@@ -464,6 +464,14 @@ func (s *service) Connectors() ([]models.SourceConnector, error) {
 			}
 		}
 	}
+	if !autofeverConfigured() {
+		for i := range connectors {
+			if connectors[i].ConnectorKey == autofeverConnectorKey {
+				connectors[i].AdapterStatus = AdapterConfigurationRequired
+				connectors[i].StatusReason = "live read-only Autofever adapter requires HAI_AUTOFEVER_CONNECTOR_TOKEN and HAI_AUTOFEVER_CONNECTOR_OWNER_IDENTITY; the shared token is restricted to that one HAI identity"
+			}
+		}
+	}
 	if _, err := odooJSON2ConfigFromEnv(); err != nil {
 		for i := range connectors {
 			if connectors[i].ConnectorKey == odooJSON2ConnectorKey {
@@ -541,6 +549,20 @@ func (s *service) CreateSource(request CreateSourceRequest) (*models.ConnectedSo
 	}
 	if connectorKey == trelloConnectorKey {
 		if err := validateTrelloSourceRequest(request, connector); err != nil {
+			return nil, err
+		}
+	}
+	if connectorKey == autofeverConnectorKey {
+		if !autofeverCredentialsBelongToOwner(request.OwnerIdentity) {
+			return nil, fmt.Errorf("Autofever credentials are restricted to the configured HAI account owner")
+		}
+		if request.LocalOnly {
+			return nil, fmt.Errorf("Autofever is a remote read-only source; localOnly must be false")
+		}
+		if category := strings.TrimSpace(request.Category); category != "" && category != connector.Category {
+			return nil, fmt.Errorf("Autofever must use the %s category", connector.Category)
+		}
+		if _, err := validateAutofeverTarget(request.SyncTarget); err != nil {
 			return nil, err
 		}
 	}
@@ -770,6 +792,21 @@ func (s *service) UpdateSource(id uuid.UUID, request UpdateSourceRequest) (*mode
 		}
 		if request.SyncTarget != nil && strings.TrimSpace(*request.SyncTarget) != "" {
 			return nil, fmt.Errorf("ShareT endpoint is configured only through HAI_SHARET_BASE_URL; syncTarget must remain empty")
+		}
+	}
+	if source.ConnectorKey == autofeverConnectorKey {
+		if !autofeverCredentialsBelongToOwner(source.OwnerIdentity) {
+			return nil, fmt.Errorf("Autofever credentials are restricted to the configured HAI account owner")
+		}
+		if request.LocalOnly != nil && *request.LocalOnly {
+			return nil, fmt.Errorf("Autofever is a remote read-only source; localOnly must remain false")
+		}
+		target := source.SyncTarget
+		if request.SyncTarget != nil {
+			target = strings.TrimSpace(*request.SyncTarget)
+		}
+		if _, err := validateAutofeverTarget(target); err != nil {
+			return nil, err
 		}
 	}
 	if source.ConnectorKey == cloudQuerySummaryConnectorKey {
@@ -1498,6 +1535,18 @@ func (s *service) syncContext(ctx context.Context, sourceID uuid.UUID, request I
 			job.CompletedAt = &now
 			_, _ = s.repo.UpdateSyncJob(job)
 			s.audit(sourceID, "source.sync_failed", sourceOperationalFailureMessage(err))
+			return nil, err
+		}
+	}
+	if len(items) == 0 && source.ConnectorKey == autofeverConnectorKey {
+		items, adapterCursor, err = fetchAutofever(ctx, source)
+		if err != nil {
+			now := time.Now().UTC()
+			job.Status = "failed"
+			job.Message = sourceOperationalFailureMessage(err)
+			job.CompletedAt = &now
+			_, _ = s.repo.UpdateSyncJob(job)
+			s.audit(sourceID, "source.sync_failed", job.Message)
 			return nil, err
 		}
 	}
@@ -3859,6 +3908,7 @@ func defaultConnectors() []models.SourceConnector {
 		{ConnectorKey: calendarConnectorKey, Name: "Google Calendar (Google OAuth)", Category: "calendar", SupportedModes: joinValues([]string{ModeHistoricalBackfill, ModeScheduledSync, ModeIncrementalSync}), RequiredScopes: "calendar.readonly", LocalOnlyCapable: false, Enabled: true, AdapterStatus: AdapterOperational, StatusReason: "live read-only primary Google Calendar sync with a bounded initial backfill and provider-native sync tokens; cancellations remain reviewable tombstones and HAI never writes back"},
 		{ConnectorKey: "local-folder", Name: "Selected local folders", Category: "local_folder", SupportedModes: joinValues([]string{ModeManualImport, ModeScheduledSync, ModeFolderWatcher, ModeIncrementalSync}), RequiredScopes: "selected-folder-read", LocalOnlyCapable: true, Enabled: true, AdapterStatus: AdapterLocalOnly, StatusReason: "manual and scheduled ingestion of an allowlisted local folder"},
 		{ConnectorKey: "json-feed", Name: "Allowlisted JSON feed", Category: "generic_feed", SupportedModes: joinValues([]string{ModeManualImport, ModeScheduledSync, ModeHistoricalBackfill, ModeIncrementalSync}), RequiredScopes: "metadata,read", LocalOnlyCapable: true, Enabled: true, AdapterStatus: AdapterOperational, StatusReason: "live scheduled and incremental fetch of a normalized JSON feed over HTTP, with host allowlisting and bounded responses"},
+		{ConnectorKey: autofeverConnectorKey, Name: "Autofever reviewed vehicles", Category: "vehicle_intelligence", SupportedModes: joinValues([]string{ModeScheduledSync, ModeHistoricalBackfill, ModeIncrementalSync}), RequiredScopes: "autofever:read", LocalOnlyCapable: false, Enabled: true, AdapterStatus: AdapterOperational, StatusReason: "live read-only Autofever sync of reviewed vehicle listings, restricted to one configured HAI owner identity; HAI has no write-back path"},
 		{ConnectorKey: "whatsapp-export", Name: "WhatsApp exported chats", Category: "chat", SupportedModes: joinValues([]string{ModeManualImport, ModeScheduledSync, ModeHistoricalBackfill, ModeIncrementalSync}), RequiredScopes: "selected-chat-export-read", LocalOnlyCapable: true, Enabled: true, AdapterStatus: AdapterLocalOnly, StatusReason: "parses local WhatsApp .txt export files into bounded, sensitive, review-gated records; does not connect to WhatsApp"},
 		{ConnectorKey: "whisper-audio", Name: "Selected audio folders (whisper.cpp)", Category: "audio", SupportedModes: joinValues([]string{ModeManualImport}), RequiredScopes: "selected-audio-folder-read,explicit-consent", LocalOnlyCapable: true, Enabled: true, AdapterStatus: AdapterLocalOnly, StatusReason: "operator-triggered local transcription from an explicit selected folder through whisper.cpp; no microphone capture, cloud upload, scheduled scan, or raw-audio retention"},
 		{ConnectorKey: doclingDocumentsConnectorKey, Name: "Selected document folders (Docling)", Category: "document", SupportedModes: joinValues([]string{ModeManualImport}), RequiredScopes: "selected-folder-read,explicit-consent", LocalOnlyCapable: true, Enabled: true, AdapterStatus: AdapterLocalOnly, StatusReason: "operator-triggered local extraction from an explicit selected folder through Docling; no browser uploads, scheduled scan, model download, cloud parser, or source-file retention"},
@@ -3916,7 +3966,7 @@ func sourceUsesLocalFolder(connectorKey string) bool {
 }
 
 func sourceHasNativeAdapter(connectorKey string) bool {
-	return sourceUsesLocalFolder(connectorKey) || connectorKey == "json-feed" || connectorKey == "github" || isGoogleOAuthConnector(connectorKey) || connectorKey == trelloConnectorKey || connectorKey == "whatsapp-export" || connectorKey == "whisper-audio" || connectorKey == "odoo-herp" || connectorKey == odooJSON2ConnectorKey || connectorKey == shareTConnectorKey || connectorKey == cloudQuerySummaryConnectorKey || connectorKey == airbyteInventoryConnectorKey || connectorKey == laroConnectorKey || connectorKey == workerControlConnectorKey || connectorKey == openSpecArtifactConnectorKey || isManualPlanningContextOnlyConnector(connectorKey)
+	return sourceUsesLocalFolder(connectorKey) || connectorKey == "json-feed" || connectorKey == autofeverConnectorKey || connectorKey == "github" || isGoogleOAuthConnector(connectorKey) || connectorKey == trelloConnectorKey || connectorKey == "whatsapp-export" || connectorKey == "whisper-audio" || connectorKey == "odoo-herp" || connectorKey == odooJSON2ConnectorKey || connectorKey == shareTConnectorKey || connectorKey == cloudQuerySummaryConnectorKey || connectorKey == airbyteInventoryConnectorKey || connectorKey == laroConnectorKey || connectorKey == workerControlConnectorKey || connectorKey == openSpecArtifactConnectorKey || isManualPlanningContextOnlyConnector(connectorKey)
 }
 
 func filterConnectorLocalItems(items []ImportItem, connectorKey string) []ImportItem {
@@ -3951,7 +4001,7 @@ func minimalPermissions(category string, requested []string) []string {
 	if len(requested) == 0 {
 		return []string{"metadata:read", category + ":read"}
 	}
-	allowed := map[string]bool{"metadata:read": true, category + ":read": true, "selected-folder-read": true, "selected-chat-export-read": true, "selected-audio-folder-read": true, "explicit-consent": true, "herp:read": true, "odoo:read": true}
+	allowed := map[string]bool{"metadata:read": true, category + ":read": true, "autofever:read": true, "selected-folder-read": true, "selected-chat-export-read": true, "selected-audio-folder-read": true, "explicit-consent": true, "herp:read": true, "odoo:read": true}
 	result := []string{}
 	for _, value := range requested {
 		value = strings.TrimSpace(value)

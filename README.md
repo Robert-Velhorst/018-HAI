@@ -1758,6 +1758,9 @@ general importer accepts `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`,
 `.yaml`, `.yml`, and `.log`; export connectors also support `.mbox`, `.eml`,
 and `.ics` within the same allowlisted root.
 
+For the owner-bound, read-only Autofever source, see
+[Autofever connector setup and verification](docs/autofever-connector.md).
+
 ### Import Phase 2 local feed records
 
 Phase 2's controlled background worker uses a separate intake boundary. Put
