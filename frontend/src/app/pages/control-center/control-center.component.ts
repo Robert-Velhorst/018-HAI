@@ -1189,7 +1189,7 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
     if (key.includes('health')) return 'heart'
     if (key.includes('house')) return 'home'
     if (key.includes('finance')) return 'wallet'
-    if (key.includes('work') || key.includes('income')) return 'briefcase'
+    if (key.includes('work') || key.includes('income')) return 'project'
     if (key.includes('relationship')) return 'team'
     if (key.includes('learn')) return 'read'
     if (key.includes('freedom')) return 'rise'

@@ -1846,6 +1846,7 @@ HAI does not create automatic memory from them and has no LARO write path.
 | Route | Purpose |
 | --- | --- |
 | `/control-center` | Primary operational overview and bounded maintenance actions. |
+| `/operational-brain` | Owner-scoped map of work, knowledge, sources, memory, agents, and inherited agent constraints. |
 | `/command-dashboard` | Robert-only decisions, open loops, source-backed context, memory-derived work, and unified approval actions for pursuits and linked workflows. |
 | `/pursuits` | Long-running objectives with workflow, source, memory, verification, blocker, approval, activity, and related-pursuit links. |
 | `/workflow-engine` | Work queue, approvals, quality gates, interruptions, retries, follow-ups, and read-only internal reminder proposals. |
@@ -2270,6 +2271,7 @@ gate/                    Legacy gateway/config area; local Compose uses nginx-co
 - [Verification and anti-hallucination policy](docs/anti-hallucination-verification.md)
 - [Source-grounded answer engine](docs/source-grounded-answer-engine.md)
 - [Automation Control Center](docs/automation-control-center-blueprint.md)
+- [Operational Brain](docs/OPERATIONAL_BRAIN.md)
 - [Release process](docs/release-process.md)
 - [Privacy impact assessment](docs/privacy-impact-assessment.md)
 

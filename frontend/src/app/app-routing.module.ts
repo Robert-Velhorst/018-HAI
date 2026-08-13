@@ -79,6 +79,14 @@ const authenticatedRoutes: Routes = [
     canActivate: [authGuard],
   },
   {
+    path: "operational-brain",
+    loadChildren: () =>
+      import("./pages/operational-brain/operational-brain.module").then(
+        (m) => m.OperationalBrainModule
+      ),
+    canActivate: [authGuard],
+  },
+  {
     path: "task-blueprint",
     loadChildren: () =>
       import("./pages/task-blueprint/task-blueprint.module").then(

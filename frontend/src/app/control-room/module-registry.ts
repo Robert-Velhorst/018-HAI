@@ -99,6 +99,16 @@ export const HAI_MODULES: HaiModuleDefinition[] = [
   { id: 'account-bridges', route: '/account-bridges', group: 'intelligence', title: 'Account bridges', description: 'Connection and permission health.', icon: 'link', primaryActionOwner: 'module', advancedSectionIds: ['registered-feeds', 'bridge-contracts'] },
   { id: 'memory', route: '/memory', group: 'intelligence', title: 'Memory', description: 'Review useful, source-linked context.', icon: 'database', primaryActionOwner: 'module', advancedSectionIds: ['memory-overview', 'memory-maintenance-actions', 'memory-records', 'memory-store-metadata', 'memory-retrieval-options', 'memory-import-metadata', 'memory-record-detail', 'memory-semantic-index', 'memory-record-content', 'memory-record-danger-zone'], progressiveSectionParents: { 'memory-record-content': 'memory-record-detail', 'memory-record-danger-zone': 'memory-record-detail' } },
   {
+    id: 'operational-brain',
+    route: '/operational-brain',
+    group: 'intelligence',
+    title: 'Operational Brain',
+    description: 'See how work, knowledge, sources, memory, and agents connect.',
+    icon: 'node-index',
+    primaryAction: { label: 'Inspect attention map', capability: 'operational-graph:read' },
+    advancedSectionIds: ['layers', 'agent-context', 'quality'],
+  },
+  {
     id: 'knowledge-claims',
     route: '/knowledge-claims',
     group: 'intelligence',
