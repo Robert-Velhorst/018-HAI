@@ -67,7 +67,15 @@ func (s pursuitStub) ListForOwner(owner string, _ bool) ([]models.Pursuit, error
 
 type sourceStub struct{ records []models.ConnectedSource }
 
-func (s sourceStub) Sources(bool) ([]models.ConnectedSource, error) { return s.records, nil }
+func (s sourceStub) SourcesForOwner(owner string, _ bool) ([]models.ConnectedSource, error) {
+	out := []models.ConnectedSource{}
+	for _, record := range s.records {
+		if record.OwnerIdentity == owner {
+			out = append(out, record)
+		}
+	}
+	return out, nil
+}
 
 type memoryStub struct{ records []models.ContextMemory }
 

@@ -43,7 +43,7 @@ type PursuitLister interface {
 	ListForOwner(string, bool) ([]models.Pursuit, error)
 }
 type SourceLister interface {
-	Sources(bool) ([]models.ConnectedSource, error)
+	SourcesForOwner(string, bool) ([]models.ConnectedSource, error)
 }
 type MemoryStore interface {
 	FindAllForOwner(string, string, bool) ([]models.ContextMemory, error)
@@ -137,11 +137,11 @@ func (s *Service) buildSnapshot(ctx context.Context, owner string) (Snapshot, er
 	} else {
 		s.projectWorkflows(b, workflows)
 	}
-	sources, err := s.sources.Sources(true)
+	sources, err := s.sources.SourcesForOwner(owner, true)
 	if err != nil {
 		b.warn("Connected sources unavailable: " + safeError(err))
 	} else {
-		s.projectSources(b, owner, sources)
+		s.projectSources(b, sources)
 	}
 	memories, err := s.memories.FindAllForOwner(owner, "", false)
 	if err != nil {
@@ -515,11 +515,8 @@ func (s *Service) projectWorkflows(b *builder, items []models.WorkflowItem) {
 		}
 	}
 }
-func (s *Service) projectSources(b *builder, owner string, items []models.ConnectedSource) {
+func (s *Service) projectSources(b *builder, items []models.ConnectedSource) {
 	for _, src := range items {
-		if strings.TrimSpace(src.OwnerIdentity) != owner {
-			continue
-		}
 		id := "source:" + src.ID.String()
 		project := b.ensureProject(src.DefaultProjectKey)
 		parent := rootID
