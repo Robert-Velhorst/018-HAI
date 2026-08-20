@@ -108,7 +108,17 @@
           [nzLoading]="busy"
           (click)="resume()"
         >
-          Resume
+          Prepare resume review
+        </button>
+        <button
+          nz-button
+          nzType="primary"
+          *ngIf="s.emergencyStop.engaged && resumeApproval"
+          [disabled]="busy || !canAdministerRuntime || resumeConfirmation !== 'RESUME BACKGROUND PROCESSING'"
+          [nzLoading]="busy"
+          (click)="approveAndResume()"
+        >
+          Confirm and resume
         </button>
         <button
           nz-button
@@ -129,6 +139,19 @@
           Run recovery
         </button>
       </div>
+      <p class="rc__permission-note" *ngIf="resumeApproval">
+        Review prepared for stop revision digest {{ resumeApproval.approvalBindingDigest | slice:0:12 }}. Type RESUME BACKGROUND PROCESSING to approve this exact change; a changed stop revision requires a new review.
+      </p>
+      <label class="rc__permission-note" *ngIf="resumeApproval" for="runtime-resume-confirmation">
+        Type RESUME BACKGROUND PROCESSING
+        <input
+          id="runtime-resume-confirmation"
+          nz-input
+          autocomplete="off"
+          [(ngModel)]="resumeConfirmation"
+          [ngModelOptions]="{ standalone: true }"
+        />
+      </label>
       <p
         id="runtime-owner-explanation"
         class="rc__permission-note"

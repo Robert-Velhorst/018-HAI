@@ -8,6 +8,7 @@ import {
   IControlAuthorization,
   IReadiness,
   IRecoveryReport,
+  IResumeApprovalRequest,
 } from '../models/runtime-control.model.interface'
 
 interface IModeApprovalPreparation {
@@ -33,12 +34,15 @@ export class RuntimeControlService {
     return this.http.post<{ emergencyStop: IEmergencyStopState }>(`${this.apiUrl}/background/pause`, { reason })
   }
 
-  prepareResume(): Observable<IControlAuthorization> {
-    return this.http.post<IControlAuthorization>(`${this.apiUrl}/background/resume/approval`, {})
+  requestResumeApproval(): Observable<IResumeApprovalRequest> {
+    return this.http.post<IResumeApprovalRequest>(`${this.apiUrl}/background/resume-approval`, {})
   }
 
-  resume(authorization: IControlAuthorization): Observable<{ emergencyStop: IEmergencyStopState }> {
-    return this.http.post<{ emergencyStop: IEmergencyStopState }>(`${this.apiUrl}/background/resume`, authorization)
+  approveAndResume(reviewItemId: string, confirmation: string): Observable<{ emergencyStop: IEmergencyStopState }> {
+    return this.http.post<{ emergencyStop: IEmergencyStopState }>(
+      `${this.apiUrl}/background/resume-approval/${encodeURIComponent(reviewItemId)}/approve-and-resume`,
+      { confirmation }
+    )
   }
 
   prepareModeChange(mode: string): Observable<IModeApprovalPreparation> {

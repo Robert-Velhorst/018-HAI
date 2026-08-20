@@ -54,6 +54,7 @@ type Service struct {
 	authorization    ExecutionAuthorizer
 	approvals        OwnerControlApprovalIssuer
 	controlApprovals ControlApprovalRepository
+	reviews          ControlReviewRepository
 	owner            string
 	space            string
 	now              func() time.Time
@@ -105,6 +106,13 @@ func (s *Service) WithExecutionAuthorizer(authorizer ExecutionAuthorizer) *Servi
 // for short-lived, exact-bound resume and autonomy-escalation requests.
 func (s *Service) WithOwnerControlApprovalIssuer(issuer OwnerControlApprovalIssuer) *Service {
 	s.approvals = issuer
+	return s
+}
+
+// WithControlReviewRepository stores safety-control approvals in the durable,
+// owner-scoped task review ledger. Resume remains unavailable without it.
+func (s *Service) WithControlReviewRepository(repository ControlReviewRepository) *Service {
+	s.reviews = repository
 	return s
 }
 

@@ -6,6 +6,7 @@ import { NzAlertModule } from 'ng-zorro-antd/alert'
 import { NzButtonModule } from 'ng-zorro-antd/button'
 import { NzCardModule } from 'ng-zorro-antd/card'
 import { NzIconModule } from 'ng-zorro-antd/icon'
+import { NzInputModule } from 'ng-zorro-antd/input'
 import { NzModalModule } from 'ng-zorro-antd/modal'
 import { NzRadioModule } from 'ng-zorro-antd/radio'
 import { NzTableModule } from 'ng-zorro-antd/table'
@@ -25,6 +26,7 @@ const routes: Routes = [{ path: '', component: RuntimeControlComponent }]
     NzButtonModule,
     NzCardModule,
     NzIconModule,
+    NzInputModule,
     NzModalModule,
     NzAlertModule,
     NzRadioModule,

@@ -22,11 +22,13 @@ import {
   IEmergencyStopState,
   IRecoveryReport,
   IReadiness,
+  IResumeApprovalRequest,
 } from '../../models/runtime-control.model.interface'
 import { AuthSessionService } from '../../services/auth-session.service'
 import { RuntimeControlService } from '../../services/runtime-control.service'
 
 const MODULE_ID = 'runtime-control'
+const RESUME_CONFIRMATION = 'RESUME BACKGROUND PROCESSING'
 
 interface IRuntimeStateLoad {
   session?: IAuthSession
@@ -61,6 +63,8 @@ export class RuntimeControlComponent implements OnInit {
   busy = false
   sessionUnavailable = false
   runtimeLoadError = ''
+  resumeApproval?: IResumeApprovalRequest
+  resumeConfirmation = ''
   private refreshRequestId = 0
 
   readonly modes = ['autonomous_safe', 'approval_required', 'draft_only', 'read_only', 'paused']
@@ -89,6 +93,8 @@ export class RuntimeControlComponent implements OnInit {
     this.authSession = undefined
     this.status = undefined
     this.readiness = undefined
+    this.resumeApproval = undefined
+    this.resumeConfirmation = ''
 
     this.authSessionService.session().pipe(
       catchError(() => of(undefined)),
@@ -211,41 +217,62 @@ export class RuntimeControlComponent implements OnInit {
       return
     }
     this.busy = true
-    this.service.prepareResume().pipe(
-      switchMap((authorization) => {
-        if (!this.hasControlAuthorization(authorization)) {
-          return throwError(() => new Error(
-            'The server did not return complete owner-approval proof. The emergency stop remains engaged.'
-          ))
+    this.service.requestResumeApproval().subscribe({
+      next: (approval) => {
+        this.busy = false
+        if (!this.isValidResumeReview(approval)) {
+          this.resumeApproval = undefined
+          this.notification.error('Resume review unavailable', 'The server returned incomplete or mismatched review evidence.')
+          return
         }
-        return this.service.resume(authorization)
-      })
-    ).subscribe({
+        this.resumeApproval = approval
+        this.resumeConfirmation = ''
+        this.notification.info('Resume review prepared', 'Review the current stop revision, then explicitly confirm before processing resumes.')
+      },
+      error: (err) => {
+        this.busy = false
+        this.notification.error('Resume review unavailable', this.errorMessage(err, 'HAI could not create the durable owner review.'))
+        this.refresh()
+      },
+    })
+  }
+
+  approveAndResume(): void {
+    if (!this.isValidResumeReview(this.resumeApproval) || this.resumeConfirmation !== RESUME_CONFIRMATION) {
+      return
+    }
+    if (!this.requirePermission(this.canAdministerRuntime, 'Resume', this.ownerControlExplanation)) {
+      return
+    }
+    this.busy = true
+    this.service.approveAndResume(this.resumeApproval.reviewItemId, this.resumeConfirmation).subscribe({
       next: (result) => {
         this.busy = false
         if (result?.emergencyStop?.engaged !== false) {
-          this.notification.error(
-            'Resume not confirmed',
-            'The server did not confirm that the persisted emergency stop was cleared.'
-          )
+          this.notification.error('Resume not confirmed', 'The server did not confirm that the persisted emergency stop was cleared.')
           this.refresh()
           return
         }
-        this.notification.success(
-          'Emergency stop cleared',
-          'The server confirmed the persisted stop is cleared. The selected runtime mode still governs processing.'
-        )
+        this.resumeApproval = undefined
+        this.resumeConfirmation = ''
+        this.notification.success('Emergency stop cleared', 'The owner review was consumed for the current stop revision.')
         this.refresh()
       },
       error: (err) => {
         this.busy = false
-        this.notification.error(
-          'Resume not confirmed',
-          this.errorMessage(err, 'The emergency stop remains governed by the server state.')
-        )
+        this.notification.error('Resume blocked', this.errorMessage(err, 'The review could not be consumed. The stop remains governed by backend state.'))
         this.refresh()
       },
     })
+  }
+
+  private isValidResumeReview(approval?: IResumeApprovalRequest): approval is IResumeApprovalRequest {
+    return Boolean(
+      approval &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(approval.reviewItemId) &&
+      approval.approvalSourceId === `opscontrol-review:${approval.reviewItemId}` &&
+      /^[0-9a-f]{64}$/.test(approval.approvalBindingDigest)
+    )
   }
 
   setMode(mode: string): void {

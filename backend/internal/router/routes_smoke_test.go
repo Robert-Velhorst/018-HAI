@@ -237,7 +237,9 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	bgctl.POST("/pause", mark("bgPause"))
 	bgctl.POST("/control-approvals", mark("bgControlApprovalPrepare"))
 	bgctl.POST("/control-approvals/:id/decision", mark("bgControlApprovalDecision"))
+	bgctl.POST("/resume/approval", mark("bgResumeApproval"))
 	bgctl.POST("/resume", mark("bgResume"))
+	bgctl.POST("/resume-approval/:id/approve-and-resume", mark("bgResumeApprovalDecision"))
 	bgctl.PATCH("/mode", mark("bgMode"))
 
 	wr := r.Group("/api/v1").Group("/windows-runtime")
@@ -377,7 +379,9 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"POST", "/api/v1/background/pause", "bgPause"},
 		{"POST", "/api/v1/background/control-approvals", "bgControlApprovalPrepare"},
 		{"POST", "/api/v1/background/control-approvals/11111111-1111-1111-1111-111111111111/decision", "bgControlApprovalDecision"},
+		{"POST", "/api/v1/background/resume/approval", "bgResumeApproval"},
 		{"POST", "/api/v1/background/resume", "bgResume"},
+		{"POST", "/api/v1/background/resume-approval/11111111-1111-1111-1111-111111111111/approve-and-resume", "bgResumeApprovalDecision"},
 		{"PATCH", "/api/v1/background/mode", "bgMode"},
 		{"GET", "/api/v1/windows-runtime/readiness", "wrReadiness"},
 		{"POST", "/api/v1/windows-runtime/recovery", "wrRecovery"},

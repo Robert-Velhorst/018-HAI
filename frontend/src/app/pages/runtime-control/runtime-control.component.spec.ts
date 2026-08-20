@@ -13,8 +13,8 @@ import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { IAuthSession } from '../../models/auth-session.model.interface'
 import {
   IBackgroundStatus,
-  IControlAuthorization,
   IReadiness,
+  IResumeApprovalRequest,
 } from '../../models/runtime-control.model.interface'
 import { AuthSessionService } from '../../services/auth-session.service'
 import { RuntimeControlService } from '../../services/runtime-control.service'
@@ -98,8 +98,8 @@ describe('RuntimeControlComponent role boundaries', () => {
       'status',
       'readiness',
       'pause',
-      'prepareResume',
-      'resume',
+      'requestResumeApproval',
+      'approveAndResume',
       'prepareModeChange',
       'setMode',
       'verifyEmergencyStop',
@@ -112,6 +112,7 @@ describe('RuntimeControlComponent role boundaries', () => {
       'success',
       'warning',
       'error',
+      'info',
     ])
 
     runtimeService.status.and.returnValue(of(activeStatus))
@@ -126,13 +127,14 @@ describe('RuntimeControlComponent role boundaries', () => {
         message: 'No unresolved OpenClaw run required cancellation.',
       },
     }))
-    runtimeService.prepareResume.and.returnValue(of({
-      idempotencyKey: 'resume-1',
-      taskId: 'opscontrol-emergency-stop-1',
-      approvalSourceId: 'opscontrol-owner:approval',
+    runtimeService.requestResumeApproval.and.returnValue(of({
+      reviewItemId: '11111111-1111-4111-8111-111111111111',
+      approvalSourceId: 'opscontrol-review:11111111-1111-4111-8111-111111111111',
       approvalBindingDigest: 'a'.repeat(64),
     }))
-    runtimeService.resume.and.returnValue(of({ emergencyStop: activeStatus.emergencyStop }))
+    runtimeService.approveAndResume.and.returnValue(of({
+      emergencyStop: { ...activeStatus.emergencyStop, engaged: false },
+    }))
     runtimeService.prepareModeChange.and.returnValue(of({ authorizationRequired: false }))
     runtimeService.setMode.and.returnValue(of({ mode: 'read_only' }))
     runtimeService.verifyEmergencyStop.and.returnValue(of({
@@ -185,18 +187,21 @@ describe('RuntimeControlComponent role boundaries', () => {
     createComponent()
 
     expect(text()).toContain('Owner authority')
-    expect(button('Resume').disabled).toBeFalse()
+    expect(button('Prepare resume review').disabled).toBeFalse()
 
-    button('Resume').click()
+    button('Prepare resume review').click()
+    fixture.detectChanges()
+    expect(runtimeService.requestResumeApproval).toHaveBeenCalled()
+    expect(runtimeService.approveAndResume).not.toHaveBeenCalled()
+    expect(button('Confirm and resume').disabled).toBeTrue()
+    component.approveAndResume()
+    expect(runtimeService.approveAndResume).not.toHaveBeenCalled()
+    component.resumeConfirmation = 'RESUME BACKGROUND PROCESSING'
+    fixture.detectChanges()
+    button('Confirm and resume').click()
     component.setMode('read_only')
 
-    expect(runtimeService.prepareResume).toHaveBeenCalled()
-    expect(runtimeService.resume).toHaveBeenCalledWith({
-      idempotencyKey: 'resume-1',
-      taskId: 'opscontrol-emergency-stop-1',
-      approvalSourceId: 'opscontrol-owner:approval',
-      approvalBindingDigest: 'a'.repeat(64),
-    })
+    expect(runtimeService.approveAndResume).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', 'RESUME BACKGROUND PROCESSING')
     expect(runtimeService.prepareModeChange).toHaveBeenCalledWith('read_only')
     expect(runtimeService.setMode).toHaveBeenCalledWith('read_only')
     expect(component.canAdministerRuntime).toBeTrue()
@@ -232,9 +237,9 @@ describe('RuntimeControlComponent role boundaries', () => {
     }
     fixture.detectChanges()
 
-    expect(button('Resume').disabled).toBeTrue()
+    expect(button('Prepare resume review').disabled).toBeTrue()
     component.resume()
-    expect(runtimeService.resume).not.toHaveBeenCalled()
+    expect(runtimeService.requestResumeApproval).not.toHaveBeenCalled()
     expect(text()).toContain('Only the owner can resume processing')
   })
 
@@ -302,7 +307,7 @@ describe('RuntimeControlComponent role boundaries', () => {
     expect(component.status?.storedMode).toBe(activeStatus.storedMode)
   })
 
-  it('does not call resume when its owner-approval preparation is incomplete', () => {
+  it('does not allow resume when durable review preparation is incomplete', () => {
     authSessionService.session.and.returnValue(of(ownerSession))
     runtimeService.status.and.returnValue(of({
       ...activeStatus,
@@ -312,23 +317,24 @@ describe('RuntimeControlComponent role boundaries', () => {
       },
       backgroundProcessingActive: false,
     }))
-    runtimeService.prepareResume.and.returnValue(of({} as IControlAuthorization))
+    runtimeService.requestResumeApproval.and.returnValue(of({} as IResumeApprovalRequest))
     createComponent()
 
     component.resume()
 
-    expect(runtimeService.prepareResume).toHaveBeenCalled()
-    expect(runtimeService.resume).not.toHaveBeenCalled()
+    expect(runtimeService.requestResumeApproval).toHaveBeenCalled()
+    expect(runtimeService.approveAndResume).not.toHaveBeenCalled()
     expect(notification.success).not.toHaveBeenCalled()
+    expect(component.resumeApproval).toBeUndefined()
     expect(notification.error).toHaveBeenCalledWith(
-      'Resume not confirmed',
-      jasmine.stringContaining('complete owner-approval proof')
+      'Resume review unavailable',
+      'The server returned incomplete or mismatched review evidence.'
     )
   })
 
   it('reconciles a stale resume request when the backend rejects its old emergency-stop state', () => {
     authSessionService.session.and.returnValue(of(ownerSession))
-    runtimeService.prepareResume.and.returnValue(throwError(() => ({
+    runtimeService.requestResumeApproval.and.returnValue(throwError(() => ({
       error: { error: 'safety-control state changed; refresh and retry' },
     })))
     createComponent()
@@ -342,12 +348,12 @@ describe('RuntimeControlComponent role boundaries', () => {
     }
     component.resume()
 
-    expect(runtimeService.prepareResume).toHaveBeenCalled()
-    expect(runtimeService.resume).not.toHaveBeenCalled()
+    expect(runtimeService.requestResumeApproval).toHaveBeenCalled()
+    expect(runtimeService.approveAndResume).not.toHaveBeenCalled()
     expect(notification.success).not.toHaveBeenCalled()
     expect(component.status?.emergencyStop.engaged).toBeFalse()
     expect(notification.error).toHaveBeenCalledWith(
-      'Resume not confirmed',
+      'Resume review unavailable',
       'safety-control state changed; refresh and retry'
     )
   })
@@ -365,10 +371,10 @@ describe('RuntimeControlComponent role boundaries', () => {
     createComponent()
 
     expect(component.emergencyStopStatusInconsistent).toBeTrue()
-    expect(button('Resume').disabled).toBeTrue()
+    expect(button('Prepare resume review').disabled).toBeTrue()
     component.resume()
 
-    expect(runtimeService.prepareResume).not.toHaveBeenCalled()
+    expect(runtimeService.requestResumeApproval).not.toHaveBeenCalled()
     expect(notification.error).toHaveBeenCalledWith(
       'Resume blocked: runtime state conflicts',
       'Refresh the backend-confirmed state before attempting to clear the emergency stop.'
@@ -453,7 +459,7 @@ describe('RuntimeControlComponent role boundaries', () => {
     component.setMode('paused')
 
     expect(runtimeService.pause).not.toHaveBeenCalled()
-    expect(runtimeService.resume).not.toHaveBeenCalled()
+    expect(runtimeService.requestResumeApproval).not.toHaveBeenCalled()
     expect(runtimeService.verifyEmergencyStop).not.toHaveBeenCalled()
     expect(runtimeService.recover).not.toHaveBeenCalled()
     expect(runtimeService.setMode).not.toHaveBeenCalled()

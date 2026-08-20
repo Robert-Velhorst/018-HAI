@@ -528,6 +528,10 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		if err != nil {
 			return err
 		}
+		opsControlReviewResolver, err := executionapproval.NewOpsControlReviewResolver(taskStateRepository)
+		if err != nil {
+			return err
+		}
 		workflowApprovalRepository, err := approvaladapter.New(workflowRepository)
 		if err != nil {
 			return err
@@ -561,6 +565,10 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			portfolioApprovalResolver,
 			ownerControlApprovalService,
 		)
+		if err != nil {
+			return err
+		}
+		approvalResolver, err = approvalResolver.WithOpsControlReviewResolver(opsControlReviewResolver)
 		if err != nil {
 			return err
 		}
@@ -682,6 +690,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			executionAuthorizationService,
 		)
 		opsControlService.WithOwnerControlApprovalIssuer(ownerControlApprovalService)
+		opsControlService.WithControlReviewRepository(newOpsControlTaskReviewRepository(taskStateRepository))
 		// The final authorization boundary must read the same persisted control
 		// state that this service will mutate. Relying only on the process-wide
 		// safety provider makes the composition implicit and can drift in tests
@@ -1973,8 +1982,10 @@ func initializeOpsControlRoutes(apiVersion *gin.RouterGroup, handler *opscontrol
 		bg.GET("/status", requirePermission(rbac.PermRead), handler.Status)
 		// Global pause and resume affect the whole installation and are owner-only.
 		bg.POST("/pause", requirePermission(rbac.PermAdmin), requirePrincipal(phase2.ConfigFromEnv().OwnerUserID), handler.Pause)
-		bg.POST("/resume/approval", requirePermission(rbac.PermAdmin), handler.PrepareResume)
+		bg.POST("/resume/approval", requirePermission(rbac.PermAdmin), handler.RequestResumeApproval)
 		bg.POST("/resume", requirePermission(rbac.PermAdmin), handler.Resume)
+		bg.POST("/resume-approval", requirePermission(rbac.PermAdmin), handler.RequestResumeApproval)
+		bg.POST("/resume-approval/:id/approve-and-resume", requirePermission(rbac.PermAdmin), handler.ApproveAndResume)
 		bg.POST("/mode/approval", requirePermission(rbac.PermAdmin), handler.PrepareModeChange)
 		bg.PATCH("/mode", requirePermission(rbac.PermAdmin), handler.SetMode)
 	}

@@ -25,13 +25,27 @@ describe('RuntimeControlService approval transport', () => {
 
   afterEach(() => http.verify())
 
-  it('prepares the exact current emergency-stop recovery', () => {
-    service.prepareResume().subscribe()
+  it('creates a durable owner review without resuming processing', () => {
+    service.requestResumeApproval().subscribe()
 
-    const request = http.expectOne('/api/v1/background/resume/approval')
+    const request = http.expectOne('/api/v1/background/resume-approval')
     expect(request.request.method).toBe('POST')
     expect(request.request.body).toEqual({})
-    request.flush(authorization)
+    request.flush({
+      reviewItemId: 'review-1',
+      approvalSourceId: 'opscontrol-review:review-1',
+      approvalBindingDigest: 'a'.repeat(64),
+    })
+  })
+
+  it('submits the exact owner confirmation for a specific durable review', () => {
+    const reviewID = '11111111-1111-4111-8111-111111111111'
+    service.approveAndResume(reviewID, 'RESUME BACKGROUND PROCESSING').subscribe()
+
+    const request = http.expectOne(`/api/v1/background/resume-approval/${reviewID}/approve-and-resume`)
+    expect(request.request.method).toBe('POST')
+    expect(request.request.body).toEqual({ confirmation: 'RESUME BACKGROUND PROCESSING' })
+    request.flush({})
   })
 
   it('requests approval for a mode escalation without granting it locally', () => {
@@ -41,15 +55,6 @@ describe('RuntimeControlService approval transport', () => {
     expect(request.request.method).toBe('POST')
     expect(request.request.body).toEqual({ mode: 'autonomous_safe' })
     request.flush({ authorizationRequired: true, authorization })
-  })
-
-  it('submits server-issued references to resume processing', () => {
-    service.resume(authorization).subscribe()
-
-    const request = http.expectOne('/api/v1/background/resume')
-    expect(request.request.method).toBe('POST')
-    expect(request.request.body).toEqual(authorization)
-    request.flush({})
   })
 
   it('includes authorization only for an approved mode escalation', () => {
