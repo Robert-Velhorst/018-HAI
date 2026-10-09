@@ -618,6 +618,13 @@
       title="Selection history"
       [summary]="selections.length + ' owner-scoped recorded decisions'"
     >
+      <div class="empty-state" role="alert" *ngIf="loadErrors['selections']; else selectionHistoryContent">
+        <span nz-icon nzType="warning" aria-hidden="true"></span>
+        <strong>Selection history unavailable</strong>
+        <p>{{ loadErrors['selections'] }}</p>
+        <button nz-button type="button" (click)="refresh()">Retry</button>
+      </div>
+      <ng-template #selectionHistoryContent>
         <nz-table
           #selectionTable
           [nzData]="selections"
@@ -662,6 +669,7 @@
             <p>Request a framework recommendation to create the first auditable selection.</p>
           </div>
         </ng-template>
+      </ng-template>
     </hai-progressive-section>
 
     <hai-progressive-section

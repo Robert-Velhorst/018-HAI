@@ -10,7 +10,7 @@
     "watch": "node scripts/build-with-limits.mjs --watch --configuration development",
     "pretest": "node scripts/check-progressive-sections.mjs",
     "check:control-room": "node --max-old-space-size=384 scripts/check-control-room-compiler.mjs && node --max-old-space-size=384 scripts/check-control-room-compiler.mjs --spec-types && node --max-old-space-size=384 scripts/check-control-room-compiler.mjs --source-navigation && node --max-old-space-size=384 scripts/check-control-room-compiler.mjs --workflow && node --max-old-space-size=384 scripts/check-control-room-compiler.mjs --workflow-spec-types",
-    "test": "node --test --test-concurrency=1 proxy.conf.test.cjs scripts/template-landmarks.test.mjs scripts/focused-test-config.test.mjs scripts/build-with-limits.test.mjs scripts/release-cache.test.mjs scripts/control-room-logic.test.mjs scripts/hai-os-observation.test.mjs scripts/module-view-preferences.test.mjs scripts/launch-request-safety.test.mjs scripts/runtime-stop-ui.test.mjs scripts/pursuit-decision-ui.test.mjs scripts/deep-link-focus.test.mjs scripts/framework-secret-boundary.test.mjs && ng test"
+    "test": "node --test --test-concurrency=1 proxy.conf.test.cjs scripts/template-landmarks.test.mjs scripts/focused-test-config.test.mjs scripts/build-with-limits.test.mjs scripts/release-cache.test.mjs scripts/control-room-logic.test.mjs scripts/hai-os-observation.test.mjs scripts/module-view-preferences.test.mjs scripts/launch-request-safety.test.mjs scripts/runtime-stop-ui.test.mjs scripts/pursuit-decision-ui.test.mjs scripts/deep-link-focus.test.mjs scripts/framework-secret-boundary.test.mjs scripts/framework-registry-history-state.test.mjs && ng test"
   },
   "private": true,
   "engines": {
