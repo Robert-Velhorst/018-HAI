@@ -1,9 +1,14 @@
 {
   "name": "hai-e2e",
   "private": true,
+  "packageManager": "npm@10.9.8",
   "description": "Browser-level end-to-end acceptance tests for the HAI operator flow. Self-contained so it does not affect the Angular app build.",
+  "engines": {
+    "node": "^24.15.0"
+  },
   "scripts": {
     "test": "playwright test",
+    "test:smoke": "playwright test tests/auth-smoke.spec.ts",
     "test:headed": "playwright test --headed",
     "typecheck": "tsc --project tsconfig.json",
     "report": "playwright show-report",

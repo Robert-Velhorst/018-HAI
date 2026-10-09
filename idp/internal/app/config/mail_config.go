@@ -23,13 +23,17 @@ type mailConfig struct {
 	RequireStartTLS bool
 }
 
-func newMailConfig() *mailConfig {
+func newMailConfig() (*mailConfig, error) {
+	requireTLS, err := getEnvBool(smtpRequireStartTLS, true)
+	if err != nil {
+		return nil, err
+	}
 	return &mailConfig{
 		Host:            strings.TrimSpace(getEnvString(smtpHost, "")),
 		Port:            strings.TrimSpace(getEnvString(smtpPort, "")),
 		Username:        strings.TrimSpace(getEnvString(smtpUsername, "")),
-		Password:        strings.TrimSpace(getEnvString(smtpPassword, "")),
+		Password:        getEnvString(smtpPassword, ""),
 		From:            strings.TrimSpace(getEnvString(smtpFrom, "")),
-		RequireStartTLS: getEnvBool(smtpRequireStartTLS, true),
-	}
+		RequireStartTLS: requireTLS,
+	}, nil
 }

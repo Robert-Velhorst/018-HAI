@@ -1,4 +1,4 @@
-<main class="framework-registry-page">
+<section class="framework-registry-page">
   <header class="registry-header">
     <div class="registry-header__identity">
       <button
@@ -20,24 +20,6 @@
     </div>
 
     <div class="registry-header__actions">
-      <div class="view-switch" role="group" aria-label="Framework Registry view depth">
-        <button
-          type="button"
-          [class.view-switch__active]="viewMode === 'basic'"
-          [attr.aria-pressed]="viewMode === 'basic'"
-          (click)="setViewMode('basic')"
-        >
-          Basic
-        </button>
-        <button
-          type="button"
-          [class.view-switch__active]="viewMode === 'advanced'"
-          [attr.aria-pressed]="viewMode === 'advanced'"
-          (click)="setViewMode('advanced')"
-        >
-          Advanced
-        </button>
-      </div>
       <button
         nz-button
         type="button"
@@ -91,15 +73,16 @@
             <h2>Select the smallest capable framework set</h2>
             <p>Describe the work. HAI records a recommendation; it does not start execution.</p>
           </div>
-          <button
-            type="button"
+          <span
             class="help-button"
+            role="note"
+            tabindex="0"
             nz-tooltip
             nzTooltipTitle="Selection applies the active Constitution, owner preferences, exact capability coverage, conflict checks, and authority ceilings."
-            aria-label="About framework selection"
+            aria-label="About framework selection: selection applies the active Constitution, owner preferences, exact capability coverage, conflict checks, and authority ceilings."
           >
             ?
-          </button>
+          </span>
         </div>
 
         <form class="selection-form" (ngSubmit)="selectFrameworks()">
@@ -130,33 +113,12 @@
             [nzDescription]="selectionAccessExplanation"
           ></nz-alert>
 
-          <div class="progressive-panel">
-            <button
-              type="button"
-              class="progressive-panel__summary"
-              id="selection-context-summary"
-              [attr.aria-expanded]="sectionOpen('selection-context')"
-              aria-controls="selection-context-panel"
-              (click)="toggleSection('selection-context')"
-            >
-              <span>
-                <strong>Selection context</strong>
-                <small>Project links, difficulty, success criteria, capabilities, and execution intent</small>
-              </span>
-              <span
-                nz-icon
-                [nzType]="sectionOpen('selection-context') ? 'up' : 'down'"
-                aria-hidden="true"
-              ></span>
-            </button>
-
-            <div
-              class="progressive-panel__body"
-              id="selection-context-panel"
-              role="region"
-              aria-labelledby="selection-context-summary"
-              *ngIf="sectionOpen('selection-context')"
-            >
+          <hai-progressive-section
+            moduleId="framework-registry"
+            sectionId="selection-context"
+            title="Selection context"
+            summary="Project links, criteria, capability needs, and execution intent."
+          >
               <div class="form-grid">
                 <label>
                   <span>Project key</span>
@@ -259,8 +221,7 @@
                   Execution requested
                 </label>
               </fieldset>
-            </div>
-          </div>
+          </hai-progressive-section>
 
           <div class="intent-boundary" id="framework-selection-boundary">
             <span nz-icon nzType="safety-certificate" aria-hidden="true"></span>
@@ -309,15 +270,16 @@
             <h2 id="recommendation-heading" tabindex="-1">Current recommendation</h2>
             <p>Selection rationale, authority, evidence, and completion contract.</p>
           </div>
-          <button
-            type="button"
+          <span
             class="help-button"
+            role="note"
+            tabindex="0"
             nz-tooltip
             nzTooltipTitle="Advanced view exposes the full reproducibility contract and all selected frameworks."
-            aria-label="About recommendations"
+            aria-label="About recommendations: Advanced view exposes the full reproducibility contract and all selected frameworks."
           >
             ?
-          </button>
+          </span>
         </div>
         <app-framework-registry-recommendation
           [selection]="currentSelection"
@@ -331,20 +293,20 @@
     </section>
 
     <section class="overview-strip" aria-label="Framework Registry summary">
-      <div>
-        <strong>{{ overview?.total ?? frameworks.length }}</strong>
+      <div [class.overview-strip__metric--pending]="isOverviewMetricUnavailable(overview?.total)">
+        <strong>{{ overviewMetricValue(overview?.total) }}</strong>
         <span>Catalog frameworks</span>
       </div>
-      <div>
-        <strong>{{ overview?.enabled ?? 0 }}</strong>
+      <div [class.overview-strip__metric--pending]="isOverviewMetricUnavailable(overview?.enabled)">
+        <strong>{{ overviewMetricValue(overview?.enabled) }}</strong>
         <span>Enabled</span>
       </div>
-      <div>
-        <strong>{{ overview?.pinned ?? 0 }}</strong>
+      <div [class.overview-strip__metric--pending]="isOverviewMetricUnavailable(overview?.pinned)">
+        <strong>{{ overviewMetricValue(overview?.pinned) }}</strong>
         <span>Pinned</span>
       </div>
-      <div>
-        <strong>{{ overview?.experimental ?? 0 }}</strong>
+      <div [class.overview-strip__metric--pending]="isOverviewMetricUnavailable(overview?.experimental)">
+        <strong>{{ overviewMetricValue(overview?.experimental) }}</strong>
         <span>Experimental</span>
       </div>
       <div>
@@ -359,28 +321,14 @@
       </div>
     </section>
 
-    <section class="progressive-section" *ngIf="isAdvanced">
-      <button
-        type="button"
-        class="progressive-section__summary"
-        id="family-taxonomy-summary"
-        [attr.aria-expanded]="sectionOpen('family-taxonomy')"
-        aria-controls="family-taxonomy-panel"
-        (click)="toggleSection('family-taxonomy')"
-      >
-        <span>
-          <strong>Framework taxonomy</strong>
-          <small>Versioned 55-family map used by HAI's selection engine</small>
-        </span>
-        <span nz-icon [nzType]="sectionOpen('family-taxonomy') ? 'up' : 'down'" aria-hidden="true"></span>
-      </button>
-      <div
-        class="progressive-section__body taxonomy-panel"
-        id="family-taxonomy-panel"
-        role="region"
-        aria-labelledby="family-taxonomy-summary"
-        *ngIf="sectionOpen('family-taxonomy')"
-      >
+    <hai-progressive-section
+      moduleId="framework-registry"
+      sectionId="family-taxonomy"
+      title="Framework taxonomy"
+      summary="Versioned 55-family map used by HAI's selection engine."
+      (openChange)="onTaxonomyOpen($event)"
+    >
+      <div class="taxonomy-panel">
         <ng-container *ngIf="familyTaxonomy as taxonomy; else taxonomyState">
           <div class="taxonomy-panel__meta">
             <span>Version <strong>{{ taxonomy.version }}</strong></span>
@@ -417,8 +365,14 @@
           </div>
         </ng-template>
       </div>
-    </section>
+    </hai-progressive-section>
 
+    <hai-progressive-section
+      moduleId="framework-registry"
+      sectionId="framework-catalog"
+      title="Framework catalogue"
+      [summary]="filteredFrameworks.length + ' entries · search, filter, and inspect the full catalogue.'"
+    >
     <section class="surface catalog-panel" aria-labelledby="framework-catalog-heading">
       <div class="section-heading catalog-heading">
         <div>
@@ -426,7 +380,6 @@
           <h2 id="framework-catalog-heading">Available frameworks</h2>
           <p>
             {{ filteredFrameworks.length }} matching framework{{ filteredFrameworks.length === 1 ? '' : 's' }}.
-            Basic view shows the first 10.
           </p>
         </div>
         <div class="catalog-filters" aria-label="Framework catalogue filters">
@@ -553,15 +506,8 @@
         </div>
       </ng-template>
 
-      <div class="catalog-foot" *ngIf="!isAdvanced && filteredFrameworks.length > displayedFrameworks.length">
-        <span>
-          {{ filteredFrameworks.length - displayedFrameworks.length }} additional matching frameworks are hidden.
-        </span>
-        <button nz-button nzType="link" type="button" (click)="setViewMode('advanced')">
-          Show all in Advanced view
-        </button>
-      </div>
     </section>
+    </hai-progressive-section>
 
     <section class="surface" aria-labelledby="constitution-summary-heading">
       <ng-container *ngIf="constitution as activeConstitution; else constitutionUnavailable">
@@ -601,36 +547,12 @@
       </ng-template>
     </section>
 
-    <section class="progressive-section" *ngIf="isAdvanced">
-      <button
-        type="button"
-        class="progressive-section__summary"
-        id="constitution-history-summary"
-        [attr.aria-expanded]="sectionOpen('constitution-history')"
-        aria-controls="constitution-history-panel"
-        (click)="toggleSection('constitution-history')"
-      >
-        <span>
-          <strong>Constitution version ledger</strong>
-          <small>
-            {{ constitutionHistory.length }} immutable version
-            {{ constitutionHistory.length === 1 ? '' : 's' }}
-            <ng-container *ngIf="constitutionHistoryTruncated">shown from a longer history</ng-container>
-          </small>
-        </span>
-        <span
-          nz-icon
-          [nzType]="sectionOpen('constitution-history') ? 'up' : 'down'"
-          aria-hidden="true"
-        ></span>
-      </button>
-      <div
-        class="progressive-section__body"
-        id="constitution-history-panel"
-        role="region"
-        aria-labelledby="constitution-history-summary"
-        *ngIf="sectionOpen('constitution-history')"
-      >
+    <hai-progressive-section
+      moduleId="framework-registry"
+      sectionId="constitution-history"
+      title="Constitution version ledger"
+      [summary]="constitutionHistory.length + ' immutable versions' + (constitutionHistoryTruncated ? ' · truncated history' : '')"
+    >
         <nz-alert
           *ngIf="loadErrors['constitutionHistory']"
           nzType="warning"
@@ -688,31 +610,14 @@
             <p>The built-in baseline remains active until the first owner amendment is stored.</p>
           </div>
         </ng-template>
-      </div>
-    </section>
+    </hai-progressive-section>
 
-    <section class="progressive-section" *ngIf="isAdvanced">
-      <button
-        type="button"
-        class="progressive-section__summary"
-        id="selection-history-summary"
-        [attr.aria-expanded]="sectionOpen('selection-history')"
-        aria-controls="selection-history-panel"
-        (click)="toggleSection('selection-history')"
-      >
-        <span>
-          <strong>Selection history</strong>
-          <small>{{ selections.length }} owner-scoped recorded decision{{ selections.length === 1 ? '' : 's' }}</small>
-        </span>
-        <span nz-icon [nzType]="sectionOpen('selection-history') ? 'up' : 'down'" aria-hidden="true"></span>
-      </button>
-      <div
-        class="progressive-section__body"
-        id="selection-history-panel"
-        role="region"
-        aria-labelledby="selection-history-summary"
-        *ngIf="sectionOpen('selection-history')"
-      >
+    <hai-progressive-section
+      moduleId="framework-registry"
+      sectionId="selection-history"
+      title="Selection history"
+      [summary]="selections.length + ' owner-scoped recorded decisions'"
+    >
         <nz-table
           #selectionTable
           [nzData]="selections"
@@ -757,36 +662,14 @@
             <p>Request a framework recommendation to create the first auditable selection.</p>
           </div>
         </ng-template>
-      </div>
-    </section>
+    </hai-progressive-section>
 
-    <section class="progressive-section" *ngIf="isAdvanced">
-      <button
-        type="button"
-        class="progressive-section__summary"
-        id="constitution-governance-summary"
-        [attr.aria-expanded]="sectionOpen('constitution-governance')"
-        aria-controls="constitution-governance-panel"
-        (click)="toggleSection('constitution-governance')"
-      >
-        <span>
-          <strong>Constitution governance</strong>
-          <small>Inspect rules, prepare an immutable draft, and explicitly activate a reviewed version</small>
-        </span>
-        <span
-          nz-icon
-          [nzType]="sectionOpen('constitution-governance') ? 'up' : 'down'"
-          aria-hidden="true"
-        ></span>
-      </button>
-
-      <div
-        class="progressive-section__body"
-        id="constitution-governance-panel"
-        role="region"
-        aria-labelledby="constitution-governance-summary"
-        *ngIf="sectionOpen('constitution-governance')"
-      >
+    <hai-progressive-section
+      moduleId="framework-registry"
+      sectionId="constitution-governance"
+      title="Constitution governance"
+      summary="Inspect rules, prepare an immutable draft, and explicitly activate a reviewed version."
+    >
         <ng-container *ngIf="constitution as activeConstitution">
           <div class="governance-overview">
             <div>
@@ -964,8 +847,7 @@
             </div>
           </form>
         </ng-container>
-      </div>
-    </section>
+    </hai-progressive-section>
   </div>
 
   <nz-drawer
@@ -989,4 +871,4 @@
       ></app-framework-registry-inspector>
     </ng-container>
   </nz-drawer>
-</main>
+</section>

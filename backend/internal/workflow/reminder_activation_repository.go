@@ -223,18 +223,20 @@ func (r *GormRepository) SaveReminderActivationDecision(
 		if err := validateReminderActivationRequest(activation); err != nil {
 			return err
 		}
-		if time.Now().UTC().After(activation.ExpiresAt) {
-			return fmt.Errorf("reminder activation request expired")
-		}
-		source, err := loadReminderActivationSource(tx, wanted.OwnerIdentity, activation.ChecklistItemID, true)
-		if err != nil {
-			return err
-		}
-		if source == nil {
-			return fmt.Errorf("reminder is no longer current")
-		}
-		if err := validateReminderActivationRequestSource(activation, source); err != nil {
-			return err
+		if wanted.Decision != ReminderActivationDecisionRevoked {
+			if time.Now().UTC().After(activation.ExpiresAt) {
+				return fmt.Errorf("reminder activation request expired")
+			}
+			source, err := loadReminderActivationSource(tx, wanted.OwnerIdentity, activation.ChecklistItemID, true)
+			if err != nil {
+				return err
+			}
+			if source == nil {
+				return fmt.Errorf("reminder is no longer current")
+			}
+			if err := validateReminderActivationRequestSource(activation, source); err != nil {
+				return err
+			}
 		}
 		var replay models.WorkflowReminderActivationDecision
 		replayErr := tx.Where(

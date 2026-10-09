@@ -75,11 +75,11 @@ func (s *capturingTaskService) Preview(request task.IntakeRequest) (*task.Comple
 func (s *capturingTaskService) Run(request task.IntakeRequest) (*task.CompletionPlan, error) {
 	s.runs++
 	s.request = request
+	if s.plan != nil {
+		return s.plan, s.err
+	}
 	if s.err != nil {
 		return nil, s.err
-	}
-	if s.plan != nil {
-		return s.plan, nil
 	}
 	return validWorkflowCompletionPlan("task-plan-1"), nil
 }
@@ -636,13 +636,14 @@ func TestRunnerRejectsCompletedExternalActionWithoutImmutableEvidence(t *testing
 	if err == nil || !strings.Contains(err.Error(), "no immutable launch-event evidence") {
 		t.Fatalf("error = %v, want immutable evidence failure", err)
 	}
-	if result != nil {
-		t.Fatalf("unaudited external completion was returned: %#v", result)
+	if result == nil || !result.ExternalActionExecuted {
+		t.Fatalf("partial result must preserve the reported external action: %#v", result)
 	}
 }
 
 func TestRunnerRejectsMissingFrameworkSelectionInsteadOfReportingCompletion(t *testing.T) {
-	tasks := &capturingTaskService{plan: &task.CompletionPlan{
+	previewPlan := validWorkflowCompletionPlan("task-plan-with-selection")
+	tasks := &capturingTaskService{previewPlan: previewPlan, plan: &task.CompletionPlan{
 		ID:               "task-plan-without-selection",
 		CompletionStatus: "validated",
 		ValidationResult: task.ValidationResult{Passed: true, Status: "verified"},
@@ -657,8 +658,106 @@ func TestRunnerRejectsMissingFrameworkSelectionInsteadOfReportingCompletion(t *t
 	if err == nil || !strings.Contains(err.Error(), "no framework selection decision") {
 		t.Fatalf("error = %v, want missing framework selection failure", err)
 	}
-	if result != nil {
-		t.Fatalf("failed framework selection was returned as a result: %#v", result)
+	if result == nil || result.PlanID != "task-plan-without-selection" {
+		t.Fatalf("partial task result must preserve plan evidence: %#v", result)
+	}
+}
+
+func TestRunnerDoesNotReportCompletionForNonValidatedPlan(t *testing.T) {
+	for _, status := range []string{"retry_needed", "review_required", "unknown"} {
+		t.Run(status, func(t *testing.T) {
+			plan := validWorkflowCompletionPlan("task-plan-" + status)
+			plan.CompletionStatus = status
+			tasks := &capturingTaskService{plan: plan}
+
+			result, err := NewRunner(tasks).RunWorkflowTask(workflow.TaskRunRequest{
+				OwnerIdentity: "alice",
+				WorkflowID:    "workflow-1",
+				Request:       "Advance workflow",
+			})
+			if err != nil {
+				t.Fatalf("RunWorkflowTask: %v", err)
+			}
+			if result == nil || result.Passed {
+				t.Fatalf("non-validated plan was reported as passed: %#v", result)
+			}
+			if result.ReviewRequired != (status == "review_required") {
+				t.Fatalf("review-required = %t for status %q", result.ReviewRequired, status)
+			}
+		})
+	}
+}
+
+func TestRunnerClassifiesOnlyPreflightFailuresAsSafeNoSideEffect(t *testing.T) {
+	tests := []struct {
+		name  string
+		tasks *capturingTaskService
+		input workflow.TaskRunRequest
+	}{
+		{
+			name:  "normalization failure",
+			tasks: &capturingTaskService{},
+			input: workflow.TaskRunRequest{WorkflowID: "workflow-1", Request: ""},
+		},
+		{
+			name:  "selection preview failure",
+			tasks: &capturingTaskService{previewErr: errors.New("preview unavailable")},
+			input: workflow.TaskRunRequest{OwnerIdentity: "alice", WorkflowID: "workflow-1", Request: "Review this task"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewRunner(test.tasks).RunWorkflowTask(test.input)
+			if err == nil || !workflow.IsTaskFailureSafeNoSideEffect(err) {
+				t.Fatalf("error = %v, want explicit safe-no-side-effect marker", err)
+			}
+			if test.tasks.runs != 0 {
+				t.Fatalf("task service Run calls = %d, want no execution", test.tasks.runs)
+			}
+		})
+	}
+}
+
+func TestRunnerDoesNotMarkTaskServiceRunErrorsSafe(t *testing.T) {
+	tasks := &capturingTaskService{err: errors.New("task engine failed after dispatch")}
+	_, err := NewRunner(tasks).RunWorkflowTask(workflow.TaskRunRequest{
+		OwnerIdentity: "alice",
+		WorkflowID:    "workflow-1",
+		Request:       "Perform the approved work",
+	})
+	if err == nil || workflow.IsTaskFailureSafeNoSideEffect(err) {
+		t.Fatalf("error = %v, want unmarked outcome-uncertain task service failure", err)
+	}
+	if tasks.runs != 1 {
+		t.Fatalf("task service Run calls = %d, want one execution attempt", tasks.runs)
+	}
+}
+
+func TestRunnerPreservesPartialExternalActionResultAlongsideRunError(t *testing.T) {
+	plan := validWorkflowCompletionPlan("task-plan-partial-action")
+	plan.ExecutionResult = &task.ExecutionResult{
+		VerificationStatus: "needs_review",
+		ToolExecution: &task.ToolExecutionResult{
+			Status:        "completed",
+			LaunchEventID: uuid.NewString(),
+			RuntimeType:   "docker",
+		},
+	}
+	runErr := errors.New("task engine lost its response after dispatch")
+	tasks := &capturingTaskService{plan: plan, err: runErr}
+	result, err := NewRunner(tasks).RunWorkflowTask(workflow.TaskRunRequest{
+		OwnerIdentity: "alice",
+		WorkflowID:    "workflow-1",
+		Request:       "Perform the approved work",
+	})
+	if err == nil || !strings.Contains(err.Error(), runErr.Error()) {
+		t.Fatalf("error = %v, want original post-dispatch failure", err)
+	}
+	if workflow.IsTaskFailureSafeNoSideEffect(err) {
+		t.Fatalf("post-Run error was marked safe: %v", err)
+	}
+	if result == nil || result.PlanID != plan.ID || !result.ExternalActionExecuted || !strings.HasPrefix(result.RuntimeEvidenceURI, "automation-launch://") {
+		t.Fatalf("partial action result/evidence was discarded: %#v", result)
 	}
 }
 

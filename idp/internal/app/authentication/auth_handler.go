@@ -1,13 +1,18 @@
 package authentication
 
 import (
+	"automation-hub-idp/internal/app/config"
 	"automation-hub-idp/internal/app/dto"
+	"bytes"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"github.com/gin-gonic/gin"
+	"io"
 	"net"
 	"net/http"
 	neturl "net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -15,8 +20,12 @@ import (
 const (
 	authSubrequestHeader         = "X-HAI-Auth-Subrequest"
 	verifiedAccessTokenHeader    = "X-HAI-Verified-Access-Token"
+	refreshedAccessCookieHeader  = "X-HAI-Refreshed-Access-Cookie"
+	refreshedRefreshCookieHeader = "X-HAI-Refreshed-Refresh-Cookie"
+	localPreviewGatewayHeader    = "X-HAI-Local-Preview-Gateway-Secret"
 	authSubrequestHeaderExpected = "1"
 	authenticatedTokenContextKey = "hai.authenticated-access-token"
+	maxAuthJSONBodyBytes         = 16 * 1024
 )
 
 func safeAuthenticationReturnURL(candidate string) string {
@@ -28,19 +37,79 @@ func safeAuthenticationReturnURL(candidate string) string {
 }
 
 type Handler struct {
-	authService IService
+	authService            IService
+	passwordResetRateLimit *passwordResetLimiter
+	publicAuthRateLimit    *publicAuthRateLimiter
+}
+
+// Close releases only the handler-owned rate-limit client, not its auth service.
+func (h *Handler) Close() error {
+	if h == nil {
+		return nil
+	}
+	return errors.Join(h.passwordResetRateLimit.Close(), h.publicAuthRateLimit.Close())
 }
 
 func NewHandler(authService IService) *Handler {
-	return &Handler{
-		authService: authService,
+	return newHandler(authService, newMemoryOnlyPasswordResetLimiter())
+}
+
+func NewHandlerWithRedisPasswordResetLimiter(authService IService, redisAddress string) *Handler {
+	secret := ""
+	if config.AuthenticationConfig != nil {
+		secret = config.AuthenticationConfig.JwtSecret
 	}
+	handler := newHandler(authService, newPasswordResetLimiter(redisAddress, secret))
+	handler.publicAuthRateLimit = newPublicAuthRateLimiter(redisAddress, secret)
+	return handler
+}
+
+func newHandler(authService IService, limiter *passwordResetLimiter) *Handler {
+	return &Handler{
+		authService:            authService,
+		passwordResetRateLimit: limiter,
+		publicAuthRateLimit:    newMemoryPublicAuthRateLimiter(),
+	}
+}
+
+func bindAuthJSON(c *gin.Context, destination any) error {
+	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxAuthJSONBodyBytes))
+	if err != nil {
+		return err
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	if authJSONHasTrailingValue(body) {
+		return errors.New("request body must contain exactly one JSON value")
+	}
+	return c.ShouldBindJSON(destination)
+}
+
+func authJSONHasTrailingValue(body []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	var first json.RawMessage
+	if err := decoder.Decode(&first); err != nil {
+		return false
+	}
+	var trailing json.RawMessage
+	return decoder.Decode(&trailing) != io.EOF
+}
+
+func authJSONErrorStatus(err error) int {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		return http.StatusRequestEntityTooLarge
+	}
+	return http.StatusBadRequest
 }
 
 // Capabilities exposes only optional login-path availability; it never returns
 // provider settings, credentials, or account existence information.
 func (h *Handler) Capabilities(c *gin.Context) {
-	c.JSON(http.StatusOK, h.authService.Capabilities())
+	capabilities := h.authService.Capabilities()
+	if !config.LocalPreviewConfig.LocalPreviewSessionAllowed() || !isLoopbackBrowserRequest(c.Request) {
+		capabilities.LocalPreviewEnabled = false
+	}
+	c.JSON(http.StatusOK, capabilities)
 }
 
 // Register
@@ -56,12 +125,15 @@ func (h *Handler) Capabilities(c *gin.Context) {
 // @Failure 500 {object} dto.ErrorResponse
 // @Router /auth/register [post]
 func (h *Handler) Register(c *gin.Context) {
+	if !h.enforcePublicAuthRateLimit(c, "register") {
+		return
+	}
 	var userDTO dto.UserDTO
 	var errorResponse dto.ErrorResponse
-	if err := c.ShouldBindJSON(&userDTO); err != nil {
+	if err := bindAuthJSON(c, &userDTO); err != nil {
 		errorResponse.Message = "Invalid request body"
-		errorResponse.ErrorCode = http.StatusBadRequest
-		c.JSON(http.StatusBadRequest, errorResponse)
+		errorResponse.ErrorCode = authJSONErrorStatus(err)
+		c.JSON(errorResponse.ErrorCode, errorResponse)
 		return
 	}
 
@@ -69,7 +141,7 @@ func (h *Handler) Register(c *gin.Context) {
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
-		case errors.Is(err, ErrRegistrationEmailInvalid), errors.Is(err, ErrRegistrationPasswordWeak):
+		case errors.Is(err, ErrRegistrationEmailInvalid), errors.Is(err, ErrRegistrationPasswordWeak), errors.Is(err, ErrRegistrationPasswordTooLong):
 			status = http.StatusBadRequest
 		case errors.Is(err, ErrRegistrationEmailInUse):
 			status = http.StatusConflict
@@ -94,9 +166,12 @@ func (h *Handler) Register(c *gin.Context) {
 // @Failure 500 "Internal Server Error"
 // @Router /auth/login [post]
 func (h *Handler) Login(c *gin.Context) {
+	if !h.enforcePublicAuthRateLimit(c, "login") {
+		return
+	}
 	var userLoginDTO dto.UserLoginDTO
-	if err := c.ShouldBindJSON(&userLoginDTO); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if err := bindAuthJSON(c, &userLoginDTO); err != nil {
+		c.JSON(authJSONErrorStatus(err), gin.H{"error": "Invalid request body"})
 		return
 	}
 
@@ -106,11 +181,8 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	atExpiresTime := time.Unix(tokenDetails.AtExpires, 0)
-	rtExpiresTime := time.Unix(tokenDetails.RtExpires, 0)
-
-	setAccessTokenCookie(c.Writer, tokenDetails.AccessToken, atExpiresTime)
-	setRefreshTokenCookie(c.Writer, tokenDetails.RefreshToken, rtExpiresTime)
+	rememberMe := userLoginDTO.RememberMe == nil || *userLoginDTO.RememberMe
+	setLoginSessionCookies(c.Writer, tokenDetails, rememberMe)
 
 	c.Status(http.StatusOK)
 }
@@ -133,9 +205,23 @@ func (h *Handler) GoogleLogin(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/login?error=google_unavailable")
 		return
 	}
+	var rememberMe *bool
+	if preference := c.Query("rememberMe"); preference != "" {
+		parsedPreference, err := strconv.ParseBool(preference)
+		if err != nil {
+			c.Redirect(http.StatusFound, "/login?error=google_unavailable")
+			return
+		}
+		rememberMe = &parsedPreference
+	}
 	expires := time.Now().Add(10 * time.Minute)
 	setGoogleOAuthStateCookie(c.Writer, state, expires)
 	setGoogleOAuthReturnURLCookie(c.Writer, safeAuthenticationReturnURL(c.Query("returnUrl")), expires)
+	if rememberMe != nil {
+		setGoogleRememberMeCookie(c.Writer, *rememberMe, expires)
+	} else if _, err := c.Cookie(googleOAuthRememberMeCookie); err == nil {
+		clearGoogleRememberMeCookie(c.Writer)
+	}
 	c.Redirect(http.StatusFound, loginURL)
 }
 
@@ -143,19 +229,19 @@ func (h *Handler) GoogleLogin(c *gin.Context) {
 // session (Google calls it directly), protected by the signed state. On success
 // it sets the same session cookies as a password login and lands on the app.
 func (h *Handler) GoogleCallback(c *gin.Context) {
-	if c.Query("error") != "" {
-		clearGoogleOAuthStateCookie(c.Writer)
-		clearGoogleOAuthReturnURLCookie(c.Writer)
-		c.Redirect(http.StatusFound, "/login?error=google_denied")
-		return
-	}
 	state := c.Query("state")
 	cookieState, err := c.Cookie(googleOAuthStateCookie)
 	returnURL, returnURLErr := c.Cookie(googleOAuthReturnURLCookie)
-	clearGoogleOAuthStateCookie(c.Writer)
-	clearGoogleOAuthReturnURLCookie(c.Writer)
 	if err != nil || state == "" || subtle.ConstantTimeCompare([]byte(cookieState), []byte(state)) != 1 {
 		c.Redirect(http.StatusFound, "/login?error=google_failed")
+		return
+	}
+	rememberMe := googleAuthCookiesShouldPersist(c.Request)
+	clearGoogleOAuthStateCookie(c.Writer)
+	clearGoogleOAuthReturnURLCookie(c.Writer)
+	clearGoogleRememberMeCookie(c.Writer)
+	if c.Query("error") != "" {
+		c.Redirect(http.StatusFound, "/login?error=google_denied")
 		return
 	}
 	tokenDetails, err := h.authService.LoginWithGoogle(c.Request.Context(), c.Query("code"), state)
@@ -163,20 +249,25 @@ func (h *Handler) GoogleCallback(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/login?error=google_failed")
 		return
 	}
-	setAccessTokenCookie(c.Writer, tokenDetails.AccessToken, time.Unix(tokenDetails.AtExpires, 0))
-	setRefreshTokenCookie(c.Writer, tokenDetails.RefreshToken, time.Unix(tokenDetails.RtExpires, 0))
+	setLoginSessionCookies(c.Writer, tokenDetails, rememberMe)
 	if returnURLErr != nil {
 		returnURL = "/"
 	}
 	c.Redirect(http.StatusFound, safeAuthenticationReturnURL(returnURL))
 }
 
-// LocalPreview establishes an ordinary signed owner session for the explicit
-// local-preview mode. Startup requires an explicit loopback gateway bind; this
-// additional Host check is deny-only defense in depth against rebinding and is
-// not the trust root for enabling local preview.
+// LocalPreview establishes an ordinary signed owner session for a direct
+// loopback caller or the gateway that proves its identity with a dedicated
+// secret. Host and Origin remain loopback-only; forwarded headers are ignored.
 func (h *Handler) LocalPreview(c *gin.Context) {
-	if !isLoopbackHost(c.Request.Host) {
+	origins := c.Request.Header.Values("Origin")
+	previewConfig := config.LocalPreviewConfig
+	previewEnabled := previewConfig.LocalPreviewSessionAllowed()
+	trustedGateway := previewEnabled && subtle.ConstantTimeCompare(
+		[]byte(c.Request.Header.Get(localPreviewGatewayHeader)), []byte(previewConfig.GatewaySecret),
+	) == 1
+	if !previewEnabled || (!isLoopbackRemoteAddr(c.Request.RemoteAddr) && !trustedGateway) || !isLoopbackHost(c.Request.Host) ||
+		len(origins) != 1 || !isLoopbackOrigin(origins[0]) {
 		c.Status(http.StatusNotFound)
 		return
 	}
@@ -188,6 +279,74 @@ func (h *Handler) LocalPreview(c *gin.Context) {
 	setAccessTokenCookie(c.Writer, tokenDetails.AccessToken, time.Unix(tokenDetails.AtExpires, 0))
 	setRefreshTokenCookie(c.Writer, tokenDetails.RefreshToken, time.Unix(tokenDetails.RtExpires, 0))
 	c.Status(http.StatusNoContent)
+}
+
+func setLoginSessionCookies(w http.ResponseWriter, tokens *dto.TokenDetails, rememberMe bool) {
+	accessExpires := time.Unix(tokens.AtExpires, 0)
+	refreshExpires := time.Unix(tokens.RtExpires, 0)
+	setAccessTokenCookieWithPersistence(w, tokens.AccessToken, accessExpires, rememberMe)
+	setRefreshTokenCookieWithPersistence(w, tokens.RefreshToken, refreshExpires, rememberMe)
+	setRememberMeCookie(w, rememberMe, refreshExpires)
+}
+
+func isLoopbackBrowserRequest(request *http.Request) bool {
+	if request == nil || !isLoopbackHost(request.Host) {
+		return false
+	}
+	origins := request.Header.Values("Origin")
+	return len(origins) == 0 || (len(origins) == 1 && isLoopbackOrigin(origins[0]))
+}
+
+func isLoopbackOrigin(origin string) bool {
+	parsed, err := neturl.Parse(strings.TrimSpace(origin))
+	if err != nil || parsed == nil || parsed.User != nil || parsed.Host == "" ||
+		parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(!strings.EqualFold(parsed.Scheme, "http") && !strings.EqualFold(parsed.Scheme, "https")) {
+		return false
+	}
+	return isLoopbackHost(parsed.Host)
+}
+
+func hasAllowedLogoutOrigin(request *http.Request) bool {
+	if request == nil || request.Host == "" {
+		return false
+	}
+	origins := request.Header.Values("Origin")
+	if len(origins) != 1 {
+		return false
+	}
+	origin := origins[0]
+	if origin != strings.TrimSpace(origin) {
+		return false
+	}
+	parsed, err := neturl.Parse(origin)
+	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.User != nil || parsed.Host == "" ||
+		parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		parsed.String() != origin {
+		return false
+	}
+	wantScheme := "http"
+	if authCookieSecure() {
+		wantScheme = "https"
+	}
+	return strings.EqualFold(parsed.Scheme, wantScheme) && strings.EqualFold(parsed.Host, request.Host)
+}
+
+func (h *Handler) RequireLogoutOrigin(c *gin.Context) {
+	if !hasAllowedLogoutOrigin(c.Request) {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	c.Next()
+}
+
+func isLoopbackRemoteAddr(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(remoteAddr))
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 func isLoopbackHost(requestHost string) bool {
@@ -206,8 +365,12 @@ func isLoopbackHost(requestHost string) bool {
 // @Success 200 "OK"
 // @Failure 400 "Unauthorized"
 // @Failure 500 "Internal Server Error"
-// @Router /auth/logout [get]
+// @Router /auth/logout [post]
 func (h *Handler) Logout(c *gin.Context) {
+	if !hasAllowedLogoutOrigin(c.Request) {
+		c.Status(http.StatusForbidden)
+		return
+	}
 	value, ok := c.Get(authenticatedTokenContextKey)
 	accessToken, tokenOK := value.(string)
 	if !ok || !tokenOK || accessToken == "" {
@@ -223,6 +386,25 @@ func (h *Handler) Logout(c *gin.Context) {
 	}
 
 	c.Status(http.StatusOK)
+}
+
+func (h *Handler) enforcePublicAuthRateLimit(c *gin.Context, action string) bool {
+	if h.publicAuthRateLimit == nil {
+		c.Header("Retry-After", strconv.Itoa(int(publicAuthRateWindow.Seconds())))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Authentication temporarily unavailable. Try again later."})
+		return false
+	}
+	decision := h.publicAuthRateLimit.allow(c.Request.Context(), action, c.Request.RemoteAddr)
+	if !decision.Allowed {
+		retryAfter := int(decision.RetryAfter.Round(time.Second).Seconds())
+		if retryAfter < 1 {
+			retryAfter = 1
+		}
+		c.Header("Retry-After", strconv.Itoa(retryAfter))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "Too many authentication attempts. Try again later."})
+		return false
+	}
+	return true
 }
 
 // IsUserAuthenticated
@@ -283,7 +465,19 @@ func (h *Handler) resolveAuthenticatedAccessToken(c *gin.Context) (string, bool)
 		return "", false
 	}
 
-	setAccessTokenCookie(c.Writer, newAccessToken.AccessToken, time.Unix(newAccessToken.AtExpires, 0))
+	persistent := authCookiesShouldPersist(c.Request)
+	accessExpires := time.Unix(newAccessToken.AtExpires, 0)
+	if c.GetHeader(authSubrequestHeader) == authSubrequestHeaderExpected {
+		c.Header(refreshedAccessCookieHeader, authCookie("access_token", newAccessToken.AccessToken, accessExpires, persistent).String())
+		if newAccessToken.RefreshToken != "" {
+			c.Header(refreshedRefreshCookieHeader, authCookie("refresh_token", newAccessToken.RefreshToken, time.Unix(newAccessToken.RtExpires, 0), persistent).String())
+		}
+	} else {
+		setAccessTokenCookieWithPersistence(c.Writer, newAccessToken.AccessToken, accessExpires, persistent)
+		if newAccessToken.RefreshToken != "" {
+			setRefreshTokenCookieWithPersistence(c.Writer, newAccessToken.RefreshToken, time.Unix(newAccessToken.RtExpires, 0), persistent)
+		}
+	}
 	return newAccessToken.AccessToken, true
 }
 
@@ -295,15 +489,39 @@ func (h *Handler) resolveAuthenticatedAccessToken(c *gin.Context) (string, bool)
 // @Produce json
 // @Param email formData string true "Email"
 // @Success 200 {object} string
+// @Failure 429 {object} dto.ErrorResponse
 // @Router /auth/request-password-reset [post]
 func (h *Handler) RequestPasswordReset(c *gin.Context) {
-	email := c.PostForm("email")
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8*1024)
+	if err := c.Request.ParseForm(); err != nil {
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(status, dto.ErrorResponse{Message: "Invalid request body", ErrorCode: status})
+		return
+	}
+	email := c.Request.PostForm.Get("email")
+	decision := h.passwordResetRateLimit.allow(c.Request.Context(), c.ClientIP(), email)
+	if !decision.Allowed {
+		retryAfter := int(decision.RetryAfter.Round(time.Second).Seconds())
+		if retryAfter < 1 {
+			retryAfter = 1
+		}
+		c.Header("Retry-After", strconv.Itoa(retryAfter))
+		c.JSON(http.StatusTooManyRequests, dto.ErrorResponse{
+			Message:   "Too many recovery requests. Try again later.",
+			ErrorCode: http.StatusTooManyRequests,
+		})
+		return
+	}
 
 	// Do not reveal whether an account exists or whether its delivery channel is available.
 	// The reset service records operational errors in its own logs.
 	_, _, _ = h.authService.RequestPasswordReset(email)
 	response := dto.SuccessResponse{
-		Message:    "If recovery is available for this account, reset instructions have been sent",
+		Message:    "If recovery is available for this account, reset instructions may be sent. This response does not confirm account existence or email delivery.",
 		StatusCode: http.StatusOK,
 	}
 	c.JSON(http.StatusOK, response)
@@ -313,24 +531,39 @@ func (h *Handler) RequestPasswordReset(c *gin.Context) {
 // @Summary ConfirmPasswordReset
 // @Description ConfirmPasswordReset
 // @Tags Authentication
-// @Accept application/x-www-form-urlencoded
+// @Accept json
 // @Produce json
-// @Param reset-token path string true "reset-token"
-// @Param newPassword formData string true "newPassword"
+// @Param body body dto.ConfirmPasswordResetDTO true "One-time reset token and new password"
 // @Success 200 {object} string
 // @Failure 400 {object} dto.ErrorResponse
 // @Failure 500 {object} dto.ErrorResponse
-// @Router /auth/confirm-password-reset/{reset-token} [post]
+// @Router /auth/confirm-password-reset [post]
 func (h *Handler) ConfirmPasswordReset(c *gin.Context) {
-	var errorResponse dto.ErrorResponse
-	token := c.Param("reset-token")
-	newPassword := c.PostForm("newPassword")
+	if !h.enforcePublicAuthRateLimit(c, "password_reset_confirm") {
+		return
+	}
 
-	err := h.authService.ConfirmPasswordReset(token, newPassword)
+	var errorResponse dto.ErrorResponse
+	var request dto.ConfirmPasswordResetDTO
+	if err := bindAuthJSON(c, &request); err != nil {
+		errorResponse.Message = "Invalid request body"
+		errorResponse.ErrorCode = authJSONErrorStatus(err)
+		c.JSON(errorResponse.ErrorCode, errorResponse)
+		return
+	}
+
+	c.Header("Cache-Control", "no-store")
+	err := h.authService.ConfirmPasswordReset(request.Token, request.NewPassword)
 	if err != nil {
-		errorResponse.Message = err.Error()
-		errorResponse.ErrorCode = http.StatusBadRequest
-		c.JSON(http.StatusBadRequest, errorResponse)
+		status := http.StatusInternalServerError
+		message := "Password reset is temporarily unavailable. Please try again."
+		if errors.Is(err, ErrInvalidPasswordReset) || errors.Is(err, ErrRegistrationPasswordWeak) || errors.Is(err, ErrRegistrationPasswordTooLong) {
+			status = http.StatusBadRequest
+			message = err.Error()
+		}
+		errorResponse.Message = message
+		errorResponse.ErrorCode = status
+		c.JSON(status, errorResponse)
 		return
 	}
 	response := dto.SuccessResponse{

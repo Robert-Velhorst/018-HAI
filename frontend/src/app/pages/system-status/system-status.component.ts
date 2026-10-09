@@ -1,5 +1,6 @@
-import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 import { Subscription, interval } from 'rxjs';
 import {
   ISystemCheck,
@@ -28,7 +29,10 @@ const GROUP_TITLES: Record<string, string> = {
   runtime: 'Runtime mode',
 };
 
+const MODULE_ID = 'system-status';
+
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-system-status',
     templateUrl: './system-status.component.html',
     styleUrls: ['./system-status.component.scss'],
@@ -55,8 +59,13 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   constructor(
     @Inject(SYSTEM_STATUS_SERVICE_TOKEN)
     private systemStatusService: ISystemStatusService,
-    private notification: NzNotificationService
+    private notification: NzNotificationService,
+    private viewPreferences: ModuleViewPreferencesService
   ) {}
+
+  get isAdvanced(): boolean {
+    return this.viewPreferences.get(MODULE_ID).mode === 'advanced';
+  }
 
   ngOnInit(): void {
     this.refresh();
@@ -130,6 +139,25 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         return 'status-fail';
       default:
         return 'status-unknown';
+    }
+  }
+
+  refreshErrorMessage(): string {
+    if (!this.readiness) {
+      return 'Could not reach the readiness probe. If you were redirected to sign in, your session may have expired.'
+    }
+    const updated = this.lastUpdated ? ` Last successful status: ${this.lastUpdated.toLocaleTimeString()}.` : ''
+    return `The latest refresh failed. The displayed status may be out of date.${updated} Refresh to retry.`
+  }
+
+  severityLabel(severity: SystemCheckSeverity): string {
+    switch (severity) {
+      case 'ok':
+        return 'OK'
+      case 'warn':
+        return 'Warning'
+      case 'fail':
+        return 'Fail'
     }
   }
 

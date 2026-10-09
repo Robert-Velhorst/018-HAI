@@ -10,11 +10,11 @@
         <i nz-icon [nzType]="themeIcon()" nzTheme="outline"></i>
         {{ themeLabel() }}
       </button>
-      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" title="Reload memory records">
+      <button *ngIf="isAdvancedView" type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" title="Reload memory records">
         <i nz-icon nzType="reload" nzTheme="outline"></i>
         Refresh
       </button>
-      <button type="button" nz-button nzType="default" (click)="exportMemories()" title="Download memories for the selected project as JSON">
+      <button *ngIf="isAdvancedView" type="button" nz-button nzType="default" (click)="exportMemories()" [nzLoading]="exporting" title="Download memories for the selected project as JSON">
         <i nz-icon nzType="download" nzTheme="outline"></i>
         Export
       </button>
@@ -25,8 +25,28 @@
     </div>
   </header>
 
-  <main class="memory-content">
-    <section class="status-strip" aria-label="Memory status">
+  <div class="memory-content">
+    <section *ngIf="operationError" class="memory-message memory-message--error" role="alert" aria-live="assertive">
+      <strong>Memory action needs attention</strong>
+      <span>{{ operationError }}</span>
+      <button type="button" nz-button nzType="default" (click)="operationError = ''">Dismiss</button>
+    </section>
+    <section *ngIf="memoryLoadError" class="memory-message memory-message--error" role="alert">
+      <strong>Memory records unavailable</strong>
+      <span>{{ memoryLoadError }}</span>
+      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">Retry</button>
+    </section>
+
+    <hai-progressive-section
+      *ngIf="isAdvancedView"
+      [moduleId]="moduleId"
+      sectionId="memory-overview"
+      title="Memory inventory"
+      summary="Counts and confidence metrics for the current filtered page."
+      (openChange)="onMemoryRecordsOpen($event)"
+    >
+    <p *ngIf="!memoriesLoaded" role="status">{{ loading ? 'Loading memory page...' : memoryLoadError ? 'Memory inventory unavailable.' : 'Memory inventory not loaded.' }}</p>
+    <section *ngIf="memoriesLoaded" class="status-strip" aria-label="Memory status for current page">
       <div title="Active memory records available for retrieval">
         <strong>{{ activeMemories().length }}</strong>
         <span>active memories</span>
@@ -56,11 +76,12 @@
         <span>needs review</span>
       </div>
     </section>
+    </hai-progressive-section>
 
     <section class="action-rail" aria-label="Memory actions">
       <button
         type="button"
-        *ngFor="let action of memoryActions"
+        *ngFor="let action of basicMemoryActions"
         class="action-tile"
         [class.action-tile--active]="selectedAction === action.id"
         [attr.data-tone]="action.tone"
@@ -76,23 +97,95 @@
       </button>
     </section>
 
-    <section class="workspace-grid">
+    <hai-progressive-section
+      *ngIf="isAdvancedView && advancedMemoryActions.length"
+      [moduleId]="moduleId"
+      sectionId="memory-maintenance-actions"
+      title="Review and maintenance actions"
+      summary="Corrections, cleanup, semantic indexing, and export controls."
+    >
+      <section class="action-rail" aria-label="Advanced memory actions">
+        <button
+          type="button"
+          *ngFor="let action of advancedMemoryActions"
+          class="action-tile"
+          [class.action-tile--active]="selectedAction === action.id"
+          [attr.data-tone]="action.tone"
+          (click)="setAction(action.id)"
+          [title]="action.title + ': ' + action.detail"
+        >
+          <i nz-icon [nzType]="action.icon" nzTheme="outline"></i>
+          <span><strong>{{ action.title }}</strong><small>{{ action.detail }}</small></span>
+          <em>{{ action.metric }}</em>
+        </button>
+      </section>
+    </hai-progressive-section>
+
+    <section class="workspace-grid" [class.workspace-grid--basic]="!isAdvancedView">
+      <hai-progressive-section
+        *ngIf="isAdvancedView"
+        [moduleId]="moduleId"
+        sectionId="memory-records"
+        title="Memory library"
+        summary="Browse saved records, source provenance, confidence, and archive state."
+        (openChange)="onMemoryRecordsOpen($event)"
+      >
       <aside class="panel memory-library">
         <div class="panel-heading">
           <div>
             <h2>Memory library</h2>
-            <p>Useful lessons only. Irrelevant context stays unloaded.</p>
+            <p>Matching records: {{ libraryResult?.total ?? 'not loaded' }}</p>
           </div>
-          <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="refresh()" title="Include archived records in the library">Archived</label>
+          <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="applyLibraryFilters()" title="Include archived records in the library">Archived</label>
         </div>
 
+        <form class="operation-form memory-library-filters" [formGroup]="libraryForm" (ngSubmit)="applyLibraryFilters()">
+          <label><span>Search records</span><input nz-input formControlName="q" type="search" /></label>
+          <label><span>Project</span><input nz-input formControlName="projectKey" /></label>
+          <div class="field-grid">
+            <label><span>Kind</span><nz-select formControlName="kind">
+              <nz-option nzValue="" nzLabel="All kinds"></nz-option>
+              <nz-option nzValue="preference" nzLabel="Preference"></nz-option>
+              <nz-option nzValue="project" nzLabel="Project context"></nz-option>
+              <nz-option nzValue="decision" nzLabel="Decision"></nz-option>
+              <nz-option nzValue="source" nzLabel="Source"></nz-option>
+              <nz-option nzValue="source_supported_fact" nzLabel="Source-supported fact"></nz-option>
+              <nz-option nzValue="lesson" nzLabel="Lesson"></nz-option>
+              <nz-option nzValue="correction_lesson" nzLabel="Correction lesson"></nz-option>
+              <nz-option nzValue="procedural" nzLabel="Procedure"></nz-option>
+            </nz-select></label>
+            <label><span>Tag</span><input nz-input formControlName="tag" /></label>
+            <label><span>Sort</span><nz-select formControlName="sort">
+              <nz-option nzValue="updatedAt" nzLabel="Updated"></nz-option>
+              <nz-option nzValue="createdAt" nzLabel="Created"></nz-option>
+              <nz-option nzValue="confidence" nzLabel="Confidence"></nz-option>
+              <nz-option nzValue="kind" nzLabel="Kind"></nz-option>
+              <nz-option nzValue="relevance" nzLabel="Relevance"></nz-option>
+            </nz-select></label>
+            <label><span>Order</span><nz-select formControlName="order">
+              <nz-option nzValue="desc" nzLabel="Descending"></nz-option>
+              <nz-option nzValue="asc" nzLabel="Ascending"></nz-option>
+            </nz-select></label>
+            <label><span>Page size</span><nz-select formControlName="pageSize">
+              <nz-option [nzValue]="20" nzLabel="20"></nz-option>
+              <nz-option [nzValue]="50" nzLabel="50"></nz-option>
+              <nz-option [nzValue]="100" nzLabel="100"></nz-option>
+            </nz-select></label>
+          </div>
+          <button type="submit" nz-button nzType="default" [nzLoading]="loading"><i nz-icon nzType="search"></i>Search</button>
+        </form>
+
         <div class="memory-list">
-          <article
+          <p *ngIf="loading" role="status" aria-live="polite">Loading saved memories…</p>
+          <p *ngIf="memoryLoadError" role="alert" class="memory-list-error">{{ memoryLoadError }}</p>
+          <button
+            type="button"
             *ngFor="let memory of recentMemories()"
             class="memory-row"
             [class.memory-row--selected]="selectedMemory()?.id === memory.id"
             (click)="selectMemory(memory)"
-            [title]="memoryTitle(memory)"
+            [attr.aria-label]="'Select memory ' + memoryTitle(memory) + ', ' + memory.kind + ', ' + (memory.projectKey || 'global') + (memory.archived ? ', archived' : ', active')"
+            [attr.aria-pressed]="selectedMemory()?.id === memory.id"
           >
             <div class="memory-row__icon" [attr.data-tone]="kindTone(memory.kind)">
               <i nz-icon nzType="database" nzTheme="outline"></i>
@@ -107,12 +200,15 @@
               <span class="status-pill" [attr.data-status]="confidenceTone(memory)">{{ memory.confidence }}</span>
               <span *ngIf="memory.archived" class="status-pill muted">archived</span>
             </div>
-          </article>
-          <nz-empty *ngIf="!memories.length && !loading" nzNotFoundContent="No memory records yet."></nz-empty>
+          </button>
+          <nz-empty *ngIf="memoriesLoaded && !memories.length && !loading && !memoryLoadError" nzNotFoundContent="No matching memory records."></nz-empty>
         </div>
+        <nz-pagination *ngIf="libraryResult" [nzPageIndex]="libraryPage" [nzPageSize]="libraryResult.pageSize" [nzTotal]="libraryResult.total" [nzDisabled]="loading" [nzSimple]="true" (nzPageIndexChange)="changeLibraryPage($event)"></nz-pagination>
       </aside>
+      </hai-progressive-section>
 
       <section class="panel action-panel">
+        <ng-container *ngIf="isAdvancedView || isBasicAction(selectedAction); else advancedActionNotice">
         <ng-container [ngSwitch]="selectedAction">
           <div *ngSwitchCase="'store'" class="operation">
             <div class="panel-heading compact">
@@ -122,6 +218,7 @@
               </div>
             </div>
             <form nz-form [formGroup]="memoryForm" class="operation-form">
+              <fieldset [disabled]="saving">
               <div class="field-grid">
                 <label>
                   <span>Project</span>
@@ -133,7 +230,6 @@
                     <nz-option nzValue="preference" nzLabel="Preference"></nz-option>
                     <nz-option nzValue="project" nzLabel="Project context"></nz-option>
                     <nz-option nzValue="decision" nzLabel="Decision"></nz-option>
-                    <nz-option nzValue="source" nzLabel="Source note"></nz-option>
                     <nz-option nzValue="lesson" nzLabel="Lesson"></nz-option>
                     <nz-option nzValue="procedural" nzLabel="Procedure"></nz-option>
                   </nz-select>
@@ -143,6 +239,7 @@
                 <span>Content</span>
                 <textarea nz-input rows="6" formControlName="content"></textarea>
               </label>
+              <hai-progressive-section *ngIf="isAdvancedView" [moduleId]="moduleId" sectionId="memory-store-metadata" title="Source and quality metadata" summary="Optional provenance, summary, tags, and confidence fields.">
               <label>
                 <span>Compact summary</span>
                 <input nz-input formControlName="summary" placeholder="Optional compact summary" />
@@ -167,11 +264,13 @@
                   <input nz-input formControlName="sourceLabel" />
                 </label>
               </div>
+              </hai-progressive-section>
               <div class="form-footer">
                 <span>{{ editingId ? 'This will update an existing memory.' : 'Only useful context should be saved.' }}</span>
                 <button type="button" nz-button nzType="default" (click)="clearForm()">Clear</button>
                 <button type="button" nz-button nzType="primary" (click)="save()" [nzLoading]="saving">Save memory</button>
               </div>
+              </fieldset>
             </form>
           </div>
 
@@ -192,11 +291,15 @@
                   <span>Project</span>
                   <input nz-input formControlName="projectKey" />
                 </label>
+              </div>
+              <hai-progressive-section *ngIf="isAdvancedView" [moduleId]="moduleId" sectionId="memory-retrieval-options" title="Retrieval options" summary="Limit and technical retrieval scope.">
+              <div class="field-grid">
                 <label>
                   <span>Limit</span>
                   <input nz-input type="number" formControlName="limit" />
                 </label>
               </div>
+              </hai-progressive-section>
               <div class="form-footer">
                 <span>Retrieval should explain which memories were used and why.</span>
                 <button type="button" nz-button nzType="primary" (click)="retrieve()" [nzLoading]="retrieving">Retrieve context</button>
@@ -204,12 +307,29 @@
             </form>
             <div *ngIf="retrieveResult" class="retrieve-results">
               <p>{{ retrieveResult.explanation }}</p>
-              <article *ngFor="let item of retrieveResult.usedContext" (click)="selectMemory(item.memory)" title="Select this memory">
+              <button
+                *ngFor="let item of retrieveResult.usedContext"
+                type="button"
+                class="retrieve-memory-select"
+                (click)="selectMemory(item.memory)"
+                [attr.aria-pressed]="selectedMemory()?.id === item.memory.id"
+                [attr.aria-label]="'Select memory ' + memoryTitle(item.memory) + ' for detail review'"
+              >
                 <strong>{{ item.memory.summary || item.memory.content }}</strong>
                 <span>{{ item.explanation }}</span>
-                <small>score {{ item.score }} / {{ item.memory.sourceLabel || item.memory.sourceUri || 'manual memory' }}</small>
-              </article>
+                <small>{{ item.memory.sourceLabel || (item.memory.sourceUri ? 'source-linked memory' : 'manual memory') }}</small>
+              </button>
               <nz-empty *ngIf="!retrieveResult.usedContext.length" nzNotFoundContent="No relevant context matched this task."></nz-empty>
+              <section *ngIf="!isAdvancedView && selectedRetrievedMemory() as memory" class="memory-basic-detail" aria-label="Selected memory">
+                <h3>{{ memoryTitle(memory) }}</h3>
+                <p>{{ memory.kind }} / {{ memory.projectKey || 'global' }}</p>
+                <p>{{ memory.sourceLabel || 'manual / unlinked' }}</p>
+                <p *ngIf="memory.sourceUri">{{ memory.sourceUri }}</p>
+                <p class="memory-record-content">{{ memory.content }}</p>
+                <button *ngIf="canEdit(memory)" type="button" nz-button nzType="default" (click)="edit(memory)">Correct memory</button>
+                <button *ngIf="!canEdit(memory)" type="button" nz-button nzType="default" (click)="openReviewWorkflow(memory)">Open review workflow</button>
+                <button type="button" nz-button nzType="default" [nzLoading]="recordBusy(memory)" (click)="archive(memory)">Archive</button>
+              </section>
             </div>
           </div>
 
@@ -237,19 +357,12 @@
                 </label>
               </div>
               <div class="field-grid">
-                <label>
-                  <span>Title</span>
-                  <input nz-input formControlName="title" />
-                </label>
-                <label>
-                  <span>External ID</span>
-                  <input nz-input formControlName="externalId" placeholder="thread id, optional" />
-                </label>
+                <label><span>Title</span><input nz-input formControlName="title" /></label>
               </div>
-              <label>
-                <span>Source URI</span>
-                <input nz-input formControlName="sourceUri" />
-              </label>
+              <hai-progressive-section *ngIf="isAdvancedView" [moduleId]="moduleId" sectionId="memory-import-metadata" title="Conversation source details" summary="Source link and provider-specific identifier.">
+                <label><span>External ID</span><input nz-input formControlName="externalId" placeholder="thread id, optional" /></label>
+              </hai-progressive-section>
+              <label><span>Source URL</span><input nz-input type="url" formControlName="sourceUri" /></label>
               <label>
                 <span>Messages</span>
                 <textarea
@@ -303,7 +416,7 @@
                 </button>
                 <div class="correction-card__meta">
                   <span class="status-pill" [attr.data-status]="confidenceTone(memory)">{{ memory.confidence }}</span>
-                  <button type="button" class="icon-button" (click)="edit(memory)" title="Correct this learned lesson">
+                  <button *ngIf="canEdit(memory)" type="button" class="icon-button" [disabled]="recordBusy(memory)" (click)="edit(memory)" title="Correct this learned lesson">
                     <i nz-icon nzType="edit" nzTheme="outline"></i>
                   </button>
                   <button type="button" *ngIf="!memory.archived" class="icon-button" (click)="archive(memory)" title="Archive this learned correction">
@@ -314,7 +427,8 @@
                   </button>
                 </div>
               </article>
-              <nz-empty *ngIf="!sourceCorrectionMemories().length" nzNotFoundContent="No source corrections have been learned yet."></nz-empty>
+              <p *ngIf="loading" role="status">Loading corrections...</p>
+              <nz-empty *ngIf="memoriesLoaded && !loading && !memoryLoadError && !sourceCorrectionMemories().length" nzNotFoundContent="No source corrections match this page."></nz-empty>
             </div>
           </div>
 
@@ -332,7 +446,7 @@
                   <span>{{ memory.kind }} / {{ memory.projectKey || 'global' }}</span>
                 </button>
                 <span class="status-pill" [attr.data-status]="confidenceTone(memory)">{{ memory.confidence }}</span>
-                <button type="button" class="icon-button" (click)="edit(memory)" title="Edit memory">
+                <button *ngIf="canEdit(memory)" type="button" class="icon-button" [disabled]="recordBusy(memory)" (click)="edit(memory)" title="Edit memory">
                   <i nz-icon nzType="edit" nzTheme="outline"></i>
                 </button>
                 <button type="button" *ngIf="!memory.archived" class="icon-button" (click)="archive(memory)" title="Archive memory">
@@ -353,14 +467,20 @@
               </div>
             </div>
             <div class="cleanup-panel">
-              <button type="button" nz-button nzType="default" (click)="includeArchived = !includeArchived; refresh()">
+              <button type="button" nz-button nzType="default" (click)="includeArchived = !includeArchived; applyLibraryFilters()">
                 {{ includeArchived ? 'Hide archived' : 'Show archived' }}
               </button>
               <button type="button" nz-button nzType="default" (click)="setAction('review')">Review records</button>
               <button type="button" nz-button nzType="primary" (click)="exportMemories()">Export before cleanup</button>
               <p>Deletion remains manual and confirmed per record. Archive first unless the data is clearly wrong or unwanted.</p>
-              <details class="semantic-index-control">
-                <summary>Local semantic index (advanced)</summary>
+              <hai-progressive-section
+                *ngIf="isAdvancedView"
+                class="semantic-index-control"
+                [moduleId]="moduleId"
+                sectionId="memory-semantic-index"
+                title="Local semantic index"
+                summary="Refresh local-only retrieval; no memory is sent to a cloud provider."
+              >
                 <p>
                   Index up to 100 memory records that you can read on this local HAI installation. This never sends memory to a cloud provider.
                 </p>
@@ -379,7 +499,7 @@
                     {{ semanticReindexResult.indexed }} indexed, {{ semanticReindexResult.deferred }} deferred, {{ semanticReindexResult.failed }} failed.
                   </ng-container>
                 </p>
-              </details>
+              </hai-progressive-section>
             </div>
           </div>
 
@@ -393,12 +513,28 @@
             <div class="cleanup-panel">
               <button type="button" nz-button nzType="primary" (click)="exportMemories()">Export now</button>
               <button type="button" nz-button nzType="default" (click)="setAction('retrieve')">Back to retrieval</button>
-              <p>The export uses the project key currently set in the store-memory form.</p>
+              <p>Project: {{ libraryProjectKey || 'all visible projects' }}. Export includes archived records and is not limited to the current search or page.</p>
             </div>
           </div>
         </ng-container>
+        </ng-container>
+        <ng-template #advancedActionNotice>
+          <div class="operation memory-action-unavailable" role="status">
+            <h2>This action is in Advanced</h2>
+            <p>Choose Store, Retrieve, or Import here, or switch this module to Advanced to continue with the selected maintenance action.</p>
+            <button type="button" nz-button nzType="default" (click)="setAction('retrieve')">Return to retrieval</button>
+          </div>
+        </ng-template>
       </section>
 
+      <hai-progressive-section
+        *ngIf="isAdvancedView"
+        [moduleId]="moduleId"
+        sectionId="memory-record-detail"
+        title="Selected memory details"
+        summary="Inspect provenance, full content, and record controls."
+        (openChange)="onMemoryRecordsOpen($event)"
+      >
       <aside class="panel inspector">
         <div class="panel-heading compact">
           <div>
@@ -425,7 +561,7 @@
               </div>
               <div>
                 <dt>Source</dt>
-                <dd>{{ memory.sourceLabel || memory.sourceUri || 'manual / unlinked' }}</dd>
+                <dd>{{ memory.sourceLabel || 'manual / unlinked' }}<span *ngIf="memory.sourceUri"> / {{ memory.sourceUri }}</span></dd>
               </div>
               <div>
                 <dt>Last used</dt>
@@ -443,25 +579,39 @@
               <span *ngIf="memory.archived" class="status-pill muted">archived</span>
             </div>
             <div class="inspector-actions">
-              <button type="button" nz-button nzType="default" (click)="edit(memory)">Edit</button>
-              <button type="button" *ngIf="!memory.archived" nz-button nzType="default" (click)="archive(memory)">Archive</button>
-              <button type="button" *ngIf="memory.archived" nz-button nzType="default" (click)="restore(memory)">Restore</button>
+              <button type="button" *ngIf="canEdit(memory)" nz-button nzType="default" [disabled]="recordBusy(memory)" (click)="edit(memory)">Edit</button>
+              <button type="button" *ngIf="!canEdit(memory)" nz-button nzType="default" (click)="openReviewWorkflow(memory)">Open review workflow</button>
+              <button type="button" *ngIf="!memory.archived" nz-button nzType="default" [nzLoading]="recordBusy(memory)" (click)="archive(memory)">Archive</button>
+              <button type="button" *ngIf="memory.archived" nz-button nzType="default" [nzLoading]="recordBusy(memory)" (click)="restore(memory)">Restore</button>
             </div>
-            <details class="advanced-section">
-              <summary>Full content</summary>
-              <p>{{ memory.content }}</p>
-            </details>
-            <details class="advanced-section danger-zone">
-              <summary>Danger zone</summary>
+            <hai-progressive-section
+              *ngIf="isAdvancedView"
+              #recordContentSection
+              [moduleId]="moduleId"
+              sectionId="memory-record-content"
+              title="Full content"
+              summary="Show the complete stored content for the selected memory record."
+            >
+              <p class="memory-record-content">{{ memory.content }}</p>
+            </hai-progressive-section>
+            <hai-progressive-section
+              *ngIf="isAdvancedView"
+              #recordDangerSection
+              [moduleId]="moduleId"
+              sectionId="memory-record-danger-zone"
+              title="Danger zone"
+              summary="Permanently delete only this selected memory record."
+            >
               <p>Delete only when the record is wrong, private data should be removed, or it must never be used again.</p>
-              <button type="button" nz-button nzDanger nzType="default" (click)="delete(memory)">Delete permanently</button>
-            </details>
+              <button type="button" nz-button nzDanger nzType="default" [disabled]="recordBusy(memory)" (click)="delete(memory)">Delete permanently</button>
+            </hai-progressive-section>
           </div>
         </ng-container>
         <ng-template #noMemory>
           <nz-empty nzNotFoundContent="Select or store a memory."></nz-empty>
         </ng-template>
       </aside>
+      </hai-progressive-section>
     </section>
-  </main>
+  </div>
 </section>

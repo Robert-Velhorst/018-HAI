@@ -1,4 +1,4 @@
-import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -27,6 +27,7 @@ import {
 } from '../../models/pursuit.model.interface';
 import { PursuitService } from '../../services/pursuit.service';
 import { WorkflowService } from '../../services/workflow/workflow.service';
+import { safeWebSourceHref } from '../../control-room/source-navigation';
 
 type CommandActionKey = 'manage-pursuits' | 'plan-next' | 'clear-blockers' | 'run-cycle' | 'run-safe';
 
@@ -49,6 +50,7 @@ interface RuntimeSurfaceGroup {
 }
 
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-command-dashboard',
     templateUrl: './command-dashboard.component.html',
     styleUrls: ['./command-dashboard.component.scss'],
@@ -61,22 +63,33 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   pursuitBrief?: IPursuitBrief;
   searchResult?: IMemoryEngineSearchResult;
   loading = false;
+  dashboardUnavailable = false;
   pursuitsLoading = false;
+  pursuitDashboardUnavailable = false;
+  pursuitBriefUnavailable = false;
   searching = false;
+  searchError = '';
   runtimeLoading = false;
+  runtimeOverviewUnavailable = false;
   commandLoading = '';
   runtimes: IAgentRuntimeInfo[] = [];
   runtimeHealth: Record<string, IAgentRuntimeHealth> = {};
   runtimeSkills: Record<string, IAgentRuntimeSkill[]> = {};
   runtimeSkillsLoading: Record<string, boolean> = {};
+  runtimeSkillsUnavailable: Record<string, boolean> = {};
   openClawEcosystemPath = '';
+  private openClawEcosystemPathEdited = false;
   openClawConfigLoading = false;
   openClawRefreshLoading = false;
+  openClawRollbackLoading = false;
   openClawUploadLoading = false;
   openClawUploadFileName = '';
+  openClawUploadError = '';
   resolvingDashboardDecisionId = '';
+  deletingArchiveIds = new Set<string>();
   selectedRuntimeSurface?: IAgentRuntimeEcosystemSurface;
   commandLogs: IAssistantCommandResult[] = [];
+  commandLogsLoading = false;
   commandLogsUnavailable = false;
   lastCommand?: IAssistantCommandResult;
   private dashboardRefreshSubscription?: Subscription;
@@ -157,7 +170,6 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.refresh();
-    this.refreshPursuits();
     this.refreshRuntimes();
     this.loadCommandLogs();
   }
@@ -172,20 +184,35 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
 
   refreshRuntimes(): void {
     this.runtimeLoading = true;
+    this.runtimeOverviewUnavailable = false;
     this.runtimeOverviewSubscription?.unsubscribe();
     this.runtimeOverviewSubscription = this.agentRuntimes.overview().subscribe({
-      next: ({ runtimes, health }) => {
+      next: (overview) => {
+        if (!this.isRuntimeOverview(overview)) {
+          this.runtimeLoading = false;
+          this.runtimeOverviewUnavailable = true;
+          this.notification.error(
+            'Agent runtimes unavailable',
+            'The runtime registry response was incomplete. The previous confirmed inventory is retained.'
+          );
+          return;
+        }
+        const { runtimes, health } = overview;
         this.runtimes = runtimes;
         this.runtimeHealth = health.reduce(
           (result, item) => ({ ...result, [item.runtimeId]: item }),
           {} as Record<string, IAgentRuntimeHealth>
         );
         const openClaw = runtimes.find((runtime) => runtime.id === 'openclaw');
-        this.openClawEcosystemPath = openClaw?.ecosystemPath || '';
+        if (!this.openClawEcosystemPathEdited) {
+          this.openClawEcosystemPath = openClaw?.ecosystemPath || '';
+        }
         this.runtimeLoading = false;
+        this.runtimeOverviewUnavailable = false;
       },
       error: (error) => {
         this.runtimeLoading = false;
+        this.runtimeOverviewUnavailable = true;
         this.notification.error(
           'Agent runtimes unavailable',
           error?.error?.error || 'Failed to load the controlled runtime registry.'
@@ -375,17 +402,26 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   loadRuntimeSkills(runtime: IAgentRuntimeInfo): void {
-    if (!runtime?.id) {
+    if (!runtime?.id || this.runtimeSkillsLoading[runtime.id]) {
       return;
     }
     this.runtimeSkillsLoading[runtime.id] = true;
+    this.runtimeSkillsUnavailable[runtime.id] = false;
     this.agentRuntimes.skills(runtime.id).subscribe({
       next: (skills) => {
-        this.runtimeSkills[runtime.id] = skills || [];
+        if (!Array.isArray(skills)) {
+          this.runtimeSkillsUnavailable[runtime.id] = true;
+          this.runtimeSkillsLoading[runtime.id] = false;
+          this.notification.error('Runtime skills unavailable', `The ${runtime.name} skills response was invalid.`);
+          return;
+        }
+        this.runtimeSkills[runtime.id] = skills;
         this.runtimeSkillsLoading[runtime.id] = false;
+        this.runtimeSkillsUnavailable[runtime.id] = false;
       },
       error: (error) => {
         this.runtimeSkillsLoading[runtime.id] = false;
+        this.runtimeSkillsUnavailable[runtime.id] = true;
         this.notification.error(
           'Runtime skills unavailable',
           error?.error?.error || `Failed to load skills for ${runtime.name}.`
@@ -425,15 +461,27 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
 
   refresh(): void {
     this.loading = true;
+    this.dashboardUnavailable = false;
     this.refreshPursuits();
     this.dashboardRefreshSubscription?.unsubscribe();
     this.dashboardRefreshSubscription = this.memoryEngine.dashboard().subscribe({
       next: (dashboard) => {
+        if (!this.isMemoryDashboard(dashboard)) {
+          this.loading = false;
+          this.dashboardUnavailable = true;
+          this.notification.error(
+            'Memory engine returned incomplete data',
+            'The previous dashboard snapshot is retained because the latest response was incomplete.'
+          );
+          return;
+        }
         this.dashboard = dashboard;
         this.loading = false;
+        this.dashboardUnavailable = false;
       },
       error: (error) => {
         this.loading = false;
+        this.dashboardUnavailable = true;
         this.notification.error(
           'Memory engine unavailable',
           error?.error?.error || 'Failed to load the command dashboard.'
@@ -442,7 +490,53 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
     });
   }
 
+  onOpenClawEcosystemPathInput(value: string): void {
+    this.openClawEcosystemPath = value;
+    this.openClawEcosystemPathEdited = value.trim() !== (this.openClawRuntime()?.ecosystemPath || '').trim();
+  }
+
+  isOpenClawBusy(): boolean {
+    return this.openClawConfigLoading || this.openClawRefreshLoading ||
+      this.openClawRollbackLoading || this.openClawUploadLoading;
+  }
+
+  rollbackOpenClawEcosystem(runtime: IAgentRuntimeInfo): void {
+    if (runtime?.id !== 'openclaw' || !runtime.ecosystemRollbackAvailable || this.isOpenClawBusy()) {
+      return;
+    }
+    this.openClawRollbackLoading = true;
+    this.agentRuntimes.prepareOpenClawEcosystemRollback().pipe(
+      switchMap((authorization) => this.agentRuntimes.rollbackOpenClawEcosystem(authorization)),
+      finalize(() => {
+        this.openClawRollbackLoading = false;
+      })
+    ).subscribe({
+      next: (updatedRuntime) => {
+        const index = this.runtimes.findIndex((item) => item.id === updatedRuntime.id);
+        if (index >= 0) {
+          this.runtimes[index] = updatedRuntime;
+        }
+        if (!this.openClawEcosystemPathEdited) {
+          this.openClawEcosystemPath = updatedRuntime.ecosystemPath || '';
+        }
+        this.notification.success(
+          'OpenClaw archive rolled back',
+          'The previously verified archive is selected. Runtime status has been refreshed.'
+        );
+      },
+      error: (error) => {
+        this.notification.error(
+          'OpenClaw archive rollback failed',
+          error?.error?.error || 'HAI could not restore the previously verified OpenClaw archive. The current selection was retained.'
+        );
+      },
+    });
+  }
+
   setOpenClawEcosystemPath(runtime: IAgentRuntimeInfo): void {
+    if (this.isOpenClawBusy()) {
+      return;
+    }
     const path = this.openClawEcosystemPath?.trim();
     if (!path) {
       this.notification.error('OpenClaw ecosystem path is required', 'Enter the local path or zip file location.');
@@ -461,6 +555,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
           this.runtimes[index] = runtime;
         }
         this.openClawEcosystemPath = runtime.ecosystemPath || path;
+        this.openClawEcosystemPathEdited = false;
         this.notification.success('OpenClaw ecosystem path updated', `Configured at ${this.openClawEcosystemPath}`);
       },
       error: (error) => {
@@ -473,7 +568,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   refreshOpenClawEcosystem(runtime: IAgentRuntimeInfo): void {
-    if (runtime.id !== 'openclaw') {
+    if (runtime.id !== 'openclaw' || this.isOpenClawBusy()) {
       return;
     }
     this.openClawRefreshLoading = true;
@@ -487,7 +582,9 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
         const index = this.runtimes.findIndex((item) => item.id === updatedRuntime.id);
         if (index >= 0) {
           this.runtimes[index] = updatedRuntime;
-          this.openClawEcosystemPath = updatedRuntime.ecosystemPath || '';
+          if (!this.openClawEcosystemPathEdited) {
+            this.openClawEcosystemPath = updatedRuntime.ecosystemPath || '';
+          }
         }
         this.notification.success(
           'OpenClaw ecosystem refreshed',
@@ -509,7 +606,6 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
     if (!file) {
       return;
     }
-    this.openClawUploadFileName = file.name;
     this.uploadOpenClawEcosystem(file);
     if (target) {
       target.value = '';
@@ -517,7 +613,12 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   uploadOpenClawEcosystem(file: File): void {
+    if (this.isOpenClawBusy()) {
+      return;
+    }
     if (!file || !file.name.toLowerCase().endsWith('.zip')) {
+      this.openClawUploadFileName = '';
+      this.openClawUploadError = '';
       this.notification.error('Invalid OpenClaw archive', 'Upload a .zip archive exported from openclaw-main.');
       return;
     }
@@ -527,8 +628,11 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
         'The local gateway accepts OpenClaw ecosystem archives up to 750 MB.'
       );
       this.openClawUploadFileName = '';
+      this.openClawUploadError = '';
       return;
     }
+    this.openClawUploadFileName = file.name;
+    this.openClawUploadError = '';
     this.openClawUploadLoading = true;
     this.agentRuntimes.prepareOpenClawEcosystemUpload(file).pipe(
       switchMap((authorization) => this.agentRuntimes.uploadOpenClawEcosystem(file, authorization)),
@@ -537,22 +641,25 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       })
     ).subscribe({
       next: (runtime) => {
-        this.openClawUploadFileName = '';
         const index = this.runtimes.findIndex((item) => item.id === runtime.id);
         if (index >= 0) {
           this.runtimes[index] = runtime;
         }
-        this.openClawEcosystemPath = runtime.ecosystemPath || runtime.name;
+        if (!this.openClawEcosystemPathEdited) {
+          this.openClawEcosystemPath = runtime.ecosystemPath || runtime.name;
+        }
+        this.openClawUploadFileName = '';
+        this.openClawUploadError = '';
         this.notification.success(
           'OpenClaw ecosystem uploaded',
           'The uploaded OpenClaw archive was indexed and the runtime surfaces were refreshed.'
         );
       },
       error: (error) => {
-        this.openClawUploadFileName = '';
+        this.openClawUploadError = error?.error?.error || 'The archive could not be indexed. Check runtime inventory before uploading again.';
         this.notification.error(
           'OpenClaw ecosystem upload failed',
-          error?.error?.error || 'The uploaded archive could not be indexed.'
+          this.openClawUploadError
         );
       },
     });
@@ -560,37 +667,53 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
 
   refreshPursuits(): void {
     this.pursuitsLoading = true;
+    this.pursuitDashboardUnavailable = false;
     this.pursuitDashboardSubscription?.unsubscribe();
     this.pursuitDashboardSubscription = this.pursuits.dashboard().subscribe({
       next: (dashboard) => {
+        if (!this.isPursuitDashboard(dashboard)) {
+          this.pursuitsLoading = false;
+          this.pursuitDashboardUnavailable = true;
+          return;
+        }
         this.pursuitDashboard = dashboard;
         this.pursuitsLoading = false;
+        this.pursuitDashboardUnavailable = false;
       },
       error: () => {
         this.pursuitsLoading = false;
-        this.pursuitDashboard = undefined;
+        this.pursuitDashboardUnavailable = true;
       },
     });
     this.pursuitBriefSubscription?.unsubscribe();
     this.pursuitBriefSubscription = this.pursuits.brief().subscribe({
       next: (brief) => {
         this.pursuitBrief = brief;
+        this.pursuitBriefUnavailable = false;
       },
       error: () => {
-        this.pursuitBrief = undefined;
+        this.pursuitBriefUnavailable = true;
       },
     });
   }
 
   loadCommandLogs(): void {
     this.commandLogsSubscription?.unsubscribe();
+    this.commandLogsLoading = true;
     this.commandLogsSubscription = this.assistantCommands.logs().subscribe({
       next: (logs) => {
-        this.commandLogs = logs || [];
+        if (!this.isCommandLogList(logs)) {
+          this.commandLogsLoading = false;
+          this.commandLogsUnavailable = true;
+          return;
+        }
+        this.commandLogs = logs;
+        this.commandLogsLoading = false;
         this.commandLogsUnavailable = false;
         this.lastCommand = this.commandLogs[0] || this.lastCommand;
       },
       error: () => {
+        this.commandLogsLoading = false;
         this.commandLogsUnavailable = true;
       },
     });
@@ -599,6 +722,9 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   runDashboardAction(action: DashboardAction): void {
     if (action.route) {
       this.router.navigate([action.route]);
+      return;
+    }
+    if (this.commandLoading) {
       return;
     }
     this.commandLoading = action.key;
@@ -612,13 +738,29 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (result) => {
           this.commandLoading = '';
+          if (!this.isAssistantCommandResult(result)) {
+            this.notification.error(
+              `${action.title} could not be confirmed`,
+              'The command endpoint returned an incomplete result. Check command history before trying again.'
+            );
+            this.loadCommandLogs();
+            return;
+          }
           this.lastCommand = result;
           if (result.agentCycle?.pursuitBrief) {
             this.pursuitBrief = result.agentCycle.pursuitBrief;
           }
           this.commandLogs = [result, ...this.commandLogs].slice(0, 50);
           this.commandLogsUnavailable = false;
-          this.notification.success(action.title, result.nextAction || result.summary);
+          if (this.commandHasFailure(result)) {
+            this.notification.error(action.title, result.nextAction || result.summary || 'The command recorded a failed or partial-failure step.');
+          } else if (result.reviewRequired) {
+            this.notification.warning(action.title, result.nextAction || result.summary);
+          } else if (result.pursuit?.executionQueued) {
+            this.notification.info(action.title, result.nextAction || result.summary);
+          } else {
+            this.notification.success(action.title, result.nextAction || result.summary);
+          }
           this.refresh();
         },
         error: (error) => {
@@ -637,16 +779,53 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
     }
     switch (action.key) {
       case 'clear-blockers':
-        return `${this.dashboard.openLoops.length} loops`;
+        return this.workflowQueuesScopedOut() ? 'See pursuits' : `${this.workflowQueueMetric(this.dashboard.openLoops.length)} loops`;
       case 'run-cycle':
-        return `${this.dashboard.needsRobert.length} need Robert`;
+        return this.workflowQueuesScopedOut() ? 'See pursuits' : `${this.workflowQueueMetric(this.dashboard.needsRobert.length)} need Robert`;
       case 'run-safe':
-        return `${this.runtimes.length} runtimes`;
+        return `${this.runtimeCountMetric()} runtimes`;
       case 'manage-pursuits':
-        return `${this.activePursuitCount()} active`;
+        return `${this.pursuitMetric(this.activePursuitCount())} active`;
       default:
-        return `${this.dashboard.insightCount} facts`;
+        return `${this.dashboardUnavailable ? 'stale · ' : ''}${this.dashboard.insightCount} facts`;
     }
+  }
+
+  runtimeCountMetric(): string {
+    if (this.runtimeOverviewUnavailable) {
+      return this.runtimes.length ? `stale · ${this.runtimes.length}` : 'unavailable';
+    }
+    if (!this.runtimes.length && this.runtimeLoading) {
+      return 'checking';
+    }
+    return String(this.runtimes.length);
+  }
+
+  pursuitMetric(count: number): string {
+    if (this.pursuitDashboardUnavailable) {
+      return this.pursuitDashboard ? `stale · ${count}` : 'unavailable';
+    }
+    if (!this.pursuitDashboard) {
+      return this.pursuitsLoading ? 'checking' : 'unavailable';
+    }
+    return String(count);
+  }
+
+  workflowQueueMetric(count: number): string {
+    if (this.workflowQueuesScopedOut()) {
+      return 'see pursuits';
+    }
+    return `${this.dashboardUnavailable ? 'stale · ' : ''}${count}`;
+  }
+
+  workflowQueuesScopedOut(): boolean {
+    return !!this.dashboard?.warnings?.some((warning) =>
+      warning.toLowerCase().includes('workflow queues are shown through the owner-scoped pursuits dashboard')
+    );
+  }
+
+  correctionMetric(corrections?: unknown[] | null): string {
+    return corrections == null ? 'not reported' : String(corrections.length);
   }
 
   activePursuitCount(): number {
@@ -654,7 +833,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   pursuitDecisionCount(): number {
-    return this.pursuitDashboard?.needsRobert?.length || 0;
+    return this.pursuitDashboard?.decisionQueue?.length || 0;
   }
 
   pursuitReadyCount(): number {
@@ -1024,13 +1203,115 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
     if (!command) {
       return 'default';
     }
+    if (this.commandHasFailure(command)) {
+      return 'error';
+    }
     if (command.reviewRequired) {
       return 'warning';
     }
-    if (command.agentCycle?.status === 'partial_failure' || command.agentCycle?.status === 'failed') {
-      return 'error';
+    if (command.pursuit?.executionQueued) {
+      return 'processing';
     }
     return 'success';
+  }
+
+  commandStatusLabel(command?: IAssistantCommandResult): string {
+    if (!command) {
+      return 'no command yet';
+    }
+    const cycleStatus = typeof command.agentCycle?.status === 'string' ? command.agentCycle.status.toLowerCase() : '';
+    if (cycleStatus === 'failed') {
+      return 'failed';
+    }
+    if (cycleStatus === 'partial_failure' || command.actions?.some((action) => typeof action?.status === 'string' && action.status.toLowerCase() === 'failed')) {
+      return 'partial failure';
+    }
+    if (command.pursuit?.executionQueued && !command.reviewRequired) {
+      return 'workflow queued';
+    }
+    return command.reviewRequired ? 'review needed' : 'recorded';
+  }
+
+  private commandHasFailure(command: IAssistantCommandResult): boolean {
+    const cycleStatus = typeof command.agentCycle?.status === 'string' ? command.agentCycle.status.toLowerCase() : '';
+    return cycleStatus === 'failed' ||
+      cycleStatus === 'partial_failure' ||
+      command.actions?.some((action) => typeof action?.status === 'string' && action.status.toLowerCase() === 'failed') === true;
+  }
+
+  private isAssistantCommandResult(value: unknown): value is IAssistantCommandResult {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const result = value as Partial<IAssistantCommandResult>;
+    return typeof result.id === 'string' && result.id.length > 0 &&
+      typeof result.createdAt === 'string' && Number.isFinite(Date.parse(result.createdAt)) &&
+      typeof result.intent === 'string' &&
+      typeof result.summary === 'string' && typeof result.nextAction === 'string' &&
+      typeof result.safetySummary === 'string' && typeof result.reviewRequired === 'boolean' &&
+      Array.isArray(result.actions) && result.actions.every((action) =>
+        !!action && typeof action.name === 'string' && typeof action.status === 'string' && typeof action.summary === 'string'
+      );
+  }
+
+  private isPursuitDashboard(value: unknown): value is IPursuitDashboard {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const dashboard = value as Partial<IPursuitDashboard>;
+    return !!dashboard.counts && typeof dashboard.counts === 'object' &&
+      typeof dashboard.counts['active'] === 'number' && Number.isFinite(dashboard.counts['active']) && [
+      dashboard.decisionQueue,
+      dashboard.needsRobert,
+      dashboard.vaReady,
+      dashboard.systemReady,
+      dashboard.blocked,
+      dashboard.stale,
+      dashboard.reviewDue,
+      dashboard.planningNeeded,
+      dashboard.recentlyChanged,
+      dashboard.highRisk,
+      dashboard.completionCandidates,
+    ].every(Array.isArray);
+  }
+
+  private isMemoryDashboard(value: unknown): value is ICommandDashboard {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const dashboard = value as Partial<ICommandDashboard>;
+    return typeof dashboard.generatedAt === 'string' && Number.isFinite(Date.parse(dashboard.generatedAt)) &&
+      typeof dashboard.conversationCount === 'number' && Number.isFinite(dashboard.conversationCount) &&
+      typeof dashboard.insightCount === 'number' && Number.isFinite(dashboard.insightCount) && [
+        dashboard.needsRobert,
+        dashboard.delegateToVA,
+        dashboard.openLoops,
+        dashboard.contradictions,
+        dashboard.recentDecisions,
+        dashboard.projects,
+        dashboard.recentArchives,
+        dashboard.warnings,
+      ].every(Array.isArray) &&
+      (dashboard.sourceCorrections == null || Array.isArray(dashboard.sourceCorrections));
+  }
+
+  private isRuntimeOverview(value: unknown): value is { runtimes: IAgentRuntimeInfo[]; health: IAgentRuntimeHealth[] } {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const overview = value as { runtimes?: unknown; health?: unknown };
+    return Array.isArray(overview.runtimes) && overview.runtimes.every((runtime) =>
+      !!runtime && typeof runtime.id === 'string' && typeof runtime.name === 'string'
+    ) && Array.isArray(overview.health) && overview.health.every((item) =>
+      !!item && typeof item.runtimeId === 'string' && typeof item.status === 'string'
+    );
+  }
+
+  private isCommandLogList(value: unknown): value is IAssistantCommandResult[] {
+    return Array.isArray(value) && value.every((item) =>
+      !!item && typeof item === 'object' && typeof item.id === 'string' &&
+      typeof item.summary === 'string' && Array.isArray(item.actions)
+    );
   }
 
   commandEngineSummary(command?: IAssistantCommandResult): string {
@@ -1041,40 +1322,66 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   search(): void {
-    if (this.searchForm.invalid) {
+    if (this.searching || this.searchForm.invalid) {
       return;
     }
     this.searching = true;
+    this.searchError = '';
     this.memoryEngine
       .search(this.searchForm.value.query, this.searchForm.value.projectKey)
       .subscribe({
         next: (result) => {
+          if (!result?.memory || !Array.isArray(result.facts) || !Array.isArray(result.memory.usedContext)) {
+            this.searching = false;
+            this.searchError = 'The memory search returned an invalid response. Previous results are retained.';
+            return;
+          }
           this.searchResult = result;
           this.searching = false;
+          this.searchError = '';
         },
         error: (error) => {
           this.searching = false;
+          this.searchError = error?.error?.error || 'Memory search failed. Previous results are retained.';
           this.notification.error('Search failed', error?.error?.error || 'Memory search failed.');
         },
       });
   }
 
   openSource(sourceUri?: string): void {
-    if (sourceUri) {
-      window.open(sourceUri, '_blank', 'noopener');
+    const uri = sourceUri?.trim();
+    if (!uri) {
+      this.notification.warning('Source unavailable', 'This record does not include a source link.');
+      return;
     }
+    const href = safeWebSourceHref(uri, true);
+    if (href) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    this.notification.warning('Source link blocked', 'HAI only opens valid HTTPS source links without embedded credentials.');
   }
 
   deleteArchive(id: string, title: string): void {
+    if (!id || this.deletingArchiveIds.has(id)) {
+      return;
+    }
     if (!window.confirm(`Delete the encrypted archive and extracted facts for "${title}"?`)) {
       return;
     }
-    this.memoryEngine.deleteConversation(id).subscribe({
+    this.deletingArchiveIds.add(id);
+    this.memoryEngine.deleteConversation(id).pipe(finalize(() => this.deletingArchiveIds.delete(id))).subscribe({
       next: () => {
+        if (this.dashboard) {
+          this.dashboard = {
+            ...this.dashboard,
+            recentArchives: this.dashboard.recentArchives.filter((archive) => archive.id !== id),
+          };
+        }
         this.notification.success('Archive deleted', 'The raw archive and extracted facts were removed.');
         this.refresh();
       },
-      error: () => this.notification.error('Delete failed', 'The archive could not be deleted.'),
+      error: (error) => this.notification.error('Delete failed', error?.error?.error || 'The archive could not be deleted.'),
     });
   }
 

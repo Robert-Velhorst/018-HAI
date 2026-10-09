@@ -63,21 +63,21 @@ func (p *registryAgentContextProvider) LatestAgents(ownerIdentity string, at tim
 
 func mapRegistryAgentCard(agent agentregistry.Agent, at time.Time) frameworkregistry.AgentCard {
 	capabilities, operations := registryCapabilities(agent.Capabilities)
-	healthy := agent.State == agentregistry.StateEnabled &&
+	// Registry health is caller-editable configuration, not a server probe.
+	declaredReady := agent.State == agentregistry.StateEnabled &&
 		agent.Availability.Available &&
+		agent.Availability.MaxConcurrent > 0 &&
+		agent.Availability.ActiveAssignments >= 0 &&
+		agent.Availability.ActiveAssignments < agent.Availability.MaxConcurrent &&
 		agent.Health.Ready &&
 		agent.Health.Status == agentregistry.HealthHealthy &&
 		healthEvidenceFresh(agent.Health, at)
 
-	status := string(agent.State)
-	healthStatus := string(agent.Health.Status)
-	availability := registryAvailability(agent)
-	var lastVerifiedAt *time.Time
-	if healthy {
-		status = "available"
-		healthStatus = "available"
-		checkedAt := agent.Health.CheckedAt.UTC()
-		lastVerifiedAt = &checkedAt
+	status := "configured_unavailable"
+	healthStatus := "declared_" + string(agent.Health.Status)
+	availability := registryAvailability(agent) + "; declaration_ready=" + strconv.FormatBool(declaredReady)
+	if declaredReady {
+		status = "configured_unverified"
 	}
 
 	revoked := agent.State == agentregistry.StateDisabled ||
@@ -105,7 +105,7 @@ func mapRegistryAgentCard(agent agentregistry.Agent, at time.Time) frameworkregi
 		ID:                    agent.ID,
 		Name:                  agent.Name,
 		Owner:                 agent.OwnerIdentity,
-		Purpose:               "perform the registered " + string(agent.Type) + " role through " + agent.Runtime.ID,
+		Purpose:               "configured " + string(agent.Type) + " role through " + agent.Runtime.ID + "; trusted server capability probe required",
 		Role:                  string(agent.Type),
 		Capabilities:          capabilities,
 		DomainCompetence:      capabilityIDs(agent.Capabilities),
@@ -119,7 +119,7 @@ func mapRegistryAgentCard(agent agentregistry.Agent, at time.Time) frameworkregi
 		ProhibitedActions:     registryLifecycleProhibitions(agent),
 		InputSchema:           "hai_agent_message_v1",
 		OutputSchema:          "hai_agent_message_v1",
-		ExpectedEvidence:      []string{"agent registry health evidence", "task execution outcome evidence"},
+		ExpectedEvidence:      []string{"trusted server capability probe", "task execution outcome evidence"},
 		EscalationRoute:       "hai_task_engine then owner-scoped review queue",
 		Availability:          availability,
 		Version:               fmt.Sprintf("contract-v%d/revision-%d", agent.ContractVersion, agent.Revision),
@@ -129,16 +129,17 @@ func mapRegistryAgentCard(agent agentregistry.Agent, at time.Time) frameworkregi
 		EvaluationScoreSource: "agent registry success/failure beta prior",
 		AuthorityCeiling:      authorityCeiling,
 		Status:                status,
-		Verified:              healthy,
+		Verified:              false,
 		Revoked:               revoked,
 		RevocationReason:      revocationReason,
 		Provenance: fmt.Sprintf(
-			"agent_registry:%s revision=%d updated=%s",
+			"agent_registry_declaration:%s revision=%d updated=%s declared_health_checked_at=%s",
 			agent.ID,
 			agent.Revision,
 			agent.UpdatedAt.UTC().Format(time.RFC3339),
+			agent.Health.CheckedAt.UTC().Format(time.RFC3339Nano),
 		),
-		LastVerifiedAt: lastVerifiedAt,
+		LastVerifiedAt: nil,
 	}
 }
 

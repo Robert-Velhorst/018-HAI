@@ -330,23 +330,26 @@ func resourcePlanningSummary(decision *resourceplanner.Decision) string {
 }
 
 func (s *service) executeWithPursuitReservation(plan *CompletionPlan, request IntakeRequest, attempt int) *ExecutionResult {
+	if taskExecutionContext(request).Err() != nil {
+		return cancelledTaskExecution(plan.ExecutionResult, plan, request, time.Now().UTC())
+	}
 	if plan == nil || strings.TrimSpace(plan.PursuitID) == "" {
 		return s.executeAllowedSteps(plan, request)
 	}
 	started := time.Now().UTC()
 	pursuitID, err := uuid.Parse(strings.TrimSpace(plan.PursuitID))
 	if err != nil {
-		return blockExecution(newExecutionResult(plan, request, started), "pursuit resource reservation received an invalid pursuit id", plan, started)
+		return pursuitReservationBlockedExecution(plan, request, "pursuit resource reservation received an invalid pursuit id", started)
 	}
 	manager, ok := s.pursuitAttempts.(PursuitResourceReservationManager)
 	if !ok {
-		return blockExecution(newExecutionResult(plan, request, started), "pursuit resource reservation boundary is unavailable", plan, started)
+		return pursuitReservationBlockedExecution(plan, request, "pursuit resource reservation boundary is unavailable", started)
 	}
 	effortMinutes, costMicros := pursuitExecutionEstimate(plan)
 	operationRoot := firstNonEmpty(request.operationID, plan.OperationID, plan.ID)
 	operationID := operationRoot + ":attempt:" + strconv.Itoa(maxInt(attempt, 1))
 	if err := manager.ReservePursuitTaskResources(pursuitID, plan.OwnerIdentity, operationID, effortMinutes, costMicros); err != nil {
-		return blockExecution(newExecutionResult(plan, request, started), "pursuit resource reservation blocked execution: "+err.Error(), plan, started)
+		return pursuitReservationBlockedExecution(plan, request, "pursuit resource reservation blocked execution: "+err.Error(), started)
 	}
 	plan.Events = append(plan.Events, event("resources", fmt.Sprintf("reserved %d minutes and EUR %.6f for execution attempt %d", effortMinutes, float64(costMicros)/1_000_000, attempt)))
 
@@ -373,6 +376,20 @@ func (s *service) executeWithPursuitReservation(plan *CompletionPlan, request In
 		return result
 	}
 	plan.Events = append(plan.Events, event("resources", fmt.Sprintf("settled execution attempt %d with %d minutes and EUR %.6f actual usage", attempt, actualEffortMinutes, float64(actualCostMicros)/1_000_000)))
+	return result
+}
+
+func pursuitReservationBlockedExecution(plan *CompletionPlan, request IntakeRequest, reason string, started time.Time) *ExecutionResult {
+	result := blockExecution(newExecutionResult(plan, request, started), reason, plan, started)
+	// A denied new attempt does not establish that earlier execution had no effects.
+	if previous := plan.ExecutionResult; previous != nil {
+		result.OutcomeUncertain = executionOutcomeUncertain(previous)
+		result.ToolExecution = previous.ToolExecution
+		result.Actions = append(append([]ExecutedAction{}, previous.Actions...), result.Actions...)
+		if previous.ToolExecution != nil || len(previous.Actions) > 0 {
+			result.Output = "Further execution was blocked; prior execution evidence was retained for review. Reservation blocker: " + result.BlockedReason
+		}
+	}
 	return result
 }
 

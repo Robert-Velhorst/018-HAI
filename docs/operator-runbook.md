@@ -1050,3 +1050,29 @@ Before operational trust still require:
 See [Framework Registry](framework-registry.md),
 [verification evidence](verification-honest-health-readiness.md), and
 [troubleshooting](troubleshooting.md).
+
+## Controlled local scripts
+
+Keep `AUTOMATION_SCRIPT_EXECUTION_ENABLED=false` unless the exact script,
+working directory, environment allowlist, and execution authorization have
+been reviewed. `AUTOMATION_SCRIPT_SHA256_ALLOWLIST` binds a reviewed filename
+to its SHA-256; changing the source without reviewing its new pin blocks it.
+
+The Linux backend copies verified script bytes into a private temporary
+directory and executes that copy, not the mutable allowlist path. It rejects
+non-regular files, final-component symlink substitutions, and files exceeding
+16 MiB. Cancellation is checked while hashing/copying, and the script deadline
+also reaches the final authorizer. The default deadline is 30 seconds. Output
+pipe draining has a separate 250 ms limit so a descendant retaining the pipes
+cannot hold the worker indefinitely. A pipe-drain timeout is indeterminate,
+not verified success. Non-Linux backends currently reject this path; a Windows
+installation running the Linux Docker backend is distinct from a native
+Windows backend process.
+
+These controls are not a capability sandbox or proof of subprocess-tree
+termination. Scripts can import other files, start descendants, or perform
+effects within their host permissions. A private temporary directory does not
+protect against a compromised same-user/root process. Never automatically
+retry an indeterminate consequential effect; inspect its audit and actual
+postcondition first. No live script or Windows native execution is approved
+merely because local fixtures pass.

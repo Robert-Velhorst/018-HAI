@@ -1,178 +1,381 @@
-<main class="bg-ops">
+<section class="bg-ops" aria-labelledby="bg-ops-title">
   <header class="bg-ops__header">
-    <div class="bg-ops__title-block">
-      <button nz-button nzType="text" class="bg-ops__back" (click)="goBack()" aria-label="Back to Command Center" title="Back to Command Center">
-        <span nz-icon nzType="arrow-left"></span>
-      </button>
-      <div>
-        <h1>Background Operations</h1>
-        <p>Review what HAI can do next, then run only safe local work.</p>
-      </div>
+    <div>
+      <h1 id="bg-ops-title">Background operations</h1>
+      <p>Review safe local work, recover failures, and confirm outcomes.</p>
     </div>
-    <button nz-button nzType="text" class="bg-ops__refresh" (click)="refresh()" [disabled]="loading" title="Refresh operations and feed status">
-      <span nz-icon nzType="reload"></span><span>Refresh</span>
+    <button
+      nz-button
+      nzType="default"
+      type="button"
+      class="bg-ops__refresh"
+      (click)="refresh()"
+      [nzLoading]="loading"
+      [disabled]="loading"
+      title="Refresh operations and connected feed status"
+    >
+      <span nz-icon nzType="reload" aria-hidden="true"></span>
+      <span>Refresh</span>
     </button>
   </header>
 
-  <section class="bg-ops__action-stage" *ngIf="dashboard as d">
-    <article class="bg-ops__run-card">
-      <div class="bg-ops__run-icon"><span nz-icon nzType="thunderbolt"></span></div>
-      <div class="bg-ops__run-copy">
-        <h2>Run a safe background pass</h2>
-        <p>Read enabled local feeds, create operations, and execute only reversible work permitted by the active policy.</p>
-        <span class="bg-ops__safety"><span nz-icon nzType="safety-certificate"></span> No emails, publishing, payments, or deletions run here.</span>
-      </div>
-      <button nz-button nzType="primary" [nzLoading]="running" [disabled]="!hasEnabledFeeds()" (click)="runBackground()" [title]="hasEnabledFeeds() ? 'Read enabled feeds and process governed local work' : 'Connect and enable an account feed before running a pass'">
-        <span nz-icon nzType="play-circle"></span> Run pass
-      </button>
-    </article>
-
-    <div class="bg-ops__action-rail" aria-label="Operation shortcuts">
-      <button class="bg-ops__action" [class.bg-ops__action--active]="statusFilter === 'awaiting_approval'" (click)="selectStatus('awaiting_approval')" title="Open operations that require your decision">
-        <span class="bg-ops__action-icon bg-ops__action-icon--gold"><span nz-icon nzType="check-square"></span></span>
-        <span><strong>Review approvals</strong><small>Actions waiting for you</small></span>
-        <em>{{ d.needsRobert }}</em>
-      </button>
-      <button class="bg-ops__action" [class.bg-ops__action--active]="statusFilter === 'blocked'" (click)="selectStatus('blocked')" title="Open operations that need information or a rule change">
-        <span class="bg-ops__action-icon bg-ops__action-icon--red"><span nz-icon nzType="stop"></span></span>
-        <span><strong>Resolve blockers</strong><small>Work that cannot continue</small></span>
-        <em>{{ d.blocked }}</em>
-      </button>
-      <button class="bg-ops__action" [class.bg-ops__action--active]="statusFilter === 'completed'" (click)="selectStatus('completed')" title="Review verified work completed by the local worker">
-        <span class="bg-ops__action-icon bg-ops__action-icon--green"><span nz-icon nzType="check-circle"></span></span>
-        <span><strong>See completed work</strong><small>Verified while you were away</small></span>
-        <em>{{ d.doneWhileAway }}</em>
-      </button>
-      <button class="bg-ops__action" [class.bg-ops__action--active]="statusFilter === 'failed'" (click)="selectStatus('failed')" title="Open failed operations and their audit trail">
-        <span class="bg-ops__action-icon bg-ops__action-icon--red"><span nz-icon nzType="warning"></span></span>
-        <span><strong>Investigate failures</strong><small>Nothing is silently retried forever</small></span>
-        <em>{{ d.failed }}</em>
-      </button>
+  <section *ngIf="loadError" class="bg-ops__load-error" [class.bg-ops__load-error--warning]="loadFailure?.tone === 'warning'" role="alert" aria-live="assertive">
+    <div>
+      <strong>{{ dashboard ? 'Could not refresh' : 'Background operations are unavailable' }}</strong>
+      <span *ngIf="loadFailure?.statusLabel" class="bg-ops__failure-status">{{ loadFailure.statusLabel }}</span>
+      <p>{{ loadError }}<span *ngIf="dashboard"> Previously loaded results are still shown, but a new pass is disabled until status is current.</span></p>
+      <p *ngIf="loadFailure?.recovery" class="bg-ops__failure-recovery">Next step: {{ loadFailure.recovery }}</p>
     </div>
+    <button nz-button nzType="default" type="button" (click)="refresh()" [nzLoading]="loading" [disabled]="loading">Retry</button>
   </section>
 
-  <section class="bg-ops__run-result" *ngIf="lastReport || lastRunError || lastRunNotice" [class.bg-ops__run-result--error]="lastRunError" [class.bg-ops__run-result--notice]="lastRunNotice">
-    <span nz-icon [nzType]="lastRunError ? 'close-circle' : lastRunNotice ? 'info-circle' : 'check-circle'"></span>
-    <div *ngIf="lastRunError; else reportSummary">
-      <strong>The background pass did not start</strong>
+  <ng-container *ngIf="dashboard as d">
+    <section class="bg-ops__primary" aria-labelledby="bg-ops-primary-title">
+      <div class="bg-ops__primary-copy">
+        <span class="bg-ops__eyebrow">Safe local work</span>
+        <h2 id="bg-ops-primary-title">Run a background pass</h2>
+        <p>Check enabled feeds and process only work allowed by HAI's current policy.</p>
+        <span class="bg-ops__safety">
+          <span nz-icon nzType="safety-certificate" aria-hidden="true"></span>
+          External messages, publishing, payments, and deletion stay out of this pass.
+        </span>
+      </div>
+      <button
+        nz-button
+        nzType="primary"
+        type="button"
+        class="bg-ops__run-button"
+        [nzLoading]="running"
+        [disabled]="running || !canRunBackground()"
+        (click)="runBackground()"
+        [attr.aria-describedby]="backgroundRunUnavailableReason ? 'bg-ops-run-context' : null"
+        [title]="loading || loadError ? 'Refresh feed status before running' : hasEnabledFeeds() ? 'Process enabled feeds under the current safety policy' : 'Connect and enable a feed first'"
+      >
+        <span nz-icon nzType="play-circle" aria-hidden="true"></span>
+        <span>Run pass</span>
+      </button>
+    </section>
+    <p *ngIf="backgroundRunUnavailableReason" id="bg-ops-run-context" class="bg-ops__run-context" role="status" aria-live="polite">
+      {{ backgroundRunUnavailableReason }}
+      <button *ngIf="!hasEnabledFeeds() && visibleOperations.length && !loading && !loadError" nz-button nzType="link" type="button" (click)="openSources()">Manage sources</button>
+      <button *ngIf="lastRunNeedsReconciliation" nz-button nzType="link" type="button" (click)="refresh()" [disabled]="loading">Refresh status</button>
+    </p>
+
+    <nav class="bg-ops__status-summary" aria-label="Filter operations by attention state">
+      <button type="button" [class.bg-ops__status-summary-item--active]="statusFilter === 'awaiting_approval'" [attr.aria-pressed]="statusFilter === 'awaiting_approval'" (click)="selectStatus('awaiting_approval')">
+        <span>Needs your decision</span><strong>{{ d.needsRobert }}</strong>
+      </button>
+      <button type="button" [class.bg-ops__status-summary-item--active]="statusFilter === 'blocked'" [attr.aria-pressed]="statusFilter === 'blocked'" (click)="selectStatus('blocked')">
+        <span>Blocked</span><strong>{{ d.blocked }}</strong>
+      </button>
+      <button type="button" [class.bg-ops__status-summary-item--active]="statusFilter === 'failed'" [attr.aria-pressed]="statusFilter === 'failed'" (click)="selectStatus('failed')">
+        <span>Failed</span><strong>{{ d.failed }}</strong>
+      </button>
+    </nav>
+  </ng-container>
+
+  <section
+    *ngIf="lastReport || lastRunError || lastRunNotice"
+    class="bg-ops__run-result"
+    [class.bg-ops__run-result--error]="lastRunError && lastRunFailure?.tone !== 'warning'"
+    [class.bg-ops__run-result--warning]="lastRunError && lastRunFailure?.tone === 'warning'"
+    [class.bg-ops__run-result--notice]="lastRunNotice"
+    [attr.role]="lastRunError ? 'alert' : 'status'"
+    [attr.aria-live]="lastRunError ? 'assertive' : 'polite'"
+  >
+    <span nz-icon [nzType]="lastRunError ? 'close-circle' : lastRunNotice ? 'info-circle' : 'check-circle'" aria-hidden="true"></span>
+    <div class="bg-ops__run-result-copy" *ngIf="lastRunError; else reportSummary">
+      <strong>{{ lastRunHeading }}</strong>
+      <span *ngIf="lastRunFailure?.statusLabel" class="bg-ops__failure-status">{{ lastRunFailure.statusLabel }}</span>
       <p>{{ lastRunError }}</p>
+      <p class="bg-ops__failure-recovery">Next step: {{ lastRunStatusRefreshed ? 'Status refreshed. Review the current operations before deciding whether another pass is appropriate.' : lastRunFailure?.recovery }}</p>
+      <p *ngIf="lastRunFailure?.retryAfter" class="bg-ops__failure-recovery">{{ lastRunFailure.retryAfter }}</p>
+      <button *ngIf="lastRunNeedsReconciliation" nz-button nzType="default" nzSize="small" type="button" (click)="refresh()" [nzLoading]="loading" [disabled]="loading">Refresh status</button>
+      <button *ngIf="!lastRunNeedsReconciliation" nz-button nzType="default" nzSize="small" type="button" (click)="openFullLedger()">Review operations</button>
     </div>
     <ng-template #reportSummary>
-      <div *ngIf="lastRunNotice; else completedReport">
-        <strong>Connect a source before running a pass</strong>
+      <div class="bg-ops__run-result-copy" *ngIf="lastRunNotice; else completedReport">
+        <strong>{{ lastRunNoticeType === 'sources' ? 'Connect a source before running a pass' : 'Refresh status before running' }}</strong>
         <p>{{ lastRunNotice }}</p>
+        <button *ngIf="lastRunNoticeType === 'sources'" nz-button nzType="default" nzSize="small" type="button" (click)="openSources()">Manage sources</button>
+        <button *ngIf="lastRunNoticeType === 'refresh'" nz-button nzType="default" nzSize="small" type="button" (click)="refresh()" [nzLoading]="loading" [disabled]="loading">Refresh status</button>
       </div>
       <ng-template #completedReport>
-      <div *ngIf="lastReport as report">
-        <strong>Last background pass complete</strong>
-        <p>{{ report.feedsRead }} feeds checked, {{ report.operationsCreated }} operations created, {{ report.verified }} verified.</p>
-        <ul *ngIf="report.errors?.length">
-          <li *ngFor="let error of report.errors">{{ error }}</li>
-        </ul>
-      </div>
+        <div class="bg-ops__run-result-copy" *ngIf="lastReport as report">
+          <strong>{{ report.errors?.length ? 'Pass finished with issues' : 'Pass complete' }}</strong>
+          <p>{{ report.feedsRead }} feeds checked, {{ report.operationsCreated }} operations created, {{ report.verified }} verified.</p>
+          <ul *ngIf="report.errors?.length">
+            <li *ngFor="let error of report.errors">{{ safeDiagnosticText(error) }}</li>
+          </ul>
+        </div>
       </ng-template>
     </ng-template>
   </section>
 
-  <hai-progressive-section moduleId="background-operations" sectionId="operation-ledger" title="Operation ledger" summary="Inspect decisions, execution state, and audit trails.">
-  <section class="bg-ops__workspace">
-    <header class="bg-ops__workspace-heading">
+  <section class="bg-ops__queue" aria-labelledby="bg-ops-queue-title">
+    <header class="bg-ops__section-heading">
       <div>
-        <h2>{{ statusFilter ? 'Filtered operations' : 'Operations' }}</h2>
-        <p *ngIf="statusFilter">Showing {{ statusFilter.replace('_', ' ') }} operations.</p>
-        <p *ngIf="!statusFilter">Each entry has a decision, risk level, and inspectable audit trail.</p>
+        <h2 id="bg-ops-queue-title">{{ statusFilter ? statusLabel(statusFilter) : 'Needs attention' }}</h2>
+        <p>Active work that needs a decision, recovery, or review.</p>
       </div>
-      <div class="bg-ops__filters" aria-label="Filter operations">
-        <button *ngFor="let status of statusFilters" nz-button nzSize="small" [nzType]="statusFilter === status.value ? 'primary' : 'default'" (click)="selectStatus(status.value)">
-          {{ status.label }}
-        </button>
-      </div>
+      <button nz-button nzType="default" type="button" (click)="openFullLedger()">Open full ledger</button>
     </header>
 
-    <div class="bg-ops__feed-line" *ngIf="feeds.length">
-      <span nz-icon nzType="database"></span>
-      <span>Enabled feeds:</span>
-      <strong *ngFor="let feed of feeds">{{ feed.name }} <small>{{ feed.provider }}</small></strong>
+    <div *ngIf="loading && !dashboard" class="bg-ops__loading" role="status" aria-live="polite">
+      <span nz-icon nzType="loading" aria-hidden="true"></span>
+      <span>Loading current operations and feed status…</span>
     </div>
 
-    <div class="bg-ops__table-wrap" *ngIf="operations.length; else emptyOperations">
-      <nz-table #opsTable [nzData]="operations" [nzLoading]="loading" nzSize="small" class="bg-ops__table">
-        <thead>
-          <tr>
-            <th>Operation</th>
-            <th>Decision</th>
-            <th>Status</th>
-            <th class="bg-ops__right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let op of opsTable.data" (click)="openDetail(op)" class="bg-ops__row" tabindex="0">
-            <td>
-              <strong class="bg-ops__operation-title">{{ op.title }}</strong>
-              <span class="bg-ops__operation-meta">{{ op.sourceType }} &middot; {{ op.operationType }} &middot; {{ op.riskLevel }} risk</span>
-            </td>
-            <td><span class="bg-ops__decision">{{ op.recommendedAction || op.currentDecision }}</span></td>
-            <td><nz-tag [nzColor]="statusColor(op.status)">{{ op.status }}</nz-tag></td>
-            <td class="bg-ops__right" (click)="$event.stopPropagation()">
-              <button nz-button nzSize="small" nzType="primary" *ngIf="canApprove(op)" (click)="approve(op)">Approve</button>
-              <button nz-button nzSize="small" *ngIf="canRun(op)" (click)="run(op)">Run</button>
-              <button nz-button nzType="text" nzSize="small" (click)="openDetail(op)" title="Inspect decision and audit trail"><span nz-icon nzType="right"></span></button>
-            </td>
-          </tr>
-        </tbody>
-      </nz-table>
-    </div>
-
-    <ng-template #emptyOperations>
-      <div class="bg-ops__empty" [class.bg-ops__empty--loading]="loading">
-        <span class="bg-ops__empty-icon" nz-icon nzType="inbox"></span>
-        <div>
-          <h3>{{ loading ? 'Loading operations' : 'Nothing needs action yet' }}</h3>
-          <p *ngIf="!loading && hasEnabledFeeds()">Run a pass to turn enabled-source information into safe, reviewable operations.</p>
-          <p *ngIf="!loading && !hasEnabledFeeds()">No account feed is enabled for this engine. Connect or enable a feed before running a pass.</p>
-          <p *ngIf="loading">Fetching the current decision ledger.</p>
-          <div class="bg-ops__empty-actions" *ngIf="!loading">
-            <button nz-button nzType="primary" (click)="runBackground()" [nzLoading]="running" [disabled]="!hasEnabledFeeds()">Run a safe pass</button>
-            <button nz-button (click)="openSources()">Manage sources</button>
+    <div *ngIf="visibleOperations.length" class="bg-ops__operation-list">
+      <article class="bg-ops__operation" *ngFor="let op of visibleOperations">
+        <div class="bg-ops__operation-copy">
+          <button nz-button nzType="link" type="button" class="bg-ops__operation-link" (click)="openDetail(op)">{{ op.title }}</button>
+          <div class="bg-ops__operation-meta">
+            <span>{{ op.sourceType }} · {{ op.operationType }} · {{ ownerLabel(op.ownerType) }}</span>
+            <nz-tag [nzColor]="riskColor(op.riskLevel)">{{ riskLabel(op.riskLevel) }}</nz-tag>
+          </div>
+          <p *ngIf="operationStatusContext(op)" class="bg-ops__operation-context">{{ operationStatusContext(op) }}</p>
+          <p *ngIf="operationOutcomeSummary(op) as outcomeSummary" class="bg-ops__operation-context">{{ outcomeSummary }}</p>
+          <div *ngIf="(op.status === 'blocked' || op.status === 'failed') && operationDisplayStatus(op) !== 'interrupted'" class="bg-ops__operation-recovery">
+            <span>{{ operationRecoveryContext(op) }}</span>
+            <span *ngIf="op.nextReviewAt">Next review: {{ reviewTime(op.nextReviewAt) }}</span>
+          </div>
+          <div class="bg-ops__operation-error" [class.bg-ops__operation-error--warning]="operationActionTone(op) === 'warning'" *ngIf="operationActionError(op) as actionError" role="alert">
+            <strong>{{ operationActionStatus(op) || 'Action needs attention' }}</strong>
+            <span>{{ actionError }}</span>
+            <span *ngIf="operationActionRecovery(op)" class="bg-ops__failure-recovery">Next step: {{ operationActionRecovery(op) }}</span>
+            <span *ngIf="operationActionIssue(op)?.retryAfter" class="bg-ops__failure-recovery">{{ operationActionIssue(op)?.retryAfter }}</span>
+            <button nz-button nzType="default" nzSize="small" type="button" (click)="refresh()" [nzLoading]="loading" [disabled]="loading">Refresh status</button>
           </div>
         </div>
-      </div>
-    </ng-template>
-  </section>
-  </hai-progressive-section>
-</main>
+        <nz-tag class="bg-ops__operation-status" [nzColor]="statusColor(operationDisplayStatus(op))">{{ statusLabel(operationDisplayStatus(op)) }}</nz-tag>
+        <div class="bg-ops__operation-actions">
+          <button nz-button nzType="primary" nzSize="small" type="button" *ngIf="canApprove(op)" [nzLoading]="isPending(op)" [disabled]="loading || isPending(op)" (click)="approve(op)">Approve</button>
+          <button nz-button nzType="default" nzSize="small" type="button" *ngIf="canRun(op)" [nzLoading]="isPending(op)" [disabled]="loading || isPending(op)" (click)="run(op)">{{ op.status === 'failed' ? 'Retry safely' : 'Run safe work' }}</button>
+          <button nz-button nzType="text" nzSize="small" type="button" (click)="openDetail(op)" [attr.aria-label]="'Inspect ' + op.title">Inspect</button>
+        </div>
+      </article>
+    </div>
 
-<nz-drawer [nzVisible]="detailVisible" [nzTitle]="selected?.title ?? 'Operation'" nzWidth="520" (nzOnClose)="closeDetail()">
+    <div *ngIf="loading && !visibleOperations.length && dashboard" class="bg-ops__loading" role="status" aria-live="polite">
+      <span nz-icon nzType="loading" aria-hidden="true"></span>
+      <span>Refreshing the operation list…</span>
+    </div>
+
+    <div *ngIf="!loading && !visibleOperations.length && !loadError" class="bg-ops__empty">
+      <span class="bg-ops__empty-icon" nz-icon nzType="inbox" aria-hidden="true"></span>
+      <div>
+        <h3>{{ statusFilter ? 'No operations in this state' : 'Nothing needs attention right now' }}</h3>
+        <p *ngIf="hasEnabledFeeds()">The current list has no active items. Completed work and full history are available in the ledger.</p>
+        <p *ngIf="!hasEnabledFeeds()">No account feed is enabled. Connect or enable a feed before a background pass can run.</p>
+        <button *ngIf="!hasEnabledFeeds()" nz-button nzType="default" type="button" (click)="openSources()">Manage sources</button>
+      </div>
+    </div>
+  </section>
+
+  <hai-progressive-section
+    moduleId="background-operations"
+    sectionId="operation-ledger"
+    title="Operation ledger"
+    summary="Full history, filters, enabled feeds, and execution records."
+    [advancedOnly]="true"
+  >
+    <section class="bg-ops__ledger" aria-labelledby="bg-ops-ledger-title">
+      <header class="bg-ops__section-heading bg-ops__ledger-heading">
+        <div>
+          <h2 id="bg-ops-ledger-title">All operations</h2>
+          <p>{{ statusFilter ? 'Showing ' + statusLabel(statusFilter).toLowerCase() + ' operations.' : 'Filter the complete operation history.' }}</p>
+        </div>
+        <div class="bg-ops__filters" role="group" aria-label="Filter the operation ledger by status">
+          <button *ngFor="let status of statusFilters" nz-button nzSize="small" type="button" [nzType]="statusFilter === status.value ? 'primary' : 'default'" [attr.aria-pressed]="statusFilter === status.value" (click)="selectStatus(status.value)">
+            {{ status.label }}
+          </button>
+        </div>
+      </header>
+
+      <div *ngIf="enabledFeeds.length" class="bg-ops__feed-line" aria-label="Enabled feeds">
+        <span nz-icon nzType="database" aria-hidden="true"></span>
+        <span>Enabled feeds</span>
+        <strong *ngFor="let feed of enabledFeeds">{{ feed.name }} <small>{{ feed.provider }}</small></strong>
+      </div>
+
+      <div *ngIf="!loadError && operations.length; else emptyLedger" class="bg-ops__table-wrap">
+        <nz-table #opsTable [nzData]="operations" [nzLoading]="loading" nzSize="small" class="bg-ops__table">
+          <thead>
+            <tr>
+              <th class="bg-ops__operation-column">Operation</th>
+              <th class="bg-ops__decision-column">Decision</th>
+              <th class="bg-ops__status-column">Status</th>
+              <th class="bg-ops__action-column">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let op of opsTable.data">
+              <td class="bg-ops__operation-column">
+                <button nz-button nzType="link" type="button" class="bg-ops__operation-link" (click)="openDetail(op)">{{ op.title }}</button>
+                <span class="bg-ops__table-meta">{{ op.sourceType }} · {{ op.operationType }} · {{ riskLabel(op.riskLevel) }}</span>
+              </td>
+              <td class="bg-ops__decision-column"><span class="bg-ops__decision">{{ decisionLabel(op.recommendedAction || op.currentDecision) }}</span></td>
+              <td class="bg-ops__status-column"><nz-tag [nzColor]="statusColor(operationDisplayStatus(op))">{{ statusLabel(operationDisplayStatus(op)) }}</nz-tag></td>
+              <td class="bg-ops__action-column">
+                <div class="bg-ops__table-actions">
+                  <button nz-button nzSize="small" nzType="primary" type="button" *ngIf="canApprove(op)" [nzLoading]="isPending(op)" [disabled]="loading || isPending(op)" (click)="approve(op)">Approve</button>
+                  <button nz-button nzSize="small" nzType="default" type="button" *ngIf="canRun(op)" [nzLoading]="isPending(op)" [disabled]="loading || isPending(op)" (click)="run(op)">Run</button>
+                  <button nz-button nzType="text" nzSize="small" type="button" (click)="openDetail(op)" [attr.aria-label]="'Inspect ' + op.title">Inspect</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </nz-table>
+      </div>
+
+      <ng-template #emptyLedger>
+        <div class="bg-ops__ledger-state" [class.bg-ops__ledger-state--error]="!!loadError" [attr.role]="loadError ? 'alert' : null">
+          <h3>{{ loading ? 'Loading the ledger' : loadError ? 'Ledger could not be refreshed' : 'No matching operations' }}</h3>
+          <p *ngIf="loading">The operation list is being refreshed.</p>
+          <p *ngIf="!loading && loadError">{{ loadError }}</p>
+          <p *ngIf="!loading && !loadError">Try another status filter or run a pass when a feed is enabled.</p>
+          <button *ngIf="loadError" nz-button nzType="default" type="button" (click)="refresh()" [nzLoading]="loading" [disabled]="loading">Retry</button>
+        </div>
+      </ng-template>
+    </section>
+  </hai-progressive-section>
+</section>
+
+<nz-drawer [nzVisible]="detailVisible" [nzTitle]="selected?.title ?? 'Operation'" nzWidth="min(520px, 100vw)" (nzOnClose)="closeDetail()">
   <ng-container *nzDrawerContent>
     <div *ngIf="selected as op" class="bg-ops__detail">
       <div class="bg-ops__detail-tags">
-        <nz-tag [nzColor]="statusColor(op.status)">{{ op.status }}</nz-tag>
-        <nz-tag [nzColor]="riskColor(op.riskLevel)">risk: {{ op.riskLevel }}</nz-tag>
-        <nz-tag>autonomy: {{ op.autonomyLevel }}</nz-tag>
+        <nz-tag [nzColor]="statusColor(operationDisplayStatus(op))">{{ statusLabel(operationDisplayStatus(op)) }}</nz-tag>
+        <nz-tag [nzColor]="riskColor(op.riskLevel)">{{ riskLabel(op.riskLevel) }}</nz-tag>
+        <nz-tag>Autonomy: {{ titleCase(op.autonomyLevel) }}</nz-tag>
       </div>
-      <p *ngIf="op.description" class="bg-ops__detail-desc">{{ op.description }}</p>
+      <p *ngIf="op.description" class="bg-ops__detail-desc">{{ safeDiagnosticText(op.description) }}</p>
       <dl class="bg-ops__detail-meta">
-        <div><dt>Decision</dt><dd>{{ op.currentDecision }}</dd></div>
-        <div><dt>Recommended</dt><dd>{{ op.recommendedAction || 'Not specified' }}</dd></div>
+        <div><dt>Decision</dt><dd>{{ decisionLabel(op.currentDecision) }}</dd></div>
+        <div><dt>Recommended</dt><dd>{{ decisionLabel(op.recommendedAction || 'not specified') }}</dd></div>
+        <div><dt>Owner</dt><dd>{{ ownerLabel(op.ownerType) }}</dd></div>
         <div><dt>Runtime</dt><dd>{{ op.runtimeId || 'Not assigned' }}</dd></div>
-        <div><dt>Verification</dt><dd>{{ op.verificationStatus }}</dd></div>
-        <div *ngIf="op.resultSummary"><dt>Result</dt><dd>{{ op.resultSummary }}</dd></div>
-        <div *ngIf="op.lastError"><dt>Last error</dt><dd class="bg-ops__error">{{ op.lastError }}</dd></div>
+        <div><dt>Verification</dt><dd>{{ operationVerificationLabel(op) }}</dd></div>
+        <div *ngIf="op.resultSummary"><dt>Result</dt><dd>{{ safeDiagnosticText(op.resultSummary) }}</dd></div>
+        <div *ngIf="op.lastError"><dt>Last error</dt><dd class="bg-ops__error">{{ safeDiagnosticText(op.lastError) }}</dd></div>
+        <div *ngIf="op.nextReviewAt"><dt>Next review</dt><dd>{{ reviewTime(op.nextReviewAt) }}</dd></div>
       </dl>
+      <p *ngIf="operationOutcomeSummary(op) as outcomeSummary" class="bg-ops__operation-context">{{ outcomeSummary }}</p>
+      <div *ngIf="(op.status === 'failed' || op.status === 'blocked') && operationDisplayStatus(op) !== 'interrupted'" class="bg-ops__operation-recovery bg-ops__operation-recovery--detail">
+        <span>{{ operationRecoveryContext(op) }}</span>
+        <span *ngIf="op.nextReviewAt">Next review: {{ reviewTime(op.nextReviewAt) }}</span>
+      </div>
+      <div *ngIf="operationActionError(op) as actionError" class="bg-ops__action-error" [class.bg-ops__action-error--warning]="operationActionTone(op) === 'warning'" role="alert">
+        <strong>{{ operationActionStatus(op) || 'Action needs attention' }}</strong>
+        <p>{{ actionError }}</p>
+        <p *ngIf="operationActionRecovery(op)" class="bg-ops__failure-recovery">Next step: {{ operationActionRecovery(op) }}</p>
+        <p *ngIf="operationActionIssue(op)?.retryAfter" class="bg-ops__failure-recovery">{{ operationActionIssue(op)?.retryAfter }}</p>
+        <button nz-button nzType="default" nzSize="small" type="button" (click)="refresh()" [nzLoading]="loading || selectedLoading" [disabled]="loading || selectedLoading">Refresh status</button>
+      </div>
+      <div *ngIf="selectedLoading" class="bg-ops__audit-state" role="status" aria-live="polite">Refreshing the operation status.</div>
+      <div *ngIf="selectedLoadError" class="bg-ops__audit-state bg-ops__audit-state--error" role="alert">
+        <strong *ngIf="selectedFailure?.statusLabel">{{ selectedFailure.statusLabel }}</strong>
+        <span>{{ selectedLoadError }}</span>
+        <span *ngIf="selectedFailure?.recovery" class="bg-ops__failure-recovery">Next step: {{ selectedFailure.recovery }}</span>
+        <button nz-button nzType="default" nzSize="small" type="button" (click)="retrySelectedOperationRefresh()" [nzLoading]="selectedLoading" [disabled]="selectedLoading">Retry status</button>
+      </div>
       <div class="bg-ops__detail-actions">
-        <button nz-button nzType="primary" *ngIf="canApprove(op)" (click)="approve(op)">Approve</button>
-        <button nz-button *ngIf="canRun(op)" (click)="run(op)">Run safe worker</button>
+        <button nz-button nzType="primary" type="button" *ngIf="canApprove(op)" [nzLoading]="isPending(op)" [disabled]="loading || isPending(op)" (click)="approve(op)">Approve</button>
+        <button nz-button nzType="default" type="button" *ngIf="canRun(op)" [nzLoading]="isPending(op)" [disabled]="loading || isPending(op)" (click)="run(op)">Run safe work</button>
       </div>
       <h3 class="bg-ops__audit-title">Audit trail</h3>
-      <nz-timeline>
+      <div *ngIf="eventsLoading" class="bg-ops__audit-state" role="status" aria-live="polite">Loading the audit trail.</div>
+      <div *ngIf="eventsLoadError" class="bg-ops__audit-state bg-ops__audit-state--error" role="alert">
+        <strong *ngIf="eventsFailure?.statusLabel">{{ eventsFailure.statusLabel }}</strong>
+        <span>{{ eventsLoadError }}</span>
+        <span *ngIf="eventsFailure?.recovery" class="bg-ops__failure-recovery">Next step: {{ eventsFailure.recovery }}</span>
+        <button nz-button nzType="default" nzSize="small" type="button" (click)="retrySelectedEvents()" [nzLoading]="eventsLoading" [disabled]="eventsLoading">Retry</button>
+      </div>
+      <nz-timeline *ngIf="!eventsLoading && !eventsLoadError">
         <nz-timeline-item *ngFor="let event of selectedEvents">
-          <strong>{{ event.eventType }}</strong>
-          <span *ngIf="event.beforeStatus || event.afterStatus"> &middot; {{ event.beforeStatus || 'None' }} to {{ event.afterStatus }}</span>
-          <div class="bg-ops__audit-msg">{{ event.message }}</div>
-          <div class="bg-ops__audit-actor">{{ event.actorType }} &middot; {{ event.createdAt | date: 'short' }}</div>
+          <strong>{{ titleCase(event.eventType) }}</strong>
+          <span *ngIf="event.beforeStatus || event.afterStatus"> · {{ event.beforeStatus || 'None' }} to {{ event.afterStatus }}</span>
+          <div class="bg-ops__audit-msg">{{ safeDiagnosticText(event.message) }}</div>
+          <div class="bg-ops__audit-actor">{{ titleCase(event.actorType) }} · {{ event.createdAt | date: 'short' }}</div>
         </nz-timeline-item>
       </nz-timeline>
-      <nz-empty *ngIf="!selectedEvents.length" nzNotFoundContent="No events recorded"></nz-empty>
+      <nz-empty *ngIf="!eventsLoading && !eventsLoadError && !selectedEvents.length" nzNotFoundContent="No events recorded"></nz-empty>
     </div>
   </ng-container>
 </nz-drawer>
+
+<nz-modal
+  [nzVisible]="sourceApprovalReviewVisible"
+  nzTitle="Review source-derived operation"
+  [nzWidth]="720"
+  [nzOkText]="'Confirm approval'"
+  [nzOkLoading]="sourceApprovalReviewConfirming"
+  [nzOkDisabled]="!sourceApprovalReview || !!sourceApprovalReviewError || sourceApprovalReviewLoading || sourceApprovalReviewConfirming"
+  [nzCancelDisabled]="sourceApprovalReviewLoading || sourceApprovalReviewConfirming"
+  [nzMaskClosable]="false"
+  [nzKeyboard]="!sourceApprovalReviewLoading && !sourceApprovalReviewConfirming"
+  (nzOnCancel)="closeSourceApprovalReview()"
+  (nzOnOk)="confirmSourceApprovalReview()">
+  <ng-container *nzModalContent>
+    <div class="bg-ops__approval-review" aria-live="polite">
+      <p class="bg-ops__approval-review-intro">Review the exact source-derived operation below. Approval records permission; it does not execute the work.</p>
+
+      <div *ngIf="sourceApprovalReviewLoading" class="bg-ops__audit-state" role="status">
+        <span nz-icon nzType="loading" aria-hidden="true"></span>
+        <span>Loading the current operation and evidence…</span>
+      </div>
+
+      <div *ngIf="sourceApprovalReviewError" class="bg-ops__approval-review-error" role="alert">
+        <strong>Approval is unavailable</strong>
+        <p>{{ sourceApprovalReviewError }}</p>
+        <button nz-button nzType="default" type="button" (click)="retrySourceApprovalReview()"
+          [nzLoading]="sourceApprovalReviewLoading"
+          [disabled]="sourceApprovalReviewLoading || sourceApprovalReviewConfirming">Load preview again</button>
+      </div>
+
+      <ng-container *ngIf="sourceApprovalReview as review">
+        <div class="bg-ops__approval-review-heading">
+          <h2>{{ review.operation.title }}</h2>
+          <nz-tag [nzColor]="riskColor(review.operation.riskLevel)">{{ riskLabel(review.operation.riskLevel) }}</nz-tag>
+        </div>
+
+        <section aria-labelledby="source-approval-action-title" class="bg-ops__approval-review-section">
+          <h3 id="source-approval-action-title">Proposed action and summary</h3>
+          <dl class="bg-ops__approval-review-meta">
+            <div><dt>Action</dt><dd>{{ review.operation.recommendedAction || decisionLabel(review.operation.currentDecision) }}</dd></div>
+            <div><dt>Operation</dt><dd>{{ review.operation.operationType }}</dd></div>
+            <div><dt>Owner</dt><dd>{{ ownerLabel(review.operation.ownerType) }}</dd></div>
+            <div><dt>Autonomy</dt><dd>{{ titleCase(review.operation.autonomyLevel) }}</dd></div>
+          </dl>
+          <p class="bg-ops__approval-review-summary">{{ review.operation.description || review.operation.resultSummary || 'No additional summary was recorded.' }}</p>
+        </section>
+
+        <section aria-labelledby="source-approval-source-title" class="bg-ops__approval-review-section">
+          <h3 id="source-approval-source-title">Source identity</h3>
+          <dl class="bg-ops__approval-review-meta">
+            <div><dt>Type</dt><dd>{{ review.operation.sourceType || 'Unknown' }}</dd></div>
+            <div *ngIf="sourceApprovalField(review.operation, 'sourceProvider') as provider"><dt>Provider</dt><dd>{{ provider }}</dd></div>
+            <div *ngIf="sourceApprovalField(review.operation, 'sourceAccount') as account"><dt>Account</dt><dd>{{ account }}</dd></div>
+            <div *ngIf="sourceApprovalField(review.operation, 'sourceExternalId') as externalId"><dt>External ID</dt><dd>{{ externalId }}</dd></div>
+            <div *ngIf="sourceApprovalField(review.operation, 'sourceId') as sourceId"><dt>Source ID</dt><dd>{{ sourceId }}</dd></div>
+            <div *ngIf="sourceApprovalField(review.operation, 'sourceUri') as sourceUri"><dt>Source reference</dt><dd>{{ sourceUri }}</dd></div>
+            <div *ngIf="sourceApprovalField(review.operation, 'sourceObservationId') as observationId"><dt>Observation</dt><dd>{{ observationId }}</dd></div>
+            <div *ngIf="sourceApprovalField(review.operation, 'sourceRevisionHash') as sourceRevision"><dt>Source revision</dt><dd>{{ sourceRevision }}</dd></div>
+            <div *ngIf="sourceApprovalField(review.operation, 'sourceIdentityHash') as identityHash"><dt>Source identity hash</dt><dd>{{ identityHash }}</dd></div>
+          </dl>
+          <div *ngIf="sourceApprovalEvidence(review.operation) as evidence" class="bg-ops__approval-evidence">
+            <h4>Available evidence</h4>
+            <pre>{{ evidence }}</pre>
+          </div>
+          <p *ngIf="!sourceApprovalEvidence(review.operation)" class="bg-ops__approval-review-muted">No evidence payload is attached to this operation.</p>
+        </section>
+
+        <div class="bg-ops__approval-revision">
+          <span>Reviewed operation revision {{ review.revision.version }}</span>
+          <code>{{ review.revision.revisionDigest }}</code>
+        </div>
+      </ng-container>
+    </div>
+  </ng-container>
+</nz-modal>

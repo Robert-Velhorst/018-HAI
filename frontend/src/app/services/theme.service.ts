@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core'
+import { BehaviorSubject } from 'rxjs'
 
 export type ThemeMode = 'light' | 'dark'
 
@@ -9,9 +10,12 @@ export class ThemeService {
   private readonly storageKey = 'hai-theme-mode'
   private readonly legacyStorageKey = 'hai-control-center-theme'
   private currentMode: ThemeMode = 'dark'
+  private readonly modeSubject = new BehaviorSubject<ThemeMode>(this.currentMode)
+  readonly changes$ = this.modeSubject.asObservable()
 
   constructor() {
     this.currentMode = this.load()
+    this.modeSubject.next(this.currentMode)
     this.apply(this.currentMode)
   }
 
@@ -21,6 +25,7 @@ export class ThemeService {
 
   setMode(mode: ThemeMode): ThemeMode {
     this.currentMode = mode
+    this.modeSubject.next(mode)
     this.persist(mode)
     this.apply(mode)
     return mode

@@ -21,12 +21,16 @@
     <button nz-button type="button" (click)="refresh()">Retry</button>
   </div>
   <div class="loading-state" *ngIf="loading" role="status"><nz-spin nzSimple></nz-spin><span>Loading authoritative team contracts</span></div>
+  <div class="source-error" *ngIf="detailError" role="alert">
+    <i nz-icon nzType="warning"></i><div><strong>Team detail unavailable</strong><span>{{ detailError }}</span></div>
+    <button nz-button type="button" (click)="retryFailedSection()" [disabled]="detailLoading">Retry detail</button>
+  </div>
 
   <ng-container *ngIf="!loading && !errorMessage">
     <section class="metric-strip" aria-label="Agent team summary">
       <button type="button" (click)="refresh()"><span>Active</span><strong>{{ activeCount }}</strong><small>coordinating</small></button>
       <button type="button" (click)="refresh()"><span>Draft</span><strong>{{ draftCount }}</strong><small>not activated</small></button>
-      <button type="button" (click)="loadSection('decisions', true)"><span>Needs review</span><strong>{{ reviewCount }}</strong><small>human decisions</small></button>
+      <button type="button" (click)="focusAttentionQueue()"><span>Attention</span><strong>{{ pendingAttentionCount }}</strong><small>review / acknowledgment</small></button>
     </section>
 
     <section class="teams-workspace" *ngIf="selected as team; else emptyState">
@@ -39,7 +43,7 @@
         </button>
       </aside>
 
-      <main class="team-focus">
+      <section class="team-focus">
         <header class="focus-heading">
           <div><span class="status-label" [attr.data-status]="team.status">{{ statusLabel(team.status) }}</span><h2>{{ team.name }}</h2><p>{{ team.purpose }}</p></div>
           <button nz-button type="button" (click)="inspect()"><i nz-icon nzType="profile"></i> Inspect charter</button>
@@ -51,11 +55,36 @@
           <button nz-button nzType="primary" type="button" (click)="runNextAction()" [disabled]="saving || (nextAction.action !== 'decisions' && nextAction.action !== 'decision' && !canGovern)">{{ nextAction.label }}</button>
         </section>
 
+        <section #attentionQueue id="team-attention-queue" class="attention-queue" aria-labelledby="team-attention-heading">
+          <header><div><h3 id="team-attention-heading">Needs your attention</h3><p>Approvals and acknowledgments stay here in the Basic view.</p></div><span>{{ pendingAttentionCount }}</span></header>
+          <div class="attention-status" *ngIf="attentionLoading" role="status"><nz-spin nzSimple></nz-spin><span>Refreshing the decision queue</span></div>
+          <div class="attention-status attention-status--error" *ngIf="attentionError" role="alert"><span>{{ attentionError }}</span><button nz-button type="button" (click)="focusAttentionQueue()" [disabled]="attentionLoading">Retry</button></div>
+          <div class="attention-list" *ngIf="basicAttentionItems.length">
+            <article *ngFor="let item of basicAttentionItems | slice:0:5; trackBy: trackById" [attr.data-state]="item.state">
+              <div><strong>{{ item.subject }}</strong><span>{{ statusLabel(item.state) }} | {{ item.reason }}</span><small>Expires {{ item.expiresAt | date:'short' }}</small></div>
+              <div class="record-actions" *ngIf="canAcknowledge(item) && canOperate"><button nz-button nzSize="small" type="button" (click)="acknowledge(item, 'accepted')" [disabled]="saving || attentionLoading">Accept</button><button nz-button nzSize="small" type="button" (click)="acknowledge(item, 'deferred')" [disabled]="saving || attentionLoading">Defer</button><button nz-button nzSize="small" nzDanger type="button" (click)="acknowledge(item, 'rejected')" [disabled]="saving || attentionLoading">Reject</button></div>
+              <small *ngIf="canAcknowledge(item) && !canOperate">Your current role cannot acknowledge this message.</small>
+            </article>
+          </div>
+          <button
+            *ngIf="pendingAttentionCount > 5"
+            class="attention-view-all"
+            nz-button
+            type="button"
+            aria-controls="agent-team-decisions"
+            [attr.aria-label]="'View all ' + pendingAttentionCount + ' pending items, including acknowledgments and human decisions'"
+            (click)="viewAllAttention()"
+          >
+            View all {{ pendingAttentionCount }} pending items
+          </button>
+          <div class="attention-empty" *ngIf="!attentionLoading && !attentionError && !basicAttentionItems.length">No pending acknowledgment or human decision for this team.</div>
+        </section>
+
         <section class="team-facts">
           <div><span>Members</span><strong>{{ activeMembers.length }} / {{ team.consensus.quorum }}</strong><small>active / quorum</small></div>
-          <div><span>Consensus</span><strong>{{ statusLabel(team.consensus.mode) }}</strong><small>{{ team.consensus.minimumSupport }} support required</small></div>
-          <div><span>Risk ceiling</span><strong>{{ statusLabel(team.riskCeiling) }}</strong><small>authority level {{ team.authorityCeiling }}</small></div>
-          <div><span>Updated</span><strong>{{ team.updatedAt | date:'short' }}</strong><small>revision {{ team.revision }}</small></div>
+          <div><span>Needs review</span><strong>{{ reviewCount }}</strong><small>human decisions</small></div>
+          <div><span>Team state</span><strong>{{ statusLabel(team.status) }}</strong><small>updated {{ team.updatedAt | date:'short' }}</small></div>
+          <div><span>Authority</span><strong>Advisory only</strong><small>execution authorization remains separate</small></div>
         </section>
 
         <div class="lifecycle-actions" *ngIf="canGovern">
@@ -65,7 +94,7 @@
           <button nz-button nzDanger type="button" *ngIf="team.status !== 'revoked' && team.status !== 'retired'" (click)="transition('revoke')" [disabled]="saving">Revoke</button>
         </div>
 
-        <hai-progressive-section #membersSection [moduleId]="moduleId" sectionId="members" title="Members and capabilities" summary="Identity, role, authority ceiling, evidence, and membership lifecycle." [advancedOnly]="false" (openChange)="loadSection('members', $event)">
+        <hai-progressive-section #membersSection [moduleId]="moduleId" sectionId="members" title="Members and capabilities" summary="Identity, role, authority ceiling, evidence, and membership lifecycle." [advancedOnly]="true" (openChange)="loadSection('members', $event)">
           <div class="section-toolbar"><div><strong>{{ activeMembers.length }} active member{{ activeMembers.length === 1 ? '' : 's' }}</strong><span>Each member inherits the lower of role and team authority.</span></div><button nz-button type="button" (click)="memberFormOpen = !memberFormOpen" [disabled]="!canGovern"><i nz-icon nzType="user-add"></i> Add member</button></div>
           <form class="inline-form" *ngIf="memberFormOpen" (ngSubmit)="addMember()">
             <label><span>Agent ID</span><input name="agentId" [(ngModel)]="memberForm.agentId" required placeholder="research-agent"></label>
@@ -85,7 +114,17 @@
           <ng-template #noMembers><div class="calm-empty"><i nz-icon nzType="usergroup-add"></i><div><strong>No members yet</strong><span>Add enough governed members to satisfy the quorum before activation.</span></div></div></ng-template>
         </hai-progressive-section>
 
-        <hai-progressive-section #decisionsSection [moduleId]="moduleId" sectionId="decisions" title="Decisions and acknowledgments" summary="Canonical advisory messages, evidence, and human review state." [advancedOnly]="false" (openChange)="loadSection('decisions', $event)">
+        <hai-progressive-section #decisionsSection id="agent-team-decisions" [moduleId]="moduleId" sectionId="decisions" title="Decision records and message evidence" summary="Canonical advisory messages, evidence, and complete recipient review history." [advancedOnly]="true" (openChange)="loadSection('decisions', $event)">
+          <section class="attention-queue" *ngIf="basicAttentionItems.length" aria-labelledby="team-complete-attention-heading">
+            <header><div><h3 id="team-complete-attention-heading">Complete pending review queue</h3><p>All {{ pendingAttentionCount }} pending acknowledgments and human decisions. Existing role and approval limits still apply.</p></div><span>{{ pendingAttentionCount }}</span></header>
+            <div class="attention-list decision-attention-list">
+              <article *ngFor="let item of basicAttentionItems; trackBy: trackById" [attr.data-state]="item.state">
+                <div><strong>{{ item.subject }}</strong><span>{{ statusLabel(item.state) }} | {{ item.reason }}</span><small>Expires {{ item.expiresAt | date:'short' }}</small></div>
+                <div class="record-actions" *ngIf="canAcknowledge(item) && canOperate"><button nz-button nzSize="small" type="button" (click)="acknowledge(item, 'accepted')" [disabled]="saving || attentionLoading">Accept</button><button nz-button nzSize="small" type="button" (click)="acknowledge(item, 'deferred')" [disabled]="saving || attentionLoading">Defer</button><button nz-button nzSize="small" nzDanger type="button" (click)="acknowledge(item, 'rejected')" [disabled]="saving || attentionLoading">Reject</button></div>
+                <small *ngIf="canAcknowledge(item) && !canOperate">Your current role cannot acknowledge this message.</small>
+              </article>
+            </div>
+          </section>
           <div class="section-toolbar"><div><strong>{{ messages.length }} recorded decision{{ messages.length === 1 ? '' : 's' }}</strong><span>{{ reviewCount }} currently require human review.</span></div><button nz-button type="button" (click)="decisionFormOpen = !decisionFormOpen; prepareDecision()" [disabled]="!canOperate || votingMembers.length < 2"><i nz-icon nzType="message"></i> Record decision</button></div>
           <form class="inline-form" *ngIf="decisionFormOpen" (ngSubmit)="createDecision()">
             <label><span>Voting sender</span><select name="sender" [(ngModel)]="decisionForm.senderMembershipId" required><option *ngFor="let member of votingMembers" [value]="member.id">{{ member.agentId }}</option></select></label>
@@ -98,27 +137,21 @@
             <label class="check"><input type="checkbox" name="requiresAck" [(ngModel)]="decisionForm.requiresAcknowledgment"><span>Require acknowledgment</span></label>
             <div class="form-actions"><button nz-button type="button" (click)="decisionFormOpen = false">Cancel</button><button nz-button nzType="primary" type="submit" [nzLoading]="saving">Record canonical message</button></div>
           </form>
-          <div class="attention-list" *ngIf="attention.length">
-            <article *ngFor="let item of attention; trackBy: trackById" [attr.data-state]="item.state">
-              <div><strong>{{ item.subject }}</strong><span>{{ statusLabel(item.state) }} | {{ item.reason }}</span><small>Expires {{ item.expiresAt | date:'short' }}</small></div>
-              <div class="record-actions" *ngIf="canAcknowledge(item) && canOperate"><button nz-button nzSize="small" type="button" (click)="acknowledge(item, 'accepted')">Accept</button><button nz-button nzSize="small" type="button" (click)="acknowledge(item, 'deferred')">Defer</button><button nz-button nzSize="small" nzDanger type="button" (click)="acknowledge(item, 'rejected')">Reject</button></div>
-            </article>
-          </div>
           <div class="message-list" *ngIf="messages.length; else noMessages"><article *ngFor="let message of messages; trackBy: trackById"><span [attr.data-vote]="message.payload.data && $any(message.payload.data).position">{{ statusLabel($any(message.payload.data)?.position || message.type) }}</span><div><strong>{{ message.payload.subject }}</strong><small>{{ message.sender.id }} to {{ message.recipient.id }} | {{ message.createdAt | date:'short' }}</small></div><code [title]="message.payloadDigest">{{ shortDigest(message.payloadDigest) }}</code></article></div>
           <ng-template #noMessages><div class="calm-empty"><i nz-icon nzType="message"></i><div><strong>No deliberation recorded</strong><span>At least two active voting members are required to exchange a decision.</span></div></div></ng-template>
         </hai-progressive-section>
 
-        <hai-progressive-section #consensusSection [moduleId]="moduleId" sectionId="consensus" title="Consensus outcomes" summary="Deterministic interpretation of a correlation's recorded votes and conflicts." [advancedOnly]="false" (openChange)="loadSection('consensus', $event)">
+        <hai-progressive-section #consensusSection [moduleId]="moduleId" sectionId="consensus" title="Consensus outcomes" summary="Deterministic interpretation of a correlation's recorded votes and conflicts." [advancedOnly]="true" (openChange)="loadSection('consensus', $event)">
           <form class="consensus-form" (ngSubmit)="recordConsensus()"><label><span>Correlation ID</span><input name="consensusCorrelation" [(ngModel)]="consensusForm.correlationId" required></label><label><span>Issue</span><input name="consensusIssue" [(ngModel)]="consensusForm.issue" required></label><button nz-button nzType="primary" type="submit" [nzLoading]="saving" [disabled]="!canGovern">Evaluate consensus</button></form>
           <div class="outcome-list" *ngIf="outcomes.length; else noOutcomes"><article *ngFor="let outcome of outcomes; trackBy: trackById"><header><span [attr.data-status]="outcome.status">{{ statusLabel(outcome.status) }}</span><time>{{ outcome.recordedAt | date:'short' }}</time></header><h3>{{ outcome.issue }}</h3><p>{{ outcome.recommendation || 'No recommendation reached.' }}</p><dl><div><dt>Support</dt><dd>{{ outcome.supportCount }}</dd></div><div><dt>Oppose</dt><dd>{{ outcome.opposeCount }}</dd></div><div><dt>Abstain</dt><dd>{{ outcome.abstainCount }}</dd></div></dl></article></div>
           <ng-template #noOutcomes><div class="calm-empty"><i nz-icon nzType="audit"></i><div><strong>No consensus outcome yet</strong><span>Record votes under one correlation, then evaluate the charter's deterministic policy.</span></div></div></ng-template>
         </hai-progressive-section>
 
-        <hai-progressive-section [moduleId]="moduleId" sectionId="history" title="Lifecycle and audit chain" summary="Immutable, hash-linked changes to the team charter and membership." (openChange)="loadSection('history', $event)">
+        <hai-progressive-section [moduleId]="moduleId" sectionId="history" title="Lifecycle and audit chain" summary="Immutable, hash-linked changes to the team charter and membership." [advancedOnly]="true" (openChange)="loadSection('history', $event)">
           <div class="event-list" *ngIf="events.length; else noEvents"><article *ngFor="let event of events; trackBy: trackById"><span>{{ event.sequence }}</span><div><strong>{{ statusLabel(event.type) }}</strong><small>{{ event.reason }} | {{ event.actor }} | {{ event.occurredAt | date:'medium' }}</small></div><code [title]="event.eventDigest">{{ shortDigest(event.eventDigest) }}</code></article></div>
           <ng-template #noEvents><div class="calm-empty"><i nz-icon nzType="history"></i><div><strong>No lifecycle events returned</strong><span>The registry has not returned an audit event for this version.</span></div></div></ng-template>
         </hai-progressive-section>
-      </main>
+      </section>
     </section>
 
     <ng-template #emptyState><section class="empty-state"><span><i nz-icon nzType="team"></i></span><h2>No advisory team exists</h2><p>Create a bounded charter before agents exchange decisions. A team never grants permission to execute tools or external actions.</p><button nz-button nzType="primary" type="button" (click)="openCreate()" [disabled]="!canGovern">Create advisory team</button></section></ng-template>
@@ -129,4 +162,17 @@
   <form class="drawer-form" (ngSubmit)="createTeam()"><p>HAI expands this bounded charter into canonical roles, capabilities, coordination rules, provenance, and safety invariants.</p><label><span>Name</span><input name="teamName" [(ngModel)]="createForm.name" required maxlength="160"></label><label><span>Stable key</span><input name="teamKey" [(ngModel)]="createForm.key" required pattern="[a-z0-9-]+" placeholder="evidence-review"></label><label><span>Version</span><input name="teamVersion" [(ngModel)]="createForm.version" required></label><label><span>Purpose</span><textarea name="teamPurpose" [(ngModel)]="createForm.purpose" rows="4" required></textarea></label><div class="drawer-grid"><label><span>Consensus</span><select name="consensusMode" [(ngModel)]="createForm.consensusMode"><option value="majority">Majority</option><option value="quorum">Quorum</option><option value="unanimous">Unanimous</option></select></label><label><span>Quorum</span><input type="number" name="quorum" [(ngModel)]="createForm.quorum" min="2"></label><label><span>Minimum support</span><input type="number" name="support" [(ngModel)]="createForm.minimumSupport" min="1"></label><label><span>Authority ceiling</span><select name="authority" [(ngModel)]="createForm.authorityCeiling"><option [ngValue]="1">1 - analysis</option><option [ngValue]="2">2 - review</option></select></label></div><label><span>Evidence references, one per line</span><textarea name="teamEvidence" [(ngModel)]="createForm.evidenceRefs" rows="3" required></textarea></label><label class="check"><input type="checkbox" name="abstention" [(ngModel)]="createForm.allowAbstention"><span>Allow abstention</span></label><div class="drawer-actions"><button nz-button type="button" (click)="createOpen = false">Cancel</button><button nz-button nzType="primary" type="submit" [nzLoading]="saving">Create draft charter</button></div></form>
 </ng-container></nz-drawer>
 
-<nz-drawer [nzVisible]="inspectorOpen" [nzWidth]="'min(600px, 100vw)'" [nzTitle]="selected?.name || 'Team charter'" (nzOnClose)="inspectorOpen = false"><ng-container *nzDrawerContent><div class="inspector" *ngIf="selected as team"><div class="inspector-boundary"><i nz-icon nzType="safety-certificate"></i><div><strong>Advisory only</strong><span>Execution authority: not granted</span></div></div><dl><div><dt>Status</dt><dd>{{ statusLabel(team.status) }}</dd></div><div><dt>Contract</dt><dd>{{ team.key }} v{{ team.version }} r{{ team.revision }}</dd></div><div><dt>Risk ceiling</dt><dd>{{ team.riskCeiling }}</dd></div><div><dt>Authority ceiling</dt><dd>{{ team.authorityCeiling }}</dd></div><div><dt>Consensus</dt><dd>{{ team.consensus.mode }} | quorum {{ team.consensus.quorum }}</dd></div><div><dt>Evidence</dt><dd>{{ team.evidenceRefs.length }} reference(s)</dd></div></dl><section><h3>Purpose</h3><p>{{ team.purpose }}</p></section><section><h3>Contract digest</h3><code>{{ team.contractDigest }}</code></section><section><h3>Provenance</h3><p>{{ team.provenance.source }} | {{ team.provenance.registeredBy }} | {{ team.provenance.registeredAt | date:'medium' }}</p><code>{{ team.provenance.evidenceDigest }}</code></section><section class="danger-zone" *ngIf="canGovern && team.status !== 'revoked' && team.status !== 'retired'"><h3>Danger area</h3><p>Revocation is an auditable terminal restriction for this team version.</p><button nz-button nzDanger type="button" (click)="transition('revoke')">Revoke team</button></section></div></ng-container></nz-drawer>
+<nz-drawer [nzVisible]="inspectorOpen" [nzWidth]="'min(600px, 100vw)'" [nzTitle]="selected?.name || 'Team charter'" (nzOnClose)="inspectorOpen = false">
+  <ng-container *nzDrawerContent>
+    <div class="inspector" *ngIf="selected as team">
+      <div class="inspector-boundary"><i nz-icon nzType="safety-certificate"></i><div><strong>Advisory only</strong><span>Execution authority: not granted</span></div></div>
+      <section><h3>Purpose</h3><p>{{ team.purpose }}</p></section>
+      <section class="danger-zone" *ngIf="canGovern && team.status !== 'revoked' && team.status !== 'retired'"><h3>Danger area</h3><p>Revocation is an auditable terminal restriction for this team version.</p><button nz-button nzDanger type="button" (click)="transition('revoke')">Revoke team</button></section>
+      <hai-progressive-section [moduleId]="moduleId" sectionId="charter-record" title="Charter, authority, and provenance" summary="Exact revision, risk and authority ceilings, quorum, evidence references, and source digests." [advancedOnly]="true">
+        <dl><div><dt>Status</dt><dd>{{ statusLabel(team.status) }}</dd></div><div><dt>Contract</dt><dd>{{ team.key }} v{{ team.version }} r{{ team.revision }}</dd></div><div><dt>Risk ceiling</dt><dd>{{ team.riskCeiling }}</dd></div><div><dt>Authority ceiling</dt><dd>{{ team.authorityCeiling }}</dd></div><div><dt>Consensus</dt><dd>{{ team.consensus.mode }} | quorum {{ team.consensus.quorum }}</dd></div><div><dt>Evidence</dt><dd>{{ team.evidenceRefs.length }} reference(s)</dd></div></dl>
+        <section><h3>Contract digest</h3><code>{{ team.contractDigest }}</code></section>
+        <section><h3>Provenance</h3><p>{{ team.provenance.source }} | {{ team.provenance.registeredBy }} | {{ team.provenance.registeredAt | date:'medium' }}</p><code>{{ team.provenance.evidenceDigest }}</code></section>
+      </hai-progressive-section>
+    </div>
+  </ng-container>
+</nz-drawer>

@@ -47,7 +47,12 @@ func (r *PostgresRepository) AppendEntity(ctx context.Context, entity Entity) (E
 	if err != nil {
 		return Entity{}, err
 	}
-	result := r.DB.WithContext(ctx).Exec(`
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Entity{}, err
+	}
+	defer finish()
+	result := db.Exec(`
 		INSERT INTO public.life_ontology_entities (
 			owner_identity, entity_id, entity_type, life_domain,
 			lifecycle_status, verification_status, sensitivity, local_only,
@@ -66,7 +71,7 @@ func (r *PostgresRepository) AppendEntity(ctx context.Context, entity Entity) (E
 	if result.RowsAffected == 1 {
 		return cloneEntity(entity), nil
 	}
-	existing, err := r.GetEntity(ctx, entity.OwnerIdentity, entity.ID)
+	existing, err := getEntityFromPostgres(db, entity.OwnerIdentity, entity.ID)
 	if err != nil {
 		return Entity{}, fmt.Errorf("resolve life ontology entity duplicate: %w", err)
 	}
@@ -84,8 +89,21 @@ func (r *PostgresRepository) GetEntity(ctx context.Context, owner, id string) (E
 	if err := r.ready(); err != nil {
 		return Entity{}, err
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Entity{}, err
+	}
+	defer finish()
+	return getEntityFromPostgres(db, owner, id)
+}
+
+func getEntityFromPostgres(db *gorm.DB, owner, id string) (Entity, error) {
+	owner, err := normalizePostgresOwner(owner)
+	if err != nil {
+		return Entity{}, err
+	}
 	var row postgresEntityRow
-	query := r.DB.WithContext(ctx).Raw(`
+	query := db.Raw(`
 		SELECT owner_identity, entity_id, entity_type, life_domain,
 			lifecycle_status, verification_status, sensitivity, local_only,
 			priority, entity_digest, provenance_digest, valid_from,
@@ -109,8 +127,13 @@ func (r *PostgresRepository) ListEntities(ctx context.Context, owner string) ([]
 	if err := r.ready(); err != nil {
 		return nil, err
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
 	var rows []postgresEntityRow
-	if err := r.DB.WithContext(ctx).Raw(`
+	if err := db.Raw(`
 		SELECT owner_identity, entity_id, entity_type, life_domain,
 			lifecycle_status, verification_status, sensitivity, local_only,
 			priority, entity_digest, provenance_digest, valid_from,
@@ -142,7 +165,12 @@ func (r *PostgresRepository) AppendRelation(ctx context.Context, relation Relati
 	if err != nil {
 		return Relation{}, err
 	}
-	result := r.DB.WithContext(ctx).Exec(`
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Relation{}, err
+	}
+	defer finish()
+	result := db.Exec(`
 		INSERT INTO public.life_ontology_relations (
 			owner_identity, relation_id, relation_type, from_entity_id,
 			to_entity_id, verification_status, sensitivity, local_only,
@@ -161,7 +189,7 @@ func (r *PostgresRepository) AppendRelation(ctx context.Context, relation Relati
 	if result.RowsAffected == 1 {
 		return cloneRelation(relation), nil
 	}
-	existing, err := r.GetRelation(ctx, relation.OwnerIdentity, relation.ID)
+	existing, err := getRelationFromPostgres(db, relation.OwnerIdentity, relation.ID)
 	if err != nil {
 		return Relation{}, fmt.Errorf("resolve life ontology relation duplicate: %w", err)
 	}
@@ -179,8 +207,21 @@ func (r *PostgresRepository) GetRelation(ctx context.Context, owner, id string) 
 	if err := r.ready(); err != nil {
 		return Relation{}, err
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Relation{}, err
+	}
+	defer finish()
+	return getRelationFromPostgres(db, owner, id)
+}
+
+func getRelationFromPostgres(db *gorm.DB, owner, id string) (Relation, error) {
+	owner, err := normalizePostgresOwner(owner)
+	if err != nil {
+		return Relation{}, err
+	}
 	var row postgresRelationRow
-	query := r.DB.WithContext(ctx).Raw(`
+	query := db.Raw(`
 		SELECT owner_identity, relation_id, relation_type, from_entity_id,
 			to_entity_id, verification_status, sensitivity, local_only,
 			relation_digest, provenance_digest, valid_from, valid_until,
@@ -237,7 +278,12 @@ func (r *PostgresRepository) AppendMergeProposal(ctx context.Context, proposal M
 	if err != nil {
 		return MergeProposal{}, err
 	}
-	result := r.DB.WithContext(ctx).Exec(`
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return MergeProposal{}, err
+	}
+	defer finish()
+	result := db.Exec(`
 		INSERT INTO public.life_ontology_merge_proposals (
 			owner_identity, proposal_id, candidate_left_id, candidate_right_id,
 			match_type, proposal_status, confidence, proposal_digest,
@@ -254,7 +300,7 @@ func (r *PostgresRepository) AppendMergeProposal(ctx context.Context, proposal M
 	if result.RowsAffected == 1 {
 		return cloneProposal(proposal), nil
 	}
-	existing, err := r.getMergeProposal(ctx, proposal.OwnerIdentity, proposal.ID)
+	existing, err := getMergeProposalFromPostgres(db, proposal.OwnerIdentity, proposal.ID)
 	if err != nil {
 		return MergeProposal{}, fmt.Errorf("resolve life ontology merge proposal duplicate: %w", err)
 	}
@@ -309,8 +355,16 @@ func (r *PostgresRepository) getMergeProposal(ctx context.Context, owner, id str
 	if err := r.ready(); err != nil {
 		return MergeProposal{}, err
 	}
+	return getMergeProposalFromPostgres(r.DB.WithContext(ctx), owner, id)
+}
+
+func getMergeProposalFromPostgres(db *gorm.DB, owner, id string) (MergeProposal, error) {
+	owner, err := normalizePostgresOwner(owner)
+	if err != nil {
+		return MergeProposal{}, err
+	}
 	var row postgresMergeProposalRow
-	query := r.DB.WithContext(ctx).Raw(`
+	query := db.Raw(`
 		SELECT owner_identity, proposal_id, candidate_left_id,
 			candidate_right_id, match_type, proposal_status, confidence,
 			proposal_digest, created_at, payload::text AS payload

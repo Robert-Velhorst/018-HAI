@@ -1330,6 +1330,7 @@ export class FrameworkRegistryService {
       'refreshtoken',
       'authorization',
       'cookie',
+      'setcookie',
       'clientsecret',
       'privatekey',
       'token',
@@ -1344,6 +1345,14 @@ export class FrameworkRegistryService {
 
   private redactSensitiveText(value: string): string {
     return value
+      .replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/gi,
+        '[redacted]'
+      )
+      .replace(
+        /(^|[ \t])((?:cookie|set-cookie)\s*[:=]\s*)[^\r\n]*/gim,
+        '$1$2[redacted]'
+      )
       .replace(
         /(\bAuthorization\b\s*:\s*)(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
         '$1[redacted]'

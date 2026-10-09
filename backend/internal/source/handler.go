@@ -7,7 +7,9 @@ import (
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/whispercpp"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -71,6 +73,9 @@ func DefaultHandler() *Handler {
 }
 
 func (h *Handler) Connectors(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	connectors, err := h.service.Connectors()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "source connectors are unavailable")})
@@ -82,6 +87,9 @@ func (h *Handler) Connectors(c *gin.Context) {
 // StartGoogleOAuth returns the Google consent URL for a Google-backed source. The UI
 // opens the returned url so the user authorizes in their own browser.
 func (h *Handler) StartGoogleOAuth(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	sourceID, err := uuid.Parse(c.Query("sourceId"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "valid sourceId query parameter is required"})
@@ -110,14 +118,18 @@ func (h *Handler) StartGoogleOAuth(c *gin.Context) {
 // is protected by signed, expiring state. On success it returns the browser to
 // the connected-sources page.
 func (h *Handler) GoogleOAuthCallback(c *gin.Context) {
+	state := c.Query("state")
+	if !googleOAuthStateCookieMatches(c, state) {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	if _, err := verifyState(state); err != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
 	defer clearGoogleOAuthStateCookie(c)
 	if oauthErr := c.Query("error"); oauthErr != "" {
 		c.Redirect(http.StatusFound, "/connected-sources?oauth=denied")
-		return
-	}
-	state := c.Query("state")
-	if !googleOAuthStateCookieMatches(c, state) {
-		c.Redirect(http.StatusFound, "/connected-sources?oauth=error")
 		return
 	}
 	_, err := h.service.CompleteGoogleOAuth(c.Request.Context(), c.Query("code"), state)
@@ -158,12 +170,16 @@ func googleOAuthCookieSecure(c *gin.Context) bool {
 }
 
 func (h *Handler) CreateSource(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
 	var request CreateSourceRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "connected source request is invalid"})
 		return
 	}
-	request.OwnerIdentity = sourceOwner(c)
+	request.OwnerIdentity = owner
 	source, err := h.service.CreateSource(request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "connected source could not be created")})
@@ -173,16 +189,24 @@ func (h *Handler) CreateSource(c *gin.Context) {
 }
 
 func (h *Handler) Sources(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
 	includeDisabled, _ := strconv.ParseBool(c.Query("includeDisabled"))
-	sources, err := h.sourcesForOwner(sourceOwner(c), includeDisabled)
+	sources, err := h.sourcesForOwner(owner, includeDisabled)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "connected sources are unavailable")})
 		return
 	}
-	c.JSON(http.StatusOK, filterVisibleSources(sources, sourceOwner(c)))
+	c.JSON(http.StatusOK, filterVisibleSources(sources, owner))
 }
 
 func (h *Handler) SyncJobs(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
 	var sourceID *uuid.UUID
 	if raw := c.Query("sourceId"); raw != "" {
 		parsed, err := uuid.Parse(raw)
@@ -206,7 +230,7 @@ func (h *Handler) SyncJobs(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "connected source history is unavailable")})
 			return
 		}
-		c.JSON(http.StatusOK, jobs)
+		c.JSON(http.StatusOK, filterManualSyncJobsForOwner(jobs, owner))
 		return
 	}
 	jobs, err := h.recentSyncJobs([]uuid.UUID{*sourceID})
@@ -214,10 +238,122 @@ func (h *Handler) SyncJobs(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "connected source history is unavailable")})
 		return
 	}
-	c.JSON(http.StatusOK, jobs)
+	c.JSON(http.StatusOK, filterManualSyncJobsForOwner(jobs, owner))
+}
+
+func filterManualSyncJobsForOwner(jobs []models.SourceSyncJob, owner string) []models.SourceSyncJob {
+	visible := make([]models.SourceSyncJob, 0, len(jobs))
+	for _, job := range jobs {
+		if job.Mode == ModeManualAsyncSync && job.OwnerIdentity != owner {
+			continue
+		}
+		visible = append(visible, job)
+	}
+	return visible
+}
+
+// SubmitManualSync accepts manual source work into the durable queue. The
+// request context is intentionally not propagated to the worker: after the
+// atomic queue/history commit, a disconnected browser cannot cancel accepted
+// work.
+func (h *Handler) SubmitManualSync(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
+	sourceID, ok := parseUUID(c)
+	if !ok {
+		return
+	}
+	if !h.requireMutableSource(c, sourceID) {
+		return
+	}
+	key := c.GetHeader("Idempotency-Key")
+	var request ManualSyncRequest
+	if c.Request.Body != nil {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2048)
+		decoder := json.NewDecoder(c.Request.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil && !errors.Is(err, io.EOF) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "manual source sync request is invalid"})
+			return
+		}
+		var trailing any
+		if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "manual source sync request must contain one JSON object"})
+			return
+		}
+	}
+	submission, ok := h.service.(ManualSyncSubmissionService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "durable manual source sync is unavailable"})
+		return
+	}
+	view, created, err := submission.SubmitManualSync(owner, sourceID, key, request)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrManualSyncInvalidRequest):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "a valid Idempotency-Key and project key are required"})
+		case errors.Is(err, ErrManualSyncWorkerUnavailable):
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "durable sync is unavailable; the request was not queued"})
+		case errors.Is(err, ErrManualSyncIdempotencyConflict), errors.Is(err, ErrManualSyncAlreadyActive):
+			c.JSON(http.StatusConflict, gin.H{"error": apierror.PublicMessage(err, "manual source sync could not be queued")})
+		case errors.Is(err, ErrManualSyncSourceDisabled):
+			c.JSON(http.StatusConflict, gin.H{"error": "source is paused or unavailable; resume it before syncing"})
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "connected source not found"})
+		default:
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "manual source sync could not be queued; retry with the same Idempotency-Key"})
+		}
+		return
+	}
+	if view == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "manual source sync was not accepted"})
+		return
+	}
+	c.Header("Location", "/api/v1/sources/sync-jobs/"+view.ID)
+	c.Header("Retry-After", "3")
+	statusCode := http.StatusAccepted
+	if !created && view.Status != "queued" && view.Status != "running" {
+		statusCode = http.StatusOK
+	}
+	c.JSON(statusCode, view)
+}
+
+// ManualSyncJob returns status only when both the persisted job owner and its
+// currently connected source owner match the authenticated identity.
+func (h *Handler) ManualSyncJob(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil || id == uuid.Nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid sync job id"})
+		return
+	}
+	submission, ok := h.service.(ManualSyncSubmissionService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "durable manual source sync is unavailable"})
+		return
+	}
+	view, err := submission.ManualSyncJobForOwner(owner, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "sync job not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sync job status is unavailable"})
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, view)
 }
 
 func (h *Handler) ConnectionHealth(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -242,17 +378,21 @@ func (h *Handler) ConnectionHealth(c *gin.Context) {
 // authenticated owner. It is a local status derivation; it never probes or
 // synchronizes external accounts.
 func (h *Handler) ConnectionHealths(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
 	healthService, ok := h.service.(ConnectionHealthBatchService)
 	if !ok {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "connection health is not available"})
 		return
 	}
-	sources, err := h.sourcesForOwner(sourceOwner(c), true)
+	sources, err := h.sourcesForOwner(owner, true)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not load connected sources"})
 		return
 	}
-	health, err := healthService.ConnectionHealths(filterVisibleSources(sources, sourceOwner(c)))
+	health, err := healthService.ConnectionHealths(filterVisibleSources(sources, owner))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not derive connection health"})
 		return
@@ -261,6 +401,9 @@ func (h *Handler) ConnectionHealths(c *gin.Context) {
 }
 
 func (h *Handler) UpdateSource(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -282,6 +425,9 @@ func (h *Handler) UpdateSource(c *gin.Context) {
 }
 
 func (h *Handler) Sync(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -300,7 +446,33 @@ func (h *Handler) Sync(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "source sync is already in progress"})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "source sync could not be completed")})
+		if errors.Is(err, ErrInvalidSyncRequest) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid sync request"})
+			return
+		}
+		if errors.Is(err, ErrSourceSyncUnavailable) {
+			c.JSON(http.StatusConflict, gin.H{"error": "source is paused or disabled; resume it before syncing"})
+			return
+		}
+		if failure, recognized := classifySyncFailure(err); recognized {
+			if failure.retryAfter > 0 {
+				seconds := int64(failure.retryAfter / time.Second)
+				if failure.retryAfter%time.Second != 0 {
+					seconds++
+				}
+				c.Header("Retry-After", strconv.FormatInt(seconds, 10))
+			}
+			c.JSON(failure.statusCode, gin.H{
+				"error":     failure.message,
+				"retryable": failure.retryable,
+			})
+			return
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "connected source not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "source sync failed; inspect sync history for details"})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -312,6 +484,9 @@ func (h *Handler) Sync(c *gin.Context) {
 // configuration. The resulting text is persisted through the normal source
 // sync path, preserving existing provenance, review, workflow, and audit gates.
 func (h *Handler) Transcribe(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	if c.Request.ContentLength != 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "transcription uses the source's configured selected folder and accepts no caller-provided files, model, language, or audio"})
 		return
@@ -370,6 +545,9 @@ func (h *Handler) Transcribe(c *gin.Context) {
 // source. It accepts no browser supplied files, paths, models, or parser
 // options; the source's approved folder remains the sole input scope.
 func (h *Handler) ExtractDocuments(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	if c.Request.ContentLength != 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "document extraction uses the source's configured selected folder and accepts no caller-provided files, model, or parser options"})
 		return
@@ -425,6 +603,9 @@ func (h *Handler) ExtractDocuments(c *gin.Context) {
 }
 
 func (h *Handler) Reindex(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -445,15 +626,11 @@ func (h *Handler) Reindex(c *gin.Context) {
 }
 
 func (h *Handler) RunDueScheduledSyncs(c *gin.Context) {
-	ownerIdentity := sourceOwner(c)
-	if ownerIdentity == "" {
-		// The global scheduler is the only allowed ownerless source worker.
-		// An HTTP request must carry a verified identity so it cannot trigger a
-		// cross-owner refresh batch.
-		c.JSON(http.StatusForbidden, gin.H{"error": "scheduled source sync requires an authenticated owner"})
+	ownerIdentity, ok := requireSourceOwner(c)
+	if !ok {
 		return
 	}
-	result, err := h.service.RunDueScheduledSyncsForOwner(time.Now().UTC(), ownerIdentity)
+	result, err := runOwnerScheduledSyncsWithContext(c.Request.Context(), h.service, time.Now().UTC(), ownerIdentity)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "scheduled source sync could not be completed")})
 		return
@@ -462,6 +639,9 @@ func (h *Handler) RunDueScheduledSyncs(c *gin.Context) {
 }
 
 func (h *Handler) Pause(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -478,6 +658,9 @@ func (h *Handler) Pause(c *gin.Context) {
 }
 
 func (h *Handler) Resume(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -494,6 +677,9 @@ func (h *Handler) Resume(c *gin.Context) {
 }
 
 func (h *Handler) Revoke(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -519,43 +705,62 @@ func (h *Handler) Revoke(c *gin.Context) {
 }
 
 func (h *Handler) Search(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
 	var request SearchRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "connected source search request is invalid"})
 		return
 	}
-	request.OwnerIdentity = sourceOwner(c)
+	request.OwnerIdentity = owner
+	ownedSourceIDs, err := h.ownedSourceIDs(owner)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "connected-source access is unavailable")})
+		return
+	}
 	result, err := h.service.Search(request)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "connected source search is unavailable")})
 		return
 	}
+	if result == nil {
+		result = &SearchResult{Query: request.Query, ProjectKey: request.ProjectKey}
+	}
+	result.UsedContext = filterRankedExtractions(result.UsedContext, ownedSourceIDs)
+	result.Explanation = "Search results are restricted to sources owned by the authenticated account; unowned legacy and other-owner records are excluded."
 	c.JSON(http.StatusOK, result)
 }
 
 func (h *Handler) Extractions(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
 	includeArchived, _ := strconv.ParseBool(c.Query("includeArchived"))
 	limit, err := extractionPageLimit(c.Query("limit"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid extraction limit"})
 		return
 	}
-	if paged, ok := h.service.(ExtractionPageService); ok {
-		page, err := paged.ExtractionPageForOwner(sourceOwner(c), c.Query("projectKey"), includeArchived, limit)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "source extractions are unavailable"})
-			return
-		}
-		c.Header("X-Total-Count", strconv.FormatInt(page.TotalCount, 10))
-		c.Header("X-Result-Limit", strconv.Itoa(page.Limit))
-		c.JSON(http.StatusOK, page.Items)
+	ownedSourceIDs, err := h.ownedSourceIDs(owner)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "connected-source access is unavailable"})
 		return
 	}
-	extractions, err := h.service.ExtractionsForOwner(sourceOwner(c), c.Query("projectKey"), includeArchived)
+	extractions, err := h.service.ExtractionsForOwner(owner, c.Query("projectKey"), includeArchived)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "source extractions are unavailable"})
 		return
 	}
+	extractions = filterExtractionsForSources(extractions, ownedSourceIDs)
+	total := len(extractions)
+	if len(extractions) > limit {
+		extractions = extractions[:limit]
+	}
+	c.Header("X-Total-Count", strconv.Itoa(total))
+	c.Header("X-Result-Limit", strconv.Itoa(limit))
 	c.JSON(http.StatusOK, extractions)
 }
 
@@ -571,27 +776,167 @@ func extractionPageLimit(value string) (int, error) {
 }
 
 func (h *Handler) UpdateExtraction(c *gin.Context) {
+	ownerIdentity, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
 	}
-	if !h.requireMutableExtraction(c, id) {
+	lookup, ok := h.service.(mutableSourceLookup)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "owner-scoped source-extraction access is unavailable", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
 		return
 	}
-	var request models.SourceExtraction
-	if err := c.ShouldBindJSON(&request); err != nil {
+	current, err := lookup.MutableExtractionForOwner(id, ownerIdentity)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "source extraction not found", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify source extraction ownership", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if !validateCorrectionIdempotencyKey(idempotencyKey) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Idempotency-Key must contain 16 to 128 printable ASCII characters", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	rawRevision := strings.TrimSpace(c.GetHeader("If-Match"))
+	if rawRevision == "" {
+		c.JSON(http.StatusPreconditionRequired, gin.H{"error": "If-Match with the current extraction revision is required", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	expectedRevision, err := parseExtractionCorrectionRevision(rawRevision)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "If-Match must contain the extraction revision", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	if !current.UpdatedAt.Equal(expectedRevision) {
+		writeExtractionCorrectionError(c, ErrExtractionPatchConflict)
+		return
+	}
+	var request ExtractionPatch
+	if c.Request.Body != nil {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
+	}
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "extraction update request is invalid"})
 		return
 	}
-	extraction, err := h.service.UpdateExtraction(id, request)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "extraction could not be updated")})
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "extraction update request must contain one JSON object"})
 		return
 	}
-	c.JSON(http.StatusOK, extraction)
+	if err := request.validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "extraction update request is invalid", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	patchService, ok := h.service.(ExtractionCorrectionService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "durable source extraction correction is unavailable", "intentPersisted": false, "patchSaved": false, "recoveryPending": false})
+		return
+	}
+	correction, err := patchService.SubmitExtractionCorrection(ownerIdentity, id, expectedRevision, request, idempotencyKey)
+	if err != nil {
+		writeExtractionCorrectionError(c, err)
+		return
+	}
+	status := http.StatusAccepted
+	switch correction.Status {
+	case models.SourceExtractionCorrectionCompleted:
+		status = http.StatusOK
+	case models.SourceExtractionCorrectionConflict:
+		status = http.StatusConflict
+	case models.SourceExtractionCorrectionFailed:
+		status = http.StatusServiceUnavailable
+	case "running", models.SourceExtractionCorrectionPending:
+		status = http.StatusAccepted
+	}
+	if correction.ID != "" {
+		c.Header("Location", "/api/v1/sources/extraction-corrections/"+correction.ID)
+	}
+	c.JSON(status, correction)
+}
+
+func (h *Handler) ExtractionCorrection(c *gin.Context) {
+	ownerIdentity, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
+	id, ok := parseUUID(c)
+	if !ok {
+		return
+	}
+	service, ok := h.service.(ExtractionCorrectionService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "durable source extraction correction is unavailable"})
+		return
+	}
+	correction, err := service.ExtractionCorrectionForOwner(ownerIdentity, id)
+	if err != nil {
+		writeExtractionCorrectionError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, correction)
+}
+
+func writeExtractionCorrectionError(c *gin.Context, err error) {
+	base := gin.H{"intentPersisted": false, "patchSaved": false, "recoveryPending": false}
+	var unknown *ExtractionCorrectionPersistenceUnknownError
+	if errors.As(err, &unknown) {
+		base["error"] = "source_correction_persistence_unknown"
+		base["intentPersisted"] = nil
+		base["patchSaved"] = nil
+		base["recoveryPending"] = nil
+		base["correctionId"] = unknown.CorrectionID.String()
+		c.Header("Location", "/api/v1/sources/extraction-corrections/"+unknown.CorrectionID.String())
+		base["message"] = "HAI could not confirm whether the correction was saved. Check its status before retrying."
+		c.JSON(http.StatusServiceUnavailable, base)
+		return
+	}
+	switch {
+	case errors.Is(err, ErrExtractionPatchConflict):
+		base["error"] = "source_extraction_revision_conflict"
+		base["message"] = "The extraction changed before this correction was saved. Refresh it and review the new revision."
+		c.JSON(http.StatusConflict, base)
+	case errors.Is(err, ErrArchivedExtractionPatch):
+		base["error"] = "source_extraction_archived"
+		base["message"] = "Restore the archived extraction before editing it."
+		c.JSON(http.StatusConflict, base)
+	case errors.Is(err, ErrExtractionCorrectionIdempotency):
+		base["error"] = "idempotency_key_reused"
+		base["message"] = "This Idempotency-Key was already used for a different correction."
+		c.JSON(http.StatusConflict, base)
+	case errors.Is(err, ErrExtractionCorrectionActive):
+		base["error"] = "source_correction_already_pending"
+		base["message"] = "Another correction is already pending for this extraction. Check its status before starting another."
+		c.JSON(http.StatusConflict, base)
+	case errors.Is(err, ErrSourceExtractionNotFound), errors.Is(err, ErrExtractionCorrectionNotFound), errors.Is(err, gorm.ErrRecordNotFound):
+		base["error"] = "source_extraction_not_found"
+		c.JSON(http.StatusNotFound, base)
+	case errors.Is(err, ErrExtractionCorrectionNotSaved), errors.Is(err, ErrExtractionPatchUnavailable), errors.Is(err, ErrExtractionCorrectionWorkerNotReady):
+		base["error"] = "source_correction_not_saved"
+		base["message"] = "The correction was not saved. No background recovery is pending."
+		c.JSON(http.StatusServiceUnavailable, base)
+	case errors.Is(err, ErrInvalidExtractionPatch):
+		base["error"] = "invalid_extraction_correction"
+		c.JSON(http.StatusBadRequest, base)
+	default:
+		base["error"] = "source_correction_unavailable"
+		base["message"] = "The correction could not be saved. No background recovery is confirmed."
+		c.JSON(http.StatusInternalServerError, base)
+	}
 }
 
 func (h *Handler) ArchiveExtraction(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -608,6 +953,9 @@ func (h *Handler) ArchiveExtraction(c *gin.Context) {
 }
 
 func (h *Handler) DeleteExtraction(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	id, ok := parseUUID(c)
 	if !ok {
 		return
@@ -632,6 +980,9 @@ func (h *Handler) DeleteExtraction(c *gin.Context) {
 }
 
 func (h *Handler) AuditLogs(c *gin.Context) {
+	if _, ok := requireSourceOwner(c); !ok {
+		return
+	}
 	var sourceID *uuid.UUID
 	if raw := c.Query("sourceId"); raw != "" {
 		parsed, err := uuid.Parse(raw)
@@ -675,6 +1026,15 @@ func sourceOwner(c *gin.Context) string {
 	return ""
 }
 
+func requireSourceOwner(c *gin.Context) (string, bool) {
+	owner := sourceOwner(c)
+	if owner == "" {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "an authenticated owner is required for connected-source access"})
+		return "", false
+	}
+	return owner, true
+}
+
 func destructiveAuthorization(c *gin.Context) DestructiveEffectAuthorization {
 	owner := sourceOwner(c)
 	return DestructiveEffectAuthorization{
@@ -706,15 +1066,8 @@ func writeDestructiveEffectError(c *gin.Context, err error) {
 
 func sourceVisible(source models.ConnectedSource, owner string) bool {
 	owner = strings.TrimSpace(owner)
-	return owner == "" || source.OwnerIdentity == "" || source.OwnerIdentity == owner
-}
-
-// sourceMutable is stricter than sourceVisible. Ownerless legacy records may
-// remain readable during local migration, but a signed-in operator cannot
-// adopt, sync, alter, revoke, or delete their source-derived records.
-func sourceMutable(source models.ConnectedSource, owner string) bool {
-	owner = strings.TrimSpace(owner)
-	return owner != "" && strings.TrimSpace(source.OwnerIdentity) == owner
+	sourceOwner := strings.TrimSpace(source.OwnerIdentity)
+	return owner != "" && sourceOwner != "" && sourceOwner == owner
 }
 
 func filterVisibleSources(sources []models.ConnectedSource, owner string) []models.ConnectedSource {
@@ -728,11 +1081,30 @@ func filterVisibleSources(sources []models.ConnectedSource, owner string) []mode
 }
 
 func (h *Handler) sourcesForOwner(ownerIdentity string, includeDisabled bool) ([]models.ConnectedSource, error) {
+	if strings.TrimSpace(ownerIdentity) == "" {
+		return nil, errors.New("authenticated source owner is required")
+	}
 	scoped, ok := h.service.(ownerScopedSources)
 	if !ok {
 		return nil, errors.New("owner-scoped source reads are unavailable")
 	}
 	return scoped.SourcesForOwner(ownerIdentity, includeDisabled)
+}
+
+func (h *Handler) ownedSourceIDs(ownerIdentity string) (map[uuid.UUID]bool, error) {
+	sources, err := h.sourcesForOwner(ownerIdentity, true)
+	if err != nil {
+		return nil, err
+	}
+	owned := make(map[uuid.UUID]bool, len(sources))
+	// The legacy service may include ownerless records for local migration;
+	// HTTP account views deliberately expose only exact owner matches.
+	for _, source := range sources {
+		if sourceVisible(source, ownerIdentity) {
+			owned[source.ID] = true
+		}
+	}
+	return owned, nil
 }
 
 func (h *Handler) recentSyncJobs(sourceIDs []uuid.UUID) ([]models.SourceSyncJob, error) {
@@ -752,15 +1124,11 @@ func (h *Handler) recentAuditLogs(sourceIDs []uuid.UUID) ([]models.SourceAuditLo
 }
 
 func (h *Handler) visibleSourceIDs(c *gin.Context) (map[uuid.UUID]bool, error) {
-	sources, err := h.sourcesForOwner(sourceOwner(c), true)
-	if err != nil {
-		return nil, err
+	owner := sourceOwner(c)
+	if owner == "" {
+		return nil, errors.New("authenticated source owner is required")
 	}
-	visible := make(map[uuid.UUID]bool, len(sources))
-	for _, source := range filterVisibleSources(sources, sourceOwner(c)) {
-		visible[source.ID] = true
-	}
-	return visible, nil
+	return h.ownedSourceIDs(owner)
 }
 
 func selectedAudioFolder(value string) (string, error) {
@@ -800,21 +1168,6 @@ func (h *Handler) requireSourceAccess(c *gin.Context, id uuid.UUID) bool {
 	return false
 }
 
-func (h *Handler) mutableSourceIDs(c *gin.Context) (map[uuid.UUID]bool, error) {
-	sources, err := h.service.Sources(true)
-	if err != nil {
-		return nil, err
-	}
-	owner := sourceOwner(c)
-	mutable := make(map[uuid.UUID]bool, len(sources))
-	for _, source := range sources {
-		if sourceMutable(source, owner) {
-			mutable[source.ID] = true
-		}
-	}
-	return mutable, nil
-}
-
 func (h *Handler) requireMutableSource(c *gin.Context, id uuid.UUID) bool {
 	_, ok := h.mutableSource(c, id)
 	return ok
@@ -825,60 +1178,55 @@ func (h *Handler) requireMutableSource(c *gin.Context, id uuid.UUID) bool {
 // checked, so returning that exact record avoids a second full source-inventory
 // read on every transcription or document extraction request.
 func (h *Handler) mutableSource(c *gin.Context, id uuid.UUID) (*models.ConnectedSource, bool) {
-	if lookup, ok := h.service.(mutableSourceLookup); ok {
-		if source, err := lookup.MutableSourceForOwner(id, sourceOwner(c)); err == nil {
-			return source, true
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify connected source ownership"})
-			return nil, false
-		}
-		c.JSON(http.StatusNotFound, gin.H{"error": "connected source not found"})
+	lookup, ok := h.service.(mutableSourceLookup)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "owner-scoped connected-source access is unavailable"})
 		return nil, false
 	}
-	// Compatibility path for older service implementations used in focused tests
-	// and downstream integrations that have not yet implemented exact lookups.
-	sources, err := h.service.Sources(true)
-	if err != nil {
+	if source, err := lookup.MutableSourceForOwner(id, sourceOwner(c)); err == nil {
+		return source, true
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify connected source ownership"})
 		return nil, false
-	}
-	for index := range sources {
-		if sources[index].ID == id && sourceMutable(sources[index], sourceOwner(c)) {
-			return &sources[index], true
-		}
 	}
 	c.JSON(http.StatusNotFound, gin.H{"error": "connected source not found"})
 	return nil, false
 }
 
 func (h *Handler) requireMutableExtraction(c *gin.Context, id uuid.UUID) bool {
-	if lookup, ok := h.service.(mutableSourceLookup); ok {
-		if _, err := lookup.MutableExtractionForOwner(id, sourceOwner(c)); err == nil {
-			return true
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify source extraction ownership"})
-			return false
-		}
-		c.JSON(http.StatusNotFound, gin.H{"error": "source extraction not found"})
+	lookup, ok := h.service.(mutableSourceLookup)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "owner-scoped source-extraction access is unavailable"})
 		return false
 	}
-	extractions, err := h.service.ExtractionsForOwner(sourceOwner(c), "", true)
-	if err != nil {
+	if _, err := lookup.MutableExtractionForOwner(id, sourceOwner(c)); err == nil {
+		return true
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify source extraction ownership"})
 		return false
-	}
-	mutableSourceIDs, err := h.mutableSourceIDs(c)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not verify source extraction ownership"})
-		return false
-	}
-	for _, extraction := range extractions {
-		if extraction.ID == id && mutableSourceIDs[extraction.SourceID] {
-			return true
-		}
 	}
 	c.JSON(http.StatusNotFound, gin.H{"error": "source extraction not found"})
 	return false
+}
+
+func filterExtractionsForSources(extractions []models.SourceExtraction, sourceIDs map[uuid.UUID]bool) []models.SourceExtraction {
+	visible := make([]models.SourceExtraction, 0, len(extractions))
+	for _, extraction := range extractions {
+		if sourceIDs[extraction.SourceID] {
+			visible = append(visible, extraction)
+		}
+	}
+	return visible
+}
+
+func filterRankedExtractions(extractions []RankedExtraction, sourceIDs map[uuid.UUID]bool) []RankedExtraction {
+	visible := make([]RankedExtraction, 0, len(extractions))
+	for _, extraction := range extractions {
+		if sourceIDs[extraction.Extraction.SourceID] {
+			visible = append(visible, extraction)
+		}
+	}
+	return visible
 }
 
 func filterVisibleSyncJobs(jobs []models.SourceSyncJob, sourceIDs map[uuid.UUID]bool) []models.SourceSyncJob {

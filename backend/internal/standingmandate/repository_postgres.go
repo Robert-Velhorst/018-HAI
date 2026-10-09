@@ -72,8 +72,13 @@ func (r *GormRepository) Get(
 	if ownerIdentity == "" || id == uuid.Nil {
 		return nil, ErrNotFound
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
 	var row models.StandingMandate
-	err := r.DB.WithContext(ctx).
+	err = db.
 		Where("owner_identity = ? AND id = ?", ownerIdentity, id).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -182,7 +187,12 @@ func (r *GormRepository) CreateDecision(
 	if err != nil {
 		return err
 	}
-	result := r.DB.WithContext(ctx).
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return err
+	}
+	defer finish()
+	result := db.
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Create(&row)
 	if result.Error != nil {
@@ -203,8 +213,13 @@ func (r *GormRepository) GetDecision(
 	if ownerIdentity == "" || id == uuid.Nil {
 		return nil, ErrNotFound
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
 	var row models.StandingMandateDecision
-	err := r.DB.WithContext(ctx).
+	err = db.
 		Where("owner_identity = ? AND id = ?", ownerIdentity, id).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {

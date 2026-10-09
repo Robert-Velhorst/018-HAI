@@ -8,6 +8,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"automation-hub-backend/internal/lifecycle"
+	"automation-hub-backend/internal/safety"
 )
 
 const (
@@ -46,6 +49,9 @@ func NewScheduler(service ScheduledWorkflowService, interval time.Duration, limi
 // durable_scheduler.go) and falls back to the legacy in-process ticker, saying
 // so, if the durable queue cannot be reached.
 func StartScheduler(ctx context.Context, service ScheduledWorkflowService, allowed ...func() bool) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	if !schedulerEnabled("WORKFLOW_SCHEDULER_ENABLED", true) {
 		return
 	}
@@ -54,18 +60,24 @@ func StartScheduler(ctx context.Context, service ScheduledWorkflowService, allow
 	backgroundAllowed := schedulerBackgroundGate(allowed)
 	if durableSchedulerEnabled() {
 		if err := startDurableScheduler(ctx, service, interval, limit, backgroundAllowed); err != nil {
-			log.Printf("workflow scheduler: durable queue unavailable (%v); falling back to the in-process ticker", err)
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("workflow scheduler: durable queue unavailable (%s); falling back to the in-process ticker", safety.RedactSecrets(err.Error()))
 		} else {
 			return
 		}
 	}
 	scheduler := NewScheduler(service, interval, limit, backgroundAllowed)
-	go scheduler.Start(ctx)
+	lifecycle.Go(ctx, "workflow-scheduler", func() { scheduler.Start(ctx) })
 }
 
 func (s *Scheduler) Start(ctx context.Context) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	if schedulerRunOnStartup() {
-		s.runOnce()
+		s.runOnce(ctx)
 	}
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
@@ -74,48 +86,22 @@ func (s *Scheduler) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.runOnce()
+			if ctx.Err() != nil {
+				return
+			}
+			s.runOnce(ctx)
 		}
 	}
 }
 
-func (s *Scheduler) runOnce() {
-	if s.service == nil || (s.backgroundAllowed != nil && !s.backgroundAllowed()) || !s.running.CompareAndSwap(false, true) {
+func (s *Scheduler) runOnce(ctx context.Context) {
+	if ctx == nil || ctx.Err() != nil || s.service == nil || (s.backgroundAllowed != nil && !s.backgroundAllowed()) || !s.running.CompareAndSwap(false, true) {
 		return
 	}
 	defer s.running.Store(false)
 
-	request := RunDueRequest{Limit: s.limit}
-	recovery, err := s.service.RecoverStaleClaims(request)
-	if err != nil {
-		log.Printf("workflow claim recovery failed: %v", err)
-	} else if recovery != nil && (recovery.WorkflowsBlocked > 0 || recovery.OpenLoopsReopened > 0 || recovery.Skipped > 0) {
-		log.Printf("workflow claim recovery checked=%d workflows_blocked=%d open_loops_reopened=%d skipped=%d", recovery.Checked, recovery.WorkflowsBlocked, recovery.OpenLoopsReopened, recovery.Skipped)
-	}
-	if schedulerEnabled("WORKFLOW_OPEN_LOOP_SCHEDULER_ENABLED", true) {
-		openLoops, err := s.service.RunDueOpenLoops(request)
-		if err != nil {
-			log.Printf("workflow open-loop scheduler failed: %v", err)
-		} else if openLoops != nil && (openLoops.Triggered > 0 || openLoops.Resolved > 0 || openLoops.Skipped > 0) {
-			log.Printf("workflow open-loop scheduler checked=%d triggered=%d resolved=%d skipped=%d", openLoops.Checked, openLoops.Triggered, openLoops.Resolved, openLoops.Skipped)
-		}
-	}
-	if delivery, ok := s.service.(ReminderDeliveryService); ok && schedulerEnabled("WORKFLOW_REMINDER_DELIVERY_ENABLED", true) {
-		reminders, err := delivery.RunDueReminderDeliveries(request)
-		if err != nil {
-			log.Printf("workflow reminder delivery failed: %v", err)
-		} else if reminders != nil && (reminders.Delivered > 0 || reminders.Retried > 0 || reminders.Suppressed > 0 || reminders.DeadLettered > 0) {
-			log.Printf("workflow reminder delivery checked=%d delivered=%d retried=%d suppressed=%d dead_lettered=%d", reminders.Checked, reminders.Delivered, reminders.Retried, reminders.Suppressed, reminders.DeadLettered)
-		}
-	}
-
-	result, err := s.service.RunDue(request)
-	if err != nil {
-		log.Printf("workflow scheduler failed: %v", err)
-		return
-	}
-	if result != nil && (result.Completed > 0 || result.Retried > 0 || result.Blocked > 0) {
-		log.Printf("workflow scheduler checked=%d completed=%d retried=%d blocked=%d skipped=%d", result.Checked, result.Completed, result.Retried, result.Blocked, result.Skipped)
+	if err := runWorkflowSweep(ctx, s.service, s.limit, s.backgroundAllowed); err != nil {
+		log.Printf("workflow scheduler: %s", safety.RedactSecrets(err.Error()))
 	}
 }
 

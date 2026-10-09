@@ -43,7 +43,7 @@
         </button>
       </aside>
 
-      <main class="plan-focus" [attr.aria-busy]="detailLoading">
+      <section class="plan-focus" [attr.aria-busy]="detailLoading">
         <section class="focus-header">
           <div class="focus-title">
             <span class="state-label" [attr.data-status]="plan.status">{{ statusLabel(plan.status) }}</span>
@@ -118,10 +118,6 @@
         <form class="replan-form" *ngIf="replanOpen" (ngSubmit)="replanSelected()">
           <header><div><h3>Repair the plan</h3><p>Create a new immutable revision. The accepted plan is never edited in place.</p></div><button type="button" class="close-button" (click)="cancelReplan()" aria-label="Cancel replanning"><i nz-icon nzType="close"></i></button></header>
           <label><span>Reason for replanning</span><textarea name="replanReason" [(ngModel)]="replanReason" rows="3" required placeholder="What changed or failed?"></textarea></label>
-          <div class="form-row">
-            <label><span>Revised deadline (optional)</span><input type="datetime-local" name="replanDeadline" [(ngModel)]="replanDeadlineAt"></label>
-            <label><span>Additional constraints, one per line</span><textarea name="replanConstraints" [(ngModel)]="replanConstraints" rows="3"></textarea></label>
-          </div>
           <div class="form-actions"><button nz-button type="button" (click)="cancelReplan()">Cancel</button><button nz-button nzType="primary" type="submit" [nzLoading]="saving" [disabled]="saving || !replanReason.trim()">Create revised plan</button></div>
         </form>
 
@@ -130,7 +126,7 @@
           sectionId="dependency-plan"
           title="Dependencies and ordered steps"
           summary="Inspect ordered work, prerequisites, owners, risk, and coordination state."
-          [advancedOnly]="false"
+          [advancedOnly]="true"
         >
           <div class="node-ledger" *ngIf="orderedNodes.length; else noNodes">
             <button type="button" class="node-row" *ngFor="let node of orderedNodes; trackBy: trackById" (click)="openInspector()">
@@ -143,32 +139,6 @@
             </button>
           </div>
           <ng-template #noNodes><div class="advanced-empty">No plan nodes were returned for this revision.</div></ng-template>
-        </hai-progressive-section>
-
-        <hai-progressive-section
-          [moduleId]="moduleId"
-          sectionId="schedule-resources"
-          title="Schedule, constraints, and resources"
-          summary="Review deadlines, hard constraints, duration, capacity, and budget evidence."
-        >
-          <div class="advanced-columns">
-            <section><h3>Timeline and constraints</h3>
-              <dl class="detail-list">
-                <div><dt>Planned start</dt><dd>{{ plan.plannedStartAt ? (plan.plannedStartAt | date:'medium') : 'Not scheduled' }}</dd></div>
-                <div><dt>Planned finish</dt><dd>{{ plan.plannedEndAt ? (plan.plannedEndAt | date:'medium') : 'Not scheduled' }}</dd></div>
-                <div><dt>Deadline</dt><dd>{{ plan.deadlineAt ? (plan.deadlineAt | date:'medium') : 'No deadline recorded' }}</dd></div>
-              </dl>
-              <div class="constraint-list" *ngIf="plan.constraints.length">
-                <article *ngFor="let constraint of plan.constraints; trackBy: trackById"><span><strong>{{ constraint.label }}</strong><small>{{ constraint.value || statusLabel(constraint.type) }}</small></span><em [attr.data-state]="constraintState(constraint)">{{ constraintState(constraint) }}</em></article>
-              </div>
-            </section>
-            <section><h3>Resource estimates</h3>
-              <div class="resource-list" *ngIf="plan.resourceEstimates.length; else noResources">
-                <article *ngFor="let resource of plan.resourceEstimates"><span><strong>{{ resource.label }}</strong><small>{{ resource.sourceLabel || statusLabel(resource.resourceType) }}</small></span><em>{{ resourceAvailability(resource) }}</em></article>
-              </div>
-              <ng-template #noResources><div class="advanced-empty">No resource estimate was recorded.</div></ng-template>
-            </section>
-          </div>
         </hai-progressive-section>
 
         <hai-progressive-section
@@ -203,7 +173,7 @@
           </div>
           <ng-template #noHistory><div class="advanced-empty">No earlier revision or repair is recorded.</div></ng-template>
         </hai-progressive-section>
-      </main>
+      </section>
     </section>
 
     <ng-template #emptyState>
@@ -223,6 +193,56 @@
     >
       <ng-container *ngTemplateOutlet="previewFormTemplate"></ng-container>
     </hai-progressive-section>
+
+    <hai-progressive-section
+      [moduleId]="moduleId"
+      sectionId="schedule-resources"
+      title="Schedule, constraints, and resources"
+      summary="Inspect recorded capacity and set optional schedule or resource assumptions for a preview or revision."
+      [advancedOnly]="true"
+    >
+      <ng-container *ngIf="selectedPlan as plan">
+        <div class="advanced-columns">
+          <section><h3>Current plan schedule and constraints</h3>
+            <dl class="detail-list">
+              <div><dt>Planned start</dt><dd>{{ plan.plannedStartAt ? (plan.plannedStartAt | date:'medium') : 'Not scheduled' }}</dd></div>
+              <div><dt>Planned finish</dt><dd>{{ plan.plannedEndAt ? (plan.plannedEndAt | date:'medium') : 'Not scheduled' }}</dd></div>
+              <div><dt>Deadline</dt><dd>{{ plan.deadlineAt ? (plan.deadlineAt | date:'medium') : 'No deadline recorded' }}</dd></div>
+            </dl>
+            <div class="constraint-list" *ngIf="plan.constraints.length">
+              <article *ngFor="let constraint of plan.constraints; trackBy: trackById"><span><strong>{{ constraint.label }}</strong><small>{{ constraint.value || statusLabel(constraint.type) }}</small></span><em [attr.data-state]="constraintState(constraint)">{{ constraintState(constraint) }}</em></article>
+            </div>
+            <div class="advanced-empty" *ngIf="!plan.constraints.length">No additional constraint was recorded.</div>
+          </section>
+          <section><h3>Recorded resource estimates</h3>
+            <div class="resource-list" *ngIf="plan.resourceEstimates.length; else noResources">
+              <article *ngFor="let resource of plan.resourceEstimates"><span><strong>{{ resource.label }}</strong><small>{{ resource.sourceLabel || statusLabel(resource.resourceType) }}</small></span><em>{{ resourceAvailability(resource) }}</em></article>
+            </div>
+            <ng-template #noResources><div class="advanced-empty">No resource estimate was recorded.</div></ng-template>
+          </section>
+        </div>
+      </ng-container>
+
+      <section class="preview-options" aria-labelledby="preview-options-title">
+        <h3 id="preview-options-title">Optional settings for the next preview</h3>
+        <p>These values are included when you create a preview. They do not schedule or execute work by themselves.</p>
+        <div class="form-grid">
+          <label><span>Deadline</span><input type="datetime-local" [(ngModel)]="previewForm.deadlineAt" [ngModelOptions]="{ standalone: true }"></label>
+          <label><span>Estimated duration in minutes</span><input type="number" [(ngModel)]="previewForm.estimatedMinutes" [ngModelOptions]="{ standalone: true }" min="0" step="1" placeholder="0"></label>
+          <label><span>Estimated paid cost in EUR</span><input type="number" [(ngModel)]="previewForm.estimatedCostEur" [ngModelOptions]="{ standalone: true }" min="0" step="0.01" placeholder="0"></label>
+          <label><span>Pursuit ID</span><input [(ngModel)]="previewForm.pursuitId" [ngModelOptions]="{ standalone: true }" maxlength="120"></label>
+          <label><span>Workflow ID</span><input [(ngModel)]="previewForm.workflowId" [ngModelOptions]="{ standalone: true }" maxlength="120"></label>
+          <label class="form-grid__wide"><span>Additional constraints, one per line</span><textarea [(ngModel)]="previewForm.constraints" [ngModelOptions]="{ standalone: true }" rows="3" placeholder="Draft only; do not send&#10;Complete before the external deadline"></textarea></label>
+        </div>
+        <ng-container *ngIf="selectedPlan && canReplan(selectedPlan)">
+          <h3 class="replan-options-title">Optional settings for the next revision</h3>
+          <div class="form-grid">
+            <label><span>Revised deadline</span><input type="datetime-local" [(ngModel)]="replanDeadlineAt" [ngModelOptions]="{ standalone: true }"></label>
+            <label class="form-grid__wide"><span>Additional revision constraints, one per line</span><textarea [(ngModel)]="replanConstraints" [ngModelOptions]="{ standalone: true }" rows="3"></textarea></label>
+          </div>
+        </ng-container>
+      </section>
+    </hai-progressive-section>
   </ng-container>
 </section>
 
@@ -233,12 +253,6 @@
       <label><span>Plan title</span><input name="previewTitle" [(ngModel)]="previewForm.title" required maxlength="160" placeholder="Prepare the evidence response"></label>
       <label class="form-grid__wide"><span>Objective</span><textarea name="previewObjective" [(ngModel)]="previewForm.objective" required rows="4" maxlength="4000" placeholder="Describe the outcome, not only the activity."></textarea></label>
       <label class="form-grid__wide"><span>Success criteria, one per line</span><textarea name="previewCriteria" [(ngModel)]="previewForm.successCriteria" required rows="4" placeholder="Every required document is source-linked&#10;The draft passes factual verification"></textarea></label>
-      <label><span>Deadline (optional)</span><input type="datetime-local" name="previewDeadline" [(ngModel)]="previewForm.deadlineAt"></label>
-      <label><span>Estimated duration in minutes (optional)</span><input type="number" name="previewDuration" [(ngModel)]="previewForm.estimatedMinutes" min="0" step="1" placeholder="0"></label>
-      <label><span>Estimated paid cost in EUR (optional)</span><input type="number" name="previewCost" [(ngModel)]="previewForm.estimatedCostEur" min="0" step="0.01" placeholder="0"></label>
-      <label><span>Pursuit ID (optional)</span><input name="previewPursuit" [(ngModel)]="previewForm.pursuitId" maxlength="120"></label>
-      <label><span>Workflow ID (optional)</span><input name="previewWorkflow" [(ngModel)]="previewForm.workflowId" maxlength="120"></label>
-      <label class="form-grid__wide"><span>Additional constraints, one per line</span><textarea name="previewConstraints" [(ngModel)]="previewForm.constraints" rows="3" placeholder="Draft only; do not send&#10;Complete before the external deadline"></textarea></label>
     </div>
     <div class="form-actions"><span><i nz-icon nzType="safety-certificate"></i> Preview only | owner-scoped | auditable</span><button nz-button nzType="primary" type="submit" [nzLoading]="saving" [disabled]="saving">Create preview</button></div>
   </form>

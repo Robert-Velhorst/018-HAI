@@ -57,6 +57,11 @@ func EvaluateMessageTimeout(
 		return TimeoutEvaluation{}, fmt.Errorf("timeout counters cannot be negative")
 	}
 	now = now.UTC()
+	if acknowledgment != nil {
+		if err := validateAcknowledgment(message, *acknowledgment, now, false); err != nil {
+			return TimeoutEvaluation{}, fmt.Errorf("validate message acknowledgment: %w", err)
+		}
+	}
 	if !message.ExpiresAt.After(now) {
 		return TimeoutEvaluation{
 			Action: TimeoutExpire,
@@ -97,10 +102,18 @@ func EvaluateMessageTimeout(
 		}, nil
 	}
 	if reminderCount < policy.MaximumReminders {
+		reminderDueAt := dueAt.Add(time.Duration(reminderCount) * policy.ReminderInterval)
+		if now.Before(reminderDueAt) {
+			return TimeoutEvaluation{
+				Action: TimeoutNone,
+				Reason: "next acknowledgment reminder interval remains open",
+				DueAt:  reminderDueAt,
+			}, nil
+		}
 		return TimeoutEvaluation{
 			Action: TimeoutRemind,
 			Reason: "acknowledgment is overdue",
-			DueAt:  dueAt.Add(time.Duration(reminderCount) * policy.ReminderInterval),
+			DueAt:  reminderDueAt,
 		}, nil
 	}
 	return escalationEvaluation(

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/models"
 
 	"github.com/gin-gonic/gin"
@@ -21,14 +22,59 @@ func (s failingHandlerService) Overview() (*Overview, error) {
 	return nil, s.overviewErr
 }
 
+func (s failingHandlerService) OverviewForOwner(_ string) (*Overview, error) {
+	return nil, s.overviewErr
+}
+
 func (s failingHandlerService) RunStressSuite() (*models.AutonomyStressRun, []StressCaseResult, error) {
 	return nil, nil, s.stressErr
+}
+
+type ownerCapturingService struct {
+	failingHandlerService
+	owner        string
+	globalCalled bool
+}
+
+func (s *ownerCapturingService) Overview() (*Overview, error) {
+	s.globalCalled = true
+	return &Overview{}, nil
+}
+
+func (s *ownerCapturingService) OverviewForOwner(owner string) (*Overview, error) {
+	s.owner = owner
+	return &Overview{}, nil
+}
+
+func TestOverviewRequiresPrincipalAndNeverUsesGlobalTelemetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, principal := range []string{"", "   ", " robert ", "other-owner"} {
+		t.Run(principal, func(t *testing.T) {
+			service := &ownerCapturingService{}
+			router := gin.New()
+			router.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, principal); c.Next() })
+			router.GET("/overview", NewHandler(service).Overview)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/overview?owner=foreign", nil))
+			want := http.StatusOK
+			if strings.TrimSpace(principal) == "" {
+				want = http.StatusUnauthorized
+			}
+			if recorder.Code != want || service.globalCalled || service.owner != strings.TrimSpace(principal) {
+				t.Fatalf("status=%d owner=%q global=%v", recorder.Code, service.owner, service.globalCalled)
+			}
+		})
+	}
 }
 
 func TestHandlerDoesNotExposeUnexpectedServiceErrors(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler(failingHandlerService{overviewErr: errors.New(`postgres password=not-for-http at C:\\private`), stressErr: errors.New(`token=not-for-http`)})
 	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "robert")
+		c.Next()
+	})
 	router.GET("/overview", handler.Overview)
 	router.POST("/stress", handler.Stress)
 

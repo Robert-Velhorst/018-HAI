@@ -251,7 +251,7 @@ func exactFrameworkPostconditionEvidence(
 	plan *CompletionPlan,
 	contract FrameworkEvidenceContract,
 ) []string {
-	if plan.ExecutionResult == nil {
+	if plan.ExecutionResult == nil || executionOutcomeUncertain(plan.ExecutionResult) {
 		return []string{}
 	}
 	result := plan.ExecutionResult
@@ -707,7 +707,16 @@ func (s *service) preAuthorizationEvidence(
 		}
 	case "live_health":
 		for _, card := range plan.ExecutionPlan.AgentCards {
-			if card.Verified && !card.Revoked && strings.EqualFold(card.HealthStatus, "healthy") && card.LastVerifiedAt != nil &&
+			// Current and legacy registry cards contain declarations, not trusted
+			// server probe evidence, regardless of their verification flags.
+			provenance := strings.ToLower(strings.TrimSpace(card.Provenance))
+			if strings.HasPrefix(provenance, "agent_registry:") || strings.HasPrefix(provenance, "agent_registry_declaration:") {
+				continue
+			}
+			healthy := strings.EqualFold(card.HealthStatus, "healthy")
+			if card.Verified && !card.Revoked && healthy && card.LastVerifiedAt != nil &&
+				!card.LastVerifiedAt.IsZero() &&
+				!card.LastVerifiedAt.After(now.Add(time.Minute)) &&
 				(contract.MaxAgeSeconds == 0 || now.Sub(card.LastVerifiedAt.UTC()) <= time.Duration(contract.MaxAgeSeconds)*time.Second) {
 				return []string{"agent-health:healthy", "agent-health-checked:" + card.LastVerifiedAt.UTC().Format(time.RFC3339Nano)}
 			}

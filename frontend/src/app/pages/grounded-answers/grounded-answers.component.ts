@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnInit, QueryList, ViewChildren } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -16,32 +16,46 @@ import { RAGFlowService } from '../../services/ragflow.service';
 import { ResearchService } from '../../services/research.service';
 import { VERIFICATION_SERVICE_TOKEN } from '../../services/verification/verification.service.token';
 import { IVerificationService } from '../../services/verification.service.interface';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
+import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component';
 
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-grounded-answers',
     templateUrl: './grounded-answers.component.html',
     styleUrls: ['./grounded-answers.component.scss'],
     standalone: false
 })
 export class GroundedAnswersComponent implements OnInit {
+  @ViewChildren(HaiProgressiveSectionComponent) progressiveSections?: QueryList<HaiProgressiveSectionComponent>;
+
+  readonly moduleId = 'grounded-answers';
   result?: IVerificationResult;
   runs: IVerificationRun[] = [];
   runsLoading = false;
   runsUnavailable = false;
+  runsLoaded = false;
   loading = false;
+  answerError = '';
   researchLoading = false;
   researchProbeLoading = false;
+  researchStatusLoading = false;
+  researchStatusLoaded = false;
   researchStatus?: IResearchStatus;
   researchProbe?: IResearchProbe;
   researchResults: IResearchResult[] = [];
   selectedResearchCandidate?: IResearchResult;
   ragflowLoading = false;
   ragflowProbeLoading = false;
+  ragflowStatusLoading = false;
+  ragflowStatusLoaded = false;
   ragflowStatus?: IRAGFlowStatus;
   ragflowProbe?: IRAGFlowProbeResult;
   ragflowResults: IRAGFlowResult[] = [];
   selectedRAGFlowCandidate?: IRAGFlowResult;
   anythingLLMLoading = false;
+  anythingLLMStatusLoading = false;
+  anythingLLMStatusLoaded = false;
   anythingLLMStatus?: IAnythingLLMStatus;
   anythingLLMResults: IAnythingLLMResult[] = [];
   selectedAnythingLLMCandidate?: IAnythingLLMResult;
@@ -55,9 +69,9 @@ export class GroundedAnswersComponent implements OnInit {
     includeRagflowCandidates: [false],
     includeResearchCandidates: [false],
     allowMemoryUpdate: [false],
-    evidenceLabel: ['Manual evidence'],
-    evidenceUri: ['local://manual-evidence'],
-    evidenceSnippet: ['Connected-source records should be checked before task planning, and unsupported claims should be marked for review.'],
+    evidenceLabel: [''],
+    evidenceUri: [''],
+    evidenceSnippet: [''],
     official: [false],
     primary: [true],
   });
@@ -71,8 +85,13 @@ export class GroundedAnswersComponent implements OnInit {
     private anythingLLMService: AnythingLLMService,
     private notification: NzNotificationService,
     private route: ActivatedRoute,
-    private router: Router
+    private router: Router,
+    private viewPreferences: ModuleViewPreferencesService
   ) {}
+
+  get isAdvancedView(): boolean {
+    return this.viewPreferences.get(this.moduleId).mode === 'advanced';
+  }
 
   ngOnInit(): void {
     const params = this.route.snapshot.queryParamMap;
@@ -81,10 +100,35 @@ export class GroundedAnswersComponent implements OnInit {
       projectKey: params.get('projectKey') || this.answerForm.value.projectKey,
       question: params.get('question') || this.answerForm.value.question,
     });
-    this.loadRuns();
+  }
+
+  onSourceDiscoveryOpen(open: boolean): void {
+    if (!open) return;
     this.loadResearchStatus();
     this.loadRAGFlowStatus();
     this.loadAnythingLLMStatus();
+  }
+
+  onVerificationHistoryOpen(open: boolean): void {
+    if (open && !this.runsLoaded) this.loadRuns();
+  }
+
+  openAdvancedSection(sectionId: string): void {
+    this.viewPreferences.setMode(this.moduleId, 'advanced');
+    this.viewPreferences.setSection(this.moduleId, sectionId, true);
+    this.progressiveSections?.find((section) => section.sectionId === sectionId)?.setOpen(true);
+    void this.router.navigate(['/grounded-answers'], {
+      fragment: sectionId,
+      queryParamsHandling: 'preserve',
+    });
+  }
+
+  usedEvidenceCount(result: IVerificationResult): number {
+    return (result.evidence || []).filter((source) => source.used).length;
+  }
+
+  rejectedEvidenceCount(result: IVerificationResult): number {
+    return (result.evidence || []).filter((source) => Boolean(source.rejectReason) || source.used === false).length;
   }
 
   answer(): void {
@@ -92,6 +136,7 @@ export class GroundedAnswersComponent implements OnInit {
       return;
     }
     this.loading = true;
+    this.answerError = '';
     const snippet = String(this.answerForm.value.evidenceSnippet || '').trim();
     this.verificationService
       .answer({
@@ -133,10 +178,11 @@ export class GroundedAnswersComponent implements OnInit {
           } else if (result.pursuitLinked) {
             this.notification.success('Verification linked', 'The verification run is now visible in the selected pursuit evidence timeline.');
           }
-          this.loadRuns();
+          if (this.viewPreferences.get(this.moduleId).openSections['verification-history']) this.loadRuns();
         },
         error: () => {
           this.loading = false;
+          this.answerError = 'The answer could not be verified. No approval or external action was created.';
           this.notification.error('Error', 'Failed to create grounded answer.');
         },
       });
@@ -154,15 +200,29 @@ export class GroundedAnswersComponent implements OnInit {
       next: (runs) => {
         this.runs = runs;
         this.runsUnavailable = false;
+        this.runsLoaded = true;
       },
-      error: () => (this.runsUnavailable = true),
+      error: () => {
+        this.runsUnavailable = true;
+        this.runsLoaded = false;
+      },
     });
   }
 
-  loadResearchStatus(): void {
+  loadResearchStatus(force = false): void {
+    if (this.researchStatusLoading || (this.researchStatusLoaded && !force)) return;
+    this.researchStatusLoading = true;
     this.researchService.status().subscribe({
-      next: (status) => (this.researchStatus = status),
-      error: () => (this.researchStatus = undefined),
+      next: (status) => {
+        this.researchStatus = status;
+        this.researchStatusLoaded = true;
+        this.researchStatusLoading = false;
+      },
+      error: () => {
+        this.researchStatus = undefined;
+        this.researchStatusLoaded = false;
+        this.researchStatusLoading = false;
+      },
     });
   }
 
@@ -196,7 +256,7 @@ export class GroundedAnswersComponent implements OnInit {
       error: () => {
         this.researchLoading = false;
         this.notification.warning('Local research unavailable', 'Configure a reviewed local SearXNG instance to discover public source candidates. No evidence was added.');
-        this.loadResearchStatus();
+        this.loadResearchStatus(true);
       },
     });
   }
@@ -223,10 +283,20 @@ export class GroundedAnswersComponent implements OnInit {
     });
   }
 
-  loadRAGFlowStatus(): void {
+  loadRAGFlowStatus(force = false): void {
+    if (this.ragflowStatusLoading || (this.ragflowStatusLoaded && !force)) return;
+    this.ragflowStatusLoading = true;
     this.ragflowService.status().subscribe({
-      next: (status) => (this.ragflowStatus = status),
-      error: () => (this.ragflowStatus = undefined),
+      next: (status) => {
+        this.ragflowStatus = status;
+        this.ragflowStatusLoaded = true;
+        this.ragflowStatusLoading = false;
+      },
+      error: () => {
+        this.ragflowStatus = undefined;
+        this.ragflowStatusLoaded = false;
+        this.ragflowStatusLoading = false;
+      },
     });
   }
 
@@ -260,7 +330,7 @@ export class GroundedAnswersComponent implements OnInit {
       error: () => {
         this.ragflowLoading = false;
         this.notification.warning('Local RAGFlow unavailable', 'Configure and approve a local RAGFlow dataset allowlist before retrieving candidate evidence. No evidence was added.');
-        this.loadRAGFlowStatus();
+        this.loadRAGFlowStatus(true);
       },
     });
   }
@@ -284,10 +354,20 @@ export class GroundedAnswersComponent implements OnInit {
     return `ragflow://dataset/${segment(result.datasetId)}/document/${segment(result.documentId)}/chunk/${segment(result.chunkId)}`;
   }
 
-  loadAnythingLLMStatus(): void {
+  loadAnythingLLMStatus(force = false): void {
+    if (this.anythingLLMStatusLoading || (this.anythingLLMStatusLoaded && !force)) return;
+    this.anythingLLMStatusLoading = true;
     this.anythingLLMService.status().subscribe({
-      next: (status) => (this.anythingLLMStatus = status),
-      error: () => (this.anythingLLMStatus = undefined),
+      next: (status) => {
+        this.anythingLLMStatus = status;
+        this.anythingLLMStatusLoaded = true;
+        this.anythingLLMStatusLoading = false;
+      },
+      error: () => {
+        this.anythingLLMStatus = undefined;
+        this.anythingLLMStatusLoaded = false;
+        this.anythingLLMStatusLoading = false;
+      },
     });
   }
 
@@ -304,7 +384,7 @@ export class GroundedAnswersComponent implements OnInit {
       error: () => {
         this.anythingLLMLoading = false;
         this.notification.warning('Local AnythingLLM unavailable', 'Configure an approved local workspace allowlist and confirm local embeddings before retrieving candidate evidence. No evidence was added.');
-        this.loadAnythingLLMStatus();
+        this.loadAnythingLLMStatus(true);
       },
     });
   }

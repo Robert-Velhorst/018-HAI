@@ -1,19 +1,21 @@
 //go:build integration
 
 // Real-Postgres proof for the durable worker. Runs only under
-// `-tags integration` with HAI_TEST_DATABASE_DSN set.
+// `-tags integration` with an explicitly enabled dedicated test database.
 package durablejob
 
 import (
 	"context"
 	"errors"
-	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"automation-hub-backend/internal/backoff"
 	"automation-hub-backend/internal/models"
+	"automation-hub-backend/internal/pgtestguard"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -22,18 +24,26 @@ import (
 
 func integrationRepo(t *testing.T) (Repository, *gorm.DB) {
 	t.Helper()
-	dsn := os.Getenv("HAI_TEST_DATABASE_DSN")
-	if dsn == "" {
-		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping Postgres integration test")
-	}
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_DURABLEJOB_TEST_DATABASE_DSN", "hai_durablejob_test")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatalf("open postgres: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("database handle: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	var database string
+	if err := db.Raw("SELECT current_database()").Scan(&database).Error; err != nil || database != "hai_durablejob_test" {
+		t.Fatalf("refusing test database %q: %v", database, err)
+	}
 	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
 		t.Fatalf("extension: %v", err)
 	}
-	_ = db.Migrator().DropTable(&models.DurableJob{})
+	if err := db.Migrator().DropTable(&models.DurableJob{}); err != nil {
+		t.Fatalf("drop dedicated test table: %v", err)
+	}
 	if err := db.AutoMigrate(&models.DurableJob{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
@@ -80,6 +90,37 @@ func TestDurableJobSurvivesProcessRestart(t *testing.T) {
 	stored, _ = repo.Find(job.ID)
 	if stored.Status != models.DurableJobSucceeded {
 		t.Fatalf("status=%q, want succeeded after restart", stored.Status)
+	}
+	if stored.Attempts != 2 {
+		t.Fatalf("attempts=%d after one failure and one success, want 2", stored.Attempts)
+	}
+}
+
+func TestRecurringSuccessPersistsAttemptsAndFreshReplacement(t *testing.T) {
+	repo, db := integrationRepo(t)
+	now := time.Now().UTC()
+	runner := NewRunner(repo, Options{
+		WorkerID: "recurring-worker", Queue: "recurring", Now: func() time.Time { return now },
+	})
+	if err := runner.RegisterRecurring("scan", time.Hour, 3, func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("RegisterRecurring: %v", err)
+	}
+	if processed, err := runner.RunOnce(context.Background()); err != nil || processed != 1 {
+		t.Fatalf("RunOnce = %d, %v; want one completed occurrence", processed, err)
+	}
+
+	var completed, pending models.DurableJob
+	if err := db.Where("queue = ? AND kind = ? AND status = ?", "recurring", "scan", models.DurableJobSucceeded).First(&completed).Error; err != nil {
+		t.Fatalf("find completed occurrence: %v", err)
+	}
+	if err := db.Where("queue = ? AND kind = ? AND status = ?", "recurring", "scan", models.DurableJobPending).First(&pending).Error; err != nil {
+		t.Fatalf("find replacement occurrence: %v", err)
+	}
+	if completed.Attempts != 1 {
+		t.Fatalf("completed occurrence attempts = %d, want 1", completed.Attempts)
+	}
+	if pending.Attempts != 0 {
+		t.Fatalf("replacement occurrence attempts = %d, want 0", pending.Attempts)
 	}
 }
 
@@ -169,6 +210,204 @@ func TestExpiredLeaseIsReclaimed(t *testing.T) {
 	stored, _ := repo.Find(job.ID)
 	if stored.Status != models.DurableJobSucceeded {
 		t.Fatalf("status=%q, want succeeded after lease recovery", stored.Status)
+	}
+	if stored.Attempts != 2 {
+		t.Fatalf("attempts=%d after crash recovery and successful execution, want 2", stored.Attempts)
+	}
+}
+
+func TestMalformedRunningRowsWithoutLeaseTimestampAreRecovered(t *testing.T) {
+	repo, db := integrationRepo(t)
+	now := time.Now().UTC()
+	rows := []*models.DurableJob{
+		{Queue: "default", Kind: "malformed-retry", RunAt: now, Status: models.DurableJobRunning, Attempts: 0, MaxAttempts: 3, LockedBy: "orphaned-worker"},
+		{Queue: "default", Kind: "malformed-final", RunAt: now, Status: models.DurableJobRunning, Attempts: 2, MaxAttempts: 3, LockedBy: "orphaned-worker"},
+	}
+	for _, row := range rows {
+		if _, err := repo.Enqueue(row); err != nil {
+			t.Fatalf("enqueue malformed running row %q: %v", row.Kind, err)
+		}
+	}
+
+	count, err := repo.ReapExpiredLeases(now, time.Minute)
+	if err != nil || count != 2 {
+		t.Fatalf("ReapExpiredLeases = %d, %v; want both malformed rows", count, err)
+	}
+	var retry, final models.DurableJob
+	if err := db.Where("kind = ?", "malformed-retry").First(&retry).Error; err != nil {
+		t.Fatalf("load retried row: %v", err)
+	}
+	if retry.Status != models.DurableJobPending || retry.Attempts != 1 || retry.LockedAt != nil || retry.LockedBy != "" ||
+		!strings.Contains(retry.LastError, "lease is missing") {
+		t.Fatalf("retried malformed row = %#v; want pending/1 with cleared lease and recovery reason", retry)
+	}
+	if err := db.Where("kind = ?", "malformed-final").First(&final).Error; err != nil {
+		t.Fatalf("load terminal row: %v", err)
+	}
+	if final.Status != models.DurableJobDead || final.Attempts != 3 || final.CompletedAt == nil || final.LockedAt != nil || final.LockedBy != "" ||
+		!strings.Contains(final.LastError, "final allowed attempt") {
+		t.Fatalf("terminal malformed row = %#v; want dead/3 with completion time and cleared lease", final)
+	}
+}
+
+func TestExpiredLeaseOnFinalDeliveryDeadLettersWithoutReexecution(t *testing.T) {
+	repo, db := integrationRepo(t)
+	now := time.Now().UTC()
+	lease := 30 * time.Second
+	job, err := repo.Enqueue(&models.DurableJob{
+		Queue: "recovery", Kind: "final-crash", Payload: "{}", Status: models.DurableJobPending,
+		RunAt: now, MaxAttempts: 1,
+	})
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	if claimed, err := repo.ClaimDue("dead-worker", "recovery", now, 1); err != nil || len(claimed) != 1 {
+		t.Fatalf("ClaimDue = %d, %v; want one claim", len(claimed), err)
+	}
+	if err := db.Model(&models.DurableJob{}).Where("id = ?", job.ID).
+		Update("locked_at", now.Add(-2*lease)).Error; err != nil {
+		t.Fatalf("expire lease: %v", err)
+	}
+	runner := NewRunner(repo, Options{WorkerID: "survivor", Queue: "recovery", Lease: lease})
+	handlerCalled := false
+	runner.Register("final-crash", func(context.Context, Job) error {
+		handlerCalled = true
+		return nil
+	})
+	if processed, err := runner.RunOnce(context.Background()); err != nil || processed != 0 {
+		t.Fatalf("RunOnce = %d, %v; final crashed delivery must not run again", processed, err)
+	}
+	stored, err := repo.Find(job.ID)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if handlerCalled || stored.Status != models.DurableJobDead || stored.Attempts != 1 || stored.CompletedAt == nil {
+		t.Fatalf("recovered final job = %#v handlerCalled=%t; want dead/1/completed without reexecution", stored, handlerCalled)
+	}
+}
+
+func TestUnstartedBatchJobsCannotExpireWhileEarlierJobRuns(t *testing.T) {
+	repo, _ := integrationRepo(t)
+	now := time.Now().UTC()
+	lease := 500 * time.Millisecond
+	if _, err := repo.Enqueue(&models.DurableJob{
+		Queue: "batch", Kind: "first", Payload: "{}", Status: models.DurableJobPending,
+		RunAt: now.Add(-2 * time.Second), MaxAttempts: 3,
+	}); err != nil {
+		t.Fatalf("enqueue first job: %v", err)
+	}
+	secondJob, err := repo.Enqueue(&models.DurableJob{
+		Queue: "batch", Kind: "second", Payload: "{}", Status: models.DurableJobPending,
+		RunAt: now.Add(-time.Second), MaxAttempts: 3,
+	})
+	if err != nil {
+		t.Fatalf("enqueue second job: %v", err)
+	}
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseFirst) }) }
+	defer release()
+	firstDone := make(chan error, 1)
+	var secondRuns int32
+	first := NewRunner(repo, Options{WorkerID: "first-worker", Queue: "batch", Lease: lease, Batch: 2})
+	first.Register("first", func(context.Context, Job) error {
+		close(firstStarted)
+		<-releaseFirst
+		return nil
+	})
+	first.Register("second", func(context.Context, Job) error {
+		atomic.AddInt32(&secondRuns, 1)
+		return nil
+	})
+	go func() {
+		_, err := first.RunOnce(context.Background())
+		firstDone <- err
+	}()
+	<-firstStarted
+	time.Sleep(2 * lease)
+	storedSecond, err := repo.Find(secondJob.ID)
+	if err != nil {
+		t.Fatalf("find second job while first is running: %v", err)
+	}
+	if storedSecond.Status != models.DurableJobPending || storedSecond.LockedBy != "" || storedSecond.LockedAt != nil {
+		t.Fatalf("second job while first is blocked = %#v; it must remain unclaimed until execution starts", storedSecond)
+	}
+
+	second := NewRunner(repo, Options{WorkerID: "second-worker", Queue: "batch", Lease: lease, Batch: 1})
+	second.Register("first", func(context.Context, Job) error { return nil })
+	second.Register("second", func(context.Context, Job) error {
+		atomic.AddInt32(&secondRuns, 1)
+		return nil
+	})
+	if processed, err := second.RunOnce(context.Background()); err != nil || processed != 1 {
+		release()
+		t.Fatalf("second worker RunOnce = %d, %v; want the still-pending second job", processed, err)
+	}
+	release()
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first worker RunOnce: %v", err)
+	}
+	if got := atomic.LoadInt32(&secondRuns); got != 1 {
+		t.Fatalf("second handler ran %d times; an unstarted batch lease must not be reclaimed and executed twice", got)
+	}
+}
+
+func TestLeaseRecoveryDoesNotReapAnotherQueueWithLongerLease(t *testing.T) {
+	repo, db := integrationRepo(t)
+	now := time.Now().UTC()
+	shortQueueJob, err := repo.Enqueue(&models.DurableJob{
+		Queue: "short", Kind: "short-lease", Payload: "{}", Status: models.DurableJobPending,
+		RunAt: now, MaxAttempts: 3,
+	})
+	if err != nil {
+		t.Fatalf("enqueue short queue: %v", err)
+	}
+	longQueueJob, err := repo.Enqueue(&models.DurableJob{
+		Queue: "long", Kind: "long-lease", Payload: "{}", Status: models.DurableJobPending,
+		RunAt: now, MaxAttempts: 3,
+	})
+	if err != nil {
+		t.Fatalf("enqueue long queue: %v", err)
+	}
+	if claimed, err := repo.ClaimDue("short-worker", "short", now, 1); err != nil || len(claimed) != 1 {
+		t.Fatalf("claim short queue: jobs=%d err=%v", len(claimed), err)
+	}
+	if claimed, err := repo.ClaimDue("long-worker", "long", now, 1); err != nil || len(claimed) != 1 {
+		t.Fatalf("claim long queue: jobs=%d err=%v", len(claimed), err)
+	}
+	if err := db.Model(&models.DurableJob{}).Where("id = ?", shortQueueJob.ID).
+		Update("locked_at", now.Add(-2*time.Second)).Error; err != nil {
+		t.Fatalf("expire short lease: %v", err)
+	}
+	if err := db.Model(&models.DurableJob{}).Where("id = ?", longQueueJob.ID).
+		Update("locked_at", now.Add(-2*time.Second)).Error; err != nil {
+		t.Fatalf("age long lease: %v", err)
+	}
+
+	reaper, ok := repo.(interface {
+		ReapExpiredLeasesForQueue(queue string, now time.Time, lease time.Duration) (int, error)
+	})
+	if !ok {
+		t.Fatal("Gorm repository does not support queue-scoped lease recovery")
+	}
+	reaped, err := reaper.ReapExpiredLeasesForQueue("short", now, time.Second)
+	if err != nil || reaped != 1 {
+		t.Fatalf("short queue reaping = %d, %v; want exactly one", reaped, err)
+	}
+	shortStored, err := repo.Find(shortQueueJob.ID)
+	if err != nil {
+		t.Fatalf("find short queue job: %v", err)
+	}
+	longStored, err := repo.Find(longQueueJob.ID)
+	if err != nil {
+		t.Fatalf("find long queue job: %v", err)
+	}
+	if shortStored.Status != models.DurableJobPending || shortStored.LockedBy != "" {
+		t.Fatalf("short job after reaping = status %q locked_by %q, want pending/unlocked", shortStored.Status, shortStored.LockedBy)
+	}
+	if longStored.Status != models.DurableJobRunning || longStored.LockedBy != "long-worker" {
+		t.Fatalf("long queue job was reaped by short-lease worker: status %q locked_by %q", longStored.Status, longStored.LockedBy)
 	}
 }
 

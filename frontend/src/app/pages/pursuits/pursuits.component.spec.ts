@@ -1,7 +1,75 @@
-import { FormBuilder } from '@angular/forms';
-import { EMPTY, of, Subject, throwError } from 'rxjs';
-import { IPursuitAction, IPursuitDecision, IPursuitDetail, IPursuitLink } from '../../models/pursuit.model.interface';
+import { CommonModule } from '@angular/common';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { ActivatedRoute, convertToParamMap, Router } from '@angular/router';
+import { RouterTestingModule } from '@angular/router/testing';
+import { BehaviorSubject, EMPTY, of, Subject, throwError } from 'rxjs';
+import { ControlRoomModule } from '../../control-room/control-room.module';
+import { IProjectDossier, IPursuitAction, IPursuitDecision, IPursuitDetail, IPursuitLink } from '../../models/pursuit.model.interface';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
+import { AutomationsService } from '../../services/automations/automations.service';
+import { PursuitService } from '../../services/pursuit.service';
+import { WorkflowService } from '../../services/workflow/workflow.service';
+import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzCardModule } from 'ng-zorro-antd/card';
+import { NzCheckboxModule } from 'ng-zorro-antd/checkbox';
+import { NzEmptyModule } from 'ng-zorro-antd/empty';
+import { NzFormModule } from 'ng-zorro-antd/form';
+import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzLayoutModule } from 'ng-zorro-antd/layout';
+import { NzModalService } from 'ng-zorro-antd/modal';
+import { NzSelectModule } from 'ng-zorro-antd/select';
+import { NzSpinModule } from 'ng-zorro-antd/spin';
+import { NzTableModule } from 'ng-zorro-antd/table';
+import { NzTagModule } from 'ng-zorro-antd/tag';
+import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { PursuitsComponent } from './pursuits.component';
+import { PursuitsModule } from './pursuits.module';
+
+function projectDossierFixture(projectKey: string, overrides: Partial<IProjectDossier> = {}): IProjectDossier {
+  return {
+    projectKey,
+    generatedAt: '2026-09-26T10:00:00.000Z',
+    counts: {
+      matchingWorkflows: 1,
+      returnedWorkflows: 1,
+      returnedMemories: 1,
+      checklistItemsReturned: 1,
+      openLoopsReturned: 1,
+      sourceLinksReturned: 1,
+      evidenceClaimsReturned: 1,
+      decisionsReturned: 1,
+    },
+    truncated: { workflows: false, memories: false, workflowContext: false, text: false },
+    workflows: [{
+      id: 'workflow-1', title: 'Prepare the project evidence', state: 'needs_approval', taskType: 'legal', riskLevel: 'high',
+      priorityScore: 90, confidence: 0.8, autonomyLevel: 'draft_only', requiresApproval: true,
+      approvalStatus: 'pending', approvalReason: 'Legal work requires review', blockedReason: 'Awaiting review',
+      nextAction: 'Review the evidence draft', dueAt: '2026-10-01T12:00:00.000Z', updatedAt: '2026-09-25T12:00:00.000Z',
+      checklist: [{ id: 'check-1', label: 'Collect source records', status: 'open', requiresApproval: false }],
+      openLoops: [{ id: 'loop-1', responsibleParty: 'lawyer', waitingFor: 'Requested documents', nextAction: 'Follow up', status: 'open' }],
+      sourceLinks: [{ sourceType: 'email', sourceUri: 'https://example.test/mail/1', sourceLabel: 'Request email', relationship: 'supports', createdAt: '2026-09-20T12:00:00.000Z' }],
+      evidence: [{ claimText: 'A source-backed statement', sourceUri: 'https://example.test/file/1', sourceLabel: 'Evidence file', reliability: 'direct', status: 'verified', needsReview: false, createdAt: '2026-09-20T12:00:00.000Z' }],
+      decisions: [{ decisionType: 'routing', decision: 'Needs owner review', reason: 'High risk', ruleApplied: 'legal-review', approved: false, createdAt: '2026-09-20T12:00:00.000Z' }],
+    }],
+    memories: [{
+      id: 'memory-1', kind: 'preference', content: 'Keep claims source-linked', summary: 'Evidence preference', tags: 'legal,evidence',
+      confidence: 0.9, sourceUri: 'https://example.test/memory/1', sourceLabel: 'Prior review',
+      createdAt: '2026-09-19T12:00:00.000Z', updatedAt: '2026-09-20T12:00:00.000Z',
+    }],
+    ...overrides,
+  };
+}
+
+function normalizedPursuitDetail(pursuit: any): IPursuitDetail {
+  let normalized!: IPursuitDetail;
+  new PursuitService({ get: () => of({ pursuit, summary: {} }) } as any).get(pursuit.id).subscribe((detail) => {
+    normalized = detail;
+  });
+  return normalized;
+}
 
 describe('PursuitsComponent action lanes', () => {
   let component: PursuitsComponent;
@@ -12,8 +80,11 @@ describe('PursuitsComponent action lanes', () => {
 		warning: (title: string, content: string) => void;
   }>;
   let modal: jasmine.SpyObj<{ confirm: (options: any) => any }>;
+  let viewPreferences: ModuleViewPreferencesService;
 
   beforeEach(() => {
+    localStorage.removeItem('hai.module-view.v1.pursuits');
+    viewPreferences = new ModuleViewPreferencesService(document);
     notification = jasmine.createSpyObj('NzNotificationService', ['info', 'success', 'error', 'warning']);
     modal = jasmine.createSpyObj('NzModalService', ['confirm']);
     component = new PursuitsComponent(
@@ -22,9 +93,10 @@ describe('PursuitsComponent action lanes', () => {
       {} as any,
       {} as any,
       notification as any,
-			modal as any,
+      modal as any,
       {} as any,
-      {} as any
+      {} as any,
+      viewPreferences,
     );
     (component as any).pursuitsService.portfolioAllocations = jasmine.createSpy('portfolioAllocations').and.returnValue(of([]));
     (component as any).pursuitsService.portfolioExecutionProposals = jasmine.createSpy('portfolioExecutionProposals').and.returnValue(of([]));
@@ -42,6 +114,60 @@ describe('PursuitsComponent action lanes', () => {
     ));
   });
 
+  afterEach(() => localStorage.removeItem('hai.module-view.v1.pursuits'));
+
+  it('keeps Advanced mode scoped to Pursuits and remembers it across service instances', () => {
+    expect(component.isAdvancedView).toBeFalse();
+    viewPreferences.setMode('pursuits', 'advanced');
+
+    const restored = new ModuleViewPreferencesService(document);
+    expect(component.isAdvancedView).toBeTrue();
+    expect(restored.get('pursuits').mode).toBe('advanced');
+    expect(restored.get('exceptions').mode).toBe('basic');
+  });
+
+  it('cancels the previous project dossier request and clears its data on selection change', () => {
+    const service = (component as any).pursuitsService;
+    const firstDossier = new Subject<IProjectDossier>();
+    const secondDossier = new Subject<IProjectDossier>();
+    const firstDetail = new Subject<IPursuitDetail>();
+    const secondDetail = new Subject<IPursuitDetail>();
+    service.get = jasmine.createSpy('get').and.returnValues(firstDetail.asObservable(), secondDetail.asObservable());
+    service.projectDossier = jasmine.createSpy('projectDossier').and.returnValues(
+      firstDossier.asObservable(),
+      secondDossier.asObservable(),
+    );
+
+    component.selectPursuit({ id: 'pursuit-one', projectKey: 'Project One' } as any, false);
+    expect(component.projectDossierProjectKey).toBe('Project One');
+    expect(component.projectDossierLoading).toBeTrue();
+
+    component.selectPursuit({ id: 'pursuit-two', projectKey: 'Project & Two' } as any, false);
+    expect(component.projectDossier).toBeUndefined();
+    expect(component.projectDossierProjectKey).toBe('Project & Two');
+    expect(firstDossier.observers.length).toBe(0);
+    expect(service.projectDossier.calls.allArgs()).toEqual([['Project One'], ['Project & Two']]);
+
+    firstDossier.next(projectDossierFixture('Project One'));
+    expect(component.projectDossier).toBeUndefined();
+    secondDossier.next(projectDossierFixture('Project & Two'));
+    expect(component.projectDossier?.projectKey).toBe('Project & Two');
+
+    secondDetail.next(normalizedPursuitDetail({ id: 'pursuit-two', title: 'Selected project', projectKey: 'Project & Two' }));
+    expect(component.selected?.pursuit.id).toBe('pursuit-two');
+    expect(service.projectDossier).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads resource usage only when the Advanced ledger is opened', () => {
+    const loadResourceEvents = spyOn(component, 'loadResourceEvents');
+
+    component.onResourceLedgerOpen(false);
+    expect(loadResourceEvents).not.toHaveBeenCalled();
+
+    component.onResourceLedgerOpen(true);
+    expect(loadResourceEvents).toHaveBeenCalledOnceWith();
+  });
+
   it('reuses active pursuits returned by the dashboard instead of issuing a second list request', () => {
     const pursuitService = (component as any).pursuitsService;
     pursuitService.dashboard = jasmine.createSpy('dashboard').and.returnValue(of({
@@ -55,6 +181,84 @@ describe('PursuitsComponent action lanes', () => {
     expect(pursuitService.dashboard).toHaveBeenCalledWith(true);
     expect(pursuitService.list).not.toHaveBeenCalled();
     expect(component.pursuits.map((pursuit) => pursuit.id)).toEqual(['pursuit-1']);
+  });
+
+  it('keeps an initial dashboard failure distinct from a genuinely empty account', () => {
+    const pursuitService = (component as any).pursuitsService;
+    pursuitService.dashboard = jasmine.createSpy('dashboard').and.returnValue(
+      throwError(() => ({ error: { error: 'Dashboard API is unavailable.' } })),
+    );
+
+    component.load();
+
+    expect(component.loading).toBeFalse();
+    expect(component.dashboardError).toBe('Dashboard API is unavailable.');
+    expect(component.loadError).toBe('Dashboard API is unavailable.');
+    expect(component.hasLastKnownData).toBeFalse();
+    expect(component.showEmptyState).toBeFalse();
+    expect(notification.error).toHaveBeenCalledWith('Pursuits unavailable', 'Dashboard API is unavailable.');
+  });
+
+  it('shows the empty state only after a successful empty response', () => {
+    const pursuitService = (component as any).pursuitsService;
+    pursuitService.dashboard = jasmine.createSpy('dashboard').and.returnValue(of({ counts: {}, pursuits: [] }));
+
+    component.load();
+
+    expect(component.loadError).toBe('');
+    expect(component.loading).toBeFalse();
+    expect(component.showEmptyState).toBeTrue();
+  });
+
+  it('retains last-known pursuits and marks them stale after a refresh failure', () => {
+    const pursuit = { id: 'pursuit-1', title: 'Existing outcome' } as any;
+    const dashboard = { counts: { active: 1 }, pursuits: [pursuit] } as any;
+    const pursuitService = (component as any).pursuitsService;
+    component.dashboard = dashboard;
+    component.pursuits = [pursuit];
+    pursuitService.dashboard = jasmine.createSpy('dashboard').and.returnValue(
+      throwError(() => ({ error: { error: 'Refresh timed out.' } })),
+    );
+
+    component.load();
+
+    expect(component.dashboard).toBe(dashboard);
+    expect(component.pursuits).toEqual([pursuit]);
+    expect(component.hasLastKnownData).toBeTrue();
+    expect(component.showEmptyState).toBeFalse();
+    expect(component.loadError).toBe('Refresh timed out.');
+  });
+
+  it('exposes list API failures instead of presenting them as an empty pursuits list', () => {
+    const pursuitService = (component as any).pursuitsService;
+    pursuitService.dashboard = jasmine.createSpy('dashboard').and.returnValue(of({ counts: { active: 0 } }));
+    pursuitService.list = jasmine.createSpy('list').and.returnValue(
+      throwError(() => ({ error: { error: 'Pursuit list is unavailable.' } })),
+    );
+
+    component.load();
+
+    expect(component.loading).toBeFalse();
+    expect(component.pursuitsError).toBe('Pursuit list is unavailable.');
+    expect(component.loadError).toBe('Pursuit list is unavailable.');
+    expect(component.hasLastKnownData).toBeTrue();
+    expect(component.showEmptyState).toBeFalse();
+  });
+
+  it('shows required-field state when create or route input is submitted empty', () => {
+    const pursuitService = (component as any).pursuitsService;
+    pursuitService.create = jasmine.createSpy('create');
+    pursuitService.routeIntake = jasmine.createSpy('routeIntake');
+
+    component.createPursuit();
+    component.routeIntake();
+
+    expect(component.createForm.get('title')?.touched).toBeTrue();
+    expect(component.createForm.get('title')?.invalid).toBeTrue();
+    expect(component.routedIntakeForm.get('input')?.touched).toBeTrue();
+    expect(component.routedIntakeForm.get('input')?.invalid).toBeTrue();
+    expect(pursuitService.create).not.toHaveBeenCalled();
+    expect(pursuitService.routeIntake).not.toHaveBeenCalled();
   });
 
   it('reconciles life domains and refreshes the pursuit view', () => {
@@ -126,8 +330,13 @@ describe('PursuitsComponent action lanes', () => {
   });
 
   it('uses the explicit candidate acceptance endpoint for an approved candidate decision', () => {
-    const candidate = { id: 'candidate-1', riskLevel: 'medium' } as any;
-    const detail = { pursuit: candidate } as IPursuitDetail;
+    const candidate = {
+      id: 'candidate-1',
+      riskLevel: 'medium',
+      status: 'active',
+      sourceOfCreation: 'manual_pursuit_intake',
+    } as any;
+    const detail = normalizedPursuitDetail(candidate);
     const pursuitService = (component as any).pursuitsService;
     pursuitService.acceptCandidate = jasmine.createSpy('acceptCandidate').and.returnValue(of(detail));
     component.selected = detail;
@@ -145,16 +354,29 @@ describe('PursuitsComponent action lanes', () => {
       requiresReview: false,
       reviewReason: decision.reason,
     });
-    expect(notification.success).toHaveBeenCalledWith('Candidate accepted', 'HAI converted the candidate into governed pursuit work.');
+    expect(notification.success).toHaveBeenCalledWith(
+      'Candidate accepted',
+      'The returned pursuit is now active for governed HAI handling. Review linked workflow state separately; execution is not confirmed.',
+    );
+    expect(component.selected?.pursuit.sourceOfCreation).toBe('manual_pursuit_intake');
   });
 
   it('does not claim that routed candidate intake created governed work', () => {
     const pursuitService = (component as any).pursuitsService;
+    const detail = normalizedPursuitDetail({
+      id: 'candidate-1',
+      status: 'waiting',
+      sourceOfCreation: 'manual_pursuit_candidate',
+    });
+    detail.workflows = [];
+    detail.links = [];
     pursuitService.routeIntake = jasmine.createSpy('routeIntake').and.returnValue(of({
       mode: 'candidate_created',
       createdCandidate: true,
+      matched: false,
       pursuitId: 'candidate-1',
       matches: [],
+      detail,
     }));
     spyOn(component, 'load');
     const selectPursuit = spyOn<any>(component as any, 'selectPursuitById');
@@ -164,10 +386,11 @@ describe('PursuitsComponent action lanes', () => {
 
     expect(notification.info).toHaveBeenCalledWith(
       'Pursuit candidate needs review',
-      'HAI recorded the unmatched input as a reviewable pursuit candidate. No workflow was created until an approver accepts it.'
+      'The returned pursuit is a candidate awaiting explicit acceptance. This response does not authorize execution.',
     );
     expect(notification.success).not.toHaveBeenCalledWith('Pursuit candidate created', jasmine.anything());
     expect(selectPursuit).toHaveBeenCalledWith('candidate-1', true);
+    expect(pursuitService.routeIntake.calls.mostRecent().args[0].trigger).toBe('pursuit_dashboard_global_intake');
   });
 
   it('opens a linked pursuit from the relationship ledger', () => {
@@ -1879,3 +2102,249 @@ function portfolioWorkflowSettlementFixture(item: any, execution: any, workflow:
     },
   };
 }
+
+describe('PursuitsComponent rendered operational states', () => {
+  let fixture: ComponentFixture<PursuitsComponent>;
+  let pursuitService: jasmine.SpyObj<any>;
+  let routeParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+
+  const emptyDashboard = () => ({
+    counts: {},
+    pursuits: [],
+    needsRobert: [],
+    blocked: [],
+    stale: [],
+    reviewDue: [],
+    planningNeeded: [],
+    completionCandidates: [],
+    decisionQueue: [],
+  });
+
+  beforeEach(async () => {
+    localStorage.removeItem('hai.module-view.v1.pursuits');
+    pursuitService = jasmine.createSpyObj('PursuitService', ['dashboard', 'list', 'get', 'projectDossier']);
+    pursuitService.projectDossier.and.callFake((projectKey: string) => of(projectDossierFixture(projectKey)));
+    routeParams = new BehaviorSubject(convertToParamMap({}));
+
+    await TestBed.configureTestingModule({
+      imports: [RouterTestingModule, PursuitsModule],
+      schemas: [NO_ERRORS_SCHEMA],
+      providers: [
+        { provide: PursuitService, useValue: pursuitService },
+        { provide: AutomationsService, useValue: {} },
+        { provide: WorkflowService, useValue: {} },
+        { provide: NzNotificationService, useValue: jasmine.createSpyObj('notifications', ['info', 'success', 'error', 'warning']) },
+        { provide: NzModalService, useValue: jasmine.createSpyObj('modal', ['confirm']) },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { queryParamMap: convertToParamMap({}) },
+            queryParamMap: routeParams.asObservable(),
+          },
+        },
+      ],
+    }).compileComponents();
+  });
+
+  afterEach(() => {
+    fixture?.destroy();
+    localStorage.removeItem('hai.module-view.v1.pursuits');
+  });
+
+  it('shows an accessible initial loading state while the dashboard request is pending', () => {
+    const pending = new Subject<any>();
+    pursuitService.dashboard.and.returnValue(pending.asObservable());
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.detectChanges();
+
+    const page: HTMLElement = fixture.nativeElement;
+    const loading = page.querySelector('[data-testid="pursuits-initial-loading"]');
+    expect(loading?.getAttribute('role')).toBe('status');
+    expect(loading?.getAttribute('aria-busy')).toBe('true');
+    expect(page.querySelector('.pursuits-empty')).toBeNull();
+  });
+
+  it('opens the create form from a create-intent link and consumes that intent from the URL', () => {
+    routeParams.next(convertToParamMap({ create: 'true' }));
+    pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [] }));
+    const router = TestBed.inject(Router);
+    spyOn(router, 'navigate').and.returnValue(Promise.resolve(true));
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.detectChanges();
+
+    const page: HTMLElement = fixture.nativeElement;
+    expect(page.querySelector('[data-testid="pursuit-create-form"]')).not.toBeNull();
+    expect(router.navigate).toHaveBeenCalledWith([], {
+      relativeTo: TestBed.inject(ActivatedRoute),
+      queryParams: { create: null },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+
+    (page.querySelector('.form-actions button[type="button"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    routeParams.next(convertToParamMap({ create: 'true', selected: 'not-yet-loaded' }));
+    fixture.detectChanges();
+    expect(page.querySelector('[data-testid="pursuit-create-form"]')).toBeNull();
+  });
+
+  it('recovers from a dashboard error and exposes the empty-state create action', () => {
+    pursuitService.dashboard.and.returnValues(
+      throwError(() => ({ error: { error: 'Dashboard temporarily unavailable' } })),
+      of(emptyDashboard()),
+    );
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.detectChanges();
+
+    const page: HTMLElement = fixture.nativeElement;
+    expect(page.querySelector('[role="alert"]')?.textContent).toContain('Dashboard temporarily unavailable');
+    const retry = page.querySelector('.pursuits-load-error button') as HTMLButtonElement;
+    expect(retry.type).toBe('button');
+    retry.focus();
+    expect(document.activeElement).toBe(retry);
+    retry.click();
+    fixture.detectChanges();
+
+    expect(page.querySelector('.pursuits-load-error')).toBeNull();
+    expect(page.querySelector('.pursuits-empty')?.textContent).toContain('Start with one outcome');
+    const create = page.querySelector('.pursuits-empty button') as HTMLButtonElement;
+    expect(create.type).toBe('button');
+    create.click();
+    fixture.detectChanges();
+    expect(page.querySelector('[data-testid="pursuit-create-form"]')).not.toBeNull();
+  });
+
+  it('retries a selected pursuit detail request and clears the error after recovery', () => {
+    const pursuitId = 'selected-pursuit';
+    const pursuit = {
+      id: pursuitId,
+      title: 'Prepare the hearing evidence',
+      status: 'active',
+      riskLevel: 'low',
+      priorityScore: 40,
+      projectKey: 'hearing',
+      domain: 'legal',
+      desiredOutcome: 'Evidence is ready for review',
+    };
+    const recoveredDetail = { pursuit: { ...pursuit }, summary: {} } as unknown as IPursuitDetail;
+    pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
+    pursuitService.get.and.returnValues(
+      throwError(() => ({ error: { error: 'private-provider-token' } })),
+      of(recoveredDetail),
+    );
+    routeParams.next(convertToParamMap({ selected: pursuitId }));
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.componentInstance.selected = { pursuit: { id: 'previous-pursuit' } } as IPursuitDetail;
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+    const page: HTMLElement = fixture.nativeElement;
+    const detailError = page.querySelector('[data-testid="pursuit-detail-error"]');
+    expect(pursuitService.get).toHaveBeenCalledOnceWith(pursuitId);
+    expect(detailError?.getAttribute('role')).toBe('alert');
+    expect(detailError?.textContent).toContain('HAI could not load the pursuit details. Retry loading this pursuit.');
+    expect(detailError?.textContent).not.toContain('private-provider-token');
+    expect(component.selected).toBeUndefined();
+    expect(page.querySelector('.detail-panel:not(.detail-panel--empty)')).toBeNull();
+
+    (detailError?.querySelector('button') as HTMLButtonElement).click();
+
+    expect(pursuitService.get).toHaveBeenCalledTimes(2);
+    expect(pursuitService.get.calls.argsFor(1)).toEqual([pursuitId]);
+    expect(component.selected).toBe(recoveredDetail);
+    expect(component.detailError).toBe('');
+    expect(component.detailLoading).toBeFalse();
+  });
+
+  it('shows a compact project summary in Basic and full read-only context in the existing Advanced disclosure', () => {
+    const pursuit = { id: 'pursuit-dossier', title: 'Prepare project evidence', status: 'active', projectKey: 'Legal & housing' };
+    const detail = normalizedPursuitDetail(pursuit);
+    const dossier = projectDossierFixture('Legal & housing', {
+      truncated: { workflows: true, memories: false, workflowContext: true, text: true },
+    });
+    pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
+    pursuitService.get.and.returnValue(of(detail));
+    pursuitService.projectDossier.and.returnValue(of(dossier));
+    routeParams.next(convertToParamMap({ selected: pursuit.id }));
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.detectChanges();
+
+    const component = fixture.componentInstance;
+    const page: HTMLElement = fixture.nativeElement;
+    expect(pursuitService.projectDossier).toHaveBeenCalledOnceWith('Legal & housing');
+    expect(page.querySelector('[data-testid="project-dossier-summary"]')?.textContent).toContain('Legal & housing');
+    expect(page.querySelector('[data-testid="project-dossier-summary"]')?.textContent).toContain('Workflows');
+    expect(page.querySelector('[data-testid="project-dossier-truncated"]')?.textContent).toContain('capped or shortened');
+    expect(page.querySelector('[data-testid="project-dossier-advanced"]')).toBeNull();
+
+    TestBed.inject(ModuleViewPreferencesService).setMode('pursuits', 'advanced');
+    fixture.detectChanges();
+    const recordDisclosure = page.querySelector('#record-audit-trails button') as HTMLButtonElement;
+    expect(recordDisclosure).not.toBeNull();
+    recordDisclosure.click();
+    fixture.detectChanges();
+    const dossierDisclosure = page.querySelector('[data-hai-section="evidence-memory-source-context"]') as HTMLDetailsElement;
+    expect(dossierDisclosure).not.toBeNull();
+    (dossierDisclosure.querySelector('summary') as HTMLElement).click();
+    fixture.detectChanges();
+
+    const advanced = page.querySelector('[data-testid="project-dossier-advanced"]') as HTMLElement;
+    expect(advanced.textContent).toContain('Prepare the project evidence');
+    expect(advanced.textContent).toContain('Collect source records');
+    expect(advanced.textContent).toContain('Requested documents');
+    expect(advanced.textContent).toContain('A source-backed statement');
+    expect(advanced.textContent).toContain('Needs owner review');
+    expect(advanced.textContent).toContain('Keep claims source-linked');
+    expect(advanced.querySelector('[data-testid="project-dossier-truncation-details"]')?.textContent).toContain('Additional matching workflows were not returned');
+    expect(component.projectDossier?.projectKey).toBe(pursuit.projectKey);
+  });
+
+  it('shows dossier loading, errors, and retry without retaining prior project data', () => {
+    const pursuit = { id: 'pursuit-dossier-error', title: 'Review project', status: 'active', projectKey: 'project-error' };
+    const detail = normalizedPursuitDetail(pursuit);
+    pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
+    pursuitService.get.and.returnValue(of(detail));
+    pursuitService.projectDossier.and.returnValues(
+      throwError(() => ({ error: { error: 'Project dossier temporarily unavailable.' } })),
+      of(projectDossierFixture('project-error')),
+    );
+    routeParams.next(convertToParamMap({ selected: pursuit.id }));
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.detectChanges();
+
+    const page: HTMLElement = fixture.nativeElement;
+    const error = page.querySelector('[data-testid="project-dossier-error"]') as HTMLElement;
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toContain('Project dossier temporarily unavailable.');
+    expect(fixture.componentInstance.projectDossier).toBeUndefined();
+    (error.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(pursuitService.projectDossier).toHaveBeenCalledTimes(2);
+    expect(page.querySelector('[data-testid="project-dossier-error"]')).toBeNull();
+    expect(fixture.componentInstance.projectDossier?.projectKey).toBe('project-error');
+  });
+
+  it('does not request a dossier without a project key and distinguishes an empty bounded response', () => {
+    const pursuit = { id: 'pursuit-no-key', title: 'Unlinked project', status: 'active' };
+    pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
+    pursuitService.get.and.returnValue(of(normalizedPursuitDetail(pursuit)));
+    routeParams.next(convertToParamMap({ selected: pursuit.id }));
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    expect(pursuitService.projectDossier).not.toHaveBeenCalled();
+    expect(page.querySelector('[data-testid="project-dossier-no-key"]')?.textContent).toContain('Add a project key');
+  });
+
+  it('reports an empty dossier and rejects content returned for a different project key', () => {
+    const pursuit = { id: 'pursuit-empty-dossier', title: 'Empty project', status: 'active', projectKey: 'empty-project' };
+    pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
+    pursuitService.get.and.returnValue(of(normalizedPursuitDetail(pursuit)));
+    pursuitService.projectDossier.and.returnValue(of(projectDossierFixture('wrong-project')));
+    routeParams.next(convertToParamMap({ selected: pursuit.id }));
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.projectDossier).toBeUndefined();
+    expect(fixture.componentInstance.projectDossierError).toContain('did not match the selected project');
+  });
+});

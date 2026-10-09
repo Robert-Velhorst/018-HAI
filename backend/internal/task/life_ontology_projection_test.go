@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"automation-hub-backend/internal/lifeontology"
 )
@@ -88,6 +89,65 @@ func TestWithLifeOntologyProjectionValidatesBoundary(t *testing.T) {
 }
 
 type failingLifeProjectionRecorder struct{}
+
+func TestLifeProjectionCannotPromoteUncertainExecution(t *testing.T) {
+	for _, kind := range []string{"execution", "tool", "legacy_action"} {
+		for _, passed := range []bool{false, true} {
+			t.Run(kind+"/"+map[bool]string{false: "human_approved", true: "validated"}[passed], func(t *testing.T) {
+				plan := validStructuredValidationPlan()
+				plan.ID = "outcome-plan"
+				plan.OwnerIdentity = "alice"
+				plan.CreatedAt = time.Now().UTC().Add(-time.Minute)
+				plan.CompletionStatus = "validated"
+				plan.ValidationResult.Passed = passed
+				plan.StoredMemoryIDs = []string{"lesson-1"}
+				request := IntakeRequest{HumanApproved: true}
+				knownDigest := completionPlanProjectionDigest(plan, request, "run")
+				known := completionPlanProjectionRequest(plan, request, "run")
+				wantKnown := lifeontology.VerificationHumanApproved
+				if passed {
+					wantKnown = lifeontology.VerificationVerified
+				}
+				if known.VerificationStatus != wantKnown {
+					t.Fatalf("known outcome lost its classification: %#v", known)
+				}
+				switch kind {
+				case "execution":
+					plan.ExecutionResult.OutcomeUncertain = true
+				case "tool":
+					plan.ExecutionResult.ToolExecution = completedToolResult()
+					plan.ExecutionResult.ToolExecution.OutcomeUncertain = true
+				case "legacy_action":
+					plan.ExecutionResult.Actions = []ExecutedAction{{Name: "automation.launch", Status: "indeterminate"}}
+				}
+				projection := completionPlanProjectionRequest(plan, request, "run")
+				if projection.Status != lifeontology.StatusWaiting || projection.VerificationStatus != lifeontology.VerificationNeedsReview || projection.Confidence > 0.6 || projection.Attributes["runtime_outcome"] != "uncertain" || projection.Attributes["completion_status"] != "review_required" {
+					t.Fatalf("uncertain outcome promoted: %#v", projection)
+				}
+				if projection.Provenance[0].ContentDigest == knownDigest {
+					t.Fatal("uncertainty was not bound into provenance")
+				}
+				ontology := lifeontology.NewService(nil, nil)
+				stored, err := ontology.ProjectOperationalRecord(context.Background(), projection)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if stored.Primary.Status != lifeontology.StatusWaiting || stored.Primary.VerificationStatus != lifeontology.VerificationNeedsReview || len(stored.LinkedEntities) != 1 {
+					t.Fatalf("stored graph promoted uncertainty or lessons: %#v", stored)
+				}
+				outcome := stored.LinkedEntities[0]
+				if outcome.Type != lifeontology.EntityOutcome || outcome.Status != lifeontology.StatusWaiting || outcome.VerificationStatus != lifeontology.VerificationNeedsReview || !strings.HasPrefix(outcome.Summary, "Unverified runtime output;") {
+					t.Fatalf("linked outcome inherited false success: %#v", outcome)
+				}
+				for _, relation := range stored.Relations {
+					if relation.VerificationStatus != lifeontology.VerificationNeedsReview {
+						t.Fatalf("graph relation promoted uncertainty: %#v", relation)
+					}
+				}
+			})
+		}
+	}
+}
 
 func (failingLifeProjectionRecorder) ProjectOperationalRecord(context.Context, lifeontology.OperationalProjectionRequest) (lifeontology.OperationalProjectionResult, error) {
 	return lifeontology.OperationalProjectionResult{}, errors.New("life ontology ledger unavailable")

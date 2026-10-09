@@ -1,32 +1,36 @@
-import { TestBed, fakeAsync, tick } from '@angular/core/testing';
-import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { fakeAsync, TestBed, tick } from '@angular/core/testing';
 
+import { HttpTimeoutPolicy } from '../../shared/http-timeout-policy';
 import { AuthService } from './auth.service';
-import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('AuthService', () => {
   let service: AuthService;
-  let controller: HttpTestingController;
+  let http: HttpTestingController;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] });
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting(), AuthService],
+    });
     service = TestBed.inject(AuthService);
-    controller = TestBed.inject(HttpTestingController);
+    http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => controller.verify());
+  afterEach(() => http.verify());
 
-  it('should be created', () => {
-    expect(service).toBeTruthy();
+  it('uses the shared bounded read timeout for session checks', () => {
+    expect(AuthService.authenticationCheckTimeoutMs).toBe(HttpTimeoutPolicy.readMs);
   });
 
-  it('fails a hanging authentication probe promptly', fakeAsync(() => {
+  it('accepts a valid session response that arrives after the former 2.5 second cutoff', fakeAsync(() => {
     let authenticated: boolean | undefined;
-    service.loggedIn().subscribe((result) => (authenticated = result));
-    controller.expectOne('/api/v1/auth/is-user-authenticated');
+    service.loggedIn().subscribe((value) => authenticated = value);
 
-    tick(AuthService.authenticationCheckTimeoutMs + 1);
+    const request = http.expectOne('/api/v1/auth/is-user-authenticated');
+    tick(3_000);
+    request.flush({ authenticated: true });
 
-    expect(authenticated).toBeFalse();
+    expect(authenticated).toBeTrue();
   }));
 });

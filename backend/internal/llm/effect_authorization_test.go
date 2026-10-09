@@ -27,6 +27,11 @@ func withTrustedTestEffect(request GenerateRequest) GenerateRequest {
 	return request
 }
 
+func disableModelMaintenanceForTest(t *testing.T) {
+	t.Helper()
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "false")
+}
+
 func withTrustedTestFinalEffects(t *testing.T, service *Service) *Service {
 	t.Helper()
 	effectContext := trustedTestEffectContext()
@@ -115,7 +120,7 @@ func TestRefreshOllamaModelUsesFreshFinalEffectAuthorizationPerAttempt(t *testin
 	effectContext := trustedTestEffectContext()
 
 	for attempt := 0; attempt < 2; attempt++ {
-		result := service.refreshOllamaModel(provider, model, "test-fingerprint", false, effectContext)
+		result := service.refreshOllamaModel(context.Background(), provider, model, "test-fingerprint", false, effectContext)
 		if result.Status != "current" || result.BlocksExecution {
 			t.Fatalf("attempt %d result = %#v", attempt+1, result)
 		}

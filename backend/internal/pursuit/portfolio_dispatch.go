@@ -305,7 +305,7 @@ func (s *service) DispatchPortfolioWorkflowsForOwner(
 		Confirmation:             request.Confirmation,
 		CoordinationPlanID:       optionalUUIDString(evidence.Allocation.CoordinationPlanID),
 		CoordinationPlanRevision: evidence.Allocation.CoordinationPlanRevision,
-		CoordinationPlanDigest:   evidence.Allocation.CoordinationPlanDigest,
+		CoordinationPlanDigest:   portfolioCoordinationDigest(evidence.Allocation.CoordinationPlanDigest),
 		CoordinationPlanNodeID:   evidence.Allocation.CoordinationPlanNodeID,
 	})
 	if err != nil {

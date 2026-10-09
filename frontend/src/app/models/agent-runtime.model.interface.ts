@@ -12,6 +12,7 @@ export interface IAgentRuntimeInfo {
   controls?: string[];
   ecosystem?: IAgentRuntimeEcosystemSurface[];
   ecosystemPath?: string;
+  ecosystemRollbackAvailable: boolean;
   missingConfiguration?: string[];
   endpoint?: string;
 }

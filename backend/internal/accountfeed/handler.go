@@ -1,6 +1,7 @@
 package accountfeed
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
@@ -18,6 +19,10 @@ type Handler struct {
 
 // NewHandler builds a handler over a registry.
 func NewHandler(reg *Registry, _ string, workspaceID string) *Handler {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		workspaceID = "local"
+	}
 	return &Handler{reg: reg, perms: NewPermissionRegistry(), space: workspaceID}
 }
 
@@ -36,7 +41,12 @@ func (h *Handler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"feeds": h.reg.HealthForOwner(owner)})
+	feeds, err := h.reg.ListContext(c.Request.Context(), FeedScope{owner, h.space})
+	if err != nil {
+		respondFeedError(c, err, nil)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"feeds": feeds})
 }
 
 // Bridges returns the provider bridge contracts with truthful connection status.
@@ -94,9 +104,9 @@ func (h *Handler) Create(c *gin.Context) {
 		WorkspaceID:   h.space,
 		Enabled:       req.Enabled,
 	}
-	created, err := h.reg.Register(feed)
+	created, err := h.reg.RegisterContext(c.Request.Context(), feed)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondFeedError(c, err, nil)
 		return
 	}
 	c.JSON(http.StatusCreated, created)
@@ -113,9 +123,9 @@ func (h *Handler) Get(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	feed, ok := h.reg.GetForOwner(id, owner)
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
+	feed, err := h.reg.GetContext(c.Request.Context(), FeedScope{owner, h.space}, id)
+	if err != nil {
+		respondFeedError(c, err, nil)
 		return
 	}
 	c.JSON(http.StatusOK, feed)
@@ -143,9 +153,9 @@ func (h *Handler) Patch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	feed, ok := h.reg.PatchForOwner(id, owner, req.Enabled, req.Name, req.OperationType)
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
+	feed, err := h.reg.PatchContext(c.Request.Context(), FeedScope{owner, h.space}, id, FeedPatch{req.Enabled, req.Name, req.OperationType})
+	if err != nil {
+		respondFeedError(c, err, nil)
 		return
 	}
 	c.JSON(http.StatusOK, feed)
@@ -162,9 +172,9 @@ func (h *Handler) Sync(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	rep, ok := h.reg.SyncForOwner(c.Request.Context(), id, owner)
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
+	rep, err := h.reg.SyncContext(c.Request.Context(), FeedScope{owner, h.space}, id)
+	if err != nil {
+		respondFeedError(c, err, gin.H{"report": rep})
 		return
 	}
 	c.JSON(http.StatusOK, rep)
@@ -176,7 +186,32 @@ func (h *Handler) SyncDue(c *gin.Context) {
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"reports": h.reg.SyncDueForOwner(c.Request.Context(), owner)})
+	reports, err := h.reg.SyncDueContext(c.Request.Context(), FeedScope{owner, h.space})
+	if err != nil {
+		respondFeedError(c, err, gin.H{"reports": reports})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"reports": reports})
+}
+
+// IdentityPreview reads local source identities without starting an import.
+func (h *Handler) IdentityPreview(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	owner, ok := h.requireOwner(c)
+	if !ok {
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	report, err := h.reg.PreviewSourceIdentity(c.Request.Context(), FeedScope{owner, h.space}, id)
+	if err != nil {
+		respondFeedError(c, err, nil)
+		return
+	}
+	c.JSON(http.StatusOK, report)
 }
 
 // Audit returns a feed's audit trail.
@@ -190,13 +225,9 @@ func (h *Handler) Audit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	if _, ok := h.reg.GetForOwner(id, owner); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
-		return
-	}
-	audit, ok := h.reg.AuditForOwner(id, owner)
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
+	audit, err := h.reg.AuditContext(c.Request.Context(), FeedScope{owner, h.space}, id)
+	if err != nil {
+		respondFeedError(c, err, nil)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"audit": audit})
@@ -209,4 +240,35 @@ func (h *Handler) requireOwner(c *gin.Context) (string, bool) {
 		return "", false
 	}
 	return owner, true
+}
+
+func respondFeedError(c *gin.Context, err error, payload gin.H) {
+	status, message := http.StatusServiceUnavailable, "Feed storage could not be verified. Refresh the status before retrying; inspect local operator diagnostics if it persists."
+	code := "feed_storage_unavailable"
+	switch {
+	case errors.Is(err, ErrFeedNotFound):
+		status, message = http.StatusNotFound, "feed not found"
+		code = "feed_not_found"
+	case errors.Is(err, ErrFeedSyncBusy):
+		status, message = http.StatusConflict, ErrFeedSyncBusy.Error()
+		code = "feed_sync_busy"
+	case errors.Is(err, ErrFeedDisabled):
+		status, message = http.StatusConflict, ErrFeedDisabled.Error()
+		code = "feed_disabled"
+	case errors.Is(err, ErrIdentityPreviewUnsupported):
+		status, message = http.StatusConflict, ErrIdentityPreviewUnsupported.Error()
+		code = "identity_preview_unsupported"
+	case errors.Is(err, ErrIdentityPreviewChanged):
+		status, message = http.StatusConflict, ErrIdentityPreviewChanged.Error()
+		code = "identity_preview_changed"
+	case errors.Is(err, ErrFeedInvalid):
+		status, message = http.StatusBadRequest, "Check the feed name, provider, source and scope."
+		code = "feed_invalid"
+	}
+	if payload == nil {
+		payload = gin.H{}
+	}
+	payload["error"] = message
+	payload["code"] = code
+	c.JSON(status, payload)
 }

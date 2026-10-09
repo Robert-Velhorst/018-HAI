@@ -3,6 +3,7 @@ package task
 import (
 	"automation-hub-backend/internal/identity"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -341,14 +342,15 @@ func TestResolveReviewItemExplainsUncertainOperationConfirmationContract(t *test
 }
 
 type capturingTaskService struct {
-	planRequest  IntakeRequest
-	runRequest   IntakeRequest
-	planErr      error
-	runErr       error
-	logsOwner    string
-	queueOwner   string
-	resolveOwner string
-	resolveErr   error
+	planRequest    IntakeRequest
+	runRequest     IntakeRequest
+	planErr        error
+	runErr         error
+	logsOwner      string
+	queueOwner     string
+	resolveOwner   string
+	resolveErr     error
+	resolveContext context.Context
 }
 
 func (s *capturingTaskService) Plan(request IntakeRequest) (*CompletionPlan, error) {
@@ -391,5 +393,13 @@ func (s *capturingTaskService) ReviewQueueForOwner(ownerIdentity string) []Revie
 
 func (s *capturingTaskService) ResolveReviewItemForOwner(ownerIdentity, id string, decision ApprovalDecision) (*ReviewResolutionResult, error) {
 	s.resolveOwner = ownerIdentity
-	return nil, s.resolveErr
+	return &ReviewResolutionResult{}, s.resolveErr
+}
+
+func (s *capturingTaskService) ResolveReviewItemForOwnerContext(ctx context.Context, ownerIdentity, id string, decision ApprovalDecision) (*ReviewResolutionResult, error) {
+	s.resolveContext = ctx
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.ResolveReviewItemForOwner(ownerIdentity, id, decision)
 }

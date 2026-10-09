@@ -1,4 +1,14 @@
 definitions:
+  dto.ConfirmPasswordResetDTO:
+    properties:
+      newPassword:
+        type: string
+      token:
+        type: string
+    required:
+    - newPassword
+    - token
+    type: object
   dto.ErrorResponse:
     properties:
       errorCode:
@@ -21,12 +31,16 @@ definitions:
         type: string
       password:
         type: string
+      rememberMe:
+        type: boolean
     required:
     - email
     - password
     type: object
   dto.UserRequest:
     properties:
+      currentPassword:
+        type: string
       email:
         type: string
       id:
@@ -44,22 +58,18 @@ definitions:
 info:
   contact: {}
 paths:
-  /auth/confirm-password-reset/{reset-token}:
+  /auth/confirm-password-reset:
     post:
       consumes:
-      - application/x-www-form-urlencoded
+      - application/json
       description: ConfirmPasswordReset
       parameters:
-      - description: reset-token
-        in: path
-        name: reset-token
+      - description: One-time reset token and new password
+        in: body
+        name: body
         required: true
-        type: string
-      - description: newPassword
-        in: formData
-        name: newPassword
-        required: true
-        type: string
+        schema:
+          $ref: '#/definitions/dto.ConfirmPasswordResetDTO'
       produces:
       - application/json
       responses:
@@ -114,7 +124,7 @@ paths:
       tags:
       - Authentication
   /auth/logout:
-    get:
+    post:
       description: Logout
       responses:
         "200":
@@ -149,6 +159,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/dto.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/dto.ErrorResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -174,12 +188,8 @@ paths:
           description: OK
           schema:
             type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/dto.ErrorResponse'
-        "500":
-          description: Internal Server Error
+        "429":
+          description: Too Many Requests
           schema:
             $ref: '#/definitions/dto.ErrorResponse'
       summary: RequestPasswordReset
@@ -206,31 +216,6 @@ paths:
       summary: GetCurrentUser
       tags:
       - Users
-  /user/change-password:
-    patch:
-      consumes:
-      - application/json
-      description: ChangePassword
-      parameters:
-      - description: User object
-        in: body
-        name: user
-        required: true
-        schema:
-          $ref: '#/definitions/dto.UserRequest'
-      responses:
-        "200":
-          description: Successfully changed password
-        "400":
-          description: Bad Request
-        "401":
-          description: Unauthorized
-        "500":
-          description: Internal Server Error
-      summary: ChangePassword
-      tags:
-      - Users
-  /users:
     patch:
       consumes:
       - application/json

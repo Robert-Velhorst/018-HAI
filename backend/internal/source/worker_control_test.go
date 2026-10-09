@@ -32,6 +32,7 @@ func TestWorkerControlSyncIsReadOnlyAndIncremental(t *testing.T) {
 		}`))
 	}))
 	defer server.Close()
+	t.Setenv("CONNECTED_SOURCE_HTTP_LOOPBACK_ADDRS", server.Listener.Addr().String())
 
 	t.Setenv("HAI_WORKER_CONTROL_ENABLED", "true")
 	t.Setenv("HAI_WORKER_CONTROL_BASE_URL", server.URL)
@@ -78,6 +79,7 @@ func TestWorkerControlRejectsUnsafeProvenanceURI(t *testing.T) {
 		}`))
 	}))
 	defer server.Close()
+	t.Setenv("CONNECTED_SOURCE_HTTP_LOOPBACK_ADDRS", server.Listener.Addr().String())
 
 	t.Setenv("HAI_WORKER_CONTROL_ENABLED", "true")
 	t.Setenv("HAI_WORKER_CONTROL_BASE_URL", server.URL)

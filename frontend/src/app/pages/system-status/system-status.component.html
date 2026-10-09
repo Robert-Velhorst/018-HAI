@@ -7,21 +7,17 @@
         reflects real connectivity probes, not configuration guesses.
       </p>
     </div>
-    <button
-      nz-button
-      nzType="default"
-      (click)="refresh()"
-      [nzLoading]="loading"
-    >
-      <span nz-icon nzType="reload"></span>
-      Refresh
-    </button>
+    <div class="header-actions">
+      <button nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">
+        <span nz-icon nzType="reload"></span> Refresh
+      </button>
+    </div>
   </div>
 
-  <div *ngIf="loadError && !readiness" class="load-error">
-    <span nz-icon nzType="disconnect"></span>
-    Could not reach the readiness probe. If you were redirected to sign in, your
-    session may have expired.
+  <hai-openclaw-maintenance></hai-openclaw-maintenance>
+  <div *ngIf="loadError" class="load-error" role="status" aria-live="polite">
+    <span nz-icon nzType="disconnect" aria-hidden="true"></span>
+    <span>{{ refreshErrorMessage() }}</span>
   </div>
 
   <ng-container *ngIf="readiness">
@@ -59,13 +55,34 @@
     >
       <h3>
         <span nz-icon nzType="bulb" nzTheme="outline"></span>
-        Recommended next actions
+        Checks needing attention
       </h3>
       <ul>
         <li *ngFor="let action of recommendedActions">{{ action }}</li>
       </ul>
     </div>
 
+    <section class="group-overview" aria-label="Subsystem status">
+      <article
+        *ngFor="let group of groups"
+        class="group-summary"
+        [ngClass]="'border-' + severityClass(group.worst)"
+      >
+        <span nz-icon [nzType]="severityIcon(group.worst)" [ngClass]="severityClass(group.worst)" aria-hidden="true"></span>
+        <strong>{{ group.title }}</strong>
+        <nz-tag [nzColor]="group.worst === 'ok' ? 'green' : group.worst === 'warn' ? 'gold' : 'red'">
+          {{ severityLabel(group.worst) }}
+        </nz-tag>
+        <small>{{ group.checks.length }} check<span *ngIf="group.checks.length !== 1">s</span></small>
+      </article>
+    </section>
+
+    <hai-progressive-section
+      moduleId="system-status"
+      sectionId="system-check-details"
+      title="Detailed system checks"
+      summary="Raw check names, individual results, and probe details."
+    >
     <div class="groups">
       <nz-card
         *ngFor="let group of groups"
@@ -86,12 +103,15 @@
               nz-icon
               [nzType]="severityIcon(check.severity)"
               [ngClass]="severityClass(check.severity)"
+              aria-hidden="true"
             ></span>
             <span class="check-name">{{ check.name }}</span>
+            <span class="check-severity" [ngClass]="severityClass(check.severity)">{{ severityLabel(check.severity) }}</span>
             <span class="check-detail">{{ check.detail }}</span>
           </li>
         </ul>
       </nz-card>
     </div>
+    </hai-progressive-section>
   </ng-container>
 </div>

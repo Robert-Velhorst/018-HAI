@@ -204,6 +204,53 @@ type scheduleSecurityHarness struct {
 	now       time.Time
 }
 
+type unconfirmedTemporalRepository struct {
+	Repository
+	change func(*models.TemporalWorkflowRun)
+}
+
+func (r unconfirmedTemporalRepository) Create(run *models.TemporalWorkflowRun) (*models.TemporalWorkflowRun, error) {
+	run.ID = uuid.New()
+	r.change(run)
+	return run, nil
+}
+
+func TestScheduleFollowUpRejectsUnconfirmedStorageProvenanceBeforeAuthorization(t *testing.T) {
+	for name, change := range map[string]func(*models.TemporalWorkflowRun){
+		"missing ID":          func(run *models.TemporalWorkflowRun) { run.ID = uuid.Nil },
+		"other owner":         func(run *models.TemporalWorkflowRun) { run.OwnerIdentity = "other@example.test" },
+		"other workflow":      func(run *models.TemporalWorkflowRun) { run.TemporalWorkflowID = "other-workflow" },
+		"other workflow type": func(run *models.TemporalWorkflowRun) { run.WorkflowType = "other-workflow-type" },
+		"already completed":   func(run *models.TemporalWorkflowRun) { run.Status = "completed" },
+		"different schedule":  func(run *models.TemporalWorkflowRun) { run.ScheduledFor = run.ScheduledFor.Add(time.Hour) },
+		"already started":     func(run *models.TemporalWorkflowRun) { at := run.ScheduledFor; run.StartedAt = &at },
+		"has completion time": func(run *models.TemporalWorkflowRun) { at := run.ScheduledFor; run.CompletedAt = &at },
+	} {
+		t.Run(name, func(t *testing.T) {
+			authorizer := &recordingFinalEffectAuthorizer{}
+			harness := newScheduleSecurityHarness(t, authorizer)
+			harness.service.repo = unconfirmedTemporalRepository{Repository: harness.repo, change: change}
+			result, err := harness.service.ScheduleFollowUp(context.Background(), "robert@example.test", FollowUpRequest{RunAt: harness.now.Add(time.Hour), Limit: 5})
+			if err == nil || result != nil {
+				t.Errorf("unconfirmed storage provenance was accepted: result=%+v err=%v", result, err)
+			}
+			if authorizer.calls != 0 || harness.scheduler.calls != 0 {
+				t.Errorf("unconfirmed storage reached authorization/scheduling: %d/%d", authorizer.calls, harness.scheduler.calls)
+			}
+		})
+	}
+}
+
+func TestScheduleFollowUpWithoutRepositoryDoesNotConsumeAuthorization(t *testing.T) {
+	authorizer := &recordingFinalEffectAuthorizer{}
+	harness := newScheduleSecurityHarness(t, authorizer)
+	harness.service.repo = nil
+	result, err := harness.service.ScheduleFollowUp(context.Background(), "robert@example.test", FollowUpRequest{RunAt: harness.now.Add(time.Hour), Limit: 5})
+	if !errors.Is(err, ErrUnavailable) || result != nil || authorizer.calls != 0 || harness.scheduler.calls != 0 {
+		t.Fatalf("missing storage did not fail closed: result=%+v err=%v authorize=%d schedule=%d", result, err, authorizer.calls, harness.scheduler.calls)
+	}
+}
+
 func newScheduleSecurityHarness(
 	t *testing.T,
 	authorizer FinalEffectAuthorizer,
@@ -278,11 +325,12 @@ func (a *recordingFinalEffectAuthorizer) AuthorizeAndConsume(
 }
 
 type recordingScheduler struct {
-	calls   int
-	options client.StartWorkflowOptions
-	input   FollowUpInput
-	err     error
-	events  *[]string
+	calls      int
+	options    client.StartWorkflowOptions
+	input      FollowUpInput
+	err        error
+	events     *[]string
+	onSchedule func()
 }
 
 func (s *recordingScheduler) Schedule(
@@ -295,6 +343,9 @@ func (s *recordingScheduler) Schedule(
 	s.input = input
 	if s.events != nil {
 		*s.events = append(*s.events, "schedule")
+	}
+	if s.onSchedule != nil {
+		s.onSchedule()
 	}
 	return s.err
 }
@@ -348,10 +399,42 @@ func (r *memoryTemporalRepository) FindByID(
 	return &value, nil
 }
 
+func (r *memoryTemporalRepository) FindByIDContext(ctx context.Context, id uuid.UUID) (*models.TemporalWorkflowRun, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.FindByID(id)
+}
+
+func (r *memoryTemporalRepository) TransitionActivity(ctx context.Context, expected, next models.TemporalWorkflowRun) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.records[expected.ID]
+	if !ok || !validActivityTransition(expected, next) || current.OwnerIdentity != expected.OwnerIdentity ||
+		current.TemporalWorkflowID != expected.TemporalWorkflowID || current.WorkflowType != expected.WorkflowType ||
+		!current.ScheduledFor.Equal(expected.ScheduledFor) || current.Status != expected.Status ||
+		!current.UpdatedAt.Equal(expected.UpdatedAt) || current.CompletedAt != nil ||
+		(current.StartedAt == nil) != (expected.StartedAt == nil) ||
+		(current.StartedAt != nil && !current.StartedAt.Equal(*expected.StartedAt)) {
+		return false, nil
+	}
+	current.Status, current.StartedAt, current.CompletedAt = next.Status, next.StartedAt, next.CompletedAt
+	current.Summary, current.ResultJSON, current.UpdatedAt = next.Summary, next.ResultJSON, next.UpdatedAt
+	r.records[expected.ID] = current
+	return true, nil
+}
+
 func (r *memoryTemporalRepository) FindForOwner(
+	ctx context.Context,
 	ownerIdentity string,
 	workflowID string,
 ) (*models.TemporalWorkflowRun, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, value := range r.records {
@@ -362,6 +445,23 @@ func (r *memoryTemporalRepository) FindForOwner(
 		}
 	}
 	return nil, errors.New("run not found")
+}
+
+func (r *memoryTemporalRepository) TransitionSchedule(ctx context.Context, expected models.TemporalWorkflowRun, from, to, summary string, at time.Time) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	current, ok := r.records[expected.ID]
+	if !ok || !validScheduleTransition(from, to) || current.OwnerIdentity != expected.OwnerIdentity ||
+		current.TemporalWorkflowID != expected.TemporalWorkflowID || current.WorkflowType != expected.WorkflowType ||
+		!current.ScheduledFor.Equal(expected.ScheduledFor) || current.Status != from || current.StartedAt != nil || current.CompletedAt != nil {
+		return false, nil
+	}
+	current.Status, current.Summary, current.UpdatedAt = to, summary, at
+	r.records[current.ID] = current
+	return true, nil
 }
 
 func (r *memoryTemporalRepository) ListForOwner(

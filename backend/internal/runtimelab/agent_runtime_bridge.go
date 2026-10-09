@@ -104,11 +104,25 @@ func (b *agentRuntimeBridge) Probe(ctx context.Context, now time.Time) ProbeResu
 		result.Status = executionbroker.RuntimeBlocked
 		result.DiscoveryState = "succeeded"
 		result.ReadinessLevel = ReadinessAvailable
-		result.ProtocolValid = true
 		result.RuntimeVersion = strings.TrimSpace(health.Version)
-		result.IdentityVerified = result.RuntimeVersion != ""
-		result.Authenticated = result.RuntimeVersion != ""
-		result.Detail = "canonical OpenClaw health contract validated; Runtime Lab remains read-only and task execution stays governed by the canonical HAI runtime path"
+		result.ProtocolValid = health.GatewayProtocolValidated
+		result.Authenticated = health.GatewayAuthenticated
+		result.IdentityVerified = result.Authenticated && result.RuntimeVersion != ""
+		result.EvidenceSchema = strings.TrimSpace(health.GatewayEvidenceSchema)
+		result.EndpointSHA256 = strings.TrimSpace(health.GatewayEndpointSHA256)
+		result.GatewayScope = strings.TrimSpace(health.GatewayScope)
+		result.GatewayTaskLedger = gatewayTaskLedgerSummaryFromHealth(health.GatewayTaskLedger)
+		result.GatewayCapabilityCatalog = gatewayCapabilityCatalogSummaryFromHealth(health.GatewayCapabilityCatalog)
+		result.GatewayPreparedModelCatalog = gatewayPreparedModelCatalogSummaryFromHealth(health.GatewayPreparedModelCatalog)
+		result.GatewayAgentRoster = gatewayAgentRosterSummaryFromHealth(health.GatewayAgentRoster)
+		if result.ProtocolValid {
+			result.Protocol = "openclaw-gateway-v4"
+			expiresAt := now.Add(openClawDiscoveryEvidenceTTL)
+			result.EvidenceExpiresAt = &expiresAt
+			result.Detail = "canonical OpenClaw protocol discovery validated; Runtime Lab remains read-only and task execution stays governed by the canonical HAI runtime path"
+		} else {
+			result.Detail = "canonical OpenClaw liveness was observed, but no protocol challenge was validated; Runtime Lab remains read-only and task execution stays governed by the canonical HAI runtime path"
+		}
 	default:
 		if result.Status == executionbroker.RuntimeBlocked {
 			result.ReadinessLevel = ReadinessConfigured
@@ -134,6 +148,14 @@ func (b *agentRuntimeBridge) LastDiscovery() (ProbeResult, bool) {
 	}
 	result := *b.lastProbe
 	result.Capabilities = append([]string(nil), b.lastProbe.Capabilities...)
+	result.GatewayTaskLedger = cloneGatewayTaskLedgerSummary(b.lastProbe.GatewayTaskLedger)
+	result.GatewayCapabilityCatalog = cloneGatewayCapabilityCatalogSummary(b.lastProbe.GatewayCapabilityCatalog)
+	result.GatewayPreparedModelCatalog = cloneGatewayPreparedModelCatalogSummary(b.lastProbe.GatewayPreparedModelCatalog)
+	result.GatewayAgentRoster = cloneGatewayAgentRosterSummary(b.lastProbe.GatewayAgentRoster)
+	if b.lastProbe.EvidenceExpiresAt != nil {
+		expiresAt := *b.lastProbe.EvidenceExpiresAt
+		result.EvidenceExpiresAt = &expiresAt
+	}
 	return result, true
 }
 
@@ -141,9 +163,104 @@ func (b *agentRuntimeBridge) remember(result ProbeResult) ProbeResult {
 	b.mu.Lock()
 	copyResult := result
 	copyResult.Capabilities = append([]string(nil), result.Capabilities...)
+	copyResult.GatewayTaskLedger = cloneGatewayTaskLedgerSummary(result.GatewayTaskLedger)
+	copyResult.GatewayCapabilityCatalog = cloneGatewayCapabilityCatalogSummary(result.GatewayCapabilityCatalog)
+	copyResult.GatewayPreparedModelCatalog = cloneGatewayPreparedModelCatalogSummary(result.GatewayPreparedModelCatalog)
+	copyResult.GatewayAgentRoster = cloneGatewayAgentRosterSummary(result.GatewayAgentRoster)
+	if result.EvidenceExpiresAt != nil {
+		expiresAt := *result.EvidenceExpiresAt
+		copyResult.EvidenceExpiresAt = &expiresAt
+	}
 	b.lastProbe = &copyResult
 	b.mu.Unlock()
 	return result
+}
+
+func gatewayTaskLedgerSummaryFromHealth(summary *agentruntime.GatewayTaskLedgerSummary) *GatewayTaskLedgerSummary {
+	if summary == nil {
+		return nil
+	}
+	return cloneGatewayTaskLedgerSummary(&GatewayTaskLedgerSummary{
+		SampledTasks: summary.SampledTasks,
+		StatusCounts: summary.StatusCounts,
+		Truncated:    summary.Truncated,
+	})
+}
+
+func cloneGatewayTaskLedgerSummary(summary *GatewayTaskLedgerSummary) *GatewayTaskLedgerSummary {
+	if summary == nil {
+		return nil
+	}
+	copySummary := *summary
+	copySummary.StatusCounts = make(map[string]int, len(summary.StatusCounts))
+	for status, count := range summary.StatusCounts {
+		copySummary.StatusCounts[status] = count
+	}
+	return &copySummary
+}
+
+func gatewayCapabilityCatalogSummaryFromHealth(summary *agentruntime.GatewayCapabilityCatalogSummary) *GatewayCapabilityCatalogSummary {
+	if summary == nil {
+		return nil
+	}
+	return cloneGatewayCapabilityCatalogSummary(&GatewayCapabilityCatalogSummary{
+		SampledSkills:      summary.SampledSkills,
+		EligibleSkills:     summary.EligibleSkills,
+		SampledCommands:    summary.SampledCommands,
+		ToolCountsBySource: summary.ToolCountsBySource,
+	})
+}
+
+func cloneGatewayCapabilityCatalogSummary(summary *GatewayCapabilityCatalogSummary) *GatewayCapabilityCatalogSummary {
+	if summary == nil {
+		return nil
+	}
+	copySummary := *summary
+	copySummary.ToolCountsBySource = make(map[string]int, len(summary.ToolCountsBySource))
+	for source, count := range summary.ToolCountsBySource {
+		copySummary.ToolCountsBySource[source] = count
+	}
+	return &copySummary
+}
+
+func gatewayPreparedModelCatalogSummaryFromHealth(summary *agentruntime.GatewayPreparedModelCatalogSummary) *GatewayPreparedModelCatalogSummary {
+	if summary == nil {
+		return nil
+	}
+	return cloneGatewayPreparedModelCatalogSummary(&GatewayPreparedModelCatalogSummary{
+		SampledModels:             summary.SampledModels,
+		AvailableModels:           summary.AvailableModels,
+		UnavailableModels:         summary.UnavailableModels,
+		UnknownAvailabilityModels: summary.UnknownAvailabilityModels,
+	})
+}
+
+func cloneGatewayPreparedModelCatalogSummary(summary *GatewayPreparedModelCatalogSummary) *GatewayPreparedModelCatalogSummary {
+	if summary == nil {
+		return nil
+	}
+	copySummary := *summary
+	return &copySummary
+}
+
+func gatewayAgentRosterSummaryFromHealth(summary *agentruntime.GatewayAgentRosterSummary) *GatewayAgentRosterSummary {
+	if summary == nil {
+		return nil
+	}
+	return cloneGatewayAgentRosterSummary(&GatewayAgentRosterSummary{
+		SampledAgents:    summary.SampledAgents,
+		AgentCount:       summary.AgentCount,
+		SystemCount:      summary.SystemCount,
+		UnknownKindCount: summary.UnknownKindCount,
+	})
+}
+
+func cloneGatewayAgentRosterSummary(summary *GatewayAgentRosterSummary) *GatewayAgentRosterSummary {
+	if summary == nil {
+		return nil
+	}
+	copySummary := *summary
+	return &copySummary
 }
 
 func (b *agentRuntimeBridge) runtimeInfo() (agentruntime.Info, bool) {

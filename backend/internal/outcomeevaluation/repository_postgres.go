@@ -230,15 +230,6 @@ func (r *PostgresRepository) AppendEvaluation(ctx context.Context, ownerID, work
 	var stored EvaluationRecord
 	created := false
 	err = r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if existing, digest, found, loadErr := loadEvaluationByIdempotency(tx, ownerID, workspaceID, outcomeID, token.Key); loadErr != nil {
-			return loadErr
-		} else if found {
-			if digest != token.RequestDigest {
-				return ErrIdempotencyConflict
-			}
-			stored = existing
-			return nil
-		}
 		if token.OutcomeAuditDigest != "" {
 			if selectorErr := validateOutcomeRevisionSelector(record.OutcomeRevision, token.OutcomeAuditDigest); selectorErr != nil {
 				return selectorErr
@@ -250,7 +241,22 @@ func (r *PostgresRepository) AppendEvaluation(ctx context.Context, ownerID, work
 			if _, decodeErr := decodeOutcomeRow(row, ownerID, workspaceID, outcomeID); decodeErr != nil {
 				return decodeErr
 			}
-		} else {
+		}
+		if existing, digest, found, loadErr := loadEvaluationByIdempotency(tx, ownerID, workspaceID, outcomeID, token.Key); loadErr != nil {
+			return loadErr
+		} else if found {
+			if digest != token.RequestDigest {
+				return ErrIdempotencyConflict
+			}
+			if token.OutcomeAuditDigest != "" {
+				if err := verifyPinnedEvaluationResult(existing, record); err != nil {
+					return err
+				}
+			}
+			stored = existing
+			return nil
+		}
+		if token.OutcomeAuditDigest == "" {
 			current, found, loadErr := loadCurrentRevision(tx, ownerID, workspaceID, outcomeID)
 			if loadErr != nil {
 				return loadErr
@@ -288,6 +294,11 @@ func (r *PostgresRepository) AppendEvaluation(ctx context.Context, ownerID, work
 		} else if found {
 			if digest != token.RequestDigest {
 				return ErrIdempotencyConflict
+			}
+			if token.OutcomeAuditDigest != "" {
+				if err := verifyPinnedEvaluationResult(existing, record); err != nil {
+					return err
+				}
 			}
 			stored = existing
 			return nil

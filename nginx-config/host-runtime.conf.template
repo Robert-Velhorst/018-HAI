@@ -1,3 +1,5 @@
+pid /tmp/nginx.pid;
+
 events {
     worker_connections 64;
 }
@@ -7,7 +9,7 @@ http {
     resolver_timeout 5s;
 
     server {
-        listen 80;
+        listen 8080;
         set $backend_upstream backend:80;
 
         location = /healthz {

@@ -404,7 +404,7 @@ func TestEmergencyStopPersistenceFailureStaysFailClosed(t *testing.T) {
 	}
 }
 
-func TestModePersistenceFailureDoesNotChangeInMemoryMode(t *testing.T) {
+func TestModePersistenceFailureDoesNotRetainCachedExecutionPermission(t *testing.T) {
 	stateDir := t.TempDir()
 	service := newTestServiceAtStateDir(t, stateDir)
 	if _, err := service.SetMode(
@@ -430,8 +430,14 @@ func TestModePersistenceFailureDoesNotChangeInMemoryMode(t *testing.T) {
 	if !errors.Is(err, ErrControlPersistence) {
 		t.Fatalf("mode error = %v, want ErrControlPersistence", err)
 	}
-	if got := service.Control().StoredMode(); got != autonomypolicy.ModeReadOnly {
-		t.Fatalf("stored mode = %s, want unchanged read_only", got)
+	if got := service.Control().StoredMode(); got != autonomypolicy.ModePaused {
+		t.Fatalf("stored mode = %s, want fail-closed paused", got)
+	}
+	if got := service.Control().Mode(); got != autonomypolicy.ModePaused {
+		t.Fatalf("effective mode = %s, want fail-closed paused", got)
+	}
+	if _, err := service.Control().ModePersistenceStatus(); err == nil {
+		t.Fatal("failed mode persistence was reported healthy")
 	}
 }
 

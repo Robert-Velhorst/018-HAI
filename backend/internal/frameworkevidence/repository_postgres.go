@@ -118,9 +118,14 @@ func (repository *GormRepository) Resolve(
 	if err != nil {
 		return Record{}, err
 	}
+	db, cleanup, err := infra.PostgresExecutionDB(ctx, repository.db)
+	if err != nil {
+		return Record{}, err
+	}
+	defer cleanup()
 
 	var row postgresRecord
-	query := repository.db.WithContext(ctx).Raw(`
+	query := db.Raw(`
 		SELECT contract_version, owner_identity, task_plan_id,
 			framework_selection_id, preflight_digest, status,
 			assertions_json, evaluated_at, created_at

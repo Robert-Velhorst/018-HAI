@@ -21,10 +21,15 @@ type NewOperationInput struct {
 	SourceURI          string
 	SourceReceivedAt   *time.Time
 	SourceRevisionHash string
+	SourceProvider     string
+	SourceAccount      string
+	SourceExternalID   string
 	ProjectKey         string
 	AccountFeedID      *uuid.UUID
 	DedupeKey          string
-	EvidenceJSON       string
+	// LegacyDedupeKey is a rollout fence, not permission to overwrite old work.
+	LegacyDedupeKey string
+	EvidenceJSON    string
 }
 
 // NewOperation builds a valid Operation in the initial `new` status. Risk,
@@ -45,6 +50,14 @@ func NewOperation(in NewOperationInput, now time.Time) (models.Operation, error)
 	if strings.TrimSpace(in.DedupeKey) == "" {
 		return models.Operation{}, fmt.Errorf("operation: dedupeKey required")
 	}
+	var sourceIdentity string
+	if in.SourceProvider != "" || in.SourceAccount != "" || in.SourceExternalID != "" {
+		var err error
+		sourceIdentity, err = SourceIdentityDigest(in.SourceProvider, in.SourceAccount, in.SourceExternalID)
+		if err != nil {
+			return models.Operation{}, err
+		}
+	}
 	op := models.Operation{
 		OwnerUserID:         in.OwnerUserID,
 		WorkspaceID:         firstNonEmpty(in.WorkspaceID, "local"),
@@ -56,6 +69,10 @@ func NewOperation(in NewOperationInput, now time.Time) (models.Operation, error)
 		SourceURI:           in.SourceURI,
 		SourceReceivedAt:    in.SourceReceivedAt,
 		SourceRevisionHash:  in.SourceRevisionHash,
+		SourceProvider:      in.SourceProvider,
+		SourceAccount:       in.SourceAccount,
+		SourceExternalID:    in.SourceExternalID,
+		SourceIdentityHash:  sourceIdentity,
 		ProjectKey:          in.ProjectKey,
 		AccountFeedID:       in.AccountFeedID,
 		Status:              string(StatusNew),
@@ -77,6 +94,9 @@ func NewOperation(in NewOperationInput, now time.Time) (models.Operation, error)
 
 // Validate enforces the Operation invariants (§10.7).
 func Validate(op models.Operation) error {
+	if err := validateOperationSourceIdentity(op); err != nil {
+		return err
+	}
 	if strings.TrimSpace(op.OwnerUserID) == "" {
 		return fmt.Errorf("operation: ownerUserId required")
 	}

@@ -3,6 +3,8 @@ package verification
 import (
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
+	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -100,27 +102,27 @@ func (r *GormRepository) FindRuns() ([]models.VerificationRun, error) {
 	return runs, err
 }
 
-// FindRunsForOwner includes legacy ownerless records for local compatibility,
-// but never returns a record owned by another authenticated user.
+// FindRunsForOwner returns only records owned by the authenticated identity.
+// Legacy ownerless runs remain available through explicit in-process methods,
+// not through authenticated reads where they could expose another operator's data.
 func (r *GormRepository) FindRunsForOwner(ownerIdentity string) ([]models.VerificationRun, error) {
-	var runs []models.VerificationRun
-	query := r.DB.Order("created_at desc")
-	if ownerIdentity != "" {
-		query = query.Where("owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL", ownerIdentity)
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, fmt.Errorf("authenticated owner identity is required")
 	}
-	err := query.Find(&runs).Error
+	var runs []models.VerificationRun
+	err := r.DB.Where("owner_identity = ?", ownerIdentity).Order("created_at desc").Find(&runs).Error
 	return runs, err
 }
 
-// FindRunForOwner includes ownerless legacy entries for local compatibility,
-// but never returns an entry belonging to another authenticated account.
+// FindRunForOwner enforces exact ownership for authenticated inspection.
 func (r *GormRepository) FindRunForOwner(ownerIdentity string, id uuid.UUID) (*models.VerificationRun, error) {
-	var run models.VerificationRun
-	query := r.DB.Where("id = ?", id)
-	if ownerIdentity != "" {
-		query = query.Where("owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL", ownerIdentity)
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, fmt.Errorf("authenticated owner identity is required")
 	}
-	if err := query.First(&run).Error; err != nil {
+	var run models.VerificationRun
+	if err := r.DB.Where("id = ? AND owner_identity = ?", id, ownerIdentity).First(&run).Error; err != nil {
 		return nil, err
 	}
 	return &run, nil

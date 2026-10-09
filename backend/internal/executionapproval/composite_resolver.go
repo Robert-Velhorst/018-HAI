@@ -9,6 +9,7 @@ import (
 
 	"automation-hub-backend/internal/executionauth"
 	"automation-hub-backend/internal/opscontrol"
+	"gorm.io/gorm"
 )
 
 var ErrUnsupportedApprovalReference = errors.New("unsupported execution approval reference")
@@ -80,6 +81,32 @@ func (r *CompositeResolver) Resolve(
 	default:
 		return executionauth.ResolvedApproval{}, ErrUnsupportedApprovalReference
 	}
+}
+
+func (r *CompositeResolver) ResolveInPostgresTransaction(
+	ctx context.Context,
+	tx *gorm.DB,
+	ownerIdentity string,
+	sourceID string,
+	bindingDigest string,
+) (executionauth.ResolvedApproval, error) {
+	if r == nil || isNilApprovalResolver(r.taskReview) {
+		return executionauth.ResolvedApproval{}, fmt.Errorf(
+			"%w: task review resolver is unavailable",
+			ErrInvalidRequest,
+		)
+	}
+	if !strings.HasPrefix(sourceID, taskReviewPrefix) {
+		return executionauth.ResolvedApproval{}, ErrUnsupportedApprovalReference
+	}
+	resolver, ok := r.taskReview.(executionauth.PostgresTransactionApprovalResolver)
+	if !ok || resolver == nil {
+		return executionauth.ResolvedApproval{}, fmt.Errorf(
+			"%w: task review resolver cannot lock approval state in the execution transaction",
+			ErrInvalidRequest,
+		)
+	}
+	return resolver.ResolveInPostgresTransaction(ctx, tx, ownerIdentity, sourceID, bindingDigest)
 }
 
 const portfolioDecisionPrefix = "portfolio-decision:"

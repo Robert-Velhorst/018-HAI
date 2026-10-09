@@ -1,0 +1,9 @@
+{
+  "extends": "../../../../tsconfig.spec.json",
+  "include": [
+    "./connected-sources.component.spec.ts",
+    "../memory/memory.component.spec.ts",
+    "../grounded-answers/grounded-answers.component.spec.ts",
+    "../../control-room/progressive-section.component.spec.ts"
+  ]
+}

@@ -60,7 +60,7 @@ func PostgresProbe(cfg config.Configuration) doctor.Probe {
 		Name:     "database.connection",
 		Critical: true,
 		Run: func(ctx context.Context) error {
-			gormDB, err := infra.NewPostgresDatabase(cfg.DbUser, cfg.DbPassword, cfg.DbName, cfg.DbHost, cfg.DbPort)
+			gormDB, err := infra.NewPostgresDatabaseContext(ctx, cfg.DbUser, cfg.DbPassword, cfg.DbName, cfg.DbHost, cfg.DbPort)
 			if err != nil {
 				return fmt.Errorf("connect %s:%d/%s as %s: %w", cfg.DbHost, cfg.DbPort, cfg.DbName, cfg.DbUser, err)
 			}

@@ -37,7 +37,7 @@ type ConnectedSource struct {
 	IngestionModes    string     `gorm:"type:varchar(512)" json:"ingestionModes"`
 	Permissions       string     `gorm:"type:varchar(1024)" json:"permissions"`
 	ExcludePatterns   string     `gorm:"type:text" json:"excludePatterns"`
-	Cursor            string     `gorm:"type:varchar(512)" json:"cursor,omitempty"`
+	Cursor            string     `gorm:"type:text" json:"cursor,omitempty"`
 	Status            string     `gorm:"type:varchar(50);default:'active';index" json:"status"`
 	LastSyncedAt      *time.Time `json:"lastSyncedAt,omitempty"`
 	RevokedAt         *time.Time `json:"revokedAt,omitempty"`
@@ -46,21 +46,29 @@ type ConnectedSource struct {
 }
 
 type SourceSyncJob struct {
-	ID           uuid.UUID  `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id,omitempty"`
-	SourceID     uuid.UUID  `gorm:"type:uuid;index;not null" json:"sourceId"`
-	Mode         string     `gorm:"type:varchar(50);index;not null" json:"mode"`
-	Status       string     `gorm:"type:varchar(50);index;not null" json:"status"`
-	CursorBefore string     `gorm:"type:varchar(512)" json:"cursorBefore,omitempty"`
-	CursorAfter  string     `gorm:"type:varchar(512)" json:"cursorAfter,omitempty"`
-	ItemsSeen    int        `json:"itemsSeen"`
-	ItemsAdded   int        `json:"itemsAdded"`
-	ItemsUpdated int        `json:"itemsUpdated"`
-	ItemsFailed  int        `json:"itemsFailed"`
-	Message      string     `gorm:"type:text" json:"message,omitempty"`
-	StartedAt    time.Time  `json:"startedAt"`
-	CompletedAt  *time.Time `json:"completedAt,omitempty"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	ID                 uuid.UUID  `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id,omitempty"`
+	SourceID           uuid.UUID  `gorm:"type:uuid;index;not null" json:"sourceId"`
+	OwnerIdentity      string     `gorm:"type:varchar(255)" json:"-"`
+	IdempotencyKeyHash string     `gorm:"type:varchar(64)" json:"-"`
+	RequestHash        string     `gorm:"type:varchar(64)" json:"-"`
+	DurableJobID       *uuid.UUID `gorm:"type:uuid" json:"-"`
+	Mode               string     `gorm:"type:varchar(50);index;not null" json:"mode"`
+	Status             string     `gorm:"type:varchar(50);index;not null" json:"status"`
+	CursorBefore       string     `gorm:"type:text" json:"cursorBefore,omitempty"`
+	CursorAfter        string     `gorm:"type:text" json:"cursorAfter,omitempty"`
+	ItemsSeen          int        `json:"itemsSeen"`
+	ItemsAdded         int        `json:"itemsAdded"`
+	ItemsUpdated       int        `json:"itemsUpdated"`
+	ItemsFailed        int        `json:"itemsFailed"`
+	ProgressPhase      string     `gorm:"type:varchar(40)" json:"progressPhase,omitempty"`
+	ProgressPages      int        `json:"progressPages,omitempty"`
+	ProgressRecords    int        `json:"progressRecords,omitempty"`
+	ProgressMessage    string     `gorm:"type:varchar(512)" json:"progressMessage,omitempty"`
+	Message            string     `gorm:"type:text" json:"message,omitempty"`
+	StartedAt          time.Time  `json:"startedAt"`
+	CompletedAt        *time.Time `json:"completedAt,omitempty"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
 type SourceRawItem struct {

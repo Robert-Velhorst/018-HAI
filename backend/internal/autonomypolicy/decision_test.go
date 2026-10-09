@@ -33,6 +33,25 @@ func TestLowRiskAutonomousSafeRunsAutomatically(t *testing.T) {
 	}
 }
 
+func TestSourceDerivedLowRiskWorkIsHeldForReviewButNotAuthorized(t *testing.T) {
+	for _, mode := range []Mode{ModeApprovalRequired, ModeAutonomousSafe} {
+		d := Decide(Input{
+			Title: "Organize workspace notes", Content: "Summarize this message",
+			OperationType: "review_message", SourceDerived: true,
+			Mode: mode, Reversible: true,
+		}, now)
+		if d.Decision != operations.DecisionAskRobert || !d.RequiresApproval || d.Autonomy != operations.AutonomyApproval || d.PolicyRule != "source_derived_owner_review_hold" {
+			t.Fatalf("source-derived work in mode %s must remain execution-blocked after review: %+v", mode, d)
+		}
+	}
+	for _, mode := range []Mode{ModeDraftOnly, ModeReadOnly} {
+		d := Decide(Input{SourceDerived: true, Mode: mode, Reversible: true}, now)
+		if d.Decision == operations.DecisionRunSafeLocalWorker {
+			t.Fatalf("source-derived internal-only mode %s authorized a host effect: %+v", mode, d)
+		}
+	}
+}
+
 func TestHighRiskAlwaysRequiresApproval(t *testing.T) {
 	for _, mode := range []Mode{ModeAutonomousSafe, ModeApprovalRequired, ModeDraftOnly, ModeReadOnly} {
 		d := Decide(Input{

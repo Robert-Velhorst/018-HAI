@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"errors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 	"testing"
 )
@@ -36,7 +38,12 @@ func TestBcryptHasher_Compare(t *testing.T) {
 
 	// Comparing the hashed password with an incorrect password
 	err = hasher.Compare(hashedPassword, "wrong-password")
+	require.ErrorIs(t, err, ErrPasswordMismatch)
+
+	// A malformed stored hash is an internal verification failure, not a mismatch.
+	err = hasher.Compare("invalid-hash", password)
 	assert.Error(t, err)
+	assert.False(t, errors.Is(err, ErrPasswordMismatch))
 }
 
 func TestDefaultBcryptHasher(t *testing.T) {

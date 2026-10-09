@@ -40,8 +40,9 @@ func TestAutomationLaunchHandlerIgnoresClientApprovalClaims(t *testing.T) {
 		LaunchTarget:       "POST " + target.URL + "/mutate",
 		ExpectedHTTPStatus: http.StatusNoContent,
 	})
-	handler := NewHandler(newTestService(repo, events.Publisher{}))
+	handler := NewHandler(newTestService(&contextualConfigurationReadProbe{Repository: repo}, events.Publisher{}))
 	body := []byte(`{
+		"idempotencyKey": "forged-approval-test-launch",
 		"humanApproved": true,
 		"approvalSourceId": "task-review:forged",
 		"approvalProof": {
@@ -85,11 +86,13 @@ func TestDirectLaunchPathsCannotBypassApproval(t *testing.T) {
 	defer target.Close()
 
 	tests := []struct {
-		name string
-		run  func(Service, uuid.UUID) (*LaunchResult, error)
+		name        string
+		run         func(Service, uuid.UUID) (*LaunchResult, error)
+		expectedErr error
 	}{
 		{
-			name: "Launch",
+			name:        "Launch rejects missing retry identity",
+			expectedErr: ErrLaunchIdempotencyKeyRequired,
 			run: func(service Service, id uuid.UUID) (*LaunchResult, error) {
 				return service.Launch(id)
 			},
@@ -99,6 +102,7 @@ func TestDirectLaunchPathsCannotBypassApproval(t *testing.T) {
 			run: func(service Service, id uuid.UUID) (*LaunchResult, error) {
 				return service.LaunchTask(id, TaskLaunchRequest{
 					OwnerIdentity:    "alice",
+					IdempotencyKey:   "forged-approval-test-launch-task",
 					ApprovalSourceID: "task-review:forged",
 					ApprovalProof: &ApprovalProof{
 						ID:               "forged",
@@ -128,6 +132,12 @@ func TestDirectLaunchPathsCannotBypassApproval(t *testing.T) {
 				ExpectedHTTPStatus: http.StatusNoContent,
 			})
 			result, err := test.run(newTestService(repo, events.Publisher{}), id)
+			if test.expectedErr != nil {
+				if !errors.Is(err, test.expectedErr) || result != nil {
+					t.Fatalf("direct launch result=%#v error=%v, want fail-closed error %v", result, err, test.expectedErr)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("launch: %v", err)
 			}
@@ -271,7 +281,7 @@ func TestApprovalProofExpiryAndConcurrentReplayFailClosed(t *testing.T) {
 	}
 }
 
-func TestReadOnlyAPIProbesAreExemptButMutationsRequireProof(t *testing.T) {
+func TestAPIRequestsRequireOwnerApprovalByDefault(t *testing.T) {
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 		t.Run(method, func(t *testing.T) {
 			var calls atomic.Int32
@@ -293,27 +303,30 @@ func TestReadOnlyAPIProbesAreExemptButMutationsRequireProof(t *testing.T) {
 				LaunchTarget:       method + " " + target.URL,
 				ExpectedHTTPStatus: http.StatusNoContent,
 			})
-			result, err := newTestService(repo, events.Publisher{}).LaunchTask(
-				id,
-				TaskLaunchRequest{OwnerIdentity: "alice"},
-			)
+			request := TaskLaunchRequest{OwnerIdentity: "alice", IdempotencyKey: "security-test-" + strings.ToLower(method)}
+			service := newTestService(repo, events.Publisher{})
+			requirementReader, ok := service.(interface {
+				ActionApprovalRequired(uuid.UUID) (bool, error)
+			})
+			if !ok {
+				t.Fatal("automation service does not expose its approval requirement")
+			}
+			required, err := requirementReader.ActionApprovalRequired(id)
+			if err != nil || !required {
+				t.Fatalf("ActionApprovalRequired = %t, error=%v; want owner approval", required, err)
+			}
+			result, err := service.LaunchTask(id, request)
 			if err != nil {
 				t.Fatalf("Launch: %v", err)
 			}
-			if method == http.MethodPost {
-				if result.Status != "blocked" || calls.Load() != 0 || !result.RequiresApproval {
-					t.Fatalf("mutating result=%#v calls=%d, want approval block before I/O", result, calls.Load())
-				}
-				return
-			}
-			if result.Status != "completed" || calls.Load() != 1 || result.RequiresApproval {
-				t.Fatalf("read-only result=%#v calls=%d, want one approval-free probe", result, calls.Load())
+			if result.Status != "blocked" || calls.Load() != 0 || !result.RequiresApproval {
+				t.Fatalf("%s result=%#v calls=%d, want approval block before I/O", method, result, calls.Load())
 			}
 		})
 	}
 }
 
-func TestApprovalProofIssuerRejectsReadOnlyAndUnsupportedActions(t *testing.T) {
+func TestApprovalProofIssuerRequiresRecordedApprovalForGETHEADAndUnsupportedActions(t *testing.T) {
 	tests := []struct {
 		name       string
 		launchType string
@@ -375,7 +388,7 @@ func TestApprovalProofServiceUnavailableFailsClosed(t *testing.T) {
 	}); err == nil || proof != nil {
 		t.Fatalf("unavailable proof service issued proof %#v with error %v", proof, err)
 	}
-	result, err := automationService.LaunchTask(id, TaskLaunchRequest{OwnerIdentity: "alice"})
+	result, err := automationService.LaunchTask(id, TaskLaunchRequest{OwnerIdentity: "alice", IdempotencyKey: "proof-service-unavailable"})
 	if err != nil {
 		t.Fatalf("LaunchTask: %v", err)
 	}
@@ -384,7 +397,7 @@ func TestApprovalProofServiceUnavailableFailsClosed(t *testing.T) {
 	}
 
 	rawService := &service{repo: repo}
-	result, err = rawService.LaunchTask(id, TaskLaunchRequest{OwnerIdentity: "alice"})
+	result, err = rawService.LaunchTask(id, TaskLaunchRequest{OwnerIdentity: "alice", IdempotencyKey: "proof-service-unavailable-raw"})
 	if err != nil {
 		t.Fatalf("raw LaunchTask: %v", err)
 	}
@@ -533,7 +546,7 @@ func TestPrepareWorkflowApprovalBindingMatchesProofDigestContract(t *testing.T) 
 	}
 }
 
-func TestPrepareWorkflowApprovalBindingSupportsReadOnlyIdentityAndRejectsOwnerlessActions(t *testing.T) {
+func TestPrepareWorkflowApprovalBindingSupportsGETScopeAndRejectsOwnerlessActions(t *testing.T) {
 	id := uuid.New()
 	repo := newFakeAutomationRepo(&models.Automation{
 		ID:           id,
@@ -589,11 +602,17 @@ func TestApprovalProofIssuerRejectsStaleAndFutureDecisions(t *testing.T) {
 
 	repo = newFakeAutomationRepo(automation)
 	service = newTestService(repo, events.Publisher{})
+	snapshot, snapshotErr := service.(ReviewConfigurationInspector).InspectReviewConfiguration(id)
+	if snapshotErr != nil {
+		t.Fatalf("capture future-decision fixture configuration: %v", snapshotErr)
+	}
 	err = service.(ApprovalDecisionRecorder).RecordApprovalDecision(id, TaskApprovalDecisionRequest{
-		OwnerIdentity:    request.OwnerIdentity,
-		Task:             request.Task,
-		ApprovalSourceID: "task-review:" + uuid.NewString(),
-		ApprovedAt:       time.Now().UTC().Add(maximumApprovalDecisionFutureSkew + time.Second),
+		OwnerIdentity:         request.OwnerIdentity,
+		Task:                  request.Task,
+		ApprovalSourceID:      "task-review:" + uuid.NewString(),
+		ApprovalBindingDigest: strings.Repeat("b", 64),
+		ReviewConfiguration:   snapshot,
+		ApprovedAt:            time.Now().UTC().Add(maximumApprovalDecisionFutureSkew + time.Second),
 	})
 	if err == nil || !strings.Contains(err.Error(), "future") {
 		t.Fatalf("future decision error=%v, want freshness rejection", err)

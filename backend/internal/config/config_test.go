@@ -36,3 +36,29 @@ func TestInitKeepsConfiguredEventBusTargets(t *testing.T) {
 		t.Fatalf("Topic = %q, want configured event topic", AppConfig.Topic)
 	}
 }
+
+func TestDatabaseCredentialDefaultsDependOnRunMode(t *testing.T) {
+	tests := []struct {
+		name             string
+		mode             string
+		wantUser, wantPW string
+	}{
+		{name: "development defaults fail safe", mode: "development"},
+		{name: "local defaults fail safe", mode: "local"},
+		{name: "production has no credential defaults", mode: "production"},
+		{name: "production mode is case insensitive", mode: " Production "},
+		{name: "demo keeps local defaults", mode: "demo", wantUser: "postgres", wantPW: "postgres"},
+		{name: "test keeps local defaults", mode: "test", wantUser: "postgres", wantPW: "postgres"},
+		{name: "unknown mode fails safe", mode: "unexpected"},
+		{name: "empty mode fails safe", mode: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotUser, gotPW := databaseCredentialDefaults(tt.mode)
+			if gotUser != tt.wantUser || gotPW != tt.wantPW {
+				t.Fatalf("databaseCredentialDefaults(%q) = (%q, %q), want (%q, %q)",
+					tt.mode, gotUser, gotPW, tt.wantUser, tt.wantPW)
+			}
+		})
+	}
+}

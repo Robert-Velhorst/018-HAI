@@ -23,7 +23,11 @@ type kafkaConfig struct {
 }
 
 func newKafkaConfig() (*kafkaConfig, error) {
-	if !getEnvBool(eventBusEnabled, false) {
+	enabled, err := getEnvBool(eventBusEnabled, false)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
 		return &kafkaConfig{}, nil
 	}
 

@@ -3,6 +3,52 @@
   overflow-x: hidden;
 }
 
+.dashboard-load-state {
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #dfe3e8;
+  border-radius: 6px;
+  color: #344054;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin: 12px 24px 0;
+  padding: 12px 14px;
+}
+
+.dashboard-load-state--error {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #7c2d12;
+}
+
+.runtime-status-summary {
+  background: #fff;
+  border: 1px solid #dfe3e8;
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+
+.runtime-status-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.runtime-status-row {
+  align-items: center;
+  border-top: 1px solid #eaecf0;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(125px, auto) auto;
+  min-width: 0;
+  padding-top: 8px;
+}
+
+.runtime-status-row > * {
+  min-width: 0;
+}
+
 .header-container {
   background: #fff;
   border-bottom: 1px solid #dfe3e8;
@@ -712,6 +758,12 @@
   line-height: 1.2;
 }
 
+.command-grid button:focus-visible,
+.row-actions button:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
 .ecosystem-chip strong {
   color: #101828;
 }
@@ -839,6 +891,46 @@ td small {
   padding: 14px 16px;
 }
 
+.dashboard-freshness,
+.pursuit-refreshing,
+.dashboard-scope-note {
+  color: var(--hai-muted, #708096);
+  margin: 8px 0 0;
+}
+
+.dashboard-scope-note {
+  border-left: 2px solid var(--hai-action, #1684ff);
+  padding: 2px 0 2px 10px;
+}
+
+.pursuit-brief__stale,
+.search-error {
+  background: var(--hai-gold-soft, #fff3df);
+  border: 1px solid var(--hai-border, #dfe7f1);
+  border-radius: 6px;
+  color: var(--hai-text, #142033);
+  margin: 0 0 12px;
+  padding: 10px 12px;
+}
+
+.search-error,
+.openclaw-upload-error {
+  overflow-wrap: anywhere;
+}
+
+.search-results__query {
+  color: var(--hai-muted, #708096);
+}
+
+.openclaw-upload {
+  flex-wrap: wrap;
+}
+
+.openclaw-upload-error {
+  color: var(--hai-red, #d83d46);
+  flex-basis: 100%;
+}
+
 @media (max-width: 1000px) {
   .status-strip {
     grid-template-columns: repeat(2, minmax(130px, 1fr));
@@ -902,8 +994,80 @@ td small {
     grid-template-columns: 1fr;
   }
 
+  .runtime-status-row {
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .dashboard-load-state {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+
   .metric {
     border-bottom: 1px solid #344054;
     border-right: 0;
   }
+}
+
+body.hai-theme-dark .command-page {
+  color: var(--hai-text, #edf4ff);
+}
+
+body.hai-theme-dark .command-page .header-container,
+body.hai-theme-dark .command-page .assistant-actions,
+body.hai-theme-dark .command-page .runtime-status-summary,
+body.hai-theme-dark .command-page .pursuit-band,
+body.hai-theme-dark .command-page .openclaw-cockpit,
+body.hai-theme-dark .command-page .runtime-surface-detail,
+body.hai-theme-dark .command-page .assistant-result,
+body.hai-theme-dark .command-page .search-results,
+body.hai-theme-dark .command-page .dashboard-load-state,
+body.hai-theme-dark .command-page .pursuit-lane,
+body.hai-theme-dark .command-page .command-history-unavailable {
+  background: var(--hai-surface, #111d2e);
+  border-color: var(--hai-border, #263850);
+  color: var(--hai-text, #edf4ff);
+}
+
+body.hai-theme-dark .command-page .action-tile,
+body.hai-theme-dark .command-page .brief-card,
+body.hai-theme-dark .command-page .pursuit-item,
+body.hai-theme-dark .command-page .openclaw-group,
+body.hai-theme-dark .command-page .openclaw-metric,
+body.hai-theme-dark .command-page .runtime-row,
+body.hai-theme-dark .command-page .ecosystem-chip,
+body.hai-theme-dark .command-page .result-grid article {
+  background: var(--hai-surface-muted, #162438);
+  border-color: var(--hai-border, #263850);
+  color: var(--hai-text, #edf4ff);
+}
+
+body.hai-theme-dark .command-page :is(.header-content span, .section-heading span, .section-heading small, .action-copy small,
+  .assistant-result > div span, .assistant-result > small, .pursuit-item span, .pursuit-item em, .pursuit-item small,
+  .brief-card span, .brief-card small, .openclaw-cockpit small, .openclaw-group small, .openclaw-surface small,
+  .runtime-row small, .list-copy span, .result-grid article span) {
+  color: var(--hai-muted, #8fa1ba);
+}
+
+body.hai-theme-dark .command-page input,
+body.hai-theme-dark .command-page textarea,
+body.hai-theme-dark .command-page select {
+  background: var(--hai-surface-muted, #162438);
+  border-color: var(--hai-border, #263850);
+  color: var(--hai-text, #edf4ff);
+}
+
+body.hai-theme-dark .command-page .dashboard-load-state--error {
+  background: var(--hai-red-soft, rgba(255, 119, 126, .13));
+  border-color: var(--hai-red, #ff777e);
+  color: var(--hai-text, #edf4ff);
+}
+
+body.hai-theme-dark .command-page :is(.action-tile:focus-visible, .brief-card:focus-visible,
+  .pursuit-item:focus-visible, .ecosystem-chip:focus-visible, .openclaw-surface:focus-visible,
+  .openclaw-metric:focus-visible, .command-grid button:focus-visible, .row-actions button:focus-visible) {
+  outline-color: var(--hai-blue, #67a5ff);
 }

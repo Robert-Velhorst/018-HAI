@@ -17,6 +17,7 @@ const (
 	openClawSetPathAction  = "agent-runtime.openclaw-ecosystem.set-path"
 	openClawRefreshAction  = "agent-runtime.openclaw-ecosystem.refresh"
 	openClawUploadAction   = "agent-runtime.openclaw-ecosystem.upload"
+	openClawRollbackAction = "agent-runtime.openclaw-ecosystem.rollback"
 	openClawResourceType   = "agent-runtime-ecosystem"
 	openClawResourceID     = "openclaw"
 	openClawMutationTarget = "agentruntime:openclaw-ecosystem:"
@@ -220,7 +221,7 @@ func buildEcosystemMutationAuthorizationRequest(
 		// non-executing and would make every valid mutation fail closed.
 		RequestedAutonomy:     6,
 		Risk:                  "high",
-		Reversible:            effect.Action == openClawRefreshAction,
+		Reversible:            effect.Action == openClawRefreshAction || effect.Action == openClawRollbackAction,
 		ApprovalSourceID:      authorization.ApprovalSourceID,
 		ApprovalBindingDigest: authorization.ApprovalBindingDigest,
 		EffectDigest:          digest,
@@ -259,6 +260,13 @@ func ecosystemMutationEffectDigest(
 		if effect.TargetPath != openClawManagedArchiveTarget ||
 			!isLowerSHA256(effect.UploadedContentDigest) ||
 			effect.UploadedSize <= 0 {
+			return "", ErrEcosystemAuthorizationDenied
+		}
+	case openClawRollbackAction:
+		if strings.TrimSpace(effect.CurrentPath) == "" ||
+			strings.TrimSpace(effect.CurrentSignature) == "" ||
+			strings.TrimSpace(effect.TargetPath) == "" ||
+			strings.TrimSpace(effect.TargetSignature) == "" {
 			return "", ErrEcosystemAuthorizationDenied
 		}
 	default:

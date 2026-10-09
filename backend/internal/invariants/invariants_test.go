@@ -1,11 +1,21 @@
 package invariants
 
 import (
+	"math"
 	"strings"
 	"testing"
 
 	"automation-hub-backend/internal/models"
 )
+
+func TestConfidenceMustBeFinite(t *testing.T) {
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		violations := ValidateMemory(models.ContextMemory{Content: "x", Kind: "k", Confidence: value})
+		if len(violations) != 1 || violations[0].Field != "confidence" || violations[0].Rule != "finite" {
+			t.Fatalf("non-finite confidence %v: violations=%+v", value, violations)
+		}
+	}
+}
 
 func TestValidMemoryHasNoViolations(t *testing.T) {
 	m := models.ContextMemory{Content: "prefer local models", Kind: "preference", Confidence: 0.8, Tags: "llm,routing"}

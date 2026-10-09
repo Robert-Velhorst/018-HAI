@@ -3,6 +3,8 @@ package assistant
 import (
 	"automation-hub-backend/internal/apierror"
 	"automation-hub-backend/internal/identity"
+	"automation-hub-backend/internal/task"
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -48,6 +50,7 @@ func (h *Handler) Command(c *gin.Context) {
 		return
 	}
 	request.OwnerIdentity = ownerIdentity
+	request.ExecutionContext = c.Request.Context()
 	request.Actor = verifiedActor(c, "operator")
 	if strings.TrimSpace(request.Message) == "" && !request.RunCycle {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
@@ -55,6 +58,18 @@ func (h *Handler) Command(c *gin.Context) {
 	}
 	result, err := h.service.Command(request)
 	if err != nil {
+		if errors.Is(err, task.ErrTaskOperationNeedsReview) {
+			c.JSON(http.StatusConflict, gin.H{"error": "task outcome requires review before retrying", "code": "outcome_reconciliation_required"})
+			return
+		}
+		if errors.Is(err, context.Canceled) {
+			c.JSON(http.StatusRequestTimeout, gin.H{"error": "assistant command was cancelled; inspect task history before retrying"})
+			return
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "assistant command deadline was exceeded; inspect task history before retrying"})
+			return
+		}
 		if errors.Is(err, ErrInvalidStandingMandateID) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "standing mandate id is invalid"})
 			return

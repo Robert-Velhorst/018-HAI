@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"testing"
 	"time"
 )
@@ -12,7 +13,7 @@ func TestWorkflowSchedulerRunsOpenLoopsBeforeRunnableItems(t *testing.T) {
 	}
 	scheduler := NewScheduler(service, time.Minute, 3)
 
-	scheduler.runOnce()
+	scheduler.runOnce(context.Background())
 
 	if got := service.calls; len(got) != 3 || got[0] != "recover" || got[1] != "open-loops" || got[2] != "run-due" {
 		t.Fatalf("calls = %#v, want recover, open-loops, then run-due", got)
@@ -27,7 +28,7 @@ func TestWorkflowSchedulerCanDisableOpenLoopPass(t *testing.T) {
 	service := &fakeScheduledWorkflowService{runDueResult: &WorkflowRunSummary{Checked: 1}}
 	scheduler := NewScheduler(service, time.Minute, 2)
 
-	scheduler.runOnce()
+	scheduler.runOnce(context.Background())
 
 	if got := service.calls; len(got) != 2 || got[0] != "recover" || got[1] != "run-due" {
 		t.Fatalf("calls = %#v, want recover then run-due", got)
@@ -38,7 +39,7 @@ func TestWorkflowSchedulerDoesNothingWhenBackgroundIsStopped(t *testing.T) {
 	service := &fakeScheduledWorkflowService{}
 	scheduler := NewScheduler(service, time.Minute, 2, func() bool { return false })
 
-	scheduler.runOnce()
+	scheduler.runOnce(context.Background())
 
 	if len(service.calls) != 0 {
 		t.Fatalf("calls = %#v, want no background work while stopped", service.calls)
@@ -117,9 +118,30 @@ type fakeScheduledWorkflowService struct {
 	runDueResult   *WorkflowRunSummary
 }
 
+func (s *fakeScheduledWorkflowService) RunDueContext(ctx context.Context, request RunDueRequest) (*WorkflowRunSummary, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.RunDue(request)
+}
+
+func (s *fakeScheduledWorkflowService) RunDueOpenLoopsContext(ctx context.Context, request RunDueRequest) (*OpenLoopRunSummary, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.RunDueOpenLoops(request)
+}
+
 func (s *fakeScheduledWorkflowService) RecoverStaleClaims(request RunDueRequest) (*ClaimRecoverySummary, error) {
 	s.calls = append(s.calls, "recover")
 	return &ClaimRecoverySummary{}, nil
+}
+
+func (s *fakeScheduledWorkflowService) RecoverStaleClaimsContext(ctx context.Context, request RunDueRequest) (*ClaimRecoverySummary, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.RecoverStaleClaims(request)
 }
 
 func (s *fakeScheduledWorkflowService) RunDue(request RunDueRequest) (*WorkflowRunSummary, error) {

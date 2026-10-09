@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -18,9 +19,10 @@ import (
 func TestCalendarBusyIntervalsAreOwnerScopedAndSourceBacked(t *testing.T) {
 	start := time.Date(2026, time.August, 4, 8, 0, 0, 0, time.UTC)
 	end := start.Add(8 * time.Hour)
-	aliceID, bobID := uuid.New(), uuid.New()
+	aliceID, aliceSecondaryID, bobID := uuid.New(), uuid.New(), uuid.New()
 	repo := newFakeSourceRepo(
 		&models.ConnectedSource{ID: aliceID, OwnerIdentity: "alice@example.test", ConnectorKey: calendarConnectorKey, Enabled: true, Status: "active"},
+		&models.ConnectedSource{ID: aliceSecondaryID, OwnerIdentity: "alice@example.test", ConnectorKey: calendarConnectorKey, Enabled: true, Status: "active"},
 		&models.ConnectedSource{ID: bobID, OwnerIdentity: "bob@example.test", ConnectorKey: calendarConnectorKey, Enabled: true, Status: "active"},
 	)
 	add := func(sourceID uuid.UUID, externalID, title, itemStart, itemEnd, status, transparency string) {
@@ -32,6 +34,7 @@ func TestCalendarBusyIntervalsAreOwnerScopedAndSourceBacked(t *testing.T) {
 		}
 	}
 	add(aliceID, "overlap", "Owner meeting", start.Add(-time.Hour).Format(time.RFC3339), start.Add(time.Hour).Format(time.RFC3339), "confirmed", "opaque")
+	add(aliceSecondaryID, "overlap", "Owner meeting", start.Add(-time.Hour).Format(time.RFC3339), start.Add(time.Hour).Format(time.RFC3339), "confirmed", "opaque")
 	add(aliceID, "free", "Free focus placeholder", start.Add(2*time.Hour).Format(time.RFC3339), start.Add(3*time.Hour).Format(time.RFC3339), "confirmed", "transparent")
 	add(aliceID, "cancelled", "Cancelled appointment", start.Add(3*time.Hour).Format(time.RFC3339), start.Add(4*time.Hour).Format(time.RFC3339), "cancelled", "opaque")
 	add(bobID, "other-owner", "Bob private meeting", start.Add(4*time.Hour).Format(time.RFC3339), start.Add(5*time.Hour).Format(time.RFC3339), "confirmed", "opaque")
@@ -44,11 +47,18 @@ func TestCalendarBusyIntervalsAreOwnerScopedAndSourceBacked(t *testing.T) {
 	if repo.lastVisibleSourceOwner != "alice@example.test" {
 		t.Fatalf("calendar capacity was not filtered by owner in the repository: %q", repo.lastVisibleSourceOwner)
 	}
-	if len(intervals) != 1 {
-		t.Fatalf("busy intervals = %#v, want one owner-scoped opaque event", intervals)
+	if len(intervals) != 2 {
+		t.Fatalf("busy intervals = %#v, want both same-ID events with distinct source provenance", intervals)
 	}
-	if !intervals[0].Start.Equal(start) || intervals[0].Title != "Owner meeting" || intervals[0].SourceID != aliceID.String() {
-		t.Fatalf("busy interval was not clipped and source linked: %#v", intervals[0])
+	sourceIDs := map[string]bool{}
+	for _, interval := range intervals {
+		if !interval.Start.Equal(start) || interval.Title != "Owner meeting" || interval.SourceURI == "" {
+			t.Fatalf("busy interval was not clipped and source linked: %#v", interval)
+		}
+		sourceIDs[interval.SourceID] = true
+	}
+	if !sourceIDs[aliceID.String()] || !sourceIDs[aliceSecondaryID.String()] {
+		t.Fatalf("same-ID events lost an account's source link: %#v", intervals)
 	}
 	if _, err := implementation.CalendarBusyIntervalsForOwner("alice@example.test", start, start.Add(32*24*time.Hour)); err == nil || !strings.Contains(err.Error(), "31 days") {
 		t.Fatalf("unbounded calendar capacity window should be rejected, got %v", err)
@@ -70,7 +80,10 @@ func TestCalendarBackfillProducesSourceLinkedEventAndSyncCursor(t *testing.T) {
 	defer server.Close()
 
 	items, next, err := fetchCalendarSourceWithClient(context.Background(), googleoauth.CalendarClient{AccessToken: "token", BaseURL: server.URL}, &models.ConnectedSource{DefaultProjectKey: "legal"}, now)
-	if err != nil || len(items) != 1 || items[0].ItemType != "google_calendar_event" || items[0].ProjectKey != "legal" || !strings.Contains(items[0].Content, "lawyer@example.test") || !strings.Contains(items[0].Metadata, `"writebackAllowed":false`) {
+	if err != nil || len(items) != 1 || items[0].ExternalID != "google-calendar:event-1" ||
+		items[0].SourceURI != "https://calendar.google.com/event?eid=1" || items[0].ItemType != "google_calendar_event" ||
+		items[0].ProjectKey != "legal" || !strings.Contains(items[0].Content, "lawyer@example.test") ||
+		!strings.Contains(items[0].Metadata, `"eventId":"event-1"`) || !strings.Contains(items[0].Metadata, `"writebackAllowed":false`) {
 		t.Fatalf("items=%#v next=%q err=%v", items, next, err)
 	}
 	cursor, err := decodeCalendarCursor(next)
@@ -202,6 +215,101 @@ func TestCalendarExpiredSyncTokenRestartsBoundedBackfill(t *testing.T) {
 	}
 }
 
+func TestCalendarExpiredTokenRecoveryIsBounded(t *testing.T) {
+	cursorValue, err := encodeCalendarCursor(calendarCursor{Phase: "changes", SyncToken: "expired"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requests++
+		if requests <= 2 {
+			writer.WriteHeader(http.StatusGone)
+			return
+		}
+		writer.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	items, next, err := fetchCalendarSourceWithClient(context.Background(), googleoauth.CalendarClient{AccessToken: "token", BaseURL: server.URL}, &models.ConnectedSource{Cursor: cursorValue}, time.Now())
+	if err == nil || requests != 2 || len(items) != 0 || next != "" {
+		t.Fatalf("requests=%d items=%#v next=%q err=%v; full-sync recovery must be attempted at most once", requests, items, next, err)
+	}
+}
+
+func TestCalendarAPIErrorLeavesSyncCursorRetryable(t *testing.T) {
+	cursorValue, err := encodeCalendarCursor(calendarCursor{Phase: "changes", SyncToken: "sync-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	source := &models.ConnectedSource{Cursor: cursorValue}
+	items, next, err := fetchCalendarSourceWithClient(context.Background(), googleoauth.CalendarClient{AccessToken: "token", BaseURL: server.URL}, source, time.Now())
+	if err == nil || len(items) != 0 || next != "" || source.Cursor != cursorValue {
+		t.Fatalf("items=%#v next=%q sourceCursor=%q err=%v; API failure must retain the sync cursor", items, next, source.Cursor, err)
+	}
+}
+
+func TestCalendarCancellationReturnsWithoutAdvancingCursor(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	defer cancel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requests++
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"items":[],"nextSyncToken":"sync-2"}`))
+	}))
+	defer server.Close()
+
+	items, next, err := fetchCalendarSourceWithClient(ctx, googleoauth.CalendarClient{AccessToken: "token", BaseURL: server.URL}, &models.ConnectedSource{}, time.Now())
+	if !errors.Is(err, context.Canceled) || requests != 0 || len(items) != 0 || next != "" {
+		t.Fatalf("requests=%d items=%#v next=%q err=%v; cancelled sync must not advance its cursor", requests, items, next, err)
+	}
+}
+
+func TestCalendarRejectsEventsWithoutStableIdentity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"items":[{"summary":"Unidentified event"}],"nextSyncToken":"sync-2"}`))
+	}))
+	defer server.Close()
+
+	items, next, err := fetchCalendarSourceWithClient(context.Background(), googleoauth.CalendarClient{AccessToken: "token", BaseURL: server.URL}, &models.ConnectedSource{}, time.Now())
+	if err == nil || len(items) != 0 || next != "" {
+		t.Fatalf("items=%#v next=%q err=%v; events without an ID must not be checkpointed", items, next, err)
+	}
+}
+
+func TestCalendarBackfillPageRetainsLowerBoundUntilFinalSyncToken(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Query().Get("pageToken") != "page-2" || request.URL.Query().Get("timeMin") != "2025-08-04T12:00:00Z" {
+			t.Fatalf("continuation query = %s", request.URL.RawQuery)
+		}
+		_, _ = writer.Write([]byte(`{"items":[{"id":"event-2","summary":"Second page"}],"nextSyncToken":"sync-1"}`))
+	}))
+	defer server.Close()
+
+	firstPage, err := encodeCalendarCursor(calendarCursor{Phase: "backfill", PageToken: "page-2", BackfillSince: "2025-08-04T12:00:00Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, next, err := fetchCalendarSourceWithClient(context.Background(), googleoauth.CalendarClient{AccessToken: "token", BaseURL: server.URL}, &models.ConnectedSource{Cursor: firstPage}, now)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items=%#v next=%q err=%v", items, next, err)
+	}
+	cursor, err := decodeCalendarCursor(next)
+	if err != nil || cursor.Phase != "changes" || cursor.SyncToken != "sync-1" || cursor.PageToken != "" {
+		t.Fatalf("final cursor=%#v err=%v", cursor, err)
+	}
+}
+
 func TestCalendarBackfillPageKeepsStableLowerBound(t *testing.T) {
 	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -216,5 +324,23 @@ func TestCalendarBackfillPageKeepsStableLowerBound(t *testing.T) {
 	cursor, err := decodeCalendarCursor(next)
 	if err != nil || cursor.PageToken != "page-2" || cursor.BackfillSince != "2025-08-04T12:00:00Z" {
 		t.Fatalf("cursor=%#v err=%v", cursor, err)
+	}
+}
+
+func TestCalendarRepeatedPageTokenDoesNotAdvanceCursor(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	cursorValue, err := encodeCalendarCursor(calendarCursor{Phase: "backfill", PageToken: "repeat", BackfillSince: "2025-08-04T12:00:00Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[],"nextPageToken":"repeat"}`))
+	}))
+	defer server.Close()
+
+	items, next, err := fetchCalendarSourceWithClient(context.Background(), googleoauth.CalendarClient{AccessToken: "token", BaseURL: server.URL}, &models.ConnectedSource{Cursor: cursorValue}, now)
+	if err == nil || len(items) != 0 || next != "" {
+		t.Fatalf("items=%#v next=%q err=%v; repeated provider token must fail without checkpoint", items, next, err)
 	}
 }

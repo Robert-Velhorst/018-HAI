@@ -413,6 +413,67 @@ func (r *PostgresTaskStateRepository) FindApprovedReviewDecision(ownerIdentity, 
 	return &decision, nil
 }
 
+// FindApprovedReviewDecisionInPostgresTransaction locks the mutable review
+// item and reads its immutable approval through the caller's execution
+// transaction. Review resolution and outcome reconciliation take the same row
+// lock, so either they complete first or this execution claim sees their
+// committed state before consuming approval.
+func (r *PostgresTaskStateRepository) FindApprovedReviewDecisionInPostgresTransaction(
+	tx *gorm.DB,
+	ownerIdentity string,
+	reviewItemID string,
+) (*ReviewDecisionRecord, error) {
+	ownerIdentity, id, err := normalizeReviewLookup(ownerIdentity, reviewItemID)
+	if err != nil {
+		return nil, err
+	}
+	if !sameTaskStatePostgresTransaction(r.DB, tx) {
+		return nil, fmt.Errorf("task review execution requires a transaction from the same PostgreSQL database")
+	}
+	var item models.TaskReviewItemRecord
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("owner_identity = ? AND id = ? AND status = ?", ownerIdentity, id, "approved").
+		First(&item).Error; err != nil {
+		return nil, taskStateDatabaseError(err)
+	}
+	latest, err := latestDecisionWithDB(tx, ownerIdentity, id, "approved", item.ReviewRevision)
+	if err != nil {
+		return nil, err
+	}
+	if latest == nil {
+		return nil, ErrTaskStateNotFound
+	}
+	if latest.RequestDigest != item.RequestDigest {
+		return nil, ErrTaskReviewBindingMismatch
+	}
+	if _, err := reviewItemFromModel(item, latest); err != nil {
+		return nil, err
+	}
+	if err := validateReviewDecisionBinding(*latest, item); err != nil {
+		return nil, err
+	}
+	decision, err := reviewDecisionFromModel(*latest)
+	if err != nil {
+		return nil, err
+	}
+	return &decision, nil
+}
+
+func sameTaskStatePostgresTransaction(database, tx *gorm.DB) bool {
+	if database == nil || tx == nil || database.Dialector == nil || tx.Dialector == nil ||
+		database.Dialector.Name() != "postgres" || tx.Dialector.Name() != "postgres" ||
+		database.Error != nil || tx.Error != nil || database.Statement == nil || tx.Statement == nil {
+		return false
+	}
+	if _, alreadyTransactional := database.Statement.ConnPool.(gorm.TxCommitter); alreadyTransactional {
+		return false
+	}
+	if _, isTransaction := tx.Statement.ConnPool.(gorm.TxCommitter); !isTransaction {
+		return false
+	}
+	return infra.PostgresExecutionPoolMatches(database, tx)
+}
+
 func (r *PostgresTaskStateRepository) latestDecision(
 	ownerIdentity string,
 	reviewItemID uuid.UUID,

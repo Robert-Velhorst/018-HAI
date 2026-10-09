@@ -12,6 +12,7 @@ export interface IAutomationModel {
   launchType?: string;
   launchTarget?: string;
   runtimeType?: string;
+  runtimeModel?: string;
   serviceName?: string;
   routePath?: string;
   publicUrl?: string;

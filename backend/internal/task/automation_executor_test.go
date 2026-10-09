@@ -1,6 +1,7 @@
 package task
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -41,7 +42,12 @@ func TestAutomationToolExecutorMapsControlledLaunchResult(t *testing.T) {
 		},
 	}
 	executor := NewAutomationToolExecutor(launcher)
-	result, err := executor.Execute(ToolExecutionRequest{OwnerIdentity: "alice", AutomationID: id.String(), Task: "Run tests"})
+	result, err := executor.Execute(ToolExecutionRequest{
+		OwnerIdentity: "alice",
+		TaskID:        "task-run-tests-1",
+		AutomationID:  id.String(),
+		Task:          "Run tests",
+	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -56,6 +62,9 @@ func TestAutomationToolExecutorMapsControlledLaunchResult(t *testing.T) {
 	}
 	if launcher.request.OwnerIdentity != "alice" {
 		t.Fatalf("launch request owner = %q, want alice", launcher.request.OwnerIdentity)
+	}
+	if launcher.request.IdempotencyKey == "" {
+		t.Fatal("launch request omitted the task-scoped idempotency key")
 	}
 	if launcher.request.ApprovalProof != nil || launcher.issueCalls != 0 {
 		t.Fatalf("unapproved request received an approval proof: request=%#v issues=%d", launcher.request, launcher.issueCalls)
@@ -80,6 +89,7 @@ func TestAutomationToolExecutorForwardsReadOnlyWorkflowDecisionWithoutMintingPro
 
 	result, err := NewAutomationToolExecutor(launcher).Execute(ToolExecutionRequest{
 		OwnerIdentity:         "alice",
+		TaskID:                "task-readonly-health-1",
 		WorkflowID:            uuid.NewString(),
 		AutomationID:          id.String(),
 		Task:                  "Run the reviewed read-only health probe.",
@@ -123,6 +133,7 @@ func TestAutomationToolExecutorForwardsImmutableGovernanceEvidence(t *testing.T)
 
 	_, err := NewAutomationToolExecutor(launcher).Execute(ToolExecutionRequest{
 		OwnerIdentity: "alice",
+		TaskID:        "task-governed-1",
 		AutomationID:  id.String(),
 		Task:          "Run governed task",
 		MandateID:     mandateID,
@@ -166,6 +177,7 @@ func TestAutomationToolExecutorIssuesActionBoundProofForRecordedReview(t *testin
 	reviewDigest := strings.Repeat("b", 64)
 	result, err := executor.Execute(ToolExecutionRequest{
 		OwnerIdentity:         "alice",
+		TaskID:                "task-reviewed-1",
 		AutomationID:          id.String(),
 		Task:                  "Run the exact reviewed action.",
 		ProjectKey:            "018-hai",
@@ -216,6 +228,7 @@ func TestAutomationToolExecutorFailsClosedWhenProofIssuerIsUnavailable(t *testin
 	sourceID := "task-review:" + uuid.NewString()
 	_, err := executor.Execute(ToolExecutionRequest{
 		OwnerIdentity:    "alice",
+		TaskID:           "task-missing-issuer-1",
 		AutomationID:     uuid.NewString(),
 		Task:             "Run reviewed action.",
 		ApprovalSourceID: sourceID,
@@ -228,6 +241,97 @@ func TestAutomationToolExecutorFailsClosedWhenProofIssuerIsUnavailable(t *testin
 	})
 	if err == nil || launcher.launchCalls != 0 {
 		t.Fatalf("missing proof issuer did not fail closed: err=%v launches=%d", err, launcher.launchCalls)
+	}
+}
+
+func TestAutomationToolExecutorUsesStableTaskScopedIdempotencyKey(t *testing.T) {
+	automationID := uuid.New()
+	launcher := &fakeAutomationLauncher{
+		result: &automation.LaunchResult{AutomationID: automationID, Status: "completed"},
+	}
+	executor := NewAutomationToolExecutor(launcher)
+	request := ToolExecutionRequest{
+		OwnerIdentity: "alice",
+		TaskID:        "durable-task-1",
+		AutomationID:  automationID.String(),
+		Task:          "Run the approved automation",
+	}
+
+	if _, err := executor.Execute(request); err != nil {
+		t.Fatalf("first Execute: %v", err)
+	}
+	firstKey := launcher.request.IdempotencyKey
+	if len(firstKey) == 0 || len(firstKey) > 256 {
+		t.Fatalf("idempotency key length = %d, want 1..256: %q", len(firstKey), firstKey)
+	}
+	for _, character := range firstKey {
+		if character < 0x21 || character > 0x7e {
+			t.Fatalf("idempotency key contains non-visible-ASCII character %q", character)
+		}
+	}
+
+	if _, err := executor.Execute(request); err != nil {
+		t.Fatalf("retry Execute: %v", err)
+	}
+	if retryKey := launcher.request.IdempotencyKey; retryKey != firstKey {
+		t.Fatalf("retry key = %q, want stable key %q", retryKey, firstKey)
+	}
+
+	request.TaskID = "durable-task-2"
+	if _, err := executor.Execute(request); err != nil {
+		t.Fatalf("new task Execute: %v", err)
+	}
+	if newTaskKey := launcher.request.IdempotencyKey; newTaskKey == firstKey {
+		t.Fatalf("new task reused idempotency key %q", newTaskKey)
+	}
+
+	request.TaskID = "durable-task-1"
+	request.OwnerIdentity = "bob"
+	if _, err := executor.Execute(request); err != nil {
+		t.Fatalf("different owner Execute: %v", err)
+	}
+	if ownerKey := launcher.request.IdempotencyKey; ownerKey == firstKey {
+		t.Fatalf("different owner reused idempotency key %q", ownerKey)
+	}
+
+	request.OwnerIdentity = "alice"
+	request.AutomationID = uuid.NewString()
+	if _, err := executor.Execute(request); err != nil {
+		t.Fatalf("different automation Execute: %v", err)
+	}
+	if automationKey := launcher.request.IdempotencyKey; automationKey == firstKey {
+		t.Fatalf("different automation reused idempotency key %q", automationKey)
+	}
+}
+
+func TestAutomationToolExecutorFailsClosedWithoutDurableTaskID(t *testing.T) {
+	for _, taskID := range []string{"", " \t\n "} {
+		t.Run(fmt.Sprintf("task-id-%q", taskID), func(t *testing.T) {
+			sourceID := "task-review:" + uuid.NewString()
+			launcher := &fakeAutomationLauncher{
+				result: &automation.LaunchResult{Status: "completed"},
+			}
+			_, err := NewAutomationToolExecutor(launcher).Execute(ToolExecutionRequest{
+				OwnerIdentity:    "alice",
+				TaskID:           taskID,
+				AutomationID:     uuid.NewString(),
+				Task:             "Run reviewed action",
+				ApprovalSourceID: sourceID,
+				approvalDecision: &automation.TaskApprovalDecisionRequest{
+					OwnerIdentity:    "alice",
+					Task:             "Run reviewed action",
+					ApprovalSourceID: sourceID,
+					ApprovedAt:       time.Now().UTC(),
+				},
+			})
+			if err == nil || !strings.Contains(err.Error(), "durable task ID is required") {
+				t.Fatalf("Execute error = %v, want missing durable task ID", err)
+			}
+			if launcher.launchCalls != 0 || launcher.issueCalls != 0 || launcher.recordCalls != 0 {
+				t.Fatalf("missing task ID performed side effects: launches=%d proofs=%d decisions=%d",
+					launcher.launchCalls, launcher.issueCalls, launcher.recordCalls)
+			}
+		})
 	}
 }
 
@@ -297,6 +401,7 @@ func TestAutomationToolExecutorRejectsInvalidAutomationID(t *testing.T) {
 }
 
 type fakeAutomationLauncher struct {
+	launchCalls             int
 	result                  *automation.LaunchResult
 	err                     error
 	request                 automation.TaskLaunchRequest
@@ -317,6 +422,7 @@ func (f *fakeAutomationLauncher) Launch(id uuid.UUID) (*automation.LaunchResult,
 }
 
 func (f *fakeAutomationLauncher) LaunchTask(id uuid.UUID, request automation.TaskLaunchRequest) (*automation.LaunchResult, error) {
+	f.launchCalls++
 	f.request = request
 	return f.result, f.err
 }

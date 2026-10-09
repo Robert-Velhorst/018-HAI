@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"automation-hub-backend/internal/infra"
@@ -102,12 +104,20 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 
 	review := taskStateTestReviewItem(owner, plan.ID, time.Now().UTC())
 	review.Request.Request = "Deploy with api_key=postgres-review-secret after approval"
+	automationID := uuid.New()
+	review.Request.AutomationID = automationID.String()
+	review.Request.automationReviewSnapshot = historicalReviewSnapshot(automationID)
 	created, err := repo.CreateReviewItem(owner, review)
 	if err != nil {
 		t.Fatalf("create review item: %v", err)
 	}
 	if strings.Contains(created.Request.Request, "postgres-review-secret") {
 		t.Fatalf("review round trip retained secret: %#v", created)
+	}
+	reloaded, err := repo.FindReviewItem(owner, created.ID)
+	if err != nil || reloaded.Request.automationReviewSnapshot == nil ||
+		*reloaded.Request.automationReviewSnapshot != *review.Request.automationReviewSnapshot {
+		t.Fatalf("historical configuration lost across PostgreSQL reload: review=%#v err=%v", reloaded, err)
 	}
 	recreated, err := repo.CreateReviewItem(owner, review)
 	if err != nil || recreated.ID != created.ID {
@@ -255,25 +265,16 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 	}
 
 	testPostgresTaskStateConcurrentTransitions(t, db, repo, owner)
+}
 
-	var appliedVersions []string
-	if err := db.Raw(`
-		SELECT version
-		FROM schema_migrations
-		WHERE version LIKE 'pre/%'
-		ORDER BY version DESC
-	`).Scan(&appliedVersions).Error; err != nil {
-		t.Fatalf("list applied pre migrations: %v", err)
+func TestPostgresTaskStateMigrationRollbackAtOriginalEmptyBoundary(t *testing.T) {
+	db := openTaskStatePostgresTestDB(t)
+	boundary := taskStateOriginalMigrationBoundary(t)
+	if applied, err := infra.ApplyMigrations(db, boundary, "pre"); err != nil || applied != 4 {
+		t.Fatalf("apply original task-state boundary: count=%d err=%v", applied, err)
 	}
-	rolledBack := 0
-	for _, version := range appliedVersions {
-		if err := infra.RollbackMigration(db, migrations.Files, "pre", version); err != nil {
-			t.Fatalf("rollback %s before task state: %v", version, err)
-		}
-		rolledBack++
-		if version == "pre/0004_task_state_storage" {
-			break
-		}
+	if err := infra.RollbackMigration(db, boundary, "pre", "pre/0004_task_state_storage"); err != nil {
+		t.Fatalf("rollback empty original task-state boundary: %v", err)
 	}
 	for _, relation := range []string{
 		"task_completion_plan_logs",
@@ -300,14 +301,66 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 	if !taskStateRelationExists(t, db, "framework_preferences") {
 		t.Fatal("task-state rollback removed the prior Framework Registry schema")
 	}
-	executeTaskStateMigration(t, db, "pre/0004_task_state_storage.down.sql")
-	reapplied, err := infra.ApplyMigrations(db, migrations.Files, "pre")
+	reapplied, err := infra.ApplyMigrations(db, boundary, "pre")
 	if err != nil {
 		t.Fatalf("reapply task-state migration: %v", err)
 	}
-	if reapplied != rolledBack || !taskStateRelationExists(t, db, "task_review_items") {
+	if reapplied != 1 || !taskStateRelationExists(t, db, "task_review_items") {
 		t.Fatalf("task-state migration reapply = %d, relation=%t", reapplied, taskStateRelationExists(t, db, "task_review_items"))
 	}
+}
+
+func TestPostgresTaskStateMigrationRetainsPopulatedOriginalBoundary(t *testing.T) {
+	db := openTaskStatePostgresTestDB(t)
+	boundary := taskStateOriginalMigrationBoundary(t)
+	if _, err := infra.ApplyMigrations(db, boundary, "pre"); err != nil {
+		t.Fatal(err)
+	}
+	owner := "retained-task-" + uuid.NewString()
+	plan := taskStateTestPlan(uuid.NewString(), owner, time.Now().UTC())
+	repo := NewPostgresTaskStateRepository(db)
+	if err := repo.AppendCompletionPlan(owner, plan); err != nil {
+		t.Fatal(err)
+	}
+	if err := infra.RollbackMigration(db, boundary, "pre", "pre/0004_task_state_storage"); err == nil || !strings.Contains(err.Error(), "task state data exists") {
+		t.Fatalf("populated task-state rollback did not refuse data loss: %v", err)
+	}
+	plans, err := repo.ListCompletionPlans(owner, 10)
+	if err != nil || len(plans) != 1 || plans[0].ID != plan.ID {
+		t.Fatalf("refused rollback lost task evidence: plans=%#v err=%v", plans, err)
+	}
+	var recorded bool
+	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)", "pre/0004_task_state_storage").Scan(&recorded).Error; err != nil || !recorded {
+		t.Fatalf("refused rollback lost migration identity: recorded=%t err=%v", recorded, err)
+	}
+	for _, relation := range []string{"task_completion_plan_logs", "task_review_items", "task_review_decisions", "framework_preferences"} {
+		if !taskStateRelationExists(t, db, relation) {
+			t.Fatalf("refused rollback lost relation %s", relation)
+		}
+	}
+}
+
+func taskStateOriginalMigrationBoundary(t *testing.T) fs.FS {
+	t.Helper()
+	paths, err := fs.Glob(migrations.Files, "pre/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Later migrations retain irreversible execution evidence; this test owns
+	// only the original task-state version boundary in its disposable database.
+	boundary := fstest.MapFS{}
+	for _, path := range paths {
+		version := strings.TrimSuffix(strings.TrimSuffix(path, ".up.sql"), ".down.sql")
+		if version > "pre/0004_task_state_storage" {
+			continue
+		}
+		data, err := migrations.Files.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		boundary[path] = &fstest.MapFile{Data: data, Mode: 0444}
+	}
+	return boundary
 }
 
 func openTaskStatePostgresTestDB(t *testing.T) *gorm.DB {

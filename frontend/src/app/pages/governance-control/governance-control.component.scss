@@ -361,6 +361,10 @@ textarea:focus-visible {
   gap: 16px;
 }
 
+.governance-primary-grid--decision {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .governance-panel {
   min-width: 0;
   background: var(--hai-surface);

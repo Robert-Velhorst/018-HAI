@@ -1,16 +1,23 @@
 package source
 
 import (
+	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/docling"
 	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/whispercpp"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -26,6 +33,15 @@ type sourceDocumentExtractorStub struct {
 	documents []docling.Document
 	err       error
 	folder    string
+}
+
+type sourceSyncErrorTestService struct {
+	*service
+	err error
+}
+
+func (s *sourceSyncErrorTestService) SyncContext(context.Context, uuid.UUID, ImportRequest) (*SyncResult, error) {
+	return nil, s.err
 }
 
 func (s *sourceDocumentExtractorStub) Status() docling.Status {
@@ -92,6 +108,110 @@ func TestHandlerOnlyListsVisibleSourcesAndRejectsForeignControls(t *testing.T) {
 		t.Fatalf("mutable source lookup = %s/%q, want exact foreign source/alice", repo.lastMutableSourceID, repo.lastMutableSourceOwner)
 	}
 }
+
+func TestHandlerReportsTrelloProviderFailureAsRetryableGatewayError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Retry-After", "999")
+		http.Error(w, "provider-detail-must-not-leak", http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	configureTrelloTest(t, server.URL)
+
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(newTrelloSource(sourceID, "abc123XY", ""))
+	handler := NewHandler(NewService(repo, &fakeSourceMemoryService{}))
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, "alice") })
+	router.POST("/sources/:id/sync", handler.Sync)
+
+	request := httptest.NewRequest(http.MethodPost, "/sources/"+sourceID.String()+"/sync", strings.NewReader(`{"mode":"incremental_sync"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("sync status = %d, body=%s; want 503 provider failure", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "provider-detail-must-not-leak") {
+		t.Fatalf("sync response leaked provider body: %s", response.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode sync failure: %v", err)
+	}
+	if body["retryable"] != true {
+		t.Fatalf("retryable = %#v, want true", body["retryable"])
+	}
+	if len(repo.jobs) != 1 || repo.jobs[0].Status != "failed" {
+		t.Fatalf("sync history = %#v, want one failed provider attempt", repo.jobs)
+	}
+}
+
+func TestHandlerSeparatesSyncTimeoutCancellationAndProviderRetryMetadata(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, OwnerIdentity: "alice", ConnectorKey: "local-folder", Name: "Local notes",
+		Enabled: true, LocalOnly: true, Status: "active", SyncTarget: ".",
+	})
+	tests := []struct {
+		name             string
+		err              error
+		wantStatus       int
+		wantRetryable    *bool
+		wantRetryAfter   string
+		wantPublicPhrase string
+	}{
+		{name: "deadline", err: context.DeadlineExceeded, wantStatus: http.StatusGatewayTimeout, wantRetryable: boolPointer(true), wantPublicPhrase: "timed out"},
+		{name: "cancellation", err: context.Canceled, wantStatus: http.StatusServiceUnavailable, wantRetryable: boolPointer(true), wantPublicPhrase: "canceled"},
+		{name: "typed bad input remains a client error", err: fmt.Errorf("%w: invalid sync request", ErrInvalidSyncRequest), wantStatus: http.StatusBadRequest, wantPublicPhrase: "invalid sync request"},
+		{name: "internal error is not mislabeled as bad input", err: errors.New("secret database detail"), wantStatus: http.StatusInternalServerError, wantPublicPhrase: "sync failed"},
+		{
+			name: "provider-specific retry metadata", err: newProviderSyncErrorWithOptions("GitHub", http.StatusForbidden, errors.New("secret provider body"), providerSyncErrorOptions{
+				RetryableOverride: boolPointer(true), RetryAfterHeader: "30",
+			}), wantStatus: http.StatusServiceUnavailable, wantRetryable: boolPointer(true), wantRetryAfter: "30", wantPublicPhrase: "temporarily refused",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			base := NewService(repo, nil).(*service)
+			handler := NewHandler(&sourceSyncErrorTestService{service: base, err: test.err})
+			router := gin.New()
+			router.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, "alice") })
+			router.POST("/sources/:id/sync", handler.Sync)
+
+			request := httptest.NewRequest(http.MethodPost, "/sources/"+sourceID.String()+"/sync", strings.NewReader(`{"mode":"incremental_sync"}`))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+
+			if response.Code != test.wantStatus {
+				t.Fatalf("sync status = %d, body=%s; want %d", response.Code, response.Body.String(), test.wantStatus)
+			}
+			if got := response.Header().Get("Retry-After"); got != test.wantRetryAfter {
+				t.Fatalf("Retry-After = %q, want %q", got, test.wantRetryAfter)
+			}
+			if !strings.Contains(response.Body.String(), test.wantPublicPhrase) || strings.Contains(response.Body.String(), "secret provider body") {
+				t.Fatalf("sync response = %q, want safe message containing %q", response.Body.String(), test.wantPublicPhrase)
+			}
+			if test.wantRetryable != nil {
+				var body map[string]any
+				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+					t.Fatalf("decode error response: %v", err)
+				}
+				if body["retryable"] != *test.wantRetryable {
+					t.Fatalf("retryable = %#v, want %v", body["retryable"], *test.wantRetryable)
+				}
+			}
+			if strings.Contains(response.Body.String(), "secret database detail") {
+				t.Fatalf("sync response leaked internal error: %s", response.Body.String())
+			}
+		})
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }
 
 func TestHandlerListsOnlyVisibleConnectionHealthInOneBatch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -174,27 +294,93 @@ func TestGoogleOAuthStartRejectsForeignSourceBeforeConfigurationLookup(t *testin
 
 func TestGoogleOAuthCallbackRequiresMatchingBrowserStateCookie(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	configureGoogleOAuthHandlerState(t)
 	handler := NewHandler(NewService(newFakeSourceRepo(), nil))
 	router := gin.New()
 	router.GET("/sources/oauth/google/callback", handler.GoogleOAuthCallback)
-
-	for _, request := range []*http.Request{
-		httptest.NewRequest(http.MethodGet, "/sources/oauth/google/callback?code=code&state=state-a", nil),
-		func() *http.Request {
-			req := httptest.NewRequest(http.MethodGet, "/sources/oauth/google/callback?code=code&state=state-a", nil)
-			req.AddCookie(&http.Cookie{Name: googleOAuthStateCookieName, Value: "state-b"})
-			return req
-		}(),
-	} {
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, request)
-		if response.Code != http.StatusFound || response.Header().Get("Location") != "/connected-sources?oauth=error" {
-			t.Fatalf("callback status=%d location=%q, want rejected state", response.Code, response.Header().Get("Location"))
-		}
-		if !strings.Contains(response.Header().Get("Set-Cookie"), googleOAuthStateCookieName+"=") {
-			t.Fatal("callback did not clear the browser-bound OAuth state cookie")
-		}
+	validState, err := signState(uuid.New())
+	if err != nil {
+		t.Fatal(err)
 	}
+	tamperedState := validState + "x"
+	expiredState := googleOAuthHandlerStateWithExpiry(t, time.Now().Add(-time.Minute))
+
+	tests := []struct {
+		name       string
+		queryState string
+		cookie     string
+	}{
+		{name: "missing state", cookie: validState},
+		{name: "cookie mismatch", queryState: validState, cookie: "different-state"},
+		{name: "tampered signed state", queryState: tamperedState, cookie: tamperedState},
+		{name: "expired signed state", queryState: expiredState, cookie: expiredState},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := "/sources/oauth/google/callback?error=access_denied"
+			if tc.queryState != "" {
+				path += "&state=" + tc.queryState
+			}
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			if tc.cookie != "" {
+				request.AddCookie(&http.Cookie{Name: googleOAuthStateCookieName, Value: tc.cookie})
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("callback status=%d location=%q body=%q, want state rejection", response.Code, response.Header().Get("Location"), response.Body.String())
+			}
+			if response.Header().Get("Location") != "" {
+				t.Fatalf("invalid state triggered redirect to %q", response.Header().Get("Location"))
+			}
+			if response.Header().Get("Set-Cookie") != "" {
+				t.Fatalf("invalid state cleared the pending cookie: %q", response.Header().Get("Set-Cookie"))
+			}
+		})
+	}
+}
+
+func TestGoogleOAuthValidDenialRedirectsAndClearsStateCookie(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	configureGoogleOAuthHandlerState(t)
+	handler := NewHandler(NewService(newFakeSourceRepo(), nil))
+	router := gin.New()
+	router.GET("/sources/oauth/google/callback", handler.GoogleOAuthCallback)
+	state, err := signState(uuid.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/sources/oauth/google/callback?error=access_denied&state="+state, nil)
+	request.AddCookie(&http.Cookie{Name: googleOAuthStateCookieName, Value: state})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusFound || response.Header().Get("Location") != "/connected-sources?oauth=denied" {
+		t.Fatalf("valid denial status=%d location=%q", response.Code, response.Header().Get("Location"))
+	}
+	setCookie := response.Header().Get("Set-Cookie")
+	if !strings.Contains(setCookie, googleOAuthStateCookieName+"=") || !strings.Contains(setCookie, "Max-Age=0") {
+		t.Fatalf("valid denial did not clear its consumed state cookie: %q", setCookie)
+	}
+}
+
+func configureGoogleOAuthHandlerState(t *testing.T) {
+	t.Helper()
+	previous := config.AppConfig
+	t.Cleanup(func() { config.AppConfig = previous })
+	config.AppConfig.OAuthStateSigningKey = "handler-test-oauth-state-key"
+}
+
+func googleOAuthHandlerStateWithExpiry(t *testing.T, expiry time.Time) string {
+	t.Helper()
+	payload := fmt.Sprintf("%s|%d|%s", uuid.NewString(), expiry.Unix(), uuid.NewString())
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	secret, err := stateSecret()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mac := hmac.New(sha256.New, secret)
+	_, _ = mac.Write([]byte(encoded))
+	return encoded + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 func TestGoogleOAuthStateFromAuthorizeURLRequiresState(t *testing.T) {
@@ -286,6 +472,163 @@ func TestHandlerRejectsInvalidExtractionPageLimit(t *testing.T) {
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/sources/extractions?limit=501", nil))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestHandlerExtractionPatchSubmitsDurableIntentAndOwnerScopedStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo, extraction, service, _ := newExtractionCorrectionFixture(t, false)
+	handler := NewHandler(service)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, "alice") })
+	router.PATCH("/sources/extractions/:id", handler.UpdateExtraction)
+	router.GET("/api/v1/sources/extraction-corrections/:id", handler.ExtractionCorrection)
+	path := "/sources/extractions/" + extraction.ID.String()
+	patch := `{"summary":"corrected summary"}`
+	headers := map[string]string{
+		"If-Match":        extraction.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		"Idempotency-Key": "handler-correction-key-01",
+	}
+	makeRequest := func(method, requestPath, body string, requestHeaders map[string]string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(method, requestPath, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		for key, value := range requestHeaders {
+			request.Header.Set(key, value)
+		}
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+	response := makeRequest(http.MethodPatch, path, patch, headers)
+	if response.Code != http.StatusAccepted {
+		t.Fatalf("PATCH status = %d, want 202: %s", response.Code, response.Body.String())
+	}
+	var view ExtractionCorrectionView
+	if err := json.Unmarshal(response.Body.Bytes(), &view); err != nil {
+		t.Fatalf("decode accepted response: %v", err)
+	}
+	location := "/api/v1/sources/extraction-corrections/" + view.ID
+	if !view.IntentPersisted || view.PatchSaved || !view.RecoveryPending || view.ID == "" || response.Header().Get("Location") != location {
+		t.Fatalf("accepted correction state = %#v, Location=%q", view, response.Header().Get("Location"))
+	}
+	if got := repo.extractions[extraction.ID].Summary; got != "before" {
+		t.Fatalf("PATCH applied before worker execution: summary=%q", got)
+	}
+	retry := makeRequest(http.MethodPatch, path, patch, headers)
+	if retry.Code != http.StatusAccepted || retry.Header().Get("Location") != location || len(repo.corrections) != 1 {
+		t.Fatalf("idempotent resubmission created new work or changed response: code=%d location=%q intents=%d", retry.Code, retry.Header().Get("Location"), len(repo.corrections))
+	}
+	status := makeRequest(http.MethodGet, location, "", nil)
+	if status.Code != http.StatusOK {
+		t.Fatalf("owner status = %d, want 200: %s", status.Code, status.Body.String())
+	}
+	if err := json.Unmarshal(status.Body.Bytes(), &view); err != nil || view.PatchSaved || !view.RecoveryPending {
+		t.Fatalf("owner correction status = %#v, err=%v", view, err)
+	}
+	foreign := gin.New()
+	foreign.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, "bob") })
+	foreign.GET("/api/v1/sources/extraction-corrections/:id", handler.ExtractionCorrection)
+	foreignResponse := httptest.NewRecorder()
+	foreign.ServeHTTP(foreignResponse, httptest.NewRequest(http.MethodGet, location, nil))
+	if foreignResponse.Code != http.StatusNotFound {
+		t.Fatalf("foreign owner status = %d, want concealed 404: %s", foreignResponse.Code, foreignResponse.Body.String())
+	}
+}
+
+func TestHandlerExtractionCorrectionStatusReturns200ForEveryExistingState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	states := []string{
+		models.SourceExtractionCorrectionPending,
+		"running",
+		models.SourceExtractionCorrectionCompleted,
+		models.SourceExtractionCorrectionConflict,
+		models.SourceExtractionCorrectionFailed,
+	}
+	for _, wantStatus := range states {
+		t.Run(wantStatus, func(t *testing.T) {
+			repo, extraction, service, _ := newExtractionCorrectionFixture(t, false)
+			patchSummary := "saved correction"
+			view := submitTestCorrection(t, service, extraction, ExtractionPatch{Summary: &patchSummary}, "status-contract-"+wantStatus)
+			correctionID, err := uuid.Parse(view.ID)
+			if err != nil {
+				t.Fatalf("parse correction ID: %v", err)
+			}
+			correction := repo.corrections[correctionID]
+			if correction == nil {
+				t.Fatal("submitted correction was not persisted")
+			}
+			if wantStatus == "running" {
+				repo.correctionJobs[correction.DurableJobID].Status = models.DurableJobRunning
+			} else {
+				correction.Status = wantStatus
+			}
+
+			router := gin.New()
+			router.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, "alice") })
+			router.GET("/api/v1/sources/extraction-corrections/:id", NewHandler(service).ExtractionCorrection)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/sources/extraction-corrections/"+view.ID, nil))
+			if response.Code != http.StatusOK {
+				t.Fatalf("GET status = %d, want 200 for existing %q correction: %s", response.Code, wantStatus, response.Body.String())
+			}
+			var got ExtractionCorrectionView
+			if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode status response: %v", err)
+			}
+			if got.Status != wantStatus {
+				t.Fatalf("GET JSON status = %q, want %q", got.Status, wantStatus)
+			}
+		})
+	}
+}
+
+func TestHandlerRejectsEmptyExtractionPatch(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sourceID := uuid.New()
+	extractionID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, OwnerIdentity: "alice", Name: "Alice source", Enabled: true, Status: "active",
+	})
+	if _, err := repo.SaveExtraction(&models.SourceExtraction{ID: extractionID, SourceID: sourceID, RawItemID: uuid.New(), Uncertain: true}); err != nil {
+		t.Fatalf("SaveExtraction: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, "alice") })
+	router.PATCH("/sources/extractions/:id", NewHandler(NewService(repo, nil)).UpdateExtraction)
+	request := httptest.NewRequest(http.MethodPatch, "/sources/extractions/"+extractionID.String(), strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("If-Match", repo.extractions[extractionID].UpdatedAt.UTC().Format(time.RFC3339Nano))
+	request.Header.Set("Idempotency-Key", "empty-patch-handler-key-01")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("empty patch status = %d, body=%s", response.Code, response.Body.String())
+	}
+	if !repo.extractions[extractionID].Uncertain {
+		t.Fatal("empty patch changed the uncertainty flag")
+	}
+}
+
+func TestHandlerExtractionPatchRejectsStaleRevisionWithoutSavingIntent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo, extraction, service, _ := newExtractionCorrectionFixture(t, false)
+	current := repo.extractions[extraction.ID]
+	current.Summary = "newer external value"
+	current.UpdatedAt = extraction.UpdatedAt.Add(time.Second)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, "alice") })
+	router.PATCH("/sources/extractions/:id", NewHandler(service).UpdateExtraction)
+	request := httptest.NewRequest(http.MethodPatch, "/sources/extractions/"+extraction.ID.String(), strings.NewReader(`{"summary":"stale correction"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("If-Match", extraction.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	request.Header.Set("Idempotency-Key", "stale-patch-handler-key-01")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "source_extraction_revision_conflict") {
+		t.Fatalf("stale PATCH = %d %s", response.Code, response.Body.String())
+	}
+	if len(repo.corrections) != 0 || current.Summary != "newer external value" {
+		t.Fatalf("stale PATCH mutated data: corrections=%d summary=%q", len(repo.corrections), current.Summary)
 	}
 }
 

@@ -150,6 +150,31 @@ func TestTaskServiceReplaysSameIdempotentPlanAndRejectsChangedInput(t *testing.T
 	}
 }
 
+func TestTaskOperationIdempotencyBindsStructuredDeadline(t *testing.T) {
+	repository := NewMemoryTaskStateRepository()
+	taskService, ok := newDurableTaskTestService(t, repository, nil).(*service)
+	if !ok {
+		t.Fatal("durable task test service does not expose the concrete operation boundary")
+	}
+	firstDeadline := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Minute)
+	request := IntakeRequest{
+		OwnerIdentity:  "alice",
+		IdempotencyKey: "manual-capture:deadline-binding",
+		Request:        "Prepare a project action plan",
+		ProjectKey:     "018-HAI",
+		Deadline:       &firstDeadline,
+	}
+	if _, err := taskService.Plan(request); err != nil {
+		t.Fatalf("first plan: %v", err)
+	}
+
+	changedDeadline := firstDeadline.Add(24 * time.Hour)
+	request.Deadline = &changedDeadline
+	if _, err := taskService.Plan(request); !errors.Is(err, ErrTaskStateConflict) {
+		t.Fatalf("same idempotency key with a different deadline = %v, want conflict", err)
+	}
+}
+
 func TestTaskOperationFailureCreatesOneOwnerReviewBeforeRetry(t *testing.T) {
 	repository := NewMemoryTaskStateRepository()
 	taskService, ok := newDurableTaskTestService(t, repository, nil).(*service)

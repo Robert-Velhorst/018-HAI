@@ -220,6 +220,7 @@ type IntakeRequest struct {
 	OwnerIdentity    string                              `json:"-"`
 	Input            string                              `json:"input"`
 	ProjectKey       string                              `json:"projectKey,omitempty"`
+	ProjectKeyHint   string                              `json:"projectKeyHint,omitempty"`
 	AutomationID     string                              `json:"automationId,omitempty"`
 	MandateID        string                              `json:"mandateId,omitempty"`
 	SourceType       string                              `json:"sourceType,omitempty"`
@@ -243,6 +244,7 @@ type RoutedIntakeResult struct {
 	Matched          bool             `json:"matched"`
 	CreatedCandidate bool             `json:"createdCandidate"`
 	PursuitID        uuid.UUID        `json:"pursuitId,omitempty"`
+	WorkflowID       *uuid.UUID       `json:"workflowId,omitempty"`
 	Score            float64          `json:"score,omitempty"`
 	Reasons          []string         `json:"reasons,omitempty"`
 	Message          string           `json:"message,omitempty"`
@@ -386,6 +388,7 @@ type PursuitDashboardDecision struct {
 }
 
 type PursuitDetail struct {
+	IntakeWorkflowID     *uuid.UUID                     `json:"intakeWorkflowId,omitempty"`
 	Pursuit              models.Pursuit                 `json:"pursuit"`
 	Links                []models.PursuitLink           `json:"links"`
 	Activity             []models.PursuitActivity       `json:"activity"`
@@ -1392,16 +1395,70 @@ func compactPursuitTaskSummary(value string) string {
 
 func pursuitTaskAttemptActivity(attempt models.PursuitTaskAttempt) (string, string) {
 	mode := firstNonEmpty(attempt.Mode, "task")
+	if pursuitTaskAttemptNeedsReview(attempt) {
+		return "pursuit.task_attempt_review_required", "Direct " + mode + " task attempt requires review: " + firstNonEmpty(attempt.BlockedReason, attempt.VerificationStatus, attempt.Status)
+	}
 	if attempt.CompletedAt == nil {
 		return "pursuit.task_attempt_started", "Direct " + mode + " task attempt started."
 	}
 	if attempt.Status == "validated" {
-		return "pursuit.task_attempt_validated", "Direct " + mode + " task attempt completed with verified output."
-	}
-	if strings.Contains(attempt.Status, "review") || strings.TrimSpace(attempt.BlockedReason) != "" {
-		return "pursuit.task_attempt_review_required", "Direct " + mode + " task attempt requires review: " + firstNonEmpty(attempt.BlockedReason, attempt.Status)
+		if acceptedCompletionStatus(attempt.VerificationStatus) {
+			return "pursuit.task_attempt_validated", "Direct " + mode + " task attempt completed with verified output."
+		}
+		return "pursuit.task_attempt_recorded", "Direct " + mode + " task attempt validated; verification status: " + firstNonEmpty(attempt.VerificationStatus, "unavailable") + "."
 	}
 	return "pursuit.task_attempt_recorded", "Direct " + mode + " task attempt recorded with status " + attempt.Status + "."
+}
+
+var taskAttemptReviewVerificationStatuses = []string{"needs_review", "uncertain", "unsupported", "conflicting", "failed", "fail"}
+
+var taskAttemptAcceptedVerificationStatuses = []string{"verified", "source_supported", "test_passed", "human_approved", "schema_validated"}
+
+// PostgreSQL BTRIM must match Go's Unicode TrimSpace at this authority boundary.
+const taskAttemptWhitespace = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+
+func pursuitTaskAttemptNeedsReview(attempt models.PursuitTaskAttempt) bool {
+	status := strings.ToLower(strings.TrimSpace(attempt.Status))
+	if strings.EqualFold(strings.TrimSpace(attempt.Mode), "run") && (status == "validated" || status == "completed") {
+		accepted := false
+		for _, status := range taskAttemptAcceptedVerificationStatuses {
+			if strings.EqualFold(strings.TrimSpace(attempt.VerificationStatus), status) {
+				accepted = true
+				break
+			}
+		}
+		if !accepted {
+			return true
+		}
+	}
+	if strings.Contains(status, "review") || strings.TrimSpace(attempt.BlockedReason) != "" {
+		return true
+	}
+	switch status {
+	case "blocked", "uncertain", "indeterminate", "failed":
+		return true
+	}
+	for _, rejected := range taskAttemptReviewVerificationStatuses {
+		if strings.EqualFold(strings.TrimSpace(attempt.VerificationStatus), rejected) {
+			return true
+		}
+	}
+	return false
+}
+
+func pursuitTaskAttemptBlockers(attempts []models.PursuitTaskAttempt, workflows []models.WorkflowItem) []PursuitBlocker {
+	var result []PursuitBlocker
+	for _, attempt := range attempts {
+		if !pursuitTaskAttemptNeedsReview(attempt) {
+			continue
+		}
+		if launchID, err := uuid.Parse(strings.TrimSpace(attempt.LaunchEventID)); err == nil &&
+			runtimeAttemptRecoveredByWorkflow(models.AutomationLaunchEvent{ID: launchID}, workflows) {
+			continue
+		}
+		result = append(result, PursuitBlocker{Label: "Direct task requires review", Owner: "Robert", Reason: firstNonEmpty(attempt.BlockedReason, attempt.VerificationStatus, attempt.Status) + " (task://" + attempt.TaskPlanID + ")"})
+	}
+	return result
 }
 
 func (s *service) Detail(id uuid.UUID) (*PursuitDetail, error) {
@@ -1433,6 +1490,21 @@ func (s *service) DetailForOwner(ownerIdentity string, id uuid.UUID) (*PursuitDe
 		return nil, pursuitDetailLoadError("task attempts", err)
 	}
 	taskAttempts = taskAttemptsVisibleToOwner(ownerIdentity, taskAttempts)
+	reviewAttempts, err := s.repo.FindTaskAttemptsNeedingReview(id)
+	if err != nil {
+		return nil, pursuitDetailLoadError("task attempts needing review", err)
+	}
+	reviewAttempts = taskAttemptsVisibleToOwner(ownerIdentity, reviewAttempts)
+	seenAttempts := map[string]bool{}
+	for _, attempt := range taskAttempts {
+		seenAttempts[attempt.TaskPlanID] = true
+	}
+	for _, attempt := range reviewAttempts {
+		if !seenAttempts[attempt.TaskPlanID] {
+			taskAttempts = append(taskAttempts, attempt)
+			seenAttempts[attempt.TaskPlanID] = true
+		}
+	}
 	if taskAttempts == nil {
 		taskAttempts = []models.PursuitTaskAttempt{}
 	}
@@ -1534,6 +1606,20 @@ func (s *service) DetailForOwner(ownerIdentity string, id uuid.UUID) (*PursuitDe
 		return nil, pursuitDetailLoadError("linked runtime attempts", err)
 	}
 	runtimeAttempts = runtimeAttemptsVisibleToOwner(ownerIdentity, runtimeAttempts)
+	exactAttempts, err := s.findExactRuntimeAttempts(ownerIdentity, linkedRuntimeAttemptIDs)
+	if err != nil {
+		return nil, pursuitDetailLoadError("explicit runtime attempts", err)
+	}
+	seenLaunches := map[uuid.UUID]bool{}
+	for _, attempt := range runtimeAttempts {
+		seenLaunches[attempt.ID] = true
+	}
+	for _, attempt := range exactAttempts {
+		if !seenLaunches[attempt.ID] {
+			runtimeAttempts = append(runtimeAttempts, attempt)
+			seenLaunches[attempt.ID] = true
+		}
+	}
 	if runtimeAttempts == nil {
 		runtimeAttempts = []models.AutomationLaunchEvent{}
 	}
@@ -1579,6 +1665,7 @@ func (s *service) DetailForOwner(ownerIdentity string, id uuid.UUID) (*PursuitDe
 	detail.Blockers = append(detail.Blockers, sourceBlockers...)
 	detail.Blockers = append(detail.Blockers, qualityGateBlockers...)
 	detail.Blockers = append(detail.Blockers, contractBlockers...)
+	detail.Blockers = append(detail.Blockers, pursuitTaskAttemptBlockers(taskAttempts, workflows)...)
 	detail.NextActions = nextActions(*pursuit, workflows, openLoops, proposals, runtimeAttempts, resolvedDecisions, len(qualityGateBlockers) > 0, len(contractBlockers) > 0)
 	detail.ActionQueues = actionQueues(*pursuit, detail.NextActions, detail.Blockers)
 	detail.Summary = summarize(*pursuit, links, workflows, openLoops, evidence, memories, detail.SourceItems, extractions, detail.TaskRuns, taskAttempts, verificationRuns, runtimeAttempts, activity, sourceBlockers, qualityGateBlockers, contractBlockers)
@@ -2365,23 +2452,21 @@ func (s *service) RouteIntake(request IntakeRequest) (*RoutedIntakeResult, error
 				Detail:    detail,
 			}, nil
 		}
-		if _, err := s.IntakeForOwner(request.OwnerIdentity, matches[0].Pursuit.ID, request); err != nil {
-			return nil, err
-		}
-		detail, err := s.DetailForOwner(request.OwnerIdentity, matches[0].Pursuit.ID)
+		detail, err := s.IntakeForOwner(request.OwnerIdentity, matches[0].Pursuit.ID, request)
 		if err != nil {
 			return nil, err
 		}
 		_, _ = s.recordActivity(matches[0].Pursuit.ID, "pursuit.routed_intake", fmt.Sprintf("Global intake routed into existing pursuit with %.2f confidence.", matches[0].Score), actor, firstNonEmpty(request.SourceType, "intake"), request.SourceID, request.SourceURI)
 		return &RoutedIntakeResult{
-			Mode:      "matched_existing",
-			Matched:   true,
-			PursuitID: matches[0].Pursuit.ID,
-			Score:     matches[0].Score,
-			Reasons:   matches[0].Reasons,
-			Message:   "intake matched and created governed workflow under existing pursuit",
-			Matches:   matches,
-			Detail:    detail,
+			Mode:       "matched_existing",
+			WorkflowID: detail.IntakeWorkflowID,
+			Matched:    true,
+			PursuitID:  matches[0].Pursuit.ID,
+			Score:      matches[0].Score,
+			Reasons:    matches[0].Reasons,
+			Message:    "intake matched and created governed workflow under existing pursuit",
+			Matches:    matches,
+			Detail:     detail,
 		}, nil
 	}
 
@@ -2399,6 +2484,7 @@ func (s *service) RouteIntake(request IntakeRequest) (*RoutedIntakeResult, error
 		OwnerIdentity:  request.OwnerIdentity,
 		Input:          request.Input,
 		ProjectKey:     request.ProjectKey,
+		ProjectKeyHint: request.ProjectKeyHint,
 		AutomationID:   request.AutomationID,
 		MandateID:      request.MandateID,
 		SourceType:     request.SourceType,
@@ -2451,10 +2537,11 @@ func (s *service) RouteIntake(request IntakeRequest) (*RoutedIntakeResult, error
 		}
 	}
 	result := &RoutedIntakeResult{
-		Mode:     "candidate_created",
-		Matches:  matches,
-		AutoLink: autoLink,
-		Message:  firstNonEmpty(autoLinkMessage(autoLink), "intake converted into governed workflow; no pursuit candidate was created"),
+		Mode:       "candidate_created",
+		WorkflowID: &record.Item.ID,
+		Matches:    matches,
+		AutoLink:   autoLink,
+		Message:    firstNonEmpty(autoLinkMessage(autoLink), "intake converted into governed workflow; no pursuit candidate was created"),
 	}
 	if autoLink != nil {
 		result.Matched = autoLink.Linked && !autoLink.Created
@@ -2482,10 +2569,15 @@ func (s *service) createIntakeCandidate(request IntakeRequest, matches []MatchCa
 	actor := firstNonEmpty(request.Actor, "system")
 	sourceType := firstNonEmpty(strings.TrimSpace(request.SourceType), "intake")
 	sourceLabel := firstNonEmpty(request.SourceLabel, request.SourceURI, sourceType+" intake")
+	description := candidateDescription("intake", request.Input, request.SourceURI, sourceLabel)
+	projectKeyHint := strings.TrimSpace(request.ProjectKeyHint)
+	if projectKeyHint != "" {
+		description += "\n\nUnverified project hint from the source: " + projectKeyHint + ". This is context only and has not been confirmed as the pursuit project."
+	}
 	created, err := s.Create(CreateRequest{
 		OwnerIdentity:         request.OwnerIdentity,
 		Title:                 candidateTitle(sourceLabel, request.Input),
-		Description:           candidateDescription("intake", request.Input, request.SourceURI, sourceLabel),
+		Description:           description,
 		ProjectKey:            strings.TrimSpace(request.ProjectKey),
 		MandateID:             request.MandateID,
 		DesiredOutcome:        "Turn this intake into a verified, governed outcome.",
@@ -2532,7 +2624,11 @@ func (s *service) createIntakeCandidate(request IntakeRequest, matches []MatchCa
 	} else if linked {
 		links = append(links, *extractionLink)
 	}
-	_, _ = s.recordActivity(created.ID, "pursuit.candidate_created", "Created pursuit candidate from unmatched intake before workflow creation.", actor, sourceType, request.SourceID, request.SourceURI)
+	candidateCreatedMessage := "Created pursuit candidate from unmatched intake before workflow creation."
+	if projectKeyHint != "" {
+		candidateCreatedMessage += " Preserved source project hint as unverified context only: " + projectKeyHint + "."
+	}
+	_, _ = s.recordActivity(created.ID, "pursuit.candidate_created", candidateCreatedMessage, actor, sourceType, request.SourceID, request.SourceURI)
 
 	result := &RoutedIntakeResult{
 		Mode:             "candidate_created",
@@ -2700,6 +2796,7 @@ func (s *service) RouteWorkflowIntake(request workflow.IntakeRequest) (*workflow
 		OwnerIdentity:  request.OwnerIdentity,
 		Input:          request.Input,
 		ProjectKey:     request.ProjectKey,
+		ProjectKeyHint: request.ProjectKeyHint,
 		AutomationID:   request.AutomationID,
 		MandateID:      request.MandateID,
 		SourceType:     request.SourceType,
@@ -3057,6 +3154,7 @@ func (s *service) IntakeForOwner(ownerIdentity string, id uuid.UUID, request Int
 		OwnerIdentity:    effectiveOwner,
 		Input:            request.Input,
 		ProjectKey:       firstNonEmpty(request.ProjectKey, pursuit.ProjectKey),
+		ProjectKeyHint:   request.ProjectKeyHint,
 		AutomationID:     request.AutomationID,
 		MandateID:        request.MandateID,
 		SourceType:       request.SourceType,
@@ -3075,20 +3173,21 @@ func (s *service) IntakeForOwner(ownerIdentity string, id uuid.UUID, request Int
 	if err != nil {
 		return nil, err
 	}
-	if record != nil {
-		_, err = s.Link(id, LinkRequest{
-			OwnerIdentity: effectiveOwner,
-			LinkType:      LinkWorkflow,
-			LinkID:        record.Item.ID.String(),
-			Relationship:  "operational_work",
-			SourceURI:     request.SourceURI,
-			SourceLabel:   request.SourceLabel,
-			Confidence:    0.9,
-			Actor:         "system",
-		})
-		if err != nil {
-			return nil, err
-		}
+	if record == nil || record.Item.ID == uuid.Nil {
+		return nil, fmt.Errorf("workflow intake returned no workflow reference; outcome requires review")
+	}
+	_, err = s.Link(id, LinkRequest{
+		OwnerIdentity: effectiveOwner,
+		LinkType:      LinkWorkflow,
+		LinkID:        record.Item.ID.String(),
+		Relationship:  "operational_work",
+		SourceURI:     request.SourceURI,
+		SourceLabel:   request.SourceLabel,
+		Confidence:    0.9,
+		Actor:         "system",
+	})
+	if err != nil {
+		return nil, err
 	}
 	if err := s.linkIntakeSourceReference(id, effectiveOwner, request); err != nil {
 		return nil, err
@@ -3122,7 +3221,16 @@ func (s *service) IntakeForOwner(ownerIdentity string, id uuid.UUID, request Int
 			Actor:         firstNonEmpty(request.Actor, "Robert"),
 		})
 	}
-	return s.RefreshSummaryForOwner(ownerIdentity, id, "system")
+	detail, err = s.RefreshSummaryForOwner(ownerIdentity, id, "system")
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil {
+		return nil, fmt.Errorf("workflow intake readback unavailable; outcome requires review")
+	}
+	// This identifies the intake result, not completed execution or a durable receipt.
+	detail.IntakeWorkflowID = &record.Item.ID
+	return detail, nil
 }
 
 func (s *service) linkIntakeSourceReference(id uuid.UUID, ownerIdentity string, request IntakeRequest) error {
@@ -3920,10 +4028,10 @@ func unresolvedWorkflowDecisions(decisions []models.WorkflowDecision) []models.W
 func blockers(workflows []models.WorkflowItem, loops []models.WorkflowOpenLoop) []PursuitBlocker {
 	result := []PursuitBlocker{}
 	for _, item := range workflows {
-		if item.CurrentState == workflow.StateBlocked || strings.TrimSpace(item.BlockedReason) != "" {
+		if item.CurrentState == workflow.StateBlocked || taskRunNeedsReview(item) {
 			result = append(result, PursuitBlocker{
 				Label:      item.Title,
-				Reason:     firstNonEmpty(item.BlockedReason, "workflow is blocked"),
+				Reason:     firstNonEmpty(item.BlockedReason, item.LastWorkerError, item.RecoveryStatus, "workflow is blocked"),
 				Owner:      "Robert or external party",
 				WorkflowID: item.ID.String(),
 			})
@@ -4698,7 +4806,7 @@ func pursuitTimeline(
 			RiskLevel:   firstNonEmpty(attempt.RiskLevel, pursuit.RiskLevel),
 			SourceURI:   "task://" + attempt.TaskPlanID,
 			SourceLabel: "direct task attempt",
-			NeedsReview: strings.Contains(attempt.Status, "review") || strings.TrimSpace(attempt.BlockedReason) != "",
+			NeedsReview: pursuitTaskAttemptNeedsReview(attempt),
 			CreatedAt:   when,
 		})
 	}
@@ -4819,10 +4927,11 @@ func summarize(pursuit models.Pursuit, links []models.PursuitLink, workflows []m
 	approvals := len(approvalWorkflows(workflows))
 	needsRobert := approvals
 	blocked := len(blockers(workflows, loops)) + len(runtimeAttemptBlockers(runtimeAttempts, workflows, resolvedPursuitDecisions(activity))) + len(sourceBlockers) + len(qualityGateBlockers) + len(contractBlockers)
+	blocked += len(pursuitTaskAttemptBlockers(taskAttempts, workflows))
 	linkedEvidence := len(evidence) + len(memories) + len(sourceItems) + activeSourceExtractions(extractions) + acceptedVerificationRuns(verificationRuns) + completedRuntimeAttempts(runtimeAttempts) + acceptedWorkflowCompletionEvidence(workflows) + acceptedAmbientOpportunityLinks(links)
 	completed := 0
 	for _, item := range workflows {
-		if item.CurrentState == workflow.StateCompleted {
+		if workflowCompletionAccepted(item) {
 			completed++
 		}
 	}
@@ -5093,6 +5202,13 @@ func (s *service) completionActiveBlockerReasonForOwner(ownerIdentity string, id
 	if active := blockers(workflows, openLoops); len(active) > 0 {
 		return firstNonEmpty(active[0].Reason, active[0].Label, "linked workflow or open loop is still blocked"), nil
 	}
+	reviewAttempts, err := s.repo.FindTaskAttemptsNeedingReview(id)
+	if err != nil {
+		return "", err
+	}
+	if active := pursuitTaskAttemptBlockers(taskAttemptsVisibleToOwner(ownerIdentity, reviewAttempts), workflows); len(active) > 0 {
+		return active[0].Reason, nil
+	}
 	proposals, err := s.repo.FindLinkedProposals(workflowIDs)
 	if err != nil {
 		return "", err
@@ -5116,7 +5232,7 @@ func (s *service) completionActiveBlockerReasonForOwner(ownerIdentity string, id
 	}
 	runtimeAttemptIDs := linkUUIDs(links, LinkAgentRuntime)
 	if len(runtimeAttemptIDs) > 0 {
-		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, runtimeAttemptIDs, len(runtimeAttemptIDs))
+		attempts, err := s.findExactRuntimeAttempts(ownerIdentity, runtimeAttemptIDs)
 		if err != nil {
 			return "", err
 		}
@@ -5144,9 +5260,6 @@ func (s *service) completionEvidenceAvailableForOwner(ownerIdentity string, id u
 		if link.LinkType == LinkVerification && strings.TrimSpace(link.LinkID) != "" {
 			id, err := uuid.Parse(strings.TrimSpace(link.LinkID))
 			if err != nil {
-				if strings.TrimSpace(link.SourceURI) != "" && strings.EqualFold(strings.TrimSpace(link.Relationship), "completion_evidence") {
-					return true, "external completion verification record has provenance", nil
-				}
 				continue
 			}
 			runs, err := s.repo.FindLinkedVerificationRuns([]uuid.UUID{id})
@@ -5158,19 +5271,16 @@ func (s *service) completionEvidenceAvailableForOwner(ownerIdentity string, id u
 					return true, "linked verification run has accepted status", nil
 				}
 			}
-			if strings.TrimSpace(link.SourceURI) != "" && strings.EqualFold(strings.TrimSpace(link.Relationship), "completion_evidence") {
-				return true, "external completion verification record has provenance", nil
-			}
 		}
 	}
 	runtimeEvidenceIDs := completionEvidenceRuntimeIDs(links)
 	if len(runtimeEvidenceIDs) > 0 {
-		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, runtimeEvidenceIDs, len(runtimeEvidenceIDs))
+		attempts, err := s.findExactRuntimeAttempts(ownerIdentity, runtimeEvidenceIDs)
 		if err != nil {
 			return false, "", err
 		}
 		for _, attempt := range attempts {
-			if runtimeAttemptCompleted(attempt.Status) {
+			if runtimeAttemptCompleted(attempt.Status) && !runtimeAttemptNeedsReview(attempt) {
 				return true, "linked agent-runtime attempt completed under HAI controls", nil
 			}
 		}
@@ -5193,7 +5303,7 @@ func (s *service) completionEvidenceAvailableForOwner(ownerIdentity string, id u
 		return false, "", err
 	}
 	for _, item := range workflows {
-		if item.CurrentState == workflow.StateCompleted && acceptedCompletionStatus(item.VerificationStatus) {
+		if workflowCompletionAccepted(item) {
 			return true, "linked workflow completed with accepted verification", nil
 		}
 	}
@@ -5216,6 +5326,34 @@ func completionEvidenceRuntimeIDs(links []models.PursuitLink) []uuid.UUID {
 		ids = append(ids, id)
 	}
 	return uniqueUUIDs(ids)
+}
+
+func (s *service) findExactRuntimeAttempts(ownerIdentity string, ids []uuid.UUID) ([]models.AutomationLaunchEvent, error) {
+	ids = uniqueUUIDs(ids)
+	var result []models.AutomationLaunchEvent
+	for offset := 0; offset < len(ids); offset += 50 {
+		end := offset + 50
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch := ids[offset:end]
+		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, batch, len(batch))
+		if err != nil {
+			return nil, err
+		}
+		found := map[uuid.UUID]models.AutomationLaunchEvent{}
+		for _, attempt := range runtimeAttemptsVisibleToOwner(ownerIdentity, attempts) {
+			found[attempt.ID] = attempt
+		}
+		for _, id := range batch {
+			attempt, ok := found[id]
+			if !ok {
+				return nil, fmt.Errorf("explicit runtime evidence is unavailable; reconcile linked records before completion")
+			}
+			result = append(result, attempt)
+		}
+	}
+	return result, nil
 }
 
 func acceptedCompletionStatus(status string) bool {
@@ -5340,7 +5478,7 @@ func workflowHasTaskRunEvidence(item models.WorkflowItem) bool {
 }
 
 func taskRunStatus(item models.WorkflowItem) string {
-	if strings.TrimSpace(item.LastWorkerError) != "" {
+	if taskRunNeedsReview(item) {
 		return "blocked"
 	}
 	if item.CurrentState == workflow.StateCompleted {
@@ -5358,7 +5496,13 @@ func taskRunStatus(item models.WorkflowItem) string {
 func taskRunNeedsReview(item models.WorkflowItem) bool {
 	status := strings.ToLower(strings.TrimSpace(item.VerificationStatus))
 	return strings.TrimSpace(item.LastWorkerError) != "" ||
+		strings.TrimSpace(item.BlockedReason) != "" ||
+		item.RecoveryStatus == workflow.RecoveryNeedsReview ||
+		item.RequiresApproval && !strings.EqualFold(strings.TrimSpace(item.ApprovalStatus), "approved") ||
+		item.CurrentState == workflow.StateCompleted && !acceptedCompletionStatus(status) ||
 		status == "needs_review" ||
+		status == "uncertain" ||
+		status == "conflicting" ||
 		status == "unsupported" ||
 		strings.Contains(status, "fail")
 }
@@ -5384,7 +5528,7 @@ func acceptedVerificationRuns(runs []models.VerificationRun) int {
 func acceptedWorkflowCompletionEvidence(workflows []models.WorkflowItem) int {
 	count := 0
 	for _, item := range workflows {
-		if item.CurrentState == workflow.StateCompleted && acceptedCompletionStatus(item.VerificationStatus) {
+		if workflowCompletionAccepted(item) {
 			count++
 		}
 	}
@@ -5410,11 +5554,16 @@ func workflowsReadyForCompletion(workflows []models.WorkflowItem) bool {
 		return false
 	}
 	for _, item := range workflows {
-		if item.CurrentState != workflow.StateCompleted || !acceptedCompletionStatus(item.VerificationStatus) {
+		if !workflowCompletionAccepted(item) {
 			return false
 		}
 	}
 	return true
+}
+
+func workflowCompletionAccepted(item models.WorkflowItem) bool {
+	return item.CurrentState == workflow.StateCompleted && acceptedCompletionStatus(item.VerificationStatus) &&
+		!taskRunNeedsReview(item)
 }
 
 func pursuitNeedsRobert(pursuit models.Pursuit, actions []PursuitAction) bool {
@@ -5809,7 +5958,7 @@ func uniqueUUIDs(ids []uuid.UUID) []uuid.UUID {
 func completedRuntimeAttempts(attempts []models.AutomationLaunchEvent) int {
 	count := 0
 	for _, attempt := range attempts {
-		if runtimeAttemptCompleted(attempt.Status) {
+		if runtimeAttemptCompleted(attempt.Status) && !runtimeAttemptNeedsReview(attempt) {
 			count++
 		}
 	}
@@ -5836,14 +5985,28 @@ func resolvedPursuitDecisions(activity []models.PursuitActivity) map[string]bool
 }
 
 func runtimeAttemptNeedsReview(attempt models.AutomationLaunchEvent) bool {
+	if attempt.RequiresApproval {
+		return true
+	}
 	status := strings.ToLower(strings.TrimSpace(attempt.Status))
 	switch status {
 	case "failed", "blocked", "error", "timeout", "timed_out", "cancelled", "canceled", "needs_review", "unsupported":
 		return true
-	case "completed", "ready":
+	case "completed":
+		switch strings.ToLower(strings.TrimSpace(attempt.LaunchType)) {
+		case "api":
+			return attempt.ExitCode < 100 || attempt.ExitCode > 599
+		case "docker_service":
+			return attempt.ExitCode != 204 && attempt.ExitCode != 304
+		default:
+			return attempt.ExitCode != 0
+		}
+	case "ready", "stopped":
+		return attempt.ExitCode != 0
+	case "pending", "running", "started", "queued":
 		return false
 	default:
-		return attempt.ExitCode != 0
+		return true
 	}
 }
 
@@ -5960,13 +6123,7 @@ func runtimeAttemptRecoveredByWorkflow(attempt models.AutomationLaunchEvent, wor
 		if !strings.EqualFold(strings.TrimSpace(item.SourceURI), sourceURI) {
 			continue
 		}
-		if item.CurrentState != workflow.StateCompleted {
-			continue
-		}
-		if acceptedCompletionStatus(item.VerificationStatus) {
-			return true
-		}
-		if item.RecoveryStatus == workflow.RecoveryCompletedAfterRetry || item.RecoveryStatus == workflow.RecoveryCompletionConfirmed {
+		if workflowCompletionAccepted(item) {
 			return true
 		}
 	}

@@ -5,19 +5,52 @@
       <h1>Brain catalog</h1>
       <p>Only reviewed adapters can become operational. A listing never installs software, grants access, bypasses approval, or claims that an external runtime is configured.</p>
     </div>
-    <button nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">
+    <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" [disabled]="loading">
       <i nz-icon nzType="reload" nzTheme="outline"></i> Refresh
     </button>
   </header>
 
-  <div class="brain-catalog-page__metrics" aria-label="Capability catalog summary">
-    <div><strong>{{ integrated.length }}</strong><span>Integrated profiles</span></div>
-    <div><strong>{{ candidates.length }}</strong><span>Needs an adapter review</span></div>
-    <div><strong>{{ held.length }}</strong><span>Held or reference only</span></div>
-    <div><strong>{{ catalog.collectionScreening.total }}</strong><span>OSS Insight collections screened</span></div>
+  <div class="brain-catalog-page__load-error" *ngIf="loadErrorMessage" role="alert">
+    <div><strong>Catalog refresh failed</strong><span>{{ loadErrorMessage }} Existing catalog data is still shown and may be stale.</span></div>
+    <button type="button" nz-button nzType="default" (click)="refresh()" [disabled]="loading">Try again</button>
   </div>
 
-  <hai-progressive-section moduleId="brain-catalog" sectionId="capability-planes" title="HAI capability map" summary="See where reviewed projects can strengthen HAI. A plane shows architectural fit, not a configured or approved runtime.">
+  <section class="brain-catalog-page__next-action" aria-label="Next catalog action">
+    <div>
+      <span>Next step · review only</span>
+      <ng-container *ngIf="candidates[0] as nextCandidate; else noReviewCandidate">
+        <h2>Review {{ nextCandidate.name }}'s adapter boundary</h2>
+        <p>Creates an auditable HAI review. It does not install, configure, approve, or run the project.</p>
+        <small>{{ candidates.length }} candidate{{ candidates.length === 1 ? '' : 's' }} await review · {{ integrated.length }} integrated profile{{ integrated.length === 1 ? '' : 's' }}</small>
+      </ng-container>
+      <ng-template #noReviewCandidate>
+        <h2>No adapter review is queued</h2>
+        <p>Registered profiles remain review-only. HAI does not activate an upstream project from this catalog.</p>
+        <small>{{ integrated.length }} integrated profile{{ integrated.length === 1 ? '' : 's' }} · {{ held.length }} held or reference-only</small>
+      </ng-template>
+    </div>
+    <div class="brain-catalog-page__next-actions">
+      <button *ngIf="candidates[0] as nextCandidate" type="button" nz-button nzType="primary" (click)="startAdapterReview(nextCandidate)" [nzLoading]="reviewingCandidateId === nextCandidate.id" [disabled]="!!reviewingCandidateId || !canStartReview(nextCandidate)">Start adapter review</button>
+      <button type="button" nz-button nzType="default" (click)="openCatalogInventory()">Open capability inventory</button>
+    </div>
+  </section>
+
+  <hai-progressive-section
+    #catalogInventorySection
+    moduleId="brain-catalog"
+    sectionId="catalog-inventory"
+    title="Catalog summary"
+    summary="Source-backed counts for integrated profiles, review candidates, and held references."
+    [advancedOnly]="true">
+    <div class="brain-catalog-page__metrics" aria-label="Capability catalog summary">
+      <div><strong>{{ integrated.length }}</strong><span>Integrated profiles</span></div>
+      <div><strong>{{ candidates.length }}</strong><span>Needs an adapter review</span></div>
+      <div><strong>{{ held.length }}</strong><span>Held or reference only</span></div>
+      <div><strong>{{ catalog.collectionScreening.total }}</strong><span>OSS Insight collections screened</span></div>
+    </div>
+  </hai-progressive-section>
+
+  <hai-progressive-section moduleId="brain-catalog" sectionId="capability-planes" title="HAI capability map" summary="See where reviewed projects can strengthen HAI. A plane shows architectural fit, not a configured or approved runtime." [advancedOnly]="true">
     <div class="brain-catalog-page__plane-grid">
       <article class="brain-catalog-page__plane" *ngFor="let plane of catalog.planeCoverage">
         <div><strong>{{ plane.name }}</strong><span>{{ plane.description }}</span></div>
@@ -29,7 +62,7 @@
     </div>
   </hai-progressive-section>
 
-  <hai-progressive-section moduleId="brain-catalog" sectionId="implementation-roadmap" title="Implementation roadmap" summary="Ranked, read-only integration work across HAI's capability planes. Load it when you want the complete back-office queue.">
+  <hai-progressive-section moduleId="brain-catalog" sectionId="implementation-roadmap" title="Implementation roadmap" summary="Ranked, read-only integration work across HAI's capability planes. Load it when you want the complete back-office queue." [advancedOnly]="true">
     <div class="brain-catalog-page__source-review" *ngIf="!adoptionPlan">
       <div>
         <strong>Review the complete queue</strong>
@@ -50,6 +83,14 @@
     </ng-container>
   </hai-progressive-section>
 
+  <hai-progressive-section
+    #catalogProfileSection
+    moduleId="brain-catalog"
+    sectionId="profile-inventory"
+    title="Integrated profiles and status"
+    summary="Inspect local bridge health, activation gates, source records, and exact profile metadata."
+    [advancedOnly]="true"
+    (openChange)="onCatalogProfileOpen($event)">
   <section class="brain-catalog-page__layout">
     <div class="brain-catalog-page__list">
       <div class="brain-catalog-page__section-heading">
@@ -302,7 +343,9 @@
     </nz-card>
   </section>
 
-  <hai-progressive-section moduleId="brain-catalog" sectionId="candidates" title="Candidate capability reviews" summary="Projects that need a concrete adapter, health check, audit path, and rollback design before activation.">
+  </hai-progressive-section>
+
+  <hai-progressive-section moduleId="brain-catalog" sectionId="candidates" title="Candidate capability reviews" summary="Projects that need a concrete adapter, health check, audit path, and rollback design before activation." [advancedOnly]="true">
     <div class="brain-catalog-page__advanced-grid">
       <button type="button" class="catalog-entry" *ngFor="let entry of candidates" (click)="select(entry)">
         <span><strong>{{ entry.name }}</strong><small>{{ entry.activation }}</small></span>
@@ -311,7 +354,7 @@
     </div>
   </hai-progressive-section>
 
-  <hai-progressive-section moduleId="brain-catalog" sectionId="capability-match" title="Match a capability need" summary="Find reviewed HAI profiles and review-first candidates. This is planning context only and never activates a project.">
+  <hai-progressive-section moduleId="brain-catalog" sectionId="capability-match" title="Match a capability need" summary="Find reviewed HAI profiles and review-first candidates. This is planning context only and never activates a project." [advancedOnly]="true">
     <div class="brain-catalog-page__capability-search">
       <input #capabilityNeed type="text" maxlength="240" placeholder="Example: local model evaluation or read-only browser verification">
       <button nz-button nzType="primary" (click)="recommendCapabilities(capabilityNeed.value)" [nzLoading]="recommendingCapabilities" [disabled]="recommendingCapabilities">Find capability</button>
@@ -329,7 +372,7 @@
     </div>
   </hai-progressive-section>
 
-  <hai-progressive-section moduleId="brain-catalog" sectionId="held" title="Held, reference, and license-review projects" summary="Useful patterns remain visible, but HAI will not create a second control plane or import code without an explicit decision.">
+  <hai-progressive-section moduleId="brain-catalog" sectionId="held" title="Held, reference, and license-review projects" summary="Useful patterns remain visible, but HAI will not create a second control plane or import code without an explicit decision." [advancedOnly]="true">
     <div class="brain-catalog-page__advanced-grid">
       <button type="button" class="catalog-entry" *ngFor="let entry of held" (click)="select(entry)">
         <span><strong>{{ entry.name }}</strong><small>{{ entry.rationale }}</small></span>
@@ -338,7 +381,7 @@
     </div>
   </hai-progressive-section>
 
-  <hai-progressive-section moduleId="brain-catalog" sectionId="oss-insight-screening" title="OSS Insight collection coverage" summary="The complete discovery pass is visible here. A collection is evidence for review, never a permission to install its repositories.">
+  <hai-progressive-section moduleId="brain-catalog" sectionId="oss-insight-screening" title="OSS Insight collection coverage" summary="The complete discovery pass is visible here. A collection is evidence for review, never a permission to install its repositories." [advancedOnly]="true" (openChange)="onOSSInsightOpen($event)">
     <div class="brain-catalog-page__source-review">
       <div>
         <strong>Catalog metadata maintenance</strong>
@@ -466,12 +509,42 @@
     </div>
   </hai-progressive-section>
 
-  <details class="advanced-section brain-catalog-page__provenance">
-    <summary>Discovery and verification record</summary>
+  <hai-progressive-section moduleId="brain-catalog" sectionId="agent-skills" title="Agent Skills inventory" summary="Read-only skill guidance available to HAI; listing a skill does not grant tool access." [advancedOnly]="true" (openChange)="onSkillInventoryOpen($event)">
+    <p class="brain-catalog-page__skill-state" *ngIf="loadingSkillInventory" role="status">Loading skill inventory...</p>
+    <div class="brain-catalog-page__skill-state" *ngIf="skillInventoryUnavailable" role="alert">
+      <span>The skill inventory could not be loaded. Existing catalog data is unchanged.</span>
+      <button type="button" nz-button nzType="default" (click)="loadSkillInventory()">Try again</button>
+    </div>
+    <ng-container *ngIf="skillInventory as inventory">
+      <div class="brain-catalog-page__skill-source">
+        <span><strong>Source:</strong> {{ inventory.sourceRepository }}</span>
+        <span><strong>Pin:</strong> <code>{{ inventory.sourceCommit }}</code></span>
+        <span><strong>Upstream commit date:</strong> {{ inventory.sourceCommitDate | date:'medium' }}</span>
+      </div>
+      <p class="brain-catalog-page__skill-state" *ngIf="!inventory.skills.length">No Agent Skills are registered on this server.</p>
+      <ul class="brain-catalog-page__skill-list" *ngIf="inventory.skills.length">
+        <li *ngFor="let skill of inventory.skills">
+          <div class="brain-catalog-page__skill-heading">
+            <div><strong>{{ skill.name }}</strong><span>{{ skill.description }}</span></div>
+            <span class="brain-catalog-page__skill-selection">{{ skill.needsReapproval ? 'Needs version confirmation' : (skill.enabled ? 'Enabled for matching tasks' : 'Not enabled') }}</span>
+          </div>
+          <div class="brain-catalog-page__skill-meta">
+            <span>License: {{ skill.license }}</span>
+            <span>Scope: {{ skill.scope }}</span>
+            <span>Status: {{ skill.status }}</span>
+            <span>Source: <code>{{ skill.sourcePath }}</code></span>
+            <span>Source SHA-256: <code>{{ skill.sourceSHA256 }}</code></span>
+          </div>
+        </li>
+      </ul>
+    </ng-container>
+  </hai-progressive-section>
+
+  <hai-progressive-section moduleId="brain-catalog" sectionId="discovery-verification-record" title="Discovery and verification record" summary="Inspect activation policy, review dates, and source coverage." [advancedOnly]="true">
     <p>{{ catalog.activationPolicy }}</p>
     <p>Last catalog review: {{ catalog.verifiedAt }}</p>
     <ul><li *ngFor="let source of catalog.discoverySources"><a [href]="source.url" target="_blank" rel="noopener noreferrer">{{ source.name }}</a> - {{ source.scope }}</li></ul>
-  </details>
+  </hai-progressive-section>
 </section>
 
 <ng-template #loadingState>

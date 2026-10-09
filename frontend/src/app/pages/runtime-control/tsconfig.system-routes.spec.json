@@ -1,0 +1,11 @@
+{
+  "extends": "../../../../tsconfig.spec.json",
+  "include": [
+    "../llm-policy/llm-policy.component.spec.ts",
+    "../llm-policy/llm-policy.accessibility.spec.ts",
+    "../framework-registry/framework-registry.component.spec.ts",
+    "./runtime-control.component.spec.ts",
+    "../runtime-lab/runtime-lab.component.spec.ts",
+    "../system-status/system-status.component.spec.ts"
+  ]
+}

@@ -198,6 +198,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	sources.POST("/search", mark("sourceSearch"))
 	sources.POST("/sync-due", mark("sourceSyncDue"))
 	sources.GET("/extractions", mark("sourceExtractions"))
+	sources.GET("/extraction-corrections/:id", mark("sourceExtractionCorrection"))
 	sources.GET("/audit-logs", mark("sourceAuditLogs"))
 	sources.PATCH("/extractions/:id", mark("sourceExtractionUpdate"))
 	sources.POST("/extractions/:id/archive", mark("sourceExtractionArchive"))
@@ -304,6 +305,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	workflowRoutes.GET("/overview", mark("workflowOverview"))
 	workflowRoutes.GET("/approvals", mark("workflowApprovals"))
 	workflowRoutes.GET("/dashboard", mark("workflowDashboard"))
+	workflowRoutes.GET("/project-dossier", mark("workflowProjectDossier"))
 	workflowRoutes.GET("/reminder-proposals", mark("workflowReminderProposals"))
 	workflowRoutes.GET("/", mark("workflowItems"))
 	workflowRoutes.POST("/intake", mark("workflowIntake"))
@@ -442,6 +444,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"POST", "/api/v1/sources/search", "sourceSearch"},
 		{"POST", "/api/v1/sources/sync-due", "sourceSyncDue"},
 		{"GET", "/api/v1/sources/extractions", "sourceExtractions"},
+		{"GET", "/api/v1/sources/extraction-corrections/abc", "sourceExtractionCorrection"},
 		{"GET", "/api/v1/sources/audit-logs", "sourceAuditLogs"},
 		{"PATCH", "/api/v1/sources/extractions/abc", "sourceExtractionUpdate"},
 		{"POST", "/api/v1/sources/extractions/abc/archive", "sourceExtractionArchive"},
@@ -469,6 +472,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"GET", "/api/v1/workflow/overview", "workflowOverview"},
 		{"GET", "/api/v1/workflow/approvals", "workflowApprovals"},
 		{"GET", "/api/v1/workflow/dashboard", "workflowDashboard"},
+		{"GET", "/api/v1/workflow/project-dossier?projectKey=Case-A", "workflowProjectDossier"},
 		{"GET", "/api/v1/workflow/reminder-proposals", "workflowReminderProposals"},
 		{"GET", "/api/v1/workflow/", "workflowItems"},
 		{"POST", "/api/v1/workflow/intake", "workflowIntake"},

@@ -87,11 +87,15 @@ func isLocalEndpointURL(raw string) bool {
 
 // probeModelsEndpoint performs a truthful GET against an OpenAI-compatible
 // /models path and maps the result onto a ProviderStatus.
-func probeModelsEndpoint(ctx context.Context, client *http.Client, providerID, baseURL, probePath string, now time.Time) ProbeResult {
-	return probeModelsEndpointWithBearer(ctx, client, providerID, baseURL, probePath, "", now)
+func probeModelsEndpoint(ctx context.Context, client *http.Client, providerID, baseURL, probePath, modelID string, now time.Time) ProbeResult {
+	return probeModelsEndpointWithBearer(ctx, client, providerID, baseURL, probePath, "", modelID, now)
 }
 
-func probeModelsEndpointWithBearer(ctx context.Context, client *http.Client, providerID, baseURL, probePath, bearerToken string, now time.Time) ProbeResult {
+func probeModelsEndpointWithBearer(ctx context.Context, client *http.Client, providerID, baseURL, probePath, bearerToken, modelID string, now time.Time) ProbeResult {
+	modelID = strings.TrimSpace(modelID)
+	if modelID == "" {
+		return ProbeResult{ProviderID: providerID, Status: ProviderFailed, Detail: "configured model identifier is missing", CheckedAt: now}
+	}
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+probePath, nil)
 	if err != nil {
@@ -110,7 +114,9 @@ func probeModelsEndpointWithBearer(ctx context.Context, client *http.Client, pro
 		return ProbeResult{ProviderID: providerID, Status: ProviderUnavailable, DurationMs: dur, Detail: fmt.Sprintf("probe HTTP %d", resp.StatusCode), CheckedAt: now}
 	}
 	var body struct {
-		Data []json.RawMessage `json:"data"`
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
 	}
 	raw, err := readBoundedProviderResponse(resp.Body, maxModelsProbeBytes)
 	if err != nil {
@@ -119,7 +125,12 @@ func probeModelsEndpointWithBearer(ctx context.Context, client *http.Client, pro
 	if err := json.Unmarshal(raw, &body); err != nil {
 		return ProbeResult{ProviderID: providerID, Status: ProviderFailed, DurationMs: dur, Detail: "invalid models response", CheckedAt: now}
 	}
-	return ProbeResult{ProviderID: providerID, Status: ProviderActive, ModelsSeen: len(body.Data), DurationMs: dur, Detail: "probe ok", CheckedAt: now}
+	for _, model := range body.Data {
+		if model.ID == modelID {
+			return ProbeResult{ProviderID: providerID, Status: ProviderActive, ModelsSeen: len(body.Data), DurationMs: dur, Detail: "configured model listed", CheckedAt: now}
+		}
+	}
+	return ProbeResult{ProviderID: providerID, Status: ProviderUnavailable, ModelsSeen: len(body.Data), DurationMs: dur, Detail: "configured model not listed by provider", CheckedAt: now}
 }
 
 // chatCompletion performs a bounded OpenAI-compatible chat completion and
@@ -149,12 +160,20 @@ func chatCompletionWithBearer(ctx context.Context, client *http.Client, provider
 		return InferenceResult{ProviderID: providerID, OK: false, Error: err.Error()}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		err := fmt.Errorf("%s: provider returned HTTP %d", providerID, resp.StatusCode)
+		return InferenceResult{ProviderID: providerID, OK: false, Error: err.Error()}, err
+	}
 	var out struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage *struct {
+			PromptTokens     *int `json:"prompt_tokens"`
+			CompletionTokens *int `json:"completion_tokens"`
+		} `json:"usage"`
 	}
 	raw, err := readBoundedProviderResponse(resp.Body, maxChatCompletionBytes)
 	if err != nil {
@@ -167,12 +186,33 @@ func chatCompletionWithBearer(ctx context.Context, client *http.Client, provider
 	if len(out.Choices) > 0 {
 		text = out.Choices[0].Message.Content
 	}
+	if strings.TrimSpace(text) == "" {
+		err := fmt.Errorf("%s: provider returned no assistant text", providerID)
+		return InferenceResult{ProviderID: providerID, OK: false, Error: err.Error()}, err
+	}
 	res := InferenceResult{ProviderID: providerID, ModelID: modelID, Lane: req.Lane, Output: text, OK: true}
 	res.DurationMs = time.Since(start).Milliseconds()
+	if res.DurationMs < 1 {
+		res.DurationMs = 1
+	}
 	res.InputTokensEstimate = estimateTokens(req.Prompt)
 	res.OutputTokensEstimate = estimateTokens(text)
+	if out.Usage != nil {
+		if out.Usage.PromptTokens != nil {
+			res.InputTokensActual = *out.Usage.PromptTokens
+			res.InputUsageReported = true
+		}
+		if out.Usage.CompletionTokens != nil {
+			res.OutputTokensActual = *out.Usage.CompletionTokens
+			res.OutputUsageReported = true
+		}
+	}
 	if res.DurationMs > 0 {
-		res.TokensPerSecond = float64(res.OutputTokensEstimate) / (float64(res.DurationMs) / 1000)
+		throughputTokens := res.OutputTokensEstimate
+		if res.OutputUsageReported {
+			throughputTokens = res.OutputTokensActual
+		}
+		res.TokensPerSecond = float64(throughputTokens) / (float64(res.DurationMs) / 1000)
 	}
 	return res, nil
 }

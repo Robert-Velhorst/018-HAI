@@ -1,3 +1,5 @@
+import { ISkillInventory, ISkillInventoryEntry } from './skills.model.interface'
+
 export type BrainCatalogStatus =
   | 'integrated_profile'
   | 'candidate'
@@ -5,6 +7,9 @@ export type BrainCatalogStatus =
   | 'reference_only'
   | 'license_review'
   | 'excluded'
+
+export type IBrainSkillInventoryEntry = ISkillInventoryEntry
+export type IBrainSkillInventory = ISkillInventory
 
 export interface IBrainCatalogControlMapping {
   sourcePattern: string

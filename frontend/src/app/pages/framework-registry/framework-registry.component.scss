@@ -253,6 +253,8 @@
 }
 
 .help-button {
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
   width: 24px;
   height: 24px;
@@ -443,6 +445,12 @@
 
 .overview-strip__freshness strong {
   font-size: 14px;
+}
+
+.overview-strip__metric--pending strong {
+  color: var(--hai-muted);
+  font-size: 14px;
+  font-weight: 650;
 }
 
 .stale-panel-note {

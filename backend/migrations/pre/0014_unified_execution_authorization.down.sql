@@ -1,3 +1,21 @@
+LOCK TABLE public.execution_authorization_consumptions,
+    public.execution_authorization_final_effect_exercises,
+    public.execution_authorization_receipts,
+    public.workflow_decisions
+    IN ACCESS EXCLUSIVE MODE;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM public.execution_authorization_consumptions)
+       OR EXISTS (SELECT 1 FROM public.execution_authorization_final_effect_exercises)
+       OR EXISTS (SELECT 1 FROM public.execution_authorization_receipts)
+       OR EXISTS (SELECT 1 FROM public.workflow_decisions)
+    THEN
+        RAISE EXCEPTION 'rollback 0014_unified_execution_authorization refused: authorization or workflow decision data exists; preserve it before rollback';
+    END IF;
+END
+$$;
+
 DROP TRIGGER IF EXISTS trg_execution_authorization_final_effects_no_truncate
     ON public.execution_authorization_final_effect_exercises;
 DROP TRIGGER IF EXISTS trg_execution_authorization_final_effects_immutable

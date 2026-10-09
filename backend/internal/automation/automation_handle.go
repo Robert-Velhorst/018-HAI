@@ -112,6 +112,7 @@ func (h *Handler) Create(c *gin.Context) {
 	automation.LaunchType = c.PostForm("launchType")
 	automation.LaunchTarget = c.PostForm("launchTarget")
 	automation.RuntimeType = c.PostForm("runtimeType")
+	automation.RuntimeModel = c.PostForm("runtimeModel")
 	automation.ServiceName = c.PostForm("serviceName")
 	automation.RoutePath = c.PostForm("routePath")
 	automation.PublicURL = c.PostForm("publicUrl")
@@ -140,10 +141,14 @@ func (h *Handler) Create(c *gin.Context) {
 
 	newAutomation, err := h.service.Create(&automation)
 	if err != nil {
+		if errors.Is(err, ErrMaskedAutomationConfiguration) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "masked automation fields require a complete unmasked replacement"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "automation could not be created")})
 		return
 	}
-	c.JSON(http.StatusCreated, newAutomation)
+	c.JSON(http.StatusCreated, publicAutomation(newAutomation))
 }
 
 func maxAutomationCreateBodyBytes() int64 {
@@ -170,7 +175,7 @@ func (h *Handler) GetAll(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, automations)
+	c.JSON(http.StatusOK, publicAutomations(automations))
 }
 
 // GetByID
@@ -204,7 +209,7 @@ func (h *Handler) GetByID(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, automation)
+	c.JSON(http.StatusOK, publicAutomation(automation))
 }
 
 // DeleteByID
@@ -308,9 +313,13 @@ func (h *Handler) Update(c *gin.Context) {
 
 	updatedAutomation, err := h.service.Update(&automation)
 	if err != nil {
+		if errors.Is(err, ErrMaskedAutomationConfiguration) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "masked automation fields must match the unchanged current display value or use a complete unmasked replacement"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "automation could not be updated")})
 		return
 	}
 
-	c.JSON(http.StatusOK, updatedAutomation)
+	c.JSON(http.StatusOK, publicAutomation(updatedAutomation))
 }

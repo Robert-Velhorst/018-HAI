@@ -75,6 +75,9 @@ func (c CalendarClient) ListPrimaryEventsPage(
 	timeMin string,
 	pageSize int,
 ) (CalendarEventPage, error) {
+	if !validGoogleEndpoint(c.baseURL(), "www.googleapis.com", "/calendar/v3") {
+		return CalendarEventPage{}, fmt.Errorf("calendar API endpoint must use HTTPS on Google's Calendar API host or a loopback test server")
+	}
 	if pageSize <= 0 || pageSize > 2500 {
 		pageSize = 200
 	}
@@ -104,21 +107,19 @@ func (c CalendarClient) ListPrimaryEventsPage(
 		return CalendarEventPage{}, fmt.Errorf("calendar request failed: %w", err)
 	}
 	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		var cause error
+		if response.StatusCode == http.StatusGone {
+			cause = ErrCalendarSyncTokenExpired
+		}
+		return CalendarEventPage{}, newProviderAPIError("Google Calendar", response, cause)
+	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxCalendarBodyBytes+1))
 	if err != nil {
 		return CalendarEventPage{}, err
 	}
 	if len(body) > maxCalendarBodyBytes {
 		return CalendarEventPage{}, fmt.Errorf("calendar response exceeded the safety limit")
-	}
-	if response.StatusCode == http.StatusUnauthorized {
-		return CalendarEventPage{}, fmt.Errorf("calendar returned 401: access token is invalid or expired")
-	}
-	if response.StatusCode == http.StatusGone {
-		return CalendarEventPage{}, ErrCalendarSyncTokenExpired
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return CalendarEventPage{}, fmt.Errorf("calendar returned HTTP %d", response.StatusCode)
 	}
 	var page CalendarEventPage
 	if err := json.Unmarshal(body, &page); err != nil {

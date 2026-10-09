@@ -1,9 +1,22 @@
-<section class="hai-progressive-section" [class.hai-progressive-section--open]="open" [class.hai-progressive-section--advanced]="advancedOnly">
-  <button type="button" class="hai-progressive-section__summary" [attr.aria-expanded]="open" (click)="toggle()">
+<section *ngIf="visible" [id]="sectionId || null" class="hai-progressive-section" [class.hai-progressive-section--open]="effectiveOpen" [class.hai-progressive-section--advanced]="advancedOnly">
+  <button
+    type="button"
+    class="hai-progressive-section__summary"
+    [id]="triggerId"
+    [attr.aria-expanded]="effectiveOpen"
+    [attr.aria-controls]="effectiveOpen ? panelId : null"
+    (click)="toggle()"
+  >
     <span><strong>{{ title }}</strong><small *ngIf="summary">{{ summary }}</small></span>
-    <i nz-icon [nzType]="open ? 'up' : 'down'" nzTheme="outline"></i>
+    <i nz-icon [nzType]="effectiveOpen ? 'up' : 'down'" nzTheme="outline" aria-hidden="true"></i>
   </button>
-  <div class="hai-progressive-section__content" *ngIf="open">
+  <div
+    class="hai-progressive-section__content"
+    [id]="panelId"
+    role="region"
+    [attr.aria-labelledby]="triggerId"
+    *ngIf="effectiveOpen"
+  >
     <ng-content></ng-content>
   </div>
 </section>

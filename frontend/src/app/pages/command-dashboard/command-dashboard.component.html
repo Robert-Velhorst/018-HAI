@@ -1,37 +1,36 @@
 <section class="command-page">
-  <nz-layout>
-    <nz-header class="header-container">
-      <div class="header-content">
-        <div>
-          <h1>HAI Command Dashboard</h1>
-          <span>Operational memory from Robert's connected AI conversations</span>
-        </div>
-        <div class="header-actions">
-          <button nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">
-            <i nz-icon nzType="reload" nzTheme="outline"></i>
-            Refresh
-          </button>
-          <button nz-button nzType="default" (click)="refreshRuntimes()" [nzLoading]="runtimeLoading">
-            <i nz-icon nzType="api" nzTheme="outline"></i>
-            Runtime health
-          </button>
-          <button nz-button nzType="default" (click)="openAmbientBrain()">
-            <i nz-icon nzType="radar-chart" nzTheme="outline"></i>
-            Proactive brain
-          </button>
-          <button nz-button nzType="default" (click)="openPursuits()">
-            <i nz-icon nzType="flag" nzTheme="outline"></i>
-            Pursuits
-          </button>
-          <button nz-button nzType="default" (click)="goHome()">
-            <i nz-icon nzType="appstore" nzTheme="outline"></i>
-            Automations
-          </button>
-        </div>
+  <header class="header-container">
+    <div class="header-content">
+      <div>
+        <h1>HAI Command Dashboard</h1>
+        <span>Operational memory from Robert's connected AI conversations</span>
       </div>
-    </nz-header>
+      <div class="header-actions" role="group" aria-label="Dashboard data controls">
+        <button type="button" nz-button nzType="default" aria-label="Refresh command dashboard" (click)="refresh()" [nzLoading]="loading">
+          <i nz-icon nzType="reload" nzTheme="outline" aria-hidden="true"></i>
+          Refresh
+        </button>
+        <button type="button" nz-button nzType="default" aria-label="Refresh runtime health" (click)="refreshRuntimes()" [nzLoading]="runtimeLoading">
+          <i nz-icon nzType="api" nzTheme="outline" aria-hidden="true"></i>
+          Runtime health
+        </button>
+      </div>
+    </div>
+    <p class="dashboard-freshness" *ngIf="dashboard as current" aria-live="polite">
+      Last successful snapshot: {{ current.generatedAt | date: 'medium' }}
+      <span *ngIf="loading"> · Refreshing; the previous snapshot remains visible.</span>
+    </p>
+  </header>
 
-    <nz-content class="content-container" *ngIf="dashboard as view">
+    <section class="dashboard-load-state" *ngIf="!dashboard && loading" role="status" aria-live="polite">
+      Loading the operating dashboard…
+    </section>
+    <section class="dashboard-load-state dashboard-load-state--error" *ngIf="dashboardUnavailable" role="alert">
+      <span>Dashboard data could not be refreshed. Any displayed records may be from the previous successful load.</span>
+      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">Retry</button>
+    </section>
+
+    <div class="content-container" *ngIf="dashboard as view">
       <div class="status-strip">
         <div class="metric">
           <span>Encrypted conversations</span>
@@ -43,7 +42,7 @@
         </div>
         <div class="metric alert">
           <span>Needs Robert</span>
-          <strong>{{ view.needsRobert.length }}</strong>
+          <strong>{{ workflowQueueMetric(view.needsRobert.length) }}</strong>
         </div>
         <div class="metric">
           <span>VA-ready</span>
@@ -55,26 +54,29 @@
         </div>
         <div class="metric">
           <span>Learned corrections</span>
-          <strong>{{ view.sourceCorrections?.length || 0 }}</strong>
+          <strong>{{ correctionMetric(view.sourceCorrections) }}</strong>
         </div>
         <div class="metric alert">
           <span>Pursuit decisions</span>
-          <strong>{{ pursuitDecisionCount() }}</strong>
+          <strong>{{ pursuitMetric(pursuitDecisionCount()) }}</strong>
         </div>
         <div class="metric">
           <span>Ready pursuit work</span>
-          <strong>{{ pursuitReadyCount() }}</strong>
+          <strong>{{ pursuitMetric(pursuitReadyCount()) }}</strong>
         </div>
       </div>
+      <p class="dashboard-scope-note" *ngIf="workflowQueuesScopedOut()" role="status" aria-live="polite">
+        Workflow queues are shown in Pursuits. This memory snapshot does not report their counts; open Pursuits for the owner-scoped queue state.
+      </p>
 
-      <section class="assistant-actions">
+      <section class="assistant-actions" [attr.aria-busy]="!!commandLoading">
             <div class="section-heading">
           <div>
             <h2>Assistant Actions</h2>
             <span>Primary controls run through the same task, memory, source, workflow, and agent-cycle bridge.</span>
           </div>
           <nz-tag [nzColor]="commandStatusColor(lastCommand)">
-            {{ lastCommand ? (lastCommand.reviewRequired ? 'review needed' : 'ready') : 'no command yet' }}
+            {{ commandStatusLabel(lastCommand) }}
           </nz-tag>
         </div>
 
@@ -85,6 +87,8 @@
             *ngFor="let action of actions"
             [attr.title]="action.description + ' Click for full orchestration through the assistant command bridge.'"
             [class.action-tile--loading]="commandLoading === action.key"
+            [disabled]="!action.route && !!commandLoading"
+            [attr.aria-busy]="commandLoading === action.key ? 'true' : null"
             (click)="runDashboardAction(action)"
           >
             <span class="action-icon">
@@ -126,26 +130,35 @@
       </section>
 
       <section class="pursuit-band" *ngIf="pursuitDashboard as pursuits">
+        <p class="pursuit-refreshing" *ngIf="pursuitsLoading" role="status" aria-live="polite">
+          Refreshing pursuit state; the last confirmed queue is shown until the request completes.
+        </p>
+        <p class="pursuit-brief__stale" *ngIf="pursuitBriefUnavailable && !pursuitBrief" role="alert">
+          The operating brief could not be loaded. The pursuit queues below are available, but no brief summary is confirmed.
+        </p>
         <div class="section-heading">
           <div>
             <h2>Pursuit Operations</h2>
             <span>Top-level goals tied to workflows, evidence, memory, approvals, and source context.</span>
           </div>
           <div class="pursuit-summary">
-            <button nz-button nzSize="small" nzType="default" title="Reload pursuit dashboard state." (click)="refreshPursuits()" [nzLoading]="pursuitsLoading">
-              <i nz-icon nzType="reload" nzTheme="outline"></i>
+            <button type="button" nz-button nzSize="small" nzType="default" aria-label="Refresh pursuit dashboard" title="Reload pursuit dashboard state." (click)="refreshPursuits()" [nzLoading]="pursuitsLoading">
+              <i nz-icon nzType="reload" nzTheme="outline" aria-hidden="true"></i>
             </button>
             <button nz-button nzSize="small" nzType="default" title="Open granular pursuit controls." (click)="openPursuits()">
               <i nz-icon nzType="flag" nzTheme="outline"></i>
-              {{ activePursuitCount() }} active
+              {{ pursuitMetric(activePursuitCount()) }} active
             </button>
-            <nz-tag [nzColor]="pursuitAttentionCount() ? 'gold' : 'green'">
-              {{ pursuitAttentionCount() }} need attention
+            <nz-tag [nzColor]="pursuitDashboardUnavailable ? 'default' : (pursuitAttentionCount() ? 'gold' : 'green')">
+              {{ pursuitMetric(pursuitAttentionCount()) }} need attention
             </nz-tag>
           </div>
         </div>
 
         <div class="pursuit-brief" *ngIf="pursuitBrief as brief">
+          <p class="pursuit-brief__stale" *ngIf="pursuitBriefUnavailable" role="status">
+            The operating brief could not be refreshed. Showing the last confirmed brief from {{ brief.generatedAt | date: 'medium' }}.
+          </p>
           <button
             type="button"
             class="pursuit-brief__summary"
@@ -204,6 +217,7 @@
                   nzSize="small"
                   nzType="primary"
                   [nzLoading]="resolvingDashboardDecisionId === card.decision.id"
+                  [disabled]="!!resolvingDashboardDecisionId && resolvingDashboardDecisionId !== card.decision.id"
                   (click)="resolveDashboardDecision(card, true, $event)"
                   [title]="dashboardDecisionTitle(card, true)"
                 >
@@ -213,7 +227,7 @@
                   type="button"
                   nz-button
                   nzSize="small"
-                  [disabled]="resolvingDashboardDecisionId === card.decision.id"
+                  [disabled]="!!resolvingDashboardDecisionId"
                   (click)="resolveDashboardDecision(card, false, $event)"
                   [title]="dashboardDecisionTitle(card, false)"
                 >
@@ -278,6 +292,46 @@
         </div>
       </section>
 
+      <section class="dashboard-load-state dashboard-load-state--error" *ngIf="pursuitDashboardUnavailable" role="alert">
+        <span *ngIf="pursuitDashboard">Pursuit refresh failed. The last confirmed queue remains visible, but it may be stale.</span>
+        <span *ngIf="!pursuitDashboard">Pursuit attention data could not be loaded. Do not treat the missing queue as an empty queue.</span>
+        <button type="button" nz-button nzType="default" (click)="refreshPursuits()" [nzLoading]="pursuitsLoading">Retry pursuits</button>
+      </section>
+
+      <section class="runtime-status-summary" aria-labelledby="runtime-summary-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="runtime-summary-title">Runtime readiness</h2>
+            <span>Current health and execution gate for each registered runtime.</span>
+          </div>
+          <button type="button" nz-button nzType="default" (click)="refreshRuntimes()" [nzLoading]="runtimeLoading">
+            Refresh status
+          </button>
+        </div>
+        <div class="dashboard-load-state dashboard-load-state--error" *ngIf="runtimeOverviewUnavailable" role="alert">
+          Runtime status is unavailable; execution readiness cannot be confirmed. Any listed runtimes are from the last successful check and are not current confirmation.
+        </div>
+        <p *ngIf="runtimeLoading && runtimes.length" role="status" aria-live="polite">
+          Refreshing runtime status; the last confirmed check remains visible until the request completes.
+        </p>
+        <div class="runtime-status-list" *ngIf="runtimes.length">
+          <article class="runtime-status-row" *ngFor="let runtime of runtimes">
+            <strong>{{ runtime.name }}</strong>
+            <nz-tag [nzColor]="runtimeStatusType(runtime)" [title]="runtimeReason(runtime)">{{ runtimeStatus(runtime) }}</nz-tag>
+            <span>{{ runtime.executionEnabled ? 'Execution enabled' : 'Execution blocked' }}</span>
+            <span *ngIf="runtime.requiresApproval">Approval required</span>
+          </article>
+        </div>
+        <p *ngIf="!runtimes.length && !runtimeLoading && !runtimeOverviewUnavailable" role="status">No runtimes are registered.</p>
+        <p *ngIf="runtimeLoading && !runtimes.length" role="status">Checking runtime health…</p>
+      </section>
+
+      <hai-progressive-section
+        moduleId="command-dashboard"
+        sectionId="runtime-inventory"
+        title="Runtime inventory and controls"
+        summary="Inspect capabilities, OpenClaw ecosystem sources, and setup controls."
+      >
       <section class="runtime-band">
           <div class="section-heading">
             <div>
@@ -317,6 +371,19 @@
                 title="Prepare a one-time owner-confirmed refresh for the configured OpenClaw package path or uploaded zip."
               >
                 Refresh ecosystem
+              </button>
+              <button
+                *ngIf="openClaw.ecosystemRollbackAvailable === true"
+                type="button"
+                nz-button
+                nzType="default"
+                nzSize="small"
+                (click)="rollbackOpenClawEcosystem(openClaw)"
+                [nzLoading]="openClawRollbackLoading"
+                [disabled]="isOpenClawBusy()"
+                title="Restore the previously verified OpenClaw archive through a one-time owner approval."
+              >
+                Roll back archive
               </button>
             </div>
           </header>
@@ -422,6 +489,9 @@
                 <small *ngIf="runtimeSkillsFor(runtime).length">
                   {{ runtimeSkillsFor(runtime).length }} surfaced capabilities
                 </small>
+                <small class="runtime-skills-unavailable" *ngIf="runtimeSkillsUnavailable[runtime.id]" role="alert">
+                  Skill inventory could not be confirmed. Any displayed skills are from the previous successful load.
+                </small>
               </div>
               <span class="runtime-skill-chips" *ngIf="runtimeSkillsFor(runtime).length">
                 <nz-tag
@@ -446,26 +516,33 @@
                     type="file"
                     accept=".zip"
                     (change)="onOpenClawEcosystemUpload($event)"
-                    [disabled]="openClawUploadLoading"
+                    [disabled]="isOpenClawBusy()"
                     aria-label="Upload OpenClaw ecosystem zip"
                   />
                   <button
+                    type="button"
                     nz-button
                     nzType="default"
                     nzSize="small"
                     (click)="openClawUploadInput.click()"
                     [nzLoading]="openClawUploadLoading"
+                    [disabled]="isOpenClawBusy()"
                   >
-                    {{ openClawUploadFileName ? 'Uploading ' + openClawUploadFileName : 'Upload openclaw-main.zip' }}
+                    {{ openClawUploadLoading ? 'Uploading ' + openClawUploadFileName : 'Choose OpenClaw archive' }}
                   </button>
+                  <small *ngIf="openClawUploadError" class="openclaw-upload-error" role="alert">
+                    Upload of {{ openClawUploadFileName }} failed: {{ openClawUploadError }} Check runtime inventory before selecting it again.
+                  </small>
                 </div>
                 <input
                   nz-input
                   nzSize="small"
+                  aria-label="OpenClaw ecosystem path"
                   [value]="openClawEcosystemPath"
-                  (input)="openClawEcosystemPath = $any($event.target).value"
+                  (input)="onOpenClawEcosystemPathInput($any($event.target).value)"
                   (keydown.enter)="setOpenClawEcosystemPath(runtime)"
                   placeholder="openclaw-main.zip or OpenClaw directory path"
+                  [disabled]="isOpenClawBusy()"
                 />
                 <div class="openclaw-control-actions">
                   <button
@@ -474,6 +551,7 @@
                     nzSize="small"
                     (click)="setOpenClawEcosystemPath(runtime)"
                     [nzLoading]="openClawConfigLoading"
+                    [disabled]="isOpenClawBusy()"
                   >
                     Save ecosystem path
                   </button>
@@ -483,6 +561,7 @@
                     nzSize="small"
                     (click)="refreshOpenClawEcosystem(runtime)"
                     [nzLoading]="openClawRefreshLoading"
+                    [disabled]="isOpenClawBusy()"
                   >
                     Refresh
                   </button>
@@ -507,9 +586,16 @@
           </div>
         </div>
       </section>
+      </hai-progressive-section>
 
       <div class="command-grid">
         <nz-card nzTitle="Needs Robert" [nzExtra]="workflowLink">
+          <p *ngIf="workflowQueuesScopedOut() && !view.needsRobert.length" role="status">
+            This snapshot omitted the approval queue. Open Pursuits to review the owner-scoped decisions.
+          </p>
+          <p *ngIf="!workflowQueuesScopedOut() && !view.needsRobert.length" role="status">
+            No items requiring Robert were reported in this snapshot.
+          </p>
           <nz-table [nzData]="view.needsRobert" nzSize="small" [nzPageSize]="6">
             <thead>
               <tr>
@@ -527,7 +613,7 @@
             </tbody>
           </nz-table>
           <ng-template #workflowLink>
-            <button nz-button nzSize="small" nzType="default" (click)="openWorkflow()">
+            <button type="button" nz-button nzSize="small" nzType="default" aria-label="Open workflow approvals" title="Open workflow approvals" (click)="openWorkflow()">
               <i nz-icon nzType="check-square" nzTheme="outline"></i>
             </button>
           </ng-template>
@@ -540,8 +626,8 @@
                 <strong>{{ item.text }}</strong>
                 <span>{{ item.projectKey || 'Unassigned project' }} · {{ item.sourceLabel }}</span>
               </div>
-              <button nz-button nzType="text" (click)="openSource(item.sourceUri)">
-                <i nz-icon nzType="link" nzTheme="outline"></i>
+              <button type="button" nz-button nzType="text" [attr.aria-label]="'Open source for delegated item: ' + item.text" [attr.title]="'Open source for delegated item: ' + item.text" (click)="openSource(item.sourceUri)">
+                <i nz-icon nzType="link" nzTheme="outline" aria-hidden="true"></i>
               </button>
             </nz-list-item>
           </nz-list>
@@ -558,63 +644,6 @@
           </nz-list>
         </nz-card>
 
-        <nz-card nzTitle="Learned Corrections">
-          <nz-list nzSize="small">
-            <nz-list-item *ngFor="let memory of view.sourceCorrections || []">
-              <div class="list-copy">
-                <strong>{{ memory.summary || memory.content }}</strong>
-                <span>{{ memory.projectKey || 'Global' }} / {{ memory.sourceLabel || memory.sourceUri || 'source correction' }}</span>
-              </div>
-              <button nz-button nzType="text" (click)="openSource(memory.sourceUri)">
-                <i nz-icon nzType="database" nzTheme="outline"></i>
-              </button>
-            </nz-list-item>
-          </nz-list>
-          <nz-empty *ngIf="!view.sourceCorrections?.length" nzNotFoundContent="No learned source corrections yet."></nz-empty>
-        </nz-card>
-      </div>
-
-      <nz-card nzTitle="Search Memory" class="full-band">
-        <form [formGroup]="searchForm" class="search-bar" (ngSubmit)="search()">
-          <input nz-input formControlName="query" placeholder="What did we decide about...">
-          <input nz-input formControlName="projectKey" placeholder="Project filter">
-          <button nz-button nzType="primary" type="submit" [nzLoading]="searching">
-            <i nz-icon nzType="search" nzTheme="outline"></i>
-            Search
-          </button>
-        </form>
-        <div class="search-results" *ngIf="searchResult as result">
-          <p>{{ result.memory.explanation }}</p>
-          <div class="result-grid">
-            <article *ngFor="let fact of result.facts">
-              <span>{{ fact.kind }} · {{ fact.projectKey || 'unassigned' }}</span>
-              <strong>{{ fact.text }}</strong>
-              <button nz-button nzType="link" (click)="openSource(fact.sourceUri)">Open source</button>
-            </article>
-            <article *ngFor="let context of result.memory.usedContext">
-              <span>memory · score {{ context.score }}</span>
-              <strong>{{ context.memory.summary || context.memory.content }}</strong>
-              <button nz-button nzType="link" (click)="openSource(context.memory.sourceUri)">Open source</button>
-            </article>
-          </div>
-        </div>
-      </nz-card>
-
-      <div class="command-grid lower-grid">
-        <nz-card nzTitle="Recent Decisions">
-          <nz-list nzSize="small">
-            <nz-list-item *ngFor="let item of view.recentDecisions">
-              <div class="list-copy">
-                <strong>{{ item.text }}</strong>
-                <span>{{ item.projectKey || 'Unassigned' }} · confidence {{ item.confidence | percent }}</span>
-              </div>
-              <button nz-button nzType="text" (click)="openSource(item.sourceUri)">
-                <i nz-icon nzType="link" nzTheme="outline"></i>
-              </button>
-            </nz-list-item>
-          </nz-list>
-        </nz-card>
-
         <nz-card nzTitle="Contradictions">
           <nz-list nzSize="small">
             <nz-list-item *ngFor="let item of view.contradictions">
@@ -622,8 +651,94 @@
                 <strong>{{ item.text }}</strong>
                 <span>{{ item.sourceLabel }} · review required</span>
               </div>
-              <button nz-button nzType="text" (click)="openSource(item.sourceUri)">
+              <button type="button" nz-button nzType="text" [attr.aria-label]="'Open source for contradiction: ' + item.text" (click)="openSource(item.sourceUri)">
                 <i nz-icon nzType="warning" nzTheme="outline"></i>
+              </button>
+            </nz-list-item>
+          </nz-list>
+          <p *ngIf="!view.openLoops.length && workflowQueuesScopedOut()" role="status">
+            Open-loop counts are available in Pursuits; this memory snapshot omitted them.
+          </p>
+          <p *ngIf="!view.openLoops.length && !workflowQueuesScopedOut()" role="status">
+            No open loops were reported in this snapshot.
+          </p>
+        </nz-card>
+      </div>
+
+      <div class="warning-band" *ngIf="view.warnings.length">
+        <strong>Capture controls</strong>
+        <span *ngFor="let warning of view.warnings">{{ warning }}</span>
+      </div>
+
+      <div class="command-history-unavailable" *ngIf="commandLogsUnavailable" role="alert">
+        <span>Command history is unavailable. Existing records are retained and HAI will not infer that no commands exist.</span>
+        <button nz-button nzType="link" type="button" (click)="loadCommandLogs()" [nzLoading]="commandLogsLoading" [disabled]="commandLogsLoading">Retry command history</button>
+      </div>
+
+      <hai-progressive-section
+        moduleId="command-dashboard"
+        sectionId="memory-inspection"
+        title="Memory and source records"
+        summary="Search context and inspect decision history, corrections, projects, and encrypted archives."
+      >
+      <nz-card nzTitle="Search Memory" class="full-band">
+        <form [formGroup]="searchForm" class="search-bar" (ngSubmit)="search()">
+          <input nz-input formControlName="query" aria-label="Search memory decisions and context" placeholder="What did we decide about...">
+          <input nz-input formControlName="projectKey" aria-label="Filter memory search by project" placeholder="Project filter">
+          <button nz-button nzType="primary" type="submit" [nzLoading]="searching" [disabled]="searching || searchForm.invalid">
+            <i nz-icon nzType="search" nzTheme="outline"></i>
+            Search
+          </button>
+        </form>
+        <p *ngIf="searching" role="status" aria-live="polite">Searching memory. Previous results, if shown, remain labelled with their original query.</p>
+        <div class="search-error" *ngIf="searchError" role="alert">
+          <span>{{ searchError }}</span>
+          <span *ngIf="searchResult">The last successful result is still shown for: “{{ searchResult.memory.query }}”.</span>
+        </div>
+        <div class="search-results" *ngIf="searchResult as result" [attr.aria-busy]="searching">
+          <p class="search-results__query">Results for: <strong>{{ result.memory.query }}</strong><span *ngIf="result.memory.projectKey"> · project {{ result.memory.projectKey }}</span></p>
+          <p>{{ result.memory.explanation }}</p>
+          <div class="result-grid">
+            <article *ngFor="let fact of result.facts">
+              <span>{{ fact.kind }} · {{ fact.projectKey || 'unassigned' }}</span>
+              <strong>{{ fact.text }}</strong>
+                <button type="button" nz-button nzType="link" (click)="openSource(fact.sourceUri)">Open source</button>
+            </article>
+            <article *ngFor="let context of result.memory.usedContext">
+              <span>memory · score {{ context.score }}</span>
+              <strong>{{ context.memory.summary || context.memory.content }}</strong>
+                <button type="button" nz-button nzType="link" (click)="openSource(context.memory.sourceUri)">Open source</button>
+            </article>
+          </div>
+        </div>
+      </nz-card>
+
+      <div class="command-grid lower-grid">
+        <nz-card nzTitle="Learned Corrections">
+          <nz-list nzSize="small">
+            <nz-list-item *ngFor="let memory of view.sourceCorrections || []">
+              <div class="list-copy">
+                <strong>{{ memory.summary || memory.content }}</strong>
+                <span>{{ memory.projectKey || 'Global' }} / {{ memory.sourceLabel || memory.sourceUri || 'source correction' }}</span>
+              </div>
+              <button type="button" nz-button nzType="text" [attr.aria-label]="'Open source for correction: ' + (memory.summary || memory.content)" (click)="openSource(memory.sourceUri)">
+                <i nz-icon nzType="database" nzTheme="outline"></i>
+              </button>
+            </nz-list-item>
+          </nz-list>
+          <p *ngIf="view.sourceCorrections == null" role="status">This snapshot did not include learned source corrections.</p>
+          <nz-empty *ngIf="view.sourceCorrections != null && !view.sourceCorrections.length" nzNotFoundContent="No learned source corrections yet."></nz-empty>
+        </nz-card>
+
+        <nz-card nzTitle="Recent Decisions">
+          <nz-list nzSize="small">
+            <nz-list-item *ngFor="let item of view.recentDecisions">
+              <div class="list-copy">
+                <strong>{{ item.text }}</strong>
+                <span>{{ item.projectKey || 'Unassigned' }} · confidence {{ item.confidence | percent }}</span>
+              </div>
+              <button type="button" nz-button nzType="text" [attr.aria-label]="'Open source for decision: ' + item.text" [attr.title]="'Open source for decision: ' + item.text" (click)="openSource(item.sourceUri)">
+                <i nz-icon nzType="link" nzTheme="outline" aria-hidden="true"></i>
               </button>
             </nz-list-item>
           </nz-list>
@@ -646,7 +761,7 @@
                 <td>{{ project.open }}</td>
                 <td>{{ project.decisions }}</td>
                 <td>{{ project.risks }}</td>
-                <td>{{ project.corrections || 0 }}</td>
+                <td>{{ project.corrections == null ? '—' : project.corrections }}</td>
               </tr>
             </tbody>
           </nz-table>
@@ -676,28 +791,27 @@
               <td>{{ archive.messageCount }}</td>
               <td>{{ archive.capturedAt | date: 'short' }}</td>
               <td class="row-actions">
-                <button nz-button nzType="text" (click)="openSource(archive.sourceUri)">
-                  <i nz-icon nzType="link" nzTheme="outline"></i>
+                <button type="button" nz-button nzType="text" [attr.aria-label]="'Open source for archived conversation: ' + archive.title" [attr.title]="'Open source for archived conversation: ' + archive.title" (click)="openSource(archive.sourceUri)">
+                  <i nz-icon nzType="link" nzTheme="outline" aria-hidden="true"></i>
                 </button>
-                <button nz-button nzType="text" nzDanger (click)="deleteArchive(archive.id, archive.title)">
-                  <i nz-icon nzType="delete" nzTheme="outline"></i>
+                <button type="button" nz-button nzType="text" nzDanger [nzLoading]="deletingArchiveIds.has(archive.id)" [disabled]="deletingArchiveIds.has(archive.id)" [attr.aria-label]="'Delete archived conversation: ' + archive.title" [attr.title]="'Delete archived conversation: ' + archive.title" (click)="deleteArchive(archive.id, archive.title)">
+                  <i nz-icon nzType="delete" nzTheme="outline" aria-hidden="true"></i>
                 </button>
               </td>
             </tr>
           </tbody>
         </nz-table>
       </nz-card>
+      </hai-progressive-section>
 
-      <div class="warning-band">
-        <strong>Capture controls</strong>
-        <span *ngFor="let warning of view.warnings">{{ warning }}</span>
-      </div>
-
+      <hai-progressive-section
+        moduleId="command-dashboard"
+        sectionId="command-history"
+        title="Assistant command history"
+        summary="Inspect prior intents, outcomes, follow-up actions, and review states."
+      >
       <nz-card nzTitle="Assistant Command History" class="full-band">
-        <div class="command-history-unavailable" *ngIf="commandLogsUnavailable" role="status">
-          <span>Command history is unavailable. Existing records are retained and HAI will not infer that no commands exist.</span>
-          <button nz-button nzType="link" type="button" (click)="loadCommandLogs()">Retry</button>
-        </div>
+        <p class="command-history-loading" *ngIf="commandLogsLoading" role="status" aria-live="polite">Loading command history…</p>
         <nz-table [nzData]="commandLogs" nzSize="small" [nzPageSize]="8">
           <thead>
             <tr>
@@ -705,7 +819,7 @@
               <th>Intent</th>
               <th>Summary</th>
               <th>Next Action</th>
-              <th>Review</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -715,17 +829,15 @@
               <td>{{ command.summary }}</td>
               <td>{{ command.nextAction }}</td>
               <td>
-                <nz-tag [nzColor]="commandStatusColor(command)">
-                  {{ command.reviewRequired ? 'review' : 'clear' }}
-                </nz-tag>
+                <nz-tag [nzColor]="commandStatusColor(command)">{{ commandStatusLabel(command) }}</nz-tag>
               </td>
             </tr>
           </tbody>
         </nz-table>
-        <nz-empty *ngIf="!commandLogsUnavailable && !commandLogs.length" nzNotFoundContent="No assistant commands yet."></nz-empty>
+        <nz-empty *ngIf="!commandLogsLoading && !commandLogsUnavailable && !commandLogs.length" nzNotFoundContent="No assistant commands yet."></nz-empty>
       </nz-card>
-    </nz-content>
-  </nz-layout>
+      </hai-progressive-section>
+    </div>
 </section>
 
 <nz-modal

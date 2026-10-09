@@ -8,7 +8,7 @@ import {registerLocaleData} from '@angular/common';
 import en from '@angular/common/locales/en';
 import {HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi} from '@angular/common/http';
 import {provideAnimationsAsync} from '@angular/platform-browser/animations/async';
-import {BulbOutline, CalendarOutline, ContactsOutline, HeartOutline, NodeIndexOutline, StarOutline} from '@ant-design/icons-angular/icons';
+import {BulbOutline, CalendarOutline, ContactsOutline, DisconnectOutline, HeartOutline, NodeIndexOutline, ReloadOutline, StarOutline, WarningFill, WarningOutline} from '@ant-design/icons-angular/icons';
 import {NZ_ICONS} from 'ng-zorro-antd/icon';
 import {AUTH_SERVICE_TOKEN} from './services/auth/auth.service.token';
 import {AuthService} from './services/auth/auth.service';
@@ -17,7 +17,18 @@ import {RequestTimeoutInterceptor} from './interceptors/request-timeout.intercep
 
 registerLocaleData(en);
 
-export const HAI_ICONS = [BulbOutline, CalendarOutline, ContactsOutline, HeartOutline, NodeIndexOutline, StarOutline];
+export const HAI_ICONS = [
+    BulbOutline,
+    CalendarOutline,
+    ContactsOutline,
+    DisconnectOutline,
+    HeartOutline,
+    NodeIndexOutline,
+    ReloadOutline,
+    StarOutline,
+    WarningFill,
+    WarningOutline,
+];
 
 @NgModule({
     declarations: [

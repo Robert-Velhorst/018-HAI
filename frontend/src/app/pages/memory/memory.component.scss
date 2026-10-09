@@ -2,6 +2,35 @@
   display: block;
 }
 
+.operation-form fieldset {
+  border: 0;
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.memory-library-filters {
+  margin-bottom: 16px;
+}
+
+.memory-basic-detail,
+.memory-record-content,
+.memory-detail dd {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.memory-basic-detail h3 {
+  font-size: 16px;
+}
+
+.memory-library nz-pagination {
+  display: block;
+  margin-top: 16px;
+}
+
 .memory-shell {
   --page-bg: var(--hai-page-bg);
   --surface: var(--hai-surface);
@@ -47,7 +76,7 @@
     margin: 0;
   }
 
-  span {
+  > div:first-child > span {
     color: var(--muted);
     display: block;
     margin-top: 5px;
@@ -89,6 +118,30 @@
   margin: 0 auto;
   max-width: 1660px;
   padding: 22px 28px 34px;
+}
+
+.memory-message {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  padding: 12px 14px;
+
+  strong {
+    color: var(--red);
+  }
+
+  span {
+    color: var(--text-soft);
+    flex: 1 1 280px;
+  }
+}
+
+.memory-message--error {
+  border-color: color-mix(in srgb, var(--red) 48%, var(--border));
 }
 
 .status-strip {
@@ -233,6 +286,15 @@
   grid-template-columns: minmax(330px, .9fr) minmax(500px, 1.25fr) minmax(300px, .75fr);
 }
 
+.workspace-grid--basic {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.memory-list-error {
+  color: var(--red);
+  padding: 8px;
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -288,21 +350,30 @@
 
 .memory-row {
   align-items: center;
+  appearance: none;
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
   display: grid;
+  font: inherit;
   gap: 12px;
   grid-template-columns: 38px minmax(0, 1fr);
   padding: 12px;
+  color: var(--text);
+  text-align: left;
+  width: 100%;
 
   &:hover,
   &:focus-visible,
   &--selected {
     border-color: var(--blue);
     box-shadow: 0 10px 28px rgba(22, 34, 51, .08);
-    outline: 0;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
   }
 }
 
@@ -473,6 +544,30 @@
   }
 }
 
+.retrieve-memory-select {
+  appearance: none;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  min-width: 0;
+  padding: 12px;
+  text-align: left;
+  width: 100%;
+
+  &:hover {
+    border-color: var(--green);
+  }
+
+  &:focus-visible {
+    border-color: var(--green);
+    outline: 2px solid var(--green);
+    outline-offset: 2px;
+  }
+}
+
 .review-list article {
   align-items: center;
   background: var(--surface-muted);
@@ -579,8 +674,8 @@
 }
 
 .semantic-index-control {
-  background: var(--surface-muted);
   flex: 1 1 100%;
+  margin-top: 0;
 
   button {
     margin-top: 10px;
@@ -589,6 +684,13 @@
   .semantic-index-result {
     color: var(--text-soft);
   }
+}
+
+.memory-record-content {
+  max-height: 32rem;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .memory-detail {
@@ -670,6 +772,39 @@ details {
   border-color: color-mix(in srgb, var(--red) 34%, var(--border));
 }
 
+:host ::ng-deep .memory-header .header-actions {
+  min-width: 0;
+  max-width: 100%;
+
+  > button.ant-btn {
+    align-items: center;
+    box-sizing: border-box;
+    display: inline-flex;
+    flex: 0 0 auto;
+    flex-flow: row nowrap;
+    gap: 8px;
+    height: auto;
+    justify-content: center;
+    min-height: 40px;
+    min-inline-size: 112px;
+    inline-size: max-content;
+    line-height: 1.2;
+    padding: 8px 12px;
+    white-space: nowrap;
+
+    > span {
+      margin: 0;
+    }
+
+    > [nz-icon],
+    > .ant-btn-icon {
+      flex: 0 0 1em;
+      inline-size: 1em;
+      margin: 0;
+    }
+  }
+}
+
 :host ::ng-deep {
   .memory-shell .ant-input,
   .memory-shell .ant-select-selector {
@@ -710,7 +845,7 @@ details {
   }
 
   .header-actions {
-    justify-content: flex-start;
+    justify-content: flex-start !important;
     width: 100%;
   }
 

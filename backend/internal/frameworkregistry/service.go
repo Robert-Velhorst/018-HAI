@@ -689,6 +689,34 @@ func (s *Service) ActiveConstitution(owner string) (Constitution, string, error)
 	if err != nil {
 		return Constitution{}, "", err
 	}
+	return activeConstitutionFromRecords(records)
+}
+
+// Execution policy must never fall back to a context-free store lookup.
+func (s *Service) ActiveConstitutionContext(ctx context.Context, owner string) (Constitution, string, error) {
+	if ctx == nil {
+		return Constitution{}, "", fmt.Errorf("Constitution lookup context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return Constitution{}, "", err
+	}
+	repo, ok := s.repo.(interface {
+		ListConstitutionsContext(context.Context, string) ([]Constitution, error)
+	})
+	if !ok {
+		return Constitution{}, "", fmt.Errorf("Constitution repository does not support contextual lookup")
+	}
+	records, err := repo.ListConstitutionsContext(ctx, strings.TrimSpace(owner))
+	if err != nil {
+		return Constitution{}, "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return Constitution{}, "", err
+	}
+	return activeConstitutionFromRecords(records)
+}
+
+func activeConstitutionFromRecords(records []Constitution) (Constitution, string, error) {
 	for _, record := range records {
 		if record.Status == ConstitutionActive {
 			record.ProtectedRules = protectedConstitutionRules()

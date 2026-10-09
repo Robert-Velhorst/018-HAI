@@ -1,33 +1,57 @@
-<section class="workflow-shell">
-  <header class="workflow-header">
-    <div class="workflow-title-block">
-      <h1>Workflow Engine</h1>
-      <p>
-        Turn real-world signals into governed, traceable work.
-        <span class="help-dot" title="HAI creates workflows from signals, keeps risky actions approval-gated, and logs every step.">?</span>
-      </p>
-    </div>
+<section class="workflow-shell" aria-labelledby="workflow-title">
+  <section class="workflow-load-state workflow-load-state--loading" *ngIf="loading && !dataLoaded" role="status" aria-live="polite" aria-busy="true" data-testid="workflow-initial-loading">
+    <i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i>
+    <span>Loading workflow operations…</span>
+  </section>
 
-    <div class="header-actions">
-      <button type="button" nz-button nzType="default" data-testid="workflow-refresh" (click)="refresh(true)" [nzLoading]="isActionRunning('refresh')" [disabled]="anyActionRunning() && !isActionRunning('refresh')">
+  <section class="workflow-load-state workflow-load-state--error" *ngIf="loadFailed" role="alert" aria-labelledby="workflow-load-error-title" data-testid="workflow-load-error">
+    <i nz-icon nzType="warning" nzTheme="outline" aria-hidden="true"></i>
+    <div>
+      <strong id="workflow-load-error-title">{{ dataLoaded ? 'Could not refresh workflow data' : 'Workflow data could not be loaded' }}</strong>
+      <p>{{ dataLoaded ? 'The last successfully loaded data remains visible. Refresh before making a decision or starting work.' : 'The workflow queue is unavailable. Retry to load the operational state before acting.' }}</p>
+    </div>
+    <button type="button" nz-button nzType="default" data-testid="workflow-retry-load" (click)="refresh(true)" [nzLoading]="loading" [disabled]="anyActionRunning()">
+      Retry
+    </button>
+  </section>
+  <section
+    class="workflow-load-state workflow-load-state--refreshing"
+    *ngIf="loading && dataLoaded"
+    role="status"
+    aria-live="polite"
+    data-testid="workflow-refreshing"
+  >
+    <i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i>
+    <span>Refreshing workflow data. Current records remain visible until the refresh completes.</span>
+  </section>
+
+  <section class="workflow-load-state workflow-load-state--error" *ngIf="workerReviewRequired" role="alert">
+    <div><strong>Operation paused for outcome review</strong><p>{{ workerReviewMessage }}</p></div>
+    <button type="button" nz-button (click)="refresh(true)" [disabled]="loading || anyActionRunning()">Refresh records</button>
+    <button type="button" nz-button (click)="acknowledgeWorkerReview()" [disabled]="!workerReviewRefreshed || loading || loadFailed || anyActionRunning()">Confirm reviewed</button>
+  </section>
+
+  <header class="workflow-header">
+    <h1 id="workflow-title">Workflows</h1>
+    <div class="workflow-toolbar" role="group" aria-label="Workflow operations">
+      <button type="button" nz-button *ngIf="lastIntakePursuitId as pursuitId" (click)="openPursuit(pursuitId)" title="Inspect the pursuit returned for the latest intake response">Inspect intake project</button>
+      <button type="button" nz-button *ngIf="lastIntakeWorkflowId" (click)="inspectIntakeWorkflow()" [disabled]="saving || !!openingWorkflowId" title="Inspect the exact workflow returned for the latest intake response">Inspect intake workflow</button>
+      <button type="button" nz-button nzType="default" data-testid="workflow-refresh" aria-label="Refresh workflow data" (click)="refresh(true)" [nzLoading]="isActionRunning('refresh')" [disabled]="anyActionRunning()">
         <i nz-icon nzType="reload" nzTheme="outline"></i>
         Refresh
       </button>
-      <button type="button" nz-button nzType="primary" data-testid="workflow-run-worker" (click)="runDue()" [nzLoading]="isActionRunning('worker')" [disabled]="anyActionRunning() && !isActionRunning('worker')">
-        <i nz-icon nzType="play-circle" nzTheme="outline"></i>
-        Run worker
-      </button>
-      <details class="workflow-more-tools">
-        <summary title="Open follow-up, recovery, and automation controls.">
-          <i nz-icon nzType="tool" nzTheme="outline"></i>
-          More controls
-        </summary>
+      <hai-progressive-section
+        class="workflow-more-tools"
+        moduleId="workflow-engine"
+        sectionId="workflow-header-controls"
+        title="More controls"
+      >
         <div class="workflow-more-tools__body">
-          <button type="button" nz-button nzType="default" data-testid="workflow-run-followups" (click)="runDueOpenLoops()" [nzLoading]="isActionRunning('followups')" [disabled]="anyActionRunning() && !isActionRunning('followups')">
+          <button type="button" nz-button nzType="default" data-testid="workflow-run-followups" (click)="runDueOpenLoops()" [nzLoading]="isActionRunning('followups')" [disabled]="workerReviewRequired || workflowActionsDisabled() || dueOpenLoopCount() === 0" [title]="dueOpenLoopCount() === 0 ? 'There are no due follow-ups to process.' : 'Process due open-loop follow-ups.'">
             <i nz-icon nzType="clock-circle" nzTheme="outline"></i>
-            Follow-ups
+            Follow-ups<span *ngIf="dueOpenLoopCount() > 0"> ({{ dueOpenLoopCount() }} due)</span>
           </button>
-          <button type="button" nz-button nzType="default" data-testid="workflow-recover-stale" (click)="recoverStaleClaims()" [nzLoading]="isActionRunning('recovery')" [disabled]="anyActionRunning() && !isActionRunning('recovery')">
+          <button type="button" nz-button nzType="default" data-testid="workflow-recover-stale" (click)="recoverStaleClaims()" [nzLoading]="isActionRunning('recovery')" [disabled]="workflowActionsDisabled()">
             <i nz-icon nzType="sync" nzTheme="outline"></i>
             Recover state
           </button>
@@ -36,12 +60,12 @@
             Automations
           </button>
         </div>
-      </details>
+      </hai-progressive-section>
     </div>
   </header>
 
-  <section class="action-strip" *ngIf="hasWorkflowAttention()" aria-label="Workflow actions">
-    <button type="button" class="action-card" (click)="activeQueue = 'approval'" title="Open work that requires a human approval before HAI may continue.">
+  <section class="action-strip" aria-label="Workflow actions">
+    <button *ngIf="queueCount('approval') > 0" type="button" class="action-card" [class.action-card--active]="activeQueue === 'approval'" [attr.aria-pressed]="activeQueue === 'approval'" (click)="activeQueue = 'approval'" title="Open work that requires a human approval before HAI may continue.">
       <span class="action-icon action-icon--green"><i nz-icon nzType="check-square" nzTheme="outline"></i></span>
       <span>
         <strong>Review approvals</strong>
@@ -51,17 +75,17 @@
       <i nz-icon nzType="right" nzTheme="outline"></i>
     </button>
 
-    <button type="button" class="action-card" (click)="runDue()" [disabled]="anyActionRunning() && !isActionRunning('worker')" title="Run the controlled workflow worker for safe, due work.">
+    <button type="button" class="action-card" data-testid="workflow-run-worker" (click)="runDue()" [disabled]="workerReviewRequired || workflowActionsDisabled() || queueCount('ready') <= 0" [attr.aria-busy]="isActionRunning('worker')" title="Run the controlled workflow worker for safe, due work.">
       <span class="action-icon action-icon--blue"><i nz-icon nzType="safety-certificate" nzTheme="outline"></i></span>
       <span>
         <strong>Run safe worker</strong>
         <em>{{ queueCount('ready') }} ready</em>
-        <small>{{ runSummary ? (runSummary.completed + ' completed last run') : 'No active run yet' }}</small>
+        <small>{{ isActionRunning('worker') ? 'Running the bounded worker…' : (runSummary ? (runSummary.completed + ' completed last run') : 'No active run yet') }}</small>
       </span>
       <i nz-icon nzType="right" nzTheme="outline"></i>
     </button>
 
-    <button type="button" class="action-card" (click)="focusIntake()" title="Create a workflow from a new real-world signal.">
+    <button type="button" class="action-card" (click)="focusIntake()" [disabled]="workflowActionsDisabled()" title="Create a workflow from a new real-world signal.">
       <span class="action-icon action-icon--blue"><i nz-icon nzType="plus-square" nzTheme="outline"></i></span>
       <span>
         <strong>Create workflow</strong>
@@ -88,7 +112,7 @@
         nz-button
         nzSize="small"
         [nzLoading]="runningAction === 'reminders'"
-        [disabled]="!!runningAction"
+        [disabled]="workerReviewRequired || workflowActionsDisabled() || !reminderDeliveryHistory.authorizations.length"
         (click)="runDueReminderDeliveries()"
         title="Run one bounded owner-scoped pass for already-authorized internal reminders."
         data-testid="reminder-run-due"
@@ -104,8 +128,10 @@
       <button
         type="button"
         class="reminder-focus__open"
-        (click)="openReminder(proposal)"
-        [attr.aria-label]="'Inspect workflow for ' + proposal.title"
+          (click)="openReminder(proposal)"
+          [attr.aria-label]="'Inspect workflow for ' + proposal.title"
+          [attr.aria-busy]="openingWorkflowId === proposal.workflowId"
+          [disabled]="workflowActionsDisabled()"
         [attr.data-testid]="'reminder-open-' + proposal.checklistItemId"
       >
         <span class="reminder-focus__status" [class.reminder-focus__status--due]="proposal.status === 'due'"></span>
@@ -130,7 +156,7 @@
           nz-button
           nzSize="small"
           [nzLoading]="activationBusyId === proposal.checklistItemId"
-          [disabled]="!!activationBusyId"
+          [disabled]="workerReviewRequired || workflowActionsDisabled()"
           (click)="prepareReminderActivation(proposal, $event)"
           [attr.data-testid]="'reminder-prepare-' + proposal.checklistItemId"
           title="Create immutable internal preparation evidence. This cannot send a message or create a calendar event."
@@ -145,7 +171,7 @@
             nzType="primary"
             nzSize="small"
             [nzLoading]="activationBusyId === activation.request.id"
-            [disabled]="!!activationBusyId"
+            [disabled]="workerReviewRequired || workflowActionsDisabled()"
             (click)="reviewReminderActivation(proposal, $event)"
             [attr.data-testid]="'reminder-approve-' + proposal.checklistItemId"
             title="Record owner approval of the internal preparation. Approval remains non-executing."
@@ -158,7 +184,8 @@
             nz-button
             nzSize="small"
             nzDanger
-            [disabled]="!!activationBusyId"
+            [nzLoading]="activationBusyId === activation.request.id"
+            [disabled]="workerReviewRequired || workflowActionsDisabled()"
             (click)="rejectReminderActivation(proposal, $event)"
             [attr.data-testid]="'reminder-reject-' + proposal.checklistItemId"
             title="Record an explicit rejection. Closing a dialog never rejects automatically."
@@ -172,10 +199,10 @@
             nzType="primary"
             nzSize="small"
             [nzLoading]="activationBusyId === activation.request.id"
-            [disabled]="!!activationBusyId"
+            [disabled]="workerReviewRequired || workflowActionsDisabled()"
             (click)="authorizeReminderDelivery(proposal, $event)"
             [attr.data-testid]="'reminder-authorize-delivery-' + proposal.checklistItemId"
-            title="Authorize one local in-app reminder. External effects remain unavailable."
+            [title]="workerReviewRequired ? 'Inspect the uncertain result and complete the required review before authorizing another reminder.' : 'Authorize one local in-app reminder. External effects remain unavailable.'"
           >Authorize one</button>
           <button
             *ngIf="activation.current && activation.status === 'approved'"
@@ -184,7 +211,7 @@
             nzSize="small"
             nzDanger
             [nzLoading]="activationBusyId === activation.request.id"
-            [disabled]="!!activationBusyId"
+            [disabled]="workflowActionsDisabled()"
             (click)="reviewReminderActivation(proposal, $event)"
             [attr.data-testid]="'reminder-revoke-' + proposal.checklistItemId"
             title="Append a revocation decision. No external effect is reversed because none was authorized."
@@ -205,7 +232,7 @@
     </span>
   </section>
 
-  <section class="workflow-quiet" *ngIf="!hasWorkflowAttention()">
+  <section class="workflow-quiet" *ngIf="dataLoaded && !loading && !loadFailed && !hasWorkflowAttention()">
     <span class="workflow-quiet__icon"><i nz-icon nzType="inbox" nzTheme="outline"></i></span>
     <div>
       <h2>Start with a real-world signal</h2>
@@ -217,40 +244,44 @@
     </button>
   </section>
 
-  <main class="workflow-main" [class.workflow-main--idle]="!hasWorkflowAttention()">
+  <div class="workflow-main" [class.workflow-main--idle]="!hasWorkflowAttention()">
     <aside class="queue-rail" *ngIf="dashboard && hasWorkflowAttention()">
       <section class="rail-card">
         <div class="rail-heading">
           <h2>Workflow queue</h2>
-          <button type="button" class="icon-button" title="Focus workflow filters" (click)="focusFilters()">
-            <i nz-icon nzType="filter" nzTheme="outline"></i>
+        <button type="button" class="icon-button" aria-label="Show and focus workflow filters" title="Show and focus workflow filters" (click)="focusFilters()">
+          <i nz-icon nzType="filter" nzTheme="outline" aria-hidden="true"></i>
           </button>
         </div>
 
-        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'all'" (click)="activeQueue = 'all'">
+        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'all'" [attr.aria-pressed]="activeQueue === 'all'" (click)="activeQueue = 'all'">
           <span><i nz-icon nzType="appstore" nzTheme="outline"></i> All workflows</span>
           <strong>{{ queueCount('all') }}</strong>
         </button>
-        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'approval'" (click)="activeQueue = 'approval'">
+        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'approval'" [attr.aria-pressed]="activeQueue === 'approval'" (click)="activeQueue = 'approval'">
           <span><b class="dot dot--amber"></b> Need approval</span>
           <strong>{{ queueCount('approval') }}</strong>
         </button>
-        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'ready'" (click)="activeQueue = 'ready'">
+        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'ready'" [attr.aria-pressed]="activeQueue === 'ready'" (click)="activeQueue = 'ready'">
           <span><b class="dot dot--green"></b> Ready</span>
           <strong>{{ queueCount('ready') }}</strong>
         </button>
-        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'blocked'" (click)="activeQueue = 'blocked'">
+        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'blocked'" [attr.aria-pressed]="activeQueue === 'blocked'" (click)="activeQueue = 'blocked'">
           <span><b class="dot dot--red"></b> Blocked</span>
           <strong>{{ queueCount('blocked') }}</strong>
         </button>
-        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'review'" (click)="activeQueue = 'review'">
+        <button type="button" class="queue-row" [class.queue-row--active]="activeQueue === 'review'" [attr.aria-pressed]="activeQueue === 'review'" (click)="activeQueue = 'review'">
           <span><b class="dot dot--purple"></b> Needs review</span>
           <strong>{{ queueCount('review') }}</strong>
         </button>
       </section>
 
-      <section class="rail-card">
-        <h2>Quick filters</h2>
+      <hai-progressive-section
+        moduleId="workflow-engine"
+        sectionId="queue-filters"
+        title="Queue filters"
+        summary="Filter by state, risk, or archived status."
+      >
         <label>
           <span>State</span>
           <select id="workflow-state-filter" [(ngModel)]="stateFilter" aria-label="State filter">
@@ -266,11 +297,11 @@
           </select>
         </label>
         <label class="checkbox-line">
-          <input type="checkbox" [(ngModel)]="includeArchived" (ngModelChange)="refresh()" />
+          <input type="checkbox" [(ngModel)]="includeArchived" (ngModelChange)="refresh()" [disabled]="anyActionRunning()" />
           Include archived
         </label>
         <button type="button" nz-button nzBlock nzType="default" (click)="clearFilters()">Clear filters</button>
-      </section>
+      </hai-progressive-section>
     </aside>
 
     <section class="workflow-center">
@@ -288,14 +319,18 @@
             id="workflow-intake-input"
             nz-input
             rows="7"
+            maxlength="4000"
             formControlName="input"
+            aria-label="Describe the signal and desired outcome"
+            aria-describedby="workflow-intake-help workflow-intake-validation"
             placeholder="Example: Email from lawyer about Vivare legal hearing tomorrow. Draft formal Dutch reply and attach evidence."
           ></textarea>
+          <small id="workflow-intake-validation" class="field-error" role="alert" *ngIf="intakeForm.get('input')?.touched && (intakeForm.get('input')?.hasError('required') || intakeForm.get('input')?.hasError('maxlength'))">
+            {{ intakeForm.get('input')?.hasError('required') ? 'Describe the signal before creating a workflow.' : 'Keep the signal within 4,000 characters.' }}
+          </small>
 
           <div class="composer-tools">
-            <span title="Attachments will be linked through connected sources."><i nz-icon nzType="paper-clip" nzTheme="outline"></i></span>
-            <span title="Mention a person, source, case, project, or account."><i nz-icon nzType="user" nzTheme="outline"></i></span>
-            <span title="Use connected source records as provenance where available."><i nz-icon nzType="database" nzTheme="outline"></i></span>
+            <small id="workflow-intake-help">Source links and sender details are available in Advanced provenance fields.</small>
             <small>{{ intakeForm.value.input?.length || 0 }} / 4000</small>
           </div>
 
@@ -310,7 +345,7 @@
               </ng-template>
             </div>
             <div class="pursuit-match-actions">
-              <button type="button" nz-button nzType="default" data-testid="workflow-match-pursuit" (click)="matchPursuits()" [nzLoading]="matchingPursuits">
+              <button type="button" nz-button nzType="default" data-testid="workflow-match-pursuit" (click)="matchPursuits()" [nzLoading]="matchingPursuits" [disabled]="matchingPursuits || !hasIntakeInput()">
                 <i nz-icon nzType="branches" nzTheme="outline"></i>
                 Review matches
               </button>
@@ -338,41 +373,67 @@
           </div>
 
           <div class="intake-options">
-            <input nz-input formControlName="projectKey" placeholder="Project or case" data-testid="workflow-project-key" />
-            <input nz-input formControlName="automationId" placeholder="Automation optional" />
-            <input nz-input formControlName="sourceType" placeholder="Source type" />
-            <button type="button" nz-button nzType="primary" data-testid="workflow-create" (click)="intake()" [nzLoading]="saving">
+            <input nz-input formControlName="projectKey" aria-label="Project or case" placeholder="Project or case" data-testid="workflow-project-key" />
+            <input nz-input formControlName="automationId" aria-label="Automation ID (optional)" placeholder="Automation optional" />
+            <input nz-input formControlName="sourceType" aria-label="Source type" placeholder="Source type" />
+            <button type="button" nz-button nzType="primary" data-testid="workflow-create" (click)="intake()" [nzLoading]="saving" [disabled]="workerReviewRequired || workflowActionsDisabled() || intakeForm.invalid || saving">
               <i nz-icon nzType="plus" nzTheme="outline"></i>
               {{ selectedPursuitMatch ? 'Create in pursuit' : 'Create workflow' }}
             </button>
           </div>
 
-          <details class="advanced-block">
-            <summary>
-              <span>Advanced provenance</span>
-              <small>source ids, trigger, content type, sender</small>
-            </summary>
+          <hai-progressive-section
+            moduleId="workflow-engine"
+            sectionId="intake-provenance"
+            title="Source provenance"
+            summary="Source IDs, links, sender, and trigger metadata."
+          >
             <div class="advanced-grid">
-              <input nz-input formControlName="sourceId" placeholder="Source record ID" data-testid="workflow-source-id" />
-              <input nz-input formControlName="sourceUri" placeholder="Source URI" data-testid="workflow-source-uri" />
-              <input nz-input formControlName="sourceLabel" placeholder="Source label" data-testid="workflow-source-label" />
-              <input nz-input formControlName="contentType" placeholder="Content type" />
-              <input nz-input formControlName="sender" placeholder="Sender or account" />
-              <input nz-input formControlName="trigger" placeholder="Trigger" />
+              <input nz-input formControlName="sourceId" aria-label="Source record ID" placeholder="Source record ID" data-testid="workflow-source-id" />
+              <input nz-input formControlName="sourceUri" aria-label="Source URI" placeholder="Source URI" data-testid="workflow-source-uri" />
+              <input nz-input formControlName="sourceLabel" aria-label="Source label" placeholder="Source label" data-testid="workflow-source-label" />
+              <input nz-input formControlName="contentType" aria-label="Content type" placeholder="Content type" />
+              <input nz-input formControlName="sender" aria-label="Sender or account" placeholder="Sender or account" />
+              <input nz-input formControlName="trigger" aria-label="Trigger" placeholder="Trigger" />
             </div>
-          </details>
+          </hai-progressive-section>
         </form>
       </article>
 
+      <section class="workflow-inline-error" *ngIf="workflowOpenError" role="alert" data-testid="workflow-open-error">
+        <i nz-icon nzType="warning" nzTheme="outline" aria-hidden="true"></i>
+        <span>{{ workflowOpenError }}</span>
+      </section>
+
+      <section class="workflow-inline-error" *ngIf="transitionError" role="alert">
+        <i nz-icon nzType="warning" nzTheme="outline" aria-hidden="true"></i>
+        <span>{{ transitionError }}</span>
+        <button type="button" nz-button (click)="reviewTransition()" [disabled]="anyActionRunning()">Refresh affected workflow</button>
+      </section>
+
+      <section class="workflow-inline-error" *ngIf="approvalError" role="alert">
+        <i nz-icon nzType="warning" nzTheme="outline" aria-hidden="true"></i>
+        <span>{{ approvalError }}</span>
+        <button type="button" nz-button (click)="reviewApproval()" [disabled]="anyActionRunning()">Refresh affected workflow</button>
+      </section>
+
+      <hai-progressive-section
+        *ngIf="items.length"
+        moduleId="workflow-engine"
+        sectionId="inbox-search"
+        title="Search workflows"
+        summary="Narrow the inbox by title or next action."
+      >
+        <input nz-input [(ngModel)]="workflowSearch" placeholder="Search workflows..." aria-label="Search workflows" />
+      </hai-progressive-section>
+
       <article class="panel inbox-panel" *ngIf="filteredItems().length">
-        <div class="panel-heading">
+          <div class="panel-heading">
           <div>
             <h2>Workflow inbox</h2>
             <p>Open a workflow to inspect next action, evidence, approvals, and timeline.</p>
           </div>
-          <input nz-input [(ngModel)]="workflowSearch" placeholder="Search..." />
-        </div>
-
+          </div>
         <div class="inbox-table">
           <div class="inbox-head">
             <span>Priority</span>
@@ -382,27 +443,53 @@
             <span>Updated</span>
             <span></span>
           </div>
-          <button type="button" class="inbox-row" *ngFor="let item of filteredItems()" [class.inbox-row--selected]="selected?.item?.id === item.id" (click)="open(item)">
-            <span class="priority" [ngClass]="priorityClass(item.priorityScore)">{{ item.priorityScore || 0 }}</span>
-            <span class="workflow-title">
+          <button type="button" class="inbox-row" *ngFor="let item of filteredItems()" [class.inbox-row--selected]="selected?.item?.id === item.id" [attr.aria-busy]="openingWorkflowId === item.id" [disabled]="anyActionRunning()" (click)="open(item)">
+            <span class="inbox-row__field inbox-row__field--priority">
+              <small class="inbox-row__field-label">Priority</small>
+              <span class="priority" [ngClass]="priorityClass(item.priorityScore)">{{ item.priorityScore || 0 }}</span>
+            </span>
+            <span class="workflow-title inbox-row__field inbox-row__field--workflow">
+              <small class="inbox-row__field-label">Workflow</small>
               <strong>{{ item.title }}</strong>
               <small>{{ item.projectKey || item.nextAction || item.taskType || 'Workflow' }}</small>
             </span>
-            <span class="status-pill" [ngClass]="statusClass(item.currentState)">{{ readable(item.currentState) }}</span>
-            <span class="status-pill" [ngClass]="item.riskLevel === 'high' ? 'status--risk' : 'status--neutral'">{{ readable(item.riskLevel) }}</span>
-            <span>{{ item.updatedAt | date: 'short' }}</span>
-            <span class="row-open">Open <i nz-icon nzType="right" nzTheme="outline"></i></span>
+            <span class="inbox-row__field inbox-row__field--status">
+              <small class="inbox-row__field-label">Status</small>
+              <span class="status-pill" [ngClass]="statusClass(item.currentState)">{{ readable(item.currentState) }}</span>
+            </span>
+            <span class="inbox-row__field inbox-row__field--risk">
+              <small class="inbox-row__field-label">Risk</small>
+              <span class="status-pill" [ngClass]="item.riskLevel === 'high' ? 'status--risk' : 'status--neutral'">{{ readable(item.riskLevel) }}</span>
+            </span>
+            <span class="inbox-row__field inbox-row__field--updated">
+              <small class="inbox-row__field-label">Updated</small>
+              <span>{{ item.updatedAt | date: 'short' }}</span>
+            </span>
+            <span class="row-open">
+              <ng-container *ngIf="openingWorkflowId === item.id; else openLabel"><i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i> Opening…</ng-container>
+              <ng-template #openLabel>Open <i nz-icon nzType="right" nzTheme="outline" aria-hidden="true"></i></ng-template>
+            </span>
           </button>
         </div>
 
       </article>
 
-      <section class="workflow-empty" *ngIf="!filteredItems().length && !loading">
+      <section class="workflow-empty" *ngIf="dataLoaded && !filteredItems().length && !loading && (items.length > 0 || hasWorkflowAttention())" role="status" aria-live="polite">
         <i nz-icon nzType="inbox" nzTheme="outline"></i>
         <div>
-          <h2>{{ hasWorkflowAttention() ? 'No workflows match this view' : 'No workflows yet' }}</h2>
-          <p>{{ hasWorkflowAttention() ? 'Adjust the queue or filters to see other work.' : 'Capture a signal above to create the first controlled workflow.' }}</p>
+          <h2>{{ items.length ? 'No workflows match this view' : 'No workflow records in this queue' }}</h2>
+          <p>{{ items.length ? 'Adjust the queue or filters to see other work.' : 'Operational attention exists, but no workflow records are available in this queue.' }}</p>
         </div>
+        <button
+          *ngIf="items.length && (activeQueue !== 'all' || stateFilter !== 'all' || riskFilter !== 'all' || workflowSearch.trim())"
+          type="button"
+          nz-button
+          nzType="default"
+          (click)="clearFilters()"
+          data-testid="workflow-clear-filters"
+        >
+          Show all workflows
+        </button>
       </section>
     </section>
 
@@ -423,11 +510,36 @@
             <div><dt>Started</dt><dd>{{ operation.at | date: 'shortTime' }}</dd></div>
             <div><dt>Result</dt><dd>{{ operation.summary }}</dd></div>
           </dl>
-          <details *ngIf="operation.details">
-            <summary>Result details</summary>
+          <hai-progressive-section
+            *ngIf="operation.details"
+            moduleId="workflow-engine"
+            sectionId="last-operation-details"
+            title="Result details"
+            summary="Expanded details from the last operation."
+          >
             <p>{{ operation.details }}</p>
-          </details>
+          </hai-progressive-section>
         </article>
+
+        <section
+          class="inspector-section workflow-pending-proposals"
+          *ngIf="selected && hasPendingReviewProposals(selected)"
+          data-testid="workflow-pending-proposals"
+        >
+          <ng-container *ngFor="let proposal of selected.proposals || []">
+            <article class="workflow-pending-proposals__item" *ngIf="proposal.status === 'open' && !isAutomationSelectionProposal(proposal.recommendedAction)">
+              <div>
+                <strong>{{ proposal.recommendedAction }}</strong>
+                <small>Decision needed before this proposal can proceed.</small>
+              </div>
+              <div class="mini-actions">
+            <button type="button" nz-button nzSize="small" nzType="primary" [nzLoading]="isProposalActionRunning(proposal.id, 'approved')" [disabled]="workflowActionsDisabled()" (click)="resolveProposal(proposal.id, 'approved', optionLines(proposal.options)[0])">Approve</button>
+                <button type="button" nz-button nzSize="small" nzType="default" [nzLoading]="isProposalActionRunning(proposal.id, 'changes_requested')" [disabled]="workflowActionsDisabled()" (click)="resolveProposal(proposal.id, 'changes_requested', 'Request changes')">Request changes</button>
+                <button type="button" nz-button nzSize="small" nzDanger [nzLoading]="isProposalActionRunning(proposal.id, 'rejected')" [disabled]="workflowActionsDisabled()" (click)="resolveProposal(proposal.id, 'rejected', 'Reject proposal')">Reject</button>
+              </div>
+            </article>
+          </ng-container>
+        </section>
         <ng-template #noOperation>
           <article class="detail-box muted-box">
             <div class="box-title">
@@ -494,13 +606,15 @@
                     nz-button
                     nzSize="small"
                     nzType="primary"
+                    [nzLoading]="isProposalActionRunning(proposal.id, 'approved')"
+                    [disabled]="workflowActionsDisabled()"
                     [attr.data-testid]="'workflow-select-automation-' + proposal.id"
                     (click)="resolveProposal(proposal.id, 'approved', option)"
                   >
                     {{ automationOptionLabel(option) }}
                   </button>
                   <ng-template #configureAutomationPrimary>
-                    <button type="button" nz-button nzSize="small" nzType="default" (click)="openAutomationSetup()">Configure automation</button>
+                    <button type="button" nz-button nzSize="small" nzType="default" [disabled]="anyActionRunning()" (click)="openAutomationSetup()">Configure automation</button>
                   </ng-template>
                 </ng-container>
               </div>
@@ -508,7 +622,7 @@
           </ng-container>
           <div
             class="mini-actions"
-            *ngIf="record.item.requiresApproval && record.item.approvalStatus !== 'approved' && record.item.approvalStatus !== 'rejected' && !hasOpenAutomationSelection(record)"
+            *ngIf="record.item.requiresApproval === true && record.item.approvalStatus === 'pending' && record.item.currentState === 'needs_approval' && !hasOpenAutomationSelection(record)"
             data-testid="workflow-approval-controls"
           >
             <button
@@ -518,7 +632,7 @@
               data-testid="workflow-approve"
               (click)="resolveApproval(record.item, true)"
               [nzLoading]="saving"
-              [disabled]="saving"
+              [disabled]="workflowActionsDisabled()"
             >
               Approve controlled execution
             </button>
@@ -528,7 +642,8 @@
               nzDanger
               data-testid="workflow-reject"
               (click)="resolveApproval(record.item, false)"
-              [disabled]="saving"
+              [nzLoading]="saving"
+              [disabled]="workflowActionsDisabled()"
             >
               Reject and block
             </button>
@@ -545,7 +660,7 @@
               data-testid="workflow-run-selected"
               (click)="runSelectedWorkflow()"
               [nzLoading]="isActionRunning('selected')"
-              [disabled]="anyActionRunning()"
+              [disabled]="workerReviewRequired || workflowActionsDisabled()"
             >
               Run this approved workflow
             </button>
@@ -631,7 +746,7 @@
 
             <ng-container *ngIf="interruptionRequiresEvidence">
               <label for="workflow-interruption-evidence-uri">
-                <span>Completion evidence URI</span>
+                <span>Prior execution reconciliation evidence URI</span>
                 <input
                   nz-input
                   id="workflow-interruption-evidence-uri"
@@ -648,6 +763,9 @@
                   placeholder="What the source proves"
                 />
               </label>
+              <label nz-checkbox formControlName="priorExecutionReconciled">
+                I verified that the prior execution ended and checked its external outcome.
+              </label>
             </ng-container>
 
             <button
@@ -656,7 +774,7 @@
               nzType="primary"
               data-testid="workflow-resolve-interruption"
               [nzLoading]="saving"
-              [disabled]="saving || interruptionForm.invalid"
+              [disabled]="workflowActionsDisabled() || interruptionForm.invalid"
               (click)="resolveInterruptedExecution()"
             >
               Record recovery decision
@@ -695,16 +813,15 @@
           </article>
         </ng-template>
 
-        <details
-          class="inspector-section framework-provenance-section"
+        <hai-progressive-section
           *ngIf="selected as record"
+          moduleId="workflow-engine"
+          sectionId="framework-provenance"
+          title="Framework provenance"
+          [summary]="frameworkGovernanceLabel"
+          class="inspector-section framework-provenance-section"
           data-testid="workflow-framework-provenance"
         >
-          <summary>
-            <span>Framework provenance</span>
-            <em>{{ frameworkGovernanceLabel }}</em>
-          </summary>
-
           <div class="framework-provenance">
             <div class="framework-provenance__state" [ngClass]="frameworkGovernanceClass">
               <strong>{{ frameworkGovernanceLabel }}</strong>
@@ -967,37 +1084,56 @@
               Open Framework Registry
             </button>
           </div>
-        </details>
+        </hai-progressive-section>
 
-        <details class="inspector-section" *ngIf="selected as record" open>
-          <summary>Workflow controls</summary>
+        <hai-progressive-section
+          class="inspector-section"
+          *ngIf="selected as record"
+          moduleId="workflow-engine"
+          sectionId="workflow-controls"
+          title="Workflow controls"
+          summary="Apply a governed state transition."
+        >
           <form nz-form [formGroup]="transitionForm" class="transition-form">
             <nz-select formControlName="targetState">
               <nz-option *ngFor="let state of overview?.states || []" [nzValue]="state" [nzLabel]="readable(state)"></nz-option>
             </nz-select>
             <input nz-input formControlName="message" />
-            <button type="button" nz-button nzType="primary" data-testid="workflow-apply-transition" (click)="transition()" [disabled]="record.item.recoveryStatus === 'needs_review'">
+            <button type="button" nz-button nzType="primary" data-testid="workflow-apply-transition" (click)="transition()" [nzLoading]="saving" [disabled]="workflowActionsDisabled() || record.item.recoveryStatus === 'needs_review' || !(overview?.states?.length)">
               Apply transition
             </button>
           </form>
-        </details>
+        </hai-progressive-section>
 
-        <details class="inspector-section" *ngIf="selected as record">
-          <summary>Checklist</summary>
+        <hai-progressive-section
+          class="inspector-section"
+          *ngIf="selected as record"
+          moduleId="workflow-engine"
+          sectionId="checklist"
+          title="Checklist"
+          summary="Review checklist progress and update individual items."
+        >
           <div class="checklist">
             <article *ngFor="let item of record.checklist">
               <div>
                 <strong>{{ item.label }}</strong>
                 <small>{{ readable(item.status) }}{{ item.requiresApproval ? ' · approval required' : '' }}</small>
+                <small class="checklist-error" role="alert" *ngIf="checklistActionError?.itemId === item.id">{{ checklistActionError.message }}</small>
               </div>
-              <button type="button" nz-button nzSize="small" nzType="default" [attr.data-testid]="'workflow-checklist-done-' + item.id" (click)="markChecklist(item.id, 'done')">Done</button>
-              <button type="button" nz-button nzSize="small" nzType="default" [attr.data-testid]="'workflow-checklist-block-' + item.id" (click)="markChecklist(item.id, 'blocked')">Block</button>
+              <button type="button" nz-button nzSize="small" nzType="default" [attr.data-testid]="'workflow-checklist-done-' + item.id" [nzLoading]="checklistAction?.itemId === item.id && checklistAction.status === 'done'" [disabled]="workflowActionsDisabled() || (checklistAction?.itemId === item.id && checklistAction.status === 'done') || item.status === 'done'" (click)="markChecklist(item.id, 'done')">{{ item.status === 'done' ? 'Done' : 'Mark done' }}</button>
+              <button type="button" nz-button nzSize="small" nzType="default" [attr.data-testid]="'workflow-checklist-block-' + item.id" [nzLoading]="checklistAction?.itemId === item.id && checklistAction.status === 'blocked'" [disabled]="workflowActionsDisabled() || (checklistAction?.itemId === item.id && checklistAction.status === 'blocked') || item.status === 'blocked'" (click)="markChecklist(item.id, 'blocked')">{{ item.status === 'blocked' ? 'Blocked' : 'Block' }}</button>
             </article>
           </div>
-        </details>
+        </hai-progressive-section>
 
-        <details class="inspector-section" *ngIf="selected as record">
-          <summary>Evidence and proposals</summary>
+        <hai-progressive-section
+          class="inspector-section"
+          *ngIf="selected as record"
+          moduleId="workflow-engine"
+          sectionId="evidence-proposals"
+          title="Evidence and proposals"
+          summary="Inspect linked evidence and the complete proposal history."
+        >
           <div class="stack-list">
             <article *ngFor="let claim of record.evidence">
               <strong>{{ claim.claimText }}</strong>
@@ -1006,17 +1142,18 @@
             <article *ngFor="let proposal of record.proposals">
               <strong>{{ proposal.recommendedAction }}</strong>
               <small>{{ readable(proposal.status) }}</small>
-              <div class="mini-actions">
-                <button *ngIf="!isAutomationSelectionProposal(proposal.recommendedAction)" type="button" nz-button nzSize="small" nzType="primary" [disabled]="proposal.status !== 'open'" (click)="resolveProposal(proposal.id, 'approved', optionLines(proposal.options)[0])">Approve</button>
-                <button type="button" nz-button nzSize="small" nzType="default" [disabled]="proposal.status !== 'open'" (click)="resolveProposal(proposal.id, 'changes_requested', 'Request changes')">Changes</button>
-                <button type="button" nz-button nzSize="small" nzDanger [disabled]="proposal.status !== 'open'" (click)="resolveProposal(proposal.id, 'rejected', 'Reject proposal')">Reject</button>
-              </div>
             </article>
           </div>
-        </details>
+        </hai-progressive-section>
 
-        <details class="inspector-section" *ngIf="selected as record">
-          <summary>Timeline and audit</summary>
+        <hai-progressive-section
+          class="inspector-section"
+          *ngIf="selected as record"
+          moduleId="workflow-engine"
+          sectionId="timeline-audit"
+          title="Timeline and audit"
+          summary="Inspect recorded transitions and workflow events."
+        >
           <div class="stack-list">
             <article *ngFor="let transition of record.transitions">
               <strong>{{ readable(transition.fromState || '-') }} -> {{ readable(transition.toState) }}</strong>
@@ -1027,13 +1164,16 @@
               <small>{{ event.createdAt | date: 'short' }} · {{ event.message || '-' }}</small>
             </article>
           </div>
-        </details>
+        </hai-progressive-section>
 
-        <details class="inspector-section technical-section" *ngIf="overview as data">
-          <summary>
-            <span>Advanced technical status</span>
-            <em>{{ data.capabilities.length }} tracked</em>
-          </summary>
+        <hai-progressive-section
+          class="inspector-section technical-section"
+          *ngIf="overview as data"
+          moduleId="workflow-engine"
+          sectionId="technical-status"
+          title="Advanced technical status"
+          [summary]="data.capabilities.length + ' capabilities tracked'"
+        >
           <div class="capability-list">
             <article *ngFor="let capability of data.capabilities">
               <div>
@@ -1044,10 +1184,10 @@
               <small>Next: {{ capability.next.join(', ') || 'None' }}</small>
             </article>
           </div>
-        </details>
+        </hai-progressive-section>
       </section>
     </aside>
-  </main>
+  </div>
 </section>
 
 <nz-drawer
@@ -1083,6 +1223,8 @@
         <button
           type="button"
           nz-button
+          [nzLoading]="openingWorkflowId === proposal.workflowId"
+          [disabled]="workflowActionsDisabled()"
           (click)="openReminderWorkflow(proposal)"
           [attr.data-testid]="'reminder-drawer-workflow-' + proposal.checklistItemId"
         >Open workflow</button>
@@ -1092,7 +1234,7 @@
           nz-button
           nzType="primary"
           [nzLoading]="activationBusyId === proposal.checklistItemId"
-          [disabled]="!!activationBusyId"
+          [disabled]="workerReviewRequired || workflowActionsDisabled()"
           (click)="prepareReminderActivation(proposal, $event)"
           [attr.data-testid]="'reminder-drawer-prepare-' + proposal.checklistItemId"
         >
@@ -1104,7 +1246,8 @@
             type="button"
             nz-button
             nzType="primary"
-            [disabled]="!!activationBusyId"
+            [nzLoading]="activationBusyId === activation.request.id"
+            [disabled]="workerReviewRequired || workflowActionsDisabled()"
             (click)="reviewReminderActivation(proposal, $event)"
             [attr.data-testid]="'reminder-drawer-approve-' + proposal.checklistItemId"
           >
@@ -1115,7 +1258,8 @@
             type="button"
             nz-button
             nzDanger
-            [disabled]="!!activationBusyId"
+            [nzLoading]="activationBusyId === activation.request.id"
+            [disabled]="workerReviewRequired || workflowActionsDisabled()"
             (click)="rejectReminderActivation(proposal, $event)"
             [attr.data-testid]="'reminder-drawer-reject-' + proposal.checklistItemId"
           >
@@ -1126,16 +1270,19 @@
             type="button"
             nz-button
             nzType="primary"
-            [disabled]="!!activationBusyId"
+            [nzLoading]="activationBusyId === activation.request.id"
+            [disabled]="workerReviewRequired || workflowActionsDisabled()"
             (click)="authorizeReminderDelivery(proposal, $event)"
             [attr.data-testid]="'reminder-drawer-authorize-delivery-' + proposal.checklistItemId"
+            [title]="workerReviewRequired ? 'Inspect the uncertain result and complete the required review before authorizing another reminder.' : 'Authorize one local in-app reminder. External effects remain unavailable.'"
           >Authorize one internal reminder</button>
           <button
             *ngIf="activation.current && activation.status === 'approved'"
             type="button"
             nz-button
             nzDanger
-            [disabled]="!!activationBusyId"
+            [nzLoading]="activationBusyId === activation.request.id"
+            [disabled]="workflowActionsDisabled()"
             (click)="reviewReminderActivation(proposal, $event)"
             [attr.data-testid]="'reminder-drawer-revoke-' + proposal.checklistItemId"
           >
@@ -1143,7 +1290,7 @@
           </button>
         </ng-container>
       </div>
-      <details class="reminder-drawer__advanced">
+      <details id="reminder-evidence" class="reminder-drawer__advanced" data-hai-advanced data-hai-section="reminder-evidence">
         <summary>Advanced evidence</summary>
         <dl>
           <div><dt>Workflow ID</dt><dd><code>{{ proposal.workflowId }}</code></dd></div>

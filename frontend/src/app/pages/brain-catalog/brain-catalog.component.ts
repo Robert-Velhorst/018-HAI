@@ -1,6 +1,8 @@
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit, ViewChild } from '@angular/core'
 import { Router } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
+import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component'
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import {
   BrainCatalogCollectionDisposition,
   IBrainCatalogAdoptionPlan,
@@ -14,6 +16,7 @@ import {
   IBrainCatalogRevalidationRun,
   IBrainCatalogResponse,
   IBrainCatalogUpstreamReview,
+  IBrainSkillInventory,
 } from '../../models/brain-catalog.model.interface'
 import { IRAGFlowStatus } from '../../models/ragflow.model.interface'
 import { IAnythingLLMStatus } from '../../models/anythingllm.model.interface'
@@ -64,16 +67,23 @@ interface BoundedCatalogStatus {
 }
 
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-brain-catalog',
     templateUrl: './brain-catalog.component.html',
     styleUrls: ['./brain-catalog.component.scss'],
     standalone: false
 })
 export class BrainCatalogComponent implements OnInit {
+  @ViewChild('catalogProfileSection') catalogProfileSection?: HaiProgressiveSectionComponent
+
   catalog?: IBrainCatalogResponse
   selected?: IBrainCatalogEntry
   loading = false
   loadFailed = false
+  loadErrorMessage = ''
+  skillInventory?: IBrainSkillInventory
+  loadingSkillInventory = false
+  skillInventoryUnavailable = false
   reviewingCandidateId = ''
   reviewingDiscoveryRepository = ''
   verifyingDiscoveryRepository = ''
@@ -146,6 +156,11 @@ export class BrainCatalogComponent implements OnInit {
   browserVerificationStatusUnavailable = false
   planningFrameworkMigration = false
   frameworkMigrationPlan?: IAgentFrameworkMigrationPlan
+  private readonly requestedProfileStatuses = new Set<string>()
+  private collectionHistoryLoaded = false
+  private collectionHistoryLoading = false
+  private repositoryHistoryLoaded = false
+  private repositoryHistoryLoading = false
   readonly frameworkMigrationExample = JSON.stringify(
     {
       workloadId: 'legacy-workload',
@@ -183,25 +198,68 @@ export class BrainCatalogComponent implements OnInit {
     private autoGenCompatibilityService: AutoGenCompatibilityService,
     private notification: NzNotificationService,
     private router: Router,
+    private viewPreferences: ModuleViewPreferencesService,
   ) {}
 
-  ngOnInit(): void { this.refresh() }
+  ngOnInit(): void {
+    this.refresh()
+    if (this.viewPreferences.get('brain-catalog').openSections['agent-skills']) this.loadSkillInventory()
+  }
 
   refresh(): void {
+    if (this.loading) return
     this.loading = true
     this.loadFailed = false
+    this.loadErrorMessage = ''
     this.service.overview().subscribe({
       next: (catalog) => {
         this.catalog = catalog
-        this.select(this.integrated[0] ?? catalog.entries[0])
-        this.loadCollectionMaintenanceHistory()
-        this.loadRepositoryDiscoveryMaintenanceHistory()
+        const firstEntry = this.integrated[0] ?? catalog.entries[0]
+        if (firstEntry) this.select(firstEntry)
+        else this.selected = undefined
         this.loading = false
       },
       error: () => {
         this.loading = false
         this.loadFailed = true
+        this.loadErrorMessage = 'HAI could not load the reviewed capability catalog.'
         this.notification.error('Catalog unavailable', 'HAI could not load the reviewed capability catalog.')
+      },
+    })
+  }
+
+  onSkillInventoryOpen(open: boolean): void {
+    if (open && !this.skillInventory && !this.loadingSkillInventory) this.loadSkillInventory()
+  }
+
+  onCatalogProfileOpen(open: boolean): void {
+    if (open) this.loadSelectedProfileStatus()
+  }
+
+  onOSSInsightOpen(open: boolean): void {
+    if (!open) return
+    this.loadCollectionMaintenanceHistory()
+    this.loadRepositoryDiscoveryMaintenanceHistory()
+  }
+
+  openCatalogInventory(): void {
+    this.viewPreferences.setMode('brain-catalog', 'advanced')
+    this.catalogProfileSection?.setOpen(true)
+    this.router.navigate([], { queryParams: { mode: 'advanced' }, queryParamsHandling: 'merge' })
+  }
+
+  loadSkillInventory(): void {
+    if (this.loadingSkillInventory) return
+    this.loadingSkillInventory = true
+    this.skillInventoryUnavailable = false
+    this.service.skillInventory().subscribe({
+      next: (inventory) => {
+        this.skillInventory = inventory
+        this.loadingSkillInventory = false
+      },
+      error: () => {
+        this.loadingSkillInventory = false
+        this.skillInventoryUnavailable = true
       },
     })
   }
@@ -224,6 +282,7 @@ export class BrainCatalogComponent implements OnInit {
 
   select(entry: IBrainCatalogEntry): void {
     this.selected = entry
+    this.requestedProfileStatuses.clear()
     this.upstreamReview = undefined
     this.ragflowStatus = undefined
     this.ragflowStatusUnavailable = false
@@ -257,6 +316,13 @@ export class BrainCatalogComponent implements OnInit {
     this.browserVerificationStatus = undefined
     this.browserVerificationStatusUnavailable = false
     this.frameworkMigrationPlan = undefined
+    if (this.catalogProfileSection?.open) this.loadSelectedProfileStatus()
+  }
+
+  private loadSelectedProfileStatus(): void {
+    const entry = this.selected
+    if (!entry || this.requestedProfileStatuses.has(entry.id)) return
+    this.requestedProfileStatuses.add(entry.id)
     if (entry.id === 'ragflow') this.loadRAGFlowStatus()
     if (entry.id === 'anythingllm') this.loadAnythingLLMStatus()
     if (entry.id === 'presidio') this.loadPresidioStatus()
@@ -730,8 +796,8 @@ export class BrainCatalogComponent implements OnInit {
       next: (run) => {
         this.runningCatalogRevalidation = false
         this.catalogRevalidation = run
-        this.loadCollectionMaintenanceHistory()
-        this.loadRepositoryDiscoveryMaintenanceHistory()
+        this.loadCollectionMaintenanceHistory(true)
+        this.loadRepositoryDiscoveryMaintenanceHistory(true)
         if (!run.enabled) {
           this.notification.error(
             'Catalog maintenance is disabled',
@@ -758,21 +824,35 @@ export class BrainCatalogComponent implements OnInit {
     })
   }
 
-  private loadCollectionMaintenanceHistory(): void {
+  private loadCollectionMaintenanceHistory(force = false): void {
+    if (this.collectionHistoryLoading || (this.collectionHistoryLoaded && !force)) return
+    this.collectionHistoryLoading = true
     this.collectionMaintenanceHistoryUnavailable = false
     this.service.collectionRevalidationHistory().subscribe({
-      next: (history) => (this.collectionMaintenanceHistory = history || []),
+      next: (history) => {
+        this.collectionHistoryLoading = false
+        this.collectionHistoryLoaded = true
+        this.collectionMaintenanceHistory = history || []
+      },
       error: () => {
+        this.collectionHistoryLoading = false
         this.collectionMaintenanceHistoryUnavailable = true
       },
     })
   }
 
-  private loadRepositoryDiscoveryMaintenanceHistory(): void {
+  private loadRepositoryDiscoveryMaintenanceHistory(force = false): void {
+    if (this.repositoryHistoryLoading || (this.repositoryHistoryLoaded && !force)) return
+    this.repositoryHistoryLoading = true
     this.repositoryDiscoveryMaintenanceHistoryUnavailable = false
     this.service.repositoryDiscoveryRevalidationHistory().subscribe({
-      next: (history) => (this.repositoryDiscoveryMaintenanceHistory = history || []),
+      next: (history) => {
+        this.repositoryHistoryLoading = false
+        this.repositoryHistoryLoaded = true
+        this.repositoryDiscoveryMaintenanceHistory = history || []
+      },
       error: () => {
+        this.repositoryHistoryLoading = false
         this.repositoryDiscoveryMaintenanceHistoryUnavailable = true
       },
     })

@@ -1,6 +1,6 @@
 // Package autonomygate decides whether an action can run automatically, needs
 // human review, or must be blocked — minimizing human decisions for safe cases
-// while never auto-running risky or irreversible ones. Pure and deterministic.
+// while never auto-running unapproved risky or irreversible ones. Pure and deterministic.
 package autonomygate
 
 import "strings"
@@ -28,6 +28,7 @@ type Signals struct {
 //   - High risk that is irreversible is Blocked without approval.
 //   - Medium/high risk or low confidence needs Review.
 //   - Low risk with high confidence and reversibility runs Auto.
+//   - Invalid risk or confidence inputs never run Auto.
 func Decide(s Signals) Decision {
 	if s.Approved {
 		return Auto
@@ -37,13 +38,10 @@ func Decide(s Signals) Decision {
 	if risk == "high" && !s.Reversible {
 		return Block
 	}
-	if risk == "high" || risk == "medium" {
-		return Review
-	}
-	if s.Confidence < 0.6 {
-		return Review
-	}
-	if risk == "medium" && !s.Reversible {
+	if risk != "low" ||
+		!s.Reversible ||
+		!(s.Confidence >= 0 && s.Confidence <= 1) ||
+		s.Confidence < 0.6 {
 		return Review
 	}
 	return Auto

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -27,7 +28,9 @@ import (
 	"automation-hub-backend/internal/automation"
 	"automation-hub-backend/internal/autonomy"
 	"automation-hub-backend/internal/autonomypolicy"
+	brainskillselection "automation-hub-backend/internal/brain_skill_selection"
 	"automation-hub-backend/internal/braincatalog"
+	"automation-hub-backend/internal/brainskills"
 	"automation-hub-backend/internal/browserverify"
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/controlledlearning"
@@ -56,8 +59,10 @@ import (
 	"automation-hub-backend/internal/hostruntime"
 	"automation-hub-backend/internal/hostruntimereconcile"
 	"automation-hub-backend/internal/i18n"
+	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/knowledgegraph"
 	"automation-hub-backend/internal/langfuse"
+	"automation-hub-backend/internal/lifecycle"
 	"automation-hub-backend/internal/lifeledger"
 	"automation-hub-backend/internal/lifeontology"
 	"automation-hub-backend/internal/lifeops"
@@ -70,6 +75,8 @@ import (
 	"automation-hub-backend/internal/miniswe"
 	"automation-hub-backend/internal/mlflow"
 	"automation-hub-backend/internal/modelintelligence"
+	"automation-hub-backend/internal/openclawmaintenance"
+	"automation-hub-backend/internal/openclawreconcile"
 	"automation-hub-backend/internal/openlit"
 	"automation-hub-backend/internal/opscontrol"
 	"automation-hub-backend/internal/outcomeevaluation"
@@ -157,7 +164,6 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		}
 		planGraphService := plangraph.NewService(planGraphRepository, nil)
 		initializePlanGraphRoutes(v1, plangraph.NewHandler(planGraphService))
-		initializePydanticAIRoutes(v1, pydanticai.NewHandler(pydanticai.DefaultService()))
 		initializeBrowserVerificationRoutes(v1, browserverify.NewHandler(browserverify.DefaultService()))
 		initializeResearchRoutes(v1, research.NewHandler(research.DefaultService()))
 		initializeRAGFlowRoutes(v1, ragflow.NewHandler(ragflow.DefaultService()))
@@ -219,7 +225,13 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		initializeMemoryRoutes(v1, memory.NewHandler(memoryService))
 		workflowRunner := workflowtask.NewDeferredRunner()
 		workflowRepository := workflow.DefaultRepository()
-		workflowService := workflow.NewServiceWithTaskRunner(workflowRepository, workflowRunner, memoryService)
+		sourceRepository := source.DefaultRepository()
+		workflowService := workflow.NewServiceWithTaskRunnerAndGitHubQualityEvidenceResolver(
+			workflowRepository,
+			workflowRunner,
+			source.NewGitHubQualityEvidenceResolver(sourceRepository),
+			memoryService,
+		)
 		workflowService, err = workflow.WithAcceptedPlanResolver(workflowService, planGraphService)
 		if err != nil {
 			return err
@@ -228,9 +240,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		if err != nil {
 			return err
 		}
-		initializeAgentFrameworkRoutes(v1, agentframework.NewHandler(agentframework.WithModelMaintenance(agentframework.DefaultService(), llmService)))
 		initializeAutoGenCompatibilityRoutes(v1, autogencompat.NewHandler(autogencompat.DefaultService()))
-		initializeCrewAIRoutes(v1, crewai.NewHandler(crewai.WithModelMaintenance(crewai.DefaultService(), llmService)))
 		doclingService := docling.DefaultService()
 		initializeDoclingRoutes(v1, docling.NewHandler(doclingService))
 		gitleaksService := gitleaks.DefaultService()
@@ -255,7 +265,8 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		if err != nil {
 			return err
 		}
-		sourceService := source.NewServiceWithWorkflowPursuitAndSemantic(source.DefaultRepository(), memoryService, workflowService, pursuitService, semanticService)
+		sourceService := source.NewServiceWithWorkflowPursuitAndSemantic(sourceRepository, memoryService, workflowService, pursuitService, semanticService)
+		sourceService = source.WithRuntimeContext(sourceService, runtimeCtx)
 		sourceEvidenceRepository, err := sourceevidence.DefaultRepository()
 		if err != nil {
 			return err
@@ -672,6 +683,46 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			return fmt.Errorf("initialize host runtime bridge repository: %w", err)
 		}
 		hostRuntimeService := hostruntime.NewService(hostRuntimeRepository)
+		maintenanceDB, err := infra.GetDefaultDB()
+		if err != nil {
+			return err
+		}
+		brainSkillCatalog := brainskills.DefaultCatalog()
+		brainSkillSelectionService := brainskillselection.NewSelectionService(
+			brainskillselection.NewPostgresRepository(maintenanceDB),
+			brainSkillCatalog,
+		)
+		initializePydanticAIRoutes(v1, pydanticai.NewHandlerWithGuidance(
+			pydanticai.WithModelMaintenance(pydanticai.DefaultService(), llmService),
+			brainSkillSelectionService,
+		))
+		initializeAgentFrameworkRoutes(v1, agentframework.NewHandlerWithGuidance(
+			agentframework.WithModelMaintenance(agentframework.DefaultService(), llmService),
+			brainSkillSelectionService,
+		))
+		initializeCrewAIRoutes(v1, crewai.NewHandlerWithGuidance(
+			crewai.WithModelMaintenance(crewai.DefaultService(), llmService),
+			brainSkillSelectionService,
+		))
+		brainSkillSelectionStore := brainskillselection.NewOwnerSelectionStoreAdapter(brainSkillSelectionService)
+		initializeBrainSkillsRoutes(v1, brainskills.NewHandler(brainSkillSelectionStore))
+		maintenanceService := openclawmaintenance.NewService(maintenanceDB)
+		maintenanceService.SetBackgroundProcessingGate(backgroundAllowed)
+		if err := maintenanceService.Initialize(runtimeCtx); err != nil {
+			return fmt.Errorf("initialize OpenClaw maintenance: %w", err)
+		}
+		maintenanceHandler := openclawmaintenance.NewHandler(maintenanceService)
+		maintenanceRoutes := v1.Group("/openclaw-maintenance", requireAuthenticatedOwner(), requirePermission(rbac.PermAdmin))
+		maintenanceRoutes.GET("", maintenanceHandler.Overview)
+		maintenanceRoutes.POST("/:target", maintenanceHandler.Action)
+		maintenanceWorker := hostRuntimeV1.Group("/openclaw-maintenance-worker", maintenanceHandler.WorkerAuth)
+		maintenanceWorker.POST("/leases", maintenanceHandler.Lease)
+		maintenanceWorker.POST("/leases/:id/confirm", maintenanceHandler.Confirm)
+		maintenanceWorker.POST("/leases/:id/permit", maintenanceHandler.Permit)
+		maintenanceWorker.POST("/leases/:id/complete", maintenanceHandler.Complete)
+		if err := openclawmaintenance.StartScheduler(runtimeCtx, maintenanceService); err != nil {
+			return err
+		}
 		initializeHostRuntimeRoutes(
 			hostRuntimeV1,
 			hostruntime.NewHandler(
@@ -679,10 +730,28 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 				hostruntime.DefaultConfig(),
 			),
 		)
-		runtimeRegistry := agentruntime.DefaultRegistryWithFinalEffectVerifierAndHostRuntime(
+		openClawReceiptRepository, err := openclawreconcile.DefaultRepository()
+		if err != nil {
+			return fmt.Errorf("initialize OpenClaw gateway receipt repository: %w", err)
+		}
+		v1.GET("/openclaw-usage/:eventId", requireAuthenticatedOwner(), requirePermission(rbac.PermRead), openclawreconcile.NewUsageHandler(openClawReceiptRepository).Get)
+		runtimeRegistry := agentruntime.DefaultRegistryWithFinalEffectVerifierAndHostRuntimeAndOpenClawGatewayReceiptStore(
 			finalEffectBridge,
 			hostRuntimeService,
+			openClawReceiptRepository,
 		)
+		openClawArtifactHandler := openclawreconcile.NewArtifactHandler(openClawReceiptRepository, runtimeRegistry)
+		openClawArtifactHandler.SetArchive(openclawreconcile.NewArtifactArchiveWithWriteConfirmation(
+			openClawReceiptRepository,
+			os.Getenv("OPENCLAW_ARTIFACT_RETENTION_KEY"),
+			strings.EqualFold(strings.TrimSpace(os.Getenv("OPENCLAW_ARTIFACT_RETENTION_KEY_CONFIRMED")), "true"),
+		))
+		initializeOpenClawArtifactRoutes(v1, openClawArtifactHandler)
+		maintenanceService.SetHealthVerifier(func(ctx context.Context) bool {
+			health, ok := runtimeRegistry.HealthFor(ctx, "openclaw")
+			return ok && (health.Status == "available" || health.Status == "ready")
+		})
+		runtimeRegistry.SetOpenClawMaintenanceGate(maintenanceService.AcquireTask)
 		// Runtime control and automation execution share one registry so the
 		// exact task that exercised a receipt can also be cancelled by its owner.
 		initializeAgentRuntimeRoutes(
@@ -712,11 +781,27 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			executionAuthorizationService,
 			finalEffectBridge,
 		)
+		openClawReconcileService := openclawreconcile.NewService(openClawReceiptRepository, automationRepository, runtimeRegistry)
+		opsControlService.WithOpenClawEmergencyStopFanout(openClawReconcileService)
+		initializeOpenClawReconcileRoutes(v1, openclawreconcile.NewOperatorReconcileHandler(openClawReconcileService))
+		if safety.EvaluateEmergencyStop().Active {
+			lifecycle.Go(runtimeCtx, "openclaw-emergency-stop-fanout", func() {
+				if _, _, _, _, err := openClawReconcileService.FanOutEmergencyStop(runtimeCtx); err != nil {
+					log.Printf("persisted emergency-stop OpenClaw cancellation fan-out remains partial: %v", err)
+				}
+			})
+		}
 		if err := hostruntimereconcile.StartDurableScheduler(
 			runtimeCtx,
 			hostruntimereconcile.NewService(hostRuntimeService, automationRepository),
 		); err != nil {
 			return fmt.Errorf("initialize host runtime completion reconciliation: %w", err)
+		}
+		if err := openclawreconcile.StartDurableScheduler(
+			runtimeCtx,
+			openClawReconcileService,
+		); err != nil {
+			return fmt.Errorf("initialize OpenClaw gateway terminal reconciliation: %w", err)
 		}
 		autoHandler := automation.NewHandler(automationService)
 		if err := initializeAutomationsRoutes(v1, autoHandler); err != nil {
@@ -737,6 +822,13 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			),
 			controlledLearningService,
 		)
+		taskService, err = task.WithBrainSkillGuidanceProvider(
+			taskService,
+			newBrainSkillTaskGuidanceAdapter(runtimeCtx, brainSkillSelectionService),
+		)
+		if err != nil {
+			return err
+		}
 		taskService, err = task.WithFrameworkEvidenceRepository(
 			taskService,
 			frameworkEvidenceRepository,
@@ -787,13 +879,20 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		initializeA2ABridgeStatusRoutes(v1, a2aBridgeHandler)
 		initializeA2ABridgeRoutes(router, relativePathV1, a2aBridgeHandler)
 		workflowRunner.Set(workflowtask.NewRunner(taskService, automationService))
-		source.StartScheduler(runtimeCtx, sourceService, backgroundAllowed)
+		if err := source.StartScheduler(runtimeCtx, sourceService, backgroundAllowed); err != nil {
+			return fmt.Errorf("start source scheduler: %w", err)
+		}
 		workflow.StartScheduler(runtimeCtx, workflowService, backgroundAllowed)
 		mcpBridgeHandler := mcpbridge.NewHandler(mcpbridge.NewServiceFromEnv(workflowService))
 		initializeMCPBridgeStatusRoutes(v1, mcpBridgeHandler)
 		initializeMCPAgentRoutes(router, relativePathV1, mcpBridgeHandler)
 		initializeSourceRoutes(v1, source.NewHandlerWithDocumentExtractor(sourceService, doclingService, whisperService))
-		initializeWorkflowRoutes(v1, workflow.NewHandlerWithPursuitIntakeRouter(workflowService, pursuitService))
+		workflowHandler := workflow.NewHandlerWithPursuitIntakeRouterAndProjectDossierService(
+			workflowService,
+			pursuitService,
+			workflow.NewProjectDossierService(workflowRepository, memoryService),
+		)
+		initializeWorkflowRoutes(v1, workflowHandler)
 		initializePursuitRoutes(v1, pursuit.NewHandler(pursuitService))
 		memoryEngineSecret := memoryEngineEncryptionSecret(config.AppConfig)
 		memoryEngineService := memoryengine.NewServiceWithPursuitLinker(
@@ -828,13 +927,19 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			phase2Module.OwnerUserID(),
 			phase2Module.WorkspaceID(),
 			runtimeRegistry,
-		)
+		).WithSafeExecutionPolicy(phase2Module.SafeExecutionPolicyAllows)
 		initializeRuntimeLabRoutes(v1, runtimelab.NewHandler(runtimeLabService))
-		feedRegistry := accountfeed.NewRegistry(phase2Module.Service(), privacyService, accountfeed.FetchOptions{
+		feedRegistry, err := accountfeed.NewPostgresRegistry(runtimeCtx, phase2Module.Service(), privacyService, accountfeed.FetchOptions{
 			FeedsRoot: phase2Module.FeedsDir(),
 			AllowHTTP: strings.EqualFold(strings.TrimSpace(os.Getenv("HAI_PHASE2_ALLOW_HTTP_FEEDS")), "true"),
 		})
-		seedAccountFeeds(feedRegistry, phase2Module)
+		if err != nil {
+			return fmt.Errorf("initialize durable account feeds: %w", err)
+		}
+		if err := seedAccountFeeds(runtimeCtx, feedRegistry, phase2Module); err != nil {
+			return fmt.Errorf("seed durable account feeds: %w", err)
+		}
+		phase2Module.WithFeedRegistry(feedRegistry)
 		initializeAccountFeedRoutes(v1, accountfeed.NewHandler(feedRegistry, phase2Module.OwnerUserID(), phase2Module.WorkspaceID()))
 		initializeOpsControlRoutes(v1, opscontrol.NewHandler(opsControlService))
 		flagStore := defaultFeatureFlags()
@@ -870,6 +975,17 @@ func memoryEngineEncryptionSecret(cfg config.Configuration) string {
 // emergency stop are both fail-closed conditions.
 func backgroundProcessingAllowed(mode autonomypolicy.Mode) bool {
 	return mode.AllowsBackgroundProcessing() && !safety.EvaluateEmergencyStop().Active
+}
+
+func initializeOpenClawArtifactRoutes(v1 *gin.RouterGroup, handler *openclawreconcile.ArtifactHandler) {
+	v1.GET("/openclaw-artifacts/:eventId", requireAuthenticatedOwner(), requirePermission(rbac.PermRead), handler.Get)
+	v1.GET("/openclaw-artifacts/:eventId/:digest/download", requireAuthenticatedOwner(), requirePermission(rbac.PermRead), handler.Download)
+	v1.POST("/openclaw-artifacts/:eventId/:digest/retain", requireAuthenticatedOwner(), requirePermission(rbac.PermWrite), handler.Retain)
+	v1.DELETE("/openclaw-artifacts/:eventId/:digest/retained", requireAuthenticatedOwner(), requirePermission(rbac.PermAdmin), handler.Forget)
+}
+
+func initializeOpenClawReconcileRoutes(v1 *gin.RouterGroup, handler *openclawreconcile.OperatorReconcileHandler) {
+	v1.POST("/openclaw-sessions/:eventId/reconcile", requireAuthenticatedOwner(), requirePermission(rbac.PermExecute), handler.Reconcile)
 }
 
 func initializeExecutionAuthorizationRoutes(
@@ -1172,9 +1288,11 @@ func initializeAgentRuntimeRoutes(apiVersion *gin.RouterGroup, handler *agentrun
 		routes.POST("/openclaw/ecosystem/approval/set-path", requirePermission(rbac.PermAdmin), handler.PrepareSetOpenClawEcosystem)
 		routes.POST("/openclaw/ecosystem/approval/refresh", requirePermission(rbac.PermAdmin), handler.PrepareRefreshOpenClawEcosystem)
 		routes.POST("/openclaw/ecosystem/approval/upload", requirePermission(rbac.PermAdmin), handler.PrepareUploadOpenClawEcosystem)
+		routes.POST("/openclaw/ecosystem/approval/rollback", requirePermission(rbac.PermAdmin), handler.PrepareRollbackOpenClawArchive)
 		routes.PATCH("/openclaw/ecosystem", requirePermission(rbac.PermAdmin), handler.SetOpenClawEcosystem)
 		routes.POST("/openclaw/ecosystem/refresh", requirePermission(rbac.PermAdmin), handler.RefreshOpenClawEcosystem)
 		routes.POST("/openclaw/ecosystem/upload", requirePermission(rbac.PermAdmin), handler.UploadOpenClawEcosystem)
+		routes.POST("/openclaw/ecosystem/rollback", requirePermission(rbac.PermAdmin), handler.RollbackOpenClawArchive)
 	}
 }
 
@@ -1369,6 +1487,12 @@ func initializeMemoryEngineRoutes(apiVersion *gin.RouterGroup, handler *memoryen
 }
 
 func initializeSourceRoutes(apiVersion *gin.RouterGroup, sourceHandler *source.Handler) {
+	// Trello callbacks authenticate through Trello's request signature and must
+	// remain outside the browser-session middleware used by owner-facing routes.
+	trelloWebhookRoutes := apiVersion.Group("/sources")
+	trelloWebhookRoutes.HEAD("/webhooks/trello", sourceHandler.TrelloWebhook)
+	trelloWebhookRoutes.POST("/webhooks/trello", sourceHandler.TrelloWebhook)
+
 	sourceRoutes := apiVersion.Group("/sources")
 	sourceRoutes.Use(requireAuthenticatedOwner())
 	{
@@ -1380,7 +1504,9 @@ func initializeSourceRoutes(apiVersion *gin.RouterGroup, sourceHandler *source.H
 		// separate in-process scheduler is the only global source worker.
 		sourceRoutes.POST("/sync-due", requirePermission(rbac.PermWrite), sourceHandler.RunDueScheduledSyncs)
 		sourceRoutes.GET("/sync-jobs", requirePermission(rbac.PermRead), sourceHandler.SyncJobs)
+		sourceRoutes.GET("/sync-jobs/:id", requirePermission(rbac.PermRead), sourceHandler.ManualSyncJob)
 		sourceRoutes.GET("/extractions", requirePermission(rbac.PermRead), sourceHandler.Extractions)
+		sourceRoutes.GET("/extraction-corrections/:id", requirePermission(rbac.PermRead), sourceHandler.ExtractionCorrection)
 		sourceRoutes.GET("/audit-logs", requirePermission(rbac.PermRead), sourceHandler.AuditLogs)
 		sourceRoutes.GET("/connection-health", requirePermission(rbac.PermRead), sourceHandler.ConnectionHealths)
 		sourceRoutes.GET("/:id/health", requirePermission(rbac.PermRead), sourceHandler.ConnectionHealth)
@@ -1388,6 +1514,7 @@ func initializeSourceRoutes(apiVersion *gin.RouterGroup, sourceHandler *source.H
 		sourceRoutes.POST("/extractions/:id/archive", requirePermission(rbac.PermWrite), sourceHandler.ArchiveExtraction)
 		sourceRoutes.DELETE("/extractions/:id", requirePermission(rbac.PermWrite), sourceHandler.DeleteExtraction)
 		sourceRoutes.PATCH("/:id", requirePermission(rbac.PermWrite), sourceHandler.UpdateSource)
+		sourceRoutes.POST("/:id/sync-jobs", requirePermission(rbac.PermWrite), sourceHandler.SubmitManualSync)
 		sourceRoutes.POST("/:id/sync", requirePermission(rbac.PermWrite), sourceHandler.Sync)
 		sourceRoutes.POST("/:id/transcribe", requirePermission(rbac.PermWrite), sourceHandler.Transcribe)
 		sourceRoutes.POST("/:id/extract-documents", requirePermission(rbac.PermWrite), sourceHandler.ExtractDocuments)
@@ -1689,6 +1816,7 @@ func initializePhase2Routes(apiVersion *gin.RouterGroup, handler *phase2.Handler
 		ops.GET("/:id", requirePermission(rbac.PermRead), handler.GetOperation)
 		ops.GET("/:id/events", requirePermission(rbac.PermRead), handler.OperationEvents)
 		ops.GET("/:id/approvals", requirePermission(rbac.PermRead), handler.Approvals)
+		ops.GET("/:id/approval-preview", requirePermission(rbac.PermRead), handler.ApprovalPreview)
 		ops.POST("/:id/approve", requirePermission(rbac.PermApprove), handler.Approve)
 		ops.POST("/:id/reject", requirePermission(rbac.PermApprove), handler.Reject)
 		ops.POST("/:id/later", requirePermission(rbac.PermWrite), handler.Later)
@@ -1721,18 +1849,20 @@ func initializeAccountFeedRoutes(apiVersion *gin.RouterGroup, handler *accountfe
 		af.PATCH("/:id", requirePermission(rbac.PermAdmin), handler.Patch)
 		af.POST("/:id/sync", requirePermission(rbac.PermWrite), handler.Sync)
 		af.GET("/:id/audit", requirePermission(rbac.PermRead), handler.Audit)
+		af.GET("/:id/identity-preview", requirePermission(rbac.PermRead), handler.IdentityPreview)
 	}
 }
 
 // seedAccountFeeds registers the module's configured local feed files so they
 // appear in the Account Feeds API and can be synced on demand.
-func seedAccountFeeds(reg *accountfeed.Registry, m *phase2.Module) {
+func seedAccountFeeds(ctx context.Context, reg *accountfeed.Registry, m *phase2.Module) error {
 	for _, name := range m.FeedFiles() {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue
 		}
-		_, _ = reg.Register(accountfeed.Feed{
+		_, err := reg.RegisterContext(ctx, accountfeed.Feed{
+			ID:           accountfeed.ConfiguredFeedID(m.OwnerUserID(), m.WorkspaceID(), name),
 			Name:         strings.TrimSuffix(name, ".json"),
 			Provider:     string(accountfeed.ProviderGenericJSONFeed),
 			AccountLabel: name,
@@ -1742,7 +1872,11 @@ func seedAccountFeeds(reg *accountfeed.Registry, m *phase2.Module) {
 			WorkspaceID:  m.WorkspaceID(),
 			Enabled:      true,
 		})
+		if err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func initializeModelIntelligenceRoutes(apiVersion *gin.RouterGroup, handler *modelintelligence.Handler) {
@@ -1795,9 +1929,8 @@ func initializeOpsControlRoutes(apiVersion *gin.RouterGroup, handler *opscontrol
 	bg.Use(requireAuthenticatedOwner())
 	{
 		bg.GET("/status", requirePermission(rbac.PermRead), handler.Status)
-		// Operators may always halt work. Only an owner may resume it or change
-		// the autonomy mode.
-		bg.POST("/pause", requirePermission(rbac.PermExecute), handler.Pause)
+		// Global pause and resume affect the whole installation and are owner-only.
+		bg.POST("/pause", requirePermission(rbac.PermAdmin), requirePrincipal(phase2.ConfigFromEnv().OwnerUserID), handler.Pause)
 		bg.POST("/resume/approval", requirePermission(rbac.PermAdmin), handler.PrepareResume)
 		bg.POST("/resume", requirePermission(rbac.PermAdmin), handler.Resume)
 		bg.POST("/mode/approval", requirePermission(rbac.PermAdmin), handler.PrepareModeChange)
@@ -2010,6 +2143,7 @@ func initializeWorkflowRoutes(apiVersion *gin.RouterGroup, workflowHandler *work
 		workflowRoutes.GET("/overview", requirePermission(rbac.PermRead), workflowHandler.Overview)
 		workflowRoutes.GET("/approvals", requirePermission(rbac.PermRead), workflowHandler.ApprovalItems)
 		workflowRoutes.GET("/dashboard", requirePermission(rbac.PermRead), workflowHandler.Dashboard)
+		workflowRoutes.GET("/project-dossier", requirePermission(rbac.PermRead), workflowHandler.ProjectDossier)
 		workflowRoutes.GET("/reminder-proposals", requirePermission(rbac.PermRead), workflowHandler.ReminderProposals)
 		workflowRoutes.POST("/reminder-proposals/:itemId/activation-requests", requirePermission(rbac.PermWrite), workflowHandler.PrepareReminderActivation)
 		workflowRoutes.GET("/reminder-activation-requests", requirePermission(rbac.PermRead), workflowHandler.ReminderActivationHistory)

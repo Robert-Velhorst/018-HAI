@@ -1,3 +1,5 @@
+import { ComponentFixture, TestBed } from '@angular/core/testing'
+import { NoopAnimationsModule } from '@angular/platform-browser/animations'
 import { NzModalService } from 'ng-zorro-antd/modal'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { of, Subject, throwError } from 'rxjs'
@@ -30,6 +32,7 @@ import { AmbientMonitorService } from '../../services/ambient-monitor.service'
 import { GovernanceControlService } from '../../services/governance-control.service'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import { GovernanceControlComponent } from './governance-control.component'
+import { GovernanceControlModule } from './governance-control.module'
 
 function proactivityDecisionRecord(): ProactivityDecisionRecord {
   return {
@@ -195,11 +198,25 @@ describe('GovernanceControlComponent', () => {
 
   const proposal = {
     id: 'proposal-1',
+    protocolVersion: '1',
+    ownerIdentity: 'session-owner',
+    idempotencyKey: 'proposal-1-create',
+    revision: 3,
     title: 'Improve evidence ranking',
     hypothesis: 'The new ranker improves source recall.',
     status: 'review_required',
+    method: 'evidence_review',
+    target: 'routing_policy',
     protectedTarget: false,
-    revision: 3,
+    proposedChange: 'Improve source ordering.',
+    currentVersion: '1.0.0',
+    proposedVersion: '1.1.0',
+    rollbackPlan: 'Restore version 1.0.0.',
+    evaluationPlan: 'Compare verified source recall.',
+    evidenceIds: [],
+    proposalDigest: 'proposal-digest',
+    createdAt: '2026-08-01T10:00:00Z',
+    updatedAt: '2026-08-01T10:00:00Z',
   } as LearningProposal
 
   const learningApplication = {
@@ -222,14 +239,29 @@ describe('GovernanceControlComponent', () => {
   } as LearningApplicationSummary
 
   const agent = {
+    contractVersion: 1,
     id: 'agent-1',
+    ownerIdentity: 'session-owner',
     name: 'Evidence reviewer',
+    type: 'reviewer',
+    runtime: { id: 'local-runtime', type: 'local', protocolVersion: '1' },
+    capabilities: [],
+    authorityCeiling: 1,
+    autonomyCeiling: 1,
     state: 'quarantined',
     health: {
       status: 'unhealthy',
       ready: false,
       reason: 'Runtime evidence expired.',
+      checkedAt: '2026-08-01T10:00:00Z',
+      freshFor: 60,
     },
+    availability: { available: false, activeAssignments: 0, maxConcurrent: 1 },
+    performance: { estimatedCostEur: 0, p95LatencyMs: 0, locality: 'local' },
+    reliability: { successes: 0, failures: 0, consecutiveFailures: 0, meanLatencyMs: 0 },
+    revision: 1,
+    createdAt: '2026-08-01T10:00:00Z',
+    updatedAt: '2026-08-01T10:00:00Z',
   } as AgentRecord
 
   const domain = {
@@ -272,6 +304,8 @@ describe('GovernanceControlComponent', () => {
         'listMandateDecisions',
         'effectiveDomainPack',
         'classifyDomain',
+        'learningProposal',
+        'learningDecisions',
         'decideLearningProposal',
         'agentTeamMessageAttention',
         'agentTeamMessageAttentionIndex',
@@ -1582,5 +1616,109 @@ describe('GovernanceControlComponent', () => {
     expect(service.agentTeamMessageAttention).not.toHaveBeenCalled()
     expect(component.agentTeamReviewCount).toBe(1)
     expect(component.agentTeamReviewItems(team).map((item) => item.state)).toEqual(['overdue'])
+  })
+
+  describe('progressive UI contract', () => {
+    let fixture: ComponentFixture<GovernanceControlComponent>
+
+    beforeEach(() => {
+      TestBed.configureTestingModule({
+        imports: [GovernanceControlModule, NoopAnimationsModule],
+        providers: [
+          { provide: GovernanceControlService, useValue: service },
+          { provide: AmbientMonitorService, useValue: ambientMonitor },
+          { provide: NzNotificationService, useValue: notification },
+          { provide: NzModalService, useValue: modal },
+          { provide: ModuleViewPreferencesService, useValue: preferences },
+        ],
+      })
+      fixture = TestBed.createComponent(GovernanceControlComponent)
+      document.body.classList.remove('hai-view-advanced')
+    })
+
+    afterEach(() => {
+      fixture.destroy()
+      document.body.classList.remove('hai-view-advanced')
+      preferences.reset('memory')
+    })
+
+    it('keeps the decision queue in Basic and opens a source-backed proposal from its real row action', () => {
+      service.learningProposal.and.returnValue(of(proposal))
+      service.learningDecisions.and.returnValue(of({ decisions: [] }))
+      fixture.detectChanges()
+
+      const view = fixture.componentInstance
+      const root = fixture.nativeElement as HTMLElement
+      expect(root.querySelector('.attention-row')?.textContent).toContain(proposal.title)
+      expect(root.querySelector('#governance-classifier')).toBeNull()
+      expect(root.querySelector('#advisory-engines')).toBeNull()
+      expect(root.querySelector('#advisory-engines .advisory-stack')).toBeNull()
+      expect(root.querySelector('#execution-receipts .hai-progressive-section__content')).toBeNull()
+
+      ;(root.querySelector('.attention-row') as HTMLButtonElement).click()
+      fixture.detectChanges()
+
+      expect(view.inspectorVisible).toBeTrue()
+      expect(view.inspectorKind).toBe('proposal')
+      expect(service.learningProposal).toHaveBeenCalledWith(proposal.id)
+      expect(service.learningDecisions).toHaveBeenCalledWith(proposal.id, 100)
+      expect(view.selectedProposal).toEqual(proposal)
+    })
+
+    it('persists advanced disclosure per module and preserves the backend classifier action', () => {
+      const classification = {
+        matches: [{
+          packId: 'legal',
+          score: 82,
+          explicit: false,
+          sensitive: true,
+          reasons: ['Contract signal'],
+          signals: [],
+        }],
+        suppressed: [],
+      }
+      service.classifyDomain.and.returnValue(of(classification))
+      preferences.setSection('memory', 'advisory-engines', false)
+      preferences.setMode('governance-control', 'advanced')
+      document.body.classList.add('hai-view-advanced')
+      fixture.detectChanges()
+
+      const view = fixture.componentInstance
+      const root = fixture.nativeElement as HTMLElement
+      const advisoryTrigger = root.querySelector<HTMLButtonElement>(
+        '#advisory-engines .hai-progressive-section__summary'
+      )
+      expect(advisoryTrigger).not.toBeNull()
+      advisoryTrigger!.click()
+      fixture.detectChanges()
+
+      expect(preferences.get('governance-control').openSections['advisory-engines']).toBeTrue()
+      expect(preferences.get('memory').openSections['advisory-engines']).toBeFalse()
+      expect(root.querySelector('#advisory-engines .advisory-stack')).not.toBeNull()
+
+      const catalogTrigger = root.querySelector<HTMLButtonElement>(
+        '#domain-pack-catalog .hai-progressive-section__summary'
+      )
+      expect(catalogTrigger).not.toBeNull()
+      catalogTrigger!.click()
+      fixture.detectChanges()
+      expect(root.querySelector('#governance-classifier')).not.toBeNull()
+
+      view.classifierText = 'Review a contract deadline.'
+      fixture.detectChanges()
+      const classifyButton = Array.from(root.querySelectorAll<HTMLButtonElement>('.classifier-body button'))
+        .find((button) => button.textContent?.includes('Classify'))
+      expect(classifyButton).toBeDefined()
+      classifyButton!.click()
+      fixture.detectChanges()
+
+      expect(service.classifyDomain).toHaveBeenCalledWith('Review a contract deadline.')
+      expect(view.classification).toEqual(classification)
+      expect(root.querySelector('.classification-result button')?.textContent).toContain('Contract signal')
+      ;(root.querySelector('.classification-result button') as HTMLButtonElement).click()
+      fixture.detectChanges()
+      expect(service.effectiveDomainPack).toHaveBeenCalledWith('legal')
+      expect(view.inspectorKind).toBe('domain')
+    })
   })
 })

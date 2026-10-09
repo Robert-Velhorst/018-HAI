@@ -1,8 +1,8 @@
 <div class="rc">
   <header class="rc__header">
     <div>
-      <button nz-button nzType="text" (click)="goBack()">
-        <span nz-icon nzType="arrow-left"></span>
+      <button type="button" nz-button nzType="text" aria-label="Back to previous page" title="Back to previous page" (click)="goBack()">
+        <span nz-icon nzType="arrow-left" aria-hidden="true"></span>
       </button>
       <h1>Runtime Control</h1>
       <p class="rc__subtitle">
@@ -10,9 +10,12 @@
         survives restart; Windows-specific readiness is honestly pending until verified on the target machine.
       </p>
     </div>
-    <button nz-button nzType="text" [nzLoading]="loading" (click)="refresh()">
-      <span nz-icon nzType="reload"></span> Refresh
-    </button>
+    <div class="rc__header-actions">
+      <button nz-button type="button" (click)="resetView()">Reset view</button>
+      <button nz-button nzType="text" [nzLoading]="loading" [disabled]="loading || busy" (click)="refresh()">
+        <span nz-icon nzType="reload"></span> Refresh
+      </button>
+    </div>
   </header>
 
   <section
@@ -54,20 +57,41 @@
         <span nz-icon [nzType]="s.emergencyStop.engaged ? 'stop' : 'check-circle'"></span>
         <div>
           <div class="rc__estop-title">
-            {{ s.emergencyStop.engaged ? 'EMERGENCY STOP ENGAGED' : 'Background processing active' }}
+            {{ emergencyStopStatusInconsistent
+              ? 'RUNTIME STATUS CONFLICT'
+              : s.emergencyStop.engaged
+                ? 'EMERGENCY STOP ENGAGED'
+                : s.backgroundProcessingActive
+                  ? 'Background processing enabled'
+                  : 'Background processing paused' }}
           </div>
           <div class="rc__muted">
-            {{ s.backgroundProcessingActive ? 'Processing runs on the next pass' : 'Processing is halted' }}
+            {{ emergencyStopStatusInconsistent
+              ? 'The server reports an engaged stop and processing enabled; refresh before taking action.'
+              : s.emergencyStop.engaged
+                ? 'The backend confirms processing is blocked by the persisted emergency stop.'
+                : s.modeStateError
+                  ? 'The stored mode is unavailable; effective processing remains fail-closed.'
+                  : s.backgroundProcessingActive
+                    ? 'Processing is enabled by the effective autonomy mode.'
+                    : 'The effective autonomy mode currently blocks processing.' }}
           </div>
         </div>
       </div>
+      <nz-alert
+        *ngIf="emergencyStopStatusInconsistent"
+        nzType="error"
+        nzShowIcon
+        nzMessage="Runtime state needs reconciliation"
+        nzDescription="Do not treat this snapshot as a verified stop. Refresh and use the backend-confirmed state."
+      ></nz-alert>
       <div class="rc__estop-actions">
         <button
           nz-button
           nzDanger
           *ngIf="!s.emergencyStop.engaged"
-          [disabled]="!canApproveRuntimeActions"
-          [attr.aria-describedby]="!canApproveRuntimeActions ? 'runtime-authority-summary' : null"
+          [disabled]="busy || !canOperateRuntime"
+          [attr.aria-describedby]="!canOperateRuntime ? 'runtime-authority-summary' : null"
           [nzLoading]="busy"
           (click)="pause()"
         >
@@ -77,8 +101,10 @@
           nz-button
           nzType="primary"
           *ngIf="s.emergencyStop.engaged"
-          [disabled]="!canAdministerRuntime"
-          [attr.aria-describedby]="!canAdministerRuntime ? 'runtime-owner-explanation' : null"
+          [disabled]="busy || !canAdministerRuntime || emergencyStopStatusInconsistent"
+          [attr.aria-describedby]="emergencyStopStatusInconsistent
+            ? 'runtime-state-conflict-explanation'
+            : !canAdministerRuntime ? 'runtime-owner-explanation' : null"
           [nzLoading]="busy"
           (click)="resume()"
         >
@@ -86,8 +112,8 @@
         </button>
         <button
           nz-button
-          [disabled]="!canApproveRuntimeActions"
-          [attr.aria-describedby]="!canApproveRuntimeActions ? 'runtime-authority-summary' : null"
+          [disabled]="busy || !canOperateRuntime"
+          [attr.aria-describedby]="!canOperateRuntime ? 'runtime-authority-summary' : null"
           [nzLoading]="busy"
           (click)="verify()"
         >
@@ -95,8 +121,8 @@
         </button>
         <button
           nz-button
-          [disabled]="!canApproveRuntimeActions"
-          [attr.aria-describedby]="!canApproveRuntimeActions ? 'runtime-authority-summary' : null"
+          [disabled]="busy || !canOperateRuntime"
+          [attr.aria-describedby]="!canOperateRuntime ? 'runtime-authority-summary' : null"
           [nzLoading]="busy"
           (click)="recover()"
         >
@@ -112,53 +138,88 @@
       </p>
     </nz-card>
 
-    <nz-card nzTitle="Autonomy mode" nzSize="small" class="rc__mode">
-      <div class="rc__muted">Current: <strong>{{ s.storedMode }}</strong> (effective: {{ s.mode }})</div>
-      <nz-radio-group [ngModel]="s.storedMode" (ngModelChange)="setMode($event)">
-        <label
-          nz-radio-button
-          *ngFor="let m of modes"
-          [nzValue]="m"
-          [nzDisabled]="!canAdministerRuntime"
-          [attr.aria-describedby]="!canAdministerRuntime ? 'runtime-mode-explanation' : null"
-        >
+  </section>
+
+  <section class="rc__summary" *ngIf="status as s" aria-label="Current runtime workload">
+    <article>
+      <span>Effective mode</span>
+      <strong>{{ s.modeStateError
+        ? (s.emergencyStop.engaged ? 'Emergency stopped; stored mode unavailable' : 'Paused; stored mode unavailable')
+        : s.mode }}</strong>
+    </article>
+    <article><span>Awaiting approval</span><strong>{{ s.awaitingApproval }}</strong></article>
+    <article><span>Completed operations</span><strong>{{ s.completedOperations }}</strong></article>
+    <article><span>Docker</span><strong>{{ s.docker.daemonRunning ? 'Running' : 'Not required' }}</strong></article>
+  </section>
+
+  <hai-progressive-section
+    moduleId="runtime-control"
+    sectionId="runtime-autonomy-policy"
+    title="Autonomy policy and controls"
+    summary="Owner-only mode changes and detailed runtime state."
+  >
+    <nz-card nzTitle="Autonomy mode" nzSize="small" class="rc__mode" *ngIf="status as s">
+      <nz-alert
+        *ngIf="s.modeStateError"
+        nzType="error"
+        nzShowIcon
+        nzMessage="Stored autonomy mode is unavailable"
+        [nzDescription]="'Effective mode is ' + s.mode + '. The persisted policy has not been confirmed.'"
+      ></nz-alert>
+      <div class="rc__muted">Stored: <strong>{{ s.modeStateError ? 'unavailable' : s.storedMode }}</strong> (effective: {{ s.mode }})</div>
+      <nz-radio-group [ngModel]="s.modeStateError ? null : s.storedMode" (ngModelChange)="setMode($event)">
+        <label nz-radio-button *ngFor="let m of modes" [nzValue]="m"
+          [nzDisabled]="busy || !canAdministerRuntime"
+          [attr.aria-describedby]="!canAdministerRuntime ? 'runtime-mode-explanation' : null">
           {{ m }}
         </label>
       </nz-radio-group>
-      <p
-        id="runtime-mode-explanation"
-        class="rc__permission-note"
-        *ngIf="!canAdministerRuntime"
-      >
+      <p id="runtime-mode-explanation" class="rc__permission-note" *ngIf="!canAdministerRuntime">
         {{ ownerControlExplanation }}
       </p>
-      <div class="rc__meta">
-        <div><span class="rc__muted">Done while away</span><span>{{ s.completedOperations }}</span></div>
-        <div><span class="rc__muted">Awaiting approval</span><span>{{ s.awaitingApproval }}</span></div>
-        <div><span class="rc__muted">Docker</span><span>{{ s.docker.daemonRunning ? 'running' : 'not running (not required)' }}</span></div>
-      </div>
+      <p
+        id="runtime-state-conflict-explanation"
+        class="rc__permission-note"
+        *ngIf="emergencyStopStatusInconsistent"
+      >
+        Refresh the backend-confirmed state before attempting to clear the emergency stop.
+      </p>
     </nz-card>
-  </section>
+  </hai-progressive-section>
 
-  <nz-card nzTitle="Windows-runtime readiness checklist" nzSize="small" class="rc__readiness" *ngIf="readiness as r">
+  <nz-card nzTitle="Runtime readiness" nzSize="small" class="rc__readiness" *ngIf="readiness as r">
     <div class="rc__ready-head">
       <nz-tag [nzColor]="r.overallReady ? 'green' : 'red'">{{ r.overallReady ? 'control plane ready' : 'not ready' }}</nz-tag>
       <span class="rc__muted">OS: {{ r.operatingSystem }}</span>
       <nz-tag *ngIf="r.targetMachineVerificationPending" nzColor="blue">target-machine verification pending</nz-tag>
     </div>
-    <nz-table #gateTable [nzData]="r.gates" nzSize="small" [nzShowPagination]="false">
-      <thead>
-        <tr><th>Gate</th><th>Status</th><th>Evidence</th><th>Remediation</th></tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let g of gateTable.data">
-          <td><code>{{ g.name }}</code></td>
-          <td><nz-tag [nzColor]="gateColor(g.status)">{{ g.status }}</nz-tag></td>
-          <td>{{ g.evidence }}</td>
-          <td class="rc__muted">{{ g.remediation }}</td>
-        </tr>
-      </tbody>
-    </nz-table>
+    <div class="rc__gate-issues" *ngIf="readinessIssues.length; else runtimeReadyMessage" role="status" aria-live="polite">
+      <h3>Readiness items that need attention</h3>
+      <ul>
+        <li *ngFor="let gate of readinessIssues">
+          <nz-tag [nzColor]="gateColor(gate.status)">{{ gate.status }}</nz-tag>
+          <strong>{{ gate.name }}</strong>
+          <span>{{ gate.remediation || gate.evidence }}</span>
+        </li>
+      </ul>
+    </div>
+    <ng-template #runtimeReadyMessage>
+      <p class="rc__muted">No readiness failures or pending checks are reported.</p>
+    </ng-template>
+    <hai-progressive-section moduleId="runtime-control" sectionId="runtime-readiness-evidence"
+      title="Readiness gate evidence" summary="Full evidence and remediation returned by the readiness service.">
+      <nz-table #gateTable [nzData]="r.gates" nzSize="small" [nzShowPagination]="false">
+        <thead><tr><th>Gate</th><th>Status</th><th>Evidence</th><th>Remediation</th></tr></thead>
+        <tbody>
+          <tr *ngFor="let g of gateTable.data">
+            <td><code>{{ g.name }}</code></td>
+            <td><nz-tag [nzColor]="gateColor(g.status)">{{ g.status }}</nz-tag></td>
+            <td>{{ g.evidence }}</td>
+            <td class="rc__muted">{{ g.remediation }}</td>
+          </tr>
+        </tbody>
+      </nz-table>
+    </hai-progressive-section>
   </nz-card>
 
   <p id="runtime-authority-summary" class="rc__sr-only">

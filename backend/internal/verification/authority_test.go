@@ -2,6 +2,7 @@ package verification
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +95,88 @@ func TestTrustedInProcessResolverCanAuthenticateExternalEvidence(t *testing.T) {
 	}
 }
 
+func TestHighQualityUnrelatedEvidenceCannotSupportOrStoreClaim(t *testing.T) {
+	resolver := EvidenceAuthorityResolverFunc(func(_ AnswerRequest, _ EvidenceInput) EvidenceAuthorityResolution {
+		return EvidenceAuthorityResolution{
+			Trusted: true, Authority: "official_registry", Official: true, Primary: true,
+		}
+	})
+	verificationRepo := &fakeVerificationRepository{}
+	memoryRepo := &capturingMemoryRepository{}
+	service := NewServiceWithAuthorityResolver(
+		verificationRepo, nil, memory.NewService(memoryRepo), resolver,
+	)
+
+	result, err := service.Answer(AnswerRequest{
+		OwnerIdentity:     "alice",
+		Question:          "What is the hearing date?",
+		DraftAnswer:       "The hearing is on 9 September.",
+		Mode:              ModeGrounded,
+		AllowMemoryUpdate: true,
+		ExternalEvidence: []EvidenceInput{{
+			SourceType: "government_record", SourceID: "unrelated-record",
+			SourceURI: "https://registry.example/record/42",
+			Snippet:   "The riverside path reopened after repairs were completed.",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Answer returned error: %v", err)
+	}
+	if len(result.Claims) != 1 || result.Claims[0].Status != StatusUnsupported ||
+		result.Claims[0].SourceRefs != "" {
+		t.Fatalf("unrelated evidence supported the claim: %#v", result.Claims)
+	}
+	if result.Run.Status != StatusNeedsReview {
+		t.Fatalf("run status = %q, want %q for unsupported grounded claim", result.Run.Status, StatusNeedsReview)
+	}
+	if len(memoryRepo.created) != 0 {
+		t.Fatalf("unrelated source was written to verified memory: %#v", memoryRepo.created)
+	}
+}
+
+func TestMemoryWriteFailureIsVisibleAndSanitized(t *testing.T) {
+	const privateDatabaseDetail = "postgres://private-database-host"
+	resolver := EvidenceAuthorityResolverFunc(func(_ AnswerRequest, _ EvidenceInput) EvidenceAuthorityResolution {
+		return EvidenceAuthorityResolution{Trusted: true, Authority: "project_record", Primary: true}
+	})
+	memoryRepo := &capturingMemoryRepository{createErr: errors.New(privateDatabaseDetail)}
+	service := NewServiceWithAuthorityResolver(
+		&fakeVerificationRepository{}, nil, memory.NewService(memoryRepo), resolver,
+	)
+
+	result, err := service.Answer(AnswerRequest{
+		OwnerIdentity: "alice", Question: "What is the current integration result?",
+		DraftAnswer: "The integration result is stable.", Mode: ModeGrounded, AllowMemoryUpdate: true,
+		ExternalEvidence: []EvidenceInput{{
+			SourceType: "project_record", SourceID: "integration-result",
+			SourceURI: "local://project/integration-result", Snippet: "The integration result is stable.",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Answer returned error: %v", err)
+	}
+	if result.MemoryUpdateRequested != true || result.MemoryUpdatesStored != 0 || result.MemoryUpdateFailures != 1 {
+		t.Fatalf("memory write outcome was not reported: %#v", result)
+	}
+	if strings.Contains(strings.Join(result.Logs, "\n"), privateDatabaseDetail) {
+		t.Fatal("private database error details leaked into response logs")
+	}
+	if len(memoryRepo.created) != 0 {
+		t.Fatalf("failed memory write appears persisted: %#v", memoryRepo.created)
+	}
+}
+
+func TestGenericStopwordOverlapIsNotEvidenceRelevance(t *testing.T) {
+	claim := tokenSet("The hearing is on 9 September")
+	source := tokenSet("The riverside path reopened after repairs were completed")
+	if score := overlapScore(claim, source); score != 0 {
+		t.Fatalf("unrelated snippets share stopword-only relevance: %.2f", score)
+	}
+	if count := overlapCount(claim, source); count != 0 {
+		t.Fatalf("unrelated snippets have %d meaningful overlaps", count)
+	}
+}
+
 func TestConnectedSourceProvenanceSupportsButDoesNotVerifyTruth(t *testing.T) {
 	if isTrustedEvidence(authorityConnectedProvenance) {
 		t.Fatal("authenticated provenance must not be treated as semantic authority")
@@ -124,7 +207,7 @@ func TestConnectedSourceProvenanceSupportsButDoesNotVerifyTruth(t *testing.T) {
 }
 
 func TestConnectedSourceRequiresExactDurableProvenance(t *testing.T) {
-	now := time.Date(2026, time.August, 4, 8, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(time.Second)
 	extraction := models.SourceExtraction{
 		ID: uuid.New(), SourceID: uuid.New(), RawItemID: uuid.New(), ProjectKey: "vivare",
 		ContentType: "email", Text: "The hearing is on 9 September.",
@@ -226,15 +309,42 @@ func (r staticSourceEvidenceRepository) Resolve(context.Context, string, string)
 }
 
 type capturingMemoryRepository struct {
-	created []models.ContextMemory
+	created   []models.ContextMemory
+	createErr error
 }
 
 func (r *capturingMemoryRepository) Create(item *models.ContextMemory) (*models.ContextMemory, error) {
+	if r.createErr != nil {
+		return nil, r.createErr
+	}
 	if item.ID == uuid.Nil {
 		item.ID = uuid.New()
 	}
 	r.created = append(r.created, *item)
 	return item, nil
+}
+
+// WithVerifiedFactPromotion is a test adapter for the repository capability
+// required by production. PostgreSQL provenance checks are covered separately
+// by memory's integration tests; this fake only checks the immutable request
+// binding before allowing the normal repository callback to run.
+func (r *capturingMemoryRepository) WithVerifiedFactPromotion(
+	_ context.Context,
+	ownerIdentity string,
+	request memory.CreateRequest,
+	provenance memory.VerifiedFactProvenance,
+	promote func(memory.Repository) (*models.ContextMemory, error),
+) (*models.ContextMemory, error) {
+	if strings.TrimSpace(ownerIdentity) == "" || provenance.RunID == uuid.Nil || provenance.ClaimID == uuid.Nil || provenance.EvidenceID == uuid.Nil || promote == nil {
+		return nil, errors.New("test verified-fact provenance is incomplete")
+	}
+	if request.Kind != "source_supported_fact" ||
+		request.SourceLabel != "verification-run:"+provenance.RunID.String() ||
+		strings.TrimSpace(request.SourceURI) == "" ||
+		strings.TrimSpace(request.SourceURI) != firstNonEmpty(strings.TrimSpace(provenance.SourceURI), strings.TrimSpace(provenance.SourceID)) {
+		return nil, errors.New("test verified-fact request does not match its provenance")
+	}
+	return promote(r)
 }
 
 func (r *capturingMemoryRepository) Update(item *models.ContextMemory) (*models.ContextMemory, error) {

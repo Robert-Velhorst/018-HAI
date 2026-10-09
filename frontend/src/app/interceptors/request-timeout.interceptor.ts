@@ -1,23 +1,21 @@
 import { Injectable } from '@angular/core';
 import { HttpEvent, HttpHandler, HttpInterceptor, HttpRequest } from '@angular/common/http';
 import { Observable, timeout } from 'rxjs';
+import { HttpTimeoutPolicy } from '../shared/http-timeout-policy';
 
 @Injectable()
 export class RequestTimeoutInterceptor implements HttpInterceptor {
-  static readonly readTimeoutMs = 8_000;
-  static readonly operationTimeoutMs = 30_000;
-  // This is the sole browser-upload path backed by the gateway's explicit
-  // 750 MiB limit and 15-minute proxy timeout. Keep other mutations short.
-  static readonly reviewedArchiveUploadTimeoutMs = 15 * 60_000;
-
+  static readonly readTimeoutMs = HttpTimeoutPolicy.readMs;
+  static readonly operationTimeoutMs = HttpTimeoutPolicy.operationMs;
+  static readonly reviewedArchiveUploadTimeoutMs = HttpTimeoutPolicy.reviewedArchiveUploadMs;
+  static readonly sourceTranscriptionTimeoutMs = HttpTimeoutPolicy.sourceTranscriptionMs;
+  static readonly sourceDocumentExtractionTimeoutMs = HttpTimeoutPolicy.sourceDocumentExtractionMs;
   private static readonly reviewedArchiveUploadPath = '/api/v1/agent-runtimes/openclaw/ecosystem/upload';
 
   intercept(request: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
-    const duration = request.method === 'GET'
-      ? RequestTimeoutInterceptor.readTimeoutMs
-      : this.isReviewedArchiveUpload(request)
-        ? RequestTimeoutInterceptor.reviewedArchiveUploadTimeoutMs
-        : RequestTimeoutInterceptor.operationTimeoutMs;
+    const duration = this.isReviewedArchiveUpload(request)
+      ? RequestTimeoutInterceptor.reviewedArchiveUploadTimeoutMs
+      : HttpTimeoutPolicy.forRequest(request.method, request.url);
     return next.handle(request).pipe(timeout(duration));
   }
 

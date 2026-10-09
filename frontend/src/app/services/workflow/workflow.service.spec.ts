@@ -91,12 +91,13 @@ describe('WorkflowService framework provenance', () => {
   });
 
   it('runs only the explicitly selected workflow', () => {
-    service.runOne('workflow-42').subscribe();
+    const id = '11111111-1111-4111-8111-111111111111';
+    service.runOne(id).subscribe();
 
-    const request = http.expectOne('/api/v1/workflow/workflow-42/run');
+    const request = http.expectOne(`/api/v1/workflow/${id}/run`);
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual({});
-    request.flush({ workflowId: 'workflow-42', status: 'completed', state: 'completed', attempts: 1 });
+    request.flush({ workflowId: id, status: 'completed', state: 'completed', attempts: 1 });
   });
 
   it('loads bounded read-only reminder proposals', () => {
@@ -130,9 +131,10 @@ describe('WorkflowService framework provenance', () => {
       activationKind: 'internal_notification' as const,
       confirmation: 'PREPARE INTERNAL REMINDER ONLY' as const,
     };
-    service.prepareReminderActivation('item-1', body).subscribe();
+    const id = '11111111-1111-4111-8111-111111111111';
+    service.prepareReminderActivation(id, body).subscribe();
 
-    const request = http.expectOne('/api/v1/workflow/reminder-proposals/item-1/activation-requests');
+    const request = http.expectOne(`/api/v1/workflow/reminder-proposals/${id}/activation-requests`);
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual(body);
     request.flush({ authority: 'reminder_activation_request_only', canExecute: false });
@@ -156,15 +158,16 @@ describe('WorkflowService framework provenance', () => {
       confirmation: 'APPROVE INTERNAL REMINDER PREPARATION' as const,
       expectedActivationRequestDigest: 'b'.repeat(64),
     };
-    service.decideReminderActivation('request-1', body).subscribe();
-    const decision = http.expectOne('/api/v1/workflow/reminder-activation-requests/request-1/decisions');
+    const id = '11111111-1111-4111-8111-111111111111';
+    service.decideReminderActivation(id, body).subscribe();
+    const decision = http.expectOne(`/api/v1/workflow/reminder-activation-requests/${id}/decisions`);
     expect(decision.request.method).toBe('POST');
     expect(decision.request.body).toEqual(body);
     decision.flush({ authority: 'reminder_activation_decision_only', canExecute: false });
 
-    service.reminderActivationDecisionHistory('request-1', 10).subscribe();
+    service.reminderActivationDecisionHistory(id, 10).subscribe();
     const history = http.expectOne((candidate) =>
-      candidate.url === '/api/v1/workflow/reminder-activation-requests/request-1/decisions' &&
+      candidate.url === `/api/v1/workflow/reminder-activation-requests/${id}/decisions` &&
       candidate.params.get('limit') === '10'
     );
     expect(history.request.method).toBe('GET');
@@ -180,8 +183,9 @@ describe('WorkflowService framework provenance', () => {
       channel: 'in_app' as const,
       confirmation: 'AUTHORIZE ONE INTERNAL HAI REMINDER' as const,
     };
-    service.authorizeReminderDelivery('request-1', body).subscribe();
-    const authorization = http.expectOne('/api/v1/workflow/reminder-activation-requests/request-1/delivery-authorizations');
+    const id = '11111111-1111-4111-8111-111111111111';
+    service.authorizeReminderDelivery(id, body).subscribe();
+    const authorization = http.expectOne(`/api/v1/workflow/reminder-activation-requests/${id}/delivery-authorizations`);
     expect(authorization.request.method).toBe('POST');
     expect(authorization.request.body).toEqual(body);
     authorization.flush({ authority: 'internal_reminder_delivery_authorization', deliveryAuthorized: true, canExecute: false });

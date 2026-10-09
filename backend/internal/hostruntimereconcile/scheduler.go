@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/durablejob"
+	"automation-hub-backend/internal/lifecycle"
 )
 
 const (
@@ -44,7 +45,9 @@ func StartDurableScheduler(ctx context.Context, service *Service) error {
 	if err := RegisterDurableScheduling(runner, service, interval()); err != nil {
 		return err
 	}
-	go runner.Start(ctx, pollInterval())
+	if !lifecycle.Go(ctx, "host-runtime-reconciliation", func() { runner.Start(ctx, pollInterval()) }) {
+		return context.Canceled
+	}
 	return nil
 }
 

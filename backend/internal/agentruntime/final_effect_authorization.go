@@ -28,6 +28,7 @@ type FinalEffectAuthorizationRequest struct {
 	PromptDigest     string
 	ApprovalSourceID string
 	RequiresApproval bool
+	RuntimeModel     string `json:",omitempty"`
 }
 
 // FinalEffectAuthorizationProof carries references to authority already issued
@@ -66,6 +67,15 @@ func (f FinalEffectProofVerifierFunc) VerifyFinalEffectProof(
 	return f(ctx, request, proof)
 }
 
+// Keep adapter inputs identical to the scope values bound by the final-effect request.
+func canonicalizeRuntimeTaskScope(task Task) Task {
+	task.ID = strings.TrimSpace(task.ID)
+	task.OwnerIdentity = strings.TrimSpace(task.OwnerIdentity)
+	task.ProjectKey = strings.TrimSpace(task.ProjectKey)
+	task.ApprovalSourceID = strings.TrimSpace(task.ApprovalSourceID)
+	return task
+}
+
 func runtimeFinalEffectRequest(runtimeID string, task Task, info Info) FinalEffectAuthorizationRequest {
 	sum := sha256.Sum256([]byte(task.Prompt))
 	return FinalEffectAuthorizationRequest{
@@ -77,6 +87,7 @@ func runtimeFinalEffectRequest(runtimeID string, task Task, info Info) FinalEffe
 		PromptDigest:     hex.EncodeToString(sum[:]),
 		ApprovalSourceID: strings.TrimSpace(task.ApprovalSourceID),
 		RequiresApproval: info.RequiresApproval,
+		RuntimeModel:     task.RuntimeModel,
 	}
 }
 

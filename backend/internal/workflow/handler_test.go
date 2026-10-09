@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -531,6 +532,14 @@ func (s *failingWorkflowHandlerService) RunDueForOwner(string, RunDueRequest) (*
 	return nil, s.err
 }
 
+func (s *failingWorkflowHandlerService) RunDueForOwnerContext(context.Context, string, RunDueRequest) (*WorkflowRunSummary, error) {
+	return s.RunDueForOwner("", RunDueRequest{})
+}
+
+func (s *failingWorkflowHandlerService) RunOneForOwnerContext(context.Context, string, uuid.UUID) (*WorkflowRunResult, error) {
+	return s.RunOneForOwner("", uuid.Nil)
+}
+
 func (s *failingWorkflowHandlerService) RunOneForOwner(string, uuid.UUID) (*WorkflowRunResult, error) {
 	return nil, s.err
 }
@@ -539,6 +548,14 @@ func (s *failingWorkflowHandlerService) RecoverStaleClaimsForOwner(string, RunDu
 	return nil, s.err
 }
 
+func (s *failingWorkflowHandlerService) RecoverStaleClaimsForOwnerContext(context.Context, string, RunDueRequest) (*ClaimRecoverySummary, error) {
+	return nil, s.err
+}
+
 func (s *failingWorkflowHandlerService) RunDueOpenLoopsForOwner(string, RunDueRequest) (*OpenLoopRunSummary, error) {
+	return nil, s.err
+}
+
+func (s *failingWorkflowHandlerService) RunDueOpenLoopsForOwnerContext(context.Context, string, RunDueRequest) (*OpenLoopRunSummary, error) {
 	return nil, s.err
 }

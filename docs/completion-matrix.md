@@ -14,6 +14,15 @@ Honest status of the review items. Columns are deliberately separated so
 
 Legend: ✅ done · 🟡 partial · ⬜ not yet · — n/a
 
+**Freshness boundary:** the dated Trello and Gmail runs below are historical
+evidence reported for 2026-07-23. They do not establish acceptance for the
+current checkout, a newly connected account, or a release candidate. The
+2026-10-01 production integration ledger records no live Trello or Gmail
+acceptance in that phase; the current provider status is in
+[`external-provider-reality-review.md`](external-provider-reality-review.md).
+Treat the historical results as scenario evidence only, not as a closed
+current-release gate.
+
 ## 1. Live connectors
 
 | Item | Implemented | Unit-tested | Sandbox-tested | Live-tested | Notes / Deferred |
@@ -143,9 +152,9 @@ execution, or establish live external multi-agent delivery.
 
 ## Remaining external gates (need resources outside this environment)
 
-> ✅ **Trello live run closed 2026-07-23** — see §1.
+> ℹ️ **Historical Trello run reported 2026-07-23** — not current-revision or current-account acceptance; see the freshness boundary above.
 > ✅ **Two-account isolation closed 2026-07-23** — see §3.
-> ✅ **Gmail sandbox acceptance closed 2026-07-23** — see §1 (two defects found and fixed).
+> ℹ️ **Historical Gmail sandbox run reported 2026-07-23** — not current-revision or current-account acceptance; see the freshness boundary above.
 > ✅ **Owner-scoped outcome local-stack acceptance closed 2026-08-03** — see §2.
 > ✅ **Local browser operator chain closed 2026-08-04** — see §2.
 
@@ -163,23 +172,38 @@ execution, or establish live external multi-agent delivery.
 
 ## Reproduce the automated evidence
 
-If the matching local toolchain is unavailable, use the pinned backend
-container (Go 1.25.12):
+For current evidence and limitations, use the dated
+[production integration ledger](../output/production-integration-20261001.md).
+Local test results do not establish live Trello account acceptance.
+
+If the matching local toolchain is unavailable, use the cached backend
+container (Go 1.25.13):
 
 ```bash
 # Unit tests (no external services)
-docker run --rm -v "$PWD/backend":/app -w /app golang:1.25.12 go test ./...
+docker run --rm -v "$PWD/backend":/app -w /app golang:1.25.13 go test ./...
 
 # Trello connector tests
-docker run --rm -v "$PWD/backend":/app -w /app golang:1.25.12 \
+docker run --rm -v "$PWD/backend":/app -w /app golang:1.25.13 \
   go test ./internal/source/ -run Trello -v
-
-# Migration runner vs REAL Postgres 17 (data dir on tmpfs so it needs no disk)
-docker network create hai-net
-docker run -d --name hai-pg --network hai-net --tmpfs /var/lib/postgresql/data \
-  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=automation_hub postgres:17-alpine
-docker run --rm --network hai-net \
-  -e HAI_TEST_DATABASE_DSN="host=hai-pg user=postgres password=postgres dbname=automation_hub port=5432 sslmode=disable TimeZone=UTC" \
-  -v "$PWD/backend":/app -w /app golang:1.25.12 \
-  go test -tags integration -run 'Migrat|Rollback' ./internal/infra/ -v
 ```
+
+These unit commands skip optional database suites when no test configuration is
+provided. To exercise Trello persistence, first provision an owned disposable
+PostgreSQL instance and apply all backend migrations. Its database must be named
+exactly `hai_migration_runner_test`, accessible through a literal loopback IP
+(not a hostname or another `_test` database). Set `HAI_TEST_DATABASE_DSN` to that
+test connection and `HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS=true`, then run from
+`backend`:
+
+```bash
+go test -count=1 -race -run '^TestTrelloPostgres' ./internal/source/ -v
+```
+
+All four repository tests must report PASS; missing schema, unavailable opted-in
+connections or unsafe destinations are failures, not acceptance skips. The
+additional guard test performs no network access. The dated Windows parent
+runner `output/production-postgres-rehearsal-20261001.ps1 -IncludeTrello` creates
+its own no-host-port tmpfs fixture and performs verified owner-only cleanup.
+Neither method should target the personal HAI database. The previous hostname/
+`automation_hub` recipe does not satisfy the current destructive-test guard.

@@ -308,6 +308,65 @@ func TestOpenClawUploadRejectsOversizeRequestBeforeMultipartParsing(t *testing.T
 	}
 }
 
+func TestOpenClawUploadConcurrencyLimitRejectsBeforeReadingBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, endpoint := range []struct {
+		name    string
+		path    string
+		handler func(*Handler, *gin.Context)
+	}{
+		{name: "upload", path: "/agent-runtimes/openclaw/ecosystem/upload", handler: (*Handler).UploadOpenClawEcosystem},
+		{name: "approval preparation", path: "/agent-runtimes/openclaw/ecosystem/approval/upload", handler: (*Handler).PrepareUploadOpenClawEcosystem},
+	} {
+		t.Run(endpoint.name, func(t *testing.T) {
+			handler := NewHandler(NewRegistry(testOpenClawAdapter(t.TempDir(), "")))
+			router := gin.New()
+			router.Use(func(c *gin.Context) {
+				c.Set(identity.ContextSubjectKey, "alice")
+				c.Next()
+			})
+			router.POST(endpoint.path, func(c *gin.Context) {
+				endpoint.handler(handler, c)
+			})
+
+			for i := 0; i < cap(handler.uploadSlots); i++ {
+				handler.uploadSlots <- struct{}{}
+			}
+			defer func() {
+				for len(handler.uploadSlots) > 0 {
+					<-handler.uploadSlots
+				}
+			}()
+
+			body := &countingRequestBody{reader: strings.NewReader("not a multipart body")}
+			request := httptest.NewRequest(http.MethodPost, endpoint.path, body)
+			request.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+
+			if response.Code != http.StatusTooManyRequests {
+				t.Fatalf("over-capacity upload status=%d body=%s", response.Code, response.Body.String())
+			}
+			if got := body.reads.Load(); got != 0 {
+				t.Fatalf("over-capacity upload read request body %d times", got)
+			}
+			if got := response.Header().Get("Retry-After"); got != "1" {
+				t.Fatalf("Retry-After=%q, want 1", got)
+			}
+		})
+	}
+}
+
+type countingRequestBody struct {
+	reader *strings.Reader
+	reads  atomic.Int32
+}
+
+func (b *countingRequestBody) Read(p []byte) (int, error) {
+	b.reads.Add(1)
+	return b.reader.Read(p)
+}
+
 func TestAgentRuntimeSkillsAndStopHandlers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -701,7 +760,121 @@ func TestOpenClawEmergencyStopAfterConsumptionBlocksEffect(t *testing.T) {
 	}
 }
 
-func TestOpenClawAuthorizedUploadReplacesAndDeletesManagedArchive(t *testing.T) {
+func TestCommitEcosystemMutationSerializesEmergencyStopInterleavings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var stopActive atomic.Bool
+	restore := safety.SetEmergencyStopProvider(safety.EmergencyStopProviderFunc(
+		func() (bool, string, error) {
+			return stopActive.Load(), "operator stopped ecosystem mutation", nil
+		},
+	))
+	defer restore()
+	adapter := testOpenClawAdapter(t.TempDir(), "")
+
+	t.Run("mutation that owns the commit fence completes before stop", func(t *testing.T) {
+		stopActive.Store(false)
+		recorder := httptest.NewRecorder()
+		ginContext, _ := gin.CreateTestContext(recorder)
+		mutationEntered := make(chan struct{})
+		finishMutation := make(chan struct{})
+		mutationDone := make(chan struct{})
+		stopAttempting := make(chan struct{})
+		stopAcquired := make(chan struct{})
+		order := make(chan string, 2)
+
+		go func() {
+			proceed, err := commitEcosystemMutation(ginContext, adapter, func() error {
+				close(mutationEntered)
+				<-finishMutation
+				order <- "mutation"
+				return nil
+			})
+			if !proceed || err != nil {
+				order <- "unexpected commit result"
+			}
+			close(mutationDone)
+		}()
+		<-mutationEntered
+
+		go func() {
+			close(stopAttempting)
+			releaseFence := safety.AcquireEmergencyStopMutationFence()
+			stopActive.Store(true)
+			order <- "stop"
+			close(stopAcquired)
+			releaseFence()
+		}()
+		<-stopAttempting
+		select {
+		case <-stopAcquired:
+			close(finishMutation)
+			<-mutationDone
+			t.Fatal("emergency-stop writer entered while ecosystem mutation held the commit fence")
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		close(finishMutation)
+		<-mutationDone
+		<-stopAcquired
+		if got := <-order; got != "mutation" {
+			t.Fatalf("first commit-fence operation=%q, want mutation", got)
+		}
+		if got := <-order; got != "stop" {
+			t.Fatalf("second commit-fence operation=%q, want stop", got)
+		}
+	})
+
+	t.Run("stop that owns the fence rejects mutation after release", func(t *testing.T) {
+		stopActive.Store(false)
+		releaseStopFence := safety.AcquireEmergencyStopMutationFence()
+		stopActive.Store(true)
+		stopFenceHeld := true
+		defer func() {
+			if stopFenceHeld {
+				releaseStopFence()
+			}
+		}()
+
+		recorder := httptest.NewRecorder()
+		ginContext, _ := gin.CreateTestContext(recorder)
+		mutationCalled := atomic.Bool{}
+		type result struct {
+			proceed bool
+			err     error
+		}
+		resultCh := make(chan result, 1)
+		started := make(chan struct{})
+		go func() {
+			close(started)
+			proceed, err := commitEcosystemMutation(ginContext, adapter, func() error {
+				mutationCalled.Store(true)
+				return nil
+			})
+			resultCh <- result{proceed: proceed, err: err}
+		}()
+		<-started
+		select {
+		case got := <-resultCh:
+			t.Fatalf("mutation returned before stop writer released fence: proceed=%t err=%v", got.proceed, got.err)
+		case <-time.After(100 * time.Millisecond):
+		}
+
+		releaseStopFence()
+		stopFenceHeld = false
+		got := <-resultCh
+		if got.err != nil || got.proceed {
+			t.Fatalf("stopped mutation result: proceed=%t err=%v", got.proceed, got.err)
+		}
+		if mutationCalled.Load() {
+			t.Fatal("mutation callback ran after emergency stop won the fence")
+		}
+		if recorder.Code != http.StatusLocked {
+			t.Fatalf("blocked mutation status=%d body=%s", recorder.Code, recorder.Body.String())
+		}
+	})
+}
+
+func TestOpenClawAuthorizedUploadPersistsSelectionAndRetainsPreviousArchive(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	oldFile, err := os.CreateTemp("", "openclaw-ecosystem-old-*.zip")
 	if err != nil {
@@ -764,8 +937,8 @@ func TestOpenClawAuthorizedUploadReplacesAndDeletesManagedArchive(t *testing.T) 
 		captured.OwnerIdentity != "alice" {
 		t.Fatalf("upload authorization request=%#v", captured)
 	}
-	if _, err := os.Stat(oldPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("previous managed archive was not deleted: %v", err)
+	if _, err := os.Stat(oldPath); err != nil {
+		t.Fatalf("original archive should remain untouched: %v", err)
 	}
 	current, _ := adapter.ecosystemState()
 	if current == "" || sameFilePath(current, oldPath) {
@@ -773,6 +946,14 @@ func TestOpenClawAuthorizedUploadReplacesAndDeletesManagedArchive(t *testing.T) 
 	}
 	if _, err := os.Stat(current); err != nil {
 		t.Fatalf("selected managed archive does not exist: %v", err)
+	}
+	t.Setenv("AGENT_RUNTIME_WORKSPACE_ROOT", root)
+	t.Setenv("OPENCLAW_WORKSPACE", root)
+	t.Setenv("OPENCLAW_ECOSYSTEM_PATH", "")
+	restarted := newOpenClawAdapterFromEnv()
+	reloadedPath, _ := restarted.ecosystemState()
+	if !sameFilePath(reloadedPath, current) {
+		t.Fatalf("backend restart selected %q, want persisted archive %q", reloadedPath, current)
 	}
 	t.Cleanup(func() { _ = os.Remove(current) })
 }
@@ -815,6 +996,25 @@ func TestValidateOpenClawZipRejectsDuplicateEntries(t *testing.T) {
 	}
 	if err := validateOpenClawZip(zipPath); err == nil {
 		t.Fatalf("expected duplicate zip entries to be rejected")
+	}
+}
+
+func TestOpenClawZipCompressionRatioComparisonHandlesUint64Wraparound(t *testing.T) {
+	maxUint64 := ^uint64(0)
+	compressedWithinRatio := maxUint64 / 100
+	if wrappedProduct := compressedWithinRatio * maxOpenClawZipCompressionRatio; wrappedProduct >= maxUint64 {
+		t.Fatalf("test fixture does not wrap below the uncompressed size: %d", wrappedProduct)
+	}
+	if openClawZipCompressionRatioExceeded(maxUint64, compressedWithinRatio) {
+		t.Fatal("synthetic wraparound metadata within the ratio limit was rejected")
+	}
+
+	compressedBeyondRatio := maxUint64 / (maxOpenClawZipCompressionRatio + 1)
+	if !openClawZipCompressionRatioExceeded(maxUint64, compressedBeyondRatio) {
+		t.Fatal("synthetic metadata exceeding the ratio limit was accepted")
+	}
+	if openClawZipCompressionRatioExceeded(0, 1) || openClawZipCompressionRatioExceeded(1, 0) {
+		t.Fatal("zero-size metadata changed the existing ratio-check behavior")
 	}
 }
 
@@ -924,9 +1124,11 @@ func mutationTestRouter(handler *Handler) *gin.Engine {
 	router.POST("/agent-runtimes/openclaw/ecosystem/approval/set-path", handler.PrepareSetOpenClawEcosystem)
 	router.POST("/agent-runtimes/openclaw/ecosystem/approval/refresh", handler.PrepareRefreshOpenClawEcosystem)
 	router.POST("/agent-runtimes/openclaw/ecosystem/approval/upload", handler.PrepareUploadOpenClawEcosystem)
+	router.POST("/agent-runtimes/openclaw/ecosystem/approval/rollback", handler.PrepareRollbackOpenClawArchive)
 	router.PATCH("/agent-runtimes/openclaw/ecosystem", handler.SetOpenClawEcosystem)
 	router.POST("/agent-runtimes/openclaw/ecosystem/refresh", handler.RefreshOpenClawEcosystem)
 	router.POST("/agent-runtimes/openclaw/ecosystem/upload", handler.UploadOpenClawEcosystem)
+	router.POST("/agent-runtimes/openclaw/ecosystem/rollback", handler.RollbackOpenClawArchive)
 	return router
 }
 
@@ -1025,10 +1227,6 @@ func exactUploadEffect(t *testing.T, handler *Handler, payload []byte) openClawE
 	t.Helper()
 	currentPath, currentSignature := testOpenClawAdapterState(handler)
 	contentHash := sha256.Sum256(payload)
-	deleteManagedPath := ""
-	if isOpenClawUploadArtifactPath(currentPath) {
-		deleteManagedPath = currentPath
-	}
 	return openClawEcosystemEffect{
 		Action:                openClawUploadAction,
 		CurrentPath:           currentPath,
@@ -1036,7 +1234,6 @@ func exactUploadEffect(t *testing.T, handler *Handler, payload []byte) openClawE
 		TargetPath:            openClawManagedArchiveTarget,
 		UploadedContentDigest: hex.EncodeToString(contentHash[:]),
 		UploadedSize:          int64(len(payload)),
-		DeleteManagedPath:     deleteManagedPath,
 	}
 }
 

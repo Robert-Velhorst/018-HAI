@@ -1,8 +1,8 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { IConnectedSourceService } from '../connected-source.service.interface';
+import { IConnectedSourceService, ISourceDestructiveAuthorization } from '../connected-source.service.interface';
 import {
   IConnectedSource,
   ICreateSourceRequest,
@@ -15,6 +15,9 @@ import {
   ISourceSearchRequest,
   ISourceSearchResult,
   ISourceSyncJob,
+  ISourceManualSyncJob,
+  ISourceExtractionCorrectionPatch,
+  ISourceExtractionCorrectionView,
   ISourceSyncResult,
   IKnowledgeGraphResult,
   IScheduledSyncRun,
@@ -95,8 +98,10 @@ export class ConnectedSourceService implements IConnectedSourceService {
     return this.http.post<IConnectedSource>(`${this.apiUrl}/${sourceId}/resume`, {});
   }
 
-  revoke(sourceId: string): Observable<IConnectedSource> {
-    return this.http.post<IConnectedSource>(`${this.apiUrl}/${sourceId}/revoke`, {});
+  revoke(sourceId: string, authorization: ISourceDestructiveAuthorization): Observable<IConnectedSource> {
+    return this.http.post<IConnectedSource>(`${this.apiUrl}/${encodeURIComponent(sourceId)}/revoke`, {}, {
+      headers: this.destructiveHeaders(authorization),
+    });
   }
 
   search(request: ISourceSearchRequest): Observable<ISourceSearchResult> {
@@ -125,7 +130,8 @@ export class ConnectedSourceService implements IConnectedSourceService {
       observe: 'response',
     }).pipe(map((response) => {
       const items = response.body || [];
-      const total = Number(response.headers.get('X-Total-Count'));
+      const totalHeader = response.headers.get('X-Total-Count');
+      const total = totalHeader?.trim() ? Number(totalHeader) : NaN;
       const responseLimit = Number(response.headers.get('X-Result-Limit'));
       return {
         items,
@@ -135,16 +141,57 @@ export class ConnectedSourceService implements IConnectedSourceService {
     }));
   }
 
-  updateExtraction(id: string, extraction: Partial<ISourceExtraction>): Observable<ISourceExtraction> {
-    return this.http.patch<ISourceExtraction>(`${this.apiUrl}/extractions/${id}`, extraction);
+  submitManualSync(sourceId: string, request: { projectKey?: string }, idempotencyKey: string): Observable<ISourceManualSyncJob> {
+    return this.http.post<ISourceManualSyncJob>(
+      `${this.apiUrl}/${sourceId}/sync-jobs`,
+      request,
+      { headers: new HttpHeaders({ 'Idempotency-Key': idempotencyKey }) }
+    );
+  }
+
+  manualSyncJob(id: string): Observable<ISourceManualSyncJob> {
+    return this.http.get<ISourceManualSyncJob>(`${this.apiUrl}/sync-jobs/${id}`, {
+      headers: new HttpHeaders({ 'Cache-Control': 'no-cache' }),
+    });
+  }
+
+  submitExtractionCorrection(
+    extractionId: string,
+    patch: ISourceExtractionCorrectionPatch,
+    ifMatchRevision: string,
+    idempotencyKey: string,
+  ): Observable<ISourceExtractionCorrectionView> {
+    return this.http.patch<ISourceExtractionCorrectionView>(
+      `${this.apiUrl}/extractions/${encodeURIComponent(extractionId)}`,
+      patch,
+      { headers: new HttpHeaders({ 'If-Match': ifMatchRevision, 'Idempotency-Key': idempotencyKey }) },
+    );
+  }
+
+  extractionCorrection(correctionId: string): Observable<ISourceExtractionCorrectionView> {
+    return this.http.get<ISourceExtractionCorrectionView>(
+      `${this.apiUrl}/extraction-corrections/${encodeURIComponent(correctionId)}`,
+      { headers: new HttpHeaders({ 'Cache-Control': 'no-cache' }) },
+    );
   }
 
   archiveExtraction(id: string): Observable<ISourceExtraction> {
     return this.http.post<ISourceExtraction>(`${this.apiUrl}/extractions/${id}/archive`, {});
   }
 
-  deleteExtraction(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/extractions/${id}`);
+  deleteExtraction(id: string, authorization: ISourceDestructiveAuthorization): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/extractions/${encodeURIComponent(id)}`, {
+      headers: this.destructiveHeaders(authorization),
+    });
+  }
+
+  private destructiveHeaders(authorization: ISourceDestructiveAuthorization): HttpHeaders {
+    return new HttpHeaders({
+      'X-HAI-Task-ID': authorization.taskId,
+      'X-HAI-Approval-Source-ID': authorization.approvalSourceId,
+      'X-HAI-Approval-Binding-Digest': authorization.approvalBindingDigest,
+      'X-HAI-Idempotency-Key': authorization.idempotencyKey,
+    });
   }
 
   auditLogs(sourceId?: string): Observable<ISourceAuditLog[]> {

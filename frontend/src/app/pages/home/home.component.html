@@ -3,99 +3,40 @@
     <nz-header class="header-container">
       <div class="header-content">
         <h1 class="header-content__title">HAI Automation Hub</h1>
-        <button
-          type="button"
-          class="header-content__menu"
-          aria-label="Open navigation"
-          title="Open navigation"
-          nz-button
-          nzType="text"
-          (click)="openNavigation()"
-        >
-          <i nz-icon nzType="menu" nzTheme="outline"></i>
-        </button>
+        <div class="header-content__actions">
+          <button type="button" nz-button nzType="primary" data-testid="home-add-automation" (click)="openAutomationModal()">
+            <i nz-icon nzType="plus" nzTheme="outline"></i>
+            Add automation
+          </button>
+          <button
+            type="button"
+            class="header-content__account"
+            aria-label="Profile"
+            title="Profile"
+            nz-button
+            nzType="text"
+            (click)="showProfileModal()"
+          >
+            <i nz-icon nzType="user" nzTheme="outline" aria-hidden="true"></i>
+          </button>
+          <button type="button" class="header-content__account" aria-label="Logout" title="Logout" nz-button nzType="text" (click)="logout()">
+            <i nz-icon nzType="logout" nzTheme="outline" aria-hidden="true"></i>
+          </button>
+        </div>
       </div>
     </nz-header>
-    <nz-drawer
-      [nzVisible]="isNavigationVisible"
-      nzPlacement="right"
-      [nzWidth]="420"
-      [nzClosable]="false"
-      [nzBodyStyle]="{ padding: '0' }"
-      (nzOnClose)="closeNavigation()"
-    >
-      <ng-container *nzDrawerContent>
-        <nav class="navigation-drawer" aria-label="Main navigation">
-          <header class="navigation-drawer__header">
-            <div>
-              <strong>HAI Navigation</strong>
-              <span>Choose the command surface you need.</span>
-            </div>
-            <button
-              type="button"
-              class="navigation-drawer__close"
-              aria-label="Close navigation"
-              (click)="closeNavigation()"
-            >
-              <i nz-icon nzType="close" nzTheme="outline"></i>
-            </button>
-          </header>
-
-          <section class="navigation-drawer__account">
-            <button type="button" (click)="showProfileFromMenu()">
-              <i nz-icon nzType="user" nzTheme="outline"></i>
-              <span>
-                <strong>Profile</strong>
-                <small>Account and password</small>
-              </span>
-            </button>
-            <button type="button" (click)="logout()">
-              <i nz-icon nzType="logout" nzTheme="outline"></i>
-              <span>
-                <strong>Logout</strong>
-                <small>End this local session</small>
-              </span>
-            </button>
-          </section>
-
-          <section class="navigation-group" *ngFor="let group of navigationGroups">
-            <span class="navigation-group__label">{{ group.label }}</span>
-            <button
-              type="button"
-              class="navigation-link"
-              *ngFor="let item of group.items"
-              (click)="activateNavigationItem(item)"
-            >
-              <span class="navigation-link__icon">
-                <i nz-icon [nzType]="item.icon" nzTheme="outline"></i>
-              </span>
-              <span class="navigation-link__copy">
-                <strong>{{ item.label }}</strong>
-                <small>{{ item.detail }}</small>
-              </span>
-              <i nz-icon nzType="right" nzTheme="outline"></i>
-            </button>
-          </section>
-        </nav>
-      </ng-container>
-    </nz-drawer>
     <nz-content class="content-container">
-      <div
-        *ngIf="automations.length; else emptyAutomationState"
-        cdkDropList
-        cdkDropListOrientation="horizontal"
-        class="card-container"
-        (cdkDropListDropped)="drop($event)"
-      >
+      <div *ngIf="automationLoadState === 'loaded' && automations.length; else emptyAutomationState" class="card-container">
         <nz-card
           class="card-container__card"
           *ngFor="let automation of automations"
-          cdkDrag
-          nzTitle="{{ automation.name }}"
-          [nzExtra]="extraTemplate"
+          [nzTitle]="automationTitle"
         >
+          <ng-template #automationTitle>
+            <span class="card-container__card__title">{{ automation.name }}</span>
+          </ng-template>
           <div class="card-container__card__image-wrapper">
-            <a [href]="'/' + automation.host">
+            <a [href]="'/' + automation.host" [attr.aria-label]="automation.name">
               <img
                 *ngIf="automation.image; else noImage"
                 class="card-container__card__image"
@@ -114,51 +55,22 @@
               </ng-template>
             </a>
           </div>
-          <ng-template #extraTemplate>
-            <i
-              nz-dropdown
-              nz-icon
-              nzType="more"
-              nzTheme="outline"
-              [nzDropdownMenu]="cardMenu"
-              nzPlacement="bottomRight"
-            ></i>
-            <nz-dropdown-menu #cardMenu="nzDropdownMenu" class="dropdown-menu">
-              <ul nz-menu>
-                <li
-                  nz-menu-item
-                  class="dropdown-menu__item"
-                  (click)="openAutomationModal(automation, true)"
-                >
-                  <i
-                    nz-icon
-                    nzType="edit"
-                    nzTheme="outline"
-                    class="dropdown-menu__item__icon"
-                  ></i>
-                  Edit
-                </li>
-                <li
-                  nz-menu-item
-                  class="dropdown-menu__item"
-                  (click)="deleteAutomation(automation.id!)"
-                >
-                  <i
-                    nz-icon
-                    nzType="delete"
-                    nzTheme="outline"
-                    class="dropdown-menu__item__icon"
-                  ></i>
-                  Delete
-                </li>
-              </ul>
-            </nz-dropdown-menu>
-          </ng-template>
         </nz-card>
       </div>
 
       <ng-template #emptyAutomationState>
-        <section class="automation-empty">
+        <section *ngIf="automationLoadState === 'loading'" class="automation-empty" role="status" aria-live="polite">
+          <span class="automation-empty__eyebrow">Automation registry</span>
+          <h2>Loading automations</h2>
+          <p>HAI is checking the saved local destinations.</p>
+        </section>
+        <section *ngIf="automationLoadState === 'error'" class="automation-empty" role="alert">
+          <span class="automation-empty__eyebrow">Automation registry</span>
+          <h2>Automations could not be loaded</h2>
+          <p>The registry is unavailable. HAI cannot confirm whether it is empty.</p>
+          <button type="button" nz-button nzType="primary" (click)="loadAutomations()">Retry</button>
+        </section>
+        <section *ngIf="automationLoadState === 'loaded' && !automations.length" class="automation-empty">
           <span class="automation-empty__eyebrow">Automation registry</span>
           <h2>No automations registered yet</h2>
           <p>
@@ -197,6 +109,61 @@
           </div>
         </section>
       </ng-template>
+
+      <hai-progressive-section
+        moduleId="automations"
+        sectionId="automation-management"
+        title="Manage automations"
+        summary="Reorder, edit, or remove registered destinations."
+      >
+        <div
+          *ngIf="automations.length; else noAutomationManagement"
+          class="automation-management-list"
+          cdkDropList
+          cdkDropListOrientation="vertical"
+          [cdkDropListDisabled]="automationReorderInFlight"
+          (cdkDropListDropped)="drop($event)"
+          aria-label="Automation management list"
+        >
+          <article class="automation-management-row" *ngFor="let automation of automations" cdkDrag>
+            <span class="automation-management-row__handle" cdkDragHandle aria-hidden="true">
+              <i nz-icon nzType="drag" nzTheme="outline"></i>
+            </span>
+            <span class="automation-management-row__copy">
+              <strong>{{ automation.name }}</strong>
+              <small>{{ automation.host }}</small>
+            </span>
+            <button
+              type="button"
+              nz-button
+              nzSize="small"
+              data-testid="automation-edit"
+              [attr.aria-label]="'Edit ' + automation.name"
+              (click)="openAutomationModal(automation, true)"
+            >
+              <i nz-icon nzType="edit" nzTheme="outline" aria-hidden="true"></i>
+              Edit
+            </button>
+            <button
+              type="button"
+              nz-button
+              nzSize="small"
+              nzDanger
+              data-testid="automation-delete"
+              [attr.aria-label]="'Delete ' + automation.name"
+              (click)="deleteAutomation(automation.id!)"
+            >
+              <i nz-icon nzType="delete" nzTheme="outline" aria-hidden="true"></i>
+              Delete
+            </button>
+          </article>
+        </div>
+        <ng-template #noAutomationManagement>
+          <p *ngIf="automationLoadState === 'loaded'" class="automation-management-empty">Add an automation before management controls are available.</p>
+          <p *ngIf="automationLoadState === 'loading'" class="automation-management-empty" role="status">Loading automation management records.</p>
+          <p *ngIf="automationLoadState === 'error'" class="automation-management-empty" role="status">Management controls are unavailable until the automation registry loads.</p>
+        </ng-template>
+      </hai-progressive-section>
     </nz-content>
 
     <app-automations-form-modal
@@ -245,11 +212,15 @@
                   [type]="hidePassword ? 'password' : 'text'"
                 />
                 <ng-template nzInputSuffix>
-                  <i
-                    nz-icon
-                    [nzType]="hidePassword ? 'eye-invisible' : 'eye'"
+                  <button
+                    type="button"
+                    class="password-visibility-toggle"
+                    [attr.aria-label]="hidePassword ? 'Show password' : 'Hide password'"
+                    [attr.title]="hidePassword ? 'Show password' : 'Hide password'"
                     (click)="hidePassword = !hidePassword"
-                  ></i>
+                  >
+                    <i nz-icon [nzType]="hidePassword ? 'eye-invisible' : 'eye'" aria-hidden="true"></i>
+                  </button>
                 </ng-template>
               </nz-input-wrapper>
             </nz-form-control>
@@ -272,11 +243,15 @@
                   [type]="hidePasswordConfirm ? 'password' : 'text'"
                 />
                 <ng-template nzInputSuffix>
-                  <i
-                    nz-icon
-                    [nzType]="hidePasswordConfirm ? 'eye-invisible' : 'eye'"
+                  <button
+                    type="button"
+                    class="password-visibility-toggle"
+                    [attr.aria-label]="hidePasswordConfirm ? 'Show confirmation password' : 'Hide confirmation password'"
+                    [attr.title]="hidePasswordConfirm ? 'Show confirmation password' : 'Hide confirmation password'"
                     (click)="hidePasswordConfirm = !hidePasswordConfirm"
-                  ></i>
+                  >
+                    <i nz-icon [nzType]="hidePasswordConfirm ? 'eye-invisible' : 'eye'" aria-hidden="true"></i>
+                  </button>
                 </ng-template>
               </nz-input-wrapper>
             </nz-form-control>

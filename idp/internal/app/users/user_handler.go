@@ -2,16 +2,45 @@ package users
 
 import (
 	"automation-hub-idp/internal/app/dto"
+	"automation-hub-idp/internal/app/utils"
+	"bytes"
+	"encoding/json"
+	"errors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"io"
 	"net/http"
 )
 
 type Handler struct {
-	userService UserService
+	userService AccountUpdateService
 }
 
-func NewHandler(userService UserService) *Handler {
+const maxUserJSONBodyBytes = 16 * 1024
+
+func bindUserJSON(c *gin.Context, destination any) error {
+	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxUserJSONBodyBytes))
+	if err != nil {
+		return err
+	}
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	if userJSONHasTrailingValue(body) {
+		return errors.New("request body must contain exactly one JSON value")
+	}
+	return c.ShouldBindJSON(destination)
+}
+
+func userJSONHasTrailingValue(body []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	var first json.RawMessage
+	if err := decoder.Decode(&first); err != nil {
+		return false
+	}
+	var trailing json.RawMessage
+	return decoder.Decode(&trailing) != io.EOF
+}
+
+func NewHandler(userService AccountUpdateService) *Handler {
 	return &Handler{
 		userService: userService,
 	}
@@ -28,14 +57,18 @@ func NewHandler(userService UserService) *Handler {
 // @Failure 400 {object} dto.ErrorResponse
 // @Failure 401 {object} dto.ErrorResponse
 // @Failure 500 {object} dto.ErrorResponse
-// @Router /users [patch]
+// @Router /user [patch]
 func (h *Handler) Update(c *gin.Context) {
 	var user dto.UserRequest
 	var errorResponse dto.ErrorResponse
-	if err := c.ShouldBindJSON(&user); err != nil {
+	if err := bindUserJSON(c, &user); err != nil {
 		errorResponse.Message = "Invalid request body"
 		errorResponse.ErrorCode = http.StatusBadRequest
-		c.JSON(http.StatusBadRequest, errorResponse)
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			errorResponse.ErrorCode = http.StatusRequestEntityTooLarge
+		}
+		c.JSON(errorResponse.ErrorCode, errorResponse)
 		return
 	}
 
@@ -47,31 +80,35 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	userID := temp.(uuid.UUID)
-
-	// check if userRequest.password is not empty
-	if user.Password != "" {
-		err := h.userService.UpdatePassword(userID, user.Password)
-		if err != nil {
-			errorResponse.Message = "Error updating user"
-			errorResponse.ErrorCode = http.StatusInternalServerError
-			c.JSON(http.StatusInternalServerError, errorResponse)
-			return
-		}
+	sessionValue, ok := c.Get("authSession")
+	if !ok {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Message: "Please log in again", ErrorCode: http.StatusUnauthorized})
+		return
 	}
-
-	userToUpdate, err := h.userService.GetUserByID(userID)
-	if err != nil {
-		errorResponse.Message = "Error updating user"
-		errorResponse.ErrorCode = http.StatusInternalServerError
-		c.JSON(http.StatusInternalServerError, errorResponse)
+	session, ok := sessionValue.(*dto.AuthSession)
+	if !ok || session == nil || session.Subject != userID.String() {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Message: "Please log in again", ErrorCode: http.StatusUnauthorized})
 		return
 	}
 
-	userToUpdate.Email = user.Email
-
-	updatedUser, err := h.userService.UpdateUser(*userToUpdate)
+	updatedUser, err := h.userService.UpdateAccount(userID, session.SessionVersion, user.CurrentPassword, user.Email, user.Password)
 	if err != nil {
-		c.Status(http.StatusInternalServerError)
+		if errors.Is(err, ErrInvalidEmail) || errors.Is(err, utils.ErrPasswordTooShort) || errors.Is(err, utils.ErrPasswordTooLong) ||
+			errors.Is(err, ErrCurrentPasswordRequired) || errors.Is(err, ErrInvalidCurrentPassword) {
+			c.JSON(http.StatusBadRequest, dto.ErrorResponse{Message: err.Error(), ErrorCode: http.StatusBadRequest})
+			return
+		}
+		if errors.Is(err, ErrConcurrentUserUpdate) {
+			c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Message: "Your session changed. Please log in again.", ErrorCode: http.StatusUnauthorized})
+			return
+		}
+		if errors.Is(err, ErrUserAlreadyExists) {
+			c.JSON(http.StatusConflict, dto.ErrorResponse{Message: "An account with this email already exists", ErrorCode: http.StatusConflict})
+			return
+		}
+		errorResponse.Message = "Error updating user"
+		errorResponse.ErrorCode = http.StatusInternalServerError
+		c.JSON(http.StatusInternalServerError, errorResponse)
 		return
 	}
 	userResponse := dto.UserResponse{

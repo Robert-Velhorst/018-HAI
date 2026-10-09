@@ -1,9 +1,9 @@
-import { Component, OnDestroy, OnInit, ViewEncapsulation } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, ViewEncapsulation } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { NzModalService } from 'ng-zorro-antd/modal';
-import { Subscription } from 'rxjs';
+import { finalize, Observable, Subscription, take } from 'rxjs';
 import {
   IAutomationLaunchEvent,
   IAutomationRuntimeRouteTrace,
@@ -19,6 +19,7 @@ import {
   IPursuitDecision,
   IPursuitDetail,
   IPursuitEvidenceResolution,
+  IProjectDossier,
   IPursuitLink,
 	IPursuitLifeDomainReconciliationResult,
   IPursuitListItem,
@@ -54,6 +55,7 @@ import { IWorkflowRecord } from '../../models/workflow.model.interface';
 import { AutomationsService } from '../../services/automations/automations.service';
 import { PursuitService } from '../../services/pursuit.service';
 import { WorkflowService } from '../../services/workflow/workflow.service';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 
 type PortfolioFactorKey = keyof IPursuitPortfolioPriorityFactors;
 
@@ -81,6 +83,7 @@ interface PortfolioPursuitDraft {
 }
 
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-pursuits',
     templateUrl: './pursuits.component.html',
     styleUrls: ['./pursuits.component.scss'],
@@ -90,21 +93,38 @@ interface PortfolioPursuitDraft {
     standalone: false
 })
 export class PursuitsComponent implements OnInit, OnDestroy {
+  readonly moduleId = 'pursuits';
   dashboard?: IPursuitDashboard;
   pursuits: IPursuit[] = [];
   selected?: IPursuitDetail;
+  projectDossier?: IProjectDossier;
+  projectDossierProjectKey = '';
+  projectDossierLoading = false;
+  projectDossierError = '';
   loading = false;
+  dashboardError = '';
+  pursuitsError = '';
   detailLoading = false;
+  detailError = '';
   creating = false;
 	lifeDomainReconciliationRunning = false;
 	lifeDomainReconciliation?: IPursuitLifeDomainReconciliationResult;
   intakeRunning = false;
   routedIntakeRunning = false;
   reviewing = false;
+  summaryLoading = false;
+  contextSaving = false;
+  linkSaving = false;
+  detachingLinkId = '';
+  linkConfirmationId = '';
+  private linkConfirmationRevision = 0;
+  private contextEditorRevision = 0;
   planning = false;
   delegationLoading = false;
   resolvingDecisionId = '';
   stoppingAutomationId = '';
+  lifecycleRunningId = '';
+  private runtimeStopRecovery?: { pursuitId: string; automationId: string; runtimeId: string; evidenceUri: string };
   resolvingEvidenceUri = '';
   inspectedEvidence?: IPursuitEvidenceResolution;
   inspectedRuntimeEvidence?: IAutomationLaunchEvent;
@@ -118,13 +138,33 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   includeArchived = false;
   private requestedPursuitId = '';
   private requestedEvidenceUri = '';
+  private createIntentApplied = false;
   highlightedDecisionId = '';
   private routeSub?: Subscription;
+  private runtimeStopSub?: Subscription;
+  private evidenceResolutionSub?: Subscription;
   private dashboardSub?: Subscription;
   private pursuitsSub?: Subscription;
   private pursuitDetailSub?: Subscription;
   private decisionDetailSub?: Subscription;
+  private decisionMutationSub?: Subscription;
+  private lifecycleSub?: Subscription;
+  private delegationSub?: Subscription;
+  private summarySub?: Subscription;
+  private reviewSub?: Subscription;
+  private planningSub?: Subscription;
+  private contextSaveSub?: Subscription;
+  private linkSaveSub?: Subscription;
+  private linkDetachSub?: Subscription;
+  private intakeSub?: Subscription;
+  private routedIntakeSub?: Subscription;
+  private resourceAppendSub?: Subscription;
+  private reservationReleaseSub?: Subscription;
+  private reservationConfirmationId = '';
+  private reservationConfirmationRevision = 0;
   private resourceEventsSub?: Subscription;
+  private projectDossierSub?: Subscription;
+  private projectDossierRequestGeneration = 0;
   private portfolioAllocationHistorySub?: Subscription;
   private portfolioExecutionProposalHistoryReadSub?: Subscription;
   private portfolioExecutionProposalSub?: Subscription;
@@ -295,7 +335,7 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   });
 
   intakeForm: FormGroup = this.fb.group({
-    input: ['New signal: describe the email, message, document, or account event here.', [Validators.required]],
+    input: ['', [Validators.required]],
     sourceType: ['manual'],
     sourceId: [''],
     sourceUri: [''],
@@ -338,14 +378,41 @@ export class PursuitsComponent implements OnInit, OnDestroy {
     private notification: NzNotificationService,
     private modal: NzModalService,
     private router: Router,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private viewPreferences: ModuleViewPreferencesService,
   ) {}
+
+  get isAdvancedView(): boolean {
+    return this.viewPreferences.get(this.moduleId).mode === 'advanced';
+  }
+
+  get loadError(): string {
+    return this.dashboardError || this.pursuitsError;
+  }
+
+  get hasLastKnownData(): boolean {
+    return !!this.dashboard || this.pursuits.length > 0;
+  }
+
+  get showEmptyState(): boolean {
+    return this.pursuits.length === 0 && !this.loading && !this.loadError;
+  }
 
   ngOnInit(): void {
     this.routeSub = this.route.queryParamMap.subscribe((params) => {
       const selectedId = params.get('selected') || '';
       const evidenceUri = params.get('evidence') || '';
       const decisionId = params.get('decision') || '';
+      if (params.get('create') === 'true' && !this.createIntentApplied) {
+        this.createIntentApplied = true;
+        this.showCreate = true;
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { create: null },
+          queryParamsHandling: 'merge',
+          replaceUrl: true,
+        });
+      }
       if (selectedId === this.requestedPursuitId && evidenceUri === this.requestedEvidenceUri && decisionId === this.highlightedDecisionId) {
         return;
       }
@@ -364,12 +431,32 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.reservationConfirmationRevision++;
+    this.reservationConfirmationId = '';
+    this.reservationReleaseSub?.unsubscribe();
+    this.resourceAppendSub?.unsubscribe();
+    this.routedIntakeSub?.unsubscribe();
+    this.intakeSub?.unsubscribe();
+    this.contextSaveSub?.unsubscribe();
+    this.linkSaveSub?.unsubscribe();
+    this.linkConfirmationRevision++;
+    this.linkConfirmationId = '';
+    this.linkDetachSub?.unsubscribe();
+    this.planningSub?.unsubscribe();
+    this.reviewSub?.unsubscribe();
+    this.summarySub?.unsubscribe();
+    this.delegationSub?.unsubscribe();
+    this.lifecycleSub?.unsubscribe();
+    this.decisionMutationSub?.unsubscribe();
+    this.evidenceResolutionSub?.unsubscribe();
+    this.runtimeStopSub?.unsubscribe();
     this.routeSub?.unsubscribe();
     this.dashboardSub?.unsubscribe();
     this.pursuitsSub?.unsubscribe();
     this.pursuitDetailSub?.unsubscribe();
     this.decisionDetailSub?.unsubscribe();
     this.resourceEventsSub?.unsubscribe();
+    this.projectDossierSub?.unsubscribe();
     this.portfolioAllocationHistorySub?.unsubscribe();
     this.portfolioExecutionProposalHistoryReadSub?.unsubscribe();
     this.portfolioExecutionProposalSub?.unsubscribe();
@@ -387,6 +474,8 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   load(): void {
     this.dashboardSub?.unsubscribe();
     this.loading = true;
+    this.dashboardError = '';
+    this.pursuitsError = '';
     this.dashboardSub = this.pursuitsService.dashboard(!this.includeArchived).subscribe({
       next: (dashboard) => {
         this.dashboard = dashboard;
@@ -398,20 +487,24 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       },
       error: (error) => {
         this.loading = false;
-        this.notification.error('Pursuits unavailable', error?.error?.error || 'Failed to load pursuit dashboard.');
+        this.dashboardError = error?.error?.error || 'Failed to load pursuit dashboard.';
+        this.notification.error('Pursuits unavailable', this.dashboardError);
       },
     });
   }
 
   loadPursuits(): void {
     this.pursuitsSub?.unsubscribe();
+    this.loading = true;
+    this.pursuitsError = '';
     this.pursuitsSub = this.pursuitsService.list(this.includeArchived).subscribe({
       next: (pursuits) => {
         this.applyPursuits(pursuits || []);
       },
       error: (error) => {
         this.loading = false;
-        this.notification.error('Pursuits unavailable', error?.error?.error || 'Failed to load pursuits.');
+        this.pursuitsError = error?.error?.error || 'Failed to load pursuits.';
+        this.notification.error('Pursuits unavailable', this.pursuitsError);
       },
     });
   }
@@ -443,6 +536,7 @@ export class PursuitsComponent implements OnInit, OnDestroy {
 
   private applyPursuits(pursuits: IPursuit[]): void {
     this.pursuits = pursuits;
+    this.pursuitsError = '';
     this.loading = false;
     if (this.requestedPursuitId) {
       this.selectPursuitById(this.requestedPursuitId, false);
@@ -2526,6 +2620,7 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       return;
     }
     this.requestedPursuitId = pursuit.id;
+    this.loadProjectDossier(pursuit.projectKey);
     this.loadPursuitDetail(pursuit.id, updateRoute);
   }
 
@@ -2548,22 +2643,52 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   }
 
   resolveDashboardDecision(card: IPursuitDashboardDecision, approved: boolean): void {
-    if (this.resolvingDecisionId || !this.canResolveDecision(card.decision)) {
+    if (this.lifecycleRunningId || this.resolvingDecisionId || !this.canResolveDecision(card.decision)) {
       return;
     }
+    this.pursuitDetailSub?.unsubscribe();
+    if (this.selected?.pursuit.id !== card.pursuit.id) {
+      this.delegationSub?.unsubscribe();
+      this.delegationPackage = undefined;
+      this.evidenceResolutionSub?.unsubscribe();
+      this.selected = undefined;
+      this.inspectedRuntimeEvidence = undefined;
+      this.inspectedEvidence = undefined;
+      this.inspectedAction = undefined;
+    }
+    this.requestedPursuitId = card.pursuit.id;
     this.detailLoading = true;
+    this.loadProjectDossier(card.pursuit.projectKey);
     this.decisionDetailSub?.unsubscribe();
-    this.decisionDetailSub = this.pursuitsService.get(card.pursuit.id).subscribe({
+    let received = false;
+    this.decisionDetailSub = this.pursuitsService.get(card.pursuit.id).pipe(take(1)).subscribe({
       next: (detail) => {
+        received = true;
+        this.detailLoading = false;
+        if (detail?.pursuit?.id !== card.pursuit.id || !Array.isArray(detail.decisionQueue)) {
+          this.notification.warning('Decision unavailable', 'The response does not match this pursuit. Refresh before reviewing the decision.');
+          return;
+        }
         this.selected = detail;
+        this.loadProjectDossier(detail.pursuit.projectKey);
         this.detailLoading = false;
         this.setSelectedQuery(detail.pursuit.id);
-        const freshDecision = detail.decisionQueue.find((item) => item.id === card.decision.id) || card.decision;
+        const freshDecision = detail.decisionQueue.find((item) => item.id === card.decision.id);
+        if (!freshDecision) {
+          this.notification.warning('Decision no longer available', 'This decision is not in the current queue. Review the refreshed pursuit before taking action.');
+          return;
+        }
         this.resolveDecision(freshDecision, approved);
       },
-      error: (error) => {
+      error: () => {
         this.detailLoading = false;
-        this.notification.error('Decision unavailable', error?.error?.error || 'HAI could not load the pursuit behind this decision.');
+        this.notification.error('Decision unavailable', 'HAI could not load the current decision. Refresh the pursuit before retrying.');
+      },
+      complete: () => {
+        if (!received) {
+          this.detailLoading = false;
+          this.notification.warning('Decision unavailable', 'No current decision was received. Refresh the pursuit before retrying.');
+        }
       },
     });
   }
@@ -2581,27 +2706,112 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       this.selectPursuit(listed, updateRoute);
       return;
     }
+    this.loadProjectDossier(undefined);
     this.loadPursuitDetail(id, updateRoute);
   }
 
   private loadPursuitDetail(id: string, updateRoute: boolean): void {
+    this.delegationSub?.unsubscribe();
+    this.decisionDetailSub?.unsubscribe();
     this.pursuitDetailSub?.unsubscribe();
+    if (this.selected?.pursuit.id !== id) {
+      this.evidenceResolutionSub?.unsubscribe();
+      this.selected = undefined;
+      this.inspectedRuntimeEvidence = undefined;
+      this.inspectedEvidence = undefined;
+      this.inspectedAction = undefined;
+    }
+    this.requestedPursuitId = id;
     this.detailLoading = true;
+    this.detailError = '';
     this.delegationPackage = undefined;
     this.showContextEditor = false;
     this.resetResourceLedger(id);
-    this.pursuitDetailSub = this.pursuitsService.get(id).subscribe({
+    let received = false;
+    this.pursuitDetailSub = this.pursuitsService.get(id).pipe(take(1)).subscribe({
       next: (detail) => {
-        this.selected = detail;
+        received = true;
         this.detailLoading = false;
+        if (detail?.pursuit?.id !== id) {
+          this.detailError = 'The response does not match the requested pursuit. Retry loading its details.';
+          this.notification.error('Pursuit unavailable', this.detailError);
+          return;
+        }
+        this.selected = detail;
+        this.loadProjectDossier(detail.pursuit.projectKey);
+        this.detailLoading = false;
+        this.detailError = '';
         if (updateRoute) {
           this.setSelectedQuery(detail.pursuit.id);
         }
         this.openRequestedEvidence();
       },
-      error: (error) => {
+      error: () => {
         this.detailLoading = false;
-        this.notification.error('Pursuit unavailable', error?.error?.error || 'Failed to load pursuit detail.');
+        this.detailError = 'HAI could not load the pursuit details. Retry loading this pursuit.';
+        this.notification.error('Pursuit unavailable', this.detailError);
+      },
+      complete: () => {
+        if (!received) {
+          this.detailLoading = false;
+          this.detailError = 'No pursuit details were received. Retry loading this pursuit.';
+          this.notification.warning('Pursuit unavailable', this.detailError);
+        }
+      },
+    });
+  }
+
+  retrySelectedPursuit(): void {
+    if (!this.requestedPursuitId || this.detailLoading) {
+      return;
+    }
+    this.loadPursuitDetail(this.requestedPursuitId, false);
+  }
+
+  retryProjectDossier(): void {
+    if (!this.projectDossierProjectKey || this.projectDossierLoading) {
+      return;
+    }
+    this.loadProjectDossier(this.projectDossierProjectKey, true);
+  }
+
+  private loadProjectDossier(projectKey?: string, force = false): void {
+    const key = typeof projectKey === 'string' ? projectKey : '';
+    if (!force && key === this.projectDossierProjectKey && (
+      this.projectDossierLoading || this.projectDossier || this.projectDossierError
+    )) {
+      return;
+    }
+
+    this.projectDossierSub?.unsubscribe();
+    const generation = ++this.projectDossierRequestGeneration;
+    this.projectDossierProjectKey = key;
+    this.projectDossier = undefined;
+    this.projectDossierLoading = false;
+    this.projectDossierError = '';
+    if (!key.trim()) {
+      return;
+    }
+
+    this.projectDossierLoading = true;
+    this.projectDossierSub = this.pursuitsService.projectDossier(key).subscribe({
+      next: (dossier) => {
+        if (generation !== this.projectDossierRequestGeneration || key !== this.projectDossierProjectKey) {
+          return;
+        }
+        this.projectDossierLoading = false;
+        if (!dossier || dossier.projectKey !== key) {
+          this.projectDossierError = 'The returned project dossier did not match the selected project.';
+          return;
+        }
+        this.projectDossier = dossier;
+      },
+      error: (error) => {
+        if (generation !== this.projectDossierRequestGeneration || key !== this.projectDossierProjectKey) {
+          return;
+        }
+        this.projectDossierLoading = false;
+        this.projectDossierError = error?.error?.error || 'Project context could not be loaded.';
       },
     });
   }
@@ -2614,38 +2824,73 @@ export class PursuitsComponent implements OnInit, OnDestroy {
     this.resourceEventsSub?.unsubscribe();
     this.resourceEventsLoading = true;
     this.resourceEventsError = '';
-    this.resourceEventsSub = this.pursuitsService.resourceEvents(pursuitId, 100).subscribe({
+    let received = false;
+    this.resourceEventsSub = this.pursuitsService.resourceEvents(pursuitId, 100).pipe(
+      take(1), finalize(() => { this.resourceEventsLoading = false; }),
+    ).subscribe({
       next: (events) => {
-        if (this.selected?.pursuit.id !== pursuitId) {
+        received = true;
+        if (this.selected?.pursuit.id !== pursuitId) return;
+        const ids = new Set<string>();
+        if (!Array.isArray(events) || !events.every(event => {
+          if (!event || typeof event.id !== 'string' || !event.id.trim() || ids.has(event.id) ||
+              event.pursuitId !== pursuitId || !['effort_recorded', 'spend_incurred', 'spend_refund'].includes(event.kind) ||
+              !Number.isSafeInteger(event.effortMinutes) || event.effortMinutes < 0 ||
+              !Number.isSafeInteger(event.amountMinor) || event.amountMinor < 0 ||
+              (event.kind === 'effort_recorded' ? event.effortMinutes <= 0 || event.amountMinor !== 0
+                : event.amountMinor <= 0 || event.effortMinutes !== 0 || event.currency !== 'EUR')) return false;
+          ids.add(event.id);
+          return true;
+        })) {
+          this.resourceEventsError = 'The returned ledger contains missing, duplicate or mismatched entries. Reload before relying on these records.';
+          this.resourceEventsLoadedFor = '';
           return;
         }
         this.resourceEvents = events;
         this.resourceEventsLoadedFor = pursuitId;
-        this.resourceEventsLoading = false;
       },
-      error: (error) => {
-        if (this.selected?.pursuit.id !== pursuitId) {
-          return;
+      error: () => {
+        if (this.selected?.pursuit.id !== pursuitId) return;
+        this.resourceEventsLoadedFor = '';
+        this.resourceEventsError = 'The resource ledger could not be loaded. Reload before relying on these records.';
+      },
+      complete: () => {
+        if (!received && this.selected?.pursuit.id === pursuitId) {
+          this.resourceEventsLoadedFor = '';
+          this.resourceEventsError = 'No resource ledger was returned. Reload before relying on these records.';
         }
-        this.resourceEventsLoading = false;
-        this.resourceEventsError = error?.error?.error || 'The immutable resource ledger could not be loaded.';
       },
     });
   }
 
+  onResourceLedgerOpen(open: boolean): void {
+    if (open) this.loadResourceEvents();
+  }
+
   recordResourceEvent(): void {
     const pursuitId = this.selected?.pursuit.id || '';
-    if (!pursuitId || this.resourceEventSaving || this.resourceEventForm.invalid) {
+    if (!pursuitId || this.detailLoading || this.resourceEventSaving || this.resourceEventForm.invalid) {
       return;
     }
     const value = this.resourceEventForm.getRawValue();
     const kind = value.kind as IPursuitResourceEvent['kind'];
+    const selection = this.selected;
+    const draftSnapshot = JSON.stringify(value);
+    const quantity = Number(kind === 'effort_recorded' ? value.effortHours : value.spendEur);
+    const scaledQuantity = Math.round(quantity * (kind === 'effort_recorded' ? 60 : 100));
+    const occurredAt = value.occurredAt ? new Date(value.occurredAt) : undefined;
+    if (!['effort_recorded', 'spend_incurred', 'spend_refund'].includes(kind) ||
+        !Number.isFinite(quantity) || quantity <= 0 || !Number.isSafeInteger(scaledQuantity) || scaledQuantity <= 0 ||
+        !String(value.idempotencyKey || '').trim() || (occurredAt && !Number.isFinite(occurredAt.getTime()))) {
+      this.notification.warning('Invalid resource entry', 'Use a positive amount, a valid date and a nonempty recording key.');
+      return;
+    }
     const request: IPursuitResourceEventRequest = {
       kind,
       idempotencyKey: String(value.idempotencyKey || '').trim(),
       note: String(value.note || '').trim() || undefined,
       evidenceUri: String(value.evidenceUri || '').trim() || undefined,
-      occurredAt: value.occurredAt ? new Date(value.occurredAt).toISOString() : undefined,
+      occurredAt: occurredAt?.toISOString(),
     };
     if (kind === 'effort_recorded') {
       request.effortHours = Number(value.effortHours || 0);
@@ -2653,9 +2898,24 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       request.spendEur = Number(value.spendEur || 0);
     }
     this.resourceEventSaving = true;
-    this.pursuitsService.appendResourceEvent(pursuitId, request).subscribe({
+    let received = false;
+    this.resourceAppendSub = this.pursuitsService.appendResourceEvent(pursuitId, request).pipe(
+      take(1), finalize(() => { this.resourceEventSaving = false; }),
+    ).subscribe({
       next: (event) => {
-        this.resourceEventSaving = false;
+        received = true;
+        if (!event || typeof event.id !== 'string' || !event.id.trim() || event.pursuitId !== pursuitId ||
+            event.idempotencyKey !== request.idempotencyKey || event.kind !== kind ||
+            event.effortMinutes !== (kind === 'effort_recorded' ? scaledQuantity : 0) ||
+            event.amountMinor !== (kind === 'effort_recorded' ? 0 : scaledQuantity) ||
+            (kind !== 'effort_recorded' && event.currency !== 'EUR')) {
+          this.notification.warning('Resource record unconfirmed', 'The receipt does not match the submitted entry. Keep its recording key and inspect the ledger before repeating it.');
+          return;
+        }
+        if (this.selected !== selection || this.detailLoading || JSON.stringify(this.resourceEventForm.getRawValue()) !== draftSnapshot) {
+          this.load();
+          return;
+        }
         this.resourceEventForm.patchValue({
           effortHours: 0.5,
           spendEur: 0,
@@ -2667,11 +2927,13 @@ export class PursuitsComponent implements OnInit, OnDestroy {
         this.resourceEvents = [event, ...this.resourceEvents.filter((item) => item.id !== event.id)];
         this.resourceEventsLoadedFor = pursuitId;
         this.loadPursuitDetail(pursuitId, false);
-        this.notification.success('Resource recorded', 'The immutable pursuit ledger and remaining ceiling were updated.');
+        this.notification.success('Resource receipt returned', 'The returned entry matches the recording key and quantity. Current budget totals will be reloaded.');
       },
-      error: (error) => {
-        this.resourceEventSaving = false;
-        this.notification.error('Resource record rejected', error?.error?.error || 'HAI rejected the resource ledger event.');
+      error: () => {
+        this.notification.error('Resource record unconfirmed', 'HAI could not confirm the entry. Keep its recording key and inspect the ledger before repeating it.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('Resource record unconfirmed', 'No receipt was returned. Keep its recording key and inspect the ledger before repeating it.');
       },
     });
   }
@@ -2690,34 +2952,65 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   releaseReservation(reservationId: string): void {
     const pursuitId = this.selected?.pursuit.id || '';
     const reason = String(this.reservationReleaseReasons[reservationId] || '').trim();
-    if (!pursuitId || this.releasingReservationId) {
+    if (!pursuitId || this.detailLoading || this.releasingReservationId || this.reservationConfirmationId) {
       return;
     }
-    if (reason.length < 12) {
-      this.notification.warning('Release reason required', 'Explain in at least 12 characters why the operation is confirmed stopped.');
+    if (reason.length < 12 || reason.length > 1000) {
+      this.notification.warning('Release reason required', 'Explain in 12 to 1000 characters why the operation is confirmed stopped.');
       return;
     }
+    const selection = this.selected;
+    const reservation = selection?.resourceUsage?.reservations?.find(item => item.id === reservationId);
+    if (!reservation || !reservation.operationId) {
+      this.notification.warning('Reservation unavailable', 'Reload the pursuit and inspect the current hold before releasing it.');
+      return;
+    }
+    this.reservationConfirmationId = reservationId;
+    const confirmationRevision = ++this.reservationConfirmationRevision;
     this.modal.confirm({
       nzTitle: 'Release this resource hold?',
       nzContent: 'Only continue after confirming the worker or runtime is no longer active. The original hold remains in the immutable audit ledger.',
       nzOkText: 'Confirmed stopped - release',
       nzOkDanger: true,
       nzCancelText: 'Keep hold',
+      nzOnCancel: () => {
+        if (this.reservationConfirmationRevision === confirmationRevision) this.reservationConfirmationId = '';
+      },
       nzOnOk: () => {
+        if (this.reservationConfirmationRevision !== confirmationRevision || this.reservationConfirmationId !== reservationId || this.releasingReservationId) return;
+        this.reservationConfirmationId = '';
+        if (this.selected !== selection || this.detailLoading ||
+            !this.selected?.resourceUsage?.reservations?.some(item => item.id === reservationId && item.operationId === reservation.operationId) ||
+            String(this.reservationReleaseReasons[reservationId] || '').trim() !== reason) {
+          this.notification.warning('Release needs review', 'The selection, hold or explanation changed. Inspect the current reservation before confirming again.');
+          return;
+        }
         this.releasingReservationId = reservationId;
-        this.pursuitsService.releaseResourceReservation(pursuitId, reservationId, reason).subscribe({
+        let received = false;
+        this.reservationReleaseSub = this.pursuitsService.releaseResourceReservation(pursuitId, reservationId, reason).pipe(
+          take(1), finalize(() => { this.releasingReservationId = ''; }),
+        ).subscribe({
           next: (resourceUsage) => {
-            this.releasingReservationId = '';
-            if (this.selected?.pursuit.id === pursuitId) {
-              this.selected = { ...this.selected, resourceUsage };
+            received = true;
+            if (resourceUsage?.available !== true || !Array.isArray(resourceUsage.reservations) ||
+                resourceUsage.activeReservations !== resourceUsage.reservations.length ||
+                resourceUsage.reservations.some(item => !item || typeof item.id !== 'string' || !item.id.trim() || item.id === reservationId)) {
+              this.notification.warning('Release unconfirmed', 'The budget response did not confirm that the hold is absent. Keep the explanation and inspect current state before repeating.');
+              return;
             }
-            delete this.reservationReleaseReasons[reservationId];
-            this.loadResourceEvents(true);
-            this.notification.success('Resource hold released', 'HAI appended a release settlement and retained the original reservation.');
+            if (this.selected === selection && !this.detailLoading) {
+              if (String(this.reservationReleaseReasons[reservationId] || '').trim() === reason) delete this.reservationReleaseReasons[reservationId];
+              // Usage lacks a pursuit or settlement identity; reload scoped detail instead of adopting it.
+              this.loadPursuitDetail(pursuitId, false);
+              this.notification.info('Budget response received', 'The returned active list omits this hold. HAI is reloading its project; the settlement itself is not independently verified.');
+            }
+            this.load();
           },
-          error: (error) => {
-            this.releasingReservationId = '';
-            this.notification.error('Resource hold not released', error?.error?.error || 'HAI rejected the reconciliation request.');
+          error: () => {
+            this.notification.error('Release unconfirmed', 'HAI could not confirm the release. Keep the explanation and inspect current state before repeating.');
+          },
+          complete: () => {
+            if (!received) this.notification.warning('Release unconfirmed', 'No budget response was returned. Keep the explanation and inspect current state before repeating.');
           },
         });
       },
@@ -2835,6 +3128,7 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       return;
     }
     const pursuit = this.selected.pursuit;
+    this.contextEditorRevision++;
     this.contextForm.reset({
       description: pursuit.description || '',
       whyItMatters: pursuit.whyItMatters || '',
@@ -2856,18 +3150,19 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   }
 
   savePursuitContext(): void {
-    if (!this.selected || this.detailLoading) {
+    if (!this.selected || this.detailLoading || this.contextSaving || this.lifecycleRunningId || this.resolvingDecisionId) {
       return;
     }
-    this.detailLoading = true;
     const pursuitID = this.selected.pursuit.id;
+    const selection = this.selected;
+    const editorRevision = this.contextEditorRevision;
+    const draftSnapshot = this.contextDraftSnapshot();
     const value = this.contextForm.value;
     if (!this.draftSuccessCriteria.length || !this.draftStopConditions.length) {
-      this.detailLoading = false;
       this.notification.error('Outcome contract incomplete', 'Keep at least one success criterion and one stop condition.');
       return;
     }
-    this.pursuitsService.update(pursuitID, {
+    const request = {
       description: value.description,
       whyItMatters: value.whyItMatters,
       desiredOutcome: value.desiredOutcome,
@@ -2880,21 +3175,79 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       targetAt: this.localDateToRFC3339(value.targetAt),
       reviewCadenceDays: Number(value.reviewCadenceDays || 0),
       resourceLimits: this.resourceLimitsFromForm(value),
-    }).subscribe({
+    };
+    this.contextSaving = true;
+    let received = false;
+    this.contextSaveSub = this.pursuitsService.update(pursuitID, request).pipe(
+      take(1), finalize(() => { this.contextSaving = false; }),
+    ).subscribe({
       next: (pursuit) => {
-        if (this.selected?.pursuit.id === pursuitID) {
-          this.selected = { ...this.selected, pursuit };
+        received = true;
+        if (pursuit?.id !== pursuitID || !this.contextResponseMatches(pursuit, request)) {
+          this.notification.warning('Context update unconfirmed', 'The returned context did not match your submitted goals, boundaries, or limits. Your draft is retained; inspect current state before repeating this action.');
+          return;
         }
-        this.detailLoading = false;
-        this.showContextEditor = false;
-        this.notification.success('Pursuit context saved', 'HAI will use the updated goal context for matching, planning, and safety checks.');
+        if (this.selected === selection && !this.detailLoading && this.contextEditorRevision === editorRevision &&
+            this.contextDraftSnapshot() === draftSnapshot) {
+          this.selected = { ...this.selected, pursuit };
+          this.loadProjectDossier(pursuit.projectKey);
+          this.showContextEditor = false;
+          this.notification.success('Context response received', 'The server returned the updated pursuit record.');
+        }
         this.load();
       },
-      error: (error) => {
-        this.detailLoading = false;
-        this.notification.error('Context update failed', error?.error?.error || 'HAI could not save the pursuit context.');
+      error: () => {
+        this.notification.error('Context update unconfirmed', 'HAI could not confirm the update. Your draft is retained; inspect current state before repeating this action.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('Context update unconfirmed', 'No pursuit record was returned. Your draft is retained; inspect current state before repeating this action.');
       },
     });
+  }
+
+  private contextDraftSnapshot(): string {
+    return JSON.stringify([this.contextForm.getRawValue(), this.draftSuccessCriteria, this.draftStopConditions, this.draftDependencies]);
+  }
+
+  private contextResponseMatches(pursuit: IPursuit, request: any): boolean {
+    const text = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
+    const dateMatches = (actual: unknown, expected: unknown): boolean => {
+      if (!expected) return actual === undefined || actual === null || actual === '';
+      return typeof actual === 'string' && typeof expected === 'string' &&
+        Number.isFinite(Date.parse(actual)) && Date.parse(actual) === Date.parse(expected);
+    };
+    for (const key of ['description', 'whyItMatters', 'desiredOutcome', 'currentStateSummary', 'nextRecommendedAction', 'completionDefinition'] as const) {
+      if (text(pursuit[key]) !== text(request[key])) return false;
+    }
+    if (pursuit.reviewCadenceDays !== request.reviewCadenceDays || !dateMatches(pursuit.targetAt, request.targetAt)) return false;
+    if (!pursuit.resourceLimits || typeof pursuit.resourceLimits !== 'object') return false;
+    for (const key of ['maxEffortHours', 'maxSpendEur', 'maxParallelWorkflows'] as const) {
+      const actual = pursuit.resourceLimits[key] ?? 0;
+      if (!Number.isFinite(actual) || actual !== request.resourceLimits[key]) return false;
+    }
+    if (text(pursuit.resourceLimits.notes) !== text(request.resourceLimits.notes)) return false;
+    // Compare submitted contract fields, allowing backend-generated stop timestamps.
+    const matchesItems = (actual: any, expected: any[], fields: string[], defaultStatus: string): boolean => {
+      if (!Array.isArray(actual) || actual.length !== expected.length) return false;
+      return expected.every((item, index) => {
+        const returned = actual[index];
+        if (!returned || typeof returned !== 'object') return false;
+        if (text(returned.status).toLowerCase() !== (text(item.status).toLowerCase() || defaultStatus)) return false;
+        return fields.every((field) => {
+          if (field === 'evidenceRequired') return returned[field] === (item[field] ?? false);
+          if (field.endsWith('At')) return field === 'dueAt' || item[field]
+            ? dateMatches(returned[field], item[field]) : true;
+          if (field === 'verificationStatus') return text(returned[field]).toLowerCase() === text(item[field]).toLowerCase();
+          return text(returned[field]) === text(item[field]);
+        });
+      });
+    };
+    return matchesItems(pursuit.successCriteria, request.successCriteria,
+      ['id', 'description', 'evidenceRequired', 'evidenceUri', 'verificationStatus', 'waiverReason'], 'pending') &&
+      matchesItems(pursuit.stopConditions, request.stopConditions,
+        ['id', 'description', 'reason', 'triggeredAt', 'resolvedAt'], 'monitoring') &&
+      matchesItems(pursuit.dependencies, request.dependencies,
+        ['id', 'label', 'owner', 'relatedPursuitId', 'evidenceUri', 'reason', 'dueAt'], 'pending');
   }
 
   addSuccessCriterion(): void {
@@ -2972,156 +3325,256 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   }
 
   runIntake(): void {
-    if (!this.selected || this.intakeForm.invalid) {
+    if (!this.selected || this.detailLoading || this.intakeRunning || this.lifecycleRunningId || this.resolvingDecisionId) return;
+    if (this.intakeForm.invalid || !String(this.intakeForm.value.input || '').trim()) {
       this.intakeForm.markAllAsTouched();
       return;
     }
+    const selection = this.selected;
+    const pursuitId = selection.pursuit.id;
+    const draft = this.intakeForm.getRawValue();
+    const draftSnapshot = JSON.stringify(draft);
+    const existingIds = new Set((selection.workflows || []).map(item => item.id));
+    const requiresReview = selection.pursuit.riskLevel === 'high' || selection.pursuit.autonomyLevel === 'approve_before_execute';
     this.intakeRunning = true;
-    this.pursuitsService.intake(this.selected.pursuit.id, {
-      ...this.intakeForm.value,
-      projectKey: this.selected.pursuit.projectKey,
+    let received = false;
+    this.intakeSub = this.pursuitsService.intake(pursuitId, {
+      ...draft,
+      projectKey: selection.pursuit.projectKey,
+      requiresReview,
+      reviewReason: requiresReview ? 'Pursuit intake requires approval before execution.' : undefined,
       trigger: 'pursuit_dashboard',
-    }).subscribe({
+    }).pipe(take(1), finalize(() => { this.intakeRunning = false; })).subscribe({
       next: (detail) => {
-        this.selected = detail;
-        this.intakeRunning = false;
-        this.notification.success('Workflow created', 'The signal was linked to this pursuit and sent through workflow intake.');
+        received = true;
+        const linkedWork = Array.isArray(detail?.workflows) && Array.isArray(detail?.links)
+          ? detail.workflows.filter(item => item && typeof item.id === 'string' && item.id.trim() &&
+            detail.links.some(link => link && link.pursuitId === pursuitId && link.linkType === 'workflow' &&
+              link.linkId === item.id && link.relationship === 'operational_work')) : [];
+        if (detail?.pursuit?.id !== pursuitId || !linkedWork.length || (requiresReview &&
+            linkedWork.filter(item => !existingIds.has(item.id)).some(item => item.requiresApproval !== true ||
+              !['pending', 'approved', 'rejected'].includes(item.approvalStatus)))) {
+          this.notification.warning('Intake unconfirmed', 'The response did not confirm linked work with the required approval context. Inspect current state before repeating this action.');
+          return;
+        }
+        if (this.selected === selection && !this.detailLoading && JSON.stringify(this.intakeForm.getRawValue()) === draftSnapshot) {
+          this.selected = detail;
+          if (linkedWork.some(item => !existingIds.has(item.id))) {
+            this.notification.success('Linked workflow returned', 'The response contains a new linked workflow. Execution is not confirmed.');
+          } else {
+            this.notification.info('Existing linked work', 'The response contains existing work; no new workflow is confirmed.');
+          }
+        }
         this.load();
       },
-      error: (error) => {
-        this.intakeRunning = false;
-        this.notification.error('Intake failed', error?.error?.error || 'HAI could not create a workflow from this signal.');
+      error: () => {
+        this.notification.error('Intake unconfirmed', 'HAI could not confirm intake. Your input is retained; inspect current state before repeating this action.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('Intake unconfirmed', 'No intake record was returned. Your input is retained; inspect current state before repeating this action.');
       },
     });
   }
 
   routeIntake(): void {
-    if (this.routedIntakeForm.invalid) {
+    if (this.routedIntakeRunning || this.detailLoading || this.lifecycleRunningId || this.resolvingDecisionId) return;
+    if (this.routedIntakeForm.invalid || !String(this.routedIntakeForm.value.input || '').trim()) {
       this.routedIntakeForm.markAllAsTouched();
       return;
     }
+    const selection = this.selected;
+    const requestedPursuitId = this.requestedPursuitId;
+    const draft = this.routedIntakeForm.getRawValue();
+    const draftSnapshot = JSON.stringify(draft);
     this.routedIntakeRunning = true;
-    this.pursuitsService.routeIntake({
-      ...this.routedIntakeForm.value,
+    let received = false;
+    this.routedIntakeSub = this.pursuitsService.routeIntake({
+      ...draft,
       trigger: 'pursuit_dashboard_global_intake',
-    }).subscribe({
+    }).pipe(take(1), finalize(() => { this.routedIntakeRunning = false; })).subscribe({
       next: (result) => {
-        this.routedIntakeRunning = false;
-        this.routedIntakeForm.patchValue({ input: '', sourceLabel: '', sourceUri: '' });
-        if (result.detail) {
-          this.selected = result.detail;
+        received = true;
+        const pursuitId = result?.pursuitId;
+        const detail = result?.detail;
+        const candidateMode = result?.mode === 'candidate_created' || result?.mode === 'matched_candidate';
+        const workflowMode = result?.mode === 'matched_existing' || result?.mode === 'matched_after_workflow';
+        const source = String(detail?.pursuit?.sourceOfCreation || '').trim().toLowerCase();
+        const candidateRecord = source === 'pursuit_candidate' || source.includes('_pursuit_candidate');
+        const linkedWork = Array.isArray(detail?.workflows) && Array.isArray(detail?.links) &&
+          detail.workflows.some(item => item && typeof item.id === 'string' && item.id.trim() &&
+            detail.links.some(link => link && link.pursuitId === pursuitId && link.linkType === 'workflow' && link.linkId === item.id));
+        const flagsMatch = result?.mode === 'candidate_created' ? result.createdCandidate === true && result.matched === false
+          : result?.createdCandidate === false && result?.matched === true;
+        if (typeof pursuitId !== 'string' || !pursuitId.trim() || detail?.pursuit?.id !== pursuitId || !flagsMatch ||
+            (candidateMode ? !candidateRecord : !workflowMode || candidateRecord || !linkedWork)) {
+          this.notification.warning('Routing unconfirmed', 'The response did not confirm a matching candidate or linked workflow. Your input is retained; inspect current state before repeating this action.');
+          return;
         }
-        if (result.createdCandidate) {
+        this.load();
+        if (this.selected !== selection || this.requestedPursuitId !== requestedPursuitId || this.detailLoading ||
+            JSON.stringify(this.routedIntakeForm.getRawValue()) !== draftSnapshot) return;
+        this.routedIntakeForm.patchValue({ input: '', sourceLabel: '', sourceUri: '' });
+        if (candidateMode) {
           this.notification.info(
             'Pursuit candidate needs review',
-            'HAI recorded the unmatched input as a reviewable pursuit candidate. No workflow was created until an approver accepts it.'
+            'The returned pursuit is a candidate awaiting explicit acceptance. This response does not authorize execution.'
           );
         } else {
           this.notification.success(
             'Input routed',
-            result.message || 'HAI matched the input and created governed workflow context.'
+            'The response confirms a pursuit with linked workflow context. Execution is not confirmed.'
           );
         }
-        this.load();
-        if (result.pursuitId) {
-          this.selectPursuitById(result.pursuitId, true);
-        }
+        this.selectPursuitById(pursuitId, true);
       },
-      error: (error) => {
-        this.routedIntakeRunning = false;
-        this.notification.error('Routing failed', error?.error?.error || 'HAI could not route this input into pursuits.');
+      error: () => {
+        this.notification.error('Routing unconfirmed', 'HAI could not confirm routing. Your input is retained; inspect current state before repeating this action.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('Routing unconfirmed', 'No routing record was returned. Your input is retained; inspect current state before repeating this action.');
       },
     });
   }
 
   refreshSelectedSummary(): void {
-    if (!this.selected) {
+    if (!this.selected || this.detailLoading || this.summaryLoading || this.lifecycleRunningId || this.resolvingDecisionId) {
       return;
     }
-    this.detailLoading = true;
-    this.pursuitsService.refreshSummary(this.selected.pursuit.id).subscribe({
+    const pursuitId = this.selected.pursuit.id;
+    const selection = this.selected;
+    this.summaryLoading = true;
+    let received = false;
+    this.summarySub = this.pursuitsService.refreshSummary(pursuitId).pipe(
+      take(1), finalize(() => { this.summaryLoading = false; }),
+    ).subscribe({
       next: (detail) => {
-        this.selected = detail;
-        this.detailLoading = false;
-        this.notification.success('Summary refreshed', 'Pursuit status, blockers, and completion state were recalculated.');
+        received = true;
+        if (detail?.pursuit?.id !== pursuitId || typeof detail.summary?.currentState !== 'string' || !detail.summary.currentState.trim()) {
+          this.notification.warning('Summary unconfirmed', 'The response did not contain a matching pursuit summary. Reload the pursuit before repeating this action.');
+          return;
+        }
+        // A newer detail read or mutation must not be replaced by this older snapshot.
+        if (this.selected === selection && !this.detailLoading) {
+          this.selected = detail;
+          this.notification.success('Summary refreshed', 'The server returned an updated summary for the requested pursuit.');
+        }
         this.load();
       },
-      error: (error) => {
-        this.detailLoading = false;
-        this.notification.error('Summary failed', error?.error?.error || 'HAI could not refresh this pursuit.');
+      error: () => {
+        this.notification.error('Summary unconfirmed', 'HAI could not confirm the summary update. Reload the pursuit before repeating this action.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('Summary unconfirmed', 'No summary was returned. Reload the pursuit before repeating this action.');
       },
     });
   }
 
   completeSelectedReview(): void {
-    if (!this.selected || this.reviewing) {
+    if (!this.selected || this.detailLoading || this.reviewing || this.lifecycleRunningId || this.resolvingDecisionId) {
       return;
     }
-    this.reviewing = true;
-    this.pursuitsService.review(this.selected.pursuit.id, {
+    const request = {
       action: 'complete',
       note: 'Scheduled pursuit review completed from the dashboard.',
-    }).subscribe({
-      next: (detail) => {
-        this.selected = detail;
-        this.reviewing = false;
-        this.notification.success('Review recorded', 'The pursuit review was audited and scheduled forward.');
-        this.load();
-      },
-      error: (error) => {
-        this.reviewing = false;
-        this.notification.error('Review failed', error?.error?.error || 'HAI could not record this pursuit review.');
-      },
-    });
+    } as const;
+    this.observeScheduledReview(this.selected, request.note, 'pursuit.reviewed', this.pursuitsService.review(this.selected.pursuit.id, request));
   }
 
   snoozeSelectedReview(days: number = 3): void {
-    if (!this.selected || this.reviewing) {
+    if (!this.selected || this.detailLoading || this.reviewing || this.lifecycleRunningId || this.resolvingDecisionId) {
       return;
     }
-    this.reviewing = true;
-    this.pursuitsService.review(this.selected.pursuit.id, {
+    if (!Number.isInteger(days) || days < 1 || days > 90) {
+      this.notification.warning('Invalid review delay', 'Choose a whole number of days between 1 and 90.');
+      return;
+    }
+    const request = {
       action: 'snooze',
       snoozeDays: days,
       note: `Scheduled pursuit review snoozed for ${days} days from the dashboard.`,
-    }).subscribe({
+    } as const;
+    this.observeScheduledReview(this.selected, request.note, 'pursuit.review_snoozed', this.pursuitsService.review(this.selected.pursuit.id, request));
+  }
+
+  private observeScheduledReview(selection: IPursuitDetail, note: string, eventType: string, response: Observable<IPursuitDetail>): void {
+    const pursuitId = selection.pursuit.id;
+    const previousAuditIds = new Set((selection.activity || []).map(item => item.id));
+    this.reviewing = true;
+    let received = false;
+    this.reviewSub = response.pipe(take(1), finalize(() => { this.reviewing = false; })).subscribe({
       next: (detail) => {
-        this.selected = detail;
-        this.reviewing = false;
-        this.notification.success('Review snoozed', `The pursuit will return to the review queue in ${days} days.`);
+        received = true;
+        const nextReviewAt = detail?.pursuit?.nextReviewAt;
+        const audit = Array.isArray(detail?.activity) && detail.activity.some(item => item &&
+          typeof item.id === 'string' && item.id.trim() && !previousAuditIds.has(item.id) &&
+          item.pursuitId === pursuitId && item.eventType === eventType && item.message === note);
+        if (detail?.pursuit?.id !== pursuitId || typeof nextReviewAt !== 'string' ||
+            !Number.isFinite(Date.parse(nextReviewAt)) || !audit) {
+          this.notification.warning('Review unconfirmed', 'The response did not confirm the review record and schedule. Inspect current state before repeating this action.');
+          return;
+        }
+        if (this.selected === selection && !this.detailLoading) {
+          this.selected = detail;
+          this.notification.success('Review recorded', 'The returned record includes a matching review entry and next review date.');
+        }
         this.load();
       },
-      error: (error) => {
-        this.reviewing = false;
-        this.notification.error('Snooze failed', error?.error?.error || 'HAI could not snooze this pursuit review.');
+      error: () => {
+        this.notification.error('Review unconfirmed', 'HAI could not confirm the review update. Inspect current state before repeating this action.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('Review unconfirmed', 'No review record was returned. Inspect current state before repeating this action.');
       },
     });
   }
 
   createFirstWorkflowPlan(): void {
-    if (!this.selected || this.planning) {
+    if (!this.selected || this.detailLoading || this.planning || this.reviewing || this.lifecycleRunningId || this.resolvingDecisionId) {
       return;
     }
 	if (!this.canCreateFirstWorkflow(this.selected)) {
 	  this.notification.info('Planning blocked', this.planningBlockReason(this.selected));
 	  return;
 	}
+    const selection = this.selected;
+    const pursuitId = selection.pursuit.id;
+    const requiresReview = selection.pursuit.riskLevel === 'high' || selection.pursuit.autonomyLevel === 'approve_before_execute';
+    const existingIds = new Set((selection.workflows || []).map(item => item.id));
     this.planning = true;
-    this.pursuitsService.plan(this.selected.pursuit.id, {
-      requiresReview: this.selected.pursuit.riskLevel === 'high',
-      reviewReason: this.selected.pursuit.riskLevel === 'high'
+    let received = false;
+    this.planningSub = this.pursuitsService.plan(pursuitId, {
+      requiresReview,
+      reviewReason: requiresReview
         ? 'High-risk pursuit planning requires Robert approval before execution.'
         : 'First pursuit workflow plan created from pursuit dashboard.',
-    }).subscribe({
+    }).pipe(take(1), finalize(() => { this.planning = false; })).subscribe({
       next: (detail) => {
-        this.selected = detail;
-        this.planning = false;
-        this.notification.success('Workflow plan created', 'The first workflow was created, linked, and sent through HAI workflow policy.');
+        received = true;
+        const plans = Array.isArray(detail?.workflows) && Array.isArray(detail?.links)
+          ? detail.workflows.filter(item => item && typeof item.id === 'string' && item.id.trim() &&
+            item.sourceType === 'pursuit' && item.sourceId === pursuitId &&
+            detail.links.some(link => link && link.pursuitId === pursuitId && link.linkType === 'workflow' &&
+              link.linkId === item.id && link.relationship === 'first_workflow_plan')) : [];
+        if (detail?.pursuit?.id !== pursuitId || !plans.length || (requiresReview &&
+            plans.some(item => item.requiresApproval !== true || !['pending', 'approved', 'rejected'].includes(item.approvalStatus)))) {
+          this.notification.warning('Planning unconfirmed', 'The response did not confirm a linked plan with the required approval context. Inspect current state before repeating this action.');
+          return;
+        }
+        if (this.selected === selection && !this.detailLoading) {
+          this.selected = detail;
+          if (plans.some(item => !existingIds.has(item.id))) {
+            this.notification.success('Workflow plan returned', 'The response includes a new linked plan. This does not confirm execution.');
+          } else {
+            this.notification.info('Existing workflow plan', 'HAI returned the existing linked plan; no new workflow is confirmed.');
+          }
+        }
         this.load();
       },
-      error: (error) => {
-        this.planning = false;
-        this.notification.error('Planning failed', error?.error?.error || 'HAI could not create the first workflow for this pursuit.');
+      error: () => {
+        this.notification.error('Planning unconfirmed', 'HAI could not confirm the plan. Inspect current state before repeating this action.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('Planning unconfirmed', 'No plan was returned. Inspect current state before repeating this action.');
       },
     });
   }
@@ -3142,57 +3595,109 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   }
 
   prepareDelegationPackage(): void {
-    if (!this.selected || this.delegationLoading) {
+    if (!this.selected || this.detailLoading || this.delegationLoading) {
       return;
     }
+    const pursuitId = this.selected.pursuit.id;
+    this.delegationPackage = undefined;
     this.delegationLoading = true;
-    this.pursuitsService.delegationPackage(this.selected.pursuit.id).subscribe({
+    let received = false;
+    this.delegationSub = this.pursuitsService.delegationPackage(pursuitId).pipe(
+      take(1), finalize(() => { this.delegationLoading = false; }),
+    ).subscribe({
       next: (delegationPackage) => {
+        received = true;
+        if (this.selected?.pursuit.id !== pursuitId) return;
+        const hasInstructions = (values: unknown): boolean => Array.isArray(values) && values.length > 0 &&
+          values.every(value => typeof value === 'string' && value.trim().length > 0);
+        const ready = delegationPackage?.ready;
+        if (!delegationPackage || delegationPackage.pursuitId !== pursuitId ||
+            typeof ready !== 'boolean' || delegationPackage.status !== (ready ? 'ready' : 'not_ready') ||
+            typeof delegationPackage.reason !== 'string' || !delegationPackage.reason.trim() ||
+            !hasInstructions(delegationPackage.allowedActions) || !hasInstructions(delegationPackage.blockedActions) ||
+            !hasInstructions(delegationPackage.deliveryRequirements) ||
+            (ready && (!Array.isArray(delegationPackage.workItems) || !delegationPackage.workItems.length ||
+              !delegationPackage.workItems.every(item => item && typeof item.workflowId === 'string' &&
+                item.workflowId.trim() && typeof item.instructions === 'string' && item.instructions.trim())))) {
+          this.notification.warning('VA brief unavailable', 'The response did not contain a matching, bounded delegation package. Refresh before preparing it again.');
+          return;
+        }
         this.delegationPackage = delegationPackage;
-        this.delegationLoading = false;
         const title = delegationPackage.ready ? 'VA brief ready' : 'VA brief blocked';
         this.notification.info(title, delegationPackage.reason);
       },
-      error: (error) => {
-        this.delegationLoading = false;
-        this.notification.error('VA brief unavailable', error?.error?.error || 'HAI could not prepare the delegation package.');
+      error: () => {
+        this.notification.error('VA brief unavailable', 'HAI could not load the delegation package. Refresh before trying again.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('VA brief unavailable', 'No delegation package was returned. Refresh before trying again.');
       },
     });
   }
 
   archiveSelected(): void {
-    if (!this.selected) {
+    if (!this.selected || this.detailLoading || this.lifecycleRunningId || this.resolvingDecisionId) {
       return;
     }
     if (this.isClosedPursuit(this.selected.pursuit)) {
       this.reopenSelected();
       return;
     }
-    const archived = true;
-    this.pursuitsService.archive(this.selected.pursuit.id, archived).subscribe({
-      next: () => {
-        this.notification.success('Pursuit archived', 'The pursuit registry was updated.');
-        this.selected = undefined;
-        this.requestedPursuitId = '';
-        this.setSelectedQuery();
-        this.load();
-      },
-      error: (error) => this.notification.error('Archive failed', error?.error?.error || 'The pursuit could not be updated.'),
-    });
+    const pursuitId = this.selected.pursuit.id;
+    this.lifecycleRunningId = pursuitId;
+    this.observePursuitLifecycle(pursuitId, true, this.pursuitsService.archive(pursuitId, true));
   }
 
   reopenSelected(): void {
-    if (!this.selected || !this.isClosedPursuit(this.selected.pursuit)) {
+    if (!this.selected || this.detailLoading || this.lifecycleRunningId || this.resolvingDecisionId ||
+      !this.isClosedPursuit(this.selected.pursuit)) {
       return;
     }
     const pursuit = this.selected.pursuit;
-    this.pursuitsService.reopen(pursuit.id).subscribe({
-      next: () => {
-        this.notification.success('Pursuit reopened', 'HAI can now prepare new governed work for this pursuit.');
-        this.loadPursuitDetail(pursuit.id, false);
+    this.lifecycleRunningId = pursuit.id;
+    this.observePursuitLifecycle(pursuit.id, false, this.pursuitsService.reopen(pursuit.id));
+  }
+
+  private observePursuitLifecycle(pursuitId: string, archived: boolean, response: Observable<IPursuit>): void {
+    let received = false;
+    this.lifecycleSub = response.pipe(
+      take(1),
+      finalize(() => { this.lifecycleRunningId = ''; }),
+    ).subscribe({
+      next: (pursuit) => {
+        received = true;
+        if (pursuit?.id !== pursuitId || pursuit.archived !== archived ||
+          pursuit.status !== (archived ? 'archived' : 'active') || (!archived && pursuit.completionState !== 'open')) {
+          this.notification.warning('Pursuit change not confirmed', 'The returned record does not confirm the requested state. Refresh the original pursuit before repeating the request.');
+          return;
+        }
+        if (archived && (this.selected?.pursuit?.id === pursuitId ||
+          (!this.selected && this.requestedPursuitId === pursuitId))) {
+          this.pursuitDetailSub?.unsubscribe();
+          this.decisionDetailSub?.unsubscribe();
+          this.evidenceResolutionSub?.unsubscribe();
+          this.inspectedRuntimeEvidence = undefined;
+          this.inspectedEvidence = undefined;
+          this.inspectedAction = undefined;
+          this.selected = undefined;
+          this.requestedPursuitId = '';
+          this.detailLoading = false;
+          this.setSelectedQuery();
+        } else if (!archived && this.selected?.pursuit?.id === pursuitId) {
+          this.selected = { ...this.selected, pursuit };
+          this.loadPursuitDetail(pursuitId, false);
+        }
+        this.notification.success('Pursuit state record received', `The returned record reports this pursuit as ${archived ? 'archived' : 'active'}. No task execution is implied.`);
         this.load();
       },
-      error: (error) => this.notification.error('Reopen failed', error?.error?.error || 'HAI could not reopen this pursuit.'),
+      error: () => {
+        this.notification.error('Pursuit change not confirmed', 'HAI could not confirm the state response. Refresh the original pursuit before repeating the request.');
+      },
+      complete: () => {
+        if (!received) {
+          this.notification.warning('Pursuit change not confirmed', 'No pursuit state response was received. Refresh the original pursuit before repeating the request.');
+        }
+      },
     });
   }
 
@@ -3276,26 +3781,86 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       return;
     }
     this.stoppingAutomationId = automation.id;
-    this.automationsService.stopRuntimeTask(automation.id).subscribe({
+    const pursuitId = this.selected?.pursuit?.id || '';
+    let received = false;
+    this.runtimeStopSub = this.automationsService.stopRuntimeTask(automation.id).pipe(
+      take(1),
+      finalize(() => { this.stoppingAutomationId = ''; }),
+    ).subscribe({
       next: (result) => {
-        this.stoppingAutomationId = '';
-        const title = result.status === 'stopping' ? 'Runtime stop requested' : 'Runtime stop response';
-        const evidence = result.evidenceUri ? ` Evidence: ${result.evidenceUri}` : '';
-        this.notification.success(title, `${result.message || `${result.runtimeId} returned ${result.status}.`}${evidence}`);
+        received = true;
+        const uri = typeof result?.evidenceUri === 'string' ? result.evidenceUri : '';
+        const validEvidence = /^automation-launch:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uri) &&
+          !uri.endsWith('00000000-0000-0000-0000-000000000000');
+        const bound = typeof result?.runtimeId === 'string' && result.runtimeId.trim().toLowerCase() === automation.runtimeType?.trim().toLowerCase() &&
+          typeof result?.taskId === 'string' && result.taskId.trim() !== '' && validEvidence;
+        const evidence = validEvidence ? ` Evidence: ${uri}` : '';
+        if (!bound) {
+          this.notification.warning('Runtime stop not confirmed', `The response has no verifiable task receipt. Review runtime evidence before retrying.${evidence}`);
+        } else if (result.status === 'stopped') {
+          this.notification.success('Runtime stop confirmed', `The stored response reports this task as stopped.${evidence}`);
+        } else if (result.status === 'cancellation_requested' || result.status === 'stopping') {
+          this.notification.info('Runtime stop requested', `Cancellation was requested; downstream termination is not yet confirmed.${evidence}`);
+        } else if (result.status === 'failed') {
+          this.notification.error('Runtime stop failed', `Review the stored attempt before trying another cancellation.${evidence}`);
+        } else {
+          this.notification.warning(result.status === 'blocked' ? 'Runtime stop blocked' : 'Runtime stop not confirmed', `Review runtime evidence before retrying. No stop completion is claimed.${evidence}`);
+        }
         this.reloadSelectedAfterDecision();
       },
       error: (error) => {
-        this.stoppingAutomationId = '';
+        const recovery = error?.error?.recovery;
+        const candidate = typeof recovery?.candidateEvidenceUri === 'string' ? recovery.candidateEvidenceUri : '';
+        const validCandidate = recovery?.automationId === automation.id &&
+          recovery?.reconciliationRequired === true && recovery?.retryAllowed === false &&
+          typeof recovery?.candidateStopEventId === 'string' &&
+          /^automation-launch:\/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate) &&
+          !candidate.endsWith('00000000-0000-0000-0000-000000000000') &&
+          candidate === `automation-launch://${recovery.candidateStopEventId}`;
         this.notification.error(
-          'Runtime stop blocked',
-          error?.error?.error || error?.error?.message || 'HAI could not stop this runtime task.'
+          'Runtime stop not confirmed',
+          'HAI could not confirm the stop request. Review runtime evidence before retrying.' +
+            (validCandidate ? ` Candidate evidence (persistence unconfirmed): ${candidate}. Do not repeat this stop before reconciliation.` : '')
         );
+        if (validCandidate) {
+          if (pursuitId) {
+            this.runtimeStopRecovery = { pursuitId, automationId: automation.id, runtimeId: (automation.runtimeType || '').trim().toLowerCase(), evidenceUri: candidate };
+          }
+          this.reloadSelectedAfterDecision();
+        }
+      },
+      complete: () => {
+        if (!received) {
+          this.notification.warning('Runtime stop not confirmed', 'No response was received. Review runtime evidence before retrying.');
+        }
       },
     });
   }
 
   runtimeEvidenceUri(attempt: IAutomationLaunchEvent): string {
     return attempt?.id ? `automation-launch://${attempt.id}` : '';
+  }
+
+  get visibleRuntimeStopRecovery(): { pursuitId: string; automationId: string; runtimeId: string; evidenceUri: string } | undefined {
+    const recovery = this.runtimeStopRecovery;
+    return recovery && this.selected?.pursuit?.id === recovery.pursuitId &&
+      this.selected.automations?.some((automation) => automation.id === recovery.automationId) ? recovery : undefined;
+  }
+
+  reviewRuntimeStopRecovery(): void {
+    const recovery = this.visibleRuntimeStopRecovery;
+    if (!recovery) {
+      return;
+    }
+    const attempt = this.runtimeAttemptFromEvidenceUri(recovery.evidenceUri);
+    if (!attempt || attempt.automationId !== recovery.automationId ||
+      (attempt.runtimeType || '').trim().toLowerCase() !== recovery.runtimeId ||
+      !['agent_runtime_stop', 'agent_runtime_stop_intent'].includes(attempt.launchType || '')) {
+      this.notification.warning('Stop evidence unavailable', 'The exact stop record is not available in this pursuit. Cancellation remains unconfirmed.');
+      this.reloadSelectedAfterDecision();
+      return;
+    }
+    this.inspectRuntimeEvidence(attempt);
   }
 
   runtimeEvidenceLabel(attempt: IAutomationLaunchEvent): string {
@@ -3416,44 +3981,108 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   }
 
   addLink(): void {
+    if (!this.selected || this.detailLoading || this.linkSaving || this.detachingLinkId || this.linkConfirmationId || this.lifecycleRunningId || this.resolvingDecisionId) return;
     if (!this.selected || this.linkForm.invalid) {
       this.linkForm.markAllAsTouched();
       return;
     }
-    this.detailLoading = true;
-    this.pursuitsService.link(this.selected.pursuit.id, {
-      ...this.linkForm.value,
-    }).subscribe({
-      next: () => {
-        this.notification.success('Link added', 'The pursuit now includes this operational record.');
-        this.linkForm.patchValue({
-          linkId: '',
-          sourceUri: '',
-          sourceLabel: '',
-          confidence: 0.7,
-        });
-        this.reloadSelectedAfterDecision();
+    const selection = this.selected;
+    const pursuitID = selection.pursuit.id;
+    const snapshot = JSON.stringify(this.linkForm.getRawValue());
+    const value = this.linkForm.getRawValue();
+    const request = {
+      linkType: String(value.linkType || '').trim(), linkId: String(value.linkId || '').trim(),
+      relationship: String(value.relationship || '').trim() || 'related',
+      sourceUri: String(value.sourceUri || '').trim(), sourceLabel: String(value.sourceLabel || '').trim(),
+      confidence: Number(value.confidence),
+    };
+    if (!this.linkTypes.includes(request.linkType) || !request.linkId ||
+        !Number.isFinite(request.confidence) || request.confidence <= 0 || request.confidence > 1) {
+      this.notification.warning('Check link details', 'Choose a record type, a non-empty record ID, and confidence greater than zero and no more than one.');
+      return;
+    }
+    this.linkSaving = true;
+    let received = false;
+    this.linkSaveSub = this.pursuitsService.link(pursuitID, request).pipe(
+      take(1), finalize(() => { this.linkSaving = false; }),
+    ).subscribe({
+      next: (link) => {
+        received = true;
+        if (!link?.id || link.pursuitId !== pursuitID || link.linkType !== request.linkType ||
+            link.linkId !== request.linkId || link.relationship !== request.relationship ||
+            (link.sourceUri || '') !== request.sourceUri || (link.sourceLabel || '') !== request.sourceLabel ||
+            link.confidence !== request.confidence) {
+          this.notification.warning('Link unconfirmed', 'The returned record did not match the requested link. Your input is retained; inspect current links before retrying.');
+          return;
+        }
+        if (this.selected === selection && !this.detailLoading && JSON.stringify(this.linkForm.getRawValue()) === snapshot) {
+          this.linkForm.patchValue({ linkId: '', sourceUri: '', sourceLabel: '', confidence: 0.7 });
+          this.notification.info('Link response received', 'The server returned the matching link. Reloading this pursuit for current state.');
+          this.loadPursuitDetail(pursuitID, false);
+        }
+        this.load();
       },
-      error: (error) => {
-        this.detailLoading = false;
-        this.notification.error('Link blocked', error?.error?.error || 'The record could not be linked to this pursuit.');
+      error: () => {
+        this.notification.error('Link unconfirmed', 'HAI could not confirm this link. Your input is retained; inspect current links before retrying.');
+      },
+      complete: () => {
+        if (!received) this.notification.warning('Link unconfirmed', 'No link record was returned. Your input is retained; inspect current links before retrying.');
       },
     });
   }
 
   deleteLink(linkId: string): void {
-    if (!this.selected || !linkId) {
+    if (!this.selected || !linkId || this.detailLoading || this.linkSaving || this.detachingLinkId ||
+        this.linkConfirmationId || this.lifecycleRunningId || this.resolvingDecisionId) return;
+    const selection = this.selected;
+    const pursuitId = selection.pursuit.id;
+    const link = selection.links?.find(item => item.id === linkId && item.pursuitId === pursuitId);
+    if (!link) {
+      this.notification.warning('Link unavailable', 'Reload this pursuit and inspect the current link before detaching it.');
       return;
     }
-    this.detailLoading = true;
-    this.pursuitsService.deleteLink(this.selected.pursuit.id, linkId).subscribe({
-      next: () => {
-        this.notification.success('Link removed', 'Incorrect pursuit link detached.');
-        this.reloadSelectedAfterDecision();
+    const linkSnapshot = JSON.stringify(link);
+    this.linkConfirmationId = linkId;
+    const revision = ++this.linkConfirmationRevision;
+    this.modal.confirm({
+      nzTitle: 'Detach this record from the pursuit?',
+      nzContent: 'This removes only the pursuit association, not the source record or document. HAI will read this pursuit again to check whether the association is absent.',
+      nzOkText: 'Detach record', nzOkDanger: true, nzCancelText: 'Keep link', nzAutofocus: 'cancel',
+      nzOnCancel: () => {
+        if (this.linkConfirmationRevision === revision) this.linkConfirmationId = '';
       },
-      error: (error) => {
-        this.detailLoading = false;
-        this.notification.error('Detach blocked', error?.error?.error || 'The pursuit link could not be removed.');
+      nzOnOk: () => {
+        if (this.linkConfirmationRevision !== revision || this.linkConfirmationId !== linkId || this.detachingLinkId) return;
+        this.linkConfirmationId = '';
+        if (this.selected !== selection || this.detailLoading || this.linkSaving || this.lifecycleRunningId || this.resolvingDecisionId ||
+            JSON.stringify(this.selected?.links?.find(item => item.id === linkId)) !== linkSnapshot) {
+          this.notification.warning('Detach needs review', 'The selected pursuit or link changed. Inspect the current association before confirming again.');
+          return;
+        }
+        this.detachingLinkId = linkId;
+        let received = false;
+        this.linkDetachSub = this.pursuitsService.deleteLink(pursuitId, linkId).pipe(
+          take(1), finalize(() => { this.detachingLinkId = ''; }),
+        ).subscribe({
+          next: (absent) => {
+            received = true;
+            if (absent !== true) {
+              this.notification.warning('Detach unconfirmed', 'The current pursuit still lists this association. Inspect current state before retrying.');
+              return;
+            }
+            if (this.selected === selection && !this.detailLoading) {
+              this.notification.info('Link absent in current read', 'The server no longer lists this association. The source record is not deleted.');
+              this.loadPursuitDetail(pursuitId, false);
+            }
+            this.load();
+          },
+          error: () => {
+            this.notification.error('Detach unconfirmed', 'HAI could not confirm the current association state. Inspect current links before retrying; the source record is not deleted.');
+          },
+          complete: () => {
+            if (!received) this.notification.warning('Detach unconfirmed', 'No scoped link readback was returned. Inspect current links before retrying.');
+          },
+        });
       },
     });
   }
@@ -3463,44 +4092,92 @@ export class PursuitsComponent implements OnInit, OnDestroy {
     if (!value) {
       return;
     }
+    if (/[\u0000-\u001f\u007f]/.test(value) || /%(?:0[0-9a-f]|1[0-9a-f]|7f)/i.test(value) ||
+        /^(javascript|vbscript|data|blob):/i.test(value)) {
+      this.notification.warning('Source link blocked', 'This source reference is not safe to open. Inspect its origin instead.');
+      return;
+    }
     const runtimeAttempt = this.runtimeAttemptFromEvidenceUri(value);
     if (runtimeAttempt) {
       this.inspectRuntimeEvidence(runtimeAttempt);
       return;
     }
-    if (!this.isBrowserNavigableUri(value) && this.selected?.pursuit?.id) {
+    const href = this.browserSourceHref(value);
+    if (href) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (/^(https?|mailto|tel):/i.test(value)) {
+      this.notification.warning('Source link blocked', 'This web or contact link is malformed or includes embedded credentials. Inspect its origin instead.');
+      return;
+    }
+    if (this.selected?.pursuit?.id) {
       this.resolveEvidence(value);
       return;
     }
-    window.open(value, '_blank', 'noopener');
+    this.notification.warning('Source context required', 'Select the pursuit containing this local or internal reference before opening it.');
   }
 
   private resolveEvidence(uri: string): void {
-    if (!this.selected?.pursuit?.id || this.resolvingEvidenceUri) {
+    if (!this.selected?.pursuit?.id || this.resolvingEvidenceUri || this.detailLoading) {
       return;
     }
+    const pursuitId = this.selected.pursuit.id;
+    let received = false;
     this.resolvingEvidenceUri = uri;
-    this.pursuitsService.resolveEvidence(this.selected.pursuit.id, uri).subscribe({
+    this.evidenceResolutionSub = this.pursuitsService.resolveEvidence(pursuitId, uri).pipe(
+      take(1),
+      finalize(() => { this.resolvingEvidenceUri = ''; }),
+    ).subscribe({
       next: (record) => {
-        this.resolvingEvidenceUri = '';
+        received = true;
+        if (this.selected?.pursuit?.id !== pursuitId) {
+          return;
+        }
+        const runtimeUri = uri.toLowerCase().startsWith('automation-launch://');
+        const returnedUri = typeof record?.uri === 'string' ? record.uri : '';
+        if (!(runtimeUri ? returnedUri.toLowerCase() === uri.toLowerCase() : returnedUri === uri) ||
+          (record?.runtimeAttempt && (!runtimeUri ||
+            this.runtimeEvidenceUri(record.runtimeAttempt).toLowerCase() !== uri.toLowerCase()))) {
+          this.notification.warning('Evidence unavailable', 'The response does not match the requested evidence. Refresh this pursuit before retrying.');
+          return;
+        }
         if (record.runtimeAttempt) {
           this.inspectRuntimeEvidence(record.runtimeAttempt);
           return;
         }
         this.inspectEvidence(record);
       },
-      error: (error) => {
-        this.resolvingEvidenceUri = '';
-        this.notification.warning(
-          'Evidence unavailable',
-          error?.error?.error || `${uri} is not linked to this pursuit.`
-        );
+      error: () => {
+        if (this.selected?.pursuit?.id === pursuitId) {
+          this.notification.warning('Evidence unavailable', 'HAI could not resolve this source. Refresh the pursuit before retrying.');
+        }
+      },
+      complete: () => {
+        if (!received && this.selected?.pursuit?.id === pursuitId) {
+          this.notification.warning('Evidence unavailable', 'No evidence record was received. Refresh the pursuit before retrying.');
+        }
       },
     });
   }
 
-  private isBrowserNavigableUri(uri: string): boolean {
-    return /^(https?:|mailto:|tel:|file:)/i.test(uri);
+  private browserSourceHref(uri: string): string | undefined {
+    try {
+      const parsed = new URL(uri);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        return /^https?:\/\//i.test(uri) && !uri.includes('\\') && parsed.hostname && !parsed.username && !parsed.password
+          ? parsed.href : undefined;
+      }
+      if (parsed.protocol === 'mailto:') {
+        return /^[^\s@]+@[^\s@]+$/.test(parsed.pathname) ? parsed.href : undefined;
+      }
+      if (parsed.protocol === 'tel:') {
+        return /^\+?[0-9][0-9(). -]{0,49}$/.test(parsed.pathname) && !parsed.search && !parsed.hash ? parsed.href : undefined;
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
   }
 
   private runtimeAttemptFromEvidenceUri(uri: string): IAutomationLaunchEvent | undefined {
@@ -3607,9 +4284,18 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   }
 
   resolveDecision(decision: IPursuitDecision, approved: boolean): void {
-    if (!this.selected || this.resolvingDecisionId || !this.canResolveDecision(decision)) {
+    if (!this.selected || this.detailLoading || this.lifecycleRunningId || this.resolvingDecisionId ||
+      typeof decision?.id !== 'string' || !decision.id.trim()) {
       return;
     }
+    const current = Array.isArray(this.selected.decisionQueue)
+      ? this.selected.decisionQueue.find((entry) => entry?.id === decision.id) : undefined;
+    if (!current || !this.canResolveDecision(current) || current.decisionType !== decision.decisionType ||
+      (current.workflowId || '') !== (decision.workflowId || '')) {
+      this.notification.warning('Decision needs refresh', 'This card no longer matches a pending decision in the selected pursuit. Refresh before reviewing it.');
+      return;
+    }
+    decision = current;
     if (decision.decisionType === 'approval' && decision.workflowId) {
       this.resolveWorkflowApproval(decision, approved);
       return;
@@ -3638,29 +4324,20 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   }
 
   private resolveWorkflowApproval(decision: IPursuitDecision, approved: boolean): void {
-    if (!decision.workflowId) {
+    if (!this.selected || !decision.workflowId) {
       return;
     }
+    const pursuitId = this.selected.pursuit.id;
     this.resolvingDecisionId = decision.id;
-    this.workflowService.resolveApproval(decision.workflowId, {
+    this.observeWorkflowDecision(pursuitId, decision.workflowId, approved, this.workflowService.resolveApproval(decision.workflowId, {
       approved,
       note: approved ? decision.yesConsequence : decision.noConsequence,
       actor: 'Robert',
-    }).subscribe({
-      next: () => {
-        this.resolvingDecisionId = '';
-        this.notification.success('Approval recorded', approved ? 'Workflow approved through the audited gate.' : 'Workflow rejected and blocked for review.');
-        this.reloadSelectedAfterDecision();
-      },
-      error: (error) => {
-        this.resolvingDecisionId = '';
-        this.notification.error('Approval blocked', error?.error?.error || 'The workflow approval could not be recorded.');
-      },
-    });
+    }));
   }
 
   private resolveWorkflowProposal(decision: IPursuitDecision, approved: boolean): void {
-    if (!decision.workflowId) {
+    if (!this.selected || !decision.workflowId) {
       return;
     }
     const proposalId = this.proposalIdFromDecision(decision);
@@ -3668,22 +4345,53 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       this.notification.error('Proposal unavailable', 'The proposal ID is missing from this decision card.');
       return;
     }
+    const pursuitId = this.selected.pursuit.id;
     this.resolvingDecisionId = decision.id;
-    this.workflowService.resolveProposal(decision.workflowId, proposalId, {
+    this.observeWorkflowDecision(pursuitId, decision.workflowId, approved, this.workflowService.resolveProposal(decision.workflowId, proposalId, {
       approved,
       status: approved ? 'approved' : 'rejected',
       selectedOption: approved ? decision.yesLabel : decision.noLabel,
       note: approved ? decision.yesConsequence : decision.noConsequence,
       actor: 'Robert',
-    }).subscribe({
-      next: () => {
-        this.resolvingDecisionId = '';
-        this.notification.success('Proposal recorded', approved ? 'Proposal accepted through the workflow audit trail.' : 'Proposal rejected for revision.');
-        this.reloadSelectedAfterDecision();
+    }), proposalId);
+  }
+
+  private observeWorkflowDecision(pursuitId: string, workflowId: string, approved: boolean,
+    response: Observable<IWorkflowRecord>, proposalId?: string): void {
+    const expectedStatus = approved ? 'approved' : 'rejected';
+    const decisionType = proposalId ? 'proposal' : 'approval';
+    let received = false;
+    this.decisionMutationSub = response.pipe(
+      take(1),
+      finalize(() => { this.resolvingDecisionId = ''; }),
+    ).subscribe({
+      next: (record) => {
+        received = true;
+        const auditMatches = Array.isArray(record?.decisions) && record.decisions.some((audit) =>
+          typeof audit?.id === 'string' && !!audit.id.trim() && audit.workflowId === workflowId &&
+          audit.decisionType === decisionType && audit.decision === expectedStatus && audit.approved === approved);
+        const stateMatches = proposalId
+          ? Array.isArray(record?.proposals) && record.proposals.some((proposal) =>
+            proposal?.id === proposalId && proposal.workflowId === workflowId && proposal.status === expectedStatus)
+          : record?.item?.approvalStatus === expectedStatus;
+        if (record?.item?.id !== workflowId || !auditMatches || !stateMatches) {
+          this.notification.warning('Workflow decision not confirmed', 'The response does not contain the matching decision record. Review the original workflow before repeating the request.');
+          return;
+        }
+        this.notification.success('Workflow decision record received', `The returned workflow and audit report this ${decisionType} as ${expectedStatus}. Execution status is separate.`);
+        if (this.selected?.pursuit?.id === pursuitId) {
+          this.reloadSelectedAfterDecision();
+        } else {
+          this.load();
+        }
       },
-      error: (error) => {
-        this.resolvingDecisionId = '';
-        this.notification.error('Proposal blocked', error?.error?.error || 'The proposal could not be resolved.');
+      error: () => {
+        this.notification.error('Workflow decision not confirmed', 'HAI could not confirm the decision response. Review the original workflow before repeating the request.');
+      },
+      complete: () => {
+        if (!received) {
+          this.notification.warning('Workflow decision not confirmed', 'No workflow decision response was received. Review the original workflow before repeating the request.');
+        }
       },
     });
   }
@@ -3692,8 +4400,9 @@ export class PursuitsComponent implements OnInit, OnDestroy {
     if (!this.selected) {
       return;
     }
+    const pursuitId = this.selected.pursuit.id;
     this.resolvingDecisionId = decision.id;
-    this.pursuitsService.resolveDecision(this.selected.pursuit.id, {
+    this.observePursuitDecision(pursuitId, decision.id, this.pursuitsService.resolveDecision(pursuitId, {
       decisionId: decision.id,
       decisionType: decision.decisionType,
       approved,
@@ -3703,34 +4412,16 @@ export class PursuitsComponent implements OnInit, OnDestroy {
         : decision.noConsequence || `Robert rejected the proposed next action: ${decision.recommended}`,
       evidenceUri: decision.evidenceUri,
       evidenceLabel: decision.evidenceLabel,
-    }).subscribe({
-      next: (detail) => {
-        this.selected = detail;
-        this.resolvingDecisionId = '';
-        this.notification.success(
-          approved ? 'Workflow created' : 'Decision recorded',
-          approved
-            ? 'The approved pursuit decision became a governed workflow item.'
-            : 'The pursuit decision is now resolved in the audit trail.'
-        );
-        this.load();
-      },
-      error: (error) => {
-        this.resolvingDecisionId = '';
-        this.notification.error(
-          approved ? 'Workflow creation blocked' : 'Decision blocked',
-          error?.error?.error || 'The pursuit decision could not be recorded.'
-        );
-      },
-    });
+    }));
   }
 
   private resolveRuntimeAttemptReview(decision: IPursuitDecision, approved: boolean): void {
     if (!this.selected) {
       return;
     }
+    const pursuitId = this.selected.pursuit.id;
     this.resolvingDecisionId = decision.id;
-    this.pursuitsService.resolveDecision(this.selected.pursuit.id, {
+    this.observePursuitDecision(pursuitId, decision.id, this.pursuitsService.resolveDecision(pursuitId, {
       decisionId: decision.id,
       decisionType: decision.decisionType,
       approved,
@@ -3738,34 +4429,16 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       note: approved ? decision.yesConsequence || decision.recommended : decision.noConsequence || 'Keep runtime attempt blocked until reviewed.',
       evidenceUri: decision.evidenceUri,
       evidenceLabel: decision.evidenceLabel,
-    }).subscribe({
-      next: (detail) => {
-        this.selected = detail;
-        this.resolvingDecisionId = '';
-        this.notification.success(
-          approved ? 'Recovery workflow created' : 'Runtime attempt kept blocked',
-          approved
-            ? 'HAI created a governed recovery workflow through the audited decision path.'
-            : 'The runtime attempt remains blocked and is removed from the Robert-only decision queue.'
-        );
-        this.load();
-      },
-      error: (error) => {
-        this.resolvingDecisionId = '';
-        this.notification.error(
-          approved ? 'Recovery workflow blocked' : 'Decision blocked',
-          error?.error?.error || 'The runtime recovery decision could not be recorded.'
-        );
-      },
-    });
+    }));
   }
 
   private resolvePursuitCompletionReview(decision: IPursuitDecision, approved: boolean): void {
     if (!this.selected) {
       return;
     }
+    const pursuitId = this.selected.pursuit.id;
     this.resolvingDecisionId = decision.id;
-    this.pursuitsService.resolveDecision(this.selected.pursuit.id, {
+    this.observePursuitDecision(pursuitId, decision.id, this.pursuitsService.resolveDecision(pursuitId, {
       decisionId: decision.id,
       decisionType: decision.decisionType,
       approved,
@@ -3775,24 +4448,36 @@ export class PursuitsComponent implements OnInit, OnDestroy {
         : decision.noConsequence || 'Robert kept the pursuit active after completion review.',
       evidenceUri: decision.evidenceUri,
       evidenceLabel: decision.evidenceLabel,
-    }).subscribe({
+    }));
+  }
+
+  private observePursuitDecision(pursuitId: string, decisionId: string, response: Observable<IPursuitDetail>): void {
+    let received = false;
+    this.decisionMutationSub = response.pipe(
+      take(1),
+      finalize(() => { this.resolvingDecisionId = ''; }),
+    ).subscribe({
       next: (detail) => {
-        this.selected = detail;
-        this.resolvingDecisionId = '';
-        this.notification.success(
-          approved ? 'Pursuit completed' : 'Pursuit kept active',
-          approved
-            ? 'Verified completion and the Robert decision were recorded in the audit trail.'
-            : 'The completion review decision was recorded.'
-        );
+        received = true;
+        if (detail?.pursuit?.id !== pursuitId || !Array.isArray(detail.decisionQueue) ||
+          detail.decisionQueue.some((decision) => !decision || typeof decision.id !== 'string' ||
+            typeof decision.status !== 'string' || decision.id === decisionId)) {
+          this.notification.warning('Decision not confirmed', 'The response does not confirm this decision. Refresh the original pursuit before repeating the request.');
+          return;
+        }
+        if (this.selected?.pursuit?.id === pursuitId) {
+          this.selected = detail;
+        }
+        this.notification.success('Decision record refreshed', 'This decision is no longer pending in the returned pursuit record. Review related work for its execution status.');
         this.load();
       },
-      error: (error) => {
-        this.resolvingDecisionId = '';
-        this.notification.error(
-          approved ? 'Completion blocked' : 'Decision blocked',
-          error?.error?.error || 'The completion review decision could not be recorded.'
-        );
+      error: () => {
+        this.notification.error('Decision not confirmed', 'HAI could not confirm the decision response. Refresh the original pursuit before repeating the request.');
+      },
+      complete: () => {
+        if (!received) {
+          this.notification.warning('Decision not confirmed', 'No decision response was received. Refresh the original pursuit before repeating the request.');
+        }
       },
     });
   }
@@ -3801,35 +4486,77 @@ export class PursuitsComponent implements OnInit, OnDestroy {
     if (!this.selected) {
       return;
     }
+    const pursuitId = this.selected.pursuit.id;
     this.resolvingDecisionId = decision.id;
     if (approved) {
-      this.pursuitsService.acceptCandidate(this.selected.pursuit.id, {
+      this.observeCandidateAcceptance(pursuitId, decision.id, this.pursuitsService.acceptCandidate(pursuitId, {
         requiresReview: decision.riskLevel === 'high',
         reviewReason: decision.reason,
-      }).subscribe({
-        next: (detail) => {
-          this.selected = detail;
-          this.resolvingDecisionId = '';
-          this.notification.success('Candidate accepted', 'HAI converted the candidate into governed pursuit work.');
-          this.load();
-        },
-        error: (error) => {
-          this.resolvingDecisionId = '';
-          this.notification.error('Candidate blocked', error?.error?.error || 'HAI could not accept and plan this candidate.');
-        },
-      });
+      }));
       return;
     }
-    this.pursuitsService.archive(this.selected.pursuit.id, true).subscribe({
-      next: () => {
-        this.selected = undefined;
-        this.resolvingDecisionId = '';
-        this.notification.success('Candidate archived', 'The auto-created candidate was removed from active queues.');
+    let received = false;
+    this.decisionMutationSub = this.pursuitsService.archive(pursuitId, true).pipe(
+      take(1),
+      finalize(() => { this.resolvingDecisionId = ''; }),
+    ).subscribe({
+      next: (pursuit) => {
+        received = true;
+        if (pursuit?.id !== pursuitId || pursuit.archived !== true || pursuit.status !== 'archived') {
+          this.notification.warning('Archive not confirmed', 'The response does not confirm this candidate was archived. Refresh the original pursuit before repeating the request.');
+          return;
+        }
+        if (this.selected?.pursuit?.id === pursuitId) {
+          this.evidenceResolutionSub?.unsubscribe();
+          this.inspectedRuntimeEvidence = undefined;
+          this.inspectedEvidence = undefined;
+          this.inspectedAction = undefined;
+          this.selected = undefined;
+        }
+        this.notification.success('Candidate archive recorded', 'The returned pursuit record reports this candidate as archived.');
         this.load();
       },
-      error: (error) => {
-        this.resolvingDecisionId = '';
-        this.notification.error('Archive blocked', error?.error?.error || 'HAI could not archive this candidate.');
+      error: () => {
+        this.notification.error('Archive not confirmed', 'HAI could not confirm the archive response. Refresh the original pursuit before repeating the request.');
+      },
+      complete: () => {
+        if (!received) {
+          this.notification.warning('Archive not confirmed', 'No archive response was received. Refresh the original pursuit before repeating the request.');
+        }
+      },
+    });
+  }
+
+  private observeCandidateAcceptance(pursuitId: string, decisionId: string, response: Observable<IPursuitDetail>): void {
+    let received = false;
+    this.decisionMutationSub = response.pipe(
+      take(1),
+      finalize(() => { this.resolvingDecisionId = ''; }),
+    ).subscribe({
+      next: (detail) => {
+        received = true;
+        const source = String(detail?.pursuit?.sourceOfCreation || '').trim().toLowerCase();
+        const acceptedSourceIsContradictory = source === 'pursuit_candidate' || source.includes('_pursuit_candidate');
+        const candidateDecisionPending = Array.isArray(detail?.decisionQueue) &&
+          detail.decisionQueue.some((entry) => entry?.id === decisionId && entry.status === 'pending');
+        if (detail?.pursuit?.id !== pursuitId || detail.pursuit.status !== 'active' ||
+            acceptedSourceIsContradictory || candidateDecisionPending) {
+          this.notification.warning('Candidate acceptance not confirmed', 'The returned pursuit does not confirm that the candidate was accepted. Refresh this pursuit before repeating the request.');
+          return;
+        }
+        if (this.selected?.pursuit?.id === pursuitId) {
+          this.selected = detail;
+        }
+        this.notification.success('Candidate accepted', 'The returned pursuit is now active for governed HAI handling. Review linked workflow state separately; execution is not confirmed.');
+        this.load();
+      },
+      error: () => {
+        this.notification.error('Candidate acceptance not confirmed', 'HAI could not confirm the acceptance response. Refresh the original pursuit before repeating the request.');
+      },
+      complete: () => {
+        if (!received) {
+          this.notification.warning('Candidate acceptance not confirmed', 'No acceptance response was received. Refresh the original pursuit before repeating the request.');
+        }
       },
     });
   }

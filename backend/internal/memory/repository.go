@@ -3,6 +3,8 @@ package memory
 import (
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
+	"context"
+	"errors"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -29,12 +31,41 @@ type RecentOwnerScopedRepository interface {
 	FindRecentForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error)
 }
 
+// MemoryDeduplicationRepository provides a cross-instance write fence for
+// deduplication. The callback must use only the supplied repository so its
+// reads and writes share the lock transaction.
+type MemoryDeduplicationRepository interface {
+	WithMemoryDeduplicationLock(ctx context.Context, key string, write func(Repository) (*models.ContextMemory, error)) (*models.ContextMemory, error)
+}
+
 type GormRepository struct {
 	DB *gorm.DB
 }
 
 func NewGormRepository(db *gorm.DB) Repository {
 	return &GormRepository{DB: db}
+}
+
+func (r *GormRepository) WithMemoryDeduplicationLock(ctx context.Context, key string, write func(Repository) (*models.ContextMemory, error)) (*models.ContextMemory, error) {
+	if r == nil || r.DB == nil || r.DB.Dialector == nil || write == nil {
+		return nil, errors.New("memory deduplication repository is unavailable")
+	}
+	if r.DB.Dialector.Name() != "postgres" {
+		return write(r)
+	}
+	var saved *models.ContextMemory
+	err := r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+			return err
+		}
+		var err error
+		saved, err = write(&GormRepository{DB: tx})
+		return err
+	})
+	if err != nil {
+		return saved, err
+	}
+	return saved, nil
 }
 
 func DefaultRepository() Repository {

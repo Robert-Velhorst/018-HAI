@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,7 +36,7 @@ type googleOAuth struct {
 const (
 	googleDefaultAuthEndpoint  = "https://accounts.google.com/o/oauth2/v2/auth"
 	googleDefaultTokenEndpoint = "https://oauth2.googleapis.com/token"
-	googleDefaultUserInfoURL   = "https://www.googleapis.com/oauth2/v2/userinfo"
+	googleDefaultUserInfoURL   = "https://openidconnect.googleapis.com/v1/userinfo"
 	googleLoginScope           = "openid email profile"
 )
 
@@ -62,7 +63,40 @@ func newGoogleOAuth(jwtSecret string) *googleOAuth {
 
 // Configured reports whether Google login can run.
 func (g *googleOAuth) Configured() bool {
-	return g.clientID != "" && g.clientSecret != "" && g.redirectURL != ""
+	return g.clientID != "" && g.clientID == strings.TrimSpace(g.clientID) &&
+		g.clientSecret != "" && g.clientSecret == strings.TrimSpace(g.clientSecret) &&
+		validGoogleRedirectURL(g.redirectURL)
+}
+
+func validGoogleRedirectURL(raw string) bool {
+	if raw == "" || raw != strings.TrimSpace(raw) {
+		return false
+	}
+	redirect, err := url.Parse(raw)
+	if err != nil || redirect == nil || !redirect.IsAbs() || redirect.Opaque != "" || redirect.User != nil ||
+		redirect.Hostname() == "" || redirect.Fragment != "" || !strings.HasSuffix(strings.TrimRight(redirect.Path, "/"), "/auth/google/callback") {
+		return false
+	}
+	if port := redirect.Port(); port != "" {
+		parsedPort, err := strconv.Atoi(port)
+		if err != nil || parsedPort < 1 || parsedPort > 65535 {
+			return false
+		}
+	}
+
+	switch strings.ToLower(redirect.Scheme) {
+	case "https":
+		return true
+	case "http":
+		host := strings.TrimSuffix(strings.ToLower(redirect.Hostname()), ".")
+		if host == "localhost" {
+			return true
+		}
+		ip := net.ParseIP(host)
+		return ip != nil && ip.IsLoopback()
+	default:
+		return false
+	}
 }
 
 func (g *googleOAuth) signState() (string, error) {
@@ -97,15 +131,55 @@ func (g *googleOAuth) verifyState(state string) error {
 		return fmt.Errorf("malformed state")
 	}
 	exp, err := strconv.ParseInt(fields[0], 10, 64)
-	if err != nil || time.Now().Unix() > exp {
+	if err != nil || time.Now().Unix() >= exp {
 		return fmt.Errorf("state expired")
 	}
 	return nil
 }
 
+// pkceVerifierForState derives an opaque verifier from a valid signed state.
+// The verifier is never sent through the browser; only its S256 challenge is
+// included in the authorization request. Domain separation keeps this use of
+// the state key independent from state signing.
+func (g *googleOAuth) pkceVerifierForState(state string) (string, error) {
+	if err := g.verifyState(state); err != nil {
+		return "", fmt.Errorf("verify state for PKCE: %w", err)
+	}
+	mac := hmac.New(sha256.New, g.stateSecret)
+	mac.Write([]byte("google-login-pkce-v1|"))
+	mac.Write([]byte(state))
+	verifier := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	if _, err := googlePKCES256Challenge(verifier); err != nil {
+		return "", fmt.Errorf("derive PKCE verifier: %w", err)
+	}
+	return verifier, nil
+}
+
+func googlePKCES256Challenge(verifier string) (string, error) {
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return "", fmt.Errorf("PKCE verifier must be 43 to 128 characters")
+	}
+	for i := 0; i < len(verifier); i++ {
+		c := verifier[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '.' || c == '_' || c == '~') {
+			return "", fmt.Errorf("PKCE verifier contains an invalid character")
+		}
+	}
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:]), nil
+}
+
 // AuthCodeURL returns the Google consent URL, with a fresh signed state.
 func (g *googleOAuth) AuthCodeURL() (string, error) {
 	state, err := g.signState()
+	if err != nil {
+		return "", err
+	}
+	verifier, err := g.pkceVerifierForState(state)
+	if err != nil {
+		return "", err
+	}
+	challenge, err := googlePKCES256Challenge(verifier)
 	if err != nil {
 		return "", err
 	}
@@ -115,13 +189,16 @@ func (g *googleOAuth) AuthCodeURL() (string, error) {
 	q.Set("response_type", "code")
 	q.Set("scope", googleLoginScope)
 	q.Set("state", state)
+	q.Set("code_challenge", challenge)
+	q.Set("code_challenge_method", "S256")
 	return g.authEndpoint + "?" + q.Encode(), nil
 }
 
 // Exchange verifies the state, trades the code for an access token, and returns
 // the authenticated user's verified email address.
 func (g *googleOAuth) Exchange(ctx context.Context, code, state string) (string, error) {
-	if err := g.verifyState(state); err != nil {
+	verifier, err := g.pkceVerifierForState(state)
+	if err != nil {
 		return "", err
 	}
 	if strings.TrimSpace(code) == "" {
@@ -134,6 +211,7 @@ func (g *googleOAuth) Exchange(ctx context.Context, code, state string) (string,
 	form.Set("client_secret", g.clientSecret)
 	form.Set("redirect_uri", g.redirectURL)
 	form.Set("grant_type", "authorization_code")
+	form.Set("code_verifier", verifier)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.tokenEndpoint, strings.NewReader(form.Encode()))
 	if err != nil {
@@ -192,7 +270,7 @@ func (g *googleOAuth) fetchEmail(ctx context.Context, accessToken string) (strin
 
 	var info struct {
 		Email         string `json:"email"`
-		VerifiedEmail bool   `json:"verified_email"`
+		EmailVerified bool   `json:"email_verified"`
 	}
 	if err := json.Unmarshal(body, &info); err != nil {
 		return "", fmt.Errorf("userinfo unparseable: %w", err)
@@ -201,7 +279,7 @@ func (g *googleOAuth) fetchEmail(ctx context.Context, accessToken string) (strin
 	if email == "" {
 		return "", fmt.Errorf("google did not return an email address")
 	}
-	if !info.VerifiedEmail {
+	if !info.EmailVerified {
 		return "", fmt.Errorf("google email address is not verified")
 	}
 	return email, nil

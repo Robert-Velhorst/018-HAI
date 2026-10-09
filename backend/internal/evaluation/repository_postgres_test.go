@@ -5,12 +5,12 @@ package evaluation
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"automation-hub-backend/internal/models"
+	"automation-hub-backend/internal/pgtestguard"
 	"automation-hub-backend/migrations"
 
 	"gorm.io/driver/postgres"
@@ -20,16 +20,7 @@ import (
 
 func openEvaluationPostgresTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping Postgres integration test")
-	}
-	if !strings.EqualFold(
-		strings.TrimSpace(os.Getenv("HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS")),
-		"true",
-	) {
-		t.Skip("HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS=true is required")
-	}
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_EVALUATION_TEST_DATABASE_DSN", "hai_evaluation_test")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
@@ -40,9 +31,8 @@ func openEvaluationPostgresTestDB(t *testing.T) *gorm.DB {
 	if err := db.Raw("SELECT current_database()").Scan(&databaseName).Error; err != nil {
 		t.Fatalf("read database name: %v", err)
 	}
-	lower := strings.ToLower(databaseName)
-	if !strings.Contains(lower, "test") && !strings.Contains(lower, "ci") {
-		t.Fatalf("refusing destructive evaluation test against %q", databaseName)
+	if databaseName != "hai_evaluation_test" {
+		t.Fatalf("refusing destructive evaluation test against unexpected database identity %q", databaseName)
 	}
 	if err := db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;").Error; err != nil {
 		t.Fatalf("reset schema: %v", err)

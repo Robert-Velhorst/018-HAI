@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.spec.json",
+  "include": [
+    "src/app/pages/home/home.component.spec.ts",
+    "src/app/pages/workflow-engine/workflow-engine.component.spec.ts",
+    "src/app/pages/quick-capture/quick-capture.component.spec.ts",
+    "src/app/pages/command-dashboard/command-dashboard.component.spec.ts"
+  ]
+}

@@ -35,6 +35,16 @@ func TestAddConfigUsesURLPathForPublicLocation(t *testing.T) {
 	if strings.Contains(text, "location /backend/") {
 		t.Fatalf("config = %q, must not expose upstream host as public route", text)
 	}
+	for _, directive := range []string{
+		"$upstream_http_x_hai_refreshed_access_cookie",
+		"$upstream_http_x_hai_refreshed_refresh_cookie",
+		"add_header Set-Cookie $hai_refreshed_access_cookie always;",
+		"add_header Set-Cookie $hai_refreshed_refresh_cookie always;",
+	} {
+		if !strings.Contains(text, directive) {
+			t.Errorf("config is missing refresh propagation directive %q", directive)
+		}
+	}
 }
 
 func TestConfigPathRejectsTraversal(t *testing.T) {

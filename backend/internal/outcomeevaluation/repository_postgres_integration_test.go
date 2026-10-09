@@ -5,10 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"automation-hub-backend/internal/pgtestguard"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -19,34 +22,7 @@ import (
 // HAI_OUTCOME_EVALUATION_TEST_DATABASE_DSN to a disposable database where
 // migration 0023 has already been applied.
 func TestPostgresRepositoryLifecycle(t *testing.T) {
-	dsn := strings.TrimSpace(os.Getenv("HAI_OUTCOME_EVALUATION_TEST_DATABASE_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_OUTCOME_EVALUATION_TEST_DATABASE_DSN not set")
-	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("open Postgres: %v", err)
-	}
-	// This switch exists only for disposable repository tests. Production and
-	// normal integration runs must receive the schema from migration 0023.
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("HAI_OUTCOME_EVALUATION_TEST_BOOTSTRAP_SCHEMA")), "true") {
-		if err := db.Exec(postgres0023SchemaContract).Error; err != nil {
-			t.Fatalf("bootstrap disposable 0023 schema contract: %v", err)
-		}
-	}
-	for _, table := range []string{
-		"public.outcome_evaluation_outcome_revisions",
-		"public.outcome_evaluation_evaluations",
-		"public.outcome_evaluation_corrections",
-	} {
-		var relation *string
-		if err := db.Raw(`SELECT to_regclass(?)::text`, table).Row().Scan(&relation); err != nil {
-			t.Fatalf("check %s: %v", table, err)
-		}
-		if relation == nil || *relation == "" {
-			t.Fatalf("required 0023 table %s is missing", table)
-		}
-	}
+	db := openOutcomePostgresFixture(t)
 
 	repository, err := NewPostgresRepositoryWithLimits(db, HistoryLimits{
 		OutcomeRevisions: 2,
@@ -164,16 +140,22 @@ func TestPostgresRepositoryLifecycle(t *testing.T) {
 	}, 12)
 	var wait sync.WaitGroup
 	for range 12 {
+		// Independent callers own their request slices. Normalization mutates
+		// them, so sharing one fixture would race before the database write.
+		request, err := cloneValue(evaluationRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
 		wait.Add(1)
-		go func() {
+		go func(request CreateEvaluationRequest) {
 			defer wait.Done()
 			<-start
-			_, wasCreated, createErr := service.CreateEvaluation(context.Background(), owner, workspace, outcomeID, evaluationRequest)
+			_, wasCreated, createErr := service.CreateEvaluation(context.Background(), owner, workspace, outcomeID, request)
 			results <- struct {
 				created bool
 				err     error
 			}{wasCreated, createErr}
-		}()
+		}(request)
 	}
 	close(start)
 	wait.Wait()
@@ -210,5 +192,141 @@ func TestPostgresRepositoryLifecycle(t *testing.T) {
 	retriedCorrection, created, err := service.StoreCorrection(context.Background(), owner, workspace, outcomeID, correctionRequest)
 	if err != nil || created || retriedCorrection.AuditDigest != correction.AuditDigest {
 		t.Fatalf("idempotent StoreCorrection = (%t, %v)", created, err)
+	}
+}
+
+func openOutcomePostgresFixture(t *testing.T) *gorm.DB {
+	t.Helper()
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_OUTCOME_EVALUATION_TEST_DATABASE_DSN", "hai_outcome_evaluation_test")
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("HAI_OUTCOME_EVALUATION_TEST_BOOTSTRAP_SCHEMA")), "true") {
+		t.Fatal("apply canonical migration 0023 before testing; handwritten schema bootstrap is not supported")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatalf("open dedicated Postgres: %v", err)
+	}
+	connection, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := connection.Close(); err != nil {
+			t.Errorf("close dedicated Postgres: %v", err)
+		}
+	})
+	var database string
+	if err := db.Raw("SELECT current_database()").Row().Scan(&database); err != nil || database != "hai_outcome_evaluation_test" {
+		t.Fatalf("connected database = %q, err %v", database, err)
+	}
+	for _, table := range []string{"outcome_evaluation_outcome_revisions", "outcome_evaluation_evaluations", "outcome_evaluation_corrections"} {
+		var count int
+		if err := db.Raw(`SELECT count(*) FROM pg_trigger
+			WHERE tgrelid = to_regclass(?) AND NOT tgisinternal AND tgenabled = 'O'
+			AND tgname IN (?, ?)`, "public."+table, "trg_"+table+"_immutable", "trg_"+table+"_no_truncate").Row().Scan(&count); err != nil || count != 2 {
+			t.Fatalf("canonical 0023 append-only triggers for %s = %d, err %v", table, count, err)
+		}
+	}
+	return db
+}
+
+func TestPostgresPinnedHistoricalEvaluationReplay(t *testing.T) {
+	db := openOutcomePostgresFixture(t)
+	repository, err := NewPostgresRepositoryWithLimits(db, HistoryLimits{OutcomeRevisions: 1, Evaluations: 10, Corrections: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	suffix := fmt.Sprintf("%d", now.UnixNano())
+	owner, workspace, outcomeID := "snapshot-owner-"+suffix, "snapshot-workspace-"+suffix, "snapshot-outcome-"+suffix
+	definition := validRequest().Outcome
+	definition.ID, definition.Scope = outcomeID, Scope{OwnerID: owner, WorkspaceID: workspace}
+	for index := range definition.Indicators {
+		definition.Indicators[index].Baseline.Scope = definition.Scope
+	}
+	service := newService(repository, func() time.Time { return now })
+	original, created, err := service.StoreOutcome(t.Context(), owner, workspace, outcomeID, StoreOutcomeRequest{IdempotencyKey: "original", Outcome: definition})
+	if err != nil || !created {
+		t.Fatalf("original definition: created %v, err %v", created, err)
+	}
+	changed, err := cloneValue(original.Outcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed.Statement = "Later definition that must not replace the pinned historical target."
+	changed.Indicators[0].Direction, changed.Indicators[0].TargetValue = DirectionLower, 5
+	later, created, err := service.StoreOutcome(t.Context(), owner, workspace, outcomeID, StoreOutcomeRequest{IdempotencyKey: "later", ExpectedRevision: 1, Outcome: changed})
+	if err != nil || !created {
+		t.Fatalf("later definition: created %v, err %v", created, err)
+	}
+	history, err := service.OutcomeHistory(t.Context(), owner, workspace, outcomeID)
+	if err != nil || len(history) != 1 || history[0].Revision != later.Revision {
+		t.Fatalf("bounded history = %#v, err %v", history, err)
+	}
+	exact, err := service.ResolveOutcomeRevision(t.Context(), owner, workspace, outcomeID, original.Revision, original.AuditDigest)
+	if err != nil || !reflect.DeepEqual(exact, original) {
+		t.Fatalf("exact original definition = %#v, err %v", exact, err)
+	}
+	observations := []Observation{
+		observation("pg-snapshot-a-"+suffix, 12, testStart.Add(5*24*time.Hour)),
+		observation("pg-snapshot-b-"+suffix, 16, testStart.Add(15*24*time.Hour)),
+	}
+	for index := range observations {
+		observations[index].Scope = definition.Scope
+	}
+	request := CreateEvaluationRequest{IdempotencyKey: "pinned", OutcomeRevision: original.Revision, OutcomeAuditDigest: original.AuditDigest, Observations: observations, AsOf: testAsOf}
+	want, err := Evaluate(EvaluationRequest{Outcome: original.Outcome, Observations: observations, AsOf: testAsOf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentResult, err := Evaluate(EvaluationRequest{Outcome: later.Outcome, Observations: observations, AsOf: testAsOf})
+	if err != nil || currentResult.State == want.State {
+		t.Fatalf("fixture must distinguish historical/current semantics: %s/%s, err %v", want.State, currentResult.State, err)
+	}
+	stored, created, err := service.CreateEvaluation(t.Context(), owner, workspace, outcomeID, request)
+	if err != nil || !created || stored.OutcomeRevision != original.Revision || !reflect.DeepEqual(stored.Evaluation, want) {
+		t.Fatalf("historical evaluation = %#v, created %v, err %v", stored, created, err)
+	}
+	before, err := loadEvaluationRow(db, owner, workspace, outcomeID, stored.Evaluation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A new repository/service proves replay comes from PostgreSQL, not a
+	// retained service object, while the recording clock has advanced.
+	reopened := newService(NewPostgresRepository(db), func() time.Time { return now.Add(time.Hour) })
+	replayed, created, err := reopened.CreateEvaluation(t.Context(), owner, workspace, outcomeID, request)
+	if err != nil || created || !reflect.DeepEqual(replayed, stored) {
+		t.Fatalf("persisted exact replay = %#v, created %v, err %v", replayed, created, err)
+	}
+	if err := replayed.Evaluation.ValidateNoAuthority(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reopened.ResolveOutcomeRevision(t.Context(), "other-"+owner, workspace, outcomeID, original.Revision, original.AuditDigest); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-owner historical selector = %v", err)
+	}
+	if _, created, err := reopened.CreateEvaluation(t.Context(), "other-"+owner, workspace, outcomeID, request); !errors.Is(err, ErrNotFound) || created {
+		t.Fatalf("cross-owner pinned replay: created %v, err %v", created, err)
+	}
+	if _, err := reopened.GetEvaluation(t.Context(), "other-"+owner, workspace, outcomeID, stored.Evaluation.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-owner persisted receipt = %v", err)
+	}
+	token := WriteToken{Key: request.IdempotencyKey, RequestDigest: before.RequestDigest, OutcomeAuditDigest: later.AuditDigest}
+	if _, created, err := repository.AppendEvaluation(t.Context(), owner, workspace, outcomeID, stored, token); !errors.Is(err, ErrNotFound) || created {
+		t.Fatalf("forged historical digest on persisted replay: created %v, err %v", created, err)
+	}
+	token.OutcomeAuditDigest = original.AuditDigest
+	if _, created, err := repository.AppendEvaluation(t.Context(), owner, workspace, outcomeID, stored, token); err != nil || created {
+		t.Fatalf("repository exact replay: created %v, err %v", created, err)
+	}
+	if err := db.Exec(`UPDATE public.outcome_evaluation_evaluations SET recorded_at = recorded_at + interval '1 second'
+		WHERE owner_identity = ? AND workspace_id = ? AND outcome_id = ? AND evaluation_id = ?`, owner, workspace, outcomeID, stored.Evaluation.ID).Error; err == nil || !strings.Contains(err.Error(), "outcome evaluation history is append-only") {
+		t.Fatalf("canonical immutability trigger = %v", err)
+	}
+	after, err := loadEvaluationRow(db, owner, workspace, outcomeID, stored.Evaluation.ID)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("persisted receipt changed: before %#v, after %#v, err %v", before, after, err)
+	}
+	var count int
+	if err := db.Raw(`SELECT count(*) FROM public.outcome_evaluation_evaluations WHERE owner_identity = ? AND workspace_id = ? AND outcome_id = ?`, owner, workspace, outcomeID).Row().Scan(&count); err != nil || count != 1 {
+		t.Fatalf("persisted evaluation count = %d, err %v", count, err)
 	}
 }

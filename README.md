@@ -1,963 +1,655 @@
-# 018-HAI
+# Gitleaks
 
-018-HAI is a local-first Human Autonomous Intelligence Shell: a governed
-Personal AI Operating System for turning authorized source material, durable
-memory, workflows, approvals, and controlled execution into inspectable work.
-
-The canonical product is this repository's Go, Angular, Postgres, and Docker
-Compose stack. It is not an unrestricted desktop agent: planning, execution,
-verification, and approval are separate; external effects remain blocked until a
-reviewed runtime, policy, and evidence path are configured.
-
-> **Current repository state, evidence reviewed through 2026-08-04:** this repository
-> implements a governed local operating layer, including the Angular dashboard,
-> Go engines, IDP, Compose topology, pursuit/workflow routing, persistence, and
-> safety gates. On the development workspace used for this review, the Compose
-> services were healthy, nginx served `/` and Angular deep links such as
-> `/control-center`, gateway health routes responded, and protected APIs rejected
-> unsigned sessions. Those observations are local-environment evidence, not a
-> claim that every Windows machine or account integration is ready. Backend/IDP
-> tests, frontend production build and 447 unit tests, Compose validation, and a
-> Postgres-backed critical-path smoke have been exercised. A signed-in browser
-> acceptance run on the local Windows Compose stack also completed source intake,
-> pursuit creation, exact runtime selection, durable approval, a real read-only
-> backend probe, and terminal verification. A clean-clone Windows run and any
-> newly configured third-party account, paid model, browser-control, mutable
-> runtime, or broad-host-control journey remain release gates.
-
-### Current Change Boundary
-
-The repository has recently completed a safety-focused pursuit hardening pass.
-Pursuit dashboards, detail views, links, task-attempt summaries, runtime
-evidence, source resolution, candidate routing, and decision handling are all
-evaluated in the authenticated owner's scope. Related pursuits are navigable in
-the dashboard, but a pursuit cannot link to itself and a relationship cannot
-be used to expose another owner's operational record. Candidate pursuits remain
-non-executable until an approval-capable user explicitly accepts them; decision
-resolution is also permission-checked in the handler, not only in route wiring.
-The Command Dashboard is the unified operator queue for governed workflow
-approvals, proposal choices, candidate acceptance or archival, approved next
-actions, runtime recovery, and verified pursuit completion; each control calls
-the existing audited API rather than bypassing the relevant gate.
-
-This is an implementation and acceptance-tested local milestone. It does not
-replace the release gates in the verification snapshot below: a fresh-machine
-browser flow, newly configured provider acceptance, local-model task, and each
-mutable runtime dry run are still required before relying on those paths for
-personal work.
-
-## Product Boundary
-
-HAI is the product. A pursuit is the high-level objective or case that connects
-the systems below; it is not a second product or a replacement workflow engine.
-The earlier Manus React/tRPC/MySQL implementation is reference material only.
-Useful behavior from it should be ported deliberately into this stack rather
-than maintained in parallel.
-
-See [ADR 0001](docs/architecture-decision-records/0001-canonical-stack-and-readiness.md)
-for the canonical-stack decision.
-
-## Framework Registry
-
-The [Framework Registry](docs/framework-registry.md) defines HAI's versioned,
-owner-scoped contract for selecting the smallest suitable set of planning,
-reasoning, governance, domain, and evaluation frameworks for a task. Its
-implemented `framework-catalog-v2` contains 55 records (54 at `1.0.0` and the
-evaluation framework at `1.1.0`; 50 active and five experimental), mandatory
-safety overlays, deterministic `selector-v5` selection with enforced task-risk
-ceilings, owner-scoped preferences, Constitution lifecycle, authority ceilings,
-reproducibility digests, API/UI/task/workflow integration, and versioned
-pre-phase migrations.
-
-The [Framework Operating Contract Matrix](docs/framework-operating-contract-matrix.md)
-maps all 55 research families to enforced, structured, or catalog-only
-behavior and states the remaining live-system boundary for each.
-
-Durable task plans and runs are projected into an append-only, owner-scoped
-operational life graph. The graph links tasks to projects, pursuits,
-workflows, verified memories, and outcomes with typed relations and source
-digests. Preview requests never write graph state, local-only records remain
-hidden until explicitly requested on the local governance screen, and graph
-records cannot grant approval or execution authority.
-
-Connected-source sync uses the same graph boundary. After a raw item and its
-extraction are durably stored and indexed, HAI appends an immutable document
-record linked to the registered source and project. Owner identity, content
-digest, sensitivity, verification state, and local-only policy are retained.
-Graph outages appear as audited sync warnings without discarding a successful
-email, file, Trello, Drive, GitHub, or other source ingestion. Operator
-corrections and archive changes create new observations rather than rewriting
-history.
-
-Selector v4 also produces a durable Chief-of-Staff operating contract: all
-matched life domains, needs state, freshness-aware human capacity, verified
-agent cards with explicit identity/capability/access/cost/health/revocation
-fields, authority-bounded delegation contracts, replay-resistant typed
-communication, coordination mode, exact per-action autonomy decisions, stop conditions,
-outcome monitoring, and an operating-contract digest. Workflow due dates flow
-into delegation deadlines; every delegation defaults to zero financial
-authority. The Advanced registry view exposes these details without turning
-the Basic view into a diagnostic wall.
-
-Task planning also applies a deterministic, advisory-only resource schedule.
-Conservative step durations, dependencies, deadlines, paid/token/tool budgets,
-and owner-confirmed Life Ops capacity are evaluated before execution. When an
-owner has an active read-only Google Calendar source, opaque busy intervals are
-subtracted from that capacity; cancelled and transparent/free events are
-ignored. Unknown or stale capacity requires review, confirmed zero remaining
-capacity blocks the plan, and Calendar read failures fail closed. The Task
-Blueprint shows the feasibility result, reserved source-linked intervals,
-scheduled steps, blockers, and approval flags. This path cannot move events,
-consume approval, or grant execution authority.
-
-Catalog lifecycle and owner-effective state are separate. `active` records are
-enabled by default; `experimental` records are disabled by default and need an
-owner opt-in plus a direct match; `deprecated` records are excluded from
-selection. `disabled` is an owner preference, not a fourth catalog lifecycle
-status. An owner can enable an experimental record or disable an ordinary
-active record, but cannot disable a protected safety overlay.
-
-The built-in fallback Constitution has the exact source
-`builtin-robert-constitution-v1:v1`. Registry selection records retain the
-catalog version/digest, selector version, effective-preference digest,
-Constitution digest/source, selected framework versions, reasons, evidence
-requirements, and authority ceiling. Protected overlays cannot be disabled;
-owner preferences may only enable an experimental record, pin a relevant
-record, lower autonomy, or add bounded safe adaptations.
-
-Constitution activation is owner-only and requires the exact, case-sensitive
-confirmation `ACTIVATE CONSTITUTION` with no leading or trailing whitespace,
-plus a redacted approval note of at least 10 characters. Ordinary Constitution
-prose is immutable, versioned governance context; it is not executable policy.
-Only code-owned protected controls and valid restrictive `HAI-RULE v1`
-`deny-capability`, `require-approval`, or `authority-ceiling` entries are
-machine-enforced. No Constitution entry can grant authority.
-
-Framework records are decision metadata, not installed tools or granted
-authority. A named agent framework, workflow platform, memory store, policy
-engine, or evaluation product is only a candidate implementation until its
-adapter is configured and passes security, capability, integration, audit, and
-real-world verification gates.
-
-The Go routes, Angular `/framework-registry` page, and nginx authenticated API
-allowlist are wired together. Repository tests cover the component, service,
-route, permission, and static gateway contracts. A clean-machine signed-in
-browser exercise remains environment-dependent acceptance evidence.
-
-Viewers can inspect the owner-scoped registry and selection history. Operators
-can also request and persist a selection recommendation. Only an owner can
-change framework preferences, create a Constitution draft, activate a
-Constitution, run an approval-gated task, or resolve a task review item.
-
-## What Is Implemented
-
-| Area | Implemented capability | Important operating boundary |
-| --- | --- | --- |
-| Operator UI | Angular onboarding, Quick Capture, Control Center, Command Dashboard, HAI OS, pursuits, workflow exceptions, sources, memory, LLM policy, grounded answers, task planning, and the Framework Registry. | A dashboard card is operational visibility, not proof that an external action occurred. |
-| Pursuits and workflows | Durable pursuits, workflow states, checklists, decisions, open loops, blockers, follow-ups, approvals, review queues, retries, task-attempt evidence, read-only VA delegation briefs, ambient opportunity routing, navigable related-pursuit links, owner-scoped internal reminder proposals, an append-only reminder preparation/decision ledger, owner-authorized internal reminder delivery receipts, and calendar-aware resource/dependency planning. | In the canonical routed stack, new source, assistant, or ambient context is matched to an active pursuit first; otherwise it becomes an approval-gated candidate, not executable work. Resource plans and reminder projections are advisory and owner-scoped. A preparation request or approval alone is evidence only. After a separate exact owner authorization, the durable workflow worker may create one source-bound internal proactivity signal with an idempotent receipt. It cannot create Calendar events, send email or messages, invoke providers, execute follow-ups, or mutate the source checklist. |
-| Memory and knowledge | Compact memory, retrieval, deduplication, correction, export/deletion planning, provenance, encrypted user-authorized conversation capture, and source/extraction links. | Raw imported conversations are not automatically promoted to trusted facts. |
-| Source ingestion | Allowlisted local files; MBOX/EML, ICS, Trello JSON, WhatsApp exports, Odoo/HERP snapshots, normalized JSON feeds, synced document folders, read-only GitHub, Gmail, Google Drive, Google Contacts, Google Calendar, Trello, ShareT, LARO, and Worker Control sync. | Gmail and Trello have bounded live acceptance evidence but are unconfigured by default. ShareT has a bounded, paginated, read-only adapter with contract coverage; its live token activation remains operator-gated. Drive, Contacts, and Calendar have unit/contract coverage but still need real sandbox acceptance runs. Imported contacts remain review candidates. Meaningful events within 14 days may create source-backed preparation work; past events stay context-only. Overlaps within 30 days create stable review-gated conflict records, while moved or cancelled events retract stale work. No Calendar or ShareT write-back exists. WhatsApp and browser accounts remain export/local-folder paths. |
-| LLM routing | Local-first routing, seven-tier model policy, local/OpenAI-compatible endpoint probes, fallback logging, cached/repeated-prompt controls, and a EUR 0 paid default. | A configured endpoint is not live-proven until it passes a bounded probe and validated task. Paid generation remains disabled by default. |
-| Verification | Source-grounded answers, claim/evidence status, schema/deterministic validation, review routing, and verification-gated task completion. | Model confidence alone never authorizes a factual claim or consequential action. |
-| Controlled execution | Reviewed API, script, Docker, Hermes, Odysseus, and OpenClaw adapter surfaces with bounded output, workspace/host allowlists, audit records, verification, emergency stop, and an internal action-bound approval proof before mutating side effects. | Direct mutating HTTP launches cannot create the proof and fail closed. The approved task-review path issues a short-lived proof signed by a stable deployment key; PostgreSQL atomically records its one allowed consumption across restarts and backend instances. External runtimes remain disabled until explicitly configured and validated, and external side effects still require postcondition/idempotency evidence. |
-| Optional local runners | Disabled-by-default Compose profiles for aggregate security scans, no-tool planning drafts, selected-folder document extraction, and disposable patch proposals. | They publish no host ports and have private networks, read-only mounts, and resource limits. Configuration or container health is not live proof; each real snapshot, model, or document path still needs retained approval, audit, and verification evidence. |
-| Proactive planning | Ambient scans identify stale work, blockers, approvals, open loops, contradiction candidates, and delegation opportunities. Governance Control records owner `accept`, `dismiss`, bounded `snooze`, indefinite `suppress`, and `resume` feedback in an immutable owner-scoped ledger that changes later attention evaluation. | Ambient mode is suggestion-first and cannot bypass approval, verification, leases, audit, or emergency stop. Attention feedback has `canExecute:false`, grants no delivery or execution authority, and invokes no notification or external effect. |
-| Advisory ambient outcome monitor | Governance Control can bind an existing outcome indicator to one of three fixed read-only local collectors: `workflow_open_loop_count`, `workflow_verified_completion_count`, or `overdue_commitment_count`. A durable singleton sweep leases due targets, appends immutable source-digested observations and run receipts, composes them into the existing outcome-evaluation service, and may surface an owner-scoped proactivity inbox decision. | The monitor is `advisory_monitor_only`. It cannot execute or deliver work, notify anyone, write Calendar data, mutate a workflow, authorize a mandate, or mutate learning. It reads only canonical local ledgers and accepts no caller-supplied SQL, URL, script, expression, or arbitrary tool instruction. Live external-account correctness and target-machine acceptance remain separate gates. |
-| Operations | nginx gateway, IDP, Postgres, Redis, optional Kafka-compatible event bus, health/readiness, support bundle, doctor/reconcile/migrate commands, versioned SQL migrations, a durable job runner (persisted retry + crash recovery), CI, Compose validation, and local smoke coverage. | **Source, workflow, and ambient** scheduling all run on the durable worker: each is a self-rescheduling singleton job with backoff retry and lease-based crash recovery. The terminal state of a recurring occurrence and creation of its replacement are one database transaction, preventing a failed terminal write from leaving an untracked duplicate future schedule. Each falls back to its in-process ticker (logging that it did) if the queue is unreachable. The workflow schedule also consumes only separately owner-authorized internal reminder deliveries; each delivery is revalidated, source-bound, idempotently receipted, and recorded as a local proactivity signal. No external notification, Calendar write, provider invocation, or follow-up execution is performed. This is a single-node worker, not a distributed or HA platform. |
-
-### Readiness Terms
-
-- **Implemented**: code, persistence, API contract, and focused automated coverage exist in this repository.
-- **Locally validated**: a bounded build, Compose, Postgres, gateway, or smoke check exercised the path. This is not third-party proof.
-- **Live-proven**: a configured account, provider, or runtime completed a bounded approved end-to-end task on the target machine with audit and verification evidence.
-
-No configured provider, runtime, dashboard state, or generated answer upgrades itself to live-proven.
-
-### Advisory Outcome Monitor
-
-The outcome monitor is a local evidence bridge, not an autonomous executor.
-An administrator configures a target against an existing owner/workspace outcome
-and indicator in Governance Control. Read-capable roles may inspect targets and
-their immutable observations/runs; write-capable roles may request a bounded
-due pass; administrator permission is required to create, enable/disable, or
-recover target state.
-
-The guarded API surface is under
-`/api/v1/outcome-evaluations/workspaces/:workspaceId`:
-
-- `GET|PUT /outcomes/:outcomeId/monitor` lists or creates a target;
-- `PATCH /outcomes/:outcomeId/monitor/:targetId/enabled` pauses or resumes it;
-- `GET /outcomes/:outcomeId/monitor/:targetId/observations` and `/runs` expose
-  bounded immutable history;
-- `POST /monitors/run-due` performs a bounded advisory pass; and
-- `POST /monitors/recover` releases only expired leases.
-
-The durable scheduler is configured with
-`OUTCOME_MONITOR_SCHEDULER_ENABLED`, `OUTCOME_MONITOR_SWEEP_SECONDS`,
-`OUTCOME_MONITOR_POLL_SECONDS`, `OUTCOME_MONITOR_LEASE_SECONDS`,
-`OUTCOME_MONITOR_SCOPE_LIMIT`, and `OUTCOME_MONITOR_BATCH_LIMIT`. Invalid or
-out-of-range values fall back to bounded defaults documented in
-`.env.example`. Disabling the scheduler does not remove the records or grant a
-different execution path.
-
-Durable workers process work already due when HAI starts, then use five-minute
-idle polls by default. This keeps a local installation quiet when no source,
-workflow, ambient, or outcome work is pending; explicit manual passes and
-normal recurring due times remain governed by their existing schedules.
-
-Required acceptance before relying on this path includes exact replay without
-duplicate observations or inbox items, two-owner isolation, active-lease
-fencing and expired-lease recovery, disable behavior, and proof that a monitor
-pass causes no task/runtime execution, notification, message delivery,
-Calendar write, workflow mutation, mandate authorization, or learning update.
-Repository implementation and focused tests do not by themselves prove
-real-world source correctness or production readiness.
-
-### Optional Runtime Profiles
-
-Recovered security, agent-planning, document, and patch-proposal helpers are
-now wired as isolated, disabled-by-default Compose profiles. The ordinary
-`docker compose up` does not start them. See
-[Optional Runtime Profiles](docs/optional-runtime-profiles.md) for the exact
-profile names, environment contract, resource ceilings, read-only mount rules,
-activation commands, and evidence required before any capability is described
-as live-proven.
-
-MLflow and OpenLIT remain bridge-only integrations to separately operated
-local/private services; this repository does not silently install or expose
-either observability server.
-
-### Status At A Glance
-
-| Status | Current position |
-| --- | --- |
-| Canonical product | This Go/Angular/Postgres/Docker Compose repository. The separate Manus React/tRPC/MySQL implementation is reference-only. |
-| Local platform | The current Windows Compose workspace has a retained browser acceptance run covering password login, read-only local source registration and sync, explicit pursuit creation, governed high-risk workflow intake, durable approval, and one bounded worker pass (2026-08-04). A separate fresh-clone Windows 11 acceptance run is still required. |
-| Core operating flow | Pursuits, workflows, task attempts, approvals, verification, audit, compact memory, source extraction, and ambient proposals are implemented and persisted. |
-| Intake safety | New source, assistant, and ambient input is matched to an active pursuit or becomes a non-executable candidate. An approval-capable user must accept a candidate before its first governed workflow is created. |
-| External accounts | Local/export ingestion and read-only GitHub sync are available. Gmail and Trello have bounded live acceptance evidence. Google Drive, Google Contacts, and primary Google Calendar have separate read-only OAuth adapters with bounded backfills and native change/sync cursors, but no retained live sandbox acceptance evidence yet. Contact candidates require review. Calendar event times feed deterministic due dates, bounded preparation proposals, and overlap review; moving or cancelling source events retracts stale Calendar-derived work without deleting obligations. These paths cannot write back. WhatsApp and browser connectors are not live. |
-| Models and runtimes | Local/free-first routing and guarded adapter surfaces exist. No provider or runtime is live-proven until its scoped probe, approved task, audit, and verification evidence exist. |
-| Production readiness | Not claimed. Clean-machine deployment and bounded acceptance for each newly enabled provider or mutable runtime remain release gates. |
-
-### Verification Snapshot
-
-This is the current evidence boundary, not a feature checklist. Re-run the
-target-machine checks before relying on a path for real work.
-
-| Surface | Current evidence | Still required before operational trust |
-| --- | --- | --- |
-| Local Compose and gateway | The local services are running; `/`, `/control-center`, `/healthz`, and `/readyz` are served through nginx. Both health probes are intentionally public; protected `/api/v1/*` engine routes still require a signed session. Angular deep links return the application shell. | Fresh-clone Windows 11 run with a newly created `.env.local`. |
-| Browser session | The unauthenticated session check returns `401`; Angular routes a browser without a refreshable session to `/login`. A signed-in Playwright acceptance run completed source intake, pursuit creation, exact runtime selection, durable approval, read-only execution, terminal verification, and creation of an immutable completion attestation. CI now also defines this local, read-only path as an isolated Compose browser-acceptance gate. | The new CI job must complete successfully before it can be cited as hosted release evidence. Repeat the acceptance run on each release target and add retained coverage for any new mutable or external action. |
-| Go and Angular code | The full Go suite, frontend production build, 447 headless Angular tests, migration-chain contract through `0067`, isolated PostgreSQL reminder-ledger tests, live workflow-repository PostgreSQL test, and signed-in browser reminder prepare/approve/persist/cleanup acceptance pass. Migrations `0046` and `0047` define the append-only owner-scoped preparation/decision ledger; `0055` through `0057` add the separately authorized internal-delivery receipt ledger; `0060` through `0064` add connected-source, memory, verification, and source-history query indexes; `0065` through `0067` add host-runtime job persistence and launch-event execution/idempotency fields. | Keep these gates green and close the existing CSS/initial-bundle budget warnings before a production release. The browser exercise proves preparation and approval persistence only. It does not prove a scheduled internal delivery or any Calendar write, message delivery, provider invocation, or follow-up execution. |
-| Sources and LLMs | Local/export ingestion, provider probes, GitHub sync, and bounded Gmail/Trello acceptance evidence exist. | A scoped local-model task and any newly configured account need their own retained audit and verification evidence. |
-| Runtimes and external effects | Script, Docker, Hermes, Odysseus, and OpenClaw adapters have bounded, approval-aware interfaces. The local registry-to-read-only-API path is acceptance-tested with deterministic receipt verification. | Explicit upstream installation, narrow allowlists, a reviewed dry run, and a verified approved task for every mutable or external adapter. |
-
-## Current Safe Operator Flows
-
-After authentication, an operator can:
-
-1. Create a pursuit with an objective, desired outcome, completion definition,
-   priority, risk, and autonomy setting.
-2. Import authorized local/exported material, inspect extractions, and route
-   actionable context into a pursuit or workflow.
-3. Create plans, checklists, follow-ups, review items, and source-linked
-   verification work through the workflow and task engines.
-4. Review Robert-only decisions, blockers, next actions, approvals, runtime
-   evidence, and completion conditions from the Command Dashboard or a pursuit.
-5. Configure and probe a local model endpoint, then run a bounded validated
-   task subject to the local/free policy.
-6. Configure one narrow approved automation or agent runtime after its
-   allowlists, workspace, timeout, and safety settings are explicitly reviewed.
-
-The normal durable path is:
-
-```text
-assistant command, source intake, or ambient opportunity
-  -> pursuit match
-  -> active pursuit + persisted workflow
-     or candidate pursuit + explicit acceptance
-  -> bounded task plan/run
-  -> verification and audit evidence
-  -> completion, review, retry, or follow-up
+```
+┌─○───┐
+│ │╲  │
+│ │ ○ │
+│ ○ ░ │
+└─░───┘
 ```
 
-Ambient opportunities use the same path. An opportunity matched to an active
-pursuit may create or reuse a governed workflow. An unmatched opportunity, or
-one matched only to a candidate pursuit, is recorded with its provenance and
-waits for an approval-capable operator to accept the candidate. It does not
-create an orphaned executable workflow.
+[license]: ./LICENSE
+[badge-license]: https://img.shields.io/github/license/gitleaks/gitleaks.svg
+[go-docs-badge]: https://pkg.go.dev/badge/github.com/gitleaks/gitleaks/v8?status
+[go-docs]: https://pkg.go.dev/github.com/zricethezav/gitleaks/v8
+[badge-build]: https://github.com/gitleaks/gitleaks/actions/workflows/test.yml/badge.svg
+[build]: https://github.com/gitleaks/gitleaks/actions/workflows/test.yml
+[go-report-card-badge]: https://goreportcard.com/badge/github.com/gitleaks/gitleaks/v8
+[go-report-card]: https://goreportcard.com/report/github.com/gitleaks/gitleaks/v8
+[dockerhub]: https://hub.docker.com/r/zricethezav/gitleaks
+[dockerhub-badge]: https://img.shields.io/docker/pulls/zricethezav/gitleaks.svg
+[gitleaks-action]: https://github.com/gitleaks/gitleaks-action
+[gitleaks-badge]: https://img.shields.io/badge/protected%20by-gitleaks-blue
+[gitleaks-playground-badge]: https://img.shields.io/badge/gitleaks%20-playground-blue
+[gitleaks-playground]: https://gitleaks.io/playground
 
-For an open checklist item with `ReminderAt`, an authenticated owner may first
-read the current reminder proposal and then append a narrowly scoped
-`internal_notification` preparation request. An approval-capable owner may
-append `approved`, `rejected`, `needs_clarification`, or `revoked` decision
-evidence. Requests and decisions are immutable, digest-bound, owner-scoped,
-idempotent, time-limited, and always return `canExecute:false`. Preparation and
-approval do not create a Calendar event, send a notification, email, or other
-message, call a provider, run a follow-up, or change the workflow/checklist.
-After a separate owner authorization, the durable worker may emit one internal
-proactivity signal and an immutable delivery receipt. It cannot deliver to
-Calendar, email, chat, or any provider. Any external delivery path would still
-require its own authorization, effect ledger, provider acceptance, and
-postcondition proof.
-The two reminder mutation routes bypass the legacy process-local
-`Idempotency-Key` rejection cache and defer replay/conflict handling to the
-durable owner-scoped ledger. Preparation uses the body `idempotencyKey`; a
-decision uses its canonical request digest and current decision-chain tip.
 
-If a pursuit linker is supplied without the native lifecycle router, derived
-workflow creation is deferred and the source or conversation import remains
-visible for repair. This fail-closed compatibility state creates no workflow;
-it is not supported production wiring.
+[![GitHub Action Test][badge-build]][build]
+[![Docker Hub][dockerhub-badge]][dockerhub]
+[![Gitleaks Playground][gitleaks-playground-badge]][gitleaks-playground]
+[![Gitleaks Action][gitleaks-badge]][gitleaks-action]
+[![GoDoc][go-docs-badge]][go-docs]
+[![GoReportCard][go-report-card-badge]][go-report-card]
+[![License][badge-license]][license]
 
-Direct `/task/*` planning and run sessions are useful for bounded operator
-work. Owner-scoped completion-plan snapshots, review items, and review
-decisions are persisted by `pre/0004_task_state_storage`; completion snapshots
-and decisions are append-only, while review-item provenance is immutable and
-only its governed state may advance. An approved review replays the exact
-stored action; a validated result becomes `completed`, while an execution error
-or failed validation returns the item to `needs_review`.
+Gitleaks is a tool for **detecting** secrets like passwords, API keys, and tokens in git repos, files, and whatever else you wanna throw at it via `stdin`. If you wanna learn more about how the detection engine works check out this blog: [Regex is (almost) all you need](https://lookingatcomputer.substack.com/p/regex-is-almost-all-you-need).
 
-When a direct task is explicitly scoped to a valid pursuit, HAI also persists
-a compact task-attempt projection. The pursuit/workflow ledger remains the
-canonical restart-safe record for workflow-owned runs; those runs retain the
-same pursuit context through planning and verification without writing a
-duplicate direct task-attempt projection. Durable review storage also provides
-a manual, dry-run-first reconciliation action for an item left `approved` by a
-process failure. It never repeats the side effect: linked durable evidence can
-close a verified completion, while an unproven outcome returns to
-`needs_review`. There is deliberately no automatic recovery worker, so
-operators must inspect evidence and follow the
-[operator runbook](docs/operator-runbook.md).
+```
+➜  ~/code(master) gitleaks git -v
 
-Refreshing a pursuit summary is documentation activity, not operational
-progress. It cannot reset the pursuit's last-activity signal or remove stale
-work from the command dashboard.
+    ○
+    │╲
+    │ ○
+    ○ ░
+    ░    gitleaks
 
-## Safety and Ownership
 
-- Verified owner identity is required for the personal pursuit, workflow,
-  source, memory, verification, task, review, ambient, HAI OS, and runtime
-  mutation APIs. Client-supplied actor or approval fields are not trusted.
-- The bundled IDP persists `owner`, `operator`, and `viewer` roles and signs
-  that role into access tokens. Request headers never grant a role; the seeded
-  `FIRST_RUN_ADMIN_EMAIL` account is promoted to `owner`, while registrations
-  default to `operator`.
-- Interactive APIs use the same signed-role boundary: viewers can inspect
-  owner-scoped state, operators can plan and edit it, and execution or approval
-  resolution requires approval capability. HTTP sync and due-work controls are
-  scoped to the authenticated owner; only in-process schedulers operate across
-  owners.
-- The IDP refreshes a valid refresh-token session before resolving the user on
-  protected routes, and nginx relays that refreshed cookie to the browser, so
-  access-token expiry does not strand an active local session on the login
-  screen or send the backend a stale credential.
-- Gateway API authentication failures remain JSON `401` responses. Angular's
-  session guard, rather than nginx rewriting API errors to HTML, directs the
-  browser to `/login` when a session is no longer refreshable.
-- Owner-scoped pursuit detail, dashboards, activity, evidence, decisions, and
-  links filter legacy records that are not visible to the current owner.
-- Pursuit-to-pursuit relationships are owner-scoped too, so authenticated users
-  cannot create or view a cross-owner case reference through pursuit metadata.
-  A pursuit cannot create a self-referential relationship, and related-pursuit
-  navigation is available only for records visible in the current owner's scope.
-- Pursuit auto-linking and candidate creation refresh their operational summary
-  inside the same authenticated owner scope, so malformed legacy links cannot
-  persist another user's workflow state into a personal pursuit.
-- Runtime launch and stop records retain the authenticated initiating owner.
-  Owner-scoped pursuits reject unknown or other-owner runtime evidence, and
-  shared automation history cannot make one operator's runtime output visible
-  in another operator's pursuit.
-- Direct task-attempt projections are similarly re-checked during pursuit
-  aggregation, so malformed or legacy cross-owner task records cannot expose
-  task summaries, review state, or blocked reasons.
-- High-risk communication, legal/government, financial, account, public-post,
-  deletion, destructive-file, and broad-host actions require explicit approval
-  and do not run from a generic transition or chat request.
-- Auto-created pursuit candidates are not active operational work. Generic
-  pursuit intake, planning, task attempts, and ambient opportunity routing
-  keep them out of the executable path; an approval-capable user must use the
-  separate candidate-acceptance action before HAI can create or unlock the
-  governed workflow path.
-- An assistant command that creates or selects a pursuit candidate returns an
-  auditable review handoff instead of attempting a direct task plan. It links
-  the candidate back to the chat result, asks Robert to accept or archive it,
-  and creates no workflow, task attempt, runtime action, or side effect before
-  the explicit candidate-acceptance action.
-- An assistant command that creates or reuses active pursuit work stops at the
-  governed workflow ledger. The workflow worker supplies its WorkflowID to the
-  task engine, so planning, retries, verification, and runtime evidence are
-  recorded once on the workflow instead of also creating a duplicate direct
-  task attempt from the chat command.
-- Pursuit decision resolution requires approval capability both in route
-  registration and in the handler. Alternate or future route wiring cannot
-  turn a non-approver's request into a workflow or decision audit event.
-- Source, AI-chat, and ambient producers configured with pursuit correlation
-  but without the native pursuit lifecycle router fail closed. Imported signals
-  and proposed ambient opportunities remain visible for repair, but no workflow
-  or executable work is created. The full router is the supported production
-  integration path.
-- Connected-source searches and extraction lists apply source ownership and a
-  fail-closed source-revocation barrier. Revoked source rows and audit history
-  remain administratively inspectable, but their cached extractions and stale
-  semantic embeddings are excluded immediately from task context. Lexical
-  retrieval is always available; vector retrieval is claimed only when the
-  configured local semantic adapter is healthy.
-- The runtime registry enforces emergency stop at its own boundary, including
-  direct Hermes, Odysseus, and OpenClaw registry execution calls.
-- Runtime execution is constrained by enablement flags, allowlisted tools,
-  hosts, paths, workspaces, timeouts, output limits, redacted audit records,
-  and verification before completion.
-- Built-in system processes cannot assign themselves a lower risk, authority,
-  autonomy, reversibility, cost, tool, runtime, or operation classification.
-  The local safe worker, task-runtime launcher, and local model-maintenance
-  worker each have an exact server-owned workload policy; an unknown system
-  identity or any policy mismatch is denied before Constitution, mandate, or
-  approval evaluation. The matched policy ID is retained in authorization
-  evidence and rechecked immediately before one-time receipt consumption.
-- Mutating API, script, Docker-start, and agent-runtime actions additionally
-  require an internal HMAC-signed approval proof bound to the owner, automation,
-  exact action digest, scope, and recorded approval source. Proofs default to a
-  five-minute lifetime, are single-use, and are issued only by the trusted
-  approved task-review path. Read-only API `GET`/`HEAD` probes are exempt from
-  the proof but not from ordinary authentication, enablement, allowlists, audit,
-  or safety policy.
-- Production approval-proof signing uses the explicit
-  `HAI_APPROVAL_PROOF_SIGNING_KEY`; startup fails closed when the key is missing
-  or shorter than 32 bytes. Consumption is an owner-scoped, append-only
-  PostgreSQL claim, so replay protection survives restart and coordinates
-  multiple backend instances. Rotating the key invalidates unexpired proofs.
-- Stopping a runtime task requires an approval-capable role. Uploading,
-  selecting, or refreshing the shared OpenClaw ecosystem requires an owner
-  role because it changes the host-wide runtime configuration. The dashboard
-  first requests a short-lived, single-use owner authorization bound to the
-  exact validated action, then submits it immediately; browser input cannot
-  assert an approval or reuse it for a different ecosystem change.
-- The shared automation registry follows the same boundary: reads are role
-  scoped, launch/stop actions require approval capability, health checks
-  require write capability, and create/update/delete/reorder operations require
-  an owner. Reordering uses `PATCH`, never a side-effecting `GET` request.
-- Ownerless legacy workflows, sources, extractions, and imported conversation
-  archives are read-compatible only for local-development compatibility.
-  Authenticated users cannot adopt, delete, or mutate them. Ownerless scheduler
-  work stays in-process and is not exposed as an operator action.
-
-For route-by-route ownership behavior, see
-[backend endpoint audit](docs/backend-endpoint-audit.md). For the broader
-threat model, see [threat model](docs/threat-model.md).
-
-## Deliberate Gaps
-
-These capabilities are not bundled or live-proven by this repository:
-
-- Live WhatsApp, browser, and other unlisted account OAuth/API integrations.
-  Gmail, Google Drive, Google Contacts, Google Calendar, and Trello read-only connectors exist
-  but remain unconfigured by default; every configured account still needs its
-  own bounded acceptance evidence before operational trust.
-- Provider webhooks, local file watchers, a dedicated vector database, generic
-  MCP, QwenPaw, browser automation, and desktop-agent execution.
-- Hermes, Odysseus, and OpenClaw upstream installations. HAI provides guarded
-  adapters, not the upstream software or unrestricted credentials.
-- Paid LLM use, public posting, financial commitments, account changes,
-  deletion, and unrestricted device control.
-- Distributed workers, leader election, worker heartbeats, or high
-  availability. Versioned pre/post SQL migrations are implemented, but
-  clean-clone and rollback acceptance still belong in each target release.
-- Verified multi-user isolation on two real accounts. Owner scoping is covered
-  in code and focused tests, but a real two-account exercise remains required
-  before shared operation is trusted.
-- A clean-machine, signed-in Windows 11 deployment journey. The local Compose
-  and gateway path has been exercised; target-machine acceptance remains a
-  required release gate.
-
-The [external provider reality review](docs/external-provider-reality-review.md)
-records the current integration truthfulness boundary.
-
-## Architecture
-
-```text
-Angular dashboard
-        |
-nginx gateway + IDP session boundary
-        |
-Go API and operating engines
-  |-- pursuits and workflow engine
-  |-- task, approval, verification, and audit engines
-  |-- memory and connected-source ingestion
-  |-- local-first LLM router and provider probes
-  |-- ambient planning and controlled runtime registry
-        |
-Postgres + Redis + optional event bus
+Finding:     "export BUNDLE_ENTERPRISE__CONTRIBSYS__COM=your-contribsys-license-key",
+Secret:      your-contribsys-license-key
+RuleID:      sidekiq-secret
+Entropy:     2.609850
+File:        cmd/generate/config/rules/sidekiq.go
+Line:        23
+Commit:      cd5226711335c68be1e720b318b7bc3135a30eb2
+Author:      John
+Email:       john@users.noreply.github.com
+Date:        2022-08-03T12:31:40Z
+Fingerprint: cd5226711335c68be1e720b318b7bc3135a30eb2:cmd/generate/config/rules/sidekiq.go:sidekiq-secret:23
 ```
 
-The local deployment targets Windows 11 with Docker Desktop. The control-plane
-backend, IDP, and nginx configuration manager use Go 1.25.13 and share an
-executable CI alignment contract. They use Gin, Gorm, Postgres, and
-Sarama/Kafka when the optional event-bus profile is enabled. The frontend uses Angular 20 and ng-zorro-antd 20. Use Node 20.19 or later within the Node 20 LTS line for frontend development and verification; the repository `.nvmrc` and frontend package engine contract declare the supported frontend runtime.
-Versioned SQL migrations are the schema source of truth and `DB_AUTOMIGRATE`
-defaults to `false`. Startup applies pre-phase migrations, optionally runs
-development-only AutoMigrate when explicitly enabled, then applies
-post-phase migrations. See
-[migration safety](docs/migrations.md).
+### GitHub Sponsors
 
-## Quick Start
+Sponsor [@zricethezav on GitHub](https://github.com/sponsors/zricethezav/) to get
+featured on this README.
 
-### Prerequisites
+## Getting Started
 
-- Windows 11 with Docker Desktop, or another Docker Compose-capable environment.
-- Git.
-- Node.js 20 for frontend development outside Docker.
-- Go 1.25.13 for control-plane backend, IDP, and nginx-config-manager
-  development outside Docker. Their modules, Docker builders, and CI toolchains
-  are checked for version alignment.
+Gitleaks can be installed using Homebrew, Docker, or Go. Gitleaks is also available in binary form for many popular platforms and OS types on the [releases page](https://github.com/gitleaks/gitleaks/releases). In addition, Gitleaks can be implemented as a pre-commit hook directly in your repo or as a GitHub action using [Gitleaks-Action](https://github.com/gitleaks/gitleaks-action).
 
-### Start the local stack
+### Installing
 
-```powershell
-./scripts/initialize-windows.ps1
-docker compose --env-file .env.local -f docker-compose.local.yml config --quiet
-docker compose --env-file .env.local -f docker-compose.local.yml up --build -d
-docker compose --env-file .env.local -f docker-compose.local.yml ps
+```bash
+# MacOS
+brew install gitleaks
+
+# Docker (DockerHub)
+docker pull zricethezav/gitleaks:latest
+docker run -v ${path_to_host_folder_to_scan}:/path zricethezav/gitleaks:latest [COMMAND] [OPTIONS] [SOURCE_PATH]
+
+# Docker (ghcr.io)
+docker pull ghcr.io/gitleaks/gitleaks:latest
+docker run -v ${path_to_host_folder_to_scan}:/path ghcr.io/gitleaks/gitleaks:latest [COMMAND] [OPTIONS] [SOURCE_PATH]
+
+# From Source (make sure `go` is installed)
+git clone https://github.com/gitleaks/gitleaks.git
+cd gitleaks
+make build
 ```
 
-The initializer prompts for the first-run owner email and password, generates
-the production signing/encryption, database, and first-run credentials, and
-writes an ignored loopback-only `.env.local`. For a non-Windows shell, copy the
-template, then run `./scripts/generate-secrets.sh >> .env.local` before
-starting Compose. The generator replaces every required placeholder, including
-the first-run owner password; never run it without redirecting its output into
-your ignored local environment file.
+### GitHub Action
 
-`docker compose --env-file .env.local up --build -d` is equivalent. The
-default `docker-compose.yml` intentionally delegates to the same local,
-source-built stack. It does not pull the old `jacksonbarreto/*` images or start
-the retired multi-broker Kafka topology.
+Check out the official [Gitleaks GitHub Action](https://github.com/gitleaks/gitleaks-action)
 
-Open [http://localhost:8088](http://localhost:8088) with the default
-configuration. If you deliberately override `GATEWAY_HOST_PORT`, use that port
-instead.
-
-For explicitly configured, guarded public HTTPS access, see
-[Governed ngrok cloud access](docs/ngrok-cloud-access.md). The tunnel is
-disabled by default and never publishes the local gateway directly.
-
-### Windows 11 installer
-
-For a product-style local installation, build the Inno Setup executable and
-use its Start menu shortcuts rather than manually operating Compose. The
-installer keeps the source-built stack loopback-only, stores first-run secrets
-outside the application directory, and refuses to start a competing HAI stack.
-It also starts the separate loopback-only A2A planning connector at
-`http://127.0.0.1:8091` by default. That connector is never served through the
-dashboard gateway or the optional ngrok tunnel. See
-[Windows installer](docs/windows-installer.md).
-
-### Desktop resource defaults
-
-The ordinary local stack now applies explicit memory, CPU, and process ceilings
-to every always-on service: backend, frontend, IDP, gateway, both Postgres
-databases, and Redis. The Redpanda broker and nginx configuration consumer are
-an opt-in `event-bus` profile, so an idle local HAI installation does not pay
-for them. Optional model, evaluation, document, and agent runners remain
-profile-gated and are not started by the standard command.
-
-The limit variables are grouped in `.env.example` (`BACKEND_MEMORY_LIMIT`,
-`POSTGRES_AUTOMATION_MEMORY_LIMIT`, and similar). Change them only for an
-observed workload, then validate the rendered configuration before restarting:
-
-```powershell
-docker compose --env-file .env.local -f docker-compose.local.yml config --quiet
+```
+name: gitleaks
+on: [pull_request, push, workflow_dispatch]
+jobs:
+  scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE}} # Only required for Organizations, not personal accounts.
 ```
 
-To enable Kafka-compatible account/event delivery and dynamic gateway
-configuration deliberately, set `HAI_EVENT_BUS_ENABLED=true` in `.env.local`
-and start the additional profile:
+### Pre-Commit
 
-```powershell
-docker compose --env-file .env.local -f docker-compose.local.yml --profile event-bus up -d
+1. Install pre-commit from https://pre-commit.com/#install
+2. Create a `.pre-commit-config.yaml` file at the root of your repository with the following content:
+
+   ```
+   repos:
+     - repo: https://github.com/gitleaks/gitleaks
+       rev: v8.24.2
+       hooks:
+         - id: gitleaks
+   ```
+
+   for a [native execution of gitleaks](https://github.com/gitleaks/gitleaks/releases) or use the [`gitleaks-docker` pre-commit ID](https://github.com/gitleaks/gitleaks/blob/master/.pre-commit-hooks.yaml) for executing gitleaks using the [official Docker images](#docker)
+
+3. Auto-update the config to the latest repos' versions by executing `pre-commit autoupdate`
+4. Install with `pre-commit install`
+5. Now you're all set!
+
+```
+➜ git commit -m "this commit contains a secret"
+Detect hardcoded secrets.................................................Failed
 ```
 
-For a single-user local preview, set `LOCAL_LOGIN_BYPASS_ENABLED=true` and keep
-`GATEWAY_HOST_BIND=127.0.0.1`. The login screen then shows **Open local
-dashboard**, which creates a normal signed session for the configured first-run
-owner. It is deliberately hidden by default and must never be enabled on a
-LAN- or internet-exposed gateway.
+Note: to disable the gitleaks pre-commit hook you can prepend `SKIP=gitleaks` to the commit command
+and it will skip running gitleaks
 
-The `.env.example` values for credentials and secrets are intentionally invalid
-placeholders. The IDP refuses to create its first owner account from a missing,
-placeholder, or too-short password, and the public ngrok launcher rejects both
-placeholder database and owner credentials. If the Postgres data volume already exists,
-changing first-run values does not rewrite the existing account. Do not commit
-`.env.local`, Docker state, database directories, uploaded material, frontend
-build output, or secrets.
-
-### Optional Google sign-in and password recovery
-
-The local password login works without external accounts. The login page only
-offers Google sign-in or email recovery after their private credentials are set
-in `.env.local`; it will not route an operator to a broken OAuth flow or claim a
-reset code was delivered when no mail sender exists.
-
-For a dedicated Google OAuth **web** client, register this redirect URI for the
-local gateway:
-
-```text
-http://localhost:8088/api/v1/auth/google/callback
+```
+➜ SKIP=gitleaks git commit -m "skip gitleaks check"
+Detect hardcoded secrets................................................Skipped
 ```
 
-Then set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and
-`GOOGLE_LOGIN_REDIRECT_URL` in `.env.local`, and recreate the IDP container.
-The Gmail, Drive, Contacts, and Calendar connected-source callback is separate. Register
-`http://localhost:8088/api/v1/sources/oauth/google/callback`, set it as
-`GOOGLE_OAUTH_REDIRECT_URL`, and enable both APIs you intend to use. Each source
-requests only its own read-only scope. Also set independent
-`HAI_OAUTH_TOKEN_ENCRYPTION_KEY` and `HAI_OAUTH_STATE_SIGNING_KEY` values; HAI
-does not fall back to JWT or backend secrets. Google redirects the browser, so a
-public tunnel is not required for this local callback.
+## Usage
 
-For optional public access through the governed ngrok profile, register the
-equivalent callback URIs for the reserved `HAI_NGROK_URL` instead. Set each
-enabled callback to that exact public origin and path. The tunnel launcher
-rejects localhost, a different host, or a mismatched path while a Google flow
-is configured, so remote sign-in and source consent cannot fail after the
-tunnel has started.
+```
+Gitleaks scans code, past or present, for secrets
 
-For reset emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
-`SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_REQUIRE_STARTTLS=true` in `.env.local`.
-Use a dedicated mailbox or provider app password over STARTTLS (typically port
-587), never a primary mailbox password. Recreate the IDP container after
-changing either integration:
+Usage:
+  gitleaks [command]
 
-```powershell
-docker compose --env-file .env.local -f docker-compose.local.yml up -d --build idp frontend gateway
+Available Commands:
+  completion  Generate the autocompletion script for the specified shell
+  dir         scan directories or files for secrets
+  git         scan git repositories for secrets
+  help        Help about any command
+  stdin       detect secrets from stdin
+  version     display gitleaks version
+
+Flags:
+  -b, --baseline-path string          path to baseline with issues that can be ignored
+  -c, --config string                 config file path
+                                      order of precedence:
+                                      1. --config/-c
+                                      2. env var GITLEAKS_CONFIG
+                                      3. env var GITLEAKS_CONFIG_TOML with the file content
+                                      4. (target path)/.gitleaks.toml
+                                      If none of the four options are used, then gitleaks will use the default config
+      --diagnostics string            enable diagnostics (http OR comma-separated list: cpu,mem,trace). cpu=CPU prof, mem=memory prof, trace=exec tracing, http=serve via net/http/pprof
+      --diagnostics-dir string        directory to store diagnostics output files when not using http mode (defaults to current directory)
+      --enable-rule strings           only enable specific rules by id
+      --exit-code int                 exit code when leaks have been encountered (default 1)
+  -i, --gitleaks-ignore-path string   path to .gitleaksignore file or folder containing one (default ".")
+  -h, --help                          help for gitleaks
+      --ignore-gitleaks-allow         ignore gitleaks:allow comments
+  -l, --log-level string              log level (trace, debug, info, warn, error, fatal) (default "info")
+      --max-archive-depth int         allow scanning into nested archives up to this depth (default "0", no archive traversal is done)
+      --max-decode-depth int          allow recursive decoding up to this depth (default "0", no decoding is done)
+      --max-target-megabytes int      files larger than this will be skipped
+      --no-banner                     suppress banner
+      --no-color                      turn off color for verbose output
+      --redact uint[=100]             redact secrets from logs and stdout. To redact only parts of the secret just apply a percent value from 0..100. For example --redact=20 (default 100%)
+  -f, --report-format string          output format (json, csv, junit, sarif, template)
+  -r, --report-path string            report file
+      --report-template string        template file used to generate the report (implies --report-format=template)
+      --timeout int                   set a timeout for gitleaks commands in seconds (default "0", no timeout is set)
+  -v, --verbose                       show verbose output from scan
+      --version                       version for gitleaks
+
+Use "gitleaks [command] --help" for more information about a command.
 ```
 
-### Verify the local gateway
+### Commands
 
-```powershell
-docker compose --env-file .env.local -f docker-compose.local.yml ps
-docker compose --env-file .env.local -f docker-compose.local.yml logs backend
-curl.exe -i http://localhost/
-curl.exe -i http://localhost/healthz
-curl.exe -i http://localhost/readyz
-curl.exe -i http://localhost/api/v1/llm/policy
+⚠️ v8.19.0 introduced a change that deprecated `detect` and `protect`. Those commands are still available but
+are hidden in the `--help` menu. Take a look at this [gist](https://gist.github.com/zricethezav/b325bb93ebf41b9c0b0507acf12810d2) for easy command translations.
+If you find v8.19.0 broke an existing command (`detect`/`protect`), please open an issue.
+
+There are three scanning modes: `git`, `dir`, and `stdin`.
+
+#### Git
+
+The `git` command lets you scan local git repos. Under the hood, gitleaks uses the `git log -p` command to scan patches.
+You can configure the behavior of `git log -p` with the `log-opts` option.
+For example, if you wanted to run gitleaks on a range of commits you could use the following
+command: `gitleaks git -v --log-opts="--all commitA..commitB" path_to_repo`. See the [git log](https://git-scm.com/docs/git-log) documentation for more information.
+If there is no target specified as a positional argument, then gitleaks will attempt to scan the current working directory as a git repo.
+
+#### Dir
+
+The `dir` (aliases include `files`, `directory`) command lets you scan directories and files. Example: `gitleaks dir -v path_to_directory_or_file`.
+If there is no target specified as a positional argument, then gitleaks will scan the current working directory.
+
+#### Stdin
+
+You can also stream data to gitleaks with the `stdin` command. Example: `cat some_file | gitleaks -v stdin`
+
+### Creating a baseline
+
+When scanning large repositories or repositories with a long history, it can be convenient to use a baseline. When using a baseline,
+gitleaks will ignore any old findings that are present in the baseline. A baseline can be any gitleaks report. To create a gitleaks report, run gitleaks with the `--report-path` parameter.
+
+```
+gitleaks git --report-path gitleaks-report.json # This will save the report in a file called gitleaks-report.json
 ```
 
-Expected behavior:
+Once as baseline is created it can be applied when running the detect command again:
 
-- `/` serves the Angular shell.
-- `/healthz` and `/readyz` reach the backend through nginx without a session.
-  They are intentionally public liveness/readiness probes and return backend
-  health JSON (`/readyz` uses HTTP `200` or `503` according to readiness).
-- Protected engine routes such as `/api/v1/llm/policy` return `401` without a
-  signed session, not anonymous application data.
-
-If port 80 is already in use, change the nginx port mapping in
-`docker-compose.local.yml` from `\"80:80\"` to, for example, `\"8088:80\"`, then
-open `http://localhost:8088`.
-
-For the target-machine acceptance sequence, use
-[fresh-clone dry run](docs/fresh-clone-dryrun.md). For diagnosis, use
-[troubleshooting](docs/troubleshooting.md) and the in-product support bundle.
-
-### Import local or exported material
-
-1. Place authorized files under `connected-sources/`.
-2. Open **Connected Sources** in the dashboard.
-3. Create or select an export/local-folder source and keep **Local only** enabled.
-4. Use a path relative to `connected-sources/`, for example `.`.
-
-The backend mounts this root read-only. Paths escaping it are rejected. The
-general importer accepts `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`,
-`.yaml`, `.yml`, and `.log`; export connectors also support `.mbox`, `.eml`,
-and `.ics` within the same allowlisted root.
-
-### Import Phase 2 local feed records
-
-Phase 2's controlled background worker uses a separate intake boundary. Put
-operator-reviewed JSON feed files under `phase2-feeds/`, set
-`HAI_PHASE2_FEED_FILES` to their comma-separated filenames in `.env.local`,
-then restart the backend. The feed folder is mounted read-only. Any verified
-safe-worker artifact is confined to `agent-workspaces/phase2`; emergency-stop
-and autonomy-mode controls persist in the named Docker volume
-`018-hai-phase2-control-state` and are included in the recovery procedure.
-
-### Connect LARO case intelligence
-
-HAI includes a dedicated `laro` read-only connected-source adapter. Create the
-credential in **LARO Settings > HAI**, then set these values in HAI's protected
-local environment and restart only the backend service:
-
-```text
-HAI_LARO_ENABLED=true
-HAI_LARO_BASE_URL=https://your-laro-origin.example/laro
-HAI_LARO_CONNECTOR_TOKEN=<one-time LARO credential>
-HAI_LARO_SYNC_LIMIT=50
+```
+gitleaks git --baseline-path gitleaks-report.json --report-path findings.json
 ```
 
-Create the source from **Connected Sources** with connector `laro`, **Local
-only** disabled, and an empty sync target. The endpoint and credential remain
-environment-owned rather than being stored in the source row. Sync is bounded
-and cursor-based. Imported LARO records are always sensitive and review-gated;
-HAI does not create automatic memory from them and has no LARO write path.
+After running the detect command with the --baseline-path parameter, report output (findings.json) will only contain new issues.
 
-## Dashboard Entry Points
+## Pre-Commit hook
 
-| Route | Purpose |
-| --- | --- |
-| `/control-center` | Primary operational overview and bounded maintenance actions. |
-| `/command-dashboard` | Robert-only decisions, open loops, source-backed context, memory-derived work, and unified approval actions for pursuits and linked workflows. |
-| `/pursuits` | Long-running objectives with workflow, source, memory, verification, blocker, approval, activity, and related-pursuit links. |
-| `/workflow-engine` | Work queue, approvals, quality gates, interruptions, retries, follow-ups, and read-only internal reminder proposals. |
-| `/connected-sources` | Source configuration, sync history, extraction inspection, reindexing, pause/resume, and revocation. |
-| `/memory` | Compact memory search, correction, archive, retrieval, and export controls. |
-| `/llm-policy` | Provider/model configuration, budget/policy visibility, probes, routing, and fallback history. |
-| `/ambient-brain` | Proactive opportunities, scan history, need-profile preferences, and decision handoffs. |
-| `/task-blueprint` | Explicit bounded task planning, execution, validation, and review. |
-| `/framework-registry` | Versioned decision frameworks, owner preferences, selection evidence, and Constitution controls. |
+You can run Gitleaks as a pre-commit hook by copying the example `pre-commit.py` script into
+your `.git/hooks/` directory.
 
-These screens are authenticated operator surfaces. Technical logs and deep
-diagnostics remain behind their relevant detail or audit views.
+## Load Configuration
 
-## API Overview
+The order of precedence is:
 
-Backend engine APIs are served under `/api/v1` through the gateway. Principal
-areas are:
+1. `--config/-c` option:
+      ```bash
+      gitleaks git --config /home/dev/customgitleaks.toml .
+      ```
+2. Environment variable `GITLEAKS_CONFIG` with the file path:
+      ```bash
+      export GITLEAKS_CONFIG="/home/dev/customgitleaks.toml"
+      gitleaks git .
+      ```
+3. Environment variable `GITLEAKS_CONFIG_TOML` with the file content:
+      ```bash
+      export GITLEAKS_CONFIG_TOML=`cat customgitleaks.toml`
+      gitleaks git .
+      ```
+4. A `.gitleaks.toml` file within the target path:
+      ```bash
+      gitleaks git .
+      ```
 
-- `/automation`: registered automations, launch/stop, health checks, and diagnostics.
-- `/agent-runtimes`: runtime inventory, health, skill discovery, controlled stop, and OpenClaw ecosystem inspection.
-- `/llm`: policy, probes, routing, generation, and redacted decision history.
-- `/memory` and `/memory-engine`: compact memory, encrypted conversation import, search, and insights.
-- `/sources`: source registry, connectors, sync, extraction management, search, and audit records.
-- `/pursuits`: high-level objectives, matching, intake, navigable related-pursuit links, summary, review, decisions, evidence, blockers, next actions, approvals, activity, planning, approval-gated candidate acceptance, and an Advanced-only **Reindex life domains** maintenance action. The reindex projects already-owned canonical pursuit classifications into HAI's local whole-life index; it does not alter pursuit content, call an external provider, or execute work.
-- `/workflow`: intake, state transitions, approvals, due work, follow-ups, owner-scoped reminder proposals, non-executing reminder activation request/decision evidence, quality/review state, and dashboard data.
-- `/task`: bounded plans/runs, durable owner-scoped completion logs, review
-  queue, and exact-action review resolution.
-- `/verification`: grounded answers and verification run history.
-- `/framework-registry`: catalog, owner-effective preferences, selection
-  history, and Constitution lifecycle.
-- `/ambient`, `/agent-cycle`, `/assistant`, and `/os`: proactive planning, controlled refreshes, command bridge, and operating-system summary.
+If none of the four options are used, then gitleaks will use the default config.
 
-Use the route tests in `backend/internal/router/` and each subsystem's
-documentation for the current Go API contracts. In particular, the
-[Framework Registry API table](docs/framework-registry.md#api) lists every
-registry endpoint and permission. [docs/swagger.yaml](docs/swagger.yaml) is a
-legacy IDP authentication specification; it does not describe the Go control
-plane and must not be used as evidence that those routes exist.
+## Configuration
 
-## Controlled Models and Runtimes
+Gitleaks offers a configuration format you can follow to write your own secret detection rules:
 
-### Models
+```toml
+# Title for the gitleaks configuration file.
+title = "Custom Gitleaks configuration"
 
-The router chooses the cheapest suitable model, not mechanically the cheapest
-model. Its policy prioritizes local/free availability, task difficulty,
-validation, fallback history, quotas, and the daily budget. Paid calls are
-disabled by default with a EUR 0 budget; request JSON cannot self-approve paid
-or approval-required use.
+# You have basically two options for your custom configuration:
+#
+# 1. define your own configuration, default rules do not apply
+#
+#    use e.g., the default configuration as starting point:
+#    https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+#
+# 2. extend a configuration, the rules are overwritten or extended
+#
+#    When you extend a configuration the extended rules take precedence over the
+#    default rules. I.e., if there are duplicate rules in both the extended
+#    configuration and the default configuration the extended rules or
+#    attributes of them will override the default rules.
+#    Another thing to know with extending configurations is you can chain
+#    together multiple configuration files to a depth of 2. Allowlist arrays are
+#    appended and can contain duplicates.
 
-Supported configuration families include Ollama, llama.cpp/LM Studio or other
-OpenAI-compatible local servers, and configured free/freemium providers. Model
-catalog entries cover Qwen, DeepSeek, Llama, Mistral/Mixtral, Gemma, Phi, and
-other configured provider models. Provider status must be read as configuration
-and probe history, not as a live-service guarantee.
+# useDefault and path can NOT be used at the same time. Choose one.
+[extend]
+# useDefault will extend the default gitleaks config built in to the binary
+# the latest version is located at:
+# https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml
+useDefault = true
+# or you can provide a path to a configuration to extend from.
+# The path is relative to where gitleaks was invoked,
+# not the location of the base config.
+# path = "common_config.toml"
+# If there are any rules you don't want to inherit, they can be specified here.
+disabledRules = [ "generic-api-key"]
 
-### Agent runtimes
+# An array of tables that contain information that define instructions
+# on how to detect secrets
+[[rules]]
+# Unique identifier for this rule
+id = "awesome-rule-1"
 
-Hermes, DeepSeek Harness, Odysseus, and OpenClaw are optional controlled adapters. HAI can inspect
-their configured capabilities and run a bounded approved task only after the
-operator installs the upstream runtime, configures scoped credentials/workspace
-state, enables the adapter, and validates it. HAI does not bundle these tools,
-send messages through them, control browsers, create cron jobs, or bypass their
-or HAI's security boundaries.
+# Short human-readable description of the rule.
+description = "awesome rule 1"
 
-OpenClaw Companion on Windows is supported as a separate, read-only gateway
-discovery path. With `OPENCLAW_AGENT_ENABLED=true`,
-`OPENCLAW_GATEWAY_ENABLED=true`, and
-`OPENCLAW_GATEWAY_URL=ws://host.docker.internal:18789` for a Compose backend,
-HAI converts the loopback WebSocket address into a strict `GET /health` probe.
-It accepts only `{"ok":true,"status":"live"}`, follows no redirects, sends no
-gateway token, and reports `available` rather than executable. The Companion's
-WSL gateway being live does not authorize HAI to run a task, access Companion
-node capabilities, or use a browser, desktop, channel, or host tool. Those
-remain blocked until the existing CLI/workspace, approval-proof, and
-postcondition paths are independently configured and validated. A health-only
-Gateway probe does not require or block on `OPENCLAW_GATEWAY_TOKEN`; that token
-is required only for the separate authenticated `operator.read` discovery path.
+# Golang regular expression used to detect secrets. Note Golang's regex engine
+# does not support lookaheads.
+regex = '''one-go-style-regex-for-this-rule'''
 
-Set `OPENCLAW_GATEWAY_PROTOCOL_DISCOVERY_ENABLED=true` only when HAI should
-also validate the unauthenticated gateway boundary. It opens the configured
-WebSocket, accepts one bounded `connect.challenge` event, and closes the socket.
-It does not send an authorization header, gateway token, `connect` frame, RPC,
-or task.
+# Int used to extract secret from regex match and used as the group that will have
+# its entropy checked if `entropy` is set.
+secretGroup = 3
 
-`OPENCLAW_GATEWAY_AUTH_DISCOVERY_ENABLED=true` is a separate, opt-in identity
-check. It requires `OPENCLAW_GATEWAY_TOKEN`, reads the bounded challenge, sends
-one Gateway `connect` request asking for exactly `operator.read`, validates the
-matching `hello-ok` response, returned scope, server identity fields, and policy,
-then closes the socket. With task-ledger discovery disabled, it sends no
-Gateway RPC, task, tool, browser, message, node, or channel command and does
-not make OpenClaw executable in HAI. An
-authenticated discovery result is therefore still reported as `available`, not
-execution-ready. HAI has not configured a Companion token or live-validated the
-authenticated handshake on this installation.
+# Float representing the minimum shannon entropy a regex group must have to be considered a secret.
+entropy = 3.5
 
-`OPENCLAW_GATEWAY_TASK_LEDGER_DISCOVERY_ENABLED=true` is a narrower, separate
-opt-in after the authenticated identity check. HAI sends one read-only
-`tasks.list` request with a fixed limit of 50 and exposes only the sampled
-status counts in runtime health. It does not retain or return task IDs, titles,
-prompts, owners, error text, session keys, or gateway credentials. It cannot
-start, cancel, modify, or otherwise operate on an OpenClaw task, and it does
-not make the OpenClaw runtime executable in HAI.
+# Golang regular expression used to match paths. This can be used as a standalone rule or it can be used
+# in conjunction with a valid `regex` entry.
+path = '''a-file-path-regex'''
 
-DeepSeek Harness remains an upstream developer preview, but it now documents a
-one-shot headless profile: `dsh --profile headless "task"`. HAI integrates only
-that documented process boundary. It is disabled by default and requires both
-`DEEPSEEK_HARNESS_ENABLED=true` and
-`DEEPSEEK_HARNESS_EXECUTION_ENABLED=true`, a pinned
-`DEEPSEEK_HARNESS_VERSION`, and HAI's server-side approval and consumed
-final-effect proof. In the Windows deployment, the backend does **not** execute
-`dsh` inside Docker. It persists an approved job and the separately started
-`hai-dsh-bridge` Windows worker pulls it through a dedicated gateway bound only
-to `127.0.0.1:8092`. That bridge requires its own random 32+ character token,
-an exact workspace key, and a local Windows workspace/state directory. It uses
-only `dsh --profile headless`, probes the pinned version at startup, applies a
-timeout, output cap, environment allowlist, and secret redaction, and never
-opens a listener. The dashboard/ngrok gateway explicitly returns `404` for the
-host bridge path. HAI does not launch the Harness Web UI or ACP server, install
-plugins, control a browser, or supply model credentials; model keys and
-permissions stay operator-managed. A missing bridge worker leaves approved work
-queued rather than falling back to a container process. While DSH is running,
-the bridge reconfirms its lease every two seconds; an emergency stop, expired
-lease, or failed confirmation cancels the local DSH process and records a
-bounded failure result. Worker liveness reporting remains a release gate; it is
-not represented as a completed capability. When the bridge submits a terminal result, HAI's
-durable-job worker projects it into the linked automation audit ledger using an
-idempotent completion key. This records success or failure without re-running
-DSH; an unlinked host job remains visible for investigation instead of being
-treated as complete.
+# Keywords are used for pre-regex check filtering. Rules that contain
+# keywords will perform a quick string compare check to make sure the
+# keyword(s) are in the content being scanned. Ideally these values should
+# either be part of the identiifer or unique strings specific to the rule's regex
+# (introduced in v8.6.0)
+keywords = [
+  "auth",
+  "password",
+  "token",
+]
 
-API, script, and Docker adapters have the same default posture: disabled until
-explicitly allowlisted and configured. The emergency stop blocks runtime
-registry execution even when an adapter is invoked directly. Mutating API,
-script, Docker-start, and agent-runtime actions also require the internal
-action-bound approval proof described above. The proof is issued only from an
-approved task review and is validated before network, process/filesystem,
-Docker-socket, or agent-runtime access. Direct mutating launch requests
-therefore block; read-only API `GET`/`HEAD` probes remain available within the
-normal access and allowlist policy.
+# Array of strings used for metadata and reporting purposes.
+tags = ["tag","another tag"]
 
-### Local provider fixture
+    # ⚠️ In v8.21.0 `[rules.allowlist]` was replaced with `[[rules.allowlists]]`.
+    # This change was backwards-compatible: instances of `[rules.allowlist]` still  work.
+    #
+    # You can define multiple allowlists for a rule to reduce false positives.
+    # A finding will be ignored if _ANY_ `[[rules.allowlists]]` matches.
+    [[rules.allowlists]]
+    description = "ignore commit A"
+    # When multiple criteria are defined the default condition is "OR".
+    # e.g., this can match on |commits| OR |paths| OR |stopwords|.
+    condition = "OR"
+    commits = [ "commit-A", "commit-B"]
+    paths = [
+      '''go\.mod''',
+      '''go\.sum'''
+    ]
+    # note: stopwords targets the extracted secret, not the entire regex match
+    # like 'regexes' does. (stopwords introduced in 8.8.0)
+    stopwords = [
+      '''client''',
+      '''endpoint''',
+    ]
 
-For a controlled HTTP compatibility check without downloading a model or
-contacting a provider, the optional `provider-fixture` Compose profile serves
-both Ollama discovery (`/api/tags`) and OpenAI-compatible discovery
-(`GET /v1/models`) plus deterministic generation-shaped responses. It is not
-an LLM and is never started by the normal local stack. It has no host port,
-read-only storage, no Linux capabilities, and a 32 MB / 0.10 CPU / 32 PID
-limit.
+    [[rules.allowlists]]
+    # The "AND" condition can be used to make sure all criteria match.
+    # e.g., this matches if |regexes| AND |paths| are satisfied.
+    condition = "AND"
+    # note: |regexes| defaults to check the _Secret_ in the finding.
+    # Acceptable values for |regexTarget| are "secret" (default), "match", and "line".
+    regexTarget = "match"
+    regexes = [ '''(?i)parseur[il]''' ]
+    paths = [ '''package-lock\.json''' ]
 
-Use it only in an isolated test configuration where a test-only provider is
-explicitly pointed at `http://provider-fixture:11434`:
+# You can extend a particular rule from the default config. e.g., gitlab-pat
+# if you have defined a custom token prefix on your GitLab instance
+[[rules]]
+id = "gitlab-pat"
+# all the other attributes from the default rule are inherited
 
-```powershell
-docker compose --env-file .env.example --profile provider-fixture -f docker-compose.local.yml up --build provider-fixture
+    [[rules.allowlists]]
+    regexTarget = "line"
+    regexes = [ '''MY-glpat-''' ]
+
+
+# ⚠️ In v8.25.0 `[allowlist]` was replaced with `[[allowlists]]`.
+#
+# Global allowlists have a higher order of precedence than rule-specific allowlists.
+# If a commit listed in the `commits` field below is encountered then that commit will be skipped and no
+# secrets will be detected for said commit. The same logic applies for regexes and paths.
+[[allowlists]]
+description = "global allow list"
+commits = [ "commit-A", "commit-B", "commit-C"]
+paths = [
+  '''gitleaks\.toml''',
+  '''(.*?)(jpg|gif|doc)'''
+]
+# note: (global) regexTarget defaults to check the _Secret_ in the finding.
+# Acceptable values for regexTarget are "match" and "line"
+regexTarget = "match"
+regexes = [
+  '''219-09-9999''',
+  '''078-05-1120''',
+  '''(9[0-9]{2}|666)-\d{2}-\d{4}''',
+]
+# note: stopwords targets the extracted secret, not the entire regex match
+# like 'regexes' does. (stopwords introduced in 8.8.0)
+stopwords = [
+  '''client''',
+  '''endpoint''',
+]
+
+# ⚠️ In v8.25.0, `[[allowlists]]` have a new field called |targetRules|.
+#
+# Common allowlists can be defined once and assigned to multiple rules using |targetRules|.
+# This will only run on the specified rules, not globally.
+[[allowlists]]
+targetRules = ["awesome-rule-1", "awesome-rule-2"]
+description = "Our test assets trigger false-positives in a couple rules."
+paths = ['''tests/expected/._\.json$''']
 ```
 
-This validates only HAI's network compatibility with a deterministic local
-service. It is not evidence that Ollama, LM Studio, a cloud provider, or a
-model has been installed or accepted for real work.
+Refer to the default [gitleaks config](https://github.com/gitleaks/gitleaks/blob/master/config/gitleaks.toml) for examples or follow the [contributing guidelines](https://github.com/gitleaks/gitleaks/blob/master/CONTRIBUTING.md) if you would like to contribute to the default configuration. Additionally, you can check out [this gitleaks blog post](https://blog.gitleaks.io/stop-leaking-secrets-configuration-2-3-aeed293b1fbf) which covers advanced configuration setups.
 
-## Developer Checks
+### Additional Configuration
 
-```powershell
-# Backend (use Docker when Go is not installed locally)
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13 go test ./...
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13 go vet ./...
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13 go build ./...
+#### Composite Rules (Multi-part or `required` Rules)
+In v8.28.0 Gitleaks introduced composite rules, which are made up of a single "primary" rule and one or more auxiliary or `required` rules. To create a composite rule, add a `[[rules.required]]` table to the primary rule specifying an `id` and optionally `withinLines` and/or `withinColumns` proximity constraints. A fragment is a chunk of content that Gitleaks processes at once (typically a file, part of a file, or git diff), and proximity matching instructs the primary rule to only report a finding if the auxiliary `required` rules also find matches within the specified area of the fragment.
 
-# Identity service (Go 1.25.13)
-Set-Location idp
-go vet ./...
-go test ./...
-go build ./...
+**Proximity matching:** Using the `withinLines` and `withinColumns` fields instructs the primary rule to only report a finding if the auxiliary `required` rules also find matches within the specified proximity. You can set:
 
-# Nginx configuration service (Go 1.25.13)
-Set-Location ..\nginx-config-manager
-go vet ./...
-go test ./...
-go build ./...
+- **`withinLines: N`** - required findings must be within N lines (vertically)
+- **`withinColumns: N`** - required findings must be within N characters (horizontally)
+- **Both** - creates a rectangular search area (both constraints must be satisfied)
+- **Neither** - fragment-level matching (required findings can be anywhere in the same fragment)
 
-# Frontend
-Set-Location ..\frontend
-npm.cmd ci
-npm.cmd run build
-npx ng test --watch=false --browsers=ChromeHeadlessNoSandbox
+Here are diagrams illustrating each proximity behavior:
 
-# Compose contract
-Set-Location ..
-docker compose --env-file .env.example -f docker-compose.local.yml config --quiet
+```
+p = primary captured secret
+a = auxiliary (required) captured secret
+fragment = section of data gitleaks is looking at
+
+
+    *Fragment-level proximity*
+    Any required finding in the fragment
+          ┌────────┐
+   ┌──────┤fragment├─────┐
+   │      └──────┬─┤     │ ┌───────┐
+   │             │a│◀────┼─│✓ MATCH│
+   │          ┌─┐└─┘     │ └───────┘
+   │┌─┐       │p│        │
+   ││a│    ┌─┐└─┘        │ ┌───────┐
+   │└─┘    │a│◀──────────┼─│✓ MATCH│
+   └─▲─────┴─┴───────────┘ └───────┘
+     │    ┌───────┐
+     └────│✓ MATCH│
+          └───────┘
+
+
+   *Column bounded proximity*
+   `withinColumns = 3`
+          ┌────────┐
+   ┌────┬─┤fragment├─┬───┐
+   │      └──────┬─┤     │ ┌───────────┐
+   │    │        │a│◀┼───┼─│+1C ✓ MATCH│
+   │          ┌─┐└─┘     │ └───────────┘
+   │┌─┐ │     │p│    │   │
+┌──▶│a│  ┌─┐  └─┘        │ ┌───────────┐
+│  │└─┘ ││a│◀────────┼───┼─│-2C ✓ MATCH│
+│  │       ┘             │ └───────────┘
+│  └── -3C ───0C─── +3C ─┘
+│  ┌─────────┐
+│  │ -4C ✗ NO│
+└──│  MATCH  │
+   └─────────┘
+
+
+   *Line bounded proximity*
+   `withinLines = 4`
+         ┌────────┐
+   ┌─────┤fragment├─────┐
+  +4L─ ─ ┴────────┘─ ─ ─│
+   │                    │
+   │              ┌─┐   │ ┌────────────┐
+   │         ┌─┐  │a│◀──┼─│+1L ✓ MATCH │
+   0L  ┌─┐   │p│  └─┘   │ ├────────────┤
+   │   │a│◀──┴─┴────────┼─│-1L ✓ MATCH │
+   │   └─┘              │ └────────────┘
+   │                    │ ┌─────────┐
+  -4L─ ─ ─ ─ ─ ─ ─ ─┌─┐─│ │-5L ✗ NO │
+   │                │a│◀┼─│  MATCH  │
+   └────────────────┴─┴─┘ └─────────┘
+
+
+   *Line and column bounded proximity*
+   `withinLines = 4`
+   `withinColumns = 3`
+         ┌────────┐
+   ┌─────┤fragment├─────┐
+  +4L   ┌└────────┴ ┐   │
+   │            ┌─┐     │ ┌───────────────┐
+   │    │       │a│◀┼───┼─│+2L/+1C ✓ MATCH│
+   │         ┌─┐└─┘     │ └───────────────┘
+   0L   │    │p│    │   │
+   │         └─┘        │
+   │    │           │   │ ┌────────────┐
+  -4L    ─ ─ ─ ─ ─ ─┌─┐ │ │-5L/+3C ✗ NO│
+   │                │a│◀┼─│   MATCH    │
+   └───-3C────0L───+3C┴─┘ └────────────┘
 ```
 
-With the matching local Go toolchains installed, run the backend commands from
-`backend/`, and the IDP and nginx-config-manager commands from their respective
-directories. These are the same build-and-test surfaces required by CI. The
-critical-path smoke is `scripts/smoke-critical-path.sh` from a Bash-capable
-shell with its prerequisites. CI also provisions a temporary production-mode
-Compose stack and runs `frontend/e2e` against it; the browser suite covers
-login, owner-scoped source intake, governed workflow approval, and one verified
-read-only backend-health execution. It uses CI-only values and does not
-authorize external providers or mutable external actions. The suite creates
-temporary local records and requires an explicit `E2E_ALLOW_MUTATION=true` flag;
-use it only against a disposable acceptance stack.
+<details><summary>Some final quick thoughts on composite rules.</summary>This is an experimental feature! It's subject to change so don't go sellin' a new B2B SaaS feature built ontop of this feature. Scan type (git vs dir) based context is interesting. I'm monitoring the situation. Composite rules might not be super useful for git scans because gitleaks only looks at additions in the git history. It could be useful to scan non-additions in git history for `required` rules. Oh, right this is a readme, I'll shut up now.</details>
 
-The repository's verification evidence is in:
+#### gitleaks:allow
 
-- [completion matrix](docs/codex-goal/completion-matrix.md)
-- [final verification report](docs/codex-goal/final-verification-report.md)
-- [fresh-clone dry run](docs/fresh-clone-dryrun.md)
-- [external provider reality review](docs/external-provider-reality-review.md)
-- [technical debt](docs/technical-debt.md)
+If you are knowingly committing a test secret that gitleaks will catch you can add a `gitleaks:allow` comment to that line which will instruct gitleaks
+to ignore that secret. Ex:
 
-These reports distinguish exercised local behavior from unproven real-world
-integrations. Treat target-machine and provider-specific checks as release
-gates, not paperwork.
+```
+class CustomClass:
+    discord_client_secret = '8dyfuiRyq=vVc3RRr_edRk-fK__JItpZ'  #gitleaks:allow
 
-## Repository Layout
-
-```text
-backend/                 Go API and HAI engines
-frontend/                Angular dashboard
-idp/                     Identity provider service
-nginx-config/            Gateway configuration used by local Compose
-nginx-config-manager/    Generated route-config manager; Docker socket disabled by default
-automation-scripts/      Read-only allowlisted script mount
-connected-sources/       Read-only local/export ingestion root
-phase2-feeds/            Read-only Phase 2 JSON feed intake root
-agent-workspaces/        Bounded local safe-worker output root
-browser-extension/       Explicit user-authorized conversation capture
-scripts/                 Smoke and operational verification scripts
-docs/                    Architecture, runbooks, evidence, audits, and roadmap
-.github/workflows/       CI pipeline
-docker-compose.local.yml Windows/local-first Compose topology
-.env.example             Environment template; copy to untracked .env.local
-generic-auto/            Legacy service, not the canonical HAI engine
-gate/                    Legacy gateway/config area; local Compose uses nginx-config/
 ```
 
-## Further Documentation
+#### .gitleaksignore
 
-- [Operator runbook](docs/operator-runbook.md)
-- [Framework Registry and task approval contract](docs/framework-registry.md)
-- [User guide](docs/user-guide.md)
-- [HAI Personal AI Operating System blueprint](docs/hai-personal-ai-operating-system.md)
-- [Universal task success engine](docs/universal-task-success-engine.md)
-- [Connected-source ingestion](docs/connected-source-ingestion-extraction.md)
-- [Verification and anti-hallucination policy](docs/anti-hallucination-verification.md)
-- [Source-grounded answer engine](docs/source-grounded-answer-engine.md)
-- [Automation Control Center](docs/automation-control-center-blueprint.md)
-- [Release process](docs/release-process.md)
-- [Privacy impact assessment](docs/privacy-impact-assessment.md)
+You can ignore specific findings by creating a `.gitleaksignore` file at the root of your repo. In release v8.10.0 Gitleaks added a `Fingerprint` value to the Gitleaks report. Each leak, or finding, has a Fingerprint that uniquely identifies a secret. Add this fingerprint to the `.gitleaksignore` file to ignore that specific secret. See Gitleaks' [.gitleaksignore](https://github.com/gitleaks/gitleaks/blob/master/.gitleaksignore) for an example. Note: this feature is experimental and is subject to change in the future.
 
-## License
+#### Decoding
 
-See [LICENSE](LICENSE).
+Sometimes secrets are encoded in a way that can make them difficult to find
+with just regex. Now you can tell gitleaks to automatically find and decode
+encoded text. The flag `--max-decode-depth` enables this feature (the default
+value "0" means the feature is disabled by default).
+
+Recursive decoding is supported since decoded text can also contain encoded
+text.  The flag `--max-decode-depth` sets the recursion limit. Recursion stops
+when there are no new segments of encoded text to decode, so setting a really
+high max depth doesn't mean it will make that many passes. It will only make as
+many as it needs to decode the text. Overall, decoding only minimally increases
+scan times.
+
+The findings for encoded text differ from normal findings in the following
+ways:
+
+- The location points the bounds of the encoded text
+  - If the rule matches outside the encoded text, the bounds are adjusted to
+    include that as well
+- The match and secret contain the decoded value
+- Two tags are added `decoded:<encoding>` and `decode-depth:<depth>`
+
+Currently supported encodings:
+
+- **percent** - Any printable ASCII percent encoded values
+- **hex** - Any printable ASCII hex encoded values >= 32 characters
+- **base64** - Any printable ASCII base64 encoded values >= 16 characters
+
+#### Archive Scanning
+
+Sometimes secrets are packaged within archive files like zip files or tarballs,
+making them difficult to discover. Now you can tell gitleaks to automatically
+extract and scan the contents of archives. The flag `--max-archive-depth`
+enables this feature for both `dir` and `git` scan types. The default value of
+"0" means this feature is disabled by default.
+
+Recursive scanning is supported since archives can also contain other archives.
+The `--max-archive-depth` flag sets the recursion limit. Recursion stops when
+there are no new archives to extract, so setting a very high max depth just
+sets the potential to go that deep. It will only go as deep as it needs to.
+
+The findings for secrets located within an archive will include the path to the
+file inside the archive. Inner paths are separated with `!`.
+
+Example finding (shortened for brevity):
+
+```
+Finding:     DB_PASSWORD=replace-with-local-password
+...
+File:        testdata/archives/nested.tar.gz!archives/files.tar!files/.env.prod
+Line:        4
+Commit:      6e6ee6596d337bb656496425fb98644eb62b4a82
+...
+Fingerprint: 6e6ee6596d337bb656496425fb98644eb62b4a82:testdata/archives/nested.tar.gz!archives/files.tar!files/.env.prod:generic-api-key:4
+Link:        https://github.com/leaktk/gitleaks/blob/6e6ee6596d337bb656496425fb98644eb62b4a82/testdata/archives/nested.tar.gz
+```
+
+This means a secret was detected on line 4 of `files/.env.prod.` which is in
+`archives/files.tar` which is in `testdata/archives/nested.tar.gz`.
+
+Currently supported formats:
+
+The [compression](https://github.com/mholt/archives?tab=readme-ov-file#supported-compression-formats)
+and [archive](https://github.com/mholt/archives?tab=readme-ov-file#supported-archive-formats)
+formats supported by mholt's [archives package](https://github.com/mholt/archives)
+are supported.
+
+#### Reporting
+
+Gitleaks has built-in support for several report formats: [`json`](https://github.com/gitleaks/gitleaks/blob/master/testdata/expected/report/json_simple.json), [`csv`](https://github.com/gitleaks/gitleaks/blob/master/testdata/expected/report/csv_simple.csv?plain=1), [`junit`](https://github.com/gitleaks/gitleaks/blob/master/testdata/expected/report/junit_simple.xml), and [`sarif`](https://github.com/gitleaks/gitleaks/blob/master/testdata/expected/report/sarif_simple.sarif).
+
+If none of these formats fit your need, you can create your own report format with a [Go `text/template` .tmpl file](https://www.digitalocean.com/community/tutorials/how-to-use-templates-in-go#step-4-writing-a-template) and the `--report-template` flag. The template can use [extended functionality from the `Masterminds/sprig` template library](https://masterminds.github.io/sprig/).
+
+For example, the following template provides a custom JSON output:
+```gotemplate
+# jsonextra.tmpl
+[{{ $lastFinding := (sub (len . ) 1) }}
+{{- range $i, $finding := . }}{{with $finding}}
+    {
+        "Description": {{ quote .Description }},
+        "StartLine": {{ .StartLine }},
+        "EndLine": {{ .EndLine }},
+        "StartColumn": {{ .StartColumn }},
+        "EndColumn": {{ .EndColumn }},
+        "Line": {{ quote .Line }},
+        "Match": {{ quote .Match }},
+        "Secret": {{ quote .Secret }},
+        "File": "{{ .File }}",
+        "SymlinkFile": {{ quote .SymlinkFile }},
+        "Commit": {{ quote .Commit }},
+        "Entropy": {{ .Entropy }},
+        "Author": {{ quote .Author }},
+        "Email": {{ quote .Email }},
+        "Date": {{ quote .Date }},
+        "Message": {{ quote .Message }},
+        "Tags": [{{ $lastTag := (sub (len .Tags ) 1) }}{{ range $j, $tag := .Tags }}{{ quote . }}{{ if ne $j $lastTag }},{{ end }}{{ end }}],
+        "RuleID": {{ quote .RuleID }},
+        "Fingerprint": {{ quote .Fingerprint }}
+    }{{ if ne $i $lastFinding }},{{ end }}
+{{- end}}{{ end }}
+]
+```
+
+Usage:
+```sh
+$ gitleaks dir ~/leaky-repo/ --report-path "report.json" --report-format template --report-template testdata/report/jsonextra.tmpl
+```
+
+## Sponsorships
+
+<p align="left">
+	<h3><a href="https://coderabbit.ai/?utm_source=oss&utm_medium=sponsorship&utm_campaign=gitleaks">coderabbit.ai</h3>
+	  <a href="https://coderabbit.ai/?utm_source=oss&utm_medium=sponsorship&utm_campaign=gitleaks">
+		  <img alt="CodeRabbit.ai Sponsorship" src="https://github.com/gitleaks/gitleaks/assets/15034943/76c30a85-887b-47ca-9956-17a8e55c6c41" width=200>
+	  </a>
+</p>
+
+
+## Exit Codes
+
+You can always set the exit code when leaks are encountered with the --exit-code flag. Default exit codes below:
+
+```
+0 - no leaks present
+1 - leaks or error encountered
+126 - unknown flag
+```
+
+### Join the Discord! [![Discord](https://img.shields.io/discord/1102689410522284044.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/8Hzbrnkr7E)

@@ -1,6 +1,7 @@
 package phase2
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -188,6 +189,7 @@ func newTestExecutionAuthorizationService(t *testing.T) *executionauth.Service {
 type phase2TestConstitution struct{}
 
 func (phase2TestConstitution) EvaluateExecutionPolicy(
+	_ context.Context,
 	_ string,
 	_ []string,
 	_ int,

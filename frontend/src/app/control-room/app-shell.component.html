@@ -1,60 +1,98 @@
-<section class="hai-app-shell" [class.hai-app-shell--compact]="navigationMode === 'compact'" [class.hai-app-shell--expanded]="navigationMode === 'expanded'">
-  <a class="hai-skip-link" href="#hai-main">Skip to content</a>
+<section class="hai-app-shell" [class.hai-app-shell--compact]="navigationMode === 'compact'" [class.hai-app-shell--expanded]="navigationMode === 'expanded'" [class.hai-app-shell--minimal]="isMinimalAccessRoute()">
+  <a class="hai-skip-link" [href]="mainContentHref" (click)="skipToContent($event)">Skip to content</a>
 
-  <aside class="hai-navigation" [class.hai-navigation--open]="mobileNavigationOpen" aria-label="HAI navigation">
-    <button type="button" class="hai-brand" (click)="navigate(modules[0])" title="Open Command Center">
-      <span>HAI</span>
-      <strong>Automation Hub</strong>
-    </button>
+  <aside *ngIf="!isMinimalAccessRoute()" #mobileNavigation id="hai-navigation" class="hai-navigation" [class.hai-navigation--open]="mobileNavigationOpen" [attr.role]="mobileNavigationOpen ? 'dialog' : null" [attr.aria-modal]="mobileNavigationOpen ? 'true' : null" aria-label="HAI navigation">
+    <div class="hai-navigation__header">
+      <a class="hai-brand" [href]="modules[0].route" (click)="navigateFromNavigation(modules[0], $event)" aria-label="Open Command Center" title="Open Command Center">
+        <span>HAI</span>
+        <strong>Automation Hub</strong>
+      </a>
+      <button type="button" class="hai-navigation__close" aria-label="Close navigation" title="Close navigation" (click)="closeMobileNavigation()">
+        <i nz-icon nzType="close" nzTheme="outline" aria-hidden="true"></i>
+      </button>
+    </div>
 
-    <nav>
-      <section class="hai-navigation__group" *ngFor="let group of groups">
-        <h2>{{ group.label }}</h2>
-        <button
-          type="button"
-          class="hai-navigation__item"
-          *ngFor="let module of groupModules(group.id)"
-          [class.hai-navigation__item--active]="isActive(module)"
-          [attr.aria-current]="isActive(module) ? 'page' : null"
-          [attr.title]="module.title + ': ' + module.description"
-          (click)="navigate(module)"
-        >
-          <i nz-icon [nzType]="module.icon" nzTheme="outline"></i>
-          <span>{{ module.title }}</span>
-        </button>
+    <nav aria-label="Primary navigation">
+      <section class="hai-navigation__group" *ngFor="let group of groups" [class.hai-navigation__group--current]="groupContainsCurrentModule(group.id)">
+        <details class="hai-navigation__disclosure" [attr.data-hai-nav-group]="group.id" [open]="isNavigationGroupOpen(group.id)" (toggle)="persistNavigationGroupState(group.id, $event)">
+          <summary class="hai-navigation__summary" [attr.aria-label]="group.label + (groupContainsCurrentModule(group.id) ? ', current module ' + current.title : '')" [attr.title]="group.label + (isNavigationGroupOpen(group.id) ? ': collapse group' : ': expand group')">
+            <i class="hai-navigation__group-icon" nz-icon [nzType]="group.icon" nzTheme="outline" aria-hidden="true"></i>
+            <span class="hai-navigation__summary-copy">
+              <strong>{{ group.label }}</strong>
+              <small *ngIf="!isNavigationGroupOpen(group.id) && groupContainsCurrentModule(group.id)">Current: {{ current.title }}</small>
+            </span>
+            <i class="hai-navigation__group-chevron" nz-icon nzType="down" nzTheme="outline" aria-hidden="true"></i>
+          </summary>
+          <div class="hai-navigation__items">
+            <a
+              class="hai-navigation__item"
+              *ngFor="let module of groupModules(group.id)"
+              [href]="module.route"
+              [class.hai-navigation__item--active]="isActive(module)"
+              [attr.aria-label]="module.title"
+              [attr.aria-current]="isActive(module) ? 'page' : null"
+              [attr.title]="module.title + ': ' + module.description"
+              (click)="navigateFromNavigation(module, $event)"
+            >
+              <i nz-icon [nzType]="module.icon" nzTheme="outline" aria-hidden="true"></i>
+              <span>{{ module.title }}</span>
+            </a>
+          </div>
+        </details>
       </section>
     </nav>
   </aside>
 
-  <button type="button" class="hai-navigation-backdrop" aria-label="Close navigation" *ngIf="mobileNavigationOpen" (click)="mobileNavigationOpen = false"></button>
+  <button type="button" class="hai-navigation-backdrop" aria-hidden="true" tabindex="-1" *ngIf="mobileNavigationOpen && !isMinimalAccessRoute()" (click)="closeMobileNavigation()"></button>
 
-  <div class="hai-workspace">
-    <header class="hai-global-bar">
-      <button type="button" class="hai-icon-control hai-mobile-menu" aria-label="Open navigation" (click)="mobileNavigationOpen = !mobileNavigationOpen">
-        <i nz-icon nzType="menu" nzTheme="outline"></i>
+  <div class="hai-workspace" [attr.inert]="mobileNavigationOpen ? '' : null" [attr.aria-hidden]="mobileNavigationOpen ? 'true' : null">
+    <header class="hai-global-bar" *ngIf="!isMinimalAccessRoute()">
+      <button #mobileMenuButton type="button" class="hai-icon-control hai-mobile-menu" [attr.aria-label]="mobileNavigationOpen ? 'Close navigation' : 'Open navigation'" aria-controls="hai-navigation" [attr.aria-expanded]="mobileNavigationOpen" (click)="toggleMobileNavigation()">
+        <i nz-icon nzType="menu" nzTheme="outline" aria-hidden="true"></i>
       </button>
-      <button type="button" class="hai-safety-status" title="Safe mode is active. High-risk actions require approval." (click)="openRoute('/ambient-brain')">
-        <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
-        <span><strong>Safe mode</strong><small>Approval-gated</small></span>
+      <button type="button" class="hai-safety-status" [class.hai-safety-status--unknown]="safetyFreshness === 'unknown' || safetyFreshness === 'checking'" [class.hai-safety-status--stale]="safetyFreshness === 'stale'" [class.hai-safety-status--current]="safetyFreshness === 'current'" [class.hai-safety-status--stopped]="emergencyStopActive" [attr.data-freshness]="safetyFreshness" [attr.aria-busy]="safetyRequestInFlight" [attr.aria-label]="safetyLabel + '. ' + safetyDetail + ' ' + safetyFreshnessText" [title]="safetyDetail + ' ' + safetyFreshnessText" (click)="openSafetyControls()">
+        <i nz-icon nzType="safety-certificate" nzTheme="outline" aria-hidden="true"></i>
+        <span class="hai-safety-status__copy"><strong>{{ safetyLabel }}</strong><small>{{ safetyDetail }}</small></span>
+        <small class="hai-safety-status__compact">{{ safetyCompactLabel }}</small>
+        <small class="hai-safety-status__freshness">{{ safetyFreshnessText }}</small>
       </button>
       <div class="hai-module-identity">
         <strong>{{ current.title }}</strong>
         <small>{{ current.description }}</small>
       </div>
       <div class="hai-global-bar__spacer"></div>
-      <button type="button" class="hai-utility-control" [attr.aria-pressed]="viewMode === 'advanced'" (click)="toggleViewMode()" title="Toggle the saved basic or advanced view for this module">
-        <i nz-icon [nzType]="viewMode === 'advanced' ? 'compress' : 'expand'" nzTheme="outline"></i>
+      <button type="button" class="hai-utility-control" [attr.aria-label]="'Advanced view for ' + current.title" [attr.aria-pressed]="viewMode === 'advanced'" (click)="toggleViewMode()" title="Toggle the saved basic or advanced view for this module">
+        <i nz-icon [nzType]="viewMode === 'advanced' ? 'compress' : 'expand'" nzTheme="outline" aria-hidden="true"></i>
         <span>{{ viewMode === 'advanced' ? 'Advanced' : 'Basic' }}</span>
       </button>
-      <button type="button" class="hai-icon-control" [attr.title]="navigationLabel()" (click)="cycleNavigationMode()">
-        <i nz-icon nzType="menu-fold" nzTheme="outline"></i>
+      <button type="button" class="hai-icon-control hai-reset-view" [attr.aria-label]="'Reset view for ' + current.title" [attr.title]="'Reset ' + current.title + ' view settings'" (click)="resetCurrentModuleView()">
+        <i nz-icon nzType="undo" nzTheme="outline" aria-hidden="true"></i>
       </button>
-      <button type="button" class="hai-icon-control" [attr.title]="'Switch to ' + (themeMode === 'dark' ? 'light' : 'dark') + ' theme'" (click)="toggleTheme()">
-        <i nz-icon [nzType]="themeMode === 'dark' ? 'eye-invisible' : 'bulb'" nzTheme="outline"></i>
+      <button type="button" class="hai-icon-control hai-navigation-layout-control" [attr.aria-label]="'Change navigation layout. Current setting: ' + navigationLabel()" [attr.title]="navigationLabel()" (click)="cycleNavigationMode()">
+        <i nz-icon nzType="menu-fold" nzTheme="outline" aria-hidden="true"></i>
+      </button>
+      <details #compactViewActions class="hai-compact-view-menu">
+        <summary [attr.aria-label]="'More view settings for ' + current.title" title="More view settings">
+          <span aria-hidden="true">⋯</span>
+        </summary>
+        <div class="hai-compact-view-menu__panel">
+          <button type="button" class="hai-compact-view-menu__action hai-compact-reset-view" (click)="resetCurrentModuleViewFromCompactMenu(compactViewActions)">
+            <i nz-icon nzType="undo" nzTheme="outline" aria-hidden="true"></i>
+            <span>Reset view for {{ current.title }}</span>
+          </button>
+          <button type="button" class="hai-compact-view-menu__action" [attr.aria-label]="'Change navigation mode. Current: ' + navigationLabel()" (click)="cycleNavigationMode()">
+            <i nz-icon nzType="menu-fold" nzTheme="outline" aria-hidden="true"></i>
+            <span>{{ navigationLabel() }}</span>
+          </button>
+        </div>
+      </details>
+      <button type="button" class="hai-icon-control" [attr.aria-label]="'Switch to ' + (themeMode === 'dark' ? 'light' : 'dark') + ' theme'" [attr.title]="'Switch to ' + (themeMode === 'dark' ? 'light' : 'dark') + ' theme'" (click)="toggleTheme()">
+        <i nz-icon [nzType]="themeMode === 'dark' ? 'eye-invisible' : 'bulb'" nzTheme="outline" aria-hidden="true"></i>
       </button>
     </header>
 
-    <main id="hai-main" class="hai-module-outlet" [attr.data-hai-module]="current.id">
+    <main id="hai-main" class="hai-module-outlet" [attr.data-hai-module]="current.id" tabindex="-1">
+      <p class="hai-view-reset-notice" [class.hai-view-reset-notice--session-only]="viewResetSessionOnly" role="status" aria-live="polite" *ngIf="viewResetNotice">{{ viewResetNotice }}</p>
       <router-outlet></router-outlet>
     </main>
   </div>

@@ -15,15 +15,15 @@ func healthyConfig() config.Configuration {
 		DbHost:                  "postgres-automation",
 		DbPort:                  5432,
 		DbName:                  "automation",
-		DbUser:                  "postgres",
-		DbPassword:              "postgres",
+		DbUser:                  "hai_runtime",
+		DbPassword:              "0123456789abcdef0123456789abcdef",
 		ImageMaxSize:            5 * 1024 * 1024,
 		ImageSaveDir:            "images",
 		Brokers:                 []string{"kafka1:9092", "kafka2:9093"},
 		Topic:                   "automation-events",
-		BackendAPIKey:           "shared-key",
-		MemoryEngineKey:         "encryption-key",
-		JWTSecret:               "jwt-signing-secret",
+		BackendAPIKey:           "0123456789abcdef0123456789abcdef",
+		MemoryEngineKey:         "abcdef0123456789abcdef0123456789",
+		JWTSecret:               "89abcdef0123456789abcdef01234567",
 		ApprovalProofSigningKey: "0123456789abcdef0123456789abcdef",
 	}
 }
@@ -119,6 +119,52 @@ func TestDiagnoseFailsPlaceholderDatabasePasswordInProduction(t *testing.T) {
 	}
 	if !r.HasFailures() {
 		t.Fatalf("a placeholder production database password must fail readiness: %+v", r.Checks)
+	}
+}
+
+func TestDiagnoseRejectsDefaultDatabaseCredentialsInProduction(t *testing.T) {
+	cfg := healthyConfig()
+	cfg.RunMode = "production"
+	cfg.DbUser = "postgres"
+	cfg.DbPassword = "postgres"
+
+	report := Diagnose(cfg)
+	for _, name := range []string{"database.user", "database.password"} {
+		check, ok := find(report, name)
+		if !ok || check.Severity != SeverityFail {
+			t.Fatalf("%s severity = %s (found=%v), want fail", name, check.Severity, ok)
+		}
+		if strings.TrimSpace(check.Detail) == "" {
+			t.Fatalf("%s failure should include remediation guidance", name)
+		}
+	}
+}
+
+func TestDiagnoseRequiresStrongDatabasePasswordInProduction(t *testing.T) {
+	for _, password := range []string{"", "short-enough-to-be-nonempty", strings.Repeat("x", 31)} {
+		cfg := healthyConfig()
+		cfg.RunMode = "production"
+		cfg.DbPassword = password
+		report := Diagnose(cfg)
+		check, ok := find(report, "database.password")
+		if !ok || check.Severity != SeverityFail {
+			t.Fatalf("database.password for %q severity = %s (found=%v), want fail", password, check.Severity, ok)
+		}
+	}
+}
+
+func TestDiagnoseAllowsLocalPostgresDefaults(t *testing.T) {
+	cfg := healthyConfig()
+	cfg.RunMode = "demo"
+	cfg.DbUser = "postgres"
+	cfg.DbPassword = "postgres"
+
+	report := Diagnose(cfg)
+	for _, name := range []string{"database.user", "database.password"} {
+		check, ok := find(report, name)
+		if !ok || check.Severity != SeverityOK {
+			t.Fatalf("%s severity = %s (found=%v), want ok", name, check.Severity, ok)
+		}
 	}
 }
 

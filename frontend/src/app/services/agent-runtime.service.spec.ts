@@ -82,4 +82,30 @@ describe('AgentRuntimeService', () => {
     expect(body.get('taskId')).toBe(authorization.taskId);
     apply.flush({ id: 'openclaw' });
   });
+
+  it('prepares and applies an owner-approved OpenClaw archive rollback', () => {
+    const authorization = {
+      idempotencyKey: 'openclaw:rollback',
+      taskId: 'openclaw-rollback-task',
+      approvalSourceId: 'opscontrol-owner:proof',
+      approvalBindingDigest: 'c'.repeat(64),
+    };
+
+    service.prepareOpenClawEcosystemRollback().subscribe((value) => {
+      expect(value).toEqual(authorization);
+    });
+    const prepare = http.expectOne('/api/v1/agent-runtimes/openclaw/ecosystem/approval/rollback');
+    expect(prepare.request.method).toBe('POST');
+    expect(prepare.request.body).toBeNull();
+    prepare.flush(authorization);
+
+    service.rollbackOpenClawEcosystem(authorization).subscribe((runtime) => {
+      expect(runtime.id).toBe('openclaw');
+      expect(runtime.ecosystemRollbackAvailable).toBeTrue();
+    });
+    const apply = http.expectOne('/api/v1/agent-runtimes/openclaw/ecosystem/rollback');
+    expect(apply.request.method).toBe('POST');
+    expect(apply.request.body).toEqual(authorization);
+    apply.flush({ id: 'openclaw', ecosystemRollbackAvailable: true });
+  });
 });

@@ -2,6 +2,7 @@ package runtimelab
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,8 @@ import (
 	"automation-hub-backend/internal/executionbroker"
 	"automation-hub-backend/internal/frameworkregistry"
 	"automation-hub-backend/internal/operations"
+
+	"github.com/google/uuid"
 )
 
 func newTestService(t *testing.T) *Service {
@@ -25,8 +28,10 @@ func newTestService(t *testing.T) *Service {
 		"local",
 	)
 	ops := operations.NewService(operations.NewMemoryRepository())
-	return NewService(broker, ops, "local-operator", "local")
+	return NewService(broker, ops, "local-operator", "local").WithSafeExecutionPolicy(allowRuntimeLabSafeExecution)
 }
+
+func allowRuntimeLabSafeExecution(string, string, string) bool { return true }
 
 func newAuthorizedRuntimeLabTestBroker(
 	t *testing.T,
@@ -167,6 +172,32 @@ func TestFeatureParityAccountsForEveryRequiredAreaPerRuntime(t *testing.T) {
 	}
 }
 
+func TestOpenClawResilienceCatalogReflectsPersistedReceiptAndReconciliationContracts(t *testing.T) {
+	inventory, ok, err := newTestService(t).RuntimeFeatureParity("openclaw")
+	if err != nil || !ok {
+		t.Fatalf("openclaw inventory = (%t, %v)", ok, err)
+	}
+	byID := map[string]RuntimeFeature{}
+	for _, item := range inventory.Features {
+		byID[item.ID] = item
+	}
+	resilience := byID["openclaw-resilience"]
+	if resilience.ImplementationStatus != "partial" {
+		t.Fatalf("resilience status = %q, want partial pending live companion acceptance", resilience.ImplementationStatus)
+	}
+	if resilience.TestStatus != "delegated_session_idempotency_terminal_stale_and_metadata_artifact_reconciliation_contract_tested" {
+		t.Fatalf("resilience test status = %q", resilience.TestStatus)
+	}
+	if !strings.Contains(resilience.RecommendedPath, "persisted") || !strings.Contains(resilience.RecommendedPath, "indeterminate") {
+		t.Fatalf("resilience recommendation does not describe current recovery boundary: %q", resilience.RecommendedPath)
+	}
+	for _, staleRequirement := range []string{"future Gateway adapter", "Add request/response idempotency"} {
+		if strings.Contains(resilience.RecommendedPath, staleRequirement) {
+			t.Fatalf("resilience recommendation is stale: %q", resilience.RecommendedPath)
+		}
+	}
+}
+
 func TestOdysseusParityFailsClosedOnLicenseAndUnsafeAdminTools(t *testing.T) {
 	s := newTestService(t)
 	inventory, ok, err := s.RuntimeFeatureParity(" ODYSSEUS ")
@@ -206,10 +237,11 @@ func TestCapabilityCardsAreCompleteAndNeverGrantAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("capability cards: %v", err)
 	}
-	if overview.Authority != "contract_only" || len(overview.Cards) != 7 {
+	if overview.Authority != "contract_only" || len(overview.Cards) != 11 {
 		t.Fatalf("capability overview = %#v", overview)
 	}
 	seen := map[string]bool{}
+	openClawCards := map[string]RuntimeCapabilityCard{}
 	for _, card := range overview.Cards {
 		if seen[card.ID] {
 			t.Fatalf("duplicate card %q", card.ID)
@@ -223,6 +255,55 @@ func TestCapabilityCardsAreCompleteAndNeverGrantAuthority(t *testing.T) {
 			card.InputSchema["type"] != "object" || card.OutputSchema["type"] != "object" {
 			t.Fatalf("incomplete capability card: %#v", card)
 		}
+		if strings.HasSuffix(card.ID, ".discovery") {
+			hasWritePermission := false
+			for _, authority := range card.RequiredAuthority {
+				hasWritePermission = hasWritePermission || authority == "write"
+			}
+			if !hasWritePermission {
+				t.Errorf("discovery card must disclose the HAI write permission required by POST /probe: %#v", card)
+			}
+		}
+		if strings.HasSuffix(card.ID, ".delegate") {
+			if card.RiskLevel != "high" || card.CanInvoke || card.CanExecuteExternalEffect {
+				t.Errorf("delegation must remain high-risk and non-invocable in Runtime Lab: %#v", card)
+			}
+			for _, required := range []string{"exact_execution_authorization_receipt"} {
+				found := false
+				for _, authority := range card.RequiredAuthority {
+					found = found || authority == required
+				}
+				if !found {
+					t.Errorf("delegation authority is missing %q: %#v", required, card.RequiredAuthority)
+				}
+			}
+			for _, required := range []string{"Current policy approval", "exact effect authorization", "fresh source and plan digests"} {
+				found := false
+				for _, approval := range card.ApprovalRequirements {
+					found = found || approval == required
+				}
+				if !found {
+					t.Errorf("delegation approval policy is missing %q: %#v", required, card.ApprovalRequirements)
+				}
+			}
+		}
+		if card.RuntimeID == "openclaw" {
+			openClawCards[card.ID] = card
+		}
+	}
+	if _, found := openClawCards["openclaw.agents.discovery"]; !found {
+		t.Fatal("OpenClaw agent-roster discovery card must be present")
+	}
+	capabilities, found := openClawCards["openclaw.capabilities.discovery"]
+	if !found || capabilities.OutputSchema["properties"].(map[string]any)["sampledCommands"] == nil {
+		t.Fatalf("OpenClaw capability card must describe its retained command count: %#v", capabilities)
+	}
+	if _, found := openClawCards["openclaw.models.discovery"]; !found {
+		t.Fatalf("OpenClaw prepared-model discovery card is missing: %#v", openClawCards)
+	}
+	tasks, found := openClawCards["openclaw.tasks.discovery"]
+	if !found || tasks.OutputSchema["properties"].(map[string]any)["sampledTasks"] == nil {
+		t.Fatalf("OpenClaw task-ledger discovery card is missing or incomplete: %#v", tasks)
 	}
 }
 
@@ -265,11 +346,106 @@ func TestSafeWorkerSelfTestThroughLedger(t *testing.T) {
 	}
 }
 
+func TestSafeWorkerSelfTestFailsClosedWithoutLivePolicy(t *testing.T) {
+	tests := []struct {
+		name   string
+		policy func(string, string, string) bool
+	}{
+		{name: "policy unavailable"},
+		{name: "policy denies execution", policy: func(string, string, string) bool { return false }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			ops := operations.NewService(operations.NewMemoryRepository())
+			service := NewService(
+				newAuthorizedRuntimeLabTestBroker(t, workspace, "local-operator", "local"),
+				ops,
+				"local-operator",
+				"local",
+			)
+			if test.policy != nil {
+				service.WithSafeExecutionPolicy(test.policy)
+			}
+
+			attempt, ok := service.SelfTest(context.Background(), executionbroker.LocalSafeWorkerID)
+			if !ok || attempt.Status != AttemptBlocked || attempt.VerificationPassed {
+				t.Fatalf("self-test without an allowing live policy = (%#v, %t), want blocked and unverified", attempt, ok)
+			}
+			entries, err := os.ReadDir(workspace)
+			if err != nil {
+				t.Fatalf("read workspace: %v", err)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("blocked self-test created %d filesystem artifacts", len(entries))
+			}
+
+			operationID, err := uuid.Parse(attempt.OperationID)
+			if err != nil {
+				t.Fatalf("self-test operation id %q: %v", attempt.OperationID, err)
+			}
+			claim, err := ops.ClaimOperation(context.Background(), "local-operator", "local", operationID, uuid.New(), time.Minute)
+			if err != nil {
+				t.Fatalf("blocked policy retained the operation claim: %v", err)
+			}
+			if err := ops.ReleaseClaim(context.Background(), claim.Claim); err != nil {
+				t.Fatalf("release check claim: %v", err)
+			}
+		})
+	}
+}
+
+type denyingTargetClaimRepository struct {
+	*operations.MemoryRepository
+}
+
+func (r *denyingTargetClaimRepository) ClaimOperation(context.Context, string, string, uuid.UUID, uuid.UUID, time.Duration) (*operations.ClaimedOperation, error) {
+	return nil, operations.ErrOperationClaimed
+}
+
+func TestSafeWorkerSelfTestClaimFailureHasNoEffect(t *testing.T) {
+	workspace := t.TempDir()
+	repository := &denyingTargetClaimRepository{MemoryRepository: operations.NewMemoryRepository()}
+	ops := operations.NewService(repository)
+	s := NewService(
+		newAuthorizedRuntimeLabTestBroker(t, workspace, "local-operator", "local"),
+		ops,
+		"local-operator",
+		"local",
+	)
+
+	attempt, ok := s.SelfTest(context.Background(), executionbroker.LocalSafeWorkerID)
+	if !ok || attempt.Status != AttemptFailed {
+		t.Fatalf("self-test with denied claim = (%#v, %t), want failed", attempt, ok)
+	}
+	if !strings.Contains(attempt.Detail, operations.ErrOperationClaimed.Error()) {
+		t.Fatalf("failed attempt detail = %q, want claim rejection", attempt.Detail)
+	}
+	entries, err := os.ReadDir(workspace)
+	if err != nil {
+		t.Fatalf("read safe-worker workspace: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("claim failure produced %d filesystem artifacts", len(entries))
+	}
+	classified, err := s.ops.List(operations.Filter{
+		OwnerUserID: "local-operator",
+		WorkspaceID: "local",
+		Status:      operations.StatusClassified,
+	})
+	if err != nil {
+		t.Fatalf("list classified self-test operation: %v", err)
+	}
+	if len(classified) != 1 || classified[0].AutonomyLevel != string(operations.AutonomyAuto) {
+		t.Fatalf("operation after claim rejection = %#v, want one unchanged auto-classified item", classified)
+	}
+}
+
 func TestUnauthorizedSafeWorkerIsBlockedAndSelfTestFailsClosed(t *testing.T) {
 	workspace := t.TempDir()
 	broker := executionbroker.NewBroker(workspace)
 	ops := operations.NewService(operations.NewMemoryRepository())
-	s := NewService(broker, ops, "local-operator", "local")
+	s := NewService(broker, ops, "local-operator", "local").WithSafeExecutionPolicy(allowRuntimeLabSafeExecution)
 
 	byID := map[string]RuntimeSummary{}
 	for _, runtime := range s.Overview(context.Background()) {
@@ -366,7 +542,7 @@ func TestSafeWorkerAttemptsRecoverFromOperationLedgerAfterRestart(t *testing.T) 
 		firstOperations,
 		"local-operator",
 		"local",
-	)
+	).WithSafeExecutionPolicy(allowRuntimeLabSafeExecution)
 	attempt, ok := first.SelfTest(context.Background(), executionbroker.LocalSafeWorkerID)
 	if !ok || attempt.Status != AttemptSucceeded {
 		t.Fatalf("initial self-test = (%#v, %t), want succeeded", attempt, ok)
@@ -377,7 +553,7 @@ func TestSafeWorkerAttemptsRecoverFromOperationLedgerAfterRestart(t *testing.T) 
 		operations.NewService(repository),
 		"local-operator",
 		"local",
-	)
+	).WithSafeExecutionPolicy(allowRuntimeLabSafeExecution)
 	recovered := restarted.Attempts(executionbroker.LocalSafeWorkerID)
 	if len(recovered) != 1 {
 		t.Fatalf("recovered attempts = %d, want 1", len(recovered))
@@ -501,18 +677,22 @@ func TestOpenClawRuntimeLabUsesCanonicalAgentRuntimeRegistry(t *testing.T) {
 	t.Setenv("AGENT_RUNTIME_ALLOWED_HOSTS", "127.0.0.1")
 
 	broker := newAuthorizedRuntimeLabTestBroker(t, t.TempDir(), "local-operator", "local")
+	ops := operations.NewService(operations.NewMemoryRepository())
 	service := NewServiceWithAgentRuntimeRegistry(
 		broker,
-		operations.NewService(operations.NewMemoryRepository()),
+		ops,
 		"local-operator",
 		"local",
 		agentruntime.DefaultRegistry(),
 	)
 	probe, ok := service.Probe(context.Background(), "openclaw")
 	if !ok || probe.Status != executionbroker.RuntimeBlocked ||
-		probe.ReadinessLevel != ReadinessAvailable || !probe.ProtocolValid ||
+		probe.ReadinessLevel != ReadinessAvailable || probe.ProtocolValid ||
 		probe.RuntimeVersion != "" || probe.Authenticated || probe.IdentityVerified {
 		t.Fatalf("canonical OpenClaw probe = (%#v, %t)", probe, ok)
+	}
+	if stored, err := ops.List(operations.Filter{OwnerUserID: "local-operator", WorkspaceID: "local", Limit: 10}); err != nil || len(stored) != 0 {
+		t.Fatalf("health-only liveness must not create durable discovery evidence: (%#v, %v)", stored, err)
 	}
 
 	openclaw, ok := service.reg.Adapter("openclaw")
@@ -522,6 +702,341 @@ func TestOpenClawRuntimeLabUsesCanonicalAgentRuntimeRegistry(t *testing.T) {
 	if _, err := openclaw.Execute(context.Background(), map[string]any{"task": "do not run"}); err == nil {
 		t.Fatal("Runtime Lab must not gain OpenClaw execution authority from the canonical registry")
 	}
+}
+
+func TestOpenClawProtocolDiscoveryPersistsRedactedEvidenceAndRecoversIt(t *testing.T) {
+	ledger := operations.NewMemoryRepository()
+	ops := operations.NewService(ledger)
+	broker := newAuthorizedRuntimeLabTestBroker(t, t.TempDir(), "local-operator", "local")
+	canonical := agentruntime.NewRegistry(&runtimeLabAgentAdapter{
+		info: agentruntime.Info{ID: "openclaw", Name: "OpenClaw", Enabled: true, Configured: true, ReadOnlyDefault: true},
+		health: agentruntime.Health{
+			RuntimeID:                "openclaw",
+			Status:                   "available",
+			Reason:                   "read-only protocol discovery verified",
+			Version:                  "2026.8.1",
+			GatewayProtocolValidated: true,
+			GatewayAuthenticated:     true,
+			GatewayScope:             "operator.read",
+			GatewayEndpointSHA256:    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			GatewayEvidenceSchema:    "openclaw-gateway-protocol-v4",
+			GatewayTaskLedger: &agentruntime.GatewayTaskLedgerSummary{
+				SampledTasks: 2,
+				StatusCounts: map[string]int{"queued": 1, "running": 1},
+				Truncated:    true,
+			},
+			GatewayCapabilityCatalog: &agentruntime.GatewayCapabilityCatalogSummary{
+				SampledSkills:      3,
+				EligibleSkills:     2,
+				SampledCommands:    4,
+				ToolCountsBySource: map[string]int{"core": 2, "plugin": 1},
+			},
+			GatewayPreparedModelCatalog: &agentruntime.GatewayPreparedModelCatalogSummary{
+				SampledModels:             3,
+				AvailableModels:           1,
+				UnavailableModels:         1,
+				UnknownAvailabilityModels: 1,
+			},
+			GatewayAgentRoster: &agentruntime.GatewayAgentRosterSummary{
+				SampledAgents:    4,
+				AgentCount:       2,
+				SystemCount:      1,
+				UnknownKindCount: 1,
+			},
+			CheckedAt: time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	service := NewServiceWithAgentRuntimeRegistry(broker, ops, "local-operator", "local", canonical)
+	service.now = func() time.Time { return time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC) }
+
+	probe, ok := service.Probe(context.Background(), "openclaw")
+	if !ok || !probe.ProtocolValid || !probe.Authenticated || !probe.EvidencePersisted || probe.EvidenceSHA256 == "" {
+		t.Fatalf("expected persisted protocol-validated OpenClaw discovery, got (%#v, %t)", probe, ok)
+	}
+	if probe.EndpointSHA256 != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" || probe.EvidenceSchema != "openclaw-gateway-protocol-v4" {
+		t.Fatalf("probe lost safe evidence metadata: %#v", probe)
+	}
+
+	stored, err := ops.List(operations.Filter{OwnerUserID: "local-operator", WorkspaceID: "local", Limit: 10})
+	if err != nil || len(stored) != 1 {
+		t.Fatalf("discovery ledger entries = (%#v, %v)", stored, err)
+	}
+	op := stored[0]
+	if op.OperationType != openClawDiscoveryOperationType || op.RuntimeID != "openclaw" || op.Status != string(operations.StatusCompleted) {
+		t.Fatalf("unexpected durable discovery operation: %#v", op)
+	}
+	if strings.Contains(op.EvidenceJSON, "gateway.example.test") || strings.Contains(op.EvidenceJSON, "secret") {
+		t.Fatalf("durable evidence must not retain endpoint or secrets: %s", op.EvidenceJSON)
+	}
+	var evidence openClawDiscoveryEvidence
+	if err := json.Unmarshal([]byte(op.EvidenceJSON), &evidence); err != nil {
+		t.Fatalf("decode durable evidence: %v", err)
+	}
+	if evidence.EndpointSHA256 != probe.EndpointSHA256 || evidence.GatewayTaskLedger == nil || evidence.GatewayTaskLedger.SampledTasks != 2 || evidence.GatewayCapabilityCatalog == nil || evidence.GatewayCapabilityCatalog.SampledSkills != 3 || evidence.GatewayPreparedModelCatalog == nil || evidence.GatewayPreparedModelCatalog.UnknownAvailabilityModels != 1 || evidence.GatewayAgentRoster == nil || evidence.GatewayAgentRoster.AgentCount != 2 {
+		t.Fatalf("unexpected durable evidence: %#v", evidence)
+	}
+	if probe.GatewayCapabilityCatalog == nil || probe.GatewayCapabilityCatalog.ToolCountsBySource["plugin"] != 1 || probe.GatewayPreparedModelCatalog == nil || probe.GatewayPreparedModelCatalog.AvailableModels != 1 || probe.GatewayAgentRoster == nil || probe.GatewayAgentRoster.SystemCount != 1 {
+		t.Fatalf("capability discovery was not projected into Runtime Lab: %#v", probe)
+	}
+
+	// A new Runtime Lab instance has no in-memory probe, but it can recover the
+	// still-fresh, owner-scoped discovery record without probing or executing.
+	restarted := NewServiceWithAgentRuntimeRegistry(broker, ops, "local-operator", "local", canonical)
+	restarted.now = service.now
+	attempts := restarted.Attempts("openclaw")
+	if len(attempts) != 1 || attempts[0].Status != AttemptSucceeded || !attempts[0].DiscoveryRecovered {
+		t.Fatalf("durable discovery was not recovered after restart: %#v", attempts)
+	}
+	cards, err := restarted.CapabilityCards(context.Background())
+	if err != nil {
+		t.Fatalf("capability cards: %v", err)
+	}
+	cardState := map[string]RuntimeCapabilityCard{}
+	for _, card := range cards.Cards {
+		cardState[card.ID] = card
+	}
+	for _, cardID := range []string{"openclaw.tasks.discovery", "openclaw.capabilities.discovery", "openclaw.models.discovery", "openclaw.agents.discovery"} {
+		card, found := cardState[cardID]
+		if !found || !card.CanInvoke || card.LatestDiscovery == nil || !card.LatestDiscovery.EvidencePersisted {
+			t.Fatalf("OpenClaw card %s did not recover durable discovery: %#v", cardID, card)
+		}
+	}
+}
+
+func TestOpenClawExpiredDiscoveryCannotRestoreReadiness(t *testing.T) {
+	ledger := operations.NewMemoryRepository()
+	ops := operations.NewService(ledger)
+	broker := newAuthorizedRuntimeLabTestBroker(t, t.TempDir(), "local-operator", "local")
+	canonical := agentruntime.NewRegistry(&runtimeLabAgentAdapter{
+		info: agentruntime.Info{ID: "openclaw", Name: "OpenClaw", Enabled: true, Configured: true, ReadOnlyDefault: true},
+		health: agentruntime.Health{
+			RuntimeID:                "openclaw",
+			Status:                   "available",
+			GatewayProtocolValidated: true,
+			GatewayEndpointSHA256:    "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			GatewayEvidenceSchema:    "openclaw-gateway-protocol-v4",
+			CheckedAt:                time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC),
+		},
+	})
+	service := NewServiceWithAgentRuntimeRegistry(broker, ops, "local-operator", "local", canonical)
+	service.now = func() time.Time { return time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC) }
+	if probe, ok := service.Probe(context.Background(), "openclaw"); !ok || !probe.EvidencePersisted {
+		t.Fatalf("persist initial discovery = (%#v, %t)", probe, ok)
+	}
+	service.now = func() time.Time { return time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC) }
+	currentCards, err := service.CapabilityCards(context.Background())
+	if err != nil {
+		t.Fatalf("in-memory expiry capability cards: %v", err)
+	}
+	for _, card := range currentCards.Cards {
+		if card.ID == "openclaw.gateway.discovery" && card.CanInvoke {
+			t.Fatalf("expired in-memory discovery must not enable invocation: %#v", card)
+		}
+	}
+
+	expired := NewServiceWithAgentRuntimeRegistry(broker, ops, "local-operator", "local", canonical)
+	expired.now = func() time.Time { return time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC) }
+	if attempts := expired.Attempts("openclaw"); len(attempts) != 0 {
+		t.Fatalf("expired discovery must not be restored as a runtime attempt: %#v", attempts)
+	}
+	cards, err := expired.CapabilityCards(context.Background())
+	if err != nil {
+		t.Fatalf("capability cards: %v", err)
+	}
+	for _, card := range cards.Cards {
+		if card.ID == "openclaw.gateway.discovery" {
+			if card.CanInvoke {
+				t.Fatalf("expired discovery must not enable invocation: %#v", card)
+			}
+			return
+		}
+	}
+	t.Fatal("missing OpenClaw discovery capability card")
+}
+
+func TestOpenClawAggregateCardsRequireAuthenticatedOperatorRead(t *testing.T) {
+	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		authenticated bool
+		scope         string
+		wantPersisted bool
+		wantAvailable bool
+	}{
+		{name: "unauthenticated aggregates", wantPersisted: false, wantAvailable: false},
+		{name: "wrong authenticated scope", authenticated: true, scope: "operator.admin", wantPersisted: false, wantAvailable: false},
+		{name: "operator read scope", authenticated: true, scope: "operator.read", wantPersisted: true, wantAvailable: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ops := operations.NewService(operations.NewMemoryRepository())
+			broker := newAuthorizedRuntimeLabTestBroker(t, t.TempDir(), "local-operator", "local")
+			canonical := agentruntime.NewRegistry(&runtimeLabAgentAdapter{
+				info: agentruntime.Info{ID: "openclaw", Name: "OpenClaw", Enabled: true, Configured: true, ReadOnlyDefault: true},
+				health: agentruntime.Health{
+					RuntimeID:                "openclaw",
+					Status:                   "available",
+					Version:                  "2026.8.1",
+					GatewayProtocolValidated: true,
+					GatewayAuthenticated:     tt.authenticated,
+					GatewayScope:             tt.scope,
+					GatewayEndpointSHA256:    "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+					GatewayEvidenceSchema:    openClawDiscoverySchema,
+					GatewayTaskLedger:        &agentruntime.GatewayTaskLedgerSummary{SampledTasks: 1, StatusCounts: map[string]int{"queued": 1}},
+					GatewayCapabilityCatalog: &agentruntime.GatewayCapabilityCatalogSummary{SampledSkills: 1, EligibleSkills: 1, SampledCommands: 1, ToolCountsBySource: map[string]int{"core": 1}},
+					GatewayPreparedModelCatalog: &agentruntime.GatewayPreparedModelCatalogSummary{
+						SampledModels: 1, AvailableModels: 1,
+					},
+					GatewayAgentRoster: &agentruntime.GatewayAgentRosterSummary{
+						SampledAgents: 1, AgentCount: 1,
+					},
+				},
+			})
+			service := NewServiceWithAgentRuntimeRegistry(broker, ops, "local-operator", "local", canonical)
+			service.now = func() time.Time { return now }
+
+			probe, ok := service.Probe(context.Background(), "openclaw")
+			if !ok || probe.EvidencePersisted != tt.wantPersisted {
+				t.Fatalf("probe persisted = (%t, %v), want %v", ok, probe.EvidencePersisted, tt.wantPersisted)
+			}
+			cards, err := service.CapabilityCards(context.Background())
+			if err != nil {
+				t.Fatalf("capability cards: %v", err)
+			}
+			byID := make(map[string]RuntimeCapabilityCard, len(cards.Cards))
+			for _, card := range cards.Cards {
+				byID[card.ID] = card
+			}
+			for _, id := range []string{
+				"openclaw.tasks.discovery",
+				"openclaw.capabilities.discovery",
+				"openclaw.models.discovery",
+				"openclaw.agents.discovery",
+			} {
+				card, found := byID[id]
+				if !found || card.CanInvoke != tt.wantAvailable || card.CanExecuteExternalEffect {
+					t.Errorf("aggregate card %s = %#v, want invoke=%v and no external effects", id, card, tt.wantAvailable)
+				}
+			}
+			delegation, found := byID["openclaw.agent.delegate"]
+			if !found || delegation.CanInvoke || delegation.CanExecuteExternalEffect || delegation.RiskLevel != "high" || len(delegation.ApprovalRequirements) == 0 {
+				t.Errorf("read-only discovery must not enable high-risk delegation: %#v", delegation)
+			}
+		})
+	}
+}
+
+func TestRemoteCapabilityCardsRequireFreshDiscovery(t *testing.T) {
+	t.Setenv("OPENCLAW_BASE_URL", "")
+	t.Setenv("HERMES_BASE_URL", "http://127.0.0.1:8999")
+	t.Setenv("ODYSSEUS_BASE_URL", "")
+	t.Setenv(runtimeLabAllowedHostsEnv, "127.0.0.1")
+	service := newTestService(t)
+	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	adapter, ok := service.reg.Adapter("hermes")
+	if !ok {
+		t.Fatal("Hermes adapter is not registered")
+	}
+	remote, ok := adapter.(*remoteRuntime)
+	if !ok {
+		t.Fatalf("Hermes adapter type = %T, want *remoteRuntime", adapter)
+	}
+
+	tests := []struct {
+		name string
+		age  time.Duration
+		want bool
+	}{
+		{name: "fresh", age: runtimeDiscoveryFreshnessTTL - time.Second, want: true},
+		{name: "expired", age: runtimeDiscoveryFreshnessTTL, want: false},
+		{name: "future dated", age: -time.Second, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			remote.remember(ProbeResult{
+				RuntimeID:      "hermes",
+				ProtocolValid:  true,
+				ReadinessLevel: ReadinessHealthChecked,
+				CheckedAt:      now.Add(-tt.age),
+			})
+			cards, err := service.CapabilityCards(context.Background())
+			if err != nil {
+				t.Fatalf("capability cards: %v", err)
+			}
+			for _, card := range cards.Cards {
+				if card.ID == "hermes.gateway.discovery" {
+					if card.CanInvoke != tt.want {
+						t.Fatalf("CanInvoke = %v, want %v for %s evidence", card.CanInvoke, tt.want, tt.name)
+					}
+					return
+				}
+			}
+			t.Fatal("missing Hermes gateway discovery card")
+		})
+	}
+}
+
+func TestOpenClawAggregateLedgerEvidenceRejectsMissingScopeAndFutureTime(t *testing.T) {
+	now := time.Date(2026, 9, 24, 10, 0, 0, 0, time.UTC)
+	probe := ProbeResult{
+		RuntimeID:         "openclaw",
+		Protocol:          "openclaw-gateway-v4",
+		ProtocolValid:     true,
+		Authenticated:     true,
+		GatewayScope:      "operator.read",
+		EvidenceSchema:    openClawDiscoverySchema,
+		EndpointSHA256:    "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+		GatewayTaskLedger: &GatewayTaskLedgerSummary{SampledTasks: 1, StatusCounts: map[string]int{"running": 1}},
+		CheckedAt:         now,
+	}
+	evidence, err := newOpenClawDiscoveryEvidence(probe, now)
+	if err != nil {
+		t.Fatalf("build valid discovery evidence: %v", err)
+	}
+	if !validOpenClawDiscoveryEvidence(evidence, now) {
+		t.Fatal("authenticated operator.read aggregate evidence should be valid")
+	}
+
+	unauthenticated := evidence
+	unauthenticated.Authenticated = false
+	unauthenticated.GatewayScope = ""
+	unauthenticated.EvidenceSHA256 = openClawDiscoveryEvidenceSHA256(unauthenticated)
+	if validOpenClawDiscoveryEvidence(unauthenticated, now) {
+		t.Fatal("aggregate evidence without authentication must not be restored")
+	}
+
+	future := evidence
+	future.CheckedAt = now.Add(time.Second)
+	future.ExpiresAt = future.CheckedAt.Add(openClawDiscoveryEvidenceTTL)
+	future.EvidenceSHA256 = openClawDiscoveryEvidenceSHA256(future)
+	if validOpenClawDiscoveryEvidence(future, now) {
+		t.Fatal("future-dated discovery evidence must not be restored")
+	}
+	futureProbe := probe
+	futureProbe.CheckedAt = now.Add(time.Second)
+	if _, err := newOpenClawDiscoveryEvidence(futureProbe, now); err == nil {
+		t.Fatal("future-dated discovery must not be reported as persisted")
+	}
+}
+
+type runtimeLabAgentAdapter struct {
+	info   agentruntime.Info
+	health agentruntime.Health
+}
+
+func (a *runtimeLabAgentAdapter) Info() agentruntime.Info { return a.info }
+
+func (a *runtimeLabAgentAdapter) HealthCheck(context.Context) agentruntime.Health { return a.health }
+
+func (*runtimeLabAgentAdapter) ListSkills(context.Context) []agentruntime.Skill { return nil }
+
+func (a *runtimeLabAgentAdapter) ExecuteTask(context.Context, agentruntime.Task) agentruntime.Result {
+	return agentruntime.Result{RuntimeID: a.info.ID, Status: "blocked"}
+}
+
+func (a *runtimeLabAgentAdapter) StopTask(context.Context, string) agentruntime.StopResult {
+	return agentruntime.StopResult{RuntimeID: a.info.ID, Status: "unsupported"}
 }
 
 func TestHermesDiscoveryUsesIdentityAndOptionalAuthenticatedCapabilities(t *testing.T) {

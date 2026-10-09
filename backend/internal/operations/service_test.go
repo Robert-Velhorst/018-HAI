@@ -8,42 +8,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// fakeRepo is an in-memory Repository for service tests (no DB).
-type fakeRepo struct {
-	ops    map[uuid.UUID]models.Operation
-	events []models.OperationEvent
-}
-
-func newFakeRepo() *fakeRepo { return &fakeRepo{ops: map[uuid.UUID]models.Operation{}} }
-
-func (f *fakeRepo) Create(op *models.Operation) (*models.Operation, error) {
-	if op.ID == uuid.Nil {
-		op.ID = uuid.New()
-	}
-	f.ops[op.ID] = *op
-	return op, nil
-}
-func (f *fakeRepo) Update(op *models.Operation) (*models.Operation, error) {
-	f.ops[op.ID] = *op
-	return op, nil
-}
-func (f *fakeRepo) GetByID(owner, ws string, id uuid.UUID) (*models.Operation, error) {
-	op, ok := f.ops[id]
-	if !ok || op.OwnerUserID != owner || op.WorkspaceID != ws {
-		return nil, ErrNotFound
-	}
-	return &op, nil
-}
-func (f *fakeRepo) FindByDedupeKey(owner, ws, key string) (*models.Operation, bool, error) {
-	for _, op := range f.ops {
-		if op.OwnerUserID == owner && op.WorkspaceID == ws && op.DedupeKey == key &&
-			op.Status != string(StatusArchived) && op.Status != string(StatusDismissed) {
-			copyOp := op
-			return &copyOp, true, nil
-		}
-	}
-	return nil, false, nil
-}
+// Service tests use the real DB-free repository, including atomic mutation guards.
+func newFakeRepo() *MemoryRepository { return NewMemoryRepository() }
 
 func TestIngestAllowsTheSameDedupeKeyForDifferentOwners(t *testing.T) {
 	repo := NewMemoryRepository()
@@ -61,46 +27,6 @@ func TestIngestAllowsTheSameDedupeKeyForDifferentOwners(t *testing.T) {
 	if !result.Created {
 		t.Fatal("same source item for another owner must create that owner's operation")
 	}
-}
-func (f *fakeRepo) List(fl Filter) ([]models.Operation, error) {
-	var out []models.Operation
-	for _, op := range f.ops {
-		if op.OwnerUserID == fl.OwnerUserID && op.WorkspaceID == fl.WorkspaceID {
-			out = append(out, op)
-		}
-	}
-	return out, nil
-}
-func (f *fakeRepo) ListDue(owner, ws string, limit int) ([]models.Operation, error) {
-	var out []models.Operation
-	for _, op := range f.ops {
-		if op.OwnerUserID == owner && op.WorkspaceID == ws {
-			out = append(out, op)
-		}
-	}
-	return out, nil
-}
-func (f *fakeRepo) Dashboard(owner, ws string) (Dashboard, error) {
-	d := Dashboard{CountsByStatus: map[string]int{}, CountsByRisk: map[string]int{}}
-	for _, op := range f.ops {
-		if op.OwnerUserID == owner && op.WorkspaceID == ws {
-			d.CountsByStatus[op.Status]++
-		}
-	}
-	return d, nil
-}
-func (f *fakeRepo) AppendEvent(evt *models.OperationEvent) error {
-	f.events = append(f.events, *evt)
-	return nil
-}
-func (f *fakeRepo) ListEvents(id uuid.UUID, limit int) ([]models.OperationEvent, error) {
-	var out []models.OperationEvent
-	for _, e := range f.events {
-		if e.OperationID == id {
-			out = append(out, e)
-		}
-	}
-	return out, nil
 }
 
 func sampleInput() NewOperationInput {
@@ -177,6 +103,7 @@ func TestTransitionEnforcesStateMachine(t *testing.T) {
 func TestCompleteRequiresVerification(t *testing.T) {
 	now := StatusVerifying
 	op := models.Operation{
+		ID: uuid.New(), Version: 1,
 		OwnerUserID: "u", WorkspaceID: "local", Title: "t", DedupeKey: "k",
 		Status:             string(now),
 		RiskLevel:          string(RiskLow),
@@ -186,13 +113,20 @@ func TestCompleteRequiresVerification(t *testing.T) {
 		VerificationStatus: string(VerificationFailed), // not passed / not_required
 	}
 	repo := newFakeRepo()
-	repo.ops[uuid.New()] = op
+	if _, err := repo.Create(&op); err != nil {
+		t.Fatalf("create verification fixture: %v", err)
+	}
 	svc := NewService(repo)
 	if _, err := svc.Transition(op, StatusCompleted, "hai", "", "done"); err == nil {
 		t.Fatalf("verifying -> completed must fail when verification failed")
 	}
+	assertMutationUnchanged(t, repo, op, 0)
 	op.VerificationStatus = string(VerificationPassed)
-	if _, err := svc.Transition(op, StatusCompleted, "hai", "", "done"); err != nil {
+	completed, err := svc.Transition(op, StatusCompleted, "hai", "", "done")
+	if err != nil {
 		t.Fatalf("verifying -> completed should succeed when verification passed: %v", err)
+	}
+	if completed.Version != op.Version+1 || completed.CompletedAt == nil || len(repo.events) != 1 {
+		t.Fatalf("verified completion lost atomic state/audit: %+v events=%+v", completed, repo.events)
 	}
 }

@@ -94,4 +94,20 @@ export class AgentRuntimeService {
   ): Observable<IAgentRuntimeInfo> {
     return this.http.post<IAgentRuntimeInfo>(`${this.apiUrl}/openclaw/ecosystem/refresh`, authorization);
   }
+
+  prepareOpenClawEcosystemRollback(): Observable<IAgentRuntimeEcosystemAuthorization> {
+    return this.http.post<IAgentRuntimeEcosystemAuthorization>(
+      `${this.apiUrl}/openclaw/ecosystem/approval/rollback`,
+      null
+    );
+  }
+
+  rollbackOpenClawEcosystem(
+    authorization: IAgentRuntimeEcosystemAuthorization
+  ): Observable<IAgentRuntimeInfo> {
+    return this.http.post<IAgentRuntimeInfo>(
+      `${this.apiUrl}/openclaw/ecosystem/rollback`,
+      authorization
+    );
+  }
 }

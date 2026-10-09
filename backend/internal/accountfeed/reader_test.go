@@ -102,7 +102,7 @@ func TestToOperationInputIsDeterministic(t *testing.T) {
 	if in1.DedupeKey != in2.DedupeKey || in1.SourceRevisionHash != in2.SourceRevisionHash {
 		t.Fatalf("same item must produce a stable dedupe key + revision hash")
 	}
-	// A changed body must change the revision hash (stale approvals invalidated).
+	// Changed content must receive a distinct revision identity.
 	it2 := it
 	it2.Body = "different"
 	in3, _ := f.ToOperationInput(it2)

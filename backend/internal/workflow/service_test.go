@@ -3,9 +3,12 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +19,78 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+func TestEngineCapabilitiesDescribeGitHubConnectorSupportPrecisely(t *testing.T) {
+	capabilities := make(map[string]EngineCapability)
+	for _, capability := range engineCapabilities() {
+		capabilities[capability.ID] = capability
+	}
+
+	for _, id := range []string{"adapters", "developer-github", "event-triggers", "universal-intake"} {
+		if _, ok := capabilities[id]; !ok {
+			t.Fatalf("engine capability %q is missing", id)
+		}
+	}
+
+	assertEntry := func(capabilityID, section, expected string) {
+		t.Helper()
+		capability := capabilities[capabilityID]
+		var entries []string
+		switch section {
+		case "implemented":
+			entries = capability.Implemented
+		case "next":
+			entries = capability.Next
+		default:
+			t.Fatalf("unsupported capability section %q", section)
+		}
+		if !strings.Contains(strings.Join(entries, "\n"), expected) {
+			t.Errorf("%s.%s does not document %q; entries: %q", capabilityID, section, expected, entries)
+		}
+	}
+
+	assertEntry("adapters", "implemented", "read-only GitHub REST sync for repository, issue, pull request, commit, and Actions-run records; branch records are not imported")
+	assertEntry("developer-github", "implemented", "read-only GitHub REST sync imports repository, issue, pull request, commit, and Actions-run records; branch records are not imported")
+	assertEntry("developer-github", "next", "read-only branch comparison and repository acceptance reports (not implemented; no branch-record import)")
+	assertEntry("adapters", "next", "GitHub webhook delivery (not implemented)")
+	assertEntry("adapters", "implemented", "read-only Trello signed webhook intake and durable read-only board reconciliation")
+	assertEntry("adapters", "next", "dedicated GitHub historical backfill mode (not implemented)")
+	assertEntry("event-triggers", "implemented", "Trello signed callbacks are signature-verified, durable, idempotent, and source-bound")
+	assertEntry("event-triggers", "next", "webhook workers for other connectors (not implemented)")
+	assertEntry("universal-intake", "implemented", "Trello signed webhook callbacks enter the durable source-processing path")
+	assertEntry("universal-intake", "next", "connector webhook intake for other providers (not implemented)")
+	if capabilities["event-triggers"].Status != "partial" || capabilities["universal-intake"].Status != "partial" {
+		t.Fatalf("connector-specific webhook coverage must remain partial: event-triggers=%q universal-intake=%q", capabilities["event-triggers"].Status, capabilities["universal-intake"].Status)
+	}
+
+	for _, id := range []string{"adapters", "developer-github", "event-triggers", "universal-intake"} {
+		for _, implemented := range capabilities[id].Implemented {
+			lower := strings.ToLower(implemented)
+			if strings.Contains(lower, "not implemented") || strings.Contains(lower, "historical backfill") {
+				t.Errorf("%s claims unimplemented behavior as implemented: %q", id, implemented)
+			}
+			if strings.Contains(lower, "branch") && !strings.Contains(lower, "not imported") {
+				t.Errorf("%s claims branch capability without identifying that branch records are not imported: %q", id, implemented)
+			}
+		}
+	}
+}
+
+func TestDeveloperQualityRuleDoesNotRequireUnsupportedBranchEvidence(t *testing.T) {
+	for _, rule := range defaultWorkflowRules() {
+		if rule.RuleKey != "developer.github_quality_gate" {
+			continue
+		}
+		if strings.Contains(strings.ToLower(rule.Description), "branch evidence") {
+			t.Fatalf("developer quality rule requires unsupported branch evidence: %q", rule.Description)
+		}
+		if !strings.Contains(rule.Description, "human review") || !strings.Contains(rule.Description, "Worker prose and labels alone are not proof") {
+			t.Fatalf("developer quality rule omits fail-closed evidence guidance: %q", rule.Description)
+		}
+		return
+	}
+	t.Fatal("developer.github_quality_gate rule is missing")
+}
 
 func TestIntakeCreatesApprovalGatedLegalWorkflow(t *testing.T) {
 	repo := newFakeWorkflowRepo()
@@ -78,6 +153,69 @@ func TestIntakeCreatesApprovalGatedLegalWorkflow(t *testing.T) {
 	}
 }
 
+func TestTrelloDefaultProjectHintIsNotStoredAsAConfirmedMatch(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo)
+	record, err := service.Intake(IntakeRequest{
+		OwnerIdentity:  "alice",
+		Input:          "Tasks: review the supplier checklist and verify its source links",
+		ProjectKeyHint: "018-HAI",
+		SourceType:     "trello",
+		SourceID:       "trello-extraction-1",
+		SourceURI:      "https://trello.com/c/card-1",
+		RequiresReview: true,
+		ReviewReason:   "Trello evidence needs owner review",
+	})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	if record.Item.ProjectKey != "" {
+		t.Fatalf("workflow ProjectKey = %q, want no unverified Trello default", record.Item.ProjectKey)
+	}
+	if len(record.Matches) != 0 {
+		t.Fatalf("project matches = %#v, want no confirmed project match", record.Matches)
+	}
+	if len(record.Intake) != 1 || record.Intake[0].PossibleProject != "018-HAI" {
+		t.Fatalf("intake possible-project hint = %#v, want retained 018-HAI hint", record.Intake)
+	}
+	foundUnverified := false
+	for _, decision := range record.Decisions {
+		if decision.DecisionType == "project_match" && decision.Decision == "unverified" {
+			foundUnverified = true
+			break
+		}
+	}
+	if !foundUnverified {
+		t.Fatalf("decisions = %#v, want an explicit unverified project-key decision", record.Decisions)
+	}
+}
+
+func TestTrelloProjectHintDoesNotOverrideContentMatchOrOtherExplicitKeys(t *testing.T) {
+	key, confidence, reasons, _, _ := matchProject(IntakeRequest{
+		ProjectKeyHint: "018-HAI",
+		SourceType:     "trello",
+	}, "vivare hearing evidence", "legal")
+	if key != "Vivare dispute" || confidence != 0.88 || len(reasons) == 0 {
+		t.Fatalf("Trello content match = (%q, %0.2f, %v), want Vivare heuristic match", key, confidence, reasons)
+	}
+
+	key, confidence, _, _, _ = matchProject(IntakeRequest{
+		ProjectKey: "custom-manual-project",
+		SourceType: "workflow_api",
+	}, "unmatched administrative work", "administrative")
+	if key != "custom-manual-project" || confidence != 0.95 {
+		t.Fatalf("non-Trello explicit match = (%q, %0.2f), want existing explicit-key behavior", key, confidence)
+	}
+
+	key, confidence, _, _, _ = matchProject(IntakeRequest{
+		ProjectKey: "confirmed-trello-project",
+		SourceType: "trello",
+	}, "unmatched administrative work", "administrative")
+	if key != "confirmed-trello-project" || confidence != 0.95 {
+		t.Fatalf("explicitly confirmed Trello project = (%q, %0.2f), want the supplied project key", key, confidence)
+	}
+}
+
 func TestReminderProposalsAreOwnerScopedCurrentAndNonExecuting(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	service := NewService(repo)
@@ -132,6 +270,171 @@ func TestReminderProposalsAreOwnerScopedCurrentAndNonExecuting(t *testing.T) {
 	}
 	if _, err := reminderService.ReminderProposalsForOwner("alice", time.Now(), 721, 100); err == nil {
 		t.Fatal("oversized reminder horizon was accepted")
+	}
+}
+
+func TestIntakeBlocksWorkflowWhenDeadlineReminderCannotBePersisted(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	repo.createDeadlineReminderErr = fmt.Errorf("checklist store unavailable")
+	service := NewService(repo)
+	due := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Second)
+
+	_, err := service.Intake(IntakeRequest{
+		OwnerIdentity: "alice",
+		Input:         "Calendar event: Evidence review\nStart: " + due.Format(time.RFC3339),
+		SourceType:    "calendar",
+		SourceID:      "deadline-reminder-failure",
+		SourceURI:     "calendar://deadline-reminder-failure",
+		SourceLabel:   "Evidence review",
+	})
+	if err == nil || !strings.Contains(err.Error(), "deadline reminder persistence failed") {
+		t.Fatalf("Intake error = %v, want deadline-reminder persistence failure", err)
+	}
+	if len(repo.items) != 1 {
+		t.Fatalf("persisted workflow count = %d, want the intake retained as blocked work", len(repo.items))
+	}
+	var item *models.WorkflowItem
+	for _, stored := range repo.items {
+		item = stored
+	}
+	if item.CurrentState != StateBlocked || item.NextRunAt != nil ||
+		!strings.Contains(item.BlockedReason, "deadline reminder") ||
+		!strings.Contains(item.NextAction, "reminder storage") {
+		t.Fatalf("workflow after reminder failure = state %q, nextRunAt %v, reason %q, nextAction %q; want blocked, unscheduled, and recoverable", item.CurrentState, item.NextRunAt, item.BlockedReason, item.NextAction)
+	}
+	for _, decision := range repo.decisions[item.ID] {
+		if decision.DecisionType == "deadline_reminder" && decision.Decision == "created" {
+			t.Fatal("workflow recorded a successful deadline-reminder decision after persistence failed")
+		}
+	}
+	if transitions := repo.transitions[item.ID]; len(transitions) == 0 ||
+		transitions[0].FromState != StateNewInput || transitions[0].ToState != StateBlocked ||
+		transitions[0].Trigger != "deadline_reminder_persistence" {
+		t.Fatalf("workflow transitions = %#v, want intake-to-blocked deadline-reminder failure transition", transitions)
+	}
+}
+
+func TestIntakeBlocksWorkflowWhenRequiredChecklistCannotBePersisted(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	repo.createChecklistItemErr = fmt.Errorf("checklist store unavailable")
+	service := NewService(repo)
+
+	_, err := service.Intake(IntakeRequest{
+		OwnerIdentity: "alice",
+		Input:         "Create a low-risk checklist for a client quote.",
+		SourceType:    "manual",
+		SourceID:      "required-checklist-failure",
+	})
+	if err == nil || !strings.Contains(err.Error(), "checklist persistence failed") {
+		t.Fatalf("Intake error = %v, want required-checklist persistence failure", err)
+	}
+	if len(repo.items) != 1 {
+		t.Fatalf("persisted workflow count = %d, want the intake retained as blocked work", len(repo.items))
+	}
+	var item *models.WorkflowItem
+	for _, stored := range repo.items {
+		item = stored
+	}
+	if item.CurrentState != StateBlocked || item.NextRunAt != nil ||
+		!strings.Contains(item.BlockedReason, "required checklist") ||
+		!strings.Contains(item.NextAction, "checklist storage") {
+		t.Fatalf("workflow after checklist failure = state %q, nextRunAt %v, reason %q, nextAction %q; want blocked, unscheduled, and recoverable", item.CurrentState, item.NextRunAt, item.BlockedReason, item.NextAction)
+	}
+	if len(repo.checklist[item.ID]) != 0 {
+		t.Fatalf("persisted checklist = %#v, want no falsely accepted checklist items", repo.checklist[item.ID])
+	}
+	if transitions := repo.transitions[item.ID]; len(transitions) == 0 ||
+		transitions[0].FromState != StateNewInput || transitions[0].ToState != StateBlocked ||
+		transitions[0].Trigger != "checklist_persistence" {
+		t.Fatalf("workflow transitions = %#v, want intake-to-blocked checklist failure transition", transitions)
+	}
+}
+
+func TestIntakeBlocksApprovalWorkflowWhenProposalCannotBePersisted(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	repo.createProposalErr = fmt.Errorf("proposal store unavailable")
+	service := NewService(repo)
+
+	_, err := service.Intake(IntakeRequest{
+		OwnerIdentity: "alice",
+		Input:         "Email from lawyer about the hearing tomorrow. Draft a formal reply.",
+		SourceType:    "email",
+		SourceID:      "approval-proposal-failure",
+		SourceURI:     "mailto:lawyer@example.test",
+	})
+	if err == nil || !strings.Contains(err.Error(), "proposal persistence failed") {
+		t.Fatalf("Intake error = %v, want approval-proposal persistence failure", err)
+	}
+	var item *models.WorkflowItem
+	for _, stored := range repo.items {
+		item = stored
+	}
+	if item == nil || item.CurrentState != StateBlocked || item.NextRunAt != nil ||
+		!item.RequiresApproval || item.ApprovalStatus != "pending" ||
+		!strings.Contains(item.BlockedReason, "required workflow proposal") {
+		t.Fatalf("workflow after proposal failure = %#v, want retained, approval-gated, unscheduled blocked work", item)
+	}
+	if len(repo.proposals[item.ID]) != 0 {
+		t.Fatalf("persisted proposals = %#v, want none after repository failure", repo.proposals[item.ID])
+	}
+	if transitions := repo.transitions[item.ID]; len(transitions) == 0 ||
+		transitions[0].FromState != StateNewInput || transitions[0].ToState != StateBlocked ||
+		transitions[0].Trigger != "proposal_persistence" {
+		t.Fatalf("workflow transitions = %#v, want intake-to-blocked proposal failure transition", transitions)
+	}
+}
+
+func TestIntakeBlocksEvidenceRequiredWorkflowWhenClaimCannotBePersisted(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	repo.createEvidenceClaimErr = fmt.Errorf("evidence claim store unavailable")
+	service := NewService(repo)
+
+	_, err := service.Intake(IntakeRequest{
+		Input:       "Email from lawyer: Vivare confirmed the hearing date. Draft a formal reply.",
+		SourceType:  "email",
+		SourceURI:   "mailto:lawyer@example.test",
+		SourceLabel: "Lawyer email",
+	})
+	if err == nil || !strings.Contains(err.Error(), "evidence claim") {
+		t.Fatalf("Intake error = %v, want evidence-claim persistence failure", err)
+	}
+	if len(repo.items) != 1 {
+		t.Fatalf("persisted workflow items = %d, want blocked intake record", len(repo.items))
+	}
+	for _, item := range repo.items {
+		if item.CurrentState != StateBlocked || item.NextRunAt != nil || !strings.Contains(item.BlockedReason, "evidence") {
+			t.Fatalf("item was queued without durable evidence claims: %#v", item)
+		}
+	}
+}
+
+func TestEvidenceLinkedClaimsGateBlocksSensitiveWorkflowWithoutClaims(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo).(*service)
+	record, err := service.Intake(IntakeRequest{
+		Input:      "Prepare a legal response for the case.",
+		SourceType: "manual",
+		SourceURI:  "https://example.test/case-source",
+	})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	item := record.Item
+	item.RequiresApproval = false
+	delete(repo.evidence, item.ID)
+
+	result := service.evaluateQualityGates(item, &TaskRunResult{
+		VerificationStatus: "verified",
+		Passed:             true,
+	})
+	if result.Passed || !result.ReviewRequired {
+		t.Fatalf("quality gate result = %#v, want review-required failure without claims", result)
+	}
+	if !strings.Contains(strings.Join(result.Failures, "; "), "evidence-linked claims") {
+		t.Fatalf("quality gate failures = %#v, want evidence-linked claims failure", result.Failures)
+	}
+	if !hasGateStatus(repo.qualityGate[item.ID], "evidence-linked claims", "needs_review") {
+		t.Fatalf("evidence-linked claims gate was not left in needs_review: %#v", repo.qualityGate[item.ID])
 	}
 }
 
@@ -666,9 +969,12 @@ func TestTransitionRequiresApprovalFromNeedsApprovalToReady(t *testing.T) {
 	if _, err := service.Transition(record.Item.ID, TransitionRequest{TargetState: StateReady}); err == nil {
 		t.Fatalf("expected transition without approval to fail")
 	}
-	approved, err := service.Transition(record.Item.ID, TransitionRequest{TargetState: StateReady, Approved: true, Message: "Robert approved draft-only workflow"})
+	if _, err := service.Transition(record.Item.ID, TransitionRequest{TargetState: StateReady, Approved: true, Message: "Robert approved draft-only workflow"}); err == nil {
+		t.Fatal("generic transition must not resolve approval")
+	}
+	approved, err := service.ResolveApproval(record.Item.ID, ApprovalResolutionRequest{Approved: true, Note: "Robert approved draft-only workflow"})
 	if err != nil {
-		t.Fatalf("Transition approved: %v", err)
+		t.Fatalf("ResolveApproval: %v", err)
 	}
 	if approved.Item.CurrentState != StateReady {
 		t.Fatalf("state = %q, want ready", approved.Item.CurrentState)
@@ -681,7 +987,7 @@ func TestTransitionRequiresApprovalFromNeedsApprovalToReady(t *testing.T) {
 	}
 }
 
-func TestTransitionRequiresApprovalForBlockedApprovalWorkflowToReady(t *testing.T) {
+func TestApprovalResolutionRejectsBlockedApprovalWorkflow(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	service := NewService(repo)
 	record, err := service.Intake(IntakeRequest{Input: "Email from lawyer about legal hearing. Draft formal reply."})
@@ -699,16 +1005,170 @@ func TestTransitionRequiresApprovalForBlockedApprovalWorkflowToReady(t *testing.
 	if _, err := service.Transition(record.Item.ID, TransitionRequest{TargetState: StateReady}); err == nil {
 		t.Fatalf("expected blocked approval-required workflow to require approval before ready")
 	}
-	approved, err := service.Transition(record.Item.ID, TransitionRequest{TargetState: StateReady, Approved: true, Message: "Robert approved controlled draft preparation"})
+	if _, err := service.Transition(record.Item.ID, TransitionRequest{TargetState: StateReady, Approved: true, Message: "Robert approved controlled draft preparation"}); err == nil {
+		t.Fatal("generic transition must not resolve approval")
+	}
+	if _, err := service.ResolveApproval(record.Item.ID, ApprovalResolutionRequest{Approved: true, Note: "Robert approved controlled draft preparation"}); err == nil {
+		t.Fatal("approval resolution must reject an item outside the pending approval state")
+	}
+	updated, err := repo.FindItem(record.Item.ID)
 	if err != nil {
-		t.Fatalf("Transition approved: %v", err)
+		t.Fatalf("FindItem: %v", err)
 	}
-	if approved.Item.CurrentState != StateReady {
-		t.Fatalf("state = %q, want ready", approved.Item.CurrentState)
+	if updated.CurrentState != StateBlocked || updated.ApprovalStatus != "pending" {
+		t.Fatalf("state/status = %q/%q, want blocked/pending unchanged", updated.CurrentState, updated.ApprovalStatus)
 	}
-	if approved.Item.ApprovalStatus != "approved" {
-		t.Fatalf("approval status = %q, want approved", approved.Item.ApprovalStatus)
+}
+
+func TestResolveApprovalRejectsNonPendingAndTerminalItems(t *testing.T) {
+	cases := []struct {
+		name             string
+		state            string
+		approvalStatus   string
+		requiresApproval bool
+		archived         bool
+	}{
+		{name: "completed", state: StateCompleted, approvalStatus: "pending", requiresApproval: true},
+		{name: "archived state", state: StateArchived, approvalStatus: "pending", requiresApproval: true, archived: true},
+		{name: "archived flag", state: StateNeedsApproval, approvalStatus: "pending", requiresApproval: true, archived: true},
+		{name: "already approved", state: StateReady, approvalStatus: "approved", requiresApproval: true},
+		{name: "already rejected", state: StateBlocked, approvalStatus: "rejected", requiresApproval: true},
+		{name: "blocked despite pending status", state: StateBlocked, approvalStatus: "pending", requiresApproval: true},
+		{name: "approval not required", state: StateNeedsApproval, approvalStatus: "pending"},
+		{name: "missing approval status", state: StateNeedsApproval, requiresApproval: true},
 	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			repo := newFakeWorkflowRepo()
+			service := NewService(repo)
+			record, err := service.Intake(IntakeRequest{Input: "Email from lawyer about legal hearing. Draft formal reply."})
+			if err != nil {
+				t.Fatalf("Intake: %v", err)
+			}
+			item := record.Item
+			item.CurrentState = testCase.state
+			item.ApprovalStatus = testCase.approvalStatus
+			item.RequiresApproval = testCase.requiresApproval
+			item.Archived = testCase.archived
+			if _, err := repo.UpdateItem(&item); err != nil {
+				t.Fatalf("UpdateItem: %v", err)
+			}
+			before, err := repo.FindItem(item.ID)
+			if err != nil {
+				t.Fatalf("FindItem before resolution: %v", err)
+			}
+			transitionCount := len(repo.transitions[item.ID])
+			approvalDecisionCount := countApprovalDecisions(repo.decisions[item.ID])
+
+			if _, err := service.ResolveApproval(item.ID, ApprovalResolutionRequest{Approved: true, Note: "duplicate or stale approval"}); err == nil {
+				t.Fatal("ResolveApproval succeeded for a non-pending or terminal workflow")
+			}
+			after, err := repo.FindItem(item.ID)
+			if err != nil {
+				t.Fatalf("FindItem after resolution: %v", err)
+			}
+			if after.CurrentState != before.CurrentState || after.ApprovalStatus != before.ApprovalStatus ||
+				after.RequiresApproval != before.RequiresApproval || after.Archived != before.Archived {
+				t.Fatalf("rejected resolution mutated approval state: before=%#v after=%#v", before, after)
+			}
+			if len(repo.transitions[item.ID]) != transitionCount || countApprovalDecisions(repo.decisions[item.ID]) != approvalDecisionCount {
+				t.Fatal("rejected resolution appended approval transitions or decisions")
+			}
+		})
+	}
+}
+
+func TestConcurrentResolveApprovalAllowsOnlyOneResolution(t *testing.T) {
+	baseRepo := newFakeWorkflowRepo()
+	barrierRepo := &concurrentApprovalWorkflowRepo{
+		fakeWorkflowRepo: baseRepo,
+		arrivals:         make(chan struct{}, 2),
+		release:          make(chan struct{}),
+	}
+	service := NewService(barrierRepo)
+	record, err := service.Intake(IntakeRequest{Input: "Email from lawyer about legal hearing. Draft formal reply."})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	transitionCount := len(baseRepo.transitions[record.Item.ID])
+	approvalDecisionCount := countApprovalDecisions(baseRepo.decisions[record.Item.ID])
+
+	type result struct {
+		record *WorkflowRecord
+		err    error
+	}
+	results := make(chan result, 2)
+	var wait sync.WaitGroup
+	for range 2 {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			resolved, resolveErr := service.ResolveApproval(record.Item.ID, ApprovalResolutionRequest{
+				Approved: true,
+				Note:     "approve this pending workflow",
+				Actor:    "robert",
+			})
+			results <- result{record: resolved, err: resolveErr}
+		}()
+	}
+	for range 2 {
+		<-barrierRepo.arrivals
+	}
+	close(barrierRepo.release)
+	wait.Wait()
+	close(results)
+
+	successes := 0
+	failures := 0
+	for resolution := range results {
+		if resolution.err == nil {
+			successes++
+			if resolution.record == nil || resolution.record.Item.CurrentState != StateReady || resolution.record.Item.ApprovalStatus != "approved" {
+				t.Errorf("successful resolution returned invalid record: %#v", resolution.record)
+			}
+		} else {
+			failures++
+			if !strings.Contains(resolution.err.Error(), "no longer pending") {
+				t.Errorf("losing resolution error = %v, want stale pending-state rejection", resolution.err)
+			}
+		}
+	}
+	if successes != 1 || failures != 1 {
+		t.Fatalf("concurrent resolutions: successes=%d failures=%d, want exactly one winner and one stale rejection", successes, failures)
+	}
+	stored, err := baseRepo.FindItem(record.Item.ID)
+	if err != nil {
+		t.Fatalf("FindItem after concurrent resolution: %v", err)
+	}
+	if stored.CurrentState != StateReady || stored.ApprovalStatus != "approved" {
+		t.Fatalf("final approval state = %q/%q, want ready/approved", stored.CurrentState, stored.ApprovalStatus)
+	}
+	if countApprovalResolutionTransitions(baseRepo.transitions[record.Item.ID]) != 1 ||
+		countApprovalDecisions(baseRepo.decisions[record.Item.ID]) != approvalDecisionCount+1 ||
+		len(baseRepo.transitions[record.Item.ID]) != transitionCount+1 {
+		t.Fatalf("concurrent resolution appended duplicate approval records: transitions=%#v decisions=%#v", baseRepo.transitions[record.Item.ID], baseRepo.decisions[record.Item.ID])
+	}
+}
+
+func countApprovalDecisions(decisions []models.WorkflowDecision) int {
+	count := 0
+	for _, decision := range decisions {
+		if decision.DecisionType == "approval" {
+			count++
+		}
+	}
+	return count
+}
+
+func countApprovalResolutionTransitions(transitions []models.WorkflowTransition) int {
+	count := 0
+	for _, transition := range transitions {
+		if transition.Trigger == "approval_resolution" {
+			count++
+		}
+	}
+	return count
 }
 
 func TestTransitionRejectsManualCompletion(t *testing.T) {
@@ -864,6 +1324,34 @@ func TestResolveApprovalGenericRejectionDoesNotStoreNoise(t *testing.T) {
 	}
 }
 
+func TestResolveApprovalReturnsErrorWhenAtomicAuditPersistenceFails(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo)
+	record, err := service.Intake(IntakeRequest{Input: "Email from lawyer about legal hearing. Draft formal reply."})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	beforeTransitions := len(repo.transitions[record.Item.ID])
+	beforeEvents := len(repo.events[record.Item.ID])
+	beforeDecisions := len(repo.decisions[record.Item.ID])
+	repo.resolvePendingApprovalErr = fmt.Errorf("workflow approval event store unavailable")
+
+	if _, err := service.ResolveApproval(record.Item.ID, ApprovalResolutionRequest{
+		Approved: true, Actor: "alice", Note: "Approve the draft-only workflow.",
+	}); err == nil || !strings.Contains(err.Error(), "event store unavailable") {
+		t.Fatalf("ResolveApproval error = %v, want audit-persistence failure", err)
+	}
+	stored := repo.items[record.Item.ID]
+	if stored.CurrentState != StateNeedsApproval || stored.ApprovalStatus != "pending" {
+		t.Fatalf("workflow state/status = %q/%q, want pending approval after failed transaction", stored.CurrentState, stored.ApprovalStatus)
+	}
+	if len(repo.transitions[record.Item.ID]) != beforeTransitions ||
+		len(repo.events[record.Item.ID]) != beforeEvents ||
+		len(repo.decisions[record.Item.ID]) != beforeDecisions {
+		t.Fatalf("audit records changed on failed approval: transitions=%d events=%d decisions=%d", len(repo.transitions[record.Item.ID])-beforeTransitions, len(repo.events[record.Item.ID])-beforeEvents, len(repo.decisions[record.Item.ID])-beforeDecisions)
+	}
+}
+
 func TestResolveApprovalApprovedNoteStoresSpecificLearning(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	mem := &fakeWorkflowMemoryService{}
@@ -907,9 +1395,11 @@ func TestResolveInterruptedExecutionStoresReviewLesson(t *testing.T) {
 	record := recoverInterruptedWorkflow(t, repo, service, "Create Trello checklist for low risk admin work")
 
 	_, err := service.ResolveInterruptedExecution(record.Item.ID, InterruptedExecutionResolutionRequest{
-		Decision: "retry",
-		Note:     "Before retrying script-based tasks, check target logs and confirm no duplicate Trello card was created.",
-		Actor:    "Robert",
+		Decision:                 "retry",
+		Note:                     "Before retrying script-based tasks, check target logs and confirm no duplicate Trello card was created.",
+		EvidenceURI:              "https://trello.example/card/reconciliation",
+		PriorExecutionReconciled: true,
+		Actor:                    "Robert",
 	})
 	if err != nil {
 		t.Fatalf("ResolveInterruptedExecution: %v", err)
@@ -1358,12 +1848,13 @@ func TestRunDueConsumesApprovedWorkflowWithTaskRunner(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	selection := testFrameworkSelection("plan-1")
 	runner := &fakeTaskRunner{result: &TaskRunResult{
-		PlanID:               "plan-1",
-		CompletionStatus:     "validated",
-		VerificationStatus:   "verified",
-		Output:               "completed",
-		RuntimeEvidenceURI:   "automation-launch://11111111-1111-1111-1111-111111111111",
-		RuntimeEvidenceLabel: "script runtime",
+		PlanID:                 "plan-1",
+		CompletionStatus:       "validated",
+		VerificationStatus:     "verified",
+		Output:                 "completed",
+		RuntimeEvidenceURI:     "automation-launch://11111111-1111-1111-1111-111111111111",
+		RuntimeEvidenceLabel:   "script runtime",
+		ExternalActionExecuted: true,
 		RuntimeRouteTrace: &models.AutomationRuntimeRouteTrace{
 			RuntimeID:         "openclaw",
 			Intent:            "code_review",
@@ -1455,6 +1946,38 @@ func TestRunDueConsumesApprovedWorkflowWithTaskRunner(t *testing.T) {
 	}
 	if !foundEvent {
 		t.Fatalf("framework selection audit event missing: %#v", updated.Events)
+	}
+}
+
+func TestRunDueRoutesUnsupportedCompletionVerificationToReviewAndReleasesClaim(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	runner := &fakeTaskRunner{result: &TaskRunResult{
+		PlanID: "source-supported-plan", CompletionStatus: "validated",
+		VerificationStatus: "source_supported", Passed: true,
+	}}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Prepare a sourced low-risk admin checklist"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Blocked != 1 || len(summary.Results) != 1 || summary.Results[0].State != StateBlocked {
+		t.Fatalf("unsupported completion verification must reach review: %#v", summary)
+	}
+	updated, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if updated.Item.CurrentState != StateBlocked || updated.Item.VerificationStatus != "source_supported" ||
+		updated.Item.WorkerClaimID != "" || updated.Item.WorkerLeaseUntil != nil {
+		t.Fatalf("review state or released worker claim is incorrect: %#v", updated.Item)
+	}
+	if _, exists := repo.attestations[record.Item.ID]; exists {
+		t.Fatal("source-supported output must not create a completion attestation")
 	}
 }
 
@@ -1754,8 +2277,8 @@ func TestRecoverStaleWorkflowClaimBlocksUnknownOutcome(t *testing.T) {
 	if updated.Item.CurrentState != StateBlocked {
 		t.Fatalf("state = %q, want blocked", updated.Item.CurrentState)
 	}
-	if updated.Item.WorkerClaimID != "" || updated.Item.WorkerLeaseUntil != nil {
-		t.Fatalf("expired claim was not cleared: %#v", updated.Item)
+	if updated.Item.WorkerClaimID != "expired-workflow-claim" || updated.Item.WorkerLeaseUntil == nil {
+		t.Fatalf("expired claim fence was not retained: %#v", updated.Item)
 	}
 	if updated.Item.RetryCount != 1 {
 		t.Fatalf("retry count = %d, want interrupted attempt recorded", updated.Item.RetryCount)
@@ -1772,6 +2295,78 @@ func TestRecoverStaleWorkflowClaimBlocksUnknownOutcome(t *testing.T) {
 	}
 	if dashboard.Counts["interruptedReview"] != 1 {
 		t.Fatalf("interrupted review count = %d, want 1", dashboard.Counts["interruptedReview"])
+	}
+}
+
+func TestLostLeaseKeepsRetryFencedUntilOriginalRunnerReturns(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	started := make(chan struct{})
+	releaseRunner := make(chan struct{})
+	runner := &fakeTaskRunner{result: &TaskRunResult{
+		PlanID:                 "blocked-runner",
+		VerificationStatus:     "needs_review",
+		ExternalActionExecuted: true,
+		ReviewRequired:         true,
+		FailureReason:          "external result requires reconciliation",
+	}}
+	runner.onRun = func(TaskRunRequest) {
+		close(started)
+		<-releaseRunner
+	}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{OwnerIdentity: "alice", Input: "Create a low-risk Trello checklist."})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		_, _ = service.RunOneForOwner("alice", record.Item.ID)
+	}()
+	<-started
+
+	stored := repo.items[record.Item.ID]
+	if stored == nil || stored.WorkerClaimID == "" {
+		t.Fatalf("runner did not hold a claim: %#v", stored)
+	}
+	claimID := stored.WorkerClaimID
+	stored.WorkerLeaseUntil = timePtr(time.Now().UTC().Add(-time.Minute))
+	if _, err := service.RecoverStaleClaims(RunDueRequest{Limit: 5}); err != nil {
+		t.Fatalf("RecoverStaleClaims: %v", err)
+	}
+	recovered, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get recovered workflow: %v", err)
+	}
+	if recovered.Item.CurrentState != StateBlocked || recovered.Item.RecoveryStatus != RecoveryNeedsReview || recovered.Item.WorkerClaimID != claimID {
+		t.Fatalf("recovery did not preserve the old execution fence: %#v", recovered.Item)
+	}
+
+	resolution := InterruptedExecutionResolutionRequest{
+		Decision: "retry", Note: "External outcome checked", EvidenceURI: "https://example.test/reconciliation",
+		PriorExecutionReconciled: true, Actor: "Robert",
+	}
+	if _, err := service.ResolveInterruptedExecution(record.Item.ID, resolution); err == nil {
+		t.Fatal("retry was allowed while the original runner still held its execution fence")
+	}
+	if _, acquired, err := repo.ClaimRunnableItem(record.Item.ID, "overlapping-attempt", time.Now().UTC(), time.Now().UTC().Add(time.Minute)); err != nil || acquired {
+		t.Fatalf("new attempt was claimable before original runner returned: acquired=%t err=%v", acquired, err)
+	}
+
+	close(releaseRunner)
+	<-runDone
+	finished, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get finished workflow: %v", err)
+	}
+	if finished.Item.WorkerClaimID != "" || finished.Item.CurrentState != StateBlocked || finished.Item.RecoveryStatus != RecoveryNeedsReview {
+		t.Fatalf("returned runner did not release only its fence while preserving review: %#v", finished.Item)
+	}
+	if _, err := service.ResolveInterruptedExecution(record.Item.ID, resolution); err != nil {
+		t.Fatalf("resolve after runner termination and evidence: %v", err)
+	}
+	if _, acquired, err := repo.ClaimRunnableItem(record.Item.ID, "subsequent-attempt", time.Now().UTC(), time.Now().UTC().Add(time.Minute)); err != nil || !acquired {
+		t.Fatalf("reconciled workflow was not claimable after runner returned: acquired=%t err=%v", acquired, err)
 	}
 }
 
@@ -1797,9 +2392,11 @@ func TestResolveInterruptedExecutionRetryMakesLowRiskWorkflowReady(t *testing.T)
 	record := recoverInterruptedWorkflow(t, repo, service, "Create Trello checklist for low risk admin work")
 
 	updated, err := service.ResolveInterruptedExecution(record.Item.ID, InterruptedExecutionResolutionRequest{
-		Decision: "retry",
-		Note:     "Checked Trello and no checklist was created by the interrupted attempt.",
-		Actor:    "Robert",
+		Decision:                 "retry",
+		Note:                     "Checked Trello and no checklist was created by the interrupted attempt.",
+		EvidenceURI:              "https://trello.example/card/reconciliation",
+		PriorExecutionReconciled: true,
+		Actor:                    "Robert",
 	})
 	if err != nil {
 		t.Fatalf("ResolveInterruptedExecution: %v", err)
@@ -1818,15 +2415,59 @@ func TestResolveInterruptedExecutionRetryMakesLowRiskWorkflowReady(t *testing.T)
 	}
 }
 
+func TestResolveInterruptedExecutionCanReconcileOrphanedClaimAfterOperatorEvidence(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo)
+	record, err := service.Intake(IntakeRequest{Input: "Create a Trello checklist for routine office work."})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	claimedAt := time.Now().UTC().Add(-2 * time.Minute)
+	claimID := "worker-from-crashed-process"
+	claimed, acquired, err := repo.ClaimRunnableItem(record.Item.ID, claimID, claimedAt, claimedAt.Add(time.Minute))
+	if err != nil || !acquired || claimed == nil {
+		t.Fatalf("ClaimRunnableItem = (%#v, %v, %v), want stale worker claim", claimed, acquired, err)
+	}
+	if _, err := service.RecoverStaleClaims(RunDueRequest{Limit: 5}); err != nil {
+		t.Fatalf("RecoverStaleClaims: %v", err)
+	}
+	blocked, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get recovered item: %v", err)
+	}
+	if blocked.Item.RecoveryStatus != RecoveryNeedsReview || blocked.Item.WorkerClaimID != claimID {
+		t.Fatalf("recovered item lost its execution fence: %#v", blocked.Item)
+	}
+	if _, acquired, err := repo.ClaimRunnableItem(record.Item.ID, "overlapping-worker", time.Now().UTC(), time.Now().UTC().Add(time.Minute)); err != nil || acquired {
+		t.Fatalf("new worker claimed before operator resolution: acquired=%v err=%v", acquired, err)
+	}
+
+	resolved, err := service.ResolveInterruptedExecution(record.Item.ID, InterruptedExecutionResolutionRequest{
+		Decision: "retry", Note: "The prior process terminated; its provider outcome was checked and no checklist was created.",
+		EvidenceURI: "https://trello.example/reconciliation/worker-from-crashed-process", PriorExecutionReconciled: true, Actor: "Robert",
+	})
+	if err != nil {
+		t.Fatalf("ResolveInterruptedExecution: %v", err)
+	}
+	if resolved.Item.CurrentState != StateReady || resolved.Item.WorkerClaimID != "" || resolved.Item.WorkerLeaseUntil != nil {
+		t.Fatalf("evidence-backed resolution did not atomically release the orphaned fence: %#v", resolved.Item)
+	}
+	if _, acquired, err := repo.ClaimRunnableItem(record.Item.ID, "reconciled-worker", time.Now().UTC(), time.Now().UTC().Add(time.Minute)); err != nil || !acquired {
+		t.Fatalf("reconciled workflow was not claimable: acquired=%v err=%v", acquired, err)
+	}
+}
+
 func TestResolveInterruptedExecutionRetryRequiresFreshApprovalForHighRiskWorkflow(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	service := NewService(repo)
 	record := recoverInterruptedWorkflow(t, repo, service, "Email lawyer about legal hearing and draft formal reply.")
 
 	updated, err := service.ResolveInterruptedExecution(record.Item.ID, InterruptedExecutionResolutionRequest{
-		Decision: "retry",
-		Note:     "Checked sent mail and confirmed that no message was sent.",
-		Actor:    "Robert",
+		Decision:                 "retry",
+		Note:                     "Checked sent mail and confirmed that no message was sent.",
+		EvidenceURI:              "https://mail.example/reconciliation",
+		PriorExecutionReconciled: true,
+		Actor:                    "Robert",
 	})
 	if err != nil {
 		t.Fatalf("ResolveInterruptedExecution: %v", err)
@@ -1854,9 +2495,11 @@ func TestInterruptedExecutionRetryCompletesThroughWorker(t *testing.T) {
 	service := NewServiceWithTaskRunner(repo, runner)
 	record := recoverInterruptedWorkflow(t, repo, service, "Create Trello checklist for low risk admin work")
 	retried, err := service.ResolveInterruptedExecution(record.Item.ID, InterruptedExecutionResolutionRequest{
-		Decision: "retry",
-		Note:     "Checked Trello and confirmed the interrupted attempt created no checklist.",
-		Actor:    "Robert",
+		Decision:                 "retry",
+		Note:                     "Checked Trello and confirmed the interrupted attempt created no checklist.",
+		EvidenceURI:              "https://trello.example/card/reconciliation",
+		PriorExecutionReconciled: true,
+		Actor:                    "Robert",
 	})
 	if err != nil {
 		t.Fatalf("ResolveInterruptedExecution: %v", err)
@@ -1897,11 +2540,12 @@ func TestResolveInterruptedExecutionCompletesWithEvidence(t *testing.T) {
 	record := recoverInterruptedWorkflow(t, repo, service, "Create Trello checklist for low risk admin work")
 
 	updated, err := service.ResolveInterruptedExecution(record.Item.ID, InterruptedExecutionResolutionRequest{
-		Decision:      "confirm_completed",
-		Note:          "Verified the expected checklist exists and contains the requested items.",
-		EvidenceURI:   "https://trello.example/card/123",
-		EvidenceLabel: "Trello checklist",
-		Actor:         "Robert",
+		Decision:                 "confirm_completed",
+		Note:                     "Verified the expected checklist exists and contains the requested items.",
+		EvidenceURI:              "https://trello.example/card/123",
+		EvidenceLabel:            "Trello checklist",
+		PriorExecutionReconciled: true,
+		Actor:                    "Robert",
 	})
 	if err != nil {
 		t.Fatalf("ResolveInterruptedExecution: %v", err)
@@ -2089,7 +2733,7 @@ func TestRecoverStaleClaimsMigratesLegacyUnownedRows(t *testing.T) {
 	}
 }
 
-func TestRunDueRecoversTaskRunnerPanicIntoRetry(t *testing.T) {
+func TestRunDueRecoversTaskRunnerPanicIntoReview(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	runner := &fakeTaskRunner{panicValue: "provider adapter crashed"}
 	service := NewServiceWithTaskRunner(repo, runner)
@@ -2102,18 +2746,18 @@ func TestRunDueRecoversTaskRunnerPanicIntoRetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDue: %v", err)
 	}
-	if summary.Retried != 1 {
-		t.Fatalf("summary = %#v, want one scheduled retry", summary)
+	if summary.Blocked != 1 || summary.Retried != 0 {
+		t.Fatalf("summary = %#v, want outcome-uncertain review without retry", summary)
 	}
 	updated, err := service.Get(record.Item.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if updated.Item.CurrentState != StateReady {
-		t.Fatalf("state = %q, want ready for retry", updated.Item.CurrentState)
+	if updated.Item.CurrentState != StateBlocked || updated.Item.NextRunAt != nil {
+		t.Fatalf("state/run time = %q/%v, want non-rerunnable review block", updated.Item.CurrentState, updated.Item.NextRunAt)
 	}
-	if !strings.Contains(updated.Item.LastWorkerError, "panic recovered") {
-		t.Fatalf("last worker error = %q, want recovered panic", updated.Item.LastWorkerError)
+	if !strings.Contains(updated.Item.LastWorkerError, "panic recovered") || !strings.Contains(updated.Item.LastWorkerError, "uncertain") {
+		t.Fatalf("last worker error = %q, want recovered panic and uncertain outcome", updated.Item.LastWorkerError)
 	}
 }
 
@@ -2492,21 +3136,274 @@ func TestRunDueBlocksTechnicalWorkflowWhenQualityEvidenceMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDue: %v", err)
 	}
-	if summary.Retried != 1 {
-		t.Fatalf("retried = %d, want 1: %#v", summary.Retried, summary)
+	if summary.Blocked != 1 || summary.Retried != 0 {
+		t.Fatalf("blocked/retried = %d/%d, want 1/0 because missing quality evidence requires review: %#v", summary.Blocked, summary.Retried, summary)
 	}
 	updated, err := service.Get(record.Item.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if updated.Item.CurrentState != StateReady {
-		t.Fatalf("state = %q, want ready after scheduled retry", updated.Item.CurrentState)
+	if updated.Item.CurrentState != StateBlocked {
+		t.Fatalf("state = %q, want blocked for quality evidence review", updated.Item.CurrentState)
 	}
 	if updated.Item.LastWorkerError == "" {
 		t.Fatalf("expected quality gate failure reason")
 	}
 	if !hasGateStatus(updated.QualityGates, "tests or build evidence", "needs_review") {
 		t.Fatalf("expected tests/build gate to need review")
+	}
+}
+
+func TestIntakeDoesNotQueueWorkflowWhenRequiredQualityGateWriteFails(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	repo.createQualityGateErr = fmt.Errorf("quality gate store unavailable")
+	runner := &fakeTaskRunner{result: &TaskRunResult{
+		PlanID:             "plan-gate-write-failure",
+		CompletionStatus:   "validated",
+		VerificationStatus: "verified",
+		Passed:             true,
+	}}
+	service := NewServiceWithTaskRunner(repo, runner)
+
+	if _, err := service.Intake(IntakeRequest{Input: "Create Trello checklist for low risk admin work"}); err == nil {
+		t.Fatal("Intake succeeded without durably persisting required quality gates")
+	}
+	if len(repo.items) != 1 {
+		t.Fatalf("workflow items = %d, want one persisted fail-closed item", len(repo.items))
+	}
+	var item *models.WorkflowItem
+	for _, persisted := range repo.items {
+		item = persisted
+	}
+	if item.CurrentState != StateBlocked || !strings.Contains(item.BlockedReason, "quality gates") {
+		t.Fatalf("workflow state = %q, blocked reason = %q; want persisted quality-gate block", item.CurrentState, item.BlockedReason)
+	}
+	if summary, err := service.RunDue(RunDueRequest{Limit: 5}); err != nil {
+		t.Fatalf("RunDue: %v", err)
+	} else if summary.Completed != 0 || len(runner.requests) != 0 {
+		t.Fatalf("workflow ran without required gates: summary=%#v runner calls=%d", summary, len(runner.requests))
+	}
+	if len(repo.attestations) != 0 {
+		t.Fatalf("completion attestations = %d, want none", len(repo.attestations))
+	}
+}
+
+func TestRunDueFailsClosedWhenRequiredQualityGateReadFails(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	runner := &fakeTaskRunner{result: &TaskRunResult{
+		PlanID:             "plan-gate-read-failure",
+		CompletionStatus:   "validated",
+		VerificationStatus: "verified",
+		Passed:             true,
+	}}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Create Trello checklist for low risk admin work"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	repo.findQualityGatesErr = fmt.Errorf("quality gate store unavailable")
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Blocked != 1 || len(runner.requests) != 0 {
+		t.Fatalf("failed quality-gate read did not block before task execution: summary=%#v runner calls=%d", summary, len(runner.requests))
+	}
+	if item := repo.items[record.Item.ID]; item.CurrentState != StateBlocked {
+		t.Fatalf("workflow state = %q, want persisted blocked state", item.CurrentState)
+	}
+	if len(repo.attestations) != 0 {
+		t.Fatalf("completion attestations = %d, want none", len(repo.attestations))
+	}
+}
+
+func TestRunDueFailsClosedWhenQualityGateEvidenceReadsFail(t *testing.T) {
+	cases := []struct {
+		name string
+		fail func(*fakeWorkflowRepo)
+	}{
+		{name: "source links", fail: func(repo *fakeWorkflowRepo) { repo.findSourceLinksErr = fmt.Errorf("source-link store unavailable") }},
+		{name: "evidence claims", fail: func(repo *fakeWorkflowRepo) { repo.findEvidenceClaimsErr = fmt.Errorf("evidence store unavailable") }},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			repo := newFakeWorkflowRepo()
+			runner := &fakeTaskRunner{result: &TaskRunResult{
+				PlanID:             "plan-evidence-read-failure",
+				CompletionStatus:   "validated",
+				VerificationStatus: "verified",
+				Passed:             true,
+			}}
+			service := NewServiceWithTaskRunner(repo, runner)
+			record, err := service.Intake(IntakeRequest{Input: "Create Trello checklist for low risk admin work"})
+			if err != nil {
+				t.Fatalf("Intake: %v", err)
+			}
+			testCase.fail(repo)
+
+			summary, err := service.RunDue(RunDueRequest{Limit: 5})
+			if err != nil {
+				t.Fatalf("RunDue: %v", err)
+			}
+			if summary.Blocked != 1 || len(runner.requests) != 1 {
+				t.Fatalf("failed evidence read did not persist review after task run: summary=%#v runner calls=%d", summary, len(runner.requests))
+			}
+			if item := repo.items[record.Item.ID]; item.CurrentState != StateBlocked {
+				t.Fatalf("workflow state = %q, want persisted blocked state", item.CurrentState)
+			}
+			if len(repo.attestations) != 0 {
+				t.Fatalf("completion attestations = %d, want none", len(repo.attestations))
+			}
+		})
+	}
+}
+
+func TestRunDueFailsClosedWhenQualityGateStatusWriteFails(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	runner := &fakeTaskRunner{result: &TaskRunResult{
+		PlanID:             "plan-gate-status-write-failure",
+		CompletionStatus:   "validated",
+		VerificationStatus: "verified",
+		Passed:             true,
+	}}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Create Trello checklist for low risk admin work"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	repo.updateQualityGateErr = fmt.Errorf("quality gate status store unavailable")
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Blocked != 1 || len(runner.requests) != 1 {
+		t.Fatalf("quality-gate status write failure did not block completion: summary=%#v runner calls=%d", summary, len(runner.requests))
+	}
+	if item := repo.items[record.Item.ID]; item.CurrentState != StateBlocked {
+		t.Fatalf("workflow state = %q, want persisted blocked state", item.CurrentState)
+	}
+	if len(repo.attestations) != 0 {
+		t.Fatalf("completion attestations = %d, want none", len(repo.attestations))
+	}
+}
+
+func TestIntakeBlocksSourcedWorkWhenProvenancePersistenceFails(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(*fakeWorkflowRepo)
+	}{
+		{name: "intake record", setup: func(repo *fakeWorkflowRepo) { repo.saveIntakeRecordErr = fmt.Errorf("intake store unavailable") }},
+		{name: "origin source link", setup: func(repo *fakeWorkflowRepo) { repo.createSourceLinkErr = fmt.Errorf("source-link store unavailable") }},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			repo := newFakeWorkflowRepo()
+			testCase.setup(repo)
+			runner := &fakeTaskRunner{result: &TaskRunResult{Passed: true, VerificationStatus: "verified"}}
+			service := NewServiceWithTaskRunner(repo, runner)
+			_, err := service.Intake(IntakeRequest{
+				OwnerIdentity: "alice",
+				Input:         "Create a low-risk checklist from the imported task.",
+				SourceType:    "trello",
+				SourceID:      "card-123",
+				SourceURI:     "https://trello.example/card-123",
+				SourceLabel:   "Imported card",
+			})
+			if err == nil || !strings.Contains(strings.ToLower(err.Error()), "source provenance") {
+				t.Fatalf("Intake error = %v, want source-provenance persistence failure", err)
+			}
+			if len(repo.items) != 1 {
+				t.Fatalf("persisted workflow count = %d, want one blocked record", len(repo.items))
+			}
+			var item *models.WorkflowItem
+			for _, stored := range repo.items {
+				item = stored
+			}
+			if item.CurrentState != StateBlocked || !strings.Contains(strings.ToLower(item.BlockedReason), "source provenance") {
+				t.Fatalf("workflow state/reason = %q/%q, want blocked for missing provenance", item.CurrentState, item.BlockedReason)
+			}
+			if _, err := service.RunDue(RunDueRequest{Limit: 5}); err != nil {
+				t.Fatalf("RunDue: %v", err)
+			}
+			if len(runner.requests) != 0 {
+				t.Fatalf("task runner calls = %d, want no execution without durable source provenance", len(runner.requests))
+			}
+		})
+	}
+}
+
+func TestRunDueBlocksSourcedWorkWhenOriginProvenanceIsMissing(t *testing.T) {
+	cases := []struct {
+		name    string
+		corrupt func(*fakeWorkflowRepo, uuid.UUID)
+	}{
+		{name: "missing intake record", corrupt: func(repo *fakeWorkflowRepo, id uuid.UUID) { delete(repo.intake, id) }},
+		{name: "intake record read failure", corrupt: func(repo *fakeWorkflowRepo, _ uuid.UUID) {
+			repo.findIntakeRecordsErr = fmt.Errorf("intake store unavailable")
+		}},
+		{name: "missing origin link", corrupt: func(repo *fakeWorkflowRepo, id uuid.UUID) { delete(repo.sourceLinks, id) }},
+		{name: "source-link read failure", corrupt: func(repo *fakeWorkflowRepo, _ uuid.UUID) {
+			repo.findSourceLinksErr = fmt.Errorf("source-link store unavailable")
+		}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			repo := newFakeWorkflowRepo()
+			runner := &fakeTaskRunner{result: &TaskRunResult{Passed: true, VerificationStatus: "verified"}}
+			service := NewServiceWithTaskRunner(repo, runner)
+			record, err := service.Intake(IntakeRequest{
+				OwnerIdentity: "alice",
+				Input:         "Create a low-risk checklist from the imported task.",
+				SourceType:    "trello",
+				SourceID:      "card-456",
+				SourceURI:     "https://trello.example/card-456",
+				SourceLabel:   "Imported card",
+			})
+			if err != nil {
+				t.Fatalf("Intake: %v", err)
+			}
+			testCase.corrupt(repo, record.Item.ID)
+
+			summary, err := service.RunDue(RunDueRequest{Limit: 5})
+			if err != nil {
+				t.Fatalf("RunDue: %v", err)
+			}
+			if summary.Blocked != 1 || len(runner.requests) != 0 {
+				t.Fatalf("missing provenance did not block before execution: summary=%#v runner calls=%d", summary, len(runner.requests))
+			}
+			if item := repo.items[record.Item.ID]; item.CurrentState != StateBlocked {
+				t.Fatalf("workflow state = %q, want blocked", item.CurrentState)
+			}
+		})
+	}
+}
+
+func TestIntakeUsesAtomicIdempotencyWhenURIPreflightMissesConcurrentInsert(t *testing.T) {
+	repo := &staleURILookupWorkflowRepo{fakeWorkflowRepo: newFakeWorkflowRepo(), preflightMisses: 2}
+	service := NewService(repo)
+	request := IntakeRequest{
+		OwnerIdentity: "alice",
+		Input:         "Follow up on the imported source task.",
+		SourceType:    "trello",
+		SourceURI:     "https://trello.example/card-race",
+		Trigger:       "source.extraction",
+	}
+
+	first, err := service.Intake(request)
+	if err != nil {
+		t.Fatalf("first Intake: %v", err)
+	}
+	second, err := service.Intake(request)
+	if err != nil {
+		t.Fatalf("second Intake after simulated stale preflight: %v", err)
+	}
+	if first.Item.ID != second.Item.ID {
+		t.Fatalf("URI replay created workflow %s after first workflow %s", second.Item.ID, first.Item.ID)
+	}
+	if len(repo.items) != 1 || repo.idempotentCreateCalls != 2 {
+		t.Fatalf("stored items=%d idempotent writes=%d; want one item and atomic write path for both deliveries", len(repo.items), repo.idempotentCreateCalls)
 	}
 }
 
@@ -2673,6 +3570,235 @@ func TestRunDueDoesNotRepeatCompletedExternalActionAfterQualityGateFailure(t *te
 	}
 }
 
+func TestRunDueRequiresReviewWhenLeaseIsLostAfterExternalAction(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	repo.loseRunnableItemRenewalAfter = 1
+	runner := &fakeTaskRunner{result: &TaskRunResult{
+		PlanID:                 "external-action-plan",
+		CompletionStatus:       "executed",
+		VerificationStatus:     "verified",
+		FailureReason:          "claim lease could not be confirmed after execution",
+		Output:                 "do not persist this free-form output",
+		RuntimeEvidenceURI:     "automation-launch://" + uuid.NewString(),
+		RuntimeEvidenceLabel:   "controlled runtime launch",
+		ExternalActionExecuted: true,
+	}, err: errors.New("runtime connector response was lost after dispatch")}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Create a checklist in Trello for low-risk administration"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Blocked != 1 || summary.Retried != 0 {
+		t.Fatalf("summary = %#v, want review-blocked item and no retry", summary)
+	}
+	updated, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if updated.Item.CurrentState != StateBlocked || updated.Item.NextRunAt != nil {
+		t.Fatalf("workflow was retried after uncertain external action: %#v", updated.Item)
+	}
+	if updated.Item.LastTaskPlanID != "external-action-plan" {
+		t.Fatalf("last task plan ID = %q, want retained execution plan", updated.Item.LastTaskPlanID)
+	}
+	if len(updated.FrameworkSelections) != 1 {
+		t.Fatalf("framework selections = %d, want evidence retained before review", len(updated.FrameworkSelections))
+	}
+	runtimeEvidenceFound := false
+	for _, claim := range updated.Evidence {
+		if claim.SourceURI == runner.result.RuntimeEvidenceURI {
+			runtimeEvidenceFound = true
+			if strings.Contains(claim.ClaimText, "do not persist this free-form output") {
+				t.Fatalf("uncertain runtime evidence persisted free-form task output: %q", claim.ClaimText)
+			}
+		}
+	}
+	if !runtimeEvidenceFound {
+		t.Fatalf("lease-loss review did not retain runtime evidence: %#v", updated.Evidence)
+	}
+	if !strings.Contains(strings.ToLower(updated.Item.BlockedReason), "lease") ||
+		!strings.Contains(strings.ToLower(updated.Item.BlockedReason), "review") ||
+		!strings.Contains(updated.Item.BlockedReason, "runtime connector response was lost") {
+		t.Fatalf("blocked reason = %q, want lease uncertainty, runner error, and human review", updated.Item.BlockedReason)
+	}
+	if len(runner.requests) != 1 {
+		t.Fatalf("task runner calls = %d, want exactly one", len(runner.requests))
+	}
+	if _, err := service.RunDue(RunDueRequest{Limit: 5}); err != nil {
+		t.Fatalf("second RunDue: %v", err)
+	}
+	if len(runner.requests) != 1 {
+		t.Fatalf("task runner calls after second scan = %d, want no duplicate side effect", len(runner.requests))
+	}
+}
+
+func TestRunDueDoesNotStartTaskWhenLeaseCannotBeConfirmedBeforeDispatch(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	repo.loseRunnableItemRenewal = true
+	runner := &fakeTaskRunner{result: &TaskRunResult{CompletionStatus: "completed"}}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Create a checklist in Trello for low-risk administration"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Blocked != 1 || len(runner.requests) != 0 {
+		t.Fatalf("summary=%+v runner calls=%d; expected blocked before dispatch", summary, len(runner.requests))
+	}
+	updated, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if updated.Item.CurrentState != StateBlocked || !strings.Contains(updated.Item.BlockedReason, "before task start") {
+		t.Fatalf("workflow was not held before task dispatch: %+v", updated.Item)
+	}
+}
+
+func TestRunDueTreatsUnknownTaskRunnerErrorAsOutcomeUncertain(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	runner := &fakeTaskRunner{err: errors.New("provider timed out after dispatch")}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Create a checklist in Trello for low-risk administration"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Blocked != 1 || summary.Retried != 0 {
+		t.Fatalf("summary = %#v, want blocked uncertain result without retry", summary)
+	}
+	updated, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if updated.Item.CurrentState != StateBlocked || updated.Item.NextRunAt != nil {
+		t.Fatalf("state/run time = %q/%v, want non-rerunnable review block", updated.Item.CurrentState, updated.Item.NextRunAt)
+	}
+	if !strings.Contains(updated.Item.BlockedReason, "outcome is uncertain") || !strings.Contains(updated.Item.BlockedReason, "provider timed out") {
+		t.Fatalf("blocked reason = %q, want uncertainty and provider error", updated.Item.BlockedReason)
+	}
+}
+
+func TestRunDueRetriesExplicitSafeNoSideEffectError(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	runner := &fakeTaskRunner{err: MarkTaskFailureSafeNoSideEffect(errors.New("framework preview rejected before execution"))}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Create a checklist in Trello for low-risk administration"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Retried != 1 || summary.Blocked != 0 {
+		t.Fatalf("summary = %#v, want one safe retry and no review block", summary)
+	}
+	updated, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if updated.Item.CurrentState != StateReady || updated.Item.NextRunAt == nil {
+		t.Fatalf("state/run time = %q/%v, want scheduled safe retry", updated.Item.CurrentState, updated.Item.NextRunAt)
+	}
+}
+
+func TestRunDueReviewBlocksSideEffectResultEvenWhenErrorIsMarkedSafe(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	runtimeURI := "automation-launch://" + uuid.NewString()
+	runner := &fakeTaskRunner{
+		result: &TaskRunResult{
+			PlanID:                 "partial-external-plan",
+			VerificationStatus:     "needs_review",
+			RuntimeEvidenceURI:     runtimeURI,
+			RuntimeEvidenceLabel:   "controlled runtime launch",
+			ExternalActionExecuted: true,
+		},
+		err: MarkTaskFailureSafeNoSideEffect(errors.New("contradictory runner error marker")),
+	}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Create a checklist in Trello for low-risk administration"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Blocked != 1 || summary.Retried != 0 {
+		t.Fatalf("summary = %#v, an executed external action must override the safe marker", summary)
+	}
+	updated, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if updated.Item.LastTaskPlanID != "partial-external-plan" || updated.Item.CurrentState != StateBlocked {
+		t.Fatalf("uncertain result was not retained in review state: %#v", updated.Item)
+	}
+	if len(updated.FrameworkSelections) != 1 {
+		t.Fatalf("framework selections = %d, want partial result provenance persisted", len(updated.FrameworkSelections))
+	}
+	if len(updated.Evidence) != 1 || updated.Evidence[0].SourceURI != runtimeURI {
+		t.Fatalf("runtime evidence = %#v, want durable launch evidence", updated.Evidence)
+	}
+}
+
+func TestRunDueAuditsUncertainEvidencePersistenceFailure(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	repo.loseRunnableItemRenewalAfter = 1
+	repo.createEvidenceClaimErr = errors.New("runtime evidence store unavailable")
+	runner := &fakeTaskRunner{result: &TaskRunResult{
+		PlanID:               "plan-with-unpersisted-runtime-evidence",
+		VerificationStatus:   "needs_review",
+		RuntimeEvidenceURI:   "automation-launch://" + uuid.NewString(),
+		RuntimeEvidenceLabel: "controlled runtime launch",
+	}}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{Input: "Create a checklist in Trello for low-risk administration"})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+
+	summary, err := service.RunDue(RunDueRequest{Limit: 5})
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if summary.Blocked != 1 || summary.Retried != 0 {
+		t.Fatalf("summary = %#v, want blocked review and no retry", summary)
+	}
+	updated, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !strings.Contains(updated.Item.BlockedReason, "evidence persistence failed") || !strings.Contains(updated.Item.BlockedReason, "runtime evidence store unavailable") {
+		t.Fatalf("blocked reason = %q, want evidence persistence failure", updated.Item.BlockedReason)
+	}
+	audited := false
+	for _, event := range updated.Events {
+		if event.EventType == "workflow.worker_review_required" && strings.Contains(event.Message, "runtime evidence store unavailable") {
+			audited = true
+			break
+		}
+	}
+	if !audited {
+		t.Fatalf("review audit did not record evidence persistence failure: %#v", updated.Events)
+	}
+}
+
 func TestDefaultRulesPreserveCreatedAtAcrossUpserts(t *testing.T) {
 	service := NewService(newFakeWorkflowRepo())
 	first := service.Overview()
@@ -2757,6 +3883,9 @@ func TestRunDueBlocksReviewRequiredTaskWithoutAutomaticRetry(t *testing.T) {
 	}
 	if summary.Blocked != 1 || summary.Retried != 0 {
 		t.Fatalf("summary = %#v, review-required task must block without retry", summary)
+	}
+	if len(summary.Results) != 1 || !summary.Results[0].ReviewRequired {
+		t.Fatalf("required review was omitted from the API result: %#v", summary.Results)
 	}
 	updated, err := service.Get(record.Item.ID)
 	if err != nil {
@@ -2912,6 +4041,66 @@ func TestIntakeDeduplicatesUnchangedSourceRevision(t *testing.T) {
 	}
 }
 
+func TestIntakeDoesNotReportIncompleteSourceAsDeduplicatedSuccess(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo)
+	request := IntakeRequest{
+		OwnerIdentity:  "alice",
+		Input:          "Follow up: prepare the first project record.",
+		SourceType:     "email",
+		SourceID:       "message-incomplete-replay",
+		SourceURI:      "mailto:project@example.test",
+		RequiresReview: true,
+		ReviewReason:   "extraction needs operator review",
+	}
+	first, err := service.Intake(request)
+	if err != nil {
+		t.Fatalf("Intake first: %v", err)
+	}
+	stored := *repo.items[first.Item.ID]
+	stored.CurrentState = StateNewInput
+	repo.items[stored.ID] = &stored
+
+	if record, err := service.Intake(request); !errors.Is(err, ErrWorkflowIntakeIncomplete) {
+		t.Fatalf("Intake replay = record %#v, error %v; want explicit incomplete-intake error", record, err)
+	}
+	if repo.items[stored.ID].CurrentState != StateNewInput {
+		t.Fatalf("incomplete intake state was changed by replay: %#v", repo.items[stored.ID])
+	}
+}
+
+func TestIntakeSourceRevisionChangesWhenTrelloProjectHintChanges(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo)
+	request := IntakeRequest{
+		Input:          "Review the source notes and prepare the next action.",
+		ProjectKeyHint: "board-project-a",
+		SourceType:     "trello",
+		SourceID:       "card-hint-change",
+		SourceURI:      "https://trello.com/c/card-hint-change",
+		RequiresReview: true,
+	}
+	first, err := service.Intake(request)
+	if err != nil {
+		t.Fatalf("Intake first: %v", err)
+	}
+	request.ProjectKeyHint = "board-project-b"
+	second, err := service.Intake(request)
+	if err != nil {
+		t.Fatalf("Intake with changed project hint: %v", err)
+	}
+	if first.Item.ID == second.Item.ID || first.Item.SourceRevision == second.Item.SourceRevision {
+		t.Fatalf("changed project routing context reused stale workflow: first=%#v second=%#v", first.Item, second.Item)
+	}
+	archived, err := service.Get(first.Item.ID)
+	if err != nil {
+		t.Fatalf("Get previous workflow: %v", err)
+	}
+	if archived.Item.CurrentState != StateArchived {
+		t.Fatalf("previous source workflow state = %q, want archived after source revision change", archived.Item.CurrentState)
+	}
+}
+
 func TestChangedSourceReviewStatusInvalidatesPriorApproval(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	service := NewService(repo)
@@ -3029,11 +4218,315 @@ func TestRetractSourceBlocksPendingSourceDerivedWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if updated.Item.CurrentState != StateBlocked || updated.Item.VerificationStatus != "needs_review" {
+	if updated.Item.CurrentState != StateBlocked || updated.Item.VerificationStatus != "needs_review" ||
+		!updated.Item.RequiresApproval || updated.Item.ApprovalStatus != "pending" ||
+		!strings.HasPrefix(updated.Item.ApprovalReason, sourceRetractionQuarantinePrefix) {
 		t.Fatalf("retracted workflow remained executable: %#v", updated.Item)
 	}
 	if !hasDecision(updated.Decisions, "source_retraction", "blocked") {
 		t.Fatalf("source retraction decision was not recorded")
+	}
+}
+
+func TestRetractedWorkflowCannotReuseApprovalOrApprovedProposal(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo)
+	record, err := service.Intake(IntakeRequest{
+		OwnerIdentity: "alice",
+		Input:         "Email the lawyer with a formal response about the legal claim.",
+		SourceType:    "email",
+		SourceID:      "retracted-approved-message",
+		SourceURI:     "local://message/retracted-approved",
+	})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	if !record.Item.RequiresApproval || record.Item.CurrentState != StateNeedsApproval {
+		t.Fatalf("legal workflow did not require approval: %#v", record.Item)
+	}
+	approved, err := service.ResolveApproval(record.Item.ID, ApprovalResolutionRequest{
+		Approved: true,
+		Note:     "Approved the original source-derived action.",
+		Actor:    "alice",
+	})
+	if err != nil {
+		t.Fatalf("ResolveApproval: %v", err)
+	}
+	if approved.Item.ApprovalStatus != "approved" || approved.Item.CurrentState != StateReady {
+		t.Fatalf("initial approval was not recorded: %#v", approved.Item)
+	}
+	proposal, err := repo.CreateProposal(&models.WorkflowProposal{
+		WorkflowID:        record.Item.ID,
+		RecommendedAction: "Approve the source-derived follow-up",
+		Status:            "open",
+	})
+	if err != nil {
+		t.Fatalf("CreateProposal: %v", err)
+	}
+	proposalsBeforeRetraction, err := repo.FindProposals(record.Item.ID)
+	if err != nil {
+		t.Fatalf("FindProposals before retraction: %v", err)
+	}
+	if err := service.RetractSource("email", "retracted-approved-message", "operator removed the source"); err != nil {
+		t.Fatalf("RetractSource: %v", err)
+	}
+	updated, err := service.Get(record.Item.ID)
+	if err != nil {
+		t.Fatalf("Get retracted workflow: %v", err)
+	}
+	if updated.Item.CurrentState != StateBlocked || !updated.Item.RequiresApproval || updated.Item.ApprovalStatus != "pending" {
+		t.Fatalf("source retraction did not revoke execution authorization: %#v", updated.Item)
+	}
+
+	if _, err := service.Transition(record.Item.ID, TransitionRequest{TargetState: StateReady, Actor: "alice"}); !errors.Is(err, ErrWorkflowSourceRetracted) {
+		t.Fatal("source-retracted workflow was manually returned to ready")
+	}
+	if _, err := service.ResolveApproval(record.Item.ID, ApprovalResolutionRequest{Approved: true, Actor: "alice"}); !errors.Is(err, ErrWorkflowSourceRetracted) {
+		t.Fatal("source-retracted workflow accepted a new approval")
+	}
+	if _, err := service.ResolveProposal(record.Item.ID, proposal.ID, ProposalResolutionRequest{Status: "approved", Actor: "alice"}); !errors.Is(err, ErrWorkflowSourceRetracted) {
+		t.Fatal("source-retracted workflow accepted an approved proposal")
+	}
+	proposals, err := repo.FindProposals(record.Item.ID)
+	if err != nil || !reflect.DeepEqual(proposals, proposalsBeforeRetraction) {
+		t.Fatalf("proposal state after rejected approval = %#v, err=%v; retraction and rejected approval must not mutate proposals from their prior state %#v", proposals, err, proposalsBeforeRetraction)
+	}
+	final, err := service.Get(record.Item.ID)
+	if err != nil || final.Item.CurrentState != StateBlocked || final.Item.ApprovalStatus != "pending" {
+		t.Fatalf("workflow state after rejected reactivation = %#v, err=%v", final, err)
+	}
+}
+
+func TestRetractedLegacyReadyWorkflowNeverReachesTaskRunner(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	runner := &fakeTaskRunner{result: &TaskRunResult{Passed: true, VerificationStatus: "verified"}}
+	service := NewServiceWithTaskRunner(repo, runner)
+	record, err := service.Intake(IntakeRequest{
+		OwnerIdentity: "alice",
+		Input:         "Follow up: prepare the source project checklist.",
+		SourceType:    "email",
+		SourceID:      "retracted-low-risk-message",
+		SourceURI:     "local://message/retracted-low-risk",
+	})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	if record.Item.RequiresApproval {
+		t.Fatalf("fixture unexpectedly requires approval: %#v", record.Item)
+	}
+	if err := service.RetractSource("email", "retracted-low-risk-message", "operator removed the source"); err != nil {
+		t.Fatalf("RetractSource: %v", err)
+	}
+
+	// Simulate a pre-fix/legacy row that was manually set ready after the
+	// retraction marker had been persisted.
+	legacy := *repo.items[record.Item.ID]
+	legacy.CurrentState = StateReady
+	if _, err := repo.UpdateItem(&legacy); err != nil {
+		t.Fatalf("simulate legacy ready row: %v", err)
+	}
+	result, err := service.RunOneForOwner("alice", record.Item.ID)
+	if err != nil {
+		t.Fatalf("RunOneForOwner: %v", err)
+	}
+	if result.Status != "blocked" || len(runner.requests) != 0 {
+		t.Fatalf("retracted legacy workflow reached execution: result=%#v taskRequests=%#v", result, runner.requests)
+	}
+}
+
+func TestRetractedInterruptedWorkflowCannotBeRetried(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo)
+	record, err := service.Intake(IntakeRequest{
+		OwnerIdentity: "alice",
+		Input:         "Follow up: prepare a project checklist after the interrupted action.",
+		SourceType:    "email",
+		SourceID:      "retracted-interrupted-message",
+		SourceURI:     "local://message/retracted-interrupted",
+	})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	item := record.Item
+	item.CurrentState = StateBlocked
+	item.RecoveryStatus = RecoveryNeedsReview
+	item.WorkerClaimID = ""
+	item.WorkerLeaseUntil = nil
+	if _, err := repo.UpdateItem(&item); err != nil {
+		t.Fatalf("prepare interrupted workflow: %v", err)
+	}
+	if err := service.RetractSource("email", "retracted-interrupted-message", "operator removed the source"); err != nil {
+		t.Fatalf("RetractSource: %v", err)
+	}
+
+	recovery := InterruptedExecutionResolutionRequest{
+		Decision:                 "retry",
+		Note:                     "The earlier attempt was reconciled.",
+		PriorExecutionReconciled: true,
+		EvidenceURI:              "local://recovery/reconciled",
+	}
+	_, err = service.ResolveInterruptedExecution(record.Item.ID, recovery)
+	if !errors.Is(err, ErrWorkflowSourceRetracted) {
+		t.Fatalf("retry resolution error = %v, want source-retracted quarantine", err)
+	}
+	stored, err := repo.FindItem(record.Item.ID)
+	if err != nil || stored.CurrentState != StateBlocked || stored.RecoveryStatus != RecoveryNeedsReview {
+		t.Fatalf("retracted interruption changed after retry attempt: %#v err=%v", stored, err)
+	}
+
+	recovery.Decision = "confirm_completed"
+	recovery.Note = "Confirmed the completed outcome from the independent reconciliation record."
+	recovery.EvidenceURI = record.Item.SourceURI
+	if _, err := service.ResolveInterruptedExecution(record.Item.ID, recovery); err == nil {
+		t.Fatal("retracted workflow source must not be accepted as independent completion evidence")
+	}
+	recovery.EvidenceURI = "local://recovery/reconciled"
+	reconciled, err := service.ResolveInterruptedExecution(record.Item.ID, recovery)
+	if err != nil {
+		t.Fatalf("evidence-backed completion reconciliation: %v", err)
+	}
+	if reconciled.Item.CurrentState != StateCompleted || reconciled.Item.VerificationStatus != "human_approved" ||
+		reconciled.Item.RecoveryStatus != RecoveryCompletionConfirmed || reconciled.Item.RequiresApproval ||
+		reconciled.Item.ApprovalStatus != approvalStatus(false) || reconciled.Item.ApprovalReason != "" {
+		t.Fatalf("operator-reconciled completion state = %#v", reconciled.Item)
+	}
+	foundCompletionEvidence := false
+	for _, sourceLink := range reconciled.SourceLinks {
+		if sourceLink.Relationship == "completion_evidence" && sourceLink.SourceURI == recovery.EvidenceURI {
+			foundCompletionEvidence = true
+			break
+		}
+	}
+	if !foundCompletionEvidence {
+		t.Fatalf("independent completion evidence was not attached: %#v", reconciled.SourceLinks)
+	}
+}
+
+func TestIndependentCompletionRecoveryRequiresFinalStateAndEvidence(t *testing.T) {
+	now := time.Now().UTC()
+	workflowID := uuid.New()
+	item := &models.WorkflowItem{
+		ID: workflowID, CurrentState: StateCompleted, RecoveryStatus: RecoveryCompletionConfirmed,
+		VerificationStatus: "human_approved", CompletedAt: &now, ApprovalStatus: approvalStatus(false),
+	}
+	link := &models.WorkflowSourceLink{
+		WorkflowID: workflowID, SourceType: "recovery_evidence", SourceURI: "local://recovery/completion",
+		Relationship: "completion_evidence",
+	}
+	claim := &models.WorkflowEvidenceClaim{
+		WorkflowID: workflowID, ClaimText: "Operator confirmed the independently reconciled outcome.",
+		SourceURI: link.SourceURI, Reliability: "operator_attestation", Status: "human_approved",
+	}
+	gate := &models.WorkflowQualityGate{
+		WorkflowID: workflowID, Gate: "verification before completion", Status: "passed",
+		Reason: "Operator supplied separate completion evidence.",
+	}
+	if !independentlyReconciledWorkflowCompletion(item, link, claim, gate) {
+		t.Fatal("valid evidence-backed operator completion should be accepted")
+	}
+
+	invalidCases := []struct {
+		name   string
+		change func(*models.WorkflowItem, *models.WorkflowSourceLink, *models.WorkflowEvidenceClaim, *models.WorkflowQualityGate)
+	}{
+		{
+			name: "recovery not marked complete",
+			change: func(item *models.WorkflowItem, _ *models.WorkflowSourceLink, _ *models.WorkflowEvidenceClaim, _ *models.WorkflowQualityGate) {
+				item.RecoveryStatus = RecoveryNeedsReview
+			},
+		},
+		{
+			name: "approval still pending",
+			change: func(item *models.WorkflowItem, _ *models.WorkflowSourceLink, _ *models.WorkflowEvidenceClaim, _ *models.WorkflowQualityGate) {
+				item.RequiresApproval = true
+				item.ApprovalStatus = "pending"
+			},
+		},
+		{
+			name: "source is not independent recovery evidence",
+			change: func(_ *models.WorkflowItem, link *models.WorkflowSourceLink, _ *models.WorkflowEvidenceClaim, _ *models.WorkflowQualityGate) {
+				link.SourceType = "email"
+			},
+		},
+		{
+			name: "reuses original source",
+			change: func(item *models.WorkflowItem, link *models.WorkflowSourceLink, _ *models.WorkflowEvidenceClaim, _ *models.WorkflowQualityGate) {
+				item.SourceURI = link.SourceURI
+			},
+		},
+		{
+			name: "empty operator claim",
+			change: func(_ *models.WorkflowItem, _ *models.WorkflowSourceLink, claim *models.WorkflowEvidenceClaim, _ *models.WorkflowQualityGate) {
+				claim.ClaimText = " "
+			},
+		},
+		{
+			name: "empty verification reason",
+			change: func(_ *models.WorkflowItem, _ *models.WorkflowSourceLink, _ *models.WorkflowEvidenceClaim, gate *models.WorkflowQualityGate) {
+				gate.Reason = ""
+			},
+		},
+	}
+	for _, testCase := range invalidCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			invalidItem := *item
+			invalidLink := *link
+			invalidClaim := *claim
+			invalidGate := *gate
+			testCase.change(&invalidItem, &invalidLink, &invalidClaim, &invalidGate)
+			if independentlyReconciledWorkflowCompletion(&invalidItem, &invalidLink, &invalidClaim, &invalidGate) {
+				t.Fatal("incomplete or non-independent reconciliation evidence was accepted")
+			}
+		})
+	}
+}
+
+type sourceRetractionClaimRaceRepo struct {
+	*fakeWorkflowRepo
+}
+
+func (r *sourceRetractionClaimRaceRepo) UpdateWorkflowItemCAS(
+	expected, updated *models.WorkflowItem,
+) (*models.WorkflowItem, bool, error) {
+	if expected.CurrentState != StateReady {
+		return r.fakeWorkflowRepo.UpdateWorkflowItemCAS(expected, updated)
+	}
+	claimed := *r.items[expected.ID]
+	leaseUntil := time.Now().UTC().Add(time.Minute)
+	claimed.CurrentState = StateInProgress
+	claimed.WorkerClaimID = "concurrent-worker-claim"
+	claimed.WorkerLeaseUntil = &leaseUntil
+	claimed.UpdatedAt = expected.UpdatedAt.Add(time.Second)
+	r.items[claimed.ID] = &claimed
+	return r.fakeWorkflowRepo.UpdateWorkflowItemCAS(expected, updated)
+}
+
+func TestRetractSourceDoesNotOverwriteConcurrentWorkerClaim(t *testing.T) {
+	repo := &sourceRetractionClaimRaceRepo{fakeWorkflowRepo: newFakeWorkflowRepo()}
+	service := NewService(repo)
+	record, err := service.Intake(IntakeRequest{
+		Input:      "Review the source-backed task.",
+		SourceType: "email",
+		SourceID:   "concurrent-retraction-message",
+	})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	if err := service.RetractSource("email", "concurrent-retraction-message", "operator removed the source"); err == nil {
+		t.Fatal("source retraction should report that the workflow changed during its update")
+	}
+
+	stored, err := repo.FindItem(record.Item.ID)
+	if err != nil {
+		t.Fatalf("FindItem after concurrent claim: %v", err)
+	}
+	if stored.CurrentState != StateInProgress || stored.WorkerClaimID != "concurrent-worker-claim" || stored.WorkerLeaseUntil == nil {
+		t.Fatalf("source retraction overwrote the active worker claim: %#v", stored)
+	}
+	for _, event := range repo.events[stored.ID] {
+		if event.EventType == "workflow.source_retracted" {
+			t.Fatal("source retraction audit was recorded although its compare-and-swap lost to the worker claim")
+		}
 	}
 }
 
@@ -3168,6 +4661,13 @@ func recoverInterruptedWorkflow(t *testing.T, repo *fakeWorkflowRepo, service Se
 	if err != nil {
 		t.Fatalf("Get recovered workflow: %v", err)
 	}
+	// This helper models the original runner having returned after recovery;
+	// tests that keep the runner blocked exercise the retained fence directly.
+	if claimed.WorkerClaimID != "" {
+		if _, err := repo.ReleaseInterruptedExecutionClaim(record.Item.ID, claimed.WorkerClaimID); err != nil {
+			t.Fatalf("release simulated returned runner fence: %v", err)
+		}
+	}
 	return recovered
 }
 
@@ -3199,24 +4699,94 @@ func testFrameworkSelection(planID string) FrameworkSelectionProvenance {
 }
 
 type fakeWorkflowRepo struct {
-	items                map[uuid.UUID]*models.WorkflowItem
-	checklist            map[uuid.UUID][]models.WorkflowChecklistItem
-	intake               map[uuid.UUID][]models.WorkflowIntakeRecord
-	matches              map[uuid.UUID][]models.WorkflowProjectMatch
-	pursuits             map[uuid.UUID][]WorkflowPursuitContext
-	evidence             map[uuid.UUID][]models.WorkflowEvidenceClaim
-	openLoops            map[uuid.UUID][]models.WorkflowOpenLoop
-	proposals            map[uuid.UUID][]models.WorkflowProposal
-	qualityGate          map[uuid.UUID][]models.WorkflowQualityGate
-	rules                map[string]models.WorkflowRule
-	transitions          map[uuid.UUID][]models.WorkflowTransition
-	sourceLinks          map[uuid.UUID][]models.WorkflowSourceLink
-	decisions            map[uuid.UUID][]models.WorkflowDecision
-	decisionWorkflow     map[uuid.UUID]uuid.UUID
-	events               map[uuid.UUID][]models.WorkflowEvent
-	attestations         map[uuid.UUID]models.WorkflowCompletionAttestation
-	rejectWorkflowClaims bool
-	rejectOpenLoopClaims bool
+	items                        map[uuid.UUID]*models.WorkflowItem
+	checklist                    map[uuid.UUID][]models.WorkflowChecklistItem
+	intake                       map[uuid.UUID][]models.WorkflowIntakeRecord
+	matches                      map[uuid.UUID][]models.WorkflowProjectMatch
+	pursuits                     map[uuid.UUID][]WorkflowPursuitContext
+	evidence                     map[uuid.UUID][]models.WorkflowEvidenceClaim
+	openLoops                    map[uuid.UUID][]models.WorkflowOpenLoop
+	proposals                    map[uuid.UUID][]models.WorkflowProposal
+	qualityGate                  map[uuid.UUID][]models.WorkflowQualityGate
+	rules                        map[string]models.WorkflowRule
+	transitions                  map[uuid.UUID][]models.WorkflowTransition
+	sourceLinks                  map[uuid.UUID][]models.WorkflowSourceLink
+	decisions                    map[uuid.UUID][]models.WorkflowDecision
+	decisionWorkflow             map[uuid.UUID]uuid.UUID
+	events                       map[uuid.UUID][]models.WorkflowEvent
+	attestations                 map[uuid.UUID]models.WorkflowCompletionAttestation
+	rejectWorkflowClaims         bool
+	rejectOpenLoopClaims         bool
+	createQualityGateErr         error
+	findQualityGatesErr          error
+	updateQualityGateErr         error
+	findSourceLinksErr           error
+	findEvidenceClaimsErr        error
+	saveIntakeRecordErr          error
+	createSourceLinkErr          error
+	findIntakeRecordsErr         error
+	resolvePendingApprovalErr    error
+	createDeadlineReminderErr    error
+	createChecklistItemErr       error
+	createProposalErr            error
+	createEvidenceClaimErr       error
+	loseRunnableItemRenewal      bool
+	loseRunnableItemRenewalAfter int
+	runnableItemRenewalCalls     int
+}
+
+type staleURILookupWorkflowRepo struct {
+	*fakeWorkflowRepo
+	preflightMisses       int
+	idempotentCreateCalls int
+}
+
+type concurrentApprovalWorkflowRepo struct {
+	*fakeWorkflowRepo
+	arrivals chan struct{}
+	release  chan struct{}
+	mu       sync.Mutex
+}
+
+func (r *concurrentApprovalWorkflowRepo) ResolvePendingApproval(
+	id uuid.UUID,
+	resolution ApprovalResolutionMutation,
+) (*models.WorkflowItem, bool, error) {
+	r.arrivals <- struct{}{}
+	<-r.release
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.fakeWorkflowRepo.ResolvePendingApproval(id, resolution)
+}
+
+func (r *staleURILookupWorkflowRepo) FindActiveItemBySourceURIForOwner(ownerIdentity, sourceURI string) (*models.WorkflowItem, error) {
+	if r.preflightMisses > 0 {
+		r.preflightMisses--
+		return nil, nil
+	}
+	return r.fakeWorkflowRepo.FindActiveItemBySourceURIForOwner(ownerIdentity, sourceURI)
+}
+
+func (r *staleURILookupWorkflowRepo) CreateItemIdempotent(item *models.WorkflowItem) (*models.WorkflowItem, bool, error) {
+	r.idempotentCreateCalls++
+	var existing *models.WorkflowItem
+	var err error
+	if strings.TrimSpace(item.SourceType) != "" && strings.TrimSpace(item.SourceID) != "" {
+		existing, err = r.fakeWorkflowRepo.FindActiveItemBySourceIdentityForOwner(item.OwnerIdentity, item.SourceType, item.SourceID)
+	} else if strings.TrimSpace(item.SourceURI) != "" {
+		existing, err = r.fakeWorkflowRepo.FindActiveItemBySourceURIForOwner(item.OwnerIdentity, item.SourceURI)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if existing != nil {
+		if existing.SourceRevision != item.SourceRevision {
+			return nil, false, fmt.Errorf("workflow source identity is already active with a different revision")
+		}
+		return existing, false, nil
+	}
+	created, err := r.fakeWorkflowRepo.CreateItem(item)
+	return created, err == nil, err
 }
 
 func newFakeWorkflowRepo() *fakeWorkflowRepo {
@@ -3251,10 +4821,265 @@ func (r *fakeWorkflowRepo) CreateItem(item *models.WorkflowItem) (*models.Workfl
 	return item, nil
 }
 
+func (r *fakeWorkflowRepo) CreateItemIdempotent(item *models.WorkflowItem) (*models.WorkflowItem, bool, error) {
+	if item == nil {
+		return nil, false, fmt.Errorf("workflow item is required")
+	}
+	var existing *models.WorkflowItem
+	var err error
+	if strings.TrimSpace(item.SourceType) != "" && strings.TrimSpace(item.SourceID) != "" {
+		existing, err = r.FindActiveItemBySourceIdentityForOwner(item.OwnerIdentity, item.SourceType, item.SourceID)
+	} else if strings.TrimSpace(item.SourceURI) != "" {
+		existing, err = r.FindActiveItemBySourceURIForOwner(item.OwnerIdentity, item.SourceURI)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if existing != nil {
+		if existing.SourceRevision != item.SourceRevision {
+			return nil, false, fmt.Errorf("workflow source identity is already active with a different revision")
+		}
+		return existing, false, nil
+	}
+	created, err := r.CreateItem(item)
+	return created, err == nil, err
+}
+
 func (r *fakeWorkflowRepo) UpdateItem(item *models.WorkflowItem) (*models.WorkflowItem, error) {
 	item.UpdatedAt = time.Now().UTC()
 	r.items[item.ID] = item
 	return item, nil
+}
+
+func (r *fakeWorkflowRepo) UpdateWorkflowItemCAS(expected, updated *models.WorkflowItem) (*models.WorkflowItem, bool, error) {
+	stored, ok := r.items[expected.ID]
+	if !ok || updated == nil || stored.OwnerIdentity != expected.OwnerIdentity ||
+		stored.CurrentState != expected.CurrentState || !stored.UpdatedAt.Equal(expected.UpdatedAt) ||
+		stored.RecoveryStatus != expected.RecoveryStatus || stored.Archived != expected.Archived ||
+		stored.WorkerClaimID != "" || stored.WorkerLeaseUntil != nil ||
+		(expected.RecoveryStatus == RecoveryNeedsReview && updated.CurrentState != StateBlocked) {
+		return nil, false, nil
+	}
+	copy := *updated
+	copy.UpdatedAt = nextWorkflowRevision(expected.UpdatedAt)
+	r.items[copy.ID] = &copy
+	returned := copy
+	return &returned, true, nil
+}
+
+func (r *fakeWorkflowRepo) CommitWorkflowIntake(finalization WorkflowIntakeFinalization) (*models.WorkflowItem, bool, error) {
+	if finalization.Expected == nil || finalization.Updated == nil {
+		return nil, false, fmt.Errorf("expected and updated workflow items are required")
+	}
+	if hasWorkflowEvent(r.events[finalization.Expected.ID], "workflow.source_retracted") {
+		return nil, false, nil
+	}
+	item, changed, err := r.UpdateWorkflowItemCAS(finalization.Expected, finalization.Updated)
+	if err != nil || !changed {
+		return item, changed, err
+	}
+	if _, err := r.CreateTransition(&finalization.Transition); err != nil {
+		return nil, false, err
+	}
+	for index := range finalization.Decisions {
+		if _, err := r.CreateDecision(&finalization.Decisions[index]); err != nil {
+			return nil, false, err
+		}
+	}
+	for index := range finalization.Events {
+		if _, err := r.CreateEvent(&finalization.Events[index]); err != nil {
+			return nil, false, err
+		}
+	}
+	return item, true, nil
+}
+
+func (r *fakeWorkflowRepo) CommitWorkflowCoordinationProjection(finalization WorkflowCoordinationProjectionFinalization) (*models.WorkflowItem, bool, error) {
+	return r.commitWorkflowCoordination(finalization)
+}
+
+func (r *fakeWorkflowRepo) CommitWorkflowCoordinationFailure(finalization WorkflowCoordinationProjectionFinalization) (*models.WorkflowItem, bool, error) {
+	return r.commitWorkflowCoordination(finalization)
+}
+
+func (r *fakeWorkflowRepo) commitWorkflowCoordination(finalization WorkflowCoordinationProjectionFinalization) (*models.WorkflowItem, bool, error) {
+	if finalization.Expected == nil || finalization.Updated == nil ||
+		hasWorkflowEvent(r.events[finalization.Expected.ID], "workflow.source_retracted") {
+		return nil, false, nil
+	}
+	decisionMissing := true
+	for _, decision := range r.decisions[finalization.Expected.ID] {
+		if decision.DecisionType == finalization.Decision.DecisionType && decision.Decision == finalization.Decision.Decision &&
+			decision.Reason == finalization.Decision.Reason && decision.RuleApplied == finalization.Decision.RuleApplied &&
+			decision.Actor == finalization.Decision.Actor {
+			decisionMissing = false
+			break
+		}
+	}
+	eventMissing := true
+	for _, event := range r.events[finalization.Expected.ID] {
+		if event.EventType == finalization.Event.EventType && event.Message == finalization.Event.Message {
+			eventMissing = false
+			break
+		}
+	}
+	item, changed, err := r.UpdateWorkflowItemCAS(finalization.Expected, finalization.Updated)
+	if err != nil || !changed || item == nil {
+		return item, changed, err
+	}
+	if finalization.Transition != nil {
+		if _, err := r.CreateTransition(finalization.Transition); err != nil {
+			return nil, false, err
+		}
+	}
+	if decisionMissing {
+		if _, err := r.CreateDecision(&finalization.Decision); err != nil {
+			return nil, false, err
+		}
+	}
+	if eventMissing {
+		if _, err := r.CreateEvent(&finalization.Event); err != nil {
+			return nil, false, err
+		}
+	}
+	return item, true, nil
+}
+
+func (r *fakeWorkflowRepo) ResolveInterruptedExecutionCAS(
+	expected, updated *models.WorkflowItem,
+	sourceLink *models.WorkflowSourceLink,
+	evidenceClaim *models.WorkflowEvidenceClaim,
+	qualityGate *models.WorkflowQualityGate,
+) (*models.WorkflowItem, bool, error) {
+	stored, ok := r.items[expected.ID]
+	if !ok || updated == nil || stored.OwnerIdentity != expected.OwnerIdentity ||
+		stored.CurrentState != StateBlocked || stored.RecoveryStatus != RecoveryNeedsReview ||
+		!stored.UpdatedAt.Equal(expected.UpdatedAt) || stored.WorkerClaimID != expected.WorkerClaimID ||
+		!sameOptionalTime(stored.WorkerLeaseUntil, expected.WorkerLeaseUntil) || stored.Archived != expected.Archived {
+		return nil, false, nil
+	}
+	copy := *updated
+	copy.UpdatedAt = nextWorkflowRevision(expected.UpdatedAt)
+	if copy.CurrentState != StateBlocked {
+		copy.WorkerClaimID = ""
+		copy.WorkerLeaseUntil = nil
+	}
+	r.items[copy.ID] = &copy
+	if sourceLink != nil {
+		r.sourceLinks[copy.ID] = append(r.sourceLinks[copy.ID], *sourceLink)
+	}
+	if evidenceClaim != nil {
+		r.evidence[copy.ID] = append(r.evidence[copy.ID], *evidenceClaim)
+	}
+	if qualityGate != nil {
+		found := false
+		for index := range r.qualityGate[copy.ID] {
+			if strings.EqualFold(r.qualityGate[copy.ID][index].Gate, qualityGate.Gate) {
+				r.qualityGate[copy.ID][index] = *qualityGate
+				found = true
+			}
+		}
+		if !found {
+			r.qualityGate[copy.ID] = append(r.qualityGate[copy.ID], *qualityGate)
+		}
+	}
+	returned := copy
+	return &returned, true, nil
+}
+
+func (r *fakeWorkflowRepo) ReleaseInterruptedExecutionClaim(id uuid.UUID, claimID string) (bool, error) {
+	stored, ok := r.items[id]
+	if !ok || stored.CurrentState != StateBlocked || stored.RecoveryStatus != RecoveryNeedsReview || stored.WorkerClaimID != claimID {
+		return false, nil
+	}
+	updated := *stored
+	updated.WorkerClaimID = ""
+	updated.WorkerLeaseUntil = nil
+	updated.UpdatedAt = nextWorkflowRevision(stored.UpdatedAt)
+	r.items[id] = &updated
+	return true, nil
+}
+
+func sameOptionalTime(left, right *time.Time) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return left.Equal(*right)
+}
+
+func (r *fakeWorkflowRepo) SupersedeSourceWorkflowCAS(expected SourceWorkflowSupersession) (bool, error) {
+	item, ok := r.items[expected.ID]
+	if !ok || item == nil || item.Archived || item.OwnerIdentity != expected.OwnerIdentity ||
+		item.SourceType != expected.SourceType || item.SourceID != expected.SourceID ||
+		item.SourceRevision != expected.ExpectedSourceRevision || item.CurrentState != expected.ExpectedCurrentState ||
+		strings.TrimSpace(item.WorkerClaimID) != "" {
+		return false, nil
+	}
+	updated := *item
+	updated.Archived = true
+	updated.CurrentState = StateArchived
+	updated.NextAction = "superseded by revised source content"
+	updated.NextRunAt = nil
+	updated.WorkerClaimID = ""
+	updated.WorkerLeaseUntil = nil
+	updated.UpdatedAt = time.Now().UTC()
+	r.items[expected.ID] = &updated
+	return true, nil
+}
+
+func (r *fakeWorkflowRepo) ResolvePendingApproval(
+	id uuid.UUID,
+	resolution ApprovalResolutionMutation,
+) (*models.WorkflowItem, bool, error) {
+	if r.resolvePendingApprovalErr != nil {
+		return nil, false, r.resolvePendingApprovalErr
+	}
+	item, ok := r.items[id]
+	if !ok || item.Archived || item.CurrentState != StateNeedsApproval ||
+		!item.RequiresApproval || item.ApprovalStatus != "pending" {
+		return nil, false, nil
+	}
+	updated := *item
+	if resolution.Approved {
+		updated.CurrentState = StateReady
+		updated.ApprovalStatus = "approved"
+		updated.BlockedReason = ""
+		updated.NextAction = "execute approved workflow steps"
+	} else {
+		updated.CurrentState = StateBlocked
+		updated.ApprovalStatus = "rejected"
+		updated.BlockedReason = firstNonEmpty(strings.TrimSpace(resolution.RejectionReason), "approval rejected")
+		updated.NextAction = "review rejection reason before continuing"
+	}
+	updated.UpdatedAt = time.Now().UTC()
+	r.items[id] = &updated
+	decision := "rejected"
+	if resolution.Approved {
+		decision = "approved"
+	}
+	transition := models.WorkflowTransition{
+		ID: uuid.New(), WorkflowID: id, FromState: StateNeedsApproval,
+		ToState: updated.CurrentState, Trigger: "approval_resolution",
+		Actor: resolution.Actor, Approved: resolution.Approved,
+		Reason: resolution.RejectionReason, CreatedAt: updated.UpdatedAt,
+	}
+	r.transitions[id] = append([]models.WorkflowTransition{transition}, r.transitions[id]...)
+	approvalDecision := models.WorkflowDecision{
+		ID: uuid.New(), WorkflowID: id, DecisionType: "approval", Decision: decision,
+		Reason: resolution.RejectionReason, RuleApplied: resolution.DecisionRule,
+		Approved: resolution.Approved, Actor: resolution.Actor, CreatedAt: updated.UpdatedAt,
+	}
+	r.decisions[id] = append([]models.WorkflowDecision{approvalDecision}, r.decisions[id]...)
+	r.decisionWorkflow[approvalDecision.ID] = id
+	event := models.WorkflowEvent{
+		ID: uuid.New(), WorkflowID: id, EventType: "workflow.approval",
+		FromState: StateNeedsApproval, ToState: updated.CurrentState,
+		Message: resolution.RejectionReason, Trigger: "approval_resolution",
+		RuleApplied: resolution.DecisionRule, SourceURI: updated.SourceURI,
+		Actor: resolution.Actor, CreatedAt: updated.UpdatedAt,
+	}
+	r.events[id] = append([]models.WorkflowEvent{event}, r.events[id]...)
+	return &updated, true, nil
 }
 
 func (r *fakeWorkflowRepo) FindItem(id uuid.UUID) (*models.WorkflowItem, error) {
@@ -3335,7 +5160,7 @@ func (r *fakeWorkflowRepo) FindApprovalItems() ([]models.WorkflowItem, error) {
 func (r *fakeWorkflowRepo) FindRunnableItems(now time.Time, limit int) ([]models.WorkflowItem, error) {
 	result := []models.WorkflowItem{}
 	for _, item := range r.items {
-		if item.CurrentState != StateReady || item.Archived || item.RetryCount >= item.MaxRetries {
+		if item.CurrentState != StateReady || item.RecoveryStatus == RecoveryNeedsReview || item.Archived || item.RetryCount >= item.MaxRetries {
 			continue
 		}
 		if item.RequiresApproval && item.ApprovalStatus != "approved" {
@@ -3377,7 +5202,7 @@ func (r *fakeWorkflowRepo) ClaimRunnableItem(id uuid.UUID, claimID string, now t
 		return nil, false, nil
 	}
 	item, ok := r.items[id]
-	if !ok || item.Archived || item.CurrentState != StateReady || item.RetryCount >= item.MaxRetries {
+	if !ok || item.Archived || item.CurrentState != StateReady || item.RecoveryStatus == RecoveryNeedsReview || item.RetryCount >= item.MaxRetries {
 		return nil, false, nil
 	}
 	if item.RequiresApproval && item.ApprovalStatus != "approved" {
@@ -3408,6 +5233,10 @@ func (r *fakeWorkflowRepo) ClaimRunnableItemForOwner(ownerIdentity string, id uu
 }
 
 func (r *fakeWorkflowRepo) RenewRunnableItemClaim(id uuid.UUID, claimID string, leaseUntil time.Time) (bool, error) {
+	r.runnableItemRenewalCalls++
+	if r.loseRunnableItemRenewal || (r.loseRunnableItemRenewalAfter > 0 && r.runnableItemRenewalCalls > r.loseRunnableItemRenewalAfter) {
+		return false, nil
+	}
 	item, ok := r.items[id]
 	if !ok || item.CurrentState != StateInProgress || item.WorkerClaimID != claimID {
 		return false, nil
@@ -3487,7 +5316,7 @@ func (r *fakeWorkflowRepo) FindExpiredWorkflowClaimsForOwner(ownerIdentity strin
 
 func (r *fakeWorkflowRepo) RecoverExpiredWorkflowClaim(item models.WorkflowItem, now time.Time) (*models.WorkflowItem, bool, error) {
 	stored, ok := r.items[item.ID]
-	if !ok || stored.CurrentState != StateInProgress || stored.WorkerClaimID != item.WorkerClaimID {
+	if !ok || stored.CurrentState != StateInProgress || stored.WorkerClaimID != item.WorkerClaimID || !stored.UpdatedAt.Equal(item.UpdatedAt) {
 		return nil, false, nil
 	}
 	expiredLease := stored.WorkerClaimID != "" && stored.WorkerLeaseUntil != nil && !stored.WorkerLeaseUntil.After(now)
@@ -3503,14 +5332,21 @@ func (r *fakeWorkflowRepo) RecoverExpiredWorkflowClaim(item models.WorkflowItem,
 	stored.RecoveryNote = ""
 	stored.RetryCount++
 	stored.NextRunAt = nil
-	stored.WorkerClaimID = ""
-	stored.WorkerLeaseUntil = nil
-	stored.UpdatedAt = now
+	if stored.WorkerClaimID == "" {
+		stored.WorkerClaimID = "legacy-recovery:" + uuid.NewString()
+	}
+	stored.UpdatedAt = nextWorkflowRevision(item.UpdatedAt)
 	copied := *stored
 	return &copied, true, nil
 }
 
 func (r *fakeWorkflowRepo) CreateChecklistItem(item *models.WorkflowChecklistItem) (*models.WorkflowChecklistItem, error) {
+	if r.createChecklistItemErr != nil {
+		return nil, r.createChecklistItemErr
+	}
+	if item.Label == "Follow up or check before detected deadline" && r.createDeadlineReminderErr != nil {
+		return nil, r.createDeadlineReminderErr
+	}
 	if item.ID == uuid.Nil {
 		item.ID = uuid.New()
 	}
@@ -3567,6 +5403,9 @@ func (r *fakeWorkflowRepo) FindReminderCandidatesForOwner(
 }
 
 func (r *fakeWorkflowRepo) SaveIntakeRecord(record *models.WorkflowIntakeRecord) (*models.WorkflowIntakeRecord, error) {
+	if r.saveIntakeRecordErr != nil {
+		return nil, r.saveIntakeRecordErr
+	}
 	if record.ID == uuid.Nil {
 		record.ID = uuid.New()
 	}
@@ -3576,6 +5415,9 @@ func (r *fakeWorkflowRepo) SaveIntakeRecord(record *models.WorkflowIntakeRecord)
 }
 
 func (r *fakeWorkflowRepo) FindIntakeRecords(workflowID uuid.UUID) ([]models.WorkflowIntakeRecord, error) {
+	if r.findIntakeRecordsErr != nil {
+		return nil, r.findIntakeRecordsErr
+	}
 	return append([]models.WorkflowIntakeRecord{}, r.intake[workflowID]...), nil
 }
 
@@ -3597,6 +5439,9 @@ func (r *fakeWorkflowRepo) FindLinkedPursuits(workflowID uuid.UUID) ([]WorkflowP
 }
 
 func (r *fakeWorkflowRepo) CreateEvidenceClaim(claim *models.WorkflowEvidenceClaim) (*models.WorkflowEvidenceClaim, error) {
+	if r.createEvidenceClaimErr != nil {
+		return nil, r.createEvidenceClaimErr
+	}
 	if claim.ID == uuid.Nil {
 		claim.ID = uuid.New()
 	}
@@ -3606,6 +5451,9 @@ func (r *fakeWorkflowRepo) CreateEvidenceClaim(claim *models.WorkflowEvidenceCla
 }
 
 func (r *fakeWorkflowRepo) FindEvidenceClaims(workflowID uuid.UUID) ([]models.WorkflowEvidenceClaim, error) {
+	if r.findEvidenceClaimsErr != nil {
+		return nil, r.findEvidenceClaimsErr
+	}
 	return append([]models.WorkflowEvidenceClaim{}, r.evidence[workflowID]...), nil
 }
 
@@ -3817,6 +5665,9 @@ func (r *fakeWorkflowRepo) RecoverExpiredOpenLoopClaim(loop models.WorkflowOpenL
 }
 
 func (r *fakeWorkflowRepo) CreateProposal(proposal *models.WorkflowProposal) (*models.WorkflowProposal, error) {
+	if r.createProposalErr != nil {
+		return nil, r.createProposalErr
+	}
 	if proposal.ID == uuid.Nil {
 		proposal.ID = uuid.New()
 	}
@@ -3845,6 +5696,9 @@ func (r *fakeWorkflowRepo) FindProposals(workflowID uuid.UUID) ([]models.Workflo
 }
 
 func (r *fakeWorkflowRepo) CreateQualityGate(gate *models.WorkflowQualityGate) (*models.WorkflowQualityGate, error) {
+	if r.createQualityGateErr != nil {
+		return nil, r.createQualityGateErr
+	}
 	if gate.ID == uuid.Nil {
 		gate.ID = uuid.New()
 	}
@@ -3856,6 +5710,9 @@ func (r *fakeWorkflowRepo) CreateQualityGate(gate *models.WorkflowQualityGate) (
 }
 
 func (r *fakeWorkflowRepo) UpdateQualityGate(gate *models.WorkflowQualityGate) (*models.WorkflowQualityGate, error) {
+	if r.updateQualityGateErr != nil {
+		return nil, r.updateQualityGateErr
+	}
 	gate.UpdatedAt = time.Now().UTC()
 	gates := r.qualityGate[gate.WorkflowID]
 	for index := range gates {
@@ -3869,6 +5726,9 @@ func (r *fakeWorkflowRepo) UpdateQualityGate(gate *models.WorkflowQualityGate) (
 }
 
 func (r *fakeWorkflowRepo) FindQualityGates(workflowID uuid.UUID) ([]models.WorkflowQualityGate, error) {
+	if r.findQualityGatesErr != nil {
+		return nil, r.findQualityGatesErr
+	}
 	return append([]models.WorkflowQualityGate{}, r.qualityGate[workflowID]...), nil
 }
 
@@ -3916,6 +5776,9 @@ func (r *fakeWorkflowRepo) FindTransitions(workflowID uuid.UUID) ([]models.Workf
 }
 
 func (r *fakeWorkflowRepo) CreateSourceLink(link *models.WorkflowSourceLink) (*models.WorkflowSourceLink, error) {
+	if r.createSourceLinkErr != nil {
+		return nil, r.createSourceLinkErr
+	}
 	if link.ID == uuid.Nil {
 		link.ID = uuid.New()
 	}
@@ -3925,6 +5788,9 @@ func (r *fakeWorkflowRepo) CreateSourceLink(link *models.WorkflowSourceLink) (*m
 }
 
 func (r *fakeWorkflowRepo) FindSourceLinks(workflowID uuid.UUID) ([]models.WorkflowSourceLink, error) {
+	if r.findSourceLinksErr != nil {
+		return nil, r.findSourceLinksErr
+	}
 	return append([]models.WorkflowSourceLink{}, r.sourceLinks[workflowID]...), nil
 }
 
@@ -4060,6 +5926,14 @@ type fakeTaskRunner struct {
 	requests   []TaskRunRequest
 	panicValue interface{}
 	onRun      func(TaskRunRequest)
+}
+
+func (r *fakeTaskRunner) RunWorkflowTaskContext(ctx context.Context, request TaskRunRequest) (*TaskRunResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	request.ExecutionContext = ctx
+	return r.RunWorkflowTask(request)
 }
 
 func (r *fakeTaskRunner) RunWorkflowTask(request TaskRunRequest) (*TaskRunResult, error) {

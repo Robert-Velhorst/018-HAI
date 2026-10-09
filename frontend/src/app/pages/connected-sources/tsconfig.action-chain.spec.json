@@ -1,0 +1,7 @@
+{
+  "extends": "../../../../tsconfig.spec.json",
+  "include": [
+    "./connected-sources.component.spec.ts",
+    "../../services/connected-source/connected-source.service.spec.ts"
+  ]
+}

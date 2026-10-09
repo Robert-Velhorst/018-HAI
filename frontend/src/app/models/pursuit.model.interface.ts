@@ -19,6 +19,115 @@ import {
   IWorkflowTransition,
 } from './workflow.model.interface';
 
+export interface IProjectDossier {
+  projectKey: string;
+  generatedAt: string;
+  counts: IProjectDossierCounts;
+  truncated: IProjectDossierTruncation;
+  workflows: IProjectDossierWorkflow[];
+  memories: IProjectDossierMemory[];
+}
+
+export interface IProjectDossierCounts {
+  matchingWorkflows: number;
+  returnedWorkflows: number;
+  returnedMemories: number;
+  checklistItemsReturned: number;
+  openLoopsReturned: number;
+  sourceLinksReturned: number;
+  evidenceClaimsReturned: number;
+  decisionsReturned: number;
+}
+
+export interface IProjectDossierTruncation {
+  workflows: boolean;
+  memories: boolean;
+  workflowContext: boolean;
+  text: boolean;
+}
+
+export interface IProjectDossierWorkflow {
+  id: string;
+  title: string;
+  state: string;
+  taskType?: string;
+  riskLevel?: string;
+  priorityScore: number;
+  confidence: number;
+  autonomyLevel?: string;
+  requiresApproval: boolean;
+  approvalStatus?: string;
+  approvalReason?: string;
+  blockedReason?: string;
+  nextAction?: string;
+  dueAt?: string;
+  updatedAt: string;
+  checklist: IProjectDossierChecklistItem[];
+  openLoops: IProjectDossierOpenLoop[];
+  sourceLinks: IProjectDossierSourceLink[];
+  evidence: IProjectDossierEvidence[];
+  decisions: IProjectDossierDecision[];
+}
+
+export interface IProjectDossierChecklistItem {
+  id: string;
+  label: string;
+  status: string;
+  requiresApproval: boolean;
+  dueAt?: string;
+  reminderAt?: string;
+}
+
+export interface IProjectDossierOpenLoop {
+  id: string;
+  responsibleParty?: string;
+  waitingFor?: string;
+  nextAction?: string;
+  followUpAt?: string;
+  status: string;
+}
+
+export interface IProjectDossierSourceLink {
+  sourceType?: string;
+  sourceUri?: string;
+  sourceLabel?: string;
+  relationship?: string;
+  createdAt: string;
+}
+
+export interface IProjectDossierEvidence {
+  claimText: string;
+  sourceUri?: string;
+  sourceLabel?: string;
+  reliability: string;
+  status: string;
+  needsReview: boolean;
+  createdAt: string;
+}
+
+export interface IProjectDossierDecision {
+  decisionType: string;
+  decision: string;
+  reason?: string;
+  ruleApplied?: string;
+  approved: boolean;
+  createdAt: string;
+}
+
+export interface IProjectDossierMemory {
+  id: string;
+  kind: string;
+  content: string;
+  summary?: string;
+  tags?: string;
+  confidence: number;
+  sourceUri?: string;
+  sourceLabel?: string;
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt?: string;
+}
+
 export interface IPursuitSuccessCriterion {
   id: string;
   description: string;
@@ -483,6 +592,7 @@ export interface IPursuitTimelineItem {
 }
 
 export interface IPursuitDetail {
+  intakeWorkflowId?: string;
   pursuit: IPursuit;
   links: IPursuitLink[];
   activity: IPursuitActivity[];
@@ -658,6 +768,7 @@ export interface IPursuitAutoLinkResult {
 }
 
 export interface IPursuitRoutedIntakeResult {
+  workflowId?: string;
   mode: string;
   matched: boolean;
   createdCandidate: boolean;

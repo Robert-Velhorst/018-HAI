@@ -342,6 +342,7 @@ export interface IWorkflowInterruptedExecutionResolutionRequest {
   note: string;
   evidenceUri?: string;
   evidenceLabel?: string;
+  priorExecutionReconciled?: boolean;
   actor?: string;
 }
 
@@ -358,6 +359,7 @@ export interface IWorkflowRunDueRequest {
 }
 
 export interface IWorkflowRunResult {
+  reviewRequired?: boolean;
   workflowId: string;
   status: string;
   state: string;
@@ -577,7 +579,7 @@ export interface IWorkflowReminderDeliveryAttempt {
   id: string;
   authorizationId: string;
   attemptNumber: number;
-  status: 'delivered' | 'retryable_failure' | 'suppressed' | 'dead_lettered';
+  status: 'delivered' | 'retryable_failure' | 'suppressed' | 'dead_lettered' | 'expired';
   reason: string;
   reminderDigest: string;
   authorizationDigest: string;
@@ -607,6 +609,7 @@ export interface IWorkflowReminderDeliveryRunSummary {
   retried: number;
   suppressed: number;
   deadLettered: number;
+  expired: number;
   results: Array<{ authorizationId: string; status: IWorkflowReminderDeliveryAttempt['status']; reason: string }>;
 }
 

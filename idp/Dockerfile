@@ -3,8 +3,13 @@ FROM golang:1.25.13 AS builder
 
 # Set the Current Working Directory inside the container
 WORKDIR /app
+ARG HAI_GO_BUILD_WORKERS=2
 
-# Copy everything from the current directory to the PWD(Present Working Directory) inside the container
+# Cache dependencies independently from application source.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the application after the stable dependency layer.
 COPY . .
 
 # Navigate to the cmd directory where the main.go file resides
@@ -12,7 +17,9 @@ WORKDIR /app/cmd
 
 # Sarama and the IDP are pure Go. Keeping CGO disabled produces a portable
 # Linux binary without a host C toolchain or runtime library dependency.
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -o idp ./main.go
+RUN case "$HAI_GO_BUILD_WORKERS" in 1|2|4|8) ;; *) exit 1 ;; esac \
+    && GOMAXPROCS="$HAI_GO_BUILD_WORKERS" CGO_ENABLED=0 GOOS=linux \
+    go build -p "$HAI_GO_BUILD_WORKERS" -trimpath -o idp ./main.go
 
 # Stage 2: Build the runtime image
 FROM ubuntu:24.04

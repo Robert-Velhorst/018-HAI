@@ -14,6 +14,9 @@ export interface ILLMPolicy {
   dailyBudgetUsedEur: number;
   inputTokensUsed: number;
   outputTokensUsed: number;
+  usageAccountingStatus?: 'durable' | 'process_only' | 'unavailable' | string;
+  usagePeriodStart?: string;
+  usageTimezone?: string;
   providers: ILLMProvider[];
   inferenceInfrastructure: ILLMInferenceInfrastructure;
 }
@@ -41,6 +44,7 @@ export interface ILLMProvider {
   budgetUsedEur: number;
   inputTokensUsed: number;
   outputTokensUsed: number;
+  usageAccountingStatus?: 'durable' | 'process_only' | 'unavailable' | string;
   models: ILLMModel[];
 }
 
@@ -80,9 +84,13 @@ export interface ILLMModelMaintenanceResult {
 export interface ILLMModelMaintenanceRun {
   eligible: number;
   checked: number;
+  providerManaged: number;
+  healthOnly: number;
   reused: number;
   updated: number;
+  inProgress: number;
   failed: number;
+  cancelled: boolean;
   results: ILLMModelMaintenanceResult[];
   runAt: string;
 }
@@ -104,6 +112,7 @@ export interface ILLMModel {
   budgetUsedEur: number;
   inputTokensUsed: number;
   outputTokensUsed: number;
+  usageAccountingStatus?: 'durable' | 'process_only' | 'unavailable' | string;
 }
 
 export interface ILLMRouteRequest {

@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -37,18 +38,19 @@ type PursuitCommandRouter interface {
 }
 
 type CommandRequest struct {
-	Message         string   `json:"message"`
-	ProjectKey      string   `json:"projectKey,omitempty"`
-	PursuitID       string   `json:"pursuitId,omitempty"`
-	AutomationID    string   `json:"automationId,omitempty"`
-	MandateID       string   `json:"mandateId,omitempty"`
-	SuccessCriteria []string `json:"successCriteria,omitempty"`
-	ExecuteAllowed  bool     `json:"executeAllowed,omitempty"`
-	RunCycle        bool     `json:"runCycle,omitempty"`
-	SkipSourceSync  bool     `json:"skipSourceSync,omitempty"`
-	SkipAmbient     bool     `json:"skipAmbient,omitempty"`
-	OwnerIdentity   string   `json:"-"`
-	Actor           string   `json:"-"`
+	ExecutionContext context.Context `json:"-"`
+	Message          string          `json:"message"`
+	ProjectKey       string          `json:"projectKey,omitempty"`
+	PursuitID        string          `json:"pursuitId,omitempty"`
+	AutomationID     string          `json:"automationId,omitempty"`
+	MandateID        string          `json:"mandateId,omitempty"`
+	SuccessCriteria  []string        `json:"successCriteria,omitempty"`
+	ExecuteAllowed   bool            `json:"executeAllowed,omitempty"`
+	RunCycle         bool            `json:"runCycle,omitempty"`
+	SkipSourceSync   bool            `json:"skipSourceSync,omitempty"`
+	SkipAmbient      bool            `json:"skipAmbient,omitempty"`
+	OwnerIdentity    string          `json:"-"`
+	Actor            string          `json:"-"`
 }
 
 type CommandAction struct {
@@ -103,6 +105,10 @@ func NewService(tasks TaskEngine, cycle AgentCycleRunner, pursuitRouters ...Purs
 }
 
 func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
+	ctx := commandExecutionContext(request)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := validateStandingMandateID(request.MandateID); err != nil {
 		return nil, err
 	}
@@ -123,22 +129,27 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 	}
 
 	taskRequest := task.IntakeRequest{
-		OwnerIdentity:   request.OwnerIdentity,
-		Request:         message,
-		ProjectKey:      request.ProjectKey,
-		AutomationID:    request.AutomationID,
-		MandateID:       request.MandateID,
-		SuccessCriteria: request.SuccessCriteria,
-		ExecuteAllowed:  request.ExecuteAllowed,
+		ExecutionContext: ctx,
+		OwnerIdentity:    request.OwnerIdentity,
+		Request:          message,
+		ProjectKey:       request.ProjectKey,
+		AutomationID:     request.AutomationID,
+		MandateID:        request.MandateID,
+		SuccessCriteria:  request.SuccessCriteria,
+		ExecuteAllowed:   request.ExecuteAllowed,
 	}
 
 	if s.pursuits != nil && shouldTrackCommand(message, request, intent) {
 		pursuitContext, err := s.routePursuit(message, request)
+		result.Pursuit = pursuitContext
 		if err != nil {
 			result.record("pursuit intake", err, "could not persist the command in the governed workflow path")
 			return result, err
 		}
-		result.Pursuit = pursuitContext
+		if err := ctx.Err(); err != nil {
+			result.ReviewRequired = true
+			return result, err
+		}
 		if pursuitContext != nil {
 			if pursuitContext.AwaitingAcceptance {
 				// A candidate is durable context, not active work. Do not turn a
@@ -163,6 +174,9 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 
 	var plan *task.CompletionPlan
 	var err error
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	if workflowQueued {
 		// Pursuit intake already created or reused the governed workflow. Its
 		// worker passes WorkflowID into the task engine, which keeps task-run
@@ -175,17 +189,24 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 		plan, err = s.tasks.Plan(taskRequest)
 		result.record("task planner", err, "created completion-first plan")
 	}
-	if err != nil {
-		return result, err
-	}
 	if plan != nil {
 		result.Plan = plan
+	}
+	if cancelErr := ctx.Err(); cancelErr != nil {
+		err = errors.Join(err, cancelErr)
+	}
+	if err != nil {
+		result.ReviewRequired = true
+		return result, err
 	}
 
 	if shouldRunCycle(message, request, intent) {
 		if s.cycle == nil {
 			result.record("agent cycle", fmt.Errorf("agent cycle service is not configured"), "agent cycle unavailable")
 		} else {
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
 			cycle := s.cycle.Run(agentcycle.RunRequest{
 				OwnerIdentity:  request.OwnerIdentity,
 				Trigger:        "assistant." + intent,
@@ -195,6 +216,10 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 			})
 			result.AgentCycle = cycle
 			result.record("agent cycle", nil, cycleSummary(cycle))
+			if err := ctx.Err(); err != nil {
+				result.ReviewRequired = true
+				return result, err
+			}
 		}
 	}
 
@@ -207,6 +232,13 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 	}
 	s.addLog(*result)
 	return result, nil
+}
+
+func commandExecutionContext(request CommandRequest) context.Context {
+	if request.ExecutionContext != nil {
+		return request.ExecutionContext
+	}
+	return context.Background()
 }
 
 func validateStandingMandateID(raw string) error {
@@ -222,6 +254,10 @@ func validateStandingMandateID(raw string) error {
 }
 
 func (s *Service) routePursuit(message string, request CommandRequest) (*CommandPursuitContext, error) {
+	ctx := commandExecutionContext(request)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	input := pursuit.IntakeRequest{
 		OwnerIdentity:  request.OwnerIdentity,
 		Input:          message,
@@ -249,6 +285,9 @@ func (s *Service) routePursuit(message string, request CommandRequest) (*Command
 		}
 		if detail == nil {
 			return nil, fmt.Errorf("selected pursuit was not found")
+		}
+		if err := ctx.Err(); err != nil {
+			return pursuitContextFromDetail(detail, "selected", false), err
 		}
 		if pursuit.IsCandidate(detail.Pursuit) {
 			return candidatePursuitContext(detail, "selected_candidate"), nil
@@ -465,6 +504,9 @@ func deriveSummary(result *CommandResult) string {
 	if result == nil {
 		return ""
 	}
+	if result.Plan != nil && task.ExecutionOutcomeUncertain(result.Plan.ExecutionResult) {
+		return "HAI cannot verify the runtime outcome. Execution may have occurred; automatic retry is disabled pending reconciliation of the audit and possible effects."
+	}
 	if result.Plan != nil && result.AgentCycle != nil {
 		if len(result.AgentCycle.PursuitDecisions) > 0 {
 			first := result.AgentCycle.PursuitDecisions[0]
@@ -502,6 +544,9 @@ func deriveNextAction(result *CommandResult) string {
 	if result == nil {
 		return ""
 	}
+	if result.Plan != nil && task.ExecutionOutcomeUncertain(result.Plan.ExecutionResult) {
+		return "reconcile the runtime audit and possible effects before a separately authorized attempt; workflow-owned tasks must use workflow recovery"
+	}
 	if result.AgentCycle != nil && strings.TrimSpace(result.AgentCycle.NextAction) != "" && result.AgentCycle.NextAction != "no immediate human action; continue scheduled monitoring" {
 		return result.AgentCycle.NextAction
 	}
@@ -523,7 +568,8 @@ func planRequiresReview(plan *task.CompletionPlan) bool {
 	if plan == nil {
 		return false
 	}
-	return plan.RiskAssessment.ApprovalRequired ||
+	return task.ExecutionOutcomeUncertain(plan.ExecutionResult) ||
+		plan.RiskAssessment.ApprovalRequired ||
 		plan.ReviewQueueItem != nil ||
 		strings.Contains(strings.ToLower(plan.CompletionStatus), "review")
 }

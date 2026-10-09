@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"automation-hub-backend/internal/workflow"
@@ -107,7 +108,7 @@ func TestWorkflowReminderActivationPermissionsSeparatePreparationDecisionAndHist
 	}
 	for _, role := range []string{"viewer", "unknown"} {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/v1/workflow/reminder-deliveries/run-due", nil)
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/workflow/reminder-deliveries/run-due", strings.NewReader("{}"))
 		request.Header.Set("X-Test-Verified-Role", role)
 		authenticated.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusForbidden {
@@ -116,11 +117,20 @@ func TestWorkflowReminderActivationPermissionsSeparatePreparationDecisionAndHist
 	}
 	for _, role := range []string{"operator", "owner"} {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/v1/workflow/reminder-deliveries/run-due", nil)
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/workflow/reminder-deliveries/run-due", strings.NewReader("{}"))
 		request.Header.Set("X-Test-Verified-Role", role)
 		authenticated.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusServiceUnavailable {
 			t.Errorf("%s delivery worker status = %d, want capability boundary 503", role, recorder.Code)
+		}
+		for _, body := range []string{"", "null", "{} {}", "{\"limit\":101}"} {
+			invalid := httptest.NewRequest(http.MethodPost, "/api/v1/workflow/reminder-deliveries/run-due", strings.NewReader(body))
+			invalid.Header.Set("X-Test-Verified-Role", role)
+			response := httptest.NewRecorder()
+			authenticated.ServeHTTP(response, invalid)
+			if response.Code != http.StatusBadRequest {
+				t.Errorf("%s invalid reminder request status = %d, want 400", role, response.Code)
+			}
 		}
 	}
 }

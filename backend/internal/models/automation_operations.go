@@ -38,6 +38,7 @@ type AutomationLaunchEvent struct {
 	RuntimeRouteTrace    *AutomationRuntimeRouteTrace `gorm:"-" json:"runtimeRouteTrace,omitempty"`
 	ExitCode             int                          `gorm:"default:0" json:"exitCode"`
 	DurationMs           int64                        `gorm:"default:0" json:"durationMs"`
+	RequiresApproval     bool                         `gorm:"not null;default:false" json:"requiresApproval"`
 	StartedAt            time.Time                    `gorm:"index" json:"startedAt"`
 	CompletedAt          time.Time                    `gorm:"index" json:"completedAt"`
 }

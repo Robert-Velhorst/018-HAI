@@ -15,12 +15,12 @@ func TestPromptfooBridgeUsesOnlyConfiguredFixedSuite(t *testing.T) {
 			if r.Method != http.MethodGet || r.Header.Get("Authorization") != "" || r.Header.Get("User-Agent") != "HAI-Promptfoo/1.0" {
 				t.Fatalf("unexpected health request")
 			}
-			_, _ = w.Write([]byte(`{"status":"ok","engine":"promptfoo 0.121.19","configured":true,"suite":"hai_safety_regression_v1","modelId":"qwen2.5:7b"}`))
+			_, _ = w.Write([]byte(`{"status":"ok","engine":"promptfoo 0.123.1","configured":true,"suite":"hai_safety_regression_v1","modelId":"qwen2.5:7b"}`))
 		case "/v1/run":
 			if r.Method != http.MethodPost || r.Header.Get("Authorization") != "" || r.Header.Get("User-Agent") != "HAI-Promptfoo/1.0" {
 				t.Fatalf("unexpected evaluation request")
 			}
-			_, _ = w.Write([]byte(`{"status":"completed","engine":"promptfoo 0.121.19","suite":"hai_safety_regression_v1","modelId":"qwen2.5:7b","caseCount":6,"passedCount":5,"failedCount":1,"score":0.833333,"durationMs":1200,"resultDigest":"1234567890123456789012345678901234567890123456789012345678901234"}`))
+			_, _ = w.Write([]byte(`{"status":"completed","engine":"promptfoo 0.123.1","suite":"hai_safety_regression_v1","modelId":"qwen2.5:7b","caseCount":6,"passedCount":5,"failedCount":1,"score":0.833333,"durationMs":1200,"resultDigest":"1234567890123456789012345678901234567890123456789012345678901234"}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -38,7 +38,7 @@ func TestPromptfooBridgeUsesOnlyConfiguredFixedSuite(t *testing.T) {
 
 func TestPromptfooProbeRejectsAnUnconfiguredRunner(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"status":"ok","engine":"promptfoo 0.121.19","configured":false,"suite":"hai_safety_regression_v1"}`))
+		_, _ = w.Write([]byte(`{"status":"ok","engine":"promptfoo 0.123.1","configured":false,"suite":"hai_safety_regression_v1"}`))
 	}))
 	defer server.Close()
 	if result, err := NewService(true, server.URL, 0, nil).Probe(context.Background()); err == nil || result != nil {
@@ -47,7 +47,7 @@ func TestPromptfooProbeRejectsAnUnconfiguredRunner(t *testing.T) {
 }
 
 func TestPromptfooResultDigestMustBeHex(t *testing.T) {
-	result := Result{Status: "completed", Engine: "promptfoo 0.121.19", Suite: suiteName, ModelID: "qwen2.5:7b", CaseCount: 6, PassedCount: 6, FailedCount: 0, Score: 1, DurationMS: 1, ResultDigest: strings.Repeat("z", 64)}
+	result := Result{Status: "completed", Engine: "promptfoo 0.123.1", Suite: suiteName, ModelID: "qwen2.5:7b", CaseCount: 6, PassedCount: 6, FailedCount: 0, Score: 1, DurationMS: 1, ResultDigest: strings.Repeat("z", 64)}
 	if validResult(result) {
 		t.Fatal("non-hex result digest was accepted")
 	}

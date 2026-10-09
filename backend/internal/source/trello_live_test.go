@@ -3,7 +3,8 @@
 // Live acceptance test for the Trello connector. Runs only under `-tags live`
 // against the REAL Trello API, using least-privilege read-only credentials:
 //
-//	TRELLO_API_KEY, TRELLO_READ_TOKEN, TRELLO_LIVE_BOARD
+//	TRELLO_API_KEY, TRELLO_READ_TOKEN, TRELLO_ACCOUNT_OWNER_IDENTITY,
+//	TRELLO_ACCOUNT_MEMBER_ID, TRELLO_LIVE_BOARD
 //
 // Normal `go test ./...` never compiles or runs this. It exists so the
 // connector's status in docs/completion-matrix.md can say "live-tested" on the
@@ -12,6 +13,7 @@ package source
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -21,29 +23,40 @@ import (
 	"github.com/google/uuid"
 )
 
-func liveBoard(t *testing.T) string {
+func liveBoard(t *testing.T) (string, string) {
 	t.Helper()
 	if strings.TrimSpace(os.Getenv(trelloAPIKeyEnv)) == "" || strings.TrimSpace(os.Getenv(trelloReadTokenEnv)) == "" {
 		t.Skip("TRELLO_API_KEY / TRELLO_READ_TOKEN not set; skipping live Trello test")
+	}
+	ownerIdentity := strings.TrimSpace(os.Getenv(trelloOwnerIdentityEnv))
+	if _, valid := normalizedTrelloMongoID(os.Getenv(trelloAccountMemberIDEnv)); ownerIdentity == "" || !valid {
+		t.Skip(trelloOwnerIdentityEnv + " and a valid " + trelloAccountMemberIDEnv + " are required; skipping live Trello test")
 	}
 	board := strings.TrimSpace(os.Getenv("TRELLO_LIVE_BOARD"))
 	if board == "" {
 		t.Skip("TRELLO_LIVE_BOARD not set; skipping live Trello test")
 	}
-	return board
+	return board, ownerIdentity
+}
+
+func liveTrelloSource(t *testing.T) *models.ConnectedSource {
+	t.Helper()
+	board, ownerIdentity := liveBoard(t)
+	return &models.ConnectedSource{
+		ID: uuid.New(), OwnerIdentity: ownerIdentity, ConnectorKey: trelloConnectorKey,
+		Name: "Live Trello board", Category: "project_board", Enabled: true,
+		Status: "active", SyncFrequency: "manual", SyncTarget: board,
+		DefaultProjectKey: "018-HAI",
+	}
 }
 
 // TestLiveTrelloSyncAgainstRealBoard performs a full sync against a real board
 // and asserts the contract the review asked to see: real cards ingested, source
 // provenance retained, an audit trail written, and the cursor advanced.
 func TestLiveTrelloSyncAgainstRealBoard(t *testing.T) {
-	board := liveBoard(t)
-	sourceID := uuid.New()
-	repo := newFakeSourceRepo(&models.ConnectedSource{
-		ID: sourceID, ConnectorKey: trelloConnectorKey, Name: "Live Trello board",
-		Category: "project_board", Enabled: true, Status: "active",
-		SyncFrequency: "manual", SyncTarget: board, DefaultProjectKey: "018-HAI",
-	})
+	source := liveTrelloSource(t)
+	sourceID := source.ID
+	repo := newFakeSourceRepo(source)
 	service := NewService(repo, &fakeSourceMemoryService{})
 
 	result, err := service.Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
@@ -74,18 +87,60 @@ func TestLiveTrelloSyncAgainstRealBoard(t *testing.T) {
 	}
 }
 
-// TestLiveTrelloIncrementalSyncSkipsUnchanged proves the cursor genuinely makes
-// the second sync incremental against the live API: nothing changed on the
-// board between runs, so no card should be re-ingested.
+// TestLiveTrelloIncrementalSyncSkipsUnchanged proves the cursor replays its
+// high-water cards idempotently: stable cards may be seen again, but persisted
+// source and extraction counts and content must remain unchanged.
 func TestLiveTrelloIncrementalSyncSkipsUnchanged(t *testing.T) {
-	board := liveBoard(t)
-	sourceID := uuid.New()
-	repo := newFakeSourceRepo(&models.ConnectedSource{
-		ID: sourceID, ConnectorKey: trelloConnectorKey, Name: "Live Trello board",
-		Category: "project_board", Enabled: true, Status: "active",
-		SyncFrequency: "manual", SyncTarget: board, DefaultProjectKey: "018-HAI",
-	})
+	source := liveTrelloSource(t)
+	sourceID := source.ID
+	repo := newFakeSourceRepo(source)
 	service := NewService(repo, &fakeSourceMemoryService{})
+	type rawState struct {
+		Title, Content, Metadata, SourceURI, ContentHash, ProjectKey, ItemType string
+	}
+	type extractionState struct {
+		Text, Summary, Entities, Dates, Tasks, Decisions, FollowUps  string
+		SourceURI, SourceLabel, ContentHash, ContentType, ProjectKey string
+		Sensitive, Uncertain, Archived                               bool
+	}
+	type persistedSnapshot struct {
+		rawCount, extractionCount int
+		rawItems                  map[string]rawState
+		extractions               map[string]extractionState
+	}
+	snapshot := func() (persistedSnapshot, error) {
+		rawItems, err := repo.FindRawItems(sourceID)
+		if err != nil {
+			return persistedSnapshot{}, err
+		}
+		rawByID := make(map[string]rawState, len(rawItems))
+		for _, item := range rawItems {
+			rawByID[item.ExternalID] = rawState{
+				Title: item.Title, Content: item.Content, Metadata: item.Metadata,
+				SourceURI: item.SourceURI, ContentHash: item.ContentHash,
+				ProjectKey: item.ProjectKey, ItemType: item.ItemType,
+			}
+		}
+		extractions, err := repo.FindExtractionsForSources([]uuid.UUID{sourceID}, "", true)
+		if err != nil {
+			return persistedSnapshot{}, err
+		}
+		extractionsByRawItem := make(map[string]extractionState, len(extractions))
+		for _, extraction := range extractions {
+			extractionsByRawItem[extraction.RawItemID.String()] = extractionState{
+				Text: extraction.Text, Summary: extraction.Summary, Entities: extraction.Entities,
+				Dates: extraction.Dates, Tasks: extraction.Tasks, Decisions: extraction.Decisions,
+				FollowUps: extraction.FollowUps, SourceURI: extraction.SourceURI,
+				SourceLabel: extraction.SourceLabel, ContentHash: extraction.ContentHash,
+				ContentType: extraction.ContentType, ProjectKey: extraction.ProjectKey,
+				Sensitive: extraction.Sensitive, Uncertain: extraction.Uncertain, Archived: extraction.Archived,
+			}
+		}
+		return persistedSnapshot{
+			rawCount: len(rawItems), rawItems: rawByID,
+			extractionCount: len(extractions), extractions: extractionsByRawItem,
+		}, nil
+	}
 
 	first, err := service.Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
 	if err != nil {
@@ -94,14 +149,31 @@ func TestLiveTrelloIncrementalSyncSkipsUnchanged(t *testing.T) {
 	if first.Job.ItemsSeen == 0 {
 		t.Fatal("first sync ingested nothing; cannot assess incrementality")
 	}
+	before, err := snapshot()
+	if err != nil {
+		t.Fatalf("snapshot first sync: %v", err)
+	}
 
 	second, err := service.Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
 	if err != nil {
 		t.Fatalf("second live sync: %v", err)
 	}
-	t.Logf("incremental: first=%d second=%d", first.Job.ItemsSeen, second.Job.ItemsSeen)
-	if second.Job.ItemsSeen != 0 {
-		t.Fatalf("second sync ingested %d card(s); with no board changes the cursor should skip them all", second.Job.ItemsSeen)
+	t.Logf("incremental: first=%d second=%d added=%d updated=%d", first.Job.ItemsSeen, second.Job.ItemsSeen, second.Job.ItemsAdded, second.Job.ItemsUpdated)
+	if second.Job.ItemsAdded != 0 || second.Job.ItemsUpdated != second.Job.ItemsSeen || second.Job.ItemsFailed != 0 {
+		t.Fatalf("second sync counts: seen=%d added=%d updated=%d failed=%d; want replay-only updates with no additions or failures", second.Job.ItemsSeen, second.Job.ItemsAdded, second.Job.ItemsUpdated, second.Job.ItemsFailed)
+	}
+	if second.Job.CursorAfter != first.Job.CursorAfter {
+		t.Fatalf("cursor moved from %q to %q although the persisted snapshot should be stable", first.Job.CursorAfter, second.Job.CursorAfter)
+	}
+	after, err := snapshot()
+	if err != nil {
+		t.Fatalf("snapshot second sync: %v", err)
+	}
+	if after.rawCount != before.rawCount || !reflect.DeepEqual(after.rawItems, before.rawItems) {
+		t.Fatalf("persisted raw item count/content changed across boundary replay: before=%d after=%d", before.rawCount, after.rawCount)
+	}
+	if after.extractionCount != before.extractionCount || !reflect.DeepEqual(after.extractions, before.extractions) {
+		t.Fatalf("persisted extraction count/content changed across boundary replay: before=%d after=%d", before.extractionCount, after.extractionCount)
 	}
 }
 
@@ -109,7 +181,7 @@ func TestLiveTrelloIncrementalSyncSkipsUnchanged(t *testing.T) {
 // cannot write. This is the least-privilege guarantee, verified against Trello
 // rather than assumed.
 func TestLiveTrelloTokenIsReadOnly(t *testing.T) {
-	liveBoard(t)
+	_, _ = liveBoard(t)
 	base, err := trelloBaseURL()
 	if err != nil {
 		t.Fatalf("base url: %v", err)

@@ -21,7 +21,7 @@ describe('BrainCatalogComponent adapter reviews', () => {
   }
 
   function createComponent() {
-    const catalogService = { adoptionPlan: jasmine.createSpy('adoptionPlan'), revalidate: jasmine.createSpy('revalidate'), revalidateOSSInsightCollections: jasmine.createSpy('revalidateOSSInsightCollections'), collectionRevalidationHistory: jasmine.createSpy('collectionRevalidationHistory'), repositoryDiscoveryRevalidationHistory: jasmine.createSpy('repositoryDiscoveryRevalidationHistory'), discoverOSSInsightRepositories: jasmine.createSpy('discoverOSSInsightRepositories'), discoverReviewableOSSInsightRepositories: jasmine.createSpy('discoverReviewableOSSInsightRepositories'), revalidateOSSInsightDiscovery: jasmine.createSpy('revalidateOSSInsightDiscovery'), recommendCapabilities: jasmine.createSpy('recommendCapabilities') }
+    const catalogService = { overview: jasmine.createSpy('overview'), skillInventory: jasmine.createSpy('skillInventory'), adoptionPlan: jasmine.createSpy('adoptionPlan'), revalidate: jasmine.createSpy('revalidate'), revalidateOSSInsightCollections: jasmine.createSpy('revalidateOSSInsightCollections'), collectionRevalidationHistory: jasmine.createSpy('collectionRevalidationHistory'), repositoryDiscoveryRevalidationHistory: jasmine.createSpy('repositoryDiscoveryRevalidationHistory'), discoverOSSInsightRepositories: jasmine.createSpy('discoverOSSInsightRepositories'), discoverReviewableOSSInsightRepositories: jasmine.createSpy('discoverReviewableOSSInsightRepositories'), revalidateOSSInsightDiscovery: jasmine.createSpy('revalidateOSSInsightDiscovery'), recommendCapabilities: jasmine.createSpy('recommendCapabilities') }
     const pursuitService = { create: jasmine.createSpy('create') }
     const ragflowService = { status: jasmine.createSpy('status') }
     const anythingLLMService = { status: jasmine.createSpy('status') }
@@ -40,6 +40,7 @@ describe('BrainCatalogComponent adapter reviews', () => {
     const autoGenCompatibilityService = { migration: jasmine.createSpy('migration') }
     const notification = jasmine.createSpyObj('NzNotificationService', ['success', 'error'])
     const router = { navigate: jasmine.createSpy('navigate') }
+    const viewPreferences = { get: jasmine.createSpy('get').and.returnValue({ openSections: {} }), setMode: jasmine.createSpy('setMode') }
     return {
       component: new BrainCatalogComponent(
         catalogService as any,
@@ -61,7 +62,10 @@ describe('BrainCatalogComponent adapter reviews', () => {
         autoGenCompatibilityService as any,
         notification,
         router as any,
+        viewPreferences as any,
       ),
+      catalogService,
+      viewPreferences,
       pursuitService,
       ragflowService,
       anythingLLMService,
@@ -72,6 +76,74 @@ describe('BrainCatalogComponent adapter reviews', () => {
       router,
     }
   }
+
+  it('loads Agent Skills only when the Advanced section opens', () => {
+    const { component, catalogService } = createComponent()
+    const inventory = { sourceRepository: 'anthropics/skills', sourceCommit: 'abc123', sourceCommitDate: '2026-09-10T19:44:08Z', skills: [] }
+    catalogService.skillInventory.and.returnValue(of(inventory))
+
+    component.onSkillInventoryOpen(false)
+    expect(catalogService.skillInventory).not.toHaveBeenCalled()
+    component.onSkillInventoryOpen(true)
+
+    expect(catalogService.skillInventory).toHaveBeenCalledTimes(1)
+    expect(component.skillInventory).toEqual(inventory)
+    expect(component.skillInventoryUnavailable).toBeFalse()
+    component.onSkillInventoryOpen(true)
+    expect(catalogService.skillInventory).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads a previously opened Agent Skills section on initialization', () => {
+    const { component, catalogService, viewPreferences } = createComponent()
+    viewPreferences.get.and.returnValue({ openSections: { 'agent-skills': true } })
+    catalogService.overview.and.returnValue(of({ entries: [candidate], collectionScreening: { entries: [] } }))
+    catalogService.collectionRevalidationHistory.and.returnValue(of([]))
+    catalogService.repositoryDiscoveryRevalidationHistory.and.returnValue(of([]))
+    catalogService.skillInventory.and.returnValue(of({ sourceRepository: 'anthropics/skills', sourceCommit: 'abc123', sourceCommitDate: '2026-09-10T19:44:08Z', skills: [] }))
+
+    component.ngOnInit()
+
+    expect(catalogService.skillInventory).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps profile health and maintenance history unloaded in the collapsed Basic view', () => {
+    const { component, catalogService, ragflowService, anythingLLMService, presidioService, langfuseService, serenaService } = createComponent()
+    catalogService.overview.and.returnValue(of({ entries: [
+      { ...candidate, id: 'ragflow', name: 'RAGFlow', status: 'integrated_profile' },
+      { ...candidate, id: 'anythingllm', name: 'AnythingLLM', status: 'integrated_profile' },
+      { ...candidate, id: 'presidio', name: 'Presidio', status: 'integrated_profile' },
+      { ...candidate, id: 'langfuse', name: 'Langfuse', status: 'integrated_profile' },
+      { ...candidate, id: 'serena', name: 'Serena', status: 'integrated_profile' },
+    ], collectionScreening: { entries: [] } } as any))
+
+    component.refresh()
+
+    for (const provider of [ragflowService, anythingLLMService, presidioService, langfuseService, serenaService]) {
+      expect(provider.status).not.toHaveBeenCalled()
+    }
+    expect(catalogService.collectionRevalidationHistory).not.toHaveBeenCalled()
+    expect(catalogService.repositoryDiscoveryRevalidationHistory).not.toHaveBeenCalled()
+  })
+
+  it('shows an inventory failure and allows a retry without changing the capability catalog', () => {
+    const { component, catalogService } = createComponent()
+    const existingCatalog = { entries: [candidate] } as any
+    component.catalog = existingCatalog
+    catalogService.skillInventory.and.returnValues(
+      throwError(() => new Error('offline')),
+      of({ sourceRepository: 'anthropics/skills', sourceCommit: 'abc123', sourceCommitDate: '2026-09-10T19:44:08Z', skills: [] }),
+    )
+
+    component.onSkillInventoryOpen(true)
+    expect(component.skillInventoryUnavailable).toBeTrue()
+    expect(component.skillInventory).toBeUndefined()
+    expect(component.catalog).toBe(existingCatalog)
+
+    component.loadSkillInventory()
+    expect(component.skillInventoryUnavailable).toBeFalse()
+    expect(component.skillInventory?.skills).toEqual([])
+    expect(catalogService.skillInventory).toHaveBeenCalledTimes(2)
+  })
 
   it('creates a review pursuit without claiming activation', () => {
     const { component, pursuitService, notification, router } = createComponent()
@@ -243,51 +315,61 @@ describe('BrainCatalogComponent adapter reviews', () => {
     expect(component.capabilityRecommendation?.recommendations[0].id).toBe('lm-eval-harness')
   })
 
-  it('reads RAGFlow bridge state only when the RAGFlow candidate is selected', () => {
+  it('defers RAGFlow bridge state until the Advanced profile inventory opens', () => {
     const { component, ragflowService } = createComponent()
     ragflowService.status.and.returnValue(of({ enabled: false, configured: false, provider: 'RAGFlow', datasetCount: 0, capabilities: [], restrictions: ['no ingestion'], scope: 'candidate evidence only' }))
 
     component.select({ ...candidate, id: 'ragflow', name: 'RAGFlow' } as any)
+    expect(ragflowService.status).not.toHaveBeenCalled()
+    component.onCatalogProfileOpen(true)
 
     expect(ragflowService.status).toHaveBeenCalled()
     expect(component.ragflowStatus?.configured).toBeFalse()
   })
 
-  it('reads AnythingLLM bridge state only when the AnythingLLM profile is selected', () => {
+  it('defers AnythingLLM bridge state until the Advanced profile inventory opens', () => {
     const { component, anythingLLMService } = createComponent()
     anythingLLMService.status.and.returnValue(of({ enabled: false, configured: false, provider: 'AnythingLLM', workspaceCount: 0, workspaceSlugs: [], localEmbeddingsConfirmed: false, capabilities: [], restrictions: ['no chat'], scope: 'candidate evidence only' }))
 
     component.select({ ...candidate, id: 'anythingllm', name: 'AnythingLLM', status: 'integrated_profile' } as any)
+    expect(anythingLLMService.status).not.toHaveBeenCalled()
+    component.onCatalogProfileOpen(true)
 
     expect(anythingLLMService.status).toHaveBeenCalled()
     expect(component.anythingLLMStatus?.configured).toBeFalse()
   })
 
-  it('reads Presidio bridge state only when the Presidio candidate is selected', () => {
+  it('defers Presidio bridge state until the Advanced profile inventory opens', () => {
     const { component, presidioService } = createComponent()
     presidioService.status.and.returnValue(of({ enabled: false, configured: false, provider: 'Presidio Analyzer', language: '', entityTypes: [], capabilities: [], restrictions: ['no persistence'], scope: 'review metadata only' }))
 
     component.select({ ...candidate, id: 'presidio', name: 'Presidio' } as any)
+    expect(presidioService.status).not.toHaveBeenCalled()
+    component.onCatalogProfileOpen(true)
 
     expect(presidioService.status).toHaveBeenCalled()
     expect(component.presidioStatus?.configured).toBeFalse()
   })
 
-  it('reads Langfuse bridge state only when the Langfuse profile is selected', () => {
+  it('defers Langfuse bridge state until the Advanced profile inventory opens', () => {
     const { component, langfuseService } = createComponent()
     langfuseService.status.and.returnValue(of({ enabled: false, configured: false, provider: 'Langfuse self-hosted observability', capabilities: [], restrictions: ['no prompt export'], scope: 'aggregate-only local trace evidence' }))
 
     component.select({ ...candidate, id: 'langfuse', name: 'Langfuse', status: 'integrated_profile' } as any)
+    expect(langfuseService.status).not.toHaveBeenCalled()
+    component.onCatalogProfileOpen(true)
 
     expect(langfuseService.status).toHaveBeenCalled()
     expect(component.langfuseStatus?.configured).toBeFalse()
   })
 
-  it('reads Serena bridge state only when the Serena profile is selected', () => {
+  it('defers Serena bridge state until the Advanced profile inventory opens', () => {
     const { component, serenaService } = createComponent()
     serenaService.status.and.returnValue(of({ enabled: false, configured: false, provider: 'Serena semantic code context', capabilities: [], restrictions: ['no edit'], scope: 'read-only metadata only' }))
 
     component.select({ ...candidate, id: 'serena', name: 'Serena', status: 'integrated_profile' } as any)
+    expect(serenaService.status).not.toHaveBeenCalled()
+    component.onCatalogProfileOpen(true)
 
     expect(serenaService.status).toHaveBeenCalled()
     expect(component.serenaStatus?.configured).toBeFalse()

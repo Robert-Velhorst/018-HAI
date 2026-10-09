@@ -2,10 +2,28 @@ package health
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"automation-hub-backend/internal/config"
 )
+
+func TestPostgresProbePropagatesCancellationBeforeOpening(t *testing.T) {
+	// No database or DNS is contacted. Invalid pool configuration ensures that
+	// cancellation, not a later constructor failure, is observed first.
+	t.Setenv("DB_MAX_OPEN_CONNS", "0")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := PostgresProbe(config.Configuration{
+		DbUser: "synthetic", DbPassword: "unused", DbName: "synthetic",
+		DbHost: "must-not-resolve.invalid", DbPort: 5432,
+	}).Run(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("probe ignored caller cancellation: %v", err)
+	}
+}
 
 func TestLLMProviderProbeUsesConfiguredLocalAIEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

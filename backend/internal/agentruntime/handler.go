@@ -14,7 +14,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -33,17 +32,19 @@ const (
 	maxOpenClawZipUncompressedBytes = uint64(1 << 30)
 	maxOpenClawZipCompressionRatio  = uint64(200)
 	maxOpenClawEcosystemUploadBytes = int64(750 * 1024 * 1024)
+	maxConcurrentOpenClawUploads    = 2
 	// Multipart framing and the small approval fields need limited overhead in
 	// addition to the archive itself.
 	maxOpenClawEcosystemRequestBytes = maxOpenClawEcosystemUploadBytes + (1 << 20)
 )
 
 type Handler struct {
-	registry   *Registry
-	authorizer EcosystemMutationAuthorizer
-	preparer   EcosystemMutationApprovalPreparer
-	now        func() time.Time
-	mutationMu sync.Mutex
+	registry    *Registry
+	authorizer  EcosystemMutationAuthorizer
+	preparer    EcosystemMutationApprovalPreparer
+	now         func() time.Time
+	mutationMu  sync.Mutex
+	uploadSlots chan struct{}
 }
 
 func NewHandler(registry *Registry) *Handler {
@@ -70,10 +71,11 @@ func NewHandlerWithEcosystemMutationAuthorization(
 	preparer EcosystemMutationApprovalPreparer,
 ) *Handler {
 	return &Handler{
-		registry:   registry,
-		authorizer: authorizer,
-		preparer:   preparer,
-		now:        time.Now,
+		registry:    registry,
+		authorizer:  authorizer,
+		preparer:    preparer,
+		now:         time.Now,
+		uploadSlots: make(chan struct{}, maxConcurrentOpenClawUploads),
 	}
 }
 
@@ -175,10 +177,109 @@ func (h *Handler) SetOpenClawEcosystem(c *gin.Context) {
 	if !h.authorizeEcosystemMutation(c, owner, authorization, effect) {
 		return
 	}
-	if !recheckEcosystemEmergencyStop(c) {
+	if err := validateOpenClawEcosystemPath(prepared.targetPath); err != nil {
+		writeEcosystemMutationError(c, err)
 		return
 	}
-	if err := openClaw.applyPreparedEcosystemPath(prepared); err != nil {
+	proceed, err := commitEcosystemMutation(c, openClaw, func() error {
+		return openClaw.commitPreparedEcosystemPathLocked(prepared)
+	})
+	if !proceed {
+		return
+	}
+	if err != nil {
+		writeEcosystemMutationError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, openClaw.Info())
+}
+
+type openClawArchiveRollbackRequest struct {
+	EcosystemMutationAuthorization
+}
+
+func (h *Handler) PrepareRollbackOpenClawArchive(c *gin.Context) {
+	owner, ok := runtimeOwner(c)
+	if !ok {
+		return
+	}
+	h.mutationMu.Lock()
+	defer h.mutationMu.Unlock()
+	openClaw, ok := h.registry.OpenClawAdapter()
+	if !ok || openClaw == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "openclaw runtime is not registered"})
+		return
+	}
+	prepared, _, _, err := openClaw.prepareOpenClawArchiveRollback()
+	if errors.Is(err, ErrOpenClawArchiveRollbackUnavailable) {
+		c.JSON(http.StatusConflict, gin.H{"error": ErrOpenClawArchiveRollbackUnavailable.Error()})
+		return
+	}
+	if err != nil {
+		writeEcosystemMutationError(c, err)
+		return
+	}
+	h.prepareEcosystemMutationApproval(c, owner, openClawEcosystemEffect{
+		Action:           openClawRollbackAction,
+		CurrentPath:      prepared.previousPath,
+		CurrentSignature: prepared.previousSignature,
+		TargetPath:       prepared.targetPath,
+		TargetSignature:  prepared.targetSignature,
+	})
+}
+
+func (h *Handler) RollbackOpenClawArchive(c *gin.Context) {
+	owner, ok := runtimeOwner(c)
+	if !ok {
+		return
+	}
+	var request openClawArchiveRollbackRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body for OpenClaw archive rollback"})
+		return
+	}
+	h.mutationMu.Lock()
+	defer h.mutationMu.Unlock()
+	openClaw, ok := h.registry.OpenClawAdapter()
+	if !ok || openClaw == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "openclaw runtime is not registered"})
+		return
+	}
+	prepared, targetDigest, previousDigest, err := openClaw.prepareOpenClawArchiveRollback()
+	if errors.Is(err, ErrOpenClawArchiveRollbackUnavailable) {
+		c.JSON(http.StatusConflict, gin.H{"error": ErrOpenClawArchiveRollbackUnavailable.Error()})
+		return
+	}
+	if err != nil {
+		writeEcosystemMutationError(c, err)
+		return
+	}
+	effect := openClawEcosystemEffect{
+		Action:           openClawRollbackAction,
+		CurrentPath:      prepared.previousPath,
+		CurrentSignature: prepared.previousSignature,
+		TargetPath:       prepared.targetPath,
+		TargetSignature:  prepared.targetSignature,
+	}
+	if !h.authorizeEcosystemMutation(
+		c,
+		owner,
+		mergeEcosystemAuthorization(c, request.EcosystemMutationAuthorization),
+		effect,
+	) {
+		return
+	}
+	if err := validateOpenClawEcosystemPath(prepared.targetPath); err != nil {
+		writeEcosystemMutationError(c, err)
+		return
+	}
+	proceed, err := commitEcosystemMutation(c, openClaw, func() error {
+		return openClaw.commitManagedArchiveSelectionLocked(prepared, targetDigest, previousDigest)
+	})
+	if !proceed {
+		return
+	}
+	if err != nil {
 		writeEcosystemMutationError(c, err)
 		return
 	}
@@ -247,10 +348,13 @@ func (h *Handler) RefreshOpenClawEcosystem(c *gin.Context) {
 	if !h.authorizeEcosystemMutation(c, owner, authorization, effect) {
 		return
 	}
-	if !recheckEcosystemEmergencyStop(c) {
+	proceed, err := commitEcosystemMutation(c, openClaw, func() error {
+		return openClaw.refreshEcosystemInventoryIfCurrentLocked(currentPath, currentSignature)
+	})
+	if !proceed {
 		return
 	}
-	if err := openClaw.refreshEcosystemInventoryIfCurrent(currentPath, currentSignature); err != nil {
+	if err != nil {
 		writeEcosystemMutationError(c, err)
 		return
 	}
@@ -284,6 +388,10 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !h.acquireOpenClawUploadSlot(c) {
+		return
+	}
+	defer h.releaseOpenClawUploadSlot()
 	inspection, err := inspectOpenClawEcosystemUpload(c)
 	if err != nil {
 		writeOpenClawEcosystemUploadError(c, err)
@@ -304,14 +412,6 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 		return
 	}
 	currentPath, currentSignature := openClaw.ecosystemState()
-	dest := filepath.Join(
-		os.TempDir(),
-		"openclaw-ecosystem-"+uuid.NewString()+".zip",
-	)
-	deleteManagedPath := ""
-	if isOpenClawUploadArtifactPath(currentPath) {
-		deleteManagedPath = currentPath
-	}
 	authorization := mergeEcosystemAuthorization(c, EcosystemMutationAuthorization{
 		IdempotencyKey:        c.PostForm("idempotencyKey"),
 		TaskID:                c.PostForm("taskId"),
@@ -325,7 +425,6 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 		TargetPath:            openClawManagedArchiveTarget,
 		UploadedContentDigest: inspection.contentDigest,
 		UploadedSize:          inspection.size,
-		DeleteManagedPath:     deleteManagedPath,
 	}
 	if !h.authorizeEcosystemMutation(c, owner, authorization, effect) {
 		return
@@ -334,39 +433,41 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 		return
 	}
 
-	f, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	dest, err := openClaw.persistManagedArchive(source, inspection.contentDigest, inspection.size)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create managed ecosystem storage"})
-		return
-	}
-	copiedHash := sha256.New()
-	copied, copyErr := io.Copy(io.MultiWriter(f, copiedHash), source)
-	closeErr := f.Close()
-	if copyErr != nil || closeErr != nil || copied != inspection.size ||
-		hex.EncodeToString(copiedHash.Sum(nil)) != inspection.contentDigest {
-		_ = os.Remove(dest)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "uploaded ecosystem changed while it was being persisted"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "failed to persist OpenClaw archive in durable storage")})
 		return
 	}
 	if !recheckEcosystemEmergencyStop(c) {
-		_ = os.Remove(dest)
 		return
 	}
 	prepared, err := openClaw.prepareEcosystemPath(dest, true)
 	if err != nil {
-		_ = os.Remove(dest)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "uploaded OpenClaw ecosystem is invalid or does not meet safety requirements"})
+		return
+	}
+	previousDigest, err := openClaw.snapshotPreviousArchive(currentPath)
+	if err != nil {
+		writeEcosystemMutationError(c, err)
 		return
 	}
 	if prepared.previousPath != currentPath ||
 		prepared.previousSignature != currentSignature ||
-		prepared.deleteManagedPath != deleteManagedPath {
-		_ = os.Remove(dest)
+		prepared.targetPath != dest {
 		writeEcosystemMutationError(c, ErrEcosystemMutationConflict)
 		return
 	}
-	if err := openClaw.applyPreparedEcosystemPath(prepared); err != nil {
-		_ = os.Remove(dest)
+	if err := validateOpenClawEcosystemPath(prepared.targetPath); err != nil {
+		writeEcosystemMutationError(c, err)
+		return
+	}
+	proceed, err := commitEcosystemMutation(c, openClaw, func() error {
+		return openClaw.commitManagedArchiveSelectionLocked(prepared, inspection.contentDigest, previousDigest)
+	})
+	if !proceed {
+		return
+	}
+	if err != nil {
 		writeEcosystemMutationError(c, err)
 		return
 	}
@@ -382,6 +483,10 @@ func (h *Handler) PrepareUploadOpenClawEcosystem(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if !h.acquireOpenClawUploadSlot(c) {
+		return
+	}
+	defer h.releaseOpenClawUploadSlot()
 	inspection, err := inspectOpenClawEcosystemUpload(c)
 	if err != nil {
 		writeOpenClawEcosystemUploadError(c, err)
@@ -393,10 +498,6 @@ func (h *Handler) PrepareUploadOpenClawEcosystem(c *gin.Context) {
 		return
 	}
 	currentPath, currentSignature := openClaw.ecosystemState()
-	deleteManagedPath := ""
-	if isOpenClawUploadArtifactPath(currentPath) {
-		deleteManagedPath = currentPath
-	}
 	h.prepareEcosystemMutationApproval(c, owner, openClawEcosystemEffect{
 		Action:                openClawUploadAction,
 		CurrentPath:           currentPath,
@@ -404,7 +505,6 @@ func (h *Handler) PrepareUploadOpenClawEcosystem(c *gin.Context) {
 		TargetPath:            openClawManagedArchiveTarget,
 		UploadedContentDigest: inspection.contentDigest,
 		UploadedSize:          inspection.size,
-		DeleteManagedPath:     deleteManagedPath,
 	})
 }
 
@@ -420,6 +520,21 @@ type openClawEcosystemUploadError struct {
 }
 
 func (e *openClawEcosystemUploadError) Error() string { return e.message }
+
+func (h *Handler) acquireOpenClawUploadSlot(c *gin.Context) bool {
+	select {
+	case h.uploadSlots <- struct{}{}:
+		return true
+	default:
+		c.Header("Retry-After", "1")
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "too many OpenClaw ecosystem uploads are being inspected"})
+		return false
+	}
+}
+
+func (h *Handler) releaseOpenClawUploadSlot() {
+	<-h.uploadSlots
+}
 
 func inspectOpenClawEcosystemUpload(c *gin.Context) (openClawEcosystemUploadInspection, error) {
 	if c.Request.ContentLength > maxOpenClawEcosystemRequestBytes {
@@ -585,6 +700,24 @@ func recheckEcosystemEmergencyStop(c *gin.Context) bool {
 	return false
 }
 
+// commitEcosystemMutation uses the same adapter-state and emergency-stop
+// fences for every HTTP mutation before applying its already-prepared change.
+func commitEcosystemMutation(
+	c *gin.Context,
+	openClaw *openClawAdapter,
+	mutate func() error,
+) (bool, error) {
+	decision, err := openClaw.withEcosystemCommitFence(mutate)
+	if decision.Active {
+		c.JSON(http.StatusLocked, gin.H{
+			"error":  "emergency stop blocks OpenClaw ecosystem mutation",
+			"reason": decision.Reason,
+		})
+		return false, nil
+	}
+	return true, err
+}
+
 func writeEcosystemMutationError(c *gin.Context, err error) {
 	if errors.Is(err, ErrEcosystemMutationConflict) {
 		c.JSON(http.StatusConflict, gin.H{"error": ErrEcosystemMutationConflict.Error()})
@@ -652,7 +785,7 @@ func validateOpenClawZipFiles(files []*zip.File) error {
 			return fmt.Errorf("openclaw ecosystem zip expands beyond the %d byte inspection limit", maxOpenClawZipUncompressedBytes)
 		}
 		totalUncompressed += file.UncompressedSize64
-		if file.UncompressedSize64 > 0 && file.CompressedSize64 > 0 && file.UncompressedSize64 > file.CompressedSize64*maxOpenClawZipCompressionRatio {
+		if openClawZipCompressionRatioExceeded(file.UncompressedSize64, file.CompressedSize64) {
 			return fmt.Errorf("openclaw ecosystem zip entry is compressed beyond the %d:1 inspection limit: %s", maxOpenClawZipCompressionRatio, normalized)
 		}
 		parts := strings.Split(normalized, "/")
@@ -669,6 +802,17 @@ func validateOpenClawZipFiles(files []*zip.File) error {
 		return errors.New("openclaw ecosystem zip does not look like an OpenClaw checkout")
 	}
 	return nil
+}
+
+func openClawZipCompressionRatioExceeded(uncompressedSize, compressedSize uint64) bool {
+	if uncompressedSize == 0 || compressedSize == 0 {
+		return false
+	}
+	minimumCompressedSize := uncompressedSize / maxOpenClawZipCompressionRatio
+	if uncompressedSize%maxOpenClawZipCompressionRatio != 0 {
+		minimumCompressedSize++
+	}
+	return compressedSize < minimumCompressedSize
 }
 
 func safeZipEntryName(name string) (string, bool) {

@@ -196,7 +196,7 @@ func TestReadinessProbeExecutesWithoutConfiguredLLM(t *testing.T) {
 		t.Fatalf("NewService: %v", err)
 	}
 	approvedAt := time.Now().UTC().Add(-time.Minute)
-	executor := &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}
+	executor := &modelPreflightExecutor{fakeToolExecutor: &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}, readOnly: true}
 	service := NewServiceWithEnginesAndPursuitAttempts(
 		&fakeMemoryService{},
 		newTaskNoProviderLLMService(t),
@@ -239,7 +239,7 @@ func TestLowRiskReadinessProbeExecutesWithoutApproval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
 	}
-	executor := &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}
+	executor := &modelPreflightExecutor{fakeToolExecutor: &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}, readOnly: true}
 	service := NewServiceWithEnginesAndPursuitAttempts(
 		&fakeMemoryService{},
 		newTaskNoProviderLLMService(t),
@@ -275,7 +275,7 @@ func TestLowRiskReadinessProbeExecutesWithoutApproval(t *testing.T) {
 	}
 }
 
-func TestLowRiskReadinessProbeWithUnknownOwnerCapacityExecutesWithoutApproval(t *testing.T) {
+func TestUnknownOwnerCapacityCannotOverrideMissingRequiredParticipants(t *testing.T) {
 	selector, err := frameworkregistry.NewService(frameworkregistry.NewMemoryRepository())
 	if err != nil {
 		t.Fatalf("NewService: %v", err)
@@ -309,17 +309,15 @@ func TestLowRiskReadinessProbeWithUnknownOwnerCapacityExecutesWithoutApproval(t 
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if executor.calls != 1 {
-		t.Fatalf("executor calls = %d, want one bounded read-only execution; risk=%#v resource=%#v plan=%#v", executor.calls, plan.RiskAssessment, plan.ResourceDecision, plan)
+	// Capacity advice cannot discharge missing independent review participants.
+	// The lightweight constructor's positive deterministic-runtime test above
+	// still covers execution separately; this production-like empty inventory
+	// must not turn that path into a specialist-bypass exception.
+	if executor.calls != 0 || plan.RiskAssessment.AllowedNow || len(plan.RiskAssessment.MissingRequiredAgents) == 0 {
+		t.Fatalf("unknown capacity overrode missing participants: calls=%d risk=%#v", executor.calls, plan.RiskAssessment)
 	}
-	if plan.RiskAssessment.ApprovalRequired || !plan.RiskAssessment.AllowedNow {
-		t.Fatalf("unknown owner capacity blocked an admitted automatic runtime: risk=%#v resource=%#v", plan.RiskAssessment, plan.ResourceDecision)
-	}
-	if plan.FrameworkEvidencePreflight == nil || !plan.FrameworkEvidencePreflight.Passed {
-		t.Fatalf("unapproved readiness preflight = %#v, want passed", plan.FrameworkEvidencePreflight)
-	}
-	if !plan.ValidationResult.Passed || plan.CompletionStatus != "validated" {
-		t.Fatalf("unapproved readiness execution was not validated: status=%s failures=%#v criteria=%#v", plan.CompletionStatus, plan.ValidationResult.Failures, plan.ValidationResult.Criteria)
+	if plan.ValidationResult.Passed || plan.CompletionStatus == "validated" || plan.ReviewQueueItem == nil {
+		t.Fatalf("blocked work was passed off as verified: status=%s validation=%t", plan.CompletionStatus, plan.ValidationResult.Passed)
 	}
 }
 

@@ -1,36 +1,20 @@
 package ambientmonitor
 
 import (
-	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/lifeontology"
 	"automation-hub-backend/internal/outcomeevaluation"
 	"automation-hub-backend/internal/proactivity"
-	"automation-hub-backend/migrations"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 func TestPostgresCompositionRepositoryLifecycle(t *testing.T) {
-	dsn := strings.TrimSpace(os.Getenv("HAI_AMBIENT_MONITOR_POSTGRES_TEST_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_AMBIENT_MONITOR_POSTGRES_TEST_DSN is not configured")
-	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	if _, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil {
-		t.Fatalf("apply migrations to ambient monitor test database: %v", err)
-	}
+	db := openAmbientMonitorPostgresTestDatabase(t)
 	var tableName string
 	if err := db.Raw(`SELECT COALESCE(to_regclass('public.outcome_monitor_composition_deliveries')::text, '')`).Row().Scan(&tableName); err != nil || tableName == "" {
 		t.Fatalf("migration 0050 is not applied: table=%q err=%v", tableName, err)

@@ -4,62 +4,180 @@ import (
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/migrations"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 var (
 	defaultDBMu          sync.Mutex
 	defaultDB            *gorm.DB
-	openConfiguredDB     = OpenDefaultDB
-	runDefaultMigrations = RunMigrations
+	defaultDBStarting    chan struct{}
+	defaultDBStartCancel context.CancelFunc
+	defaultDBClosed      bool
+	defaultDBCloseDone   chan struct{}
+	defaultDBCloseErr    error
+	openConfiguredDB     = OpenDefaultDBContext
+	runDefaultMigrations = RunMigrationsContext
 )
 
+var ErrDefaultDBClosed = errors.New("shared database pool is shut down")
+
 func NewPostgresDatabase(user, password, dbName, dbHost string, dbPort int) (*gorm.DB, error) {
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%d sslmode=disable TimeZone=UTC",
-		dbHost, user, password, dbName, dbPort)
-
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-	if err != nil {
-		return nil, err
-	}
-
-	return db, nil
+	return NewPostgresDatabaseContext(context.Background(), user, password, dbName, dbHost, dbPort)
 }
 
 // OpenDefaultDB opens the configured database without running migrations. Use it
 // for read-only operations (e.g. `migrate status`) or explicit rollbacks.
 func OpenDefaultDB() (*gorm.DB, error) {
-	return NewPostgresDatabase(config.AppConfig.DbUser, config.AppConfig.DbPassword,
+	return OpenDefaultDBContext(context.Background())
+}
+
+// OpenDefaultDBContext opens a caller-owned, migration-free pool with the
+// caller's deadline covering acquisition as well as the initial ping.
+func OpenDefaultDBContext(ctx context.Context) (*gorm.DB, error) {
+	return NewPostgresDatabaseContext(ctx, config.AppConfig.DbUser, config.AppConfig.DbPassword,
 		config.AppConfig.DbName, config.AppConfig.DbHost, config.AppConfig.DbPort)
 }
 
 func GetDefaultDB() (*gorm.DB, error) {
-	defaultDBMu.Lock()
-	defer defaultDBMu.Unlock()
-	if defaultDB != nil {
-		return defaultDB, nil
-	}
+	return GetDefaultDBContext(context.Background())
+}
 
-	db, err := openConfiguredDB()
-	if err != nil {
-		return nil, err
+// GetDefaultDBContext preserves a neutral cached handle. Only initialization
+// uses the first caller's context; waiting callers can leave without cancelling it.
+func GetDefaultDBContext(ctx context.Context) (*gorm.DB, error) {
+	if ctx == nil {
+		return nil, errors.New("shared database acquisition requires a context")
 	}
-
-	if migrationsEnabledAtStartup() {
-		if err := runDefaultMigrations(db); err != nil {
+	var startupCtx context.Context
+	var cancel context.CancelFunc
+	for {
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		defaultDBMu.Lock()
+		if defaultDBClosed {
+			defaultDBMu.Unlock()
+			return nil, ErrDefaultDBClosed
+		}
+		if defaultDB != nil {
+			db := defaultDB
+			defaultDBMu.Unlock()
+			return db, nil
+		}
+		if pending := defaultDBStarting; pending != nil {
+			defaultDBMu.Unlock()
+			select {
+			case <-pending:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		timeout, err := databaseStartupTimeout()
+		if err != nil {
+			defaultDBMu.Unlock()
+			return nil, err
+		}
+		startupCtx, cancel = context.WithTimeout(ctx, timeout)
+		defaultDBStarting = make(chan struct{})
+		defaultDBStartCancel = cancel
+		defaultDBMu.Unlock()
+		break
 	}
+	defer cancel()
 
-	defaultDB = db
-	return db, nil
+	db, err := openConfiguredDB(startupCtx)
+	if err == nil && db == nil {
+		err = errors.New("shared database opener returned no pool")
+	}
+	defaultDBMu.Lock()
+	closed := defaultDBClosed
+	defaultDBMu.Unlock()
+	if err == nil && closed {
+		err = ErrDefaultDBClosed
+	}
+	if err == nil {
+		err = startupCtx.Err()
+	}
+	if err == nil && migrationsEnabledAtStartup() {
+		err = runDefaultMigrations(startupCtx, db)
+	}
+	defaultDBMu.Lock()
+	if err == nil {
+		err = startupCtx.Err()
+	}
+	if err == nil && !defaultDBClosed {
+		defaultDB = db
+		close(defaultDBStarting)
+		defaultDBStarting = nil
+		defaultDBStartCancel = nil
+		defaultDBMu.Unlock()
+		return db, nil
+	}
+	closed = defaultDBClosed
+	defaultDBMu.Unlock()
+	var closeErr error
+	if db != nil {
+		closeErr = closePostgresDatabase(db)
+	}
+	defaultDBMu.Lock()
+	if defaultDBClosed {
+		defaultDBCloseErr = errors.Join(defaultDBCloseErr, closeErr)
+		closed = true
+	}
+	close(defaultDBStarting)
+	defaultDBStarting = nil
+	defaultDBStartCancel = nil
+	defaultDBMu.Unlock()
+	if closed {
+		err = errors.Join(err, ErrDefaultDBClosed)
+	}
+	return nil, errors.Join(err, closeErr)
+}
+
+// CloseDefaultDB is terminal for this process. Call only after API work drains.
+// Candidate initialization and driver cleanup finish without holding the cache lock.
+func CloseDefaultDB() error {
+	defaultDBMu.Lock()
+	if done := defaultDBCloseDone; done != nil {
+		defaultDBMu.Unlock()
+		<-done
+		defaultDBMu.Lock()
+		err := defaultDBCloseErr
+		defaultDBMu.Unlock()
+		return err
+	}
+	defaultDBClosed = true
+	defaultDBCloseDone = make(chan struct{})
+	db, pending := defaultDB, defaultDBStarting
+	cancelStartup := defaultDBStartCancel
+	defaultDB = nil
+	defaultDBMu.Unlock()
+	if cancelStartup != nil {
+		cancelStartup()
+	}
+	if pending != nil {
+		<-pending
+	}
+	var closeErr error
+	if db != nil {
+		closeErr = closePostgresDatabase(db)
+	}
+	defaultDBMu.Lock()
+	defaultDBCloseErr = errors.Join(defaultDBCloseErr, closeErr)
+	close(defaultDBCloseDone)
+	err := defaultDBCloseErr
+	defaultDBMu.Unlock()
+	return err
 }
 
 // resetDefaultDBForTest clears the package connection cache. It is deliberately
@@ -68,6 +186,22 @@ func resetDefaultDBForTest() {
 	defaultDBMu.Lock()
 	defer defaultDBMu.Unlock()
 	defaultDB = nil
+	defaultDBStarting = nil
+	defaultDBStartCancel = nil
+	defaultDBClosed = false
+	defaultDBCloseDone = nil
+	defaultDBCloseErr = nil
+}
+
+func databaseStartupTimeout() (time.Duration, error) {
+	if raw := strings.TrimSpace(os.Getenv("DB_STARTUP_TIMEOUT")); raw != "" {
+		timeout, err := time.ParseDuration(raw)
+		if err != nil || timeout <= 0 {
+			return 0, errors.New("DB_STARTUP_TIMEOUT must be a positive duration, e.g. 5m")
+		}
+		return timeout, nil
+	}
+	return 5 * time.Minute, nil
 }
 
 // migrationsEnabledAtStartup keeps existing installations compatible while
@@ -119,6 +253,18 @@ func autoMigrateMissingTables(db *gorm.DB, candidates ...interface{}) error {
 }
 
 func RunMigrations(db *gorm.DB) error {
+	return RunMigrationsContext(context.Background(), db)
+}
+
+// The migration clone must not pin the runtime pool to a startup deadline.
+func RunMigrationsContext(ctx context.Context, db *gorm.DB) error {
+	if ctx == nil || db == nil || db.Config == nil {
+		return errors.New("migrations require a context and initialized database")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	db = db.WithContext(ctx)
 	// Phase 1: versioned migrations that must precede table creation (extensions
 	// the models' UUID defaults depend on).
 	if _, err := ApplyMigrations(db, migrations.Files, "pre"); err != nil {
@@ -143,6 +289,8 @@ func RunMigrations(db *gorm.DB) error {
 			&models.Automation{},
 			&models.AutomationHealthEvent{},
 			&models.AutomationLaunchEvent{},
+			&models.OpenClawGatewaySessionReceipt{},
+			&models.OpenClawGatewayArtifactReceipt{},
 			&models.AutomationDependency{},
 			&models.AutomationRouteCheck{},
 			&models.AutomationAlert{},
@@ -157,6 +305,7 @@ func RunMigrations(db *gorm.DB) error {
 			&models.SourceSyncJob{},
 			&models.SourceRawItem{},
 			&models.SourceExtraction{},
+			&models.SourceExtractionCorrection{},
 			&models.SourceIndexEntry{},
 			&models.SourceAuditLog{},
 			&models.SourceOAuthToken{},

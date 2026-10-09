@@ -106,7 +106,7 @@ func validatePlan(plan *CompletionPlan, attempt int) ValidationResult {
 		"success criteria are missing",
 		fmt.Sprintf("criteria-count:%d", len(plan.Intake.SuccessCriteria)),
 	)
-	deterministicRuntime := attempt > 0 && plan.ExecutionResult != nil &&
+	deterministicRuntime := attempt > 0 && plan.ExecutionResult != nil && !executionOutcomeUncertain(plan.ExecutionResult) &&
 		deterministicReadOnlyRuntimeCompleted(plan.ExecutionResult.ToolExecution)
 	modelEvidence := "model:" + strings.TrimSpace(plan.ModelDecision.SelectedModelID)
 	if deterministicRuntime && strings.TrimSpace(plan.ModelDecision.SelectedModelID) == "" {
@@ -200,8 +200,13 @@ func validatePlan(plan *CompletionPlan, attempt int) ValidationResult {
 
 		if executionReady {
 			result := plan.ExecutionResult
+			recordCheck(
+				"runtime outcome is established before completion",
+				!executionOutcomeUncertain(result),
+				uncertainToolOutcomeReason,
+			)
 			if plan.Intake.NeedsTools || plan.Intake.NeedsLocalExecution {
-				toolReady = result.ToolExecution != nil && result.ToolExecution.Status == "completed"
+				toolReady = result.ToolExecution != nil && result.ToolExecution.Status == "completed" && !executionOutcomeUncertain(result)
 				toolFailure := "required controlled runtime execution did not run"
 				if result.ToolExecution != nil {
 					toolFailure = "controlled runtime execution did not complete: " + result.ToolExecution.Status

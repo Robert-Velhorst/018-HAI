@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 
 	"github.com/google/uuid"
@@ -141,9 +142,14 @@ func (r *GormRepository) GetSelection(
 	if err != nil {
 		return nil, fmt.Errorf("framework selection id must be a UUID")
 	}
+	db, cleanup, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	var row models.FrameworkSelectionRecord
-	if err := r.DB.WithContext(ctx).
+	if err := db.
 		Where("owner_identity = ? AND id = ?", owner, selectionID).
 		First(&row).Error; err != nil {
 		return nil, err
@@ -186,6 +192,16 @@ func (r *GormRepository) ListSelections(owner string, limit int) ([]SelectionDec
 }
 
 func (r *GormRepository) ListConstitutions(owner string) ([]Constitution, error) {
+	return r.ListConstitutionsContext(context.Background(), owner)
+}
+
+func (r *GormRepository) ListConstitutionsContext(ctx context.Context, owner string) ([]Constitution, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("Constitution lookup context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(owner) == "" {
 		return []Constitution{}, nil
 	}
@@ -193,9 +209,14 @@ func (r *GormRepository) ListConstitutions(owner string) ([]Constitution, error)
 	if err != nil {
 		return nil, err
 	}
+	db, cleanup, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	var rows []models.RobertConstitutionVersion
-	if err := r.DB.
+	if err := db.
 		Where("owner_identity = ?", owner).
 		Order("version DESC, created_at DESC").
 		Find(&rows).Error; err != nil {
@@ -550,6 +571,16 @@ func (r *MemoryRepository) ListSelections(owner string, limit int) ([]SelectionD
 }
 
 func (r *MemoryRepository) ListConstitutions(owner string) ([]Constitution, error) {
+	return r.ListConstitutionsContext(context.Background(), owner)
+}
+
+func (r *MemoryRepository) ListConstitutionsContext(ctx context.Context, owner string) ([]Constitution, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("Constitution lookup context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(owner) == "" {
 		return []Constitution{}, nil
 	}
@@ -558,9 +589,20 @@ func (r *MemoryRepository) ListConstitutions(owner string) ([]Constitution, erro
 		return nil, err
 	}
 
-	r.mu.RLock()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for !r.mu.TryRLock() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 	rows := append([]models.RobertConstitutionVersion(nil), r.constitutions[owner]...)
 	r.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].Version != rows[j].Version {
 			return rows[i].Version > rows[j].Version

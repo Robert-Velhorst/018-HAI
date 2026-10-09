@@ -1,12 +1,13 @@
-import { ChangeDetectorRef, Component, Inject, OnDestroy, OnInit, ViewEncapsulation } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, OnDestroy, OnInit, ViewEncapsulation } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { NzModalService } from 'ng-zorro-antd/modal';
-import { catchError, forkJoin, of, Subscription, timeout } from 'rxjs';
+import { catchError, finalize, forkJoin, map, of, Subscription, take, timeout } from 'rxjs';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 import {
-  IPursuitDetail,
   IPursuitMatchCandidate,
+  IPursuitRoutedIntakeResult,
 } from '../../models/pursuit.model.interface';
 import { PursuitService } from '../../services/pursuit.service';
 import {
@@ -25,6 +26,7 @@ import {
   IWorkflowReminderActivationHistorySnapshot,
   IWorkflowReminderDeliveryAuthorization,
   IWorkflowReminderDeliveryHistory,
+  IWorkflowReminderDeliveryRunSummary,
   IWorkflowRunResult,
   IWorkflowRunSummary,
 } from '../../models/workflow.model.interface';
@@ -34,6 +36,7 @@ import { IWorkflowService } from '../../services/workflow.service.interface';
 type FrameworkProvenanceState = 'missing' | 'invalid' | 'recorded' | 'verified';
 
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-workflow-engine',
     templateUrl: './workflow-engine.component.html',
     styleUrls: ['./workflow-engine.component.scss'],
@@ -68,7 +71,40 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   selectedPursuitMatch?: IPursuitMatchCandidate;
   includeArchived = false;
   loading = false;
+  dataLoaded = false;
+  loadFailed = false;
+  openingWorkflowId?: string;
+  workflowOpenError?: string;
+  checklistAction?: { itemId: string; status: string };
+  checklistActionError?: { itemId: string; message: string };
   saving = false;
+  transitionReviewId?: string;
+  transitionError?: string;
+  private transitionSubscription?: Subscription;
+  approvalReviewId?: string;
+  approvalError?: string;
+  private approvalSubscription?: Subscription;
+  private interruptionSubscription?: Subscription;
+  private proposalSubscription?: Subscription;
+  private selectedRunSubscription?: Subscription;
+  private reminderRunSubscription?: Subscription;
+  private reminderAuthorizationSubscription?: Subscription;
+  private reminderPreparationSubscription?: Subscription;
+  private reminderDecisionSubscription?: Subscription;
+  private workerRunSubscription?: Subscription;
+  private recoveryRunSubscription?: Subscription;
+  private followupRunSubscription?: Subscription;
+  private pursuitMatchSubscription?: Subscription;
+  private intakeSubscription?: Subscription;
+  lastIntakePursuitId?: string;
+  lastIntakeWorkflowId?: string;
+  workerReviewRequired = false;
+  workerReviewMessage?: string;
+  workerReviewRefreshed = false;
+  proposalAction?: {
+    proposalId: string;
+    status: 'approved' | 'changes_requested' | 'rejected';
+  };
   matchingPursuits = false;
   runningAction?: 'refresh' | 'worker' | 'selected' | 'followups' | 'recovery' | 'reminders';
   private readonly operationTimeoutMs = 30000;
@@ -86,10 +122,13 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   private frameworkSelectionLookup = 0;
   activationBusyId?: string;
   private refreshSubscription?: Subscription;
+  private workflowOpenSubscription?: Subscription;
+  private workflowOpenRequest = 0;
+  private destroyed = false;
   private intakeChangesSubscription?: Subscription;
 
   intakeForm: FormGroup = this.fb.group({
-    input: ['', [Validators.required]],
+    input: ['', [Validators.required, Validators.maxLength(4000)]],
     projectKey: [''],
     automationId: [''],
     sourceType: ['manual'],
@@ -115,6 +154,7 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     note: ['', [Validators.required]],
     evidenceUri: [''],
     evidenceLabel: [''],
+    priorExecutionReconciled: [false],
   });
 
   constructor(
@@ -125,7 +165,8 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     private modal: NzModalService,
     private route: ActivatedRoute,
     private router: Router,
-    private changeDetector: ChangeDetectorRef
+    private changeDetector: ChangeDetectorRef,
+    private viewPreferences: ModuleViewPreferencesService,
   ) {}
 
   ngOnInit(): void {
@@ -134,23 +175,40 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
       // A changed signal must be matched again; never link edited intake to a stale pursuit choice.
       this.selectedPursuitMatch = undefined;
       this.pursuitMatches = [];
+      this.lastIntakePursuitId = undefined;
+      this.lastIntakeWorkflowId = undefined;
+      this.pursuitMatchSubscription?.unsubscribe();
+      this.matchingPursuits = false;
     });
     const workflowId = this.route.snapshot.queryParamMap.get('workflowId');
     if (workflowId) {
-      this.workflowService.get(workflowId).subscribe({
-        next: (record) => this.applyWorkflowRecord(record),
-        error: () => this.notification.error('Error', 'The linked workflow could not be opened.'),
-      });
+      this.loadWorkflowRecord(workflowId);
     }
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     this.refreshSubscription?.unsubscribe();
+    this.workflowOpenSubscription?.unsubscribe();
     this.intakeChangesSubscription?.unsubscribe();
+    this.transitionSubscription?.unsubscribe();
+    this.approvalSubscription?.unsubscribe();
+    this.interruptionSubscription?.unsubscribe();
+    this.proposalSubscription?.unsubscribe();
+    this.selectedRunSubscription?.unsubscribe();
+    this.reminderRunSubscription?.unsubscribe();
+    this.reminderAuthorizationSubscription?.unsubscribe();
+    this.reminderPreparationSubscription?.unsubscribe();
+    this.reminderDecisionSubscription?.unsubscribe();
+    this.workerRunSubscription?.unsubscribe();
+    this.recoveryRunSubscription?.unsubscribe();
+    this.followupRunSubscription?.unsubscribe();
+    this.pursuitMatchSubscription?.unsubscribe();
+    this.intakeSubscription?.unsubscribe();
   }
 
   refresh(showNotification = false, preserveLastOperation = false): void {
-    if (this.runningAction && this.runningAction !== 'refresh') {
+    if (this.destroyed || (this.runningAction && this.runningAction !== 'refresh')) {
       return;
     }
     this.refreshSubscription?.unsubscribe();
@@ -162,9 +220,22 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     this.reminderProposalsUnavailable = false;
     this.reminderActivationUnavailable = false;
     this.reminderDeliveryUnavailable = false;
+    this.loadFailed = false;
     if (blockingRefresh) {
       this.runningAction = 'refresh';
     }
+    let received = false;
+    const failed = () => {
+      this.loadFailed = true;
+      this.workerReviewRefreshed = false;
+      this.reminderProposals = undefined;
+      this.reminderActivationHistory = undefined;
+      this.reminderDeliveryHistory = undefined;
+      if (!preserveLastOperation) {
+        this.lastOperation = { name: 'Refresh', status: 'failed', summary: 'Workflow panels could not be validated. Previous records are retained; refresh before acting.', at: new Date() };
+      }
+      this.notification.error('Workflow data unavailable', 'One or more workflow panels are missing, invalid or unavailable. Previous records remain visible but cannot authorize actions.');
+    };
     this.refreshSubscription = forkJoin({
       overview: this.workflowService.overview(),
       dashboard: this.workflowService.dashboard(),
@@ -182,8 +253,13 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
       })),
       items: this.workflowService.items(this.includeArchived),
       approvals: this.workflowService.approvals(),
-    }).subscribe({
+    }).pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => {
+      this.loading = false;
+      if (blockingRefresh) this.runningAction = undefined;
+    })).subscribe({
       next: ({ overview, dashboard, reminderProposals, reminderActivations, reminderDeliveries, items, approvals }) => {
+        received = true;
+        if (!this.validOperationalPanels(overview, dashboard, items, approvals)) { failed(); return; }
         this.overview = overview;
         this.dashboard = dashboard;
         const proposalsValid = this.validReminderProposalSnapshot(reminderProposals);
@@ -206,6 +282,8 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
         }
         this.items = items;
         this.approvalItems = approvals;
+        this.dataLoaded = true;
+        if (this.workerReviewRequired) this.workerReviewRefreshed = true;
         this.loading = false;
         if (blockingRefresh) {
           this.runningAction = undefined;
@@ -225,91 +303,150 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
           );
         }
       },
-      error: () => {
-        this.loading = false;
-        this.reminderProposals = undefined;
-        this.reminderActivationHistory = undefined;
-        this.reminderDeliveryHistory = undefined;
-        if (blockingRefresh) {
-          this.runningAction = undefined;
-        }
-        if (!preserveLastOperation) {
-          this.lastOperation = {
-            name: 'Refresh',
-            status: 'failed',
-            summary: 'One or more workflow panels failed to load.',
-            at: new Date(),
-          };
-        }
-        this.notification.error('Error', 'Failed to load the workflow operational chain.');
-      }
+      error: failed,
+      complete: () => { if (!received) failed(); },
+    });
+  }
+
+  private validOperationalPanels(
+    overview: IWorkflowOverview, dashboard: IWorkflowDashboard,
+    items: IWorkflowItem[], approvals: IWorkflowItem[]
+  ): boolean {
+    const states = ['new_input', 'classified', 'linked', 'checklist_generated', 'waiting_external_input',
+      'needs_approval', 'ready', 'in_progress', 'completed', 'archived', 'blocked'];
+    const strings = (values: unknown): values is string[] => Array.isArray(values) && values.every(value => typeof value === 'string');
+    const reference = (value: unknown): value is string => typeof value === 'string' &&
+      /^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value);
+    const rules = (values: unknown): boolean => Array.isArray(values) && values.every(value => value &&
+      typeof value.id === 'string' && typeof value.name === 'string' && typeof value.ruleKey === 'string' &&
+      typeof value.description === 'string' && typeof value.category === 'string' && typeof value.enabled === 'boolean');
+    const records = (values: unknown): boolean => {
+      if (!Array.isArray(values)) return false;
+      const ids = new Set<string>();
+      return values.every(value => {
+        if (!value || !reference(value.id) || ids.has(value.id.toLowerCase()) || typeof value.title !== 'string' ||
+            !states.includes(value.currentState) || typeof value.requiresApproval !== 'boolean' ||
+            typeof value.archived !== 'boolean' || !['not_required', 'pending', 'approved', 'rejected'].includes(value.approvalStatus)) return false;
+        ids.add(value.id.toLowerCase()); return true;
+      });
+    };
+    if (!overview || !strings(overview.states) || overview.states.length !== states.length ||
+        new Set(overview.states).size !== states.length || !states.every(state => overview.states.includes(state)) ||
+        !strings(overview.safetyRules) || !rules(overview.rules) || !Array.isArray(overview.capabilities) ||
+        !overview.capabilities.every(value => value && typeof value.id === 'string' && typeof value.name === 'string' &&
+          typeof value.status === 'string' && strings(value.implemented) && strings(value.next)) ||
+        !dashboard || !dashboard.counts || typeof dashboard.counts !== 'object' || Array.isArray(dashboard.counts) ||
+        !Object.values(dashboard.counts).every(value => Number.isSafeInteger(value) && value >= 0) || !rules(dashboard.rules) ||
+        ![items, approvals, dashboard.approvalItems, dashboard.readyItems, dashboard.blockedItems,
+          dashboard.highRiskItems, dashboard.itemsWithoutNextAction].every(records) || !Array.isArray(dashboard.dueOpenLoops)) return false;
+    const loopIds = new Set<string>();
+    return dashboard.dueOpenLoops.every(loop => {
+      if (!loop || !reference(loop.id) || !reference(loop.workflowId) || loopIds.has(loop.id.toLowerCase()) ||
+          typeof loop.status !== 'string' || typeof loop.responsibleParty !== 'string' ||
+          typeof loop.waitingFor !== 'string' || typeof loop.nextAction !== 'string') return false;
+      loopIds.add(loop.id.toLowerCase()); return true;
     });
   }
 
   intake(): void {
-    if (this.intakeForm.invalid) {
+    if (this.destroyed || this.workerReviewRequired || this.intakeForm.invalid || this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
+    const request = { ...this.intakeForm.getRawValue() };
+    if (typeof request.input !== 'string' || !request.input.trim()) return;
+    const choice = this.selectedPursuitMatch;
+    if (choice && (!this.pursuitMatches.includes(choice) || !this.validWorkerReference(choice.pursuit?.id))) return;
+    const pursuitId = choice?.pursuit.id;
+    const original = this.selected;
+    const snapshot = JSON.stringify(request);
     this.saving = true;
-    if (this.selectedPursuitMatch) {
-      this.pursuitService.intake(this.selectedPursuitMatch.pursuit.id, this.intakeForm.value).subscribe({
-        next: (detail) => {
-          this.saving = false;
-          this.notification.success('Workflow linked to pursuit', 'Input became operational work under the selected pursuit.');
-          this.selectNewestPursuitWorkflow(detail);
-          this.refresh(false, true);
-        },
-        error: () => {
-          this.saving = false;
-          this.notification.error('Error', 'Failed to create workflow inside the selected pursuit.');
-        },
-      });
-      return;
-    }
-    this.pursuitService.routeIntake(this.intakeForm.value).subscribe({
+    this.lastIntakePursuitId = undefined;
+    this.lastIntakeWorkflowId = undefined;
+    let received = false;
+    const uncertain = () => this.pauseWorkerForReview('Intake');
+    const operation = pursuitId
+      ? this.pursuitService.intake(pursuitId, request).pipe(map((detail): IPursuitRoutedIntakeResult => ({
+        mode: 'selected_existing', matched: true, createdCandidate: false, pursuitId, detail, workflowId: detail?.intakeWorkflowId,
+      })))
+      : this.pursuitService.routeIntake(request);
+    this.intakeSubscription = operation.pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.saving = false; })).subscribe({
       next: (result) => {
+        received = true;
         this.saving = false;
-        this.pursuitMatches = result.matches || [];
-        if (result.detail) {
-          this.selectNewestPursuitWorkflow(result.detail);
+        const candidate = result?.mode === 'candidate_created';
+        const matched = ['selected_existing', 'matched_existing', 'matched_candidate'].includes(result?.mode);
+        const workflowId = result?.workflowId;
+        const hasWorkflow = this.validWorkerReference(workflowId);
+        const standalone = candidate && result.createdCandidate === false && result.matched === false && hasWorkflow &&
+          !this.validWorkerReference(result.pursuitId) && !result.detail && !pursuitId &&
+          (!result.pursuitId || result.pursuitId === '00000000-0000-0000-0000-000000000000');
+        const needsAcceptance = (candidate && !standalone) || result?.mode === 'matched_candidate';
+        if (!result || (!standalone && !this.validWorkerReference(result.pursuitId)) || (!candidate && !matched) ||
+            result.matched !== matched || result.createdCandidate !== (candidate && !standalone) ||
+            (pursuitId && result.pursuitId !== pursuitId) ||
+            (matched && result.detail?.pursuit?.id !== result.pursuitId) ||
+            (result.detail && result.detail.pursuit?.id !== result.pursuitId) ||
+            (workflowId !== undefined && (!hasWorkflow || needsAcceptance)) ||
+            (result.detail?.intakeWorkflowId !== undefined && (!hasWorkflow || result.detail.intakeWorkflowId !== workflowId))) { uncertain(); return; }
+        if (snapshot === JSON.stringify(this.intakeForm.getRawValue()) && this.selected === original && this.selectedPursuitMatch === choice) {
+          this.lastIntakePursuitId = standalone ? undefined : result.pursuitId;
+          this.lastIntakeWorkflowId = hasWorkflow ? workflowId : undefined;
         }
-        if (result.mode === 'matched_existing') {
-          this.notification.success('Workflow linked to pursuit', 'HAI matched this input to an existing pursuit before creating governed work.');
-        } else if (result.createdCandidate) {
-          this.notification.info('Pursuit candidate needs review', 'HAI recorded the unmatched input as a reviewable pursuit candidate. No workflow was created until an approver accepts it.');
-        } else {
-          this.notification.success('Workflow created', result.message || 'Input classified, checklist generated, and audit event recorded.');
-        }
+        const summary = needsAcceptance
+          ? 'The server returned a pursuit candidate for review. This acknowledgement does not prove workflow creation or task execution.'
+          : hasWorkflow
+            ? 'The server returned an exact intake workflow reference. Inspect its records and audit; this acknowledgement does not prove task execution.'
+            : 'The server returned the associated pursuit. Inspect its records and intake audit; the response does not identify the exact newly created workflow.';
+        this.lastOperation = { name: 'Intake response', status: 'completed', summary, at: new Date() };
+        this.notification.info(needsAcceptance ? 'Pursuit candidate needs review' : 'Intake response received', summary);
         this.refresh(false, true);
       },
-      error: () => {
-        this.saving = false;
-        this.notification.error('Error', 'Failed to match and intake workflow input.');
-      },
+      error: uncertain,
+      complete: () => { if (!received) uncertain(); },
     });
   }
 
   matchPursuits(): void {
+    if (this.destroyed || (this.anyActionRunning() && !this.matchingPursuits)) return;
     const value = this.intakeForm.value;
-    if (!String(value.input || '').trim()) {
+    if (typeof value.input !== 'string' || !value.input.trim()) {
       this.notification.error('Input required', 'Describe the signal before matching it to a pursuit.');
       return;
     }
+    this.pursuitMatchSubscription?.unsubscribe();
+    this.selectedPursuitMatch = undefined;
+    this.pursuitMatches = [];
+    const inputSnapshot = JSON.stringify(this.intakeForm.getRawValue());
     this.matchingPursuits = true;
-    this.pursuitService.match({
+    let received = false;
+    const unavailable = () => {
+      this.notification.error('Pursuit matching unavailable', 'No project selection was confirmed. Check the current input before trying again.');
+    };
+    this.pursuitMatchSubscription = this.pursuitService.match({
       input: value.input,
       projectKey: value.projectKey,
       sourceType: value.sourceType,
       sourceId: value.sourceId,
       sourceUri: value.sourceUri,
       limit: 5,
-    }).subscribe({
+    }).pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.matchingPursuits = false; })).subscribe({
       next: (matches) => {
+        received = true;
+        if (this.destroyed || inputSnapshot !== JSON.stringify(this.intakeForm.getRawValue())) return;
+        const ids = new Set<string>();
+        if (!Array.isArray(matches) || matches.length > 5 || !matches.every(match => {
+          const id = match?.pursuit?.id;
+          if (!this.validWorkerReference(id) || ids.has(id.toLowerCase()) || typeof match.pursuit.title !== 'string' ||
+              !Number.isFinite(match.score) || match.score < 0 || match.score > 1 ||
+              typeof match.confidence !== 'string' || !Array.isArray(match.reasons) ||
+              !match.reasons.every(reason => typeof reason === 'string')) return false;
+          ids.add(id.toLowerCase()); return true;
+        })) { unavailable(); return; }
         this.pursuitMatches = matches;
         this.matchingPursuits = false;
         if (!matches.length) {
           this.selectedPursuitMatch = undefined;
-          this.notification.info('No pursuit match', 'This signal can still create a standalone workflow.');
+          this.notification.info('No pursuit match', 'No existing project was selected for this input.');
           return;
         }
         if (!this.selectedPursuitMatch && matches[0].score >= 0.7) {
@@ -319,63 +456,202 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
         // change. Render the returned, selectable candidates immediately.
         this.changeDetector.detectChanges();
       },
-      error: () => {
-        this.matchingPursuits = false;
-        this.notification.error('Error', 'Failed to retrieve pursuit matches.');
-      },
+      error: unavailable,
+      complete: () => { if (!received) unavailable(); },
     });
   }
 
   selectPursuitMatch(match: IPursuitMatchCandidate): void {
+    if (this.destroyed || this.matchingPursuits || !this.pursuitMatches.includes(match)) return;
     this.selectedPursuitMatch = match;
   }
 
   clearPursuitMatch(): void {
+    this.pursuitMatchSubscription?.unsubscribe();
+    this.matchingPursuits = false;
     this.selectedPursuitMatch = undefined;
   }
 
   open(item: IWorkflowItem): void {
-    this.workflowService.get(item.id).subscribe({
-      next: (record) => this.applyWorkflowRecord(record),
-      error: () => this.notification.error('Error', 'Failed to open workflow.'),
-    });
+    this.loadWorkflowRecord(item.id);
+  }
+
+  inspectIntakeWorkflow(): void {
+    if (this.validWorkerReference(this.lastIntakeWorkflowId)) this.loadWorkflowRecord(this.lastIntakeWorkflowId!);
+  }
+
+  private loadWorkflowRecord(workflowId: string, onLoaded?: () => void): void {
+    if (this.destroyed || this.saving || this.proposalAction || this.checklistAction || this.activationBusyId) return;
+    this.workflowOpenSubscription?.unsubscribe();
+    const request = ++this.workflowOpenRequest;
+    this.selected = undefined;
+    if (typeof workflowId !== 'string' || !this.isUuid(workflowId) || workflowId === '00000000-0000-0000-0000-000000000000') {
+      this.openingWorkflowId = undefined;
+      this.workflowOpenError = 'The workflow reference is invalid. Select a current workflow record.';
+      this.notification.error('Workflow unavailable', this.workflowOpenError);
+      return;
+    }
+    this.openingWorkflowId = workflowId;
+    this.workflowOpenError = undefined;
+    let received = false;
+    this.workflowOpenSubscription = this.workflowService.get(workflowId)
+      .pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => {
+        if (request === this.workflowOpenRequest) this.openingWorkflowId = undefined;
+      }))
+      .subscribe({
+        next: (record) => {
+          if (this.destroyed || request !== this.workflowOpenRequest) return;
+          received = true;
+          if (typeof record?.item?.id !== 'string' || record.item.id.toLowerCase() !== workflowId.toLowerCase()) {
+            this.workflowOpenError = 'The response did not match the requested workflow. Select the record again to refresh.';
+            this.changeDetector.detectChanges();
+            return;
+          }
+          if (this.transitionReviewId === workflowId &&
+              (typeof record.item.currentState !== 'string' || !this.overview?.states?.includes(record.item.currentState))) {
+            this.workflowOpenError = 'The affected workflow did not return a recognized state. Refresh it again before another change.';
+            this.changeDetector.detectChanges();
+            return;
+          }
+          this.openingWorkflowId = undefined;
+          if (this.approvalReviewId === workflowId) {
+            if (typeof record.item.currentState !== 'string' || !this.overview?.states?.includes(record.item.currentState) ||
+                !['pending', 'approved', 'rejected', 'not_required'].includes(record.item.approvalStatus)) {
+              this.workflowOpenError = 'The affected workflow did not return a recognized approval state. Refresh it again before another change.';
+              this.changeDetector.detectChanges();
+              return;
+            }
+            this.approvalReviewId = undefined;
+            this.approvalError = undefined;
+          }
+          if (this.transitionReviewId === workflowId) {
+            this.transitionReviewId = undefined;
+            this.transitionError = undefined;
+          }
+          this.applyWorkflowRecord(record);
+          onLoaded?.();
+        },
+        error: () => {
+          if (this.destroyed || request !== this.workflowOpenRequest) return;
+          this.openingWorkflowId = undefined;
+          this.workflowOpenError = 'The workflow could not be opened. Check the connection, then select the row to retry.';
+          this.changeDetector.detectChanges();
+          this.notification.error('Workflow unavailable', 'The workflow record could not be loaded.');
+        },
+        complete: () => {
+          if (!received && !this.destroyed && request === this.workflowOpenRequest) {
+            this.workflowOpenError = 'No workflow record was returned. Select the record again to refresh.';
+            this.changeDetector.detectChanges();
+          }
+        },
+      });
   }
 
   transition(): void {
-    if (!this.selected || this.transitionForm.invalid) {
+    if (this.destroyed || !this.selected || this.transitionForm.invalid || this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
-    this.workflowService.transition(this.selected.item.id, this.transitionForm.value).subscribe({
-      next: (record) => {
-        this.applyWorkflowRecord(record);
-        this.notification.success('State updated', 'Workflow transition was validated and audited.');
-        this.refresh(false, true);
-      },
-      error: () => this.notification.error('Blocked', 'Workflow transition was not allowed.'),
-    });
-  }
-
-  resolveApproval(item: IWorkflowItem, approved: boolean): void {
-    if (this.saving) {
+    const original = this.selected;
+    const workflowId = original.item.id;
+    const targetState = this.transitionForm.value.targetState;
+    const message = this.transitionForm.value.message;
+    if (!this.isUuid(workflowId) || workflowId === '00000000-0000-0000-0000-000000000000' ||
+        typeof targetState !== 'string' || !this.overview?.states?.includes(targetState) || typeof message !== 'string') {
+      this.notification.warning('Check transition', 'Use a current workflow, a listed target state and a message.');
       return;
     }
     this.saving = true;
-    this.workflowService.resolveApproval(item.id, {
-      approved,
-      note: this.approvalForm.value.note,
-      actor: 'operator',
-    }).subscribe({
+    this.transitionError = undefined;
+    let received = false;
+    const unconfirmed = () => {
+      this.transitionReviewId = workflowId;
+      this.transitionError = 'The transition could not be confirmed. Refresh the affected workflow before another change.';
+      this.notification.warning('Transition unconfirmed', this.transitionError);
+    };
+    this.transitionSubscription = this.workflowService.transition(workflowId, { targetState, message })
+      .pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.saving = false; }))
+      .subscribe({
       next: (record) => {
+        received = true;
+        if (this.destroyed) return;
+        if (record?.item?.id !== workflowId || record.item.currentState !== targetState) {
+          unconfirmed();
+          return;
+        }
         this.saving = false;
-        this.applyWorkflowRecord(record);
-        this.notification.success('Approval updated', approved ? 'Workflow approved for execution.' : 'Workflow rejected and blocked.');
+        if (this.selected === original) this.applyWorkflowRecord(record);
+        this.notification.info('State response received', 'The server returned the requested workflow state. This is not proof of task execution or an independent audit.');
         this.refresh(false, true);
       },
       error: () => {
-        this.saving = false;
-        this.notification.error('Error', 'Failed to update workflow approval.');
+        if (!this.destroyed) unconfirmed();
+      },
+      complete: () => {
+        if (!received && !this.destroyed) unconfirmed();
       },
     });
+  }
+
+  reviewTransition(): void {
+    if (this.transitionReviewId && !this.destroyed && !this.anyActionRunning()) {
+      this.loadWorkflowRecord(this.transitionReviewId);
+    }
+  }
+
+  resolveApproval(item: IWorkflowItem, approved: boolean): void {
+    if (this.destroyed || this.actionsUnavailable() || this.anyActionRunning() ||
+        this.selected?.item !== item || typeof approved !== 'boolean' ||
+        !this.isUuid(item.id) || item.id === '00000000-0000-0000-0000-000000000000' ||
+        item.requiresApproval !== true || item.approvalStatus !== 'pending' || item.currentState !== 'needs_approval' ||
+        this.hasOpenAutomationSelection(this.selected) || typeof this.approvalForm.value.note !== 'string') {
+      return;
+    }
+    const original = this.selected;
+    const workflowId = item.id;
+    const decisionIds = new Set(original.decisions?.map(decision => decision.id) || []);
+    const expectedDecision = approved ? 'approved' : 'rejected';
+    this.saving = true;
+    this.approvalError = undefined;
+    let received = false;
+    const unconfirmed = () => {
+      this.approvalReviewId = workflowId;
+      this.approvalError = 'The approval decision could not be confirmed. Refresh the affected workflow before another change.';
+      this.notification.warning('Approval unconfirmed', this.approvalError);
+    };
+    this.approvalSubscription = this.workflowService.resolveApproval(workflowId, {
+      approved,
+      note: this.approvalForm.value.note,
+      actor: 'operator',
+    }).pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.saving = false; })).subscribe({
+      next: (record) => {
+        received = true;
+        if (this.destroyed) return;
+        const decision = Array.isArray(record?.decisions) && record.decisions.some(value =>
+          typeof value?.id === 'string' && this.isUuid(value.id) && value.id !== '00000000-0000-0000-0000-000000000000' &&
+          !decisionIds.has(value.id) && value.workflowId === workflowId && value.decisionType === 'approval' &&
+          value.decision === expectedDecision && value.approved === approved &&
+          typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt)));
+        if (record?.item?.id !== workflowId || record.item.requiresApproval !== true || record.item.approvalStatus !== expectedDecision ||
+            record.item.currentState !== (approved ? 'ready' : 'blocked') || !decision) {
+          unconfirmed();
+          return;
+        }
+        this.saving = false;
+        if (this.selected === original) this.applyWorkflowRecord(record);
+        this.notification.info('Decision response received', 'The server returned the requested approval decision and record. This is not proof of execution or independent audit persistence.');
+        this.refresh(false, true);
+      },
+      error: () => {
+        if (!this.destroyed) unconfirmed();
+      },
+      complete: () => {
+        if (!received && !this.destroyed) unconfirmed();
+      },
+    });
+  }
+
+  reviewApproval(): void {
+    if (this.approvalReviewId && !this.destroyed && !this.anyActionRunning()) this.loadWorkflowRecord(this.approvalReviewId);
   }
 
   openReminder(proposal: IWorkflowReminderProposal): void {
@@ -387,19 +663,16 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   }
 
   openReminderWorkflow(proposal: IWorkflowReminderProposal): void {
-    const item = this.items.find((candidate) => candidate.id === proposal.workflowId);
-    if (item) {
-      this.closeReminder();
-      this.open(item);
+    if (this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
-    this.workflowService.get(proposal.workflowId).subscribe({
-      next: (record) => {
-        this.closeReminder();
-        this.applyWorkflowRecord(record);
-      },
-      error: () => this.notification.error('Workflow unavailable', 'Refresh the reminder before opening its workflow.'),
-    });
+    const item = this.items.find((candidate) => candidate.id === proposal.workflowId);
+    if (item) {
+      this.open(item);
+      this.closeReminder();
+      return;
+    }
+    this.loadWorkflowRecord(proposal.workflowId, () => this.closeReminder());
   }
 
   activationFor(proposal: IWorkflowReminderProposal): IWorkflowReminderActivationHistoryItem | undefined {
@@ -429,6 +702,13 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   canAuthorizeReminderDelivery(proposal: IWorkflowReminderProposal): boolean {
     const activation = this.activationFor(proposal);
     return !!activation?.current && activation.status === 'approved' && !!activation.latestDecision?.expiresAt &&
+      this.validWorkerReference(activation.request.id) && this.validWorkerReference(activation.latestDecision.id) &&
+      this.validDigest(activation.request.recordDigest) && this.validDigest(activation.latestDecision.recordDigest) &&
+      this.reminderActivationHistory?.items.filter(item => item.request.id === activation.request.id).length === 1 &&
+      activation.latestDecision.authority === 'reminder_activation_decision_only' &&
+      activation.latestDecision.confirmation === 'APPROVE INTERNAL REMINDER PREPARATION' &&
+      activation.latestDecision.decision === 'approved' && activation.latestDecision.activationRequestId === activation.request.id &&
+      activation.latestDecision.activationRequestDigest === activation.request.recordDigest &&
       new Date(activation.latestDecision.expiresAt).getTime() > Date.now() && !this.deliveryAuthorizationFor(proposal);
   }
 
@@ -436,64 +716,110 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     event.stopPropagation();
     const activation = this.activationFor(proposal);
     const decision = activation?.latestDecision;
-    if (!activation || !decision || !this.canAuthorizeReminderDelivery(proposal) || this.activationBusyId) {
+    if (this.destroyed || this.workerReviewRequired || !activation || !decision || !this.canAuthorizeReminderDelivery(proposal) ||
+        ![activation.request.id, activation.request.workflowId, activation.request.checklistItemId, decision.id].every(id => this.validWorkerReference(id)) ||
+        ![activation.request.recordDigest, activation.request.reminderDigest, decision.recordDigest].every(value => this.validDigest(value)) ||
+        this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
+    const requestId = activation.request.id;
+    const decisionId = decision.id;
+    const requestDigest = activation.request.recordDigest;
+    const reminderDigest = activation.request.reminderDigest;
+    const decisionDigest = decision.recordDigest;
+    const workflowId = activation.request.workflowId;
+    const checklistItemId = activation.request.checklistItemId;
+    const idempotencyKey = `ui:delivery:${requestId}:${decisionDigest.slice(0, 16)}`;
+    let dispatched = false;
     this.modal.confirm({
       nzTitle: 'Authorize one internal HAI reminder?',
       nzContent: 'This permits one local in-app reminder only. It cannot send email, write Calendar data, call a provider, or execute a follow-up.',
       nzOkText: 'Authorize one reminder',
       nzCancelText: 'Cancel',
       nzOnOk: () => {
-        this.activationBusyId = activation.request.id;
-        this.workflowService.authorizeReminderDelivery(activation.request.id, {
-          expectedActivationRequestDigest: activation.request.recordDigest,
-          expectedActivationDecisionDigest: decision.recordDigest,
-          expectedReminderDigest: activation.request.reminderDigest,
-          idempotencyKey: `ui:delivery:${activation.request.id}:${decision.recordDigest.slice(0, 16)}`,
+        const currentActivation = this.activationFor(proposal);
+        if (dispatched || this.destroyed || this.workerReviewRequired || this.actionsUnavailable() || this.anyActionRunning() ||
+            currentActivation?.request.id !== requestId || currentActivation.request.recordDigest !== requestDigest ||
+            currentActivation.request.reminderDigest !== reminderDigest || currentActivation.request.workflowId !== workflowId ||
+            currentActivation.request.checklistItemId !== checklistItemId || currentActivation.latestDecision?.id !== decisionId ||
+            currentActivation.latestDecision.recordDigest !== decisionDigest ||
+            !this.canAuthorizeReminderDelivery(proposal)) {
+          return;
+        }
+        dispatched = true;
+        let received = false;
+        const uncertain = () => this.pauseWorkerForReview('Internal reminder authorization');
+        this.activationBusyId = requestId;
+        this.reminderAuthorizationSubscription = this.workflowService.authorizeReminderDelivery(requestId, {
+          expectedActivationRequestDigest: requestDigest,
+          expectedActivationDecisionDigest: decisionDigest,
+          expectedReminderDigest: reminderDigest,
+          idempotencyKey,
           channel: 'in_app',
           confirmation: 'AUTHORIZE ONE INTERNAL HAI REMINDER',
-        }).subscribe({
+        }).pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.activationBusyId = undefined; })).subscribe({
           next: (result) => {
+            received = true;
             this.activationBusyId = undefined;
+            const authorization = result?.authorization;
             if (result?.authority !== 'internal_reminder_delivery_authorization' || result?.canExecute !== false ||
-                result?.deliveryAuthorized !== true || result.authorization?.activationRequestId !== activation.request.id ||
-                result.authorization?.activationDecisionId !== decision.id || result.authorization?.channel !== 'in_app' ||
-                !this.validDigest(result.authorization?.recordDigest)) {
-              this.notification.error('Authorization rejected', 'HAI returned invalid reminder-delivery evidence.');
-              return;
-            }
-            this.notification.success('Internal reminder authorized', 'The local worker may record one in-app reminder. No external effect was authorized.');
+                result?.deliveryAuthorized !== true || typeof result.replayed !== 'boolean' || !authorization ||
+                !this.validWorkerReference(authorization.id) || authorization.activationRequestId !== requestId ||
+                authorization.activationDecisionId !== decisionId || authorization.workflowId !== workflowId ||
+                authorization.checklistItemId !== checklistItemId || authorization.channel !== 'in_app' ||
+                authorization.authority !== result.authority || authorization.confirmation !== 'AUTHORIZE ONE INTERNAL HAI REMINDER' ||
+                authorization.idempotencyKey !== idempotencyKey || authorization.reminderDigest !== reminderDigest ||
+                authorization.activationRequestDigest !== requestDigest || authorization.activationDecisionDigest !== decisionDigest ||
+                !this.validDigest(authorization.requestDigest) || !this.validDigest(authorization.recordDigest)) { uncertain(); return; }
+            this.notification.info('Server reported internal reminder authorization', 'Inspect authorization and delivery receipts. No external effect was authorized and no delivery is proven by this response.');
             this.refresh(false, true);
           },
-          error: () => {
-            this.activationBusyId = undefined;
-            this.notification.error('Authorization blocked', 'The approval expired, changed, or already authorized a delivery.');
-          },
+          error: uncertain,
+          complete: () => { if (!received) uncertain(); },
         });
       },
     });
   }
 
   runDueReminderDeliveries(): void {
-    if (this.runningAction) {
+    if (this.destroyed || this.workerReviewRequired || this.actionsUnavailable() || this.anyActionRunning() || !this.reminderDeliveryHistory?.authorizations.length) {
       return;
     }
     this.runningAction = 'reminders';
-    this.workflowService.runDueReminderDeliveries({ limit: 25 }).subscribe({
+    let received = false;
+    const uncertain = () => this.pauseWorkerForReview('Internal reminder pass');
+    this.reminderRunSubscription = this.workflowService.runDueReminderDeliveries({ limit: 25 }).pipe(
+      take(1), timeout(this.operationTimeoutMs), finalize(() => { this.runningAction = undefined; })
+    ).subscribe({
       next: (summary) => {
+        received = true;
         this.runningAction = undefined;
-        this.notification.success(
-          'Internal reminder pass complete',
-          `${summary.delivered} delivered, ${summary.retried} retrying, ${summary.suppressed} suppressed, ${summary.deadLettered} dead-lettered.`
-        );
+        if (!this.validReminderRunSummary(summary)) { uncertain(); return; }
+        const message = `Server reported ${summary.delivered} internal signals, ${summary.retried} retries, ${summary.suppressed} suppressed, ${summary.deadLettered} dead-lettered and ${summary.expired} expired. Inspect delivery receipts; no external messages were authorized.`;
+        this.lastOperation = { name: 'Internal reminder pass', status: 'completed', summary: message, at: new Date() };
+        this.notification.info('Internal reminder response received', message);
         this.refresh(false, true);
       },
-      error: () => {
-        this.runningAction = undefined;
-        this.notification.error('Reminder pass blocked', 'The local reminder worker could not complete safely.');
-      },
+      error: uncertain,
+      complete: () => { if (!received) uncertain(); },
     });
+  }
+
+  private validReminderRunSummary(summary: IWorkflowReminderDeliveryRunSummary): boolean {
+    if (!summary || !Array.isArray(summary.results) ||
+        ![summary.checked, summary.delivered, summary.retried, summary.suppressed, summary.deadLettered, summary.expired]
+          .every(value => Number.isSafeInteger(value) && value >= 0 && value <= 25) ||
+        summary.checked !== summary.results.length ||
+        summary.checked !== summary.delivered + summary.retried + summary.suppressed + summary.deadLettered + summary.expired) return false;
+    const counts = { delivered: 0, retryable_failure: 0, suppressed: 0, dead_lettered: 0, expired: 0 };
+    const ids = new Set<string>();
+    for (const result of summary.results) {
+      if (!result || !this.validWorkerReference(result.authorizationId) || ids.has(result.authorizationId.toLowerCase()) ||
+          !Object.prototype.hasOwnProperty.call(counts, result.status)) return false;
+      ids.add(result.authorizationId.toLowerCase()); counts[result.status]++;
+    }
+    return counts.delivered === summary.delivered && counts.retryable_failure === summary.retried &&
+      counts.suppressed === summary.suppressed && counts.dead_lettered === summary.deadLettered && counts.expired === summary.expired;
   }
 
   canPrepareReminder(proposal: IWorkflowReminderProposal): boolean {
@@ -503,45 +829,50 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
 
   prepareReminderActivation(proposal: IWorkflowReminderProposal, event: Event): void {
     event.stopPropagation();
-    if (this.activationBusyId || !this.canPrepareReminder(proposal)) {
+    if (this.destroyed || this.workerReviewRequired || this.actionsUnavailable() || this.anyActionRunning() || !this.canPrepareReminder(proposal) ||
+        !this.validWorkerReference(proposal.checklistItemId) || !this.validWorkerReference(proposal.workflowId) || !this.validDigest(proposal.evidenceDigest)) {
       return;
     }
-    this.activationBusyId = proposal.checklistItemId;
+    const checklistItemId = proposal.checklistItemId;
+    const workflowId = proposal.workflowId;
+    const reminderDigest = proposal.evidenceDigest;
+    this.activationBusyId = checklistItemId;
     const idempotencyKey = [
-      'ui', 'internal-reminder', proposal.checklistItemId,
-      proposal.evidenceDigest.slice(0, 16), Date.now().toString(36),
+      'ui', 'internal-reminder', checklistItemId,
+      reminderDigest.slice(0, 16), Date.now().toString(36),
     ].join(':');
-    this.workflowService.prepareReminderActivation(proposal.checklistItemId, {
-      expectedReminderDigest: proposal.evidenceDigest,
+    let received = false;
+    const uncertain = () => this.pauseWorkerForReview('Internal reminder preparation');
+    this.reminderPreparationSubscription = this.workflowService.prepareReminderActivation(checklistItemId, {
+      expectedReminderDigest: reminderDigest,
       idempotencyKey,
       activationKind: 'internal_notification',
       confirmation: 'PREPARE INTERNAL REMINDER ONLY',
-    }).subscribe({
+    }).pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.activationBusyId = undefined; })).subscribe({
       next: (result) => {
+        received = true;
         this.activationBusyId = undefined;
         if (result?.authority !== 'reminder_activation_request_only' || result?.canExecute !== false ||
+            typeof result.replayed !== 'boolean' || !this.validWorkerReference(result.request?.id) ||
             result.request?.activationKind !== 'internal_notification' ||
-            result.request?.checklistItemId !== proposal.checklistItemId ||
-            result.request?.reminderDigest !== proposal.evidenceDigest ||
-            !this.validDigest(result.request?.recordDigest)) {
-          this.notification.error('Preparation rejected', 'HAI returned invalid reminder preparation evidence.');
-          return;
-        }
-        this.notification.success(
-          result.replayed ? 'Preparation already recorded' : 'Internal reminder prepared',
-          'Nothing was sent and no calendar event was created. Owner approval remains separate.'
+            result.request?.checklistItemId !== checklistItemId || result.request.workflowId !== workflowId ||
+            result.request?.reminderDigest !== reminderDigest || result.request.idempotencyKey !== idempotencyKey ||
+            result.request.authority !== result.authority || result.request.confirmation !== 'PREPARE INTERNAL REMINDER ONLY' ||
+            !this.validDigest(result.request.requestDigest) || !this.validDigest(result.request?.recordDigest)) { uncertain(); return; }
+        this.notification.info(
+          result.replayed ? 'Server reported existing preparation' : 'Server reported internal reminder preparation',
+          'Inspect preparation evidence. Owner approval and delivery authorization remain separate; this response does not prove delivery.'
         );
         this.refresh(false, true);
       },
-      error: () => {
-        this.activationBusyId = undefined;
-        this.notification.error('Preparation blocked', 'The reminder changed or could not be prepared safely.');
-      },
+      error: uncertain,
+      complete: () => { if (!received) uncertain(); },
     });
   }
 
   reviewReminderActivation(proposal: IWorkflowReminderProposal, event: Event): void {
     event.stopPropagation();
+    if (this.destroyed || this.actionsUnavailable() || this.anyActionRunning()) return;
     const activation = this.activationFor(proposal);
     if (!activation || !activation.current || this.activationBusyId) {
       return;
@@ -553,11 +884,11 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
         nzOkText: 'Revoke preparation',
         nzOkDanger: true,
         nzCancelText: 'Keep approval',
-        nzOnOk: () => this.decideReminderActivation(activation, 'revoked'),
+        nzOnOk: this.reminderDecisionConfirmation(activation, 'revoked'),
       });
       return;
     }
-    if (!['prepared', 'needs_clarification'].includes(activation.status)) {
+    if (this.workerReviewRequired || !['prepared', 'needs_clarification'].includes(activation.status)) {
       return;
     }
     this.modal.confirm({
@@ -565,12 +896,15 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
       nzContent: 'Approval remains non-executing. A future effect would still require separate authorization and verification.',
       nzOkText: 'Approve preparation',
       nzCancelText: 'Cancel',
-      nzOnOk: () => this.decideReminderActivation(activation, 'approved'),
+      nzOnOk: this.reminderDecisionConfirmation(activation, 'approved'),
     });
   }
 
   rejectReminderActivation(proposal: IWorkflowReminderProposal, event: Event): void {
     event.stopPropagation();
+    if (this.destroyed || this.workerReviewRequired || this.actionsUnavailable() || this.anyActionRunning()) {
+      return;
+    }
     const activation = this.activationFor(proposal);
     if (!activation || !activation.current ||
         !['prepared', 'needs_clarification'].includes(activation.status) || this.activationBusyId) {
@@ -582,14 +916,40 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
       nzOkText: 'Reject preparation',
       nzOkDanger: true,
       nzCancelText: 'Cancel',
-      nzOnOk: () => this.decideReminderActivation(activation, 'rejected'),
+      nzOnOk: this.reminderDecisionConfirmation(activation, 'rejected'),
     });
+  }
+
+  private reminderDecisionConfirmation(activation: IWorkflowReminderActivationHistoryItem, decision: 'approved' | 'rejected' | 'revoked'): () => void {
+    const captured = { ...activation, request: { ...activation.request }, latestDecision: activation.latestDecision ? { ...activation.latestDecision } : undefined };
+    let dispatched = false;
+    return () => {
+      if (dispatched) return;
+      dispatched = true;
+      this.decideReminderActivation(captured, decision);
+    };
   }
 
   private decideReminderActivation(
     activation: IWorkflowReminderActivationHistoryItem,
     decision: 'approved' | 'rejected' | 'revoked'
   ): void {
+    const current = this.reminderActivationHistory?.items.find(
+      (item) => item.request.id === activation.request.id
+    );
+    const expectedStatuses = decision === 'revoked'
+      ? ['approved']
+      : ['prepared', 'needs_clarification'];
+    if (this.destroyed || (this.workerReviewRequired && decision !== 'revoked') || this.actionsUnavailable() || this.anyActionRunning() || !current?.current ||
+        !this.validWorkerReference(activation.request.id) || !this.validDigest(activation.request.recordDigest) ||
+        (activation.latestDecision && (!this.validWorkerReference(activation.latestDecision.id) || !this.validDigest(activation.latestDecision.recordDigest))) ||
+        current.request.recordDigest !== activation.request.recordDigest ||
+        current.latestDecision?.id !== activation.latestDecision?.id ||
+        current.latestDecision?.recordDigest !== activation.latestDecision?.recordDigest ||
+        !expectedStatuses.includes(current.status)) {
+      this.notification.warning('Reminder decision unavailable', 'Refresh and review the current reminder state before deciding.');
+      return;
+    }
     const confirmation: Record<'approved' | 'rejected' | 'revoked', IWorkflowReminderActivationDecisionRequest['confirmation']> = {
       approved: 'APPROVE INTERNAL REMINDER PREPARATION',
       rejected: 'REJECT INTERNAL REMINDER PREPARATION',
@@ -600,30 +960,33 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
       rejected: 'Owner rejected this internal reminder preparation.',
       revoked: 'Owner revoked the prior internal reminder preparation approval.',
     };
-    this.activationBusyId = activation.request.id;
-    this.workflowService.decideReminderActivation(activation.request.id, {
+    const requestId = activation.request.id;
+    const requestDigest = activation.request.recordDigest;
+    const previousDecisionId = activation.latestDecision?.id;
+    let received = false;
+    const uncertain = () => this.pauseWorkerForReview('Internal reminder decision');
+    this.activationBusyId = requestId;
+    this.reminderDecisionSubscription = this.workflowService.decideReminderActivation(requestId, {
       decision,
       reason: reason[decision],
       confirmation: confirmation[decision],
-      expectedActivationRequestDigest: activation.request.recordDigest,
-      expectedPreviousDecisionId: activation.latestDecision?.id,
-    }).subscribe({
+      expectedActivationRequestDigest: requestDigest,
+      expectedPreviousDecisionId: previousDecisionId,
+    }).pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.activationBusyId = undefined; })).subscribe({
       next: (result) => {
+        received = true;
         this.activationBusyId = undefined;
         if (result?.authority !== 'reminder_activation_decision_only' || result?.canExecute !== false ||
-            result.decision?.activationRequestId !== activation.request.id ||
-            result.decision?.activationRequestDigest !== activation.request.recordDigest ||
-            result.decision?.decision !== decision || !this.validDigest(result.decision?.recordDigest)) {
-          this.notification.error('Decision rejected', 'HAI returned invalid reminder decision evidence.');
-          return;
-        }
-        this.notification.success('Reminder decision recorded', 'The immutable decision was saved. No external action was executed.');
+            typeof result.replayed !== 'boolean' || !this.validWorkerReference(result.decision?.id) ||
+            result.decision?.activationRequestId !== requestId || result.decision.activationRequestDigest !== requestDigest ||
+            (result.decision.previousDecisionId || undefined) !== previousDecisionId || result.decision.authority !== result.authority ||
+            result.decision.confirmation !== confirmation[decision] || result.decision.decision !== decision ||
+            !this.validDigest(result.decision.requestDigest) || !this.validDigest(result.decision.recordDigest)) { uncertain(); return; }
+        this.notification.info('Server reported reminder decision', 'Inspect the decision evidence. Delivery authorization remains separate; no delivery is proven by this response.');
         this.refresh(false, true);
       },
-      error: () => {
-        this.activationBusyId = undefined;
-        this.notification.error('Decision blocked', 'The reminder request expired or changed. Prepare a fresh request.');
-      },
+      error: uncertain,
+      complete: () => { if (!received) uncertain(); },
     });
   }
 
@@ -658,12 +1021,12 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
         !Array.isArray(snapshot?.items) || Number.isNaN(new Date(snapshot?.checkedAt || '').getTime())) {
       return false;
     }
-    const requestIds = new Set(snapshot.items.map((item) => item?.request?.id));
+    const requestIds = new Set(snapshot.items.map((item) => typeof item?.request?.id === 'string' ? item.request.id.toLowerCase() : undefined));
     const allowedStatuses = ['prepared', 'approved', 'rejected', 'needs_clarification', 'revoked', 'expired', 'stale'];
     return requestIds.size === snapshot.items.length && snapshot.items.every((item) => {
       const request = item?.request;
       const decision = item?.latestDecision;
-      if (!request?.id || !request.workflowId || !request.checklistItemId ||
+      if (!this.validWorkerReference(request?.id) || !this.validWorkerReference(request.workflowId) || !this.validWorkerReference(request.checklistItemId) ||
           request.activationKind !== 'internal_notification' || request.checklistStatus !== 'open' ||
           request.authority !== 'reminder_activation_request_only' ||
           request.confirmation !== 'PREPARE INTERNAL REMINDER ONLY' || item.canExecute !== false ||
@@ -678,10 +1041,13 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
       if (!decision) {
         return ['prepared', 'expired', 'stale'].includes(item.status);
       }
-      return decision.activationRequestId === request.id &&
+      const confirmations = { approved: 'APPROVE', rejected: 'REJECT', needs_clarification: 'REQUEST', revoked: 'REVOKE' };
+      return this.validWorkerReference(decision.id) && decision.activationRequestId === request.id &&
         decision.activationRequestDigest === request.recordDigest &&
         decision.authority === 'reminder_activation_decision_only' &&
         ['approved', 'rejected', 'needs_clarification', 'revoked'].includes(decision.decision) &&
+        (['expired', 'stale'].includes(item.status) || item.status === decision.decision) &&
+        decision.confirmation === (decision.decision === 'needs_clarification' ? 'REQUEST REMINDER CLARIFICATION' : `${confirmations[decision.decision]} INTERNAL REMINDER PREPARATION`) &&
         this.validDigest(decision.requestDigest) && this.validDigest(decision.recordDigest) &&
         !Number.isNaN(new Date(decision.decidedAt || '').getTime());
     });
@@ -692,9 +1058,9 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
         !Array.isArray(history.authorizations) || !Array.isArray(history.attempts)) {
       return false;
     }
-    const authorizationIds = new Set(history.authorizations.map((item) => item?.id));
+    const authorizationIds = new Set(history.authorizations.map((item) => typeof item?.id === 'string' ? item.id.toLowerCase() : undefined));
     if (authorizationIds.size !== history.authorizations.length || !history.authorizations.every((item) =>
-      !!item?.id && !!item.activationRequestId && !!item.activationDecisionId && !!item.workflowId && !!item.checklistItemId &&
+      !!item && [item.id, item.activationRequestId, item.activationDecisionId, item.workflowId, item.checklistItemId].every(id => this.validWorkerReference(id)) &&
       item.channel === 'in_app' && item.authority === 'internal_reminder_delivery_authorization' &&
       item.confirmation === 'AUTHORIZE ONE INTERNAL HAI REMINDER' && this.validDigest(item.reminderDigest) &&
       this.validDigest(item.activationRequestDigest) && this.validDigest(item.activationDecisionDigest) &&
@@ -702,12 +1068,19 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     )) {
       return false;
     }
-    return history.attempts.every((item) => authorizationIds.has(item?.authorizationId) &&
-      Number.isSafeInteger(item.attemptNumber) && item.attemptNumber >= 1 && item.attemptNumber <= 3 &&
-      ['delivered', 'retryable_failure', 'suppressed', 'dead_lettered'].includes(item.status) &&
-      item.authority === 'internal_reminder_delivery_receipt' && this.validDigest(item.reminderDigest) &&
-      this.validDigest(item.authorizationDigest) && this.validDigest(item.recordDigest)
-    );
+    const attemptIds = new Set<string>();
+    const sequenceKeys = new Set<string>();
+    return history.attempts.every((item) => {
+      const authorization = history.authorizations.find(authorization => authorization.id === item?.authorizationId);
+      if (!authorization || !this.validWorkerReference(item?.id) || attemptIds.has(item.id.toLowerCase()) ||
+          !Number.isSafeInteger(item.attemptNumber) || item.attemptNumber < 1 || item.attemptNumber > 3 ||
+          sequenceKeys.has(`${item.authorizationId}:${item.attemptNumber}`) ||
+          !['delivered', 'retryable_failure', 'suppressed', 'dead_lettered', 'expired'].includes(item.status) ||
+          item.authority !== 'internal_reminder_delivery_receipt' || item.reminderDigest !== authorization.reminderDigest ||
+          item.authorizationDigest !== authorization.recordDigest || !this.validDigest(item.recordDigest)) return false;
+      attemptIds.add(item.id.toLowerCase()); sequenceKeys.add(`${item.authorizationId}:${item.attemptNumber}`);
+      return true;
+    });
   }
 
   private validDigest(value?: string): boolean {
@@ -715,136 +1088,285 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   }
 
   resolveInterruptedExecution(): void {
-    if (!this.selected || this.interruptionForm.invalid) {
+    if (this.destroyed || !this.selected || this.interruptionForm.invalid || this.actionsUnavailable() || this.anyActionRunning() ||
+        this.selected.item.currentState !== 'blocked' || this.selected.item.recoveryStatus !== 'needs_review' ||
+        typeof this.selected.item.requiresApproval !== 'boolean') {
       return;
     }
     const request = {
       ...this.interruptionForm.value,
       actor: 'operator',
     };
-    if (request.decision === 'confirm_completed' && !request.evidenceUri?.trim()) {
-      this.notification.error('Evidence required', 'Add a source URI before confirming completion.');
+    if (!['retry', 'confirm_completed', 'keep_blocked'].includes(request.decision) ||
+        typeof request.note !== 'string' || !request.note.trim()) return;
+    if (request.decision !== 'keep_blocked' && (request.priorExecutionReconciled !== true ||
+        typeof request.evidenceUri !== 'string' || !request.evidenceUri.trim())) {
+      this.notification.error('Reconciliation required', 'Confirm that the prior execution has ended and its outcome was checked, and add a source URI.');
       return;
     }
+    const original = this.selected;
+    const workflowId = original.item.id;
+    if (!this.isUuid(workflowId) || workflowId === '00000000-0000-0000-0000-000000000000') return;
+    const draft = JSON.stringify(this.interruptionForm.value);
+    const decisionIds = new Set(original.decisions?.map(decision => decision.id) || []);
+    const expectedState = request.decision === 'confirm_completed' ? 'completed' : request.decision === 'keep_blocked' ? 'blocked' : original.item.requiresApproval ? 'needs_approval' : 'ready';
+    const expectedRecovery = request.decision === 'retry' ? 'retry_confirmed' : request.decision === 'confirm_completed' ? 'completion_confirmed' : 'needs_review';
     this.saving = true;
-    this.workflowService.resolveInterruptedExecution(this.selected.item.id, request).subscribe({
+    let received = false;
+    const unconfirmed = () => {
+      this.pauseWorkerForReview('Interrupted-execution decision');
+      this.transitionReviewId = workflowId;
+      this.transitionError = 'The interrupted-execution decision could not be confirmed. Refresh the affected workflow before another change.';
+      this.notification.warning('Recovery decision unconfirmed', this.transitionError);
+    };
+    this.interruptionSubscription = this.workflowService.resolveInterruptedExecution(workflowId, request)
+      .pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.saving = false; })).subscribe({
       next: (record) => {
-        this.applyWorkflowRecord(record);
-        this.interruptionForm.reset({
+        received = true;
+        if (this.destroyed) return;
+        const decisionMatches = Array.isArray(record?.decisions) && record.decisions.some(value =>
+          typeof value?.id === 'string' && this.isUuid(value.id) && value.id !== '00000000-0000-0000-0000-000000000000' &&
+          !decisionIds.has(value.id) && value.workflowId === workflowId && value.decisionType === 'interrupted_execution' &&
+          value.decision === request.decision && value.approved === (request.decision === 'confirm_completed') &&
+          typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt)));
+        const sourceMatches = request.decision === 'keep_blocked' || (Array.isArray(record?.sourceLinks) && record.sourceLinks.some(value =>
+          value?.workflowId === workflowId && value.sourceType === 'recovery_evidence' &&
+          value.sourceUri === request.evidenceUri.trim() && value.relationship === (request.decision === 'retry' ? 'execution_reconciliation' : 'completion_evidence')));
+        if (record?.item?.id !== workflowId || record.item.currentState !== expectedState ||
+            record.item.recoveryStatus !== expectedRecovery || !decisionMatches || !sourceMatches ||
+            (expectedState === 'needs_approval' && (record.item.requiresApproval !== true || record.item.approvalStatus !== 'pending'))) {
+          unconfirmed();
+          return;
+        }
+        const sameSelection = this.selected === original;
+        if (sameSelection) this.applyWorkflowRecord(record);
+        if (sameSelection && JSON.stringify(this.interruptionForm.value) === draft) this.interruptionForm.reset({
           decision: 'retry',
           note: '',
           evidenceUri: '',
           evidenceLabel: '',
+          priorExecutionReconciled: false,
         });
         this.saving = false;
-        this.notification.success('Interruption resolved', `Recovery decision recorded: ${request.decision}.`);
+        this.notification.info('Recovery response received', 'The server returned the requested recovery state and evidence. This is not independent verification of the external outcome.');
         this.refresh(false, true);
       },
       error: () => {
-        this.saving = false;
-        this.notification.error('Resolution blocked', 'The interrupted execution could not be resolved.');
+        if (!this.destroyed) unconfirmed();
+      },
+      complete: () => {
+        if (!received && !this.destroyed) unconfirmed();
       },
     });
   }
 
   runDue(): void {
-    if (this.runningAction) {
+    if (this.destroyed || this.workerReviewRequired || this.actionsUnavailable() || this.anyActionRunning() || this.queueCount('ready') <= 0) {
       return;
     }
     this.runningAction = 'worker';
-    this.workflowService.runDue({ limit: 10 }).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    this.runSummary = undefined;
+    let received = false;
+    const uncertain = () => {
+      this.workerReviewRequired = true;
+      this.workerReviewRefreshed = false;
+      this.workerReviewMessage = 'The worker outcome needs review. Refresh and inspect workflow records and execution evidence before allowing another run. A missing response does not mean nothing ran.';
+      this.lastOperation = { name: 'Run worker', status: 'failed', summary: this.workerReviewMessage, at: new Date() };
+      this.notification.warning('Review worker outcomes', this.workerReviewMessage);
+    };
+    this.workerRunSubscription = this.workflowService.runDue({ limit: 10 }).pipe(
+      take(1), timeout(this.operationTimeoutMs), finalize(() => { this.runningAction = undefined; })
+    ).subscribe({
       next: (summary) => {
-        this.runSummary = summary;
+        received = true;
         this.runningAction = undefined;
+        if (!this.validWorkerSummary(summary) || summary.results.some(result => result.reviewRequired)) {
+          uncertain(); return;
+        }
+        this.runSummary = {
+          checked: summary.checked, completed: summary.completed, retried: summary.retried,
+          blocked: summary.blocked, skipped: summary.skipped,
+          results: summary.results.map(result => ({
+            workflowId: result.workflowId, status: result.status, state: result.state, attempts: result.attempts,
+          })),
+        };
         this.lastOperation = {
           name: 'Run worker',
           status: 'completed',
           summary: `${summary.checked} checked, ${summary.completed} completed, ${summary.retried} retried, ${summary.blocked} blocked, ${summary.skipped} skipped.`,
-          details: this.workflowRunDetails(summary),
+          details: this.workflowRunDetails(this.runSummary),
           at: new Date(),
         };
-        this.notification.success('Worker run complete', `${summary.completed} completed, ${summary.retried} retried, ${summary.blocked} blocked.`);
+        this.notification.info('Worker response received', `${summary.completed} reported completed, ${summary.retried} retries scheduled, ${summary.blocked} blocked. Inspect records for evidence.`);
         this.reloadSelectedWorkflow();
         this.refresh(false, true);
       },
-      error: () => {
-        this.runningAction = undefined;
-        this.lastOperation = {
-          name: 'Run worker',
-          status: 'failed',
-          summary: 'Workflow worker run failed before completion.',
-          at: new Date(),
-        };
-        this.notification.error('Error', 'Workflow worker run failed.');
+      error: uncertain,
+      complete: () => { if (!received) uncertain(); },
+    });
+  }
+
+  acknowledgeWorkerReview(): void {
+    if (this.destroyed || !this.workerReviewRequired || !this.workerReviewRefreshed || !this.dataLoaded || this.loading ||
+        this.loadFailed || this.anyActionRunning() || this.items.some(item => item.currentState === 'in_progress')) return;
+    const message = this.workerReviewMessage;
+    this.modal.confirm({
+      nzTitle: 'Have you reviewed the previous worker outcomes?',
+      nzContent: 'Check workflow records, audit history and external execution evidence. This acknowledgement only clears the local UI pause; it does not verify completion or bypass backend safety gates.',
+      nzOkText: 'I reviewed the outcomes', nzCancelText: 'Keep paused',
+      nzOnOk: () => {
+        if (this.destroyed || !this.workerReviewRequired || this.workerReviewMessage !== message ||
+            !this.workerReviewRefreshed || !this.dataLoaded || this.loading || this.loadFailed || this.anyActionRunning() ||
+            this.items.some(item => item.currentState === 'in_progress')) return;
+        this.workerReviewRequired = false;
+        this.workerReviewMessage = undefined;
       },
     });
   }
 
+  private validWorkerSummary(summary: IWorkflowRunSummary): boolean {
+    if (!summary || !Array.isArray(summary.results) || summary.results.length > 10 ||
+        ![summary.checked, summary.completed, summary.retried, summary.blocked, summary.skipped]
+          .every(value => Number.isInteger(value) && value >= 0 && value <= 10) ||
+        summary.checked !== summary.results.length ||
+        summary.checked !== summary.completed + summary.retried + summary.blocked + summary.skipped) return false;
+    const ids = new Set<string>();
+    const counts = { completed: 0, retry_scheduled: 0, blocked: 0, skipped: 0 };
+    for (const result of summary.results) {
+      if (!result || typeof result.workflowId !== 'string' ||
+          !/^(?!00000000-0000-0000-0000-000000000000$)[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(result.workflowId) ||
+          ids.has(result.workflowId.toLowerCase()) ||
+          !Object.prototype.hasOwnProperty.call(counts, result.status) ||
+          !this.overview?.states.includes(result.state) ||
+          !Number.isInteger(result.attempts) || result.attempts < 0 ||
+          (result.status === 'completed' && result.state !== 'completed') ||
+          (result.status === 'retry_scheduled' && result.state !== 'ready') ||
+          (result.reviewRequired !== undefined && typeof result.reviewRequired !== 'boolean')) return false;
+      ids.add(result.workflowId.toLowerCase());
+      counts[result.status as keyof typeof counts]++;
+    }
+    return counts.completed === summary.completed && counts.retry_scheduled === summary.retried &&
+      counts.blocked === summary.blocked && counts.skipped === summary.skipped;
+  }
+
   recoverStaleClaims(): void {
-    if (this.runningAction) {
+    if (this.destroyed || this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
     this.runningAction = 'recovery';
-    this.workflowService.recoverStaleClaims({ limit: 50 }).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    this.recoverySummary = undefined;
+    let received = false;
+    const uncertain = () => this.pauseWorkerForReview('Recover stale');
+    this.recoveryRunSubscription = this.workflowService.recoverStaleClaims({ limit: 50 }).pipe(
+      take(1), timeout(this.operationTimeoutMs), finalize(() => { this.runningAction = undefined; })
+    ).subscribe({
       next: (summary) => {
-        this.recoverySummary = summary;
+        received = true;
         this.runningAction = undefined;
+        if (!this.validRecoverySummary(summary)) { uncertain(); return; }
+        this.recoverySummary = { checked: summary.checked, workflowsBlocked: summary.workflowsBlocked,
+          openLoopsReopened: summary.openLoopsReopened, skipped: summary.skipped,
+          results: summary.results.map(result => ({ workflowId: result.workflowId, openLoopId: result.type === 'open_loop' ? result.openLoopId : undefined,
+            type: result.type, status: result.status, message: 'Inspect the workflow record and recovery audit.' })),
+        };
         this.lastOperation = {
           name: 'Recover stale',
           status: 'completed',
           summary: `${summary.checked} checked, ${summary.workflowsBlocked} workflows blocked for review, ${summary.openLoopsReopened} follow-ups reopened, ${summary.skipped} skipped.`,
-          details: this.claimRecoveryDetails(summary),
+          details: this.claimRecoveryDetails(this.recoverySummary),
           at: new Date(),
         };
-        this.notification.success(
-          'Claim recovery complete',
-          `${summary.workflowsBlocked} workflows blocked for review, ${summary.openLoopsReopened} follow-ups reopened.`
+        this.notification.info(
+          'Recovery response received',
+          `${summary.workflowsBlocked} workflows reported blocked for review, ${summary.openLoopsReopened} follow-ups reported reopened. Inspect records for confirmation.`
         );
         this.refresh(false, true);
       },
-      error: () => {
-        this.runningAction = undefined;
-        this.lastOperation = {
-          name: 'Recover stale',
-          status: 'failed',
-          summary: 'Stale claim recovery failed before completion.',
-          at: new Date(),
-        };
-        this.notification.error('Error', 'Stale claim recovery failed.');
-      },
+      error: uncertain,
+      complete: () => { if (!received) uncertain(); },
     });
   }
 
   runDueOpenLoops(): void {
-    if (this.runningAction) {
+    if (this.destroyed || this.workerReviewRequired || this.actionsUnavailable() || this.anyActionRunning() || this.dueOpenLoopCount() <= 0) {
       return;
     }
     this.runningAction = 'followups';
-    this.workflowService.runDueOpenLoops({ limit: 10 }).subscribe({
+    this.openLoopRunSummary = undefined;
+    let received = false;
+    const uncertain = () => this.pauseWorkerForReview('Run follow-ups');
+    this.followupRunSubscription = this.workflowService.runDueOpenLoops({ limit: 10 }).pipe(
+      take(1), timeout(this.operationTimeoutMs), finalize(() => { this.runningAction = undefined; })
+    ).subscribe({
       next: (summary) => {
-        this.openLoopRunSummary = summary;
+        received = true;
         this.runningAction = undefined;
+        if (!this.validFollowupSummary(summary)) { uncertain(); return; }
+        this.openLoopRunSummary = { checked: summary.checked, triggered: summary.triggered,
+          resolved: summary.resolved, skipped: summary.skipped,
+          results: summary.results.map(result => ({ workflowId: result.workflowId, openLoopId: result.openLoopId,
+            status: result.status, state: result.state })),
+        };
         this.lastOperation = {
           name: 'Run follow-ups',
           status: 'completed',
           summary: `${summary.checked} checked, ${summary.triggered} triggered, ${summary.resolved} resolved, ${summary.skipped} skipped.`,
-          details: this.openLoopRunDetails(summary),
+          details: this.openLoopRunDetails(this.openLoopRunSummary),
           at: new Date(),
         };
-        this.notification.success('Open loops processed', `${summary.triggered} triggered, ${summary.resolved} resolved.`);
+        this.notification.info('Follow-up response received', `${summary.triggered} reported triggered, ${summary.resolved} reported resolved. This is not proof of an external message or task execution.`);
         this.refresh(false, true);
       },
-      error: () => {
-        this.runningAction = undefined;
-        this.lastOperation = {
-          name: 'Run follow-ups',
-          status: 'failed',
-          summary: 'Open-loop worker run failed before completion.',
-          at: new Date(),
-        };
-        this.notification.error('Error', 'Open-loop worker run failed.');
-      },
+      error: uncertain,
+      complete: () => { if (!received) uncertain(); },
     });
+  }
+
+  private pauseWorkerForReview(name: string): void {
+    this.workerReviewRequired = true;
+    this.workerReviewRefreshed = false;
+    this.workerReviewMessage = 'Operation outcome needs review. Refresh and inspect project records and audit evidence before resubmitting input or starting execution or follow-ups. Missing acknowledgement does not mean nothing changed. Claim recovery remains available and does not execute tasks.';
+    this.lastOperation = { name, status: 'failed', summary: this.workerReviewMessage, at: new Date() };
+    this.notification.warning('Review operation outcome', this.workerReviewMessage);
+  }
+
+  private validFollowupSummary(summary: IWorkflowOpenLoopRunSummary): boolean {
+    if (!summary || !Array.isArray(summary.results) ||
+        ![summary.checked, summary.triggered, summary.resolved, summary.skipped].every(value => Number.isSafeInteger(value) && value >= 0 && value <= 10) ||
+        summary.checked !== summary.results.length || summary.checked !== summary.triggered + summary.resolved + summary.skipped) return false;
+    const ids = new Set<string>();
+    const counts = { triggered: 0, resolved: 0, skipped: 0 };
+    for (const result of summary.results) {
+      if (!result || !this.validWorkerReference(result.workflowId) || !this.validWorkerReference(result.openLoopId) ||
+          ids.has(result.openLoopId.toLowerCase()) || !Object.prototype.hasOwnProperty.call(counts, result.status) ||
+          (result.status !== 'skipped' && !this.overview?.states.includes(result.state || '')) ||
+          (result.state !== undefined && !this.overview?.states.includes(result.state))) return false;
+      ids.add(result.openLoopId.toLowerCase()); counts[result.status as keyof typeof counts]++;
+    }
+    return counts.triggered === summary.triggered && counts.resolved === summary.resolved && counts.skipped === summary.skipped;
+  }
+
+  private validRecoverySummary(summary: IWorkflowClaimRecoverySummary): boolean {
+    if (!summary || !Array.isArray(summary.results) ||
+        ![summary.checked, summary.workflowsBlocked, summary.openLoopsReopened, summary.skipped].every(value => Number.isSafeInteger(value) && value >= 0 && value <= 100) ||
+        summary.checked !== summary.results.length || summary.checked !== summary.workflowsBlocked + summary.openLoopsReopened + summary.skipped) return false;
+    const ids = new Set<string>(); let workflows = 0; let loops = 0; let blocked = 0; let reopened = 0; let skipped = 0;
+    for (const result of summary.results) {
+      if (!result || !this.validWorkerReference(result.workflowId) || !['workflow', 'open_loop'].includes(result.type) ||
+          (result.type === 'open_loop' && !this.validWorkerReference(result.openLoopId)) ||
+          (result.type === 'workflow' && result.openLoopId !== undefined && result.openLoopId !== '00000000-0000-0000-0000-000000000000') ||
+          !['skipped', result.type === 'workflow' ? 'blocked' : 'reopened'].includes(result.status)) return false;
+      const key = `${result.type}:${(result.type === 'open_loop' ? result.openLoopId! : result.workflowId).toLowerCase()}`;
+      if (ids.has(key)) return false;
+      ids.add(key);
+      if (result.type === 'workflow') workflows++; else loops++;
+      if (result.status === 'blocked') blocked++; else if (result.status === 'reopened') reopened++; else skipped++;
+    }
+    return workflows <= 50 && loops <= 50 && blocked === summary.workflowsBlocked && reopened === summary.openLoopsReopened && skipped === summary.skipped;
+  }
+
+  private validWorkerReference(value: unknown): value is string {
+    return typeof value === 'string' && this.isUuid(value) && value !== '00000000-0000-0000-0000-000000000000';
   }
 
   resolveProposal(
@@ -852,81 +1374,142 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     status: 'approved' | 'changes_requested' | 'rejected',
     selectedOption?: string,
   ): void {
-    if (!this.selected) {
+    if (this.destroyed || !this.selected || this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
+    const original = this.selected;
+    const workflowId = original.item.id;
+    const proposals = original.proposals?.filter(value => value?.id === proposalId) || [];
+    if (!this.isUuid(workflowId) || workflowId === '00000000-0000-0000-0000-000000000000' ||
+        !this.isUuid(proposalId) || proposalId === '00000000-0000-0000-0000-000000000000' ||
+        !['approved', 'rejected', 'changes_requested'].includes(status) ||
+        (selectedOption !== undefined && typeof selectedOption !== 'string') ||
+        proposals.length !== 1 || proposals[0].workflowId !== workflowId || proposals[0].status !== 'open') return;
+    const decisionIds = new Set(original.decisions?.map(value => value.id) || []);
+    this.proposalAction = { proposalId, status };
     const approved = status === 'approved';
     const noteByStatus: Record<string, string> = {
       approved: 'Proposal approved from dashboard.',
       changes_requested: 'Proposal needs changes from dashboard.',
       rejected: 'Proposal rejected from dashboard.',
     };
-    this.workflowService.resolveProposal(this.selected.item.id, proposalId, {
+    let received = false;
+    const unconfirmed = () => {
+      this.transitionReviewId = workflowId;
+      this.transitionError = 'The proposal decision could not be confirmed. Refresh the affected workflow before another change.';
+      this.notification.warning('Proposal decision unconfirmed', this.transitionError);
+    };
+    this.proposalSubscription = this.workflowService.resolveProposal(workflowId, proposalId, {
       approved,
       status,
       selectedOption,
       note: noteByStatus[status],
       actor: 'operator',
-    }).subscribe({
+    }).pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.proposalAction = undefined; })).subscribe({
       next: (record) => {
-        this.applyWorkflowRecord(record);
-        this.notification.success('Proposal updated', noteByStatus[status]);
-        // The just-returned workflow is authoritative for this action. Keep
-        // background list reconciliation non-blocking so a ready workflow can
-        // immediately enter its own guarded execution confirmation.
+        received = true;
+        if (this.destroyed) return;
+        const returned = Array.isArray(record?.proposals) ? record.proposals.filter(value => value?.id === proposalId) : [];
+        const decisionMatches = Array.isArray(record?.decisions) && record.decisions.some(value =>
+          typeof value?.id === 'string' && this.isUuid(value.id) && value.id !== '00000000-0000-0000-0000-000000000000' &&
+          !decisionIds.has(value.id) && value.workflowId === workflowId && value.decisionType === 'proposal' &&
+          value.decision === status && value.approved === approved && typeof value.createdAt === 'string' && Number.isFinite(Date.parse(value.createdAt)));
+        if (record?.item?.id !== workflowId || typeof record.item.currentState !== 'string' ||
+            !this.overview?.states?.includes(record.item.currentState) || returned.length !== 1 ||
+            returned[0].workflowId !== workflowId || returned[0].status !== status ||
+            (selectedOption !== undefined && returned[0].selectedOption !== selectedOption.trim()) || !decisionMatches) {
+          unconfirmed();
+          return;
+        }
+        this.proposalAction = undefined;
+        if (this.selected === original) this.applyWorkflowRecord(record);
+        this.notification.info('Proposal response received', 'The server returned the requested proposal decision and record. This is not proof of execution or independent audit persistence.');
         this.refresh(false, true);
       },
-      error: () => this.notification.error('Error', 'Failed to update proposal.'),
+      error: () => {
+        if (!this.destroyed) unconfirmed();
+      },
+      complete: () => {
+        if (!received && !this.destroyed) unconfirmed();
+      },
     });
   }
 
+  isProposalActionRunning(
+    proposalId: string,
+    status: 'approved' | 'changes_requested' | 'rejected'
+  ): boolean {
+    return this.proposalAction?.proposalId === proposalId && this.proposalAction.status === status;
+  }
+
   runSelectedWorkflow(): void {
-    const item = this.selected?.item;
+    const original = this.selected;
+    const item = original?.item;
     const approvalSatisfied = item?.approvalStatus === 'approved'
       || (!item?.requiresApproval && item?.approvalStatus === 'not_required');
-    if (!item || item.currentState !== 'ready' || !approvalSatisfied || this.runningAction) {
+    if (this.destroyed || this.workerReviewRequired || !original || !item || !this.validWorkerReference(item.id) || item.currentState !== 'ready' || !approvalSatisfied || this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
+    const id = item.id;
+    let dispatched = false;
     this.modal.confirm({
       nzTitle: 'Run this selected workflow?',
       nzContent: 'HAI will claim only this workflow. Any concrete task or runtime action still passes authorization, emergency-stop, audit, and verification gates.',
       nzOkText: 'Run this workflow',
       nzCancelText: 'Cancel',
-      nzOnOk: () => this.executeSelectedWorkflow(item.id),
+      nzOnOk: () => {
+        const approvalStillSatisfied = item.approvalStatus === 'approved'
+          || (item.requiresApproval === false && item.approvalStatus === 'not_required');
+        if (dispatched || this.destroyed || this.workerReviewRequired || this.selected !== original || original.item !== item || item.id !== id ||
+            item.currentState !== 'ready' || !approvalStillSatisfied ||
+            this.actionsUnavailable() || this.anyActionRunning()) return;
+        dispatched = true;
+        this.executeSelectedWorkflow(id, original);
+      },
     });
   }
 
-  private executeSelectedWorkflow(id: string): void {
+  private executeSelectedWorkflow(id: string, original: IWorkflowRecord): void {
     this.runningAction = 'selected';
-    this.workflowService.runOne(id).subscribe({
+    let received = false;
+    const uncertain = () => {
+      this.pauseWorkerForReview('Run selected workflow');
+      this.transitionReviewId = id;
+      this.transitionError = 'Execution outcome needs reconciliation. Reload this workflow before another action; do not assume nothing ran.';
+      this.lastOperation = { name: 'Run selected workflow', status: 'failed', summary: this.transitionError, at: new Date() };
+    };
+    this.selectedRunSubscription = this.workflowService.runOne(id).pipe(
+      take(1), timeout(this.operationTimeoutMs), finalize(() => { this.runningAction = undefined; })
+    ).subscribe({
       next: (result) => {
+        received = true;
         this.runningAction = undefined;
+        if (!result || typeof result.workflowId !== 'string' || result.workflowId.toLowerCase() !== id.toLowerCase() ||
+            !['completed', 'blocked', 'skipped', 'retry_scheduled'].includes(result.status) ||
+            !this.overview?.states.includes(result.state) || !Number.isSafeInteger(result.attempts) || result.attempts < 0 ||
+            (result.status === 'completed' && result.state !== 'completed') ||
+            (result.status === 'retry_scheduled' && result.state !== 'ready') ||
+            (result.reviewRequired !== undefined && typeof result.reviewRequired !== 'boolean')) {
+          uncertain(); return;
+        }
+        if (result.reviewRequired) { uncertain(); return; }
         const completed = result.status === 'completed';
         this.lastOperation = {
           name: 'Run selected workflow',
           status: completed ? 'completed' : 'failed',
-          summary: this.workflowResultSummary(result),
-          details: result.message,
+          summary: `Server reported ${this.readable(result.status)}. Inspect the workflow record and evidence for the current outcome.`,
           at: new Date(),
         };
         if (completed) {
-          this.notification.success('Workflow completed', 'The selected workflow completed and its result was verified.');
+          this.notification.info('Server reported completion', 'Inspect the workflow record and evidence; this response alone is not independent verification.');
         } else {
-          this.notification.warning('Workflow needs attention', this.workflowResultSummary(result));
+          this.notification.warning('Workflow needs attention', this.lastOperation.summary);
         }
-        this.reloadSelectedWorkflow();
+        if (this.selected === original) this.reloadSelectedWorkflow();
         this.refresh(false, true);
       },
-      error: () => {
-        this.runningAction = undefined;
-        this.lastOperation = {
-          name: 'Run selected workflow',
-          status: 'failed',
-          summary: 'The selected workflow could not be started.',
-          at: new Date(),
-        };
-        this.notification.error('Execution failed', 'The selected workflow could not be started. No other workflow was run.');
-      },
+      error: uncertain,
+      complete: () => { if (!received) uncertain(); },
     });
   }
 
@@ -937,6 +1520,12 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   hasOpenAutomationSelection(record?: IWorkflowRecord): boolean {
     return !!record?.proposals?.some((proposal) =>
       proposal.status === 'open' && this.isAutomationSelectionProposal(proposal.recommendedAction)
+    );
+  }
+
+  hasPendingReviewProposals(record?: IWorkflowRecord): boolean {
+    return !!record?.proposals?.some((proposal) =>
+      proposal.status === 'open' && !this.isAutomationSelectionProposal(proposal.recommendedAction)
     );
   }
 
@@ -961,20 +1550,36 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   }
 
   markChecklist(itemId: string, status: string): void {
-    if (!this.selected) {
+    const checklistItem = this.selected?.checklist.find((item) => item.id === itemId);
+    if (!this.selected || !checklistItem || checklistItem.status === status ||
+        this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
-    this.workflowService.updateChecklistItem(this.selected.item.id, itemId, { status }).subscribe({
-      next: (record) => this.applyWorkflowRecord(record),
-      error: () => this.notification.error('Error', 'Failed to update checklist item.'),
+    this.checklistAction = { itemId, status };
+    this.checklistActionError = undefined;
+    const workflowId = this.selected.item.id;
+    this.workflowService.updateChecklistItem(workflowId, itemId, { status })
+      .pipe(timeout(this.operationTimeoutMs))
+      .subscribe({
+      next: (record) => {
+        this.checklistAction = undefined;
+        this.applyWorkflowRecord(record);
+      },
+      error: () => {
+        this.checklistAction = undefined;
+        this.checklistActionError = { itemId, message: 'Update failed. The saved checklist state was not confirmed; retry after checking the workflow.' };
+        this.changeDetector.detectChanges();
+        this.notification.error('Checklist update failed', 'The saved state was not confirmed.');
+      },
     });
   }
 
   get interruptionRequiresEvidence(): boolean {
-    return this.interruptionForm.get('decision')?.value === 'confirm_completed';
+    return ['retry', 'confirm_completed'].includes(this.interruptionForm.get('decision')?.value);
   }
 
   applyWorkflowRecord(record: IWorkflowRecord): void {
+    this.workflowOpenError = undefined;
     this.selected = record;
     // Selected workflow controls are a primary Basic-view action surface.
     // Render this record before optional provenance lookups begin.
@@ -1022,7 +1627,9 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     this.frameworkProvenanceState = 'recorded';
     this.frameworkSelectionLoading = true;
     const lookup = ++this.frameworkSelectionLookup;
-    this.workflowService.frameworkSelection(provenance.selectionDecisionId).subscribe({
+    this.workflowService.frameworkSelection(provenance.selectionDecisionId)
+      .pipe(timeout(this.operationTimeoutMs))
+      .subscribe({
       next: (decision) => {
         if (lookup !== this.frameworkSelectionLookup) {
           return;
@@ -1144,8 +1751,12 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   queueCount(queue: 'all' | 'approval' | 'ready' | 'blocked' | 'review'): number {
     if (queue === 'all') return this.items.length;
     if (queue === 'approval') return this.approvalItems.length;
-    if (queue === 'ready') return this.dashboard?.readyItems?.length || this.count('ready');
-    if (queue === 'blocked') return this.dashboard?.blockedItems?.length || this.count('blocked');
+    if (queue === 'ready') {
+      return Array.isArray(this.dashboard?.readyItems) ? this.dashboard.readyItems.length : this.count('ready');
+    }
+    if (queue === 'blocked') {
+      return Array.isArray(this.dashboard?.blockedItems) ? this.dashboard.blockedItems.length : this.count('blocked');
+    }
     return this.count('interruptedReview');
   }
 
@@ -1208,15 +1819,26 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     this.workflowSearch = '';
   }
 
+  hasIntakeInput(): boolean {
+    return !!String(this.intakeForm.get('input')?.value || '').trim();
+  }
+
   focusFilters(): void {
-    document.getElementById('workflow-state-filter')?.focus();
+    this.viewPreferences.setMode('workflow-engine', 'advanced');
+    this.viewPreferences.setSection('workflow-engine', 'queue-filters', true);
+    window.setTimeout(() => {
+      this.changeDetector.detectChanges();
+      document.getElementById('workflow-state-filter')?.focus();
+    });
   }
 
   focusIntake(): void {
     const element = document.getElementById('workflow-intake-input');
     if (element) {
       element.focus();
-      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const reduceMotion = typeof window !== 'undefined' &&
+        window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      element.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
     }
   }
 
@@ -1237,7 +1859,22 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   }
 
   anyActionRunning(): boolean {
-    return !!this.runningAction;
+    return !!this.runningAction || this.loading || this.saving || !!this.proposalAction ||
+      !!this.checklistAction || !!this.activationBusyId || !!this.openingWorkflowId || this.matchingPursuits;
+  }
+
+  actionsUnavailable(): boolean {
+    return !this.dataLoaded || this.loadFailed || this.loading || !!this.transitionReviewId || !!this.approvalReviewId;
+  }
+
+  workflowActionsDisabled(): boolean {
+    return this.actionsUnavailable() || this.anyActionRunning();
+  }
+
+  dueOpenLoopCount(): number {
+    return Array.isArray(this.dashboard?.dueOpenLoops)
+      ? this.dashboard.dueOpenLoops.length
+      : this.count('dueOpenLoops');
   }
 
   private validateFrameworkProvenance(
@@ -1357,19 +1994,7 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     if (!workflowId) {
       return;
     }
-    this.workflowService.get(workflowId).subscribe({
-      next: (record) => {
-        if (this.selected?.item?.id === workflowId) {
-          this.applyWorkflowRecord(record);
-        }
-      },
-      error: () => {
-        this.notification.warning(
-          'Workflow detail not refreshed',
-          'The worker result is available, but the selected workflow detail could not be reloaded.'
-        );
-      },
-    });
+    this.loadWorkflowRecord(workflowId);
   }
 
   private workflowRunDetails(summary: IWorkflowRunSummary): string {
@@ -1406,12 +2031,4 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     this.router.navigate(['/pursuits'], { queryParams: { selected: id } });
   }
 
-  private selectNewestPursuitWorkflow(detail: IPursuitDetail): void {
-    const newest = [...(detail.workflows || [])].sort((left, right) => {
-      return new Date(right.updatedAt || right.createdAt).getTime() - new Date(left.updatedAt || left.createdAt).getTime();
-    })[0];
-    if (newest) {
-      this.open(newest);
-    }
-  }
 }

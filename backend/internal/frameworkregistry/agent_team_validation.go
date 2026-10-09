@@ -591,6 +591,19 @@ func teamMemberMayVote(team AgentTeamContract, membershipID string) bool {
 }
 
 func containsAgentTeamSecret(value any) bool {
+	// These typed fields are identity/policy metadata, not credentials. Keep
+	// their values in the scan without treating their schema labels as secrets.
+	if team, ok := value.(AgentTeamContract); ok {
+		type contract AgentTeamContract
+		value = struct {
+			contract
+			Key                            string `json:"key,omitempty"`
+			ExecutionAuthorizationRequired *bool  `json:"executionAuthorizationRequired,omitempty"`
+			TeamIdentifier                 string `json:"teamIdentifier"`
+			ExecutionApprovalRequired      bool   `json:"executionApprovalRequired"`
+		}{contract: contract(team), TeamIdentifier: team.Key,
+			ExecutionApprovalRequired: team.ExecutionAuthorizationRequired}
+	}
 	payload, err := json.Marshal(value)
 	if err != nil {
 		return true

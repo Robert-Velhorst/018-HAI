@@ -43,13 +43,13 @@ func TestJWTRoleIsEnforced(t *testing.T) {
 	exp := now.Add(time.Hour).Unix()
 
 	// owner JWT -> reaches the admin route
-	owner := identity.SignToken(identity.Claims{Subject: "u1", Role: "owner", Expiry: exp}, "router-secret")
+	owner := identity.SignToken(identity.Claims{Subject: "u1", Role: "owner", Issuer: "hai-idp", Audience: "hai", TokenType: "access", IssuedAt: now.Unix(), Expiry: exp}, "router-secret")
 	if code := doJWT(engine, owner); code != http.StatusOK {
 		t.Fatalf("owner JWT should reach admin route, got %d", code)
 	}
 
 	// viewer JWT -> forbidden on the admin route
-	viewer := identity.SignToken(identity.Claims{Subject: "u2", Role: "viewer", Expiry: exp}, "router-secret")
+	viewer := identity.SignToken(identity.Claims{Subject: "u2", Role: "viewer", Issuer: "hai-idp", Audience: "hai", TokenType: "access", IssuedAt: now.Unix(), Expiry: exp}, "router-secret")
 	if code := doJWT(engine, viewer); code != http.StatusForbidden {
 		t.Fatalf("viewer JWT should be 403 on admin route, got %d", code)
 	}
@@ -62,6 +62,70 @@ func TestJWTRoleIsEnforced(t *testing.T) {
 	// no token -> viewer default -> 403 on admin
 	if code := doJWT(engine, ""); code != http.StatusForbidden {
 		t.Fatalf("no token should default to viewer (403 on admin), got %d", code)
+	}
+}
+
+func TestJWTRejectsRefreshAndUntypedTokensAtRequestBoundary(t *testing.T) {
+	previous := config.AppConfig.JWTSecret
+	config.AppConfig.JWTSecret = "router-secret"
+	t.Cleanup(func() { config.AppConfig.JWTSecret = previous })
+	engine := newIdentityEngine()
+	exp := time.Now().Add(time.Hour).Unix()
+	for _, tokenType := range []string{"refresh", ""} {
+		t.Run("type="+tokenType, func(t *testing.T) {
+			token := identity.SignToken(identity.Claims{Subject: "u1", Role: "owner", Issuer: "hai-idp", Audience: "hai", TokenType: tokenType, IssuedAt: time.Now().Unix(), Expiry: exp}, "router-secret")
+			if code := doJWT(engine, token); code != http.StatusUnauthorized {
+				t.Fatalf("non-access token reached authenticated route: type=%q status=%d", tokenType, code)
+			}
+		})
+	}
+}
+
+func TestJWTRejectsOwnerTokenWithoutStablePrincipalAtRequestBoundary(t *testing.T) {
+	previous := config.AppConfig.JWTSecret
+	config.AppConfig.JWTSecret = "router-secret"
+	t.Cleanup(func() { config.AppConfig.JWTSecret = previous })
+	engine := newIdentityEngine()
+	now := time.Now()
+	token := identity.SignToken(identity.Claims{
+		Role:      "owner",
+		Issuer:    "hai-idp",
+		Audience:  "hai",
+		TokenType: "access",
+		IssuedAt:  now.Unix(),
+		Expiry:    now.Add(time.Hour).Unix(),
+	}, "router-secret")
+
+	if code := doJWT(engine, token); code != http.StatusUnauthorized {
+		t.Fatalf("owner token without sub or user_id reached admin route: status=%d, want %d", code, http.StatusUnauthorized)
+	}
+}
+
+func TestJWTRejectsUnboundAccessTokensAtRequestBoundary(t *testing.T) {
+	previous := config.AppConfig.JWTSecret
+	config.AppConfig.JWTSecret = "router-secret"
+	t.Cleanup(func() { config.AppConfig.JWTSecret = previous })
+	engine := newIdentityEngine()
+	validExpiry := time.Now().Add(time.Hour).Unix()
+	tests := []struct {
+		name  string
+		claim func(*identity.Claims)
+	}{
+		{name: "missing expiry", claim: func(c *identity.Claims) { c.Expiry = 0 }},
+		{name: "missing issued at", claim: func(c *identity.Claims) { c.IssuedAt = 0 }},
+		{name: "future issued at", claim: func(c *identity.Claims) { c.IssuedAt = time.Now().Add(31 * time.Second).Unix() }},
+		{name: "wrong issuer", claim: func(c *identity.Claims) { c.Issuer = "another-idp" }},
+		{name: "wrong audience", claim: func(c *identity.Claims) { c.Audience = "another-service" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			claims := identity.Claims{Subject: "u1", Role: "owner", Issuer: "hai-idp", Audience: "hai", TokenType: "access", IssuedAt: time.Now().Unix(), Expiry: validExpiry}
+			test.claim(&claims)
+			token := identity.SignToken(claims, "router-secret")
+			if code := doJWT(engine, token); code != http.StatusUnauthorized {
+				t.Fatalf("unbound access token reached authenticated route: status=%d", code)
+			}
+		})
 	}
 }
 
@@ -144,8 +208,12 @@ func TestIDPCookieSetsBundledUserIDAsSubject(t *testing.T) {
 	})
 
 	token := identity.SignToken(identity.Claims{
-		UserID: "bundled-idp-user",
-		Expiry: time.Now().Add(time.Hour).Unix(),
+		UserID:    "bundled-idp-user",
+		Issuer:    "hai-idp",
+		Audience:  "hai",
+		TokenType: "access",
+		IssuedAt:  time.Now().Unix(),
+		Expiry:    time.Now().Add(time.Hour).Unix(),
 	}, "router-secret")
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil)

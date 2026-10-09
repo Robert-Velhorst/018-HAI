@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { ActivatedRoute } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
@@ -27,6 +27,7 @@ interface PreviewForm {
 }
 
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-plan-coordination',
     templateUrl: './plan-coordination.component.html',
     styleUrls: ['./plan-coordination.component.scss'],
@@ -213,10 +214,10 @@ export class PlanCoordinationComponent implements OnInit {
   }
 
   get nextCoordinatedNode(): IPlanNode | undefined {
-    const nodes = this.selectedPlan?.nodes || []
-    return [...nodes]
+    const nodes = [...(this.selectedPlan?.nodes || [])]
       .sort((left, right) => left.sequence - right.sequence)
-      .find((node) => node.status === 'ready' || node.status === 'planned')
+    return nodes.find((node) => node.status === 'ready')
+      || nodes.find((node) => node.status === 'planned')
   }
 
   get blockedNodes(): IPlanNode[] {

@@ -1,6 +1,10 @@
 package utils
 
-import "golang.org/x/crypto/bcrypt"
+import (
+	"errors"
+
+	"golang.org/x/crypto/bcrypt"
+)
 
 type BcryptHasher struct {
 	cost int
@@ -23,5 +27,9 @@ func (b *BcryptHasher) Hash(password string) (string, error) {
 }
 
 func (b *BcryptHasher) Compare(hashedPassword, password string) error {
-	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	if errors.Is(err, bcrypt.ErrMismatchedHashAndPassword) {
+		return ErrPasswordMismatch
+	}
+	return err
 }

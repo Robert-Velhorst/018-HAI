@@ -1,21 +1,77 @@
 <div class="rl">
   <header class="rl__header">
     <div>
-      <button nz-button nzType="text" (click)="goBack()">
+      <button nz-button nzType="text" aria-label="Back to Control Center" title="Back to Control Center" (click)="goBack()">
         <span nz-icon nzType="arrow-left"></span>
       </button>
       <h1>Runtime Lab</h1>
       <p class="rl__subtitle">
         HAI is the control plane above external runtimes - it never rebuilds or fakes them. The local safe worker
         actually executes and self-tests through the Operation Ledger; Hermes, OpenClaw, Odysseus, and OpenHands show
-        their exact setup requirements and never report execution until a real runtime runs.
+        their reported readiness blockers and never report execution until a real runtime runs.
       </p>
     </div>
-    <button nz-button nzType="text" (click)="refresh()">
-      <span nz-icon nzType="reload"></span> Refresh
-    </button>
+    <div class="rl__header-actions">
+      <button nz-button type="button" (click)="resetView()">Reset view</button>
+      <button nz-button nzType="text" (click)="refresh()" [nzLoading]="loading">
+        <span nz-icon nzType="reload"></span> Refresh
+      </button>
+    </div>
   </header>
 
+  <hai-openclaw-maintenance></hai-openclaw-maintenance>
+
+  <section class="rl__basic-status" aria-label="Runtime readiness" role="status" aria-live="polite">
+    <div class="rl__basic-status-head">
+      <span>Runtime readiness</span>
+      <strong *ngIf="!loading && !loadError">{{ runtimeReadinessSummary }}</strong>
+      <strong *ngIf="loading">Checking runtimes...</strong>
+      <strong *ngIf="loadError">Runtime status unavailable</strong>
+    </div>
+    <p *ngIf="loadError" class="rl__warning">The runtime overview could not be loaded. Refresh to retry; no runtime was started.</p>
+    <p *ngIf="!loading && !loadError && runtimes.length === 0" class="rl__muted">No runtime records were returned by the runtime service.</p>
+    <ul *ngIf="runtimesNeedingAttention.length" class="rl__attention-list">
+      <li *ngFor="let runtime of runtimesNeedingAttention">
+        <div>
+          <strong>{{ runtime.info.displayName }}</strong>
+          <nz-tag [nzColor]="selfTestNeedsReconciliation(runtime) ? 'gold' : statusColor(runtime.status)">{{ selfTestNeedsReconciliation(runtime) ? 'Reconciliation required' : runtime.status }}</nz-tag>
+          <span *ngIf="runtime.info.id === 'deepseek-harness'" class="rl__runtime-configured">
+            Configured: {{ runtimeConfiguredLabel(runtime.info.id) }}
+          </span>
+          <span>{{ runtimeAttentionDetail(runtime) }}</span>
+          <span *ngIf="selfTestNeedsReconciliation(runtime)" class="rl__warning" role="alert">{{ selfTestOutcomeSummary(runtime) }}</span>
+          <span *ngIf="isDeepSeekSandboxBlocked(runtime)" class="rl__warning">
+            This is a safety-policy block, not a missing credential. HAI offers no enable or start action while the OS sandbox is unavailable.
+          </span>
+        </div>
+        <button *ngIf="!isDeepSeekExecutionBlocked(runtime)" nz-button nzSize="small" type="button" [nzLoading]="probeBusy[runtime.info.id]" (click)="probe(runtime)">
+          Check runtime
+        </button>
+        <button *ngIf="selfTestNeedsReconciliation(runtime)" nz-button nzSize="small" type="button" (click)="reviewSelfTestOperations()">Review operation ledger</button>
+      </li>
+    </ul>
+    <ng-container *ngIf="mcpOverview as overview">
+      <p *ngIf="overview.configError" class="rl__warning" role="alert">MCP readiness configuration needs attention: {{ overview.configError }}</p>
+      <ul *ngIf="mcpServersNeedingAttention.length" class="rl__attention-list" aria-label="MCP readiness issues">
+        <li *ngFor="let server of mcpServersNeedingAttention">
+          <div>
+            <strong>{{ server.catalogName || server.id }}</strong>
+            <nz-tag [nzColor]="server.lastAttempt ? statusColor(server.lastAttempt.status) : 'gold'">
+              {{ server.lastAttempt?.status || 'setup required' }}
+            </nz-tag>
+            <span>{{ server.lastAttempt?.detail || 'Configure the approved local endpoint before checking readiness.' }}</span>
+          </div>
+        </li>
+      </ul>
+      <p *ngIf="!mcpLoading && !overview.configError && !mcpServersNeedingAttention.length" class="rl__muted">
+        MCP configuration has no reported readiness failures. Tool invocation remains unavailable from this page.
+      </p>
+    </ng-container>
+  </section>
+
+  <hai-progressive-section moduleId="runtime-lab" sectionId="runtime-inventory"
+    title="Runtime inventory and controls"
+    summary="Safe runtime checks, authoritative blockers, and full runtime details.">
   <div class="rl__grid" [class.rl__grid--loading]="loading">
     <nz-card *ngFor="let r of runtimes" class="rl__card" nzSize="small">
       <div class="rl__card-head">
@@ -23,10 +79,28 @@
           <div class="rl__name">{{ r.info.displayName }}</div>
           <div class="rl__kind">{{ r.info.kind }}</div>
         </div>
-        <nz-tag [nzColor]="statusColor(r.status)">{{ r.status }}</nz-tag>
+        <nz-tag [nzColor]="selfTestNeedsReconciliation(r) ? 'gold' : statusColor(r.status)">{{ selfTestNeedsReconciliation(r) ? 'Reconciliation required' : r.status }}</nz-tag>
       </div>
 
       <p class="rl__desc">{{ r.info.description }}</p>
+
+      <section *ngIf="r.info.id === 'deepseek-harness'" class="rl__deepseek-policy" aria-labelledby="deepseek-policy-title">
+        <h3 id="deepseek-policy-title">DeepSeek Harness runtime policy</h3>
+        <p class="rl__muted">Configured state and authoritative readiness details.</p>
+        <dl class="rl__runtime-policy" aria-label="DeepSeek Harness runtime policy details">
+          <div><dt>Configured</dt><dd>{{ runtimeConfiguredLabel(r.info.id) }}</dd></div>
+          <div><dt>Execution</dt><dd>{{ runtimeExecutionLabel(r.info.id, r.canExecute) }}</dd></div>
+          <div><dt>HAI enabled</dt><dd>{{ agentInfo(r.info.id) ? (agentInfo(r.info.id)?.enabled ? 'Yes' : 'No') : 'Unavailable' }}</dd></div>
+          <div><dt>Approval required</dt><dd>{{ agentInfo(r.info.id)?.requiresApproval ? 'Yes' : 'Not confirmed' }}</dd></div>
+          <div><dt>Read-only default</dt><dd>{{ agentInfo(r.info.id)?.readOnlyDefault ? 'Yes' : 'Not confirmed' }}</dd></div>
+        </dl>
+        <p class="rl__runtime-blocker" role="status" aria-live="polite">
+          <strong>{{ r.status }}:</strong> {{ runtimeAttentionDetail(r) }}
+        </p>
+        <p *ngIf="isDeepSeekSandboxBlocked(r)" class="rl__warning">
+          This blocker cannot be cleared by adding credentials or changing an enable setting. Runtime execution remains unavailable until HAI has a verified OS-enforced sandbox.
+        </p>
+      </section>
 
       <div class="rl__row">
         <span class="rl__label">Claim</span>
@@ -46,7 +120,7 @@
         </nz-tag>
       </div>
 
-      <div class="rl__setup" *ngIf="r.setupRequirements?.length">
+      <div class="rl__setup" *ngIf="r.info.id !== 'deepseek-harness' && r.setupRequirements?.length">
         <div class="rl__label">Setup required</div>
         <ol>
           <li *ngFor="let s of r.setupRequirements">
@@ -55,28 +129,30 @@
         </ol>
       </div>
 
-      <div class="rl__attempt" *ngIf="r.lastAttempt as a">
+      <div class="rl__attempt" *ngIf="lastSelfTestAttempt(r) as a">
         <span class="rl__label">Last attempt</span>
-        <nz-tag [nzColor]="attemptColor(a.status)">{{ a.status }}</nz-tag>
-        <span class="rl__attempt-detail">{{ a.detail }}</span>
+        <nz-tag [nzColor]="selfTestAttemptColor(a)">{{ selfTestAttemptLabel(a) }}</nz-tag>
+        <span class="rl__attempt-detail">{{ selfTestOutcomeSummary(r) }}</span>
+        <span *ngIf="selfTestNeedsReconciliation(r)" class="rl__warning">Another self-test is blocked. Review the previous effects; refreshing readiness alone does not reconcile them.</span>
       </div>
 
-      <div class="rl__actions">
-        <button nz-button nzSize="small" [nzLoading]="busy[r.info.id]" (click)="probe(r)">Probe</button>
-        <button nz-button nzSize="small" nzType="primary" [nzLoading]="busy[r.info.id]" (click)="selfTest(r)">
+      <div class="rl__actions" *ngIf="!isDeepSeekExecutionBlocked(r)">
+        <button nz-button nzSize="small" [nzLoading]="probeBusy[r.info.id]" (click)="probe(r)">Probe</button>
+        <button nz-button nzSize="small" nzType="primary" [nzLoading]="selfTestBusy[r.info.id]" [disabled]="!canSelfTest(r)" (click)="selfTest(r)">
           Self-test
         </button>
       </div>
+      <p *ngIf="isDeepSeekExecutionBlocked(r)" class="rl__muted" role="note">
+        Runtime actions are withheld by the backend safety gate. Use Refresh to recheck status; this page cannot enable or start DeepSeek Harness.
+      </p>
     </nz-card>
   </div>
 
-  <details class="rl__parity">
-    <summary>
-      <span>External runtime feature parity</span>
-      <small *ngIf="parityOverview as parity">
-        {{ parity.inventories.length }} projects · {{ parity.requiredCoverageAreas.length }} required areas · readiness capped at declared
-      </small>
-    </summary>
+  </hai-progressive-section>
+
+  <hai-progressive-section moduleId="runtime-lab" sectionId="runtime-feature-parity"
+    title="External runtime feature parity"
+    [summary]="parityOverview ? parityOverview.inventories.length + ' projects · readiness capped at declared' : 'Source-reviewed implementation and backlog mapping.'">
     <p>
       This is HAI's source-reviewed disposition ledger. It records what can be retained, adapted, constrained,
       excluded, or implemented later. A listed feature is not installed, configured, or authorized.
@@ -86,19 +162,18 @@
       Feature parity is unavailable. Runtime readiness has not been widened.
     </p>
 
-    <div class="rl__parity-list" *ngIf="parityOverview as parity">
-      <details class="rl__inventory" *ngFor="let inventory of parity.inventories">
-        <summary>
-          <span>
-            <strong>{{ inventory.project }}</strong>
-            <small>{{ inventory.license }} · {{ inventory.features.length }} reviewed feature groups</small>
-          </span>
-          <span class="rl__inventory-counts">
+    <div class="rl__parity" *ngIf="parityOverview as parity">
+    <div class="rl__parity-list">
+      <article class="rl__inventory" *ngFor="let inventory of parity.inventories">
+        <hai-progressive-section moduleId="runtime-lab"
+          [sectionId]="'runtime-inventory-' + inventory.runtimeId"
+          [title]="inventory.project"
+          [summary]="inventory.license + ' · ' + inventory.features.length + ' reviewed feature groups'">
+          <div class="rl__inventory-counts">
             <nz-tag nzColor="green">{{ implementationCount(inventory, 'implemented') }} HAI present</nz-tag>
             <nz-tag nzColor="gold">{{ backlogCount(inventory) }} backlog</nz-tag>
             <nz-tag>{{ inventory.readinessCeiling }}</nz-tag>
-          </span>
-        </summary>
+          </div>
 
         <div class="rl__inventory-meta">
           <div><span>Reviewed revision</span><code>{{ inventory.reviewedRevision | slice:0:12 }}</code></div>
@@ -115,8 +190,9 @@
             </div>
             <nz-tag>{{ capabilityOverview?.authority || 'unavailable' }}</nz-tag>
           </header>
-          <p *ngIf="capabilityLoading" class="rl__muted">Loading HAI capability contracts...</p>
-          <p *ngIf="!capabilityLoading && !cards.length" class="rl__muted">No reviewed HAI capability card is registered.</p>
+          <p *ngIf="capabilityState(inventory.runtimeId) === 'loading'" class="rl__muted">Loading HAI capability contracts...</p>
+          <p *ngIf="capabilityState(inventory.runtimeId) === 'unavailable'" class="rl__warning">Capability contracts are unavailable. No capability cards were loaded; this is not an empty catalog.</p>
+          <p *ngIf="capabilityState(inventory.runtimeId) === 'empty'" class="rl__muted">No reviewed HAI capability card is registered for this runtime.</p>
           <article class="rl__capability" *ngFor="let card of cards">
             <div>
               <strong>{{ card.name }}</strong>
@@ -131,6 +207,10 @@
                 <div><dt>Protocol</dt><dd>{{ discovery.protocol || 'unverified' }} · {{ discovery.discoveryState }}</dd></div>
                 <div><dt>Identity</dt><dd>{{ discovery.identityVerified ? 'verified response identity' : 'not carried by this protocol' }}</dd></div>
                 <div><dt>Version</dt><dd>{{ discovery.runtimeVersion || 'not reported' }}</dd></div>
+                <div *ngIf="taskLedgerLabel(discovery) as taskLedger"><dt>Tasks</dt><dd>{{ taskLedger }}</dd></div>
+                <div *ngIf="capabilityCatalogLabel(discovery) as capabilityCatalog"><dt>Capabilities</dt><dd>{{ capabilityCatalog }}</dd></div>
+                <div *ngIf="preparedModelCatalogLabel(discovery) as modelCatalog"><dt>Prepared models</dt><dd>{{ modelCatalog }}</dd></div>
+                <div *ngIf="agentRosterLabel(discovery) as agentRoster"><dt>Agent roster</dt><dd>{{ agentRoster }}</dd></div>
                 <div><dt>Evidence</dt><dd><code>{{ discovery.evidenceSha256 | slice:0:16 }}</code> · {{ discovery.checkedAt | date:'medium' }}</dd></div>
               </ng-container>
             </dl>
@@ -169,12 +249,16 @@
             </div>
           </article>
         </div>
-      </details>
+        </hai-progressive-section>
+      </article>
     </div>
-  </details>
+    </div>
+  </hai-progressive-section>
 
-  <details class="rl__mcp" [open]="!!mcpOverview?.servers?.length">
-    <summary>Approved MCP server readiness (advanced)</summary>
+  <hai-progressive-section moduleId="runtime-lab" sectionId="runtime-mcp-readiness"
+    title="Approved MCP server readiness"
+    summary="Local initialize and tools/list handshake only; no tools are invoked.">
+    <section class="rl__mcp">
     <p>
       HAI can verify only explicitly configured local MCP endpoints through initialize and tools/list. It never starts a server, sends credentials, or calls a listed tool from this screen.
     </p>
@@ -218,5 +302,6 @@
         </article>
       </div>
     </ng-container>
-  </details>
+    </section>
+  </hai-progressive-section>
 </div>

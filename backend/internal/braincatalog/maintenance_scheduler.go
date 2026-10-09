@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"automation-hub-backend/internal/lifecycle"
 )
 
 const catalogRevalidationSchedulerIntervalEnv = "HAI_CATALOG_REVALIDATION_SCHEDULER_INTERVAL_MINUTES"
@@ -15,16 +17,22 @@ const catalogRevalidationSchedulerIntervalEnv = "HAI_CATALOG_REVALIDATION_SCHEDU
 // catalog metadata. It honours HAI's emergency stop and relies on durable
 // records to avoid duplicate checks between sweeps.
 func StartCatalogRevalidationScheduler(ctx context.Context, service *CatalogMaintenanceService, backgroundAllowed func() bool) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	if service == nil || !catalogRevalidationEnabled() || !catalogRevalidationSchedulerEnabled() {
 		return
 	}
 	run := func() {
+		if ctx.Err() != nil {
+			return
+		}
 		if backgroundAllowed != nil && !backgroundAllowed() {
 			return
 		}
 		reportCatalogRevalidationRun(service.RunDueRevalidations())
 	}
-	go func() {
+	lifecycle.Go(ctx, "brain-catalog-maintenance", func() {
 		run()
 		ticker := time.NewTicker(catalogRevalidationSchedulerInterval())
 		defer ticker.Stop()
@@ -36,7 +44,7 @@ func StartCatalogRevalidationScheduler(ctx context.Context, service *CatalogMain
 				run()
 			}
 		}
-	}()
+	})
 }
 
 // reportCatalogRevalidationRun keeps unattended failures visible without

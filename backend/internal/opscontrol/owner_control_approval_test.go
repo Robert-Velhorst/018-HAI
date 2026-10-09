@@ -14,6 +14,7 @@ import (
 type allowExactControlConstitution struct{}
 
 func (allowExactControlConstitution) EvaluateExecutionPolicy(
+	_ context.Context,
 	_ string,
 	_ []string,
 	_ int,

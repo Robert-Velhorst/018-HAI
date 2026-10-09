@@ -3,6 +3,7 @@ package automation
 import (
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,10 +14,17 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+var (
+	errLaunchIntentAlreadyExists = errors.New("launch intent already exists")
+	errLaunchEventKeyConflict    = errors.New("launch event key already has a different outcome")
+)
+
 type Repository interface {
 	FindByID(id uuid.UUID) (*models.Automation, error)
 	Create(automation *models.Automation) (*models.Automation, error)
 	Update(automation *models.Automation) (*models.Automation, error)
+	UpdateLaunchState(id uuid.UUID, startedAt time.Time, failureReason *string) error
+	UpdateRuntimeStopFailure(id uuid.UUID, startedAt time.Time, reason string) error
 	Delete(id uuid.UUID) error
 	FindAll() ([]*models.Automation, error)
 	MaxPosition() (int, error)
@@ -26,8 +34,15 @@ type Repository interface {
 	FindHealthEvents(automationID uuid.UUID, limit int) ([]models.AutomationHealthEvent, error)
 	SaveLaunchIntent(event *models.AutomationLaunchEvent) error
 	SaveLaunchEvent(event *models.AutomationLaunchEvent) error
+	FindLaunchIntentByEventKey(eventKey string) (*models.AutomationLaunchEvent, error)
+	FindLaunchOutcomeByIntentID(intentID uuid.UUID) (*models.AutomationLaunchEvent, error)
 	FindLaunchEvents(automationID uuid.UUID, limit int) ([]models.AutomationLaunchEvent, error)
+	FindOwnerLaunchEvents(automationID uuid.UUID, owner string, limit int) ([]models.AutomationLaunchEvent, error)
+	FindOwnerActiveRuntimeLaunch(automationID uuid.UUID, runtimeID, owner string) (*models.AutomationLaunchEvent, error)
+	FindPendingRuntimeLaunchIntent(automationID uuid.UUID, owner string) (*models.AutomationLaunchEvent, error)
+	FindUnresolvedRuntimeStopIntent(automationID uuid.UUID, owner, taskID string) (*models.AutomationLaunchEvent, error)
 	FindLaunchEventByExecutionReference(reference string) (*models.AutomationLaunchEvent, error)
+	FindLaunchIntentByExecutionReference(reference string) (*models.AutomationLaunchEvent, error)
 	SaveApprovalDecision(record *ApprovalDecisionRecord) error
 	FindApprovalDecision(sourceID string) (*ApprovalDecisionRecord, error)
 }
@@ -73,6 +88,59 @@ func (r *GormUserRepository) Update(automation *models.Automation) (*models.Auto
 		return nil, err
 	}
 	return automation, nil
+}
+
+func (r *GormUserRepository) UpdateRuntimeStopFailure(id uuid.UUID, startedAt time.Time, reason string) error {
+	if id == uuid.Nil || startedAt.IsZero() {
+		return fmt.Errorf("runtime stop failure summary requires automation ID and start time")
+	}
+	if r == nil || r.DB == nil || r.DB.Config == nil || r.DB.DryRun || r.DB.Statement == nil || r.DB.Statement.Context == nil {
+		return fmt.Errorf("runtime stop failure summary requires available non-dry-run storage")
+	}
+	ctx, cancel := context.WithTimeout(r.DB.Statement.Context, approvalRegistrationTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	scoped := r.DB.WithContext(ctx)
+	result := scoped.Model(&models.Automation{}).
+		Where("id = ? AND (last_launch_at IS NULL OR last_launch_at <= ?)", id, startedAt.UTC()).
+		Update("last_failure_reason", reason)
+	if err := errors.Join(ctx.Err(), result.Error); err != nil {
+		return err
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+	// A newer launch supersedes this summary. A deleted automation does not.
+	var existing models.Automation
+	err := scoped.Select("id").First(&existing, "id = ?", id).Error
+	return errors.Join(ctx.Err(), err)
+}
+
+func (r *GormUserRepository) UpdateLaunchState(id uuid.UUID, startedAt time.Time, failureReason *string) error {
+	if id == uuid.Nil || startedAt.IsZero() {
+		return fmt.Errorf("automation launch state requires an automation ID and start time")
+	}
+
+	updates := map[string]interface{}{"last_launch_at": startedAt.UTC()}
+	if failureReason != nil {
+		updates["last_failure_reason"] = *failureReason
+	}
+	result := r.DB.Model(&models.Automation{}).
+		Where("id = ? AND (last_launch_at IS NULL OR last_launch_at <= ?)", id, startedAt.UTC()).
+		Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		return nil
+	}
+
+	// A zero-row update also means this launch is older than the projection
+	// already stored. Distinguish that harmless stale write from a deleted row.
+	var existing models.Automation
+	return r.DB.Select("id").First(&existing, "id = ?", id).Error
 }
 
 func (r *GormUserRepository) Delete(id uuid.UUID) error {
@@ -151,11 +219,58 @@ func (r *GormUserRepository) SaveLaunchEvent(event *models.AutomationLaunchEvent
 	}
 	if key := strings.TrimSpace(event.EventKey); key != "" {
 		// The partial unique index introduced by migration 0067 is the authority
-		// for event-key idempotency. Let the database absorb a concurrent retry
-		// instead of treating a check-then-insert race as a worker failure.
-		return r.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(event).Error
+		// for event-key idempotency. Resolve a conflict to its durable row instead
+		// of returning success for an event that was never inserted.
+		result := r.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(event)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected > 0 {
+			return nil
+		}
+
+		var existing models.AutomationLaunchEvent
+		if err := r.DB.Where("event_key = ?", event.EventKey).First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errLaunchEventKeyConflict
+			}
+			return err
+		}
+		if !sameLaunchEventOutcome(&existing, event) {
+			return errLaunchEventKeyConflict
+		}
+		event.ID = existing.ID
+		return nil
 	}
 	return r.DB.Create(event).Error
+}
+
+func sameLaunchEventOutcome(existing, candidate *models.AutomationLaunchEvent) bool {
+	if existing == nil || candidate == nil {
+		return false
+	}
+	return existing.AutomationID == candidate.AutomationID &&
+		existing.OwnerIdentity == candidate.OwnerIdentity &&
+		existing.RuntimeType == candidate.RuntimeType &&
+		existing.LaunchType == candidate.LaunchType &&
+		existing.RuntimeTaskID == candidate.RuntimeTaskID &&
+		existing.ExecutionReference == candidate.ExecutionReference &&
+		existing.EventKey == candidate.EventKey &&
+		existing.Target == candidate.Target &&
+		existing.Status == candidate.Status &&
+		existing.Message == candidate.Message &&
+		existing.Output == candidate.Output &&
+		existing.AuditLog == candidate.AuditLog &&
+		existing.RuntimeRouteTraceLog == candidate.RuntimeRouteTraceLog &&
+		existing.ExitCode == candidate.ExitCode &&
+		existing.DurationMs == candidate.DurationMs &&
+		existing.RequiresApproval == candidate.RequiresApproval &&
+		samePersistedLaunchTime(existing.StartedAt, candidate.StartedAt) &&
+		samePersistedLaunchTime(existing.CompletedAt, candidate.CompletedAt)
+}
+
+func samePersistedLaunchTime(existing, candidate time.Time) bool {
+	return existing.Truncate(time.Microsecond).Equal(candidate.Truncate(time.Microsecond))
 }
 
 func (r *GormUserRepository) SaveLaunchIntent(event *models.AutomationLaunchEvent) error {
@@ -164,7 +279,97 @@ func (r *GormUserRepository) SaveLaunchIntent(event *models.AutomationLaunchEven
 		strings.TrimSpace(event.Status) != "pending" {
 		return fmt.Errorf("launch intent must be an immutable pending intent event")
 	}
-	return r.DB.Create(event).Error
+	if strings.TrimSpace(event.EventKey) == "" {
+		return r.DB.Create(event).Error
+	}
+	result := r.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(event)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errLaunchIntentAlreadyExists
+	}
+	return nil
+}
+
+func (r *GormUserRepository) FindLaunchIntentByEventKey(eventKey string) (*models.AutomationLaunchEvent, error) {
+	eventKey = strings.TrimSpace(eventKey)
+	if eventKey == "" {
+		return nil, fmt.Errorf("launch intent event key is required")
+	}
+	var event models.AutomationLaunchEvent
+	err := r.DB.Where("event_key = ?", eventKey).First(&event).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasSuffix(strings.TrimSpace(event.LaunchType), "_intent") {
+		return nil, fmt.Errorf("event key is already assigned to a non-intent launch event")
+	}
+	return &event, nil
+}
+
+func (r *GormUserRepository) FindLaunchOutcomeByIntentID(intentID uuid.UUID) (*models.AutomationLaunchEvent, error) {
+	if intentID == uuid.Nil {
+		return nil, fmt.Errorf("launch intent ID is required")
+	}
+	var outcome *models.AutomationLaunchEvent
+	var event models.AutomationLaunchEvent
+	err := r.DB.
+		Where("event_key IN ?", []string{automationLaunchOutcomeEventKey(intentID), runtimeStopOutcomeEventKey(intentID)}).
+		Order("completed_at DESC").
+		First(&event).Error
+	if err == nil {
+		if strings.HasSuffix(strings.TrimSpace(event.LaunchType), "_intent") {
+			return nil, fmt.Errorf("launch outcome key is assigned to an intent")
+		}
+		outcome = &event
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var intent models.AutomationLaunchEvent
+	err = r.DB.Where("id = ?", intentID).First(&intent).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return outcome, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if intent.LaunchType != "agent_runtime_intent" {
+		return outcome, nil
+	}
+	reconciled, err := r.findReconciledRuntimeOutcome(&intent)
+	if err != nil {
+		return nil, err
+	}
+	if reconciled != nil {
+		return reconciled, nil
+	}
+	return outcome, nil
+}
+
+func (r *GormUserRepository) findReconciledRuntimeOutcome(intent *models.AutomationLaunchEvent) (*models.AutomationLaunchEvent, error) {
+	if intent == nil || intent.AutomationID == uuid.Nil || strings.TrimSpace(intent.OwnerIdentity) == "" ||
+		strings.TrimSpace(intent.RuntimeType) == "" || strings.TrimSpace(intent.RuntimeTaskID) == "" {
+		return nil, nil
+	}
+	var event models.AutomationLaunchEvent
+	err := r.DB.
+		Where("automation_id = ? AND owner_identity = ? AND LOWER(runtime_type) = ? AND runtime_task_id = ?",
+			intent.AutomationID, strings.TrimSpace(intent.OwnerIdentity), strings.ToLower(strings.TrimSpace(intent.RuntimeType)), strings.TrimSpace(intent.RuntimeTaskID)).
+		Where("launch_type IN ?", []string{"agent_runtime_openclaw_terminal", "agent_runtime_host_completion"}).
+		Order("completed_at DESC").
+		First(&event).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
 }
 
 func (r *GormUserRepository) FindLaunchEvents(automationID uuid.UUID, limit int) ([]models.AutomationLaunchEvent, error) {
@@ -184,6 +389,123 @@ func (r *GormUserRepository) FindLaunchEvents(automationID uuid.UUID, limit int)
 	return events, nil
 }
 
+func (r *GormUserRepository) FindOwnerLaunchEvents(automationID uuid.UUID, owner string, limit int) ([]models.AutomationLaunchEvent, error) {
+	if automationID == uuid.Nil || strings.TrimSpace(owner) == "" {
+		return nil, fmt.Errorf("owner-bound launch history lookup requires automation and owner")
+	}
+	var events []models.AutomationLaunchEvent
+	if limit <= 0 {
+		limit = 20
+	}
+	err := r.DB.
+		Where("automation_id = ? AND owner_identity = ?", automationID, strings.TrimSpace(owner)).
+		Where("launch_type <> ? AND launch_type NOT LIKE ?", "approval_decision", "%_intent").
+		Order("started_at desc").
+		Limit(limit).
+		Find(&events).Error
+	if err != nil {
+		return nil, err
+	}
+	return events, nil
+}
+
+func (r *GormUserRepository) FindOwnerActiveRuntimeLaunch(automationID uuid.UUID, runtimeID, owner string) (*models.AutomationLaunchEvent, error) {
+	if automationID == uuid.Nil || strings.TrimSpace(owner) == "" || strings.TrimSpace(runtimeID) == "" {
+		return nil, fmt.Errorf("owner-bound runtime launch lookup requires automation, runtime, and owner")
+	}
+	statuses := []string{"queued", "running"}
+	if strings.EqualFold(strings.TrimSpace(runtimeID), "openclaw") {
+		statuses = append(statuses, "indeterminate", "needs_review")
+	}
+	var event models.AutomationLaunchEvent
+	err := r.DB.
+		Where("automation_id = ? AND LOWER(runtime_type) = ? AND owner_identity = ? AND launch_type = ?", automationID, strings.ToLower(strings.TrimSpace(runtimeID)), strings.TrimSpace(owner), "agent_runtime").
+		Where("status IN ?", statuses).
+		Where("(status NOT IN ? OR execution_reference <> '')", []string{"indeterminate", "needs_review"}).
+		Where(`NOT EXISTS (
+			SELECT 1 FROM automation_launch_events AS terminal
+			WHERE terminal.automation_id = automation_launch_events.automation_id
+			  AND terminal.owner_identity = automation_launch_events.owner_identity
+			  AND LOWER(terminal.runtime_type) = LOWER(automation_launch_events.runtime_type)
+			  AND terminal.runtime_task_id = automation_launch_events.runtime_task_id
+			  AND terminal.launch_type IN ('agent_runtime_openclaw_terminal', 'agent_runtime_host_completion')
+		)`).
+		Order("started_at DESC").
+		First(&event).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
+func (r *GormUserRepository) FindPendingRuntimeLaunchIntent(automationID uuid.UUID, owner string) (*models.AutomationLaunchEvent, error) {
+	if automationID == uuid.Nil || strings.TrimSpace(owner) == "" {
+		return nil, fmt.Errorf("owner-bound pending launch lookup requires automation and owner")
+	}
+	var event models.AutomationLaunchEvent
+	query := r.DB.Model(&models.AutomationLaunchEvent{}).
+		Where("automation_id = ? AND owner_identity = ? AND launch_type = ? AND status = ?", automationID, strings.TrimSpace(owner), "agent_runtime_intent", "pending").
+		// RuntimeTaskID is generated from the immutable launch-intent UUID and is
+		// therefore the stable reconciliation key. Gateway references are optional
+		// transport metadata and must not prevent CLI outcomes from closing intents.
+		Where(`NOT EXISTS (
+			SELECT 1 FROM automation_launch_events AS outcome
+			WHERE outcome.automation_id = automation_launch_events.automation_id
+			  AND outcome.owner_identity = automation_launch_events.owner_identity
+			  AND LOWER(outcome.runtime_type) = LOWER(automation_launch_events.runtime_type)
+			  AND outcome.launch_type = 'agent_runtime'
+			  AND outcome.runtime_task_id = automation_launch_events.runtime_task_id
+		)`).
+		// Reconciliation can persist a terminal result before the ordinary launch
+		// outcome. A matching terminal event is sufficient to close the intent.
+		Where(`NOT EXISTS (
+			SELECT 1 FROM automation_launch_events AS terminal
+			WHERE terminal.automation_id = automation_launch_events.automation_id
+			  AND terminal.owner_identity = automation_launch_events.owner_identity
+			  AND LOWER(terminal.runtime_type) = LOWER(automation_launch_events.runtime_type)
+			  AND terminal.runtime_task_id = automation_launch_events.runtime_task_id
+			  AND terminal.launch_type IN ('agent_runtime_openclaw_terminal', 'agent_runtime_host_completion')
+		)`).
+		Order("started_at DESC")
+	err := query.First(&event).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
+func (r *GormUserRepository) FindUnresolvedRuntimeStopIntent(automationID uuid.UUID, owner, taskID string) (*models.AutomationLaunchEvent, error) {
+	if automationID == uuid.Nil || strings.TrimSpace(owner) == "" || strings.TrimSpace(taskID) == "" {
+		return nil, fmt.Errorf("owner-bound runtime stop intent lookup requires automation, owner, and task")
+	}
+	var event models.AutomationLaunchEvent
+	query := r.DB.Model(&models.AutomationLaunchEvent{}).
+		Where("automation_id = ? AND owner_identity = ? AND runtime_task_id = ? AND launch_type = ? AND status = ?", automationID, strings.TrimSpace(owner), strings.TrimSpace(taskID), "agent_runtime_stop_intent", "pending").
+		Where(`NOT EXISTS (
+			SELECT 1 FROM automation_launch_events AS outcome
+			WHERE outcome.automation_id = automation_launch_events.automation_id
+			  AND outcome.owner_identity = automation_launch_events.owner_identity
+			  AND outcome.runtime_task_id = automation_launch_events.runtime_task_id
+			  AND outcome.launch_type = 'agent_runtime_stop'
+			  AND outcome.event_key = 'runtime-stop-outcome:' || automation_launch_events.id::text
+		)`).
+		Order("started_at DESC")
+	err := query.First(&event).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
 func (r *GormUserRepository) FindLaunchEventByExecutionReference(reference string) (*models.AutomationLaunchEvent, error) {
 	reference = strings.TrimSpace(reference)
 	if reference == "" {
@@ -193,6 +515,22 @@ func (r *GormUserRepository) FindLaunchEventByExecutionReference(reference strin
 	err := r.DB.
 		Where("execution_reference = ?", reference).
 		Where("launch_type = ?", "agent_runtime").
+		Order("started_at DESC").
+		First(&event).Error
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
+func (r *GormUserRepository) FindLaunchIntentByExecutionReference(reference string) (*models.AutomationLaunchEvent, error) {
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return nil, fmt.Errorf("execution reference is required")
+	}
+	var event models.AutomationLaunchEvent
+	err := r.DB.
+		Where("execution_reference = ? AND launch_type = ? AND status = ?", reference, "agent_runtime_intent", "pending").
 		Order("started_at DESC").
 		First(&event).Error
 	if err != nil {

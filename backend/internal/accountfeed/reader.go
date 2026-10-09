@@ -42,11 +42,7 @@ func (r *LocalFileReader) Feed() Feed { return r.feed }
 // Read loads and validates the feed's items, preserving each item's exact raw
 // JSON for evidence.
 func (r *LocalFileReader) Read(ctx context.Context) ([]FeedItem, error) {
-	full, err := pathsafety.SafeJoin(r.rootDir, r.feed.Path)
-	if err != nil {
-		return nil, fmt.Errorf("accountfeed: %w", err)
-	}
-	data, err := readBoundedLocalFeed(full)
+	data, err := readBoundedLocalFeed(ctx, r.rootDir, r.feed.Path)
 	if err != nil {
 		return nil, fmt.Errorf("accountfeed: read feed file: %w", err)
 	}
@@ -56,6 +52,9 @@ func (r *LocalFileReader) Read(ctx context.Context) ([]FeedItem, error) {
 	}
 	items := make([]FeedItem, 0, len(raws))
 	for i, raw := range raws {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var it FeedItem
 		if err := json.Unmarshal(raw, &it); err != nil {
 			return nil, fmt.Errorf("accountfeed: item %d: %w", i, err)

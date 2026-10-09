@@ -36,7 +36,7 @@ var integratedImplementationBoundaries = map[string]ImplementationBoundary{
 	"microsoft-agent-framework":        {"local planning review", "/api/v1/agent-framework", "backend/internal/agentframework/service.go", "fixed local planner/reviewer draft only; no tools, sources, memory, or execution"},
 	"mlflow":                           {"local evaluation evidence", "/api/v1/mlflow", "backend/internal/mlflow/service.go", "allowlisted recent run metrics only"},
 	"odoo":                             {"read-only business intake", "/api/v1/sources", "backend/internal/source/odoo_json2.go", "fixed-model search_read source ingestion only"},
-	"ollama":                           {"local provider and updater", "/api/v1/llm", "backend/internal/llm/maintenance.go", "configured tag pull and post-verification under daily maintenance"},
+	"ollama":                           {"configured provider and updater", "/api/v1/llm", "backend/internal/llm/maintenance.go", "configured tag pull and post-verification under daily maintenance; cloud tags are external and must not use local/free policy"},
 	"openhands":                        {"runtime health profile", "/api/v1/runtime-lab", "backend/internal/runtimelab/remote_runtime.go", "allowlisted health probe only; task execution refused"},
 	"openlit":                          {"aggregate telemetry export", "/api/v1/openlit", "backend/internal/openlit/service.go", "owner-triggered aggregate local OTLP snapshot only"},
 	"openspec":                         {"planning-artifact intake", "/api/v1/sources", "backend/internal/source/openspec_artifacts.go", "active Markdown planning artifacts only"},

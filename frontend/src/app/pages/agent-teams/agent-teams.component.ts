@@ -1,8 +1,9 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit, ViewChild } from '@angular/core'
+import { ChangeDetectionStrategy, Component, ElementRef, OnInit, ViewChild } from '@angular/core'
 import { forkJoin } from 'rxjs'
 import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
+import { Router } from '@angular/router'
 import {
   AgentCoordinationMessage,
   AgentTeamAttention,
@@ -19,6 +20,7 @@ import { AuthSessionService } from '../../services/auth-session.service'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-agent-teams',
     templateUrl: './agent-teams.component.html',
     styleUrls: ['./agent-teams.component.scss'],
@@ -27,7 +29,9 @@ import { NzNotificationService } from 'ng-zorro-antd/notification'
 export class AgentTeamsComponent implements OnInit {
   @ViewChild('membersSection') membersSection?: HaiProgressiveSectionComponent
   @ViewChild('decisionsSection') decisionsSection?: HaiProgressiveSectionComponent
+  @ViewChild('decisionsSection', { read: ElementRef }) decisionsSectionHost?: ElementRef<HTMLElement>
   @ViewChild('consensusSection') consensusSection?: HaiProgressiveSectionComponent
+  @ViewChild('attentionQueue', { read: ElementRef }) attentionQueue?: ElementRef<HTMLElement>
 
   readonly moduleId = 'agent-teams'
   teams: AgentTeamContract[] = []
@@ -37,6 +41,10 @@ export class AgentTeamsComponent implements OnInit {
   detailLoading = false
   saving = false
   errorMessage = ''
+  detailError = ''
+  failedSection = ''
+  attentionLoading = false
+  attentionError = ''
   inspectorOpen = false
   createOpen = false
   memberFormOpen = false
@@ -46,6 +54,8 @@ export class AgentTeamsComponent implements OnInit {
   outcomes: AgentTeamConsensusOutcome[] = []
   events: AgentTeamLifecycleEvent[] = []
   loadedSections = new Set<string>()
+  private attentionRequest = 0
+  private attentionLoadedTeam = ''
 
   createForm = {
     key: '', version: '1.0.0', name: '', purpose: '', authorityCeiling: 1,
@@ -64,7 +74,8 @@ export class AgentTeamsComponent implements OnInit {
     private teamsService: AgentTeamsService,
     private authService: AuthSessionService,
     private preferences: ModuleViewPreferencesService,
-    private notification: NzNotificationService
+    private notification: NzNotificationService,
+    private router: Router,
   ) {}
 
   ngOnInit(): void {
@@ -88,6 +99,8 @@ export class AgentTeamsComponent implements OnInit {
   get draftCount(): number { return this.teams.filter((team) => team.status === 'draft').length }
   get reviewCount(): number { return this.attention.filter((item) => item.humanReviewRequired).length }
   get actionableAcknowledgments(): AgentTeamAttention[] { return this.attention.filter((item) => this.canAcknowledge(item)) }
+  get pendingAttentionCount(): number { return this.attention.filter((item) => item.humanReviewRequired || this.canAcknowledge(item)).length }
+  get basicAttentionItems(): AgentTeamAttention[] { return this.attention.filter((item) => item.humanReviewRequired || this.canAcknowledge(item)) }
   get activeMembers(): AgentTeamMember[] { return (this.selected?.members || []).filter((member) => member.status === 'active') }
   get votingMembers(): AgentTeamMember[] {
     const team = this.selected
@@ -105,8 +118,8 @@ export class AgentTeamsComponent implements OnInit {
     if (team.status === 'draft' && this.activeMembers.length < team.consensus.quorum) return { title: 'Add governed members', summary: `${team.consensus.quorum - this.activeMembers.length} more active member(s) required before activation.`, label: 'Add member', action: 'member' }
     if (team.status === 'draft') return { title: 'Activate the charter', summary: 'The quorum is present. Activation enables advisory coordination only.', label: 'Activate team', action: 'activate' }
     if (team.status === 'suspended') return { title: 'Review and reactivate', summary: 'Confirm the charter and evidence before resuming coordination.', label: 'Reactivate', action: 'activate' }
-    if (this.reviewCount) return { title: 'Resolve waiting decisions', summary: `${this.reviewCount} coordination message(s) require human review.`, label: 'Review messages', action: 'decisions' }
     if (this.actionableAcknowledgments.length) return { title: 'Acknowledge the decision', summary: `${this.actionableAcknowledgments.length} message(s) await explicit receipt.`, label: 'Review acknowledgment', action: 'decisions' }
+    if (this.reviewCount) return { title: 'Resolve waiting decisions', summary: `${this.reviewCount} coordination message(s) require human review.`, label: 'Review messages', action: 'decisions' }
     if (this.consensusReady) return { title: 'Evaluate advisory consensus', summary: 'The recorded vote set meets the charter threshold.', label: 'Evaluate consensus', action: 'consensus' }
     return { title: 'Record a deliberation', summary: 'Capture evidence-backed votes, then calculate an advisory consensus.', label: 'Record decision', action: 'decision' }
   }
@@ -140,14 +153,22 @@ export class AgentTeamsComponent implements OnInit {
   }
 
   selectTeam(team: AgentTeamContract): void {
+    this.attentionRequest++
+    this.attentionLoadedTeam = ''
+    this.attentionLoading = false
     this.selected = team
     this.loadedSections.clear()
     this.messages = []
     this.attention = []
     this.outcomes = []
     this.events = []
+    this.attentionError = ''
+    this.detailError = ''
+    this.failedSection = ''
+    this.detailLoading = false
     const open = this.preferences.get(this.moduleId).openSections
     Object.keys(open).filter((section) => open[section]).forEach((section) => this.loadSection(section, true))
+    this.loadAttention()
   }
 
   inspect(): void { if (this.selected) this.inspectorOpen = true }
@@ -156,7 +177,7 @@ export class AgentTeamsComponent implements OnInit {
       case 'create': this.openCreate(); break
       case 'member': this.openMembers(); break
       case 'activate': this.transition('activate'); break
-      case 'decisions': this.openDecisions(false); break
+      case 'decisions': this.focusAttentionQueue(); break
       case 'consensus': this.openConsensus(); break
       default: this.openDecisions(true)
     }
@@ -168,22 +189,47 @@ export class AgentTeamsComponent implements OnInit {
   }
 
   private openMembers(): void {
-    this.membersSection?.setOpen(true)
+    this.enterAdvancedSection('members', this.membersSection)
     this.memberFormOpen = true
   }
 
   private openDecisions(recordDecision: boolean): void {
-    this.decisionsSection?.setOpen(true)
-    this.loadSection('decisions', true)
     if (recordDecision) {
+      this.enterAdvancedSection('decisions', this.decisionsSection)
       this.decisionFormOpen = true
       this.prepareDecision()
-    }
+    } else this.focusAttentionQueue()
   }
 
   private openConsensus(): void {
-    this.consensusSection?.setOpen(true)
-    this.loadSection('consensus', true)
+    this.enterAdvancedSection('consensus', this.consensusSection)
+  }
+
+  focusAttentionQueue(): void {
+    const team = this.selected
+    const teamKey = team ? `${team.id}@${team.version}` : ''
+    if (teamKey && !this.attentionLoading && this.attentionLoadedTeam !== teamKey) this.loadAttention()
+    this.attentionQueue?.nativeElement.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+
+  viewAllAttention(): void {
+    this.enterAdvancedSection('decisions', this.decisionsSection)
+    window.setTimeout(() => this.decisionsSectionHost?.nativeElement.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+  }
+
+  retryFailedSection(): void {
+    if (!this.failedSection) return
+    const section = this.failedSection
+    this.detailError = ''
+    this.loadSection(section, true)
+  }
+
+  private enterAdvancedSection(sectionId: string, section?: HaiProgressiveSectionComponent): void {
+    this.preferences.setMode(this.moduleId, 'advanced')
+    const wasOpen = section?.open === true
+    section?.setOpen(true)
+    this.router.navigate([], { queryParams: { mode: 'advanced' }, queryParamsHandling: 'merge' })
+    if (wasOpen || !section) this.loadSection(sectionId, true)
   }
 
   createTeam(): void {
@@ -328,33 +374,49 @@ export class AgentTeamsComponent implements OnInit {
     if (!open || !this.selected || this.loadedSections.has(section)) return
     const team = this.selected
     this.detailLoading = true
+    this.detailError = ''
+    this.failedSection = ''
+    const isCurrentTeam = () => this.selected?.id === team.id && this.selected.version === team.version
     const failed = (error: HttpErrorResponse) => {
+      if (!isCurrentTeam()) return
       this.detailLoading = false
+      this.failedSection = section
+      this.detailError = this.apiError(error, 'The section could not be loaded.')
       this.notification.error('Team detail unavailable', this.apiError(error, 'The section could not be loaded.'))
     }
     if (section === 'decisions') {
       this.teamsService.decisionOverview(team.id, team.version).subscribe({
-        next: (result) => { this.detailLoading = false; this.loadedSections.add(section); this.messages = result.messages; this.attention = result.attention },
+        next: (result) => {
+          if (!isCurrentTeam()) return
+          this.detailLoading = false
+          this.loadedSections.add(section)
+          this.messages = result.messages
+          this.attention = result.attention
+          this.attentionLoadedTeam = `${team.id}@${team.version}`
+          this.attentionRequest++
+          this.attentionLoading = false
+          this.attentionError = ''
+        },
         error: failed,
       })
       return
     }
     if (section === 'consensus') {
       this.teamsService.outcomes(team.id, team.version).subscribe({
-        next: (result) => { this.detailLoading = false; this.loadedSections.add(section); this.outcomes = result },
+        next: (result) => { if (!isCurrentTeam()) return; this.detailLoading = false; this.loadedSections.add(section); this.outcomes = result },
         error: failed,
       })
       return
     }
     if (section === 'history') {
       this.teamsService.events(team.id, team.version).subscribe({
-        next: (result) => { this.detailLoading = false; this.loadedSections.add(section); this.events = result },
+        next: (result) => { if (!isCurrentTeam()) return; this.detailLoading = false; this.loadedSections.add(section); this.events = result },
         error: failed,
       })
       return
     }
     this.teamsService.get(team.id, team.version).subscribe({
-      next: (result) => { this.detailLoading = false; this.loadedSections.add(section); this.replaceTeam(result) },
+      next: (result) => { if (!isCurrentTeam()) return; this.detailLoading = false; this.loadedSections.add(section); this.replaceTeam(result) },
       error: failed,
     })
   }
@@ -366,10 +428,21 @@ export class AgentTeamsComponent implements OnInit {
 
   private loadAttention(): void {
     const team = this.selected
-    if (!team) return
+    if (!team || this.attentionLoading) return
+    const request = ++this.attentionRequest
+    this.attentionLoading = true
+    this.attentionError = ''
     this.teamsService.attention(team.id, team.version).subscribe({
-      next: (items) => this.attention = items,
+      next: (items) => {
+        if (request !== this.attentionRequest || this.selected?.id !== team.id || this.selected.version !== team.version) return
+        this.attentionLoading = false
+        this.attention = items
+        this.attentionLoadedTeam = `${team.id}@${team.version}`
+      },
       error: (error: HttpErrorResponse) => {
+        if (request !== this.attentionRequest || this.selected?.id !== team.id || this.selected.version !== team.version) return
+        this.attentionLoading = false
+        this.attentionError = this.apiError(error, 'The decision succeeded, but the queue could not be refreshed.')
         this.notification.error('Attention queue unavailable', this.apiError(error, 'The decision succeeded, but the queue could not be refreshed.'))
       },
     })

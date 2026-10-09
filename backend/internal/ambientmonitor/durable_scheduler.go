@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/durablejob"
+	"automation-hub-backend/internal/lifecycle"
 )
 
 const (
@@ -16,6 +17,13 @@ const (
 	monitorWorkerID     = "outcome-monitor-scheduler"
 	monitorMaxAttempts  = 3
 )
+
+func monitorSafetyGate(allowed func() bool) func() bool {
+	if allowed == nil {
+		return func() bool { return false }
+	}
+	return allowed
+}
 
 type schedulerService interface {
 	DueScopes(context.Context, time.Time, int) ([]Scope, error)
@@ -32,9 +40,7 @@ func RegisterDurableScheduling(runner *durablejob.Runner, service schedulerServi
 	if runner == nil || service == nil {
 		return fmt.Errorf("ambient outcome scheduling requires a runner and service")
 	}
-	if allowed == nil {
-		allowed = func() bool { return true }
-	}
+	allowed = monitorSafetyGate(allowed)
 	return runner.RegisterRecurring(monitorSweepJobKind, interval, monitorMaxAttempts, func(ctx context.Context) error {
 		if !allowed() {
 			return durablejob.Defer("background processing is paused by safety policy")
@@ -44,13 +50,22 @@ func RegisterDurableScheduling(runner *durablejob.Runner, service schedulerServi
 }
 
 func runMonitorSweep(ctx context.Context, service schedulerService, now time.Time, allowed func() bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dueScopes, err := service.DueScopes(ctx, now, monitorScopeLimit())
 	if err != nil {
 		return fmt.Errorf("discover due monitor scopes: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	compositionScopes, err := service.PendingCompositionScopes(ctx, now, monitorScopeLimit())
 	if err != nil {
 		return fmt.Errorf("discover due composition scopes: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	scopes := mergeScopes(dueScopes, compositionScopes, monitorScopeLimit())
 	failures := 0
@@ -85,6 +100,9 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 				failures++
 				break
 			}
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			terminalCompositionFailure := false
 			for _, failure := range result.Compositions.Failures {
 				if !failure.Retrying {
@@ -99,6 +117,9 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 				break
 			}
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if failures > 0 {
 		return fmt.Errorf("ambient outcome sweep failed for %d scoped batch(es)", failures)
@@ -133,7 +154,9 @@ func StartDurableScheduler(ctx context.Context, service *Service, allowed func()
 	if err := RegisterDurableScheduling(runner, service, allowed, monitorSweepInterval()); err != nil {
 		return err
 	}
-	go runner.Start(ctx, monitorPollInterval())
+	if !lifecycle.Go(ctx, "ambient-monitor-worker", func() { runner.Start(ctx, monitorPollInterval()) }) {
+		return context.Canceled
+	}
 	return nil
 }
 

@@ -11,6 +11,7 @@
   --hai-border: #dfe7f1;
   --hai-blue: #1769e0;
   --hai-blue-soft: #e8f1ff;
+  --hai-purple: #8b5cf6;
   --hai-green: #119d68;
   --hai-green-soft: #e7f8f1;
   --hai-gold: #d77916;
@@ -32,6 +33,7 @@ body.hai-theme-dark {
   --hai-border: #263850;
   --hai-blue: #67a5ff;
   --hai-blue-soft: rgba(103, 165, 255, .14);
+  --hai-purple: #b69cff;
   --hai-green: #45d18d;
   --hai-green-soft: rgba(69, 209, 141, .13);
   --hai-gold: #ffb355;
@@ -48,6 +50,10 @@ body {
   padding: 0;
 }
 
+body.hai-theme-dark :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--hai-text);
+}
+
 /* Notifications are passive status feedback. NG-Zorro renders them inside a
    CDK overlay pane, so disabling only the notice leaves that parent pane able
    to intercept clicks on the workflow beneath it. Keep notification panes
@@ -60,4 +66,11 @@ body {
 
 .cdk-overlay-container .cdk-overlay-pane:has(> nz-notification-container) .ant-notification-notice-close {
   pointer-events: auto !important;
+}
+.hai-execution-diagnostics {
+  .ant-modal { max-width: calc(100vw - 32px); }
+  .ant-modal-content, .ant-modal-header { background: var(--hai-surface); color: var(--hai-text); }
+  .ant-modal-title, .ant-modal-close { color: var(--hai-text); }
+  .ant-modal-header { border-color: var(--hai-border); }
+  .ant-modal-body { color: var(--hai-text); }
 }

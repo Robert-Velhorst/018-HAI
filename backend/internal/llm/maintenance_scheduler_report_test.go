@@ -9,6 +9,7 @@ func TestModelMaintenanceNeedsReportForUpdatesOrFailures(t *testing.T) {
 		want bool
 	}{
 		{name: "quiet reused run", run: ModelMaintenanceRun{Reused: 2}, want: false},
+		{name: "provider-managed cloud models", run: ModelMaintenanceRun{Eligible: 2, ProviderManaged: 2}, want: false},
 		{name: "model update", run: ModelMaintenanceRun{Updated: 1}, want: true},
 		{name: "model failure", run: ModelMaintenanceRun{Failed: 1}, want: true},
 	}

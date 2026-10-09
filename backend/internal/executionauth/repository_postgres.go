@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"automation-hub-backend/internal/infra"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
@@ -48,8 +50,13 @@ func (r *PostgresRepository) CreateOrGet(
 	if err != nil {
 		return Receipt{}, false, err
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Receipt{}, false, err
+	}
+	defer finish()
 
-	result := r.DB.WithContext(ctx).Exec(`
+	result := db.Exec(`
 		INSERT INTO public.execution_authorization_receipts (
 			id, contract_version, owner_identity, idempotency_key,
 			actor_identity, actor_kind, task_id, action, stage,
@@ -119,8 +126,8 @@ func (r *PostgresRepository) CreateOrGet(
 		return cloneReceipt(receipt), true, nil
 	}
 
-	existing, err := r.getByIdempotency(
-		ctx,
+	existing, err := getReceiptByIdempotencyFromPostgres(
+		db,
 		receipt.OwnerIdentity,
 		receipt.IdempotencyKey,
 	)
@@ -147,7 +154,16 @@ func (r *PostgresRepository) Get(
 	if err := validateReceiptLookup(owner, id); err != nil {
 		return Receipt{}, err
 	}
-	row := r.DB.WithContext(ctx).Raw(
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Receipt{}, err
+	}
+	defer finish()
+	return getReceiptFromPostgres(db, owner, id)
+}
+
+func getReceiptFromPostgres(db *gorm.DB, owner string, id uuid.UUID) (Receipt, error) {
+	row := db.Raw(
 		receiptSelect+`
 		WHERE owner_identity = ? AND id = ?`,
 		strings.TrimSpace(owner),
@@ -175,7 +191,12 @@ func (r *PostgresRepository) List(
 	if err := validateIdentifier("owner identity", owner); err != nil {
 		return nil, err
 	}
-	rows, err := r.DB.WithContext(ctx).Raw(
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return nil, err
+	}
+	defer finish()
+	rows, err := db.Raw(
 		receiptSelect+`
 		WHERE owner_identity = ?
 		ORDER BY evaluated_at DESC, id DESC
@@ -215,7 +236,28 @@ func (r *PostgresRepository) Consume(
 	if err := validateConsumption(consumption); err != nil {
 		return err
 	}
-	result := r.DB.WithContext(ctx).Exec(`
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return err
+	}
+	defer finish()
+	return db.Transaction(func(tx *gorm.DB) error {
+		return consumeInPostgresTransaction(db.Statement.Context, tx, consumption)
+	})
+}
+
+func consumeInPostgresTransaction(
+	ctx context.Context,
+	tx *gorm.DB,
+	consumption Consumption,
+) error {
+	if tx == nil {
+		return ErrPostgresTransactionRequired
+	}
+	if err := lockAndCheckApprovalClaim(ctx, tx, consumption); err != nil {
+		return err
+	}
+	result := tx.WithContext(ctx).Exec(`
 		INSERT INTO public.execution_authorization_consumptions (
 			owner_identity, receipt_id, consumer, execution_target,
 			receipt_digest, consumed_at
@@ -227,30 +269,149 @@ func (r *PostgresRepository) Consume(
 		  AND id = ?
 		  AND outcome = 'authorized'
 		  AND decision_digest = ?
-		ON CONFLICT (owner_identity, receipt_id) DO NOTHING`,
+		  AND (approval_source_id = '' OR COALESCE(
+		    NULLIF(evidence_json #>> '{approval,expiresAt}', '')::timestamptz > clock_timestamp(),
+		    FALSE
+		  ))
+		  AND (approval_source_id = '' OR COALESCE(
+		    NULLIF(evidence_json #>> '{approval,expiresAt}', '')::timestamptz > ?,
+		    FALSE
+		  ))
+		ON CONFLICT DO NOTHING`,
 		consumption.Consumer,
 		consumption.ExecutionTarget,
 		consumption.ConsumedAt.UTC(),
 		consumption.OwnerIdentity,
 		consumption.ReceiptID,
 		consumption.ReceiptDigest,
+		consumption.ConsumedAt.UTC(),
 	)
 	if result.Error != nil {
+		var postgresError *pgconn.PgError
+		if errors.As(result.Error, &postgresError) &&
+			postgresError.Code == "23505" {
+			switch postgresError.ConstraintName {
+			case "uq_execution_authorization_task_review_claim_decision",
+				"uq_execution_authorization_workflow_decision_claim_decision":
+				return ErrApprovalAlreadyClaimed
+			}
+		}
 		return fmt.Errorf("consume execution authorization receipt: %w", result.Error)
 	}
 	if result.RowsAffected == 1 {
+		var taskReviewDecisionID, workflowDecisionID sql.NullString
+		err := tx.WithContext(ctx).Raw(`
+			SELECT task_review_decision_id::text, workflow_decision_id::text
+			FROM public.execution_authorization_receipts
+			WHERE owner_identity = ? AND id = ? AND decision_digest = ?`,
+			consumption.OwnerIdentity,
+			consumption.ReceiptID,
+			consumption.ReceiptDigest,
+		).Row().Scan(&taskReviewDecisionID, &workflowDecisionID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("read consumed task-review approval reference: %w", err)
+		}
+		if taskReviewDecisionID.Valid {
+			claim := tx.WithContext(ctx).Exec(`
+				INSERT INTO public.execution_authorization_task_review_claims (
+					owner_identity, task_review_decision_id, receipt_id, claimed_at
+				)
+				SELECT owner_identity, task_review_decision_id, id, ?
+				FROM public.execution_authorization_receipts
+				WHERE owner_identity = ? AND id = ? AND decision_digest = ?
+				  AND task_review_decision_id = ?
+				ON CONFLICT (owner_identity, task_review_decision_id) DO NOTHING`,
+				consumption.ConsumedAt.UTC(),
+				consumption.OwnerIdentity,
+				consumption.ReceiptID,
+				consumption.ReceiptDigest,
+				taskReviewDecisionID.String,
+			)
+			if claim.Error != nil {
+				return fmt.Errorf("claim task-review approval decision: %w", claim.Error)
+			}
+			if claim.RowsAffected == 0 {
+				var claimedReceipt uuid.UUID
+				err = tx.WithContext(ctx).Raw(`
+					SELECT receipt_id
+					FROM public.execution_authorization_task_review_claims
+					WHERE owner_identity = ? AND task_review_decision_id = ?`,
+					consumption.OwnerIdentity,
+					taskReviewDecisionID.String,
+				).Row().Scan(&claimedReceipt)
+				if err == nil {
+					if claimedReceipt != consumption.ReceiptID {
+						return ErrApprovalAlreadyClaimed
+					}
+				} else if !errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("inspect task-review approval claim: %w", err)
+				} else {
+					return ErrAuthorizationChanged
+				}
+			}
+		}
+
+		if workflowDecisionID.Valid {
+			claim := tx.WithContext(ctx).Exec(`
+				INSERT INTO public.execution_authorization_workflow_decision_claims (
+					owner_identity, workflow_decision_id, receipt_id, claimed_at
+				)
+				SELECT owner_identity, workflow_decision_id, id, ?
+				FROM public.execution_authorization_receipts
+				WHERE owner_identity = ? AND id = ? AND decision_digest = ?
+				  AND workflow_decision_id = ?
+				ON CONFLICT (owner_identity, workflow_decision_id) DO NOTHING`,
+				consumption.ConsumedAt.UTC(),
+				consumption.OwnerIdentity,
+				consumption.ReceiptID,
+				consumption.ReceiptDigest,
+				workflowDecisionID.String,
+			)
+			if claim.Error != nil {
+				return fmt.Errorf("claim workflow approval decision: %w", claim.Error)
+			}
+			if claim.RowsAffected == 0 {
+				var claimedReceipt uuid.UUID
+				err = tx.WithContext(ctx).Raw(`
+					SELECT receipt_id
+					FROM public.execution_authorization_workflow_decision_claims
+					WHERE owner_identity = ? AND workflow_decision_id = ?`,
+					consumption.OwnerIdentity,
+					workflowDecisionID.String,
+				).Row().Scan(&claimedReceipt)
+				if err == nil {
+					if claimedReceipt != consumption.ReceiptID {
+						return ErrApprovalAlreadyClaimed
+					}
+				} else if !errors.Is(err, sql.ErrNoRows) {
+					return fmt.Errorf("inspect workflow approval claim: %w", err)
+				} else {
+					return ErrAuthorizationChanged
+				}
+			}
+		}
 		return nil
 	}
 
 	var outcome string
 	var decisionDigest string
-	err := r.DB.WithContext(ctx).Raw(`
-		SELECT outcome, decision_digest
+	var taskReviewDecisionID sql.NullString
+	var approvalExpired bool
+	err := tx.WithContext(ctx).Raw(`
+		SELECT outcome, decision_digest, task_review_decision_id::text,
+		       approval_source_id <> '' AND (
+		         COALESCE(NULLIF(evidence_json #>> '{approval,expiresAt}', '')::timestamptz <= clock_timestamp(), TRUE)
+		         OR COALESCE(NULLIF(evidence_json #>> '{approval,expiresAt}', '')::timestamptz <= ?, TRUE)
+		       )
 		FROM public.execution_authorization_receipts
 		WHERE owner_identity = ? AND id = ?`,
+		consumption.ConsumedAt.UTC(),
 		consumption.OwnerIdentity,
 		consumption.ReceiptID,
-	).Row().Scan(&outcome, &decisionDigest)
+	).Row().Scan(&outcome, &decisionDigest, &taskReviewDecisionID, &approvalExpired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -261,7 +422,120 @@ func (r *PostgresRepository) Consume(
 		decisionDigest != consumption.ReceiptDigest {
 		return ErrNotAuthorized
 	}
+	if approvalExpired {
+		return ErrAuthorizationChanged
+	}
+
+	var consumedReceipt uuid.UUID
+	err = tx.WithContext(ctx).Raw(`
+		SELECT receipt_id
+		FROM public.execution_authorization_consumptions
+		WHERE owner_identity = ? AND receipt_id = ?`,
+		consumption.OwnerIdentity,
+		consumption.ReceiptID,
+	).Row().Scan(&consumedReceipt)
+	if err == nil {
+		return ErrAlreadyConsumed
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("inspect execution authorization consumption: %w", err)
+	}
+	if taskReviewDecisionID.Valid {
+		var claimedReceipt uuid.UUID
+		err = tx.WithContext(ctx).Raw(`
+			SELECT receipt_id
+			FROM public.execution_authorization_task_review_claims
+			WHERE owner_identity = ? AND task_review_decision_id = ?`,
+			consumption.OwnerIdentity,
+			taskReviewDecisionID.String,
+		).Row().Scan(&claimedReceipt)
+		if err == nil {
+			return ErrApprovalAlreadyClaimed
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("inspect task review approval claim: %w", err)
+		}
+	}
 	return ErrAlreadyConsumed
+}
+
+// lockAndCheckApprovalClaim makes every approval source single-use, including
+// source types that do not yet have dedicated claim tables. The transaction
+// lock serializes competing consumers across processes; immutable receipt and
+// consumption rows provide the durable claim record.
+func lockAndCheckApprovalClaim(
+	ctx context.Context,
+	tx *gorm.DB,
+	consumption Consumption,
+) error {
+	var approvalSourceID, decisionID string
+	err := tx.WithContext(ctx).Raw(`
+		SELECT approval_source_id, COALESCE(evidence_json #>> '{approval,decisionId}', '')
+		FROM public.execution_authorization_receipts
+		WHERE owner_identity = ? AND id = ? AND outcome = 'authorized'
+		  AND decision_digest = ?`,
+		consumption.OwnerIdentity,
+		consumption.ReceiptID,
+		consumption.ReceiptDigest,
+	).Row().Scan(&approvalSourceID, &decisionID)
+	if errors.Is(err, sql.ErrNoRows) || approvalSourceID == "" {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read approval claim identity: %w", err)
+	}
+	if decisionID == "" {
+		return ErrAuthorizationChanged
+	}
+	if strings.HasPrefix(approvalSourceID, "task-review:") ||
+		strings.HasPrefix(approvalSourceID, "workflow-decision:") {
+		return nil
+	}
+	var isolation string
+	if err := tx.WithContext(ctx).Raw("SHOW transaction_isolation").Row().Scan(&isolation); err != nil {
+		return fmt.Errorf("read approval claim transaction isolation: %w", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(isolation), "read committed") {
+		return ErrApprovalClaimIsolationUnsupported
+	}
+	claimIdentity := consumption.OwnerIdentity + "\x00" + approvalSourceID + "\x00" + decisionID
+	var lockAcquired bool
+	if err := tx.WithContext(ctx).Raw(
+		"SELECT pg_advisory_xact_lock(hashtextextended(?, 0)) IS NULL",
+		claimIdentity,
+	).Row().Scan(&lockAcquired); err != nil {
+		return fmt.Errorf("lock execution approval claim: %w", err)
+	}
+	if !lockAcquired {
+		return ErrAuthorizationChanged
+	}
+	var alreadyClaimed bool
+	err = tx.WithContext(ctx).Raw(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM public.execution_authorization_receipts r
+			JOIN public.execution_authorization_consumptions c
+			  ON c.owner_identity = r.owner_identity
+			 AND c.receipt_id = r.id
+			 AND c.receipt_digest = r.decision_digest
+			WHERE r.owner_identity = ?
+			  AND r.approval_source_id = ?
+			  AND r.evidence_json #>> '{approval,decisionId}' = ?
+			  AND r.outcome = 'authorized'
+			  AND r.id <> ?
+		)`,
+		consumption.OwnerIdentity,
+		approvalSourceID,
+		decisionID,
+		consumption.ReceiptID,
+	).Row().Scan(&alreadyClaimed)
+	if err != nil {
+		return fmt.Errorf("inspect prior execution approval claim: %w", err)
+	}
+	if alreadyClaimed {
+		return ErrApprovalAlreadyClaimed
+	}
+	return nil
 }
 
 func (r *PostgresRepository) GetConsumption(
@@ -275,8 +549,17 @@ func (r *PostgresRepository) GetConsumption(
 	if err := validateReceiptLookup(owner, receiptID); err != nil {
 		return Consumption{}, err
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Consumption{}, err
+	}
+	defer finish()
+	return getConsumptionFromPostgres(db, owner, receiptID)
+}
+
+func getConsumptionFromPostgres(db *gorm.DB, owner string, receiptID uuid.UUID) (Consumption, error) {
 	var result Consumption
-	err := r.DB.WithContext(ctx).Raw(`
+	err := db.Raw(`
 		SELECT
 			receipt_id, owner_identity, consumer, execution_target,
 			receipt_digest, consumed_at
@@ -315,7 +598,15 @@ func (r *PostgresRepository) ExerciseFinalEffect(
 	if err := validateFinalEffectExercise(exercise); err != nil {
 		return err
 	}
-	result := r.DB.WithContext(ctx).Exec(`
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return err
+	}
+	defer finish()
+	result := db.Exec(`
+		WITH boundary AS MATERIALIZED (
+			SELECT clock_timestamp() AS exercised_at
+		)
 		INSERT INTO public.execution_authorization_final_effect_exercises (
 			owner_identity, receipt_id, runtime_id, task_id, action,
 			resource_type, resource_id, project_key, approval_source_id,
@@ -326,12 +617,13 @@ func (r *PostgresRepository) ExerciseFinalEffect(
 			r.owner_identity, r.id, r.runtime_id, r.task_id, r.action,
 			r.resource_type, r.resource_id, r.project_key,
 			r.approval_source_id, r.effect_digest, r.request_digest,
-			r.decision_digest, ?, c.execution_target, ?
+			r.decision_digest, ?, c.execution_target, boundary.exercised_at
 		FROM public.execution_authorization_receipts r
 		JOIN public.execution_authorization_consumptions c
 		  ON c.owner_identity = r.owner_identity
 		 AND c.receipt_id = r.id
 		 AND c.receipt_digest = r.decision_digest
+		CROSS JOIN boundary
 		WHERE r.owner_identity = ?
 		  AND r.id = ?
 		  AND r.outcome = 'authorized'
@@ -347,9 +639,18 @@ func (r *PostgresRepository) ExerciseFinalEffect(
 		  AND r.decision_digest = ?
 		  AND ? = r.effect_digest
 		  AND c.execution_target = ?
+		  AND c.consumed_at >= r.evaluated_at
+		  AND c.consumed_at <= boundary.exercised_at
+		  AND c.consumed_at >= boundary.exercised_at - (?::double precision * INTERVAL '1 second')
+		  AND (
+		    r.approval_source_id = ''
+		    OR (
+		      r.evidence_json #>> '{approval,sourceId}' = r.approval_source_id
+		      AND NULLIF(r.evidence_json #>> '{approval,expiresAt}', '')::timestamptz > boundary.exercised_at
+		    )
+		  )
 		ON CONFLICT (owner_identity, receipt_id) DO NOTHING`,
 		exercise.RuntimeRequestDigest,
-		exercise.ExercisedAt.UTC(),
 		exercise.OwnerIdentity,
 		exercise.ReceiptID,
 		exercise.RuntimeID,
@@ -364,6 +665,7 @@ func (r *PostgresRepository) ExerciseFinalEffect(
 		exercise.DecisionDigest,
 		exercise.RuntimeRequestDigest,
 		exercise.ConsumptionTarget,
+		finalEffectFreshnessWindow.Seconds(),
 	)
 	if result.Error != nil {
 		return fmt.Errorf("exercise execution authorization final effect: %w", result.Error)
@@ -371,8 +673,8 @@ func (r *PostgresRepository) ExerciseFinalEffect(
 	if result.RowsAffected == 1 {
 		return nil
 	}
-	if _, err := r.GetFinalEffectExercise(
-		ctx,
+	if _, err := getFinalEffectExerciseFromPostgres(
+		db,
 		exercise.OwnerIdentity,
 		exercise.ReceiptID,
 	); err == nil {
@@ -380,15 +682,15 @@ func (r *PostgresRepository) ExerciseFinalEffect(
 	} else if !errors.Is(err, ErrNotFound) {
 		return err
 	}
-	receipt, err := r.Get(ctx, exercise.OwnerIdentity, exercise.ReceiptID)
+	receipt, err := getReceiptFromPostgres(db, exercise.OwnerIdentity, exercise.ReceiptID)
 	if errors.Is(err, ErrNotFound) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	consumption, err := r.GetConsumption(
-		ctx,
+	consumption, err := getConsumptionFromPostgres(
+		db,
 		exercise.OwnerIdentity,
 		exercise.ReceiptID,
 	)
@@ -400,6 +702,14 @@ func (r *PostgresRepository) ExerciseFinalEffect(
 	}
 	if !finalEffectMatches(receipt, consumption, exercise) {
 		return ErrFinalEffectMismatch
+	}
+	var boundaryTime time.Time
+	if err := db.Raw("SELECT clock_timestamp()").Row().Scan(&boundaryTime); err != nil {
+		return fmt.Errorf("read execution authorization final-effect time: %w", err)
+	}
+	exercise.ExercisedAt = boundaryTime.UTC()
+	if !finalEffectAuthorityFresh(receipt, consumption, exercise.ExercisedAt) {
+		return ErrFinalEffectExpired
 	}
 	return ErrNotAuthorized
 }
@@ -415,8 +725,17 @@ func (r *PostgresRepository) GetFinalEffectExercise(
 	if err := validateReceiptLookup(owner, receiptID); err != nil {
 		return FinalEffectExercise{}, err
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return FinalEffectExercise{}, err
+	}
+	defer finish()
+	return getFinalEffectExerciseFromPostgres(db, owner, receiptID)
+}
+
+func getFinalEffectExerciseFromPostgres(db *gorm.DB, owner string, receiptID uuid.UUID) (FinalEffectExercise, error) {
 	var value FinalEffectExercise
-	err := r.DB.WithContext(ctx).Raw(`
+	err := db.Raw(`
 		SELECT
 			receipt_id, owner_identity, runtime_id, task_id, action,
 			resource_type, resource_id, project_key, approval_source_id,
@@ -462,12 +781,12 @@ func (r *PostgresRepository) GetFinalEffectExercise(
 	return value, nil
 }
 
-func (r *PostgresRepository) getByIdempotency(
-	ctx context.Context,
+func getReceiptByIdempotencyFromPostgres(
+	db *gorm.DB,
 	owner string,
 	idempotencyKey string,
 ) (Receipt, error) {
-	row := r.DB.WithContext(ctx).Raw(
+	row := db.Raw(
 		receiptSelect+`
 		WHERE owner_identity = ? AND idempotency_key = ?`,
 		owner,

@@ -104,9 +104,28 @@ func TestWorkflowReminderActivationLedgerIsImmutableOwnerScopedAndLinearInPostgr
 	}
 
 	if err := infra.RollbackMigration(
+		db, files, "pre", "pre/0047_workflow_reminder_activation_decision_order",
+	); err != nil {
+		t.Fatalf("roll back the later decision-order migration first: %v", err)
+	}
+	if err := infra.RollbackMigration(
 		db, files, "pre", "pre/0046_workflow_reminder_activation_ledger",
 	); err == nil || !strings.Contains(err.Error(), "refusing to remove non-empty workflow reminder activation ledgers") {
 		t.Fatalf("non-empty rollback error = %v, want immutable-ledger refusal", err)
+	}
+	assertRollbackMigrationLedger(t, db, "pre/0046_workflow_reminder_activation_ledger", true)
+	assertRollbackMigrationLedger(t, db, "pre/0047_workflow_reminder_activation_decision_order", false)
+	for table, want := range map[string]int64{
+		"workflow_reminder_activation_requests":  2,
+		"workflow_reminder_activation_decisions": 2,
+	} {
+		var got int64
+		if err := db.Raw("SELECT count(*) FROM public." + table).Scan(&got).Error; err != nil {
+			t.Fatalf("count retained %s: %v", table, err)
+		}
+		if got != want {
+			t.Errorf("retained %s rows = %d, want %d", table, got, want)
+		}
 	}
 }
 

@@ -16,7 +16,10 @@ import {
   IReadiness,
 } from '../../models/runtime-control.model.interface'
 import { AuthSessionService } from '../../services/auth-session.service'
-import { RuntimeControlService } from '../../services/runtime-control.service'
+import {
+  IControlAuthorization,
+  RuntimeControlService,
+} from '../../services/runtime-control.service'
 import { RuntimeControlComponent } from './runtime-control.component'
 import { RuntimeControlModule } from './runtime-control.module'
 
@@ -46,7 +49,7 @@ describe('RuntimeControlComponent role boundaries', () => {
     permissions: {
       canRead: true,
       canOperate: true,
-      canApprove: true,
+      canApprove: false,
       canAdminister: false,
     },
   }
@@ -115,7 +118,16 @@ describe('RuntimeControlComponent role boundaries', () => {
 
     runtimeService.status.and.returnValue(of(activeStatus))
     runtimeService.readiness.and.returnValue(of(readiness))
-    runtimeService.pause.and.returnValue(of({ emergencyStop: activeStatus.emergencyStop }))
+    runtimeService.pause.and.returnValue(of({
+      emergencyStop: {
+        ...activeStatus.emergencyStop,
+        engaged: true,
+      },
+      openClawCancellation: {
+        status: 'complete',
+        message: 'No unresolved OpenClaw run required cancellation.',
+      },
+    }))
     runtimeService.prepareResume.and.returnValue(of({
       idempotencyKey: 'resume-1',
       taskId: 'opscontrol-emergency-stop-1',
@@ -197,6 +209,7 @@ describe('RuntimeControlComponent role boundaries', () => {
     createComponent()
 
     expect(text()).toContain('Operator authority')
+    expect(component.canOperateRuntime).toBeTrue()
     expect(button('Engage emergency stop').disabled).toBeFalse()
     expect(button('Verify emergency stop').disabled).toBeFalse()
     expect(button('Run recovery').disabled).toBeFalse()
@@ -225,6 +238,204 @@ describe('RuntimeControlComponent role boundaries', () => {
     component.resume()
     expect(runtimeService.resume).not.toHaveBeenCalled()
     expect(text()).toContain('Only the owner can resume processing')
+  })
+
+  it('does not present a fail-closed fallback as a confirmed stored autonomy mode', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.status.and.returnValue(of({
+      ...activeStatus,
+      mode: 'paused',
+      storedMode: 'paused',
+      modeStateError: 'persisted autonomy mode is unavailable',
+    }))
+    createComponent()
+
+    expect(text()).toContain('Paused; stored mode unavailable')
+    expect(text()).not.toContain('Stored: paused')
+  })
+
+  it('refreshes backend state when returning to the runtime-control window', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    createComponent()
+    const initialStatusCalls = runtimeService.status.calls.count()
+
+    window.dispatchEvent(new Event('focus'))
+    fixture.detectChanges()
+
+    expect(runtimeService.status.calls.count()).toBe(initialStatusCalls + 1)
+  })
+
+  it('reports partial emergency-stop fan-out without presenting it as complete', () => {
+    authSessionService.session.and.returnValue(of(operatorSession))
+    runtimeService.pause.and.returnValue(of({
+      emergencyStop: {
+        ...activeStatus.emergencyStop,
+        engaged: true,
+      },
+      openClawCancellation: {
+        status: 'partial',
+        message: 'One exact run remains unresolved.',
+      },
+    }))
+    createComponent()
+
+    button('Engage emergency stop').click()
+
+    expect(notification.warning).toHaveBeenCalledWith(
+      'Emergency stop active; remote cancellation incomplete',
+      'One exact run remains unresolved.'
+    )
+    expect(notification.success).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the mode-approval response omits its required proof', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.prepareModeChange.and.returnValue(of({ authorizationRequired: true }))
+    createComponent()
+
+    component.setMode('autonomous_safe')
+
+    expect(runtimeService.prepareModeChange).toHaveBeenCalledWith('autonomous_safe')
+    expect(runtimeService.setMode).not.toHaveBeenCalled()
+    expect(notification.error).toHaveBeenCalledWith(
+      'Mode change not confirmed',
+      jasmine.stringContaining('incomplete approval proof')
+    )
+    expect(component.status?.storedMode).toBe(activeStatus.storedMode)
+  })
+
+  it('does not call resume when its owner-approval preparation is incomplete', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.status.and.returnValue(of({
+      ...activeStatus,
+      emergencyStop: {
+        ...activeStatus.emergencyStop,
+        engaged: true,
+      },
+      backgroundProcessingActive: false,
+    }))
+    runtimeService.prepareResume.and.returnValue(of({} as IControlAuthorization))
+    createComponent()
+
+    component.resume()
+
+    expect(runtimeService.prepareResume).toHaveBeenCalled()
+    expect(runtimeService.resume).not.toHaveBeenCalled()
+    expect(notification.success).not.toHaveBeenCalled()
+    expect(notification.error).toHaveBeenCalledWith(
+      'Resume not confirmed',
+      jasmine.stringContaining('complete owner-approval proof')
+    )
+  })
+
+  it('reconciles a stale resume request when the backend rejects its old emergency-stop state', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.prepareResume.and.returnValue(throwError(() => ({
+      error: { error: 'safety-control state changed; refresh and retry' },
+    })))
+    createComponent()
+    component.status = {
+      ...activeStatus,
+      emergencyStop: {
+        ...activeStatus.emergencyStop,
+        engaged: true,
+      },
+      backgroundProcessingActive: false,
+    }
+    component.resume()
+
+    expect(runtimeService.prepareResume).toHaveBeenCalled()
+    expect(runtimeService.resume).not.toHaveBeenCalled()
+    expect(notification.success).not.toHaveBeenCalled()
+    expect(component.status?.emergencyStop.engaged).toBeFalse()
+    expect(notification.error).toHaveBeenCalledWith(
+      'Resume not confirmed',
+      'safety-control state changed; refresh and retry'
+    )
+  })
+
+  it('blocks resume when one backend snapshot says both stop-engaged and processing-enabled', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.status.and.returnValue(of({
+      ...activeStatus,
+      emergencyStop: {
+        ...activeStatus.emergencyStop,
+        engaged: true,
+      },
+      backgroundProcessingActive: true,
+    }))
+    createComponent()
+
+    expect(component.emergencyStopStatusInconsistent).toBeTrue()
+    expect(button('Resume').disabled).toBeTrue()
+    component.resume()
+
+    expect(runtimeService.prepareResume).not.toHaveBeenCalled()
+    expect(notification.error).toHaveBeenCalledWith(
+      'Resume blocked: runtime state conflicts',
+      'Refresh the backend-confirmed state before attempting to clear the emergency stop.'
+    )
+  })
+
+  it('requires the verification result to confirm both halt and prior-state restoration', () => {
+    authSessionService.session.and.returnValue(of(operatorSession))
+    runtimeService.verifyEmergencyStop.and.returnValue(of({
+      engagedDuringTest: true,
+      operationsProcessedDuringStop: 0,
+      halted: true,
+      restoredEngagedState: false,
+      detail: 'The prior stop state was not restored.',
+    }))
+    createComponent()
+
+    button('Verify emergency stop').click()
+
+    expect(notification.success).not.toHaveBeenCalled()
+    expect(notification.error).toHaveBeenCalledWith(
+      'Emergency stop verification not confirmed',
+      'The prior stop state was not restored.'
+    )
+  })
+
+  it('does not call a recovery report complete when it has no scan-error proof', () => {
+    authSessionService.session.and.returnValue(of(operatorSession))
+    runtimeService.recover.and.returnValue(of({
+      scannedRunning: 0,
+      scannedVerifying: 0,
+      recovered: 0,
+      ranAt: '2026-09-24T12:00:00Z',
+    }))
+    createComponent()
+
+    button('Run recovery').click()
+
+    expect(notification.success).not.toHaveBeenCalled()
+    expect(notification.warning).toHaveBeenCalledWith(
+      'Recovery report received',
+      'HAI reported 0 recovered of 0 scanned operations. Review the operation ledger for the resulting states.'
+    )
+  })
+
+  it('keeps emergency stop, approval count, and readiness remediation visible in Basic', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.readiness.and.returnValue(of({
+      ...readiness,
+      overallReady: false,
+      gates: [{
+        name: 'windows.startup',
+        status: 'fail',
+        evidence: 'Startup task is not registered.',
+        remediation: 'Register the signed startup task for this Windows user.',
+      }],
+    }))
+    createComponent()
+
+    const root = fixture.nativeElement as HTMLElement
+    expect(button('Engage emergency stop').hidden).toBeFalse()
+    expect(text()).toContain('Awaiting approval')
+    expect(text()).toContain('2')
+    expect(text()).toContain('Register the signed startup task for this Windows user.')
+    expect(root.querySelector('.hai-progressive-section__content')).toBeNull()
   })
 
   it('renders a viewer as read-only and blocks every protected interaction', () => {
@@ -265,6 +476,16 @@ describe('RuntimeControlComponent role boundaries', () => {
     expect(fixture.nativeElement.querySelector('.rc__control')).toBeNull()
   })
 
+  it('names the icon-only back control for assistive technology', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    createComponent()
+
+    const back = fixture.nativeElement.querySelector('button[aria-label="Back to previous page"]') as HTMLButtonElement | null
+    expect(back).not.toBeNull()
+    expect(back?.title).toBe('Back to previous page')
+    expect(back?.querySelector('[nz-icon]')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
   function createComponent(): void {
     fixture = TestBed.createComponent(RuntimeControlComponent)
     component = fixture.componentInstance
@@ -280,7 +501,10 @@ describe('RuntimeControlComponent role boundaries', () => {
       (fixture.nativeElement as HTMLElement).querySelectorAll('button')
     ).find((candidate) => candidate.textContent?.includes(label))
     if (!match) {
-      throw new Error(`Button not found: ${label}`)
+      const available = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll('button')
+      ).map((candidate) => candidate.textContent?.trim()).filter(Boolean)
+      throw new Error(`Button not found: ${label}; available buttons: ${available.join(', ')}`)
     }
     return match
   }

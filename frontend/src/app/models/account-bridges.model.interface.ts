@@ -41,7 +41,10 @@ export interface IFeedHealth {
   feed: IFeed
   connectionStatus: string
   lastSyncedAt?: string
+  lastAttemptAt?: string
   lastItemsRead: number
+  syncState?: 'idle' | 'running_or_interrupted'
+  syncStartedAt?: string
 }
 
 export interface ISyncReport {
@@ -52,6 +55,7 @@ export interface ISyncReport {
   privacyFlagged: number
   cursor?: string
   errors?: string[]
+  recorded?: boolean
 }
 
 export interface IFeedAudit {
@@ -60,4 +64,27 @@ export interface IFeedAudit {
   eventType: string
   message: string
   createdAt: string
+}
+
+export type FeedIdentityState = 'unseen' | 'canonical' | 'historical' | 'coexisting'
+
+export interface IFeedIdentityItem {
+  externalId: string
+  title: string
+  state: FeedIdentityState
+  canonicalOperationId?: string
+  historicalOperationId?: string
+}
+
+export interface IFeedIdentityPreview {
+  feedId: string
+  // RFC3339 UTC observation time, not a transaction-wide snapshot timestamp.
+  observedAt: string
+  scope: 'current_local_feed_active_operations'
+  historicalInventoryComplete: false
+  itemsObserved: number
+  itemsInspected: number
+  truncated: boolean
+  counts: Record<FeedIdentityState, number>
+  items: IFeedIdentityItem[]
 }

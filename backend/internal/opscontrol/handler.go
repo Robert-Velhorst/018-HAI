@@ -40,15 +40,27 @@ func (h *Handler) Pause(c *gin.Context) {
 	var req pauseRequest
 	_ = c.ShouldBindJSON(&req)
 	actor, _ := h.actor(c)
-	state, err := h.svc.EngageEmergencyStop(req.Reason, actor)
-	if err != nil {
+	state, cancellation, err := h.svc.EngageEmergencyStopAuthenticatedWithFanout(c.Request.Context(), req.Reason, actor)
+	if errors.Is(err, ErrUnauthenticated) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner is required"})
+		return
+	}
+	if err != nil && !state.Engaged {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error":         "failed to persist emergency-stop state; execution remains blocked",
-			"emergencyStop": h.svc.Control().EmergencyState(),
+			"error":                "the emergency stop could not be confirmed as persisted",
+			"emergencyStop":        h.svc.Control().EmergencyState(),
+			"openClawCancellation": cancellation,
 		})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"emergencyStop": state})
+	status := http.StatusOK
+	if cancellation.Status != "complete" || err != nil {
+		status = http.StatusMultiStatus
+	}
+	c.JSON(status, gin.H{
+		"emergencyStop":        state,
+		"openClawCancellation": cancellation,
+	})
 }
 
 type controlAuthorizationRequest struct {
@@ -206,7 +218,12 @@ func (h *Handler) Readiness(c *gin.Context) {
 
 // Recovery runs a crash/reboot recovery pass.
 func (h *Handler) Recovery(c *gin.Context) {
-	c.JSON(http.StatusOK, h.svc.Recover(c.Request.Context()))
+	report, err := h.svc.Recover(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "background operation recovery could not be completed"})
+		return
+	}
+	c.JSON(http.StatusOK, report)
 }
 
 // VerifyEmergencyStop proves the emergency stop halts background processing.

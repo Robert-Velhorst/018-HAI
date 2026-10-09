@@ -19,22 +19,23 @@ const (
 	ProviderTestVerifier = "test-verifier"
 )
 
-// deterministicTelemetry fills token + tokens/sec telemetry from output size
-// without any wall-clock dependency, so results are reproducible.
-func deterministicTelemetry(res *InferenceResult, in, out string) {
+// deterministicTelemetry records explicitly estimated token usage and measured
+// rule-execution time; it does not invent a fixed model throughput.
+func deterministicTelemetry(res *InferenceResult, in, out string, started time.Time) {
 	res.InputTokensEstimate = estimateTokens(in)
 	res.OutputTokensEstimate = estimateTokens(out)
-	// A local deterministic provider is modeled at ~200 tokens/sec.
-	res.TokensPerSecond = 200
-	ms := int64(float64(res.OutputTokensEstimate) / res.TokensPerSecond * 1000)
+	ms := time.Since(started).Milliseconds()
 	if ms < 1 {
 		ms = 1
 	}
 	res.DurationMs = ms
+	res.TokensPerSecond = float64(res.OutputTokensEstimate) / (float64(ms) / 1000)
 }
 
 // testFastTriageProvider classifies/summarizes background items deterministically.
 type testFastTriageProvider struct{}
+
+func (*testFastTriageProvider) isDeterministicLocalInference() {}
 
 func (p *testFastTriageProvider) ID() string { return ProviderTestFastTriage }
 func (p *testFastTriageProvider) DisplayName() string {
@@ -50,7 +51,10 @@ func (p *testFastTriageProvider) Profiles() []ModelProfile {
 		Lanes:              []RoutingLane{LaneFastTriage, LanePrivacyFilter},
 		ContextWindow:      8192,
 		Local:              true,
-		Paid:               false,
+		Deterministic:      true,
+		Paid:               paidValue(BillingUnmetered),
+		BillingStatus:      BillingUnmetered,
+		EndpointLocal:      true,
 		Status:             ProviderActive, // it runs locally and deterministically
 		ClaimLevel:         ClaimExercisedLocalSafeTask,
 	}}
@@ -61,11 +65,18 @@ func (p *testFastTriageProvider) Probe(ctx context.Context, now time.Time) Probe
 }
 
 func (p *testFastTriageProvider) Generate(ctx context.Context, req InferenceRequest, now time.Time) (InferenceResult, error) {
+	started := time.Now()
+	if ctx != nil && ctx.Err() != nil {
+		return InferenceResult{}, ctx.Err()
+	}
 	category := triageCategory(req.Prompt)
 	summary := boundedSummary(req.Prompt, 160)
 	out := "category=" + category + "; summary=" + summary
+	if ctx != nil && ctx.Err() != nil {
+		return InferenceResult{}, ctx.Err()
+	}
 	res := InferenceResult{ProviderID: p.ID(), ModelID: "triage-rules-v1", Lane: req.Lane, Output: out, OK: true}
-	deterministicTelemetry(&res, req.Prompt, out)
+	deterministicTelemetry(&res, req.Prompt, out, started)
 	return res, nil
 }
 
@@ -91,6 +102,8 @@ func triageCategory(text string) string {
 // appears in the evidence.
 type testVerifierProvider struct{}
 
+func (*testVerifierProvider) isDeterministicLocalInference() {}
+
 func (p *testVerifierProvider) ID() string          { return ProviderTestVerifier }
 func (p *testVerifierProvider) DisplayName() string { return "Test Verifier (local, deterministic)" }
 
@@ -103,7 +116,10 @@ func (p *testVerifierProvider) Profiles() []ModelProfile {
 		Lanes:              []RoutingLane{LaneVerifier},
 		ContextWindow:      8192,
 		Local:              true,
-		Paid:               false,
+		Deterministic:      true,
+		Paid:               paidValue(BillingUnmetered),
+		BillingStatus:      BillingUnmetered,
+		EndpointLocal:      true,
 		Status:             ProviderActive,
 		ClaimLevel:         ClaimExercisedLocalSafeTask,
 	}}
@@ -114,6 +130,10 @@ func (p *testVerifierProvider) Probe(ctx context.Context, now time.Time) ProbeRe
 }
 
 func (p *testVerifierProvider) Generate(ctx context.Context, req InferenceRequest, now time.Time) (InferenceResult, error) {
+	started := time.Now()
+	if ctx != nil && ctx.Err() != nil {
+		return InferenceResult{}, ctx.Err()
+	}
 	claim, evidence := splitClaimEvidence(req.Prompt)
 	grounded := isGrounded(claim, evidence)
 	verdict := "not_grounded"
@@ -121,8 +141,11 @@ func (p *testVerifierProvider) Generate(ctx context.Context, req InferenceReques
 		verdict = "grounded"
 	}
 	out := "verdict=" + verdict
+	if ctx != nil && ctx.Err() != nil {
+		return InferenceResult{}, ctx.Err()
+	}
 	res := InferenceResult{ProviderID: p.ID(), ModelID: "verifier-rules-v1", Lane: req.Lane, Output: out, OK: true}
-	deterministicTelemetry(&res, req.Prompt, out)
+	deterministicTelemetry(&res, req.Prompt, out, started)
 	return res, nil
 }
 

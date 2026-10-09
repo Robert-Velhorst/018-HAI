@@ -562,6 +562,23 @@ describe('FrameworkRegistryService', () => {
     expect(JSON.stringify(result)).not.toContain('sk-super-secret-credential');
   });
 
+  it('redacts complete cookies and truncated private keys before inspector records are returned', () => {
+    let result: IFrameworkView | undefined;
+    const record: IFrameworkView = {
+      ...framework,
+      provenance: 'Set-Cookie: session=synthetic-cookie; csrf=synthetic-csrf',
+      source: '-----BEGIN OPENSSH PRIVATE KEY-----\nsynthetic-private-body',
+    };
+    service.framework('truth-evidence').subscribe(response => result = response);
+    http.expectOne('/api/v1/framework-registry/frameworks/truth-evidence').flush({ framework: record });
+    expect(result?.provenance).toBe('Set-Cookie: [redacted]');
+    expect(result?.source).toBe('[redacted]');
+    expect(result?.enabled).toBeTrue();
+    expect(result?.effectiveAutonomyLevel).toBe(framework.effectiveAutonomyLevel);
+    expect(JSON.stringify(result)).not.toContain('synthetic-');
+    expect(record.provenance).toContain('synthetic-cookie');
+  });
+
   it('rejects malformed list envelopes instead of presenting them as empty data', () => {
     let error: unknown;
     service.frameworks().subscribe({ error: (value) => (error = value) });

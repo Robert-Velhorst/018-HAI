@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.app.json",
+  "files": [
+    "src/app/control-room/app-shell.component.ts",
+    "src/app/control-room/control-room.module.ts",
+    "src/app/pages/knowledge-claims/knowledge-claims.module.ts",
+    "src/app/services/framework-registry.service.ts",
+    "src/app/pages/pursuits/pursuits.module.ts",
+    "src/app/pages/hai-os/hai-os.module.ts"
+  ]
+}

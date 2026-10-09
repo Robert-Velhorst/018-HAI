@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
-const ENGINE = 'promptfoo 0.121.19';
+const ENGINE = 'promptfoo 0.123.1';
 const SUITE = 'hai_safety_regression_v1';
 const MAX_REQUEST_BYTES = 256;
 const MAX_RUN_MS = 120_000;
@@ -109,7 +109,7 @@ function spawnPromptfoo(args, timeoutMs) {
         HTTP_PROXY: '', HTTPS_PROXY: '', ALL_PROXY: '',
         http_proxy: '', https_proxy: '', all_proxy: '',
         NO_PROXY: '*', no_proxy: '*',
-        PROMPTFOO_DISABLE_TELEMETRY: 'true', PROMPTFOO_DISABLE_UPDATE_CHECK: 'true',
+        PROMPTFOO_DISABLE_TELEMETRY: '1', PROMPTFOO_DISABLE_UPDATE: '1',
       },
     });
     const timer = setTimeout(() => {

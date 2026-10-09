@@ -1,14 +1,15 @@
-import { Component } from '@angular/core';
-import { Router } from '@angular/router';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
+import { safePostOnboardingDestination } from '../../services/auth/guards/safe-return-url';
+import { completeOnboarding, isOnboardingComplete } from './onboarding-state';
 
 interface OnboardingStep {
   title: string;
   description: string;
 }
 
-const ONBOARDED_KEY = 'hai_onboarded';
-
 @Component({
+    changeDetection: ChangeDetectionStrategy.Eager,
     selector: 'app-onboarding',
     templateUrl: './onboarding.component.html',
     styleUrls: ['./onboarding.component.scss'],
@@ -40,15 +41,11 @@ export class OnboardingComponent {
     },
   ];
 
-  constructor(private router: Router) {}
+  constructor(private router: Router, private route: ActivatedRoute) {}
 
   /** Whether onboarding has already been completed on this device. */
   static isOnboarded(): boolean {
-    try {
-      return localStorage.getItem(ONBOARDED_KEY) === 'true';
-    } catch {
-      return false;
-    }
+    return isOnboardingComplete();
   }
 
   get isLastStep(): boolean {
@@ -68,12 +65,11 @@ export class OnboardingComponent {
   }
 
   finish(): void {
-    try {
-      localStorage.setItem(ONBOARDED_KEY, 'true');
-    } catch {
-      /* storage may be unavailable; proceed regardless */
-    }
-    this.router.navigate(['/control-center']);
+    completeOnboarding();
+    const destination = safePostOnboardingDestination(
+      this.route.snapshot.queryParamMap.get('returnUrl'),
+    );
+    void this.router.navigateByUrl(destination ?? '/control-center');
   }
 
   skip(): void {

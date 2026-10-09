@@ -1,6 +1,7 @@
 package autonomy
 
 import (
+	"automation-hub-backend/internal/apierror"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 	"encoding/json"
@@ -66,6 +67,7 @@ type Overview struct {
 
 type Service interface {
 	Overview() (*Overview, error)
+	OverviewForOwner(owner string) (*Overview, error)
 	RunStressSuite() (*models.AutonomyStressRun, []StressCaseResult, error)
 }
 
@@ -86,18 +88,37 @@ func DefaultService() Service {
 }
 
 func (s *service) Overview() (*Overview, error) {
+	return s.overview(nil)
+}
+
+func (s *service) OverviewForOwner(owner string) (*Overview, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return nil, apierror.New(apierror.CodeUnauthorized, "an authenticated owner is required for autonomy telemetry")
+	}
+	return s.overview(&owner)
+}
+
+func (s *service) overview(owner *string) (*Overview, error) {
 	limit := telemetryLimit()
-	var states []models.AutonomyWorldState
-	var actions []models.AutonomyActionTrace
-	var evaluations []models.AutonomyEvaluation
-	var stressRuns []models.AutonomyStressRun
-	if err := s.db.Order("observed_at desc").Limit(limit).Find(&states).Error; err != nil {
+	states := make([]models.AutonomyWorldState, 0)
+	actions := make([]models.AutonomyActionTrace, 0)
+	evaluations := make([]models.AutonomyEvaluation, 0)
+	stressRuns := make([]models.AutonomyStressRun, 0)
+	scope := func(db *gorm.DB) *gorm.DB {
+		if owner == nil {
+			return db
+		}
+		workflows := s.db.Model(&models.WorkflowItem{}).Select("id").Where("owner_identity = ?", *owner)
+		return db.Where("workflow_id IN (?)", workflows)
+	}
+	if err := s.db.Scopes(scope).Order("observed_at desc").Limit(limit).Find(&states).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.Order("started_at desc").Limit(limit).Find(&actions).Error; err != nil {
+	if err := s.db.Scopes(scope).Order("started_at desc").Limit(limit).Find(&actions).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.Order("created_at desc").Limit(500).Find(&evaluations).Error; err != nil {
+	if err := s.db.Scopes(scope).Order("created_at desc").Limit(500).Find(&evaluations).Error; err != nil {
 		return nil, err
 	}
 	if err := s.db.Order("created_at desc").Limit(10).Find(&stressRuns).Error; err != nil {
@@ -125,6 +146,7 @@ func (s *service) Overview() (*Overview, error) {
 			"benchmarkClaims":        "unverified until reproduced locally",
 		},
 		Warnings: []string{
+			"HTTP workflow telemetry is owner-scoped; recent stress runs are shared deterministic system diagnostics, not personal workflow results.",
 			"Completion under policy requires verified execution and any mandatory approval; raw completion alone is not accepted.",
 			"Stress-suite results validate deterministic guards, not the correctness of external providers or uncontrolled real-world environments.",
 			"World-state snapshots are compact workflow observations; desktop, browser, and physical perception require runtime-specific adapters.",

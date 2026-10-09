@@ -23,6 +23,25 @@ var ErrControlPersistence = errors.New("opscontrol state persistence failed")
 // emergency stop without importing the background worker directly.
 type BackgroundRunner func(ctx context.Context) (processed int, err error)
 
+// OpenClawEmergencyStopFanout requests exact-run cancellation only after the
+// persisted HAI stop has been engaged. It never owns stop persistence.
+type OpenClawEmergencyStopFanout interface {
+	FanOutEmergencyStop(context.Context) (targeted, acknowledged, awaitingIdentity, failed int, err error)
+}
+
+// EmergencyStopFanoutSummary reports delivery without implying that an abort
+// acknowledgment is terminal completion.
+type EmergencyStopFanoutSummary struct {
+	Status                   string `json:"status"`
+	Targeted                 int    `json:"targeted"`
+	Acknowledged             int    `json:"acknowledged"`
+	AwaitingIdentity         int    `json:"awaitingIdentity"`
+	Failed                   int    `json:"failed"`
+	TerminallyVerified       int    `json:"terminallyVerified"`
+	AcknowledgmentIsTerminal bool   `json:"acknowledgmentIsTerminal"`
+	Message                  string `json:"message"`
+}
+
 // Service is the always-on runtime control plane: emergency stop, background
 // mode, Docker dependency status, crash/reboot recovery, and the Windows
 // readiness checklist. It shares the Operation Ledger + execution broker.
@@ -31,6 +50,7 @@ type Service struct {
 	broker        *executionbroker.Broker
 	ops           *operations.Service
 	runner        BackgroundRunner
+	openClawStop  OpenClawEmergencyStopFanout
 	authorization ExecutionAuthorizer
 	approvals     OwnerControlApprovalIssuer
 	owner         string
@@ -66,6 +86,12 @@ func (s *Service) SeedInitialState(
 // SetBackgroundRunner wires the background pass used by emergency-stop
 // verification.
 func (s *Service) SetBackgroundRunner(r BackgroundRunner) { s.runner = r }
+
+// WithOpenClawEmergencyStopFanout wires receipt-bound remote cancellation.
+func (s *Service) WithOpenClawEmergencyStopFanout(fanout OpenClawEmergencyStopFanout) *Service {
+	s.openClawStop = fanout
+	return s
+}
 
 // WithExecutionAuthorizer injects the single-use authorization boundary for
 // weakening safety controls. Without it, clear/escalate requests fail closed.
@@ -179,10 +205,49 @@ func (s *Service) PrepareAutonomyModeChange(actorIdentity, mode string) (Control
 
 // EngageEmergencyStop halts all background processing (persisted).
 func (s *Service) EngageEmergencyStop(reason, actor string) (EmergencyStopState, error) {
+	if s.openClawStop != nil {
+		state, _, err := s.EngageEmergencyStopWithFanout(context.Background(), reason, actor)
+		return state, err
+	}
 	if reason == "" {
 		reason = "operator-engaged emergency stop"
 	}
 	return s.control.Engage(reason, actor, s.now().UTC())
+}
+
+// EngageEmergencyStopAuthenticatedWithFanout records a non-empty authenticated
+// actor for audit. HTTP callers must pass the router's verified admin-role
+// check; s.owner is the worker/ledger scope and is not the IDP principal.
+func (s *Service) EngageEmergencyStopAuthenticatedWithFanout(
+	ctx context.Context,
+	reason string,
+	actor string,
+) (EmergencyStopState, EmergencyStopFanoutSummary, error) {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return EmergencyStopState{}, EmergencyStopFanoutSummary{}, ErrUnauthenticated
+	}
+	return s.EngageEmergencyStopWithFanout(ctx, reason, actor)
+}
+
+// EngageEmergencyStopWithFanout persists the stop before touching any remote
+// receipt. Delivery failures do not clear or weaken that persisted stop.
+func (s *Service) EngageEmergencyStopWithFanout(ctx context.Context, reason, actor string) (EmergencyStopState, EmergencyStopFanoutSummary, error) {
+	if strings.TrimSpace(reason) == "" {
+		reason = "operator-engaged emergency stop"
+	}
+	state, err := s.control.Engage(reason, actor, s.now().UTC())
+	if err != nil {
+		return state, EmergencyStopFanoutSummary{
+			Status: "unavailable", Message: "HAI could not confirm that the emergency stop was persisted.",
+		}, fmt.Errorf("%w: %v", ErrControlPersistence, err)
+	}
+	if s.openClawStop == nil {
+		return state, EmergencyStopFanoutSummary{
+			Status: "unavailable", Message: "The emergency stop is active, but OpenClaw cancellation delivery is not configured.",
+		}, fmt.Errorf("OpenClaw emergency-stop cancellation delivery is unavailable")
+	}
+	return s.fanOutEmergencyStop(ctx)
 }
 
 // DisengageEmergencyStop clears the exact persisted stop revision only after a
@@ -221,8 +286,8 @@ func (s *Service) DisengageEmergencyStop(
 }
 
 // SetMode updates the background autonomy mode. More permissive transitions
-// require a fresh exact-bound authorization; restrictive transitions remain
-// immediately available.
+// require a fresh exact-bound authorization; restrictive transitions require
+// no approval but serialize with effects and preserve newer operator decisions.
 func (s *Service) SetMode(
 	ctx context.Context,
 	mode string,
@@ -237,7 +302,10 @@ func (s *Service) SetMode(
 		return string(current), nil
 	}
 	if current == target {
-		updated, err := s.control.SetMode(target)
+		updated, err := s.control.SetModeIfCurrent(current, target)
+		if errors.Is(err, ErrAutonomyModeStateChanged) {
+			return string(updated), err
+		}
 		if err != nil {
 			return string(updated), fmt.Errorf("%w: %v", ErrControlPersistence, err)
 		}
@@ -261,7 +329,10 @@ func (s *Service) SetMode(
 		}
 		return string(updated), fmt.Errorf("%w: %v", ErrControlPersistence, err)
 	}
-	updated, err := s.control.SetMode(target)
+	updated, err := s.control.SetModeIfCurrent(current, target)
+	if errors.Is(err, ErrAutonomyModeStateChanged) {
+		return string(updated), err
+	}
 	if err != nil {
 		return string(updated), fmt.Errorf("%w: %v", ErrControlPersistence, err)
 	}
@@ -286,8 +357,8 @@ func modeAuthorityRank(mode autonomypolicy.Mode) int {
 }
 
 // Recover runs a crash/reboot recovery pass over the ledger.
-func (s *Service) Recover(ctx context.Context) RecoveryReport {
-	return Recover(s.ops, s.owner, s.space, s.now().UTC())
+func (s *Service) Recover(ctx context.Context) (RecoveryReport, error) {
+	return Recover(ctx, s.ops, s.owner, s.space, s.now().UTC())
 }
 
 // Status is the background status roll-up (§10.19 GET /background/status).
@@ -428,6 +499,9 @@ type EmergencyStopVerification struct {
 	Halted              bool   `json:"halted"`
 	RestoredEngaged     bool   `json:"restoredEngagedState"`
 	Detail              string `json:"detail"`
+	// OpenClawCancellation is retained for response compatibility. Verification
+	// is intentionally local-only and must never cancel live OpenClaw runs.
+	OpenClawCancellation *EmergencyStopFanoutSummary `json:"openClawCancellation,omitempty"`
 }
 
 // VerifyEmergencyStop proves the emergency stop actually halts background
@@ -484,6 +558,31 @@ func (s *Service) VerifyEmergencyStop(ctx context.Context) (EmergencyStopVerific
 		v.Detail = fmt.Sprintf("EMERGENCY STOP DID NOT HALT: %d operations processed while engaged", processed)
 	}
 	return v, nil
+}
+
+func (s *Service) fanOutEmergencyStop(ctx context.Context) (EmergencyStopState, EmergencyStopFanoutSummary, error) {
+	state, err := s.control.emergency.Status()
+	if err != nil {
+		return state, EmergencyStopFanoutSummary{Status: "unavailable", Message: "HAI could not read the persisted emergency-stop state."}, fmt.Errorf("read persisted emergency-stop state before cancellation fan-out: %w", err)
+	}
+	if !state.Engaged {
+		return state, EmergencyStopFanoutSummary{Status: "unavailable", Message: "OpenClaw cancellation was not attempted because the persisted emergency stop is not active."}, fmt.Errorf("emergency stop is not persisted as active")
+	}
+	if s.openClawStop == nil {
+		return state, EmergencyStopFanoutSummary{Status: "unavailable", Message: "The emergency stop is active, but OpenClaw cancellation delivery is not configured."}, fmt.Errorf("OpenClaw emergency-stop cancellation delivery is unavailable")
+	}
+	targeted, acknowledged, awaitingIdentity, failed, fanoutErr := s.openClawStop.FanOutEmergencyStop(ctx)
+	status := "complete"
+	message := "The emergency stop is active. No unresolved OpenClaw run required cancellation."
+	if targeted > 0 || awaitingIdentity > 0 || failed > 0 || fanoutErr != nil {
+		status = "partial"
+		message = "The emergency stop remains active. Cancellation requests and outcomes are recorded, but exact runs remain unresolved until terminal verification."
+	}
+	summary := EmergencyStopFanoutSummary{Status: status, Targeted: targeted, Acknowledged: acknowledged, AwaitingIdentity: awaitingIdentity, Failed: failed, TerminallyVerified: 0, AcknowledgmentIsTerminal: false, Message: message}
+	if fanoutErr != nil {
+		return state, summary, fmt.Errorf("emergency stop persisted; OpenClaw cancellation fan-out was partial: %w", fanoutErr)
+	}
+	return state, summary, nil
 }
 
 func (s *Service) restore(

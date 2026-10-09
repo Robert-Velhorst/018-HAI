@@ -4,6 +4,7 @@
 package apierror
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -59,6 +60,17 @@ type Error struct {
 	Details map[string]string `json:"details,omitempty"`
 }
 
+// MarshalJSON applies the public redaction boundary even when callers serialize
+// an Error directly instead of wrapping it in Envelope.
+func (e *Error) MarshalJSON() ([]byte, error) {
+	if e == nil {
+		return []byte("null"), nil
+	}
+	public := e.Envelope().Error
+	type wireError Error
+	return json.Marshal((*wireError)(public))
+}
+
 // New builds an error with the given code and message.
 func New(code Code, message string) *Error {
 	return &Error{Code: code, Message: message}
@@ -75,7 +87,10 @@ func (e *Error) WithDetail(field, detail string) *Error {
 
 // Error implements the error interface.
 func (e *Error) Error() string {
-	return string(e.Code) + ": " + e.Message
+	if e == nil {
+		return "<nil>"
+	}
+	return string(e.Code) + ": " + safety.RedactSecrets(e.Message)
 }
 
 // HTTPStatus returns the HTTP status for this error's code.
@@ -86,8 +101,25 @@ type Envelope struct {
 	Error *Error `json:"error"`
 }
 
-// Envelope wraps the error for JSON serialization.
-func (e *Error) Envelope() Envelope { return Envelope{Error: e} }
+// Envelope captures a filtered public snapshot without modifying the original error.
+func (e *Error) Envelope() Envelope {
+	if e == nil {
+		return Envelope{}
+	}
+	public := &Error{Code: e.Code, Message: safety.RedactSecrets(e.Message)}
+	if e.Details != nil {
+		public.Details = make(map[string]string, len(e.Details))
+		for field, detail := range e.Details {
+			safeField := safety.RedactSecrets(field)
+			if safeField != field || safety.IsSensitiveKey(field) {
+				public.Details[safeField] = "[REDACTED]"
+			} else {
+				public.Details[safeField] = safety.RedactSecrets(detail)
+			}
+		}
+	}
+	return Envelope{Error: public}
+}
 
 // PublicMessage returns a stable fallback for unexpected errors. A handler may
 // pass a deliberately constructed API Error when its message is safe for the

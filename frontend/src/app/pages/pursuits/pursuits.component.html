@@ -22,12 +22,63 @@
       </div>
     </nz-header>
 
-    <nz-content class="page-content">
-      <details class="pursuit-health" *ngIf="dashboard as view">
-        <summary title="Expand pursuit metrics and operating queues">
-          <span>Pursuit health</span>
-          <small>{{ count('active') }} active · {{ topQueue().length }} need attention</small>
-        </summary>
+    <nz-content class="page-content" [attr.aria-busy]="loading">
+      <section
+        class="pursuits-load-state pursuits-load-state--loading"
+        *ngIf="loading && !pursuits.length"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+        data-testid="pursuits-initial-loading"
+      >
+        <i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i>
+        <span>Loading pursuits and current actions…</span>
+      </section>
+      <section
+        class="pursuits-load-state pursuits-load-state--refreshing"
+        *ngIf="loading && hasLastKnownData"
+        role="status"
+        aria-live="polite"
+        data-testid="pursuits-refreshing"
+      >
+        <i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i>
+        <span>Refreshing pursuit data. Existing details remain available.</span>
+      </section>
+
+      <section class="pursuits-load-error" *ngIf="loadError" role="alert" aria-live="assertive">
+        <i nz-icon nzType="warning" nzTheme="outline" aria-hidden="true"></i>
+        <div>
+          <strong>{{ hasLastKnownData ? 'Could not refresh pursuit data' : 'Pursuit data is unavailable' }}</strong>
+          <p>
+            {{ loadError }}
+            <ng-container *ngIf="hasLastKnownData">Previously loaded information remains visible and may be out of date.</ng-container>
+          </p>
+        </div>
+        <button nz-button nzType="default" type="button" (click)="load()" [nzLoading]="loading">
+          Retry
+        </button>
+      </section>
+
+      <section class="pursuits-load-error runtime-stop-recovery" *ngIf="visibleRuntimeStopRecovery" role="alert" data-testid="runtime-stop-recovery">
+        <i nz-icon nzType="warning" nzTheme="outline" aria-hidden="true"></i>
+        <div>
+          <strong>Stop needs review</strong>
+          <p>Cancellation is not confirmed. Review the original attempt before repeating it.</p>
+        </div>
+        <button nz-button nzType="default" type="button" [disabled]="detailLoading" title="Inspect the exact candidate stop record without repeating cancellation" (click)="reviewRuntimeStopRecovery()">
+          <i nz-icon nzType="search" nzTheme="outline" aria-hidden="true"></i>
+          Review stop attempt
+        </button>
+      </section>
+
+      <hai-progressive-section
+        [moduleId]="moduleId"
+        sectionId="pursuit-health"
+        title="Pursuit health"
+        [summary]="(dashboard ? count('active') + ' active · ' + topQueue().length + ' need attention' : 'Metrics are unavailable until the dashboard loads.')"
+        [advancedOnly]="true"
+        *ngIf="dashboard as view"
+      >
         <section class="metric-strip">
           <button type="button" class="metric-card" title="All active pursuits HAI is tracking." (click)="load()">
             <span>Active</span>
@@ -54,13 +105,14 @@
             <strong>{{ view.completionCandidates.length }}</strong>
           </button>
         </section>
-      </details>
+      </hai-progressive-section>
 
       <hai-progressive-section
         moduleId="pursuits"
         sectionId="life-domain-index"
         title="Life-domain index"
         summary="Repair the local planning index for existing pursuits. This does not change a pursuit or execute external work."
+        [advancedOnly]="true"
       >
         <div class="portfolio-entry">
           <div>
@@ -148,6 +200,7 @@
         sectionId="portfolio-planning"
         title="Portfolio planning"
         summary="Compare explicit estimates against owner capacity, dependencies, resource ceilings, and approval policy."
+        [advancedOnly]="true"
       >
         <div class="portfolio-entry">
           <div>
@@ -166,17 +219,31 @@
         </div>
       </hai-progressive-section>
 
-      <details class="route-intake-panel">
-        <summary title="Add a note, source, or signal for HAI to connect to a pursuit">
-          <span>Route new input</span>
-          <small>Connect a note, message, document, or open loop</small>
-        </summary>
+      <hai-progressive-section
+        [moduleId]="moduleId"
+        sectionId="route-input"
+        title="Route new input"
+        summary="Connect a note, message, document, or open loop to an existing pursuit or a reviewable candidate."
+        [advancedOnly]="true"
+      >
+        <section class="route-intake-panel">
         <form [formGroup]="routedIntakeForm" (ngSubmit)="routeIntake()">
           <div class="form-heading">
             <strong>Drop new input into HAI</strong>
             <span>HAI matches the right pursuit or creates a reviewable candidate.</span>
           </div>
-          <textarea nz-input formControlName="input" rows="2" placeholder="Paste a message, source note, AI-thread action, document signal, or open loop."></textarea>
+          <textarea
+            nz-input
+            formControlName="input"
+            rows="2"
+            placeholder="Paste a message, source note, AI-thread action, document signal, or open loop."
+            aria-label="Input to route into a pursuit"
+            [attr.aria-invalid]="routedIntakeForm.get('input')?.invalid && routedIntakeForm.get('input')?.touched"
+            [attr.aria-describedby]="routedIntakeForm.get('input')?.invalid && routedIntakeForm.get('input')?.touched ? 'pursuit-input-error' : null"
+          ></textarea>
+          <small id="pursuit-input-error" class="pursuits-field-error" role="alert" *ngIf="routedIntakeForm.get('input')?.invalid && routedIntakeForm.get('input')?.touched">
+            Add some input before routing it.
+          </small>
           <div class="route-intake-fields">
             <input nz-input formControlName="projectKey" placeholder="project key">
             <input nz-input formControlName="sourceType" placeholder="source type">
@@ -184,12 +251,13 @@
             <input nz-input formControlName="sourceUri" placeholder="source link / local path">
           </div>
           <div class="form-actions">
-            <button nz-button nzType="primary" type="submit" [nzLoading]="routedIntakeRunning">
+            <button nz-button nzType="primary" type="submit" [nzLoading]="routedIntakeRunning" [disabled]="detailLoading || !!lifecycleRunningId || !!resolvingDecisionId">
               Route input
             </button>
           </div>
         </form>
-      </details>
+        </section>
+      </hai-progressive-section>
 
       <section class="create-panel" *ngIf="showCreate">
         <form [formGroup]="createForm" (ngSubmit)="createPursuit()" data-testid="pursuit-create-form">
@@ -197,18 +265,37 @@
             <strong>Create pursuit</strong>
             <span>Define the outcome once. HAI links the operational records underneath it.</span>
           </div>
-          <input nz-input formControlName="title" placeholder="Pursuit title" data-testid="pursuit-title">
-          <input nz-input formControlName="projectKey" placeholder="Project key" data-testid="pursuit-project-key">
-          <nz-select formControlName="domain" nzPlaceHolder="Domain">
+          <div class="pursuits-required-field">
+            <input
+              nz-input
+              formControlName="title"
+              placeholder="Pursuit title"
+              aria-label="Pursuit title"
+              data-testid="pursuit-title"
+              [attr.aria-invalid]="createForm.get('title')?.invalid && createForm.get('title')?.touched"
+              [attr.aria-describedby]="createForm.get('title')?.invalid && createForm.get('title')?.touched ? 'pursuit-title-error' : null"
+            >
+            <small id="pursuit-title-error" class="pursuits-field-error" role="alert" *ngIf="createForm.get('title')?.invalid && createForm.get('title')?.touched">
+              A pursuit title is required.
+            </small>
+          </div>
+          <input nz-input formControlName="projectKey" placeholder="Project key" aria-label="Project key, optional" data-testid="pursuit-project-key">
+          <nz-select formControlName="domain" nzPlaceHolder="Domain" aria-label="Life domain">
             <nz-option *ngFor="let domain of domains" [nzValue]="domain[0]" [nzLabel]="domain[1]"></nz-option>
           </nz-select>
-          <textarea nz-input formControlName="description" rows="2" placeholder="Background context (optional)"></textarea>
-          <textarea nz-input formControlName="whyItMatters" rows="2" placeholder="Why this matters"></textarea>
-          <textarea nz-input formControlName="desiredOutcome" rows="2" placeholder="Desired outcome"></textarea>
-          <textarea nz-input formControlName="currentStateSummary" rows="2" placeholder="Current state (optional)"></textarea>
-          <textarea nz-input formControlName="completionDefinition" rows="2" placeholder="Completion definition"></textarea>
-          <details class="contract-editor contract-editor--create">
-            <summary>Outcome contract and resource boundaries</summary>
+          <textarea nz-input formControlName="description" rows="2" placeholder="Background context (optional)" aria-label="Background context, optional"></textarea>
+          <textarea nz-input formControlName="whyItMatters" rows="2" placeholder="Why this matters" aria-label="Why this matters"></textarea>
+          <textarea nz-input formControlName="desiredOutcome" rows="2" placeholder="Desired outcome" aria-label="Desired outcome"></textarea>
+          <textarea nz-input formControlName="currentStateSummary" rows="2" placeholder="Current state (optional)" aria-label="Current state, optional"></textarea>
+          <textarea nz-input formControlName="completionDefinition" rows="2" placeholder="Completion definition" aria-label="Completion definition"></textarea>
+          <hai-progressive-section
+            [moduleId]="moduleId"
+            sectionId="new-pursuit-contract"
+            title="Outcome contract and resource boundaries"
+            summary="Optional criteria, stop conditions, dependencies, deadlines, and effort or spend ceilings."
+            [advancedOnly]="true"
+          >
+            <section class="contract-editor contract-editor--create">
             <div class="contract-create-grid">
               <label>
                 <span>Success criteria, one per line</span>
@@ -229,7 +316,8 @@
               <label><span>Parallel workflow ceiling</span><input nz-input type="number" min="0" formControlName="maxParallelWorkflows"></label>
               <label class="contract-create-grid__wide"><span>Resource notes</span><input nz-input formControlName="resourceNotes" placeholder="Availability, people, tools, or non-financial constraints"></label>
             </div>
-          </details>
+            </section>
+          </hai-progressive-section>
           <div class="form-actions">
             <button nz-button nzType="primary" type="submit" data-testid="pursuit-create" [nzLoading]="creating">Create</button>
             <button nz-button nzType="default" type="button" (click)="showCreate = false">Cancel</button>
@@ -237,7 +325,7 @@
         </form>
       </section>
 
-      <section class="pursuits-empty" *ngIf="!pursuits.length && !loading">
+      <section class="pursuits-empty" *ngIf="showEmptyState">
         <div class="pursuits-empty__icon"><i nz-icon nzType="flag" nzTheme="outline"></i></div>
         <div>
           <h2>Start with one outcome</h2>
@@ -281,7 +369,7 @@
             <span class="pursuit-row__next">{{ pursuit.nextRecommendedAction || 'No next action yet' }}</span>
           </button>
 
-          <nz-empty *ngIf="!pursuits.length && !loading" nzNotFoundContent="No pursuits yet. Create one to start tying work together."></nz-empty>
+          <nz-empty *ngIf="showEmptyState" nzNotFoundContent="No pursuits yet. Create one to start tying work together."></nz-empty>
         </aside>
 
         <section class="detail-panel" *ngIf="selected as detail; else noSelection">
@@ -294,7 +382,7 @@
             </div>
             <div class="detail-actions">
               <nz-tag [nzColor]="riskColor(detail.pursuit.riskLevel)">{{ detail.pursuit.riskLevel }} risk</nz-tag>
-              <button nz-button nzType="default" title="Recalculate state from linked workflows and evidence." (click)="refreshSelectedSummary()" [nzLoading]="detailLoading">
+              <button nz-button nzType="default" title="Recalculate state from linked workflows and evidence." (click)="refreshSelectedSummary()" [nzLoading]="summaryLoading" [disabled]="detailLoading || !!lifecycleRunningId || !!resolvingDecisionId">
                 <i nz-icon nzType="sync" nzTheme="outline"></i>
                 Refresh summary
               </button>
@@ -315,17 +403,107 @@
                 nz-button
                 nzType="default"
                 title="Reopen this pursuit for additional governed work. It does not run any task automatically."
+                [nzLoading]="lifecycleRunningId === detail.pursuit.id"
+                [disabled]="detailLoading || !!lifecycleRunningId || !!resolvingDecisionId"
                 (click)="reopenSelected()"
               >
                 Reopen
               </button>
               <ng-template #archivePursuit>
-                <button nz-button nzType="default" title="Archive this pursuit and remove it from active operating queues." (click)="archiveSelected()">
+                <button nz-button nzType="default" title="Archive this pursuit and remove it from active operating queues." [nzLoading]="lifecycleRunningId === detail.pursuit.id" [disabled]="detailLoading || !!lifecycleRunningId || !!resolvingDecisionId" (click)="archiveSelected()">
                   Archive
                 </button>
               </ng-template>
             </div>
           </header>
+
+          <section class="project-dossier-summary" data-testid="project-dossier-summary" aria-labelledby="project-dossier-heading">
+            <header>
+              <div>
+                <span class="page-kicker">Project context</span>
+                <h3 id="project-dossier-heading">Shared project dossier</h3>
+                <small *ngIf="detail.pursuit.projectKey as projectKey">{{ projectKey }} · Read-only workflow and memory context</small>
+                <small *ngIf="!detail.pursuit.projectKey">No project key is linked to this pursuit.</small>
+              </div>
+              <button
+                *ngIf="projectDossier && projectDossierProjectKey === (detail.pursuit.projectKey || '')"
+                nz-button
+                nzType="default"
+                nzSize="small"
+                type="button"
+                (click)="retryProjectDossier()"
+                [disabled]="projectDossierLoading"
+                aria-label="Refresh project dossier"
+              >
+                Refresh
+              </button>
+            </header>
+
+            <p *ngIf="!detail.pursuit.projectKey" class="project-dossier-summary__state" data-testid="project-dossier-no-key">
+              Add a project key to connect workflow records and verified memory for this project.
+            </p>
+            <div
+              *ngIf="detail.pursuit.projectKey && projectDossierProjectKey !== detail.pursuit.projectKey"
+              class="project-dossier-summary__state"
+              role="status"
+              data-testid="project-dossier-selection-pending"
+            >
+              Loading context for the selected project…
+            </div>
+            <div
+              *ngIf="projectDossierLoading && projectDossierProjectKey === detail.pursuit.projectKey"
+              class="project-dossier-summary__state"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+              data-testid="project-dossier-loading"
+            >
+              <i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i>
+              Loading project context…
+            </div>
+            <div
+              *ngIf="projectDossierError && projectDossierProjectKey === detail.pursuit.projectKey"
+              class="project-dossier-summary__state project-dossier-summary__state--error"
+              role="alert"
+              data-testid="project-dossier-error"
+            >
+              <span>{{ projectDossierError }}</span>
+              <button nz-button nzType="default" nzSize="small" type="button" (click)="retryProjectDossier()" [disabled]="projectDossierLoading">
+                Retry
+              </button>
+            </div>
+            <ng-container *ngIf="projectDossier as dossier">
+              <ng-container *ngIf="projectDossierProjectKey === detail.pursuit.projectKey">
+                <p class="project-dossier-summary__freshness">Updated {{ dossier.generatedAt | date:'medium' }}</p>
+                <div class="project-dossier-summary__metrics" aria-label="Project dossier counts">
+                  <article>
+                    <span>Workflows</span>
+                    <strong>{{ dossier.counts.matchingWorkflows }}</strong>
+                    <small>{{ dossier.counts.returnedWorkflows }} shown</small>
+                  </article>
+                  <article>
+                    <span>Memories</span>
+                    <strong>{{ dossier.counts.returnedMemories }}</strong>
+                  </article>
+                  <article>
+                    <span>Checklists and open loops</span>
+                    <strong>{{ dossier.counts.checklistItemsReturned + dossier.counts.openLoopsReturned }}</strong>
+                  </article>
+                  <article>
+                    <span>Evidence, sources, decisions</span>
+                    <strong>{{ dossier.counts.evidenceClaimsReturned + dossier.counts.sourceLinksReturned + dossier.counts.decisionsReturned }}</strong>
+                  </article>
+                </div>
+                <p *ngIf="!dossier.counts.matchingWorkflows && !dossier.counts.returnedMemories" class="project-dossier-summary__state" data-testid="project-dossier-empty">
+                  No active workflow or memory context is recorded for this project yet.
+                </p>
+                <p *ngIf="dossier.truncated.workflows || dossier.truncated.memories || dossier.truncated.workflowContext || dossier.truncated.text"
+                  class="project-dossier-summary__truncated" role="status" data-testid="project-dossier-truncated">
+                  Some project context is capped or shortened. Open Advanced for returned records and truncation details.
+                </p>
+              </ng-container>
+            </ng-container>
+          </section>
 
           <section class="operational-digest" *ngIf="showContextEditor">
             <header>
@@ -440,7 +618,7 @@
                 </div>
               </section>
               <div class="form-actions">
-                <button nz-button nzType="primary" type="submit" [nzLoading]="detailLoading">Save context</button>
+                <button nz-button nzType="primary" type="submit" [nzLoading]="contextSaving" [disabled]="detailLoading || !!lifecycleRunningId || !!resolvingDecisionId">Save context</button>
                 <button nz-button nzType="default" type="button" (click)="showContextEditor = false">Cancel</button>
               </div>
             </form>
@@ -508,6 +686,13 @@
             <p *ngIf="detail.resourceUsage.blockingReason" role="alert">{{ detail.resourceUsage.blockingReason }}</p>
           </section>
 
+          <hai-progressive-section
+            [moduleId]="moduleId"
+            sectionId="pursuit-summary-metrics"
+            title="Pursuit metrics"
+            summary="Detailed counts for workload lanes, review cadence, confidence, and planning state."
+            [advancedOnly]="true"
+          >
           <div class="detail-summary">
             <article title="Current operational state inferred from linked records.">
               <span>Current state</span>
@@ -542,12 +727,17 @@
               <strong>{{ detail.summary.planningNeeded ? 'yes' : 'no' }}</strong>
             </article>
           </div>
+          </hai-progressive-section>
 
-          <details class="resource-ledger" (toggle)="loadResourceEvents()">
-            <summary>
-              <span>Resource ledger</span>
-              <small>{{ detail.resourceUsage.eventCount }} immutable records</small>
-            </summary>
+          <hai-progressive-section
+            [moduleId]="moduleId"
+            sectionId="resource-ledger"
+            title="Resource ledger"
+            [summary]="detail.resourceUsage.eventCount + ' immutable records · loaded only when opened'"
+            [advancedOnly]="true"
+            (openChange)="onResourceLedgerOpen($event)"
+          >
+            <section class="resource-ledger">
             <div class="resource-ledger__body">
               <section class="resource-reservations" *ngIf="detail.resourceUsage.reservations.length">
                 <div class="section-title">
@@ -608,7 +798,7 @@
                 <input nz-input formControlName="note" placeholder="Short accounting note" aria-label="Resource accounting note">
                 <input nz-input formControlName="evidenceUri" placeholder="Evidence URI (required for spend/refund)" aria-label="Resource evidence URI">
                 <input nz-input type="datetime-local" formControlName="occurredAt" aria-label="Resource occurrence time">
-                <button nz-button nzType="primary" type="submit" [nzLoading]="resourceEventSaving">Record</button>
+                <button nz-button nzType="primary" type="submit" [nzLoading]="resourceEventSaving" [disabled]="detailLoading">Record</button>
               </form>
 
               <div *ngIf="resourceEventsLoading" class="resource-ledger__state" role="status">Loading immutable resource records...</div>
@@ -632,7 +822,8 @@
                 <nz-empty *ngIf="!resourceEvents.length" nzNotFoundContent="No actual effort or spend has been recorded."></nz-empty>
               </div>
             </div>
-          </details>
+            </section>
+          </hai-progressive-section>
 
           <section class="operational-digest" *ngIf="detail.operationalDigest as digest">
             <header [title]="digest.riskLine">
@@ -702,11 +893,11 @@
               <p>Record the review when the next action is still valid, or snooze it if Robert should see it again later.</p>
             </div>
             <div class="review-banner__actions">
-              <button nz-button nzType="primary" [nzLoading]="reviewing" (click)="completeSelectedReview()">
+              <button nz-button nzType="primary" [nzLoading]="reviewing" [disabled]="detailLoading || !!lifecycleRunningId || !!resolvingDecisionId" (click)="completeSelectedReview()">
                 <i nz-icon nzType="check" nzTheme="outline"></i>
                 Review done
               </button>
-              <button nz-button nzType="default" [disabled]="reviewing" (click)="snoozeSelectedReview(3)">
+              <button nz-button nzType="default" [disabled]="reviewing || detailLoading || !!lifecycleRunningId || !!resolvingDecisionId" (click)="snoozeSelectedReview(3)">
                 <i nz-icon nzType="clock-circle" nzTheme="outline"></i>
                 Snooze 3 days
               </button>
@@ -727,7 +918,7 @@
                 nz-button
                 nzType="primary"
                 [nzLoading]="planning"
-                [disabled]="!canCreateFirstWorkflow(detail)"
+                [disabled]="!canCreateFirstWorkflow(detail) || detailLoading || reviewing || !!lifecycleRunningId || !!resolvingDecisionId"
                 [title]="canCreateFirstWorkflow(detail) ? 'Create the first governed workflow plan.' : planningBlockReason(detail)"
                 (click)="createFirstWorkflowPlan()"
               >
@@ -877,8 +1068,14 @@
                 </nz-card>
               </div>
             </section>
-            <details class="legacy-actions">
-              <summary>All generated actions</summary>
+            <hai-progressive-section
+              [moduleId]="moduleId"
+              sectionId="generated-actions"
+              title="All generated actions"
+              summary="Inspect the full action set beyond the single ranked next step."
+              [advancedOnly]="true"
+            >
+            <section class="legacy-actions">
               <div class="action-list">
               <article class="next-action" *ngFor="let action of detail.nextActions" [title]="action.reason">
                 <div>
@@ -891,7 +1088,8 @@
               </article>
                 <nz-empty *ngIf="!detail.nextActions.length" nzNotFoundContent="No next action generated yet."></nz-empty>
               </div>
-            </details>
+            </section>
+            </hai-progressive-section>
           </section>
 
           <section class="decision-panel">
@@ -961,6 +1159,13 @@
             </div>
           </section>
 
+          <hai-progressive-section
+            [moduleId]="moduleId"
+            sectionId="operational-timeline"
+            title="Operational timeline"
+            [summary]="detail.summary.timelineItems + ' linked records across pursuit, workflow, source, verification, and runtime activity.'"
+            [advancedOnly]="true"
+          >
           <section class="timeline-panel">
             <div class="section-title">
               <div>
@@ -993,7 +1198,15 @@
               <nz-empty *ngIf="!detail.timeline.length" nzNotFoundContent="No linked timeline records yet."></nz-empty>
             </div>
           </section>
+          </hai-progressive-section>
 
+          <hai-progressive-section
+            [moduleId]="moduleId"
+            sectionId="pursuit-intake"
+            title="Add real-world signal"
+            summary="Connect an email, chat, document, source item, or manual note to this pursuit."
+            [advancedOnly]="true"
+          >
           <section class="intake-panel">
             <div class="section-title">
               <div>
@@ -1010,12 +1223,13 @@
                 <input nz-input formControlName="sender" placeholder="sender">
               </div>
               <input nz-input formControlName="sourceUri" placeholder="source link / local path">
-              <button nz-button nzType="primary" type="submit" [nzLoading]="intakeRunning">
+              <button nz-button nzType="primary" type="submit" [nzLoading]="intakeRunning" [disabled]="detailLoading || !!lifecycleRunningId || !!resolvingDecisionId">
                 <i nz-icon nzType="branches" nzTheme="outline"></i>
                 Create linked workflow
               </button>
             </form>
           </section>
+          </hai-progressive-section>
 
           <div class="detail-grid">
             <nz-card nzTitle="Blockers">
@@ -1028,6 +1242,13 @@
               <nz-empty *ngIf="!detail.blockers.length" nzNotFoundContent="No blockers detected."></nz-empty>
             </nz-card>
 
+            <hai-progressive-section
+              [moduleId]="moduleId"
+              sectionId="linked-record-counts"
+              title="Linked-record counts"
+              summary="Counts for evidence, workflows, attempts, memory, source items, and runtime records."
+              [advancedOnly]="true"
+            >
             <nz-card nzTitle="Linked records">
               <dl class="link-counts">
                 <div><dt>Workflows</dt><dd>{{ detail.workflows.length }}</dd></div>
@@ -1044,11 +1265,17 @@
                 <div><dt>Runtime</dt><dd>{{ detail.runtimeAttempts.length }}</dd></div>
               </dl>
             </nz-card>
+            </hai-progressive-section>
           </div>
 
+          <hai-progressive-section
+            [moduleId]="moduleId"
+            sectionId="manage-pursuit-links"
+            title="Manage pursuit links"
+            summary="Create, inspect, or detach explicit links to source records and other HAI work."
+            [advancedOnly]="true"
+          >
           <section class="link-manager">
-            <details>
-              <summary>Manage pursuit links</summary>
               <div class="link-manager__body">
                 <form [formGroup]="linkForm" (ngSubmit)="addLink()" class="link-form">
                   <nz-select formControlName="linkType" nzPlaceHolder="Record type">
@@ -1058,8 +1285,8 @@
                   <input nz-input formControlName="relationship" placeholder="relationship, e.g. evidence">
                   <input nz-input formControlName="sourceLabel" placeholder="source label">
                   <input nz-input formControlName="sourceUri" placeholder="source URI / local path">
-                  <input nz-input type="number" min="0" max="1" step="0.05" formControlName="confidence" placeholder="confidence">
-                  <button nz-button nzType="primary" type="submit" [nzLoading]="detailLoading">
+                  <input nz-input type="number" min="0.05" max="1" step="0.05" formControlName="confidence" placeholder="confidence" title="Confidence must be greater than zero and no more than one.">
+                  <button nz-button nzType="primary" type="submit" [nzLoading]="linkSaving" [disabled]="detailLoading || linkSaving || !!detachingLinkId || !!linkConfirmationId || !!lifecycleRunningId || !!resolvingDecisionId">
                     Link record
                   </button>
                 </form>
@@ -1101,7 +1328,7 @@
                       </td>
                       <td>{{ link.confidence | percent }}</td>
                       <td>
-                        <button nz-button nzDanger nzType="text" title="Detach this incorrect pursuit link." (click)="deleteLink(link.id)">
+                        <button nz-button nzDanger nzType="text" title="Review and detach this association without deleting its source." [nzLoading]="detachingLinkId === link.id" [disabled]="detailLoading || linkSaving || !!detachingLinkId || !!linkConfirmationId || !!lifecycleRunningId || !!resolvingDecisionId" (click)="deleteLink(link.id)">
                           Detach
                         </button>
                       </td>
@@ -1109,12 +1336,19 @@
                   </tbody>
                 </nz-table>
                 <nz-empty *ngIf="!detail.links.length" nzNotFoundContent="No explicit pursuit links yet."></nz-empty>
-              </div>
-            </details>
+            </div>
           </section>
+          </hai-progressive-section>
 
+          <hai-progressive-section
+            [moduleId]="moduleId"
+            sectionId="record-audit-trails"
+            title="Workflow, evidence, and runtime records"
+            summary="Technical history and raw linked records. Review queues and blocking recovery stay visible above."
+            [advancedOnly]="true"
+          >
           <section class="linked-records">
-            <details open>
+            <details open data-hai-advanced data-hai-section="workflow-approval-trail">
               <summary>Workflow and approval trail</summary>
               <nz-table [nzData]="detail.workflows" nzSize="small" [nzPageSize]="6">
                 <thead>
@@ -1136,7 +1370,7 @@
               </nz-table>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="workflow-quality-gates">
               <summary>Quality gates ({{ detail.summary.qualityGatesNeedingReview }} need review)</summary>
               <nz-table [nzData]="detail.qualityGates" nzSize="small" [nzPageSize]="6">
                 <thead>
@@ -1157,7 +1391,7 @@
               <nz-empty *ngIf="!detail.qualityGates.length" nzNotFoundContent="No workflow quality gates linked yet."></nz-empty>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="decision-audit-history">
               <summary>Decision audit history</summary>
               <nz-table [nzData]="detail.decisions" nzSize="small" [nzPageSize]="6">
                 <thead>
@@ -1180,7 +1414,7 @@
               <nz-empty *ngIf="!detail.decisions.length" nzNotFoundContent="No workflow decision records linked yet."></nz-empty>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="workflow-transition-source-audit">
               <summary>Workflow transition, event, and source-link audit</summary>
               <div class="source-grid">
                 <article *ngFor="let event of detail.events">
@@ -1205,7 +1439,7 @@
               ></nz-empty>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="task-execution-trail">
               <summary>Task execution trail</summary>
               <div class="source-grid">
                 <article *ngFor="let run of detail.taskRuns">
@@ -1235,7 +1469,7 @@
               <nz-empty *ngIf="!detail.taskRuns.length && !detail.taskAttempts.length" nzNotFoundContent="No task execution evidence linked yet."></nz-empty>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="automation-runtime-trail">
               <summary>Automation and runtime trail</summary>
               <div class="source-grid">
                 <article *ngFor="let automation of detail.automations">
@@ -1339,7 +1573,7 @@
               ></nz-empty>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="verification-runs-claims">
               <summary>Verification runs and claims</summary>
               <div class="source-grid">
                 <article *ngFor="let run of detail.verificationRuns">
@@ -1365,8 +1599,100 @@
               ></nz-empty>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="evidence-memory-source-context">
               <summary>Evidence, memory, and source context</summary>
+              <section class="project-dossier-detail" data-testid="project-dossier-advanced">
+                <header>
+                  <div>
+                    <strong>Project-wide workflow and memory dossier</strong>
+                    <small *ngIf="projectDossier">{{ projectDossier.projectKey }} · generated {{ projectDossier.generatedAt | date:'medium' }}</small>
+                  </div>
+                </header>
+                <p *ngIf="!detail.pursuit.projectKey" class="project-dossier-summary__state">
+                  This pursuit has no project key, so no project dossier can be requested.
+                </p>
+                <div *ngIf="projectDossierLoading && projectDossierProjectKey === detail.pursuit.projectKey" role="status" aria-busy="true">
+                  Loading selected project dossier…
+                </div>
+                <div *ngIf="projectDossierError && projectDossierProjectKey === detail.pursuit.projectKey" class="project-dossier-summary__state project-dossier-summary__state--error" role="alert">
+                  <span>{{ projectDossierError }}</span>
+                  <button nz-button nzType="default" nzSize="small" type="button" (click)="retryProjectDossier()" [disabled]="projectDossierLoading">Retry</button>
+                </div>
+                <ng-container *ngIf="projectDossier as dossier">
+                  <ng-container *ngIf="dossier.projectKey === detail.pursuit.projectKey">
+                    <div class="project-dossier-detail__counts">
+                      <span>{{ dossier.counts.matchingWorkflows }} matching workflows ({{ dossier.counts.returnedWorkflows }} returned)</span>
+                      <span>{{ dossier.counts.returnedMemories }} memories</span>
+                      <span>{{ dossier.counts.checklistItemsReturned }} checklist items</span>
+                      <span>{{ dossier.counts.openLoopsReturned }} open loops</span>
+                      <span>{{ dossier.counts.sourceLinksReturned }} source links</span>
+                      <span>{{ dossier.counts.evidenceClaimsReturned }} evidence claims</span>
+                      <span>{{ dossier.counts.decisionsReturned }} decisions</span>
+                    </div>
+                    <div *ngIf="dossier.truncated.workflows || dossier.truncated.memories || dossier.truncated.workflowContext || dossier.truncated.text"
+                      class="project-dossier-summary__truncated" role="status" data-testid="project-dossier-truncation-details">
+                      <strong>Returned content is bounded.</strong>
+                      <span *ngIf="dossier.truncated.workflows">Additional matching workflows were not returned.</span>
+                      <span *ngIf="dossier.truncated.memories">Additional memories were not returned.</span>
+                      <span *ngIf="dossier.truncated.workflowContext">Some nested workflow context was not returned.</span>
+                      <span *ngIf="dossier.truncated.text">Some text was shortened or redacted.</span>
+                    </div>
+                    <nz-empty *ngIf="!dossier.counts.matchingWorkflows && !dossier.counts.returnedMemories"
+                      nzNotFoundContent="No active workflow or memory context is recorded for this project."></nz-empty>
+                    <section class="project-dossier-detail__workflows" *ngFor="let workflow of dossier.workflows">
+                      <header>
+                        <div>
+                          <strong>{{ workflow.title }}</strong>
+                          <small>{{ workflow.state }} · {{ workflow.riskLevel || 'risk unknown' }} · priority {{ workflow.priorityScore }} · updated {{ workflow.updatedAt | date:'short' }}</small>
+                        </div>
+                        <nz-tag [nzColor]="workflow.requiresApproval ? 'warning' : 'default'">
+                          {{ workflow.requiresApproval ? (workflow.approvalStatus || 'approval required') : 'no approval required' }}
+                        </nz-tag>
+                      </header>
+                      <p *ngIf="workflow.nextAction"><strong>Next action:</strong> {{ workflow.nextAction }}</p>
+                      <p *ngIf="workflow.blockedReason" role="status"><strong>Blocked:</strong> {{ workflow.blockedReason }}</p>
+                      <p *ngIf="workflow.approvalReason"><strong>Approval context:</strong> {{ workflow.approvalReason }}</p>
+                      <p *ngIf="workflow.dueAt"><strong>Due:</strong> {{ workflow.dueAt | date:'medium' }}</p>
+                      <div class="project-dossier-detail__records">
+                        <div>
+                          <strong>Checklist ({{ workflow.checklist.length }})</strong>
+                          <ul><li *ngFor="let item of workflow.checklist"><span>{{ item.status }}</span> {{ item.label }} <small *ngIf="item.requiresApproval">· approval required</small><small *ngIf="item.dueAt">· due {{ item.dueAt | date:'short' }}</small><small *ngIf="item.reminderAt">· reminder {{ item.reminderAt | date:'short' }}</small></li></ul>
+                          <small *ngIf="!workflow.checklist.length">No checklist items returned.</small>
+                        </div>
+                        <div>
+                          <strong>Open loops ({{ workflow.openLoops.length }})</strong>
+                          <ul><li *ngFor="let loop of workflow.openLoops"><span>{{ loop.status }}</span> {{ loop.waitingFor || 'Waiting party not specified' }}<small *ngIf="loop.responsibleParty">· responsible {{ loop.responsibleParty }}</small><small *ngIf="loop.nextAction">· next {{ loop.nextAction }}</small><small *ngIf="loop.followUpAt">· follow-up {{ loop.followUpAt | date:'short' }}</small></li></ul>
+                          <small *ngIf="!workflow.openLoops.length">No open loops returned.</small>
+                        </div>
+                        <div>
+                          <strong>Evidence and sources ({{ workflow.evidence.length + workflow.sourceLinks.length }})</strong>
+                          <ul>
+                            <li *ngFor="let claim of workflow.evidence"><span>{{ claim.status }} · {{ claim.reliability }}</span> {{ claim.claimText }}<small *ngIf="claim.needsReview">· needs review</small><small *ngIf="claim.sourceLabel">· {{ claim.sourceLabel }}</small><button *ngIf="claim.sourceUri" nz-button nzType="link" type="button" (click)="openSource(claim.sourceUri)">Open source</button></li>
+                            <li *ngFor="let link of workflow.sourceLinks"><span>{{ link.relationship || link.sourceType || 'source' }}</span> {{ link.sourceLabel || link.sourceUri || 'Linked source' }}<button *ngIf="link.sourceUri" nz-button nzType="link" type="button" (click)="openSource(link.sourceUri)">Open source</button><small>{{ link.createdAt | date:'short' }}</small></li>
+                          </ul>
+                          <small *ngIf="!workflow.evidence.length && !workflow.sourceLinks.length">No evidence claims or source links returned.</small>
+                        </div>
+                        <div>
+                          <strong>Decisions ({{ workflow.decisions.length }})</strong>
+                          <ul><li *ngFor="let decision of workflow.decisions"><span>{{ decision.decisionType }} · {{ decision.approved ? 'approved' : 'not approved' }}</span> {{ decision.decision }}<small *ngIf="decision.reason">· {{ decision.reason }}</small><small *ngIf="decision.ruleApplied">· rule: {{ decision.ruleApplied }}</small><small>{{ decision.createdAt | date:'short' }}</small></li></ul>
+                          <small *ngIf="!workflow.decisions.length">No decisions returned.</small>
+                        </div>
+                      </div>
+                    </section>
+                    <section class="project-dossier-detail__memories" *ngIf="dossier.memories.length">
+                      <h4>Project memories ({{ dossier.memories.length }})</h4>
+                      <article *ngFor="let memory of dossier.memories">
+                        <header><strong>{{ memory.summary || memory.kind }}</strong><nz-tag>{{ memory.kind }}</nz-tag></header>
+                        <p>{{ memory.content }}</p>
+                        <small *ngIf="memory.tags">Tags: {{ memory.tags }}</small>
+                        <small>Confidence {{ memory.confidence | percent:'1.0-0' }} · updated {{ memory.updatedAt | date:'short' }}</small>
+                        <small *ngIf="memory.sourceLabel">Source: {{ memory.sourceLabel }}</small>
+                        <button *ngIf="memory.sourceUri" nz-button nzType="link" type="button" (click)="openSource(memory.sourceUri)">Open source</button>
+                      </article>
+                    </section>
+                  </ng-container>
+                </ng-container>
+              </section>
               <div class="source-grid">
                 <article *ngFor="let evidence of detail.evidence">
                   <span>Evidence · {{ evidence.status }}</span>
@@ -1396,7 +1722,7 @@
               </div>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="proactive-opportunities">
               <summary>Proactive opportunities</summary>
               <div class="source-grid">
                 <article *ngFor="let opportunity of detail.ambientOpportunities">
@@ -1412,7 +1738,7 @@
               <nz-empty *ngIf="!detail.ambientOpportunities.length" nzNotFoundContent="No proactive opportunities linked yet."></nz-empty>
             </details>
 
-            <details>
+            <details data-hai-advanced data-hai-section="pursuit-activity-log">
               <summary>Activity log</summary>
               <div class="activity-list">
                 <article *ngFor="let item of detail.activity">
@@ -1423,11 +1749,36 @@
               </div>
             </details>
           </section>
+          </hai-progressive-section>
         </section>
 
         <ng-template #noSelection>
-          <section class="detail-panel detail-panel--empty">
-            <nz-empty nzNotFoundContent="Select or create a pursuit to see operational detail."></nz-empty>
+          <section class="detail-panel detail-panel--empty" [attr.aria-busy]="detailLoading">
+            <div
+              *ngIf="detailLoading"
+              class="pursuit-detail-state"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+              data-testid="pursuit-detail-loading"
+            >
+              <i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i>
+              <span>Loading the selected pursuit details…</span>
+            </div>
+            <div
+              *ngIf="!detailLoading && detailError"
+              class="pursuit-detail-state pursuit-detail-state--error"
+              role="alert"
+              aria-live="assertive"
+              data-testid="pursuit-detail-error"
+            >
+              <strong>Could not open this pursuit</strong>
+              <p>{{ detailError }}</p>
+              <button nz-button nzType="default" type="button" (click)="retrySelectedPursuit()" [disabled]="detailLoading">
+                Retry details
+              </button>
+            </div>
+            <nz-empty *ngIf="!detailLoading && !detailError" nzNotFoundContent="Select or create a pursuit to see operational detail."></nz-empty>
           </section>
         </ng-template>
       </div>

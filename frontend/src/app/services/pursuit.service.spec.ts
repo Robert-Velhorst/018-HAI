@@ -1,10 +1,31 @@
 import { PursuitService } from './pursuit.service';
 import { of } from 'rxjs';
 
+describe('PursuitService project dossier', () => {
+  it('requests the read-only dossier using an encoded exact project key', (done) => {
+    const response = { projectKey: 'Legal & housing/2026', workflows: [], memories: [] };
+    const http = { get: jasmine.createSpy('get').and.returnValue(of(response)) };
+    const service = new PursuitService(http as any);
+
+    service.projectDossier(response.projectKey).subscribe((result) => {
+      expect(result).toBe(response as any);
+      const [url, options] = http.get.calls.mostRecent().args;
+      expect(url).toBe('/api/v1/workflow/project-dossier');
+      expect(options.params.get('projectKey')).toBe(response.projectKey);
+      expect(options.params.toString()).toBe('projectKey=Legal%20%26%20housing/2026');
+      done();
+    });
+  });
+});
+
 describe('PursuitService response normalization', () => {
   it('requests already-loaded active pursuits only when a dashboard consumer needs them', (done) => {
     const http = {
-      get: jasmine.createSpy('get').and.returnValue(of({ counts: {}, pursuits: [] })),
+      get: jasmine.createSpy('get').and.returnValue(of({
+        counts: { active: 0 }, pursuits: [], decisionQueue: [], needsRobert: [], vaReady: [],
+        systemReady: [], blocked: [], stale: [], reviewDue: [], planningNeeded: [],
+        recentlyChanged: [], highRisk: [], completionCandidates: [],
+      })),
     };
     const service = new PursuitService(http as any);
 
@@ -15,6 +36,19 @@ describe('PursuitService response normalization', () => {
       expect(url).toBe('/api/v1/pursuits/dashboard');
       expect(options.params.get('includePursuits')).toBe('true');
       done();
+    });
+  });
+
+  it('rejects an incomplete dashboard instead of normalizing missing queues into a false empty state', (done) => {
+    const http = { get: jasmine.createSpy('get').and.returnValue(of({})) };
+    const service = new PursuitService(http as any);
+
+    service.dashboard().subscribe({
+      next: () => fail('Incomplete dashboard response was accepted.'),
+      error: (error) => {
+        expect(error.message).toContain('response is incomplete');
+        done();
+      },
     });
   });
 
@@ -365,7 +399,7 @@ describe('PursuitService response normalization', () => {
 
   it('loads a bounded immutable resource event list', (done) => {
     const http = {
-      get: jasmine.createSpy('get').and.returnValue(of({ events: null })),
+      get: jasmine.createSpy('get').and.returnValue(of({ events: [] })),
     };
     const service = new PursuitService(http as any);
 
@@ -376,6 +410,21 @@ describe('PursuitService response normalization', () => {
       }));
       expect(http.get.calls.mostRecent().args[1].params.get('limit')).toBe('500');
       done();
+    });
+  });
+
+  it('rejects a resource ledger response that omits the events collection', (done) => {
+    const http = {
+      get: jasmine.createSpy('get').and.returnValue(of({ events: null })),
+    };
+    const service = new PursuitService(http as any);
+
+    service.resourceEvents('pursuit-1').subscribe({
+      next: () => fail('A malformed ledger response must not be normalized to an empty ledger.'),
+      error: (error) => {
+        expect(error.message).toBe('Resource ledger response is unavailable.');
+        done();
+      },
     });
   });
 
