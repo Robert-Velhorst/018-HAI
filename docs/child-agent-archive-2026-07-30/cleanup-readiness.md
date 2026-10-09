@@ -114,6 +114,18 @@ transcripts, and 8 matching crosswalk rows. The source check also passed against
 verifies candidate bytes against the ledger; it does not close the separate
 PR/CI and repository-history gates or authorize deletion.
 
+The Windows backup preflight now inventories mounted HAI volumes by Compose
+project and HAI container name, checks Docker's
+`com.docker.volume.anonymous` ownership label, and refuses to certify a
+complete bundle when a mounted volume is absent from the recovery allowlist.
+A live read-only check on 2026-10-10 found three uncovered anonymous mounts:
+Redis `/data` and the PostgreSQL data mounts on the runtime-role and
+state-permissions helper containers. The shared recovery contract rejected
+that exact inventory before any backup or cleanup operation. The focused
+contract test covers detection and refusal; these mounts still need a defined
+recovery or explicit non-persistent service contract before they can be
+removed.
+
 Run the current read-only checks from the repository root in PowerShell:
 
 ```powershell
@@ -230,8 +242,8 @@ restriction was not bypassed.
    history. Retain all 10 other transcript files, including duplicate-ID,
    aborted, and nonterminal sessions.
 3. Implement and rehearse export/restore for every remaining HAI persistent
-   volume. Until then the backup script must continue refusing to certify a
-   complete installation backup or volume removal.
+   volume and anonymous mount. Until then the backup script must continue
+   refusing to certify a complete installation backup or volume removal.
 4. Re-run `scripts/test-hai-temp-fixture-cleanup-readiness.ps1` immediately
    before any future fixture cleanup. Only the four complete, hash-verified
    fixture folders with zero matching Docker resources are candidates; retain

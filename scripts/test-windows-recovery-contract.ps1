@@ -59,6 +59,12 @@ try {
     Assert-Throws 'uncovered HAI persistent volume' {
         Assert-HaiOptionalRecoveryAssetsAbsent ($supportedHaiVolumes + '018-hai-ollama-local-data') $optionalStore
     } 'HAI persistent volume.*018-hai-ollama-local-data.*No complete backup'
+    Assert-Throws 'anonymous HAI volume mount' {
+        Assert-HaiOptionalRecoveryAssetsAbsent $supportedHaiVolumes $optionalStore @([pscustomobject]@{ volume = 'synthetic-anonymous-volume'; container = 'fixture-hai-container'; destination = '/data' })
+    } 'Docker volume.*synthetic-anonymous-volume.*No complete backup'
+    Assert-Throws 'unlisted external HAI volume mount' {
+        Assert-HaiOptionalRecoveryAssetsAbsent $supportedHaiVolumes $optionalStore @([pscustomobject]@{ volume = 'shared-state-volume'; container = 'fixture-hai-container'; destination = '/state'; anonymous = $false })
+    } 'Docker volume.*shared-state-volume.*No complete backup'
     [IO.Directory]::CreateDirectory($optionalStore) | Out-Null
     $openClawArchiveFixture = Join-Path $optionalStore 'archive-fixture.zip'
     [IO.File]::WriteAllText($openClawArchiveFixture, 'synthetic archive payload', [Text.UTF8Encoding]::new($false))
@@ -293,7 +299,7 @@ try {
     } finally { $archive.Dispose() }
 
     # Child-script calls resolve this function, never the installed Docker executable.
-    $global:HaiRecoveryContractMock = @{ Calls = [Collections.Generic.List[object]]::new(); VolumeExists = $false; VolumeToken = ''; FailCreate = ''; FailQuery = $false; FailCleanup = $false; DockerHost = 'npipe:////./pipe/docker_engine' }
+    $global:HaiRecoveryContractMock = @{ Calls = [Collections.Generic.List[object]]::new(); VolumeExists = $false; VolumeToken = ''; FailCreate = ''; FailQuery = $false; FailCleanup = $false; AnonymousMounts = $false; DockerHost = 'npipe:////./pipe/docker_engine' }
     function docker {
         $commandArgs = @($args | ForEach-Object { [string]$_ })
         $global:HaiRecoveryContractMock.Calls.Add($commandArgs)
@@ -303,6 +309,17 @@ try {
         }
         if ($commandArgs[0] -eq 'compose') { return }
         if ($commandArgs[0] -eq 'volume' -and $commandArgs[1] -eq 'ls') { return @('018-hai-phase2-control-state') }
+        if ($commandArgs[0] -eq 'ps' -and $commandArgs -contains '--format') { return @('fixture-hai-container') }
+        if ($commandArgs[0] -eq 'inspect' -and $commandArgs -contains '{{json .Mounts}}') {
+            if ($global:HaiRecoveryContractMock.AnonymousMounts) {
+                return '[{"Type":"volume","Name":"synthetic-anonymous-volume","Destination":"/data"}]'
+            }
+            return '[]'
+        }
+        if ($commandArgs[0] -eq 'volume' -and $commandArgs[1] -eq 'inspect' -and $commandArgs -contains '{{json .Labels}}') {
+            if ($global:HaiRecoveryContractMock.AnonymousMounts) { return '{"com.docker.volume.anonymous":""}' }
+            return '{}'
+        }
         if ($commandArgs[0] -eq 'image' -and $commandArgs[1] -eq 'inspect') { return 'fixture image exists' }
         if ($commandArgs[0] -eq 'volume' -and $commandArgs[1] -eq 'inspect' -and $commandArgs -contains '018-hai-phase2-control-state') { return 'fixture control volume exists' }
         if ($commandArgs[0] -eq 'exec' -and $commandArgs[2] -eq 'psql') {
@@ -343,6 +360,20 @@ try {
     }
 
     $savedDockerHost = $env:DOCKER_HOST
+    $global:HaiRecoveryContractMock.AnonymousMounts = $true
+    $uncoveredMounts = @(Get-HaiUncoveredVolumeMounts)
+    if ($uncoveredMounts.Count -ne 1 -or $uncoveredMounts[0].container -cne 'fixture-hai-container' -or
+        $uncoveredMounts[0].volume -cne 'synthetic-anonymous-volume' -or
+        $uncoveredMounts[0].destination -cne '/data' -or -not $uncoveredMounts[0].anonymous) {
+        throw 'Uncovered HAI Docker volume mounts were not identified from their Docker ownership label.'
+    }
+    $global:HaiRecoveryContractMock.AnonymousMounts = $false
+    if (@(Get-HaiUncoveredVolumeMounts).Count -ne 0) { throw 'The HAI volume inventory reported an uncovered mount when none existed.' }
+    $backupSource = [IO.File]::ReadAllText($backupScript)
+    if (-not $backupSource.Contains('$uncoveredVolumeMounts = @(Get-HaiUncoveredVolumeMounts)') -or
+        -not $backupSource.Contains('$latestUncoveredVolumeMounts = @(Get-HaiUncoveredVolumeMounts)')) {
+        throw 'Backup does not inventory uncovered HAI volumes before and after producing a bundle.'
+    }
     try {
         Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
         Assert-HaiLocalDockerEngine

@@ -359,8 +359,15 @@ function Get-HaiOpenClawManagedStoreState([string]$Path) {
     return 'empty'
 }
 
-function Assert-HaiOptionalRecoveryAssetsAbsent([string[]]$VolumeNames, [string]$OpenClawStorePath) {
+function Assert-HaiOptionalRecoveryAssetsAbsent([string[]]$VolumeNames, [string]$OpenClawStorePath, [object[]]$UncoveredVolumeMounts = @()) {
     $temporalVolume = '018-hai-temporal-postgres-data'
+    $uncoveredMounts = @($UncoveredVolumeMounts | ForEach-Object {
+        if ($_ -is [string]) { [string]$_ }
+        else { "{0} ({1}:{2})" -f $_.volume, $_.container, $_.destination }
+    } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Sort-Object -Unique)
+    if ($uncoveredMounts.Count -gt 0) {
+        throw "HAI container(s) use Docker volume(s) without backup coverage: $($uncoveredMounts -join ', '). No complete backup may be created or these volumes removed."
+    }
     if (@($VolumeNames | Where-Object { [string]$_ -ceq $temporalVolume }).Count -gt 0) {
         throw 'Temporal persistence volume exists, but this recovery format cannot safely archive and restore it; no complete backup may be created.'
     }
@@ -391,6 +398,49 @@ function Assert-HaiOptionalRecoveryAssetsAbsent([string[]]$VolumeNames, [string]
         }
         haiVolumes = $coveredVolumes
     }
+}
+
+function Get-HaiUncoveredVolumeMounts {
+    $composeContainers = @(& docker ps -a --filter 'label=com.docker.compose.project=018-hai' --format '{{.Names}}' 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inventory HAI Compose containers for anonymous volume coverage.' }
+    $namedContainers = @(& docker ps -a --filter 'name=018-hai-' --format '{{.Names}}' 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inventory named HAI containers for anonymous volume coverage.' }
+    $containers = @(@($composeContainers) + @($namedContainers) | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ } | Sort-Object -Unique)
+
+    $coveredVolumeNames = @(
+        '018-hai-postgres-automation-data'
+        '018-hai-postgres-idp-data'
+        '018-hai-phase2-control-state'
+    )
+    $mounts = @()
+    foreach ($container in $containers) {
+        Write-Verbose "Checking volume mounts for HAI container '$container'."
+        $mountOutput = @(& docker inspect --format '{{json .Mounts}}' $container 2>$null)
+        if ($LASTEXITCODE -ne 0 -or $mountOutput.Count -ne 1) {
+            throw 'Could not inspect HAI container mounts; refusing to certify a complete backup.'
+        }
+        try { $containerMounts = @($mountOutput[0] | ConvertFrom-Json -ErrorAction Stop) }
+        catch { throw 'HAI container mount inventory was not valid JSON; refusing to certify a complete backup.' }
+
+        foreach ($mount in $containerMounts) {
+            if ([string]$mount.Type -cne 'volume' -or [string]::IsNullOrWhiteSpace([string]$mount.Name)) { continue }
+            if ([string]$mount.Name -cin $coveredVolumeNames) { continue }
+            $labelsOutput = @(& docker volume inspect --format '{{json .Labels}}' ([string]$mount.Name) 2>$null)
+            if ($LASTEXITCODE -ne 0 -or $labelsOutput.Count -ne 1) {
+                throw 'Could not inspect HAI volume ownership labels; refusing to certify a complete backup.'
+            }
+            try { $labels = $labelsOutput[0] | ConvertFrom-Json -ErrorAction Stop }
+            catch { throw 'HAI volume labels were not valid JSON; refusing to certify a complete backup.' }
+            $isAnonymous = $null -ne $labels.PSObject.Properties['com.docker.volume.anonymous']
+            $mounts += [pscustomobject][ordered]@{
+                container = [string]$container
+                volume = [string]$mount.Name
+                destination = [string]$mount.Destination
+                anonymous = $isAnonymous
+            }
+        }
+    }
+    return @($mounts | Sort-Object volume, container, destination -Unique)
 }
 
 function Assert-HaiExtendedRecoveryCoverage($Coverage) {
@@ -617,14 +667,15 @@ Assert-HaiOwnedDirectory $mediaPath $root 'images'
 if ($LASTEXITCODE -ne 0) { throw "Docker Compose validation failed." }
 $temporalVolumes = @(& docker volume ls --format '{{.Name}}' 2>$null | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
 if ($LASTEXITCODE -ne 0) { throw 'Could not reliably inventory local Docker volumes; refusing to certify a complete backup.' }
-$optionalRecoveryCoverage = Assert-HaiOptionalRecoveryAssetsAbsent $temporalVolumes (Join-Path $root 'agent-workspaces\.hai-openclaw-ecosystem')
+$uncoveredVolumeMounts = @(Get-HaiUncoveredVolumeMounts)
+$optionalRecoveryCoverage = Assert-HaiOptionalRecoveryAssetsAbsent $temporalVolumes (Join-Path $root 'agent-workspaces\.hai-openclaw-ecosystem') $uncoveredVolumeMounts
 & docker volume inspect $controlStateVolume | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Safety control-state volume is unavailable: $controlStateVolume" }
 & docker image inspect $archiveImage | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Local backend image is unavailable: $archiveImage. Run docker compose up --build first." }
 
 if ($ValidateOnly) {
-    Write-Host "Backup preflight passed for Compose, configured media, local image, explicit HAI volume coverage, and absence of unsupported Temporal/OpenClaw recovery state. Database contents and safety documents have not been validated."
+    Write-Host "Backup preflight passed for Compose, configured media, local image, explicit HAI volume coverage, and absence of unsupported Temporal/OpenClaw or uncovered HAI volume state. Database contents and safety documents have not been validated."
     return
 }
 
@@ -722,7 +773,8 @@ try {
     Assert-HaiRecoveryEvidence $controlEvidence (Get-HaiControlDigests $controlStateVolume $archiveImage) 'Safety source changed during backup'
     $latestTemporalVolumes = @(& docker volume ls --format '{{.Name}}' 2>$null | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
     if ($LASTEXITCODE -ne 0) { throw 'Could not recheck local Docker volumes before completion; refusing to certify a complete backup.' }
-    $latestOptionalCoverage = Assert-HaiOptionalRecoveryAssetsAbsent $latestTemporalVolumes (Join-Path $root 'agent-workspaces\.hai-openclaw-ecosystem')
+    $latestUncoveredVolumeMounts = @(Get-HaiUncoveredVolumeMounts)
+    $latestOptionalCoverage = Assert-HaiOptionalRecoveryAssetsAbsent $latestTemporalVolumes (Join-Path $root 'agent-workspaces\.hai-openclaw-ecosystem') $latestUncoveredVolumeMounts
     if ((Get-HaiTextDigest ($optionalRecoveryCoverage | ConvertTo-Json -Depth 10 -Compress)) -cne
         (Get-HaiTextDigest ($latestOptionalCoverage | ConvertTo-Json -Depth 10 -Compress))) {
         throw 'Optional Temporal/OpenClaw state changed during backup; refusing to certify a complete bundle.'
