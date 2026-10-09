@@ -232,6 +232,20 @@ restriction was not bypassed.
   not change container or volume state. Joyce, ShareT, and LARO services remain
   running and were not modified.
 
+## Current PR status (2026-10-10)
+
+PR #36 remains open on `codex/hai-runtime-release`. CI run `38004949959` for
+the prior head `d13ba7c` completed with failures in frontend and backend tests,
+Windows installer/signing guards, guarded Windows runtime, browser acceptance,
+two-account isolation, migration integration, Promptfoo safety image,
+authenticated control-plane smoke, and repository secret scan. Gateway/Compose,
+provider fixture, nginx manager, Windows path contract, and several runner
+contracts passed. The failure details have not been cleared, so this run is not
+a cleanup gate. The anonymous/uncovered-volume backup guard was then committed
+as `d845534` and pushed; the PR points to that commit, and its new CI checks are
+still running. No merge, transcript deletion, volume removal, or image removal
+is authorized by these checks.
+
 ## Safe next steps
 
 1. Resolve the open PR checks and land the recovery-contract changes, all three
