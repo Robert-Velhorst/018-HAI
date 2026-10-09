@@ -248,15 +248,6 @@ func (m *Module) SafeOperationExecutionAllowed(op models.Operation) bool {
 	if !operations.IsSourceDerived(op) {
 		return m.SafeExecutionPolicyAllows(op.Title, op.Description, op.OperationType)
 	}
-	mode := m.cfg.Mode
-	emergencyStop := m.cfg.EmergencyStop
-	if m.control != nil {
-		mode = m.control.Mode()
-		emergencyStop = m.control.EmergencyStop()
-	}
-	if mode != autonomypolicy.ModeAutonomousSafe || emergencyStop {
-		return false
-	}
 	var approvalValid bool
 	switch operations.OperationStatus(op.Status) {
 	case operations.StatusApproved:
@@ -265,7 +256,24 @@ func (m *Module) SafeOperationExecutionAllowed(op models.Operation) bool {
 	case operations.StatusRunning:
 		approvalValid = m.svc.ValidateConsumedSourceApproval(op) == nil
 	}
-	if !approvalValid {
+	return approvalValid && m.SafeOperationEffectPolicyAllows(op)
+}
+
+// SafeOperationEffectPolicyAllows is the repository-independent part of the
+// final safe-effect gate. Source approval has already been validated and
+// consumed before the effect boundary; keeping this check free of repository
+// reads avoids re-entering a locked repository from its authorization callback.
+func (m *Module) SafeOperationEffectPolicyAllows(op models.Operation) bool {
+	if !operations.IsSourceDerived(op) {
+		return m.SafeExecutionPolicyAllows(op.Title, op.Description, op.OperationType)
+	}
+	mode := m.cfg.Mode
+	emergencyStop := m.cfg.EmergencyStop
+	if m.control != nil {
+		mode = m.control.Mode()
+		emergencyStop = m.control.EmergencyStop()
+	}
+	if mode != autonomypolicy.ModeAutonomousSafe || emergencyStop {
 		return false
 	}
 	if m.blockRules != nil {

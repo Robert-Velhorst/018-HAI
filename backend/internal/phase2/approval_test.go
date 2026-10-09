@@ -33,8 +33,9 @@ func awaitingApprovalID(t *testing.T, r *gin.Engine) string {
 	return listed.Operations[0].ID
 }
 
-func approveAndRunExactSourceOperation(t *testing.T, r *gin.Engine, id string) {
+func approveAndRunExactSourceOperation(t *testing.T, r *gin.Engine, m *Module, id string) {
 	t.Helper()
+	operationID, _ := uuid.Parse(id)
 	previewResponse := do(t, r, http.MethodGet, "/operations/"+id+"/approval-preview")
 	if previewResponse.Code != http.StatusOK {
 		t.Fatalf("approval preview: status %d body %s", previewResponse.Code, previewResponse.Body.String())
@@ -55,10 +56,15 @@ func approveAndRunExactSourceOperation(t *testing.T, r *gin.Engine, id string) {
 	}
 	run := do(t, r, http.MethodPost, "/operations/"+id+"/run")
 	if run.Code != http.StatusOK {
-		t.Fatalf("run exactly approved source revision: status %d body %s", run.Code, run.Body.String())
+		stored, loadErr := m.svc.Get("local-operator", "local", operationID)
+		var receiptErr error
+		if loadErr == nil {
+			_, receiptErr = m.svc.SourceApprovalForExecution(*stored)
+		}
+		t.Fatalf("run exactly approved source revision: status %d body %s; stored load=%v receipt=%v", run.Code, run.Body.String(), loadErr, receiptErr)
 	}
 	var result struct {
-		Verified bool `json:"verified"`
+		Verified  bool `json:"verified"`
 		Operation struct {
 			Status string `json:"status"`
 		} `json:"operation"`
@@ -68,7 +74,7 @@ func approveAndRunExactSourceOperation(t *testing.T, r *gin.Engine, id string) {
 	}
 }
 
-func createCompletedSourceOperation(t *testing.T, r *gin.Engine) string {
+func createCompletedSourceOperation(t *testing.T, r *gin.Engine, m *Module) string {
 	t.Helper()
 	backgroundRun := do(t, r, http.MethodPost, "/background/run")
 	if backgroundRun.Code != http.StatusOK {
@@ -87,7 +93,7 @@ func createCompletedSourceOperation(t *testing.T, r *gin.Engine) string {
 		t.Fatalf("owner approval queue = %s err=%v", queued.Body.String(), err)
 	}
 	id := listed.Operations[0].ID
-	approveAndRunExactSourceOperation(t, r, id)
+	approveAndRunExactSourceOperation(t, r, m, id)
 	return id
 }
 

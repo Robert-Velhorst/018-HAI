@@ -45,6 +45,7 @@ type SourceApprovalReceipt struct {
 	OwnerUserID       string    `json:"ownerUserId"`
 	WorkspaceID       string    `json:"workspaceId"`
 	ApprovedBy        string    `json:"approvedBy"`
+	ReviewedOwnerType string    `json:"reviewedOwnerType,omitempty"`
 	ApprovedAt        time.Time `json:"approvedAt"`
 	ReviewedUpdatedAt time.Time `json:"reviewedUpdatedAt"`
 	Version           int64     `json:"version"`
@@ -127,6 +128,7 @@ func validateSourceApprovalReceiptEvent(expected, updated models.Operation, even
 		event.AfterStatus != string(StatusApproved) || event.ActorType != string(OwnerRobert) || event.ActorID != receipt.ApprovedBy ||
 		receipt.Schema != sourceApprovalReceiptSchema || receipt.ID == uuid.Nil || receipt.OperationID != expected.ID ||
 		receipt.OwnerUserID != expected.OwnerUserID || receipt.WorkspaceID != expected.WorkspaceID || receipt.ApprovedBy == "" ||
+		(receipt.ReviewedOwnerType != "" && receipt.ReviewedOwnerType != expected.OwnerType) ||
 		receipt.Version != expected.Version || !strings.EqualFold(receipt.RevisionDigest, digest) ||
 		!receipt.ReviewedUpdatedAt.Equal(expected.UpdatedAt.UTC()) || !receipt.ApprovedAt.Equal(event.CreatedAt) ||
 		!updated.UpdatedAt.Equal(event.CreatedAt) || updated.Status != string(StatusApproved) || updated.Version != expected.Version+1 {
@@ -185,7 +187,8 @@ func (s *Service) approveSourceDerived(ctx context.Context, op models.Operation,
 	receipt := SourceApprovalReceipt{
 		Schema: sourceApprovalReceiptSchema, ID: uuid.New(), OperationID: op.ID,
 		OwnerUserID: op.OwnerUserID, WorkspaceID: op.WorkspaceID,
-		ApprovedBy: actorID, ApprovedAt: now, ReviewedUpdatedAt: op.UpdatedAt.UTC(), Version: op.Version,
+		ApprovedBy: actorID, ReviewedOwnerType: op.OwnerType, ApprovedAt: now,
+		ReviewedUpdatedAt: op.UpdatedAt.UTC(), Version: op.Version,
 		RevisionDigest: preview.RevisionDigest,
 	}
 	reviewed := op
@@ -345,6 +348,7 @@ func (s *Service) findSourceApproval(op models.Operation) (SourceApprovalReceipt
 		receipt := payload.SourceApproval
 		if receipt.Schema != sourceApprovalReceiptSchema || receipt.ID == uuid.Nil || receipt.OperationID != op.ID ||
 			receipt.OwnerUserID != op.OwnerUserID || receipt.WorkspaceID != op.WorkspaceID || strings.TrimSpace(receipt.ApprovedBy) == "" ||
+			(receipt.ReviewedOwnerType != "" && !OwnerType(receipt.ReviewedOwnerType).IsValid()) ||
 			receipt.Version <= 0 || !validSHA256(receipt.RevisionDigest) || receipt.ApprovedAt.IsZero() || receipt.ReviewedUpdatedAt.IsZero() ||
 			event.ActorID != receipt.ApprovedBy || event.ActorType != string(OwnerRobert) ||
 			event.BeforeStatus != string(StatusAwaitingApproval) || event.AfterStatus != string(StatusApproved) ||
@@ -401,10 +405,19 @@ func sourceRevisionMatches(op models.Operation, receipt SourceApprovalReceipt) b
 	revision := op
 	revision.Version = receipt.Version
 	revision.Status = string(StatusAwaitingApproval)
-	revision.OwnerType = string(OwnerHAI)
 	revision.UpdatedAt = receipt.ReviewedUpdatedAt
-	digest, err := sourceOperationRevisionDigest(revision)
-	return err == nil && digest == receipt.RevisionDigest
+	owners := []OwnerType{OwnerHAI, OwnerRobert, OwnerVA, OwnerExternal, OwnerRuntime}
+	if receipt.ReviewedOwnerType != "" {
+		owners = []OwnerType{OwnerType(receipt.ReviewedOwnerType)}
+	}
+	for _, owner := range owners {
+		revision.OwnerType = string(owner)
+		digest, err := sourceOperationRevisionDigest(revision)
+		if err == nil && digest == receipt.RevisionDigest {
+			return true
+		}
+	}
+	return false
 }
 
 func sourceExecutionPreparationMatches(approved, prepared models.Operation) bool {

@@ -552,6 +552,31 @@ func TestSourceApprovalReceiptCannotAuthorizeMutatedApprovedRevision(t *testing.
 	}
 }
 
+func TestExplicitSourceApprovalOverridesFutureReviewReminder(t *testing.T) {
+	service, _, op := sourceApprovalFixture(t)
+	reviewAt := time.Now().UTC().Add(24 * time.Hour)
+	op.NextReviewAt = &reviewAt
+	postponed, err := service.Save(op, "postponed", string(OwnerRobert), "defer review until tomorrow")
+	if err != nil {
+		t.Fatalf("save review reminder: %v", err)
+	}
+	preview, err := service.PreviewSourceApproval(*postponed)
+	if err != nil {
+		t.Fatalf("preview source approval: %v", err)
+	}
+	approved, _, err := service.ApproveSourceDerived(*postponed, op.OwnerUserID, preview.Version, preview.RevisionDigest)
+	if err != nil {
+		t.Fatalf("approve exact source revision: %v", err)
+	}
+	claimed, err := service.ClaimOperation(context.Background(), op.OwnerUserID, op.WorkspaceID, op.ID, uuid.New(), time.Minute)
+	if err != nil {
+		t.Fatalf("explicit approval must override a future review reminder: %v", err)
+	}
+	if claimed.Operation.Version != approved.Version || claimed.Operation.Status != string(StatusApproved) {
+		t.Fatalf("claimed operation = version %d status %q; want approved version %d", claimed.Operation.Version, claimed.Operation.Status, approved.Version)
+	}
+}
+
 func TestSourceApprovalReceiptConsumedOnceWithFencedRunningEvent(t *testing.T) {
 	service, repo, op := sourceApprovalFixture(t)
 	for i := 0; i < 125; i++ {

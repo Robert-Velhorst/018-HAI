@@ -413,8 +413,8 @@ func TestBackgroundRunAndDashboardKeepSourceWorkApprovalGated(t *testing.T) {
 }
 
 func TestOverviewReturnsDashboardAndFilteredOperationsInOneResponse(t *testing.T) {
-	r, _ := newTestServer(t)
-	createCompletedSourceOperation(t, r)
+	r, m := newTestServer(t)
+	createCompletedSourceOperation(t, r, m)
 
 	w := do(t, r, http.MethodGet, "/operations/overview?status=completed")
 	if w.Code != http.StatusOK {

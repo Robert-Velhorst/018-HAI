@@ -492,7 +492,7 @@ func (h *Handler) RunOperation(c *gin.Context) {
 	outcome, err := background.ExecuteSafeOperationClaimed(
 		c.Request.Context(), h.m.svc, h.m.broker, claimed.Operation, claimed.Claim, time.Now().UTC(),
 		func(op models.Operation) bool {
-			return h.m.SafeOperationExecutionAllowed(op)
+			return h.m.SafeOperationEffectPolicyAllows(op)
 		},
 	)
 	if err != nil {

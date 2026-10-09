@@ -11,7 +11,7 @@ from typing import Callable, Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GITLEAKS_MODULE = "github.com/gitleaks/gitleaks/v8@v8.30.1"
+GITLEAKS_MODULE = "github.com/zricethezav/gitleaks/v8@v8.30.1"
 
 
 def _safe_finding_summary(stdout: str) -> list[str] | None:

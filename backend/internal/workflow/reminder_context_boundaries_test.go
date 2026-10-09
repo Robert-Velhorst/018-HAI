@@ -120,7 +120,7 @@ func TestReminderContextStopsBetweenStorageStepsAndRetainsConfirmedResults(t *te
 				want = append(want, "process", "activation", "source", "receipt", "process", "activation", "source", "receipt")
 				count = 2
 			}
-			if result == nil || result.Checked != count || result.Delivered != count || len(result.Results) != count || !reflect.DeepEqual(repo.calls, want) {
+			if (count == 0 && result != nil) || (count > 0 && (result == nil || result.Checked != count || result.Delivered != count || len(result.Results) != count)) || !reflect.DeepEqual(repo.calls, want) {
 				t.Fatalf("unexpected confirmed work: summary=%+v calls=%v err=%v", result, repo.calls, err)
 			}
 			if boundary == "complete" {

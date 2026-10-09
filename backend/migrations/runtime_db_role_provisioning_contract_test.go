@@ -37,7 +37,7 @@ func TestRuntimeRoleProvisionersRejectExamplePasswordsBeforeExternalCommands(t *
 			if err != nil {
 				t.Fatalf("read provisioning entry point: %v", err)
 			}
-			source := string(contents)
+			source := strings.ReplaceAll(string(contents), "\r\n", "\n")
 			commandAt := strings.Index(source, tc.cmd)
 			if commandAt < 0 {
 				t.Fatalf("expected external command %q not found", tc.cmd)

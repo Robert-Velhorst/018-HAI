@@ -15,9 +15,9 @@ import (
 )
 
 func TestEvidencePackGenerationAndRetrieval(t *testing.T) {
-	r, _ := newTestServer(t)
+	r, m := newTestServer(t)
 	// Complete one source-fed operation only after the exact owner review flow.
-	id := createCompletedSourceOperation(t, r)
+	id := createCompletedSourceOperation(t, r, m)
 
 	gen := do(t, r, http.MethodPost, "/operations/"+id+"/evidence-pack")
 	if gen.Code != http.StatusCreated {
@@ -113,7 +113,7 @@ func operationsFilterAll() operations.Filter {
 func TestEvidencePackRetrievalRequiresAuthenticatedMatchingOwner(t *testing.T) {
 	m := newTestModule(t)
 	ownerRouter := newTestRouter(m, "local-operator", true)
-	operationID := createCompletedSourceOperation(t, ownerRouter)
+	operationID := createCompletedSourceOperation(t, ownerRouter, m)
 
 	generated := do(t, ownerRouter, http.MethodPost, "/operations/"+operationID+"/evidence-pack")
 	if generated.Code != http.StatusCreated {
@@ -160,7 +160,7 @@ func TestEvidencePackStorageFailuresFailClosed(t *testing.T) {
 		m.evidence = repository
 		m.evidenceErr = nil
 		r := newTestRouter(m, "local-operator", true)
-		operationID := createCompletedSourceOperation(t, r)
+		operationID := createCompletedSourceOperation(t, r, m)
 
 		got := do(t, r, http.MethodPost, "/operations/"+operationID+"/evidence-pack")
 		if got.Code != http.StatusInternalServerError {

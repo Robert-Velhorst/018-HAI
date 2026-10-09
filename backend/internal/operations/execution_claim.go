@@ -317,11 +317,10 @@ func safeOperationClaimable(op models.Operation, now time.Time) bool {
 	switch OperationStatus(op.Status) {
 	case StatusClassified, StatusReady, StatusFailed:
 	case StatusApproved:
-		// The durable approval receipt is verified by ClaimOperation before a
-		// worker receives this claim. OwnerType is display/assignment metadata,
-		// not the authorization proof, and may be normalized by repositories.
-		return IsSourceDerived(op) && op.RequiresApproval &&
-			(op.NextReviewAt == nil || !op.NextReviewAt.After(now))
+		// A fresh, exact-revision owner approval overrides a prior review
+		// reminder. The durable receipt is verified by ClaimOperation before
+		// a worker receives this claim; OwnerType is not authorization proof.
+		return IsSourceDerived(op) && op.RequiresApproval
 	default:
 		return false
 	}
