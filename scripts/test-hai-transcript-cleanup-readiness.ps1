@@ -1,0 +1,140 @@
+param(
+    [string]$TranscriptRoot,
+    [switch]$RequireSourceArchive
+)
+
+$ErrorActionPreference = 'Stop'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$archiveDir = Join-Path $repoRoot 'docs/child-agent-archive-2026-07-30'
+$manifestPath = Join-Path $archiveDir 'child-agent-transcript-manifest.csv'
+$summaryPath = Join-Path $archiveDir 'child-agent-transcript-summary.json'
+$reportsPath = Join-Path $archiveDir 'child-agent-final-reports.md'
+$readinessPath = Join-Path $archiveDir 'cleanup-readiness.md'
+
+function Stop-ReadinessCheck([string]$Message) {
+    throw "Transcript cleanup readiness failed: $Message"
+}
+
+if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $summaryPath -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $reportsPath -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $readinessPath -PathType Leaf)) {
+    Stop-ReadinessCheck 'one or more committed ledger artifacts are missing.'
+}
+
+$summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
+$rows = @(Import-Csv -LiteralPath $manifestPath)
+$candidates = @($rows | Where-Object disposition -CEQ 'candidate_after_ledger_commit')
+$retained = @($rows | Where-Object disposition -CLike 'retain*')
+
+if ($summary.deletion_performed -ne $false) {
+    Stop-ReadinessCheck 'the summary must state deletion_performed=false.'
+}
+if ($rows.Count -ne [int]$summary.audited_transcripts -or
+    $candidates.Count -ne [int]$summary.cleanup_candidate_transcripts -or
+    $retained.Count -ne [int]$summary.retained_transcripts) {
+    Stop-ReadinessCheck 'manifest rows do not match the recorded summary counts.'
+}
+$candidateBytes = [long](($candidates | Measure-Object -Property logical_bytes -Sum).Sum)
+$retainedBytes = [long](($retained | Measure-Object -Property logical_bytes -Sum).Sum)
+if ($candidateBytes -ne [long]$summary.cleanup_candidate_logical_bytes -or
+    $retainedBytes -ne [long]$summary.retained_logical_bytes) {
+    Stop-ReadinessCheck 'manifest byte totals do not match the recorded summary.'
+}
+if ($candidates.Count -eq 0 -or
+    @($candidates | Group-Object child_id | Where-Object Count -ne 1).Count -gt 0) {
+    Stop-ReadinessCheck 'cleanup candidate child IDs are empty or duplicated.'
+}
+
+foreach ($candidate in $candidates) {
+    if ($candidate.terminal_status -cne 'completed' -or
+        $candidate.final_report_preserved -cne 'True' -or
+        [int]$candidate.duplicate_id_file_count -ne 1 -or
+        $candidate.transcript_sha256 -notmatch '^[0-9a-f]{64}$' -or
+        [long]$candidate.logical_bytes -le 0) {
+        Stop-ReadinessCheck "candidate metadata is incomplete or unsafe for child $($candidate.child_id)."
+    }
+}
+
+$reportText = Get-Content -LiteralPath $reportsPath -Raw
+$crosswalkText = Get-Content -LiteralPath $readinessPath -Raw
+$crosswalkStart = $crosswalkText.IndexOf('### Completed-report integration crosswalk', [StringComparison]::Ordinal)
+$crosswalkEnd = $crosswalkText.IndexOf('**Transcript cleanup gate', [StringComparison]::Ordinal)
+if ($crosswalkStart -lt 0 -or $crosswalkEnd -le $crosswalkStart) {
+    Stop-ReadinessCheck 'the bounded completed-report crosswalk section is missing.'
+}
+$crosswalkBody = $crosswalkText.Substring($crosswalkStart, $crosswalkEnd - $crosswalkStart)
+$crosswalkIds = @([regex]::Matches($crosswalkBody, '(?m)^\| `([0-9a-f-]{36})` \|') | ForEach-Object { $_.Groups[1].Value })
+if (@($crosswalkIds | Group-Object | Where-Object Count -ne 1).Count -gt 0) {
+    Stop-ReadinessCheck 'the completed-report crosswalk contains duplicate child IDs.'
+}
+if ($crosswalkIds.Count -ne $candidates.Count) {
+    Stop-ReadinessCheck 'crosswalk rows do not exactly match the cleanup candidate count.'
+}
+
+foreach ($candidate in $candidates) {
+    $id = [string]$candidate.child_id
+    if (@($crosswalkIds | Where-Object { $_ -ceq $id }).Count -ne 1) {
+        Stop-ReadinessCheck "candidate $id does not have exactly one integration crosswalk row."
+    }
+    if (-not $reportText.Contains($id)) {
+        Stop-ReadinessCheck "candidate $id has no preserved report in the committed report file."
+    }
+}
+
+$sourceVerified = $false
+if ($RequireSourceArchive -and [string]::IsNullOrWhiteSpace($TranscriptRoot)) {
+    Stop-ReadinessCheck '-RequireSourceArchive requires -TranscriptRoot.'
+}
+if (-not [string]::IsNullOrWhiteSpace($TranscriptRoot)) {
+    if (-not (Test-Path -LiteralPath $TranscriptRoot -PathType Container)) {
+        Stop-ReadinessCheck 'the source transcript archive path is unavailable.'
+    }
+    $archiveFullPath = (Resolve-Path -LiteralPath $TranscriptRoot).Path.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $archiveLeaf = Split-Path -Leaf $archiveFullPath
+    $seenPaths = @{}
+    foreach ($entry in $rows) {
+        $relative = ([string]$entry.session_path).Replace('/', [IO.Path]::DirectorySeparatorChar)
+        $prefix = $archiveLeaf + [IO.Path]::DirectorySeparatorChar
+        if (-not $relative.StartsWith($prefix, [StringComparison]::Ordinal) -or
+            $relative.Contains('..')) {
+            Stop-ReadinessCheck "transcript $($entry.child_id) has a path outside the declared archive root."
+        }
+        if ($seenPaths.ContainsKey($relative)) {
+            Stop-ReadinessCheck "manifest contains a duplicate transcript path: $relative."
+        }
+        $seenPaths[$relative] = $true
+        $sourcePath = Join-Path $archiveFullPath $relative.Substring($prefix.Length)
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            Stop-ReadinessCheck "transcript source file is missing: $($entry.session_path)."
+        }
+        $sourceItem = Get-Item -LiteralPath $sourcePath -Force
+        if (($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            $sourceItem.Length -ne [long]$entry.logical_bytes) {
+            Stop-ReadinessCheck "transcript source file is a reparse point or has changed size: $($entry.session_path)."
+        }
+        if ([string]$entry.disposition -ceq 'candidate_after_ledger_commit') {
+            $actualHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -cne [string]$entry.transcript_sha256) {
+                Stop-ReadinessCheck "candidate source hash does not match the manifest: $($entry.session_path)."
+            }
+        }
+    }
+    if ($seenPaths.Count -ne $rows.Count) {
+        Stop-ReadinessCheck 'source archive path count does not match the manifest.'
+    }
+    $sourceVerified = $true
+}
+
+[pscustomobject][ordered]@{
+    result = if ($sourceVerified) { 'source_archive_verified' } else { 'ledger_verified_source_not_checked' }
+    repository_root = $repoRoot
+    manifest_rows = $rows.Count
+    candidate_files = $candidates.Count
+    candidate_bytes = [long]$summary.cleanup_candidate_logical_bytes
+    retained_files = $retained.Count
+    crosswalk_candidate_ids = $crosswalkIds.Count
+    source_archive_verified = $sourceVerified
+    deletion_performed = $false
+    cleanup_authorized = $false
+} | ConvertTo-Json -Depth 4

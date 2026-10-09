@@ -85,11 +85,11 @@ are outside this candidate set and remain retained as shown in the manifest.
 
 **Transcript cleanup gate is not yet satisfied.** The source changes,
 crosswalk, reports, and manifest are committed and the remote branch head is
-confirmed at `29e9743`. Current PR/CI status remains unverified; frontend build,
-IDP validation against this checkpoint, and relevant deployment checks are not
-recorded against this exact commit. Do not remove any candidate transcript until
-those remaining gates are satisfied. The manifest/hash is a candidate allowlist
-only, not a deletion command.
+confirmed at `f788d48`. The read-only verifier below confirms that all eight
+candidate source files match their manifest hashes. The PR is still open and
+its CI run has failures and pending jobs; these do not satisfy the cleanup gate.
+Do not remove any candidate transcript until those gates are satisfied. The
+manifest/hash is a candidate allowlist only, not a deletion command.
 
 - The eight unique completed transcripts are candidates for archive cleanup
   only after the integration changes, ledger, and report/manifest are committed
@@ -97,6 +97,35 @@ only, not a deletion command.
   ten retained files.
   Do not delete duplicate-ID files, aborted work, or nonterminal work on the
   basis of file size or an empty final message.
+
+### Read-only cleanup verifier (2026-10-10)
+
+`scripts/test-hai-transcript-cleanup-readiness.ps1` checks summary counts,
+manifest disposition and hashes, unique candidate IDs, exact crosswalk coverage,
+and preserved report presence. When given `-TranscriptRoot`, it verifies every
+manifest path, file type, and byte count (including all ten retained files),
+then checks the full SHA-256 of each candidate. It has no deletion behavior and
+always reports `cleanup_authorized=false`.
+
+The ledger-only check passed with 18 manifest rows, 8 candidates, 10 retained
+transcripts, and 8 matching crosswalk rows. The source check also passed against
+`D:\codex-temp\hai-completed-agent-sessions`: all eight candidate files
+(7,939,888,699 bytes total) matched their recorded size and SHA-256. This
+verifies candidate bytes against the ledger; it does not close the separate
+PR/CI and repository-history gates or authorize deletion.
+
+Run the current read-only checks from the repository root in PowerShell:
+
+```powershell
+.\scripts\test-hai-transcript-cleanup-readiness.ps1 `
+  -TranscriptRoot 'D:\codex-temp\hai-completed-agent-sessions' `
+  -RequireSourceArchive
+.\scripts\test-hai-temp-fixture-cleanup-readiness.ps1
+.\scripts\test-hai-volume-cleanup-readiness.ps1
+```
+
+All three commands report status only. They do not delete files, stop
+containers, or remove volumes.
 
 ## Other local HAI data: refreshed snapshot (2026-10-10)
 
@@ -106,17 +135,23 @@ synthetic temporary fixtures was blocked by the execution platform; that
 restriction was not bypassed.
 
 - Six `%TEMP%` folders matching the generated
-  `hai-acceptance-<32 hex>` pattern occupy 392,892 bytes at this snapshot.
-  Four (351,030 bytes total) contain exactly `manifest.json`, `compose.json`,
-  and `synthetic.env`. Their manifest owner matches the folder suffix, the
-  project matches the generated owner prefix, and the email is the test-only
-  `e2e-owner@example.test`; no containers, networks, or volumes with their
-  project prefix were found. These are strongly identified generated
-  acceptance fixtures, but remain present because deletion was blocked.
-  Two other folders contain only `synthetic.env` (20,931 bytes each) and have
-  no manifest or Compose file. Their provenance is unresolved; retain them.
-  The previous marker/seven-fixture description did not match the current
-  filesystem and is superseded by this inventory.
+  `hai-acceptance-<32 hex>` pattern occupy 474,396 bytes at the 2026-10-10
+  refreshed snapshot. Four (432,534 bytes total) have a matching version-1
+  manifest, generated Compose project, test-only `e2e-owner@example.test`
+  identity, and fixture-contained bind sources. They contain generated
+  compose/init/nginx/runtime-role/source/env files; the env and Compose files
+  include synthetic credentials, and `sources/acceptance.txt` explicitly
+  identifies itself as synthetic with no personal records. The verifier
+  requires the exact generated file/directory inventory, rejects reparse
+  points and out-of-root bind sources, and checks resource owner markers.
+  `scripts/test-hai-temp-fixture-cleanup-readiness.ps1` hashes each file and
+  confirms no related Docker container, network, or volume by project/owner
+  labels or resource-name prefix. It classified all four as
+  `candidate_manual_cleanup` with zero Docker resources. No folder was deleted.
+  Two folders (41,862 bytes total) contain only `synthetic.env` and have no
+  manifest or Compose definition; their provenance remains unresolved, so the
+  verifier classifies them `retain_unverified`. The verifier's output is a
+  read-only report; it does not authorize or perform deletion.
 - Seven HAI volumes are present. A refreshed read-only Docker inventory on
   2026-10-10 found `018-hai-postgres-automation` and `018-hai-postgres-idp`
   running and mounting their respective Postgres data volumes. The backend
@@ -139,7 +174,16 @@ restriction was not bypassed.
   two Postgres volumes are actively mounted now; do not stop or remove them as
   part of cleanup. Unattached volume status is not proof that data is
   disposable. Keep all seven pending export/restore coverage and a retention
-  decision.
+  decision. `scripts/test-hai-volume-cleanup-readiness.ps1` now performs a
+  read-only local-engine inventory of all seven names, their attached
+  containers, backup-method coverage, and HAI images. On this run it found four
+  uncovered detached volumes, two active Postgres volume attachments, and the
+  phase2 volume referenced by a created backend and failed helper. It also
+  found three anonymous volumes mounted by the Redis container and two helper
+  containers; these are not among the seven named volumes and must be included
+  in any complete recovery assessment. The script reports
+  `safe_to_remove=false` for every named volume and has no stop, export,
+  restore, or deletion action.
 - Six HAI-tagged images are present (`018-hai-backend:latest`,
   `018-hai-backend-migrate:latest`, `018-hai-idp:latest`,
   `018-hai-frontend:latest`, `018-hai-backend:local`, and
@@ -149,19 +193,21 @@ restriction was not bypassed.
   `018-hai-backend:local` is required by the Windows backup and restore
   tooling. Keep all six while the PR is unresolved and local rebuild/startup
   acceptance remains incomplete.
-- The previous audit snapshot recorded PR #36 at head
-  `1758e3c18cae06b7846167f2ff94756f6cb96c73` and its CI run as terminal. This
-  session's local branch HEAD is `fd6286f7f04385ad7857bebbc846ca0eb35b52da`,
-  with the integration changes above still uncommitted. The GitHub connection
-  required reauthentication, so current PR status and checks were not
-  independently refreshed. The previous run had failures in the repository
-  secret scan, Windows installer/signing guards,
-  two-account isolation, Promptfoo safety image, browser acceptance, native
-  Windows runtime regressions, backend build/tests, authenticated control-plane
-  smoke, and migration integration. Passing component checks do not cancel
-  those failures. Keep the worktree and its untracked CI logs/download, scanner,
-  evidence fixtures, and local patch as review evidence until the current PR
-  state and acceptance evidence are refreshed.
+- PR #36 is currently open at `f788d489f2c6843328cdf16e60f268e97eeb97b9`
+  on `codex/hai-runtime-release` (refreshed 2026-10-10 via `gh`). CI run
+  `38002967480` is terminal: backend tests, authenticated smoke, browser
+  acceptance, frontend tests, migration integration, Promptfoo image,
+  repository secret scan, two-account isolation, and Windows installer/signing
+  guards failed. Gateway/Compose validation, native Windows runtime, IDP,
+  provider fixture, nginx manager, runner contracts, and Windows smoke-path
+  checks passed. The secret scan reported 27 redacted candidate findings in
+  historical commits; they require triage, not blind allowlisting. This PR is
+  not merge-ready and its failure evidence remains needed.
+- The current worktree has this ledger edit and three new cleanup-readiness
+  scripts not yet committed. Other untracked
+  acceptance evidence, CI logs, frontend-job ZIP, scanner binary/ZIP, local
+  patch, and isolated-acceptance note remain untouched. Do not remove them until
+  the failed CI evidence has been reviewed and the PR status is resolved.
 - The Go toolchain ZIP occupied 67,590,465 bytes in the prior snapshot; the
   installed toolchain can serve other repositories. Do not remove the shared
   toolchain as HAI-only data.
@@ -174,15 +220,19 @@ restriction was not bypassed.
 
 ## Safe next steps
 
-1. Resolve the open PR checks and land the recovery-contract changes and this
-   ledger through the normal review path; confirm the candidate transcript
-   hashes in the merged tree before considering any archive candidate.
-2. Implement and rehearse export/restore for every remaining HAI persistent
-   volume. Until then the backup script must continue refusing to call the
-   installation fully backed up when an unsupported HAI volume exists.
-3. For the four complete acceptance fixtures, use only a platform-authorized
-   deletion path after preserving any required evidence. Do not infer ownership
-   of the two incomplete env-only folders; retain them until their provenance
-   is established. Recheck project resources immediately before any cleanup.
-4. Delete nothing if the platform blocks deletion. Do not bypass that control
+1. Resolve the open PR checks and land the recovery-contract changes, all three
+   read-only cleanup verifiers, and this ledger through normal review; rerun the
+   source verifier against the merged manifest before considering any
+   transcript candidate.
+2. The 8 transcript candidates remain gated on successful PR/CI and merged
+   history. Retain all 10 other transcript files, including duplicate-ID,
+   aborted, and nonterminal sessions.
+3. Implement and rehearse export/restore for every remaining HAI persistent
+   volume. Until then the backup script must continue refusing to certify a
+   complete installation backup or volume removal.
+4. Re-run `scripts/test-hai-temp-fixture-cleanup-readiness.ps1` immediately
+   before any future fixture cleanup. Only the four complete, hash-verified
+   fixture folders with zero matching Docker resources are candidates; retain
+   the two env-only folders unless their provenance is established.
+5. Delete nothing if the platform blocks deletion. Do not bypass that control
    with another shell, runtime, or API.
