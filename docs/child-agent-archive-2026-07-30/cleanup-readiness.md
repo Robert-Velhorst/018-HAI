@@ -46,13 +46,15 @@ are in `child-agent-transcript-summary.json`. `deletion_performed` is `false`.
   frontend now fetches and displays before/after preference snapshots and
   digests, with explicit retryable load errors. New migrations are
   sequential after the checked-in `0115` tail (`0116` and `0117`); workflow
-  rollback refuses to discard non-empty criteria. These changes remain
-  uncommitted. `go test ./...` passed in the backend. Frontend Angular checks
-  could not run because this worktree has no complete `node_modules` tree
-  (required packages including TypeScript and Angular compiler are absent).
-  The GitHub connector required reauthentication, so current PR state could
-  not be verified. This is local implementation evidence, not release or live
-  database acceptance.
+  rollback refuses to discard non-empty criteria. The changes were committed
+  as `29e974323b081f339d248e2e25e223fb52752cc2` on
+  `codex/hai-runtime-release`; `git ls-remote` confirmed that exact commit at
+  the remote branch. `go test ./...` passed in the backend before the checkpoint,
+  but Go is unavailable in the current shell for a rerun. Frontend Angular
+  checks could not run because this worktree has no complete `node_modules`
+  tree. The GitHub connector required reauthentication, so PR status and checks
+  were not verified. This is source/checkpoint evidence, not release or live DB
+  acceptance.
 - Completed-report cross-check: exact action-bound approval proof, value and
   negation-aware criterion evidence matching, approved-review reconciliation,
   Constitution history with `baseVersion`, selection-history error states,
@@ -60,9 +62,8 @@ are in `child-agent-transcript-summary.json`. `deletion_performed` is `false`.
   focused tests or route/template coverage. The previously blank registry
   template was replaced by the implemented inspector/recommendation views.
   These are repository checks, not production acceptance. Preference audit
-  history and explicit workflow success criteria are the newly integrated
-  items described above and remain uncommitted; their frontend behavior is not
-  yet compiled or browser-tested in this worktree.
+  history and explicit workflow success criteria were included in checkpoint
+  `29e9743`; their frontend behavior is not yet compiled or browser-tested.
 
 ### Completed-report integration crosswalk (2026-10-10)
 
@@ -82,13 +83,13 @@ are outside this candidate set and remain retained as shown in the manifest.
 | `019fb287-d1ed-75f0-99a8-8cd09c1ef9f2` | Advisory | Owner-scoped Constitution history and append-only framework-preference history are exposed; preference events are digest-checked, and frontend contracts preserve `baseVersion`. | `backend/internal/frameworkregistry/history_test.go`, `handler.go`, `repository.go`; routes `/frameworks/:id/preference-history` and `/constitution/history`; frontend registry model, service, component, and specs. |
 | `019fb287-f3be-7860-ba1f-e6b05088db73` | Advisory | Selection-history fetch failures render as unavailable/stale rather than empty history; workflow framework inspector includes conflicts, context requirements, and learning plan. | `frontend/src/app/pages/framework-registry/framework-registry.component.html`; `frontend/src/app/models/workflow.model.interface.ts`; Workflow Engine template and spec. |
 
-**Transcript cleanup gate is not yet satisfied.** These integration changes are
-uncommitted and current PR/CI state could not be refreshed. Do not remove any of
-the eight candidate transcripts until the source changes, crosswalk, reports,
-and manifest are committed in the intended HAI repository, the commit is
-independently confirmed, and backend, IDP, frontend, and relevant deployment
-checks are recorded against that exact commit. The manifest/hash is a candidate
-allowlist only, not a deletion command.
+**Transcript cleanup gate is not yet satisfied.** The source changes,
+crosswalk, reports, and manifest are committed and the remote branch head is
+confirmed at `29e9743`. Current PR/CI status remains unverified; frontend build,
+IDP validation against this checkpoint, and relevant deployment checks are not
+recorded against this exact commit. Do not remove any candidate transcript until
+those remaining gates are satisfied. The manifest/hash is a candidate allowlist
+only, not a deletion command.
 
 - The eight unique completed transcripts are candidates for archive cleanup
   only after the integration changes, ledger, and report/manifest are committed
