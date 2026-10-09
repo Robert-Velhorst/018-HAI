@@ -244,7 +244,7 @@ func (s *service) runDueReminderDeliveriesContext(ctx context.Context, owner str
 	result := &ReminderDeliveryRunSummary{Results: []ReminderDeliveryRunResult{}}
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
-			return result, err
+			return nil, err
 		}
 		var outcome *ReminderDeliveryRunResult
 		if durable, ok := repository.(transactionalReminderDeliveryRepository); ok {
@@ -255,7 +255,7 @@ func (s *service) runDueReminderDeliveriesContext(ctx context.Context, owner str
 			return nil, fmt.Errorf("atomic reminder delivery storage is unavailable")
 		}
 		if err != nil {
-			return result, err
+			return nil, err
 		}
 		if outcome == nil {
 			continue
@@ -276,7 +276,7 @@ func (s *service) runDueReminderDeliveriesContext(ctx context.Context, owner str
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return result, err
+		return nil, err
 	}
 	return result, nil
 }

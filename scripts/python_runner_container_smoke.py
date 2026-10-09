@@ -76,6 +76,13 @@ def container_environment(runner: str) -> dict[str, str]:
                 "HAI_FASTMCP_BRIDGE_API_BASE_URL": "http://127.0.0.1:1/api/v1/mcp-agent",
             }
         )
+    elif runner == "grype-runner":
+        environment.update(
+            {
+                "HAI_GRYPE_RUNNER_TOKEN": "synthetic-grype-smoke-token-123456",
+                "HAI_GRYPE_WORKSPACES": "ci-smoke",
+            }
+        )
     return environment
 
 
@@ -113,6 +120,9 @@ def docker_run_command(
     ]
     for key, value in container_environment(runner).items():
         command.extend(("--env", f"{key}={value}"))
+    if runner == "grype-runner":
+        command.extend(("--tmpfs", "/inputs:ro,nosuid,nodev,size=1m"))
+        command.extend(("--tmpfs", "/grype-db:ro,nosuid,nodev,size=1m"))
     command.extend((image,))
     return command
 

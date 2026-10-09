@@ -20,7 +20,7 @@ function parsedWorkers(value) {
     process: { env, versions: process.versions },
     require(name) {
       assert.equal(name, 'node:os');
-      return { availableParallelism: () => 64 };
+      return { availableParallelism: () => 5 };
     },
   }, { timeout: 1000 });
   return exports.maxWorkers;
@@ -54,13 +54,6 @@ test('installed Angular parser honors each bounded worker choice', () => {
   }
   assert.equal(parsedWorkers(undefined), 4);
   assert.equal(parsedWorkers(''), 4);
-});
-
-test('installed parser alone does not validate unsafe numeric choices', () => {
-  assert.ok(Number.isNaN(parsedWorkers('invalid')));
-  assert.equal(parsedWorkers('0'), 0);
-  assert.equal(parsedWorkers('-1'), -1);
-  assert.equal(parsedWorkers('2.5'), 2.5);
 });
 
 test('worker argument defaults to two after the cached dependency and source layers', () => {

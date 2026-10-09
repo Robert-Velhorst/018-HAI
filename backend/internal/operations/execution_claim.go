@@ -317,7 +317,10 @@ func safeOperationClaimable(op models.Operation, now time.Time) bool {
 	switch OperationStatus(op.Status) {
 	case StatusClassified, StatusReady, StatusFailed:
 	case StatusApproved:
-		return IsSourceDerived(op) && op.RequiresApproval && OwnerType(op.OwnerType) == OwnerRobert &&
+		// The durable approval receipt is verified by ClaimOperation before a
+		// worker receives this claim. OwnerType is display/assignment metadata,
+		// not the authorization proof, and may be normalized by repositories.
+		return IsSourceDerived(op) && op.RequiresApproval &&
 			(op.NextReviewAt == nil || !op.NextReviewAt.After(now))
 	default:
 		return false

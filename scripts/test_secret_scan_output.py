@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import redirect_stdout
 import importlib.util
 import io
+import json
 from pathlib import Path
 import subprocess
 import unittest
@@ -49,6 +50,45 @@ class SecretScanOutputTest(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertNotIn("synthetic candidate detail", output.getvalue())
+
+    def test_valid_findings_show_only_bounded_safe_metadata(self) -> None:
+        candidate = "ghp_" + "A" * 36
+        finding = {
+            "RuleID": "github-pat",
+            "File": "backend/config/example.env",
+            "StartLine": 12,
+            "Commit": "a" * 40,
+            "Secret": candidate,
+            "Match": candidate,
+        }
+        runner = Mock(
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=1, stdout=json.dumps([finding]), stderr=candidate
+            )
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = secret_scan.scan(runner=runner, root=ROOT)
+
+        self.assertEqual(result, 1)
+        self.assertIn("github-pat: backend/config/example.env:12", output.getvalue())
+        self.assertNotIn(candidate, output.getvalue())
+        self.assertNotIn("Match", output.getvalue())
+
+    def test_malformed_findings_remain_fully_withheld(self) -> None:
+        candidate = "ghp_" + "A" * 36
+        runner = Mock(
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=1, stdout=candidate, stderr=candidate
+            )
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = secret_scan.scan(runner=runner, root=ROOT)
+
+        self.assertEqual(result, 1)
+        self.assertIn("not valid JSON", output.getvalue())
+        self.assertNotIn(candidate, output.getvalue())
 
     def test_success_never_prints_captured_report(self) -> None:
         candidate = "synthetic-candidate-never-print"

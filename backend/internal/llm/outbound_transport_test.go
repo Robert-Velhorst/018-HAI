@@ -280,7 +280,7 @@ func newTestProviderTLSServer(t *testing.T) (*httptest.Server, *x509.CertPool) {
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, "ok")
 	}))
-	server.Config.TLSConfig = &tls.Config{Certificates: []tls.Certificate{certificate}}
+	server.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}}
 	server.StartTLS()
 	return server, roots
 }

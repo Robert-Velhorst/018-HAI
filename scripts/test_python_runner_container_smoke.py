@@ -99,6 +99,16 @@ class PythonRunnerContainerSmokeTest(unittest.TestCase):
             "http://127.0.0.1:1/api/v1/mcp-agent",
         )
 
+    def test_grype_liveness_smoke_uses_synthetic_configuration_and_empty_mounts(self):
+        environment = smoke.container_environment("grype-runner")
+        self.assertEqual(environment["HAI_GRYPE_WORKSPACES"], "ci-smoke")
+        self.assertGreaterEqual(len(environment["HAI_GRYPE_RUNNER_TOKEN"]), 16)
+        command = smoke.docker_run_command(
+            "grype-runner", "hai-grype-runner:ci", "smoke-test", Path("cid")
+        )
+        self.assertIn("/inputs:ro,nosuid,nodev,size=1m", command)
+        self.assertIn("/grype-db:ro,nosuid,nodev,size=1m", command)
+
     def test_successful_smoke_removes_the_started_container(self):
         commands = []
 

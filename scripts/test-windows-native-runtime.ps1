@@ -240,7 +240,7 @@ try {
             $env:GOMAXPROCS = '1'
             $env:GOMEMLIMIT = '384MiB'
             $version = & $go version
-            if ($LASTEXITCODE -ne 0 -or $version -notmatch 'go1\.25\.13 windows/amd64') {
+            if ($LASTEXITCODE -ne 0 -or $version -notmatch 'go1\.27\.2 windows/amd64') {
                 throw 'Native build requires existing Go 1.27.2 windows/amd64; use -CrossCompileDocker when absent.'
             }
             Invoke-BoundedNativeCompiler -Executable $go -Arguments @('test', '-p', '1', '-mod=readonly', '-c', '-o', $binary, './internal/agentruntime') -WorkingDirectory $backendRoot -LogDirectory $scratch -TimeoutMilliseconds ($NativeBuildTimeoutSeconds * 1000)

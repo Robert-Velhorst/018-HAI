@@ -130,7 +130,7 @@ try {
     $accent = [char]0xE9
     $unconfiguredContent = "# Preserve this comment: cafe$accent`r`nUNRELATED_SETTING=keep exact spacing  `r`nBACKEND_API_SHARED_KEY=$b`r`n"
     $missingPath = New-HaiFixture -Name 'missing-settings' -Content $unconfiguredContent -Utf8Bom
-    $originalAcl = (Get-Acl -LiteralPath $missingPath).Sddl
+    $originalAcl = Get-HaiComparableFileAccessDescriptor -FileSecurity (Get-Acl -LiteralPath $missingPath)
     $firstRun = Invoke-HaiUpgradeFixture -Path $missingPath
     Assert-HaiTest $firstRun.Succeeded ("The existing-install migration did not complete for a valid fixture: {0}" -f $firstRun.Output)
     Assert-HaiTest (-not [string]::IsNullOrEmpty($firstRun.Output)) 'The migration did not report its non-secret status.'
@@ -142,7 +142,8 @@ try {
     Assert-HaiTest ($migratedEnabled -ceq 'true') ("A missing maintenance setting did not default to enabled (observed: '$migratedEnabled').")
     Assert-HaiTest ($generatedToken -match '\A[a-f0-9]{64}\z') 'The migration did not create a cryptographically random-format token.'
     Assert-HaiTest (-not $firstRun.Output.Contains($generatedToken)) 'The migration printed its generated token.'
-    Assert-HaiTest ([string]::Equals($originalAcl, (Get-Acl -LiteralPath $missingPath).Sddl, [StringComparison]::Ordinal)) 'The migration changed the existing environment file ACL.'
+    $migratedAcl = Get-HaiComparableFileAccessDescriptor -FileSecurity (Get-Acl -LiteralPath $missingPath)
+    Assert-HaiTest ([string]::Equals($originalAcl, $migratedAcl, [StringComparison]::Ordinal)) 'The migration changed the existing environment file DACL.'
     Assert-HaiTest ($migratedContent.Contains("# Preserve this comment: cafe$accent`r`nUNRELATED_SETTING=keep exact spacing  `r`nBACKEND_API_SHARED_KEY=$b`r`n")) 'Unrelated environment text or CRLF line endings changed.'
 
     $stableBytes = [Convert]::ToBase64String($migratedBytes)

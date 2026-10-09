@@ -658,7 +658,8 @@ jobs:
           import sys
           source = Path("nginx-config/nginx.conf.template").read_text(encoding="utf-8")
           Path(sys.argv[1]).write_text(
-              source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key"),
+              source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key")
+                    .replace("${LOCAL_PREVIEW_GATEWAY_SECRET}", "ci-preview-key"),
               encoding="utf-8",
           )
           PY
@@ -1099,6 +1100,9 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: hai-ci-two-account-db-password-0123456789abcdef
           DB_NAME: automation_hub
+          # This is synthetic acceptance data on local service containers;
+          # production TLS requirements are exercised by config/doctor tests.
+          RUN_MODE: test
           # The explicit versioned migration runner owns the CI schema too.
           # AutoMigrate is deliberately limited to local, pre-migration model
           # scaffolding and must not alter an already-migrated database.
