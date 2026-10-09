@@ -193,18 +193,20 @@ restriction was not bypassed.
   `018-hai-backend:local` is required by the Windows backup and restore
   tooling. Keep all six while the PR is unresolved and local rebuild/startup
   acceptance remains incomplete.
-- PR #36 is currently open at `f788d489f2c6843328cdf16e60f268e97eeb97b9`
-  on `codex/hai-runtime-release` (refreshed 2026-10-10 via `gh`). CI run
-  `38002967480` is terminal: backend tests, authenticated smoke, browser
+- Before the cleanup-readiness update, PR #36 was open at
+  `f788d489f2c6843328cdf16e60f268e97eeb97b9` on `codex/hai-runtime-release`.
+  CI run `38002967480` was terminal: backend tests, authenticated smoke, browser
   acceptance, frontend tests, migration integration, Promptfoo image,
   repository secret scan, two-account isolation, and Windows installer/signing
   guards failed. Gateway/Compose validation, native Windows runtime, IDP,
   provider fixture, nginx manager, runner contracts, and Windows smoke-path
   checks passed. The secret scan reported 27 redacted candidate findings in
   historical commits; they require triage, not blind allowlisting. This PR is
-  not merge-ready and its failure evidence remains needed.
-- The current worktree has this ledger edit and three new cleanup-readiness
-  scripts not yet committed. Other untracked
+  not merge-ready on that run and its failure evidence remains needed. The
+  cleanup-readiness update was committed as `9830786` and pushed to the same PR;
+  the new CI run `38004875276` was pending when checked.
+- The cleanup ledger and three read-only verifiers are now committed and pushed.
+  Other untracked
   acceptance evidence, CI logs, frontend-job ZIP, scanner binary/ZIP, local
   patch, and isolated-acceptance note remain untouched. Do not remove them until
   the failed CI evidence has been reviewed and the PR status is resolved.
