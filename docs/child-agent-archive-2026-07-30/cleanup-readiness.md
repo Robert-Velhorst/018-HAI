@@ -44,19 +44,32 @@ are in `child-agent-transcript-summary.json`. `deletion_performed` is `false`.
   Do not delete duplicate-ID files, aborted work, or nonterminal work on the
   basis of file size or an empty final message.
 
-## Other local HAI data: fresh snapshot (2026-10-10)
+## Other local HAI data: refreshed snapshot (2026-10-10)
 
-This is a point-in-time read-only snapshot; re-inventory before future cleanup.
+This is a point-in-time inventory; re-inventory before any future cleanup.
+No local data was removed during this review. The attempt to remove clearly
+synthetic temporary fixtures was blocked by the execution platform; that
+restriction was not bypassed.
 
-- Six `%TEMP%` folders matching the generated `hai-acceptance-<32 hex>` naming
-  pattern occupy 474,396 bytes total. Four contain the known
-  `Synthetic HAI acceptance source. No personal records` marker and the
-  expected seven fixture files (82,653; 133,614; 133,592; and 82,675 bytes).
-  Two folders contain only a `synthetic.env` file (20,931 bytes each) and do
-  not contain the acceptance marker. Keep all six until exact ownership and
-  content provenance of the markerless pair is resolved; the four marked
-  folders are candidates only, not deleted.
-- Seven HAI volumes are present and report zero attached containers:
+- Six `%TEMP%` folders matching the generated
+  `hai-acceptance-<32 hex>` pattern occupy 392,892 bytes at this snapshot.
+  Four (351,030 bytes total) contain exactly `manifest.json`, `compose.json`,
+  and `synthetic.env`. Their manifest owner matches the folder suffix, the
+  project matches the generated owner prefix, and the email is the test-only
+  `e2e-owner@example.test`; no containers, networks, or volumes with their
+  project prefix were found. These are strongly identified generated
+  acceptance fixtures, but remain present because deletion was blocked.
+  Two other folders contain only `synthetic.env` (20,931 bytes each) and have
+  no manifest or Compose file. Their provenance is unresolved; retain them.
+  The previous marker/seven-fixture description did not match the current
+  filesystem and is superseded by this inventory.
+- Seven HAI volumes are present. Current container references include
+  `018-hai-phase2-control-state` from the created backend and failed permission
+  helper, `018-hai-postgres-automation-data` from the exited automation
+  Postgres container, and `018-hai-postgres-idp-data` from the exited IDP
+  Postgres container. The Kafka, Ollama, Redis, and Redpanda volumes have no
+  container references in the current `docker ps -a` inventory. None of these
+  facts establishes that the underlying data is disposable:
   `018-hai-postgres-automation-data` (858.4 MB),
   `018-hai-redpanda-data` (251.7 MB),
   `018-hai-kafka-kraft-data` (53.5 MB),
@@ -71,28 +84,40 @@ This is a point-in-time read-only snapshot; re-inventory before future cleanup.
 - Six HAI-tagged images are present (`018-hai-backend:latest`,
   `018-hai-backend-migrate:latest`, `018-hai-idp:latest`,
   `018-hai-frontend:latest`, `018-hai-backend:local`, and
-  `018-hai-nginxconfigmanager:latest`); each currently has zero container
-  references. `018-hai-backend:local` is required by the Windows backup and
-  restore tooling. The other images may be rebuildable, but rebuilding and
-  startup have not been verified for this local installation. Keep them until
-  that acceptance is complete.
-- The active PR worktree and its CI logs/download, scanner binary/archive,
-  evidence fixtures, and local patch remain untracked and untouched. The PR is
-  open and its CI run is still active; these are review/runtime evidence, not
-  cleanup targets.
+  `018-hai-nginxconfigmanager:latest`). The backend-migrate, IDP, frontend,
+  and backend-local images are referenced by created/exited HAI containers;
+  backend-latest and nginxconfigmanager currently have no container references.
+  `018-hai-backend:local` is required by the Windows backup and restore
+  tooling. Keep all six while the PR is unresolved and local rebuild/startup
+  acceptance remains incomplete.
+- PR #36 is still open at head `1758e3c18cae06b7846167f2ff94756f6cb96c73`;
+  it is not merged. Its associated CI run is terminal, not active. The run has
+  failures in the repository secret scan, Windows installer/signing guards,
+  two-account isolation, Promptfoo safety image, browser acceptance, native
+  Windows runtime regressions, backend build/tests, authenticated control-plane
+  smoke, and migration integration. Passing component checks do not cancel
+  those failures. Keep the worktree and its untracked CI logs/download, scanner,
+  evidence fixtures, and local patch as review evidence; do not treat them as
+  cleanup targets while the PR remains open and unresolved.
 - The Go toolchain ZIP occupied 67,590,465 bytes in the prior snapshot; the
   installed toolchain can serve other repositories. Do not remove the shared
   toolchain as HAI-only data.
-- HAI, Joyce, ShareT, and LARO running services were not stopped or modified.
+- No HAI containers are running; the `018-hai` Compose project currently has
+  created and exited containers, including the migration and permission-helper
+  failures. This review did not change container or volume state. Joyce,
+  ShareT, and LARO services remain running and were not modified.
 
 ## Safe next steps
 
-1. Merge/land the recovery-contract changes and this ledger through the normal
-   review path; confirm the candidate transcript hashes in the merged tree.
+1. Resolve the open PR checks and land the recovery-contract changes and this
+   ledger through the normal review path; confirm the candidate transcript
+   hashes in the merged tree before considering any archive candidate.
 2. Implement and rehearse export/restore for every remaining HAI persistent
    volume. Until then the backup script must continue refusing to call the
    installation fully backed up when an unsupported HAI volume exists.
-3. Obtain a fresh local inventory and separately confirm ownership of each
-   synthetic temp item, stopped/unused image, or other proposed cleanup target.
+3. For the four complete acceptance fixtures, use only a platform-authorized
+   deletion path after preserving any required evidence. Do not infer ownership
+   of the two incomplete env-only folders; retain them until their provenance
+   is established. Recheck project resources immediately before any cleanup.
 4. Delete nothing if the platform blocks deletion. Do not bypass that control
    with another shell, runtime, or API.
