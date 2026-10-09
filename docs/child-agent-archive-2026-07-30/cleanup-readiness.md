@@ -44,33 +44,46 @@ are in `child-agent-transcript-summary.json`. `deletion_performed` is `false`.
   Do not delete duplicate-ID files, aborted work, or nonterminal work on the
   basis of file size or an empty final message.
 
-## Other local HAI data: last recorded inventory
+## Other local HAI data: fresh snapshot (2026-10-10)
 
-The following is a dated snapshot from the cleanup audit, not a live inventory
-for future runs:
+This is a point-in-time read-only snapshot; re-inventory before future cleanup.
 
-- Six synthetic acceptance fixture files occupied 393,104 bytes in `%TEMP%`.
-  Their content was marked synthetic; retain until their exact ownership and
-  the cleanup mechanism are independently checked.
-- `hai-go-toolchain-check-20261009-1.zip` occupied 67,590,465 bytes in `%TEMP%`.
-  The Go toolchain itself is installed and may serve other repositories; do not
-  remove it as HAI-only data.
-- The active PR worktree, CI logs/download, security scanner binary/archive,
-  evidence fixtures, and local patch were intentionally left untouched. Some
-  are shared/review evidence rather than disposable HAI runtime data.
-- Docker volumes reported at that time included
+- Six `%TEMP%` folders matching the generated `hai-acceptance-<32 hex>` naming
+  pattern occupy 474,396 bytes total. Four contain the known
+  `Synthetic HAI acceptance source. No personal records` marker and the
+  expected seven fixture files (82,653; 133,614; 133,592; and 82,675 bytes).
+  Two folders contain only a `synthetic.env` file (20,931 bytes each) and do
+  not contain the acceptance marker. Keep all six until exact ownership and
+  content provenance of the markerless pair is resolved; the four marked
+  folders are candidates only, not deleted.
+- Seven HAI volumes are present and report zero attached containers:
   `018-hai-postgres-automation-data` (858.4 MB),
   `018-hai-redpanda-data` (251.7 MB),
   `018-hai-kafka-kraft-data` (53.5 MB),
   `018-hai-postgres-idp-data` (64.69 MB),
   `018-hai-ollama-local-data` (397.8 MB),
   `018-hai-redis-data` (908 B), and
-  `018-hai-phase2-control-state` (164 B). Current backup coverage handles the
-  two database volumes and safety-control volume; the other named volumes are
-  not yet covered by a verified export/restore contract. Keep them intact.
-- No claim is made here that HAI containers, images, volumes, or temporary
-  artifacts have since been removed. Re-inventory immediately before any
-  cleanup, and preserve Joyce, ShareT, and LARO data and running services.
+  `018-hai-phase2-control-state` (164 B). The current backup contract covers
+  only the two Postgres volumes and safety-control volume. Redpanda, Kafka,
+  Ollama, and Redis remain outside verified export/restore coverage, so the
+  backup script correctly refuses to certify a complete backup. Zero attached
+  containers is not proof that volume data is disposable. Keep all seven.
+- Six HAI-tagged images are present (`018-hai-backend:latest`,
+  `018-hai-backend-migrate:latest`, `018-hai-idp:latest`,
+  `018-hai-frontend:latest`, `018-hai-backend:local`, and
+  `018-hai-nginxconfigmanager:latest`); each currently has zero container
+  references. `018-hai-backend:local` is required by the Windows backup and
+  restore tooling. The other images may be rebuildable, but rebuilding and
+  startup have not been verified for this local installation. Keep them until
+  that acceptance is complete.
+- The active PR worktree and its CI logs/download, scanner binary/archive,
+  evidence fixtures, and local patch remain untracked and untouched. The PR is
+  open and its CI run is still active; these are review/runtime evidence, not
+  cleanup targets.
+- The Go toolchain ZIP occupied 67,590,465 bytes in the prior snapshot; the
+  installed toolchain can serve other repositories. Do not remove the shared
+  toolchain as HAI-only data.
+- HAI, Joyce, ShareT, and LARO running services were not stopped or modified.
 
 ## Safe next steps
 
