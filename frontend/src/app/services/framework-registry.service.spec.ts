@@ -5,6 +5,7 @@ import {
   IConstitutionHistoryPage,
   IFrameworkRegistryOverview,
   IFrameworkFamilyTaxonomy,
+  IFrameworkPreferenceChange,
   IFrameworkSelectionDecision,
   IFrameworkSelectionRequest,
   IFrameworkView,
@@ -227,6 +228,30 @@ describe('FrameworkRegistryService', () => {
     });
     expect(request.request.body['ownerIdentity']).toBeUndefined();
     request.flush({ framework });
+  });
+
+  it('loads and validates owner-scoped append-only preference history', () => {
+    const history: IFrameworkPreferenceChange[] = [{
+      id: 'change-1',
+      sequence: 1,
+      frameworkId: 'truth-evidence',
+      actor: 'owner-1',
+      reason: 'Enable with a bounded autonomy ceiling',
+      after: {
+        frameworkId: 'truth-evidence', state: 'enabled', pinned: true,
+        maximumAutonomyLevel: 2, adaptations: [], updatedAt: '2026-10-10T10:00:00Z',
+      },
+      occurredAt: '2026-10-10T10:00:00Z',
+      eventDigest: 'a'.repeat(64),
+    }];
+    service.preferenceHistory('truth-evidence').subscribe(result => expect(result).toEqual(history));
+
+    const request = http.expectOne(candidate =>
+      candidate.url === '/api/v1/framework-registry/frameworks/truth-evidence/preference-history' &&
+      candidate.params.get('limit') === '50'
+    );
+    expect(request.request.method).toBe('GET');
+    request.flush({ changes: history });
   });
 
   it('normalizes selection history', () => {

@@ -384,6 +384,27 @@
 
           <hai-progressive-section
             moduleId="workflow-engine"
+            sectionId="intake-outcome-criteria"
+            title="Outcome criteria"
+            summary="Optional, concrete conditions HAI should preserve when planning this workflow."
+          >
+            <label class="advanced-field" for="workflow-success-criteria">
+              <span>What must be true for this work to count as complete?</span>
+              <textarea
+                id="workflow-success-criteria"
+                nz-input
+                rows="3"
+                maxlength="5000"
+                formControlName="successCriteriaText"
+                aria-describedby="workflow-success-criteria-help"
+                placeholder="One condition per line, for example: Include the 19 March email and link its source."
+              ></textarea>
+              <small id="workflow-success-criteria-help">Each non-empty line is stored as a separate success criterion. HAI does not treat criteria as verified until evidence supports them.</small>
+            </label>
+          </hai-progressive-section>
+
+          <hai-progressive-section
+            moduleId="workflow-engine"
             sectionId="intake-provenance"
             title="Source provenance"
             summary="Source IDs, links, sender, and trigger metadata."

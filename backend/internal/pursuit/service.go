@@ -219,6 +219,7 @@ type AutoLinkResult struct {
 type IntakeRequest struct {
 	OwnerIdentity    string                              `json:"-"`
 	Input            string                              `json:"input"`
+	SuccessCriteria  []string                            `json:"successCriteria,omitempty"`
 	ProjectKey       string                              `json:"projectKey,omitempty"`
 	ProjectKeyHint   string                              `json:"projectKeyHint,omitempty"`
 	AutomationID     string                              `json:"automationId,omitempty"`
@@ -2481,23 +2482,24 @@ func (s *service) RouteIntake(request IntakeRequest) (*RoutedIntakeResult, error
 	reviewRequired := request.RequiresReview || candidateEligible || strings.EqualFold(classifyRisk(request.Input+" "+request.SourceLabel+" "+request.SourceType), "high")
 	reviewReason := firstNonEmpty(request.ReviewReason, routedIntakeReviewReason(reviewRequired, request))
 	record, err := s.workflowService.Intake(workflow.IntakeRequest{
-		OwnerIdentity:  request.OwnerIdentity,
-		Input:          request.Input,
-		ProjectKey:     request.ProjectKey,
-		ProjectKeyHint: request.ProjectKeyHint,
-		AutomationID:   request.AutomationID,
-		MandateID:      request.MandateID,
-		SourceType:     request.SourceType,
-		SourceID:       request.SourceID,
-		SourceURI:      request.SourceURI,
-		SourceLabel:    request.SourceLabel,
-		ContentType:    request.ContentType,
-		Sender:         request.Sender,
-		ReceivedAt:     request.ReceivedAt,
-		Trigger:        firstNonEmpty(request.Trigger, "pursuit_global_intake"),
-		Actor:          actor,
-		RequiresReview: reviewRequired,
-		ReviewReason:   reviewReason,
+		OwnerIdentity:   request.OwnerIdentity,
+		Input:           request.Input,
+		SuccessCriteria: append([]string(nil), request.SuccessCriteria...),
+		ProjectKey:      request.ProjectKey,
+		ProjectKeyHint:  request.ProjectKeyHint,
+		AutomationID:    request.AutomationID,
+		MandateID:       request.MandateID,
+		SourceType:      request.SourceType,
+		SourceID:        request.SourceID,
+		SourceURI:       request.SourceURI,
+		SourceLabel:     request.SourceLabel,
+		ContentType:     request.ContentType,
+		Sender:          request.Sender,
+		ReceivedAt:      request.ReceivedAt,
+		Trigger:         firstNonEmpty(request.Trigger, "pursuit_global_intake"),
+		Actor:           actor,
+		RequiresReview:  reviewRequired,
+		ReviewReason:    reviewReason,
 	})
 	if err != nil {
 		return nil, err
@@ -2793,25 +2795,26 @@ func workflowIDForSource(detail *PursuitDetail, sourceType, sourceID, sourceURI 
 // explicit pursuit acceptance before any workflow record may exist.
 func (s *service) RouteWorkflowIntake(request workflow.IntakeRequest) (*workflow.WorkflowRecord, error) {
 	routed, err := s.RouteIntake(IntakeRequest{
-		OwnerIdentity:  request.OwnerIdentity,
-		Input:          request.Input,
-		ProjectKey:     request.ProjectKey,
-		ProjectKeyHint: request.ProjectKeyHint,
-		AutomationID:   request.AutomationID,
-		MandateID:      request.MandateID,
-		SourceType:     request.SourceType,
-		SourceID:       request.SourceID,
-		RawItemID:      request.RawItemID,
-		ExtractionID:   request.ExtractionID,
-		SourceURI:      request.SourceURI,
-		SourceLabel:    request.SourceLabel,
-		ContentType:    request.ContentType,
-		Sender:         request.Sender,
-		ReceivedAt:     request.ReceivedAt,
-		Trigger:        request.Trigger,
-		Actor:          request.Actor,
-		RequiresReview: request.RequiresReview,
-		ReviewReason:   request.ReviewReason,
+		OwnerIdentity:   request.OwnerIdentity,
+		Input:           request.Input,
+		SuccessCriteria: append([]string(nil), request.SuccessCriteria...),
+		ProjectKey:      request.ProjectKey,
+		ProjectKeyHint:  request.ProjectKeyHint,
+		AutomationID:    request.AutomationID,
+		MandateID:       request.MandateID,
+		SourceType:      request.SourceType,
+		SourceID:        request.SourceID,
+		RawItemID:       request.RawItemID,
+		ExtractionID:    request.ExtractionID,
+		SourceURI:       request.SourceURI,
+		SourceLabel:     request.SourceLabel,
+		ContentType:     request.ContentType,
+		Sender:          request.Sender,
+		ReceivedAt:      request.ReceivedAt,
+		Trigger:         request.Trigger,
+		Actor:           request.Actor,
+		RequiresReview:  request.RequiresReview,
+		ReviewReason:    request.ReviewReason,
 	})
 	if err != nil {
 		return nil, err
@@ -3153,6 +3156,7 @@ func (s *service) IntakeForOwner(ownerIdentity string, id uuid.UUID, request Int
 	record, err := s.workflowService.Intake(workflow.IntakeRequest{
 		OwnerIdentity:    effectiveOwner,
 		Input:            request.Input,
+		SuccessCriteria:  append([]string(nil), request.SuccessCriteria...),
 		ProjectKey:       firstNonEmpty(request.ProjectKey, pursuit.ProjectKey),
 		ProjectKeyHint:   request.ProjectKeyHint,
 		AutomationID:     request.AutomationID,

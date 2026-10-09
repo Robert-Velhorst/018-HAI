@@ -23,6 +23,7 @@ import {
   IConstitutionHistoryEntry,
   IFrameworkFamilyTaxonomy,
   IFrameworkPreferencePatch,
+  IFrameworkPreferenceChange,
   IFrameworkRegistryOverview,
   IFrameworkSelectionDecision,
   IFrameworkSelectionRequest,
@@ -118,9 +119,13 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   inspectorError = '';
   selectedFramework?: IFrameworkView;
   preferenceSaving = false;
+  preferenceHistory: IFrameworkPreferenceChange[] = [];
+  preferenceHistoryLoading = false;
+  preferenceHistoryError = '';
   private inspectorReturnFocus?: HTMLElement;
   private inspectedFrameworkId = '';
   private inspectorSubscription?: Subscription;
+  private preferenceHistorySubscription?: Subscription;
   private refreshSubscription?: Subscription;
   private overviewSubscription?: Subscription;
   private familyTaxonomySubscription?: Subscription;
@@ -183,6 +188,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.refreshSubscription?.unsubscribe();
     this.inspectorSubscription?.unsubscribe();
+    this.preferenceHistorySubscription?.unsubscribe();
     this.overviewSubscription?.unsubscribe();
     this.familyTaxonomySubscription?.unsubscribe();
     this.destroy$.next();
@@ -538,6 +544,8 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     this.inspectorLoading = true;
     this.inspectorError = '';
     this.selectedFramework = undefined;
+    this.preferenceHistory = [];
+    this.preferenceHistoryError = '';
     this.inspectorSubscription?.unsubscribe();
 
     this.inspectorSubscription = this.service.framework(normalizedId).pipe(
@@ -556,6 +564,26 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
         this.notification.error('Framework could not be opened', this.inspectorError);
       },
     });
+    this.loadPreferenceHistory(normalizedId);
+  }
+
+  loadPreferenceHistory(frameworkId = this.inspectedFrameworkId): void {
+    if (!frameworkId) return;
+    this.preferenceHistorySubscription?.unsubscribe();
+    this.preferenceHistoryLoading = true;
+    this.preferenceHistoryError = '';
+    this.preferenceHistorySubscription = this.service.preferenceHistory(frameworkId).pipe(
+      takeUntil(this.destroy$),
+      finalize(() => (this.preferenceHistoryLoading = false))
+    ).subscribe({
+      next: changes => {
+        if (this.inspectedFrameworkId === frameworkId) this.preferenceHistory = changes;
+      },
+      error: error => {
+        if (this.inspectedFrameworkId !== frameworkId) return;
+        this.preferenceHistoryError = this.errorMessage(error, 'Framework preference history is unavailable.');
+      },
+    });
   }
 
   retryFrameworkInspector(): void {
@@ -567,10 +595,14 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   closeInspector(): void {
     const returnFocus = this.inspectorReturnFocus;
     this.inspectorSubscription?.unsubscribe();
+    this.preferenceHistorySubscription?.unsubscribe();
+    this.preferenceHistorySubscription = undefined;
     this.inspectorSubscription = undefined;
     this.inspectorVisible = false;
     this.inspectorLoading = false;
     this.selectedFramework = undefined;
+    this.preferenceHistory = [];
+    this.preferenceHistoryError = '';
     this.inspectorError = '';
     this.inspectedFrameworkId = '';
     this.inspectorReturnFocus = undefined;
@@ -622,6 +654,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
           framework.id === updated.id ? updated : framework
         );
         this.notification.success('Preference saved', `${updated.name} was updated for this owner.`);
+        this.loadPreferenceHistory(updated.id);
         this.refreshOverview();
       },
       error: (error: unknown) => {

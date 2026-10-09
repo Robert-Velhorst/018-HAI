@@ -191,6 +191,8 @@ func TestGovernanceMigrationTailPreservesSemanticUpgradeOrder(t *testing.T) {
 		"0113_operation_source_heads",
 		"0114_operation_source_configuration",
 		"0115_durable_job_replay_policy",
+		"0116_workflow_success_criteria",
+		"0117_framework_preference_change_history",
 	}
 	entries, err := fs.ReadDir(Files, "pre")
 	if err != nil {

@@ -1158,6 +1158,7 @@ func initializeFrameworkRegistryRoutes(apiVersion *gin.RouterGroup, handler *fra
 		routes.GET("/frameworks/:id", requirePermission(rbac.PermRead), handler.Get)
 		routes.POST("/select", requirePermission(rbac.PermWrite), handler.Select)
 		routes.PATCH("/frameworks/:id/preference", requirePermission(rbac.PermAdmin), handler.UpdatePreference)
+		routes.GET("/frameworks/:id/preference-history", requirePermission(rbac.PermRead), handler.PreferenceHistory)
 		routes.GET("/selections", requirePermission(rbac.PermRead), handler.Selections)
 		routes.GET("/constitution", requirePermission(rbac.PermRead), handler.Constitution)
 		routes.GET("/constitution/history", requirePermission(rbac.PermRead), handler.ConstitutionHistory)

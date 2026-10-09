@@ -877,6 +877,38 @@
         (retry)="retryFrameworkInspector()"
         (save)="savePreference()"
       ></app-framework-registry-inspector>
+      <hai-progressive-section
+        moduleId="framework-registry"
+        sectionId="framework-preference-history"
+        title="Preference change history"
+        summary="Owner-scoped, append-only record of changes to this framework."
+      >
+        <div class="selection-error" role="alert" *ngIf="preferenceHistoryError">
+          <span>{{ preferenceHistoryError }}</span>
+          <button nz-button type="button" (click)="loadPreferenceHistory()" [disabled]="preferenceHistoryLoading">Retry</button>
+        </div>
+        <p *ngIf="preferenceHistoryLoading" role="status">Loading preference history…</p>
+        <p *ngIf="!preferenceHistoryLoading && !preferenceHistoryError && !preferenceHistory.length">No preference changes recorded.</p>
+        <ol class="preference-history" *ngIf="preferenceHistory.length">
+          <li *ngFor="let change of preferenceHistory">
+            <div class="preference-history__heading">
+              <strong>{{ change.reason }}</strong>
+              <time [attr.datetime]="change.occurredAt">{{ change.occurredAt | date: 'medium' }}</time>
+            </div>
+            <p>Change {{ change.sequence }} · {{ change.actor }}</p>
+            <details>
+              <summary>Inspect recorded state</summary>
+              <strong>Before</strong>
+              <pre *ngIf="change.before; else noPriorPreference">{{ change.before | json }}</pre>
+              <ng-template #noPriorPreference><p>No prior owner preference was recorded.</p></ng-template>
+              <strong>After</strong>
+              <pre>{{ change.after | json }}</pre>
+              <small>Digest: {{ change.eventDigest }}</small>
+              <small *ngIf="change.previousEventDigest">Previous event: {{ change.previousEventDigest }}</small>
+            </details>
+          </li>
+        </ol>
+      </hai-progressive-section>
     </ng-container>
   </nz-drawer>
 </section>

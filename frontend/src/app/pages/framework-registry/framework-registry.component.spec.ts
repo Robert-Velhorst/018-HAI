@@ -150,6 +150,7 @@ describe('FrameworkRegistryComponent', () => {
       'framework',
       'select',
       'updatePreference',
+      'preferenceHistory',
       'selections',
       'constitution',
       'constitutionHistory',
@@ -193,6 +194,7 @@ describe('FrameworkRegistryComponent', () => {
     }));
     service.select.and.returnValue(of(selection));
     service.updatePreference.and.returnValue(of(framework));
+    service.preferenceHistory.and.returnValue(of([]));
     service.createConstitutionDraft.and.returnValue(of({ ...constitution, id: 'draft-2', version: 2, status: 'draft' }));
     service.activateConstitution.and.returnValue(of({ ...constitution, version: 2 }));
 
@@ -644,6 +646,25 @@ describe('FrameworkRegistryComponent', () => {
     expect(service.framework).toHaveBeenCalledWith(framework.id);
     expect(component.selectedFramework).toBe(framework);
     expect(component.inspectorVisible).toBeTrue();
+    expect(service.preferenceHistory).toHaveBeenCalledWith(framework.id);
+  });
+
+  it('keeps preference-history load errors distinct from an empty history and supports retry', () => {
+    service.preferenceHistory.and.returnValues(
+      throwError(() => new HttpErrorResponse({ status: 503 })),
+      of([])
+    );
+
+    component.openFrameworkById(framework.id);
+
+    expect(component.preferenceHistoryError).toBe('Framework preference history is unavailable.');
+    expect(component.preferenceHistory).toEqual([]);
+
+    component.loadPreferenceHistory();
+
+    expect(component.preferenceHistoryError).toBe('');
+    expect(component.preferenceHistoryLoading).toBeFalse();
+    expect(service.preferenceHistory).toHaveBeenCalledTimes(2);
   });
 
   it('cancels an obsolete inspector request before applying a newer record', () => {

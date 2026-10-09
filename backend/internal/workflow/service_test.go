@@ -97,17 +97,21 @@ func TestIntakeCreatesApprovalGatedLegalWorkflow(t *testing.T) {
 	service := NewService(repo)
 
 	record, err := service.Intake(IntakeRequest{
-		Input:      "Email from lawyer about Vivare legal hearing tomorrow. Draft formal reply.",
-		ProjectKey: "Vivare dispute",
-		SourceType: "email",
-		SourceURI:  "mailto:lawyer@example.test",
-		Trigger:    "email.sync",
+		Input:           "Email from lawyer about Vivare legal hearing tomorrow. Draft formal reply.",
+		SuccessCriteria: []string{"Reply remains a draft", "Cite each attached source"},
+		ProjectKey:      "Vivare dispute",
+		SourceType:      "email",
+		SourceURI:       "mailto:lawyer@example.test",
+		Trigger:         "email.sync",
 	})
 	if err != nil {
 		t.Fatalf("Intake: %v", err)
 	}
 	if record.Item.CurrentState != StateNeedsApproval {
 		t.Fatalf("state = %q, want needs approval", record.Item.CurrentState)
+	}
+	if !reflect.DeepEqual(record.Item.SuccessCriteria, []string{"Reply remains a draft", "Cite each attached source"}) {
+		t.Fatalf("workflow success criteria = %#v", record.Item.SuccessCriteria)
 	}
 	if !record.Item.RequiresApproval {
 		t.Fatalf("expected approval requirement")

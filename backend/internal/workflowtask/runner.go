@@ -365,6 +365,7 @@ func (r *Runner) RunWorkflowTask(request workflow.TaskRunRequest) (*workflow.Tas
 		PursuitID:             request.PursuitID,
 		WorkflowID:            request.WorkflowID,
 		Request:               request.Request,
+		SuccessCriteria:       append([]string(nil), request.SuccessCriteria...),
 		ProjectKey:            request.ProjectKey,
 		AutomationID:          request.AutomationID,
 		MandateID:             request.MandateID,

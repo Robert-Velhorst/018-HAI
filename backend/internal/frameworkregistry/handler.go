@@ -148,6 +148,19 @@ func (h *Handler) UpdatePreference(c *gin.Context) {
 	respondFramework(c, result, err, http.StatusOK)
 }
 
+func (h *Handler) PreferenceHistory(c *gin.Context) {
+	owner, ok := frameworkOwner(c)
+	if !ok {
+		return
+	}
+	limit, ok := frameworkListLimit(c, "preference history", defaultHistoryLimit, maxHistoryLimit)
+	if !ok {
+		return
+	}
+	result, err := h.service.PreferenceHistory(owner, c.Param("id"), limit)
+	respondFramework(c, gin.H{"changes": result}, err, http.StatusOK)
+}
+
 func (h *Handler) Selections(c *gin.Context) {
 	owner, ok := frameworkOwner(c)
 	if !ok {

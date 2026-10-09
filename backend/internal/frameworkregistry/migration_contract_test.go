@@ -57,6 +57,59 @@ func TestFrameworkRegistryMigrationDeclaresVersionedImmutableConstitutionContrac
 	}
 }
 
+func TestFrameworkPreferenceChangeMigrationIsAppendOnlyAndReversibleOnlyWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	upBytes, err := migrations.Files.ReadFile("pre/0117_framework_preference_change_history.up.sql")
+	if err != nil {
+		t.Fatalf("read preference history up migration: %v", err)
+	}
+	downBytes, err := migrations.Files.ReadFile("pre/0117_framework_preference_change_history.down.sql")
+	if err != nil {
+		t.Fatalf("read preference history down migration: %v", err)
+	}
+	up := strings.ToLower(string(upBytes))
+	down := strings.ToLower(string(downBytes))
+	for _, fragment := range []string{
+		"unique (owner_identity, framework_id, sequence)",
+		"before_json jsonb",
+		"after_json jsonb not null",
+		"previous_event_digest character(64)",
+		"event_digest character(64) not null",
+		"before update or delete",
+		"before truncate",
+	} {
+		if !strings.Contains(up, fragment) {
+			t.Errorf("preference history migration is missing %q", fragment)
+		}
+	}
+	if !strings.Contains(down, "cannot drop framework preference change history while audit records exist") {
+		t.Error("preference history rollback could silently delete audit records")
+	}
+}
+
+func TestWorkflowSuccessCriteriaRollbackRefusesToDropStoredCriteria(t *testing.T) {
+	t.Parallel()
+
+	downBytes, err := migrations.Files.ReadFile("pre/0116_workflow_success_criteria.down.sql")
+	if err != nil {
+		t.Fatalf("read workflow criteria rollback: %v", err)
+	}
+	down := strings.ToLower(string(downBytes))
+	for _, fragment := range []string{
+		"where success_criteria is distinct from '[]'::jsonb",
+		"raise exception",
+		"drop column if exists success_criteria",
+	} {
+		if !strings.Contains(down, fragment) {
+			t.Errorf("workflow criteria rollback does not contain preservation guard %q", fragment)
+		}
+	}
+	if strings.Index(down, "raise exception") > strings.Index(down, "drop column") {
+		t.Fatal("workflow criteria rollback must check for user data before dropping its column")
+	}
+}
+
 func TestFrameworkSelectorV5MigrationRequiresRealOperatingDigest(t *testing.T) {
 	t.Parallel()
 

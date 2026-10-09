@@ -2,6 +2,7 @@ export interface IWorkflowItem {
   id: string;
   title: string;
   description?: string;
+  successCriteria?: string[];
   projectKey?: string;
   automationId?: string;
   mandateId?: string;
@@ -303,6 +304,7 @@ export interface IWorkflowRecord {
 
 export interface IWorkflowIntakeRequest {
   input: string;
+  successCriteria?: string[];
   projectKey?: string;
   automationId?: string;
   mandateId?: string;

@@ -129,6 +129,7 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
 
   intakeForm: FormGroup = this.fb.group({
     input: ['', [Validators.required, Validators.maxLength(4000)]],
+    successCriteriaText: ['', [Validators.maxLength(5000)]],
     projectKey: [''],
     automationId: [''],
     sourceType: ['manual'],
@@ -352,13 +353,19 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     if (this.destroyed || this.workerReviewRequired || this.intakeForm.invalid || this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
-    const request = { ...this.intakeForm.getRawValue() };
+    const formValue = this.intakeForm.getRawValue();
+    const { successCriteriaText, ...request } = formValue;
+    const successCriteria = String(successCriteriaText || '')
+      .split(/\r?\n/)
+      .map(value => value.trim())
+      .filter(Boolean);
+    if (successCriteria.length) request.successCriteria = successCriteria;
     if (typeof request.input !== 'string' || !request.input.trim()) return;
     const choice = this.selectedPursuitMatch;
     if (choice && (!this.pursuitMatches.includes(choice) || !this.validWorkerReference(choice.pursuit?.id))) return;
     const pursuitId = choice?.pursuit.id;
     const original = this.selected;
-    const snapshot = JSON.stringify(request);
+    const snapshot = JSON.stringify(formValue);
     this.saving = true;
     this.lastIntakePursuitId = undefined;
     this.lastIntakeWorkflowId = undefined;

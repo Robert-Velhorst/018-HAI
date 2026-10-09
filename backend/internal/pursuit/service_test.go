@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -2004,12 +2005,13 @@ func TestRouteWorkflowIntakeStillRoutesByConfirmedProjectKey(t *testing.T) {
 	}
 
 	record, err := service.RouteWorkflowIntake(workflow.IntakeRequest{
-		OwnerIdentity: "alice",
-		Input:         "Prepare a tax receipt bundle for review.",
-		ProjectKey:    "confirmed-project",
-		SourceType:    "manual",
-		SourceID:      "confirmed-project-intake",
-		SourceURI:     "manual://intake/confirmed-project-intake",
+		OwnerIdentity:   "alice",
+		Input:           "Prepare a tax receipt bundle for review.",
+		SuccessCriteria: []string{"Include every linked receipt", "Do not submit externally"},
+		ProjectKey:      "confirmed-project",
+		SourceType:      "manual",
+		SourceID:        "confirmed-project-intake",
+		SourceURI:       "manual://intake/confirmed-project-intake",
 	})
 	if err != nil {
 		t.Fatalf("RouteWorkflowIntake returned error: %v", err)
@@ -2019,6 +2021,9 @@ func TestRouteWorkflowIntakeStillRoutesByConfirmedProjectKey(t *testing.T) {
 	}
 	if workflowService.received.ProjectKey != "confirmed-project" || record.Item.ProjectKey != "confirmed-project" {
 		t.Fatalf("confirmed project key changed during routing: request=%q record=%q", workflowService.received.ProjectKey, record.Item.ProjectKey)
+	}
+	if !reflect.DeepEqual(workflowService.received.SuccessCriteria, []string{"Include every linked receipt", "Do not submit externally"}) {
+		t.Fatalf("workflow success criteria were not preserved during pursuit routing: %#v", workflowService.received.SuccessCriteria)
 	}
 	if record.Item.ID == uuid.Nil || len(repo.pursuits) != 1 || repo.pursuits[confirmed.ID].ProjectKey != "confirmed-project" {
 		t.Fatalf("confirmed routing unexpectedly changed pursuits: workflows=%#v pursuits=%#v", repo.workflows, repo.pursuits)
@@ -6056,12 +6061,12 @@ func (r *fakeRepo) FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launc
 type fakeWorkflowIntake struct {
 	missingRecord bool
 	zeroID        bool
-	received     workflow.IntakeRequest
-	calls        int
-	lastGetOwner string
-	records      map[uuid.UUID]*workflow.WorkflowRecord
-	repo         *fakeRepo
-	err          error
+	received      workflow.IntakeRequest
+	calls         int
+	lastGetOwner  string
+	records       map[uuid.UUID]*workflow.WorkflowRecord
+	repo          *fakeRepo
+	err           error
 }
 
 func (f *fakeWorkflowIntake) Intake(request workflow.IntakeRequest) (*workflow.WorkflowRecord, error) {

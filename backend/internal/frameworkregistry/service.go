@@ -23,6 +23,8 @@ const (
 type Repository interface {
 	ListPreferences(owner string) ([]Preference, error)
 	UpsertPreference(owner string, preference Preference) (*Preference, error)
+	UpsertPreferenceWithEvent(owner, actor, reason string, preference Preference) (*Preference, error)
+	ListPreferenceHistory(owner, frameworkID string, limit int) ([]PreferenceChangeEvent, error)
 	CreateSelection(owner string, decision SelectionDecision, requestHash, requestSummary string) error
 	GetSelection(context.Context, string, string) (*SelectionDecision, error)
 	ListSelections(owner string, limit int) ([]SelectionDecision, error)
@@ -156,6 +158,24 @@ func applyPreference(framework Framework, preference Preference) FrameworkView {
 	return view
 }
 
+func (s *Service) PreferenceHistory(owner, frameworkID string, limit int) ([]PreferenceChangeEvent, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return nil, fmt.Errorf("owner identity is required")
+	}
+	view, err := s.Get(owner, frameworkID)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = defaultHistoryLimit
+	}
+	if limit > maxHistoryLimit {
+		limit = maxHistoryLimit
+	}
+	return s.repo.ListPreferenceHistory(owner, view.ID, limit)
+}
+
 func (s *Service) UpdatePreference(owner, frameworkID string, patch PreferencePatch) (*FrameworkView, error) {
 	owner = strings.TrimSpace(owner)
 	if owner == "" {
@@ -210,7 +230,14 @@ func (s *Service) UpdatePreference(owner, frameworkID string, patch PreferencePa
 	if patch.Pinned != nil {
 		pinned = *patch.Pinned
 	}
-	preference, err := s.repo.UpsertPreference(owner, Preference{
+	reason := strings.Join(strings.Fields(strings.TrimSpace(safety.RedactSecrets(patch.Reason))), " ")
+	if reason == "" {
+		reason = "operator updated framework preference"
+	}
+	if len([]rune(reason)) > 1024 {
+		return nil, fmt.Errorf("preference change reason may contain at most 1024 characters")
+	}
+	preference, err := s.repo.UpsertPreferenceWithEvent(owner, owner, reason, Preference{
 		FrameworkID:          view.ID,
 		State:                state,
 		Pinned:               pinned,

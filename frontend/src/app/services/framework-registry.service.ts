@@ -12,6 +12,7 @@ import {
   IFrameworkFamilyRecord,
   IFrameworkFamilyTaxonomy,
   IFrameworkPreferencePatch,
+  IFrameworkPreferenceChange,
   IFrameworkRegistryOverview,
   IFrameworkSelectionDecision,
   IFrameworkSelectionRequest,
@@ -34,6 +35,8 @@ type SelectionResponse =
 type SelectionListResponse =
   | IFrameworkSelectionDecision[]
   | { selections: IFrameworkSelectionDecision[] };
+
+type PreferenceHistoryResponse = IFrameworkPreferenceChange[] | { changes: IFrameworkPreferenceChange[] };
 
 type ActiveConstitutionResponse =
   | IConstitution
@@ -104,6 +107,14 @@ export class FrameworkRegistryService {
         'framework preference'
       ))
     );
+  }
+
+  preferenceHistory(id: string, limit = 50): Observable<IFrameworkPreferenceChange[]> {
+    const boundedLimit = Number.isInteger(limit) && limit > 0 && limit <= 100 ? limit : 50;
+    return this.http.get<PreferenceHistoryResponse>(
+      `${this.apiUrl}/frameworks/${encodeURIComponent(id)}/preference-history`,
+      { params: new HttpParams().set('limit', boundedLimit) }
+    ).pipe(map(response => this.normalizePreferenceHistory(response)));
   }
 
   selections(): Observable<IFrameworkSelectionDecision[]> {
@@ -398,6 +409,50 @@ export class FrameworkRegistryService {
     return payload.map((entry, index) =>
       this.normalizeSelection(entry, `selection history item ${index + 1}`)
     );
+  }
+
+  private normalizePreferenceHistory(value: unknown): IFrameworkPreferenceChange[] {
+    const sanitized = this.sanitizeInbound(value) as unknown;
+    const payload = Array.isArray(sanitized)
+      ? sanitized
+      : this.isRecord(sanitized) ? sanitized['changes'] : undefined;
+    if (!Array.isArray(payload)) throw this.contractError('framework preference history');
+    return payload.map((entry, index) => {
+      const resource = `framework preference history item ${index + 1}`;
+      const record = this.requireRecord(entry, resource);
+      const result: IFrameworkPreferenceChange = {
+        id: this.requireString(record, 'id', resource),
+        sequence: this.requireInteger(record, 'sequence', resource, 1),
+        frameworkId: this.requireString(record, 'frameworkId', resource),
+        actor: this.requireString(record, 'actor', resource),
+        reason: this.requireString(record, 'reason', resource),
+        after: this.normalizePreferenceSnapshot(record['after'], `${resource} after`),
+        occurredAt: this.requireDateString(record, 'occurredAt', resource),
+        eventDigest: this.requireDigest(record, 'eventDigest', resource),
+      };
+      if (record['before'] !== undefined && record['before'] !== null) {
+        result.before = this.normalizePreferenceSnapshot(record['before'], `${resource} before`);
+      }
+      if (record['previousEventDigest'] !== undefined && record['previousEventDigest'] !== '') {
+        result.previousEventDigest = this.requireDigest(record, 'previousEventDigest', resource);
+      }
+      return result;
+    });
+  }
+
+  private normalizePreferenceSnapshot(value: unknown, resource: string): IFrameworkPreference {
+    const record = this.requireRecord(value, resource);
+    const result: IFrameworkPreference = {
+      frameworkId: this.requireString(record, 'frameworkId', resource),
+      state: this.requireEnum(record, 'state', resource, ['default', 'enabled', 'disabled'] as const),
+      pinned: this.requireBoolean(record, 'pinned', resource),
+      adaptations: this.requireStringArray(record, 'adaptations', resource),
+      updatedAt: this.requireDateString(record, 'updatedAt', resource),
+    };
+    if (record['maximumAutonomyLevel'] !== undefined && record['maximumAutonomyLevel'] !== null) {
+      result.maximumAutonomyLevel = this.requireInteger(record, 'maximumAutonomyLevel', resource, 0, 10);
+    }
+    return result;
   }
 
   private normalizeSelection(

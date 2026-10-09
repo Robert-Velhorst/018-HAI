@@ -2,6 +2,7 @@ package workflowtask
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -345,6 +346,7 @@ func TestRunnerPassesPursuitAndWorkflowContextToTaskEngine(t *testing.T) {
 		PursuitID:             "pursuit-1",
 		WorkflowID:            "workflow-1",
 		Request:               "Advance the governed workflow.",
+		SuccessCriteria:       []string{"Only use linked evidence", "Leave external messages as drafts"},
 		ProjectKey:            "018-hai",
 		RiskLevel:             "medium",
 		MandateID:             mandateID,
@@ -363,6 +365,9 @@ func TestRunnerPassesPursuitAndWorkflowContextToTaskEngine(t *testing.T) {
 	if tasks.request.PursuitID != "pursuit-1" || tasks.request.WorkflowID != "workflow-1" || tasks.request.OwnerIdentity != "alice" ||
 		tasks.request.IdempotencyKey != "workflow:workflow-1:approval:"+approvalSourceID {
 		t.Fatalf("task context = %#v", tasks.request)
+	}
+	if !reflect.DeepEqual(tasks.request.SuccessCriteria, []string{"Only use linked evidence", "Leave external messages as drafts"}) {
+		t.Fatalf("workflow success criteria were not delegated: %#v", tasks.request.SuccessCriteria)
 	}
 	if !tasks.request.HumanApproved || tasks.request.ApprovalSourceID != approvalSourceID {
 		t.Fatalf("workflow approval provenance was not delegated intact: %#v", tasks.request)

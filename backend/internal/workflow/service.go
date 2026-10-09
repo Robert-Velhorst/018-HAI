@@ -114,6 +114,7 @@ func workflowAuditPersistenceFailure(operation string, err error) error {
 type IntakeRequest struct {
 	OwnerIdentity            string                              `json:"-"`
 	Input                    string                              `json:"input"`
+	SuccessCriteria          []string                            `json:"successCriteria,omitempty"`
 	ProjectKey               string                              `json:"projectKey,omitempty"`
 	ProjectKeyHint           string                              `json:"projectKeyHint,omitempty"`
 	AutomationID             string                              `json:"automationId,omitempty"`
@@ -181,6 +182,7 @@ type TaskRunRequest struct {
 	PursuitID             string                              `json:"pursuitId,omitempty"`
 	WorkflowID            string                              `json:"workflowId"`
 	Request               string                              `json:"request"`
+	SuccessCriteria       []string                            `json:"successCriteria,omitempty"`
 	ProjectKey            string                              `json:"projectKey,omitempty"`
 	AutomationID          string                              `json:"automationId,omitempty"`
 	MandateID             string                              `json:"-"`
@@ -632,7 +634,11 @@ func (s *service) Intake(request IntakeRequest) (*WorkflowRecord, error) {
 	if input == "" {
 		return nil, fmt.Errorf("input is required")
 	}
-	var err error
+	successCriteria, err := normalizeWorkflowSuccessCriteria(request.SuccessCriteria)
+	if err != nil {
+		return nil, err
+	}
+	request.SuccessCriteria = successCriteria
 	coordinationBinding := request.resolvedCoordinationPlan
 	if coordinationBinding == nil {
 		coordinationBinding, err = s.resolveAcceptedCoordinationPlan(request.OwnerIdentity, request.CoordinationPlan)
@@ -759,6 +765,7 @@ func (s *service) Intake(request IntakeRequest) (*WorkflowRecord, error) {
 		OwnerIdentity:    strings.TrimSpace(request.OwnerIdentity),
 		Title:            analysis.title,
 		Description:      input,
+		SuccessCriteria:  append([]string(nil), request.SuccessCriteria...),
 		ProjectKey:       projectKey,
 		AutomationID:     strings.TrimSpace(request.AutomationID),
 		MandateID:        mandateID,
@@ -3173,6 +3180,7 @@ func (s *service) runWorkflowItem(ctx context.Context, item models.WorkflowItem,
 		PursuitID:             pursuitID,
 		WorkflowID:            item.ID.String(),
 		Request:               item.Description,
+		SuccessCriteria:       append([]string(nil), item.SuccessCriteria...),
 		ProjectKey:            item.ProjectKey,
 		AutomationID:          item.AutomationID,
 		MandateID:             uuidPointerString(item.MandateID),
@@ -5212,6 +5220,7 @@ func workflowSourceRevision(request IntakeRequest, input string, selectionContex
 		strings.TrimSpace(request.MandateID),
 		fmt.Sprintf("%t", request.RequiresReview),
 		strings.TrimSpace(request.ReviewReason),
+		strings.Join(request.SuccessCriteria, "\x1d"),
 		request.CoordinationPlan.PlanID.String(),
 		fmt.Sprintf("%d", request.CoordinationPlan.Revision),
 		strings.ToLower(strings.TrimSpace(request.CoordinationPlan.Digest)),
@@ -5220,6 +5229,24 @@ func workflowSourceRevision(request IntakeRequest, input string, selectionContex
 	}, "\x1f")
 	sum := sha256.Sum256([]byte(canonical))
 	return fmt.Sprintf("%x", sum)
+}
+
+func normalizeWorkflowSuccessCriteria(criteria []string) ([]string, error) {
+	if len(criteria) > 50 {
+		return nil, fmt.Errorf("success criteria may contain at most 50 items")
+	}
+	result := make([]string, len(criteria))
+	for index, criterion := range criteria {
+		criterion = strings.TrimSpace(criterion)
+		if criterion == "" {
+			return nil, fmt.Errorf("success criterion %d is empty", index+1)
+		}
+		if len([]rune(criterion)) > 1000 {
+			return nil, fmt.Errorf("success criterion %d exceeds 1000 characters", index+1)
+		}
+		result[index] = criterion
+	}
+	return result, nil
 }
 
 func compactTitle(value string) string {

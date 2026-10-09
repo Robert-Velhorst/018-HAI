@@ -59,6 +59,17 @@
   line-height: 1.4;
 }
 
+.advanced-field {
+  display: grid;
+  gap: 7px;
+  max-width: 760px;
+
+  > span {
+    font-size: 13px;
+    font-weight: 700;
+  }
+}
+
 .checklist-error {
   margin-top: 4px;
 }

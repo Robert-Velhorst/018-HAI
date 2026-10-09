@@ -281,6 +281,7 @@ describe('WorkflowEngineComponent', () => {
 
     expect(component.intakeForm.value).toEqual({
       input: '',
+      successCriteriaText: '',
       projectKey: '',
       automationId: '',
       sourceType: 'manual',
@@ -292,6 +293,27 @@ describe('WorkflowEngineComponent', () => {
       trigger: 'manual_intake',
     });
     expect(component.intakeForm.invalid).toBeTrue();
+  });
+
+  it('routes explicitly entered outcome criteria as separate success criteria', () => {
+    const { component, pursuitService } = createComponent();
+    component.intakeForm.patchValue({
+      input: 'Prepare the evidence bundle',
+      successCriteriaText: ' Include the March 19 email. \n\nLink every item to its source.  ',
+    });
+    pursuitService.routeIntake.and.returnValue(of({
+      mode: 'candidate_created', matched: false, createdCandidate: true,
+      pursuitId: '11111111-1111-4111-8111-111111111111', matches: [],
+    }));
+
+    component.intake();
+
+    expect(pursuitService.routeIntake).toHaveBeenCalledWith(jasmine.objectContaining({
+      successCriteria: ['Include the March 19 email.', 'Link every item to its source.'],
+    }));
+    expect(pursuitService.routeIntake.calls.mostRecent().args[0]).not.toEqual(
+      jasmine.objectContaining({ successCriteriaText: jasmine.anything() })
+    );
   });
 
   it('accepts only current non-executing reminder snapshots with exact unique items', () => {
