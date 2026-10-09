@@ -15,10 +15,20 @@ GITLEAKS_MODULE = "github.com/gitleaks/gitleaks/v8@v8.30.1"
 
 
 def _safe_finding_summary(stdout: str) -> list[str] | None:
-    try:
-        findings = json.loads(stdout)
-    except (TypeError, json.JSONDecodeError):
+    if not isinstance(stdout, str):
         return None
+    candidates = [stdout.strip()]
+    first_array = stdout.find("[")
+    last_array = stdout.rfind("]")
+    if first_array >= 0 and last_array > first_array:
+        candidates.append(stdout[first_array : last_array + 1])
+    findings = None
+    for candidate in candidates:
+        try:
+            findings = json.loads(candidate)
+            break
+        except json.JSONDecodeError:
+            continue
     if not isinstance(findings, list):
         return None
     lines = [f"Secret scan found {len(findings)} candidate(s); values are redacted."]
