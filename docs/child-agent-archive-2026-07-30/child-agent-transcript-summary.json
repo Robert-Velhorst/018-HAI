@@ -1,0 +1,21 @@
+{
+  "generated_at_utc": "2026-10-09T21:58:32.6259284Z",
+  "root_session_id": "019e7acc-44f2-7c90-a04e-253f6d43df28",
+  "audited_transcripts": 18,
+  "unique_child_ids": 16,
+  "duplicate_child_ids": 2,
+  "completed_transcripts": 9,
+  "cleanup_candidate_transcripts": 8,
+  "candidate_transcripts_hashed": 8,
+  "candidate_hashing_requested": true,
+  "retained_transcripts": 10,
+  "cleanup_candidate_logical_bytes": 7939888699,
+  "cleanup_candidate_allocated_bytes": 7939888699,
+  "completed_logical_bytes": 9543740426,
+  "completed_allocated_bytes": 9543740426,
+  "retained_logical_bytes": 12799280423,
+  "retained_allocated_bytes": 12799280423,
+  "completed_reports_file": "child-agent-final-reports.md",
+  "manifest_file": "child-agent-transcript-manifest.csv",
+  "deletion_performed": false
+}

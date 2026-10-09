@@ -3,7 +3,8 @@ param(
     [string]$EnvFile = ".env.local",
     [string]$OutputDirectory = "backups",
     [switch]$ValidateOnly,
-    [string]$RecoveryResourceManifest
+    [string]$RecoveryResourceManifest,
+    [switch]$LibraryOnly
 )
 
 function Get-HaiWindowsUserSid {
@@ -363,20 +364,47 @@ function Assert-HaiOptionalRecoveryAssetsAbsent([string[]]$VolumeNames, [string]
     if (@($VolumeNames | Where-Object { [string]$_ -ceq $temporalVolume }).Count -gt 0) {
         throw 'Temporal persistence volume exists, but this recovery format cannot safely archive and restore it; no complete backup may be created.'
     }
+    $coveredVolumes = @(
+        [pscustomobject][ordered]@{ volume = '018-hai-postgres-automation-data'; artifact = 'automation.dump' }
+        [pscustomobject][ordered]@{ volume = '018-hai-postgres-idp-data'; artifact = 'identity.dump' }
+        [pscustomobject][ordered]@{ volume = '018-hai-phase2-control-state'; artifact = 'phase2-control-state.tar.gz' }
+    )
+    $coveredNames = @($coveredVolumes | ForEach-Object { $_.volume })
+    $uncoveredVolumes = @(
+        $VolumeNames | Where-Object {
+            ([string]$_).StartsWith('018-hai-', [StringComparison]::Ordinal) -and
+            [string]$_ -cnotin $coveredNames
+        } | Sort-Object -Unique
+    )
+    if ($uncoveredVolumes.Count -gt 0) {
+        throw "HAI persistent volume(s) are not included in this recovery format: $($uncoveredVolumes -join ', '). No complete backup may be created or these volumes removed."
+    }
+    foreach ($volume in $coveredVolumes) {
+        $volume | Add-Member -NotePropertyName state -NotePropertyValue $(if (@($VolumeNames | Where-Object { [string]$_ -ceq $volume.volume }).Count -gt 0) { 'present' } else { 'absent' })
+    }
     return [pscustomobject][ordered]@{
-        contract = 'hai-extended-recovery.v1'
+        contract = 'hai-extended-recovery.v2'
         temporal = [pscustomobject][ordered]@{ state = 'absent'; volume = $temporalVolume }
         openClawManagedArchives = [pscustomobject][ordered]@{
             state = Get-HaiOpenClawManagedStoreState $OpenClawStorePath
             path = 'agent-workspaces/.hai-openclaw-ecosystem'
         }
+        haiVolumes = $coveredVolumes
     }
 }
 
 function Assert-HaiExtendedRecoveryCoverage($Coverage) {
-    if ($null -eq $Coverage -or $Coverage.contract -cne 'hai-extended-recovery.v1' -or
-        @($Coverage.PSObject.Properties.Name | Where-Object { $_ -cnotin @('contract', 'temporal', 'openClawManagedArchives') }).Count -gt 0 -or
-        @($Coverage.PSObject.Properties.Name).Count -ne 3) {
+    $contract = if ($null -eq $Coverage) { '' } else { [string]$Coverage.contract }
+    $expectedProperties = if ($contract -ceq 'hai-extended-recovery.v1') {
+        @('contract', 'temporal', 'openClawManagedArchives')
+    } elseif ($contract -ceq 'hai-extended-recovery.v2') {
+        @('contract', 'temporal', 'openClawManagedArchives', 'haiVolumes')
+    } else {
+        @()
+    }
+    if ($null -eq $Coverage -or $expectedProperties.Count -eq 0 -or
+        @($Coverage.PSObject.Properties.Name | Where-Object { $_ -cnotin $expectedProperties }).Count -gt 0 -or
+        @($Coverage.PSObject.Properties.Name).Count -ne $expectedProperties.Count) {
         throw 'Backup lacks explicit optional recovery coverage; it is incomplete and must not be restored.'
     }
     $temporal = $Coverage.temporal
@@ -390,6 +418,29 @@ function Assert-HaiExtendedRecoveryCoverage($Coverage) {
         @($openClaw.PSObject.Properties.Name).Count -ne 2 -or $openClaw.state -notin @('absent', 'empty') -or
         $openClaw.path -cne 'agent-workspaces/.hai-openclaw-ecosystem') {
         throw 'Backup contains unsupported or ambiguous OpenClaw archive recovery state; refusing to treat it as complete.'
+    }
+    if ($contract -ceq 'hai-extended-recovery.v2') {
+        $expectedVolumes = @{
+            '018-hai-postgres-automation-data' = 'automation.dump'
+            '018-hai-postgres-idp-data' = 'identity.dump'
+            '018-hai-phase2-control-state' = 'phase2-control-state.tar.gz'
+        }
+        if (@($Coverage.haiVolumes).Count -ne $expectedVolumes.Count) {
+            throw 'Backup contains incomplete or ambiguous HAI persistent-volume coverage.'
+        }
+        foreach ($volume in @($Coverage.haiVolumes)) {
+            if (@($volume.PSObject.Properties.Name | Where-Object { $_ -cnotin @('volume', 'artifact', 'state') }).Count -gt 0 -or
+                @($volume.PSObject.Properties.Name).Count -ne 3 -or
+                -not $expectedVolumes.ContainsKey([string]$volume.volume) -or
+                $volume.artifact -cne $expectedVolumes[[string]$volume.volume] -or
+                $volume.state -notin @('present', 'absent')) {
+                throw 'Backup contains unsupported or ambiguous HAI persistent-volume coverage.'
+            }
+        }
+        if (@($Coverage.haiVolumes | Group-Object volume | Where-Object Count -ne 1).Count -gt 0 -or
+            @($Coverage.haiVolumes | Where-Object { $_.state -eq 'present' -and $_.volume -eq '018-hai-phase2-control-state' }).Count -ne 1) {
+            throw 'Backup contains duplicate HAI volume coverage or omits the required safety-control volume.'
+        }
     }
 }
 
@@ -480,7 +531,7 @@ function Assert-HaiMediaContents($Archive, [string]$Directory) {
 }
 
 # Dot-sourcing imports only the evidence helpers, never backup operations.
-if ($MyInvocation.InvocationName -eq '.') { return }
+if ($LibraryOnly -or $MyInvocation.InvocationName -eq '.') { return }
 
 $ErrorActionPreference = "Stop"
 if ($PSBoundParameters.ContainsKey('RecoveryResourceManifest')) {
@@ -573,7 +624,7 @@ if ($LASTEXITCODE -ne 0) { throw "Safety control-state volume is unavailable: $c
 if ($LASTEXITCODE -ne 0) { throw "Local backend image is unavailable: $archiveImage. Run docker compose up --build first." }
 
 if ($ValidateOnly) {
-    Write-Host "Backup preflight passed for Compose, configured media, local image, safety volume, and absence of unsupported Temporal/OpenClaw recovery state. Database contents and safety documents have not been validated."
+    Write-Host "Backup preflight passed for Compose, configured media, local image, explicit HAI volume coverage, and absence of unsupported Temporal/OpenClaw recovery state. Database contents and safety documents have not been validated."
     return
 }
 

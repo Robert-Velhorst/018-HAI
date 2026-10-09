@@ -17,7 +17,7 @@ if ($PSBoundParameters.ContainsKey('RecoveryResourceManifest')) {
     $isolatedManifestPath = $RecoveryResourceManifest
     $isolatedValidateOnly = [bool]$ValidateOnly
     . (Join-Path $PSScriptRoot 'windows-recovery-contract.ps1')
-    . (Join-Path $PSScriptRoot 'backup-windows.ps1')
+    . (Join-Path $PSScriptRoot 'backup-windows.ps1') -LibraryOnly
     . (Join-Path $PSScriptRoot 'isolated-recovery-rehearsal.ps1')
     Invoke-HaiIsolatedRestore (Read-HaiIsolatedSelection $isolatedManifestPath) -ValidateOnly:$isolatedValidateOnly
     return
@@ -27,7 +27,7 @@ $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $compose = Join-Path $root "docker-compose.local.yml"
 $archiveImage = "018-hai-backend:local"
 . (Join-Path $PSScriptRoot "windows-recovery-contract.ps1")
-. (Join-Path $PSScriptRoot "backup-windows.ps1") -EnvFile $EnvFile -ValidateOnly:$ValidateOnly
+. (Join-Path $PSScriptRoot "backup-windows.ps1") -EnvFile $EnvFile -ValidateOnly:$ValidateOnly -LibraryOnly
 
 function Resolve-RepoPath([string]$Path) {
     if ([IO.Path]::IsPathRooted($Path)) { return [IO.Path]::GetFullPath($Path) }

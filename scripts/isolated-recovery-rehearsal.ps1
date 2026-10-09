@@ -462,7 +462,7 @@ if ($MyInvocation.InvocationName -eq '.') { return }
 $ErrorActionPreference = 'Stop'
 $requestedManifest = $RecoveryResourceManifest
 . (Join-Path $PSScriptRoot 'windows-recovery-contract.ps1')
-. (Join-Path $PSScriptRoot 'backup-windows.ps1')
+. (Join-Path $PSScriptRoot 'backup-windows.ps1') -LibraryOnly
 if ($Action -eq 'Prepare') {
     if ($requestedManifest) { throw 'Prepare always generates a fresh owner/project; caller manifest reuse is forbidden.' }
     $selection = New-HaiIsolatedSelection $PostgresImageId

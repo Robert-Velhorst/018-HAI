@@ -3,7 +3,8 @@ param(
     [string]$RootSessionId = '019e7acc-44f2-7c90-a04e-253f6d43df28',
     [string]$SessionsRoot = 'C:\Users\NO\.codex\sessions\2026\08',
     [string]$OutputDirectory = '',
-    [int]$TailBytes = 16777216
+    [int]$TailBytes = 16777216,
+    [switch]$HashCleanupCandidates
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,6 +100,8 @@ function Protect-ReportText {
     param([AllowEmptyString()][string]$Text)
 
     $protected = $Text
+    $protected = $protected -replace '(?i)[A-Z]:\\Users\\[^\\\s`]+\\Documents\\Codex\\(?:[^\\\s`]+\\)*?work\\018-hai-port-engine-control\\', '[HAI_REPO]\'
+    $protected = $protected -replace '(?i)[A-Z]:\\Users\\[^\\\s`]+\\Documents\\Codex\\(?:[^\\\s`]+\\)*?github-plugin-github-openai-curated-noodzakelijk\\', '[HAI_REPO]\'
     $protected = $protected -replace '(?i)(Authorization:\s*Bearer\s+)[A-Za-z0-9._~+/=-]+', '$1[REDACTED]'
     $protected = $protected -replace '(?i)sk-[A-Za-z0-9_-]{12,}', 'sk-[REDACTED]'
     $protected = $protected -replace '(?i)ghp_[A-Za-z0-9]{12,}', 'ghp_[REDACTED]'
@@ -178,9 +181,16 @@ foreach ($file in $sessionFiles) {
         'retain'
     }
 
+    $dateMatch = [regex]::Match($file.Name, '^rollout-(?<date>\d{4}-\d{2}-\d{2})T')
+    $sessionDate = if ($dateMatch.Success) {
+        $dateMatch.Groups['date'].Value
+    } else {
+        $file.LastWriteTimeUtc.ToString('yyyy-MM-dd')
+    }
+
     $records.Add([pscustomobject]@{
         child_id = $childId
-        session_date = $file.Directory.Name
+        session_date = $sessionDate
         nickname = [string]$metadata.payload.agent_nickname
         terminal_status = $terminalStatus
         terminal_reason = $terminalReason
@@ -191,19 +201,43 @@ foreach ($file in $sessionFiles) {
         final_message_sha256 = Get-Sha256 -Text $finalMessage
         final_report_preserved = ($terminalStatus -eq 'completed')
         disposition = $disposition
+        duplicate_id_file_count = 1
+        transcript_sha256 = ''
         session_path = $relativePath
         protected_final_message = Protect-ReportText -Text $finalMessage
     })
 }
 
 $records = @($records | Sort-Object session_date, child_id)
+$duplicateGroups = @($records | Group-Object child_id | Where-Object Count -gt 1)
+foreach ($group in $duplicateGroups) {
+    foreach ($record in $group.Group) {
+        $record.disposition = 'retain_duplicate_id'
+        $record.duplicate_id_file_count = $group.Count
+    }
+}
+if ($HashCleanupCandidates) {
+    foreach ($record in @($records | Where-Object disposition -eq 'candidate_after_ledger_commit')) {
+        $sourcePath = Join-Path $relativeBase ($record.session_path -replace '/', '\\')
+        $before = Get-Item -LiteralPath $sourcePath
+        $digest = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        $after = Get-Item -LiteralPath $sourcePath
+        if ($before.Length -ne $after.Length -or $before.LastWriteTimeUtc -ne $after.LastWriteTimeUtc) {
+            $record.disposition = 'retain_changed_during_audit'
+        } else {
+            $record.transcript_sha256 = $digest
+        }
+    }
+}
 $completed = @($records | Where-Object terminal_status -eq 'completed')
-$retained = @($records | Where-Object terminal_status -ne 'completed')
+$candidates = @($records | Where-Object disposition -eq 'candidate_after_ledger_commit')
+$retained = @($records | Where-Object disposition -ne 'candidate_after_ledger_commit')
 
 $csvHeader = @(
     'child_id', 'session_date', 'nickname', 'terminal_status', 'terminal_reason',
     'work_kind', 'patch_call_count', 'logical_bytes', 'allocated_bytes',
-    'final_message_sha256', 'final_report_preserved', 'disposition', 'session_path'
+    'final_message_sha256', 'final_report_preserved', 'disposition',
+    'duplicate_id_file_count', 'transcript_sha256', 'session_path'
 )
 $csvLines = [System.Collections.Generic.List[string]]::new()
 $csvLines.Add(($csvHeader | ForEach-Object { ConvertTo-CsvField $_ }) -join ',')
@@ -217,11 +251,12 @@ foreach ($record in $records) {
 $reportLines = [System.Collections.Generic.List[string]]::new()
 $reportLines.Add('# Completed child-agent final reports')
 $reportLines.Add('')
-$reportLines.Add('This generated archive preserves the canonical terminal report from every')
-$reportLines.Add('completed HAI child transcript in the audited August 2026 cohort. Potential')
-$reportLines.Add('credential-shaped values are redacted; the manifest retains the SHA-256 of')
+$reportLines.Add('This generated archive preserves the terminal report from each completed')
+$reportLines.Add('HAI child transcript in the audited cohort. Credential-shaped values and')
+$reportLines.Add('local repository roots are redacted; the manifest retains the SHA-256 of')
 $reportLines.Add('the original terminal message. Aborted and nonterminal transcripts are not')
-$reportLines.Add('represented as completed work and must be retained.')
+$reportLines.Add('represented as completed work and must be retained. Every transcript sharing')
+$reportLines.Add('a child ID is also retained until its duplicate history is reconciled.')
 $reportLines.Add('')
 foreach ($record in $completed) {
     $agentLabel = if ([string]::IsNullOrWhiteSpace($record.nickname)) {
@@ -231,7 +266,7 @@ foreach ($record in $completed) {
     }
     $reportLines.Add("## $($record.child_id)")
     $reportLines.Add('')
-    $reportLines.Add("- Date: 2026-08-$($record.session_date)")
+    $reportLines.Add("- Date: $($record.session_date)")
     $reportLines.Add("- Agent: $agentLabel")
     $reportLines.Add("- Work kind: $($record.work_kind)")
     $reportLines.Add('- Original report SHA-256: `' + $record.final_message_sha256 + '`')
@@ -258,8 +293,15 @@ $summary = [ordered]@{
     generated_at_utc = [DateTime]::UtcNow.ToString('o')
     root_session_id = $RootSessionId
     audited_transcripts = $records.Count
+    unique_child_ids = @($records | Select-Object -ExpandProperty child_id -Unique).Count
+    duplicate_child_ids = $duplicateGroups.Count
     completed_transcripts = $completed.Count
+    cleanup_candidate_transcripts = $candidates.Count
+    candidate_transcripts_hashed = @($candidates | Where-Object { $_.transcript_sha256 -match '^[0-9a-f]{64}$' }).Count
+    candidate_hashing_requested = [bool]$HashCleanupCandidates
     retained_transcripts = $retained.Count
+    cleanup_candidate_logical_bytes = [int64](($candidates | Measure-Object logical_bytes -Sum).Sum)
+    cleanup_candidate_allocated_bytes = [uint64](($candidates | Measure-Object allocated_bytes -Sum).Sum)
     completed_logical_bytes = [int64](($completed | Measure-Object logical_bytes -Sum).Sum)
     completed_allocated_bytes = [uint64](($completed | Measure-Object allocated_bytes -Sum).Sum)
     retained_logical_bytes = [int64](($retained | Measure-Object logical_bytes -Sum).Sum)

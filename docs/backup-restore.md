@@ -15,6 +15,7 @@ mode, durable workflow history, or selected OpenClaw archive/rollback state.
 | Accounts and authentication | Postgres (`IDP_DB_NAME`) | `pg_dump` logical backup |
 | Uploaded media | `IMAGE_SAVE_DIR` | ZIP on Windows; tar elsewhere |
 | Emergency-stop and autonomy controls | `018-hai-phase2-control-state` | checksummed `phase2-control-state.tar.gz` |
+| Other HAI-named Docker volumes | Docker volume inventory | **Fail-closed:** the current format refuses if an `018-hai-*` volume is outside its explicit coverage list. |
 | Optional Temporal workflow persistence | `018-hai-temporal-postgres-data` | **Fail-closed:** current Windows format cannot archive/restore this volume. Backup refuses if it exists. |
 | OpenClaw managed archive selections and rollback archives | `agent-workspaces/.hai-openclaw-ecosystem` | **Fail-closed:** current Windows format cannot archive/restore this store. Backup refuses if it is non-empty. |
 | Windows runtime configuration | selected `-EnvFile` (contains secrets) | version-3 bundle includes a DPAPI CurrentUser-encrypted `environment.dpapi` |
@@ -37,16 +38,20 @@ metadata, although it does not contain credentials or raw records:
 ```
 
 Before either preflight or backup, the script inventories Docker volumes and
-the exact OpenClaw managed-store path. If the Temporal volume exists, or the
-OpenClaw store contains any entry, the command stops and creates no complete
-bundle. It does not stop, archive, or modify those assets. This is deliberate:
-their current archive/restore contract has not been implemented or rehearsed.
-The manifest explicitly records `hai-extended-recovery.v1` coverage only when
-Temporal is absent and the OpenClaw store is absent or empty. Restore requires
-that declaration and refuses older or ambiguous bundles before environment
-recovery or Docker operations. Do not remove or disable either asset to get a
-backup; preserve it and use a separately reviewed recovery method until support
-is implemented.
+the exact OpenClaw managed-store path. The current `hai-extended-recovery.v2`
+contract explicitly records the automation database, IDP database, and safety
+control volume, including whether each named volume exists. It refuses to
+create a complete bundle if any other `018-hai-*` volume exists, if the
+Temporal volume exists, or if the OpenClaw store contains any entry. It does not
+stop, archive, or modify unsupported assets. This is deliberate: their current
+archive/restore contract has not been implemented or rehearsed. The v2
+manifest records Temporal absent, OpenClaw store absent/empty, and exactly the
+three supported HAI volume records; the safety-control volume must be present.
+Restore validates this declaration before environment recovery or Docker
+operations. Existing v1 bundles remain readable under the legacy contract, but
+cannot attest the explicit HAI volume inventory introduced by v2. Do not remove
+or disable an unsupported asset to get a backup; preserve it and implement and
+rehearse a separate recovery method first.
 
 The encrypted environment artifact uses Windows DPAPI `CurrentUser` scope and
 bundle-specific entropy. It can be decrypted only in the same Windows user

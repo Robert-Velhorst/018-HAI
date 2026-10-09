@@ -4,6 +4,10 @@ This ledger preserves the operational result of the large HAI child-agent run
 before any local transcript cleanup. It is evidence about integration state, not
 permission to delete session data.
 
+The separately audited 2026-07-30 archive and its cleanup-readiness decision are
+recorded in `docs/child-agent-archive-2026-07-30/cleanup-readiness.md`; do not
+mix its file counts or retention decisions with the August cohort below.
+
 ## Audited snapshot
 
 Snapshot date: 2026-08-08

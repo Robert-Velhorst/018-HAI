@@ -7,7 +7,8 @@ if (-not (Test-Path -LiteralPath $library -PathType Leaf)) {
     throw "Windows recovery contract library is missing."
 }
 . $library
-. (Join-Path $PSScriptRoot "backup-windows.ps1")
+$backupScript = Join-Path $PSScriptRoot "backup-windows.ps1"
+. $backupScript -LibraryOnly
 
 function Assert-Throws([string]$Name, [scriptblock]$Action, [string]$Pattern) {
     try {
@@ -41,22 +42,31 @@ try {
         [IO.File]::WriteAllText((Join-Path $testRoot $name), "fixture-$name", [Text.UTF8Encoding]::new($false))
     }
     $optionalStore = Join-Path $testRoot 'agent-workspaces\.hai-openclaw-ecosystem'
-    $coverage = Assert-HaiOptionalRecoveryAssetsAbsent @() $optionalStore
+    $supportedHaiVolumes = @(
+        '018-hai-postgres-automation-data',
+        '018-hai-postgres-idp-data',
+        '018-hai-phase2-control-state'
+    )
+    $coverage = Assert-HaiOptionalRecoveryAssetsAbsent $supportedHaiVolumes $optionalStore
     Assert-HaiExtendedRecoveryCoverage $coverage
-    if ($coverage.temporal.state -cne 'absent' -or $coverage.openClawManagedArchives.state -cne 'absent') {
+    if ($coverage.temporal.state -cne 'absent' -or $coverage.openClawManagedArchives.state -cne 'absent' -or
+        @($coverage.haiVolumes | Where-Object state -ne 'present').Count -ne 0) {
         throw 'Empty optional recovery fixtures were not recorded as absent.'
     }
     Assert-Throws 'existing Temporal persistence' {
-        Assert-HaiOptionalRecoveryAssetsAbsent @('other-volume', '018-hai-temporal-postgres-data') $optionalStore
+        Assert-HaiOptionalRecoveryAssetsAbsent ($supportedHaiVolumes + '018-hai-temporal-postgres-data') $optionalStore
     } 'Temporal persistence volume exists.*no complete backup'
+    Assert-Throws 'uncovered HAI persistent volume' {
+        Assert-HaiOptionalRecoveryAssetsAbsent ($supportedHaiVolumes + '018-hai-ollama-local-data') $optionalStore
+    } 'HAI persistent volume.*018-hai-ollama-local-data.*No complete backup'
     [IO.Directory]::CreateDirectory($optionalStore) | Out-Null
     $openClawArchiveFixture = Join-Path $optionalStore 'archive-fixture.zip'
     [IO.File]::WriteAllText($openClawArchiveFixture, 'synthetic archive payload', [Text.UTF8Encoding]::new($false))
     Assert-Throws 'persisted OpenClaw archive state' {
-        Assert-HaiOptionalRecoveryAssetsAbsent @() $optionalStore
+        Assert-HaiOptionalRecoveryAssetsAbsent $supportedHaiVolumes $optionalStore
     } 'OpenClaw managed archive selection/rollback data exists.*no complete backup'
     Remove-Item -LiteralPath $openClawArchiveFixture -Force
-    $coverage = Assert-HaiOptionalRecoveryAssetsAbsent @() $optionalStore
+    $coverage = Assert-HaiOptionalRecoveryAssetsAbsent $supportedHaiVolumes $optionalStore
     Assert-HaiExtendedRecoveryCoverage $coverage
     if ($coverage.openClawManagedArchives.state -cne 'empty') { throw 'Empty OpenClaw store was not recorded as empty.' }
     $ambiguousTemporalCoverage = $coverage | ConvertTo-Json -Depth 10 | ConvertFrom-Json
@@ -65,6 +75,21 @@ try {
     $ambiguousOpenClawCoverage = $coverage | ConvertTo-Json -Depth 10 | ConvertFrom-Json
     $ambiguousOpenClawCoverage.openClawManagedArchives.state = 'present'
     Assert-Throws 'ambiguous OpenClaw coverage' { Assert-HaiExtendedRecoveryCoverage $ambiguousOpenClawCoverage } 'unsupported or ambiguous OpenClaw'
+    $ambiguousHaiVolumeCoverage = $coverage | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    $ambiguousHaiVolumeCoverage.haiVolumes[0].artifact = 'identity.dump'
+    Assert-Throws 'ambiguous HAI volume coverage' { Assert-HaiExtendedRecoveryCoverage $ambiguousHaiVolumeCoverage } 'unsupported or ambiguous HAI persistent-volume'
+    $missingSafetyVolumeCoverage = $coverage | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    $missingSafetyVolumeCoverage.haiVolumes = @($missingSafetyVolumeCoverage.haiVolumes | Where-Object volume -ne '018-hai-phase2-control-state')
+    Assert-Throws 'missing safety volume coverage' { Assert-HaiExtendedRecoveryCoverage $missingSafetyVolumeCoverage } 'incomplete or ambiguous HAI persistent-volume coverage'
+    $duplicateHaiVolumeCoverage = $coverage | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+    $duplicateHaiVolumeCoverage.haiVolumes += $duplicateHaiVolumeCoverage.haiVolumes[0]
+    Assert-Throws 'duplicate HAI volume coverage' { Assert-HaiExtendedRecoveryCoverage $duplicateHaiVolumeCoverage } 'incomplete or ambiguous HAI persistent-volume coverage'
+    $legacyCoverage = [pscustomobject]@{
+        contract = 'hai-extended-recovery.v1'
+        temporal = [pscustomobject]@{ state = 'absent'; volume = '018-hai-temporal-postgres-data' }
+        openClawManagedArchives = [pscustomobject]@{ state = 'absent'; path = 'agent-workspaces/.hai-openclaw-ecosystem' }
+    }
+    Assert-HaiExtendedRecoveryCoverage $legacyCoverage
     Assert-Throws 'missing extended coverage' { Assert-HaiExtendedRecoveryCoverage $null } 'lacks explicit optional recovery coverage'
     $oldManifestWithoutCoverage = [pscustomobject]@{ formatVersion = 3 }
     Assert-Throws 'old manifest without optional coverage' {
