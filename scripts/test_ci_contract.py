@@ -1730,7 +1730,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
 
     def test_native_runtime_gate_requires_actual_windows_execution_and_evidence(self) -> None:
         native = job_block("windows-native-runtime")
-        for contract in ("runs-on: windows-latest", 'go-version: "1.25.13"',
+        for contract in ("runs-on: windows-latest", 'go-version: "1.27.2"',
                          "go mod download", "./scripts/test-windows-native-runtime.ps1",
                          "if: always()", "acceptance-evidence.json", "native-tests.log"):
             self.assertIn(contract, native)

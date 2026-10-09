@@ -59,6 +59,17 @@ $docs = [IO.File]::ReadAllText($documentation)
 $gitignore = [IO.File]::ReadAllText((Join-Path $repositoryRoot ".gitignore"))
 $runtimeLifecycle = [IO.File]::ReadAllText($runtimeLifecycleTest)
 
+foreach ($textName in @(
+    'build', 'sourceSelection', 'installer', 'support', 'maintenanceSupport',
+    'maintenanceTaskManager', 'maintenanceLauncher', 'initializer',
+    'runtimeDatabaseRole', 'runtimeRoleProvisioner', 'composeConfiguration',
+    'gatewayConfig', 'maintenanceDocumentation', 'startScript', 'stopScript',
+    'openScript', 'connectorTest', 'hostRuntimeWorker', 'ngrokStart',
+    'exampleEnvironment', 'secretGenerator', 'docs', 'gitignore', 'runtimeLifecycle'
+)) {
+    Set-Variable -Name $textName -Value ((Get-Variable -Name $textName -ValueOnly).Replace("`r`n", "`n"))
+}
+
 if ($gitignore -notmatch [Regex]::Escape("/installer/release/")) {
     throw "Generated installer release artifacts must be ignored by Git."
 }
@@ -177,7 +188,7 @@ foreach ($required in @(
     "hai-openclaw-maintenance.exe",
     "./cmd/hai-openclaw-maintenance",
     "GOOS=windows",
-    'golang:1.25.13@sha256:cbff9d1a9041b316010f2da6b701b6c0d597718cb90928c85eb597334a0d23d4',
+    'golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c',
     "--platform linux/amd64",
     'tool = $goBuilderImage',
     '$goBuilderImage `'
@@ -298,9 +309,9 @@ foreach ($required in @(
         throw "Host-runtime worker contract is missing its declared configuration field: $required"
     }
 }
-if ($support -match '(?i)--version|&\s*\$executable' -or
-    $exampleEnvironment -notmatch '(?m)^DEEPSEEK_HARNESS_ENABLED=false$' -or
-    $exampleEnvironment -notmatch '(?m)^DEEPSEEK_HARNESS_EXECUTION_ENABLED=false$') {
+if ($hostRuntimeWorker -match '(?i)--version|&\s*\$executable' -or
+    $exampleEnvironment -notmatch '(?m)^DEEPSEEK_HARNESS_ENABLED=false\r?$' -or
+    $exampleEnvironment -notmatch '(?m)^DEEPSEEK_HARNESS_EXECUTION_ENABLED=false\r?$') {
     throw 'The Windows installer must block DSH runtime execution and keep both execution flags disabled in a fresh installation.'
 }
 
@@ -862,7 +873,7 @@ if ($SkipPayload) {
     exit 0
 }
 
-& $buildScript -SkipCompile
+& $buildScript -SkipCompile -AllowDirtyWorktree
 if ($LASTEXITCODE -ne 0) {
     throw "Installer payload preparation failed."
 }

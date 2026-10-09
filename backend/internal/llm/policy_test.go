@@ -2135,9 +2135,11 @@ func TestGenerateAccountsSuccessfulProviderResponseWhenCancellationRacesBodyRead
 	wantCost := estimateModelUsageCostEUR(policy.Providers[index].Models[0], 11, 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	originalTransport := providerHTTPClient.Transport
-	providerHTTPClient.Transport = successfulProviderResponseCancellingTransport{cancel: cancel}
-	defer func() { providerHTTPClient.Transport = originalTransport }()
+	originalTestHook := providerHTTPClientTestHook
+	providerHTTPClientTestHook = func(Provider) *http.Client {
+		return &http.Client{Transport: successfulProviderResponseCancellingTransport{cancel: cancel}}
+	}
+	defer func() { providerHTTPClientTestHook = originalTestHook }()
 	history := &fakeGenerationHistoryRepository{}
 	telemetry := &fakeModelTelemetryRepository{}
 	service := withTrustedTestFinalEffects(t, (&Service{policy: policy, generationHistory: history}).WithModelTelemetryRepository(telemetry))

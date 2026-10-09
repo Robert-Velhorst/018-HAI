@@ -177,14 +177,14 @@ For current evidence and limitations, use the dated
 Local test results do not establish live Trello account acceptance.
 
 If the matching local toolchain is unavailable, use the cached backend
-container (Go 1.25.13):
+container (Go 1.27.2):
 
 ```bash
 # Unit tests (no external services)
-docker run --rm -v "$PWD/backend":/app -w /app golang:1.25.13 go test ./...
+docker run --rm -v "$PWD/backend":/app -w /app golang:1.27.2 go test ./...
 
 # Trello connector tests
-docker run --rm -v "$PWD/backend":/app -w /app golang:1.25.13 \
+docker run --rm -v "$PWD/backend":/app -w /app golang:1.27.2 \
   go test ./internal/source/ -run Trello -v
 ```
 

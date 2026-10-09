@@ -478,7 +478,7 @@ func (h *Handler) RunOperation(c *gin.Context) {
 		}
 		return
 	}
-	if !h.m.SafeExecutionPolicyAllows(claimed.Operation.Title, claimed.Operation.Description, claimed.Operation.OperationType) {
+	if !h.m.SafeOperationExecutionAllowed(claimed.Operation) {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
 		releaseErr := h.m.svc.ReleaseClaim(cleanupCtx, claimed.Claim)
 		cancel()
@@ -492,7 +492,7 @@ func (h *Handler) RunOperation(c *gin.Context) {
 	outcome, err := background.ExecuteSafeOperationClaimed(
 		c.Request.Context(), h.m.svc, h.m.broker, claimed.Operation, claimed.Claim, time.Now().UTC(),
 		func(op models.Operation) bool {
-			return h.m.SafeExecutionPolicyAllows(op.Title, op.Description, op.OperationType)
+			return h.m.SafeOperationExecutionAllowed(op)
 		},
 	)
 	if err != nil {

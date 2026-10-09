@@ -1557,7 +1557,7 @@ Postgres + Redis + optional event bus
 ```
 
 The local deployment targets Windows 11 with Docker Desktop. The control-plane
-backend, IDP, and nginx configuration manager use Go 1.25.13 and share an
+backend, IDP, and nginx configuration manager use Go 1.27.2 and share an
 executable CI alignment contract. They use Gin, Gorm, Postgres, and
 Sarama/Kafka when the optional event-bus profile is enabled. The frontend uses Angular 22 and ng-zorro-antd 22. Use Node 24.15.0 or later within the Node 24 LTS line and npm 10.9.8 for frontend development and verification; the repository `.nvmrc` and package metadata declare the supported frontend toolchain.
 Versioned SQL migrations are the schema source of truth and `DB_AUTOMIGRATE`
@@ -1574,7 +1574,7 @@ post-phase migrations. See
 - Git.
 - Node.js 24.15.0 or later within the Node 24 LTS line, and npm 10.9.8,
   for frontend development outside Docker.
-- Go 1.25.13 for control-plane backend, IDP, and nginx-config-manager
+- Go 1.27.2 for control-plane backend, IDP, and nginx-config-manager
   development outside Docker. Their modules, Docker builders, and CI toolchains
   are checked for version alignment.
 
@@ -2173,17 +2173,17 @@ model has been installed or accepted for real work.
 
 ```powershell
 # Backend (use Docker when Go is not installed locally)
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13 go test ./...
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13 go vet ./...
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13 go build ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.2 go test ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.2 go vet ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.2 go build ./...
 
-# Identity service (Go 1.25.13)
+# Identity service (Go 1.27.2)
 Set-Location idp
 go vet ./...
 go test ./...
 go build ./...
 
-# Nginx configuration service (Go 1.25.13)
+# Nginx configuration service (Go 1.27.2)
 Set-Location ..\nginx-config-manager
 go vet ./...
 go test ./...

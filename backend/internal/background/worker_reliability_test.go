@@ -52,8 +52,17 @@ func TestRunOnceDoesNotLetUnprocessableDueOperationsStarveNewWork(t *testing.T) 
 	if err != nil {
 		t.Fatalf("RunOnce: %v", err)
 	}
-	if report.OperationsCreated != 1 || report.Verified != 1 {
-		t.Fatalf("fresh operation was starved by the failed record: %#v", report)
+	if report.OperationsCreated != 1 || report.AwaitingApproval != 1 || report.Verified != 0 {
+		t.Fatalf("fresh source operation was not routed to its required approval: %#v", report)
+	}
+	awaitingApproval, err := service.List(operations.Filter{
+		OwnerUserID: "user-1", WorkspaceID: "local", Status: operations.StatusAwaitingApproval,
+	})
+	if err != nil {
+		t.Fatalf("list operations awaiting approval: %v", err)
+	}
+	if len(awaitingApproval) != 1 || awaitingApproval[0].Title != "Organize workspace notes" {
+		t.Fatalf("fresh source operation was starved or executed without approval: %#v", awaitingApproval)
 	}
 	remaining, err := service.List(operations.Filter{
 		OwnerUserID: "user-1", WorkspaceID: "local", Status: operations.StatusNew,

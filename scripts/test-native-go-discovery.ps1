@@ -24,7 +24,7 @@ $savedProfile = $env:USERPROFILE
 try {
     $env:USERPROFILE = [IO.Path]::GetFullPath($PSScriptRoot)
     $explicit = Join-Path $env:USERPROFILE 'synthetic-go.exe'
-    $cached = Join-Path $env:USERPROFILE 'go\pkg\mod\golang.org\toolchain@v0.0.1-go1.25.13.windows-amd64\bin\go.exe'
+    $cached = Join-Path $env:USERPROFILE 'go\pkg\mod\golang.org\toolchain@v0.0.1-go1.27.2.windows-amd64\bin\go.exe'
     $script:existingFiles[$explicit] = $true
     $script:existingFiles[$cached] = $true
     $script:commandSource = 'path-go.exe'

@@ -21,7 +21,6 @@ def scan(
         "run",
         GITLEAKS_MODULE,
         "git",
-        "--source",
         str(root),
         "--redact=100",
         "--no-banner",

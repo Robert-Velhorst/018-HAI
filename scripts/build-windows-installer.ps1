@@ -21,7 +21,7 @@ $ErrorActionPreference = "Stop"
 
 # Pin the Docker fallback to the official multi-platform index digest. Keep the
 # tag for human-readable provenance, and select the builder platform explicitly.
-$goBuilderImage = 'golang:1.25.13@sha256:cbff9d1a9041b316010f2da6b701b6c0d597718cb90928c85eb597334a0d23d4'
+$goBuilderImage = 'golang:1.27.2@sha256:5bc7f572bbaa98885a3a1fd9c0aa76b59e3e14e8628bfc316bbfd0c701e4818c'
 
 function Resolve-HaiInstallerSigningPolicy {
     param(

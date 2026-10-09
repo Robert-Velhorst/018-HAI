@@ -498,20 +498,17 @@ func TestBackgroundRunScopesFeedsAndProcessingToAuthenticatedOwner(t *testing.T)
 	if err != nil {
 		t.Fatalf("list caller execution receipts: %v", err)
 	}
-	if len(configuredReceipts) != 1 || len(callerReceipts) != 1 {
+	if len(configuredReceipts) != 0 || len(callerReceipts) != 0 {
 		t.Fatalf(
-			"execution receipts configured=%d caller=%d, want one owner-scoped receipt each",
+			"source-derived work executed before owner approval: execution receipts configured=%d caller=%d",
 			len(configuredReceipts),
 			len(callerReceipts),
 		)
 	}
-	if configuredReceipts[0].OwnerIdentity != "local-operator" ||
-		callerReceipts[0].OwnerIdentity != "caller-owner" {
-		t.Fatalf(
-			"execution receipt owners configured=%q caller=%q",
-			configuredReceipts[0].OwnerIdentity,
-			callerReceipts[0].OwnerIdentity,
-		)
+	for _, op := range append(configuredBefore, callerOps...) {
+		if op.Status != string(operations.StatusAwaitingApproval) {
+			t.Fatalf("source-derived operation %s for owner %q has status %q before approval", op.ID, op.OwnerUserID, op.Status)
+		}
 	}
 	before := make(map[string]operationsSnapshot, len(configuredBefore))
 	for _, op := range configuredBefore {
@@ -600,11 +597,28 @@ func TestRunRefusesNonSafeOperation(t *testing.T) {
 		} `json:"operations"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &listed)
-	if len(listed.Operations) != 1 {
-		t.Fatalf("want the high-risk op awaiting approval, got %d", len(listed.Operations))
+	var highRiskID string
+	for _, candidate := range listed.Operations {
+		var detail struct {
+			RiskLevel string `json:"riskLevel"`
+		}
+		response := do(t, r, http.MethodGet, "/operations/"+candidate.ID)
+		if response.Code != http.StatusOK {
+			t.Fatalf("load awaiting operation: status %d body %s", response.Code, response.Body.String())
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
+			t.Fatalf("decode awaiting operation: %v", err)
+		}
+		if detail.RiskLevel == string(operations.RiskHigh) {
+			highRiskID = candidate.ID
+			break
+		}
+	}
+	if highRiskID == "" {
+		t.Fatalf("expected a high-risk operation awaiting approval, got %d operations", len(listed.Operations))
 	}
 	// Attempting to run it must be refused (no real runtime in 2A).
-	w = do(t, r, http.MethodPost, "/operations/"+listed.Operations[0].ID+"/run")
+	w = do(t, r, http.MethodPost, "/operations/"+highRiskID+"/run")
 	if w.Code != http.StatusConflict {
 		t.Fatalf("running a non-safe operation must be refused with 409, got %d", w.Code)
 	}

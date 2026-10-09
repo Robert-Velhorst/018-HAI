@@ -17,7 +17,7 @@ function parsedWorkers(value) {
   // Execute the installed parser with isolated environment and CPU metadata.
   angularOptions.runInNewContext({
     exports,
-    process: { env },
+    process: { env, versions: process.versions },
     require(name) {
       assert.equal(name, 'node:os');
       return { availableParallelism: () => 64 };

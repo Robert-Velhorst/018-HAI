@@ -18,10 +18,10 @@ function Resolve-NativeAcceptanceGo([string]$ExplicitPath) {
     $command = Get-Command go.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($command) { return $command.Source }
     if ($env:USERPROFILE) {
-        $cached = Join-Path $env:USERPROFILE 'go\pkg\mod\golang.org\toolchain@v0.0.1-go1.25.13.windows-amd64\bin\go.exe'
+        $cached = Join-Path $env:USERPROFILE 'go\pkg\mod\golang.org\toolchain@v0.0.1-go1.27.2.windows-amd64\bin\go.exe'
         if (Test-Path -LiteralPath $cached -PathType Leaf) { return $cached }
     }
-    throw 'Existing Go 1.25.13 windows/amd64 is required; this runner does not download or install it.'
+    throw 'Existing Go 1.27.2 windows/amd64 is required; this runner does not download or install it.'
 }
 
 function Invoke-BoundedNativeCompiler([string]$Executable, [string[]]$Arguments, [string]$WorkingDirectory, [string]$LogDirectory, [int]$TimeoutMilliseconds) {
@@ -198,8 +198,8 @@ try {
         $docker = Get-Command docker.exe -CommandType Application -ErrorAction Stop
         # Use only an already-present pinned toolchain. No pull/install, Docker
         # socket mount, credentials, shared writable cache, or service mutation.
-        $image = & $docker.Source image inspect golang:1.25.13 --format '{{.Id}}'
-        if ($LASTEXITCODE -ne 0) { throw 'golang:1.25.13 must already exist locally; this runner does not pull it.' }
+        $image = & $docker.Source image inspect golang:1.27.2 --format '{{.Id}}'
+        if ($LASTEXITCODE -ne 0) { throw 'golang:1.27.2 must already exist locally; this runner does not pull it.' }
         $evidence['buildImage'] = "$image".Trim()
         $containerName = 'hai-native-acceptance-build-' + [Guid]::NewGuid().ToString('N')
         $evidence['buildContainer'] = $containerName
@@ -219,7 +219,7 @@ try {
         Write-Host 'Cross-compiling in a socket-free, network-disabled build container. This is not native execution.'
         & $docker.Source @dockerArgs
         if ($LASTEXITCODE -ne 0) { throw 'Windows test cross-compilation failed; native execution was not attempted.' }
-        $evidence['buildMode'] = 'linux-cross-compile-go1.25.13-windows-amd64'
+        $evidence['buildMode'] = 'linux-cross-compile-go1.27.2-windows-amd64'
         # Preserve the stopped one-shot container and all scratch; no cleanup.
     } else {
         $go = Resolve-NativeAcceptanceGo $GoExecutable
@@ -241,7 +241,7 @@ try {
             $env:GOMEMLIMIT = '384MiB'
             $version = & $go version
             if ($LASTEXITCODE -ne 0 -or $version -notmatch 'go1\.25\.13 windows/amd64') {
-                throw 'Native build requires existing Go 1.25.13 windows/amd64; use -CrossCompileDocker when absent.'
+                throw 'Native build requires existing Go 1.27.2 windows/amd64; use -CrossCompileDocker when absent.'
             }
             Invoke-BoundedNativeCompiler -Executable $go -Arguments @('test', '-p', '1', '-mod=readonly', '-c', '-o', $binary, './internal/agentruntime') -WorkingDirectory $backendRoot -LogDirectory $scratch -TimeoutMilliseconds ($NativeBuildTimeoutSeconds * 1000)
         } finally {
@@ -250,7 +250,7 @@ try {
                 [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process')
             }
         }
-        $evidence['buildMode'] = 'native-build-go1.25.13-windows-amd64'
+        $evidence['buildMode'] = 'native-build-go1.27.2-windows-amd64'
     }
     if ((Get-FileHash -LiteralPath $testSource -Algorithm SHA256).Hash -ne $sourceHash) {
         throw 'Acceptance source changed during compilation; refuse potentially stale native proof.'

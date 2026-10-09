@@ -23,6 +23,7 @@ import (
 	"automation-hub-backend/internal/frameworkevidence"
 	"automation-hub-backend/internal/frameworkregistry"
 	"automation-hub-backend/internal/modelintelligence"
+	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/operations"
 	"automation-hub-backend/internal/opscontrol"
 	"automation-hub-backend/internal/privacyfilter"
@@ -232,6 +233,43 @@ func (m *Module) SafeExecutionPolicyAllows(title, description, operationType str
 	}
 	if m.blockRules != nil {
 		blocked, _ := m.blockRules.ShouldBlock(operationType, title)
+		if blocked {
+			return false
+		}
+	}
+	return true
+}
+
+// SafeOperationExecutionAllowed keeps source-derived work behind its durable,
+// exact-revision owner approval while still allowing the approved local worker
+// path to complete. Unapproved source content never inherits the generic safe
+// action decision.
+func (m *Module) SafeOperationExecutionAllowed(op models.Operation) bool {
+	if !operations.IsSourceDerived(op) {
+		return m.SafeExecutionPolicyAllows(op.Title, op.Description, op.OperationType)
+	}
+	mode := m.cfg.Mode
+	emergencyStop := m.cfg.EmergencyStop
+	if m.control != nil {
+		mode = m.control.Mode()
+		emergencyStop = m.control.EmergencyStop()
+	}
+	if mode != autonomypolicy.ModeAutonomousSafe || emergencyStop {
+		return false
+	}
+	var approvalValid bool
+	switch operations.OperationStatus(op.Status) {
+	case operations.StatusApproved:
+		_, err := m.svc.SourceApprovalForExecution(op)
+		approvalValid = err == nil
+	case operations.StatusRunning:
+		approvalValid = m.svc.ValidateConsumedSourceApproval(op) == nil
+	}
+	if !approvalValid {
+		return false
+	}
+	if m.blockRules != nil {
+		blocked, _ := m.blockRules.ShouldBlock(op.OperationType, op.Title)
 		if blocked {
 			return false
 		}

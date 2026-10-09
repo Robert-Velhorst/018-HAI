@@ -12,7 +12,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
-const ENGINE = 'promptfoo 0.123.1';
+const ENGINE = 'promptfoo 0.124.1';
 const SUITE = 'hai_safety_regression_v1';
 const MAX_REQUEST_BYTES = 256;
 const MAX_RUN_MS = 120_000;

@@ -284,8 +284,8 @@ try {
     [IO.File]::WriteAllText((Join-Path $scratch 'git-status-before.txt'), ((& git -C $root status --short --untracked-files=all) -join "`n"))
     Save-Evidence
     $docker = (Get-Command docker.exe -CommandType Application -ErrorAction Stop).Source
-    $image = & $docker image inspect golang:1.25.13 --format '{{.Id}}'
-    if ($LASTEXITCODE -ne 0) { throw 'Cached golang:1.25.13 is unavailable; no pull permitted.' }
+    $image = & $docker image inspect golang:1.27.2 --format '{{.Id}}'
+    if ($LASTEXITCODE -ne 0) { throw 'Cached golang:1.27.2 is unavailable; no pull permitted.' }
     $image = "$image".Trim()
     foreach ($volume in @('hai-go-modcache', 'hai-go-buildcache')) {
         & $docker volume inspect $volume --format '{{.Name}}' | Out-Null

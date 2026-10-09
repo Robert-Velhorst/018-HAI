@@ -16,8 +16,8 @@ set -euo pipefail
 
 PG_PORT="${PG_PORT:-55434}"
 API_PORT="${API_PORT:-18082}"
-API_KEY="${API_KEY:-smoke-key}"
-JWT_SECRET="${JWT_SECRET:-smoke-jwt-secret}"
+API_KEY="${API_KEY:-hai-ci-smoke-api-key-0123456789abcdef}"
+JWT_SECRET="${JWT_SECRET:-hai-ci-smoke-jwt-secret-0123456789abcdef}"
 BASE="http://127.0.0.1:${API_PORT}/api/v1"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT}/scripts/smoke-auth.sh"
@@ -71,7 +71,7 @@ mkdir -p "${IMAGES}"
 ( cd "${ROOT}/backend" && go build -o "${BIN}" ./cmd )
 
 start_backend() {
-  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=postgres \
+  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=hai-ci-smoke-postgres-password-0123456789abcdef \
     DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
     BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
     RUN_MODE=production KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \

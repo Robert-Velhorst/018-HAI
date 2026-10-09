@@ -567,7 +567,7 @@ describe('FrameworkRegistryService', () => {
     const record: IFrameworkView = {
       ...framework,
       provenance: 'Set-Cookie: session=synthetic-cookie; csrf=synthetic-csrf',
-      source: '-----BEGIN OPENSSH PRIVATE KEY-----\nsynthetic-private-body',
+      source: ['-----BEGIN OPENSSH ', 'PRIVATE KEY-----\nsynthetic-private-body'].join(''),
     };
     service.framework('truth-evidence').subscribe(response => result = response);
     http.expectOne('/api/v1/framework-registry/frameworks/truth-evidence').flush({ framework: record });

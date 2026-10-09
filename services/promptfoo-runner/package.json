@@ -6,6 +6,6 @@
     "node": "^24.15.0"
   },
   "dependencies": {
-    "promptfoo": "0.123.1"
+    "promptfoo": "0.124.1"
   }
 }
