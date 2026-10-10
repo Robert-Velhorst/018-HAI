@@ -449,3 +449,38 @@ retained files, but the six retained histories lack line-by-line semantic
 review, the full archive crosswalk is incomplete, and the PR is not merged.
 Therefore no transcript or source, worktree, diagnostic, credential, database,
 or generated file is eligible for deletion at this checkpoint.
+
+### Archive-to-Remote Crosscheck (2026-10-10)
+
+The read-only transcript readiness verifier was rerun against
+`D:\codex-temp\hai-completed-agent-sessions`. It verified all 18 manifest rows
+against the source archive (20,739,169,122 logical bytes), including all eight
+candidate hashes (7,939,888,699 bytes). Ten rows remain retained. The verifier
+reported `source_archive_verified=true`, `deletion_performed=false`, and
+`cleanup_authorized=false`; no archive file was changed.
+
+The six retained no-patch histories were streamed to count and inspect their
+human-readable assistant messages. The sampled latest work reports repeat the
+guarded brain integrations and disk/cache investigations already described
+above. Claims that code was pushed were checked against the Git graph rather
+than accepted from transcript text. The named RAGFlow, Presidio, Whisper.cpp,
+PydanticAI, FastMCP, Evidently, Guardrails, and SearXNG commits are ancestors of
+both the live `main` ref (`91c8620c`) and PR #36 head
+(`da44f867d53df13030bed4c011cc31c25ddf1bbb`). The retained workflow/task and
+Constitution-history commits `d3ad5606` and `29e97432` are ancestors of the PR
+head but not of `main`; they are not merged product history yet.
+
+This pass did not semantically review every assistant message, tool result, or
+all shell activity in those six histories. The completed candidate reports and
+source crosswalk remain the evidence for the other eight rows. Therefore this
+crosscheck narrows the unresolved work but does not complete the full archive
+integration audit or authorize deletion. Keep the ten retained histories and
+all 18 source files until the full crosswalk, PR checks, and repository-history
+cleanup gate pass.
+
+At this checkpoint PR #36 remained open and unstable. Latest PR-head Actions
+run `38065751414` had failures in authenticated control-plane smoke, repository
+secret scanning, and the Promptfoo dependency audit; browser acceptance was
+still in progress. The Windows-runtime authorization failure is not understood
+well enough to change its safety gate. Treat this CI state as a timestamped
+checkpoint, and refresh it before any merge or cleanup decision.
