@@ -130,16 +130,14 @@ it is not proof that every nested completion event in the retained histories
 was a distinct task or was individually integrated.
 
 An earlier note counted 542 nontrivial completion texts across six retained
-histories, but did not record the six source paths, their hashes, or a
-reproducible extraction artifact. That count therefore cannot currently be
-attributed to this July 30 archive or treated as 542 distinct work items. The
-verified July 30 inventory is the 18-file manifest above: eight unique
+histories without recording source paths or a reproducible extraction artifact.
+The October 11 audit below has since attributed and reproduced the count. It
+remains a count of distinct trimmed message texts, not distinct tasks or integrated work.
+The verified July 30 inventory is the 18-file manifest above: eight unique
 completed candidates have report/source crosswalks, and ten duplicate,
-aborted, or nonterminal files remain retained. Do not use the unattributed 542
-count as evidence that this archive has additional deliverables, and do not
-claim that every event embedded in retained histories has been individually
-reconciled. If those six histories are identified later, audit them as a
-separate source set with file-level provenance.
+aborted, or nonterminal files remain retained. Do not treat the 542 messages as
+proof that each underlying item is integrated, and do not claim that every
+event embedded in retained histories has been individually reconciled.
 
 For the current clean integration snapshot, the complete tracked HAI change
 set was compared with the latest remote PR source. No additional product-code
@@ -809,3 +807,28 @@ This removes them from the proposed current tree only; it does not rewrite
 public Git history or affect the separate primary checkout. If any of their
 short default-like values were reused in an actual deployment, rotate those
 credentials independently.
+
+## Retained completion-event audit (2026-10-11)
+
+The six retained transcript paths associated with the disputed completion-text
+count were resolved from the July 30 manifest and rescanned with the
+read-only `scripts/audit-hai-retained-completions.ps1`. The script verifies
+each requested path is a retained manifest row under the expected archive
+root, checks its byte length against the manifest, streams JSONL records, and
+prints counts derived from message hashes only; it prints neither message
+contents nor hash values and does not modify the archive.
+
+Four large aborted histories each contain 580 `task_complete` records and 542
+non-empty final messages. The two small aborted histories contain no
+`task_complete` records. Across all six files, the audit counted 2,320
+completion records, 2,168 non-empty final messages, 542 unique trimmed-message
+hashes, and zero parse errors on matching records. The reproducible command
+accepts the six `session_path` values from the manifest and
+`-TranscriptRoot D:\codex-temp\hai-completed-agent-sessions`.
+
+This establishes archive provenance and exact-text deduplication only. It does
+not establish that 542 distinct tasks occurred, that any message describes a
+successful change, or that every described change is integrated. The larger
+793-path patch-event crosswalk, per-event child attribution, and semantic
+comparison to final source remain open. All 18 archive files remain preserved;
+this finding does not authorize removal.

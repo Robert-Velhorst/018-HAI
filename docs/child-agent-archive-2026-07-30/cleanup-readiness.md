@@ -892,3 +892,21 @@ downgrade or audit suppression was applied. The exact protected-recovery test
 set passed locally under PowerShell 7.6.5, but that does not override the
 failed GitHub check; its completed job log is still required to diagnose the
 CI/local discrepancy. The PR is not green and no cleanup gate passes.
+
+## Retained completion-event audit (2026-10-11)
+
+The six retained files behind the previously unattributed completion-text
+figure are now identified by exact `session_path` values in the manifest. The
+read-only `scripts/audit-hai-retained-completions.ps1` validates each path and
+byte length against that manifest, then streams the six files and prints only
+counts derived from hashes, not message bodies or hash values. Results: four
+large aborted files each contain 580 completion
+records and 542 non-empty final messages; two small aborted files contain no
+completion records. The cross-file totals are 2,320 completion records, 2,168
+non-empty messages, 542 unique trimmed-message hashes, and zero JSON parse
+errors on matching records.
+
+These counts establish provenance and exact-text deduplication, not unique
+tasks or semantic integration. The 793-path event crosswalk and child-local
+attribution remain incomplete. The audit changed no transcript and does not
+alter the existing retention or cleanup decision.
