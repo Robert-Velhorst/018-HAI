@@ -230,3 +230,23 @@ After the push, local `main` and `origin/main` both resolved to the checkpoint
 commit and the worktree was clean. This satisfies cleanup gates 1 and 2. The
 generated manifest and terminal-report archive satisfy gates 3 through 5 for
 the audited allowlist; those gates remain mandatory for every future batch.
+
+## 2026-10-10 PR update
+
+The existing PR #36 was updated by a fast-forward only. Immediately before the
+push, `origin/codex/hai-runtime-release` resolved to
+`2691b54deeeb6aaff32021d8bf8d17f2b1453edd`; the pushed head is
+`60c7f6595dbb56cf08e86770307f2136675827e3`. The PR remains open against
+`main`; no merge or force-push was performed. The update contains 19 explicit
+source/documentation paths. Untracked CI logs, test evidence, scanner binaries,
+archives, and local patch files were excluded and left untouched.
+
+The update records scanner-fixture hardening, an isolated acceptance guide,
+and the current transcript integration limits. Local backend, IDP, frontend,
+production-build, and directory secret-scan checks passed before publication.
+GitHub Actions has started a new run; its jobs were pending when checked. Do
+not treat the PR as accepted until the required remote jobs complete and any
+failures are resolved. The 20.7 GB transcript archive remains protected:
+the 542 distinct nontrivial completion texts counted in retained histories
+have not yet all been semantically mapped to preserved reports or source
+evidence, so the archive deletion gate is not satisfied.
