@@ -439,3 +439,35 @@ containers, worktrees, or toolchains were deleted.
   authentication. No migration, credential change, or permission change was
   attempted. This is an additional reason to preserve the active database,
   images, and worktree until the stack is reconciled.
+
+## Source and runtime recheck (2026-10-10 01:45 UTC)
+
+This snapshot supersedes the earlier runtime and source-inventory observations
+above. Checks are read-only; no archive, fixture, Docker resource, worktree, or
+toolchain was deleted.
+
+- **Transcript archive:** `scripts/test-hai-transcript-cleanup-readiness.ps1`
+  passed `-RequireSourceArchive` against the local 20,739,169,122-byte source.
+  The full tree contains exactly 18 files matching the ledger; reparse-point
+  checks passed, all eight candidate hashes matched, and all 10 retained
+  entries matched their recorded sizes. The 7,939,888,699 candidate bytes
+  remain ineligible for cleanup until the ledger is committed on `main` and
+  PR #36 is merged with successful checks.
+- **Temp fixtures:** the live scanner found six generated-name directories:
+  four exact synthetic fixtures (432,534 bytes) with no related Docker
+  resources, and two empty/layout-mismatched directories retained as
+  unverified. `cleanup_authorized=false`; `deletion_performed=false`.
+- **Docker volumes:** the live inventory found seven named HAI volumes, no
+  unknown HAI volume names, and three attached anonymous mounts. The two
+  Postgres volumes are attached to healthy containers; phase2 state remains
+  attached to the created backend and exited helper. Four detached volumes
+  have current verified archives, but all seven volumes remain
+  `safe_to_remove=false`; three volumes still lack current verified recovery
+  evidence. Five recovery bundles remain unverified.
+- **Docker images:** all six HAI images remain installed. Four have container
+  references; the two unreferenced images remain `hold_retention_review`.
+  `image_cleanup_authorized=false` and `deletion_performed=false`.
+- **PR and verification:** PR #36 remains open at `17539e3efd1b9e13b73624dcb8d572173ff8fbcc`.
+  CI run `38014306769` was queued at this check; its HAI cleanup-readiness
+  safety-contract job had passed, but the complete run had not finished.
+  The worktree and its 23 untracked diagnostics were preserved.
