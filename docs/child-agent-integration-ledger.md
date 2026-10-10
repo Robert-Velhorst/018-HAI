@@ -710,3 +710,26 @@ weakening the gate. The run's pending browser acceptance and the eight
 candidate transcripts' malformed/truncated records also remain open gates.
 Revalidate candidate hashes and cleanup boundaries before considering any
 deletion; no archive or diagnostic files have been removed.
+
+## Primary-checkout source comparison refresh (2026-10-10)
+
+The primary checkout remains at `e07b9daeb3ba2630ecbe12a64d948f791203c241`;
+the PR worktree is at `b6c0e0ecb365831bfc0595cb4944d9454f8ccb1c`. A fresh,
+read-only SHA-256 comparison matched each path explicitly across 874 untracked
+primary-checkout files with source/documentation extensions, excluding the
+generated `output/`, `.claude-flow/`, `.swarm/`, and local outcome-evaluation
+evidence trees. Of these, 825 are byte-identical to the PR, 49 have the same path
+but different contents, none are missing from the PR, and none were unreadable.
+This narrower source-like inventory is not directly comparable to the earlier
+2,475-path/1,383-source-like inventory above because that audit used a broader
+classification and excluded different generated areas.
+
+The 49 same-path differences remain competing versions and are not automatically
+integrated. A safety-focused sample found the PR versions include later source-
+approval owner/revision binding and evidence-digest checks, approval-claim
+handling aligned with the persisted event schema, and timestamp-preserving
+compare-and-swap updates. These spot checks support retaining the current PR
+versions; they do not complete the semantic review of all 49 files or the
+793-path transcript patch crosswalk. No primary-checkout files were changed.
+The transcript archive, diagnostic artifacts, and cleanup gates are unchanged;
+no deletion is authorized by this comparison.
