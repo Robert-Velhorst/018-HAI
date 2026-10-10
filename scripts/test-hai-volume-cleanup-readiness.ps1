@@ -24,9 +24,19 @@ $archiveSources = @(
 )
 $verifiedArchiveVolumes = @{}
 $verifiedRecoveryArchives = [Collections.Generic.List[object]]::new()
+$sourceRemovedRecoveryArchives = [Collections.Generic.List[object]]::new()
 $unverifiedRecoveryBundles = [Collections.Generic.List[object]]::new()
 $archiveVerifier = Join-Path $PSScriptRoot 'verify-hai-detached-volume-archive.ps1'
 $archiveRootFull = [IO.Path]::GetFullPath($RecoveryArchiveRoot)
+
+function Invoke-DockerInventory([string[]]$Arguments) {
+    $global:LASTEXITCODE = 0
+    $lines = @(& docker @Arguments 2>$null)
+    if ($LASTEXITCODE -ne 0) { throw "Docker inventory query failed: docker $($Arguments -join ' ')" }
+    return @($lines | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+}
+
+$names = @(Invoke-DockerInventory @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $_.StartsWith('018-hai-', [StringComparison]::Ordinal) } | Sort-Object)
 
 if (Test-Path -LiteralPath $archiveRootFull -PathType Container) {
     $archiveRootItem = Get-Item -LiteralPath $archiveRootFull -Force
@@ -83,27 +93,49 @@ if (Test-Path -LiteralPath $archiveRootFull -PathType Container) {
             $bundleBytes = [long]$manifest.artifact.bytes
             $artifactSha256 = [string]$manifest.artifact.sha256
 
-            try { $verificationOutput = @(& $archiveVerifier -VolumeName $bundleVolume -BundlePath $bundleDirectory.FullName -ArchiveRoot $archiveRootFull) }
+            $archiveOnly = -not ($names -ccontains $bundleVolume)
+            $verifierArguments = @{
+                VolumeName = $bundleVolume
+                BundlePath = $bundleDirectory.FullName
+                ArchiveRoot = $archiveRootFull
+            }
+            if ($archiveOnly) { $verifierArguments.ArchiveOnly = $true }
+            try { $verificationOutput = @(& $archiveVerifier @verifierArguments) }
             catch {
                 $failureCode = 'archive_verification_failed'
                 throw 'archive verification failed'
             }
             $verification = [string]::Join([Environment]::NewLine, [string[]]$verificationOutput) | ConvertFrom-Json -ErrorAction Stop
-            if ([string]$verification.result -cne 'current_source_matches_verified_recovery_archive' -or
-                $verification.safeToRemove -ne $false -or $verification.cleanupAuthorized -ne $false) {
+            $expectedVerificationResult = if ($archiveOnly) {
+                'verified_recovery_archive_source_removed'
+            } else {
+                'current_source_matches_verified_recovery_archive'
+            }
+            if ([string]$verification.result -cne $expectedVerificationResult -or
+                $verification.safeToRemove -ne $false -or $verification.cleanupAuthorized -ne $false -or
+                ($archiveOnly -and ($verification.archiveIntegrityVerified -ne $true -or $verification.sourceVolumeRemoved -ne $true)) -or
+                (-not $archiveOnly -and $verification.sourceVolumeRemoved -ne $false)) {
                 $failureCode = 'verification_contract_failed'
                 throw 'archive verifier did not return the fail-closed success contract'
             }
 
-            $verifiedArchiveVolumes[$bundleVolume] = $true
-            $verifiedRecoveryArchives.Add([pscustomobject][ordered]@{
+            $archiveRecord = [pscustomobject][ordered]@{
                 volume = $bundleVolume
                 bundle_id = $bundleDirectory.Name
                 archive_bytes = [long]$manifest.artifact.bytes
                 archive_sha256 = [string]$verification.archiveSha256
-                source_matches = $true
+                source_matches = (-not $archiveOnly)
+                source_removed = $archiveOnly
+                archive_integrity_verified = $true
+                restore_drill_recorded = 'passed'
                 safe_to_remove = $false
-            })
+            }
+            $verifiedRecoveryArchives.Add($archiveRecord)
+            if ($archiveOnly) {
+                $sourceRemovedRecoveryArchives.Add($archiveRecord)
+            } else {
+                $verifiedArchiveVolumes[$bundleVolume] = $true
+            }
         } catch {
             if (($bundleBytes -le 0 -or -not $artifactSha256) -and
                 ($bundleDirectory.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
@@ -155,14 +187,6 @@ if (Test-Path -LiteralPath $archiveRootFull -PathType Container) {
     }
 }
 
-function Invoke-DockerInventory([string[]]$Arguments) {
-    $global:LASTEXITCODE = 0
-    $lines = @(& docker @Arguments 2>$null)
-    if ($LASTEXITCODE -ne 0) { throw "Docker inventory query failed: docker $($Arguments -join ' ')" }
-    return @($lines | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
-}
-
-$names = @(Invoke-DockerInventory @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $_.StartsWith('018-hai-', [StringComparison]::Ordinal) } | Sort-Object)
 $unknownNames = @($names | Where-Object { -not $knownVolumes.Contains([string]$_) })
 $inventory = foreach ($name in $names) {
     $references = @(Invoke-DockerInventory @('ps', '-a', '--filter', "volume=$name", '--format', '{{.Names}}|{{.Status}}'))
@@ -245,6 +269,7 @@ $result = [pscustomobject][ordered]@{
     volumes_without_supported_recovery_method = $unsupportedRecoveryMethods
     volumes_without_current_verified_recovery_evidence = $unverifiedRecoveryCount
     verified_recovery_archives = @($verifiedRecoveryArchives)
+    source_removed_recovery_archives = @($sourceRemovedRecoveryArchives)
     unverified_recovery_bundles = @($unverifiedRecoveryBundles)
     unverified_recovery_bundle_bytes = $unverifiedRecoveryBytes
     anonymous_hai_volume_mounts = $anonymousMounts

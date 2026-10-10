@@ -6,7 +6,8 @@ param(
     [Parameter(Mandatory)]
     [string]$BundlePath,
     [string]$ArchiveRoot = (Join-Path $env:LOCALAPPDATA 'HAI\volume-recovery'),
-    [switch]$LibraryOnly
+    [switch]$LibraryOnly,
+    [switch]$ArchiveOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,6 +101,31 @@ if (($archiveItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
 
 $imageId = (Invoke-HaiVolumeVerifierDocker @('image', 'inspect', '--format', '{{.Id}}', '018-hai-backend:local') 'Pinned local archive image is unavailable.') | Out-String
 if ($imageId.Trim() -cne [string]$manifest.archiveImageId) { throw 'Pinned local archive image differs from the image used for the restore drill.' }
+
+if ($ArchiveOnly) {
+    $volumeNames = @(Invoke-HaiVolumeVerifierDocker @('volume', 'ls', '--format', '{{.Name}}') 'Could not verify that the archived source volume is absent.')
+    if (@($volumeNames | Where-Object { [string]$_ -ceq $VolumeName }).Count -gt 0) {
+        throw 'Archive-only verification is valid only after the exact source volume has been removed.'
+    }
+    $references = @(Invoke-HaiVolumeVerifierDocker @('ps', '-a', '--filter', "volume=$VolumeName", '--format', '{{.ID}}|{{.Names}}') 'Could not verify source-volume references.')
+    if (@($references | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }).Count -gt 0) {
+        throw 'A container still references the archived source volume.'
+    }
+    [pscustomobject][ordered]@{
+        result = 'verified_recovery_archive_source_removed'
+        sourceVolume = $VolumeName
+        archiveBundle = $bundleFull
+        archiveSha256 = [string]$manifest.artifact.sha256
+        archiveIntegrityVerified = $true
+        restoreDrillRecorded = 'passed'
+        sourceDetached = $true
+        sourceVolumeRemoved = $true
+        safeToRemove = $false
+        cleanupAuthorized = $false
+    } | ConvertTo-Json -Depth 4
+    return
+}
+
 $sourceMetadata = Get-HaiVolumeVerifierMetadata $VolumeName
 if ([string]$sourceMetadata.Driver -cne 'local' -or
     [string]$sourceMetadata.CreatedAt -cne [string]$manifest.sourceVolume.createdAt) {

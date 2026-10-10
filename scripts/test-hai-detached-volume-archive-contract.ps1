@@ -87,6 +87,8 @@ if ($source -match 'docker volume rm \$VolumeName') { throw 'Detached volume arc
 $verifier = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'verify-hai-detached-volume-archive.ps1'))
 if (-not $verifier.Contains('safeToRemove = $false') -or
     -not $verifier.Contains('cleanupAuthorized = $false') -or
+    -not $verifier.Contains("result = 'verified_recovery_archive_source_removed'") -or
+    -not $verifier.Contains('archiveIntegrityVerified = $true') -or
     -not $verifier.Contains("'--cap-add', 'DAC_READ_SEARCH'") -or
     -not $verifier.Contains("'-dzf'") -or
     -not $verifier.Contains('target=/source,readonly') -or
