@@ -23,10 +23,10 @@ if ($requestedPersistentVolumes.Count -gt 0 -and -not $AllowPersistentDataRemova
 }
 
 function Invoke-HaiVolumeCleanupDocker([string[]]$Arguments) {
-    $global:LASTEXITCODE = 0
-    $output = @(& docker @Arguments 2>$null | ForEach-Object { [string]$_ })
-    if ($LASTEXITCODE -ne 0) { throw "Docker inventory or removal failed: docker $($Arguments -join ' ')" }
-    return $output
+    $result = Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSeconds 30
+    if ($result.timed_out) { throw "Docker command timed out; the command outcome may be unknown. Run fresh read-only inventory before retrying: docker $($Arguments -join ' ')" }
+    if (-not $result.succeeded) { throw "Docker inventory or removal failed: docker $($Arguments -join ' ')" }
+    return @(([string]$result.output -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
 function Get-HaiVolumeCleanupReadiness {
@@ -163,31 +163,53 @@ if (-not $PSCmdlet.ShouldProcess(($requestedVolumes -join ', '), 'Remove only de
 
 $removed = [Collections.Generic.List[object]]::new()
 $failure = $null
+$outcomeUnknown = $false
 foreach ($name in $requestedVolumes) {
+    $removeAttempted = $false
+    $verified = $null
     try {
         Assert-HaiVolumeContext $contextName
         $verified = Assert-HaiVolumeRecovery $name $applyReadiness
         if ($verified.archive_sha256 -cne [string](@($verifiedBeforeRemoval | Where-Object volume -CEQ $name)[0].archive_sha256)) {
             throw 'Verified recovery archive identity changed during cleanup.'
         }
+        $removeAttempted = $true
         $null = Invoke-HaiVolumeCleanupDocker @('volume', 'rm', $name)
         $remaining = @(Invoke-HaiVolumeCleanupDocker @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $_ -ceq $name })
         if ($remaining.Count -ne 0) { throw "Docker did not remove the exact selected volume '$name'." }
-        $removed.Add([pscustomobject]@{ volume = $name; archive_bundle = $verified.bundle_id; archive_bytes = $verified.archive_bytes })
+        $removed.Add([pscustomobject]@{ volume = $name; archive_bundle = $verified.bundle_id; archive_bytes = $verified.archive_bytes; postflight_verified = $true; remove_response_confirmed = $true })
     } catch {
         $failure = 'A selected volume failed its final verify/remove/postflight step; inspect the exact local Docker state before retrying.'
+        if ($removeAttempted) {
+            try {
+                $postflight = @(Invoke-HaiVolumeCleanupDocker @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $_ -ceq $name })
+                if ($postflight.Count -eq 0) {
+                    $removed.Add([pscustomobject]@{ volume = $name; archive_bundle = $verified.bundle_id; archive_bytes = $verified.archive_bytes; postflight_verified = $true; remove_response_confirmed = $false })
+                    $failure = 'Docker returned an error after removal was requested, but fresh postflight confirms the volume is absent; verify state before any further cleanup.'
+                }
+            } catch {
+                $outcomeUnknown = $true
+                $failure = 'Docker removal was requested but postflight could not verify the volume state; outcome is unknown. Do not retry until fresh inventory succeeds.'
+            }
+        }
         break
     }
 }
 
-$remainingSelected = @(Invoke-HaiVolumeCleanupDocker @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $requestedVolumes -ccontains $_ })
+$remainingSelected = $null
+try { $remainingSelected = @(Invoke-HaiVolumeCleanupDocker @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $requestedVolumes -ccontains $_ }) }
+catch {
+    $outcomeUnknown = $true
+    $failure = 'Docker postflight inventory failed; volume removal outcome is unknown. Do not retry until fresh inventory succeeds.'
+}
 $result = [pscustomobject][ordered]@{
     mode = if ($failure) { 'partial_failure' } else { 'apply' }
     removed_volumes = $removed.Count
     removed = @($removed)
     remaining_selected_volumes = $remainingSelected
-    deletion_performed = ($removed.Count -gt 0)
-    postflight_verified = ($null -eq $failure -and $remainingSelected.Count -eq 0)
+    deletion_performed = if ($outcomeUnknown) { $null } else { ($removed.Count -gt 0) }
+    deletion_outcome_unknown = $outcomeUnknown
+    postflight_verified = (-not $outcomeUnknown -and $null -eq $failure -and $remainingSelected.Count -eq 0)
     failure = $failure
 }
 $result | ConvertTo-Json -Depth 5

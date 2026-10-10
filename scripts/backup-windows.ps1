@@ -212,12 +212,61 @@ function Get-HaiTextDigest([string]$Text) {
     } finally { $hash.Dispose() }
 }
 
+function Invoke-HaiBoundedProcess([string]$FilePath, [string[]]$Arguments, [ValidateRange(1, 120)][int]$TimeoutSeconds = 15) {
+    $startInfo = [Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $Arguments) { $startInfo.ArgumentList.Add([string]$argument) }
+
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) { throw 'Docker CLI process could not be started.' }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            # Docker may spawn CLI plugins; terminate the process tree so a timed-out check cannot leave them behind.
+            try { $process.Kill($true) } catch { }
+            $process.WaitForExit()
+            return [pscustomobject]@{
+                succeeded = $false
+                timed_out = $true
+                exit_code = $null
+                output = ''
+            }
+        }
+        $process.WaitForExit()
+        $null = $stderr.GetAwaiter().GetResult()
+        return [pscustomobject]@{
+            succeeded = ($process.ExitCode -eq 0)
+            timed_out = $false
+            exit_code = [int]$process.ExitCode
+            output = $stdout.GetAwaiter().GetResult()
+        }
+    } finally {
+        $process.Dispose()
+    }
+}
+
+function Invoke-HaiBoundedDockerCommand([string[]]$Arguments, [ValidateRange(1, 120)][int]$TimeoutSeconds = 15) {
+    $docker = Get-Command docker -ErrorAction Stop
+    return Invoke-HaiBoundedProcess $docker.Source $Arguments -TimeoutSeconds $TimeoutSeconds
+}
+
 function Assert-HaiLocalDockerEngine {
     if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_HOST)) {
         throw 'Windows backup and restore refuse a DOCKER_HOST override; select the local Docker Desktop engine.'
     }
-    $contexts = @(& docker context inspect 2>$null | ConvertFrom-Json)
-    if ($LASTEXITCODE -ne 0 -or $contexts.Count -ne 1 -or
+    $result = Invoke-HaiBoundedDockerCommand @('context', 'inspect') -TimeoutSeconds 10
+    if (-not $result.succeeded -or $result.timed_out) {
+        throw 'Docker local-engine check failed or timed out; no containers or volumes were changed.'
+    }
+    try { $contexts = @($result.output | ConvertFrom-Json -ErrorAction Stop) }
+    catch { throw 'Docker returned invalid local-engine context metadata; no containers or volumes were changed.' }
+    if ($contexts.Count -ne 1 -or
         [string]$contexts[0].Endpoints.docker.Host -notmatch '^(npipe|unix)://') {
         throw 'Windows backup and restore require one verified local Docker engine context; no containers or volumes were changed.'
     }

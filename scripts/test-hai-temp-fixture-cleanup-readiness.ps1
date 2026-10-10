@@ -24,10 +24,9 @@ try {
 }
 
 function Test-DockerQuery([string[]]$Arguments) {
-    $global:LASTEXITCODE = 0
-    $output = @(& docker @Arguments 2>$null)
-    if ($LASTEXITCODE -ne 0) { return [pscustomobject]@{ Success = $false; Items = @() } }
-    return [pscustomobject]@{ Success = $true; Items = @($output | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) }
+    $result = Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSeconds 10
+    if (-not $result.succeeded -or $result.timed_out) { return [pscustomobject]@{ Success = $false; Items = @() } }
+    return [pscustomobject]@{ Success = $true; Items = @(([string]$result.output -split "`r?`n") | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) }
 }
 
 function Get-HaiExampleEnvironmentValues {

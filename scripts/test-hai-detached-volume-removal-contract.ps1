@@ -19,10 +19,14 @@ $required = @(
     'sourceDetached -ne $true',
     'archive_sha256',
     'Assert-HaiLocalDockerEngine',
+    'Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSeconds 30',
+    'outcome may be unknown',
+    'deletion_outcome_unknown = $outcomeUnknown',
+    'remove_response_confirmed = $false',
     'Docker context changed during volume cleanup',
     "'volume', 'rm', `$name",
     'remaining_selected_volumes',
-    'deletion_performed = ($removed.Count -gt 0)'
+    'deletion_performed = if ($outcomeUnknown) { $null } else { ($removed.Count -gt 0) }'
 )
 foreach ($token in $required) {
     if (-not $remover.Contains($token)) { throw "HAI detached-volume removal is missing a required guard: $token" }

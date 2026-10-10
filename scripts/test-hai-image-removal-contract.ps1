@@ -4,6 +4,10 @@ $scriptText = Get-Content -LiteralPath $scriptPath -Raw
 $readinessText = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'get-hai-local-cleanup-readiness.ps1') -Raw
 foreach ($required in @(
     "backup-windows.ps1') -LibraryOnly",
+    'Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSeconds 30',
+    'outcome may be unknown',
+    'deletion_outcome_unknown = $outcomeUnknown',
+    'remove_response_confirmed = $false',
     "'018-hai-backend:latest'",
     "'018-hai-backend-migrate:latest'",
     "'018-hai-idp:latest'",

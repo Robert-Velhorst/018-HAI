@@ -30,10 +30,10 @@ $serviceByReference = @{
 }
 
 function Invoke-HaiImageDocker([string[]]$Arguments) {
-    $global:LASTEXITCODE = 0
-    $output = @(& docker @Arguments 2>$null | ForEach-Object { [string]$_ })
-    if ($LASTEXITCODE -ne 0) { throw "HAI image inventory failed: docker $($Arguments -join ' ')" }
-    return $output
+    $result = Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSeconds 30
+    if ($result.timed_out) { throw "Docker command timed out; the command outcome may be unknown. Run fresh read-only inventory before retrying: docker $($Arguments -join ' ')" }
+    if (-not $result.succeeded) { throw "HAI image inventory failed: docker $($Arguments -join ' ')" }
+    return @(([string]$result.output -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
 function Test-HaiBuildSource([string]$Service, $Compose) {
@@ -174,7 +174,9 @@ foreach ($candidate in $inspection.candidates) {
 }
 $removed = [Collections.Generic.List[object]]::new()
 $failure = $null
+$outcomeUnknown = $false
 foreach ($candidate in $finalInspection.candidates) {
+    $removeAttempted = $false
     try {
         $currentContext = (Invoke-HaiImageDocker @('context', 'show') | Out-String).Trim()
         if ($currentContext -cne $contextName) { throw 'Docker context changed during image removal.' }
@@ -182,14 +184,39 @@ foreach ($candidate in $finalInspection.candidates) {
         if ($current.candidates.Count -ne 1 -or [string]$current.candidates[0].image_id -cne [string]$candidate.image_id) {
             throw "Image identity or container references changed for '$($candidate.reference)'."
         }
+        $removeAttempted = $true
         $null = Invoke-HaiImageDocker @('image', 'rm', [string]$candidate.reference)
         $remaining = @(Invoke-HaiImageDocker @('image', 'ls', '--all', '--no-trunc', '--format', '{{.Repository}}:{{.Tag}}|{{.ID}}') | Where-Object { $_ -match ('^' + [regex]::Escape([string]$candidate.reference) + '\|') })
         if ($remaining.Count -gt 0) { throw "Docker did not remove the exact image tag '$($candidate.reference)'." }
-        $removed.Add([pscustomobject]@{ reference = [string]$candidate.reference; image_id = [string]$candidate.image_id; bytes = [long]$candidate.bytes })
+        $removed.Add([pscustomobject]@{ reference = [string]$candidate.reference; image_id = [string]$candidate.image_id; bytes = [long]$candidate.bytes; postflight_verified = $true; remove_response_confirmed = $true })
     } catch {
         $failure = 'An image failed its final context, reference, remove, or postflight check; inspect exact Docker state before retrying.'
+        if ($removeAttempted) {
+            try {
+                $postflight = @(Invoke-HaiImageDocker @('image', 'ls', '--all', '--no-trunc', '--format', '{{.Repository}}:{{.Tag}}|{{.ID}}') | Where-Object { $_ -match ('^' + [regex]::Escape([string]$candidate.reference) + '\|') })
+                if ($postflight.Count -eq 0) {
+                    $removed.Add([pscustomobject]@{ reference = [string]$candidate.reference; image_id = [string]$candidate.image_id; bytes = [long]$candidate.bytes; postflight_verified = $true; remove_response_confirmed = $false })
+                    $failure = 'Docker returned an error after image removal was requested, but fresh postflight confirms the tag is absent; verify state before further cleanup.'
+                }
+            } catch {
+                $outcomeUnknown = $true
+                $failure = 'Docker image removal was requested but postflight could not verify the tag state; outcome is unknown. Do not retry until fresh inventory succeeds.'
+            }
+        }
         break
     }
+}
+$postflightVerified = $true
+try {
+    $remainingTags = @(Invoke-HaiImageDocker @('image', 'ls', '--all', '--no-trunc', '--format', '{{.Repository}}:{{.Tag}}|{{.ID}}') | Where-Object {
+        $line = [string]$_
+        @($finalInspection.candidates | Where-Object { $line -match ('^' + [regex]::Escape([string]$_.reference) + '\|') }).Count -gt 0
+    })
+    if ($remainingTags.Count -gt 0) { $postflightVerified = $false }
+} catch {
+    $outcomeUnknown = $true
+    $postflightVerified = $false
+    $failure = 'Docker postflight inventory failed; image removal outcome is unknown. Do not retry until fresh inventory succeeds.'
 }
 [pscustomobject][ordered]@{
     mode = if ($failure) { 'partial_failure' } else { 'completed' }
@@ -197,6 +224,8 @@ foreach ($candidate in $finalInspection.candidates) {
     image_size_bytes_estimate_not_reclaimable = [long](($removed | Measure-Object -Property bytes -Sum).Sum)
     failure = $failure
     docker_volumes_and_containers_touched = $false
-    deletion_performed = ($removed.Count -gt 0)
+    deletion_performed = if ($outcomeUnknown) { $null } else { ($removed.Count -gt 0) }
+    deletion_outcome_unknown = $outcomeUnknown
+    postflight_verified = $postflightVerified
 } | ConvertTo-Json -Depth 5
 if ($failure) { throw $failure }

@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-hai-volume-cleanup-readiness.ps1'))
+$processRunner = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'backup-windows.ps1'))
 foreach ($token in @(
+    'Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSeconds 15',
+    '$result.timed_out',
     "'system', 'df', '--verbose', '--format', 'json'",
     'reported_size = if ($volumeSizes.ContainsKey([string]$name)) { [string]$volumeSizes[[string]$name] } else { $null }',
     "reported_volume_size_status = `$volumeSizeStatus",
@@ -42,6 +45,14 @@ foreach ($token in @(
 )) {
     if (-not $source.Contains($token)) { throw "HAI image readiness is missing its reference or retention gate: $token" }
 }
+foreach ($token in @(
+    'function Invoke-HaiBoundedProcess',
+    '$process.WaitForExit($TimeoutSeconds * 1000)',
+    '$process.Kill($true)',
+    'timed_out = $true'
+)) {
+    if (-not $processRunner.Contains($token)) { throw "Bounded Docker process runner is missing timeout safety: $token" }
+}
 if ($source.Contains('uncovered_volume_count')) {
     throw 'Volume readiness must distinguish a supported recovery workflow from a verified current recovery artifact.'
 }
@@ -52,3 +63,4 @@ if ($source -match '(?i)Remove-Item|\[IO\.Directory\]::Delete|\[IO\.File\]::Dele
     throw 'HAI resource readiness must not delete recovery bundles or their artifacts.'
 }
 Write-Output 'HAI volume and image cleanup readiness contract: PASS'
+& (Join-Path $PSScriptRoot 'test-hai-bounded-process.ps1')

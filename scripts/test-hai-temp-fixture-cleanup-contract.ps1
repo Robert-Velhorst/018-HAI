@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-hai-temp-fixture-cleanup-readiness.ps1'))
+$processRunner = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'backup-windows.ps1'))
 $runner = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'isolated-acceptance-stack.ps1'))
 $behaviorTest = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-isolated-acceptance-stack.ps1'))
 foreach ($token in @(
@@ -29,6 +30,10 @@ foreach ($token in @(
     'deletion_performed = $false'
 )) {
     if (-not $source.Contains($token)) { throw "HAI Temp fixture readiness is missing a cleanup safety guard: $token" }
+}
+if (-not $source.Contains('Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSeconds 10') -or
+    -not $processRunner.Contains('function Invoke-HaiBoundedDockerCommand')) {
+    throw 'HAI Temp readiness must use a bounded local Docker query and fail closed on timeout.'
 }
 foreach ($token in @(
     "'(?:^|_)(?:PASSWORD|PASS|TOKEN|SECRET|API_KEY|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY|ENCRYPTION_KEY|ACCESS_KEY|SHARED_KEY|CREDENTIALS?)$'",

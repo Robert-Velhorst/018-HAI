@@ -33,10 +33,10 @@ $archiveVerifier = Join-Path $PSScriptRoot 'verify-hai-detached-volume-archive.p
 $archiveRootFull = [IO.Path]::GetFullPath($RecoveryArchiveRoot)
 
 function Invoke-DockerInventory([string[]]$Arguments) {
-    $global:LASTEXITCODE = 0
-    $lines = @(& docker @Arguments 2>$null)
-    if ($LASTEXITCODE -ne 0) { throw "Docker inventory query failed: docker $($Arguments -join ' ')" }
-    return @($lines | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+    $result = Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSeconds 15
+    if ($result.timed_out) { throw "Docker inventory query timed out: docker $($Arguments -join ' ')" }
+    if (-not $result.succeeded) { throw "Docker inventory query failed: docker $($Arguments -join ' ')" }
+    return @(([string]$result.output -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
 $names = @(Invoke-DockerInventory @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $_.StartsWith('018-hai-', [StringComparison]::Ordinal) } | Sort-Object)
@@ -284,8 +284,10 @@ foreach ($container in $haiContainerNames) {
 $unsupportedRecoveryMethods = @($inventory | Where-Object { $_.recovery_method -eq 'not_covered' }).Count
 $unverifiedRecoveryCount = @($inventory | Where-Object { -not $_.recovery_verified_this_run }).Count
 $unverifiedRecoveryBytes = [long](($unverifiedRecoveryBundles | Measure-Object -Property bundle_bytes -Sum).Sum)
+$contextResult = Invoke-HaiBoundedDockerCommand @('context', 'show') -TimeoutSeconds 10
+$dockerContext = if ($contextResult.succeeded -and -not $contextResult.timed_out) { ([string]$contextResult.output).Trim() } else { 'unavailable' }
 $result = [pscustomobject][ordered]@{
-    docker_context = (& docker context show 2>$null | Out-String).Trim()
+    docker_context = $dockerContext
     inventory_complete = ($unknownNames.Count -eq 0)
     named_hai_volumes = $inventory.Count
     unknown_hai_volumes = $unknownNames
