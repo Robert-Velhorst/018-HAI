@@ -14,11 +14,7 @@ $prNumber = 36
 $expectedRoot = 'D:\codex-temp\hai-pr-update-018-20261009'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..')).TrimEnd('\')
 $composeFile = Join-Path $repoRoot 'docker-compose.local.yml'
-$environmentFile = if (Test-Path -LiteralPath (Join-Path $repoRoot '.env.local') -PathType Leaf) {
-    Join-Path $repoRoot '.env.local'
-} else {
-    Join-Path $repoRoot '.env.example'
-}
+$environmentFile = Join-Path $repoRoot '.env.example'
 $serviceByReference = @{
     '018-hai-backend:latest' = 'backend'
     '018-hai-nginxconfigmanager:latest' = 'nginxconfigmanager'
@@ -39,16 +35,15 @@ function Test-HaiBuildSource([string]$Service, $Compose) {
     $dockerfileValue = if ($build -is [string] -or [string]::IsNullOrWhiteSpace([string]$build.dockerfile)) {
         'Dockerfile'
     } else { [string]$build.dockerfile }
-    if ([IO.Path]::IsPathRooted($contextValue) -or [IO.Path]::IsPathRooted($dockerfileValue) -or
-        @((($contextValue + '/' + $dockerfileValue) -split '[/\\]') | Where-Object { $_ -in @('..') }).Count -gt 0) {
-        throw "Compose build source for '$Service' escapes the exact repository tree."
-    }
-    $context = [IO.Path]::GetFullPath((Join-Path $repoRoot $contextValue))
-    $dockerfile = [IO.Path]::GetFullPath((Join-Path $context $dockerfileValue))
+    $context = if ([IO.Path]::IsPathRooted($contextValue)) { [IO.Path]::GetFullPath($contextValue) }
+        else { [IO.Path]::GetFullPath((Join-Path $repoRoot $contextValue)) }
+    $dockerfile = if ([IO.Path]::IsPathRooted($dockerfileValue)) { [IO.Path]::GetFullPath($dockerfileValue) }
+        else { [IO.Path]::GetFullPath((Join-Path $context $dockerfileValue)) }
     if (-not $context.StartsWith($repoRoot + '\', [StringComparison]::OrdinalIgnoreCase) -and $context -cne $repoRoot) {
         throw "Compose build context for '$Service' is outside the repository."
     }
     if (-not $dockerfile.StartsWith($repoRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+        -not $dockerfile.StartsWith($context.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase) -or
         -not (Test-Path -LiteralPath $context -PathType Container) -or -not (Test-Path -LiteralPath $dockerfile -PathType Leaf)) {
         throw "Compose build source for '$Service' is missing or outside the repository."
     }
@@ -93,7 +88,7 @@ function Get-HaiImageCandidates([string[]]$References, [string]$ExpectedContext)
     if (-not (Test-Path -LiteralPath $composeFile -PathType Leaf) -or -not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
         throw 'The local Compose file or environment configuration is missing.'
     }
-    $composeLines = @(& docker compose --env-file $environmentFile -f $composeFile config --format json 2>$null)
+    $composeLines = @(& docker compose --profile event-bus --env-file $environmentFile -f $composeFile config --format json 2>$null)
     if ($LASTEXITCODE -ne 0 -or $composeLines.Count -eq 0) { throw 'Current local Compose build configuration could not be validated.' }
     $compose = ($composeLines -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
 
