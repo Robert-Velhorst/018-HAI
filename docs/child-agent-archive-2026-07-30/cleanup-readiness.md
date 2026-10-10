@@ -96,25 +96,32 @@ work:
 | `019fb277-0ddf-7500-9088-52cb4655be1a` (aborted duplicate-ID transcript) | Successful patch output touched workflow criteria and task evidence validation; later patch attempts also failed. | Workflow and task paths are tracked in commits `29e9743` and `d3ad560`; backend CI passed. The duplicate-ID companion is nonterminal, so both transcripts remain retained. |
 | `019fb296-75ae-7943-913c-32d41f5de2d6` (aborted) | One successful patch changed task evidence validation and tests. | `backend/internal/task/validation.go` and its tests are tracked in `d3ad560`; backend CI passed. |
 | `019fb296-9d1a-7301-901c-c35d99ccf3da` (aborted) | One successful patch changed Constitution history types, service, repository, handler, routes, and tests. | These paths are tracked in `29e9743`/`d3ad560`; backend CI passed. |
-| Remaining six retained rows | The bounded tail audit recorded no successful patch call for these rows. This is not proof that their entire transcript has no earlier work. | No result is promoted from an aborted or nonterminal transcript without complete review. Preserve the raw files and their duplicate-ID relationships. |
+| Remaining six retained rows | A full streaming pass over these files reviewed user-message events and all shell-call records. No patch-tool calls were present. User/task context and command history include: (1) Meitner and Volta nonterminal histories repeat the HAI OSS-agent/RAGFlow work; (2) Carson contains isolated Go workflow-test performance diagnostics; (3) Parfit contains generated dependency-tree compression and attempted cache quarantine; (4) Hume contains storage/cache inventory and copy attempts; (5) Arendt contains a read-only disk-exhaustion integrity audit. | OSS/RAGFlow behavior is already represented in current source and documentation; task/workflow/governance changes are covered above. Performance and integrity work is diagnostic, not a product patch. The full shell-call scan found 6 mutation-like cache/temp commands in Parfit and 4 in Hume; recorded outcomes include successful moves, failed moves, timeouts, and an interrupted copy. These concern workstation state, not HAI product files. Do not replay or clean those paths from transcript evidence. |
 
 This is a source-presence and CI cross-check, not proof that each historical
 patch was applied byte-for-byte or that the product is deployed. The full
 transcripts remain the authoritative record for unresolved/partial work. The
 eight candidate hashes are verified; the ten retained transcripts are not
-eligible for deletion under this ledger.
+eligible for deletion under the current ledger policy. The six retained files
+were streamed for user-message events and shell-call records, with mutation-like
+calls matched to their recorded outputs where available. Their full
+assistant/tool-output histories were not semantically reviewed line by line;
+the six nonterminal/aborted records with no patch calls are preserved for that
+reason. No claim of complete transcript integration is made while that
+limitation holds.
 
 **Transcript cleanup gate is not yet satisfied.** The source changes,
-crosswalk, reports, and manifest are committed on the PR branch; the currently
-observed remote head is `3b51111`. A fresh read-only source audit confirms all
-18 archive files are present and all eight candidate files match their
-manifest hashes. The current PR #36 remains
-open; its latest observed run has completed with seven failed checks, including
-secret scan, installer guards, browser acceptance, safety image, authenticated
-smoke, migration integration, and account isolation. This does not satisfy the
-cleanup gate. Do not remove any candidate transcript until the canonical-main,
-merged-PR, and successful-check gates pass. The manifest/hash is a candidate
-allowlist only, not a deletion command.
+crosswalk, reports, and manifest are committed on the PR branch. A fresh
+read-only source audit confirms all 18 archive files are present and all eight
+candidate files match their manifest hashes. At the latest check on
+2026-10-10, PR #36 is open at head `aa110fae0a9ad541815e6bce4405f47724f5d36b`;
+run `38036603737` completed with seven failed checks: Windows installer guards,
+two-account isolation, repository secret scan, browser acceptance,
+authenticated smoke, migration integration, and Promptfoo runner image. Other
+completed checks in that run succeeded. The CI gate and canonical-main/merged-PR
+gates therefore do not pass. Do not remove any candidate transcript under the
+current cleanup procedure. The manifest/hash is a candidate allowlist only,
+not a deletion command.
 
 - The eight unique completed transcripts are candidates for archive cleanup
   only after the integration changes, ledger, and report/manifest are committed
@@ -167,11 +174,14 @@ are complete. A normal source-hash verification intentionally reports
 `cleanup_gate_ready=false` when the repository/PR gates were not requested.
 
 The ledger-only check passed with 18 manifest rows, 8 candidates, 10 retained
-transcripts, and 8 matching crosswalk rows. The source check also passed against
-`D:\codex-temp\hai-completed-agent-sessions`: all eight candidate files
+transcripts, and 8 matching candidate crosswalk rows. The source check also
+passed against `D:\codex-temp\hai-completed-agent-sessions`: all 18 files
+(20,739,169,122 logical bytes) were present and the eight candidate files
 (7,939,888,699 bytes total) matched their recorded size and SHA-256. This
-verifies candidate bytes against the ledger; it does not close the separate
-PR/CI and repository-history gates or authorize deletion.
+verifies the archive inventory and candidate bytes against the ledger; it does
+not establish that every event in the six retained histories has been
+integrated, close the separate PR/CI and repository-history gates, or authorize
+deletion.
 
 The Windows backup preflight now inventories mounted HAI volumes by Compose
 project and HAI container name, checks Docker's
