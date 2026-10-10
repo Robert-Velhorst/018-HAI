@@ -5,6 +5,7 @@ const baseURL = process.env.E2E_BASE_URL || 'http://localhost';
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: './global-setup.ts',
   // These tests exercise a real stack, so keep them serial and generous.
   fullyParallel: false,
   workers: 1,

@@ -40,7 +40,7 @@ test.describe('HAI operator acceptance flow', () => {
     assertIsolatedAcceptanceTarget(baseURL, process.env.E2E_ISOLATED_STACK, email);
   });
 
-  test('login -> source -> sync -> workflow -> exact bounded execution', async ({ page }) => {
+  test('login -> source -> sync -> workflow -> fail-closed runtime preflight', async ({ page }) => {
     test.setTimeout(180_000);
     let sourceName = '';
     let sourceId = '';
@@ -189,7 +189,7 @@ test.describe('HAI operator acceptance flow', () => {
       await expect(page.getByTestId('workflow-selected-state')).toHaveText('ready');
     });
 
-    await test.step('require action-bound approval before executing the selected API workflow', async () => {
+    await test.step('block execution until runtime and governance prerequisites are verified', async () => {
       const exactRun = page.getByTestId('workflow-run-selected');
       await expect(exactRun).toBeVisible();
       await exactRun.click();
@@ -205,9 +205,13 @@ test.describe('HAI operator acceptance flow', () => {
       const result = await response.json();
       const resultContext = JSON.stringify(result, null, 2);
       expect(result.status, resultContext).toBe('blocked');
-      expect(result.state, resultContext).toBe('needs_approval');
-      expect(result.attempts, resultContext).toBe(0);
-      expect(result.message).toContain('action-bound approval proof is required');
+      expect(result.state, resultContext).toBe('blocked');
+      expect(result.reviewRequired, resultContext).toBe(true);
+      expect(result.message).toContain('assign and verify required participants before execution');
+      expect(result.message).toContain('no capable model was selected');
+      expect(result.message).toContain('approval is required before execution');
+      expect(result.message).toContain('framework evidence preconditions were not verified before execution');
+      expect(result.message).toContain('no execution result was produced');
       await expect(page.getByTestId('workflow-selected-state')).toHaveText('needs approval');
       await expect(page.getByTestId('workflow-approval-controls')).toBeVisible();
       const approvalResponse = page.waitForResponse((response) =>

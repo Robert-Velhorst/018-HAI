@@ -3,10 +3,13 @@
 }
 
 .life-ops-page {
+  box-sizing: border-box;
   color: var(--hai-text);
   margin: 0 auto;
   max-width: 1320px;
+  min-width: 0;
   padding: 30px;
+  width: 100%;
 }
 
 .life-ops-header,
@@ -309,7 +312,18 @@ p {
 .life-empty {
   color: var(--hai-text-muted);
   min-height: 162px;
+  min-width: 0;
   padding: 22px;
+}
+
+.life-empty > div {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.life-empty button {
+  max-width: 100%;
+  white-space: normal;
 }
 
 .life-empty > i {
@@ -636,6 +650,20 @@ p {
     align-items: flex-start;
   }
 
+  .life-ops-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .life-ops-header > div {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .life-ops-header > button {
+    margin-left: auto;
+  }
+
   .life-ops-header h1 {
     font-size: 25px;
   }
@@ -653,6 +681,20 @@ p {
   .factor-grid,
   .priority-result {
     grid-template-columns: 1fr;
+  }
+
+  .life-empty {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .life-empty > div {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .life-empty button {
+    align-self: flex-start;
   }
 
   .goal-summary {

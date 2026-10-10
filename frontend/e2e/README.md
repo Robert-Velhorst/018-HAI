@@ -14,8 +14,8 @@ password login
 -> explicit pursuit creation
 -> project-matched low-risk workflow intake
 -> exact runtime selection
--> one exact selected read-only execution
--> terminal completion with deterministic verification evidence
+-> fail-closed runtime and governance preflight
+-> review-required block with no execution result when prerequisites are missing
 ```
 
 The source path is the read-only `connected-sources/` mount. The suite does not
@@ -23,9 +23,10 @@ authorize an external provider, request an irreversible operation, or present
 the health probe as legal work. Its runtime target is the backend's real
 `GET /readyz` endpoint. High-risk approval and legal-evidence boundaries are
 covered by backend policy tests; this browser suite proves the separate
-read-only operator path. Missing controls, failed proposal resolution, an
-unexpected execution route, non-terminal workflows, or absent verification
-evidence fail the test; no acceptance step is optional.
+read-only operator path through safe preflight. This flow does not prove a
+successful task execution or terminal completion. Missing controls, failed
+proposal resolution, a missing fail-closed block, or absent prerequisite
+reasons fail the test; no acceptance step is optional.
 
 ## Run it
 
@@ -69,6 +70,10 @@ Credentials come from the environment and are never committed. Authenticated
 tests reject a missing isolation declaration, a non-loopback URL, default ports,
 and a non-synthetic account. `E2E_ALLOW_MUTATION=true` separately authorizes only
 the disposable operator flow; it does not make a personal installation safe.
+When enabled, Playwright creates one synthetic owner session in a unique OS
+temporary directory and reuses it for the read-only route matrix. Global teardown
+removes the session file. The production IDP login rate limit remains enabled;
+tests must not raise or disable it.
 Control-room tests block post-login mutation requests. Pure target-validation
 and rendering-contract tests need no stack or account:
 

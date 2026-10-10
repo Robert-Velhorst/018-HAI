@@ -5,8 +5,7 @@ import { assertIsolatedAcceptanceTarget } from './isolated-stack';
 
 export interface OwnedMatrixTarget {
   origin: string;
-  email: string;
-  password: string;
+  storageStatePath: string;
 }
 
 function inside(root: string, candidate: string): boolean {
@@ -37,9 +36,13 @@ export function ownedMatrixTarget(info: TestInfo): OwnedMatrixTarget {
   const password = process.env.E2E_OPERATOR_PASSWORD || '';
   assertIsolatedAcceptanceTarget(origin, process.env.E2E_ISOLATED_STACK, email);
   if (process.env.E2E_ALLOW_MUTATION !== 'true') {
-    throw new Error('Matrix requires E2E_ALLOW_MUTATION=true for its single synthetic login only.');
+    throw new Error('Matrix requires E2E_ALLOW_MUTATION=true for one isolated synthetic session setup.');
   }
   if (!password) throw new Error('Matrix requires the disposable owner password.');
+  const storageStatePath = process.env.HAI_E2E_AUTH_STATE_PATH || '';
+  if (!path.isAbsolute(storageStatePath) || !statExists(storageStatePath)) {
+    throw new Error('Matrix requires the isolated run-scoped synthetic owner session.');
+  }
   if (info.project.use.baseURL !== origin) throw new Error('Configured baseURL differs from the explicit isolated target.');
   const evidence = process.env.HAI_ACCEPTANCE_EVIDENCE || '';
   if (!path.isAbsolute(evidence)) throw new Error('HAI_ACCEPTANCE_EVIDENCE must name the parent-owned absolute evidence directory.');
@@ -61,7 +64,7 @@ export function ownedMatrixTarget(info: TestInfo): OwnedMatrixTarget {
     // Never expose private manifest values or filesystem/parser diagnostics.
     throw new Error('Matrix evidence ownership or artifact destination validation failed.');
   }
-  return { origin: new URL(origin).origin, email, password };
+  return { origin: new URL(origin).origin, storageStatePath };
 }
 
 interface MatrixHealth {
@@ -90,7 +93,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
     }
     // Do not inherit private cookies, storageState, HARs or recording settings.
     const context = await browser.newContext({
-      baseURL: target.origin, storageState: { cookies: [], origins: [] },
+      baseURL: target.origin, storageState: target.storageStatePath,
       viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce',
       serviceWorkers: 'block', acceptDownloads: false,
     });
@@ -101,12 +104,11 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
       consoleErrors: 0, pageErrors: 0, failedRequests: 0, httpErrors: 0,
       deniedWrites: 0, deniedExternal: 0, pendingReads: 0,
     };
-    let loginAvailable = true;
     let bootstrapAuthRefusals = 0;
-    const bootstrapProbe = (url: string, beforeLogin = loginAvailable): boolean => {
+    const bootstrapProbe = (url: string): boolean => {
       try {
         const parsed = new URL(url);
-        return beforeLogin && parsed.origin === target.origin
+        return parsed.origin === target.origin
           && parsed.pathname === '/api/v1/auth/is-user-authenticated';
       } catch { return false; }
     };
@@ -114,7 +116,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
     page.on('console', (message) => {
       if (message.type() !== 'error') return;
       // Only the real signed-out guard's exact 401 is expected, never route errors.
-      if (bootstrapAuthRefusals > 0 && bootstrapProbe(message.location().url, true)
+      if (bootstrapAuthRefusals > 0 && bootstrapProbe(message.location().url)
         && /\b401\b/.test(message.text())) return;
       health.consoleErrors++;
     });
@@ -141,15 +143,6 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
         health.deniedExternal++;
         await route.abort('blockedbyclient');
       } else if (['GET', 'HEAD', 'OPTIONS'].includes(request.method())) {
-        await route.continue();
-      } else if (loginAvailable && request.method() === 'POST' && url.pathname === '/api/v1/auth/login') {
-        const body = request.postDataJSON();
-        if (body?.email !== target.email || body?.password !== target.password) {
-          health.deniedWrites++;
-          await route.abort('blockedbyclient');
-          return;
-        }
-        loginAvailable = false;
         await route.continue();
       } else {
         health.deniedWrites++;
@@ -190,17 +183,8 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
 });
 
 export async function signIn(matrix: OwnedBrowserMatrix): Promise<void> {
-  const { page, target } = matrix;
-  await page.goto('/login');
-  await page.getByTestId('login-email').fill(target.email);
-  // Keep the credential out of a failed fill() call's Playwright log.
-  await page.getByTestId('login-password').evaluate((element, password) => {
-    const input = element as HTMLInputElement;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, password);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }, target.password);
-  await page.getByTestId('login-submit').click();
+  const { page } = matrix;
+  await page.goto('/control-center');
   await expect(page).toHaveURL(/\/(?:control-center|onboarding)(?:\?|$)/);
   if (new URL(page.url()).pathname === '/onboarding') {
     await page.getByRole('button', { name: 'Skip', exact: true }).click();
