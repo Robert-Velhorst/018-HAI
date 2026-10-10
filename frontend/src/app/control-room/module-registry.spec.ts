@@ -85,6 +85,7 @@ describe('HAI module registry', () => {
           'constitution-history',
           'selection-history',
           'constitution-governance',
+          'framework-preference-history',
         ],
       })
     );

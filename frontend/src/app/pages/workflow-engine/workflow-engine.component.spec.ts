@@ -297,6 +297,8 @@ describe('WorkflowEngineComponent', () => {
 
   it('routes explicitly entered outcome criteria as separate success criteria', () => {
     const { component, pursuitService } = createComponent();
+    component.dataLoaded = true;
+    component.loadFailed = false;
     component.intakeForm.patchValue({
       input: 'Prepare the evidence bundle',
       successCriteriaText: ' Include the March 19 email. \n\nLink every item to its source.  ',
