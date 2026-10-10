@@ -89,10 +89,48 @@ foreach ($candidate in $selected) {
 $removed = [Collections.Generic.List[object]]::new()
 foreach ($path in $pathsToRemove) {
     if ($PSCmdlet.ShouldProcess($path, 'Remove verified synthetic HAI acceptance fixture')) {
-        $bytes = [long]($selected | Where-Object { $_.directory -ceq $path } | Select-Object -First 1 -ExpandProperty bytes)
-        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
-        if (Test-Path -LiteralPath $path) { throw 'Fixture removal could not be verified.' }
-        $removed.Add([pscustomobject]@{ path = $path; bytes = $bytes })
+        $selectedEntry = @($selected | Where-Object { $_.directory -ceq $path })
+        if ($selectedEntry.Count -ne 1) { throw 'Selected fixture identity is ambiguous; no further directory was removed.' }
+        $owner = [string]$selectedEntry[0].owner
+        $finalReadiness = Get-HaiFixtureReadiness
+        if ($finalReadiness.deletion_performed -ne $false -or $finalReadiness.cleanup_authorized -ne $false) {
+            throw 'Final fixture audit violated its read-only contract; no further directory was removed.'
+        }
+        $finalEntry = @($finalReadiness.directories | Where-Object { [string]$_.owner -ceq $owner })
+        if ($finalEntry.Count -ne 1 -or
+            [string]$finalEntry[0].disposition -cne 'candidate_manual_cleanup' -or
+            [string]$finalEntry[0].directory -cne $path -or
+            [long]$finalEntry[0].bytes -ne [long]$selectedEntry[0].bytes -or
+            $null -eq $finalEntry[0].age_hours -or [double]$finalEntry[0].age_hours -lt $MinimumAgeHours -or
+            $finalEntry[0].related_containers -ne 0 -or $finalEntry[0].related_networks -ne 0 -or
+            $finalEntry[0].related_volumes -ne 0 -or
+            (ConvertTo-Json -InputObject @($finalEntry[0].source_hashes) -Depth 5 -Compress) -cne
+                (ConvertTo-Json -InputObject @($selectedEntry[0].source_hashes) -Depth 5 -Compress)) {
+            throw 'Fixture identity, hashes, age, or Docker references changed after confirmation; no further directory was removed.'
+        }
+
+        $verifiedPath = (Resolve-Path -LiteralPath $path -ErrorAction Stop).Path
+        $expectedPath = Join-Path $root "hai-acceptance-$owner"
+        if ($verifiedPath -cne $expectedPath -or
+            -not $verifiedPath.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Fixture path changed after confirmation; no further directory was removed.'
+        }
+        $verifiedItem = Get-Item -LiteralPath $verifiedPath -Force
+        $verifiedEntries = @(Get-ChildItem -LiteralPath $verifiedPath -Force -Recurse -ErrorAction Stop)
+        if (($verifiedItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            @($verifiedEntries | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count -gt 0) {
+            throw 'Fixture acquired a reparse point after confirmation; no further directory was removed.'
+        }
+        $finalProcesses = Get-CimInstance Win32_Process -ErrorAction Stop
+        $finalProcessReference = @($finalProcesses | Where-Object {
+            -not [string]::IsNullOrWhiteSpace([string]$_.CommandLine) -and
+            ([string]$_.CommandLine).IndexOf($verifiedPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        })
+        if ($finalProcessReference.Count -gt 0) { throw 'A running process now references the selected fixture; no further directory was removed.' }
+
+        Remove-Item -LiteralPath $verifiedPath -Recurse -Force -ErrorAction Stop
+        if (Test-Path -LiteralPath $verifiedPath) { throw 'Fixture removal could not be verified.' }
+        $removed.Add([pscustomobject]@{ path = $verifiedPath; bytes = [long]$selectedEntry[0].bytes })
     }
 }
 

@@ -23,10 +23,25 @@ foreach ($token in @(
     'Get-CimInstance Win32_Process -ErrorAction Stop',
     'Resolved fixture path is outside the exact Temp-owned fixture directory.',
     '$PSCmdlet.ShouldProcess',
-    'Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop',
-    'Test-Path -LiteralPath $path'
+    'Remove-Item -LiteralPath $verifiedPath -Recurse -Force -ErrorAction Stop',
+    'Test-Path -LiteralPath $verifiedPath'
 )) {
     if (-not $remover.Contains($token)) { throw "Temp fixture removal is missing a fail-closed guard: $token" }
+}
+$confirmationPosition = $remover.IndexOf('if ($PSCmdlet.ShouldProcess($path')
+$finalAuditPosition = $remover.IndexOf('$finalReadiness = Get-HaiFixtureReadiness')
+$removePosition = $remover.IndexOf('Remove-Item -LiteralPath $verifiedPath -Recurse -Force')
+if ($confirmationPosition -lt 0 -or $finalAuditPosition -le $confirmationPosition -or $removePosition -le $finalAuditPosition) {
+    throw 'Temp fixture removal must repeat its full readiness audit after confirmation and immediately before deletion.'
+}
+foreach ($token in @(
+    'finalReadiness.deletion_performed -ne $false',
+    'finalReadiness.cleanup_authorized -ne $false',
+    'source_hashes',
+    'Get-CimInstance Win32_Process -ErrorAction Stop',
+    'verifiedEntries = @(Get-ChildItem -LiteralPath $verifiedPath -Force -Recurse'
+)) {
+    if (-not $remover.Contains($token)) { throw "Temp final deletion audit is missing required guard: $token" }
 }
 if ($remover -match 'docker\s+(container|network|volume)\s+(rm|prune)|git\s+clean') {
     throw 'Temp fixture removal may not remove Docker resources or repository data.'

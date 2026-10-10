@@ -132,14 +132,20 @@ verified fixtures are about 14.4 hours old, and two markerless partial folders
 remain unverified. They were not removed. The 20.7 GB transcript archive and
 active PR worktree/toolchain/diagnostics were not modified.
 
-PR #36 remains open at `a97fe173475646efe8e2783846344e05b8a270c0` and is
-unstable. The dedicated HAI cleanup-readiness safety-contract job passed, as
-did frontend, backend, IDP, and guarded Windows runtime checks. Seven other CI
-jobs failed: repository secret scan, real-Postgres migration integration,
-Windows installer guards, two-account isolation, Promptfoo safety image,
-authenticated control-plane smoke, and browser acceptance. The merge/removal
-gate therefore remains closed. The expanded image-removal contract, unified
-inventory contract, Temp fixture cleanup contract, transcript cleanup gate,
-volume/image inventory contract, PowerShell parser, and local Compose
+The Temp-fixture remover was hardened to repeat its read-only readiness audit
+for each directory after `ShouldProcess` confirmation, immediately before
+recursive removal. It compares the owner, exact path, byte count, file hashes,
+retention age, Docker references, reparse-point state, and running-process
+references. Its live dry run still reports zero candidates and performs no
+deletion.
+
+PR #36 remains open at `ba9c67e140545cdb564d615ba6451ef91a1cc5b8` and is
+unstable. CI run `38027085175` is still running: the dedicated HAI
+cleanup-readiness safety-contract job has passed, while repository secret
+scan, Promptfoo safety image, and two-account isolation have failed so far;
+other jobs were still pending or running at the last check. The merge/removal
+gate remains closed. The expanded image-removal contract, unified inventory
+contract, Temp fixture cleanup and removal contracts, transcript cleanup
+gate, volume/image inventory contract, PowerShell parser, and local Compose
 validation passed in this session. No data or containers were deleted or
 stopped during the recheck.
