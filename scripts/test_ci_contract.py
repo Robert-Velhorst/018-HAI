@@ -573,8 +573,8 @@ class CIWorkflowContractTest(unittest.TestCase):
                 default_services.add(service)
 
         self.assertEqual(default_services, core_services)
-        self.assertEqual(len(services), 44)
-        self.assertEqual(len(optional_services), 34)
+        self.assertEqual(len(services), 45)
+        self.assertEqual(len(optional_services), 35)
         self.assertTrue(optional_services)
         for service in optional_services:
             with self.subTest(service=service):
@@ -595,8 +595,25 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.findall(r"(?m)^\| `([^`]+)` \|", documentation)
         )
 
-        self.assertEqual(len(compose_profiles), 25)
+        self.assertEqual(len(compose_profiles), 26)
         self.assertEqual(documented_profiles, compose_profiles)
+
+    def test_searxng_discovery_is_opt_in_and_network_isolated(self) -> None:
+        compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+        service = compose_service_block(compose, "searxng")
+        backend = compose_service_block(compose, "backend")
+        networks = compose.split("\nnetworks:\n", 1)[1].split("\nvolumes:\n", 1)[0]
+
+        self.assertIn('profiles: ["research-discovery"]', service)
+        self.assertNotRegex(service, r"(?m)^    ports:")
+        self.assertIn("searxng-backend", service)
+        self.assertIn("searxng-egress", service)
+        self.assertIn("searxng-backend", backend)
+        self.assertRegex(
+            networks,
+            r"(?ms)^  searxng-backend:\n(?:(?!^  [\w-]+:).)*?^    internal: true$",
+        )
+        self.assertIn("HAI_SEARXNG_SECRET", service)
 
     def test_local_compose_has_one_canonical_runtime_and_unique_container_names(
         self,
@@ -734,7 +751,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             "\nnetworks:\n", 1
         )[0]
         services = re.findall(r"(?m)^  ([A-Za-z0-9_-]+):\n", services_section)
-        self.assertEqual(len(services), 44)
+        self.assertEqual(len(services), 45)
 
         for service in services:
             block = compose_service_block(compose, service)

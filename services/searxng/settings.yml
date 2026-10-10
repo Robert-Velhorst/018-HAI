@@ -1,0 +1,28 @@
+# HAI uses SearXNG for bounded source discovery only. Results remain
+# unverified candidates until an operator attaches and reviews evidence.
+use_default_settings: true
+
+general:
+  instance_name: "HAI local source discovery"
+  enable_metrics: false
+
+search:
+  safe_search: 2
+  autocomplete: ""
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "replace-at-runtime"
+  limiter: false
+  image_proxy: false
+  public_instance: false
+  method: GET
+
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 8.0
+  pool_connections: 20
+  pool_maxsize: 5
+  enable_http2: false

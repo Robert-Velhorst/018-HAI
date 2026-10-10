@@ -61,6 +61,7 @@ The remaining profile-gated services are:
 | `durability` | Temporal server, PostgreSQL, schema setup, and namespace setup |
 | `compatibility` | Legacy `generic-auto` service |
 | `provider-fixture` | Local provider-contract fixture (not an LLM) |
+| `research-discovery` | Local SearXNG source discovery |
 
 ## Default Stack And Resource Ceiling
 
@@ -68,7 +69,7 @@ The default local topology has exactly nine services: seven long-running core
 services (`backend`, `idp`, `frontend`, `nginx`, both PostgreSQL services, and
 Redis) plus the one-shot `backend-migrate` and `backend-runtime-role` setup
 jobs. The setup jobs use `restart: "no"`; they exit after their respective
-operation and do not remain as idle workers. All 34 other service definitions
+operation and do not remain as idle workers. All 35 other service definitions
 are profile-gated. The source-contract test checks this exact boundary, unique
 container names, the absence of Compose replica/scale settings, and the distinct
 IDP/application database bindings.
@@ -130,6 +131,24 @@ Copy `.env.example` to `.env.local`, generate unique runner tokens, and enable
 only one reviewed profile at a time. This general activation procedure does
 not apply to the `local-host-runtime` profile or DeepSeek Harness; those remain
 hard-disabled as described below.
+
+### Local SearXNG source discovery
+
+The `research-discovery` profile is disabled by default and exposes no host
+port. Generate a unique `HAI_SEARXNG_SECRET`, set
+`HAI_SEARXNG_BASE_URL=http://searxng:8080` and
+`HAI_SEARXNG_ENABLED=true` in `.env.local`, then start only this service:
+
+```powershell
+docker compose --env-file .env.local -f docker-compose.local.yml --profile research-discovery up -d searxng
+```
+
+The backend and SearXNG share a dedicated internal network; SearXNG also joins
+an egress network to query its configured search engines. Search snippets are
+unverified candidates and are not automatically attached as evidence or
+promoted to memory. Review SearXNG's AGPL-3.0 license and configured search
+engines before enabling it. A separately managed local/private instance can
+still be configured instead.
 
 ## DeepSeek Harness Host Runtime (Hard-Disabled)
 

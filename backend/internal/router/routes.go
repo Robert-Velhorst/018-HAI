@@ -164,13 +164,6 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		}
 		planGraphService := plangraph.NewService(planGraphRepository, nil)
 		initializePlanGraphRoutes(v1, plangraph.NewHandler(planGraphService))
-		var browserVerificationHandler *browserverify.Handler
-		if workflowLinker, ok := workflowService.(browserverify.WorkflowLinker); ok {
-			browserVerificationHandler = browserverify.NewHandler(browserverify.DefaultService(workflowLinker))
-		} else {
-			browserVerificationHandler = browserverify.NewHandler(browserverify.DefaultService())
-		}
-		initializeBrowserVerificationRoutes(v1, browserVerificationHandler)
 		initializeResearchRoutes(v1, research.NewHandler(research.DefaultService()))
 		initializeRAGFlowRoutes(v1, ragflow.NewHandler(ragflow.DefaultService()))
 		initializeAnythingLLMRoutes(v1, anythingllm.NewHandler(anythingllm.DefaultService()))
@@ -246,6 +239,13 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		if err != nil {
 			return err
 		}
+		var browserVerificationHandler *browserverify.Handler
+		if workflowLinker, ok := workflowService.(browserverify.WorkflowLinker); ok {
+			browserVerificationHandler = browserverify.NewHandler(browserverify.DefaultService(workflowLinker))
+		} else {
+			browserVerificationHandler = browserverify.NewHandler(browserverify.DefaultService())
+		}
+		initializeBrowserVerificationRoutes(v1, browserVerificationHandler)
 		initializeAutoGenCompatibilityRoutes(v1, autogencompat.NewHandler(autogencompat.DefaultService()))
 		doclingService := docling.DefaultService()
 		initializeDoclingRoutes(v1, docling.NewHandler(doclingService))

@@ -662,6 +662,43 @@ services:
       - coding-runners-internal
       - a2a-local
       - host-runtime-internal
+      - searxng-backend
+
+  # Optional local source discovery. HAI reaches this service over an
+  # internal-only network; SearXNG has separate egress for search providers.
+  # It returns candidates only and has no published host port.
+  searxng:
+    image: ghcr.io/searxng/searxng:2026.10.9-f4822b3fc
+    profiles: ["research-discovery"]
+    restart: unless-stopped
+    environment:
+      SEARXNG_BIND_ADDRESS: "0.0.0.0"
+      SEARXNG_PORT: "8080"
+      SEARXNG_LIMITER: "false"
+      SEARXNG_IMAGE_PROXY: "false"
+      SEARXNG_SECRET: ${HAI_SEARXNG_SECRET}
+      FORCE_OWNERSHIP: "false"
+    expose:
+      - "8080"
+    volumes:
+      - ./services/searxng:/etc/searxng:ro
+      - searxng-cache:/var/cache/searxng
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/local/searxng/.venv/bin/python -c \"from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/healthz', timeout=3).read()\""]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - searxng-backend
+      - searxng-egress
 
   # Schema migration is a separate, owner-credentialed one-shot job. The API
   # process is never the default migration runner.
@@ -2067,6 +2104,13 @@ networks:
     name: 018-hai-coding-runners-internal
     driver: bridge
     internal: true
+  searxng-backend:
+    name: 018-hai-searxng-backend
+    driver: bridge
+    internal: true
+  searxng-egress:
+    name: 018-hai-searxng-egress
+    driver: bridge
 
 volumes:
   postgres-idp-data:
@@ -2081,3 +2125,5 @@ volumes:
     name: 018-hai-redpanda-data
   phase2-control-state:
     name: 018-hai-phase2-control-state
+  searxng-cache:
+    name: 018-hai-searxng-cache
