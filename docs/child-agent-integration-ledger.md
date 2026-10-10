@@ -286,12 +286,20 @@ IDs, and `deletion_performed=false`. Its cleanup gate remained false because
 the committed-ledger and merged-PR requirements are not satisfied by the
 current publication state.
 
-The remote branch was rechecked at
-`d1d643122d1dfaf762eba6bae592d15b3fee80a5`. PR #36 remains open against
-`main`, with no merge commit. Exact-head GitHub Actions run `38042792522`
-failed. Failed jobs are repository secret scan, Windows installer safety
-guards, migration integration, two-account isolation, authenticated
-control-plane smoke, browser acceptance, and the Promptfoo production
-dependency audit. The prior exact-head run `38042681986` also failed. Local
-archive integrity does not override these release gates; no transcript
-deletion is safe yet.
+The remote branch is `1f12ef977bf43324f09ea27df16dc22c34713f9f`. PR #36
+remains open against `main`, with no merge commit. The immediately preceding
+exact-head Actions run `38043642051` failed its repository secret scan,
+Windows environment-migration DACL regression, real-Postgres migration job,
+two-account and authenticated smoke tests, browser acceptance, and Promptfoo
+production dependency audit. The Windows migration and smoke-auth failures
+have since received a focused local repair in `1f12ef9`: the migration now
+verifies both the original DACL and complete file contents before removing
+rollback data, and the shared smoke-token helper emits the claims required by
+the backend verifier. Locally, the OpenClaw migration fixtures, seven smoke
+auth contract checks, Bash syntax checks, Go identity tests, and staged diff
+whitespace checks passed. These local checks do not establish remote CI
+acceptance. Exact-head Actions run `38044450685` is queued. The remaining
+history-wide secret findings, migration integration, two-account smoke,
+browser acceptance, and Promptfoo dependency audit still require review of
+that run and any follow-up. Local archive integrity does not override these
+release gates; no transcript deletion is safe yet.
