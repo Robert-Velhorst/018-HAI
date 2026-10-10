@@ -962,9 +962,10 @@ jobs:
             ./internal/task/ -v | tee "$task_log"
           grep -q -- '^--- PASS: TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability' "$task_log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
-            -run '^TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals$' \
+            -run '^(TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals|TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts)$' \
             ./internal/executionauth/ -v | tee "$execution_auth_log"
           grep -q -- '^--- PASS: TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts' "$execution_auth_log"
           HAI_AGENTREGISTRY_TEST_DATABASE_DSN="$agent_registry_dsn" go test -count=1 \
             -run '^(TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers|TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema)$' \
             ./internal/agentregistry/ -v | tee "$agent_registry_log"

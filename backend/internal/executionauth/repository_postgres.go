@@ -504,15 +504,11 @@ func lockAndCheckApprovalClaim(
 		approvalSourceID,
 		decisionID,
 	)
-	var lockAcquired bool
-	if err := tx.WithContext(ctx).Raw(
-		"SELECT pg_advisory_xact_lock(hashtextextended(?, 0)) IS NULL",
+	if err := tx.WithContext(ctx).Exec(
+		"SELECT pg_advisory_xact_lock(hashtextextended(?, 0))",
 		claimIdentity,
-	).Row().Scan(&lockAcquired); err != nil {
+	).Error; err != nil {
 		return fmt.Errorf("lock execution approval claim: %w", err)
-	}
-	if !lockAcquired {
-		return ErrAuthorizationChanged
 	}
 	var alreadyClaimed bool
 	err = tx.WithContext(ctx).Raw(`
