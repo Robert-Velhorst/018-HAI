@@ -145,6 +145,7 @@ jobs:
           ./scripts/test-hai-detached-volume-removal-contract.ps1
           ./scripts/test-hai-pr-diagnostic-removal-contract.ps1
           ./scripts/test-hai-image-removal-contract.ps1
+          ./scripts/test-hai-duplicate-recovery-bundle-removal-contract.ps1
 
   windows-installer:
     name: Windows installer preview and signing guards

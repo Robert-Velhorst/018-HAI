@@ -46,6 +46,21 @@ At the follow-up inventory, three named HAI volumes remained and all were held:
 the two attached Postgres volumes and attached phase-two control state. Four
 removed-volume recovery archives passed archive-only integrity verification.
 
+A separate guarded cleanup removed four additional recovery directories only
+after proving their archive files were exact byte-for-byte and SHA-256 copies
+of the canonical Kafka recovery archive, their paths and ACLs were private to
+the current user and SYSTEM, and the canonical archive remained intact. The
+removed duplicate bundle IDs were:
+
+- `hai-volume-recovery-39d10f85f0f84e03b4fae095a42c9e0d`
+- `hai-volume-recovery-9415d2d9532f4e918d1caf5b817719d2`
+- `hai-volume-recovery-ad2f86d3d7fe48eb9af37dc39fa607fa`
+- `hai-volume-recovery-ffdcf3ec070549eaad7ac5fc615af55c`
+
+The four directories contained 40,808,612 bytes in total. This is deleted file
+size, not a measurement of physical disk space reclaimed. The differing,
+unverified recovery bundle remains retained.
+
 The separate 20.7 GB completed-session archive remains untouched. Its manifest
 and source hashes verify 18 files: eight completed unique transcripts totaling
 7,939,888,699 bytes are cleanup candidates, while ten duplicate-ID, aborted, or
