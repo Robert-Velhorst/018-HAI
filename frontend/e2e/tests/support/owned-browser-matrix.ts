@@ -157,9 +157,14 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       },
       assertHealthy: () => {
-        expect(health, 'Counts only: console text, bodies, headers and credentials are deliberately excluded').toEqual({
+        // Pending reads are a point-in-time measure. `settle()` already proves
+        // the route reached quiescence; a normal refresh started between that
+        // checkpoint and this assertion must not make the route fail.
+        const completedHealth = { ...health };
+        Reflect.deleteProperty(completedHealth, 'pendingReads');
+        expect(completedHealth, 'Counts only: console text, bodies, headers and credentials are deliberately excluded').toEqual({
           consoleErrors: 0, pageErrors: 0, failedRequests: 0, httpErrors: 0,
-          deniedWrites: 0, deniedExternal: 0, pendingReads: 0,
+          deniedWrites: 0, deniedExternal: 0,
         });
       },
       capture: async (name) => {

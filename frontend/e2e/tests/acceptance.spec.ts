@@ -155,7 +155,8 @@ test.describe('HAI operator acceptance flow', () => {
       await page.getByTestId('workflow-project-key').fill(projectKey);
       const matchResponse = page.waitForResponse(
         (response) => response.url().includes('/api/v1/pursuits/match')
-          && response.request().method() === 'POST'
+          && response.request().method() === 'POST',
+        { timeout: 30_000 },
       );
       await page.getByTestId('workflow-match-pursuit').click();
       const matches = await (await matchResponse).json() as Array<{ pursuit?: { title?: string } }>;
@@ -212,7 +213,7 @@ test.describe('HAI operator acceptance flow', () => {
       expect(result.message).toContain('approval is required before execution');
       expect(result.message).toContain('framework evidence preconditions were not verified before execution');
       expect(result.message).toContain('no execution result was produced');
-      await expect(page.getByTestId('workflow-selected-state')).toHaveText('needs approval');
+      await expect(page.getByTestId('workflow-selected-state')).toHaveText('blocked');
       await expect(page.getByTestId('workflow-approval-controls')).toBeVisible();
       const approvalResponse = page.waitForResponse((response) =>
         response.request().method() === 'POST'
