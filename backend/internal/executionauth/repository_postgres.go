@@ -498,7 +498,11 @@ func lockAndCheckApprovalClaim(
 	if !strings.EqualFold(strings.TrimSpace(isolation), "read committed") {
 		return ErrApprovalClaimIsolationUnsupported
 	}
-	claimIdentity := consumption.OwnerIdentity + "\x00" + approvalSourceID + "\x00" + decisionID
+	claimIdentity := approvalClaimLockIdentity(
+		consumption.OwnerIdentity,
+		approvalSourceID,
+		decisionID,
+	)
 	var lockAcquired bool
 	if err := tx.WithContext(ctx).Raw(
 		"SELECT pg_advisory_xact_lock(hashtextextended(?, 0)) IS NULL",
@@ -536,6 +540,12 @@ func lockAndCheckApprovalClaim(
 		return ErrApprovalAlreadyClaimed
 	}
 	return nil
+}
+
+func approvalClaimLockIdentity(owner, sourceID, decisionID string) string {
+	return hex.EncodeToString([]byte(owner)) + ":" +
+		hex.EncodeToString([]byte(sourceID)) + ":" +
+		hex.EncodeToString([]byte(decisionID))
 }
 
 func (r *PostgresRepository) GetConsumption(

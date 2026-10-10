@@ -60,6 +60,18 @@ func TestPostgresRepositoryFailsClosedWithoutDatabase(t *testing.T) {
 	}
 }
 
+func TestApprovalClaimLockIdentityIsTextSafeAndUnambiguous(t *testing.T) {
+	first := approvalClaimLockIdentity("a", "b\x00c", "d")
+	second := approvalClaimLockIdentity("a\x00b", "c", "d")
+
+	if strings.ContainsRune(first, '\x00') || strings.ContainsRune(second, '\x00') {
+		t.Fatal("PostgreSQL advisory-lock identity contains a NUL byte")
+	}
+	if first == second {
+		t.Fatal("distinct approval claims produced the same advisory-lock identity")
+	}
+}
+
 func TestReceiptReferencesAllowBuiltinConstitutionWithoutDatabaseForeignKey(t *testing.T) {
 	receipt := postgresTestReceipt(
 		"owner@example.com",
