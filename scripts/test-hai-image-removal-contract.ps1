@@ -16,6 +16,8 @@ foreach ($required in @(
     'ancestor=$id',
     'REMOVE HAI UNREFERENCED IMAGES',
     "'image', 'rm', [string]`$candidate.reference",
+    'Get-HaiImageCandidates @([string]$candidate.reference) $contextName',
+    "mode = if (`$failure) { 'partial_failure' } else { 'completed' }",
     'image_size_bytes_estimate_not_reclaimable',
     'docker_volumes_and_containers_touched = $false'
 )) {
