@@ -764,7 +764,10 @@ func updateOperationCAS(tx *gorm.DB, op models.Operation, expectedVersion int64)
 	}
 	result := tx.Model(&models.Operation{}).
 		Where("id = ? AND owner_user_id = ? AND workspace_id = ? AND version = ?", op.ID, op.OwnerUserID, op.WorkspaceID, expectedVersion).
-		Select("*").Omit("id", "created_at").Updates(&op)
+		// Lifecycle timestamps are assigned together with their immutable audit
+		// event before this CAS. UpdateColumns skips GORM's automatic UpdatedAt
+		// rewrite so persisted operation and event timestamps remain identical.
+		Select("*").Omit("id", "created_at").UpdateColumns(&op)
 	if err := intakeContextError(tx.Statement.Context); err != nil {
 		return err
 	}
