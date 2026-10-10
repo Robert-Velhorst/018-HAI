@@ -288,7 +288,9 @@ func validPulledLease(l Lease) bool {
 	if err != nil || id.String() != l.Job.ID || !ValidTarget(l.Job.Target) || l.Job.Status != "leased" || l.Job.LeaseUntil == nil || !l.Job.LeaseUntil.After(time.Now()) {
 		return false
 	}
-	if len(l.Token) != 64 || strings.Trim(l.Token, "0123456789abcdef") != "" {
+	if len(l.Token) != 64 || strings.IndexFunc(l.Token, func(r rune) bool {
+		return !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f'))
+	}) >= 0 {
 		return false
 	}
 	switch l.Job.Kind {

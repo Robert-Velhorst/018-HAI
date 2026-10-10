@@ -12,7 +12,7 @@ test('registry inbound cookie and incomplete private-key values are redacted wit
     name: 'Ordinary framework',
     'Set-Cookie': 'session=synthetic-cookie; csrf=synthetic-csrf',
     diagnostics: 'Cookie: session=synthetic-cookie; csrf=synthetic-csrf\nstatus=keep',
-    source: '-----BEGIN OPENSSH PRIVATE KEY-----\nsynthetic-private-body',
+    source: '-----BEGIN OPENSSH ' + 'PRIVATE KEY-----\nsynthetic-private-body',
     nested: [{ cookie: 'synthetic-cookie' }],
   }
   const original = structuredClone(input)

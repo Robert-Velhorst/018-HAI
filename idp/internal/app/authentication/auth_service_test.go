@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testSigningSecret = "0123456789abcdef0123456789abcdef"
+var testSigningSecret = strings.Repeat("s", 32)
 
 func TestRegisterRejectsInvalidInputBeforeHashing(t *testing.T) {
 	svc := &service{}

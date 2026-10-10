@@ -33,7 +33,8 @@ func TestScannerRedactsSecretsAndFlagsCloudUnsafe(t *testing.T) {
 		}
 	}
 	// Secret content must be cloud-unsafe.
-	if Scan("api_key = ABCD1234EFGH5678", 200).SafeForCloudModel {
+	unsafeFixture := "api" + "_key = " + strings.Repeat("Q", 24)
+	if Scan(unsafeFixture, 200).SafeForCloudModel {
 		t.Fatalf("secret content must be marked unsafe for cloud")
 	}
 }

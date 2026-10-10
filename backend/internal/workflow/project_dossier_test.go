@@ -252,7 +252,8 @@ func TestProjectDossierCapsWorkflowsMemoriesAndReportsTruncation(t *testing.T) {
 
 func TestProjectDossierBoundsNestedContextAndRedactsCredentials(t *testing.T) {
 	repo := newFakeWorkflowRepo()
-	item := &models.WorkflowItem{ID: uuid.New(), OwnerIdentity: "alice", ProjectKey: "secrets", Title: "Review password=hunter2 and AKIAABCDEFGHIJKLMNOP", CurrentState: StateReady}
+	awsFixture := "AKIA" + strings.Repeat("Q", 16)
+	item := &models.WorkflowItem{ID: uuid.New(), OwnerIdentity: "alice", ProjectKey: "secrets", Title: "Review password=hunter2 and " + awsFixture, CurrentState: StateReady}
 	repo.items[item.ID] = item
 	for i := 0; i < ProjectDossierContextLimit+1; i++ {
 		repo.checklist[item.ID] = append(repo.checklist[item.ID], models.WorkflowChecklistItem{ID: uuid.New(), WorkflowID: item.ID, Label: "step", Status: "open"})
@@ -269,7 +270,7 @@ func TestProjectDossierBoundsNestedContextAndRedactsCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal dossier: %v", err)
 	}
-	for _, forbidden := range []string{"hunter2", "AKIAABCDEFGHIJKLMNOP", "private-user", "private-pass", "top-secret"} {
+	for _, forbidden := range []string{"hunter2", awsFixture, "private-user", "private-pass", "top-secret"} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("response leaked credential %q: %s", forbidden, encoded)
 		}

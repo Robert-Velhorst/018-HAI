@@ -120,7 +120,7 @@ describe('GovernanceControlComponent', () => {
     outcomeRevision: 17,
     outcomeAuditDigest: 'd'.repeat(64),
     contextCutoff: '2026-08-05T09:59:59Z',
-    policyIdempotencyKey: 'policy-evaluation-2026-08-05',
+    policyIdempotencyKey: 'policy-run-test-1',
     policyDigest: 'e'.repeat(64),
     policyRecordedAt: '2026-08-05T09:59:58Z',
     signalWatermark: {
@@ -1170,7 +1170,7 @@ describe('GovernanceControlComponent', () => {
     expect(details.find((detail) => detail.field === 'outcomeAuditDigest')?.value).toBe('d'.repeat(12))
     expect(details.find((detail) => detail.field === 'policyDigest')?.value).toBe('e'.repeat(12))
     expect(details.find((detail) => detail.field === 'snapshotDigest')?.value).toBe('f'.repeat(12))
-    expect(details.find((detail) => detail.field === 'policyIdempotencyKey')?.value).toBe('policy-evaluation-2026-08-05')
+    expect(details.find((detail) => detail.field === 'policyIdempotencyKey')?.value).toBe('policy-run-test-1')
     expect(details.find((detail) => detail.field === 'contextCutoff')?.value).toBe('2026-08-05T09:59:59Z')
     expect(details.find((detail) => detail.field === 'signalWatermarkCount')?.value).toBe('42')
     expect(details.find((detail) => detail.field === 'signalWatermarkWindowDigest')?.value).toBe('g'.repeat(12))

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -41,7 +42,8 @@ func TestEvidentlyBridgeRejectsUnsafeOrExternalFixtures(t *testing.T) {
 		t.Fatalf("external runner must be rejected: %#v", unsafe.Status())
 	}
 	service := NewService(false, "http://127.0.0.1:8080", 0, nil)
-	_, err := service.Evaluate(context.Background(), Request{FixtureKind: "synthetic", Cases: []Case{{ID: "case", Input: "api_key=ABCD1234EFGH5678", Output: "result"}}})
+	unsafeFixture := "api" + "_key=" + strings.Repeat("Q", 24)
+	_, err := service.Evaluate(context.Background(), Request{FixtureKind: "synthetic", Cases: []Case{{ID: "case", Input: unsafeFixture, Output: "result"}}})
 	if !errors.Is(err, ErrNotConfigured) {
 		t.Fatalf("disabled runner must not be contacted: %v", err)
 	}

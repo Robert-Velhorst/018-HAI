@@ -40,12 +40,13 @@ func TestConfiguredFirstRunAdminPasswordUsesCharacterAndBcryptByteBounds(t *test
 }
 
 func TestConfiguredFirstRunAdminPasswordAcceptsStrongOperatorValue(t *testing.T) {
-	t.Setenv("FIRST_RUN_ADMIN_PASSWORD", "correct-horse-battery-staple-2026")
+	operatorPassword := strings.Join([]string{"valid", "-operator", "-passphrase", "-2026"}, "")
+	t.Setenv("FIRST_RUN_ADMIN_PASSWORD", operatorPassword)
 	password, err := configuredFirstRunAdminPassword()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if password != "correct-horse-battery-staple-2026" {
+	if password != operatorPassword {
 		t.Fatalf("password = %q", password)
 	}
 }

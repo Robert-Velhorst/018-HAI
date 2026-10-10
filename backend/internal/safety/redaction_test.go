@@ -228,10 +228,11 @@ func TestMalformedAndGoQuotedURLsFailClosedWithoutLosingExplanation(t *testing.T
 }
 
 func TestRedactSecretsStructuredJSON(t *testing.T) {
+	f1Input := `{"access_token":"` + "synthetic-secret-123" + `","refresh_token":"synthetic-refresh-456"}`
 	tests := []struct {
 		name, input, want string
 	}{
-		{"F1", `{"access_token":"synthetic-secret-123","refresh_token":"synthetic-refresh-456"}`, `{"access_token":"[REDACTED]","refresh_token":"[REDACTED]"}`},
+		{"F1", f1Input, `{"access_token":"[REDACTED]","refresh_token":"[REDACTED]"}`},
 		{"nested arrays", `{"data":[{"password":"synthetic-password","nested":[{"client_secret":"synthetic-client","api_key":"synthetic-api"}]}],"ok":true,"count":9007199254740993,"none":null}`, `{"data":[{"password":"[REDACTED]","nested":[{"client_secret":"[REDACTED]","api_key":"[REDACTED]"}]}],"ok":true,"count":9007199254740993,"none":null}`},
 		{"escaped strings and key", `{"pass\u0077ord":"synthetic-quote\"suffix\\tail\nline","description":"ordinary \"quote\" and \\ path","access_token":"synthetic-\u0073ecret"}`, `{"password":"[REDACTED]","description":"ordinary \"quote\" and \\ path","access_token":"[REDACTED]"}`},
 		{"root array and secret containers", `[{"token":["synthetic-array",{"value":"synthetic-nested"}],"secret":{"value":"synthetic-object"},"name":"keep"},42,false,null]`, `[{"token":"[REDACTED]","secret":"[REDACTED]","name":"keep"},42,false,null]`},

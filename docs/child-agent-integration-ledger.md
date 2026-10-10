@@ -120,6 +120,51 @@ of the following are true:
 No transcript deletion, movement, truncation, compression, or archival was
 performed while producing this ledger.
 
+## October 10 integration checkpoint
+
+The 2026-07-30 archive is separately inventoried in
+`docs/child-agent-archive-2026-07-30/cleanup-readiness.md`. Its 18 JSONL files
+total 20,739,169,122 bytes. The existing ledger crosswalk covers the eight
+unique completed cleanup candidates and the patch-bearing retained transcripts;
+it is not proof that every nested completion event in the retained histories
+was a distinct task or was individually integrated.
+
+A bounded event scan of the six retained histories counted 580, 428, 580, 580,
+436, and 580 `task_complete` records. Text-level deduplication yielded 542
+nontrivial completion texts, not 542 verified distinct work items. Repeated
+parent-history snapshots account for substantial duplication. The contents of
+those 542 texts have not all been semantically classified and cross-referenced
+to source changes, accepted tests, or the preserved reports. That is the
+remaining integration-ledger gap; do not describe the archive as fully
+integrated or delete any of its files on this checkpoint.
+
+For the current clean integration snapshot, the complete tracked HAI change
+set was compared with the latest remote PR source. No additional product-code
+patch was missing from that newer source after removing one byte-identical
+duplicate 627-line frontend test block. The additional isolated-acceptance
+guide and secret-scanner-safe test-fixture corrections are included in this
+snapshot. The eight untracked local database/race-test outputs are diagnostic
+evidence, not source changes, and are excluded; the original worktree and those
+files remain untouched.
+
+Local verification on 2026-10-10 used Node 24.19.0 and the repository-pinned Go
+1.27.2. Results: frontend `npm test -- --watch=false --browsers=ChromeHeadless`
+passed 175 Node checks and 1,328 Angular tests; frontend production build
+passed with four existing SCSS component-size budget warnings; backend
+`go test -p 2 ./...` passed; IDP `go test -p 2 ./...` passed. A redacted
+Gitleaks directory scan of the candidate tree found no remaining findings
+after converting synthetic credentials and a pinned public signing key to
+scanner-safe runtime fixtures. These are local repository checks, not live
+provider, account, deployment, or external acceptance.
+
+At this checkpoint, remote `main` remains `91c8620c557229f1da4ed15fcbb7088c6a6947a7`.
+The existing `codex/hai-runtime-release` branch remains at
+`2691b54deeeb6aaff32021d8bf8d17f2b1453edd`; it has not been rewritten. No new
+snapshot branch or pull request has yet been published. Preserve the original
+20.7 GB archive until the 542 completion texts are classified or explicitly
+shown to be redundant against preserved reports and source evidence, and until
+the remote preservation and repository cleanup gates pass.
+
 ## Cleanup disposition
 
 All five cleanup gates are now represented in committed or generated evidence:

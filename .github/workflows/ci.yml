@@ -1145,7 +1145,7 @@ jobs:
           HAI_MEMORY_ENCRYPTION_KEY: ci-memory-encryption-key-0123456789
           # Production-mode startup requires a non-placeholder approval proof
           # key. This is a test-only value; production uses a generated secret.
-          HAI_APPROVAL_PROOF_SIGNING_KEY: ci-approval-proof-signing-key-0123456789
+          HAI_APPROVAL_PROOF_SIGNING_KEY: ${{ format('ci-approval-proof-signing-{0}-{1}', github.run_id, github.run_attempt) }}
           SERVER_PORT: "8080"
           REDIS_ADDR: localhost:6379
           # Keep the acceptance run deterministic: no background schedulers.

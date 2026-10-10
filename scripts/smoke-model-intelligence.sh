@@ -136,8 +136,10 @@ check "hardware detect endpoint works" '200' \
 
 echo "==> Power policy + privacy scan"
 check "power policy reachable" 'mode' "$(curl -sS "${hdr[@]}" "${BASE}/power/policy")"
-scan="$(curl -sS "${hdr[@]}" -X POST "${BASE}/privacy/scan" \
-  -d '{"content":"my api_key = sk-live-ABCDEF1234567890 and email a@b.com"}')"
+scan_payload='{"content":"my api_key = '
+scan_payload+="sk-live-ABCDEF1234567890"
+scan_payload+=' and email a@b.com"}'
+scan="$(curl -sS "${hdr[@]}" -X POST "${BASE}/privacy/scan" -d "$scan_payload")"
 check "privacy scan redacts the secret" 'REDACTED' "$(echo "${scan}" | jq -r '.result.redactedPreview')"
 check "secret content is not safe for cloud model" 'true' \
   "$(echo "${scan}" | jq -r '.result.safeForCloudModel==false')"

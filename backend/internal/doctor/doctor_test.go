@@ -24,7 +24,7 @@ func healthyConfig() config.Configuration {
 		BackendAPIKey:           "0123456789abcdef0123456789abcdef",
 		MemoryEngineKey:         "abcdef0123456789abcdef0123456789",
 		JWTSecret:               "89abcdef0123456789abcdef01234567",
-		ApprovalProofSigningKey: "0123456789abcdef0123456789abcdef",
+		ApprovalProofSigningKey: strings.Repeat("k", 32),
 	}
 }
 
