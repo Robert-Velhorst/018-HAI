@@ -106,6 +106,15 @@ if (-not $PSCmdlet.ShouldProcess("$($artifactPaths.Count) exact manifest-listed 
     return
 }
 
+$finalPreflight = Get-HaiArtifactPreflight
+if (-not $finalPreflight.ready) { throw "Final cleanup preflight failed: $($finalPreflight.reason); no local artifact was removed." }
+$finalProcesses = Get-CimInstance Win32_Process -ErrorAction Stop
+$finalBusy = @($finalProcesses | Where-Object {
+    -not [string]::IsNullOrWhiteSpace([string]$_.CommandLine) -and
+    ([string]$_.CommandLine).IndexOf($toolPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+})
+if ($finalBusy.Count -gt 0) { throw 'A Gitleaks process started during confirmation; cleanup is blocked.' }
+
 $removed = [Collections.Generic.List[object]]::new()
 foreach ($entry in @($manifest.artifacts)) {
     $path = Join-Path $repoRoot ([string]$entry.path)

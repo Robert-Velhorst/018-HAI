@@ -12,6 +12,8 @@ foreach ($required in @(
     'PR #36 must be merged into main at this exact local HEAD',
     'Get-FileHash',
     'Get-CimInstance Win32_Process',
+    '$finalPreflight = Get-HaiArtifactPreflight',
+    '$finalProcesses = Get-CimInstance Win32_Process',
     'REMOVE HAI LOCAL DIAGNOSTICS',
     'Remove-Item -LiteralPath $path -Force',
     'local-working-tree.patch',
