@@ -29,6 +29,7 @@ func migrationFilesThrough(t *testing.T, version string) fs.FS {
 	}
 	files := fstest.MapFS{
 		"pre": &fstest.MapFile{Mode: fs.ModeDir},
+		"post": &fstest.MapFile{Mode: fs.ModeDir},
 	}
 	entries, err := fs.ReadDir(migrations.Files, "pre")
 	if err != nil {

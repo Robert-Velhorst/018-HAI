@@ -108,6 +108,7 @@ func applyRealAccountFeedRegistryMigration(t *testing.T, db *gorm.DB) fs.FS {
 	}
 	files := fstest.MapFS{
 		"pre":                                   &fstest.MapFile{Mode: fs.ModeDir},
+		"post":                                  &fstest.MapFile{Mode: fs.ModeDir},
 		"pre/0110_account_feed_registry.up.sql": {Data: up, Mode: 0o600},
 		"pre/0110_account_feed_registry.down.sql": {Data: down, Mode: 0o600},
 	}

@@ -197,6 +197,11 @@ func (w *Worker) RunOnce(ctx context.Context) (Report, error) {
 	if err := ctx.Err(); err != nil {
 		return rep, err
 	}
+	if !w.effectiveMode().AllowsBackgroundProcessing() {
+		// Paused and emergency-stopped modes still ingest for the record but
+		// must not classify, draft, or execute any operations.
+		return rep, reportFailures(rep)
+	}
 	if w.effectiveEmergencyStop() {
 		// Emergency stop still ingests for the record but processes nothing.
 		return rep, reportFailures(rep)

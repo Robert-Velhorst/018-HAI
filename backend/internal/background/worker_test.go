@@ -773,6 +773,26 @@ func TestEmergencyStopProcessesNothing(t *testing.T) {
 	}
 }
 
+func TestPausedModeIngestsButProcessesNothing(t *testing.T) {
+	w, svc, _ := buildWorker(t, autonomypolicy.ModePaused, twoItemFeed)
+	rep, err := w.RunOnce(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.OperationsCreated != 2 {
+		t.Fatalf("paused mode should still record ingested items, got %d", rep.OperationsCreated)
+	}
+	if rep.Classified != 0 || rep.AutoExecuted != 0 || rep.Drafted != 0 || rep.Verified != 0 {
+		t.Fatalf("paused mode must not process operations: %+v", rep)
+	}
+	newOperations, err := svc.List(operations.Filter{
+		OwnerUserID: "user-1", WorkspaceID: "local", Status: operations.StatusNew,
+	})
+	if err != nil || len(newOperations) != 2 {
+		t.Fatalf("paused mode should leave ingested operations new: count=%d err=%v", len(newOperations), err)
+	}
+}
+
 func TestReadOnlyModeObservesOnly(t *testing.T) {
 	w, svc, _ := buildWorker(t, autonomypolicy.ModeReadOnly, twoItemFeed)
 	rep, err := w.RunOnce(context.Background())

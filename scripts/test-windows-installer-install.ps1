@@ -38,7 +38,7 @@ function Assert-HaiSmokeContract {
 
     if (-not $runSectionMatch.Success -or $runStartEntries.Count -ne 1 -or
         $runStartEntries[0].Value -notmatch '-PauseOnError' -or
-        $runStartEntries[0].Value -notmatch 'Flags: postinstall nowait skipifsilent$') {
+        $runStartEntries[0].Value -notmatch 'Flags: postinstall nowait skipifsilent\r?$') {
         throw 'Post-install startup must retain -PauseOnError while Inno Setup skips it for silent installs.'
     }
     if (-not $uninstallMatch.Success -or $unregisterIndex -lt 0 -or $stopVerificationIndex -lt 0 -or
@@ -59,7 +59,7 @@ function Assert-HaiSmokeContract {
     }
 
     if ($installer -notmatch '(?m)^PrivilegesRequired=lowest\r?$' -or
-        $installer -notmatch '(?m)^Filename: .*Parameters: .*Start-HAI\.ps1.*-PauseOnError.*Flags: postinstall nowait skipifsilent$' -or
+        $installer -notmatch '(?m)^Filename: .*Parameters: .*Start-HAI\.ps1.*-PauseOnError.*Flags: postinstall nowait skipifsilent\r?$' -or
         $installer -notmatch '(?m)^Name: "\{autoprograms\}\\HAI Local\\Start HAI"; Filename: .*Start-HAI\.ps1.*-PauseOnError' -or
         $installer -notmatch "if WizardSilent then\s+RunHaiInstallerSupport\('-ConfigureSilentUpgrade'" -or
         $installer -notmatch "if WizardSilent then\s+RunHaiInstallerSupport\('-StartMaintenanceTask'" -or
