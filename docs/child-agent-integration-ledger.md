@@ -832,3 +832,34 @@ successful change, or that every described change is integrated. The larger
 793-path patch-event crosswalk, per-event child attribution, and semantic
 comparison to final source remain open. All 18 archive files remain preserved;
 this finding does not authorize removal.
+
+## Primary-checkout source recheck (2026-10-11)
+
+A fresh, read-only hash comparison used `git ls-files --others
+--exclude-standard` in the primary checkout and the extensions `.go`, `.ts`,
+`.html`, `.scss`, `.css`, `.json`, `.yaml`, `.yml`, `.md`, `.ps1`, `.sh`,
+`.sql`, `.mod`, `.sum`, `.toml`, `.txt`, `.xml`, `.proto`, and `.conf`. It
+excluded `output/`, `.claude-flow/`, `.swarm/`,
+`backend/internal/outcomeevaluation/test-evidence/`, `node_modules/`, `dist/`,
+`coverage/`, `playwright-report/`, `test-results/`, `.angular/`, and `.git/`.
+It selected 833 files; 43 had the same relative path but different bytes from
+this PR worktree, and none were missing from the PR. This is a narrower
+population than the earlier 874-file/49-difference comparison and should not
+be combined with those earlier totals.
+
+A focused review compared `backend/internal/openclawmaintenance/pull_client.go`,
+`backend/internal/openclawmaintenance/worker.go`,
+`backend/internal/operations/source_approval.go`,
+`backend/internal/operations/source_approval_test.go`,
+`backend/internal/operations/execution_claim.go`,
+`backend/internal/operations/execution_claim_memory.go`, and
+`backend/migrations/protected_data_rollback_postgres_integration_test.go`.
+The PR versions already include stricter lowercase-hex validation for pulled leases;
+a byte-encoded pinned OpenClaw signing key to avoid secret-scanner false
+positives; source-approval owner and raw-evidence digest binding; PostgreSQL
+`payload_json` receipt lookup, exact-approval precedence over a future review
+reminder, and timestamp-preserving compare-and-swap persistence; plus the
+missing `post/` fixture directory for rollback integration tests. These are
+already present on the PR and require no port from the primary checkout. The
+remaining same-path differences were not semantically reviewed by this sample;
+no wholesale copy is justified, and no primary-checkout file was modified.
