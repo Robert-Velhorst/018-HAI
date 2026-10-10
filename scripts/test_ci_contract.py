@@ -2227,6 +2227,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn("if: github.event_name == 'push' && github.ref == 'refs/heads/main'", upload_body)
         self.assertIn("if-no-files-found: error", upload_body)
         self.assertIn("test-windows-installer-install.ps1", installer)
+        self.assertIn("-AllowUnavailableDockerOnHostedRunner", installer)
         self.assertNotIn("-AllowDirtyWorktree", installer)
 
     def test_windows_installer_ci_compiles_the_distributable(self) -> None:

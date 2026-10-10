@@ -2,6 +2,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$InstallerPath,
     [Parameter(Mandatory = $true)][ValidatePattern('^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$')][string]$ExpectedVersion,
+    [switch]$AllowUnavailableDockerOnHostedRunner,
     [switch]$ContractOnly
 )
 
@@ -70,6 +71,8 @@ function Assert-HaiSmokeContract {
         $installer -notmatch "RunHaiMaintenanceTaskManager\('Register', True, ExitCode\)" -or
         $maintenance -notmatch "HaiOpenClawMaintenanceTaskName = 'HAI OpenClaw Maintenance'" -or
         $smoke -notmatch "RUNNER_ENVIRONMENT.*github-hosted" -or
+        $smoke -notmatch 'AllowUnavailableDockerOnHostedRunner' -or
+        $smoke -notmatch 'Disposable GitHub-hosted runner has no reachable Docker engine' -or
         $smoke -notmatch 'RUNNER_TEMP is a distinct, existing runner-owned temporary directory' -or
         $smoke -notmatch 'RUNNER_TEMP is a reparse point' -or
         $smoke -notmatch 'Keep installer/runtime profile writes inside this uniquely owned smoke' -or
@@ -91,23 +94,39 @@ function Get-HaiTask {
     }
 }
 
+$script:HaiDockerUnavailableWarningWritten = $false
+
 function Assert-HaiDockerStateIsEmpty {
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-        throw 'Docker CLI is unavailable; existing HAI project/volume state cannot be ruled out. Refusing to run installer smoke test.'
+    $dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
+    $dockerUnavailableReason = $null
+    if ($null -eq $dockerCommand) {
+        $dockerUnavailableReason = 'Docker CLI is unavailable; existing HAI project/volume state cannot be ruled out. Refusing to run installer smoke test.'
+    } else {
+        $info = @(& $dockerCommand.Source info --format '{{.ServerVersion}}' 2>&1)
+        if ($LASTEXITCODE -ne 0 -or $info.Count -eq 0 -or [string]::IsNullOrWhiteSpace([string]$info[0])) {
+            $dockerUnavailableReason = 'Docker engine state could not be verified; refusing to run installer smoke test.'
+        }
     }
-    $info = @(& docker info --format '{{.ServerVersion}}' 2>&1)
-    if ($LASTEXITCODE -ne 0 -or $info.Count -eq 0 -or [string]::IsNullOrWhiteSpace([string]$info[0])) {
-        throw 'Docker engine state could not be verified; refusing to run installer smoke test.'
+    if ($null -ne $dockerUnavailableReason) {
+        $allowHostedSkip = $AllowUnavailableDockerOnHostedRunner -and
+            $env:GITHUB_ACTIONS -ceq 'true' -and $env:RUNNER_ENVIRONMENT -ceq 'github-hosted' -and
+            [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+        if (-not $allowHostedSkip) { throw $dockerUnavailableReason }
+        if (-not $script:HaiDockerUnavailableWarningWritten) {
+            Write-Warning 'Disposable GitHub-hosted runner has no reachable Docker engine; skipping Docker inventory assertions.'
+            $script:HaiDockerUnavailableWarningWritten = $true
+        }
+        return
     }
 
-    $containers = @(& docker ps --all --quiet --filter 'label=com.docker.compose.project=018-hai' 2>&1)
+    $containers = @(& $dockerCommand.Source ps --all --quiet --filter 'label=com.docker.compose.project=018-hai' 2>&1)
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect Docker containers; refusing to run installer smoke test.' }
-    $volumes = @(& docker volume ls --quiet 2>&1)
+    $volumes = @(& $dockerCommand.Source volume ls --quiet 2>&1)
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect Docker volumes; refusing to run installer smoke test.' }
     $haiVolumes = @($volumes | Where-Object { [string]$_ -match '^018-hai-' })
-    $projectVolumes = @(& docker volume ls --quiet --filter 'label=com.docker.compose.project=018-hai' 2>&1)
+    $projectVolumes = @(& $dockerCommand.Source volume ls --quiet --filter 'label=com.docker.compose.project=018-hai' 2>&1)
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect HAI-labelled Docker volumes; refusing to run installer smoke test.' }
-    $projects = @(& docker compose ls --all --format json 2>&1)
+    $projects = @(& $dockerCommand.Source compose ls --all --format json 2>&1)
     if ($LASTEXITCODE -ne 0) { throw 'Could not inspect Docker Compose projects; refusing to run installer smoke test.' }
     $matchingProjects = @()
     if ($projects.Count -gt 0) {

@@ -253,7 +253,7 @@ jobs:
           ./scripts/build-windows-installer.ps1 -Version "ci-$($env:GITHUB_SHA.Substring(0, 7))"
       - name: Install smoke test on disposable hosted runner
         shell: pwsh
-        run: ./scripts/test-windows-installer-install.ps1 -InstallerPath "./installer/release/HAI-Setup-ci-$($env:GITHUB_SHA.Substring(0, 7)).exe" -ExpectedVersion "ci-$($env:GITHUB_SHA.Substring(0, 7))"
+        run: ./scripts/test-windows-installer-install.ps1 -InstallerPath "./installer/release/HAI-Setup-ci-$($env:GITHUB_SHA.Substring(0, 7)).exe" -ExpectedVersion "ci-$($env:GITHUB_SHA.Substring(0, 7))" -AllowUnavailableDockerOnHostedRunner
       - name: Upload unsigned Windows preview
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
