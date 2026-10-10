@@ -138,6 +138,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           ./scripts/test-hai-detached-volume-archive-contract.ps1
+          ./scripts/test-hai-transcript-cleanup-readiness.ps1
           ./scripts/test-hai-transcript-cleanup-gate-contract.ps1
           ./scripts/test-hai-transcript-removal-contract.ps1
           ./scripts/test-hai-local-cleanup-readiness.ps1

@@ -76,6 +76,19 @@ if ($crosswalkIds.Count -ne $candidates.Count) {
     Stop-ReadinessCheck 'crosswalk rows do not exactly match the cleanup candidate count.'
 }
 
+$crosswalkSourcePaths = @(
+    [regex]::Matches($crosswalkBody, '`((?:backend|frontend|idp|scripts)/[^`]+)`') |
+        ForEach-Object { $_.Groups[1].Value } |
+        Sort-Object -Unique
+)
+foreach ($sourcePath in $crosswalkSourcePaths) {
+    $relativePath = $sourcePath.TrimEnd('/')
+    $localPath = Join-Path $repoRoot ($relativePath -replace '/', [IO.Path]::DirectorySeparatorChar)
+    if (-not (Test-Path -LiteralPath $localPath)) {
+        Stop-ReadinessCheck "crosswalk source path does not exist: $relativePath"
+    }
+}
+
 foreach ($candidate in $candidates) {
     $id = [string]$candidate.child_id
     if (@($crosswalkIds | Where-Object { $_ -ceq $id }).Count -ne 1) {
