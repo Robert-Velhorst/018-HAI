@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 .env.browser-acceptance
+.env-backend
+.env-gateway
+.env-idp
 
 # Local runtime state.
 db_data_automation/

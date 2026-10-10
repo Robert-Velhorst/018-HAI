@@ -1641,6 +1641,12 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
             "a local reproduction of browser acceptance must not expose its generated credentials to git status",
         )
 
+    def test_legacy_service_environment_files_are_ignored(self) -> None:
+        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        for name in (".env-backend", ".env-gateway", ".env-idp"):
+            with self.subTest(name=name):
+                self.assertRegex(gitignore, rf"(?m)^{re.escape(name)}$")
+
     def test_browser_acceptance_requires_an_explicit_mutation_opt_in(self) -> None:
         acceptance_test = (
             ROOT / "frontend" / "e2e" / "tests" / "acceptance.spec.ts"

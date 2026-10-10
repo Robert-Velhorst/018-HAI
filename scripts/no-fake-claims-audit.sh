@@ -79,12 +79,12 @@ echo "==> 3. No secrets / databases / runtime state / model weights added by Pha
 
 tracked="$(git ls-files)"
 
-# Pre-existing repo-baseline infra env files (dev defaults, e.g. DB_PASSWORD=postgres).
-# They are NOT introduced by Phase 2; documented here for honesty.
-BASELINE_ENV_RE='^(\.env|\.env-backend|\.env-gateway|\.env-idp|\.env\.example)$'
+# Only the documented environment template may remain tracked; operator
+# configuration is local and ignored.
+BASELINE_ENV_RE='^(\.env|\.env\.example)$'
 baseline="$(echo "${tracked}" | grep -E "${BASELINE_ENV_RE}" || true)"
 if [ -n "${baseline}" ]; then
-  echo "  NOTE: pre-existing repo-baseline env files (dev defaults, not Phase 2):"
+  echo "  NOTE: environment templates only (never local operator configuration):"
   echo "${baseline}" | sed 's/^/        /'
 fi
 

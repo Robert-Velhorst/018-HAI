@@ -761,3 +761,51 @@ the job log (HTTP 403), so the underlying Docker failure is not yet established.
 No failure suppression or speculative workflow change was made. Transcript
 cleanup remains gated on completing the semantic integration review and
 passing the PR/cleanup readiness checks.
+
+## Cleanup and snapshot verification refresh (2026-10-10)
+
+A fresh read-only `-RequireSourceArchive` verification parsed all 18 manifest
+rows, matched the 18 source files and 20,739,169,122 logical bytes, and
+recomputed the hashes for all eight candidate transcripts (7,939,888,699
+bytes). The ten retained files total 12,799,280,423 bytes. The verifier
+reported `source_archive_verified=true` and `deletion_performed=false`; it
+reported `cleanup_gate_ready=false` because the check was not on canonical
+`main` and PR #36 is not merged. The combined local inventory also continues to
+block PR diagnostics (15 files, 31,505,884 bytes) until merge, flags an
+unrecognized/anonymous Docker mount, and requires preserving the active PR and
+secondary checkout. No source, diagnostic, Docker, or transcript data was
+removed.
+
+The `hai-integration-snapshot` index has 2,917 tracked paths compared with
+2,923 paths in PR `HEAD` `9200ae3f2f1b9a02925c883a11f400d3cb96bf7e`: 2,835
+blob IDs match, 82 same-path blobs differ, and no snapshot-index path is absent
+from the PR checkout. A separate read-only scan of its 19 unstaged paths found
+four already byte-identical to the PR, twelve differing only in line endings,
+two substantive code/script changes already present in the PR, and one newer
+ledger checkpoint not yet integrated. This establishes path coverage, not a
+semantic review of all 82 competing versions; the complete semantic comparison
+is still open.
+
+The detached `hai-merge-scratch-20261010` checkout remains unmerged with 189
+conflict paths. All 189 paths exist in the PR checkout; 181 PR blobs equal the
+scratch stage-2 blobs, while eight are distinct from all three conflict
+stages. The scratch checkout remains untouched, and those eight versions have
+not been declared redundant pending targeted review.
+
+At the live check, PR #36 was open on `codex/hai-runtime-release` at
+`9200ae3f2f1b9a02925c883a11f400d3cb96bf7e`. Exact-head Actions run
+`38085176170` had 35 completed jobs, no failures, and browser acceptance still
+in progress. This is a timestamped observation, not a passing-run result.
+Cleanup remains prohibited until the full semantic crosswalk is completed,
+checks pass on the final PR head, the PR is merged into `main`, and the cleanup
+script's source/ledger/merge gates are revalidated.
+
+This review also found three obsolete root `.env-*` files tracked in the public
+repository. Current tracked runtime/Compose sources do not consume them, the
+supported local setup uses ignored `.env.local` from `.env.example`, and the
+Windows installer explicitly excludes those files. They are removed from the
+PR's working tree, ignored going forward, and covered by a regression check.
+This removes them from the proposed current tree only; it does not rewrite
+public Git history or affect the separate primary checkout. If any of their
+short default-like values were reused in an actual deployment, rotate those
+credentials independently.
