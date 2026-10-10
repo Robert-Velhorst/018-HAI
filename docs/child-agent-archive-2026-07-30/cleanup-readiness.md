@@ -189,6 +189,19 @@ restriction was not bypassed.
   manifest or Compose definition; their provenance remains unresolved, so the
   verifier classifies them `retain_unverified`. The verifier's output is a
   read-only report; it does not authorize or perform deletion.
+- A guarded operator path is available at
+  `scripts/remove-hai-temp-fixtures.ps1`. It is dry-run by default and scans
+  only the current Windows Temp root. Readiness requires at least 24 hours
+  since fixture creation and the most recent fixture-file change. Removal
+  requires exact owner IDs, `-Apply`, the count-bound phrase
+  `REMOVE HAI TEMP FIXTURES <count>`, and PowerShell's high-impact
+  `ShouldProcess` confirmation. It reruns the exact file-hash and Docker
+  inventory check, rejects changed files/references and process command lines
+  that mention a selected path, and removes only selected generated fixture
+  directories. It cannot remove Docker resources, repository files, or the two
+  manifest-less synthetic environment folders. This operator path does not
+  change the PR, transcript, volume, image, worktree, or toolchain retention
+  gates.
 - Seven HAI volumes are present. A refreshed read-only Docker inventory on
   2026-10-10 found `018-hai-postgres-automation` and `018-hai-postgres-idp`
   running and mounting their respective Postgres data volumes. The backend

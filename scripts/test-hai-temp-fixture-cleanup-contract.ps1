@@ -5,6 +5,9 @@ foreach ($token in @(
     'fixture root is a reparse point',
     'generated manifest or compose definition is missing',
     'fixture file/directory inventory differs from the generated acceptance layout',
+    'MinimumAgeHours = 24',
+    'retain_recent',
+    'generated fixture has not reached the minimum retention age',
     "'hai.acceptance.owner'",
     'docker_resources_checked = $dockerAvailable',
     "disposition = 'candidate_manual_cleanup'",
@@ -17,3 +20,4 @@ if ($source -match 'Remove-Item|Move-Item|docker\s+(container|network|volume)\s+
     throw 'HAI Temp fixture readiness must remain read-only.'
 }
 Write-Output 'HAI Temp fixture cleanup readiness contract: PASS'
+& (Join-Path $PSScriptRoot 'test-hai-temp-fixture-removal-contract.ps1')

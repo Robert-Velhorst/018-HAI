@@ -1,5 +1,7 @@
 param(
-    [string]$TempRoot = [IO.Path]::GetTempPath()
+    [string]$TempRoot = [IO.Path]::GetTempPath(),
+    [ValidateRange(1, 8760)]
+    [int]$MinimumAgeHours = 24
 )
 
 $ErrorActionPreference = 'Stop'
@@ -38,6 +40,7 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
         project = $null
         file_count = 0
         bytes = 0L
+        age_hours = $null
         source_hashes = @()
         docker_resources_checked = $dockerAvailable
         related_containers = $null
@@ -87,6 +90,20 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
             throw 'generated fixture identity markers do not match the directory'
         }
         $record.project = $expectedProject
+
+        $createdUtc = [DateTimeOffset]::Parse([string]$manifest.createdUtc).ToUniversalTime()
+        $latestWriteUtc = ($allEntries | Measure-Object -Property LastWriteTimeUtc -Maximum).Maximum
+        if ($null -eq $latestWriteUtc) { throw 'fixture modification time is unavailable' }
+        $record.age_hours = [math]::Round([math]::Min(
+            ([DateTimeOffset]::UtcNow - $createdUtc).TotalHours,
+            ([DateTimeOffset]::UtcNow - [DateTimeOffset]$latestWriteUtc).TotalHours
+        ), 2)
+        if ($record.age_hours -lt $MinimumAgeHours) {
+            $record.disposition = 'retain_recent'
+            $record.reason = 'generated fixture has not reached the minimum retention age'
+            [pscustomobject]$record
+            continue
+        }
 
         foreach ($service in $compose.services.PSObject.Properties) {
             $config = $service.Value
@@ -151,6 +168,7 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
 
 [pscustomobject][ordered]@{
     temp_root = $root
+    minimum_age_hours = $MinimumAgeHours
     inspected_directories = @($results).Count
     candidate_directories = @($results | Where-Object disposition -CEQ 'candidate_manual_cleanup').Count
     retained_or_unverified_directories = @($results | Where-Object disposition -CEQ 'retain_unverified').Count
