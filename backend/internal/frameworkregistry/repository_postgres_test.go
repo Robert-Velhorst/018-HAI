@@ -65,17 +65,19 @@ func executeEmbeddedMigration(t *testing.T, db *gorm.DB, path string) {
 	}
 }
 
-func frameworkRegistryMigrationFiles(t *testing.T) fs.FS {
+func migrationFilesThrough(t *testing.T, lastVersion string) fs.FS {
 	t.Helper()
 	files := fstest.MapFS{}
-	for _, name := range []string{
-		"0001_extensions.down.sql",
-		"0001_extensions.up.sql",
-		"0002_baseline.down.sql",
-		"0002_baseline.up.sql",
-		"0003_framework_registry.down.sql",
-		"0003_framework_registry.up.sql",
-	} {
+	entries, err := fs.ReadDir(migrations.Files, "pre")
+	if err != nil {
+		t.Fatalf("read pre-migration directory: %v", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		base := strings.TrimSuffix(strings.TrimSuffix(name, ".up.sql"), ".down.sql")
+		if entry.IsDir() || (!strings.HasSuffix(name, ".up.sql") && !strings.HasSuffix(name, ".down.sql")) || strings.Compare(base, lastVersion) > 0 {
+			continue
+		}
 		content, err := migrations.Files.ReadFile("pre/" + name)
 		if err != nil {
 			t.Fatalf("read migration fixture %s: %v", name, err)
@@ -150,7 +152,7 @@ func TestFrameworkRegistryPostgresIntegrationRequiredEnvironment(t *testing.T) {
 
 func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	db := openFrameworkRegistryPostgresTestDB(t)
-	migrationFiles := frameworkRegistryMigrationFiles(t)
+	migrationFiles := migrationFilesThrough(t, "0003_framework_registry")
 
 	applied, err := infra.ApplyMigrations(db, migrationFiles, "pre")
 	if err != nil {
@@ -267,11 +269,12 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 
 func TestHostRuntimeStartIntentMigrationRollbackIsRefused(t *testing.T) {
 	db := openFrameworkRegistryPostgresTestDB(t)
-	if _, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil {
+	migrationFiles := migrationFilesThrough(t, "0108_host_runtime_start_intent")
+	if _, err := infra.ApplyMigrations(db, migrationFiles, "pre"); err != nil {
 		t.Fatalf("apply pre migrations: %v", err)
 	}
 	const version = "pre/0108_host_runtime_start_intent"
-	err := infra.RollbackMigration(db, migrations.Files, "pre", version)
+	err := infra.RollbackMigration(db, migrationFiles, "pre", version)
 	if err == nil || !strings.Contains(err.Error(), "rollback refused: removing host-runtime start intents") {
 		t.Fatalf("rollback error = %v, want host-runtime start-intent safety rejection", err)
 	}
