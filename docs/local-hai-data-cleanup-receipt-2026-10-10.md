@@ -226,3 +226,45 @@ That backup stays protected pending a retention decision. No Docker resource or
 recovery file was removed. The volume and unified readiness contract tests and
 PowerShell parser passed after this code change; the live readiness command
 returned `safe_to_remove=false` for every attached volume.
+
+## Latest full read-only inventory (2026-10-10, 08:42 Europe/Amsterdam)
+
+The unified readiness command was rerun from the PR worktree with
+`-VerifyTranscriptArchive`. It completed successfully in read-only mode. The
+report is not an authorization to delete anything:
+
+- The completed-session source archive still has 18 files totaling
+  20,739,169,122 bytes. Source paths and sizes match the manifest; all eight
+  completed-transcript candidate hashes verify. The eight candidates total
+  7,939,888,699 bytes. Their remover still requires canonical `main` after PR
+  #36 is merged. The ten protected transcripts remain retained.
+- Temp has nine HAI acceptance directories (659,988 bytes total), with zero
+  eligible candidates: seven are younger than 24 hours and two interrupted
+  fixtures have no verifiable cleanup manifest.
+- The three named HAI Docker volumes are still attached. Docker reports 164 B
+  for phase-two control state, 858.8 MB for automation Postgres, and 65.13 MB
+  for IDP Postgres. The Postgres containers are healthy/running. The old Ollama
+  source volume remains absent; its separate verified recovery archive is
+  retained. A separate 10,189,079-byte recovery bundle still has unverified
+  ACL provenance and remains retained.
+- Two image tags without container references (backend `latest`, 249 MB; and
+  nginxconfigmanager `latest`, 29.2 MB) remain held by retention review; no
+  image is eligible under the current gate.
+- The 15-file, 31,505,884-byte PR diagnostic allowlist remains blocked until
+  PR #36 is merged at the exact verified HEAD. The active worktree has no
+  tracked changes and 23 untracked files; the separate C: checkout still has
+  692 modified tracked files and 2,475 untracked files, with 2,295 entries
+  that are not byte-identical matches in the PR checkout. Both checkouts and
+  the shared Go toolchain remain preserved.
+- PR #36 is open at `23ac8dd7acec381701f4c8a907bd66b9114ad343` and GitHub
+  reports it as unstable. CI run `38031485799` completed with seven failures:
+  authenticated control-plane smoke, browser acceptance, Postgres migration
+  integration, Promptfoo safety runner image, repository secret scan (redacted
+  output), two-account isolation, and Windows installer/signing guards. The
+  dedicated HAI cleanup-readiness safety-contract job passed. These failures
+  leave the merge/removal gate closed; no secret-scan findings or values are
+  copied into this receipt.
+
+No source archive, transcript, Temp fixture, Docker resource, image, recovery
+bundle, diagnostic, checkout, or toolchain was changed or removed by this
+inventory. Both `cleanup_authorized` and `deletion_performed` remain `false`.
