@@ -144,12 +144,12 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
         $isCompleteFixture = @($actualFiles | Where-Object { $_ -cne 'cleanup-manifest.json' }).Count -eq $expectedFiles.Count -and
             @(Compare-Object ($expectedFiles | Sort-Object) (@($actualFiles | Where-Object { $_ -cne 'cleanup-manifest.json' } | Sort-Object))).Count -eq 0 -and
             @(Compare-Object $expectedDirectories $actualDirectories).Count -eq 0
-        if (-not $isPreparingFixture -and -not $isCompleteFixture) {
-            throw 'fixture file/directory inventory differs from the generated acceptance layout'
-        }
         $files = @($allEntries | Where-Object { -not $_.PSIsContainer })
         $record.file_count = $files.Count
         $record.bytes = [long](($files | Measure-Object -Property Length -Sum).Sum)
+        if (-not $isPreparingFixture -and -not $isCompleteFixture) {
+            throw 'fixture file/directory inventory differs from the generated acceptance layout'
+        }
 
         $manifestPath = Join-Path $directory.FullName 'manifest.json'
         $composePath = Join-Path $directory.FullName 'compose.json'

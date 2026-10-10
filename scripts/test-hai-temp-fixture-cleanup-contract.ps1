@@ -47,5 +47,11 @@ foreach ($token in @(
 if ($source -match 'Remove-Item|Move-Item|docker\s+(container|network|volume)\s+(rm|prune)') {
     throw 'HAI Temp fixture readiness must remain read-only.'
 }
+$fileCountAssignment = $source.IndexOf('$record.file_count = $files.Count', [StringComparison]::Ordinal)
+$bytesAssignment = $source.IndexOf('$record.bytes = [long](($files | Measure-Object -Property Length -Sum).Sum)', [StringComparison]::Ordinal)
+$inventoryRejection = $source.IndexOf("throw 'fixture file/directory inventory differs from the generated acceptance layout'", [StringComparison]::Ordinal)
+if ($fileCountAssignment -lt 0 -or $bytesAssignment -le $fileCountAssignment -or $inventoryRejection -le $bytesAssignment) {
+    throw 'HAI Temp readiness must report observed file counts and bytes before rejecting an incomplete fixture layout.'
+}
 Write-Output 'HAI Temp fixture cleanup readiness contract: PASS'
 & (Join-Path $PSScriptRoot 'test-hai-temp-fixture-removal-contract.ps1')
