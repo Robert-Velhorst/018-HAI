@@ -983,7 +983,7 @@ jobs:
             DB_NAME=hai_brain_skill_selection_test DB_AUTOMIGRATE=false \
             HAI_SEMANTIC_RETRIEVAL_ENABLED=false \
             go run ./cmd/main.go migrate up
-          HAI_BRAIN_SKILL_SELECTION_TEST_DATABASE_DSN="$brain_skill_selection_dsn" go test -count=1 \
+          HAI_BRAIN_SKILL_SELECTION_TEST_DATABASE_DSN="$brain_skill_selection_dsn" go test -count=1 -tags integration \
             ./internal/brain_skill_selection/ -v | tee "$brain_skill_selection_log"
           grep -q -- '^--- PASS: TestPostgresRepositoryAndSelectionServiceIntegration' "$brain_skill_selection_log"
           grep -q -- '^--- PASS: TestPostgresRepositoryConcurrentOpposingSelectionWrites' "$brain_skill_selection_log"

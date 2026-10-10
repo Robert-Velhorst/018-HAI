@@ -1916,6 +1916,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         preparation = 'DB_NAME=hai_brain_skill_selection_test DB_AUTOMIGRATE=false'
         execution = 'HAI_BRAIN_SKILL_SELECTION_TEST_DATABASE_DSN="$brain_skill_selection_dsn" go test'
         self.assertIn(preparation, migrations)
+        self.assertIn(f'{execution} -count=1 -tags integration', migrations)
         self.assertIn('go run ./cmd/main.go migrate up', migrations)
         self.assertLess(migrations.index(preparation), migrations.index(execution))
 
