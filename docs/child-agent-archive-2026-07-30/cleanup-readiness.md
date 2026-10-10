@@ -564,3 +564,14 @@ remain; it never removes the archive directory or unselected transcripts. A ligh
 branch/PR preflight prevents a multi-gigabyte source hash pass while the PR is
 still open or checks are incomplete. This command has not been run against the
 source archive; current PR state keeps it blocked.
+
+The four legacy detached Docker volumes with current-source-verified restore
+archives also have a narrowly scoped operator path at
+`scripts/remove-hai-detached-volume.ps1`. It accepts only the exact Kafka,
+Ollama, named Redis, and Redpanda volume names; verifies the local Docker
+context, current source/restore archive, and detached status; requires `-Apply`,
+a count-bound confirmation phrase, and `ShouldProcess`; and re-verifies each
+volume immediately before removing only that exact named volume. It excludes
+the PostgreSQL and phase2 control-state volumes, never uses `prune`, retains
+the recovery archives, and reports partial outcomes. Its contract runs in CI.
+No volume removal was performed.
