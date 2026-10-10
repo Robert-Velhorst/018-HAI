@@ -21,6 +21,7 @@ secret_scan = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(secret_scan)
 
 
+@patch.dict("os.environ", {"CI": "", "GITLEAKS_BASE_SHA": ""})
 class SecretScanOutputTest(unittest.TestCase):
     def test_candidate_output_is_suppressed_on_findings(self) -> None:
         candidate = "ghp_" + "A" * 36
