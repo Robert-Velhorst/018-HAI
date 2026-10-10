@@ -164,6 +164,61 @@ func TestGormExplicitOperationClaimsAreAtomicAndFencedPostgres(t *testing.T) {
 	if err := secondService.ReleaseClaim(context.Background(), current.Claim); err != nil {
 		t.Fatalf("release current claim: %v", err)
 	}
+
+	sourceID := uuid.New()
+	source, err := firstService.Ingest(operations.NewOperationInput{
+		OwnerUserID: "explicit-claim-test-owner", WorkspaceID: "local",
+		Title: "explicit approved source claim", OperationType: "safe_worker_test",
+		SourceType: "integration_test", SourceID: &sourceID,
+		SourceRevisionHash: strings.Repeat("a", 64),
+		DedupeKey: "explicit-source-claim-" + uuid.NewString(),
+		EvidenceJSON: `{"fixture":"approved-source-claim"}`,
+	})
+	if err != nil {
+		t.Fatalf("create source-derived operation: %v", err)
+	}
+	sourceOperationID := source.Operation.ID
+	t.Cleanup(func() {
+		if err := db.Exec("DELETE FROM public.operation_events WHERE operation_id = ?", sourceOperationID).Error; err != nil {
+			t.Errorf("delete source operation events: %v", err)
+		}
+		if err := db.Exec("DELETE FROM public.operation_execution_claims WHERE operation_id = ?", sourceOperationID).Error; err != nil {
+			t.Errorf("delete source operation claim: %v", err)
+		}
+		if err := db.Exec("DELETE FROM public.operations WHERE id = ?", sourceOperationID).Error; err != nil {
+			t.Errorf("delete source operation: %v", err)
+		}
+	})
+	sourceOp := source.Operation
+	sourceOp.CurrentDecision = string(operations.DecisionAskRobert)
+	sourceOp.RequiresApproval = true
+	sourceOp.RiskLevel = string(operations.RiskMedium)
+	sourceOp.AutonomyLevel = string(operations.AutonomyApproval)
+	sourceClassified, err := firstService.Transition(sourceOp, operations.StatusClassified, "hai", "", "source operation classified")
+	if err != nil {
+		t.Fatalf("classify source operation: %v", err)
+	}
+	sourceAwaiting, err := firstService.Transition(*sourceClassified, operations.StatusAwaitingApproval, "hai", "", "awaiting owner approval")
+	if err != nil {
+		t.Fatalf("request source operation approval: %v", err)
+	}
+	preview, err := firstService.PreviewSourceApproval(*sourceAwaiting)
+	if err != nil {
+		t.Fatalf("preview source operation approval: %v", err)
+	}
+	approved, _, err := firstService.ApproveSourceDerived(*sourceAwaiting, "explicit-claim-test-owner", preview.Version, preview.RevisionDigest)
+	if err != nil {
+		t.Fatalf("approve source operation: %v", err)
+	}
+	sourceClaim, err := firstService.ClaimOperation(
+		context.Background(), "explicit-claim-test-owner", "local", approved.ID, uuid.New(), time.Minute,
+	)
+	if err != nil || sourceClaim == nil || sourceClaim.Operation.ID != approved.ID {
+		t.Fatalf("explicit claim of approved source operation: claim=%#v err=%v", sourceClaim, err)
+	}
+	if err := firstService.ReleaseClaim(context.Background(), sourceClaim.Claim); err != nil {
+		t.Fatalf("release approved source claim: %v", err)
+	}
 }
 
 func isLoopbackClaimTestHost(host string) bool {

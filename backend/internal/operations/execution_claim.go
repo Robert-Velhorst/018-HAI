@@ -252,7 +252,7 @@ func (r *GormRepository) ClaimOperation(ctx context.Context, ownerUserID, worksp
 			var eligible int64
 			if err := tx.Raw(`SELECT count(*) FROM public.operation_events
 WHERE operation_id = ? AND event_type = 'status_change'
-  AND after_status = 'approved' AND payload ? 'sourceApproval'`, op.ID).Row().Scan(&eligible); err != nil {
+  AND after_status = 'approved' AND payload_json ? 'sourceApproval'`, op.ID).Row().Scan(&eligible); err != nil {
 				return fmt.Errorf("verify approved source operation receipt: %w", err)
 			}
 			if eligible != 1 {
