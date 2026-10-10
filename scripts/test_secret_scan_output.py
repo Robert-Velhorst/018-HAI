@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 import subprocess
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +50,40 @@ class SecretScanOutputTest(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertNotIn("synthetic candidate detail", output.getvalue())
+
+    def test_ci_scan_requires_valid_comparison_revision(self) -> None:
+        runner = Mock()
+        output = io.StringIO()
+        with patch.dict("os.environ", {"CI": "true", "GITLEAKS_BASE_SHA": ""}):
+            with redirect_stdout(output):
+                result = secret_scan.scan(runner=runner, root=ROOT)
+
+        self.assertEqual(result, 2)
+        self.assertIn("did not provide a comparison revision", output.getvalue())
+        runner.assert_not_called()
+
+    def test_scan_limits_history_to_the_provided_base_revision(self) -> None:
+        base_revision = "a" * 40
+        runner = Mock(
+            return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+        )
+        with patch.dict("os.environ", {"CI": "true", "GITLEAKS_BASE_SHA": base_revision}):
+            result = secret_scan.scan(runner=runner, root=ROOT)
+
+        self.assertEqual(result, 0)
+        command = runner.call_args.args[0]
+        self.assertIn("--log-opts", command)
+        self.assertEqual(command[command.index("--log-opts") + 1], f"{base_revision}..HEAD")
+
+    def test_invalid_comparison_revision_fails_closed(self) -> None:
+        runner = Mock()
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = secret_scan.scan(runner=runner, root=ROOT, base_revision="not-a-commit")
+
+        self.assertEqual(result, 2)
+        self.assertIn("comparison revision is invalid", output.getvalue())
+        runner.assert_not_called()
 
     def test_valid_findings_show_only_bounded_safe_metadata(self) -> None:
         candidate = "ghp_" + "A" * 36

@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 import json
+import os
 import re
 from pathlib import Path
 from typing import Callable, Sequence
@@ -54,8 +55,18 @@ def _safe_finding_summary(stdout: str) -> list[str] | None:
 def scan(
     runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     root: Path = ROOT,
+    base_revision: str | None = None,
 ) -> int:
-    command: Sequence[str] = (
+    if base_revision is None:
+        base_revision = os.environ.get("GITLEAKS_BASE_SHA", "").strip()
+    if base_revision and not re.fullmatch(r"[0-9a-fA-F]{40}", base_revision):
+        print("Secret scan failed; comparison revision is invalid.")
+        return 2
+    if os.environ.get("CI", "").lower() == "true" and not base_revision:
+        print("Secret scan failed; CI did not provide a comparison revision.")
+        return 2
+
+    command: list[str] = [
         "go",
         "run",
         GITLEAKS_MODULE,
@@ -66,10 +77,12 @@ def scan(
         "--log-level=fatal",
         "--report-format=json",
         "--report-path=-",
-    )
+    ]
+    if base_revision:
+        command.extend(("--log-opts", f"{base_revision}..HEAD"))
     try:
         result = runner(
-            list(command),
+            command,
             cwd=root,
             text=True,
             capture_output=True,
