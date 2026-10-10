@@ -53,8 +53,8 @@ echo "==> Preparing a feed (so there is real work to halt)"
 mkdir -p "${FEEDS}" "${WORKSPACE}" "${STATE}"
 cat > "${FEEDS}/inbox.json" <<'JSON'
 [
-  {"externalId":"n1","title":"Organize notes","body":"Consolidate personal notes into a local file"},
-  {"externalId":"n2","title":"Tidy workspace","body":"Reorganize the local scratch files"}
+  {"externalId":"n1","title":"Organize notes","content":"Consolidate personal notes into a local file","itemType":"email","provider":"generic_json_feed"},
+  {"externalId":"n2","title":"Tidy workspace","content":"Reorganize the local scratch files","itemType":"email","provider":"generic_json_feed"}
 ]
 JSON
 
