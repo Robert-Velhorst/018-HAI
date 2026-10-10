@@ -72,6 +72,7 @@ function Assert-HaiSmokeContract {
         $smoke -notmatch "RUNNER_ENVIRONMENT.*github-hosted" -or
         $smoke -notmatch 'RUNNER_TEMP is a distinct, existing runner-owned temporary directory' -or
         $smoke -notmatch 'RUNNER_TEMP is a reparse point' -or
+        $smoke -notmatch 'Keep installer/runtime profile writes inside this uniquely owned smoke' -or
         $smoke -notmatch 'SignatureStatus\]::NotSigned' -or
         $smoke -notmatch 'HAI has existing project containers or volumes' -or
         $smoke -notmatch 'hai\.env was created by installer setup' -or
@@ -259,13 +260,11 @@ $smokeRoot = Join-Path $runnerTemp ("hai-installer-smoke-{0}" -f [Guid]::NewGuid
 $installRoot = Join-Path $smokeRoot 'installed'
 $setupLog = Join-Path $smokeRoot 'setup.log'
 $uninstallLog = Join-Path $smokeRoot 'uninstall.log'
-$localHaiRoot = Join-Path ([IO.Path]::GetFullPath($env:LOCALAPPDATA)) 'HAI'
-$environmentFile = Join-Path $localHaiRoot 'hai.env'
+$originalLocalAppData = $env:LOCALAPPDATA
 $startMenuGroup = Join-Path ([Environment]::GetFolderPath('Programs')) 'HAI Local'
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{2F1FA2B5-68B6-4EAF-A4B4-7E44F456B889}_is1'
 $currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
-if (Test-Path -LiteralPath $localHaiRoot) { throw 'Runner profile already contains %LOCALAPPDATA%\HAI; refusing to install.' }
 if (Get-HaiTask) { throw 'A HAI maintenance scheduled task already exists; refusing to run the installer.' }
 if (Test-Path -LiteralPath $uninstallKey) { throw 'A HAI installer registration already exists in this runner profile.' }
 if (Test-Path -LiteralPath $startMenuGroup) { throw 'A HAI Start Menu group already exists in this runner profile.' }
@@ -273,6 +272,13 @@ if (Test-Path -LiteralPath $smokeRoot) { throw 'Generated smoke directory unexpe
 New-Item -ItemType Directory -Path $smokeRoot -ErrorAction Stop | Out-Null
 
 try {
+    # Keep installer/runtime profile writes inside this uniquely owned smoke
+    # root. Any existing runner-profile HAI data remains outside the test.
+    $env:LOCALAPPDATA = Join-Path $smokeRoot 'isolated-profile\AppData\Local'
+    $localHaiRoot = Join-Path ([IO.Path]::GetFullPath($env:LOCALAPPDATA)) 'HAI'
+    $environmentFile = Join-Path $localHaiRoot 'hai.env'
+    if (Test-Path -LiteralPath $localHaiRoot) { throw 'Isolated smoke profile unexpectedly contains HAI data.' }
+
     $arguments = @(
         '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-',
         "/DIR=`"$installRoot`"", "/LOG=`"$setupLog`""
@@ -382,5 +388,6 @@ try {
     Write-Host "PASS: silent setup did not create hai.env, a scheduled task, HAI containers, or an HAI process."
     Write-Host "PASS: uninstall was safely cancelled because no protected first-run environment existed; installed files were preserved. (exit $($uninstallProcess.ExitCode))"
 } finally {
+        $env:LOCALAPPDATA = $originalLocalAppData
         Remove-HaiSmokeOwnedArtifacts -SmokeRoot $smokeRoot -StartMenuGroup $startMenuGroup -InstallRoot $installRoot
 }

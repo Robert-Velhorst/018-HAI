@@ -395,7 +395,7 @@ func TestSourceObservationPostgresUpgradeMintConstraintsAndRollback(t *testing.T
 		// The earlier 0112-only phase tested its SQL data guard. After upgrading,
 		// the runner must refuse out-of-order rollback before invoking down SQL.
 		rollbackErr := infra.RollbackMigration(db, migrations.Files, "pre", version)
-		if rollbackErr == nil || !strings.Contains(rollbackErr.Error(), "while later migration") || sourceConfigurationRaceSQLState(rollbackErr) != "" {
+		if rollbackErr == nil || !strings.Contains(rollbackErr.Error(), "while later-phase migration") || sourceConfigurationRaceSQLState(rollbackErr) != "" {
 			t.Fatalf("current schema did not refuse ordered rollback at the runner: %v", rollbackErr)
 		}
 		for _, retainedVersion := range []string{version, "pre/0113_operation_source_heads", "pre/0114_operation_source_configuration"} {

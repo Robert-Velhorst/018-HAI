@@ -135,7 +135,20 @@ func TestSourceHeadPostgresPublicationEpochSupersessionAndRollback(t *testing.T)
 	if err := db.Where("owner_user_id = ? AND workspace_id = ? AND source_identity_hash = ?", opA.OwnerUserID, opA.WorkspaceID, opA.SourceIdentityHash).First(&head).Error; err != nil || head.State != "reconciliation_required" {
 		t.Fatalf("actual A-B-A head: %+v / %v", head, err)
 	}
-	// Runtime needs 0114, but 0113's data guard must be tested at the real tail.
+	// Verify the phase-order guard, then remove post-phase migrations from this
+	// isolated database so the pre-phase data guard can be exercised.
+	if err := infra.RollbackMigration(db, migrations.Files, "pre", "pre/0114_operation_source_configuration"); err == nil || !strings.Contains(err.Error(), "later-phase migration") {
+		t.Fatalf("pre-phase rollback should be refused while post migrations remain applied: %v", err)
+	}
+	postStatus, err := infra.Status(db, migrations.Files, "post")
+	if err != nil {
+		t.Fatalf("read post-phase migration status: %v", err)
+	}
+	for i := len(postStatus.Applied) - 1; i >= 0; i-- {
+		if err := infra.RollbackMigration(db, migrations.Files, "post", postStatus.Applied[i]); err != nil {
+			t.Fatalf("rollback isolated post-phase migration %q: %v", postStatus.Applied[i], err)
+		}
+	}
 	// These origins are deliberately unmanaged, so removing 0114 preserves them.
 	if err := infra.RollbackMigration(db, migrations.Files, "pre", "pre/0114_operation_source_configuration"); err != nil {
 		t.Fatalf("rollback unmanaged configuration prerequisite before head rollback: %v", err)
