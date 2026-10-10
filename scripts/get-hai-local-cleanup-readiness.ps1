@@ -78,6 +78,128 @@ $images = Get-ReadOnlyReport 'unreferenced_local_images' 'remove-hai-unreference
     )
 }
 
+$git = Get-Command git -ErrorAction SilentlyContinue
+$branch = $null
+$head = $null
+$trackedChangeCount = $null
+$untrackedFileCount = $null
+$pullRequestState = $null
+$pullRequestMergedAt = $null
+$pullRequestHead = $null
+$workspaceBlocker = $null
+if ($null -eq $git) {
+    $workspaceBlocker = 'git is unavailable; active worktree state could not be verified'
+} else {
+    $gitPrefix = @('-c', "safe.directory=$repoRoot", '-C', $repoRoot)
+    $branchLines = @(& $git.Source @gitPrefix branch --show-current 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $branchLines.Count -eq 1) { $branch = [string]$branchLines[0] }
+    $headLines = @(& $git.Source @gitPrefix rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $headLines.Count -eq 1) { $head = ([string]$headLines[0]).Trim().ToLowerInvariant() }
+    $statusLines = @(& $git.Source @gitPrefix status --porcelain=v1 --untracked-files=all 2>$null)
+    if ($LASTEXITCODE -eq 0) {
+        $trackedChangeCount = @($statusLines | Where-Object { -not ([string]$_).StartsWith('??', [StringComparison]::Ordinal) }).Count
+        $untrackedFileCount = @($statusLines | Where-Object { ([string]$_).StartsWith('??', [StringComparison]::Ordinal) }).Count
+    } else {
+        $workspaceBlocker = 'git could not inventory the active worktree'
+    }
+}
+$gh = Get-Command gh -ErrorAction SilentlyContinue
+if ($null -eq $gh) {
+    $workspaceBlocker = 'GitHub CLI is unavailable; pull request state could not be verified'
+} else {
+    $prLines = @(& $gh.Source pr view 36 --repo Robert-Velhorst/018-HAI --json state,mergedAt,headRefOid 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $prLines.Count -gt 0) {
+        try {
+            $pr = ($prLines -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
+            $pullRequestState = [string]$pr.state
+            $pullRequestMergedAt = [string]$pr.mergedAt
+            $pullRequestHead = [string]$pr.headRefOid
+        } catch {
+            $workspaceBlocker = 'GitHub returned invalid PR metadata; worktree retention state could not be verified'
+        }
+    } else {
+        $workspaceBlocker = 'GitHub could not verify PR #36; worktree retention state could not be verified'
+    }
+}
+$worktreeReason = if ($workspaceBlocker) {
+    $workspaceBlocker
+} elseif ($pullRequestState -ceq 'OPEN') {
+    'PR #36 is open; preserve source, environment files, backups, and verification artifacts.'
+} elseif (-not [string]::IsNullOrWhiteSpace($pullRequestMergedAt)) {
+    'PR #36 is merged, but retain this checkout until changed and untracked files are reviewed and any needed local state is preserved.'
+} else {
+    'PR #36 is not verified as merged; preserve this checkout and its local state.'
+}
+$worktreeTarget = [pscustomobject][ordered]@{
+    id = 'active_pr_worktree'
+    source_path = $repoRoot
+    status = 'retain'
+    branch = $branch
+    head = $head
+    pull_request_state = $pullRequestState
+    pull_request_merged_at = $pullRequestMergedAt
+    pull_request_head = $pullRequestHead
+    tracked_change_count = $trackedChangeCount
+    untracked_file_count = $untrackedFileCount
+    blocker = $worktreeReason
+    cleanup_requires_manual_review = $true
+    cleanup_authorized = $false
+    deletion_performed = $false
+}
+$sharedToolchainPath = Join-Path (Split-Path $repoRoot -Parent) 'go1.25.12'
+$toolchainTarget = [pscustomobject][ordered]@{
+    id = 'shared_go_toolchain'
+    source_path = $sharedToolchainPath
+    status = if (Test-Path -LiteralPath $sharedToolchainPath -PathType Container) { 'retain_shared' } else { 'not_present' }
+    blocker = if (Test-Path -LiteralPath $sharedToolchainPath -PathType Container) { 'Shared development toolchain; it is not HAI-exclusive and is not a cleanup candidate.' } else { $null }
+    cleanup_authorized = $false
+    deletion_performed = $false
+}
+$secondaryWorktreePath = Join-Path $env:USERPROFILE 'Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk'
+$secondaryWorktreeTarget = [pscustomobject][ordered]@{
+    id = 'secondary_hai_checkout'
+    source_path = $secondaryWorktreePath
+    status = 'not_present'
+    repository = $null
+    branch = $null
+    head = $null
+    tracked_change_count = $null
+    untracked_file_count = $null
+    blocker = $null
+    cleanup_authorized = $false
+    deletion_performed = $false
+}
+if (Test-Path -LiteralPath $secondaryWorktreePath -PathType Container) {
+    if ($null -eq $git) {
+        $secondaryWorktreeTarget.status = 'retain_unverified'
+        $secondaryWorktreeTarget.blocker = 'A known secondary checkout exists, but git is unavailable; preserve it.'
+    } else {
+        $secondaryGitPrefix = @('-c', "safe.directory=$secondaryWorktreePath", '-C', $secondaryWorktreePath)
+        $secondaryOriginLines = @(& $git.Source @secondaryGitPrefix remote get-url origin 2>$null)
+        if ($LASTEXITCODE -ne 0 -or $secondaryOriginLines.Count -ne 1 -or
+            [string]$secondaryOriginLines[0] -notmatch '(?i)(github\.com[:/]Robert-Velhorst/018-HAI(?:\.git)?$)') {
+            $secondaryWorktreeTarget.status = 'retain_unverified'
+            $secondaryWorktreeTarget.blocker = 'A known secondary checkout exists, but its repository identity could not be verified.'
+        } else {
+            $secondaryBranchLines = @(& $git.Source @secondaryGitPrefix branch --show-current 2>$null)
+            if ($LASTEXITCODE -eq 0 -and $secondaryBranchLines.Count -eq 1) { $secondaryWorktreeTarget.branch = [string]$secondaryBranchLines[0] }
+            $secondaryHeadLines = @(& $git.Source @secondaryGitPrefix rev-parse HEAD 2>$null)
+            if ($LASTEXITCODE -eq 0 -and $secondaryHeadLines.Count -eq 1) { $secondaryWorktreeTarget.head = ([string]$secondaryHeadLines[0]).Trim().ToLowerInvariant() }
+            $secondaryStatusLines = @(& $git.Source @secondaryGitPrefix status --porcelain=v1 --untracked-files=all 2>$null)
+            if ($LASTEXITCODE -eq 0) {
+                $secondaryWorktreeTarget.repository = 'Robert-Velhorst/018-HAI'
+                $secondaryWorktreeTarget.tracked_change_count = @($secondaryStatusLines | Where-Object { -not ([string]$_).StartsWith('??', [StringComparison]::Ordinal) }).Count
+                $secondaryWorktreeTarget.untracked_file_count = @($secondaryStatusLines | Where-Object { ([string]$_).StartsWith('??', [StringComparison]::Ordinal) }).Count
+                $secondaryWorktreeTarget.status = 'retain'
+                $secondaryWorktreeTarget.blocker = 'Separate local HAI checkout; preserve it until its branch, changes, and relationship to the PR checkout are reconciled.'
+            } else {
+                $secondaryWorktreeTarget.status = 'retain_unverified'
+                $secondaryWorktreeTarget.blocker = 'Secondary checkout status could not be inventoried; preserve it.'
+            }
+        }
+    }
+}
+
 $targets = [Collections.Generic.List[object]]::new()
 if ($temp.status -eq 'reported') {
     $candidateDirectories = @($temp.report.directories | Where-Object disposition -CEQ 'candidate_manual_cleanup')
@@ -195,6 +317,6 @@ $report = [pscustomobject][ordered]@{
         'Do not remove the active PR worktree or toolchain before PR #36 is merged and its checks pass.',
         'Do not remove retained, aborted, duplicate-ID, or nonterminal transcripts.'
     )
-    cleanup_targets = @($targets)
+    cleanup_targets = @($targets) + @($worktreeTarget, $secondaryWorktreeTarget, $toolchainTarget)
 }
 $report | ConvertTo-Json -Depth 10

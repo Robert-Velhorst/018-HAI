@@ -13,14 +13,23 @@ $required = @(
     'deletion_performed -ne $false',
     'mode = ''read_only_inventory''',
     'cleanup_authorized = $false',
-    'cleanup_targets = @($targets)',
     'source_archive_integrity',
     'RequireSourceArchive = $true',
     'VerifyTranscriptArchive',
     'if ($VerifyTranscriptArchive)',
     "status = 'not_requested'",
     'source_hash_audit_requested = [bool]$VerifyTranscriptArchive',
-    'preserve_active_pr_worktree = $true'
+    'preserve_active_pr_worktree = $true',
+    "id = 'active_pr_worktree'",
+    'pull_request_state = $pullRequestState',
+    'cleanup_requires_manual_review = $true',
+    'tracked_change_count = $trackedChangeCount',
+    'untracked_file_count = $untrackedFileCount',
+    "id = 'shared_go_toolchain'",
+    'status = if (Test-Path -LiteralPath $sharedToolchainPath -PathType Container) { ''retain_shared'' } else { ''not_present'' }',
+    "id = 'secondary_hai_checkout'",
+    'Separate local HAI checkout; preserve it until its branch, changes, and relationship to the PR checkout are reconciled.',
+    'cleanup_targets = @($targets) + @($worktreeTarget, $secondaryWorktreeTarget, $toolchainTarget)'
 )
 foreach ($token in $required) {
     if (-not $scriptText.Contains($token)) { throw "Unified HAI cleanup inventory is missing contract token: $token" }
