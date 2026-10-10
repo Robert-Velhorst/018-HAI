@@ -81,7 +81,7 @@ export const HAI_MODULES: HaiModuleDefinition[] = [
     advancedSectionIds: ['dependency-plan', 'governance-bindings', 'revision-history', 'schedule-resources'],
     basicSectionIds: ['create-preview'],
   },
-  { id: 'workflow-engine', route: '/workflow-engine', group: 'work', title: 'Workflows', description: 'Review and move controlled workflows forward.', icon: 'unordered-list', primaryActionOwner: 'module', advancedSectionIds: ['queue-filters', 'intake-provenance', 'inbox-search', 'last-operation-details', 'framework-provenance', 'workflow-controls', 'checklist', 'evidence-proposals', 'timeline-audit', 'technical-status', 'workflow-header-controls', 'reminder-evidence'] },
+  { id: 'workflow-engine', route: '/workflow-engine', group: 'work', title: 'Workflows', description: 'Review and move controlled workflows forward.', icon: 'unordered-list', primaryActionOwner: 'module', advancedSectionIds: ['queue-filters', 'intake-provenance', 'inbox-search', 'last-operation-details', 'framework-provenance', 'workflow-controls', 'checklist', 'evidence-proposals', 'timeline-audit', 'technical-status', 'workflow-header-controls', 'reminder-evidence', 'intake-outcome-criteria'] },
   { id: 'quick-capture', route: '/quick-capture', group: 'work', title: 'Quick capture', description: 'Turn a thought into controlled work.', icon: 'plus-square', primaryActionOwner: 'module', advancedSectionIds: ['capture-details'] },
   { id: 'exceptions', route: '/exceptions', group: 'work', title: 'Exceptions', description: 'Resolve work that needs intervention.', icon: 'warning', primaryActionOwner: 'module', advancedSectionIds: ['filters', 'diagnostics'] },
   { id: 'task-blueprint', route: '/task-blueprint', group: 'intelligence', title: 'Task planning', description: 'Talk to HAI and inspect its plan.', icon: 'partition', primaryActionOwner: 'module', advancedSectionIds: ['task-context', 'task-inspector'] },
@@ -180,6 +180,7 @@ export const HAI_MODULES: HaiModuleDefinition[] = [
       'constitution-history',
       'selection-history',
       'constitution-governance',
+      'framework-preference-history',
     ],
   },
   {
