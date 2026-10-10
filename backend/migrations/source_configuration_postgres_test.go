@@ -106,7 +106,7 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 		t.Fatalf("apply isolated pre-phase migrations: %v", err)
 	}
 	rollbackRoot := t.TempDir()
-	if err := os.WriteFile(filepath.Join(rollbackRoot, "rollback-feed.json"), []byte(`{"items":[{"externalId":"managed-one","title":"Keep managed source authority","content":"rollback guard fixture","itemType":"email","provider":"local"}]}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(rollbackRoot, "rollback-feed.json"), []byte(`{"items":[{"externalId":"managed-one","title":"Keep managed source authority","content":"rollback guard fixture","itemType":"email","provider":"generic_json_feed"}]}`), 0o600); err != nil {
 		t.Fatalf("write isolated rollback fixture: %v", err)
 	}
 	rollbackService := operations.NewService(operations.NewGormRepository(rollbackDB))

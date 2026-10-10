@@ -836,3 +836,16 @@ content-level integration is incomplete, so neither source is eligible for
 deletion. Existing untracked evidence, logs, scanner binaries, and diagnostic
 patches were not staged or removed. No archive, checkout, recovery data,
 container, or volume cleanup has been performed.
+
+## Rollback-fixture diagnosis (2026-10-10 13:33 UTC)
+
+Directly retrieved the completed migration-job log for run `38055839177`.
+The new rollback-guard fixture failed before reaching the migration guard:
+its feed item used provider `local`, which `accountfeed.ParseProvider` rejects;
+the sync report therefore had zero items and zero created operations. The
+fixture now uses the supported `generic_json_feed` provider, matching the
+existing accepted feed contract. This is a test-fixture correction only; the
+managed-data rollback refusal is still unverified until the next real Postgres
+integration run passes. The failed test is not evidence of a production
+migration defect. No source archive, checkout, log, or recovery data was
+removed.
