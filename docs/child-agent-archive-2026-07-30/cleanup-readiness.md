@@ -757,3 +757,26 @@ run's logs identify additional concrete failure details, so PR acceptance and
 cleanup remain blocked. The transcript archive, secondary checkout, 2,475
 untracked files, output evidence, diagnostics, containers, images, volumes, and
 recovery bundles remain untouched. `deletion_performed=false`.
+
+## Live PR and cleanup gate update (2026-10-10 13:04 UTC)
+
+The current PR #36 head is `e7ca8c85d6169e91d5c1e62eb344b8aca9e1887c` on
+`codex/hai-runtime-release`, targeting `main`. GitHub reports the PR open and
+mergeable. Run `38053311971` is not terminal: backend, IDP, frontend, gateway,
+local provider fixture, two-account isolation, Windows CI contract, and the
+Python runner contract jobs completed successfully. Five jobs completed with
+failure: Windows installer preview/signing guards, repository secret scan,
+authenticated control-plane smoke, Postgres migration integration, and the
+Promptfoo safety runner image. The owned browser acceptance job remains in
+progress. Failure logs for this run are not yet available while the workflow
+remains active. These results are not a passing PR gate.
+
+The live transcript source audit remains limited to the previously recorded
+source/hash and manifest checks. A separate streaming pass found 71 distinct
+commit references in parseable retained-transcript final answers; all 71
+resolve to commits in the PR branch ancestry. This is useful corroboration, not
+proof that every transcript item is integrated: 47 malformed or oversized
+JSONL records were skipped by that parser, and commit references cannot prove
+that uncommitted outputs or non-code decisions were incorporated. The retained
+transcripts and secondary checkout therefore remain preserved and ineligible
+for cleanup. No local source or recovery data was changed or removed.
