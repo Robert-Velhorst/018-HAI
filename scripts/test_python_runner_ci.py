@@ -43,8 +43,8 @@ class PythonRunnerCIPolicyTest(unittest.TestCase):
                 runtime_requirements = service / "requirements.txt"
                 self.assertTrue(runtime_requirements.is_file())
                 self.assertEqual(
-                    runtime_requirements.read_bytes(),
-                    lock.read_bytes(),
+                    runtime_requirements.read_bytes().replace(b"\r\n", b"\n"),
+                    lock.read_bytes().replace(b"\r\n", b"\n"),
                     "Docker-installed requirements.txt must exactly match the hash lock",
                 )
                 locked = lock.read_text(encoding="utf-8").lower()
