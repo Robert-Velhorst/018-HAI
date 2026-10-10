@@ -53,12 +53,13 @@ test('both reminder authorization controls expose the execution review gate with
 test('selected workflow confirmation rechecks context and bounds uncertain execution responses', () => {
   const id = '11111111-1111-4111-8111-111111111111'
   for (const mode of ['valid', 'selection', 'state', 'approval', 'unavailable', 'destroy_before', 'duplicate', 'foreign', 'empty', 'error', 'destroy_after', 'review', 'id_changed', 'malformed']) {
-    const response = new Subject(); const calls = []; const notices = []; let confirm
+    const response = new Subject(); const calls = []; const notices = []; const readbacks = []; let confirm
     const component = new WorkflowEngineComponent(new FormBuilder(), { runOne: value => { calls.push(value); return response } }, {}, Object.fromEntries(['info', 'success', 'warning', 'error'].map(kind => [kind, (...args) => notices.push(args)])), { confirm: options => { confirm = options.nzOnOk } }, {}, {}, { detectChanges: () => {} }, {})
     component.selected = { item: { id, currentState: 'ready', approvalStatus: 'approved', requiresApproval: true } }
     component.actionsUnavailable = () => false
     component.refresh = () => {}
     component.reloadSelectedWorkflow = () => {}
+    component.loadWorkflowRecord = workflowId => readbacks.push(workflowId)
     component.overview = { states: ['ready', 'completed', 'blocked'] }
     try {
       component.runSelectedWorkflow()
@@ -81,7 +82,11 @@ test('selected workflow confirmation rechecks context and bounds uncertain execu
       confirm(); assert.equal(calls.length, 1, mode)
       assert.equal(component.runningAction, undefined, mode)
       assert.doesNotMatch(JSON.stringify(notices) + JSON.stringify(component.lastOperation), /private-token|result was verified|No other workflow was run/)
-      if (['foreign', 'empty', 'error', 'review', 'malformed'].includes(mode)) assert.equal(component.transitionReviewId, id, mode)
+      if (['foreign', 'empty', 'error', 'malformed'].includes(mode)) assert.equal(component.transitionReviewId, id, mode)
+      if (mode === 'review') {
+        assert.equal(component.workerReviewRequired, true, mode)
+        assert.deepEqual(readbacks, [id], mode)
+      }
     } finally { component.ngOnDestroy() }
   }
 })
