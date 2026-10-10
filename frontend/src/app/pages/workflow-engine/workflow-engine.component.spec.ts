@@ -817,6 +817,38 @@ describe('WorkflowEngineComponent', () => {
     expect(workflowService.runOne).toHaveBeenCalledTimes(1);
   });
 
+  it('reloads a persisted blocked workflow when the run response requires review', () => {
+    const { component, workflowService, modal } = createComponent();
+    component.dataLoaded = true;
+    component.overview = { states: ['ready', 'needs_approval', 'blocked'] } as any;
+    const ready = workflowRecord([]);
+    ready.item.id = '11111111-1111-4111-8111-111111111111';
+    ready.item.currentState = 'ready';
+    ready.item.approvalStatus = 'approved';
+    component.applyWorkflowRecord(ready);
+    workflowService.runOne.and.returnValue(of({
+      workflowId: ready.item.id,
+      status: 'blocked',
+      state: 'blocked',
+      attempts: 0,
+      reviewRequired: true,
+    }));
+    const pending = workflowRecord([]);
+    pending.item.id = ready.item.id;
+    pending.item.currentState = 'needs_approval';
+    pending.item.approvalStatus = 'pending';
+    workflowService.get.and.returnValue(of(pending));
+
+    component.runSelectedWorkflow();
+    modal.confirm.calls.mostRecent().args[0].nzOnOk();
+
+    expect(workflowService.get).toHaveBeenCalledOnceWith(ready.item.id);
+    expect(component.selected?.item.currentState).toBe('needs_approval');
+    expect(component.selected?.item.approvalStatus).toBe('pending');
+    expect(component.workerReviewRequired).toBeTrue();
+    expect(component.refresh).toHaveBeenCalledWith(false, true);
+  });
+
   it('does not dispatch a stale selected-workflow confirmation', () => {
     const { component, workflowService, modal } = createComponent();
     component.dataLoaded = true;

@@ -863,3 +863,88 @@ missing `post/` fixture directory for rollback integration tests. These are
 already present on the PR and require no port from the primary checkout. The
 remaining same-path differences were not semantically reviewed by this sample;
 no wholesale copy is justified, and no primary-checkout file was modified.
+
+## Primary-checkout diff triage (2026-10-11)
+
+A fresh content diff of the 43 same-path files from the scoped primary-checkout
+inventory was reviewed across approval/claim tests, migration rollback tests,
+synthetic-stack guards, Windows installer smoke tests, and runner manifests.
+This is a bounded semantic triage, not a claim that all 43 files have been
+individually accepted or that the wider transcript/snapshot crosswalk is done.
+
+The reviewed primary-checkout variants are not safe to copy wholesale. In
+particular, `worker_reliability_test.go` removes the assertion that newly
+ingested source work awaits approval; operation-ingest, repository-ordering,
+and phase-2 claim test variants remove source-evidence digest, deterministic
+claim-order, or approved-source-claim coverage. The migration-test variants
+remove or relocate checks for later-phase rollback refusal and data-preserving
+rollback behavior. Keep the stricter PR versions unless an isolated, stronger
+replacement is implemented and verified.
+
+The primary-checkout isolated-acceptance variants remove dependency validation,
+the interrupted-preparation cleanup manifest and its hash binding, synthetic
+credential scrubbing, and explicit ownership for private backend tmpfs state.
+Its installer-smoke variant writes to the runner's normal LocalAppData profile
+instead of keeping generated HAI state inside the uniquely owned smoke profile,
+and relaxes the runner-temp boundary checks. These are safety regressions, not
+acceptable ports. The primary Promptfoo runner manifest also downgrades the
+pinned Promptfoo version and removes its `get-uri` override; do not substitute
+it without a separate dependency/security review.
+
+No files from this primary-checkout diff sample were copied into the PR by this
+triage. It establishes concrete reject/retain decisions only; the remaining
+same-path diffs, all 82 snapshot blob conflicts, the eight scratch-only
+variants, and the full transcript semantic crosswalk remain open. Local source,
+transcript, and diagnostic data remain preserved.
+
+## Primary-checkout tracked working-tree comparison (2026-10-11)
+
+The primary checkout is at `e07b9da` with a dirty working tree; the current PR
+checkout is at `4343a89`. A read-only comparison found 682 tracked paths changed
+relative to the primary checkout's `HEAD`. Every path exists in the PR. Exact
+byte hashes differ for 678 paths, but after normalizing CRLF to LF, 608 paths
+are byte-equivalent and only 74 still differ in content. The primary tree has
+mixed LF/CRLF files while the PR worktree is CRLF, so raw hashes and ordinary
+diff statistics substantially overstate the amount of unique work.
+
+The 74 content-different paths are competing versions that still need
+file-by-file semantic triage; none were copied in this comparison. A review of
+`backend/internal/frameworkregistry/repository.go` found the PR version adds
+owner-scoped, digest-chained preference history and transactional writes that
+are absent from the primary checkout, so the older local variant must not
+replace it. This spot review is not evidence that the other 73 differences are
+resolved. The primary checkout was not modified, and these observations do not
+authorize removal of its files or any source data.
+
+## Exact-head CI regression review and fixes (2026-10-11)
+
+The completed GitHub Actions run `38093710608` tested the PR merge commit and
+finished red. The Windows installer smoke built and installed its unsigned
+preview, verified that silent setup created no HAI environment, task,
+containers, or process, and confirmed that uninstall safely cancelled while
+preserving the installation when no protected environment existed. Despite
+those PASS assertions, the step exited with code 1 after the expected
+uninstaller cancellation. The smoke script now resets the hosted runner's
+stale native `$LASTEXITCODE` only after its full success path and cleanup;
+static contract validation passes. The installer itself was not run on this
+workstation.
+
+The browser job's retained artifact showed a real UI-state defect in the
+operator acceptance flow: the server returned a valid blocked result with
+`reviewRequired=true`, but the UI paused safely without reloading the persisted
+workflow, leaving its displayed state at `ready`. The selected-workflow path
+now pauses the worker and reloads the owner-scoped workflow record and summary
+before presenting the result. The focused Angular suite passes all 44 tests,
+including a regression asserting that a persisted `needs_approval` state is
+shown after the blocked result; the Windows smoke static contract also passes.
+
+The browser job remains unresolved. Its full matrix reports missing
+`E2E_MATRIX_UNCERTAIN_WORKFLOW_ID` and `E2E_MATRIX_UNCERTAIN_TASK_ID` records,
+route tests redirected to onboarding before theme controls were available,
+and at least one operation that remained pending during health sampling. These
+are not waived or reclassified as passes. The run's earlier failed-result
+acceptance check also timed out after observing a stale `ready` state; the
+workflow-record reconciliation fix addresses that observed defect, but requires
+a new exact-head CI run. PR #36 remains open and unmerged. No branch cleanup or
+local deletion is authorized by this CI diagnosis; archive, working-tree,
+scratch, snapshot, and diagnostic gaps remain open.

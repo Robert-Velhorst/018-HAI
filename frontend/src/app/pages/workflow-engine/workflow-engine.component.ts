@@ -1499,7 +1499,12 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
             (result.reviewRequired !== undefined && typeof result.reviewRequired !== 'boolean')) {
           uncertain(); return;
         }
-        if (result.reviewRequired) { uncertain(); return; }
+        if (result.reviewRequired) {
+          this.pauseWorkerForReview('Run selected workflow');
+          if (this.selected === original) this.loadWorkflowRecord(id);
+          this.refresh(false, true);
+          return;
+        }
         const completed = result.status === 'completed';
         this.lastOperation = {
           name: 'Run selected workflow',

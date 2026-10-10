@@ -80,7 +80,8 @@ function Assert-HaiSmokeContract {
         $smoke -notmatch 'HAI has existing project containers or volumes' -or
         $smoke -notmatch 'hai\.env was created by installer setup' -or
         $smoke -notmatch 'Uninstall was safely cancelled' -or
-        $smoke -notmatch 'Remove-HaiSmokeOwnedArtifacts') {
+        $smoke -notmatch 'Remove-HaiSmokeOwnedArtifacts' -or
+        $smoke -notmatch '(?s)\$global:LASTEXITCODE\s*=\s*0\s*$') {
         throw 'Installer smoke contract is missing hosted-runner isolation, silent setup, first-run environment, task, or fail-closed uninstall assertions.'
     }
 }
@@ -417,3 +418,4 @@ try {
         $env:LOCALAPPDATA = $originalLocalAppData
         Remove-HaiSmokeOwnedArtifacts -SmokeRoot $smokeRoot -StartMenuGroup $startMenuGroup -InstallRoot $installRoot
 }
+$global:LASTEXITCODE = 0
