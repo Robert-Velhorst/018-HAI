@@ -167,6 +167,14 @@ process_status="${process_response##*$'\n'}"
 process_report="${process_response%$'\n'*}"
 if [ "${process_status}" != "200" ]; then
   echo "approved background run failed with HTTP ${process_status}: $(echo "${process_report}" | jq -c '{error, reasonCode, code}')" >&2
+  if [ -n "${safe_id}" ]; then
+    if recent_events="$(curl -fsS "${hdr[@]}" "${BASE}/operations/${safe_id}/events" | \
+      jq -c '{events: [.events[-5:][]? | {eventType, beforeStatus, afterStatus, message}]}')"; then
+      echo "approved operation recent audit events: ${recent_events}" >&2
+    else
+      echo "approved operation audit events were unavailable" >&2
+    fi
+  fi
 fi
 check "approved background run returns HTTP 200" '200' "${process_status}"
 check "one approved safe operation executed and verified" 'true' \
