@@ -83,13 +83,38 @@ are outside this candidate set and remain retained as shown in the manifest.
 | `019fb287-d1ed-75f0-99a8-8cd09c1ef9f2` | Advisory | Owner-scoped Constitution history and append-only framework-preference history are exposed; preference events are digest-checked, and frontend contracts preserve `baseVersion`. | `backend/internal/frameworkregistry/history_test.go`, `handler.go`, `repository.go`; routes `/frameworks/:id/preference-history` and `/constitution/history`; frontend registry model, service, component, and specs. |
 | `019fb287-f3be-7860-ba1f-e6b05088db73` | Advisory | Selection-history fetch failures render as unavailable/stale rather than empty history; workflow framework inspector includes conflicts, context requirements, and learning plan. | `frontend/src/app/pages/framework-registry/framework-registry.component.html`; `frontend/src/app/models/workflow.model.interface.ts`; Workflow Engine template and spec. |
 
+### Retained-transcript work assessment (2026-10-10)
+
+The ten manifest rows marked `retain*` are outside the eight-row candidate
+crosswalk above. Their successful patch outputs were checked against the
+current tracked source tree so the retention decision does not hide completed
+work:
+
+| Retained child/file | Archived patch evidence | Current source disposition |
+| --- | --- | --- |
+| `019fb20b-b4b1-7250-9d7c-9d1e591ab852` (completed duplicate-ID transcript) | The completed report says the approval-boundary security test was restored; the transcript tail records successful approval/runtime edits and a later failed patch. | The approval security test, automation service, and agent-runtime files are tracked and updated in commit `d3ad560`. Backend CI passed. The transcript/report discrepancy and duplicate ID are why both files remain retained. |
+| `019fb277-0ddf-7500-9088-52cb4655be1a` (aborted duplicate-ID transcript) | Successful patch output touched workflow criteria and task evidence validation; later patch attempts also failed. | Workflow and task paths are tracked in commits `29e9743` and `d3ad560`; backend CI passed. The duplicate-ID companion is nonterminal, so both transcripts remain retained. |
+| `019fb296-75ae-7943-913c-32d41f5de2d6` (aborted) | One successful patch changed task evidence validation and tests. | `backend/internal/task/validation.go` and its tests are tracked in `d3ad560`; backend CI passed. |
+| `019fb296-9d1a-7301-901c-c35d99ccf3da` (aborted) | One successful patch changed Constitution history types, service, repository, handler, routes, and tests. | These paths are tracked in `29e9743`/`d3ad560`; backend CI passed. |
+| Remaining six retained rows | The bounded tail audit recorded no successful patch call for these rows. This is not proof that their entire transcript has no earlier work. | No result is promoted from an aborted or nonterminal transcript without complete review. Preserve the raw files and their duplicate-ID relationships. |
+
+This is a source-presence and CI cross-check, not proof that each historical
+patch was applied byte-for-byte or that the product is deployed. The full
+transcripts remain the authoritative record for unresolved/partial work. The
+eight candidate hashes are verified; the ten retained transcripts are not
+eligible for deletion under this ledger.
+
 **Transcript cleanup gate is not yet satisfied.** The source changes,
-crosswalk, reports, and manifest are committed and the remote branch head is
-confirmed at `f788d48`. The read-only verifier below confirms that all eight
-candidate source files match their manifest hashes. The PR is still open and
-its CI run has failures and pending jobs; these do not satisfy the cleanup gate.
-Do not remove any candidate transcript until those gates are satisfied. The
-manifest/hash is a candidate allowlist only, not a deletion command.
+crosswalk, reports, and manifest are committed on the PR branch; the currently
+observed remote head is `3b51111`. A fresh read-only source audit confirms all
+18 archive files are present and all eight candidate files match their
+manifest hashes. The current PR #36 remains
+open; its latest observed run has completed with seven failed checks, including
+secret scan, installer guards, browser acceptance, safety image, authenticated
+smoke, migration integration, and account isolation. This does not satisfy the
+cleanup gate. Do not remove any candidate transcript until the canonical-main,
+merged-PR, and successful-check gates pass. The manifest/hash is a candidate
+allowlist only, not a deletion command.
 
 - The eight unique completed transcripts are candidates for archive cleanup
   only after the integration changes, ledger, and report/manifest are committed
