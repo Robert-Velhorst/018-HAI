@@ -526,3 +526,30 @@ checkpoint. Keep all source files and local diagnostics. The cleanup verifier
 previously reported `cleanup_gate_ready=false` and `cleanup_authorized=false`;
 no deletion is permitted until semantic integration, PR merge, and the
 repository's explicit cleanup gates are all verified.
+
+## Archive integrity and exact-head PR update (2026-10-10 18:58 UTC)
+
+The eight completed-candidate path audit is still not a complete semantic
+transcript integration. Two candidates have malformed JSONL records at exact
+2-8 MiB byte boundaries: Aristotle has four and Descartes has fourteen
+unterminated-string parse failures. Their recorded file hashes match the
+archive manifest, but the malformed records cannot be decoded and have not
+been reconciled. Keep the archive; do not infer integration for those records.
+The separate recovery-tree and `hai-repo-link/` path normalization also remains
+part of the crosswalk, with verified canonical Framework Registry equivalents
+but at least one failed-and-removed test patch rather than an unintegrated
+source file.
+
+PR #36 is open and mergeable at `c4d2aa752203df0ed17373cf1da496f29c95d989`.
+Exact-head run `38076417111` is still running browser acceptance; Windows
+installer preview/signing guards and the Promptfoo dependency audit have
+failed, while backend, frontend, IDP, Postgres migration, authenticated smoke,
+secret scan, and cleanup-readiness checks passed. Local `npm audit
+--omit=dev --audit-level=high` independently reports ten high and zero
+critical findings in Promptfoo `0.124.1`; npm's only automatic fix is a major
+downgrade to `0.116.7`, which has not been adopted without compatibility
+validation. The protected-recovery CI script set passed locally under
+PowerShell 7.6.5; GitHub's failed Windows job still needs its own logs after
+the workflow reaches a terminal state. This checkpoint does not authorize
+merge or local deletion. The archive, dirty primary checkout, and untracked
+diagnostics remain intact.

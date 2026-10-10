@@ -853,3 +853,30 @@ managed-data rollback refusal is still unverified until the next real Postgres
 integration run passes. The failed test is not evidence of a production
 migration defect. No source archive, checkout, log, or recovery data was
 removed.
+
+## Candidate transcript parse integrity supplement (2026-10-10 18:58 UTC)
+
+A streaming JSONL parse of the Aristotle candidate
+(`019fb220-c797-77d1-8060-0f220cd733e1`) found four malformed records; the
+Descartes candidate (`019fb221-54e7-7921-8c65-8a74da2e6d93`) found fourteen.
+Each error is an unterminated JSON string at a record whose byte length is an
+exact 2, 4, 6, or 8 MiB boundary. The records cannot be decoded as JSON and
+their contents have not been certified against the PR. This supplements, and
+does not replace, the eight-candidate path crosswalk. The archive hashes match
+the manifest, but that proves only that the archived bytes are stable; it does
+not prove these records are semantically complete. Keep both files and treat
+their affected content as unresolved until a trustworthy source or export can
+be reconciled.
+
+The same checkpoint rechecked PR #36 at head
+`c4d2aa752203df0ed17373cf1da496f29c95d989`, open and mergeable. Exact-head run
+`38076417111` has passing backend, IDP, frontend, Postgres 17 migration,
+authenticated smoke, secret scan, and cleanup-safety checks. The Promptfoo
+production dependency audit and Windows installer preview/signing guards have
+failed; browser acceptance remains in progress. A live npm audit of the locked
+Promptfoo `0.124.1` production tree independently reports ten high and zero
+critical advisories. npm offers only a major downgrade to `0.116.7`; no
+downgrade or audit suppression was applied. The exact protected-recovery test
+set passed locally under PowerShell 7.6.5, but that does not override the
+failed GitHub check; its completed job log is still required to diagnose the
+CI/local discrepancy. The PR is not green and no cleanup gate passes.
