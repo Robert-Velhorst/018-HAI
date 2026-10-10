@@ -55,8 +55,8 @@ echo "==> Preparing local account feed"
 mkdir -p "${FEEDS}" "${WORKSPACE}"
 cat > "${FEEDS}/inbox.json" <<'JSON'
 [
-  {"externalId":"note-1","title":"Organize workspace notes","body":"Consolidate personal notes into a local file"},
-  {"externalId":"pay-1","title":"Pay invoice to landlord","body":"Send payment for the rent invoice"}
+  {"externalId":"note-1","title":"Organize workspace notes","content":"Consolidate personal notes into a local file","itemType":"email","provider":"generic_json_feed"},
+  {"externalId":"pay-1","title":"Pay invoice to landlord","content":"Send payment for the rent invoice","itemType":"email","provider":"generic_json_feed"}
 ]
 JSON
 
@@ -140,43 +140,64 @@ report="${run_response%$'\n'*}"
 if [ "${run_status}" != "200" ]; then
   echo "background run failed with HTTP ${run_status}: $(echo "${report}" | jq -c '{error, reasonCode, code}')" >&2
 fi
+check "background run returns HTTP 200" '200' "${run_status}"
 check "two operations created from the feed" 'true' \
   "$(echo "${report}" | jq -r '.operationsCreated == 2')"
-check "one low-risk op auto-executed and verified" 'true' \
-  "$(echo "${report}" | jq -r '(.autoExecuted == 1) and (.verified == 1)')"
-check "one high-risk op routed to approval" 'true' \
-  "$(echo "${report}" | jq -r '.awaitingApproval == 1')"
+await="$(curl -sS "${hdr[@]}" "${BASE}/operations?status=awaiting_approval")"
+safe_id="$(echo "${await}" | jq -r '(.operations // [])[] | select(.title == "Organize workspace notes") | .id' | head -n 1)"
+high_id="$(echo "${await}" | jq -r '(.operations // [])[] | select(.title == "Pay invoice to landlord") | .id' | head -n 1)"
+check "both source-derived operations require owner review" '2' "$(echo "${report}" | jq -r '.awaitingApproval')"
+check "safe candidate is in the owner review queue" 'true' "$([ -n "${safe_id}" ] && echo true)"
+check "high-risk candidate is in the owner review queue" 'true' "$([ -n "${high_id}" ] && echo true)"
+check "unreviewed source work did not execute" 'true' \
+  "$(echo "${report}" | jq -r '(.autoExecuted == 0) and (.verified == 0)')"
 
-echo "==> Dashboard roll-up"
+echo "==> Owner reviews and approves the exact safe-source revision"
+preview="$(curl -sS "${hdr[@]}" "${BASE}/operations/${safe_id}/approval-preview")"
+reviewed_version="$(echo "${preview}" | jq -r '.revision.version // 0')"
+revision_digest="$(echo "${preview}" | jq -r '.revision.revisionDigest // empty')"
+approval_body="$(jq -nc --argjson expectedVersion "${reviewed_version}" --arg revisionDigest "${revision_digest}" '{expectedVersion:$expectedVersion,revisionDigest:$revisionDigest}')"
+approved="$(curl -sS "${hdr[@]}" -X POST "${BASE}/operations/${safe_id}/approve" -d "${approval_body}")"
+check "approval is bound to the reviewed revision" 'true' \
+  "$(echo "${approved}" | jq -r --arg id "${safe_id}" --arg digest "${revision_digest}" '(.id == $id) and (.status == "approved") and (.approvalReceipt.operationId == $id) and (.approvalReceipt.revisionDigest == $digest)')"
+
+echo "==> Background worker executes only the explicitly approved safe item"
+process_response="$(curl -sS -w $'\n%{http_code}' "${hdr[@]}" -X POST "${BASE}/background/run")"
+process_status="${process_response##*$'\n'}"
+process_report="${process_response%$'\n'*}"
+if [ "${process_status}" != "200" ]; then
+  echo "approved background run failed with HTTP ${process_status}: $(echo "${process_report}" | jq -c '{error, reasonCode, code}')" >&2
+fi
+check "approved background run returns HTTP 200" '200' "${process_status}"
+check "one approved safe operation executed and verified" 'true' \
+  "$(echo "${process_report}" | jq -r '(.autoExecuted == 1) and (.verified == 1) and (.operationsCreated == 0)')"
+remaining="$(curl -sS "${hdr[@]}" "${BASE}/operations?status=awaiting_approval")"
+check "high-risk operation remains approval-gated" 'true' \
+  "$(echo "${remaining}" | jq -r --arg id "${high_id}" 'any(.operations[]?; .id == $id and .status == "awaiting_approval")')"
+
+echo "==> Dashboard roll-up and verified completion"
 dash="$(curl -sS "${hdr[@]}" "${BASE}/operations/dashboard")"
-check "dashboard shows work done while away" 'true' "$(echo "${dash}" | jq -r '.doneWhileAway >= 1')"
-check "dashboard shows an item needing Robert" 'true' "$(echo "${dash}" | jq -r '.needsRobert >= 1')"
-
-echo "==> Completion requires passing verification (no fake completion)"
+check "dashboard shows work done after approval" 'true' "$(echo "${dash}" | jq -r '.doneWhileAway >= 1')"
+check "dashboard still shows work needing Robert" 'true' "$(echo "${dash}" | jq -r '.needsRobert >= 1')"
 completed="$(curl -sS "${hdr[@]}" "${BASE}/operations?status=completed")"
-comp_id="$(echo "${completed}" | jq -r '.operations[0].id // empty')"
-check "completed operation exists" 'true' "$([ -n "${comp_id}" ] && echo true)"
-check "completed operation is verification-passed" 'passed' \
-  "$(echo "${completed}" | jq -r '.operations[0].verificationStatus')"
-check "completed operation records the runtime" 'hai-local-safe-worker' \
-  "$(echo "${completed}" | jq -r '.operations[0].runtimeId')"
+check "approved operation completed with passing verification" 'true' \
+  "$(echo "${completed}" | jq -r --arg id "${safe_id}" 'any(.operations[]?; .id == $id and .verificationStatus == "passed")')"
+check "completed operation records the runtime" 'true' \
+  "$(echo "${completed}" | jq -r --arg id "${safe_id}" 'any(.operations[]?; .id == $id and .runtimeId == "hai-local-safe-worker")')"
 check "operation carries an audit trail" 'true' \
-  "$(curl -sS "${hdr[@]}" "${BASE}/operations/${comp_id}/events" | jq -r '(.events | length) > 1')"
+  "$(curl -sS "${hdr[@]}" "${BASE}/operations/${safe_id}/events" | jq -r '(.events | length) > 1')"
 
 echo "==> Safe artifact was actually written to the confined workspace"
 check "workspace artifact present" 'operation-' "$(ls "${WORKSPACE}" 2>/dev/null | tr '\n' ' ')"
 
-echo "==> Anti-fake: a non-safe operation cannot be executed in 2A"
-await="$(curl -sS "${hdr[@]}" "${BASE}/operations?status=awaiting_approval")"
-await_id="$(echo "${await}" | jq -r '.operations[0].id // empty')"
-check "high-risk op is awaiting approval" 'true' "$([ -n "${await_id}" ] && echo true)"
-check "running a non-safe op is refused (409)" '409' \
-  "$(curl -sS -o /dev/null -w '%{http_code}' "${hdr[@]}" -X POST "${BASE}/operations/${await_id}/run")"
+echo "==> Anti-fake: a high-risk operation cannot be executed in 2A"
+check "running the high-risk operation is refused (409)" '409' \
+  "$(curl -sS -o /dev/null -w '%{http_code}' "${hdr[@]}" -X POST "${BASE}/operations/${high_id}/run")"
 
 echo "==> Idempotency: re-running the loop creates no duplicates"
-report2="$(curl -sS "${hdr[@]}" -X POST "${BASE}/background/run")"
-check "second pass creates no duplicate operations" 'true' \
-  "$(echo "${report2}" | jq -r '.operationsCreated == 0')"
+report3="$(curl -sS "${hdr[@]}" -X POST "${BASE}/background/run")"
+check "later pass creates no duplicate operations" 'true' \
+  "$(echo "${report3}" | jq -r '.operationsCreated == 0')"
 
 echo ""
 echo "==> Result: ${pass} passed, ${fail} failed"
