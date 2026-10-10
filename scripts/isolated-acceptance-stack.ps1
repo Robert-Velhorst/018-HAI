@@ -202,7 +202,7 @@ if ($Action -eq 'Prepare') {
         if ($key -match '_ENABLED$') { $values[$key] = 'false' }
     }
     foreach ($key in @($values.Keys)) {
-        if ($key -match '(?:^|_)(?:PASSWORD|TOKEN|SECRET|API_KEY|CLIENT_SECRET|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY)$') {
+        if ($key -match '(?:^|_)(?:PASSWORD|PASS|TOKEN|SECRET|API_KEY|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY|ENCRYPTION_KEY|ACCESS_KEY|SHARED_KEY|CREDENTIALS?)$') {
             $values[$key] = ''
         }
     }

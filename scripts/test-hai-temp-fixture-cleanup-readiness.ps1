@@ -30,6 +30,37 @@ function Test-DockerQuery([string[]]$Arguments) {
     return [pscustomobject]@{ Success = $true; Items = @($output | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) }
 }
 
+function Get-HaiExampleEnvironmentValues {
+    $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+    $examplePath = Join-Path $repoRoot '.env.example'
+    $exampleItem = Get-Item -LiteralPath $examplePath -Force -ErrorAction Stop
+    if ($exampleItem.PSIsContainer -or $exampleItem.Length -gt 1048576 -or
+        ($exampleItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'tracked environment example is not a bounded regular file'
+    }
+
+    $git = Get-Command git -ErrorAction Stop
+    $gitPrefix = @('-c', "safe.directory=$repoRoot", '-C', $repoRoot)
+    $tracked = @(& $git.Source @gitPrefix ls-files --error-unmatch -- .env.example 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $tracked.Count -ne 1 -or [string]$tracked[0] -cne '.env.example') {
+        throw 'environment example is not tracked by the current repository'
+    }
+    & $git.Source @gitPrefix diff --quiet HEAD -- .env.example 2>$null
+    if ($LASTEXITCODE -ne 0) { throw 'environment example has uncommitted changes' }
+    & $git.Source @gitPrefix diff --cached --quiet HEAD -- .env.example 2>$null
+    if ($LASTEXITCODE -ne 0) { throw 'environment example has staged changes' }
+
+    $values = @{}
+    foreach ($line in Get-Content -LiteralPath $examplePath) {
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.TrimStart().StartsWith('#', [StringComparison]::Ordinal)) { continue }
+        if ($line -notmatch '^([A-Z][A-Z0-9_]*)=(.*)$') { throw 'environment example contains an invalid line' }
+        $key = $Matches[1]
+        if ($values.ContainsKey($key)) { throw 'environment example contains duplicate keys' }
+        $values[$key] = $Matches[2]
+    }
+    return $values
+}
+
 function Assert-HaiSyntheticEnvironment([string]$Path, [string]$Project) {
     $item = Get-Item -LiteralPath $Path -Force
     if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $item.Length -gt 1048576) {
@@ -65,11 +96,14 @@ function Assert-HaiSyntheticEnvironment([string]$Path, [string]$Project) {
     if ([string]$values.FIRST_RUN_ADMIN_PASSWORD -notmatch '^E2eOnly-[0-9a-f]{32}$') {
         throw 'synthetic bootstrap password marker is invalid'
     }
+    $exampleValues = Get-HaiExampleEnvironmentValues
+    $credentialPattern = '(?:^|_)(?:PASSWORD|PASS|TOKEN|SECRET|API_KEY|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY|ENCRYPTION_KEY|ACCESS_KEY|SHARED_KEY|CREDENTIALS?)$'
     foreach ($entry in $values.GetEnumerator()) {
-        if ($entry.Key -match '(?:^|_)(?:PASSWORD|TOKEN|SECRET|API_KEY|CLIENT_SECRET|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY)$' -and
-            -not [string]::IsNullOrEmpty([string]$entry.Value) -and
-            [string]$entry.Value -notmatch '^(?:[0-9a-f]{64}|E2eOnly-[0-9a-f]{32})$') {
-            throw 'synthetic environment retains a non-generated credential-like value'
+        if ($entry.Key -match $credentialPattern -and -not [string]::IsNullOrEmpty([string]$entry.Value) -and
+            [string]$entry.Value -notmatch '^(?:[0-9a-f]{64}|E2eOnly-[0-9a-f]{32})$' -and
+            (-not $exampleValues.ContainsKey([string]$entry.Key) -or
+                [string]$entry.Value -cne [string]$exampleValues[[string]$entry.Key])) {
+            throw 'synthetic environment contains a credential-like value outside generated markers and the unchanged tracked example'
         }
         if ($entry.Key -match '_ENABLED$' -and $entry.Key -cne 'SOURCE_MANUAL_WORKER_ENABLED' -and [string]$entry.Value -cne 'false') {
             throw 'synthetic environment enables an external or autonomous capability'
@@ -193,6 +227,8 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
                 $markerCreatedUtc = Assert-HaiCleanupManifest $cleanupManifestPath $owner $expectedProject $environmentPath
                 if ($markerCreatedUtc -gt $createdUtc) { throw 'cleanup manifest timestamp is inconsistent with the completed fixture' }
                 if ($markerCreatedUtc -lt $createdUtc) { $createdUtc = $markerCreatedUtc }
+            } else {
+                Assert-HaiSyntheticEnvironment $environmentPath $expectedProject
             }
         }
         if ($directory.CreationTimeUtc -gt $createdUtc.UtcDateTime) {

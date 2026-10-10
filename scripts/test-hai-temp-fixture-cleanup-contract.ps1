@@ -13,6 +13,11 @@ foreach ($token in @(
     "'hai.acceptance.owner'",
     'docker_resources_checked = $dockerAvailable',
     'Assert-HaiCleanupManifest',
+    'Get-HaiExampleEnvironmentValues',
+    'tracked environment example is not a bounded regular file',
+    'environment example has uncommitted changes',
+    'credential-like value outside generated markers and the unchanged tracked example',
+    'Assert-HaiSyntheticEnvironment $environmentPath $expectedProject',
     "kind -cne 'hai-acceptance-synthetic-fixture'",
     'syntheticEnvSha256',
     'actualFiles.Count -in @(1, 2)',
@@ -26,7 +31,7 @@ foreach ($token in @(
     if (-not $source.Contains($token)) { throw "HAI Temp fixture readiness is missing a cleanup safety guard: $token" }
 }
 foreach ($token in @(
-    "'(?:^|_)(?:PASSWORD|TOKEN|SECRET|API_KEY|CLIENT_SECRET|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY)$'",
+    "'(?:^|_)(?:PASSWORD|PASS|TOKEN|SECRET|API_KEY|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY|ENCRYPTION_KEY|ACCESS_KEY|SHARED_KEY|CREDENTIALS?)$'",
     "state = 'preparing'",
     "kind = 'hai-acceptance-synthetic-fixture'",
     'syntheticEnvSha256',

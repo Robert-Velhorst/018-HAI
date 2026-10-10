@@ -36,7 +36,7 @@ if (Test-Path -LiteralPath (Join-Path $preparedDirectory 'cleanup-manifest.json'
     throw 'Successful preparation retained its interrupted-cleanup marker.'
 }
 foreach ($entry in $syntheticValues.GetEnumerator()) {
-    if ($entry.Key -match '(?:^|_)(?:PASSWORD|TOKEN|SECRET|API_KEY|CLIENT_SECRET|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY)$' -and
+    if ($entry.Key -match '(?:^|_)(?:PASSWORD|PASS|TOKEN|SECRET|API_KEY|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY|ENCRYPTION_KEY|ACCESS_KEY|SHARED_KEY|CREDENTIALS?)$' -and
         -not [string]::IsNullOrEmpty([string]$entry.Value) -and
         [string]$entry.Value -notmatch '^(?:[0-9a-f]{64}|E2eOnly-[0-9a-f]{32})$') {
         throw "A credential-like setting was inherited into the synthetic environment: $($entry.Key)"

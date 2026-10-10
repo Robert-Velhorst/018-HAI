@@ -637,3 +637,48 @@ volume immediately before removing only that exact named volume. It excludes
 the PostgreSQL and phase2 control-state volumes, never uses `prune`, retains
 the recovery archives, and reports partial outcomes. Its contract runs in CI.
 No volume removal was performed.
+
+## Temp fixture environment validation update (2026-10-10 05:43 UTC)
+
+The Temp readiness audit now validates `synthetic.env` for complete fixtures
+even when an older successful fixture has no `cleanup-manifest.json`. It
+requires the checked-in `.env.example` to be tracked and unchanged in both the
+staged and unstaged worktree, rejects malformed or duplicate keys, and accepts
+nonempty credential-like settings only when they are generated markers or
+exactly match that trusted template. New acceptance environments also clear
+the expanded credential-key suffix set before applying the isolated test
+overrides. This prevents a matching directory name or generic fixture manifest
+from serving as the only proof that environment data is synthetic.
+
+The current read-only Temp audit inspected nine matching directories: zero
+were deletion candidates; seven were too recent (618,126 bytes total), and two
+older markerless environment files remain unverified (41,862 bytes). The
+command reported `deletion_performed=false`. The credential values were not
+printed, changed, or removed.
+
+## Transcript and Docker state recheck (2026-10-10 05:52 UTC)
+
+The full read-only transcript source audit was run with
+`scripts/test-hai-transcript-cleanup-readiness.ps1 -TranscriptRoot
+D:\codex-temp\hai-completed-agent-sessions -RequireSourceArchive`. It verified
+all 18 source files and 20,739,169,122 logical bytes against the manifest and
+summary, matched all eight candidate transcript hashes, and found exactly
+eight candidate integration-crosswalk rows. The eight candidates total
+7,939,888,699 bytes; the other ten manifest entries remain retained. The
+source archive is verified, but the cleanup gate remains false: this source-only
+run did not request committed-ledger or merged-PR verification, and a separate
+live check confirms PR #36 is still open. No transcript was changed or removed.
+A later removal must still run the full gate from canonical `main` after PR #36
+is merged and all its checks pass.
+
+A fresh live volume check on Docker context `desktop-linux` found only three
+HAI named volumes, and all are attached: `018-hai-phase2-control-state` has
+two container references, while each Postgres volume has one. All three lack
+current-source-verified recovery evidence and remain ineligible for removal.
+The earlier Ollama local-model item is no longer a Docker volume; its
+384,800,505-byte archive remains in the recovery directory. It is preserved as
+recovery data, not treated as disposable volume data. A separate 10,189,079-
+byte recovery bundle still fails private-ACL verification and remains
+unverified. The readiness report returned `safe_to_remove_any=false` and
+`deletion_performed=false`. No container, volume, image, or recovery archive
+was changed.
