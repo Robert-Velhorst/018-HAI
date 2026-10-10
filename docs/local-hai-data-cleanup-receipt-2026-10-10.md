@@ -349,3 +349,31 @@ image tags held for retention review; and 15 diagnostic/tool artifacts
 secondary checkout, and shared toolchain remain protected. `cleanup_authorized`
 and `deletion_performed` remain `false`; this pass changed no local cleanup
 targets.
+
+## Archive hash and complete Docker mount audit (2026-10-10, approximately 09:34 Europe/Amsterdam)
+
+The July 30 transcript readiness verifier was run read-only against
+`D:\codex-temp\hai-completed-agent-sessions` with source-archive verification
+enabled. It verified an exact 18-file, 20,739,169,122-byte archive against its
+manifest and ledger, including SHA-256 matches for all eight completed
+candidate transcripts (7,939,888,699 bytes). Ten retained transcripts remain
+in the manifest. `cleanup_gate_ready` remains false because PR #36 has not
+merged; no transcript was changed.
+
+The Docker readiness audit exposed a reporting gap: three anonymous volumes
+mounted by HAI-named containers were listed separately but omitted from the
+main volume inventory. The report now unions named HAI volumes, Compose-labeled
+HAI volumes, and mounts discovered from HAI-named containers. The live report
+therefore marks inventory incomplete and exits 2 until those unrecognized
+anonymous volumes receive explicit ownership and recovery coverage. It records
+their mount destinations and references, assigns a hold disposition, and never
+marks them removable. Docker reports 0B for the two anonymous Postgres-init
+mounts and 1.139kB for the Redis mount; the three persistent named volumes
+remain attached, including the 858.8MB and 65.13MB Postgres data stores.
+
+The live Docker query found no `018-hai-ollama-local-data` volume and no
+Ollama-named volume. The older 1.6GB volume estimate is not reproduced by the
+current Docker inventory and must not be used as a deletion target. Shared
+Docker build cache is also excluded because it is global and not attributable
+to HAI alone. No container, volume, image, build cache, transcript, or local
+file was removed; `cleanup_authorized` and `deletion_performed` remain `false`.

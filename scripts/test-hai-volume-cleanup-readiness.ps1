@@ -39,7 +39,28 @@ function Invoke-DockerInventory([string[]]$Arguments) {
     return @(([string]$result.output -split "`r?`n") | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 }
 
-$names = @(Invoke-DockerInventory @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $_.StartsWith('018-hai-', [StringComparison]::Ordinal) } | Sort-Object)
+$allNamedHaiVolumes = @(Invoke-DockerInventory @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $_.StartsWith('018-hai-', [StringComparison]::Ordinal) })
+$composeLabeledHaiVolumes = @(Invoke-DockerInventory @('volume', 'ls', '--filter', 'label=com.docker.compose.project=018-hai', '--format', '{{.Name}}'))
+$haiContainerNames = @(Invoke-DockerInventory @('ps', '-a', '--filter', 'name=018-hai-', '--format', '{{.Names}}') | Sort-Object -Unique)
+$anonymousMountRecords = [Collections.Generic.List[object]]::new()
+foreach ($container in $haiContainerNames) {
+    $inspectJson = @(Invoke-DockerInventory @('inspect', '--format', '{{json .Mounts}}', $container))
+    if ($inspectJson.Count -ne 1) { throw "Could not inspect mount inventory for HAI container '$container'." }
+    $mounts = @($inspectJson[0] | ConvertFrom-Json)
+    foreach ($mount in $mounts) {
+        if ([string]$mount.Type -ceq 'volume' -and [string]$mount.Name) {
+            if (-not ([string]$mount.Name).StartsWith('018-hai-', [StringComparison]::Ordinal)) {
+                $anonymousMountRecords.Add([pscustomobject]@{
+                    container = $container
+                    volume = [string]$mount.Name
+                    destination = [string]$mount.Destination
+                })
+            }
+        }
+    }
+}
+$anonymousVolumeNames = @($anonymousMountRecords | ForEach-Object volume)
+$names = @(($allNamedHaiVolumes + $composeLabeledHaiVolumes + $anonymousVolumeNames) | Sort-Object -Unique)
 $volumeSizes = @{}
 $volumeSizeStatus = 'unavailable'
 try {
@@ -267,17 +288,18 @@ $images = foreach ($row in $imageRows) {
         safe_to_remove = $false
     }
 }
-$anonymousMounts = @()
-$haiContainerNames = @(Invoke-DockerInventory @('ps', '-a', '--filter', 'name=018-hai-', '--format', '{{.Names}}') | Sort-Object -Unique)
-foreach ($container in $haiContainerNames) {
-    $inspectJson = @(Invoke-DockerInventory @('inspect', '--format', '{{json .Mounts}}', $container))
-    if ($inspectJson.Count -ne 1) { throw "Could not inspect mount inventory for HAI container '$container'." }
-    $mounts = @($inspectJson[0] | ConvertFrom-Json)
-    foreach ($mount in $mounts) {
-        if ([string]$mount.Type -ceq 'volume' -and [string]$mount.Name -and
-            -not ([string]$mount.Name).StartsWith('018-hai-', [StringComparison]::Ordinal)) {
-            $anonymousMounts += [pscustomobject]@{ container = $container; volume = [string]$mount.Name }
-        }
+$anonymousMounts = foreach ($mountRecord in $anonymousMountRecords) {
+    $references = @(Invoke-DockerInventory @('ps', '-a', '--filter', "volume=$($mountRecord.volume)", '--format', '{{.Names}}|{{.Status}}'))
+    [pscustomobject][ordered]@{
+        container = [string]$mountRecord.container
+        volume = [string]$mountRecord.volume
+        destination = [string]$mountRecord.destination
+        reported_size = if ($volumeSizes.ContainsKey([string]$mountRecord.volume)) { [string]$volumeSizes[[string]$mountRecord.volume] } else { $null }
+        container_reference_count = $references.Count
+        container_references = $references
+        ownership_evidence = 'mounted_by_018_hai_named_container'
+        disposition = 'hold_unrecognized_hai_mounted_volume'
+        safe_to_remove = $false
     }
 }
 
@@ -289,7 +311,7 @@ $dockerContext = if ($contextResult.succeeded -and -not $contextResult.timed_out
 $result = [pscustomobject][ordered]@{
     docker_context = $dockerContext
     inventory_complete = ($unknownNames.Count -eq 0)
-    named_hai_volumes = $inventory.Count
+    hai_volume_inventory_count = $inventory.Count
     unknown_hai_volumes = $unknownNames
     volumes_without_supported_recovery_method = $unsupportedRecoveryMethods
     volumes_without_current_verified_recovery_evidence = $unverifiedRecoveryCount

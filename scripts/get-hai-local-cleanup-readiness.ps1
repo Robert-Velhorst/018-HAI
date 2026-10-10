@@ -252,7 +252,16 @@ if ($transcripts.status -eq 'reported') {
 if ($volumes.status -eq 'reported') {
     $targets.Add([pscustomobject][ordered]@{
         id = 'docker_volumes_and_recovery_archives'
-        status = if ($volumes.report.safe_to_remove_any -eq $true) { 'candidate_requires_explicit_confirmation' } else { 'retain' }
+        status = if (-not $volumes.report.inventory_complete) {
+            'blocked'
+        } elseif ($volumes.report.safe_to_remove_any -eq $true) {
+            'candidate_requires_explicit_confirmation'
+        } else {
+            'retain'
+        }
+        inventory_complete = [bool]$volumes.report.inventory_complete
+        volume_inventory_count = [int]$volumes.report.hai_volume_inventory_count
+        unknown_hai_volumes = @($volumes.report.unknown_hai_volumes)
         reported_volume_size_status = [string]$volumes.report.reported_volume_size_status
         named_volumes = @($volumes.report.volumes | ForEach-Object {
             [pscustomobject]@{
@@ -262,6 +271,19 @@ if ($volumes.status -eq 'reported') {
                 recovery_status = [string]$_.recovery_status
                 container_reference_count = [int]$_.container_reference_count
                 container_references = @($_.container_references)
+                disposition = [string]$_.disposition
+                safe_to_remove = [bool]$_.safe_to_remove
+            }
+        })
+        anonymous_hai_volume_mounts = @($volumes.report.anonymous_hai_volume_mounts | ForEach-Object {
+            [pscustomobject]@{
+                container = [string]$_.container
+                volume = [string]$_.volume
+                destination = [string]$_.destination
+                reported_size = if ($null -ne $_.reported_size) { [string]$_.reported_size } else { $null }
+                container_reference_count = [int]$_.container_reference_count
+                container_references = @($_.container_references)
+                ownership_evidence = [string]$_.ownership_evidence
                 disposition = [string]$_.disposition
                 safe_to_remove = [bool]$_.safe_to_remove
             }
@@ -285,7 +307,11 @@ if ($volumes.status -eq 'reported') {
             }
         })
         image_cleanup_authorized = [bool]$volumes.report.image_cleanup_authorized
-        blocker = 'Attached or unverified state remains protected; persistent-volume removal requires an independently verified archive and restore drill.'
+        blocker = if (-not $volumes.report.inventory_complete) {
+            'HAI volume inventory includes an unrecognized or anonymous mount; ownership and recovery must be resolved before any removal.'
+        } else {
+            'Attached or unverified state remains protected; persistent-volume removal requires an independently verified archive and restore drill.'
+        }
     })
 } else {
     $targets.Add([pscustomobject]@{ id = 'docker_volumes_and_recovery_archives'; status = 'blocked'; blocker = $volumes.blocker })
