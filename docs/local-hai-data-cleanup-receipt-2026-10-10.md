@@ -295,3 +295,29 @@ safety contract passed in the recorded run; the failed checks are not treated
 as evidence that any artifact is safe to remove. This recheck changed no
 archive, fixture, volume, image, recovery file, diagnostic, checkout, or
 toolchain. `cleanup_authorized` and `deletion_performed` remain `false`.
+
+## Bounded cleanup operations (2026-10-10, 09:15 Europe/Amsterdam)
+
+Cleanup readiness and the destructive volume/image runners now invoke Docker
+through a bounded process helper. A timeout terminates the Docker CLI process
+tree and fails closed. If a volume or image removal request times out, the
+runner attempts a fresh read-only postflight; it reports confirmed absence,
+confirmed presence, or an explicitly unknown outcome. An unknown outcome is
+not reported as `deletion_performed=false` and must not be retried until fresh
+inventory succeeds.
+
+The bounded-process behavior and the Temp, transcript, volume/archive, image,
+diagnostic, and unified-readiness safety contracts passed locally. PowerShell
+parser checks and `git diff --check` passed. These checks validate the local
+implementation only; they do not prove Docker Desktop behavior under every
+failure mode.
+
+The change was committed as `ba562961645b3735e6913ffb7f6e959dadd454ee` and
+pushed to PR #36. GitHub confirms the PR remains open and unstable; its newly
+triggered checks were still pending at the time of this receipt. The current
+read-only inventory found zero eligible Temp fixtures, eight transcript
+candidates totaling 7,939,888,699 bytes still gated on PR merge, three attached
+HAI volumes, and 15 PR diagnostic/tool files totaling 31,505,884 bytes still
+gated on PR merge. No source archive, transcript, Temp fixture, Docker
+resource, image, recovery bundle, diagnostic, checkout, or toolchain was
+changed or removed.
