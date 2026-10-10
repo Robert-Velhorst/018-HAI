@@ -868,6 +868,18 @@ not prove these records are semantically complete. Keep both files and treat
 their affected content as unresolved until a trustworthy source or export can
 be reconciled.
 
+The synced parent Codex conversation also contains the final child reports for
+these two IDs (conversation `019fd0df-32c2-79b0-aae3-a9d3c566575b`, messages
+21646, 21648, and 21652). Their report-named files were checked individually
+against current PR `HEAD`: all 14 Framework Registry files named by Aristotle,
+plus the Framework Registry template and the automation form HTML/SCSS named
+by Descartes, are present. This recovers the final reports and proves source
+presence for those 17 paths; it does not recover or verify the malformed raw
+patch records. Aristotle's report says integration-tag tests compiled but
+Postgres runtime assertions were skipped because `HAI_TEST_DATABASE_DSN` was
+unset in that child environment. Do not treat the report as live database
+runtime evidence.
+
 The same checkpoint rechecked PR #36 at head
 `c4d2aa752203df0ed17373cf1da496f29c95d989`, open and mergeable. Exact-head run
 `38076417111` has passing backend, IDP, frontend, Postgres 17 migration,

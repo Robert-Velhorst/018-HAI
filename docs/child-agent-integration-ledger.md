@@ -540,6 +540,17 @@ part of the crosswalk, with verified canonical Framework Registry equivalents
 but at least one failed-and-removed test patch rather than an unintegrated
 source file.
 
+Read-only Memory Layer access to the synced parent Codex conversation
+(`019fd0df-32c2-79b0-aae3-a9d3c566575b`, message IDs 21646, 21648, 21652)
+recovered the final reports for Aristotle and Descartes. All 17 unique paths
+listed in those reports are present in current PR `HEAD`: 14 backend/docs
+Framework Registry paths, its frontend template, and the automation form HTML
+and SCSS. This closes source-presence checks for those report outputs only;
+the malformed raw records and remaining recovery/scratch path union remain
+unresolved. Aristotle's report explicitly says Postgres integration-tag tests
+compiled but runtime assertions were skipped because its `HAI_TEST_DATABASE_DSN`
+was unset. Do not count that as a live database test.
+
 PR #36 is open and mergeable at `c4d2aa752203df0ed17373cf1da496f29c95d989`.
 Exact-head run `38076417111` is still running browser acceptance; Windows
 installer preview/signing guards and the Promptfoo dependency audit have
