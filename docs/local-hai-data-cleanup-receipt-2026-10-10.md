@@ -149,3 +149,51 @@ contract, Temp fixture cleanup and removal contracts, transcript cleanup
 gate, volume/image inventory contract, PowerShell parser, and local Compose
 validation passed in this session. No data or containers were deleted or
 stopped during the recheck.
+
+## Latest read-only integrity and cleanup recheck (2026-10-10, 08:25 Europe/Amsterdam)
+
+The unified readiness command was rerun with `-VerifyTranscriptArchive`. This
+performed a full read-only enumeration of the July 30 source archive and SHA-256
+verification of every candidate transcript. It reported:
+
+- 18 source files totaling exactly 20,739,169,122 bytes; all source paths and
+  sizes match the committed manifest, and all eight candidate transcript hashes
+  match. The ten aborted, nonterminal, or duplicate-ID transcripts remain
+  retained.
+- Eight completed unique-ID transcript candidates totaling 7,939,888,699
+  bytes. They remain blocked because PR #36 is open and the remover requires
+  execution from canonical `main` after the PR is merged.
+- Nine Temp fixture directories totaling 659,988 bytes. Seven are younger than
+  the 24-hour retention threshold and two lack verified cleanup manifests, so
+  zero are currently eligible.
+- Three HAI volumes remain attached: phase-two control state is referenced by
+  two containers, and the automation and IDP PostgreSQL volumes are each
+  referenced by a healthy running database container. No volume is eligible.
+  The 10,189,079-byte recovery bundle with an unverified ACL remains retained.
+- Two image tags have no container references (backend latest and
+  nginxconfigmanager latest), but remain held by the image-retention gate. No
+  image was removed.
+- The exact 15-file PR diagnostic allowlist totals 31,505,884 bytes and remains
+  blocked until PR #36 is merged at the verified local HEAD.
+- PR #36 is open at `f0b3d40110672aa86c835fe4f4c650bcac5a4318`. At this
+  snapshot, 20 checks passed, seven failed, and nine were queued or in progress.
+  Therefore the PR is not eligible for merge or cleanup-gate completion.
+- The active PR checkout has no tracked changes and 23 untracked files. The
+  separate C: HAI checkout has 692 modified tracked files and 2,475 untracked
+  files; it remains preserved because its work has not been reconciled with the
+  PR checkout. The shared Go toolchain also remains preserved.
+- A read-only same-relative-path comparison of all 3,167 C: checkout status
+  entries found 872 same-size, SHA-256-identical files, 715 files with different
+  content or size, and 1,580 paths absent from the PR worktree. The C: status
+  entries occupy 152,672,874 bytes. This is overlap evidence only: matching
+  paths may still be untracked in the PR checkout, and no source path is thereby
+  approved for deletion. The 2,295 non-identical or destination-missing entries
+  make whole-checkout cleanup unsafe.
+
+This pass changed no source archive, Temp fixture, Docker container, volume,
+image, recovery bundle, diagnostic, or worktree file. The report's
+`cleanup_authorized` and `deletion_performed` fields remained `false`. The prior
+1.6 GB estimate for detached HAI volumes is not current evidence: this live
+inventory found three attached named volumes, and older detached volumes
+already have separate recovery records in this receipt. Re-inventory all
+targets immediately before any future apply operation.
