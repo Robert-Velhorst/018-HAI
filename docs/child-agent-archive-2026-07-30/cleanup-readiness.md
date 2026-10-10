@@ -113,15 +113,15 @@ limitation holds.
 **Transcript cleanup gate is not yet satisfied.** The source changes,
 crosswalk, reports, and manifest are committed on the PR branch. A fresh
 read-only source audit confirms all 18 archive files are present and all eight
-candidate files match their manifest hashes. At the latest check on
-2026-10-10, PR #36 is open at head `aa110fae0a9ad541815e6bce4405f47724f5d36b`;
-run `38036603737` completed with seven failed checks: Windows installer guards,
-two-account isolation, repository secret scan, browser acceptance,
-authenticated smoke, migration integration, and Promptfoo runner image. Other
-completed checks in that run succeeded. The CI gate and canonical-main/merged-PR
-gates therefore do not pass. Do not remove any candidate transcript under the
-current cleanup procedure. The manifest/hash is a candidate allowlist only,
-not a deletion command.
+candidate files match their manifest hashes. At this earlier 2026-10-10
+checkpoint, PR #36 was open at head
+`aa110fae0a9ad541815e6bce4405f47724f5d36b`; run `38036603737` completed with
+seven failed checks. This is a historical snapshot, not the current PR status.
+See `docs/child-agent-integration-ledger.md` for later publication checkpoints
+and the latest verified cleanup-gate state. The CI and canonical-main/merged-PR
+gates did not pass at this checkpoint. Do not remove any candidate transcript
+under the current cleanup procedure. The manifest/hash is a candidate allowlist
+only, not a deletion command.
 
 - The eight unique completed transcripts are candidates for archive cleanup
   only after the integration changes, ledger, and report/manifest are committed
