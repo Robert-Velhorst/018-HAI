@@ -123,6 +123,24 @@ jobs:
       - name: Scan repository history with redacted output
         run: python3 scripts/run-secret-scan.py
 
+  cleanup-readiness-contracts:
+    name: HAI cleanup readiness safety contracts
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify detached-volume archive and read-only contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/test-hai-detached-volume-archive-contract.ps1
+          ./scripts/test-hai-transcript-cleanup-gate-contract.ps1
+          ./scripts/test-hai-volume-cleanup-readiness-contract.ps1
+
   windows-installer:
     name: Windows installer preview and signing guards
     runs-on: windows-latest
