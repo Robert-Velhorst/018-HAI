@@ -4,6 +4,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath $TempRoot).Path
+$rootItem = Get-Item -LiteralPath $root -Force
+if (($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw 'Temp scan root is a reparse point; fixture cleanup readiness is blocked.'
+}
 $pattern = '^hai-acceptance-([0-9a-f]{32})$'
 $dockerAvailable = $false
 $dockerFailure = 'local Docker engine was not verified'
@@ -44,6 +48,9 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
     }
 
     try {
+        if (($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'fixture root is a reparse point'
+        }
         $allEntries = @(Get-ChildItem -LiteralPath $directory.FullName -Force -Recurse -ErrorAction Stop)
         if (@($allEntries | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count -gt 0) {
             throw 'reparse point present'
