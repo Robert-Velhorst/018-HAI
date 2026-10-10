@@ -96,19 +96,23 @@ work:
 | `019fb277-0ddf-7500-9088-52cb4655be1a` (aborted duplicate-ID transcript) | Successful patch output touched workflow criteria and task evidence validation; later patch attempts also failed. | Workflow and task paths are tracked in commits `29e9743` and `d3ad560`; backend CI passed. The duplicate-ID companion is nonterminal, so both transcripts remain retained. |
 | `019fb296-75ae-7943-913c-32d41f5de2d6` (aborted) | One successful patch changed task evidence validation and tests. | `backend/internal/task/validation.go` and its tests are tracked in `d3ad560`; backend CI passed. |
 | `019fb296-9d1a-7301-901c-c35d99ccf3da` (aborted) | One successful patch changed Constitution history types, service, repository, handler, routes, and tests. | These paths are tracked in `29e9743`/`d3ad560`; backend CI passed. |
-| Remaining six retained rows | A full streaming pass over these files reviewed user-message events and all shell-call records. No patch-tool calls were present. User/task context and command history include: (1) Meitner and Volta nonterminal histories repeat the HAI OSS-agent/RAGFlow work; (2) Carson contains isolated Go workflow-test performance diagnostics; (3) Parfit contains generated dependency-tree compression and attempted cache quarantine; (4) Hume contains storage/cache inventory and copy attempts; (5) Arendt contains a read-only disk-exhaustion integrity audit. | OSS/RAGFlow behavior is already represented in current source and documentation; task/workflow/governance changes are covered above. Performance and integrity work is diagnostic, not a product patch. The full shell-call scan found 6 mutation-like cache/temp commands in Parfit and 4 in Hume; recorded outcomes include successful moves, failed moves, timeouts, and an interrupted copy. These concern workstation state, not HAI product files. Do not replay or clean those paths from transcript evidence. |
+| Remaining six retained rows | The initial shallow audit reviewed user-message events and shell-call records and found no child-local patch calls. A corrective stream found thousands of `patch_apply_end` events in each transcript file. | Sampled event metadata ties those patch records to the pinned parent session: the transcript `session_id`, `parent_thread_id`, and sampled patch `turn_id` all identify root `019e7acc-44f2-7c90-a04e-253f6d43df28`. These are repeated/shared parent-history events, not proof that each child independently changed hundreds of files. Child-specific attribution and normalized path reconciliation remain open. Do not replay, discard, or clean these records until the crosswalk is complete. |
 
 This is a source-presence and CI cross-check, not proof that each historical
 patch was applied byte-for-byte or that the product is deployed. The full
 transcripts remain the authoritative record for unresolved/partial work. The
 eight candidate hashes are verified; the ten retained transcripts are not
-eligible for deletion under the current ledger policy. The six retained files
-were streamed for user-message events and shell-call records, with mutation-like
-calls matched to their recorded outputs where available. Their full
-assistant/tool-output histories were not semantically reviewed line by line;
-the six nonterminal/aborted records with no patch calls are preserved for that
-reason. No claim of complete transcript integration is made while that
-limitation holds.
+eligible for deletion under the current ledger policy. A corrective bounded
+stream over retained transcripts observed roughly 2,783-3,610 parent-history
+patch events and hundreds of paths in individual files. Sampled metadata
+identifies these events as belonging to the pinned parent session, so repeated
+counts must not be treated as unique child work. The initial path comparison
+also failed to normalize a second HAI checkout root; its missing-path count is
+not valid evidence of unintegrated files. Child-local patch attribution and a
+deduplicated source-to-PR crosswalk remain incomplete. Some large compacted
+records exceeded the parser's configured bound and were skipped. No claim of
+complete transcript integration is made, and no transcript is eligible for
+deletion while this remains open.
 
 **Transcript cleanup gate is not yet satisfied.** The source changes,
 crosswalk, reports, and manifest are committed on the PR branch. A fresh

@@ -459,13 +459,25 @@ candidate hashes (7,939,888,699 bytes). Ten rows remain retained. The verifier
 reported `source_archive_verified=true`, `deletion_performed=false`, and
 `cleanup_authorized=false`; no archive file was changed.
 
-The six retained no-patch histories were streamed to count and inspect their
-human-readable assistant messages. The sampled latest work reports repeat the
-guarded brain integrations and disk/cache investigations already described
-above. Claims that code was pushed were checked against the Git graph rather
-than accepted from transcript text. The named RAGFlow, Presidio, Whisper.cpp,
-PydanticAI, FastMCP, Evidently, Guardrails, and SearXNG commits are ancestors of
-both the live `main` ref (`91c8620c`) and PR #36 head
+The earlier statement that six retained histories contained no patch calls is
+clarified: the shallow audit found no child-local patch calls, but a corrective
+stream observed thousands of parent-history `patch_apply_end` events and
+hundreds of paths in individual transcript files. In a sampled file,
+`session_id`, `parent_thread_id`, and patch `turn_id` identify the pinned parent
+session `019e7acc-44f2-7c90-a04e-253f6d43df28`. These repeated/shared records do
+not prove that each child independently changed those paths. An initial path
+comparison also failed to normalize a second HAI checkout root, so its
+missing-path count is not valid evidence of unintegrated files. Child-local
+attribution, event deduplication, and normalized source-to-PR reconciliation
+remain incomplete. Do not use earlier “diagnostic only” wording or raw event
+counts to authorize cleanup.
+
+The sampled latest work reports repeat the guarded brain integrations and
+disk/cache investigations already described above. Claims that code was
+pushed were checked against the Git graph rather than accepted from transcript
+text. The named RAGFlow, Presidio, Whisper.cpp, PydanticAI, FastMCP, Evidently,
+Guardrails, and SearXNG commits are ancestors of both the live `main` ref
+(`91c8620c`) and the earlier PR #36 head
 (`da44f867d53df13030bed4c011cc31c25ddf1bbb`). The retained workflow/task and
 Constitution-history commits `d3ad5606` and `29e97432` are ancestors of the PR
 head but not of `main`; they are not merged product history yet.
