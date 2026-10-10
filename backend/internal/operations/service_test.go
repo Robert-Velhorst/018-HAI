@@ -76,6 +76,30 @@ func TestIngestDuplicateIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestIngestDoesNotRefreshEquivalentJSONEvidence(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo)
+	first := sampleInput()
+	first.EvidenceJSON = `{"messageId":"m-1","metadata":{"source":"local","revision":2}}`
+	created, err := svc.Ingest(first)
+	if err != nil {
+		t.Fatalf("first ingest: %v", err)
+	}
+
+	second := first
+	second.EvidenceJSON = `{ "metadata" : { "revision" : 2, "source" : "local" }, "messageId" : "m-1" }`
+	refreshed, err := svc.Ingest(second)
+	if err != nil {
+		t.Fatalf("equivalent duplicate ingest: %v", err)
+	}
+	if refreshed.Created || refreshed.Operation.Version != created.Operation.Version || refreshed.Operation.EvidenceJSON != first.EvidenceJSON {
+		t.Fatalf("equivalent evidence changed operation state: created=%v before=%+v after=%+v", refreshed.Created, created.Operation, refreshed.Operation)
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != "created" {
+		t.Fatalf("equivalent evidence unexpectedly added an audit mutation: %+v", repo.events)
+	}
+}
+
 func TestTransitionEnforcesStateMachine(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo)
