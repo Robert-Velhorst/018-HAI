@@ -5,14 +5,18 @@ $ErrorActionPreference = 'Stop'
 $global:HaiDetachedVolumeMock = @{
     Attached = $false
     Changed = $false
-    WrongOwner = $false
     FailQuery = $false
+    ContainerFailure = $false
 }
 
 function docker {
     $argsText = @($args | ForEach-Object { [string]$_ })
     $global:LASTEXITCODE = 0
     if ($global:HaiDetachedVolumeMock.FailQuery) { $global:LASTEXITCODE = 1; return }
+    if ($argsText[0] -eq 'run' -and $global:HaiDetachedVolumeMock.ContainerFailure) {
+        $global:LASTEXITCODE = 2
+        return '/bin/tar: ./private-file: Cannot open: Permission denied'
+    }
     if ($argsText[0] -eq 'ps') {
         if ($global:HaiDetachedVolumeMock.Attached) { return 'container-id|fixture-container' }
         return
@@ -26,15 +30,6 @@ function docker {
                 Driver = 'local'
                 CreatedAt = $createdAt
                 Labels = @{}
-            } | ConvertTo-Json -Compress -Depth 5)
-        }
-        if ($name -eq '018-hai-restore-drill-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') {
-            $owner = if ($global:HaiDetachedVolumeMock.WrongOwner) { 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } else { 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
-            return ([pscustomobject]@{
-                Name = $name
-                Driver = 'local'
-                CreatedAt = '2026-10-10T00:00:00Z'
-                Labels = @{ 'hai.cleanup.owner' = $owner; 'hai.cleanup.kind' = 'restore-drill' }
             } | ConvertTo-Json -Compress -Depth 5)
         }
         $global:LASTEXITCODE = 1
@@ -62,35 +57,37 @@ try {
 }
 $global:HaiDetachedVolumeMock.Changed = $false
 
-Assert-HaiScratchVolumeOwnership '018-hai-restore-drill-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-$global:HaiDetachedVolumeMock.WrongOwner = $true
+$global:HaiDetachedVolumeMock.ContainerFailure = $true
 try {
-    Assert-HaiScratchVolumeOwnership '018-hai-restore-drill-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-    throw 'Foreign scratch volume unexpectedly passed the ownership gate.'
+    Invoke-HaiArchiveContainer @('run') 'archive step failed'
+    throw 'Failed archive command unexpectedly passed.'
 } catch {
-    if ($_.Exception.Message -notmatch 'ownership could not be proven') { throw }
-}
-$global:HaiDetachedVolumeMock.WrongOwner = $false
-$global:HaiDetachedVolumeMock.Attached = $true
-try {
-    Assert-HaiScratchVolumeOwnership '018-hai-restore-drill-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-    throw 'Attached scratch volume unexpectedly passed cleanup ownership checks.'
-} catch {
-    if ($_.Exception.Message -notmatch 'attached or its attachment inventory failed') { throw }
+    if ($_.Exception.Message -notmatch 'exit code 2; permission denied' -or
+        $_.Exception.Message -match 'private-file') {
+        throw 'Archive failure diagnostics must expose a redacted category and exit code only.'
+    }
 }
 
 $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'archive-hai-detached-volume.ps1'))
 if (-not $source.Contains('sourceVolumeRemoved = $false') -or
     -not $source.Contains('type=volume,source=$VolumeName,target=/source,readonly') -or
-    -not $source.Contains("'-dzf'") -or
-    -not $source.Contains('docker volume rm $scratchVolume')) {
-    throw 'Detached volume archive lost its source-preservation, read-only, restore-compare, or owned scratch-cleanup contract.'
+    -not $source.Contains("'--cap-add', 'DAC_READ_SEARCH'") -or
+    -not $source.Contains("'--tmpfs', '/restore:rw,size=1g'") -or
+    -not $source.Contains('restoreTargetDisposed = $true') -or
+    $source.Contains('docker volume create') -or $source.Contains('docker volume rm') -or
+    -not $source.Contains('tar -dzf') -or
+    -not $source.Contains('tar -xzf ''/backup/$artifact'' -C /restore') -or
+    -not $source.Contains('tar -dzf ''/backup/$artifact'' -C /source') -or
+    ([regex]::Matches($source, 'New-HaiPrivateEnvironmentFile')).Count -lt 2 -or
+    -not $source.Contains('Assert-HaiPrivateEnvironmentAcl $archivePath')) {
+    throw 'Detached volume archive lost source preservation, bounded ephemeral restore, or full comparison checks.'
 }
 if ($source -match 'docker volume rm \$VolumeName') { throw 'Detached volume archive may not remove its source volume.' }
 
 $verifier = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'verify-hai-detached-volume-archive.ps1'))
 if (-not $verifier.Contains('safeToRemove = $false') -or
     -not $verifier.Contains('cleanupAuthorized = $false') -or
+    -not $verifier.Contains("'--cap-add', 'DAC_READ_SEARCH'") -or
     -not $verifier.Contains("'-dzf'") -or
     -not $verifier.Contains('target=/source,readonly') -or
     -not $verifier.Contains('Get-FileHash') -or

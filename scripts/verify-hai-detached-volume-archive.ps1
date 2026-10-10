@@ -60,12 +60,21 @@ if (($manifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { 
 try { $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
 catch { throw 'Recovery manifest is invalid JSON.' }
 
-$requiredManifestKeys = @('formatVersion', 'createdUtc', 'owner', 'sourceVolume', 'archiveImageId', 'artifact', 'restoreDrill', 'sourceUnchangedAfterArchive', 'scratchVolumeRemoved', 'sourceVolumeRemoved')
+$formatVersion = [int]$manifest.formatVersion
+$requiredManifestKeys = if ($formatVersion -eq 1) {
+    @('formatVersion', 'createdUtc', 'owner', 'sourceVolume', 'archiveImageId', 'artifact', 'restoreDrill', 'sourceUnchangedAfterArchive', 'scratchVolumeRemoved', 'sourceVolumeRemoved')
+} elseif ($formatVersion -eq 2) {
+    @('formatVersion', 'createdUtc', 'owner', 'sourceVolume', 'archiveImageId', 'artifact', 'restoreDrill', 'restoreTarget', 'restoreTargetDisposed', 'sourceUnchangedAfterArchive', 'sourceVolumeRemoved')
+} else {
+    throw 'Recovery manifest format version is unsupported.'
+}
 if (@($manifest.PSObject.Properties.Name | Where-Object { $_ -cnotin $requiredManifestKeys }).Count -gt 0 -or
     @($manifest.PSObject.Properties.Name).Count -ne $requiredManifestKeys.Count -or
-    [int]$manifest.formatVersion -ne 1 -or [string]$manifest.owner -cne $ownerMatch.Groups[1].Value -or
+    [string]$manifest.owner -cne $ownerMatch.Groups[1].Value -or
     [string]$manifest.restoreDrill -cne 'passed' -or $manifest.sourceUnchangedAfterArchive -ne $true -or
-    $manifest.scratchVolumeRemoved -ne $true -or $manifest.sourceVolumeRemoved -ne $false) {
+    $manifest.sourceVolumeRemoved -ne $false -or
+    ($formatVersion -eq 1 -and $manifest.scratchVolumeRemoved -ne $true) -or
+    ($formatVersion -eq 2 -and ([string]$manifest.restoreTarget -cne 'tmpfs-1g' -or $manifest.restoreTargetDisposed -ne $true))) {
     throw 'Recovery manifest does not satisfy the detached-volume archive contract.'
 }
 if (@($manifest.sourceVolume.PSObject.Properties.Name | Where-Object { $_ -cnotin @('name', 'driver', 'createdAt') }).Count -gt 0 -or
@@ -99,7 +108,7 @@ if ([string]$sourceMetadata.Driver -cne 'local' -or
 Assert-HaiVolumeVerifierDetached $VolumeName $sourceMetadata
 
 $compareArgs = @(
-    'run', '--rm', '--pull=never', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--user', '0:0',
+    'run', '--rm', '--pull=never', '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--cap-add', 'DAC_READ_SEARCH', '--user', '0:0',
     '--mount', "type=bind,source=$bundleFull,target=/backup,readonly",
     '--mount', "type=volume,source=$VolumeName,target=/source,readonly",
     '--entrypoint', '/bin/tar', [string]$manifest.archiveImageId,
@@ -114,6 +123,7 @@ Assert-HaiVolumeVerifierDetached $VolumeName $sourceMetadata
     archiveBundle = $bundleFull
     archiveSha256 = [string]$manifest.artifact.sha256
     restoreDrill = 'passed'
+    restoreTarget = if ($formatVersion -eq 1) { 'legacy-named-scratch-volume' } else { [string]$manifest.restoreTarget }
     sourceDetached = $true
     sourceVolumeRemoved = $false
     safeToRemove = $false

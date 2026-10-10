@@ -298,17 +298,18 @@ Kafka KRaft, local Ollama cache, named Redis, and Redpanda. It requires the
 local Docker engine, the already cached `018-hai-backend:local` image, and a
 private archive directory. It refuses a source volume with any container
 reference, uses a read-only mount for the source, disables network access, and
-does not pull or substitute an image. It restores the archive to a uniquely
-labelled scratch volume, compares both the restored scratch volume and the
-unchanged source against the archive, then removes only that owned scratch
-volume after checking its label and lack of attachments. The source volume is
-never removed. A manifest is written only after the restore comparison and
-scratch cleanup pass; the manifest records archive size and SHA-256.
+does not pull or substitute an image. It restores the archive into a bounded
+1 GiB tmpfs, compares the restored contents and unchanged source against the
+archive, then lets the temporary container dispose of the tmpfs. It creates no
+persistent scratch volume. The source volume is never removed. A manifest is
+written only after the restore comparison and private-file ACL checks pass; the
+manifest records archive size and SHA-256.
 
 `scripts/test-hai-detached-volume-archive-contract.ps1` covers refusal of
-attached/changed sources, scratch-volume ownership, source-read-only behavior,
-restore comparison, source non-removal, and the read-only verifier contract. The
-verifier `scripts/verify-hai-detached-volume-archive.ps1` checks a generated
+attached/changed sources, redacted failure diagnostics, absence of persistent
+scratch-volume operations, source-read-only behavior, bounded tmpfs restore,
+restore comparison, source non-removal, and the read-only verifier contract.
+The verifier `scripts/verify-hai-detached-volume-archive.ps1` checks a generated
 bundle's manifest and SHA-256, confirms the cached image and detached source
 volume identities, and compares the current source against the archive without
 writing to either. It always reports `safeToRemove=false` and
@@ -322,6 +323,11 @@ not automatic permission to remove a volume. Active Postgres,
 phase2, Redis anonymous, and helper-container anonymous volumes remain outside
 this new detached-volume path and continue to block complete installation
 backup/removal certification.
+
+The earlier inventory paragraphs above are historical snapshots. A later
+refresh below records the actual local archive-and-restore results and
+supersedes the earlier statement that no detached volume archive had yet been
+made.
 
 ## Fresh local cleanup gate (2026-10-10)
 
@@ -366,3 +372,67 @@ have only passed contract checks and a synthetic tar/restore comparison. No
 actual HAI volume has been exported or removed. The only change in this pass is
 this ledger update and local verification; no local HAI data, containers,
 volumes, images, worktrees, or diagnostic artifacts were deleted.
+
+## Detached archive and cleanup refresh (2026-10-10)
+
+This later refresh supersedes the detached-volume and archive-completion claims
+in the earlier snapshot. All commands below were read-only with respect to the
+source volumes and transcript/fixture folders. No files, volumes, images,
+containers, worktrees, or toolchains were deleted.
+
+- The archive tool now uses a private manifest/archive and a bounded 1 GiB
+  tmpfs restore target; it creates no Docker scratch volume. The source volume
+  is mounted read-only for both archival and verification. The manifest is
+  emitted only after the restored copy and live source match the archive.
+- The live verifier rechecked all four intended detached volumes, their source
+  identities, archive hashes, and source contents. Results remain
+  `safeToRemove=false` and `cleanupAuthorized=false`:
+  - Kafka KRaft: bundle `hai-volume-recovery-a1489c6f199e4b8c93bdfe864d8275d5`,
+    10,201,979 archive bytes, SHA-256
+    `acffd54c11a877a80eb948bdf47a52141aa2fc2745a88b61c68ad9a11ebab32c`.
+  - Ollama cache: bundle `hai-volume-recovery-8520099a46d940f39c72c5fcc520a2c5`,
+    384,800,505 archive bytes, SHA-256
+    `4bce3222e106f8d082035f4a30f232d508bfd9e859653a6f28dff910f8f7dab2`.
+  - Named Redis: bundle `hai-volume-recovery-32738cc8c1cd46228bb7e9533a02925a`,
+    663 archive bytes, SHA-256
+    `4ae6bea1884d69a2c34e1d434ccdf86dd7c5a32b67883e3248d4916404f7a9fd`.
+  - Redpanda: bundle `hai-volume-recovery-a428f75bb9e6442a9a44d4c3ce87fb82`,
+    274,228 archive bytes, SHA-256
+    `44fa5c75b3db1e2faf980e9ce6a81623c963539bcdae49fb236805068c73e704`.
+- Five other attempt bundles are not recovery copies and remain untouched:
+  four have no completion manifest; the fifth
+  (`hai-volume-recovery-39d10dd71be04f40a91676fc080d3356`) fails the private
+  ACL requirement. The readiness report now surfaces these as
+  `retain_unverified` instead of treating their tar files as valid backups.
+- `scripts/test-hai-volume-cleanup-readiness.ps1` now calls the independent
+  verifier for generated bundles, reports verified and unverified bundle IDs,
+  and changes the four covered volumes from `not_covered` only after the live
+  source comparison passes. Even then it holds them for a retention decision;
+  it never authorizes removal. Its latest live integrated run found seven
+  named volumes, four current verified detached-volume archives, five
+  unverified bundles, zero named volumes without a supported recovery method,
+  and three named volumes without current verified recovery evidence (the two
+  Postgres data volumes and phase2 control state). The Postgres/phase2 paths
+  are supported by `backup-windows.ps1`, but that workflow was not run as part
+  of this read-only check, so this is not evidence of a current backup or
+  restore. All seven volumes remain `safe_to_remove=false`; the three active
+  Postgres/phase2 volumes, three anonymous mounts, and all six HAI images remain
+  held. `deletion_performed=false`.
+- The current read-only Temp scan found four exact synthetic fixtures
+  (432,534 bytes total) with zero related Docker resources, classified as
+  `candidate_manual_cleanup`; two directories (one empty and one layout
+  mismatch) remain `retain_unverified`. `cleanup_authorized=false` and
+  `deletion_performed=false` for every directory.
+- The transcript source check again verified the eight candidate hashes and
+  full source archive inventory, but `cleanup_gate_ready=false`: PR #36 is
+  still open. Public GitHub API evidence for head
+  `14cd192c80e5fa2e05293a8fa83da63a7a7afa06` showed 36 checks, five failures,
+  and no pending checks. The PR worktree and all untracked diagnostic evidence
+  remain preserved.
+- Dashboard diagnostics found the gateway unhealthy and backend container in
+  `Created` state. The migration job refuses the database's eight applied
+  `pre/0060`-`pre/0067` IDs because they are from a different migration
+  lineage; a no-migration smoke test also failed runtime-role password
+  authentication. No migration, credential change, or permission change was
+  attempted. This is an additional reason to preserve the active database,
+  images, and worktree until the stack is reconciled.
