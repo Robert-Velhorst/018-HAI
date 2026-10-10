@@ -263,8 +263,6 @@ $uninstallLog = Join-Path $smokeRoot 'uninstall.log'
 $originalLocalAppData = $env:LOCALAPPDATA
 $startMenuGroup = Join-Path ([Environment]::GetFolderPath('Programs')) 'HAI Local'
 $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{2F1FA2B5-68B6-4EAF-A4B4-7E44F456B889}_is1'
-$currentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-
 if (Get-HaiTask) { throw 'A HAI maintenance scheduled task already exists; refusing to run the installer.' }
 if (Test-Path -LiteralPath $uninstallKey) { throw 'A HAI installer registration already exists in this runner profile.' }
 if (Test-Path -LiteralPath $startMenuGroup) { throw 'A HAI Start Menu group already exists in this runner profile.' }
@@ -306,14 +304,23 @@ try {
     }
     if (-not (Test-Path -LiteralPath $setupLog -PathType Leaf)) { throw 'Inno Setup did not produce the requested setup log.' }
 
-    $installedAcl = Get-Acl -LiteralPath $installRoot -ErrorAction Stop
-    $userRules = @($installedAcl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) | Where-Object {
-        $_.IdentityReference.Value -eq $currentSid -and $_.AccessControlType -eq [Security.AccessControl.AccessControlType]::Allow
-    })
-    $requiredRights = [Security.AccessControl.FileSystemRights]::ReadAndExecute -bor
-        [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete
-    if (-not ($userRules | Where-Object { ($_.FileSystemRights -band $requiredRights) -eq $requiredRights })) {
-        throw 'The current runner user does not retain the expected access to its isolated installed payload.'
+    $statusScript = Join-Path $installRoot 'app\installer\windows\HAI-Status.ps1'
+    if ([string]::IsNullOrWhiteSpace([IO.File]::ReadAllText($statusScript))) {
+        throw 'The current runner user cannot read the installed HAI payload.'
+    }
+    $accessProbe = Join-Path $installRoot ('.hai-install-access-' + [Guid]::NewGuid().ToString('N'))
+    $accessProbeContent = [Guid]::NewGuid().ToString('N')
+    try {
+        [IO.File]::WriteAllText($accessProbe, $accessProbeContent)
+        if ([IO.File]::ReadAllText($accessProbe) -cne $accessProbeContent) {
+            throw 'The installed-payload access probe could not be read back.'
+        }
+    } catch {
+        throw 'The current runner user cannot create and read files in its isolated installed payload.'
+    } finally {
+        if (Test-Path -LiteralPath $accessProbe -PathType Leaf) {
+            Remove-Item -LiteralPath $accessProbe -Force -ErrorAction Stop
+        }
     }
 
     $shortcutTargets = [ordered]@{

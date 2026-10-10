@@ -135,28 +135,31 @@ func TestSourceHeadPostgresPublicationEpochSupersessionAndRollback(t *testing.T)
 	if err := db.Where("owner_user_id = ? AND workspace_id = ? AND source_identity_hash = ?", opA.OwnerUserID, opA.WorkspaceID, opA.SourceIdentityHash).First(&head).Error; err != nil || head.State != "reconciliation_required" {
 		t.Fatalf("actual A-B-A head: %+v / %v", head, err)
 	}
-	// Verify the phase-order guard, then remove post-phase migrations from this
-	// isolated database so the pre-phase data guard can be exercised.
+	// Verify that the migration runner refuses a pre-phase rollback while later
+	// post-phase migrations remain applied.
 	if err := infra.RollbackMigration(db, migrations.Files, "pre", "pre/0114_operation_source_configuration"); err == nil || !strings.Contains(err.Error(), "later-phase migration") {
 		t.Fatalf("pre-phase rollback should be refused while post migrations remain applied: %v", err)
 	}
-	postStatus, err := infra.Status(db, migrations.Files, "post")
-	if err != nil {
-		t.Fatalf("read post-phase migration status: %v", err)
+
+	// Exercise the data-protection rollback guard in a separate database that
+	// has only pre-phase migrations. Do not dismantle real post-phase runtime
+	// tables and their durable execution history just to reach this assertion.
+	rollbackDB := openIsolatedMigrationDatabase(t)
+	if _, err := infra.ApplyMigrations(rollbackDB, files, "pre"); err != nil {
+		t.Fatalf("apply isolated pre-phase migrations: %v", err)
 	}
-	for i := len(postStatus.Applied) - 1; i >= 0; i-- {
-		if err := infra.RollbackMigration(db, migrations.Files, "post", postStatus.Applied[i]); err != nil {
-			t.Fatalf("rollback isolated post-phase migration %q: %v", postStatus.Applied[i], err)
-		}
+	rollbackOriginID := uuid.New()
+	if err := rollbackDB.Exec(`
+		INSERT INTO public.operation_source_origins
+		    (owner_user_id, workspace_id, origin_id, config_digest, config_epoch)
+		VALUES (?, ?, ?, ?, ?)
+	`, "rollback-guard-owner", "local", rollbackOriginID.String(), strings.Repeat("a", 64), 1).Error; err != nil {
+		t.Fatalf("seed source-origin history for rollback guard: %v", err)
 	}
-	// These origins are deliberately unmanaged, so removing 0114 preserves them.
-	if err := infra.RollbackMigration(db, migrations.Files, "pre", "pre/0114_operation_source_configuration"); err != nil {
-		t.Fatalf("rollback unmanaged configuration prerequisite before head rollback: %v", err)
-	}
-	err = infra.RollbackMigration(db, files, "pre", version)
+	err = infra.RollbackMigration(rollbackDB, files, "pre", version)
 	assertSourceObservationSQLState(t, err, "55000")
 	var appliedHead int64
-	if err := db.Raw(`SELECT count(*) FROM public.schema_migrations WHERE version = ?`, version).Row().Scan(&appliedHead); err != nil || appliedHead != 1 {
+	if err := rollbackDB.Raw(`SELECT count(*) FROM public.schema_migrations WHERE version = ?`, version).Row().Scan(&appliedHead); err != nil || appliedHead != 1 {
 		t.Fatalf("refused populated head rollback changed its ledger: %d / %v", appliedHead, err)
 	}
 	for _, statement := range []string{
