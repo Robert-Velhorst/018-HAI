@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -580,6 +581,13 @@ func (h *Handler) RunBackground(c *gin.Context) {
 	if err != nil {
 		status := backgroundRunHTTPStatus(err)
 		if status >= http.StatusInternalServerError {
+			if phase2TestDiagnosticsEnabled(os.Getenv("RUN_MODE"), os.Getenv("HAI_PHASE2_TEST_DIAGNOSTICS")) {
+				c.JSON(status, gin.H{
+					"error":       apierror.PublicMessage(err, "background pass could not be completed"),
+					"diagnostics": rep.Errors,
+				})
+				return
+			}
 			writeServerError(c, err, "background pass could not be completed")
 			return
 		}
@@ -587,6 +595,10 @@ func (h *Handler) RunBackground(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, rep)
+}
+
+func phase2TestDiagnosticsEnabled(runMode, flag string) bool {
+	return strings.EqualFold(strings.TrimSpace(runMode), "test") && strings.TrimSpace(flag) == "1"
 }
 
 func writeServerError(c *gin.Context, err error, fallback string) {

@@ -76,7 +76,7 @@ mkdir -p "${IMAGES}"
 DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=hai-ci-smoke-postgres-password-0123456789abcdef \
   DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
   BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
-  RUN_MODE=test KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
+  RUN_MODE=test HAI_PHASE2_TEST_DIAGNOSTICS=1 KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
   HAI_PHASE2_FEEDS_DIR="${FEEDS}" HAI_PHASE2_WORKSPACE_DIR="${WORKSPACE}" \
   HAI_PHASE2_FEED_FILES="inbox.json" HAI_PHASE2_MODE="autonomous_safe" \
   "${BIN}" > "${WORKDIR}/backend.log" 2>&1 &
@@ -106,7 +106,7 @@ BACKEND_PID=""
 DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=hai-ci-smoke-postgres-password-0123456789abcdef \
   DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
   BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
-  RUN_MODE=test KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
+  RUN_MODE=test HAI_PHASE2_TEST_DIAGNOSTICS=1 KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
   HAI_PHASE2_FEEDS_DIR="${FEEDS}" HAI_PHASE2_WORKSPACE_DIR="${WORKSPACE}" \
   HAI_PHASE2_FEED_FILES="inbox.json" HAI_PHASE2_MODE="autonomous_safe" \
   "${BIN}" > "${WORKDIR}/backend.log" 2>&1 &
@@ -166,7 +166,7 @@ process_response="$(curl -sS -w $'\n%{http_code}' "${hdr[@]}" -X POST "${BASE}/b
 process_status="${process_response##*$'\n'}"
 process_report="${process_response%$'\n'*}"
 if [ "${process_status}" != "200" ]; then
-  echo "approved background run failed with HTTP ${process_status}: $(echo "${process_report}" | jq -c '{error, reasonCode, code}')" >&2
+  echo "approved background run failed with HTTP ${process_status}: $(echo "${process_report}" | jq -c '{error, diagnostics}')" >&2
   if [ -n "${safe_id}" ]; then
     if recent_events="$(curl -fsS "${hdr[@]}" "${BASE}/operations/${safe_id}/events" | \
       jq -c '{events: [.events[-5:][]? | {eventType, beforeStatus, afterStatus, message}]}')"; then

@@ -21,6 +21,25 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestPhase2TestDiagnosticsRequireExplicitTestOnlyOptIn(t *testing.T) {
+	tests := []struct {
+		name, runMode, flag string
+		want                bool
+	}{
+		{name: "disabled by default", runMode: "test", flag: "", want: false},
+		{name: "enabled in test mode", runMode: "test", flag: "1", want: true},
+		{name: "not enabled in production", runMode: "production", flag: "1", want: false},
+		{name: "not enabled for other flags", runMode: "test", flag: "true", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := phase2TestDiagnosticsEnabled(test.runMode, test.flag); got != test.want {
+				t.Fatalf("phase2TestDiagnosticsEnabled(%q, %q) = %v; want %v", test.runMode, test.flag, got, test.want)
+			}
+		})
+	}
+}
+
 func TestBackgroundRunHTTPStatusIsActionable(t *testing.T) {
 	if got := backgroundRunHTTPStatus(background.ErrBusy); got != http.StatusConflict {
 		t.Fatalf("busy status = %d, want %d", got, http.StatusConflict)

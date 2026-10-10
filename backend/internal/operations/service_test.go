@@ -76,7 +76,37 @@ func TestIngestDuplicateIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestIngestDoesNotRefreshEquivalentJSONEvidence(t *testing.T) {
+func TestIngestDoesNotRefreshWhenJSONBReserializesStoredEvidence(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo)
+	first := sampleInput()
+	first.EvidenceJSON = `{"messageId":"m-1","metadata":{"source":"local","revision":2}}`
+	created, err := svc.Ingest(first)
+	if err != nil {
+		t.Fatalf("first ingest: %v", err)
+	}
+
+	// PostgreSQL jsonb may return a different serialization than was sent. The
+	// persisted raw-input digest must still identify the exact original bytes.
+	repo.mu.Lock()
+	stored := repo.ops[created.Operation.ID]
+	stored.EvidenceJSON = `{ "metadata" : { "revision" : 2, "source" : "local" }, "messageId" : "m-1" }`
+	repo.ops[created.Operation.ID] = stored
+	repo.mu.Unlock()
+
+	refreshed, err := svc.Ingest(first)
+	if err != nil {
+		t.Fatalf("duplicate ingest after JSONB reserialization: %v", err)
+	}
+	if refreshed.Created || refreshed.Operation.Version != created.Operation.Version || refreshed.Operation.EvidenceJSON != stored.EvidenceJSON {
+		t.Fatalf("JSONB reserialization changed operation state: created=%v before=%+v after=%+v", refreshed.Created, created.Operation, refreshed.Operation)
+	}
+	if len(repo.events) != 1 || repo.events[0].EventType != "created" {
+		t.Fatalf("JSONB reserialization unexpectedly added an audit mutation: %+v", repo.events)
+	}
+}
+
+func TestIngestRefreshesWhenRawEvidenceBytesChange(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo)
 	first := sampleInput()
@@ -90,13 +120,16 @@ func TestIngestDoesNotRefreshEquivalentJSONEvidence(t *testing.T) {
 	second.EvidenceJSON = `{ "metadata" : { "revision" : 2, "source" : "local" }, "messageId" : "m-1" }`
 	refreshed, err := svc.Ingest(second)
 	if err != nil {
-		t.Fatalf("equivalent duplicate ingest: %v", err)
+		t.Fatalf("changed raw evidence ingest: %v", err)
 	}
-	if refreshed.Created || refreshed.Operation.Version != created.Operation.Version || refreshed.Operation.EvidenceJSON != first.EvidenceJSON {
-		t.Fatalf("equivalent evidence changed operation state: created=%v before=%+v after=%+v", refreshed.Created, created.Operation, refreshed.Operation)
+	if refreshed.Created || refreshed.Operation.Version != created.Operation.Version+1 || refreshed.Operation.EvidenceJSON != second.EvidenceJSON {
+		t.Fatalf("raw evidence change was not recorded: created=%v before=%+v after=%+v", refreshed.Created, created.Operation, refreshed.Operation)
 	}
-	if len(repo.events) != 1 || repo.events[0].EventType != "created" {
-		t.Fatalf("equivalent evidence unexpectedly added an audit mutation: %+v", repo.events)
+	if refreshed.Operation.SourceEvidenceRawSHA256 != rawEvidenceSHA256(second.EvidenceJSON) {
+		t.Fatalf("raw evidence digest was not refreshed: got=%q", refreshed.Operation.SourceEvidenceRawSHA256)
+	}
+	if len(repo.events) != 2 || repo.events[1].EventType != "source_evidence_refreshed" {
+		t.Fatalf("raw evidence change should be audited: %+v", repo.events)
 	}
 }
 

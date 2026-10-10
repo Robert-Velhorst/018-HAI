@@ -2,13 +2,14 @@ package operations
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"automation-hub-backend/internal/idempotency"
 	"automation-hub-backend/internal/models"
 
 	"github.com/google/uuid"
@@ -185,8 +186,9 @@ func (s *Service) refreshEvidence(ctx context.Context, contextual ContextIntakeR
 	if err := intakeContextError(ctx); err != nil {
 		return IngestResult{}, err
 	}
-	if evidence := strings.TrimSpace(in.EvidenceJSON); evidence != "" && evidence != "{}" && !sameEvidenceJSON(evidence, existing.EvidenceJSON) {
+	if evidence := strings.TrimSpace(in.EvidenceJSON); evidence != "" && evidence != "{}" && rawEvidenceSHA256(in.EvidenceJSON) != existing.SourceEvidenceRawSHA256 {
 		existing.EvidenceJSON = in.EvidenceJSON
+		existing.SourceEvidenceRawSHA256 = rawEvidenceSHA256(in.EvidenceJSON)
 		updated, err := s.save(ctx, contextual, existing, "source_evidence_refreshed", string(OwnerHAI), "source evidence refreshed")
 		if err != nil {
 			return IngestResult{}, err
@@ -202,16 +204,9 @@ func (s *Service) refreshEvidence(ctx context.Context, contextual ContextIntakeR
 	return IngestResult{Operation: existing}, nil
 }
 
-// PostgreSQL jsonb normalizes whitespace and object-key ordering. Compare the
-// decoded JSON meaning so a routine re-read does not mutate an approved
-// operation merely because its serialized representation changed.
-func sameEvidenceJSON(left, right string) bool {
-	canonical := func(value string) (string, error) {
-		return idempotency.CanonicalJSONString(json.RawMessage(value))
-	}
-	leftCanonical, leftErr := canonical(left)
-	rightCanonical, rightErr := canonical(right)
-	return leftErr == nil && rightErr == nil && leftCanonical == rightCanonical
+func rawEvidenceSHA256(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
 }
 
 // Get returns an operation scoped to owner/workspace.

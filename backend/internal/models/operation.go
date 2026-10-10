@@ -43,7 +43,8 @@ type Operation struct {
 	ApprovalID        *uuid.UUID `gorm:"type:uuid" json:"approvalId,omitempty"`
 	RecommendedAction string     `gorm:"type:text" json:"recommendedAction,omitempty"`
 
-	EvidenceJSON        string `gorm:"type:jsonb;not null;default:'{}'" json:"evidence"`
+	EvidenceJSON           string `gorm:"type:jsonb;not null;default:'{}'" json:"evidence"`
+	SourceEvidenceRawSHA256 string `gorm:"type:text;not null;default:''" json:"-"`
 	WorldModelStateJSON string `gorm:"type:jsonb;not null;default:'{}'" json:"worldModelState"`
 
 	RuntimeID          string `gorm:"type:text" json:"runtimeId,omitempty"`

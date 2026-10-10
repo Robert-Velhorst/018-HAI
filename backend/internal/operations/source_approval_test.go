@@ -177,6 +177,7 @@ func TestSourceApprovalRevisionDigestBindsEveryActionPolicyAndExecutionField(t *
 		{"approvalId", func(v *models.Operation) { id := uuid.New(); v.ApprovalID = &id }},
 		{"recommendedAction", func(v *models.Operation) { v.RecommendedAction += " changed" }},
 		{"evidence", func(v *models.Operation) { v.EvidenceJSON = `{"changed":true}` }},
+		{"sourceEvidenceRawSHA256", func(v *models.Operation) { v.SourceEvidenceRawSHA256 = strings.Repeat("b", 64) }},
 		{"worldModelState", func(v *models.Operation) { v.WorldModelStateJSON = `{"changed":true}` }},
 		{"runtimeId", func(v *models.Operation) { v.RuntimeID = "different-runtime" }},
 		{"modelProviderId", func(v *models.Operation) { v.ModelProviderID = "different-provider" }},

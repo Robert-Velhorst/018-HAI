@@ -83,6 +83,7 @@ func NewOperation(in NewOperationInput, now time.Time) (models.Operation, error)
 		RequiresApproval:    false,
 		VerificationStatus:  string(VerificationNotRequired),
 		EvidenceJSON:        firstNonEmpty(in.EvidenceJSON, "{}"),
+		SourceEvidenceRawSHA256: rawEvidenceSHA256(firstNonEmpty(in.EvidenceJSON, "{}")),
 		WorldModelStateJSON: "{}",
 		DedupeKey:           in.DedupeKey,
 		CreatedAt:           now,

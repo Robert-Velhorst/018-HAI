@@ -474,6 +474,7 @@ func sourceOperationRevisionDigest(op models.Operation) (string, error) {
 		OperationType, RiskLevel, AutonomyLevel, OwnerType, CurrentDecision   string
 		RequiresApproval                                                      bool
 		ApprovalID, RecommendedAction, EvidenceJSON, WorldModelStateJSON      string
+		SourceEvidenceRawSHA256                                               string `json:",omitempty"`
 		RuntimeID, ModelProviderID, ModelID, VerificationStatus               string
 		ResultSummary, LastError, DedupeKey                                   string
 		CreatedAt, UpdatedAt, CompletedAt, NextReviewAt                       string
@@ -502,6 +503,7 @@ func sourceOperationRevisionDigest(op models.Operation) (string, error) {
 		OperationType: op.OperationType, RiskLevel: op.RiskLevel, AutonomyLevel: op.AutonomyLevel,
 		OwnerType: op.OwnerType, CurrentDecision: op.CurrentDecision, RequiresApproval: op.RequiresApproval,
 		ApprovalID: text(op.ApprovalID), RecommendedAction: op.RecommendedAction, EvidenceJSON: op.EvidenceJSON,
+		SourceEvidenceRawSHA256: op.SourceEvidenceRawSHA256,
 		WorldModelStateJSON: op.WorldModelStateJSON, RuntimeID: op.RuntimeID, ModelProviderID: op.ModelProviderID,
 		ModelID: op.ModelID, VerificationStatus: op.VerificationStatus, ResultSummary: op.ResultSummary,
 		LastError: op.LastError, DedupeKey: op.DedupeKey, CreatedAt: op.CreatedAt.UTC().Format(time.RFC3339Nano),
