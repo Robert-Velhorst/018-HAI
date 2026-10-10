@@ -26,6 +26,22 @@ try {
 
 # Load the real guard without creating or deleting any runtime resources.
 . $launcher -Action Validate -EvidenceDirectory $preparedDirectory
+$syntheticValues = @{}
+foreach ($line in Get-Content -LiteralPath (Join-Path $preparedDirectory 'synthetic.env')) {
+    if ($line -notmatch '^([A-Z][A-Z0-9_]*)=(.*)$') { throw 'Synthetic environment contains an invalid line.' }
+    if ($syntheticValues.ContainsKey($Matches[1])) { throw 'Synthetic environment contains duplicate keys.' }
+    $syntheticValues[$Matches[1]] = $Matches[2]
+}
+if (Test-Path -LiteralPath (Join-Path $preparedDirectory 'cleanup-manifest.json')) {
+    throw 'Successful preparation retained its interrupted-cleanup marker.'
+}
+foreach ($entry in $syntheticValues.GetEnumerator()) {
+    if ($entry.Key -match '(?:^|_)(?:PASSWORD|TOKEN|SECRET|API_KEY|CLIENT_SECRET|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY)$' -and
+        -not [string]::IsNullOrEmpty([string]$entry.Value) -and
+        [string]$entry.Value -notmatch '^(?:[0-9a-f]{64}|E2eOnly-[0-9a-f]{32})$') {
+        throw "A credential-like setting was inherited into the synthetic environment: $($entry.Key)"
+    }
+}
 if ($config.services.backend.environment.SERVER_PORT -ne '80' -or
     $config.services.idp.environment.GOOGLE_OAUTH_CLIENT_ID -ne '' -or
     $config.services.idp.environment.FIRST_RUN_ADMIN_EMAIL -ne 'e2e-owner@example.test') {
@@ -168,10 +184,28 @@ function docker { throw 'Synthetic Docker configuration failure.' }
 try {
     $env:SERVER_PORT = 'failure-restoration-sentinel'
     $failed = $false
-    try { & $launcher -Action Prepare -Port 58144 | Out-Null }
+    $failureOutput = [Collections.Generic.List[string]]::new()
+    try { & $launcher -Action Prepare -Port 58144 2>&1 | ForEach-Object { $failureOutput.Add([string]$_) } }
     catch { if ($_.Exception.Message -notmatch 'Synthetic Docker configuration failure') { throw }; $failed = $true }
     if (-not $failed -or $env:SERVER_PORT -ne 'failure-restoration-sentinel') { throw 'Prepare failure did not restore the caller environment.' }
+    $preparingLine = @($failureOutput | Where-Object { $_ -match '^Preparing evidence: ' })
+    if ($preparingLine.Count -ne 1) { throw 'Failed preparation did not report its owned evidence directory.' }
+    $partialDirectory = $preparingLine[0].Substring('Preparing evidence: '.Length)
+    $cleanupMarkerPath = Join-Path $partialDirectory 'cleanup-manifest.json'
+    $syntheticEnvironmentPath = Join-Path $partialDirectory 'synthetic.env'
+    if (-not (Test-Path -LiteralPath $cleanupMarkerPath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $syntheticEnvironmentPath -PathType Leaf)) {
+        throw 'Failed preparation did not retain its cleanup provenance marker.'
+    }
+    $cleanupMarker = Get-Content -LiteralPath $cleanupMarkerPath -Raw | ConvertFrom-Json
+    $environmentHash = (Get-FileHash -LiteralPath $syntheticEnvironmentPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ([string]$cleanupMarker.state -cne 'preparing' -or
+        [string]$cleanupMarker.kind -cne 'hai-acceptance-synthetic-fixture' -or
+        [string]$cleanupMarker.syntheticEnvSha256 -cne $environmentHash) {
+        throw 'Failed preparation cleanup marker does not bind the synthetic environment.'
+    }
     Write-Output 'PASS: configuration failure restores caller environment'
+    Write-Output 'PASS: interrupted preparation retains hash-bound synthetic cleanup provenance'
 } finally {
     Remove-Item -LiteralPath Function:docker
     if ($null -eq $savedServer) { Remove-Item -LiteralPath Env:SERVER_PORT -ErrorAction SilentlyContinue }

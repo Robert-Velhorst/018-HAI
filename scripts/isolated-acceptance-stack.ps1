@@ -189,6 +189,11 @@ if ($Action -eq 'Prepare') {
     foreach ($key in @($values.Keys)) {
         if ($key -match '_ENABLED$') { $values[$key] = 'false' }
     }
+    foreach ($key in @($values.Keys)) {
+        if ($key -match '(?:^|_)(?:PASSWORD|TOKEN|SECRET|API_KEY|CLIENT_SECRET|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY)$') {
+            $values[$key] = ''
+        }
+    }
     foreach ($key in @('DB_PASSWORD', 'BACKEND_DB_PASSWORD', 'BACKEND_API_SHARED_KEY', 'HAI_MEMORY_ENCRYPTION_KEY', 'JWT_SECRET', 'HAI_APPROVAL_PROOF_SIGNING_KEY')) {
         $values[$key] = [Guid]::NewGuid().ToString('N') + [Guid]::NewGuid().ToString('N')
     }
@@ -209,6 +214,18 @@ if ($Action -eq 'Prepare') {
     if ($ExecutionMode -eq 'manual-local') { $values['HAI_PHASE2_MODE'] = 'autonomous_safe' }
     $envFile = Join-Path $EvidenceDirectory 'synthetic.env'
     [IO.File]::WriteAllLines($envFile, @($values.Keys | ForEach-Object { "$_=$($values[$_])" }), [Text.UTF8Encoding]::new($false))
+    $cleanupManifestPath = Join-Path $EvidenceDirectory 'cleanup-manifest.json'
+    $cleanupManifest = [pscustomobject]@{
+        version = 1
+        kind = 'hai-acceptance-synthetic-fixture'
+        state = 'preparing'
+        owner = $owner
+        project = $project
+        createdUtc = [DateTime]::UtcNow.ToString('o')
+        syntheticEnvBytes = (Get-Item -LiteralPath $envFile).Length
+        syntheticEnvSha256 = (Get-FileHash -LiteralPath $envFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    Write-JsonFile $cleanupManifest $cleanupManifestPath
     # Parent process variables must not override the deliberately synthetic file.
     $saved = @{}
     $references = [regex]::Matches([IO.File]::ReadAllText((Join-Path $repo 'docker-compose.local.yml')), '\$\{([A-Z][A-Z0-9_]*)')
@@ -284,6 +301,7 @@ if ($Action -eq 'Prepare') {
     Assert-IsolatedConfiguration $config $manifest
     Write-JsonFile $config (Join-Path $EvidenceDirectory 'compose.json')
     Write-JsonFile $manifest (Join-Path $EvidenceDirectory 'manifest.json')
+    Remove-Item -LiteralPath $cleanupManifestPath -Force -ErrorAction Stop
     Write-Output "Prepared: $EvidenceDirectory"
     Write-Output 'Only synthetic credentials are retained in manifest.json; do not publish that file.'
     return
