@@ -809,3 +809,30 @@ The new run is not passing evidence and PR #36 remains open. Transcript
 integration remains incomplete; the 20.7 GB archive, secondary checkout, and
 all unrelated untracked diagnostics remain untouched. No local source or
 recovery data was deleted; `deletion_performed=false`.
+
+## Correction: post-fix verification and rollback guard (2026-10-10 13:28 UTC)
+
+The `payload_json` correction is valid, but the earlier statement that the
+authenticated background-smoke failures cascaded from that same query was not
+proved. Run `38055436363` continued to report authenticated smoke failures
+after the SQL fix was present, so the smoke root cause remains open. The model-
+intelligence failures on that run also remain unverified against the corrected
+head.
+
+The current head at the time of this update is `d63f115`, pushed to PR #36.
+Its only code change after `bf0d051` separates the phase-order rollback
+assertion from a new isolated Postgres test that creates a registry-managed
+source and exercises the migration's own data guard. `git diff --cached
+--check` passed before commit. This Windows environment has no Go executable,
+so the test has not been run locally. Run `38055567389` for `bf0d051` already
+reported failures in the repository secret scan, Promptfoo dependency audit,
+and authenticated control-plane smoke; its Postgres integration was still
+running at the time of this entry. Run `38055436363` was also not terminal.
+The new head's checks have not yet completed and must not be inferred from the
+prior runs.
+
+The transcript archive and secondary checkout remain preserved. Transcript
+content-level integration is incomplete, so neither source is eligible for
+deletion. Existing untracked evidence, logs, scanner binaries, and diagnostic
+patches were not staged or removed. No archive, checkout, recovery data,
+container, or volume cleanup has been performed.
