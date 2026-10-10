@@ -95,6 +95,13 @@ function Assert-IsolatedConfiguration($Config, $Manifest) {
     foreach ($entry in $Config.services.PSObject.Properties) {
         $s = $entry.Value
         Assert-AcceptanceResourceLimits $s $entry.Name
+        if ($null -ne $s.depends_on) {
+            foreach ($dependency in @(Get-PropertyNames $s.depends_on)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$dependency) -and $dependency -notin $names) {
+                    throw "Acceptance service dependency is missing: $($entry.Name)/$dependency"
+                }
+            }
+        }
         foreach ($property in @('env_file', 'secrets', 'configs', 'extends')) {
             if ($s.PSObject.Properties[$property]) { throw "External configuration is forbidden in acceptance: $($entry.Name)/$property" }
         }
@@ -269,7 +276,11 @@ if ($Action -eq 'Prepare') {
         $mounts = @()
         if ($name -eq 'backend') {
             $mounts = @(@{ type = 'bind'; source = (Join-Path $EvidenceDirectory 'sources'); target = '/root/connected-sources'; read_only = $true })
-            $s.tmpfs = @('/tmp:rw,noexec,nosuid,size=128m', '/root/images:rw,noexec,nosuid,size=16m', '/root/agent-workspaces:rw,noexec,nosuid,size=32m', '/root/phase2-control-state:rw,noexec,nosuid,size=8m', '/root/phase2-feeds:rw,noexec,nosuid,size=8m')
+            $s.tmpfs = @('/tmp:rw,noexec,nosuid,size=128m', '/root/images:rw,noexec,nosuid,size=16m', '/root/agent-workspaces:rw,noexec,nosuid,size=32m', '/root/phase2-control-state:rw,noexec,nosuid,size=8m,uid=10001,gid=10001', '/root/phase2-feeds:rw,noexec,nosuid,size=8m')
+            # Production repairs ownership of its persistent state volume with
+            # a privileged one-shot service. Acceptance uses private tmpfs,
+            # so assign the runtime UID directly and omit that volume helper.
+            $s.depends_on.PSObject.Properties.Remove('backend-state-permissions')
         }
         if ($name -match '^postgres-') {
             $s.image = 'postgres:17-alpine'

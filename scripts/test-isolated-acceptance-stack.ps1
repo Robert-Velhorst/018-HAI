@@ -47,6 +47,10 @@ if ($config.services.backend.environment.SERVER_PORT -ne '80' -or
     $config.services.idp.environment.FIRST_RUN_ADMIN_EMAIL -ne 'e2e-owner@example.test') {
     throw 'Inherited configuration leaked into the synthetic stack.'
 }
+if ($config.services.backend.depends_on.PSObject.Properties['backend-state-permissions'] -or
+    -not @($config.services.backend.tmpfs | Where-Object { $_ -match '^/root/phase2-control-state:.*uid=10001,gid=10001' }).Count) {
+    throw 'The disposable backend state must use runtime-owned tmpfs without the persistent-volume permission helper.'
+}
 $baseline = $config | ConvertTo-Json -Depth 100
 $externalConfigurationCases = @(
     @{ name = 'service-env-file'; edit = { param($c) $c.services.backend | Add-Member NoteProperty env_file @('/external/private.env') }; error = 'External configuration' },
