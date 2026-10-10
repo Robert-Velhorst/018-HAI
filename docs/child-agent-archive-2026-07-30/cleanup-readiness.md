@@ -526,3 +526,26 @@ worktree, or diagnostic artifact was removed or changed.
   `296366d741f2e5f4d3ed3e19a2073ada67437f50` and pushed to PR #36. New CI run
   `38015664226` was queued at 02:06 UTC; no result was available at this
   ledger update.
+
+## Recovery-bundle diagnostics update (2026-10-10)
+
+`scripts/test-hai-volume-cleanup-readiness.ps1` now includes stable failure
+codes, manifest presence, last-modified time, and bundle byte counts for
+unverified recovery bundles. It only computes an artifact hash after the file
+passes the private-ACL check. When that check passes, it can identify an
+unmanifested artifact as an exact byte duplicate of a current-source-verified
+archive; the readiness script remains read-only and never authorizes deletion.
+
+The live check found five unverified bundles totaling 50,997,691 bytes. One
+bundle's manifest and four artifacts fail the required private-file-ACL check;
+the other files remain unverified. All five are retained. The distinct older
+Kafka archive and the valid-manifest bundle are not treated as disposable.
+Four detached-volume archives remain verified against their current source;
+three named volumes still lack current verified recovery evidence, including
+the attached application and control-state volumes.
+
+The generated Temp fixture scan found no eligible cleanup candidates: four
+verified synthetic fixtures are about 11.7 hours old (below the 24-hour
+retention minimum), and two folders remain unverified. No local file, Docker
+container, volume, image, or service was deleted or changed during this
+recheck.

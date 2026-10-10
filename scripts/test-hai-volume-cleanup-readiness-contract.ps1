@@ -9,9 +9,18 @@ foreach ($token in @(
     "'verified_detached_archive'",
     "'hold_retention_decision'",
     "'retain_unverified'",
+    "'manifest_missing'",
+    "'manifest_acl_unverified'",
+    "'artifact_acl_unverified'",
+    "'archive_verification_failed'",
+    'exact_duplicate_of_verified_archive = $false',
+    "'review_exact_duplicate_of_verified_archive'",
+    'artifact_sha256 = $artifactSha256',
+    'bundle_bytes = $bundleBytes',
     'verify-hai-detached-volume-archive.ps1',
     'verified_recovery_archives = @($verifiedRecoveryArchives)',
     'unverified_recovery_bundles = @($unverifiedRecoveryBundles)',
+    'unverified_recovery_bundle_bytes = $unverifiedRecoveryBytes',
     'recovery_status = $recoveryStatus',
     'recovery_verified_this_run = $archiveVerified',
     'volumes_without_supported_recovery_method = $unsupportedRecoveryMethods',
@@ -28,5 +37,8 @@ if ($source.Contains('uncovered_volume_count')) {
 }
 if ($source -match 'docker\s+image\s+(rm|prune)|docker\s+volume\s+(rm|prune)|docker\s+system\s+prune') {
     throw 'HAI resource readiness must remain read-only.'
+}
+if ($source -match '(?i)Remove-Item|\[IO\.Directory\]::Delete|\[IO\.File\]::Delete') {
+    throw 'HAI resource readiness must not delete recovery bundles or their artifacts.'
 }
 Write-Output 'HAI volume and image cleanup readiness contract: PASS'

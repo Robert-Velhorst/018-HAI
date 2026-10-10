@@ -36,28 +36,62 @@ if (Test-Path -LiteralPath $archiveRootFull -PathType Container) {
 
     foreach ($bundleDirectory in @(Get-ChildItem -LiteralPath $archiveRootFull -Directory -Force | Where-Object Name -Match '^hai-volume-recovery-[0-9a-f]{32}$')) {
         $bundleVolume = $null
+        $artifactSourceHint = $null
+        $manifestPresent = $false
+        $failureCode = 'bundle_validation_failed'
+        $bundleBytes = 0L
+        $artifactSha256 = $null
         try {
             if (($bundleDirectory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                $failureCode = 'unsafe_bundle_path'
                 throw 'reparse point'
             }
             Assert-HaiOwnedDirectory $bundleDirectory.FullName $archiveRootFull $bundleDirectory.Name
-            Assert-HaiPrivateEnvironmentAcl $bundleDirectory.FullName -Directory
+            try { Assert-HaiPrivateEnvironmentAcl $bundleDirectory.FullName -Directory }
+            catch {
+                $failureCode = 'bundle_directory_acl_unverified'
+                throw 'bundle directory ACL is not private'
+            }
 
             $manifestPath = Join-Path $bundleDirectory.FullName 'manifest.json'
-            if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { throw 'manifest missing' }
+            if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+                $failureCode = 'manifest_missing'
+                throw 'manifest missing'
+            }
+            $manifestPresent = $true
             $manifestItem = Get-Item -LiteralPath $manifestPath -Force
             if (($manifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $manifestItem.Length -gt 65536) {
+                $failureCode = 'invalid_manifest_file'
                 throw 'manifest is not a bounded regular file'
             }
-            Assert-HaiPrivateEnvironmentAcl $manifestPath
-            $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
+            try { Assert-HaiPrivateEnvironmentAcl $manifestPath }
+            catch {
+                $failureCode = 'manifest_acl_unverified'
+                throw 'manifest ACL is not private'
+            }
+            try { $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop }
+            catch {
+                $failureCode = 'invalid_manifest_json'
+                throw 'manifest JSON is invalid'
+            }
             $bundleVolume = [string]$manifest.sourceVolume.name
-            if ($bundleVolume -cnotin $archiveSources) { throw 'unsupported source volume' }
+            if ($bundleVolume -cnotin $archiveSources) {
+                $failureCode = 'unsupported_source_volume'
+                throw 'unsupported source volume'
+            }
+            $artifactSourceHint = $bundleVolume
+            $bundleBytes = [long]$manifest.artifact.bytes
+            $artifactSha256 = [string]$manifest.artifact.sha256
 
-            $verificationOutput = @(& $archiveVerifier -VolumeName $bundleVolume -BundlePath $bundleDirectory.FullName -ArchiveRoot $archiveRootFull)
+            try { $verificationOutput = @(& $archiveVerifier -VolumeName $bundleVolume -BundlePath $bundleDirectory.FullName -ArchiveRoot $archiveRootFull) }
+            catch {
+                $failureCode = 'archive_verification_failed'
+                throw 'archive verification failed'
+            }
             $verification = [string]::Join([Environment]::NewLine, [string[]]$verificationOutput) | ConvertFrom-Json -ErrorAction Stop
             if ([string]$verification.result -cne 'current_source_matches_verified_recovery_archive' -or
                 $verification.safeToRemove -ne $false -or $verification.cleanupAuthorized -ne $false) {
+                $failureCode = 'verification_contract_failed'
                 throw 'archive verifier did not return the fail-closed success contract'
             }
 
@@ -71,11 +105,52 @@ if (Test-Path -LiteralPath $archiveRootFull -PathType Container) {
                 safe_to_remove = $false
             })
         } catch {
+            if (($bundleBytes -le 0 -or -not $artifactSha256) -and
+                ($bundleDirectory.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {
+                try {
+                    $candidateFiles = @(Get-ChildItem -LiteralPath $bundleDirectory.FullName -File -Force -ErrorAction Stop)
+                    if ($candidateFiles.Count -eq 1 -and
+                        ($candidateFiles[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -and
+                        $candidateFiles[0].Name -cmatch '^(018-hai-(kafka-kraft|ollama-local|redis|redpanda)-data)\.tar\.gz$' -and
+                        $candidateFiles[0].Length -gt 0) {
+                        $artifactSourceHint = [string]$Matches[1]
+                        $bundleBytes = [long]$candidateFiles[0].Length
+                        try { Assert-HaiPrivateEnvironmentAcl $candidateFiles[0].FullName }
+                        catch {
+                            $failureCode = 'artifact_acl_unverified'
+                            throw 'archive artifact ACL is not private'
+                        }
+                        $artifactSha256 = (Get-FileHash -LiteralPath $candidateFiles[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                    } else {
+                        $bundleBytes = [long](($candidateFiles | Measure-Object -Property Length -Sum).Sum)
+                    }
+                } catch {
+                    if ($bundleBytes -le 0) { $bundleBytes = 0L }
+                }
+            }
             $unverifiedRecoveryBundles.Add([pscustomobject][ordered]@{
                 bundle_id = $bundleDirectory.Name
                 source_volume = $bundleVolume
+                artifact_source_hint = $artifactSourceHint
+                manifest_present = $manifestPresent
+                failure_code = $failureCode
+                bundle_modified_utc = $bundleDirectory.LastWriteTimeUtc.ToString('o')
+                bundle_bytes = $bundleBytes
+                artifact_sha256 = $artifactSha256
+                exact_duplicate_of_verified_archive = $false
                 disposition = 'retain_unverified'
             })
+        }
+    }
+
+    foreach ($bundle in $unverifiedRecoveryBundles) {
+        if ($bundle.manifest_present -or -not $bundle.artifact_source_hint -or -not $bundle.artifact_sha256) { continue }
+        $matchingVerifiedArchive = @($verifiedRecoveryArchives | Where-Object {
+            $_.volume -ceq $bundle.artifact_source_hint -and $_.archive_sha256 -ceq $bundle.artifact_sha256
+        }) | Select-Object -First 1
+        if ($null -ne $matchingVerifiedArchive) {
+            $bundle.exact_duplicate_of_verified_archive = $true
+            $bundle.disposition = 'review_exact_duplicate_of_verified_archive'
         }
     }
 }
@@ -161,6 +236,7 @@ foreach ($container in $haiContainerNames) {
 
 $unsupportedRecoveryMethods = @($inventory | Where-Object { $_.recovery_method -eq 'not_covered' }).Count
 $unverifiedRecoveryCount = @($inventory | Where-Object { -not $_.recovery_verified_this_run }).Count
+$unverifiedRecoveryBytes = [long](($unverifiedRecoveryBundles | Measure-Object -Property bundle_bytes -Sum).Sum)
 $result = [pscustomobject][ordered]@{
     docker_context = (& docker context show 2>$null | Out-String).Trim()
     inventory_complete = ($unknownNames.Count -eq 0)
@@ -170,6 +246,7 @@ $result = [pscustomobject][ordered]@{
     volumes_without_current_verified_recovery_evidence = $unverifiedRecoveryCount
     verified_recovery_archives = @($verifiedRecoveryArchives)
     unverified_recovery_bundles = @($unverifiedRecoveryBundles)
+    unverified_recovery_bundle_bytes = $unverifiedRecoveryBytes
     anonymous_hai_volume_mounts = $anonymousMounts
     hai_images = $images
     image_cleanup_authorized = $false
