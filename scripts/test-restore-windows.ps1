@@ -32,23 +32,6 @@ $compose = Join-Path $root "docker-compose.local.yml"
 $archiveImage = "018-hai-backend:local"
 . (Join-Path $PSScriptRoot "windows-recovery-contract.ps1")
 . (Join-Path $PSScriptRoot "backup-windows.ps1") -EnvFile $EnvFile -ValidateOnly:$ValidateOnly -LibraryOnly
-if ($ContractTest) {
-    function Invoke-HaiBoundedDockerCommand([string[]]$Arguments, [ValidateRange(1, 120)][int]$TimeoutSeconds = 15) {
-        $commandArgs = @($Arguments | ForEach-Object { [string]$_ })
-        $global:HaiRecoveryContractMock.Calls.Add($commandArgs)
-        $global:LASTEXITCODE = 0
-        if ($commandArgs.Count -eq 2 -and $commandArgs[0] -eq 'context' -and $commandArgs[1] -eq 'inspect') {
-            return [pscustomobject]@{
-                succeeded = $true
-                timed_out = $false
-                exit_code = 0
-                output = (@(@{ Endpoints = @{ docker = @{ Host = $global:HaiRecoveryContractMock.DockerHost } } }) | ConvertTo-Json -Depth 5)
-            }
-        }
-        throw 'Unexpected bounded Docker contract command.'
-    }
-}
-
 function Resolve-RepoPath([string]$Path) {
     if ([IO.Path]::IsPathRooted($Path)) { return [IO.Path]::GetFullPath($Path) }
     return [IO.Path]::GetFullPath((Join-Path $root $Path))
@@ -119,7 +102,16 @@ if ($RestoreEnvironmentOnly) {
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "Docker Desktop is required." }
-Assert-HaiLocalDockerEngine
+if ($ContractTest) {
+    Assert-HaiLocalDockerContextResult ([pscustomobject]@{
+        succeeded = $true
+        timed_out = $false
+        exit_code = 0
+        output = (@(@{ Endpoints = @{ docker = @{ Host = $global:HaiRecoveryContractMock.DockerHost } } }) | ConvertTo-Json -Depth 5)
+    })
+} else {
+    Assert-HaiLocalDockerEngine
+}
 
 $environmentRestored = $false
 $environmentPreflightComplete = $false
@@ -132,7 +124,17 @@ if (Test-Path -LiteralPath $envPath) {
     if ($ValidateOnly) {
         $settings = Restore-HaiProtectedEnvironmentFile $bundle $manifest $envPath -ValidateOnly -ValidationAction {
             param($stagedEnvironmentPath)
-            & (Join-Path $PSScriptRoot 'backup-windows.ps1') -EnvFile $stagedEnvironmentPath -ValidateOnly
+            if ($ContractTest) {
+                $stagedSettings = Read-DotEnv $stagedEnvironmentPath
+                foreach ($name in @('DB_USER', 'AUTOMATION_DB_NAME', 'IDP_DB_NAME', 'IMAGE_SAVE_DIR')) {
+                    $null = Require-Setting $stagedSettings $name
+                }
+                if ($stagedSettings.IMAGE_SAVE_DIR.TrimEnd('/') -cne '/root/images') {
+                    throw 'Recovered environment media path does not match the backup contract.'
+                }
+            } else {
+                & (Join-Path $PSScriptRoot 'backup-windows.ps1') -EnvFile $stagedEnvironmentPath -ValidateOnly
+            }
         }
         $environmentPreflightComplete = $true
     } else {

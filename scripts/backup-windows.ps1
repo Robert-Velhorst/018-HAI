@@ -259,11 +259,7 @@ function Invoke-HaiBoundedDockerCommand([string[]]$Arguments, [ValidateRange(1, 
     return Invoke-HaiBoundedProcess $docker.Source $Arguments -TimeoutSeconds $TimeoutSeconds
 }
 
-function Assert-HaiLocalDockerEngine {
-    if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_HOST)) {
-        throw 'Windows backup and restore refuse a DOCKER_HOST override; select the local Docker Desktop engine.'
-    }
-    $result = Invoke-HaiBoundedDockerCommand @('context', 'inspect') -TimeoutSeconds 10
+function Assert-HaiLocalDockerContextResult($result) {
     if (-not $result.succeeded -or $result.timed_out) {
         throw 'Docker local-engine check failed or timed out; no containers or volumes were changed.'
     }
@@ -273,6 +269,14 @@ function Assert-HaiLocalDockerEngine {
         [string]$contexts[0].Endpoints.docker.Host -notmatch '^(npipe|unix)://') {
         throw 'Windows backup and restore require one verified local Docker engine context; no containers or volumes were changed.'
     }
+}
+
+function Assert-HaiLocalDockerEngine {
+    if (-not [string]::IsNullOrWhiteSpace($env:DOCKER_HOST)) {
+        throw 'Windows backup and restore refuse a DOCKER_HOST override; select the local Docker Desktop engine.'
+    }
+    $result = Invoke-HaiBoundedDockerCommand @('context', 'inspect') -TimeoutSeconds 10
+    Assert-HaiLocalDockerContextResult $result
 }
 
 function Invoke-HaiRecoveryQuery([string]$Container, [string]$User, [string]$Database, [string]$Sql, $Selection = $null) {

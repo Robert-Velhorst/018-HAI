@@ -398,9 +398,30 @@ try {
     }
     try {
         Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
-        Assert-HaiLocalDockerEngine
+        Assert-HaiLocalDockerContextResult ([pscustomobject]@{
+            succeeded = $true
+            timed_out = $false
+            exit_code = 0
+            output = (@(@{ Endpoints = @{ docker = @{ Host = $global:HaiRecoveryContractMock.DockerHost } } }) | ConvertTo-Json -Depth 5)
+        })
+        Assert-Throws 'failed Docker context probe' {
+            Assert-HaiLocalDockerContextResult ([pscustomobject]@{ succeeded = $false; timed_out = $false; exit_code = 1; output = '' })
+        } 'check failed or timed out'
+        Assert-Throws 'timed out Docker context probe' {
+            Assert-HaiLocalDockerContextResult ([pscustomobject]@{ succeeded = $false; timed_out = $true; exit_code = $null; output = '' })
+        } 'check failed or timed out'
+        Assert-Throws 'malformed Docker context metadata' {
+            Assert-HaiLocalDockerContextResult ([pscustomobject]@{ succeeded = $true; timed_out = $false; exit_code = 0; output = 'not-json' })
+        } 'invalid local-engine context metadata'
         Set-HaiRecoveryContractDockerHost 'tcp://remote.example:2376'
-        Assert-Throws 'remote Docker context' { Assert-HaiLocalDockerEngine } 'require one verified local Docker engine'
+        Assert-Throws 'remote Docker context' {
+            Assert-HaiLocalDockerContextResult ([pscustomobject]@{
+                succeeded = $true
+                timed_out = $false
+                exit_code = 0
+                output = (@(@{ Endpoints = @{ docker = @{ Host = $global:HaiRecoveryContractMock.DockerHost } } }) | ConvertTo-Json -Depth 5)
+            })
+        } 'require one verified local Docker engine'
         Set-HaiRecoveryContractDockerHost 'npipe:////./pipe/docker_engine'
         $env:DOCKER_HOST = 'tcp://remote.example:2376'
         Assert-Throws 'Docker host override' { Assert-HaiLocalDockerEngine } 'DOCKER_HOST override'

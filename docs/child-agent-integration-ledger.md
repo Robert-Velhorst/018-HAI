@@ -564,3 +564,24 @@ PowerShell 7.6.5; GitHub's failed Windows job still needs its own logs after
 the workflow reaches a terminal state. This checkpoint does not authorize
 merge or local deletion. The archive, dirty primary checkout, and untracked
 diagnostics remain intact.
+
+## Windows CI Docker-probe regression (2026-10-10 19:10 UTC)
+
+Run `38076417111` reached a terminal failure. Its Windows recovery contract
+logs show the failure came from the nested restore test invoking the real
+`backup-windows.ps1 -ValidateOnly` callback, which attempted a Docker context
+inspection. The Windows CI runner had the Docker CLI but no available local
+engine. This was a test-isolation defect; the check failed before changing any
+containers or volumes. Promptfoo's separate audit failure is confirmed as ten
+high, zero critical production dependency advisories in the locked `0.124.1`
+tree.
+
+The recovery implementation now separates pure Docker-context validation
+from the production bounded CLI probe. Contract mode supplies synthetic local
+or remote context metadata and validates the recovered environment fields
+without invoking Docker. The exact ten-script Windows recovery contract block
+passed locally under PowerShell 7.6.5 with Docker removed from the child
+process `PATH`, including failed, timed-out, malformed, and remote context
+cases. This reproduces the CI constraint, but the post-fix GitHub run is still
+required. No runtime policy was relaxed, and no Docker resources, archives,
+checkouts, or diagnostic artifacts were removed.
