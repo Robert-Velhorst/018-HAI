@@ -732,7 +732,7 @@ jobs:
       - run: test "$(npm --version)" = "10.9.8"
       - name: Audit production dependencies
         working-directory: services/promptfoo-runner
-        run: bash ../../scripts/audit-npm-production-dependencies.sh "Promptfoo runner"
+        run: bash ../../scripts/audit-npm-production-dependencies.sh "Promptfoo runner" omit-optional
       - name: Build runner and execute isolated contract tests
         working-directory: services/promptfoo-runner
         run: docker build --file Dockerfile --tag hai-promptfoo-runner:ci .

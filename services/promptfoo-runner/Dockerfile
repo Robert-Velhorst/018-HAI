@@ -8,7 +8,7 @@ COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm install --global npm@10.9.8 --no-audit --no-fund \
     && test "$(npm --version)" = "10.9.8" \
-    && npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+    && npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund
 
 ENV PATH="/app/node_modules/.bin:${PATH}"
 

@@ -211,9 +211,22 @@ class CIWorkflowContractTest(unittest.TestCase):
 
         promptfoo = job_block("promptfoo-runner")
         self.assertIn(
-            'bash ../../scripts/audit-npm-production-dependencies.sh "Promptfoo runner"',
+            'bash ../../scripts/audit-npm-production-dependencies.sh "Promptfoo runner" omit-optional',
             promptfoo,
         )
+        promptfoo_dockerfile = (ROOT / "services" / "promptfoo-runner" / "Dockerfile").read_text(
+            encoding="utf-8"
+        )
+        promptfoo_package = json.loads(
+            (ROOT / "services" / "promptfoo-runner" / "package.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertIn("npm ci --omit=dev --omit=optional", promptfoo_dockerfile)
+        self.assertEqual(
+            promptfoo_package["overrides"]["get-uri"]["basic-ftp"], "6.2.1"
+        )
+        self.assertIn('omit-optional) audit_command+=(--omit=optional)', audit_text)
 
     def test_bootstrap_document_matches_the_dark_first_theme_contract(self) -> None:
         index = (ROOT / "frontend" / "src" / "index.html").read_text(

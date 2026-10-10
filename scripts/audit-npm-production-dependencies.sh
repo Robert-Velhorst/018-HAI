@@ -2,9 +2,17 @@
 set -euo pipefail
 
 scope="${1:-production package}"
+optional_mode="${2:-include-optional}"
 report="$(mktemp)"
 stderr_file="$(mktemp)"
 trap 'rm -f "$report" "$stderr_file"' EXIT
+
+audit_command=(npm audit --omit=dev --audit-level=high --json)
+case "$optional_mode" in
+  include-optional) ;;
+  omit-optional) audit_command+=(--omit=optional) ;;
+  *) echo "invalid optional dependency audit mode: $optional_mode" >&2; exit 2 ;;
+esac
 
 validate_report() {
   node - "$report" <<'NODE'
@@ -39,7 +47,7 @@ for attempt in 1 2 3; do
   : >"$report"
   : >"$stderr_file"
   set +e
-  timeout 90s npm audit --omit=dev --audit-level=high --json >"$report" 2>"$stderr_file"
+  timeout 90s "${audit_command[@]}" >"$report" 2>"$stderr_file"
   audit_exit=$?
   set -e
 
