@@ -733,3 +733,31 @@ versions; they do not complete the semantic review of all 49 files or the
 793-path transcript patch crosswalk. No primary-checkout files were changed.
 The transcript archive, diagnostic artifacts, and cleanup gates are unchanged;
 no deletion is authorized by this comparison.
+
+## Bounded transcript-tail reconciliation (2026-10-10)
+
+A second read-only pass sampled at most the final 16 MiB of each of the 18
+transcripts (288 MiB maximum read). It parsed 5,389 complete JSONL records,
+with no parse errors in the sampled tails, and found 117 patch events (94
+successful, 23 failed) across 11 transcript files. Those events referenced 71
+distinct absolute target paths. Fifty-five paths mapped unambiguously to HAI
+repository-relative source paths; all 55 target paths exist in the current PR
+checkout. The remaining 16 paths point to recovery/audit scratch artifacts or
+other non-canonical paths.
+
+This tail sample is not a whole-transcript review. Path presence does not prove
+that the corresponding diff, intent, or final state was integrated, and the
+sample may include inherited parent-history events. The earlier 793-path
+semantic crosswalk and transcript attribution work therefore remain open.
+The 20.7 GB source archive and all local diagnostics remain untouched.
+
+The current PR head is `9dc9cf27c4f3c7b034fc2726903df0868881a100` and remains
+open against `main`. At the latest check, exact-head Actions run `38083647651`
+has 34 successful jobs, the `Promptfoo safety runner image` job failed, and
+`Browser acceptance (owned disposable stack)` remains in progress. The
+Promptfoo dependency-audit step passed; the Docker build/isolated-contract-test
+step failed. The public GitHub API returns job metadata but denies access to
+the job log (HTTP 403), so the underlying Docker failure is not yet established.
+No failure suppression or speculative workflow change was made. Transcript
+cleanup remains gated on completing the semantic integration review and
+passing the PR/cleanup readiness checks.
