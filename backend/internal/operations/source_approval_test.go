@@ -118,8 +118,8 @@ func TestSourceApprovalReceiptBindsExactRevisionAndIsAuditable(t *testing.T) {
 	}
 	wrongStatus := *approved
 	wrongStatus.Status = string(StatusReady)
-	if _, err := service.SourceApprovalForExecution(wrongStatus); !errors.Is(err, ErrSourceApprovalStale) {
-		t.Fatalf("approval receipt accepted wrong lifecycle status: %v", err)
+	if _, err := service.SourceApprovalForExecution(wrongStatus); !errors.Is(err, ErrSourceApprovalStale) || !strings.Contains(err.Error(), "status/version binding mismatch") {
+		t.Fatalf("approval receipt accepted wrong lifecycle status or lost its diagnostic: %v", err)
 	}
 	events, err := service.listSourceApprovalEvents(op.ID)
 	if err != nil || len(events) < 4 {
@@ -548,7 +548,7 @@ func TestSourceApprovalReceiptCannotAuthorizeMutatedApprovedRevision(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SourceApprovalForExecution(*mutated); !errors.Is(err, ErrSourceApprovalStale) {
+	if _, err := service.SourceApprovalForExecution(*mutated); !errors.Is(err, ErrSourceApprovalStale) || !strings.Contains(err.Error(), "operation revision digest mismatch") {
 		t.Fatalf("mutated approved revision error = %v", err)
 	}
 }

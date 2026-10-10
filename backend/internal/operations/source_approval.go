@@ -233,8 +233,11 @@ func (s *Service) SourceApprovalForExecution(op models.Operation) (SourceApprova
 	if err != nil {
 		return SourceApprovalReceipt{}, err
 	}
-	if op.Status != string(StatusApproved) || op.Version != receipt.Version+1 || !sourceRevisionMatches(op, receipt) {
-		return SourceApprovalReceipt{}, ErrSourceApprovalStale
+	if op.Status != string(StatusApproved) || op.Version != receipt.Version+1 {
+		return SourceApprovalReceipt{}, fmt.Errorf("%w: approved status/version binding mismatch", ErrSourceApprovalStale)
+	}
+	if !sourceRevisionMatches(op, receipt) {
+		return SourceApprovalReceipt{}, fmt.Errorf("%w: approved operation revision digest mismatch", ErrSourceApprovalStale)
 	}
 	return receipt, nil
 }
@@ -353,10 +356,10 @@ func (s *Service) findSourceApproval(op models.Operation) (SourceApprovalReceipt
 			event.ActorID != receipt.ApprovedBy || event.ActorType != string(OwnerRobert) ||
 			event.BeforeStatus != string(StatusAwaitingApproval) || event.AfterStatus != string(StatusApproved) ||
 			!event.CreatedAt.Equal(receipt.ApprovedAt) {
-			return SourceApprovalReceipt{}, ErrSourceApprovalStale
+			return SourceApprovalReceipt{}, fmt.Errorf("%w: approval receipt event binding mismatch", ErrSourceApprovalStale)
 		}
 		if found != nil {
-			return SourceApprovalReceipt{}, ErrSourceApprovalStale
+			return SourceApprovalReceipt{}, fmt.Errorf("%w: duplicate approval receipts", ErrSourceApprovalStale)
 		}
 		copy := *receipt
 		found = &copy
