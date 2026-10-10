@@ -10,7 +10,7 @@ export interface IAuthCapabilities {
 export interface IAuthService {
   getCapabilities(): Observable<IAuthCapabilities>;
 	openLocalPreview(): Observable<void>;
-	login(username: string, password: string, rememberMe?: boolean): Observable<Object>;
+	login(username: string, password: string, rememberMe?: boolean): Observable<void>;
   register(email: string, password: string): Observable<IUserModel>;
   requestPasswordReset(email: string): Observable<void>;
   confirmPasswordReset(token: string, newPassword: string): Observable<void>;
