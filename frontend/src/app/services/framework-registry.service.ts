@@ -11,6 +11,7 @@ import {
   FrameworkLifecycleStatus,
   IFrameworkFamilyRecord,
   IFrameworkFamilyTaxonomy,
+  IFrameworkPreference,
   IFrameworkPreferencePatch,
   IFrameworkPreferenceChange,
   IFrameworkRegistryOverview,
