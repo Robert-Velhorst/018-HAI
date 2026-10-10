@@ -471,3 +471,40 @@ toolchain was deleted.
   CI run `38014306769` was queued at this check; its HAI cleanup-readiness
   safety-contract job had passed, but the complete run had not finished.
   The worktree and its 23 untracked diagnostics were preserved.
+
+## Runtime and cleanup recheck (2026-10-10 01:59 UTC)
+
+Read-only checks were repeated against the live Windows Docker engine and the
+local transcript source. No transcript, Temp fixture, Docker volume, image,
+worktree, or diagnostic artifact was removed or changed.
+
+- The complete transcript source still contains exactly 18 files and
+  20,739,169,122 logical bytes. All eight candidate hashes match the ledger;
+  the ten retained entries match their recorded sizes. The gate remains
+  `cleanup_gate_ready=false`, with `deletion_performed=false` and
+  `cleanup_authorized=false`.
+- The Temp scan still finds six generated-name directories: four exact
+  synthetic candidates totaling 432,534 bytes and two unverified directories.
+  All candidates have zero related Docker resources. The verifier continues to
+  report `cleanup_authorized=false` and `deletion_performed=false`.
+- The volume verifier still reports `safe_to_remove_any=false` for all seven
+  named HAI volumes and `image_cleanup_authorized=false`. The two PostgreSQL
+  volumes remain attached to healthy database containers; the phase2 state
+  volume remains referenced by the created backend and exited helper. The
+  active `automation_hub` database is 716 MB, so its volume is not disposable.
+- The dashboard shell responds at `/control-center`, but API data is
+  unavailable: the gateway is unhealthy, the backend remains in `Created`,
+  and the migration job exited with code 1. Its fail-closed migration check
+  reports eight applied `pre/0060` through `pre/0067` IDs absent from the
+  current migration bundle. No migration, credential change, or database
+  repair was attempted. This runtime/schema mismatch is an additional reason
+  to preserve the database, attached state, and backend image until a verified
+  recovery and migration-lineage repair are completed.
+- PR #36 remains open at `65fbf1f3be8640a78b492d4d68299f9b580db760`. CI run
+  `38014491605` completed with failures in backend vulnerability scanning,
+  repository secret scanning, Windows installer guards, real-Postgres
+  migration integration, two-account isolation, authenticated control-plane
+  smoke, the Promptfoo safety runner image, and browser acceptance. The
+  dedicated HAI cleanup-readiness safety-contract job passed. The PR gate is
+  still unmet, and the worktree's 23 untracked diagnostic artifacts remain
+  untouched.
