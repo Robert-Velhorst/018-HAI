@@ -640,3 +640,43 @@ fixtures, local patch, primary checkout, and transcript archive remain
 untouched. This reconciliation does not satisfy semantic transcript
 integration, PR merge, or cleanup-readiness gates and does not authorize local
 deletion.
+
+## Completed-session transcript structural pass (2026-10-10)
+
+A bounded, read-only scan of the 18 files in
+`D:\codex-temp\hai-completed-agent-sessions` covered 20,739,169,122 bytes
+(about 20.7 GB decimal). It parsed 527,872 JSONL records and found 45,017
+`patch_apply_end` records: 44,941 marked successful and 76 marked failed.
+Those events contained 793 distinct absolute target paths and 5,130 distinct
+unified-diff fingerprints. The path references were concentrated in the
+primary HAI checkout (68,756 references); 1,214 references targeted the
+separate `work\018-hai-port-engine-control` scratch checkout, and 325 targeted
+temporary audit/smoke scripts. These are reference counts across patch events,
+not counts of unique files or accepted changes.
+
+Two 67 MB compacted-summary records exceeded the parser's 64 MiB per-record
+limit. Their record type was `compacted`, and a chunk-wise scan found no
+`patch_apply_end` marker in either. Every under-limit record containing a
+`patch_apply_end` marker parsed as JSON; this is not a claim that every record
+in the archives is valid. The previously identified malformed/truncated
+candidate records remain unresolved. The transcripts were not changed.
+
+This pass establishes a structural map of attempted edits, not a semantic
+approval or complete integration proof. Failed patch attempts are not product
+changes; repeated diffs are not independent contributions; temporary browser
+scripts are not product source; and scratch-checkout changes still need to be
+compared with the canonical PR. Only the 17 unique paths named in the
+Aristotle/Descartes final reports have a completed source-presence check so far.
+The 793-path semantic crosswalk, including patch intent, final surviving
+version, tests, and disposition for every unique product path, remains open.
+The two compacted summaries and the malformed/truncated candidate records also
+remain retained. No archive, output, scratch checkout, or diagnostic data is
+cleanup-ready on this evidence.
+
+At the time of this transcript pass, PR #36 is at `cb5996a831abc9ac9aefdf1e9f43d73e97dfd598`.
+Public GitHub Actions run `38080242458` for that exact commit is still in
+progress; its Promptfoo safety-runner image job has failed at the production
+dependency audit step. The GitHub app connector requires reauthentication, so
+the run's final status and remaining job results are not yet verified. This
+replaces earlier checkpoint references above to older PR heads and runs; those
+entries remain historical snapshots, not current status.
