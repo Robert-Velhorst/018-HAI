@@ -43,6 +43,46 @@ func TestVerifiedActorDoesNotUseClientSuppliedActor(t *testing.T) {
 	}
 }
 
+func TestIntakeHandlerReturnsExactWorkflowReference(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	workflowService := &fakeWorkflowIntake{repo: repo}
+	service := NewService(repo, workflowService)
+	pursuit, err := service.Create(CreateRequest{
+		Title:         "Intake response regression",
+		OwnerIdentity: "alice",
+		ProjectKey:    "intake-response",
+	})
+	if err != nil {
+		t.Fatalf("Create pursuit: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.POST("/pursuits/:id/intake", NewHandler(service).Intake)
+
+	request := httptest.NewRequest(http.MethodPost, "/pursuits/"+pursuit.ID.String()+"/intake", strings.NewReader(`{"input":"Prepare a reviewable workflow"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("Intake status = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+
+	var detail PursuitDetail
+	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode intake response: %v", err)
+	}
+	if detail.IntakeWorkflowID == nil || *detail.IntakeWorkflowID == uuid.Nil {
+		t.Fatalf("intake response lost the exact workflow reference: %#v", detail.IntakeWorkflowID)
+	}
+	if _, ok := workflowService.records[*detail.IntakeWorkflowID]; !ok {
+		t.Fatalf("intake response references a workflow not returned by intake: %s", detail.IntakeWorkflowID)
+	}
+}
+
 func TestSettlePortfolioWorkflowHandlerUsesVerifiedOwnerAndReturnsCreated(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, _, item, execution := completedPortfolioWorkflowFixture(t, "verified")

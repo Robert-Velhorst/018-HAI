@@ -948,12 +948,14 @@ func (h *Handler) Intake(c *gin.Context) {
 	}
 	request.OwnerIdentity = pursuitOwner(c)
 	request.Actor = verifiedActor(c, "operator")
-	_, err := h.service.IntakeForOwner(pursuitOwner(c), id, request)
+	detail, err := h.service.IntakeForOwner(pursuitOwner(c), id, request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	h.respondScopedDetail(c, id, http.StatusCreated)
+	// IntakeWorkflowID is an exact response-only reference. Re-reading the
+	// pursuit here would drop it because it is intentionally not persisted.
+	c.JSON(http.StatusCreated, detail)
 }
 
 func (h *Handler) Plan(c *gin.Context) {
