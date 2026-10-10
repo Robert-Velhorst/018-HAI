@@ -548,8 +548,13 @@ func TestSourceApprovalReceiptCannotAuthorizeMutatedApprovedRevision(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SourceApprovalForExecution(*mutated); !errors.Is(err, ErrSourceApprovalStale) || !strings.Contains(err.Error(), "operation revision digest mismatch") {
+	if _, err := service.SourceApprovalForExecution(*mutated); !errors.Is(err, ErrSourceApprovalStale) || !strings.Contains(err.Error(), "status/version binding mismatch") {
 		t.Fatalf("mutated approved revision error = %v", err)
+	}
+	sameVersionMutation := *approved
+	sameVersionMutation.Description += " changed without a version bump"
+	if _, err := service.SourceApprovalForExecution(sameVersionMutation); !errors.Is(err, ErrSourceApprovalStale) || !strings.Contains(err.Error(), "operation revision digest mismatch") {
+		t.Fatalf("same-version approved mutation error = %v", err)
 	}
 }
 
