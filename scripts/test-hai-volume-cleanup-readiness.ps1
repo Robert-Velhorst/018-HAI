@@ -7,9 +7,9 @@ $ErrorActionPreference = 'Stop'
 Assert-HaiLocalDockerEngine
 
 $knownVolumes = [ordered]@{
-    '018-hai-postgres-automation-data' = 'postgres_logical_backup'
-    '018-hai-postgres-idp-data' = 'postgres_logical_backup'
-    '018-hai-phase2-control-state' = 'safety_control_archive'
+    '018-hai-postgres-automation-data' = 'offline_archive_and_restore_drill'
+    '018-hai-postgres-idp-data' = 'offline_archive_and_restore_drill'
+    '018-hai-phase2-control-state' = 'offline_archive_and_restore_drill'
     '018-hai-redpanda-data' = 'not_covered'
     '018-hai-kafka-kraft-data' = 'not_covered'
     '018-hai-ollama-local-data' = 'not_covered'
@@ -17,6 +17,9 @@ $knownVolumes = [ordered]@{
 }
 
 $archiveSources = @(
+    '018-hai-postgres-automation-data',
+    '018-hai-postgres-idp-data',
+    '018-hai-phase2-control-state',
     '018-hai-redpanda-data',
     '018-hai-kafka-kraft-data',
     '018-hai-ollama-local-data',
@@ -143,7 +146,7 @@ if (Test-Path -LiteralPath $archiveRootFull -PathType Container) {
                     $candidateFiles = @(Get-ChildItem -LiteralPath $bundleDirectory.FullName -File -Force -ErrorAction Stop)
                     if ($candidateFiles.Count -eq 1 -and
                         ($candidateFiles[0].Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -and
-                        $candidateFiles[0].Name -cmatch '^(018-hai-(kafka-kraft|ollama-local|redis|redpanda)-data)\.tar\.gz$' -and
+                        $candidateFiles[0].Name -cmatch '^(018-hai-(kafka-kraft|ollama-local|redis|redpanda|postgres-automation|postgres-idp)-data|018-hai-phase2-control-state)\.tar\.gz$' -and
                         $candidateFiles[0].Length -gt 0) {
                         $artifactSourceHint = [string]$Matches[1]
                         $bundleBytes = [long]$candidateFiles[0].Length
@@ -197,7 +200,7 @@ $inventory = foreach ($name in $names) {
     }
     $recoveryStatus = if ($archiveVerified) {
         'verified_current_source_archive'
-    } elseif ($coverage -in @('postgres_logical_backup', 'safety_control_archive')) {
+    } elseif ($coverage -ceq 'offline_archive_and_restore_drill') {
         'supported_workflow_not_run_in_this_check'
     } else {
         'no_verified_recovery_archive'

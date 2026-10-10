@@ -2,7 +2,9 @@ $ErrorActionPreference = 'Stop'
 $remover = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'remove-hai-detached-volume.ps1'))
 $readiness = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-hai-volume-cleanup-readiness.ps1'))
 $required = @(
-    "ValidateSet('018-hai-kafka-kraft-data', '018-hai-ollama-local-data', '018-hai-redis-data', '018-hai-redpanda-data')",
+    "ValidateSet('018-hai-kafka-kraft-data', '018-hai-ollama-local-data', '018-hai-redis-data', '018-hai-redpanda-data', '018-hai-postgres-automation-data', '018-hai-postgres-idp-data', '018-hai-phase2-control-state')",
+    'AllowPersistentDataRemoval',
+    'REMOVE HAI PERSISTENT VOLUMES',
     'SupportsShouldProcess = $true',
     'ConfirmationPhrase',
     'cleanup_requires_apply = $true',
@@ -25,8 +27,14 @@ $required = @(
 foreach ($token in $required) {
     if (-not $remover.Contains($token)) { throw "HAI detached-volume removal is missing a required guard: $token" }
 }
-if ($remover -match 'docker\s+volume\s+(prune|rm\s+-f)|docker\s+system\s+prune|018-hai-postgres|018-hai-phase2-control-state') {
-    throw 'HAI detached-volume cleanup may not target persistent application databases/state or use broad Docker removal.'
+try {
+    & (Join-Path $PSScriptRoot 'remove-hai-detached-volume.ps1') -VolumeNames '018-hai-postgres-idp-data' 2>$null | Out-Null
+    throw 'Persistent volume removal unexpectedly proceeded without its separate authorization switch.'
+} catch {
+    if ($_.Exception.Message -notmatch 'require -AllowPersistentDataRemoval') { throw }
+}
+if ($remover -match 'docker\s+volume\s+(prune|rm\s+-f)|docker\s+system\s+prune') {
+    throw 'HAI detached-volume cleanup may not use broad Docker removal.'
 }
 if ($readiness -match 'docker\s+volume\s+(rm|prune)|Remove-Item|\[IO\.Directory\]::Delete') {
     throw 'HAI volume readiness must remain read-only.'

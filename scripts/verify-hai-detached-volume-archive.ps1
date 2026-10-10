@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('018-hai-kafka-kraft-data', '018-hai-ollama-local-data', '018-hai-redis-data', '018-hai-redpanda-data')]
+    [ValidateSet('018-hai-kafka-kraft-data', '018-hai-ollama-local-data', '018-hai-redis-data', '018-hai-redpanda-data', '018-hai-postgres-automation-data', '018-hai-postgres-idp-data', '018-hai-phase2-control-state')]
     [string]$VolumeName,
     [Parameter(Mandatory)]
     [string]$BundlePath,

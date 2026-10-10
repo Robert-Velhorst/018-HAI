@@ -1,11 +1,12 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('018-hai-kafka-kraft-data', '018-hai-ollama-local-data', '018-hai-redis-data', '018-hai-redpanda-data')]
+    [ValidateSet('018-hai-kafka-kraft-data', '018-hai-ollama-local-data', '018-hai-redis-data', '018-hai-redpanda-data', '018-hai-postgres-automation-data', '018-hai-postgres-idp-data', '018-hai-phase2-control-state')]
     [string[]]$VolumeNames,
     [string]$RecoveryArchiveRoot = (Join-Path $env:LOCALAPPDATA 'HAI\volume-recovery'),
     [switch]$Apply,
-    [string]$ConfirmationPhrase = ''
+    [string]$ConfirmationPhrase = '',
+    [switch]$AllowPersistentDataRemoval
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +16,11 @@ $verifierScript = Join-Path $PSScriptRoot 'verify-hai-detached-volume-archive.ps
 $archiveRootFull = [IO.Path]::GetFullPath($RecoveryArchiveRoot).TrimEnd('\')
 $requestedVolumes = @($VolumeNames | Sort-Object -Unique)
 if ($requestedVolumes.Count -ne $VolumeNames.Count) { throw 'Duplicate volume names are not allowed.' }
+$persistentVolumeNames = @('018-hai-postgres-automation-data', '018-hai-postgres-idp-data', '018-hai-phase2-control-state')
+$requestedPersistentVolumes = @($requestedVolumes | Where-Object { $persistentVolumeNames -ccontains $_ })
+if ($requestedPersistentVolumes.Count -gt 0 -and -not $AllowPersistentDataRemoval) {
+    throw 'Persistent HAI data volumes require -AllowPersistentDataRemoval in addition to the exact persistent-volume confirmation phrase.'
+}
 
 function Invoke-HaiVolumeCleanupDocker([string[]]$Arguments) {
     $global:LASTEXITCODE = 0
@@ -111,6 +117,11 @@ function Assert-HaiVolumeContext([string]$ExpectedContext) {
 
 Assert-HaiLocalDockerEngine
 $contextName = (Invoke-HaiVolumeCleanupDocker @('context', 'show') | Out-String).Trim()
+$requiredPhrase = if ($requestedPersistentVolumes.Count -gt 0) {
+    "REMOVE HAI PERSISTENT VOLUMES $($requestedVolumes -join ',')"
+} else {
+    "REMOVE HAI DETACHED VOLUMES $($requestedVolumes.Count)"
+}
 $rootItem = Get-Item -LiteralPath $archiveRootFull -Force
 if (-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
     throw 'Recovery archive root is not a regular directory.'
@@ -125,7 +136,7 @@ if (-not $Apply) {
             docker_context = $contextName
             eligible_volumes = @($verified)
             eligible_count = @($verified).Count
-            confirmation_phrase = "REMOVE HAI DETACHED VOLUMES $(@($verified).Count)"
+            confirmation_phrase = $requiredPhrase
             cleanup_requires_apply = $true
             deletion_performed = $false
         } | ConvertTo-Json -Depth 5
@@ -141,7 +152,6 @@ if (-not $Apply) {
     return
 }
 
-$requiredPhrase = "REMOVE HAI DETACHED VOLUMES $($requestedVolumes.Count)"
 if ($ConfirmationPhrase -cne $requiredPhrase) { throw "Confirmation phrase mismatch. Required phrase: $requiredPhrase" }
 $applyReadiness = Get-HaiVolumeCleanupReadiness
 $verifiedBeforeRemoval = foreach ($name in $requestedVolumes) { Get-HaiVerifiedSummary $name $applyReadiness }

@@ -61,6 +61,16 @@ The four directories contained 40,808,612 bytes in total. This is deleted file
 size, not a measurement of physical disk space reclaimed. The differing,
 unverified recovery bundle remains retained.
 
+The volume retirement scripts now also support the two Postgres data volumes
+and phase-two control-state volume, but only through the same exact-name,
+detached-source archive and restore-drill flow. Removing one of those
+persistent volumes additionally requires `-AllowPersistentDataRemoval` and an
+exact confirmation phrase containing the selected volume name(s). The scripts
+do not stop services or alter attached volumes. The current live readiness
+check still finds these three volumes attached, so none is eligible now.
+Recovery archives remain local after source-volume removal; this workflow does
+not by itself reclaim the archive's disk space or authorize deleting backups.
+
 The separate 20.7 GB completed-session archive remains untouched. Its manifest
 and source hashes verify 18 files: eight completed unique transcripts totaling
 7,939,888,699 bytes are cleanup candidates, while ten duplicate-ID, aborted, or

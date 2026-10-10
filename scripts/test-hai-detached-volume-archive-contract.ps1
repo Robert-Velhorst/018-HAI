@@ -69,6 +69,12 @@ try {
 }
 
 $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'archive-hai-detached-volume.ps1'))
+foreach ($scriptName in @('archive-hai-detached-volume.ps1', 'verify-hai-detached-volume-archive.ps1', 'remove-hai-detached-volume.ps1')) {
+    $scriptText = [IO.File]::ReadAllText((Join-Path $PSScriptRoot $scriptName))
+    foreach ($volumeName in @('018-hai-postgres-automation-data', '018-hai-postgres-idp-data', '018-hai-phase2-control-state')) {
+        if (-not $scriptText.Contains($volumeName)) { throw "$scriptName does not support the exact persistent HAI volume '$volumeName'." }
+    }
+}
 if (-not $source.Contains('sourceVolumeRemoved = $false') -or
     -not $source.Contains('type=volume,source=$VolumeName,target=/source,readonly') -or
     -not $source.Contains("'--cap-add', 'DAC_READ_SEARCH'") -or
