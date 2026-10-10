@@ -303,3 +303,51 @@ history-wide secret findings, migration integration, two-account smoke,
 browser acceptance, and Promptfoo dependency audit still require review of
 that run and any follow-up. Local archive integrity does not override these
 release gates; no transcript deletion is safe yet.
+
+### Full patch-event crosswalk follow-up
+
+A streaming pass over the large Carson transcript
+`rollout-2026-07-30T11-17-55-019fb250-eabe-7c82-a488-19e4541375f0.jsonl`
+found 3,574 `patch_apply_end` events (3,570 successful and four failed) and
+695 distinct repository paths. This is an event/path inventory, not 3,574
+independent requirements or proof that each patch was accepted. Comparing the
+latest source-path dispositions with the current PR tree found no missing
+tracked deletion. The previously untracked successful additions were:
+
+- `backend/internal/browserverify/handler_test.go`: the workflow-link test was
+  integrated with the browser-verification API change. CI caught an
+  initialization-order compile defect in the first publication; commit
+  `ff892b46` moves route setup until after the workflow service is constructed.
+  Exact-head CI is pending; hosted Go tests have not yet verified this repair.
+- `services/searxng/settings.yml`: integrated with the opt-in
+  `research-discovery` Compose service, private backend network, separate
+  SearXNG egress network, bounded resource settings, and activation docs in
+  `ff892b46`. Local Compose config and 107 source-contract tests passed. This
+  does not establish that the container successfully starts or returns live
+  search results. The image tag was checked against the upstream GHCR package
+  listing on 2026-10-10.
+- `.env.local`: local credentials/configuration; deliberately not copied into
+  source control.
+- `mini-swe-workspaces/.gitkeep`, `mini-swe-workspaces/.gitignore`, and
+  `security-snapshots/.gitignore`: ignored/generated workspace roots; these
+  are not product behavior and remain local-only.
+
+The archived transcript also changed `.git/info/exclude` and generated
+`security-snapshots/README.md`; neither is part of the product patch. These
+local artifacts remain untouched. Other paths in the 695-path event set were
+compared by latest archived source disposition against the current tracked
+tree; repository presence does not prove semantic equivalence or live
+acceptance. The other 17 transcripts have not received the same exhaustive
+patch-event-to-source crosswalk, and the six retained histories still have not
+received a line-by-line semantic review. Therefore, the 18-file archive is not
+fully integrated or eligible for removal.
+
+At the time of this entry, PR #36 is open at
+`ff892b46ea663c1bac7f05863a6c83537800bb09`. The preceding exact-head run
+`38060350008` failed because the browser workflow linker was referenced before
+`workflowService` existed; backend build, two-account, browser, and authenticated
+smoke jobs consequently failed. The same run also reported 27 history-wide
+secret-scan candidates and ten high-severity Promptfoo production dependency
+advisories. These independent failures remain for review; do not suppress the
+scans or claim acceptance. The new exact-head CI run is queued. No transcript,
+diagnostic artifact, local credential, worktree, or database was removed.
