@@ -550,6 +550,35 @@ retention minimum), and two folders remain unverified. No local file, Docker
 container, volume, image, or service was deleted or changed during this
 recheck.
 
+## Local PR diagnostic artifact cleanup (2026-10-10)
+
+The isolated PR worktree contains 15 inventoried local diagnostics/tool files
+totalling 31,505,884 bytes: 12 downloaded CI logs, one frontend-job ZIP, and
+the Gitleaks 8.30.1 Windows executable and ZIP. Exact relative paths, byte
+sizes, and SHA-256 digests are recorded in
+`scripts/local-hai-pr-artifact-cleanup-manifest.json`. The manifest is an
+allowlist, not deletion authorization.
+
+`scripts/remove-hai-pr-diagnostic-artifacts.ps1` is restricted to the exact
+`D:\codex-temp\hai-pr-update-018-20261009` worktree and those 15 regular files.
+It checks the expected repository and branch, requires PR #36 to be merged into
+`main` at the exact local HEAD, requires every PR check to succeed, verifies
+each manifest size and digest, refuses tracked files and running Gitleaks
+processes, and then requires `-Apply`, a count-bound confirmation phrase, and
+PowerShell `ShouldProcess`. It does not recursively remove directories or
+touch Docker resources. The working-tree patch, isolated acceptance document,
+outcome-evaluation test evidence, transcript archive, all runtime data, and
+recovery bundles are explicitly retained.
+
+The safety contract is wired into both existing Windows cleanup-contract CI
+paths. Local verification passed the complete cleanup-contract set and the
+PowerShell parser. The live dry run verified all 15 artifact hashes and
+reported 31,505,884 candidate bytes, but correctly blocked because PR #36 is
+still open; `deletion_performed=false`. At this audit, PR #36 head remains
+`48c5f6e3665abf9495cc6ecb77d13baa96a4fcd2`, with 21 successful checks, 7
+failed checks, and 8 pending checks. No local diagnostic, archive, Temp
+fixture, Docker volume, image, worktree, or service was deleted.
+
 The transcript archive now has a separate removal command,
 `scripts/remove-hai-completed-session-transcripts.ps1`. It is fail-closed and
 targets only the eight manifest-listed completed transcripts whose reports and
