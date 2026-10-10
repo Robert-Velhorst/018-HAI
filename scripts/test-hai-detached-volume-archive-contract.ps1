@@ -99,3 +99,4 @@ if ($verifier -match 'docker\s+volume\s+rm|Remove-Item|docker\s+volume\s+prune')
 }
 
 Write-Output 'HAI detached-volume archive and verifier contracts: PASS'
+$global:LASTEXITCODE = 0
