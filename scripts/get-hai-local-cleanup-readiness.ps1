@@ -35,6 +35,10 @@ function Get-ReadOnlyReport([string]$Name, [string]$ScriptName, [hashtable]$Argu
 }
 
 $temp = Get-ReadOnlyReport 'synthetic_temp_fixtures' 'test-hai-temp-fixture-cleanup-readiness.ps1' @{ MinimumAgeHours = $MinimumFixtureAgeHours }
+$transcriptIntegrity = Get-ReadOnlyReport 'transcript_source_integrity' 'test-hai-transcript-cleanup-readiness.ps1' @{
+    TranscriptRoot = $TranscriptRoot
+    RequireSourceArchive = $true
+}
 $transcripts = Get-ReadOnlyReport 'completed_session_transcripts' 'remove-hai-completed-session-transcripts.ps1' @{ TranscriptRoot = $TranscriptRoot }
 $volumes = Get-ReadOnlyReport 'docker_volumes_and_recovery_archives' 'test-hai-volume-cleanup-readiness.ps1' @{ RecoveryArchiveRoot = $RecoveryArchiveRoot }
 $diagnostics = Get-ReadOnlyReport 'pr_diagnostics_and_tool_downloads' 'remove-hai-pr-diagnostic-artifacts.ps1'
@@ -66,6 +70,7 @@ if ($temp.status -eq 'reported') {
 }
 
 if ($transcripts.status -eq 'reported') {
+    $integrity = if ($transcriptIntegrity.status -eq 'reported') { $transcriptIntegrity.report } else { $null }
     $targets.Add([pscustomobject][ordered]@{
         id = 'completed_session_transcripts'
         source_path = $TranscriptRoot
@@ -73,10 +78,32 @@ if ($transcripts.status -eq 'reported') {
         candidate_count = [int]$transcripts.report.candidate_files
         candidate_bytes = [long]$transcripts.report.candidate_bytes
         blocker = [string]$transcripts.report.blocker
-        source_hash_audit_started = [bool]$transcripts.report.source_hash_audit_started
+        source_archive_integrity = [pscustomobject][ordered]@{
+            status = if ($null -ne $integrity -and $integrity.source_archive_verified -eq $true) { 'verified' } else { 'not_verified' }
+            result = if ($null -ne $integrity) { [string]$integrity.result } else { 'blocked' }
+            source_archive_verified = ($null -ne $integrity -and $integrity.source_archive_verified -eq $true)
+            source_archive_files = if ($null -ne $integrity) { $integrity.source_archive_files } else { $null }
+            source_archive_logical_bytes = if ($null -ne $integrity) { $integrity.source_archive_logical_bytes } else { $null }
+            blocker = if ($null -ne $integrity) { $null } else { [string]$transcriptIntegrity.blocker }
+        }
+        source_hash_audit_started = ($null -ne $integrity)
     })
 } else {
-    $targets.Add([pscustomobject]@{ id = 'completed_session_transcripts'; status = 'blocked'; blocker = $transcripts.blocker })
+    $integrity = if ($transcriptIntegrity.status -eq 'reported') { $transcriptIntegrity.report } else { $null }
+    $targets.Add([pscustomobject][ordered]@{
+        id = 'completed_session_transcripts'
+        status = 'blocked'
+        blocker = $transcripts.blocker
+        source_archive_integrity = [pscustomobject][ordered]@{
+            status = if ($null -ne $integrity -and $integrity.source_archive_verified -eq $true) { 'verified' } else { 'not_verified' }
+            result = if ($null -ne $integrity) { [string]$integrity.result } else { 'blocked' }
+            source_archive_verified = ($null -ne $integrity -and $integrity.source_archive_verified -eq $true)
+            source_archive_files = if ($null -ne $integrity) { $integrity.source_archive_files } else { $null }
+            source_archive_logical_bytes = if ($null -ne $integrity) { $integrity.source_archive_logical_bytes } else { $null }
+            blocker = if ($null -ne $integrity) { $null } else { [string]$transcriptIntegrity.blocker }
+        }
+        source_hash_audit_started = ($null -ne $integrity)
+    })
 }
 
 if ($volumes.status -eq 'reported') {

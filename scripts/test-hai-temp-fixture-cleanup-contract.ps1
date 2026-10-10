@@ -15,6 +15,9 @@ foreach ($token in @(
     'Assert-HaiCleanupManifest',
     "kind -cne 'hai-acceptance-synthetic-fixture'",
     'syntheticEnvSha256',
+    'actualFiles.Count -in @(1, 2)',
+    'AllowEnvironmentMissing',
+    'empty interrupted-preparation marker',
     '$isPreparingFixture',
     "disposition = 'candidate_manual_cleanup'",
     'cleanup_authorized = $false',
@@ -27,6 +30,7 @@ foreach ($token in @(
     "state = 'preparing'",
     "kind = 'hai-acceptance-synthetic-fixture'",
     'syntheticEnvSha256',
+    'syntheticEnvBytes = 0',
     'Write-JsonFile $cleanupManifest $cleanupManifestPath',
     'Remove-Item -LiteralPath $cleanupManifestPath -Force -ErrorAction Stop'
 )) {
@@ -35,6 +39,10 @@ foreach ($token in @(
 if ($runner.IndexOf('Write-JsonFile $cleanupManifest $cleanupManifestPath', [StringComparison]::Ordinal) -gt
     $runner.IndexOf("'config', '--format', 'json'", [StringComparison]::Ordinal)) {
     throw 'The cleanup manifest must be written before Docker configuration can fail.'
+}
+if ($runner.IndexOf('Write-JsonFile $cleanupManifest $cleanupManifestPath', [StringComparison]::Ordinal) -gt
+    $runner.IndexOf('[IO.File]::WriteAllLines($envFile', [StringComparison]::Ordinal)) {
+    throw 'The cleanup provenance marker must be written before the synthetic environment payload.'
 }
 foreach ($token in @(
     'Successful preparation retained its interrupted-cleanup marker.',

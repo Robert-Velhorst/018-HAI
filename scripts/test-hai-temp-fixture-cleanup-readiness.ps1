@@ -81,23 +81,33 @@ function Assert-HaiSyntheticEnvironment([string]$Path, [string]$Project) {
     }
 }
 
-function Assert-HaiCleanupManifest([string]$Path, [string]$Owner, [string]$Project, [string]$EnvironmentPath) {
+function Assert-HaiCleanupManifest([string]$Path, [string]$Owner, [string]$Project, [string]$EnvironmentPath, [switch]$AllowEnvironmentMissing) {
     $item = Get-Item -LiteralPath $Path -Force
     if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $item.Length -gt 16384) {
         throw 'cleanup manifest is not a bounded regular file'
     }
     $marker = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
-    $environment = Get-Item -LiteralPath $EnvironmentPath -Force
-    Assert-HaiSyntheticEnvironment $EnvironmentPath $Project
-    $environmentHash = (Get-FileHash -LiteralPath $EnvironmentPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    foreach ($property in @('version', 'kind', 'state', 'owner', 'project', 'createdUtc', 'syntheticEnvBytes', 'syntheticEnvSha256')) {
+        if ($null -eq $marker.PSObject.Properties[$property]) { throw 'cleanup manifest is missing a required provenance field' }
+    }
+    $hasEnvironment = Test-Path -LiteralPath $EnvironmentPath -PathType Leaf
+    $environment = if ($hasEnvironment) { Get-Item -LiteralPath $EnvironmentPath -Force } else { $null }
+    $environmentHash = $null
+    if ($hasEnvironment) {
+        Assert-HaiSyntheticEnvironment $EnvironmentPath $Project
+        $environmentHash = (Get-FileHash -LiteralPath $EnvironmentPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    } elseif (-not $AllowEnvironmentMissing -or [long]$marker.syntheticEnvBytes -ne 0 -or
+        -not [string]::IsNullOrEmpty([string]$marker.syntheticEnvSha256)) {
+        throw 'synthetic environment is missing without an empty interrupted-preparation marker'
+    }
     if ([int]$marker.version -ne 1 -or
         [string]$marker.kind -cne 'hai-acceptance-synthetic-fixture' -or
         [string]$marker.state -cne 'preparing' -or
         [string]$marker.owner -cne $Owner -or
         [string]$marker.project -cne $Project -or
-        [long]$marker.syntheticEnvBytes -ne [long]$environment.Length -or
-        [string]$marker.syntheticEnvSha256 -cne $environmentHash -or
-        [string]$marker.syntheticEnvSha256 -notmatch '^[0-9a-f]{64}$') {
+        ($hasEnvironment -and [long]$marker.syntheticEnvBytes -ne [long]$environment.Length) -or
+        ($hasEnvironment -and [string]$marker.syntheticEnvSha256 -cne $environmentHash) -or
+        ($hasEnvironment -and [string]$marker.syntheticEnvSha256 -notmatch '^[0-9a-f]{64}$')) {
         throw 'cleanup manifest identity or synthetic environment hash does not match'
     }
     return [DateTimeOffset]::Parse([string]$marker.createdUtc).ToUniversalTime()
@@ -138,7 +148,7 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
         $cleanupManifestPath = Join-Path $directory.FullName 'cleanup-manifest.json'
         $environmentPath = Join-Path $directory.FullName 'synthetic.env'
         $hasCleanupManifest = $actualFiles -ccontains 'cleanup-manifest.json'
-        $isPreparingFixture = $actualFiles.Count -eq 2 -and
+        $isPreparingFixture = $actualFiles.Count -in @(1, 2) -and
             @($actualFiles | Where-Object { $_ -cnotin @('cleanup-manifest.json', 'synthetic.env') }).Count -eq 0 -and
             $actualDirectories.Count -eq 0
         $isCompleteFixture = @($actualFiles | Where-Object { $_ -cne 'cleanup-manifest.json' }).Count -eq $expectedFiles.Count -and
@@ -154,10 +164,10 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
         $manifestPath = Join-Path $directory.FullName 'manifest.json'
         $composePath = Join-Path $directory.FullName 'compose.json'
         if ($isPreparingFixture) {
-            if (-not $hasCleanupManifest -or -not (Test-Path -LiteralPath $environmentPath -PathType Leaf)) {
-                throw 'interrupted fixture is missing its cleanup manifest or environment file'
+            if (-not $hasCleanupManifest) {
+                throw 'interrupted fixture is missing its cleanup manifest'
             }
-            $createdUtc = Assert-HaiCleanupManifest $cleanupManifestPath $owner $expectedProject $environmentPath
+            $createdUtc = Assert-HaiCleanupManifest $cleanupManifestPath $owner $expectedProject $environmentPath -AllowEnvironmentMissing:(-not (Test-Path -LiteralPath $environmentPath -PathType Leaf))
             $record.project = $expectedProject
         } else {
             if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -or

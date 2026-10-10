@@ -89,6 +89,17 @@ Docker-volume/recovery, PR-diagnostic, and image-removal gates in one JSON
 report. The command invokes only read-only readiness/dry-run paths; it never
 passes `-Apply`, deletes files, removes Docker resources, or authorizes cleanup.
 Missing scripts, failed checks, and malformed reports are reported as blocked.
+The transcript source archive is independently enumerated and candidate hashes
+are verified even when the remover's canonical-main/merged-PR gate is still
+closed. Its integrity result is separate from deletion readiness; a verified
+source archive does not authorize removing its contents.
+
+New isolated-acceptance runs write a cleanup provenance marker before writing
+the synthetic environment. A crash after that marker but before the environment
+is complete can be identified as an interrupted synthetic fixture; the marker
+must have the exact owner/project identity and empty environment hash metadata.
+The two pre-existing markerless partial fixtures remain unverified and are not
+made cleanup candidates by this change.
 
 Use each existing narrowly scoped remover separately only after reviewing that
 target's current report and satisfying its independent exact-path, identity,

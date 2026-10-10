@@ -5,6 +5,7 @@ $scriptPath = Join-Path $PSScriptRoot 'get-hai-local-cleanup-readiness.ps1'
 $scriptText = Get-Content -LiteralPath $scriptPath -Raw
 $required = @(
     'test-hai-temp-fixture-cleanup-readiness.ps1',
+    'test-hai-transcript-cleanup-readiness.ps1',
     'remove-hai-completed-session-transcripts.ps1',
     'test-hai-volume-cleanup-readiness.ps1',
     'remove-hai-pr-diagnostic-artifacts.ps1',
@@ -13,6 +14,8 @@ $required = @(
     'mode = ''read_only_inventory''',
     'cleanup_authorized = $false',
     'cleanup_targets = @($targets)',
+    'source_archive_integrity',
+    'RequireSourceArchive = $true',
     'preserve_active_pr_worktree = $true'
 )
 foreach ($token in $required) {

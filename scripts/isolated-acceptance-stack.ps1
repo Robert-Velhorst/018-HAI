@@ -179,6 +179,18 @@ if ($Action -eq 'Prepare') {
     New-Item -ItemType Directory -Path $EvidenceDirectory | Out-Null
     Write-Output "Preparing evidence: $EvidenceDirectory"
     $project = 'hai-acceptance-' + $owner.Substring(0, 12)
+    $cleanupManifestPath = Join-Path $EvidenceDirectory 'cleanup-manifest.json'
+    $cleanupManifest = [pscustomobject]@{
+        version = 1
+        kind = 'hai-acceptance-synthetic-fixture'
+        state = 'preparing'
+        owner = $owner
+        project = $project
+        createdUtc = [DateTime]::UtcNow.ToString('o')
+        syntheticEnvBytes = 0
+        syntheticEnvSha256 = ''
+    }
+    Write-JsonFile $cleanupManifest $cleanupManifestPath
     $values = [ordered]@{}
     foreach ($line in Get-Content -LiteralPath (Join-Path $repo '.env.example')) {
         if ($line -match '^([A-Z][A-Z0-9_]*)=(.*)$') {
@@ -214,17 +226,8 @@ if ($Action -eq 'Prepare') {
     if ($ExecutionMode -eq 'manual-local') { $values['HAI_PHASE2_MODE'] = 'autonomous_safe' }
     $envFile = Join-Path $EvidenceDirectory 'synthetic.env'
     [IO.File]::WriteAllLines($envFile, @($values.Keys | ForEach-Object { "$_=$($values[$_])" }), [Text.UTF8Encoding]::new($false))
-    $cleanupManifestPath = Join-Path $EvidenceDirectory 'cleanup-manifest.json'
-    $cleanupManifest = [pscustomobject]@{
-        version = 1
-        kind = 'hai-acceptance-synthetic-fixture'
-        state = 'preparing'
-        owner = $owner
-        project = $project
-        createdUtc = [DateTime]::UtcNow.ToString('o')
-        syntheticEnvBytes = (Get-Item -LiteralPath $envFile).Length
-        syntheticEnvSha256 = (Get-FileHash -LiteralPath $envFile -Algorithm SHA256).Hash.ToLowerInvariant()
-    }
+    $cleanupManifest.syntheticEnvBytes = (Get-Item -LiteralPath $envFile).Length
+    $cleanupManifest.syntheticEnvSha256 = (Get-FileHash -LiteralPath $envFile -Algorithm SHA256).Hash.ToLowerInvariant()
     Write-JsonFile $cleanupManifest $cleanupManifestPath
     # Parent process variables must not override the deliberately synthetic file.
     $saved = @{}
