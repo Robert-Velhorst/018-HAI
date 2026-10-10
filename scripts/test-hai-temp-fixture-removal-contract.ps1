@@ -38,6 +38,7 @@ foreach ($token in @(
     'finalReadiness.deletion_performed -ne $false',
     'finalReadiness.cleanup_authorized -ne $false',
     'source_hashes',
+    'provenance = [string]$finalEntry[0].provenance',
     'Get-CimInstance Win32_Process -ErrorAction Stop',
     'verifiedEntries = @(Get-ChildItem -LiteralPath $verifiedPath -Force -Recurse'
 )) {

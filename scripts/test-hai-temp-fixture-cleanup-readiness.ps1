@@ -96,6 +96,86 @@ function Assert-HaiSyntheticEnvironment([string]$Path, [string]$Project) {
         throw 'synthetic bootstrap password marker is invalid'
     }
     $exampleValues = Get-HaiExampleEnvironmentValues
+    $generatorOnlyKeys = @(
+        'DB_PASSWORD', 'BACKEND_DB_PASSWORD', 'BACKEND_API_SHARED_KEY', 'HAI_MEMORY_ENCRYPTION_KEY', 'JWT_SECRET',
+        'HAI_APPROVAL_PROOF_SIGNING_KEY', 'COMPOSE_PROJECT_NAME', 'GATEWAY_HOST_BIND', 'GATEWAY_HOST_PORT', 'RUN_MODE',
+        'FIRST_RUN_ADMIN_EMAIL', 'FIRST_RUN_ADMIN_PASSWORD', 'BACKEND_DB_USER', 'DB_MIGRATIONS_ENABLED', 'IDP_COOKIE_SECURE',
+        'HAI_PHASE2_MODE', 'HAI_PHASE2_FEED_FILES', 'LOCAL_LOGIN_BYPASS_ENABLED', 'LLM_PROVIDERS_JSON',
+        'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET', 'SMTP_HOST', 'SMTP_USERNAME', 'SMTP_PASSWORD',
+        'GITHUB_SOURCE_TOKEN', 'TRELLO_API_KEY', 'TRELLO_API_SECRET', 'TRELLO_READ_TOKEN',
+        'AUTOMATION_API_ALLOWED_HOSTS', 'AUTOMATION_HEALTH_ALLOWED_HOSTS', 'SOURCE_MANUAL_WORKER_ENABLED',
+        'SOURCE_WORKER_POLL_SECONDS'
+    )
+    $expectedKeys = @($exampleValues.Keys) + $generatorOnlyKeys
+    $legacyLinkLocalKey = $false
+    if ($values.ContainsKey('CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL') -and
+        $exampleValues.ContainsKey('CONNECTED_SOURCE_HTTP_LOOPBACK_ADDRS') -and
+        -not $values.ContainsKey('CONNECTED_SOURCE_HTTP_LOOPBACK_ADDRS')) {
+        if ([string]$values.CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL -cne 'false') {
+            throw 'legacy synthetic environment enables link-local source access'
+        }
+        $expectedKeys = @($expectedKeys | Where-Object { $_ -cne 'CONNECTED_SOURCE_HTTP_LOOPBACK_ADDRS' }) + 'CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL'
+        $legacyLinkLocalKey = $true
+    }
+    $expectedKeySet = @($expectedKeys | Sort-Object -Unique)
+    $actualKeySet = @($values.Keys | Sort-Object -Unique)
+    if (@(Compare-Object -ReferenceObject $expectedKeySet -DifferenceObject $actualKeySet -CaseSensitive).Count -gt 0) {
+        throw 'synthetic environment keys differ from the generated fixture template'
+    }
+
+    $expectedOverrides = @{
+        COMPOSE_PROJECT_NAME = $Project
+        GATEWAY_HOST_BIND = '127.0.0.1'
+        RUN_MODE = 'production'
+        FIRST_RUN_ADMIN_EMAIL = 'e2e-owner@example.test'
+        BACKEND_DB_USER = 'hai_runtime'
+        DB_MIGRATIONS_ENABLED = 'false'
+        IDP_COOKIE_SECURE = 'false'
+        LOCAL_LOGIN_BYPASS_ENABLED = 'false'
+        HAI_PHASE2_FEED_FILES = ''
+        LLM_PROVIDERS_JSON = '[]'
+        GOOGLE_OAUTH_CLIENT_ID = ''
+        GOOGLE_OAUTH_CLIENT_SECRET = ''
+        SMTP_HOST = ''
+        SMTP_USERNAME = ''
+        SMTP_PASSWORD = ''
+        GITHUB_SOURCE_TOKEN = ''
+        TRELLO_API_KEY = ''
+        TRELLO_API_SECRET = ''
+        TRELLO_READ_TOKEN = ''
+        AUTOMATION_API_ALLOWED_HOSTS = 'backend'
+        AUTOMATION_HEALTH_ALLOWED_HOSTS = 'backend'
+        SOURCE_WORKER_POLL_SECONDS = '15'
+    }
+    foreach ($entry in $expectedOverrides.GetEnumerator()) {
+        if (-not $values.ContainsKey($entry.Key) -or [string]$values[$entry.Key] -cne [string]$entry.Value) {
+            throw 'synthetic environment does not match the acceptance generator overrides'
+        }
+    }
+    $generatedSecretKeys = @('DB_PASSWORD', 'BACKEND_DB_PASSWORD', 'BACKEND_API_SHARED_KEY', 'HAI_MEMORY_ENCRYPTION_KEY', 'JWT_SECRET', 'HAI_APPROVAL_PROOF_SIGNING_KEY')
+    foreach ($key in $generatedSecretKeys) {
+        if ([string]$values[$key] -notmatch '^[0-9a-f]{64}$') { throw 'synthetic environment generated secret marker is invalid' }
+    }
+    $port = 0
+    if (-not [int]::TryParse([string]$values.GATEWAY_HOST_PORT, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+        throw 'synthetic environment gateway port is invalid'
+    }
+    if ($legacyLinkLocalKey -and $values.ContainsKey('CONNECTED_SOURCE_HTTP_LOOPBACK_ADDRS')) {
+        throw 'legacy source-access settings are ambiguous'
+    }
+    foreach ($entry in $values.GetEnumerator()) {
+        if ($exampleValues.ContainsKey([string]$entry.Key) -and
+            -not $expectedOverrides.ContainsKey([string]$entry.Key) -and
+            $generatedSecretKeys -cnotcontains [string]$entry.Key -and
+            [string]$entry.Key -cne 'HAI_PHASE2_MODE' -and
+            [string]$entry.Key -cne 'SOURCE_MANUAL_WORKER_ENABLED' -and
+            [string]$entry.Key -cne 'FIRST_RUN_ADMIN_PASSWORD' -and
+            [string]$entry.Key -cne 'GATEWAY_HOST_PORT' -and
+            [string]$entry.Key -notmatch '_ENABLED$' -and
+            [string]$entry.Value -cne [string]$exampleValues[[string]$entry.Key]) {
+            throw 'synthetic environment contains a non-generated value outside the tracked example defaults'
+        }
+    }
     $credentialPattern = '(?:^|_)(?:PASSWORD|PASS|TOKEN|SECRET|API_KEY|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY|ENCRYPTION_KEY|ACCESS_KEY|SHARED_KEY|CREDENTIALS?)$'
     foreach ($entry in $values.GetEnumerator()) {
         if ($entry.Key -match $credentialPattern -and -not [string]::IsNullOrEmpty([string]$entry.Value) -and
@@ -109,7 +189,8 @@ function Assert-HaiSyntheticEnvironment([string]$Path, [string]$Project) {
         }
     }
     if ([string]$values.SOURCE_MANUAL_WORKER_ENABLED -notin @('true', 'false') -or
-        [string]$values.HAI_PHASE2_MODE -notin @('paused', 'autonomous_safe')) {
+        [string]$values.HAI_PHASE2_MODE -notin @('paused', 'autonomous_safe') -or
+        ([string]$values.HAI_PHASE2_MODE -ceq 'autonomous_safe') -ne ([string]$values.SOURCE_MANUAL_WORKER_ENABLED -ceq 'true')) {
         throw 'synthetic environment execution mode is invalid'
     }
 }
@@ -158,6 +239,7 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
         bytes = 0L
         age_hours = $null
         source_hashes = @()
+        provenance = 'unverified'
         docker_resources_checked = $dockerAvailable
         related_containers = $null
         related_networks = $null
@@ -198,9 +280,16 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
         $composePath = Join-Path $directory.FullName 'compose.json'
         if ($isPreparingFixture) {
             if (-not $hasCleanupManifest) {
-                throw 'interrupted fixture is missing its cleanup manifest'
+                if ($actualFiles.Count -ne 1 -or $actualFiles[0] -cne 'synthetic.env') {
+                    throw 'interrupted fixture is missing its cleanup manifest and exact synthetic environment file'
+                }
+                Assert-HaiSyntheticEnvironment $environmentPath $expectedProject
+                $createdUtc = [DateTimeOffset]$directory.CreationTimeUtc
+                $record.provenance = 'validated_legacy_synthetic_environment_without_cleanup_manifest'
+            } else {
+                $createdUtc = Assert-HaiCleanupManifest $cleanupManifestPath $owner $expectedProject $environmentPath -AllowEnvironmentMissing:(-not (Test-Path -LiteralPath $environmentPath -PathType Leaf))
+                $record.provenance = 'cleanup_manifest_and_synthetic_environment_validated'
             }
-            $createdUtc = Assert-HaiCleanupManifest $cleanupManifestPath $owner $expectedProject $environmentPath -AllowEnvironmentMissing:(-not (Test-Path -LiteralPath $environmentPath -PathType Leaf))
             $record.project = $expectedProject
         } else {
             if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf) -or
@@ -226,8 +315,10 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
                 $markerCreatedUtc = Assert-HaiCleanupManifest $cleanupManifestPath $owner $expectedProject $environmentPath
                 if ($markerCreatedUtc -gt $createdUtc) { throw 'cleanup manifest timestamp is inconsistent with the completed fixture' }
                 if ($markerCreatedUtc -lt $createdUtc) { $createdUtc = $markerCreatedUtc }
+                $record.provenance = 'cleanup_manifest_and_acceptance_manifest_validated'
             } else {
                 Assert-HaiSyntheticEnvironment $environmentPath $expectedProject
+                $record.provenance = 'acceptance_manifest_and_synthetic_environment_validated'
             }
         }
         if ($directory.CreationTimeUtc -gt $createdUtc.UtcDateTime) {

@@ -130,7 +130,13 @@ foreach ($path in $pathsToRemove) {
 
         Remove-Item -LiteralPath $verifiedPath -Recurse -Force -ErrorAction Stop
         if (Test-Path -LiteralPath $verifiedPath) { throw 'Fixture removal could not be verified.' }
-        $removed.Add([pscustomobject]@{ path = $verifiedPath; bytes = [long]$selectedEntry[0].bytes })
+        $removed.Add([pscustomobject]@{
+            path = $verifiedPath
+            owner = $owner
+            bytes = [long]$selectedEntry[0].bytes
+            provenance = [string]$finalEntry[0].provenance
+            source_hashes = @($finalEntry[0].source_hashes)
+        })
     }
 }
 

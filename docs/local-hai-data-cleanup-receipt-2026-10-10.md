@@ -321,3 +321,31 @@ HAI volumes, and 15 PR diagnostic/tool files totaling 31,505,884 bytes still
 gated on PR merge. No source archive, transcript, Temp fixture, Docker
 resource, image, recovery bundle, diagnostic, checkout, or toolchain was
 changed or removed.
+
+## Provenance-gated Temp recheck (2026-10-10, approximately 09:24 Europe/Amsterdam)
+
+The unified read-only inventory was rerun after tightening synthetic fixture
+provenance checks. It found nine Temp fixture directories (659,988 bytes) and
+zero eligible candidates. Six validated fixtures are still younger than the
+24-hour minimum. Two manifest-less, one-file fixtures now pass the exact
+synthetic-environment validation but remain under that same age hold. Three
+other fixtures are retained as unverified because at least one environment
+value differs from the tracked acceptance-generator defaults; their values
+were not copied into this receipt. No fixture was removed.
+
+The update adds explicit provenance and source hashes to any future removal
+record. Eleven cleanup safety contracts passed, including Temp readiness and
+removal, transcript gates, volume/archive gates, image removal, diagnostic
+allowlisting, duplicate recovery-bundle protection, and unified readiness.
+All four changed PowerShell files passed parser checks and `git diff --check`.
+These are local code and contract checks, not proof of external CI or Docker
+behavior.
+
+The same inventory still reports eight completed transcript candidates
+(7,939,888,699 bytes) blocked until PR #36 is merged; three attached HAI
+volumes; a 10,189,079-byte recovery bundle with unverified ACL provenance; two
+image tags held for retention review; and 15 diagnostic/tool artifacts
+(31,505,884 bytes) gated on the exact PR head being merged. The PR worktree,
+secondary checkout, and shared toolchain remain protected. `cleanup_authorized`
+and `deletion_performed` remain `false`; this pass changed no local cleanup
+targets.
