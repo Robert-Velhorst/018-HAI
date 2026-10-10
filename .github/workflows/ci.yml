@@ -144,6 +144,7 @@ jobs:
           ./scripts/test-hai-volume-cleanup-readiness-contract.ps1
           ./scripts/test-hai-detached-volume-removal-contract.ps1
           ./scripts/test-hai-pr-diagnostic-removal-contract.ps1
+          ./scripts/test-hai-image-removal-contract.ps1
 
   windows-installer:
     name: Windows installer preview and signing guards
@@ -217,6 +218,7 @@ jobs:
           ./scripts/test-hai-volume-cleanup-readiness-contract.ps1
           ./scripts/test-hai-detached-volume-removal-contract.ps1
           ./scripts/test-hai-pr-diagnostic-removal-contract.ps1
+          ./scripts/test-hai-image-removal-contract.ps1
       - name: Required environment startup guard
         shell: pwsh
         run: ./scripts/test-windows-start-env-validation.ps1

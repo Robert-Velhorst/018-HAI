@@ -570,6 +570,25 @@ touch Docker resources. The working-tree patch, isolated acceptance document,
 outcome-evaluation test evidence, transcript archive, all runtime data, and
 recovery bundles are explicitly retained.
 
+### Unreferenced HAI image path
+
+`scripts/remove-hai-unreferenced-image.ps1` provides a separate, opt-in path for
+only `018-hai-backend:latest` and `018-hai-nginxconfigmanager:latest`. Before
+removal it requires PR #36 to be merged into `main` at the exact local HEAD and
+all PR checks to succeed; it validates the local Compose build definition and
+Dockerfile, HAI Compose ownership labels, sole image tag, and absence of any
+container reference. It rechecks those conditions after confirmation and uses
+`docker image rm` on each exact tag only, never force-removes or prunes. It
+does not touch containers or volumes. Reported image sizes are explicitly
+estimates, not guaranteed reclaimed disk bytes because layers may be shared.
+The live dry run found two unreferenced tags but blocked at the open-PR gate;
+`deletion_performed=false`.
+
+The image-removal contract is included in both Windows cleanup CI paths. It
+checks the fixed image allowlist and guards against broad image/volume/container
+prune operations. It is a source-level contract plus a live blocked dry run,
+not a build or deletion acceptance test.
+
 The safety contract is wired into both existing Windows cleanup-contract CI
 paths. Local verification passed the complete cleanup-contract set and the
 PowerShell parser. The live dry run verified all 15 artifact hashes and
