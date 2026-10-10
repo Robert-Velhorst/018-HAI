@@ -170,6 +170,14 @@ verification of every candidate transcript. It reported:
   two containers, and the automation and IDP PostgreSQL volumes are each
   referenced by a healthy running database container. No volume is eligible.
   The 10,189,079-byte recovery bundle with an unverified ACL remains retained.
+- Docker's verbose disk report measured the attached phase-two volume at 164 B,
+  automation PostgreSQL at 858.8 MB, and IDP PostgreSQL at 65.13 MB (about
+  924 MB combined as reported by Docker). The old `018-hai-ollama-local-data`
+  source volume is absent. Its separate 384,801,204-byte recovery bundle remains
+  under the local HAI recovery root; the earlier removal receipt records its
+  archive hash and restore drill. That bundle is retained backup data, not an
+  unreferenced Docker volume, and this workflow has no automatic backup-purge
+  path. Keep it until Robert makes an explicit retention decision.
 - Two image tags have no container references (backend latest and
   nginxconfigmanager latest), but remain held by the image-retention gate. No
   image was removed.
@@ -197,3 +205,24 @@ image, recovery bundle, diagnostic, or worktree file. The report's
 inventory found three attached named volumes, and older detached volumes
 already have separate recovery records in this receipt. Re-inventory all
 targets immediately before any future apply operation.
+
+## Structured Docker volume-size check (2026-10-10, 08:33 Europe/Amsterdam)
+
+The read-only volume readiness script now reads Docker's structured
+`system df --verbose --format json` output and includes each named volume's
+reported size. If the CLI does not return that optional data, the status is
+`unavailable`; that metric cannot change volume eligibility or authorize
+cleanup. The live report returned `reported` and confirmed:
+
+| Volume | Reported size | Container references | Disposition |
+| --- | ---: | ---: | --- |
+| `018-hai-phase2-control-state` | 164 B | 2 | Retain; attached |
+| `018-hai-postgres-automation-data` | 858.8 MB | 1 healthy container | Retain; attached |
+| `018-hai-postgres-idp-data` | 65.13 MB | 1 healthy container | Retain; attached |
+
+The local Ollama volume remains absent; the separate 384,800,505-byte archive
+was verified by the readiness script, with its recorded restore drill passed.
+That backup stays protected pending a retention decision. No Docker resource or
+recovery file was removed. The volume and unified readiness contract tests and
+PowerShell parser passed after this code change; the live readiness command
+returned `safe_to_remove=false` for every attached volume.

@@ -8,6 +8,8 @@ $required = @(
     'test-hai-transcript-cleanup-readiness.ps1',
     'remove-hai-completed-session-transcripts.ps1',
     'test-hai-volume-cleanup-readiness.ps1',
+    'reported_volume_size_status = [string]$volumes.report.reported_volume_size_status',
+    'reported_size = if ($null -ne $_.reported_size) { [string]$_.reported_size } else { $null }',
     'remove-hai-pr-diagnostic-artifacts.ps1',
     'remove-hai-unreferenced-image.ps1',
     'deletion_performed -ne $false',

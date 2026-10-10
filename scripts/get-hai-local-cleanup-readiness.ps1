@@ -253,9 +253,11 @@ if ($volumes.status -eq 'reported') {
     $targets.Add([pscustomobject][ordered]@{
         id = 'docker_volumes_and_recovery_archives'
         status = if ($volumes.report.safe_to_remove_any -eq $true) { 'candidate_requires_explicit_confirmation' } else { 'retain' }
+        reported_volume_size_status = [string]$volumes.report.reported_volume_size_status
         named_volumes = @($volumes.report.volumes | ForEach-Object {
             [pscustomobject]@{
                 name = [string]$_.volume
+                reported_size = if ($null -ne $_.reported_size) { [string]$_.reported_size } else { $null }
                 recovery_method = [string]$_.recovery_method
                 recovery_status = [string]$_.recovery_status
                 container_reference_count = [int]$_.container_reference_count

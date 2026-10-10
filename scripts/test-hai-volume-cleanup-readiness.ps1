@@ -40,6 +40,25 @@ function Invoke-DockerInventory([string[]]$Arguments) {
 }
 
 $names = @(Invoke-DockerInventory @('volume', 'ls', '--format', '{{.Name}}') | Where-Object { $_.StartsWith('018-hai-', [StringComparison]::Ordinal) } | Sort-Object)
+$volumeSizes = @{}
+$volumeSizeStatus = 'unavailable'
+try {
+    $usageLines = @(Invoke-DockerInventory @('system', 'df', '--verbose', '--format', 'json'))
+    if ($usageLines.Count -eq 1) {
+        $usage = [string]$usageLines[0] | ConvertFrom-Json -ErrorAction Stop
+        if ($usage.PSObject.Properties.Name -contains 'Volumes') {
+            foreach ($entry in @($usage.Volumes)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$entry.Name) -and
+                    -not [string]::IsNullOrWhiteSpace([string]$entry.Size)) {
+                    $volumeSizes[[string]$entry.Name] = [string]$entry.Size
+                }
+            }
+            $volumeSizeStatus = 'reported'
+        }
+    }
+} catch {
+    $volumeSizeStatus = 'unavailable'
+}
 
 if (Test-Path -LiteralPath $archiveRootFull -PathType Container) {
     $archiveRootItem = Get-Item -LiteralPath $archiveRootFull -Force
@@ -220,6 +239,7 @@ $inventory = foreach ($name in $names) {
     }
     [pscustomobject][ordered]@{
         volume = $name
+        reported_size = if ($volumeSizes.ContainsKey([string]$name)) { [string]$volumeSizes[[string]$name] } else { $null }
         recovery_method = $coverage
         recovery_status = $recoveryStatus
         recovery_verified_this_run = $archiveVerified
@@ -271,6 +291,7 @@ $result = [pscustomobject][ordered]@{
     unknown_hai_volumes = $unknownNames
     volumes_without_supported_recovery_method = $unsupportedRecoveryMethods
     volumes_without_current_verified_recovery_evidence = $unverifiedRecoveryCount
+    reported_volume_size_status = $volumeSizeStatus
     verified_recovery_archives = @($verifiedRecoveryArchives)
     source_removed_recovery_archives = @($sourceRemovedRecoveryArchives)
     unverified_recovery_bundles = @($unverifiedRecoveryBundles)

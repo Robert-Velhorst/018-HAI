@@ -1,6 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $source = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'test-hai-volume-cleanup-readiness.ps1'))
 foreach ($token in @(
+    "'system', 'df', '--verbose', '--format', 'json'",
+    'reported_size = if ($volumeSizes.ContainsKey([string]$name)) { [string]$volumeSizes[[string]$name] } else { $null }',
+    "reported_volume_size_status = `$volumeSizeStatus",
     "'image', 'ls', '--all', '--no-trunc'",
     'ancestor=$($parts[1])',
     'container_reference_count = $references.Count',
