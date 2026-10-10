@@ -80,3 +80,18 @@ the cleanup ledger on merged `main`.
 Six Temp fixture directories remain. At this inventory, none met the 24-hour
 retention threshold and two did not match the generated fixture layout; no Temp
 files were removed.
+
+## Unified read-only readiness report
+
+Run `pwsh -NoProfile -File scripts/get-hai-local-cleanup-readiness.ps1` from
+the inventoried PR worktree to collect the current Temp-fixture, transcript,
+Docker-volume/recovery, PR-diagnostic, and image-removal gates in one JSON
+report. The command invokes only read-only readiness/dry-run paths; it never
+passes `-Apply`, deletes files, removes Docker resources, or authorizes cleanup.
+Missing scripts, failed checks, and malformed reports are reported as blocked.
+
+Use each existing narrowly scoped remover separately only after reviewing that
+target's current report and satisfying its independent exact-path, identity,
+backup/retention, PR, and confirmation requirements. The active PR worktree and
+toolchain, retained transcripts, attached data volumes, and unverified recovery
+bundles are preservation targets, not candidates for broad cleanup.
