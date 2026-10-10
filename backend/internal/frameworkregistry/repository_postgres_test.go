@@ -84,6 +84,10 @@ func migrationFilesThrough(t *testing.T, lastVersion string) fs.FS {
 		}
 		files["pre/"+name] = &fstest.MapFile{Data: content}
 	}
+	// RollbackMigration validates later phases before touching pre-phase state.
+	// Keep an empty post directory in this test filesystem so the test exercises
+	// ordering behavior instead of failing because its fixture omitted a phase.
+	files["post/.keep"] = &fstest.MapFile{Data: []byte("test fixture")}
 	return files
 }
 
