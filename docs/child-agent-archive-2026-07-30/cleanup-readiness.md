@@ -780,3 +780,32 @@ JSONL records were skipped by that parser, and commit references cannot prove
 that uncommitted outputs or non-code decisions were incorporated. The retained
 transcripts and secondary checkout therefore remain preserved and ineligible
 for cleanup. No local source or recovery data was changed or removed.
+
+## Shared execution-claim defect and PR gate recheck (2026-10-10 13:22 UTC)
+
+The failed migration and authenticated-smoke logs for run `38054839348` exposed
+a shared production defect in `backend/internal/operations/execution_claim.go`:
+the claim query referenced `operation_events.payload`, while the schema stores
+that JSON in `payload_json`. This made Postgres claim selection fail with
+`SQLSTATE 42703`; background smoke failures cascaded from the same claim path,
+and the model-intelligence lane had no operation to stamp or telemetry from
+which to derive a lane winner. The query now uses the schema's `payload_json`
+column. The change is pushed to PR #36 as `c6df3cd31a9cb45e9cf3c2bc2e95e43a74cf3ea1`.
+
+Run `38054839348` tests the prior head and is still non-terminal while browser
+acceptance runs; its migration, authenticated-smoke, Promptfoo audit, and secret
+scan jobs failed. The current PR head is `c6df3cd31a9cb45e9cf3c2bc2e95e43a74cf3ea1`.
+Its new run `38055436363` has already failed the Promptfoo production dependency
+audit and repository secret scan; migration and authenticated smoke have not
+finished, so the SQL repair is not yet verified by CI. The Promptfoo audit
+reports ten high advisories for the pinned `0.124.1` dependency tree; its only
+suggested package-level remediation is a downgrade to `0.116.7`, which has not
+been adopted without compatibility and audit verification. The secret-scan
+summary identifies historical candidates concentrated in synthetic fixtures,
+tests, and workflow literals; no blanket suppression has been added and the
+local and CI scans have not yet been reconciled.
+
+The new run is not passing evidence and PR #36 remains open. Transcript
+integration remains incomplete; the 20.7 GB archive, secondary checkout, and
+all unrelated untracked diagnostics remain untouched. No local source or
+recovery data was deleted; `deletion_performed=false`.
