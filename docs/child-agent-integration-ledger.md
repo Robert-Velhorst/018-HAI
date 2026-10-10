@@ -680,3 +680,33 @@ dependency audit step. The GitHub app connector requires reauthentication, so
 the run's final status and remaining job results are not yet verified. This
 replaces earlier checkpoint references above to older PR heads and runs; those
 entries remain historical snapshots, not current status.
+
+## Current cleanup and CI gate (2026-10-10)
+
+The integration ledger for the same July 30 archive identifies eight completed,
+unique-ID candidate transcripts totaling 7,939,888,699 bytes, and ten files
+that must remain retained totaling 12,799,280,423 bytes. The candidate set has
+preserved final reports and a source crosswalk; the retained set includes
+duplicate-ID, aborted, and nonterminal transcripts. This is a limited cleanup
+scope, not authorization to delete the full 20.7 GB archive. No candidate or
+retained file has been removed.
+
+After the ledger update, the PR branch advanced to
+`5d8c6abc54dfab7ed1ab028b05e203993e46a269`, confirmed equal to the remote
+`codex/hai-runtime-release` ref. GitHub Actions run `38082211825` (`#783`) is
+for that exact commit. A direct read of the public GitHub Actions API at
+2026-10-10 20:07:32 UTC reports 36 jobs: 34 succeeded, one failed, and browser
+acceptance is in progress. The failed job is `Promptfoo safety runner image`; its
+`Audit production dependencies` step failed and the runner contract step was
+skipped. The workflow has not reached a final state. A local reproduction
+using the locked Promptfoo
+`0.124.1` package and CI-pinned npm `10.9.8` reports ten high and zero critical
+production dependency advisories. The only automatic npm remediation offered
+is a major downgrade to Promptfoo `0.116.7`, while the current registry's
+`latest` tag is `0.124.1`; no downgrade or audit suppression has been applied.
+The candidate cleanup gate therefore remains false. Recheck all PR checks at
+the latest head after resolving the upstream dependency security issue without
+weakening the gate. The run's pending browser acceptance and the eight
+candidate transcripts' malformed/truncated records also remain open gates.
+Revalidate candidate hashes and cleanup boundaries before considering any
+deletion; no archive or diagnostic files have been removed.
