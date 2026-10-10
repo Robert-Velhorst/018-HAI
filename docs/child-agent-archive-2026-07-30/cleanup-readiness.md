@@ -717,3 +717,43 @@ byte recovery bundle still fails private-ACL verification and remains
 unverified. The readiness report returned `safe_to_remove_any=false` and
 `deletion_performed=false`. No container, volume, image, or recovery archive
 was changed.
+
+## Secondary checkout reconciliation (2026-10-10 12:47 UTC)
+
+The additional checkout
+`C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`
+was inspected read-only and verified as the same `Robert-Velhorst/018-HAI`
+repository. It is on `codex/hai-runtime-release` at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241` (2026-09-04). GitHub's compare API
+confirms that commit is an ancestor of the current PR head, with 80 later
+commits and no commits unique to the secondary checkout.
+
+The checkout itself has 692 tracked files modified and 2,475 untracked files.
+Its working data totals about 152.7 MB; `output/` accounts for about 127.0 MB.
+The non-output path comparison against the current PR checkout found:
+
+- All 692 tracked paths exist in the current PR checkout; one has identical
+  SHA-256 content and 691 differ.
+- Of 899 non-output untracked files, 858 have identical SHA-256 content to a
+  corresponding file in the current PR checkout, 37 differ, and four are
+  local test-evidence logs with no counterpart.
+- No source file was copied, staged, committed, or removed during this audit.
+
+The differing working-tree versions are not safe to import wholesale. Direct
+comparison found examples that weaken current protections: an approved source
+operation no longer binds approval to the reviewed owner type or review time;
+an execution claim omits the current Robert-owner and review-time conditions;
+the pinned OpenClaw signing public key is changed to a scanner-triggering
+literal; and the Promptfoo runner is downgraded from the PR's `0.124.1` to
+`0.123.1`. These local variants were not integrated. The remaining divergent
+paths still require content-level review before this checkout can be removed.
+
+The current PR #36 head is `75b71fc7646ef2f753eaaa414a46a40b6be37702`, open
+and mergeable. Its current GitHub Actions run `38052358151` is still in
+progress; the secret scan, authenticated control-plane smoke, Promptfoo audit,
+Postgres migration integration, and Windows installer checks have failed in
+the latest observed run, while browser acceptance is still running. The prior
+run's logs identify additional concrete failure details, so PR acceptance and
+cleanup remain blocked. The transcript archive, secondary checkout, 2,475
+untracked files, output evidence, diagnostics, containers, images, volumes, and
+recovery bundles remain untouched. `deletion_performed=false`.
