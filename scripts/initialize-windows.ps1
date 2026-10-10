@@ -343,19 +343,49 @@ function Invoke-HaiExistingEnvironmentMigrationLocked {
 
     $temporaryPath = Join-Path ([IO.Path]::GetDirectoryName($Path)) ('.hai-maintenance-' + [Guid]::NewGuid().ToString('N') + '.tmp')
     $backupPath = Join-Path ([IO.Path]::GetDirectoryName($Path)) ('.hai-maintenance-backup-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    $rollbackPath = Join-Path ([IO.Path]::GetDirectoryName($Path)) ('.hai-maintenance-rollback-' + [Guid]::NewGuid().ToString('N') + '.tmp')
     $migrationFailure = $null
     $temporaryFilesRemoved = $true
+    $preserveBackup = $false
+    $preserveRollbackData = $false
     try {
         $installerSupport = Join-Path $repositoryRoot 'installer\windows\Hai-InstallerSupport.ps1'
         . $installerSupport
         $environmentAcl = Get-Acl -LiteralPath $Path
+        $expectedDacl = Get-HaiComparableFileAccessDescriptor -FileSecurity $environmentAcl
         Write-HaiAclProtectedFile -Path $temporaryPath -Bytes $updatedBytes -FileSecurity $environmentAcl
         [IO.File]::Replace($temporaryPath, $Path, $backupPath)
-        if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
-            [IO.File]::Delete($backupPath)
-        }
-        if (Test-Path -LiteralPath $backupPath) {
-            throw 'The temporary migration backup could not be removed.'
+        try {
+            # File.Replace can materialize the replacement with a different
+            # inherited DACL on some Windows/filesystem combinations. Restore
+            # and verify the original policy before discarding rollback data.
+            Set-Acl -LiteralPath $Path -AclObject $environmentAcl
+            $actualDacl = Get-HaiComparableFileAccessDescriptor -FileSecurity (Get-Acl -LiteralPath $Path)
+            $actualBytes = [IO.File]::ReadAllBytes($Path)
+            if (-not [string]::Equals($expectedDacl, $actualDacl, [StringComparison]::Ordinal) -or
+                -not [string]::Equals([Convert]::ToBase64String($updatedBytes), [Convert]::ToBase64String($actualBytes), [StringComparison]::Ordinal)) {
+                throw 'The migrated environment file did not retain the original DACL and complete updated contents.'
+            }
+        } catch {
+            $verificationFailure = $_.Exception.GetBaseException()
+            if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
+                try {
+                    Write-HaiAclProtectedFile -Path $temporaryPath -Bytes $bytes -FileSecurity $environmentAcl
+                    [IO.File]::Replace($temporaryPath, $Path, $rollbackPath)
+                    $restoredDacl = Get-HaiComparableFileAccessDescriptor -FileSecurity (Get-Acl -LiteralPath $Path)
+                    $restoredBytes = [IO.File]::ReadAllBytes($Path)
+                    if (-not [string]::Equals($expectedDacl, $restoredDacl, [StringComparison]::Ordinal) -or
+                        -not [string]::Equals([Convert]::ToBase64String($bytes), [Convert]::ToBase64String($restoredBytes), [StringComparison]::Ordinal)) {
+                        throw 'The original environment file could not be verified after rollback.'
+                    }
+                } catch {
+                    $preserveBackup = Test-Path -LiteralPath $backupPath -PathType Leaf
+                    $preserveRollbackData = $preserveBackup -or (Test-Path -LiteralPath $rollbackPath -PathType Leaf)
+                    $rollbackMessage = $_.Exception.GetBaseException().Message
+                    throw "Migration verification failed and automatic rollback could not be verified. $rollbackMessage"
+                }
+            }
+            throw "Migration verification failed; the original environment was restored. $($verificationFailure.Message)"
         }
     } catch {
         $failure = $_.Exception.GetBaseException()
@@ -363,11 +393,15 @@ function Invoke-HaiExistingEnvironmentMigrationLocked {
         $failureMessage = $failure.Message.Replace($Path, '[environment file]').Replace($temporaryPath, '[temporary file]').Replace($backupPath, '[temporary backup]')
         $migrationFailure = "The existing HAI environment could not be updated safely ($failureType); no maintenance task was started. $failureMessage"
     } finally {
-        foreach ($temporaryFile in @($temporaryPath, $backupPath)) {
+        foreach ($temporaryFile in @($temporaryPath)) {
             if (-not (Remove-HaiSensitiveTemporaryFile -Path $temporaryFile)) { $temporaryFilesRemoved = $false }
         }
+        if (-not $preserveBackup -and -not (Remove-HaiSensitiveTemporaryFile -Path $backupPath)) { $temporaryFilesRemoved = $false }
+        if (-not $preserveRollbackData -and -not (Remove-HaiSensitiveTemporaryFile -Path $rollbackPath)) { $temporaryFilesRemoved = $false }
     }
     if ($null -ne $migrationFailure) {
+        if ($preserveBackup) { $migrationFailure += " The original recovery file was preserved at '$backupPath'; do not remove it until the environment is recovered." }
+        if ($preserveRollbackData -and (Test-Path -LiteralPath $rollbackPath -PathType Leaf)) { $migrationFailure += " The prior target file was preserved at '$rollbackPath'." }
         if (-not $temporaryFilesRemoved) { $migrationFailure += ' A sensitive temporary file may remain and must be removed before continuing.' }
         throw $migrationFailure
     }

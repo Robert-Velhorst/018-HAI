@@ -49,12 +49,29 @@ class SmokeAuthContractTest(unittest.TestCase):
             '"alg": "HS256"',
             '"sub": subject',
             '"role": role',
+            '"iss": "hai-idp"',
+            '"aud": "hai"',
+            '"token_type": "access"',
+            '"iat": int(time.time())',
             '"exp": int(time.time()) + 3600',
             "hmac.new(secret.encode()",
             "hashlib.sha256",
         ):
             with self.subTest(contract=contract):
                 self.assertIn(contract, helper)
+
+    def test_two_account_acceptance_uses_the_shared_idp_token_contract(self) -> None:
+        script = (ROOT / "scripts" / "two-account-isolation-test.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('source "${ROOT}/scripts/smoke-auth.sh"', script)
+        self.assertIn(
+            'A="$(hai_smoke_mint_jwt owner "$SECRET" "$ALICE")"', script
+        )
+        self.assertIn(
+            'B="$(hai_smoke_mint_jwt owner "$SECRET" "$BOB")"', script
+        )
+        self.assertNotIn("mkjwt()", script)
 
     def test_smoke_checkout_and_temp_paths_are_space_safe(self) -> None:
         for name in SMOKE_SUITES:

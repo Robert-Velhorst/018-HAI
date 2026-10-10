@@ -17,6 +17,8 @@ SECRET="${HAI_JWT_SECRET:-devsecret}"
 API_KEY="${HAI_BACKEND_API_SHARED_KEY:-}"
 SECRET_TEXT="45000 EUR"
 fails=0
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT}/scripts/smoke-auth.sh"
 
 api_headers=()
 if [ -n "$API_KEY" ]; then
@@ -26,16 +28,6 @@ fi
 pass() { printf '  \033[32mPASS\033[0m %s\n' "$1"; }
 fail() { printf '  \033[31mFAIL\033[0m %s\n' "$1"; fails=$((fails+1)); }
 check() { [ "$2" = "$3" ] && pass "$1 ($2)" || fail "$1: got '$2', want '$3'"; }
-
-mkjwt() {
-  python3 -c "
-import hmac,hashlib,base64,json,time,sys
-def b64(b): return base64.urlsafe_b64encode(b).rstrip(b'=').decode()
-h=b64(b'{\"alg\":\"HS256\",\"typ\":\"JWT\"}')
-p=b64(json.dumps({'sub':sys.argv[1],'role':'owner','exp':int(time.time())+3600}).encode())
-s=b64(hmac.new(sys.argv[2].encode(),f'{h}.{p}'.encode(),hashlib.sha256).digest())
-print(f'{h}.{p}.{s}')" "$1" "$SECRET"
-}
 
 jlen() { python3 -c "
 import sys,json
@@ -47,7 +39,8 @@ except Exception: print('ERR')"; }
 # Unique owners per run so repeated runs stay independent.
 STAMP="$(date +%s)"
 ALICE="alice-${STAMP}@local"; BOB="bob-${STAMP}@local"
-A="$(mkjwt "$ALICE")"; B="$(mkjwt "$BOB")"
+A="$(hai_smoke_mint_jwt owner "$SECRET" "$ALICE")"
+B="$(hai_smoke_mint_jwt owner "$SECRET" "$BOB")"
 
 echo "Two-account isolation test against $BASE"
 echo "  owners: $ALICE / $BOB"

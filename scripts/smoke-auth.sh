@@ -49,7 +49,15 @@ def encode(value):
 header = encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
 payload = encode(
     json.dumps(
-        {"sub": subject, "role": role, "exp": int(time.time()) + 3600},
+        {
+            "sub": subject,
+            "role": role,
+            "iss": "hai-idp",
+            "aud": "hai",
+            "token_type": "access",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 3600,
+        },
         separators=(",", ":"),
     ).encode()
 )
