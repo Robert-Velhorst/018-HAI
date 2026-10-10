@@ -2044,10 +2044,16 @@ networks:
     name: 018-hai-a2a-local
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: ${HAI_A2A_LOCAL_SUBNET:-10.255.0.0/24}
   host-runtime-internal:
     name: 018-hai-host-runtime-internal
     driver: bridge
     internal: true
+    ipam:
+      config:
+        - subnet: ${HAI_HOST_RUNTIME_INTERNAL_SUBNET:-10.255.1.0/24}
   evidently-internal:
     name: 018-hai-evidently-internal
     driver: bridge

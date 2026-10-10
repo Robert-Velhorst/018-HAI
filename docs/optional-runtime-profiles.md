@@ -63,6 +63,15 @@ The remaining profile-gated services are:
 | `provider-fixture` | Local provider-contract fixture (not an LLM) |
 | `research-discovery` | Local SearXNG source discovery |
 
+The isolated `a2a-local` and `host-runtime-internal` networks use the private
+CIDR defaults `10.255.0.0/24` and `10.255.1.0/24`. Set
+`HAI_A2A_LOCAL_SUBNET` or `HAI_HOST_RUNTIME_INTERNAL_SUBNET` in `.env.local`
+to an unused private range if either overlaps with a LAN, VPN, or another
+Docker network. Check existing Docker networks before choosing a replacement.
+Changing the IPAM configuration of an already-created Compose network may
+require Compose to recreate that network and its attached containers; do not
+remove volumes as part of this network change.
+
 ## Default Stack And Resource Ceiling
 
 The default local topology has exactly nine services: seven long-running core

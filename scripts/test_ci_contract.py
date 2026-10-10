@@ -1017,6 +1017,13 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertNotIn("- service-hub", service)
         self.assertIn("a2a-local:", compose)
         self.assertIn("internal: true", compose)
+        self.assertIn("HAI_A2A_LOCAL_SUBNET=10.255.0.0/24", defaults)
+        self.assertIn("HAI_HOST_RUNTIME_INTERNAL_SUBNET=10.255.1.0/24", defaults)
+        self.assertIn("subnet: ${HAI_A2A_LOCAL_SUBNET:-10.255.0.0/24}", compose)
+        self.assertIn(
+            "subnet: ${HAI_HOST_RUNTIME_INTERNAL_SUBNET:-10.255.1.0/24}",
+            compose,
+        )
         self.assertIn("HAI_A2A_LOCAL_PORT=8091", defaults)
         backend_service = compose_service_block(compose, "backend")
         self.assertIn(
