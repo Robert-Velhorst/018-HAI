@@ -35,7 +35,7 @@ func TestSourceHeadPostgresPublicationEpochSupersessionAndRollback(t *testing.T)
 	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := infra.ApplyMigrations(db, migrationFilesThrough(t, "pre/0114_operation_source_configuration"), "pre"); err != nil {
+	if _, err := infra.ApplyMigrations(db, migrationFilesThrough(t, "pre/0118_operation_source_evidence_raw_digest"), "pre"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := infra.ApplyMigrations(db, migrations.Files, "post"); err != nil {

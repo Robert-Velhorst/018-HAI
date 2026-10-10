@@ -225,6 +225,7 @@ func TestAtomicIngestUnsupportedCreationAndReadOnlyDuplicate(t *testing.T) {
 	}
 	op, event := ingestAtomicPair(t)
 	op.EvidenceJSON = `{"revision":1}`
+	op.SourceEvidenceRawSHA256 = rawEvidenceSHA256(op.EvidenceJSON)
 	if _, err := base.CreateWithEvent(&op, &event); err != nil {
 		t.Fatal(err)
 	}
@@ -382,6 +383,7 @@ func TestAtomicIngestCollisionRefreshesScopedWinnerWithAudit(t *testing.T) {
 	base := NewMemoryRepository()
 	winner, event := ingestAtomicPair(t)
 	winner.EvidenceJSON = `{"winner":true}`
+	winner.SourceEvidenceRawSHA256 = rawEvidenceSHA256(winner.EvidenceJSON)
 	winner.WorldModelStateJSON = `{"outcomeUncertain":true}`
 	if _, err := base.CreateWithEvent(&winner, &event); err != nil {
 		t.Fatal(err)
@@ -414,7 +416,8 @@ func TestAtomicIngestCollisionRefreshesScopedWinnerWithAudit(t *testing.T) {
 	in.EvidenceJSON = `{"loser":true}`
 	result, err := svc.Ingest(in)
 	want := winner
-	want.EvidenceJSON, want.UpdatedAt, want.Version = in.EvidenceJSON, now, winner.Version+1
+	want.EvidenceJSON, want.SourceEvidenceRawSHA256 = in.EvidenceJSON, rawEvidenceSHA256(in.EvidenceJSON)
+	want.UpdatedAt, want.Version = now, winner.Version+1
 	if err != nil || result.Created || !reflect.DeepEqual(result.Operation, want) || repo.lookups != 2 || repo.creationCalls != 1 || repo.mutationCalls != 1 {
 		t.Fatalf("collision winner: result=%+v err=%v lookups=%d creations=%d mutations=%d", result, err, repo.lookups, repo.creationCalls, repo.mutationCalls)
 	}
@@ -508,6 +511,7 @@ func TestAtomicIngestEvidenceRefreshAuditedAndPreservesStoredState(t *testing.T)
 	before.ApprovalID = &approvalID
 	before.WorldModelStateJSON = `{"beforeEffect":false,"outcomeUncertain":true}`
 	before.EvidenceJSON = `{"revision":1}`
+	before.SourceEvidenceRawSHA256 = rawEvidenceSHA256(before.EvidenceJSON)
 	before.ResultSummary = "stored review decision"
 	before.VerificationStatus = string(VerificationFailed)
 	base.mu.Lock()
@@ -523,7 +527,8 @@ func TestAtomicIngestEvidenceRefreshAuditedAndPreservesStoredState(t *testing.T)
 	in.EvidenceJSON = `{"revision":2}`
 	result, err := svc.Ingest(in)
 	want := before
-	want.EvidenceJSON, want.UpdatedAt, want.Version = in.EvidenceJSON, now, before.Version+1
+	want.EvidenceJSON, want.SourceEvidenceRawSHA256 = in.EvidenceJSON, rawEvidenceSHA256(in.EvidenceJSON)
+	want.UpdatedAt, want.Version = now, before.Version+1
 	if err != nil || result.Created || !reflect.DeepEqual(result.Operation, want) || repo.creationCalls != 0 || repo.mutationCalls != 1 {
 		t.Fatalf("evidence refresh changed stored state or bypassed Save: result=%+v err=%v", result, err)
 	}

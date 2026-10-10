@@ -382,7 +382,7 @@ func sourceApprovalSQLRow(op models.Operation) ([]string, []driver.Value) {
 		"source_received_at", "source_revision_hash", "source_provider", "source_account", "source_external_id",
 		"source_identity_hash", "source_observation_id", "source_observation_generation", "project_key", "pursuit_id",
 		"workflow_id", "account_feed_id", "operation_type", "status", "risk_level", "autonomy_level", "owner_type",
-		"current_decision", "requires_approval", "approval_id", "recommended_action", "evidence_json", "world_model_state_json",
+		"current_decision", "requires_approval", "approval_id", "recommended_action", "evidence_json", "source_evidence_raw_sha256", "world_model_state_json",
 		"runtime_id", "model_provider_id", "model_id", "verification_status", "result_summary", "last_error", "dedupe_key",
 		"next_review_at", "created_at", "updated_at", "completed_at", "version",
 	}
@@ -391,7 +391,7 @@ func sourceApprovalSQLRow(op models.Operation) ([]string, []driver.Value) {
 		timeValue(op.SourceReceivedAt), op.SourceRevisionHash, op.SourceProvider, op.SourceAccount, op.SourceExternalID,
 		op.SourceIdentityHash, idValue(op.SourceObservationID), op.SourceObservationGeneration, op.ProjectKey, idValue(op.PursuitID),
 		idValue(op.WorkflowID), idValue(op.AccountFeedID), op.OperationType, op.Status, op.RiskLevel, op.AutonomyLevel, op.OwnerType,
-		op.CurrentDecision, op.RequiresApproval, idValue(op.ApprovalID), op.RecommendedAction, op.EvidenceJSON, op.WorldModelStateJSON,
+		op.CurrentDecision, op.RequiresApproval, idValue(op.ApprovalID), op.RecommendedAction, op.EvidenceJSON, op.SourceEvidenceRawSHA256, op.WorldModelStateJSON,
 		op.RuntimeID, op.ModelProviderID, op.ModelID, op.VerificationStatus, op.ResultSummary, op.LastError, op.DedupeKey,
 		timeValue(op.NextReviewAt), op.CreatedAt, op.UpdatedAt, timeValue(op.CompletedAt), op.Version,
 	}

@@ -328,7 +328,7 @@ func TestSourceObservationPostgresUpgradeMintConstraintsAndRollback(t *testing.T
 	t.Run("actual repository and observed service intake", func(t *testing.T) {
 		// Current runtime mints configuration epochs and publishes heads. Earlier
 		// assertions deliberately exercise only the historical 0112 schema.
-		if _, err := infra.ApplyMigrations(db, migrationFilesThrough(t, "pre/0114_operation_source_configuration"), "pre"); err != nil {
+		if _, err := infra.ApplyMigrations(db, migrationFilesThrough(t, "pre/0118_operation_source_evidence_raw_digest"), "pre"); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := infra.ApplyMigrations(db, migrations.Files, "post"); err != nil {
