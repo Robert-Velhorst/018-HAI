@@ -573,14 +573,19 @@ recovery bundles are explicitly retained.
 ### Unreferenced HAI image path
 
 `scripts/remove-hai-unreferenced-image.ps1` provides a separate, opt-in path for
-only `018-hai-backend:latest` and `018-hai-nginxconfigmanager:latest`. Before
-removal it requires PR #36 to be merged into `main` at the exact local HEAD and
-all PR checks to succeed; it validates the local Compose build definition and
-Dockerfile, HAI Compose ownership labels, sole image tag, and absence of any
-container reference. It rechecks those conditions after confirmation and uses
-`docker image rm` on each exact tag only, never force-removes or prunes. It
-does not touch containers or volumes. Reported image sizes are explicitly
-estimates, not guaranteed reclaimed disk bytes because layers may be shared.
+the five removable first-party tags in the audited inventory:
+`018-hai-backend:latest`, `018-hai-backend-migrate:latest`,
+`018-hai-idp:latest`, `018-hai-frontend:latest`, and
+`018-hai-nginxconfigmanager:latest`. `018-hai-backend:local` is deliberately
+excluded because the Windows backup and restore tooling requires it. Before
+removal the script requires PR #36 to be merged into `main` at the exact local
+HEAD and all PR checks to succeed; it validates each tag against its Compose
+service, build definition and Dockerfile, HAI Compose ownership labels, sole
+image tag, and absence of any container reference. It rechecks those
+conditions after confirmation and uses `docker image rm` on each exact tag
+only, never force-removes or prunes. It does not touch containers or volumes.
+Reported image sizes are explicitly estimates, not guaranteed reclaimed disk
+bytes because layers may be shared.
 The live dry run found two unreferenced tags but blocked at the open-PR gate;
 `deletion_performed=false`.
 

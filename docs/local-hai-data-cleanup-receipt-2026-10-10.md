@@ -106,3 +106,40 @@ target's current report and satisfying its independent exact-path, identity,
 backup/retention, PR, and confirmation requirements. The active PR worktree and
 toolchain, retained transcripts, attached data volumes, and unverified recovery
 bundles are preservation targets, not candidates for broad cleanup.
+
+## Latest read-only recheck (2026-10-10, 07:17 Europe/Amsterdam)
+
+The unified image cleanup allowlist now covers all five removable first-party
+tags in the archived six-image inventory: backend latest, backend-migrate,
+IDP, frontend, and nginxconfigmanager. The `018-hai-backend:local` backup and
+restore image remains excluded. The remover validates each image against its
+Compose service/build source, ownership labels, unique tag, and container
+references; it removes only the exact requested image tag and does not prune.
+
+Live read-only Docker inventory in `desktop-linux` found six HAI tags. Four
+remain referenced by containers (`backend-migrate`, `backend:local`, IDP, and
+frontend; each has one reference), while
+`018-hai-backend:latest` and `018-hai-nginxconfigmanager:latest` have no
+container references. Their reported sizes are 249 MB and 29.2 MB; these are
+image-size estimates, not guaranteed disk savings. No image was removed. The
+three named HAI volumes remain attached (phase2 control state to two
+containers; each Postgres volume to one container), and are not safe
+to remove. One recovery bundle remains unverified (10,189,079 bytes) and is
+retained.
+
+The six Temp fixture folders were rechecked: zero are cleanup candidates; four
+verified fixtures are about 14.4 hours old, and two markerless partial folders
+remain unverified. They were not removed. The 20.7 GB transcript archive and
+active PR worktree/toolchain/diagnostics were not modified.
+
+PR #36 remains open at `a97fe173475646efe8e2783846344e05b8a270c0` and is
+unstable. The dedicated HAI cleanup-readiness safety-contract job passed, as
+did frontend, backend, IDP, and guarded Windows runtime checks. Seven other CI
+jobs failed: repository secret scan, real-Postgres migration integration,
+Windows installer guards, two-account isolation, Promptfoo safety image,
+authenticated control-plane smoke, and browser acceptance. The merge/removal
+gate therefore remains closed. The expanded image-removal contract, unified
+inventory contract, Temp fixture cleanup contract, transcript cleanup gate,
+volume/image inventory contract, PowerShell parser, and local Compose
+validation passed in this session. No data or containers were deleted or
+stopped during the recheck.

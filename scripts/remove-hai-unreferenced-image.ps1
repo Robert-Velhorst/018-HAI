@@ -1,7 +1,13 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)]
-    [ValidateSet('018-hai-backend:latest', '018-hai-nginxconfigmanager:latest')]
+    [ValidateSet(
+        '018-hai-backend:latest',
+        '018-hai-backend-migrate:latest',
+        '018-hai-idp:latest',
+        '018-hai-frontend:latest',
+        '018-hai-nginxconfigmanager:latest'
+    )]
     [string[]]$ImageReferences,
     [switch]$Apply,
     [string]$ConfirmationPhrase = ''
@@ -17,6 +23,9 @@ $composeFile = Join-Path $repoRoot 'docker-compose.local.yml'
 $environmentFile = Join-Path $repoRoot '.env.example'
 $serviceByReference = @{
     '018-hai-backend:latest' = 'backend'
+    '018-hai-backend-migrate:latest' = 'backend-migrate'
+    '018-hai-idp:latest' = 'idp'
+    '018-hai-frontend:latest' = 'frontend'
     '018-hai-nginxconfigmanager:latest' = 'nginxconfigmanager'
 }
 

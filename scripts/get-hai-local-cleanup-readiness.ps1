@@ -43,7 +43,13 @@ $transcripts = Get-ReadOnlyReport 'completed_session_transcripts' 'remove-hai-co
 $volumes = Get-ReadOnlyReport 'docker_volumes_and_recovery_archives' 'test-hai-volume-cleanup-readiness.ps1' @{ RecoveryArchiveRoot = $RecoveryArchiveRoot }
 $diagnostics = Get-ReadOnlyReport 'pr_diagnostics_and_tool_downloads' 'remove-hai-pr-diagnostic-artifacts.ps1'
 $images = Get-ReadOnlyReport 'unreferenced_local_images' 'remove-hai-unreferenced-image.ps1' @{
-    ImageReferences = @('018-hai-backend:latest', '018-hai-nginxconfigmanager:latest')
+    ImageReferences = @(
+        '018-hai-backend:latest',
+        '018-hai-backend-migrate:latest',
+        '018-hai-idp:latest',
+        '018-hai-frontend:latest',
+        '018-hai-nginxconfigmanager:latest'
+    )
 }
 
 $targets = [Collections.Generic.List[object]]::new()
