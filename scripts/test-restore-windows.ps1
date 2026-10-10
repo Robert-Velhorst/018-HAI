@@ -4,10 +4,14 @@ param(
     [string]$EnvFile = ".env.local",
     [switch]$ValidateOnly,
     [switch]$RestoreEnvironmentOnly,
-    [string]$RecoveryResourceManifest
+    [string]$RecoveryResourceManifest,
+    [switch]$ContractTest
 )
 
 $ErrorActionPreference = "Stop"
+if ($ContractTest -and $null -eq $global:HaiRecoveryContractMock) {
+    throw 'Contract-test mode requires the isolated recovery mock harness.'
+}
 if ($PSBoundParameters.ContainsKey('RecoveryResourceManifest')) {
     if ($RestoreEnvironmentOnly) { throw 'Environment-only recovery is available only for a normal Windows backup bundle.' }
     if ([string]::IsNullOrWhiteSpace($RecoveryResourceManifest)) { throw 'An explicit isolated recovery manifest must not be empty.' }
@@ -28,6 +32,22 @@ $compose = Join-Path $root "docker-compose.local.yml"
 $archiveImage = "018-hai-backend:local"
 . (Join-Path $PSScriptRoot "windows-recovery-contract.ps1")
 . (Join-Path $PSScriptRoot "backup-windows.ps1") -EnvFile $EnvFile -ValidateOnly:$ValidateOnly -LibraryOnly
+if ($ContractTest) {
+    function Invoke-HaiBoundedDockerCommand([string[]]$Arguments, [ValidateRange(1, 120)][int]$TimeoutSeconds = 15) {
+        $commandArgs = @($Arguments | ForEach-Object { [string]$_ })
+        $global:HaiRecoveryContractMock.Calls.Add($commandArgs)
+        $global:LASTEXITCODE = 0
+        if ($commandArgs.Count -eq 2 -and $commandArgs[0] -eq 'context' -and $commandArgs[1] -eq 'inspect') {
+            return [pscustomobject]@{
+                succeeded = $true
+                timed_out = $false
+                exit_code = 0
+                output = (@(@{ Endpoints = @{ docker = @{ Host = $global:HaiRecoveryContractMock.DockerHost } } }) | ConvertTo-Json -Depth 5)
+            }
+        }
+        throw 'Unexpected bounded Docker contract command.'
+    }
+}
 
 function Resolve-RepoPath([string]$Path) {
     if ([IO.Path]::IsPathRooted($Path)) { return [IO.Path]::GetFullPath($Path) }
@@ -129,7 +149,10 @@ if (@($manifest.databases).Count -ne 2 -or $manifest.databases[0] -cne $liveAuto
     throw "Backup database identities do not match the selected environment file."
 }
 # Use the recovered/provided environment only for a read-only Compose preflight.
-if (-not $environmentPreflightComplete) { & (Join-Path $PSScriptRoot 'backup-windows.ps1') -EnvFile $envPath -ValidateOnly }
+if (-not $environmentPreflightComplete) {
+    if ($ContractTest) { $settings = Read-DotEnv $envPath }
+    else { & (Join-Path $PSScriptRoot 'backup-windows.ps1') -EnvFile $envPath -ValidateOnly }
+}
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $media = [IO.Compression.ZipFile]::OpenRead((Join-Path $bundle "media.zip"))

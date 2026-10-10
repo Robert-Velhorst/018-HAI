@@ -31,9 +31,16 @@ function New-ManifestFile([string]$Path) {
     }
 }
 
+function Set-HaiRecoveryContractDockerHost([string]$DockerHost) {
+    $global:HaiRecoveryContractMock.DockerHost = $DockerHost
+}
+
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ("hai-recovery-contract-" + [Guid]::NewGuid().ToString("N"))
 $sourceFixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("hai-env-source-fixture-" + [Guid]::NewGuid().ToString("N"))
 $environmentFixture = Join-Path $sourceFixtureRoot 'source.env'
+$repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+$imagesFixture = Join-Path $repoRoot 'images'
+$createdImagesFixture = $false
 $priorMock = Get-Variable -Name HaiRecoveryContractMock -Scope Global -ErrorAction SilentlyContinue
 [IO.Directory]::CreateDirectory($testRoot) | Out-Null
 [IO.Directory]::CreateDirectory($sourceFixtureRoot) | Out-Null
@@ -359,6 +366,21 @@ try {
         if ($commandArgs[0] -notin @('exec', 'cp', 'compose', 'image', 'run')) { throw 'Unexpected Docker mock command.' }
     }
 
+    function Invoke-HaiBoundedDockerCommand([string[]]$Arguments, [ValidateRange(1, 120)][int]$TimeoutSeconds = 15) {
+        $commandArgs = @($Arguments | ForEach-Object { [string]$_ })
+        $global:HaiRecoveryContractMock.Calls.Add($commandArgs)
+        $global:LASTEXITCODE = 0
+        if ($commandArgs.Count -eq 2 -and $commandArgs[0] -eq 'context' -and $commandArgs[1] -eq 'inspect') {
+            return [pscustomobject]@{
+                succeeded = $true
+                timed_out = $false
+                exit_code = 0
+                output = (@(@{ Endpoints = @{ docker = @{ Host = $global:HaiRecoveryContractMock.DockerHost } } }) | ConvertTo-Json -Depth 5)
+            }
+        }
+        throw 'Unexpected bounded Docker contract command.'
+    }
+
     $savedDockerHost = $env:DOCKER_HOST
     $global:HaiRecoveryContractMock.AnonymousMounts = $true
     $uncoveredMounts = @(Get-HaiUncoveredVolumeMounts)
@@ -377,9 +399,9 @@ try {
     try {
         Remove-Item Env:DOCKER_HOST -ErrorAction SilentlyContinue
         Assert-HaiLocalDockerEngine
-        $global:HaiRecoveryContractMock.DockerHost = 'tcp://remote.example:2376'
+        Set-HaiRecoveryContractDockerHost 'tcp://remote.example:2376'
         Assert-Throws 'remote Docker context' { Assert-HaiLocalDockerEngine } 'require one verified local Docker engine'
-        $global:HaiRecoveryContractMock.DockerHost = 'npipe:////./pipe/docker_engine'
+        Set-HaiRecoveryContractDockerHost 'npipe:////./pipe/docker_engine'
         $env:DOCKER_HOST = 'tcp://remote.example:2376'
         Assert-Throws 'Docker host override' { Assert-HaiLocalDockerEngine } 'DOCKER_HOST override'
     } finally {
@@ -416,19 +438,23 @@ try {
     $validManifest | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $testRoot 'manifest.json') -Encoding utf8
     $envFixture = Join-Path $testRoot 'fixture.env'
     [IO.File]::WriteAllText($envFixture, "DB_USER=fixture_user`nAUTOMATION_DB_NAME=fixture_automation`nIDP_DB_NAME=fixture_identity`nIMAGE_SAVE_DIR=/root/images`n")
+    if (-not (Test-Path -LiteralPath $imagesFixture)) {
+        [IO.Directory]::CreateDirectory($imagesFixture) | Out-Null
+        $createdImagesFixture = $true
+    }
     $drill = Join-Path $PSScriptRoot 'test-restore-windows.ps1'
     $global:HaiRecoveryContractMock.Calls.Clear()
-    $global:HaiRecoveryContractMock.DockerHost = 'tcp://remote.example:2376'
-    Assert-Throws 'restore against remote Docker context' { & $drill -BackupDirectory $testRoot -EnvFile $envFixture } 'require one verified local Docker engine'
+    Set-HaiRecoveryContractDockerHost 'tcp://remote.example:2376'
+    Assert-Throws 'restore against remote Docker context' { & $drill -BackupDirectory $testRoot -EnvFile $envFixture -ContractTest } 'require one verified local Docker engine'
     $remoteMutations = @($global:HaiRecoveryContractMock.Calls | Where-Object {
         $_[0] -in @('exec', 'cp', 'run') -or ($_[0] -eq 'volume' -and $_[1] -in @('create', 'rm'))
     })
     if ($remoteMutations.Count -ne 0) { throw 'Restore attempted Docker mutations before refusing the remote context.' }
-    $global:HaiRecoveryContractMock.DockerHost = 'npipe:////./pipe/docker_engine'
+    Set-HaiRecoveryContractDockerHost 'npipe:////./pipe/docker_engine'
     foreach ($collision in @('018-hai-postgres-automation', '018-hai-postgres-idp')) {
         $global:HaiRecoveryContractMock.Calls.Clear()
         $global:HaiRecoveryContractMock.FailCreate = $collision
-        Assert-Throws "refused scratch creation $collision" { & $drill -BackupDirectory $testRoot -EnvFile $envFixture } "Could not create the .* scratch database"
+        Assert-Throws "refused scratch creation $collision" { & $drill -BackupDirectory $testRoot -EnvFile $envFixture -ContractTest } "Could not create the .* scratch database"
         $drops = @($global:HaiRecoveryContractMock.Calls | Where-Object { $_[0] -eq 'exec' -and $_[2] -eq 'dropdb' })
         $expectedDrops = if ($collision -eq '018-hai-postgres-automation') { 0 } else { 1 }
         if ($drops.Count -ne $expectedDrops -or @($drops | Where-Object { $_[1] -eq $collision }).Count -ne 0) { throw 'Drill attempted to drop a database it failed to create.' }
@@ -439,7 +465,7 @@ try {
     $savedManifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
     $savedManifest.PSObject.Properties.Remove('extendedRecoveryCoverage')
     $savedManifest | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $manifestPath -Encoding utf8
-    Assert-Throws 'restore old incomplete bundle' { & $drill -BackupDirectory $testRoot -EnvFile $envFixture } 'lacks explicit optional recovery coverage'
+    Assert-Throws 'restore old incomplete bundle' { & $drill -BackupDirectory $testRoot -EnvFile $envFixture -ContractTest } 'lacks explicit optional recovery coverage'
     $earlyRestoreMutations = @($global:HaiRecoveryContractMock.Calls | Where-Object {
         $_[0] -in @('exec', 'cp', 'run') -or ($_[0] -eq 'volume' -and $_[1] -in @('create', 'rm'))
     })
@@ -450,13 +476,13 @@ try {
     $global:HaiRecoveryContractMock.Calls.Clear()
     $global:HaiRecoveryContractMock.VolumeExists = $true
     $global:HaiRecoveryContractMock.VolumeToken = 'another-owner'
-    Assert-Throws 'colliding volume' { & $drill -BackupDirectory $testRoot -EnvFile $envFixture } 'already exists'
+    Assert-Throws 'colliding volume' { & $drill -BackupDirectory $testRoot -EnvFile $envFixture -ContractTest } 'already exists'
     if (@($global:HaiRecoveryContractMock.Calls | Where-Object { $_[0] -eq 'volume' -and $_[1] -eq 'rm' }).Count -ne 0) { throw 'Drill removed a preexisting volume.' }
     $global:HaiRecoveryContractMock.VolumeExists = $false
     $global:HaiRecoveryContractMock.FailCleanup = $true
-    Assert-Throws 'failed fixture cleanup' { & $drill -BackupDirectory $testRoot -EnvFile $envFixture } 'clean owned-fixture cleanup'
+    Assert-Throws 'failed fixture cleanup' { & $drill -BackupDirectory $testRoot -EnvFile $envFixture -ContractTest } 'clean owned-fixture cleanup'
     $global:HaiRecoveryContractMock.FailCleanup = $false
-    & $drill -BackupDirectory $testRoot -EnvFile $envFixture
+    & $drill -BackupDirectory $testRoot -EnvFile $envFixture -ContractTest
 
     $v3Manifest | Add-Member -NotePropertyName integrity -NotePropertyValue ([pscustomobject]@{
         contract = 'hai-recovery-integrity.v1'
@@ -468,13 +494,13 @@ try {
     $v3Manifest.files = @('automation.dump', 'identity.dump', 'media.zip', 'phase2-control-state.tar.gz', 'environment.dpapi') | ForEach-Object { New-ManifestFile (Join-Path $testRoot $_) }
     $v3Manifest | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $testRoot 'manifest.json') -Encoding utf8
     $validateOnlyTarget = Join-Path $restoreParent 'validate-only.env'
-    & $drill -BackupDirectory $testRoot -EnvFile $validateOnlyTarget -ValidateOnly
+    & $drill -BackupDirectory $testRoot -EnvFile $validateOnlyTarget -ValidateOnly -ContractTest
     if ((Test-Path -LiteralPath $validateOnlyTarget -PathType Leaf) -or
         @(Get-ChildItem -LiteralPath $restoreParent -Force -Directory | Where-Object Name -like '.hai-env-recovery-*').Count -ne 0) {
         throw 'ValidateOnly wrote a recovered environment or left protected plaintext staging behind.'
     }
     $integratedTarget = Join-Path $restoreParent 'recovered-by-restore.env'
-    & $drill -BackupDirectory $testRoot -EnvFile $integratedTarget
+    & $drill -BackupDirectory $testRoot -EnvFile $integratedTarget -ContractTest
     if ((Get-FileHash -LiteralPath $integratedTarget -Algorithm SHA256).Hash -cne (Get-FileHash -LiteralPath $environmentFixture -Algorithm SHA256).Hash -or
         @(Get-ChildItem -LiteralPath $restoreParent -Force -Directory | Where-Object Name -like '.hai-env-recovery-*').Count -ne 0) {
         throw 'Integrated missing-environment restore did not preserve bytes and clean its protected staging directory.'
@@ -510,6 +536,15 @@ try {
     $sourceResolved = [IO.Path]::GetFullPath($sourceFixtureRoot)
     Assert-HaiOwnedDirectory $sourceResolved $tempRoot ([IO.Path]::GetFileName($sourceFixtureRoot))
     if ([IO.Directory]::Exists($sourceResolved)) { [IO.Directory]::Delete($sourceResolved, $true) }
+    if ($createdImagesFixture -and [IO.Directory]::Exists($imagesFixture)) {
+        $imageItem = Get-Item -LiteralPath $imagesFixture -Force
+        if (($imageItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0 -and
+            @(Get-ChildItem -LiteralPath $imagesFixture -Force).Count -eq 0) {
+            [IO.Directory]::Delete($imagesFixture, $false)
+        } else {
+            Write-Warning 'Owned images test fixture changed during the test and was preserved for inspection.'
+        }
+    }
 }
 
 Write-Host "Windows recovery behavioral contracts passed."

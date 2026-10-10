@@ -252,7 +252,10 @@ function Invoke-HaiBoundedProcess([string]$FilePath, [string[]]$Arguments, [Vali
 }
 
 function Invoke-HaiBoundedDockerCommand([string[]]$Arguments, [ValidateRange(1, 120)][int]$TimeoutSeconds = 15) {
-    $docker = Get-Command docker -ErrorAction Stop
+    $docker = Get-Command docker -CommandType Application -ErrorAction Stop | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($docker.Source)) {
+        throw 'Docker CLI application path could not be resolved; no containers or volumes were changed.'
+    }
     return Invoke-HaiBoundedProcess $docker.Source $Arguments -TimeoutSeconds $TimeoutSeconds
 }
 
