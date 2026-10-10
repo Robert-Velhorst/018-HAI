@@ -268,3 +268,30 @@ report is not an authorization to delete anything:
 No source archive, transcript, Temp fixture, Docker resource, image, recovery
 bundle, diagnostic, checkout, or toolchain was changed or removed by this
 inventory. Both `cleanup_authorized` and `deletion_performed` remain `false`.
+
+## Follow-up read-only inventory (2026-10-10, 09:00 Europe/Amsterdam)
+
+The unified readiness script was rerun with `-VerifyTranscriptArchive` from the
+PR worktree. It completed successfully and verified all eight transcript
+candidate hashes. The archive still contains 18 files totaling 20,739,169,122
+bytes; the eight completed candidates total 7,939,888,699 bytes and remain
+blocked until PR #36 is merged. The ten non-candidates remain protected.
+
+The current Temp inventory contains nine fixture directories (659,988 bytes).
+Seven are younger than the 24-hour minimum and two have no verifiable cleanup
+manifest, leaving zero candidates. The three named HAI Docker volumes remain
+attached and non-removable; the 10,189,079-byte recovery bundle still has
+unverified ACL provenance. The separate Ollama recovery archive remains
+retained. Two unreferenced image tags (249 MB backend and 29.2 MB
+nginxconfigmanager) remain held by the image-retention gate. The exact
+15-artifact PR diagnostic allowlist (31,505,884 bytes), active PR worktree
+(23 untracked files), secondary checkout (692 modified tracked and 2,475
+untracked files), and shared Go toolchain remain preserved.
+
+PR #36 is still open at `00c0b69bf30f41adfddb0c0020f5ee2d0795022a`. The
+latest GitHub check snapshot has 29 successes and seven failures, so the
+merge-dependent cleanup gates remain closed. The dedicated cleanup-readiness
+safety contract passed in the recorded run; the failed checks are not treated
+as evidence that any artifact is safe to remove. This recheck changed no
+archive, fixture, volume, image, recovery file, diagnostic, checkout, or
+toolchain. `cleanup_authorized` and `deletion_performed` remain `false`.
