@@ -500,7 +500,8 @@ worktree, or diagnostic artifact was removed or changed.
   repair was attempted. This runtime/schema mismatch is an additional reason
   to preserve the database, attached state, and backend image until a verified
   recovery and migration-lineage repair are completed.
-- PR #36 remains open at `65fbf1f3be8640a78b492d4d68299f9b580db760`. CI run
+- At the 01:59 UTC check, PR #36 was open at
+  `65fbf1f3be8640a78b492d4d68299f9b580db760`. CI run
   `38014491605` completed with failures in backend vulnerability scanning,
   repository secret scanning, Windows installer guards, real-Postgres
   migration integration, two-account isolation, authenticated control-plane
@@ -508,3 +509,7 @@ worktree, or diagnostic artifact was removed or changed.
   dedicated HAI cleanup-readiness safety-contract job passed. The PR gate is
   still unmet, and the worktree's 23 untracked diagnostic artifacts remain
   untouched.
+- This 01:59 UTC recheck was subsequently committed as
+  `296366d741f2e5f4d3ed3e19a2073ada67437f50` and pushed to PR #36. New CI run
+  `38015664226` was queued at 02:06 UTC; no result was available at this
+  ledger update.
