@@ -484,3 +484,33 @@ secret scanning, and the Promptfoo dependency audit; browser acceptance was
 still in progress. The Windows-runtime authorization failure is not understood
 well enough to change its safety gate. Treat this CI state as a timestamped
 checkpoint, and refresh it before any merge or cleanup decision.
+
+### Current PR and cleanup checkpoint (2026-10-10)
+
+The current PR #36 head was re-verified as
+`2ed55b26d2578ae80ac38a1a580d5ea844aa7791` on
+`codex/hai-runtime-release`, targeting `main`. GitHub reports the PR open and
+mergeable. The isolated worktree's tracked files are clean; 22 untracked
+diagnostic/evidence artifacts remain and have not been staged or removed. The
+separate primary checkout remains dirty and has not been modified in this
+checkpoint.
+
+Exact-head Actions run `38074032843` confirms backend build/tests, real
+Postgres 17 migration integration, frontend build/tests, authenticated
+control-plane smoke, Windows installer preview/signing guards, native runtime
+regressions, cleanup-readiness contracts, and the other completed contract
+jobs passed. The Promptfoo safety runner image failed its production dependency
+advisory gate (10 high, zero critical in the locked tree); browser acceptance
+was still running at the latest status check. No dependency downgrade, audit
+suppression, or execution-policy relaxation was applied. Refresh this run and
+resolve the upstream dependency finding before calling the PR green.
+
+The source transcript archive remains at
+`D:\codex-temp\hai-completed-agent-sessions`. Its 18-file, 20,739,169,122-byte
+inventory was hash-verified, but hash verification is not semantic integration.
+The earlier ledger records incomplete semantic review of retained histories
+and crosswalk gaps; no new complete archive crosswalk was produced in this
+checkpoint. Keep all source files and local diagnostics. The cleanup verifier
+previously reported `cleanup_gate_ready=false` and `cleanup_authorized=false`;
+no deletion is permitted until semantic integration, PR merge, and the
+repository's explicit cleanup gates are all verified.
