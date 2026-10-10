@@ -129,14 +129,17 @@ unique completed cleanup candidates and the patch-bearing retained transcripts;
 it is not proof that every nested completion event in the retained histories
 was a distinct task or was individually integrated.
 
-A bounded event scan of the six retained histories counted 580, 428, 580, 580,
-436, and 580 `task_complete` records. Text-level deduplication yielded 542
-nontrivial completion texts, not 542 verified distinct work items. Repeated
-parent-history snapshots account for substantial duplication. The contents of
-those 542 texts have not all been semantically classified and cross-referenced
-to source changes, accepted tests, or the preserved reports. That is the
-remaining integration-ledger gap; do not describe the archive as fully
-integrated or delete any of its files on this checkpoint.
+An earlier note counted 542 nontrivial completion texts across six retained
+histories, but did not record the six source paths, their hashes, or a
+reproducible extraction artifact. That count therefore cannot currently be
+attributed to this July 30 archive or treated as 542 distinct work items. The
+verified July 30 inventory is the 18-file manifest above: eight unique
+completed candidates have report/source crosswalks, and ten duplicate,
+aborted, or nonterminal files remain retained. Do not use the unattributed 542
+count as evidence that this archive has additional deliverables, and do not
+claim that every event embedded in retained histories has been individually
+reconciled. If those six histories are identified later, audit them as a
+separate source set with file-level provenance.
 
 For the current clean integration snapshot, the complete tracked HAI change
 set was compared with the latest remote PR source. No additional product-code
@@ -161,9 +164,11 @@ At this checkpoint, remote `main` remains `91c8620c557229f1da4ed15fcbb7088c6a694
 The existing `codex/hai-runtime-release` branch remains at
 `2691b54deeeb6aaff32021d8bf8d17f2b1453edd`; it has not been rewritten. No new
 snapshot branch or pull request has yet been published. Preserve the original
-20.7 GB archive until the 542 completion texts are classified or explicitly
-shown to be redundant against preserved reports and source evidence, and until
-the remote preservation and repository cleanup gates pass.
+20.7 GB archive until the repository and PR gates below pass. The ten retained
+files are not cleanup candidates under this ledger; only the eight exact,
+hashed candidate paths can be considered for later cleanup. The unattributed
+542-text figure is a separate unresolved provenance question, not a verified
+count of this archive's work.
 
 ## Cleanup disposition
 
@@ -246,10 +251,14 @@ and the current transcript integration limits. Local backend, IDP, frontend,
 production-build, and directory secret-scan checks passed before publication.
 GitHub Actions has started a new run; its jobs were pending when checked. Do
 not treat the PR as accepted until the required remote jobs complete and any
-failures are resolved. The 20.7 GB transcript archive remains protected:
-the 542 distinct nontrivial completion texts counted in retained histories
-have not yet all been semantically mapped to preserved reports or source
-evidence, so the archive deletion gate is not satisfied.
+failures are resolved. The 20.7 GB transcript archive remains protected. The
+source archive was reverified on 2026-10-10: 18 files and 20,739,169,122
+logical bytes are present; the eight candidate files (7,939,888,699 bytes)
+match their recorded hashes, and the eight candidate IDs match the crosswalk.
+The ten retained files remain intact. Cleanup readiness is false because the
+PR is open and required CI is failing; no deletion was performed. The
+542-text count above remains unattributed and must not be confused with this
+verified archive inventory.
 
 ### Acceptance-stack repair follow-up
 
@@ -265,6 +274,24 @@ scripts/test-isolated-acceptance-stack.ps1` and `docker compose ... config
 --quiet` against the generated disposable Compose file. The exact-commit
 GitHub Actions run `38042681986` was still in progress at the time of this
 entry; local validation is not remote CI acceptance. The PR remains open and
-unmerged. No transcript or diagnostic archive was deleted. The 542 completion
-texts remain unresolved integration evidence, so the transcript cleanup gate
-continues to fail closed.
+unmerged. No transcript or diagnostic archive was deleted.
+
+### Archive verification and current publication state
+
+On 2026-10-10, the read-only cleanup-readiness verifier was run with
+`-TranscriptRoot D:\codex-temp\hai-completed-agent-sessions
+-RequireSourceArchive`. It returned `source_archive_verified`, 18 manifest
+rows, eight candidate files, ten retained files, eight candidate crosswalk
+IDs, and `deletion_performed=false`. Its cleanup gate remained false because
+the committed-ledger and merged-PR requirements are not satisfied by the
+current publication state.
+
+The remote branch was rechecked at
+`d1d643122d1dfaf762eba6bae592d15b3fee80a5`. PR #36 remains open against
+`main`, with no merge commit. Exact-head GitHub Actions run `38042792522`
+failed. Failed jobs are repository secret scan, Windows installer safety
+guards, migration integration, two-account isolation, authenticated
+control-plane smoke, browser acceptance, and the Promptfoo production
+dependency audit. The prior exact-head run `38042681986` also failed. Local
+archive integrity does not override these release gates; no transcript
+deletion is safe yet.
