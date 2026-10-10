@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,5 +92,46 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	assertSourceObservationSQLState(t, db.Exec("UPDATE public.operation_source_origins SET enabled = true, registry_config_version = registry_config_version + 1, config_epoch = config_epoch + 1 WHERE origin_id = ?", feed.ID).Error, "23000")
 	assertSourceObservationSQLState(t, db.Exec("UPDATE public.operation_source_origins SET registry_managed = false, config_epoch = config_epoch + 1 WHERE origin_id = ?", feed.ID).Error, "23000")
 	assertSourceObservationSQLState(t, db.Exec("DELETE FROM public.account_feeds WHERE id = ?", feed.ID).Error, "23000")
-	assertSourceObservationSQLState(t, infra.RollbackMigration(db, files, "pre", "pre/0114_operation_source_configuration"), "55000")
+	rollbackErr := infra.RollbackMigration(db, migrations.Files, "pre", "pre/0114_operation_source_configuration")
+	if rollbackErr == nil || !strings.Contains(rollbackErr.Error(), "later-phase migration") {
+		t.Fatalf("pre-phase rollback with later post migrations applied = %v; want phase-order refusal", rollbackErr)
+	}
+
+	// Exercise the migration's registry-data guard independently of the runner's
+	// earlier phase-order guard. This database has only the pre migrations needed
+	// for a real managed feed, so rollback reaches the 0114 down-SQL preflight.
+	rollbackDB := openIsolatedMigrationDatabase(t).WithContext(ctx)
+	rollbackFiles := migrationFilesThrough(t, "pre/0114_operation_source_configuration")
+	if _, err := infra.ApplyMigrations(rollbackDB, rollbackFiles, "pre"); err != nil {
+		t.Fatalf("apply isolated pre-phase migrations: %v", err)
+	}
+	rollbackRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rollbackRoot, "rollback-feed.json"), []byte(`{"items":[{"externalId":"managed-one","title":"Keep managed source authority","content":"rollback guard fixture","itemType":"email","provider":"local"}]}`), 0o600); err != nil {
+		t.Fatalf("write isolated rollback fixture: %v", err)
+	}
+	rollbackService := operations.NewService(operations.NewGormRepository(rollbackDB))
+	rollbackRegistry, err := accountfeed.NewRegistryWithRepository(
+		accountfeed.NewGormRegistryRepository(rollbackDB), rollbackService, nil,
+		accountfeed.FetchOptions{FeedsRoot: rollbackRoot},
+	)
+	if err != nil {
+		t.Fatalf("create isolated registry: %v", err)
+	}
+	rollbackFeed, err := rollbackRegistry.RegisterContext(ctx, accountfeed.Feed{
+		Name: "rollback-guard", Provider: string(accountfeed.ProviderGenericJSONFeed),
+		SourceType: accountfeed.SourceLocalJSONFile, Path: "rollback-feed.json",
+		OwnerUserID: "config-rollback-owner", WorkspaceID: "local", Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("register isolated rollback feed: %v", err)
+	}
+	rollbackScope := accountfeed.FeedScope{OwnerUserID: rollbackFeed.OwnerUserID, WorkspaceID: rollbackFeed.WorkspaceID}
+	rollbackReport, err := rollbackRegistry.SyncContext(ctx, rollbackScope, rollbackFeed.ID)
+	if err != nil || !rollbackReport.Recorded || rollbackReport.OperationsCreated != 1 {
+		t.Fatalf("seed managed source authority for rollback: %+v / %v", rollbackReport, err)
+	}
+	assertSourceObservationSQLState(t,
+		infra.RollbackMigration(rollbackDB, rollbackFiles, "pre", "pre/0114_operation_source_configuration"),
+		"55000",
+	)
 }
