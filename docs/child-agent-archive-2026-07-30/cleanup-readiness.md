@@ -549,3 +549,18 @@ verified synthetic fixtures are about 11.7 hours old (below the 24-hour
 retention minimum), and two folders remain unverified. No local file, Docker
 container, volume, image, or service was deleted or changed during this
 recheck.
+
+The transcript archive now has a separate removal command,
+`scripts/remove-hai-completed-session-transcripts.ps1`. It is fail-closed and
+targets only the eight manifest-listed completed transcripts whose reports and
+integration crosswalks are preserved. It requires the exact inventoried source
+path, canonical `main`, PR #36 merged into `main`, successful PR checks, a full
+source/archive/hash audit, explicit child IDs or the complete manifest-approved
+set, `-Apply`, a count-bound confirmation phrase, and PowerShell's high-impact
+`ShouldProcess` confirmation. Before deleting it also checks for running
+processes referencing the archive and rehashes every selected transcript. Its
+postflight verifies that only manifest entries not selected for deletion
+remain; it never removes the archive directory or unselected transcripts. A lightweight
+branch/PR preflight prevents a multi-gigabyte source hash pass while the PR is
+still open or checks are incomplete. This command has not been run against the
+source archive; current PR state keeps it blocked.

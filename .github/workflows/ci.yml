@@ -139,6 +139,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           ./scripts/test-hai-detached-volume-archive-contract.ps1
           ./scripts/test-hai-transcript-cleanup-gate-contract.ps1
+          ./scripts/test-hai-transcript-removal-contract.ps1
           ./scripts/test-hai-temp-fixture-cleanup-contract.ps1
           ./scripts/test-hai-volume-cleanup-readiness-contract.ps1
 
@@ -209,6 +210,7 @@ jobs:
           ./scripts/test-windows-environment-only-recovery.ps1
           ./scripts/test-hai-detached-volume-archive-contract.ps1
           ./scripts/test-hai-transcript-cleanup-gate-contract.ps1
+          ./scripts/test-hai-transcript-removal-contract.ps1
           ./scripts/test-hai-temp-fixture-cleanup-contract.ps1
           ./scripts/test-hai-volume-cleanup-readiness-contract.ps1
       - name: Required environment startup guard
