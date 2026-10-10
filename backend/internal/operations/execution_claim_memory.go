@@ -363,14 +363,17 @@ func (r *MemoryRepository) RecoverExpiredClaims(ctx context.Context, ownerUserID
 }
 
 func memoryClaimable(op models.Operation, now time.Time, events []models.OperationEvent) bool {
+	status := OperationStatus(op.Status)
+	if status == StatusApproved {
+		// A fresh exact-revision owner approval supersedes a prior self-hold.
+		return hasSourceApprovalReceipt(events, op.ID)
+	}
 	if op.NextReviewAt != nil && op.NextReviewAt.After(now) {
 		return false
 	}
-	switch OperationStatus(op.Status) {
+	switch status {
 	case StatusNew, StatusReady, StatusDrafting:
 		return true
-	case StatusApproved:
-		return hasSourceApprovalReceipt(events, op.ID)
 	case StatusClassified:
 		decision := CurrentDecision(op.CurrentDecision)
 		return decision == DecisionRunSafeLocalWorker || decision == DecisionCreateDraft || decision == DecisionBlock || op.RequiresApproval

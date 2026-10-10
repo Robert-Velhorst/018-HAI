@@ -116,7 +116,10 @@ func (r *GormRepository) ClaimNext(ctx context.Context, ownerUserID, workspaceID
 				  AND approval.after_status = 'approved'
 				  AND approval.payload_json ? 'sourceApproval'
 			)`, string(StatusApproved)).
-			Where("next_review_at IS NULL OR next_review_at <= clock_timestamp()").
+			// A fresh exact-revision owner approval supersedes a prior self-hold.
+			// Keep the review reminder for all other statuses, matching the memory
+			// repository's safeOperationClaimable behavior.
+			Where("(status = ? OR next_review_at IS NULL OR next_review_at <= clock_timestamp())", string(StatusApproved)).
 			Where(claimSourceHeadPredicate).
 			Where(`NOT EXISTS (
 				SELECT 1 FROM public.operation_execution_claims AS active_claim

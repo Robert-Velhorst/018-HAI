@@ -122,6 +122,7 @@ func (l *orderingSQLLog) Trace(_ context.Context, _ time.Time, query func() (str
 type orderingQueryConnector struct{}
 type orderingQueryDriver struct{}
 type orderingQueryConnection struct{}
+type orderingQueryTransaction struct{}
 type orderingQueryRows struct{}
 
 func (orderingQueryConnector) Connect(context.Context) (driver.Conn, error) {
@@ -130,11 +131,13 @@ func (orderingQueryConnector) Connect(context.Context) (driver.Conn, error) {
 func (orderingQueryConnector) Driver() driver.Driver                { return orderingQueryDriver{} }
 func (orderingQueryDriver) Open(string) (driver.Conn, error)        { return orderingQueryConnection{}, nil }
 func (orderingQueryConnection) Prepare(string) (driver.Stmt, error) { return nil, driver.ErrSkip }
-func (orderingQueryConnection) Begin() (driver.Tx, error)           { return nil, driver.ErrSkip }
+func (orderingQueryConnection) Begin() (driver.Tx, error)           { return orderingQueryTransaction{}, nil }
 func (orderingQueryConnection) Close() error                        { return nil }
 func (orderingQueryConnection) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
 	return orderingQueryRows{}, nil
 }
+func (orderingQueryTransaction) Commit() error      { return nil }
+func (orderingQueryTransaction) Rollback() error    { return nil }
 func (orderingQueryRows) Columns() []string         { return []string{"key", "n"} }
 func (orderingQueryRows) Close() error              { return nil }
 func (orderingQueryRows) Next([]driver.Value) error { return io.EOF }
@@ -155,6 +158,10 @@ func TestPostgresOperationQueriesKeepDeterministicSecondaryOrdering(t *testing.T
 		name, order string
 		call        func() error
 	}{
+		{"claim-next", "ORDER BY created_at ASC, updated_at ASC, id ASC", func() error {
+			_, err := repo.ClaimNext(context.Background(), "user-1", "local", uuid.New(), time.Minute)
+			return err
+		}},
 		{"list", "ORDER BY updated_at DESC,id ASC", func() error {
 			_, err := repo.List(Filter{OwnerUserID: "user-1", WorkspaceID: "local", Offset: -5, Limit: 7})
 			return err
@@ -176,6 +183,11 @@ func TestPostgresOperationQueriesKeepDeterministicSecondaryOrdering(t *testing.T
 			}
 			if query.name == "due" && !strings.Contains(sql, "next_review_at IS NULL OR next_review_at <= now()") {
 				t.Fatalf("due filter missing: %s", sql)
+			}
+			if query.name == "claim-next" &&
+				(!strings.Contains(sql, "(status = 'approved' OR next_review_at IS NULL OR next_review_at <= clock_timestamp())") ||
+					!strings.Contains(sql, "payload_json ? 'sourceApproval'")) {
+				t.Fatalf("claim query must let only receipt-backed approval bypass a review reminder: %s", sql)
 			}
 		})
 	}

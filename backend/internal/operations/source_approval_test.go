@@ -568,7 +568,7 @@ func TestExplicitSourceApprovalOverridesFutureReviewReminder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("approve exact source revision: %v", err)
 	}
-	claimed, err := service.ClaimOperation(context.Background(), op.OwnerUserID, op.WorkspaceID, op.ID, uuid.New(), time.Minute)
+	claimed, err := service.ClaimNext(context.Background(), op.OwnerUserID, op.WorkspaceID, uuid.New(), time.Minute)
 	if err != nil {
 		t.Fatalf("explicit approval must override a future review reminder: %v", err)
 	}

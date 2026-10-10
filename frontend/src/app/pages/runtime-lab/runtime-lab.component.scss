@@ -169,6 +169,56 @@
     padding: 10px 12px;
   }
 
+  &__runtime-configured {
+    font-weight: 600;
+  }
+
+  &__deepseek-policy {
+    border-top: 1px solid var(--rl-border);
+    margin-top: 12px;
+    padding-top: 12px;
+
+    h3 {
+      font-size: 14px;
+      margin: 0;
+    }
+
+    > p {
+      margin: 6px 0 0;
+    }
+  }
+
+  &__runtime-policy {
+    display: grid;
+    gap: 8px 16px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
+
+    div {
+      min-width: 0;
+    }
+
+    dt {
+      color: var(--rl-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+
+    dd {
+      margin: 2px 0 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__runtime-blocker {
+    background: var(--hai-surface-muted);
+    border: 1px solid var(--rl-border);
+    border-radius: 6px;
+    margin: 12px 0 0;
+    overflow-wrap: anywhere;
+    padding: 10px 12px;
+  }
+
   &__mcp,
   &__parity {
     background: var(--rl-surface);
