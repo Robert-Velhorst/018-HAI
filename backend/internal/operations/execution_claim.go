@@ -114,7 +114,7 @@ func (r *GormRepository) ClaimNext(ctx context.Context, ownerUserID, workspaceID
 				WHERE approval.operation_id = operations.id
 				  AND approval.event_type = 'status_change'
 				  AND approval.after_status = 'approved'
-				  AND approval.payload ? 'sourceApproval'
+				  AND approval.payload_json ? 'sourceApproval'
 			)`, string(StatusApproved)).
 			Where("next_review_at IS NULL OR next_review_at <= clock_timestamp()").
 			Where(claimSourceHeadPredicate).
