@@ -3,7 +3,8 @@ param(
     [string]$TranscriptRoot = 'D:\codex-temp\hai-completed-agent-sessions',
     [string]$RecoveryArchiveRoot = (Join-Path $env:LOCALAPPDATA 'HAI\volume-recovery'),
     [ValidateRange(1, 8760)]
-    [int]$MinimumFixtureAgeHours = 24
+    [int]$MinimumFixtureAgeHours = 24,
+    [switch]$VerifyTranscriptArchive
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,11 +36,36 @@ function Get-ReadOnlyReport([string]$Name, [string]$ScriptName, [hashtable]$Argu
 }
 
 $temp = Get-ReadOnlyReport 'synthetic_temp_fixtures' 'test-hai-temp-fixture-cleanup-readiness.ps1' @{ MinimumAgeHours = $MinimumFixtureAgeHours }
-$transcriptIntegrity = Get-ReadOnlyReport 'transcript_source_integrity' 'test-hai-transcript-cleanup-readiness.ps1' @{
-    TranscriptRoot = $TranscriptRoot
-    RequireSourceArchive = $true
+$transcriptIntegrity = if ($VerifyTranscriptArchive) {
+    Get-ReadOnlyReport 'transcript_source_integrity' 'test-hai-transcript-cleanup-readiness.ps1' @{
+        TranscriptRoot = $TranscriptRoot
+        RequireSourceArchive = $true
+    }
+} else {
+    [pscustomobject]@{
+        name = 'transcript_source_integrity'
+        status = 'not_requested'
+        blocker = 'Full transcript enumeration and candidate SHA-256 verification were skipped. Pass -VerifyTranscriptArchive for this I/O-intensive check.'
+        report = $null
+    }
 }
 $transcripts = Get-ReadOnlyReport 'completed_session_transcripts' 'remove-hai-completed-session-transcripts.ps1' @{ TranscriptRoot = $TranscriptRoot }
+$integrity = if ($transcriptIntegrity.status -eq 'reported') { $transcriptIntegrity.report } else { $null }
+$integrityStatus = if ($null -eq $integrity) {
+    [string]$transcriptIntegrity.status
+} elseif ($integrity.source_archive_verified -eq $true) {
+    'verified'
+} else {
+    'not_verified'
+}
+$integritySummary = [pscustomobject][ordered]@{
+    status = $integrityStatus
+    result = if ($null -ne $integrity) { [string]$integrity.result } else { [string]$transcriptIntegrity.status }
+    source_archive_verified = ($null -ne $integrity -and $integrity.source_archive_verified -eq $true)
+    source_archive_files = if ($null -ne $integrity) { $integrity.source_archive_files } else { $null }
+    source_archive_logical_bytes = if ($null -ne $integrity) { $integrity.source_archive_logical_bytes } else { $null }
+    blocker = if ($null -ne $integrity -and $integrity.source_archive_verified -eq $true) { $null } else { [string]$transcriptIntegrity.blocker }
+}
 $volumes = Get-ReadOnlyReport 'docker_volumes_and_recovery_archives' 'test-hai-volume-cleanup-readiness.ps1' @{ RecoveryArchiveRoot = $RecoveryArchiveRoot }
 $diagnostics = Get-ReadOnlyReport 'pr_diagnostics_and_tool_downloads' 'remove-hai-pr-diagnostic-artifacts.ps1'
 $images = Get-ReadOnlyReport 'unreferenced_local_images' 'remove-hai-unreferenced-image.ps1' @{
@@ -76,7 +102,6 @@ if ($temp.status -eq 'reported') {
 }
 
 if ($transcripts.status -eq 'reported') {
-    $integrity = if ($transcriptIntegrity.status -eq 'reported') { $transcriptIntegrity.report } else { $null }
     $targets.Add([pscustomobject][ordered]@{
         id = 'completed_session_transcripts'
         source_path = $TranscriptRoot
@@ -84,31 +109,16 @@ if ($transcripts.status -eq 'reported') {
         candidate_count = [int]$transcripts.report.candidate_files
         candidate_bytes = [long]$transcripts.report.candidate_bytes
         blocker = [string]$transcripts.report.blocker
-        source_archive_integrity = [pscustomobject][ordered]@{
-            status = if ($null -ne $integrity -and $integrity.source_archive_verified -eq $true) { 'verified' } else { 'not_verified' }
-            result = if ($null -ne $integrity) { [string]$integrity.result } else { 'blocked' }
-            source_archive_verified = ($null -ne $integrity -and $integrity.source_archive_verified -eq $true)
-            source_archive_files = if ($null -ne $integrity) { $integrity.source_archive_files } else { $null }
-            source_archive_logical_bytes = if ($null -ne $integrity) { $integrity.source_archive_logical_bytes } else { $null }
-            blocker = if ($null -ne $integrity) { $null } else { [string]$transcriptIntegrity.blocker }
-        }
-        source_hash_audit_started = ($null -ne $integrity)
+        source_archive_integrity = $integritySummary
+        source_hash_audit_requested = [bool]$VerifyTranscriptArchive
     })
 } else {
-    $integrity = if ($transcriptIntegrity.status -eq 'reported') { $transcriptIntegrity.report } else { $null }
     $targets.Add([pscustomobject][ordered]@{
         id = 'completed_session_transcripts'
         status = 'blocked'
         blocker = $transcripts.blocker
-        source_archive_integrity = [pscustomobject][ordered]@{
-            status = if ($null -ne $integrity -and $integrity.source_archive_verified -eq $true) { 'verified' } else { 'not_verified' }
-            result = if ($null -ne $integrity) { [string]$integrity.result } else { 'blocked' }
-            source_archive_verified = ($null -ne $integrity -and $integrity.source_archive_verified -eq $true)
-            source_archive_files = if ($null -ne $integrity) { $integrity.source_archive_files } else { $null }
-            source_archive_logical_bytes = if ($null -ne $integrity) { $integrity.source_archive_logical_bytes } else { $null }
-            blocker = if ($null -ne $integrity) { $null } else { [string]$transcriptIntegrity.blocker }
-        }
-        source_hash_audit_started = ($null -ne $integrity)
+        source_archive_integrity = $integritySummary
+        source_hash_audit_requested = [bool]$VerifyTranscriptArchive
     })
 }
 
@@ -174,6 +184,7 @@ $report = [pscustomobject][ordered]@{
     worktree = $repoRoot
     generated_utc = [DateTimeOffset]::UtcNow.ToString('o')
     mode = 'read_only_inventory'
+    transcript_source_hash_audit_requested = [bool]$VerifyTranscriptArchive
     cleanup_authorized = $false
     deletion_performed = $false
     preserve_active_pr_worktree = $true

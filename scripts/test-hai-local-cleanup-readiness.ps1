@@ -16,6 +16,10 @@ $required = @(
     'cleanup_targets = @($targets)',
     'source_archive_integrity',
     'RequireSourceArchive = $true',
+    'VerifyTranscriptArchive',
+    'if ($VerifyTranscriptArchive)',
+    "status = 'not_requested'",
+    'source_hash_audit_requested = [bool]$VerifyTranscriptArchive',
     'preserve_active_pr_worktree = $true'
 )
 foreach ($token in $required) {

@@ -120,7 +120,16 @@ remains read-only and does not authorize or perform transcript deletion.
 `scripts/test-hai-transcript-cleanup-gate-contract.ps1` protects these
 boundaries in the Windows recovery CI suite.
 
-The full future gate invocation is:
+The unified inventory defaults to a low-I/O pass. It reports manifest-ledger
+candidates and marks source integrity `not_requested`; it does not enumerate or
+hash the 20+ GB transcript archive. To run the full source enumeration and
+candidate SHA-256 audit, opt in explicitly:
+
+```powershell
+./scripts/get-hai-local-cleanup-readiness.ps1 -VerifyTranscriptArchive
+```
+
+That report is read-only. The full future transcript-removal gate invocation is:
 
 ```powershell
 ./scripts/test-hai-transcript-cleanup-readiness.ps1 `
