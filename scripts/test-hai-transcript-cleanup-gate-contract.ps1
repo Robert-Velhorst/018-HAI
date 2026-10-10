@@ -12,6 +12,12 @@ $required = @(
     '--json name,state',
     "state -cne 'SUCCESS'",
     'merge-base --is-ancestor',
+    'source archive root is a reparse point',
+    'Get-ChildItem -LiteralPath $archiveFullPath -Force -Recurse',
+    'source archive contains a reparse point',
+    '$sourceRelativeKey = $relativeKey.Substring($prefix.Length)',
+    '$sourcePaths.Count -ne $rows.Count',
+    '$sourceArchiveBytes -ne $manifestBytes',
     '$cleanupGateReady = $sourceVerified -and $committedLedgerVerified -and $mergedPullRequestVerified',
     'cleanup_authorized = $false'
 )

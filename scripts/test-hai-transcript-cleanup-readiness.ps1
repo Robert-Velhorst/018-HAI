@@ -101,26 +101,55 @@ if (-not [string]::IsNullOrWhiteSpace($TranscriptRoot)) {
     }
     $archiveFullPath = (Resolve-Path -LiteralPath $TranscriptRoot).Path.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
     $archiveLeaf = Split-Path -Leaf $archiveFullPath
+    $archiveRoot = Get-Item -LiteralPath $archiveFullPath -Force
+    if (($archiveRoot.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Stop-ReadinessCheck 'the source archive root is a reparse point.'
+    }
+    try {
+        $sourceEntries = @(Get-ChildItem -LiteralPath $archiveFullPath -Force -Recurse -ErrorAction Stop)
+    }
+    catch {
+        Stop-ReadinessCheck 'the source archive could not be completely enumerated.'
+    }
+    if (@($sourceEntries | Where-Object { ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 }).Count -gt 0) {
+        Stop-ReadinessCheck 'the source archive contains a reparse point.'
+    }
+    $sourceFiles = @($sourceEntries | Where-Object { -not $_.PSIsContainer })
+    $sourcePaths = @{}
+    [long]$sourceArchiveBytes = 0
+    foreach ($sourceFile in $sourceFiles) {
+        $sourceRelative = $sourceFile.FullName.Substring($archiveFullPath.Length + 1).Replace('\', '/')
+        if ($sourcePaths.ContainsKey($sourceRelative)) {
+            Stop-ReadinessCheck "the source archive contains a duplicate path: $sourceRelative."
+        }
+        $sourcePaths[$sourceRelative] = $true
+        $sourceArchiveBytes += [long]$sourceFile.Length
+    }
     $seenPaths = @{}
     foreach ($entry in $rows) {
-        $relative = ([string]$entry.session_path).Replace('/', [IO.Path]::DirectorySeparatorChar)
-        $prefix = $archiveLeaf + [IO.Path]::DirectorySeparatorChar
-        if (-not $relative.StartsWith($prefix, [StringComparison]::Ordinal) -or
-            $relative.Contains('..')) {
+        $relativeKey = ([string]$entry.session_path).Replace('\', '/')
+        $prefix = $archiveLeaf + '/'
+        if (-not $relativeKey.StartsWith($prefix, [StringComparison]::Ordinal) -or
+            [IO.Path]::IsPathRooted($relativeKey) -or
+            @($relativeKey -split '/' | Where-Object { $_ -ceq '.' -or $_ -ceq '..' }).Count -gt 0) {
             Stop-ReadinessCheck "transcript $($entry.child_id) has a path outside the declared archive root."
         }
-        if ($seenPaths.ContainsKey($relative)) {
-            Stop-ReadinessCheck "manifest contains a duplicate transcript path: $relative."
+        $sourceRelativeKey = $relativeKey.Substring($prefix.Length)
+        $relative = $sourceRelativeKey.Replace('/', [IO.Path]::DirectorySeparatorChar)
+        if ([IO.Path]::IsPathRooted($relative)) {
+            Stop-ReadinessCheck "transcript $($entry.child_id) has a path outside the declared archive root."
         }
-        $seenPaths[$relative] = $true
-        $sourcePath = Join-Path $archiveFullPath $relative.Substring($prefix.Length)
+        if ($seenPaths.ContainsKey($sourceRelativeKey)) {
+            Stop-ReadinessCheck "manifest contains a duplicate transcript path: $relativeKey."
+        }
+        $seenPaths[$sourceRelativeKey] = $true
+        $sourcePath = Join-Path $archiveFullPath $relative
         if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
             Stop-ReadinessCheck "transcript source file is missing: $($entry.session_path)."
         }
         $sourceItem = Get-Item -LiteralPath $sourcePath -Force
-        if (($sourceItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
-            $sourceItem.Length -ne [long]$entry.logical_bytes) {
-            Stop-ReadinessCheck "transcript source file is a reparse point or has changed size: $($entry.session_path)."
+        if ($sourceItem.Length -ne [long]$entry.logical_bytes) {
+            Stop-ReadinessCheck "transcript source file has changed size: $($entry.session_path)."
         }
         if ([string]$entry.disposition -ceq 'candidate_after_ledger_commit') {
             $actualHash = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -129,8 +158,18 @@ if (-not [string]::IsNullOrWhiteSpace($TranscriptRoot)) {
             }
         }
     }
-    if ($seenPaths.Count -ne $rows.Count) {
-        Stop-ReadinessCheck 'source archive path count does not match the manifest.'
+    if ($seenPaths.Count -ne $rows.Count -or $sourcePaths.Count -ne $rows.Count) {
+        Stop-ReadinessCheck 'source archive file count does not exactly match the manifest.'
+    }
+    foreach ($relative in $seenPaths.Keys) {
+        if (-not $sourcePaths.ContainsKey($relative)) {
+            Stop-ReadinessCheck "source archive contains a missing or unlisted manifest path: $relative."
+        }
+    }
+    $manifestBytes = [long](($rows | Measure-Object -Property logical_bytes -Sum).Sum)
+    $ledgerBytes = [long]$summary.cleanup_candidate_logical_bytes + [long]$summary.retained_logical_bytes
+    if ($sourceArchiveBytes -ne $manifestBytes -or $sourceArchiveBytes -ne $ledgerBytes) {
+        Stop-ReadinessCheck 'source archive bytes do not exactly match the manifest and ledger totals.'
     }
     $sourceVerified = $true
 }
@@ -216,6 +255,8 @@ $cleanupGateReady = $sourceVerified -and $committedLedgerVerified -and $mergedPu
     candidate_files = $candidates.Count
     candidate_bytes = [long]$summary.cleanup_candidate_logical_bytes
     retained_files = $retained.Count
+    source_archive_files = if ($sourceVerified) { $sourcePaths.Count } else { $null }
+    source_archive_logical_bytes = if ($sourceVerified) { $sourceArchiveBytes } else { $null }
     crosswalk_candidate_ids = $crosswalkIds.Count
     source_archive_verified = $sourceVerified
     committed_ledger_verified = $committedLedgerVerified

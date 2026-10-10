@@ -425,7 +425,10 @@ containers, worktrees, or toolchains were deleted.
   `deletion_performed=false` for every directory.
 - The transcript source check again verified the eight candidate hashes and
   full source archive inventory, but `cleanup_gate_ready=false`: PR #36 is
-  still open. Public GitHub API evidence for head
+  still open. The verifier now enumerates the entire source tree, rejects
+  reparse points, requires an exact manifest-to-disk path/count match, and
+  compares aggregate source bytes with both manifest and ledger totals before
+  reporting source verification. Public GitHub API evidence for head
   `14cd192c80e5fa2e05293a8fa83da63a7a7afa06` showed 36 checks, five failures,
   and no pending checks. The PR worktree and all untracked diagnostic evidence
   remain preserved.
