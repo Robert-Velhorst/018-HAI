@@ -10,7 +10,9 @@ function Test-HaiInstallerExcludedPath {
     if ($fileName -match '(?i)(^|[._-])(?:secrets?|credentials?|service-account)(?:[._-]|$)' -or
         $fileName -match '^(?i)(?:id_rsa|id_ed25519|id_ecdsa|id_dsa)(?:\..*)?$' -or
         $fileName -match '^(?i)(?:\.npmrc|\.pypirc|\.netrc|\.pgpass|\.my\.cnf)$') { return $true }
-    if ($normalized -match '(?i)\.(?:zip|tar|gz|7z|rar|pdf|bak|backup|old|db|sqlite|sqlite3|sqlite-wal|sqlite-shm|db-wal|db-shm|wal|sql|dump|bson|mdb|accdb|ibd|frm|myd|myi|pem|key|keyx|p12|pfx|p7b|p7c|p7s|p8|jks|keystore|crt|cer|der|asc|gpg|snk|mobileprovision|tfstate|tfstate\.backup)$') { return $true }
+    $isVersionedSchemaMigration = $normalized -match '^backend/migrations/(?:pre|post)/\d{4}_[^/]+\.sql$'
+    if (-not $isVersionedSchemaMigration -and
+        $normalized -match '(?i)\.(?:zip|tar|gz|7z|rar|pdf|bak|backup|old|db|sqlite|sqlite3|sqlite-wal|sqlite-shm|db-wal|db-shm|wal|sql|dump|bson|mdb|accdb|ibd|frm|myd|myi|pem|key|keyx|p12|pfx|p7b|p7c|p7s|p8|jks|keystore|crt|cer|der|asc|gpg|snk|mobileprovision|tfstate|tfstate\.backup)$') { return $true }
     return $false
 }
 

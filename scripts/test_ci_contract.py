@@ -1920,6 +1920,13 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn('go run ./cmd/main.go migrate up', migrations)
         self.assertLess(migrations.index(preparation), migrations.index(execution))
 
+    def test_evaluation_postgres_tests_enable_integration_build_tag(self) -> None:
+        migrations = job_block("migrations-integration")
+        execution = 'HAI_EVALUATION_TEST_DATABASE_DSN="$evaluation_dsn" go test -count=1 -tags integration'
+        self.assertIn(execution, migrations)
+        self.assertIn('TestGormRepositoryOwnerIsolationRoundTripAndImmutableReceipts', migrations)
+        self.assertIn('TestGormRepositoryFailsClosedOnStoredDigestMismatch', migrations)
+
     def test_durable_recovery_runs_on_dedicated_database_with_required_passes(self) -> None:
         migrations = job_block("migrations-integration")
         self.assertIn('HAI_DURABLEJOB_TEST_DATABASE_DSN="$durablejob_dsn" go test -count=1 -tags integration', migrations)

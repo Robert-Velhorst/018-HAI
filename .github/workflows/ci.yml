@@ -988,7 +988,7 @@ jobs:
           grep -q -- '^--- PASS: TestPostgresRepositoryAndSelectionServiceIntegration' "$brain_skill_selection_log"
           grep -q -- '^--- PASS: TestPostgresRepositoryConcurrentOpposingSelectionWrites' "$brain_skill_selection_log"
           evaluation_log="$RUNNER_TEMP/evaluation-postgres.log"
-          HAI_EVALUATION_TEST_DATABASE_DSN="$evaluation_dsn" go test -count=1 \
+          HAI_EVALUATION_TEST_DATABASE_DSN="$evaluation_dsn" go test -count=1 -tags integration \
             ./internal/evaluation/ -v | tee "$evaluation_log"
           grep -q -- '^--- PASS: TestGormRepositoryOwnerIsolationRoundTripAndImmutableReceipts' "$evaluation_log"
           grep -q -- '^--- PASS: TestGormRepositoryFailsClosedOnStoredDigestMismatch' "$evaluation_log"

@@ -23,6 +23,10 @@ $fixtureSelection = @(Resolve-HaiInstallerSourceSelection `
     -TrackedFiles @(
         'README.md',
         '.env.example',
+        'backend/migrations/pre/0001_example.up.sql',
+        'backend/migrations/post/0001_example.down.sql',
+        'backend/migrations/post/unversioned.sql',
+        'exports/customer.sql',
         '.env.local',
         'db_data_automation/ha.db',
         'docs/private.pdf',
@@ -58,6 +62,8 @@ $fixtureSelection = @(Resolve-HaiInstallerSourceSelection `
 Assert-HaiInstallerSelectionContains $fixtureSelection @(
     'README.md',
     '.env.example',
+    'backend/migrations/pre/0001_example.up.sql',
+    'backend/migrations/post/0001_example.down.sql',
     'backend/cmd/hai-openclaw-maintenance/tracked.go',
     'installer/windows/Run-HAI-OpenClawMaintenance.ps1',
     'installer/windows/Hai-OpenClawMaintenance.ps1',
@@ -85,7 +91,9 @@ Assert-HaiInstallerSelectionOmits $fixtureSelection @(
     'backend/internal/openclawmaintenance/certificate.pem',
     'backend/internal/openclawmaintenance/source.zip',
     'backend/internal/openclawmaintenance/trace.txt',
-    'backend/internal/unrelated/unrelated.go'
+    'backend/internal/unrelated/unrelated.go',
+    'backend/migrations/post/unversioned.sql',
+    'exports/customer.sql'
 ) 'Fixture selection'
 
 $sensitiveArtifacts = @(
