@@ -102,6 +102,9 @@ if ($null -eq $git) {
     } else {
         $workspaceBlocker = 'git could not inventory the active worktree'
     }
+    if ([string]::IsNullOrWhiteSpace($branch) -or $head -notmatch '^[0-9a-f]{40}$') {
+        $workspaceBlocker = 'Git could not verify the active worktree branch and commit; preserve it.'
+    }
 }
 $gh = Get-Command gh -ErrorAction SilentlyContinue
 if ($null -eq $gh) {
@@ -186,7 +189,9 @@ if (Test-Path -LiteralPath $secondaryWorktreePath -PathType Container) {
             $secondaryHeadLines = @(& $git.Source @secondaryGitPrefix rev-parse HEAD 2>$null)
             if ($LASTEXITCODE -eq 0 -and $secondaryHeadLines.Count -eq 1) { $secondaryWorktreeTarget.head = ([string]$secondaryHeadLines[0]).Trim().ToLowerInvariant() }
             $secondaryStatusLines = @(& $git.Source @secondaryGitPrefix status --porcelain=v1 --untracked-files=all 2>$null)
-            if ($LASTEXITCODE -eq 0) {
+            if ($LASTEXITCODE -eq 0 -and
+                -not [string]::IsNullOrWhiteSpace([string]$secondaryWorktreeTarget.branch) -and
+                [string]$secondaryWorktreeTarget.head -match '^[0-9a-f]{40}$') {
                 $secondaryWorktreeTarget.repository = 'Robert-Velhorst/018-HAI'
                 $secondaryWorktreeTarget.tracked_change_count = @($secondaryStatusLines | Where-Object { -not ([string]$_).StartsWith('??', [StringComparison]::Ordinal) }).Count
                 $secondaryWorktreeTarget.untracked_file_count = @($secondaryStatusLines | Where-Object { ([string]$_).StartsWith('??', [StringComparison]::Ordinal) }).Count

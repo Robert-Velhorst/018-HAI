@@ -25,6 +25,7 @@ $required = @(
     'cleanup_requires_manual_review = $true',
     'tracked_change_count = $trackedChangeCount',
     'untracked_file_count = $untrackedFileCount',
+    'Git could not verify the active worktree branch and commit; preserve it.',
     "id = 'shared_go_toolchain'",
     'status = if (Test-Path -LiteralPath $sharedToolchainPath -PathType Container) { ''retain_shared'' } else { ''not_present'' }',
     "id = 'secondary_hai_checkout'",
