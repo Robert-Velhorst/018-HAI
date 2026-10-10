@@ -121,7 +121,7 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	if err != nil {
 		t.Fatalf("create isolated registry: %v", err)
 	}
-	rollbackFeed, err := rollbackRegistry.RegisterContext(ctx, accountfeed.Feed{
+	_, err = rollbackRegistry.RegisterContext(ctx, accountfeed.Feed{
 		Name: "rollback-guard", Provider: string(accountfeed.ProviderGenericJSONFeed),
 		SourceType: accountfeed.SourceLocalJSONFile, Path: "rollback-feed.json",
 		OwnerUserID: "config-rollback-owner", WorkspaceID: "local", Enabled: true,
