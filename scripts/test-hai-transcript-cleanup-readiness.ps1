@@ -1,6 +1,10 @@
 param(
     [string]$TranscriptRoot,
-    [switch]$RequireSourceArchive
+    [switch]$RequireSourceArchive,
+    [switch]$RequireCommittedLedger,
+    [switch]$RequireMergedPullRequest,
+    [int]$PullRequestNumber = 36,
+    [string]$GitHubRepository = 'Robert-Velhorst/018-HAI'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,6 +87,11 @@ foreach ($candidate in $candidates) {
 }
 
 $sourceVerified = $false
+$committedLedgerVerified = $false
+$mergedPullRequestVerified = $false
+$repositoryHead = $null
+$pullRequestMergeCommit = $null
+$cleanupGateReady = $false
 if ($RequireSourceArchive -and [string]::IsNullOrWhiteSpace($TranscriptRoot)) {
     Stop-ReadinessCheck '-RequireSourceArchive requires -TranscriptRoot.'
 }
@@ -126,6 +135,80 @@ if (-not [string]::IsNullOrWhiteSpace($TranscriptRoot)) {
     $sourceVerified = $true
 }
 
+if ($RequireMergedPullRequest) { $RequireCommittedLedger = $true }
+if ($RequireCommittedLedger) {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($null -eq $git) { Stop-ReadinessCheck 'git is unavailable for committed-ledger verification.' }
+    $gitPrefix = @('-c', "safe.directory=$repoRoot", '-C', $repoRoot)
+    $repositoryHead = (& $git.Source @gitPrefix rev-parse --verify HEAD 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $repositoryHead -notmatch '^[0-9a-f]{40}$') {
+        Stop-ReadinessCheck 'the repository HEAD could not be verified.'
+    }
+    $branch = (& $git.Source @gitPrefix branch --show-current 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $branch -cne 'main') {
+        Stop-ReadinessCheck 'committed-ledger cleanup checks must run from the canonical main branch.'
+    }
+    $origin = (& $git.Source @gitPrefix remote get-url origin 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $origin -notmatch '(?i)(github\.com[:/]Robert-Velhorst/018-HAI(?:\.git)?$)') {
+        Stop-ReadinessCheck 'origin does not identify the expected HAI repository.'
+    }
+    $ledgerFiles = @(
+        'docs/child-agent-archive-2026-07-30/child-agent-transcript-manifest.csv',
+        'docs/child-agent-archive-2026-07-30/child-agent-transcript-summary.json',
+        'docs/child-agent-archive-2026-07-30/child-agent-final-reports.md',
+        'docs/child-agent-archive-2026-07-30/cleanup-readiness.md'
+    )
+    foreach ($relativePath in $ledgerFiles) {
+        $tracked = @(& $git.Source @gitPrefix ls-files --error-unmatch -- $relativePath 2>$null)
+        if ($LASTEXITCODE -ne 0 -or $tracked.Count -ne 1 -or [string]$tracked[0] -cne $relativePath) {
+            Stop-ReadinessCheck "ledger file is not tracked: $relativePath."
+        }
+        & $git.Source @gitPrefix diff --quiet HEAD -- $relativePath 2>$null
+        if ($LASTEXITCODE -ne 0) { Stop-ReadinessCheck "ledger file has uncommitted worktree changes: $relativePath." }
+        & $git.Source @gitPrefix diff --cached --quiet HEAD -- $relativePath 2>$null
+        if ($LASTEXITCODE -ne 0) { Stop-ReadinessCheck "ledger file has staged changes: $relativePath." }
+        & $git.Source @gitPrefix cat-file -e "HEAD:$relativePath" 2>$null
+        if ($LASTEXITCODE -ne 0) { Stop-ReadinessCheck "ledger file is absent from committed HEAD: $relativePath." }
+    }
+    $committedLedgerVerified = $true
+}
+
+if ($RequireMergedPullRequest) {
+    $gh = Get-Command gh -ErrorAction SilentlyContinue
+    if ($null -eq $gh) { Stop-ReadinessCheck 'GitHub CLI is unavailable for merged-PR verification.' }
+    if ($PullRequestNumber -le 0 -or $GitHubRepository -cne 'Robert-Velhorst/018-HAI') {
+        Stop-ReadinessCheck 'pull request identity is invalid or does not match the expected HAI repository.'
+    }
+    $prJson = @(& $gh.Source pr view $PullRequestNumber --repo $GitHubRepository --json state,mergedAt,baseRefName,mergeCommit 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $prJson.Count -ne 1) {
+        Stop-ReadinessCheck 'GitHub could not verify the pull request; reauthentication or network access may be required.'
+    }
+    try { $pr = [string]$prJson[0] | ConvertFrom-Json -ErrorAction Stop }
+    catch { Stop-ReadinessCheck 'GitHub returned invalid pull request metadata.' }
+    $pullRequestMergeCommit = [string]$pr.mergeCommit.oid
+    if ([string]$pr.state -cne 'CLOSED' -or [string]::IsNullOrWhiteSpace([string]$pr.mergedAt) -or
+        [string]$pr.baseRefName -cne 'main' -or $pullRequestMergeCommit -notmatch '^[0-9a-f]{40}$') {
+        Stop-ReadinessCheck 'the integration pull request is not verified as merged into main.'
+    }
+    $checkOutput = @(& $gh.Source pr checks $PullRequestNumber --repo $GitHubRepository --json name,state 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $checkOutput.Count -eq 0) {
+        Stop-ReadinessCheck 'GitHub pull-request check results are unavailable or empty.'
+    }
+    try { $pullRequestChecks = ($checkOutput -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop }
+    catch { Stop-ReadinessCheck 'GitHub returned invalid pull-request check metadata.' }
+    $pullRequestChecks = @($pullRequestChecks)
+    if ($pullRequestChecks.Count -eq 0 -or @($pullRequestChecks | Where-Object { [string]$_.state -cne 'SUCCESS' }).Count -gt 0) {
+        Stop-ReadinessCheck 'one or more pull-request checks are not successful.'
+    }
+    & $git.Source @gitPrefix merge-base --is-ancestor $pullRequestMergeCommit $repositoryHead 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Stop-ReadinessCheck 'the verified pull-request merge commit is not an ancestor of the checked-out main history.'
+    }
+    $mergedPullRequestVerified = $true
+}
+
+$cleanupGateReady = $sourceVerified -and $committedLedgerVerified -and $mergedPullRequestVerified
+
 [pscustomobject][ordered]@{
     result = if ($sourceVerified) { 'source_archive_verified' } else { 'ledger_verified_source_not_checked' }
     repository_root = $repoRoot
@@ -135,6 +218,11 @@ if (-not [string]::IsNullOrWhiteSpace($TranscriptRoot)) {
     retained_files = $retained.Count
     crosswalk_candidate_ids = $crosswalkIds.Count
     source_archive_verified = $sourceVerified
+    committed_ledger_verified = $committedLedgerVerified
+    merged_pull_request_verified = $mergedPullRequestVerified
+    repository_head = $repositoryHead
+    pull_request_merge_commit = $pullRequestMergeCommit
+    cleanup_gate_ready = $cleanupGateReady
     deletion_performed = $false
     cleanup_authorized = $false
 } | ConvertTo-Json -Depth 4

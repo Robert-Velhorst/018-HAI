@@ -107,6 +107,31 @@ manifest path, file type, and byte count (including all ten retained files),
 then checks the full SHA-256 of each candidate. It has no deletion behavior and
 always reports `cleanup_authorized=false`.
 
+Before any later retention review, rerun it with `-RequireSourceArchive
+-RequireCommittedLedger -RequireMergedPullRequest`. The repository-history gate
+requires the four ledger artifacts to be tracked and unchanged on canonical
+`main` at the expected repository origin. The PR gate requires PR #36 to be
+merged into `main`, all reported checks to succeed, and the merge commit to be
+in the checked-out history. This checks every reported result because the
+repository currently reports no branch-protection-required checks. Missing
+GitHub authentication, missing check results, any non-success check, a dirty
+ledger, or an unmerged PR fails closed. Even when these gates pass, the command
+remains read-only and does not authorize or perform transcript deletion.
+`scripts/test-hai-transcript-cleanup-gate-contract.ps1` protects these
+boundaries in the Windows recovery CI suite.
+
+The full future gate invocation is:
+
+```powershell
+./scripts/test-hai-transcript-cleanup-readiness.ps1 `
+  -TranscriptRoot 'D:\codex-temp\hai-completed-agent-sessions' `
+  -RequireSourceArchive -RequireCommittedLedger -RequireMergedPullRequest
+```
+
+It must run from a clean checkout of `main` after PR #36 and all required checks
+are complete. A normal source-hash verification intentionally reports
+`cleanup_gate_ready=false` when the repository/PR gates were not requested.
+
 The ledger-only check passed with 18 manifest rows, 8 candidates, 10 retained
 transcripts, and 8 matching crosswalk rows. The source check also passed against
 `D:\codex-temp\hai-completed-agent-sessions`: all eight candidate files
@@ -264,3 +289,80 @@ is authorized by these checks.
    the two env-only folders unless their provenance is established.
 5. Delete nothing if the platform blocks deletion. Do not bypass that control
    with another shell, runtime, or API.
+
+## Detached volume recovery addition (2026-10-10)
+
+`scripts/archive-hai-detached-volume.ps1` now provides an explicit export and
+restore-drill path for the four known detached legacy volumes only:
+Kafka KRaft, local Ollama cache, named Redis, and Redpanda. It requires the
+local Docker engine, the already cached `018-hai-backend:local` image, and a
+private archive directory. It refuses a source volume with any container
+reference, uses a read-only mount for the source, disables network access, and
+does not pull or substitute an image. It restores the archive to a uniquely
+labelled scratch volume, compares both the restored scratch volume and the
+unchanged source against the archive, then removes only that owned scratch
+volume after checking its label and lack of attachments. The source volume is
+never removed. A manifest is written only after the restore comparison and
+scratch cleanup pass; the manifest records archive size and SHA-256.
+
+`scripts/test-hai-detached-volume-archive-contract.ps1` covers refusal of
+attached/changed sources, scratch-volume ownership, source-read-only behavior,
+restore comparison, source non-removal, and the read-only verifier contract. The
+verifier `scripts/verify-hai-detached-volume-archive.ps1` checks a generated
+bundle's manifest and SHA-256, confirms the cached image and detached source
+volume identities, and compares the current source against the archive without
+writing to either. It always reports `safeToRemove=false` and
+`cleanupAuthorized=false`; it is evidence for a later human review, not deletion
+authority. Both scripts are covered by the protected Windows recovery CI step.
+These contract tests do not exercise an actual Docker volume archive or restore.
+Run the archive command only for one verified detached volume at a time and
+retain its output bundle. The existing volume readiness verifier still reports
+`safe_to_remove_any=false`; an archive/restore drill is evidence for recovery,
+not automatic permission to remove a volume. Active Postgres,
+phase2, Redis anonymous, and helper-container anonymous volumes remain outside
+this new detached-volume path and continue to block complete installation
+backup/removal certification.
+
+## Fresh local cleanup gate (2026-10-10)
+
+This snapshot was refreshed from the Windows host and local Docker Desktop; it
+is evidence for this check only and must be refreshed before any later cleanup.
+
+- **Completed-agent sessions:** the source directory contained 18 files totaling
+  20,739,169,122 bytes. The ledger contains 8 candidates totaling 7,939,888,699
+  bytes and 10 retained entries. The full source-size inventory passed, and
+  candidate SHA-256 values matched. No source file was removed. Candidate status
+  is not equivalent to cleanup authorization.
+- **Synthetic Temp fixtures:** 6 generated-name directories were inspected.
+  Four exact-layout fixtures totaling 432,534 bytes had zero related containers,
+  networks, or volumes and remain `candidate_manual_cleanup`; two empty or
+  layout-mismatched directories remain `retain_unverified`. No directory was
+  removed.
+- **Docker volumes:** all 7 known named volumes were found. The automation and
+  IDP Postgres volumes each remain attached to a healthy container; the phase2
+  state volume is referenced by a created backend and an exited helper. Kafka,
+  Ollama, named Redis, and Redpanda are detached but still lack a real archive
+  and restore drill. Three anonymous HAI volume mounts remain attached to
+  runtime/helper containers. `safe_to_remove_any=false`.
+- **Docker images and runtime:** all 6 named HAI images remain installed. Four
+  have container references, including a failed migration container; two
+  (`018-hai-backend:latest` and `018-hai-nginxconfigmanager:latest`) currently
+  have no container references and are held for retention review. Five HAI
+  containers were running and healthy; backend/helper/migration containers
+  also include `Created` and `Exited` states. No image is marked safe to remove.
+  The images and volumes remain retained because the stack is still present and
+  no full recovery/acceptance gate has passed.
+- **PR worktree:** the isolated checkout is on `codex/hai-runtime-release` at
+  `0853e73d69e9ec35daa6becc80ad460c6280ff87` and has 28 tracked/untracked status
+  entries, including diagnostic and acceptance artifacts. It was left intact.
+  A read-only GitHub CLI check confirmed PR #36 is open. Its 35 reported checks
+  currently include 10 failures and 25 successes; the failing checks include
+  backend/frontend builds, Postgres migration, secret scan, browser acceptance,
+  and Windows runtime/installer gates. No reported checks are marked required,
+  so the transcript deletion gate correctly remains closed.
+
+The detached-volume archive and read-only source verifier are implemented, but
+have only passed contract checks and a synthetic tar/restore comparison. No
+actual HAI volume has been exported or removed. The only change in this pass is
+this ledger update and local verification; no local HAI data, containers,
+volumes, images, worktrees, or diagnostic artifacts were deleted.

@@ -41,7 +41,23 @@ $inventory = foreach ($name in $names) {
     }
 }
 
-$images = @(Invoke-DockerInventory @('image', 'ls', '--format', '{{.Repository}}:{{.Tag}}|{{.ID}}') | Where-Object { $_ -match '^018-hai-' })
+$imageRows = @(Invoke-DockerInventory @('image', 'ls', '--all', '--no-trunc', '--format', '{{.Repository}}:{{.Tag}}|{{.ID}}|{{.Size}}') | Where-Object { $_ -match '^018-hai-' })
+$images = foreach ($row in $imageRows) {
+    $parts = $row -split '\|', 3
+    if ($parts.Count -ne 3 -or $parts[1] -notmatch '^sha256:[0-9a-f]{64}$') {
+        throw 'HAI image inventory returned an invalid image identity; cleanup remains blocked.'
+    }
+    $references = @(Invoke-DockerInventory @('ps', '-a', '--filter', "ancestor=$($parts[1])", '--format', '{{.Names}}|{{.Status}}'))
+    [pscustomobject][ordered]@{
+        reference = [string]$parts[0]
+        image_id = [string]$parts[1]
+        size = [string]$parts[2]
+        container_reference_count = $references.Count
+        container_references = $references
+        disposition = if ($references.Count -gt 0) { 'hold_container_reference' } else { 'hold_retention_review' }
+        safe_to_remove = $false
+    }
+}
 $anonymousMounts = @()
 $haiContainerNames = @(Invoke-DockerInventory @('ps', '-a', '--filter', 'name=018-hai-', '--format', '{{.Names}}') | Sort-Object -Unique)
 foreach ($container in $haiContainerNames) {
@@ -65,6 +81,7 @@ $result = [pscustomobject][ordered]@{
     uncovered_volume_count = $uncoveredPresent
     anonymous_hai_volume_mounts = $anonymousMounts
     hai_images = $images
+    image_cleanup_authorized = $false
     safe_to_remove_any = $false
     deletion_performed = $false
     volumes = @($inventory)
