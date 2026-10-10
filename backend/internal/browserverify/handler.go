@@ -1,13 +1,16 @@
 package browserverify
 
 import (
-	"automation-hub-backend/internal/apierror"
-	"automation-hub-backend/internal/identity"
 	"errors"
-	"github.com/gin-gonic/gin"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"automation-hub-backend/internal/apierror"
+	"automation-hub-backend/internal/identity"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct{ service *service }
@@ -18,7 +21,14 @@ func (h *Handler) Profiles(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"profiles": h.service.Profiles()})
 }
 func (h *Handler) Run(c *gin.Context) {
-	run, err := h.service.Run(c.Request.Context(), owner(c), c.Param("id"))
+	var request struct {
+		WorkflowID string `json:"workflowId,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "browser verification request is invalid"})
+		return
+	}
+	run, err := h.service.RunWithWorkflow(c.Request.Context(), owner(c), c.Param("id"), request.WorkflowID)
 	if errors.Is(err, ErrNotConfigured) {
 		c.JSON(http.StatusConflict, gin.H{"error": "browser verification is not configured", "status": h.service.Status()})
 		return
