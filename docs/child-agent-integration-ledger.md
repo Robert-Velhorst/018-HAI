@@ -351,3 +351,45 @@ secret-scan candidates and ten high-severity Promptfoo production dependency
 advisories. These independent failures remain for review; do not suppress the
 scans or claim acceptance. The new exact-head CI run is queued. No transcript,
 diagnostic artifact, local credential, worktree, or database was removed.
+
+### Exact-head CI failure evidence
+
+The PR branch was advanced through `ff892b46` and `ab102d17`; the latter is the
+head checked by GitHub Actions run `38061021277` (`ab102d178f5e6717fa7088fa06f4076680d13010`).
+At this entry, the run's browser-acceptance job is still in progress, so the
+overall run has no final conclusion. Backend, IDP, and frontend build/tests;
+Postgres migration integration; two-account isolation; Compose validation;
+cleanup-readiness contracts; provider fixtures; and the completed runner
+contract jobs passed on this head.
+
+The completed failures have distinct evidence and must not be collapsed into a
+single environment issue:
+
+- `Authenticated control-plane smoke`: background operations reported 17
+  passed and five failed. After the exact safe-source approval, no verified
+  artifact/runtime completion was observed. The Windows-runtime suite passed
+  its pause/emergency-stop checks but its effect-bound resume request returned
+  HTTP 403 with `control.execution.unavailable`; its final result was missing.
+  The model-intelligence, runtime-lab, and account-bridge smoke suites passed.
+  Root causes remain unconfirmed; the retained report is insufficient to
+  distinguish execution rejection from a report-contract defect.
+- `Windows installer preview and signing guards`: the Windows process,
+  migration, installer, and 93 signing-contract cases passed, and the preview
+  installer was produced. The install smoke then refused to run because it
+  could not verify Docker engine state. This is an environment gate, not proof
+  that the installed application passed.
+- `Promptfoo safety runner image`: production dependency audit found ten high
+  and zero critical advisories in the locked Promptfoo 0.124.1 tree. The audit
+  identifies vulnerable transitive packages; its proposed Promptfoo 0.116.7
+  change is a major downgrade. No downgrade, advisory suppression, or
+  unverified override has been made. Upstream registry/advisory review and a
+  compatible remediation remain necessary.
+- `Repository secret scan`: the full-history scan reported 27 candidates and
+  redacted values. Findings span test fixtures, workflow examples, and source
+  files across prior commits. Their appearance in the history is not enough to
+  call them false positives; no ignore entry or history rewrite has been made.
+
+The browser-acceptance job's final state must be appended after run completion.
+No transcript, local diagnostic, secret-scan candidate, credential, worktree,
+database, or other local data was removed. The archive remains ineligible for
+cleanup while the transcript crosswalk is incomplete and the PR is unmerged.
