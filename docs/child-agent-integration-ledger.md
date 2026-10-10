@@ -585,3 +585,58 @@ process `PATH`, including failed, timed-out, malformed, and remote context
 cases. This reproduces the CI constraint, but the post-fix GitHub run is still
 required. No runtime policy was relaxed, and no Docker resources, archives,
 checkouts, or diagnostic artifacts were removed.
+
+## Full Primary-Worktree Reconciliation (2026-10-10)
+
+The primary checkout at
+`C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`
+is the same repository and branch lineage as PR #36, not a separate product
+repository. Its `HEAD` is `e07b9daeb3ba2630ecbe12a64d948f791203c241`, which is
+the merge base of the PR worktree's current `HEAD` (`00b84408ecfcc3562b59234aa5c918e6b06fa695`).
+The PR contains 120 commits after that base. A read-only inventory of the
+primary checkout found 3,167 status entries: 682 modified tracked files and
+2,475 untracked files. The tracked diff is 142,921 insertions and 17,804
+deletions. Nothing in the primary checkout was staged, overwritten, or
+deleted.
+
+The tracked diff was three-way compared against the PR. The cleanly applicable
+paths produced no additional tracked diff at PR `HEAD`, which confirms that
+those changes are already represented in the PR. There were 47 overlapping
+files. The primary-checkout variants remove or weaken later PR behavior,
+including cleanup CI gates, Go toolchain alignment, paused-worker handling,
+source-approval identity and evidence checks, workflow success criteria,
+Windows recovery protections, and bounded secret-history scanning. The PR
+versions were retained for those overlaps; the primary checkout remains intact
+as the recovery source. The PR worktree has no remaining tracked diff from this
+reconciliation.
+
+For the 2,475 untracked primary-checkout paths, a path-and-content comparison
+identified 1,383 source-like files: 816 matched an existing PR file exactly,
+46 had an existing PR path with different content, and 521 were absent from
+the PR. All 521 absent paths were under hidden `output/` directories or agent
+state directories (`.claude-flow/`, `.swarm/`); no missing source path outside
+those generated/evidence areas was found in this comparison. The 46
+same-path differences were treated as competing versions, not assumed to be
+newer. Targeted reviews found local alternatives that remove or weaken safety
+behavior; the existing PR versions remain authoritative for those reviewed
+cases. A complete semantic review of every differing output/evidence file is
+still outstanding. The raw local files are preserved.
+
+The hidden `output/` tree contains 1,576 files totaling 126,970,802 bytes;
+the full untracked primary-checkout inventory totals 137,007,708 bytes. These
+are mostly JSONL command transcripts, logs, structured receipts, and recovery
+test artifacts. They are not being committed wholesale because that would
+publish raw operational/test data and duplicate generated artifacts; their
+relevant conclusions must be represented by reviewed, redacted evidence in
+the repository before cleanup can be considered. The separate child-session
+archive remains 18 JSONL files totaling 20,739,169,122 bytes. Its two
+malformed candidates, incomplete semantic crosswalk, and report/runtime
+verification gaps remain open as documented above.
+
+At this checkpoint, PR #36 remains open and mergeable at
+`00b84408ecfcc3562b59234aa5c918e6b06fa695`; exact-head run `38078840727` is
+still in progress. The existing untracked CI logs, scanner downloads, evidence
+fixtures, local patch, primary checkout, and transcript archive remain
+untouched. This reconciliation does not satisfy semantic transcript
+integration, PR merge, or cleanup-readiness gates and does not authorize local
+deletion.
