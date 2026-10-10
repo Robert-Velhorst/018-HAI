@@ -377,3 +377,21 @@ current Docker inventory and must not be used as a deletion target. Shared
 Docker build cache is also excluded because it is global and not attributable
 to HAI alone. No container, volume, image, build cache, transcript, or local
 file was removed; `cleanup_authorized` and `deletion_performed` remain `false`.
+
+## PR validation gate recheck (2026-10-10, run `38035011669`)
+
+After commit `eaf5708808355523c9b7dbf50171f6832692401e` was pushed, GitHub
+reported PR #36 still open and unstable. The completed workflow run had 29
+successful jobs and seven failures. The HAI cleanup readiness safety-contract
+job passed. Other failures were: a redacted repository secret-scan failure; a
+Postgres integration migration attempting to add a duplicate primary key to
+`ai_conversation_archives`; ten high production-dependency advisories in the
+Promptfoo runner; browser-stack startup failure; authenticated smoke requests
+returning HTTP 401; two-account isolation exit code 2; and the Windows installer
+payload/safety contract. Secret-scan findings and values are intentionally not
+copied into this receipt.
+
+These failures are merge blockers, not cleanup approval. PR #36 is not merged,
+so transcript and PR-diagnostic cleanup remain gated. The local archive,
+volumes, images, Temp fixtures, worktrees, toolchain, and untracked diagnostics
+remain unchanged; no deletion was performed.
