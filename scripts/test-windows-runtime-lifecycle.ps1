@@ -348,11 +348,12 @@ try {
         'HAI_A2A_BRIDGE_URL=https://a2a.example.test/saved/rpc',
         'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=false'
     )
-    $savedEnvironment = $savedA2ALines + 'HAI_OPENCLAW_MAINTENANCE_ENABLED=false'
+    $savedNetworkLines = @('HAI_A2A_LOCAL_SUBNET=10.254.0.0/24', 'HAI_HOST_RUNTIME_INTERNAL_SUBNET=10.254.1.0/24')
+    $savedEnvironment = $savedA2ALines + $savedNetworkLines + 'HAI_OPENCLAW_MAINTENANCE_ENABLED=false'
     [IO.File]::WriteAllLines($environmentFile, [string[]]$savedEnvironment)
     foreach ($startAttempt in 1..2) {
         Initialize-HaiLocalEnvironment -GatewayPort 8088
-        $currentA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_' })
+        $currentA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_(?:BRIDGE_|LOCAL_PORT=)' })
         Assert-HaiRuntimeTest (($currentA2ALines -join "`n") -ceq ($savedA2ALines -join "`n")) "No-switch startup attempt $startAttempt changed the saved enabled A2A settings or token."
         Assert-HaiRuntimeTest (Test-HaiA2ABridgeEnabled) "No-switch startup attempt $startAttempt disabled the saved A2A bridge."
     }
@@ -362,15 +363,17 @@ try {
     $expectedEnvironmentAcl = Get-HaiComparableFileAccessDescriptor -FileSecurity (New-HaiRestrictedEnvironmentFileSecurity)
     $actualEnvironmentAcl = Get-HaiComparableFileAccessDescriptor -FileSecurity (Get-Acl -LiteralPath $environmentFile)
     Assert-HaiRuntimeTest ([string]::Equals($expectedEnvironmentAcl, $actualEnvironmentAcl, [StringComparison]::Ordinal)) 'Forced initialization retained the existing environment-file ACL instead of restricting access to the current user, SYSTEM, and administrators.'
-    $preservedA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_' })
+    $preservedA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_(?:BRIDGE_|LOCAL_PORT=)' })
     Assert-HaiRuntimeTest (($preservedA2ALines -join "`n") -ceq ($savedA2ALines -join "`n")) 'Replacing an existing environment without an A2A switch did not preserve the saved enabled bridge credentials and settings.'
+    $preservedNetworkLines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^(?:HAI_A2A_LOCAL_SUBNET|HAI_HOST_RUNTIME_INTERNAL_SUBNET)=' })
+    Assert-HaiRuntimeTest ((@($preservedNetworkLines | Sort-Object) -join "`n") -ceq (@($savedNetworkLines | Sort-Object) -join "`n")) 'Replacing an existing environment reset an operator-selected Docker network range.'
 
     & $initializer -EnvFile $environmentFile -AdminEmail 'operator@example.test' -AdminPasswordPlainText 'fixture-password-123' -Force -EnableA2ABridge
-    $explicitlyPreservedA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_' })
+    $explicitlyPreservedA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_(?:BRIDGE_|LOCAL_PORT=)' })
     Assert-HaiRuntimeTest (($explicitlyPreservedA2ALines -join "`n") -ceq ($savedA2ALines -join "`n")) 'Explicit enablement rotated a valid saved A2A token or changed its settings.'
 
     & $initializer -EnvFile $environmentFile -AdminEmail 'operator@example.test' -AdminPasswordPlainText 'fixture-password-123' -Force -EnableA2ABridge
-    $repeatedExplicitA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_' })
+    $repeatedExplicitA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_(?:BRIDGE_|LOCAL_PORT=)' })
     Assert-HaiRuntimeTest (($repeatedExplicitA2ALines -join "`n") -ceq ($explicitlyPreservedA2ALines -join "`n")) 'Repeated explicit enablement rotated the A2A token or changed its settings.'
 
     & $initializer -EnvFile $environmentFile -AdminEmail 'operator@example.test' -AdminPasswordPlainText 'fixture-password-123' -Force -EnableA2ABridge:$false

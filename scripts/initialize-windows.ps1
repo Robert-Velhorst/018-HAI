@@ -451,6 +451,22 @@ $savedA2AConfiguration = $null
 if (-not ($PSBoundParameters.ContainsKey('EnableA2ABridge') -and -not $EnableA2ABridge)) {
     $savedA2AConfiguration = Get-HaiSavedA2AConfiguration -Path $EnvFile
 }
+$savedNetworkSubnets = @{
+    HAI_A2A_LOCAL_SUBNET = '10.255.0.0/24'
+    HAI_HOST_RUNTIME_INTERNAL_SUBNET = '10.255.1.0/24'
+}
+if (Test-Path -LiteralPath $EnvFile -PathType Leaf) {
+    $existingEnvironmentLines = [Regex]::Split([IO.File]::ReadAllText($EnvFile), "\r\n|\n|\r")
+    foreach ($settingName in @('HAI_A2A_LOCAL_SUBNET', 'HAI_HOST_RUNTIME_INTERNAL_SUBNET')) {
+        $savedSetting = Get-HaiDotEnvEntry -Lines $existingEnvironmentLines -Name $settingName
+        if ($savedSetting.Found) {
+            if (-not $savedSetting.WellFormed -or [string]::IsNullOrWhiteSpace($savedSetting.Value)) {
+                throw "The existing $settingName value is invalid; refusing to reset the configured Docker network range."
+            }
+            $savedNetworkSubnets[$settingName] = $savedSetting.Value
+        }
+    }
+}
 
 function Assert-HaiComposeProjectAvailable {
     param(
@@ -502,6 +518,8 @@ function Assert-HaiComposeProjectAvailable {
 }
 
 $content = [IO.File]::ReadAllText($examplePath)
+$content = Set-DotEnvValue $content 'HAI_A2A_LOCAL_SUBNET' $savedNetworkSubnets.HAI_A2A_LOCAL_SUBNET
+$content = Set-DotEnvValue $content 'HAI_HOST_RUNTIME_INTERNAL_SUBNET' $savedNetworkSubnets.HAI_HOST_RUNTIME_INTERNAL_SUBNET
 Assert-HaiComposeProjectAvailable -ProjectName $ComposeProjectName -ExpectedWorkingDirectory $repositoryRoot
 $content = Set-DotEnvValue $content "COMPOSE_PROJECT_NAME" $ComposeProjectName
 $content = Set-DotEnvValue $content "BACKEND_API_SHARED_KEY" (New-HaiSecret)
