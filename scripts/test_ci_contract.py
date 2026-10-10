@@ -224,6 +224,9 @@ class CIWorkflowContractTest(unittest.TestCase):
         )
         self.assertIn("npm ci --omit=dev --omit=optional", promptfoo_dockerfile)
         self.assertEqual(
+            promptfoo_package["dependencies"]["@libsql/linux-x64-gnu"], "0.5.29"
+        )
+        self.assertEqual(
             promptfoo_package["overrides"]["get-uri"]["basic-ftp"], "6.2.1"
         )
         self.assertIn('omit-optional) audit_command+=(--omit=optional)', audit_text)

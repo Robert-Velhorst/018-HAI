@@ -6,6 +6,7 @@
     "node": "^24.15.0"
   },
   "dependencies": {
+    "@libsql/linux-x64-gnu": "0.5.29",
     "promptfoo": "0.124.1"
   },
   "overrides": {
