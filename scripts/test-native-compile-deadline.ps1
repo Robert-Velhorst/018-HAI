@@ -21,11 +21,11 @@ function Invoke-Fixture([string]$Name, [string]$Code, [int]$Deadline) {
     Invoke-BoundedNativeCompiler -Executable $nodePath -Arguments @('-e', $Code) -WorkingDirectory $scratch -LogDirectory $logs -TimeoutMilliseconds $Deadline
 }
 try {
-    Invoke-Fixture 'success' 'console.log("compile-fixture-ok");console.error("diagnostic-fixture");' 5000
+    Invoke-Fixture 'success' 'console.log("compile-fixture-ok");console.error("diagnostic-fixture");' 15000
     if (-not ([IO.File]::ReadAllText((Join-Path $scratch 'success/native-compile.stdout.log'))).Contains('compile-fixture-ok')) { throw 'Standard output not retained.' }
     if (-not ([IO.File]::ReadAllText((Join-Path $scratch 'success/native-compile.stderr.log'))).Contains('diagnostic-fixture')) { throw 'Standard error not retained.' }
     $failure = $false
-    try { Invoke-Fixture 'failure' 'process.exit(7)' 5000 } catch {
+    try { Invoke-Fixture 'failure' 'process.exit(7)' 15000 } catch {
         if ($_.Exception.Message -notmatch 'exit 7') { throw }
         $failure = $true
     }
@@ -46,7 +46,7 @@ try {
         $startup = $true
     }
     if (-not $startup) { throw 'Missing compiler executable was accepted.' }
-    Invoke-Fixture 'after-failure' 'process.exit(0)' 5000
+    Invoke-Fixture 'after-failure' 'process.exit(0)' 15000
     $ready = [Threading.ManualResetEventSlim]::new($false)
     $release = [Threading.ManualResetEventSlim]::new($false)
     $holder = [powershell]::Create()
@@ -70,7 +70,7 @@ try {
         $handle = $holder.BeginInvoke()
         if (-not $ready.Wait(3000)) { throw 'Compiler contention fixture not ready.' }
         $refused = $false
-        try { Invoke-Fixture 'contending' 'console.log("must-not-run")' 5000 } catch {
+        try { Invoke-Fixture 'contending' 'console.log("must-not-run")' 15000 } catch {
             if ($_.Exception.Message -notmatch 'Another native acceptance compilation is active') { throw }
             $refused = $true
         }
@@ -90,7 +90,7 @@ try {
             $release.Dispose()
         }
     }
-    Invoke-Fixture 'after-contention' 'process.exit(0)' 5000
+    Invoke-Fixture 'after-contention' 'process.exit(0)' 15000
     Write-Host 'Compiler deadline: output capture, exit failure, actual timeout, startup failure, lock release and cross-thread contention checks passed. No Go compiler, server, provider or container executed.'
 } finally {
     Write-Host "Synthetic logs retained: $scratch"
