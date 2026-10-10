@@ -24,14 +24,18 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 	db := openIsolatedMigrationDatabase(t).WithContext(ctx)
-	files := migrationFilesThrough(t, "pre/0114_operation_source_configuration")
-	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
+	configFiles := migrationFilesThrough(t, "pre/0114_operation_source_configuration")
+	if _, err := infra.ApplyMigrations(db, configFiles, "pre"); err != nil {
 		t.Fatal(err)
 	}
-	if err := infra.RollbackMigration(db, files, "pre", "pre/0114_operation_source_configuration"); err != nil {
+	if err := infra.RollbackMigration(db, configFiles, "pre", "pre/0114_operation_source_configuration"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
+	if _, err := infra.ApplyMigrations(db, configFiles, "pre"); err != nil {
+		t.Fatal(err)
+	}
+	currentFiles := migrationFilesThrough(t, "pre/0118_operation_source_evidence_raw_digest")
+	if _, err := infra.ApplyMigrations(db, currentFiles, "pre"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := infra.ApplyMigrations(db, migrations.Files, "post"); err != nil {
@@ -125,11 +129,9 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	if err != nil {
 		t.Fatalf("register isolated rollback feed: %v", err)
 	}
-	rollbackScope := accountfeed.FeedScope{OwnerUserID: rollbackFeed.OwnerUserID, WorkspaceID: rollbackFeed.WorkspaceID}
-	rollbackReport, err := rollbackRegistry.SyncContext(ctx, rollbackScope, rollbackFeed.ID)
-	if err != nil || !rollbackReport.Recorded || rollbackReport.OperationsCreated != 1 {
-		t.Fatalf("seed managed source authority for rollback: %+v / %v", rollbackReport, err)
-	}
+	// Registration alone creates the managed origin that the 0114 down
+	// migration must protect. Syncing would write operations using the current
+	// model against this intentionally pre-0118 schema fixture.
 	assertSourceObservationSQLState(t,
 		infra.RollbackMigration(rollbackDB, rollbackFiles, "pre", "pre/0114_operation_source_configuration"),
 		"55000",
