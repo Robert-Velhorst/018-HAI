@@ -250,3 +250,21 @@ failures are resolved. The 20.7 GB transcript archive remains protected:
 the 542 distinct nontrivial completion texts counted in retained histories
 have not yet all been semantically mapped to preserved reports or source
 evidence, so the archive deletion gate is not satisfied.
+
+### Acceptance-stack repair follow-up
+
+The PR branch was advanced by a fast-forward from `4400b35d5cc67876c71d9dee0b43c20f8a7b6135`
+to `7ecbc9aa03dc0aa20e22c19cd6f922526732216d`. The repair removes the
+production-only `backend-state-permissions` dependency from the disposable
+acceptance configuration and gives its private tmpfs state directory the
+backend runtime UID/GID. The validator now rejects any remaining dependency
+that references a service outside the isolated stack.
+
+Local verification passed `pwsh -NoProfile -File
+scripts/test-isolated-acceptance-stack.ps1` and `docker compose ... config
+--quiet` against the generated disposable Compose file. The exact-commit
+GitHub Actions run `38042681986` was still in progress at the time of this
+entry; local validation is not remote CI acceptance. The PR remains open and
+unmerged. No transcript or diagnostic archive was deleted. The 542 completion
+texts remain unresolved integration evidence, so the transcript cleanup gate
+continues to fail closed.
