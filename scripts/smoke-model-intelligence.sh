@@ -53,7 +53,7 @@ echo "==> Preparing local account feed"
 mkdir -p "${FEEDS}" "${WORKSPACE}"
 cat > "${FEEDS}/inbox.json" <<'JSON'
 [
-  {"externalId":"note-1","title":"Organize workspace notes","body":"Consolidate personal notes into a local file"}
+  {"externalId":"note-1","title":"Organize workspace notes","content":"Consolidate personal notes into a local file","itemType":"email","provider":"generic_json_feed"}
 ]
 JSON
 
