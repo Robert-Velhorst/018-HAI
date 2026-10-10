@@ -71,8 +71,10 @@ describe('HaiProgressiveSectionComponent', () => {
     const fixture = createHost()
     const button = fixture.nativeElement.querySelector('button') as HTMLButtonElement
     const section = fixture.componentInstance.section
+    const disclosure = fixture.nativeElement.querySelector('.hai-progressive-section') as HTMLElement
     const panel = fixture.nativeElement.querySelector(`#${section.panelId}`) as HTMLElement
 
+    expect(disclosure.getAttribute('data-hai-section')).toBe('members')
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(button.getAttribute('aria-controls')).toBe(section.panelId)
     expect(panel.getAttribute('role')).toBe('region')

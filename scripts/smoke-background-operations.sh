@@ -134,7 +134,12 @@ echo "==> Account feed registered"
 check "inbox feed listed" '"name":"inbox"' "$(curl -sS "${hdr[@]}" "${BASE}/account-feeds")"
 
 echo "==> Background loop: ingest -> classify -> execute+verify / approve"
-report="$(curl -sS "${hdr[@]}" -X POST "${BASE}/background/run")"
+run_response="$(curl -sS -w $'\n%{http_code}' "${hdr[@]}" -X POST "${BASE}/background/run")"
+run_status="${run_response##*$'\n'}"
+report="${run_response%$'\n'*}"
+if [ "${run_status}" != "200" ]; then
+  echo "background run failed with HTTP ${run_status}: $(echo "${report}" | jq -c '{error, reasonCode, code}')" >&2
+fi
 check "two operations created from the feed" 'true' \
   "$(echo "${report}" | jq -r '.operationsCreated == 2')"
 check "one low-risk op auto-executed and verified" 'true' \

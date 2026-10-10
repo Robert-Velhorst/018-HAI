@@ -32,7 +32,8 @@ def _safe_finding_summary(stdout: str) -> list[str] | None:
     if not isinstance(findings, list):
         return None
     lines = [f"Secret scan found {len(findings)} candidate(s); values are redacted."]
-    for finding in findings[:25]:
+    finding_limit = 100
+    for finding in findings[:finding_limit]:
         if not isinstance(finding, dict):
             continue
         rule = finding.get("RuleID")
@@ -45,8 +46,8 @@ def _safe_finding_summary(stdout: str) -> list[str] | None:
         safe_line = str(line) if isinstance(line, int) and line > 0 else "?"
         safe_commit = commit[:12] if isinstance(commit, str) and re.fullmatch(r"[0-9a-fA-F]{7,64}", commit) else "unknown"
         lines.append(f"- {safe_rule}: {safe_path}:{safe_line} (commit {safe_commit})")
-    if len(findings) > 25:
-        lines.append(f"- {len(findings) - 25} additional finding(s) omitted")
+    if len(findings) > finding_limit:
+        lines.append(f"- {len(findings) - finding_limit} additional finding(s) omitted")
     return lines
 
 

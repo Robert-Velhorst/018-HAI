@@ -1,4 +1,4 @@
-<section *ngIf="visible" [id]="sectionId || null" class="hai-progressive-section" [class.hai-progressive-section--open]="effectiveOpen" [class.hai-progressive-section--advanced]="advancedOnly">
+<section *ngIf="visible" [id]="sectionId || null" [attr.data-hai-section]="sectionId || null" class="hai-progressive-section" [class.hai-progressive-section--open]="effectiveOpen" [class.hai-progressive-section--advanced]="advancedOnly">
   <button
     type="button"
     class="hai-progressive-section__summary"

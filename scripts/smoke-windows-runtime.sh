@@ -127,6 +127,9 @@ check "no-external-sends-without-approval gate passes" 'pass' \
 
 echo "==> Emergency stop self-verification (proves it halts processing)"
 ver="$(curl -sS "${hdr[@]}" -X POST "${BASE}/windows-runtime/emergency-stop/verify")"
+if ! echo "${ver}" | jq -e 'has("halted")' >/dev/null; then
+  echo "emergency-stop verification response: $(echo "${ver}" | jq -c '{error, reasonCode, code}')" >&2
+fi
 check "emergency stop halts background processing" 'true' \
   "$(echo "${ver}" | jq -r '.halted==true')"
 check "zero operations processed while stopped" 'true' \
@@ -164,6 +167,8 @@ if [ "${resume_status}" != "200" ]; then
   curl -sS "${hdr[@]}" "${BASE}/execution-authorizations?limit=3" \
     | jq -c '{receipts: [.receipts[] | select(.action == "opscontrol.emergency-stop.clear") | {outcome, reason, evidence: {reasonCodes: .evidence.reasonCodes, constitution: {requestedCapabilities: .evidence.constitution.requestedCapabilities, deniedCapabilities: .evidence.constitution.deniedCapabilities, authorityCeiling: .evidence.constitution.authorityCeiling}}}]}' >&2 \
     || true
+  grep 'opscontrol safety authorization rejected:' "${WORKDIR}/backend.log" \
+    | sed -E 's/ detail=.*/ detail=[REDACTED]/' >&2 || true
   # Do not emit the raw process log here. ORM driver errors can include signed
   # approval provenance, while the receipt inspection above is intentionally
   # limited to safe, owner-scoped diagnostic fields.

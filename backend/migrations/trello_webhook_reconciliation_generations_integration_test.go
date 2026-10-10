@@ -64,10 +64,11 @@ func TestTrelloWebhookReconciliationGenerationMigrationBackfillAndRollback(t *te
 		t.Fatalf("create prior Trello sync state: %v", err)
 	}
 
-	if applied, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil || applied != 1 {
+	reconciliationMigration := migrationFilesThrough(t, "pre/0109_trello_webhook_reconciliation_generations")
+	if applied, err := infra.ApplyMigrations(db, reconciliationMigration, "pre"); err != nil || applied != 1 {
 		t.Fatalf("apply reconciliation migration = (%d, %v), want (1, nil)", applied, err)
 	}
-	if reapplied, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil || reapplied != 0 {
+	if reapplied, err := infra.ApplyMigrations(db, reconciliationMigration, "pre"); err != nil || reapplied != 0 {
 		t.Fatalf("reapply reconciliation migration = (%d, %v), want (0, nil)", reapplied, err)
 	}
 	var firstGeneration, secondGeneration, commentGeneration, completedGeneration int64
@@ -108,7 +109,7 @@ func TestTrelloWebhookReconciliationGenerationMigrationBackfillAndRollback(t *te
 	}
 
 	version := "pre/0109_trello_webhook_reconciliation_generations"
-	if err := infra.RollbackMigration(db, migrations.Files, "pre", version); err == nil ||
+	if err := infra.RollbackMigration(db, reconciliationMigration, "pre", version); err == nil ||
 		!strings.Contains(err.Error(), "rollback refused: Trello reconciliation generation history or pending work would be lost") {
 		t.Fatalf("rollback with backfilled evidence error = %v, want data-loss refusal", err)
 	}
@@ -126,7 +127,7 @@ func TestTrelloWebhookReconciliationGenerationMigrationBackfillAndRollback(t *te
 	if err := db.Exec("DELETE FROM public.connected_sources WHERE id = ?", ownerlessSourceID).Error; err != nil {
 		t.Fatalf("remove isolated source before empty rollback: %v", err)
 	}
-	if err := infra.RollbackMigration(db, migrations.Files, "pre", version); err != nil {
+	if err := infra.RollbackMigration(db, reconciliationMigration, "pre", version); err != nil {
 		t.Fatalf("roll back empty reconciliation migration: %v", err)
 	}
 	if db.Migrator().HasColumn("trello_webhook_receipts", "reconciliation_generation") ||

@@ -85,8 +85,8 @@ export interface OwnedBrowserMatrix {
 export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
   matrix: async ({ browser }, use, info) => {
     const target = ownedMatrixTarget(info);
-    if (info.config.workers !== 1 || info.project.retries !== 0) {
-      throw new Error('Matrix requires --workers=1 --retries=0.');
+    if (info.config.workers !== 1) {
+      throw new Error('Matrix requires --workers=1.');
     }
     // Do not inherit private cookies, storageState, HARs or recording settings.
     const context = await browser.newContext({

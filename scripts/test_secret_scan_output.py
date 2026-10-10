@@ -100,6 +100,32 @@ class SecretScanOutputTest(unittest.TestCase):
         self.assertIn("github-pat: backend/config/example.env:12", output.getvalue())
         self.assertNotIn(candidate, output.getvalue())
 
+    def test_all_small_reports_are_shown_without_candidate_values(self) -> None:
+        candidate = "synthetic-secret-value"
+        findings = [
+            {
+                "RuleID": "generic-api-key",
+                "File": f"backend/test-fixture-{index}.go",
+                "StartLine": index + 1,
+                "Commit": "c" * 40,
+                "Secret": candidate,
+            }
+            for index in range(27)
+        ]
+        runner = Mock(
+            return_value=subprocess.CompletedProcess(
+                args=[], returncode=1, stdout=json.dumps(findings), stderr=candidate
+            )
+        )
+        output = io.StringIO()
+        with redirect_stdout(output):
+            result = secret_scan.scan(runner=runner, root=ROOT)
+
+        self.assertEqual(result, 1)
+        self.assertIn("backend/test-fixture-26.go:27", output.getvalue())
+        self.assertNotIn("additional finding(s) omitted", output.getvalue())
+        self.assertNotIn(candidate, output.getvalue())
+
     def test_malformed_findings_remain_fully_withheld(self) -> None:
         candidate = "ghp_" + "A" * 36
         runner = Mock(

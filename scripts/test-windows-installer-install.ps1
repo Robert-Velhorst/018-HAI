@@ -70,6 +70,8 @@ function Assert-HaiSmokeContract {
         $installer -notmatch "RunHaiMaintenanceTaskManager\('Register', True, ExitCode\)" -or
         $maintenance -notmatch "HaiOpenClawMaintenanceTaskName = 'HAI OpenClaw Maintenance'" -or
         $smoke -notmatch "RUNNER_ENVIRONMENT.*github-hosted" -or
+        $smoke -notmatch 'RUNNER_TEMP is a distinct, existing runner-owned temporary directory' -or
+        $smoke -notmatch 'RUNNER_TEMP is a reparse point' -or
         $smoke -notmatch 'SignatureStatus\]::NotSigned' -or
         $smoke -notmatch 'HAI has existing project containers or volumes' -or
         $smoke -notmatch 'hai\.env was created by installer setup' -or
@@ -150,8 +152,14 @@ function Assert-HaiRunnerSafety {
     }
     $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
     $runnerWorkspace = [IO.Path]::GetFullPath($env:RUNNER_WORKSPACE).TrimEnd('\')
-    if (-not $runnerTemp.StartsWith($runnerWorkspace + '\', [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'RUNNER_TEMP is not contained by the GitHub runner workspace; refusing installer execution.'
+    if ($runnerTemp -ieq $runnerWorkspace -or
+        [IO.Path]::GetPathRoot($runnerTemp).TrimEnd('\') -ieq $runnerTemp -or
+        -not (Test-Path -LiteralPath $runnerTemp -PathType Container)) {
+        throw 'RUNNER_TEMP is not a distinct, existing runner-owned temporary directory; refusing installer execution.'
+    }
+    $tempDirectory = Get-Item -LiteralPath $runnerTemp -Force -ErrorAction Stop
+    if (($tempDirectory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        throw 'RUNNER_TEMP is a reparse point; refusing installer execution.'
     }
     $expectedLocalAppData = [IO.Path]::GetFullPath((Join-Path $env:USERPROFILE 'AppData\Local')).TrimEnd('\')
     if ([IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\') -ine $expectedLocalAppData) {

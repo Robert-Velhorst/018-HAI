@@ -164,6 +164,9 @@ test.describe('HAI operator acceptance flow', () => {
       await expect(pursuitMatch).toBeVisible();
       await pursuitMatch.click();
       await page.getByTestId('workflow-create').click();
+      const inspectIntake = page.getByRole('button', { name: 'Inspect intake workflow', exact: true });
+      await expect(inspectIntake).toBeVisible();
+      await inspectIntake.click();
       await expect(page.getByTestId('workflow-runtime-selection')).toBeVisible();
     });
 

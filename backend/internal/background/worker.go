@@ -197,9 +197,17 @@ func (w *Worker) RunOnce(ctx context.Context) (Report, error) {
 	if err := ctx.Err(); err != nil {
 		return rep, err
 	}
-	if !w.effectiveMode().AllowsBackgroundProcessing() {
-		// Paused and emergency-stopped modes still ingest for the record but
-		// must not classify, draft, or execute any operations.
+	mode := w.effectiveMode()
+	if mode == autonomypolicy.ModePaused {
+		// Paused mode leaves new work untouched, but safely defers work that
+		// was already approved for local execution before the pause.
+		if err := w.deferPausedSafeOperations(ctx, &rep); err != nil {
+			return rep, err
+		}
+		return rep, reportFailures(rep)
+	}
+	if !mode.AllowsBackgroundProcessing() {
+		// Emergency-stopped mode still ingests for the record but processes nothing.
 		return rep, reportFailures(rep)
 	}
 	if w.effectiveEmergencyStop() {
@@ -213,6 +221,51 @@ func (w *Worker) RunOnce(ctx context.Context) (Report, error) {
 		return rep, err
 	}
 	return rep, reportFailures(rep)
+}
+
+func (w *Worker) deferPausedSafeOperations(ctx context.Context, rep *Report) error {
+	processed := 0
+	for _, status := range []operations.OperationStatus{operations.StatusReady, operations.StatusClassified} {
+		operationsDue, err := w.svc.List(operations.Filter{
+			OwnerUserID: w.opts.OwnerUserID,
+			WorkspaceID: w.opts.WorkspaceID,
+			Status:      status,
+			Limit:       w.opts.MaxOps,
+		})
+		if err != nil {
+			return fmt.Errorf("list %s operations while paused: %w", status, err)
+		}
+		for _, op := range operationsDue {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if processed >= w.opts.MaxOps {
+				return nil
+			}
+			if operations.CurrentDecision(op.CurrentDecision) != operations.DecisionRunSafeLocalWorker {
+				continue
+			}
+			claimed, err := w.svc.ClaimOperation(ctx, w.opts.OwnerUserID, w.opts.WorkspaceID, op.ID, w.claimOwner, w.claimLease)
+			if errors.Is(err, operations.ErrOperationNotClaimable) || errors.Is(err, operations.ErrOperationClaimed) || errors.Is(err, operations.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("claim safe operation while paused: %w", err)
+			}
+			if claimed == nil {
+				continue
+			}
+			processed++
+			if err := w.processClaimed(ctx, *claimed, rep); err != nil && !errors.Is(err, errExecutionDeferredByPolicy) {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				rep.Errors = append(rep.Errors, fmt.Sprintf("operation %s: %v", claimed.Operation.ID, err))
+				return errors.Join(ErrReportedFailures, fmt.Errorf("defer safe operation while paused: %w", err))
+			}
+		}
+	}
+	return nil
 }
 
 // ingest reads every feed and creates/refreshes Operations for its items.

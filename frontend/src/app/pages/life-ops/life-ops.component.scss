@@ -228,6 +228,8 @@ p {
 .need-list__meta {
   color: var(--hai-text-muted);
   font-size: 11px;
+  flex-wrap: wrap;
+  gap: 6px 10px;
   justify-content: flex-start;
 }
 
