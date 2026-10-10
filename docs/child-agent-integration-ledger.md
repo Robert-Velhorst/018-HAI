@@ -393,3 +393,59 @@ The browser-acceptance job's final state must be appended after run completion.
 No transcript, local diagnostic, secret-scan candidate, credential, worktree,
 database, or other local data was removed. The archive remains ineligible for
 cleanup while the transcript crosswalk is incomplete and the PR is unmerged.
+
+### Exact PR crosswalk refresh (2026-10-10)
+
+PR #36 is open at `616c571e894a0c900e2385bdc96e7ab1d8f0f4fb`, based on
+`main`. The local primary checkout is at `e07b9dae`, an ancestor of this PR
+head; the PR contains 97 later commits. GitHub's remote ref was verified with
+`git ls-remote`, so the stale local tracking ref is not used as publication
+evidence.
+
+A read-only content comparison against the exact PR tree classified the
+primary checkout's 692 modified tracked files as 476 byte-identical to the PR,
+153 differing only by CRLF/LF normalization, and 63 substantively different.
+Of 897 untracked non-output product paths, 849 exactly match paths already in
+the PR, 40 differ from the PR version, and eight are new local evidence files
+under `backend/internal/outcomeevaluation/test-evidence/20260930-pg-snapshot/`.
+The broader checkout has 2,475 untracked paths, including 1,570 under
+`output/`; counts are an inventory, not a cleanup allowlist.
+
+The differing local copies are not safe to bulk-port. Direct comparison found
+examples that remove the exact-revision approval override for review reminders,
+use the wrong operation-event payload column, remove source-owner binding from
+approval receipts, restore a plaintext public-key literal, and remove
+redaction from secret-scan output. The local Promptfoo package is also older
+than the PR's pinned version. These examples are evidence for file-by-file
+review, not a claim that all 63 tracked differences or all 40 untracked
+differences have received semantic review. The eight new evidence records and
+all other diagnostics remain local and unstaged.
+
+Exact-head Actions run `38064692746` targets the PR head above. At this
+checkpoint, 32 jobs passed, three failed, and the browser-acceptance job was
+still running. Backend build/tests, real Postgres 17 migration integration,
+Windows installer guards, frontend build/tests, and the cleanup-readiness
+safety contracts passed. Failures were:
+
+- Authenticated control-plane smoke: background operations returned HTTP 500;
+  the suite reported 15 passed and seven failed. The Windows-runtime resume
+  returned HTTP 403 with `control.execution.unavailable` even though its
+  authorization receipt outcome was `authorized`. The safe diagnostic does
+  not establish either root cause; no execution or approval gate was weakened.
+- Promptfoo production dependency audit: 10 high and zero critical advisories
+  in the locked 0.124.1 tree. The registry reports 0.124.1 as the current
+  package version, and npm's suggested fix is a major downgrade to 0.116.7.
+  No downgrade, override, or scanner suppression has been applied.
+- Repository history secret scan: the log identifies a historical JWT-shaped
+  test fixture at `backend/internal/identity/jwt_test.go:41` in commit
+  `ecec8f55d449`. Its classification as synthetic versus sensitive has not
+  been established from the complete findings; no finding was suppressed and
+  no history was rewritten.
+
+The browser-acceptance result must be added after run `38064692746` reaches a
+terminal state. The source archive still contains 18 JSONL files totaling
+20,739,169,122 bytes; the readiness inventory lists eight candidates and ten
+retained files, but the six retained histories lack line-by-line semantic
+review, the full archive crosswalk is incomplete, and the PR is not merged.
+Therefore no transcript or source, worktree, diagnostic, credential, database,
+or generated file is eligible for deletion at this checkpoint.
