@@ -1420,3 +1420,25 @@ is not installed on this machine's PATH. No source from the primary checkout
 was copied. The 108-file semantic review is incomplete, PR #36 is still open,
 and local data cleanup remains gated on further source/archive reconciliation
 and final PR verification.
+
+### October 11, 2026: untracked source-candidate comparison
+
+A fresh comparison of source-like untracked files in the primary checkout used
+the same explicit text-extension filter and excluded generated output, test
+evidence, dependency, build, coverage, Playwright, and VCS directories. Of 833
+candidates, zero are missing from the PR worktree and 38 have different
+content after line-ending normalization. The compared primary checkout remains
+untouched. This comparison does not cover binary files, excluded generated
+content, or prove the semantic integration of the 38 differences.
+
+Targeted review of the competing operation/source-approval files confirms that
+the PR preserves owner and revision binding, the source-evidence digest,
+exact-receipt verification, and claimability for a fresh approval even when a
+prior self-hold set a review reminder. The primary variants omit or weaken
+parts of those guards. Other previously checked candidate variants remove
+deterministic claim-order, approval-before-execution, interrupted-acceptance
+cleanup ownership, synthetic-credential scrubbing, or isolated installer
+profile boundaries; the PR versions are retained. No candidate file was
+copied. The remaining 38-way semantic disposition and all archive child-local
+attribution are still open, so no secondary checkout or archive cleanup is
+eligible.
