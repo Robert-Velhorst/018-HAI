@@ -2292,3 +2292,10 @@ separate and before this guard: the older PR #34 guard would also suppress
 required readiness probes. Focused and full backend CI verification are
 pending on the latest pushed head; the branch remains preserved for continued
 file-by-file comparison.
+
+PR #34 also tightened provider URL validation. Current #36 already rejects
+embedded URL credentials, but routing accepted query parameters and fragments.
+Provider readiness now rejects all three components, with separate route-level
+regression cases for credentials, query parameters, and fragments. This is
+consistent with the existing maintenance endpoint parser, which already
+rejects those URL components. Exact-head backend CI is pending.

@@ -200,6 +200,51 @@ func TestRouteBlocksLinkLocalProviderEndpointByDefault(t *testing.T) {
 	}
 }
 
+func TestRouteBlocksProviderEndpointCredentialsQueryAndFragment(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		want     string
+	}{
+		{
+			name:     "embedded credentials",
+			endpoint: "http://operator:secret@127.0.0.1:11434",
+			want:     "credentials",
+		},
+		{
+			name:     "query parameters",
+			endpoint: "http://127.0.0.1:11434/v1?token=do-not-store",
+			want:     "query parameters",
+		},
+		{
+			name:     "fragment",
+			endpoint: "http://127.0.0.1:11434/v1#secret",
+			want:     "fragments",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			policy := testPolicyWithoutEndpoints()
+			policy.Providers[0].EndpointURL = test.endpoint
+			service := &Service{policy: annotatePolicyReadiness(policy)}
+
+			decision, err := service.Route(RouteRequest{Task: "Summarize this short note"})
+			if err != nil {
+				t.Fatalf("Route returned error: %v", err)
+			}
+			if decision.SelectedModelID != "" {
+				t.Fatalf("selected %q for provider endpoint with %s", decision.SelectedModelID, test.name)
+			}
+			for _, skipped := range decision.Skipped {
+				if skipped.ProviderID == "ollama" && strings.Contains(skipped.Reason, test.want) {
+					return
+				}
+			}
+			t.Fatalf("expected endpoint rejection mentioning %q, got %#v", test.want, decision.Skipped)
+		})
+	}
+}
+
 func TestRouteBlocksRemoteLlamaCPPProviderEndpoint(t *testing.T) {
 	policy := testPolicyWithoutEndpoints()
 	llamaIndex := providerIndex(t, policy, "llama-cpp")
@@ -578,7 +623,7 @@ func TestLocalProviderFlagCannotAuthorizeRemoteEndpoint(t *testing.T) {
 	}
 }
 
-func TestProviderReadinessRequiresTLSForRemoteAndRejectsEmbeddedCredentials(t *testing.T) {
+func TestProviderReadinessRequiresTLSAndRejectsUnsafeURLComponents(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		endpoint   string
@@ -591,7 +636,15 @@ func TestProviderReadinessRequiresTLSForRemoteAndRejectsEmbeddedCredentials(t *t
 		},
 		{
 			name: "URL userinfo is rejected", endpoint: "https://user:secret@models.example.test/v1",
-			wantStatus: "invalid_endpoint", wantReason: "without embedded credentials",
+			wantStatus: "invalid_endpoint", wantReason: "credentials",
+		},
+		{
+			name: "query parameters are rejected", endpoint: "https://models.example.test/v1?token=secret",
+			wantStatus: "invalid_endpoint", wantReason: "query parameters",
+		},
+		{
+			name: "fragments are rejected", endpoint: "https://models.example.test/v1#secret",
+			wantStatus: "invalid_endpoint", wantReason: "fragments",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

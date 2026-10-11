@@ -2334,8 +2334,11 @@ func providerRuntimeReadiness(provider Provider) providerReadiness {
 		return providerReadiness{configured: false, status: "not_configured", reason: "provider endpoint is not configured"}
 	}
 	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
-		return providerReadiness{configured: false, status: "invalid_endpoint", reason: "provider endpoint must be an absolute http or https URL without embedded credentials"}
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return providerReadiness{configured: false, status: "invalid_endpoint", reason: "provider endpoint must be an absolute http or https URL"}
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return providerReadiness{configured: false, status: "invalid_endpoint", reason: "provider endpoint must not contain credentials, query parameters, or fragments"}
 	}
 	host := parsed.Hostname()
 	if unsafeEndpointHost(host) && strings.ToLower(strings.TrimSpace(os.Getenv("LLM_ALLOW_LINK_LOCAL_ENDPOINTS"))) != "true" {
