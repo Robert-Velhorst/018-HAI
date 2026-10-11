@@ -2458,3 +2458,45 @@ locally because `HAI_TEST_DATABASE_DSN` is not configured. The earlier exact-hea
 PR CI predates this change, so GitHub validation for the new commit is still
 required. This is a selective completion of the durable-event path, not a
 review of the remaining divergent branch commits or external Kafka acceptance.
+
+### October 12, 2026: archive integrity and local-source reconciliation
+
+Refreshed the live repository state. PR #36 is open at
+`cfbf13f23d456511bd61260842241b6b0530d4c1`; GitHub reports all 36 checks
+successful and none pending. PRs #33, #34, and #35 are also still open; their
+current listed checks pass. A green check run does not satisfy the archive
+semantic-reconciliation or merge gates.
+
+Rechecked the original July 30 source root
+`D:\codex-temp\hai-completed-agent-sessions` against the checked-in
+18-row manifest: all 18 paths exist and all recorded logical byte lengths
+match, totaling 20,739,169,122 bytes. The supplemental source roots contain
+the expected 3 and 6 files, respectively, totaling 14,013,737,298 bytes.
+Recomputed SHA-256 for the three completed supplemental transcripts; Hubble,
+Popper, and Anscombe match their manifest hashes. The six supplemental
+aborted/nonterminal transcripts remain protected. These checks establish
+current file presence, lengths, and the three selected hashes; they do not
+complete semantic review of every transcript or authorize deletion.
+
+Refreshed the two D: scratch checkouts using a per-command Git safe-directory
+exception only; no global Git trust setting was changed. The integration
+snapshot remains at `91c8620c` with 1,790 staged paths, 19 unstaged paths, no
+untracked paths, and no unmerged entries. The merge scratch remains at
+`e3843448` with 206 staged paths, 189 unstaged paths, and 189 unmerged paths.
+Both remain preserved; neither was copied or cleaned.
+
+Reviewed local Autofever candidate commit `7eed157b`. Its new adapter assumes
+`/api/integrations/hai/feed` and vehicle-review records, but its tests use only
+a synthetic HTTP server and do not establish that the upstream application
+implements this contract. The current PR correctly keeps Autofever disabled
+pending a verified upstream contract; the candidate is not ported or described
+as operational, and its local branch remains preserved for now.
+
+Removed only the clean `hai-tree-compare` checkout after confirming it was at
+the exact PR #36 head and contained no ignored or untracked files. Its 3,147
+tracked repository files were already present in the open PR; the measured
+checkout footprint was 37,283,017 bytes. This freed about 35.6 MiB of duplicate
+local checkout data. No archive, transcript, diagnostic, environment file,
+database, or unresolved worktree was removed. The wider
+branch, transcript-semantic, and local-artifact audits remain incomplete; no
+other cleanup gate is claimed.
