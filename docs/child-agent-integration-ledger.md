@@ -1602,6 +1602,33 @@ transcripts and their possible earlier patch events have not been semantically
 reconciled. The existing automated gate therefore cannot authorize removal
 from either supplemental folder; no local HAI files were deleted.
 
+### October 11, 2026: integration snapshot comparison and exact-head CI
+
+The `codex/hai-integration-snapshot` checkout is at commit
+`91c8620c557229f1da4ed15fcbb7088c6a6947a7`, an ancestor of PR #36's current
+`codex/hai-runtime-release` head (`467` commits behind, `0` commits ahead).
+Its worktree still contains 1,794 modified tracked paths. A read-only comparison
+of 2,917 tracked, non-secret text/source files against the PR found 86 differing
+paths: `.github` (1), backend (35), Compose (1), docs (4), frontend (15),
+scripts (28), and services (2). This comparison does not cover untracked files,
+binary assets, excluded credential-like paths, the primary checkout, or the
+separate merge-scratch checkout; it is not a cleanup authorization.
+
+Sampled high-risk comparisons of operation claims, source approvals, optional
+runtime documentation, and Promptfoo dependencies confirm that the canonical
+PR carries the schema-correct `payload_json` query, complete source-revision
+and owner binding, audited network/profile documentation, and pinned runner
+dependency safeguards. No source was copied in this batch. The remaining
+snapshot differences still require disposition against the existing audit
+ledger; the separate merge-scratch checkout still has 189 unmerged paths.
+
+Exact-head Actions run `38112214166` for commit `0701e4201ce170467a3942f1c25ca816d55b228a`
+was in progress at the latest check (`2026-10-11 04:44 UTC`): 33 jobs had
+succeeded, 3 were still running, and none had failed. This is not final CI
+acceptance. PR #36 remains open and unmerged; transcript deletion and local
+checkout cleanup remain unauthorized until source reconciliation, merge, and
+fresh retained-copy verification are complete.
+
 ### October 11, 2026: supplemental July 30 child batches discovered
 
 Two additional folders, `D:\codex-temp\completed-agent-sessions` and
