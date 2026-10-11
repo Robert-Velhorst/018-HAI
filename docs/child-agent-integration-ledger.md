@@ -1315,3 +1315,34 @@ browser acceptance, guarded Windows runtime, installer guards, and other
 runner jobs are still pending at this refresh. No cleanup condition has
 changed: keep both checkouts, the transcript archive, diagnostics, Docker
 volumes, and recovery bundle intact.
+
+### October 11, 2026: follow-up semantic review of overlapping source files
+
+The tracked/untracked comparison was independently rerun against the current
+secondary checkout. Its 682 modified tracked paths include 75 substantive
+content differences after line-ending normalization; all paths exist in the
+PR tree. Among the additional reviewed deltas, the PR preserves workflow task
+success criteria, returns partial reminder-delivery results when cancellation
+or a delivery error interrupts a batch, and wires optional SearXNG discovery
+through the backend API, isolated Compose networks, configuration, contract
+tests, and operator/license documentation. Those facilities are present in
+the PR and did not require copying from the secondary checkout. The frontend
+login method's explicit `Observable<void>` response typing is also present in
+the PR. These checks do not finish semantic review of the other tracked or
+untracked differences.
+
+The separate July 30 transcript archive remains 18 files (16 unique child
+IDs), with nine terminal-completed records, eight unique cleanup candidates,
+and ten retained duplicate, aborted, or nonterminal files. Its eight
+completed-candidate reports have a source crosswalk. The retained records
+contain repeated parent-session patch events; child-local attribution and a
+deduplicated semantic crosswalk remain incomplete. This archive is distinct
+from the August cohort summarized earlier in this ledger. No transcript or
+other local data is eligible for deletion at the present PR state.
+
+The latest PR head at this review is `238a621f28bcdd09b5c7b8381a0685e74637f619`,
+open against `main`. Exact-head Actions run `38105484907` has passed the
+cleanup-safety contract job; the other checks, including backend, frontend,
+database, browser, Windows, installer, and runner acceptance, were pending at
+the latest refresh. Do not merge or clean the local worktrees until those
+checks and the remaining source/transcript crosswalk are complete.
