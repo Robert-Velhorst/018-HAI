@@ -1034,3 +1034,19 @@ profile override and several `RUNNER_TEMP` ownership/reparse-point checks.
 Although the smoke script still requires a hosted disposable Windows runner and
 checks the application profile is initially empty, retain the stronger isolated
 profile and path-ownership checks until a replacement is independently tested.
+
+### Backend and audit-evidence review (2026-10-11)
+
+The remaining backend and migration test diffs include additional deletion
+risks:
+
+| Area | Observed snapshot difference | Current disposition |
+| --- | --- | --- |
+| Outcome evaluation | Removes defensive slice copies before normalization and deletes tests proving caller-owned nested data is unchanged and concurrent shared input does not race. | Reject as-is; normalization mutates caller-owned buffers and the regression coverage is removed. |
+| Migration integrity | Removes 0118 source-evidence digest migration expectations and deletes isolated rollback/data-preservation cases from source-configuration/head tests. | Reject as-is; these tests prove upgrade and data-loss refusal contracts. |
+| Transcript audit evidence | Deletes the supplemental manifest, final reports, batch audit, and `audit-hai-retained-completions.ps1` from the PR comparison. | Reject; these are current provenance and reconciliation evidence, not disposable generated output. |
+| Browser-verification tests | Deletes the dedicated handler test while also removing the workflow-link response contract. | Reject as-is; retain explicit API and workflow-link coverage. |
+
+This is still a risk-based review of the remaining high-impact diffs; no claim
+is made that all changed paths have been individually adjudicated. The source
+snapshot remains unreconciled and must not be deleted or merged wholesale.
