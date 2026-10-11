@@ -11,6 +11,7 @@ import (
 
 	"automation-hub-backend/internal/lifecycle"
 	"automation-hub-backend/internal/safety"
+	"automation-hub-backend/internal/schedulerstatus"
 )
 
 const (
@@ -53,6 +54,7 @@ func StartScheduler(ctx context.Context, service ScheduledWorkflowService, allow
 		return
 	}
 	if !schedulerEnabled("WORKFLOW_SCHEDULER_ENABLED", true) {
+		schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Detail: "disabled by WORKFLOW_SCHEDULER_ENABLED"})
 		return
 	}
 	interval := schedulerInterval("WORKFLOW_SCHEDULER_INTERVAL_SECONDS")
@@ -61,15 +63,22 @@ func StartScheduler(ctx context.Context, service ScheduledWorkflowService, allow
 	if durableSchedulerEnabled() {
 		if err := startDurableScheduler(ctx, service, interval, limit, backgroundAllowed); err != nil {
 			if ctx.Err() != nil {
+				schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Durable: true, Detail: "startup canceled before durable worker attached"})
 				return
 			}
+			schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Durable: true, Detail: "durable worker unavailable; using configured in-process fallback: " + safety.RedactSecrets(err.Error())})
 			log.Printf("workflow scheduler: durable queue unavailable (%s); falling back to the in-process ticker", safety.RedactSecrets(err.Error()))
 		} else {
+			schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Durable: true, Running: true, Detail: "durable worker attached"})
 			return
 		}
 	}
 	scheduler := NewScheduler(service, interval, limit, backgroundAllowed)
-	lifecycle.Go(ctx, "workflow-scheduler", func() { scheduler.Start(ctx) })
+	if lifecycle.Go(ctx, "workflow-scheduler", func() { scheduler.Start(ctx) }) {
+		schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Running: true, Detail: "in-process scheduler active; not crash-recoverable"})
+	} else {
+		schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Detail: "lifecycle rejected worker during shutdown"})
+	}
 }
 
 func (s *Scheduler) Start(ctx context.Context) {

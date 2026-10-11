@@ -4,7 +4,18 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"automation-hub-backend/internal/schedulerstatus"
 )
+
+func TestStartSchedulerReportsDisabledState(t *testing.T) {
+	t.Setenv("WORKFLOW_SCHEDULER_ENABLED", "false")
+	StartScheduler(context.Background(), nil)
+	state, ok := schedulerstatus.Snapshot("workflow")
+	if !ok || state.Enabled || state.Running {
+		t.Fatalf("disabled scheduler state = %+v, found=%t", state, ok)
+	}
+}
 
 func TestWorkflowSchedulerRunsOpenLoopsBeforeRunnableItems(t *testing.T) {
 	service := &fakeScheduledWorkflowService{

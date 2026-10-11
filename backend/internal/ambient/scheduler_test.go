@@ -6,7 +6,17 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/models"
+	"automation-hub-backend/internal/schedulerstatus"
 )
+
+func TestStartSchedulerReportsPolicyDisabledState(t *testing.T) {
+	t.Setenv("AMBIENT_SCHEDULER_ENABLED", "false")
+	StartScheduler(context.Background(), nil)
+	state, ok := schedulerstatus.Snapshot("ambient")
+	if !ok || state.Enabled || state.Running {
+		t.Fatalf("disabled scheduler state = %+v, found=%t", state, ok)
+	}
+}
 
 type schedulerScanRecorder struct {
 	Service

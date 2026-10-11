@@ -36,6 +36,25 @@ func TestPostgresProbePingsAcquiredServingPool(t *testing.T) {
 	}
 }
 
+func TestProbesIncludeNonCriticalBackgroundSchedulerStatus(t *testing.T) {
+	probes := Probes(config.Configuration{})
+	want := map[string]bool{
+		"scheduler.source":   false,
+		"scheduler.workflow": false,
+		"scheduler.ambient":  false,
+	}
+	for _, probe := range probes {
+		if _, ok := want[probe.Name]; ok {
+			want[probe.Name] = !probe.Critical
+		}
+	}
+	for name, foundNonCritical := range want {
+		if !foundNonCritical {
+			t.Errorf("%s probe is missing or marked critical", name)
+		}
+	}
+}
+
 func TestPostgresProbeReportsServingPoolFailure(t *testing.T) {
 	pinger := &recordingPostgresPinger{err: errors.New("connection reset")}
 	probe := postgresProbe(config.Configuration{DbHost: "postgres", DbPort: 5432, DbName: "hai", DbUser: "hai"}, func() (postgresPinger, error) {

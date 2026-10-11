@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/lifecycle"
+	"automation-hub-backend/internal/schedulerstatus"
 )
 
 func TestSourceSchedulerIntervalUsesSafeBounds(t *testing.T) {
@@ -54,6 +55,10 @@ func TestStartSchedulerFailsClosedWhenDurableStartupFails(t *testing.T) {
 	if volatileStarts != 0 {
 		t.Fatalf("volatile fallback started %d times without explicit opt-in", volatileStarts)
 	}
+	state, ok := schedulerstatus.Snapshot("source")
+	if !ok || !state.Enabled || !state.Durable || state.Running {
+		t.Fatalf("failed durable scheduler state = %+v, found=%t", state, ok)
+	}
 }
 
 func TestStartSchedulerUsesOnlyExplicitlyEnabledVolatileFallback(t *testing.T) {
@@ -79,6 +84,10 @@ func TestStartSchedulerUsesOnlyExplicitlyEnabledVolatileFallback(t *testing.T) {
 	if !strings.Contains(logs.String(), "DEGRADED") || !strings.Contains(logs.String(), "not crash-recoverable") {
 		t.Fatalf("fallback log does not expose degraded mode: %q", logs.String())
 	}
+	state, ok := schedulerstatus.Snapshot("source")
+	if !ok || !state.Enabled || state.Durable || !state.Running {
+		t.Fatalf("volatile scheduler state = %+v, found=%t", state, ok)
+	}
 }
 
 func TestStartSchedulerKeepsSuccessfulDurableStartup(t *testing.T) {
@@ -95,6 +104,29 @@ func TestStartSchedulerKeepsSuccessfulDurableStartup(t *testing.T) {
 	}
 	if durableStarts != 1 || volatileStarts != 0 {
 		t.Fatalf("durable starts=%d, volatile starts=%d; want 1 and 0", durableStarts, volatileStarts)
+	}
+	state, ok := schedulerstatus.Snapshot("source")
+	if !ok || !state.Enabled || !state.Durable || !state.Running {
+		t.Fatalf("durable scheduler state = %+v, found=%t", state, ok)
+	}
+}
+
+func TestStartSchedulerReportsDisabledState(t *testing.T) {
+	configureSchedulerTest(t, "true", "false")
+	t.Setenv("SOURCE_SCHEDULER_ENABLED", "false")
+	called := false
+	err := startScheduler(
+		context.Background(), nil,
+		func(context.Context, Service, time.Duration, ...func() bool) error { called = true; return nil },
+		func(context.Context, Service, time.Duration, ...func() bool) bool { called = true; return true },
+		func(context.Context, Service, ...func() bool) error { called = true; return nil },
+	)
+	if err != nil || called {
+		t.Fatalf("disabled scheduler startup error=%v, starter called=%t", err, called)
+	}
+	state, ok := schedulerstatus.Snapshot("source")
+	if !ok || state.Enabled || state.Running {
+		t.Fatalf("disabled scheduler state = %+v, found=%t", state, ok)
 	}
 }
 

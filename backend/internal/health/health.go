@@ -26,6 +26,7 @@ import (
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/doctor"
 	"automation-hub-backend/internal/infra"
+	"automation-hub-backend/internal/schedulerstatus"
 
 	"github.com/IBM/sarama"
 )
@@ -48,6 +49,9 @@ func Probes(cfg config.Configuration) []doctor.Probe {
 		RedisProbe(cfg),
 		KafkaProbe(cfg),
 		LLMProviderProbe(),
+		schedulerstatus.Probe("source"),
+		schedulerstatus.Probe("workflow"),
+		schedulerstatus.Probe("ambient"),
 	}
 }
 

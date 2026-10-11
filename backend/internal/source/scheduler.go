@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/lifecycle"
+	"automation-hub-backend/internal/safety"
+	"automation-hub-backend/internal/schedulerstatus"
 )
 
 const (
@@ -56,6 +58,7 @@ func startScheduler(ctx context.Context, service Service, startDurable durableSc
 		}
 	}
 	if !schedulerEnabled() {
+		schedulerstatus.Record(schedulerstatus.State{Name: "source", Detail: "disabled by SOURCE_SCHEDULER_ENABLED"})
 		startManualIfEnabled()
 		return nil
 	}
@@ -65,6 +68,7 @@ func startScheduler(ctx context.Context, service Service, startDurable durableSc
 	if durableSchedulerEnabled() {
 		durableErr = startDurable(ctx, service, interval, backgroundAllowed)
 		if durableErr == nil {
+			schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Durable: true, Running: true, Detail: "durable worker attached"})
 			return nil
 		}
 		if ctx.Err() != nil {
@@ -74,6 +78,10 @@ func startScheduler(ctx context.Context, service Service, startDurable durableSc
 		durableErr = errors.New("durable source scheduling is disabled")
 	}
 	if !volatileSchedulerFallbackEnabled() {
+		schedulerstatus.Record(schedulerstatus.State{
+			Name: "source", Enabled: true, Durable: durableSchedulerEnabled(),
+			Detail: "durable scheduler startup failed; volatile fallback is disabled: " + safety.RedactSecrets(durableErr.Error()),
+		})
 		return fmt.Errorf("source scheduler durable startup failed: %w (set SOURCE_SCHEDULER_VOLATILE_FALLBACK=true to explicitly allow degraded in-memory scheduling)", durableErr)
 	}
 	if ctx.Err() != nil {
@@ -83,8 +91,10 @@ func startScheduler(ctx context.Context, service Service, startDurable durableSc
 		if ctx.Err() != nil {
 			return nil
 		}
+		schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Detail: "volatile fallback could not start"})
 		return fmt.Errorf("source scheduler durable startup failed: %w; explicitly enabled volatile fallback could not start", durableErr)
 	}
+	schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Running: true, Detail: "explicitly enabled volatile fallback; work is not crash-recoverable"})
 	log.Printf("source scheduler DEGRADED: volatile in-memory fallback is active after durable startup failure (%v); scheduled work is not crash-recoverable", durableErr)
 	return nil
 }
