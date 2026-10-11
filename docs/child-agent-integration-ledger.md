@@ -1165,3 +1165,51 @@ fixture identifiers and are not copied into the repository; relevant test
 results and the race diagnosis are preserved here. Keep those local artifacts
 until the new code passes the exact-head race gate and the broader source
 crosswalk and cleanup conditions are complete.
+
+### October 11, 2026: secondary-checkout untracked source comparison
+
+A fresh read-only inventory of source-like untracked files in the secondary
+checkout used the extensions `.go`, `.ts`, `.html`, `.scss`, `.css`, `.json`,
+`.yml`, `.yaml`, `.md`, `.ps1`, `.sh`, `.py`, `.sql`, `.proto`, `.mod`, and
+`.sum`, excluding `output`, `.claude-flow`, `.swarm`, `node_modules`, `dist`,
+`coverage`, and `test-evidence`. It found 845 files: every path exists in the
+PR worktree, 803 are byte-equivalent after newline normalization, and 42 have
+content differences. The difference count is not evidence that all 42 have
+been fully reviewed; the per-file semantic disposition remains open.
+
+Targeted comparisons of execution claims and source approvals confirmed the
+PR version has stricter durable receipt binding, binds source evidence raw
+SHA-256, reports precise stale-receipt causes, and keeps the SQL and in-memory
+claim rules aligned. The secondary checkout uses an older approval predicate,
+including a mutable owner field as authority evidence, and its GORM update
+rewrites lifecycle timestamps. OpenClaw maintenance variants in the secondary
+checkout include a literal copy of the pinned npm registry public key and
+weaker credential/worker checks; the PR keeps that key byte-encoded and adds
+independent registry signature and Windows Authenticode verification. The
+acceptance-stack variant also omits PR filesystem ownership and non-root tmpfs
+constraints. These variants were not copied over the PR implementation.
+
+Migration test comparisons found useful rollback assertions in the secondary
+checkout, but its source-configuration test attempted rollback while later
+phase migrations were still applied, and its source-head test dismantled live
+post-phase tables to reach a data guard. The PR versions explicitly verify the
+phase-order refusal and exercise data-loss guards in isolated databases,
+preserving durable history. These improvements are present in the PR worktree;
+they still require successful exact-head migration CI before acceptance.
+
+The latest PR state was checked with GitHub CLI: PR #36 is open, targets
+`main`, and points to `9a554bc5e070f84c5777ddf1b6975f958555fc02`; the remote
+branch points to the same commit. Exact-head checks include passing frontend,
+secret-scan, authenticated-control-plane, local-provider-fixture, Compose,
+and cleanup-contract jobs, while backend, browser acceptance, guarded Windows,
+real-Postgres migration, installer, and several Python-runner jobs remain
+pending. The GitHub app connector required reauthentication, so no claim is
+based on that connector. PR #36 is unmerged; the transcript cleanup readiness
+gate remains closed. No files were deleted or moved.
+
+Still open: semantic disposition of all 42 differing untracked files, the 74
+secondary-checkout tracked content differences, transcript-to-source
+crosswalk and malformed-record resolution, the remaining local-only evidence
+and output classifications, and exact-head CI completion. Do not remove the
+transcript archive, source checkout, merge scratch, diagnostics, Docker data,
+or other local artifacts until those integration and readiness gates pass.
