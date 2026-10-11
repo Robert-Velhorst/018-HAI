@@ -1207,9 +1207,53 @@ pending. The GitHub app connector required reauthentication, so no claim is
 based on that connector. PR #36 is unmerged; the transcript cleanup readiness
 gate remains closed. No files were deleted or moved.
 
-Still open: semantic disposition of all 42 differing untracked files, the 74
+Still open: semantic disposition of all 42 differing untracked files, the 75
 secondary-checkout tracked content differences, transcript-to-source
 crosswalk and malformed-record resolution, the remaining local-only evidence
 and output classifications, and exact-head CI completion. Do not remove the
 transcript archive, source checkout, merge scratch, diagnostics, Docker data,
 or other local artifacts until those integration and readiness gates pass.
+
+### October 11, 2026: tracked-diff and local cleanup preflight refresh
+
+The secondary checkout reports 692 modified tracked entries. A read-only
+comparison against the PR worktree enumerated 682 diff paths; 75 have content
+differences after newline normalization, and all 682 paths exist in the PR
+worktree. The ten additional status entries were also checked and are
+newline-normalized identical to the PR versions. Targeted review of the
+highest-risk variants found
+the PR contains the newer workflow success-criteria propagation, whole-record
+execution policy checks, advisory-lock identity encoding, browser-verification
+route registration, and recovery preflights. Several secondary-checkout
+variants were stale implementations or tests: its execution-auth lock used a
+NUL-delimited identity and interpreted a void advisory-lock call as a boolean;
+its recovery tests and Compose ownership helper used older sequencing and
+broader capabilities. These reviewed examples were not copied over the PR.
+The remaining 75-path semantic classification is not complete.
+
+The read-only local cleanup inventory ran from the PR worktree at
+`65788d88a6c31204278569a775b724d0cc8bcc4b`; it performed no deletion. It
+reported zero eligible synthetic temporary fixtures, eight transcript
+candidates totaling 7,939,888,699 bytes blocked until canonical-main and
+merged-PR verification, and 15 PR diagnostic/tool artifacts totaling
+31,505,884 bytes blocked until PR #36 is merged at the exact local HEAD. The
+Docker inventory is incomplete: three HAI-mounted anonymous volumes are
+unrecognized, including PostgreSQL data mounts and Redis `/data`; a recovery
+bundle of 10,189,079 bytes has unverified ACL evidence. Two old HAI images
+remain on retention review, and neither containers, volumes, recovery data,
+nor images are eligible for removal. The active PR worktree has 22 untracked
+items and remains in use. Joyce Work Schedule and ShareT were preserved.
+
+The GitHub Actions run for that exact HEAD (`38104760246`) was still queued at
+the last check. PR #36 remains open and unmerged. No local HAI files or Docker
+resources were removed; the transcript and local diagnostic cleanup gates
+remain closed.
+
+The explicit read-only source integrity check has since completed: all 18
+archive files (20,739,169,122 logical bytes) match the manifest inventory, and
+all eight candidate files (7,939,888,699 bytes total) match their recorded
+size and SHA-256. This verifies the transcript bytes, not completion of the
+semantic crosswalk or permission to remove them. The gate still reports
+`cleanup_gate_ready=false`, `deletion_performed=false`, and
+`cleanup_authorized=false` because committed-ledger verification on canonical
+`main` and the merged-PR verification have not passed.
