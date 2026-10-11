@@ -526,6 +526,11 @@ func TestGoogleOAuthStartUsesAStableSecretBoundPKCEVerifier(t *testing.T) {
 	}
 	query := parsed.Query()
 	state := query.Get("state")
+	persistedState := svc.repo.(*fakeSourceRepo).oauthStates[sourceID]
+	if persistedState == nil || persistedState.StateDigest != oauthStateDigest(state) ||
+		persistedState.OwnerIdentity != "alice@example.test" || persistedState.ConsumedAt != nil {
+		t.Fatalf("OAuth state was not durably represented by an owner-bound digest: %#v", persistedState)
+	}
 	if got := query.Get("code_challenge_method"); got != "S256" {
 		t.Fatalf("code_challenge_method = %q, want S256", got)
 	}

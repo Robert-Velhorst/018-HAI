@@ -57,6 +57,8 @@ type Repository interface {
 	SaveOAuthToken(token *models.SourceOAuthToken) error
 	FindOAuthToken(sourceID uuid.UUID) (*models.SourceOAuthToken, error)
 	FindOAuthTokensForSources(sourceIDs []uuid.UUID) ([]models.SourceOAuthToken, error)
+	SaveOAuthState(state *models.SourceOAuthState) error
+	ConsumeOAuthState(sourceID uuid.UUID, ownerIdentity, stateDigest string, consumedAt time.Time) error
 }
 
 type guardedExtractionDeleteRepository interface {
@@ -82,6 +84,7 @@ var (
 	ErrExtractionCorrectionWorkerActive   = errors.New("source extraction has an active correction worker")
 	ErrGuardedExtractionDeleteUnavailable = errors.New("repository does not support guarded extraction deletion")
 	ErrSourceChanged                      = errors.New("connected source changed since it was read")
+	ErrOAuthStateInvalid                  = errors.New("OAuth state is invalid, expired, or already consumed")
 )
 
 type GormRepository struct {
@@ -380,6 +383,10 @@ func (r *GormRepository) RevokeSource(
 		}
 		if err := tx.Where("source_id = ?", expected.ID).
 			Delete(&models.SourceOAuthToken{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("source_id = ?", expected.ID).
+			Delete(&models.SourceOAuthState{}).Error; err != nil {
 			return err
 		}
 		result := tx.Model(&models.ConnectedSource{}).
@@ -1375,4 +1382,102 @@ func (r *GormRepository) FindOAuthTokensForSources(sourceIDs []uuid.UUID) ([]mod
 		return nil, err
 	}
 	return tokens, nil
+}
+
+// SaveOAuthState replaces the single outstanding state for an active,
+// owner-bound source. Only the digest is persisted; the signed bearer value
+// stays in the browser/provider round trip.
+func (r *GormRepository) SaveOAuthState(state *models.SourceOAuthState) error {
+	if state == nil || state.SourceID == uuid.Nil || !validOAuthStateDigest(state.StateDigest) {
+		return ErrOAuthStateInvalid
+	}
+	state.OwnerIdentity = strings.TrimSpace(state.OwnerIdentity)
+	if state.OwnerIdentity == "" || len(state.OwnerIdentity) > 255 {
+		return ErrOAuthStateInvalid
+	}
+	now := time.Now().UTC()
+	if state.ExpiresAt.IsZero() || !state.ExpiresAt.After(now) {
+		return ErrOAuthStateInvalid
+	}
+	state.ExpiresAt = state.ExpiresAt.UTC()
+
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		var source models.ConnectedSource
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_identity = ?", state.SourceID, state.OwnerIdentity).
+			First(&source).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrOAuthStateInvalid
+		}
+		if err != nil {
+			return err
+		}
+		if source.RevokedAt != nil || strings.EqualFold(strings.TrimSpace(source.Status), "revoked") ||
+			!source.Enabled || strings.EqualFold(strings.TrimSpace(source.Status), "paused") {
+			return ErrOAuthStateInvalid
+		}
+
+		if err := tx.Where("source_id = ?", state.SourceID).Delete(&models.SourceOAuthState{}).Error; err != nil {
+			return err
+		}
+		state.ID = uuid.New()
+		state.CreatedAt = now
+		state.ConsumedAt = nil
+		return tx.Create(state).Error
+	})
+}
+
+// ConsumeOAuthState atomically marks a matching unexpired authorization state
+// used. Locking the source first serializes this with source revocation.
+func (r *GormRepository) ConsumeOAuthState(
+	sourceID uuid.UUID,
+	ownerIdentity, stateDigest string,
+	consumedAt time.Time,
+) error {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if sourceID == uuid.Nil || ownerIdentity == "" || !validOAuthStateDigest(stateDigest) || consumedAt.IsZero() {
+		return ErrOAuthStateInvalid
+	}
+	consumedAt = consumedAt.UTC()
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		var source models.ConnectedSource
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND owner_identity = ?", sourceID, ownerIdentity).
+			First(&source).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrOAuthStateInvalid
+		}
+		if err != nil {
+			return err
+		}
+		if source.RevokedAt != nil || strings.EqualFold(strings.TrimSpace(source.Status), "revoked") ||
+			!source.Enabled || strings.EqualFold(strings.TrimSpace(source.Status), "paused") {
+			return ErrOAuthStateInvalid
+		}
+
+		result := tx.Model(&models.SourceOAuthState{}).
+			Where("source_id = ? AND owner_identity = ? AND state_digest = ? AND consumed_at IS NULL AND expires_at > ?",
+				sourceID, ownerIdentity, stateDigest, consumedAt).
+			Update("consumed_at", gorm.Expr("GREATEST(?, created_at)", consumedAt))
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrOAuthStateInvalid
+		}
+		return nil
+	})
+}
+
+func validOAuthStateDigest(value string) bool {
+	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
+}
+
+func oauthStateDigest(state string) string {
+	digest := sha256.Sum256([]byte(state))
+	return hex.EncodeToString(digest[:])
 }

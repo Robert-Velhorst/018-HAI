@@ -600,6 +600,16 @@ class CIWorkflowContractTest(unittest.TestCase):
                     "optional integrations must never join the default local startup",
                 )
 
+    def test_frontend_healthcheck_probes_its_listening_health_endpoint(self) -> None:
+        compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+        frontend = compose_service_block(compose, "frontend")
+        nginx = (ROOT / "frontend" / "nginx-custom.conf").read_text(encoding="utf-8")
+
+        self.assertIn("listen 8080;", nginx)
+        self.assertIn("location = /healthz", nginx)
+        self.assertIn("http://127.0.0.1:8080/healthz", frontend)
+        self.assertNotIn("http://127.0.0.1/", frontend)
+
     def test_optional_profile_documentation_covers_every_compose_profile(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
         documentation = (ROOT / "docs" / "optional-runtime-profiles.md").read_text(

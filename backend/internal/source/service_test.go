@@ -3563,6 +3563,7 @@ type fakeSourceRepo struct {
 	auditLogErr                error
 	deleteExtractionErr        error
 	oauthTokens                map[uuid.UUID]*models.SourceOAuthToken
+	oauthStates                map[uuid.UUID]*models.SourceOAuthState
 	oauthTokenSingleQueries    int
 	oauthTokenBatchQueries     int
 	sourceLeaseAcquired        bool
@@ -3620,6 +3621,7 @@ func newFakeSourceRepo(sources ...*models.ConnectedSource) *fakeSourceRepo {
 		rawItems:                map[uuid.UUID]*models.SourceRawItem{},
 		extractions:             map[uuid.UUID]*models.SourceExtraction{},
 		oauthTokens:             map[uuid.UUID]*models.SourceOAuthToken{},
+		oauthStates:             map[uuid.UUID]*models.SourceOAuthState{},
 		sourceLeaseAcquired:     true,
 		extractionFenceAcquired: true,
 	}
@@ -3677,6 +3679,45 @@ func (r *fakeSourceRepo) SaveOAuthToken(token *models.SourceOAuthToken) error {
 	}
 	stored := *token
 	r.oauthTokens[token.SourceID] = &stored
+	return nil
+}
+
+func (r *fakeSourceRepo) SaveOAuthState(state *models.SourceOAuthState) error {
+	if state == nil || state.SourceID == uuid.Nil || !validOAuthStateDigest(state.StateDigest) || !state.ExpiresAt.After(time.Now()) {
+		return ErrOAuthStateInvalid
+	}
+	owner := strings.TrimSpace(state.OwnerIdentity)
+	source := r.sources[state.SourceID]
+	if owner == "" || source == nil || source.OwnerIdentity != owner || !source.Enabled ||
+		source.RevokedAt != nil || strings.EqualFold(strings.TrimSpace(source.Status), "revoked") ||
+		strings.EqualFold(strings.TrimSpace(source.Status), "paused") {
+		return ErrOAuthStateInvalid
+	}
+	copy := *state
+	copy.OwnerIdentity = owner
+	copy.ID = uuid.New()
+	copy.CreatedAt = time.Now().UTC()
+	copy.ConsumedAt = nil
+	r.oauthStates[state.SourceID] = &copy
+	return nil
+}
+
+func (r *fakeSourceRepo) ConsumeOAuthState(sourceID uuid.UUID, ownerIdentity, stateDigest string, consumedAt time.Time) error {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	state := r.oauthStates[sourceID]
+	source := r.sources[sourceID]
+	if sourceID == uuid.Nil || ownerIdentity == "" || !validOAuthStateDigest(stateDigest) || consumedAt.IsZero() ||
+		state == nil || source == nil || source.OwnerIdentity != ownerIdentity || state.OwnerIdentity != ownerIdentity ||
+		state.StateDigest != stateDigest || state.ConsumedAt != nil || !state.ExpiresAt.After(consumedAt) ||
+		!source.Enabled || source.RevokedAt != nil || strings.EqualFold(strings.TrimSpace(source.Status), "paused") ||
+		strings.EqualFold(strings.TrimSpace(source.Status), "revoked") {
+		return ErrOAuthStateInvalid
+	}
+	consumed := consumedAt.UTC()
+	if consumed.Before(state.CreatedAt) {
+		consumed = state.CreatedAt
+	}
+	state.ConsumedAt = &consumed
 	return nil
 }
 
@@ -3840,6 +3881,7 @@ func (r *fakeSourceRepo) RevokeSource(
 	source.RevokedAt = &revokedAt
 	source.UpdatedAt = time.Now().UTC()
 	delete(r.oauthTokens, expected.ID)
+	delete(r.oauthStates, expected.ID)
 	copied := *source
 	return &copied, nil
 }

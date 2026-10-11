@@ -481,6 +481,16 @@ func (s *service) StartGoogleOAuth(sourceID uuid.UUID) (string, error) {
 	if authorizeURL == "" {
 		return "", fmt.Errorf("google oauth authorization request could not be constructed")
 	}
+	claims, err := verifyBoundGoogleOAuthState(state)
+	if err != nil {
+		return "", err
+	}
+	if err := s.repo.SaveOAuthState(&models.SourceOAuthState{
+		SourceID: sourceID, OwnerIdentity: source.OwnerIdentity,
+		StateDigest: oauthStateDigest(state), ExpiresAt: time.Unix(claims.ExpiresAt, 0).UTC(),
+	}); err != nil {
+		return "", fmt.Errorf("persist Google OAuth state: %w", err)
+	}
 	return authorizeURL, nil
 }
 
@@ -516,6 +526,9 @@ func (s *service) CompleteGoogleOAuth(ctx context.Context, code, state string) (
 	// the source state again before exchanging and persisting a new grant.
 	if err := googleOAuthSourceAllowed(source); err != nil {
 		return uuid.Nil, err
+	}
+	if err := s.repo.ConsumeOAuthState(sourceID, source.OwnerIdentity, oauthStateDigest(state), time.Now().UTC()); err != nil {
+		return uuid.Nil, fmt.Errorf("consume Google OAuth state: %w", err)
 	}
 	cfg, err := googleOAuthConfigForConnector(claims.ConnectorKey)
 	if err != nil {
@@ -1222,7 +1235,7 @@ func gmailMessagesToImportItems(messages []googleoauth.GmailMessage, source *mod
 				"source": "gmail", "sourceId": source.ID, "messageId": m.ID,
 				"historyId": m.HistoryID, "contentStatus": "size_limit",
 				"contentLimitBytes": m.ContentLimitBytes,
-				"reviewRequired": true, "reviewStatus": "pending", "readonly": true,
+				"reviewRequired":    true, "reviewStatus": "pending", "readonly": true,
 			})
 			items = append(items, ImportItem{
 				ExternalID: "gmail:content-limited:" + m.ID,
@@ -1317,10 +1330,10 @@ func gmailMessagesToImportItems(messages []googleoauth.GmailMessage, source *mod
 			"date": formatOptionalTime(m.Date), "threadId": m.ThreadID,
 			"historyId": m.HistoryID, "attachments": len(m.Attachments),
 			"attachmentContentStatuses": attachmentStatuses,
-			"attachmentsOmitted": m.AttachmentsOmitted,
-			"bodyTruncated": m.BodyTruncated, "bodyLimitBytes": m.BodyLimitBytes,
+			"attachmentsOmitted":        m.AttachmentsOmitted,
+			"bodyTruncated":             m.BodyTruncated, "bodyLimitBytes": m.BodyLimitBytes,
 			"bodyEncodingWarning": m.BodyEncodingWarning,
-			"reviewRequired": len(reviewReasons) > 0, "reviewStatus": reviewStatusValue,
+			"reviewRequired":      len(reviewReasons) > 0, "reviewStatus": reviewStatusValue,
 			"reviewReasons": reviewReasons, "readonly": true,
 		})
 		items = append(items, ImportItem{
