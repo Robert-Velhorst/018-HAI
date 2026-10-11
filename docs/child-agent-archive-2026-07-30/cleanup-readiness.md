@@ -1145,3 +1145,47 @@ available in the current local environment, so the focused Go test and a live
 PostgreSQL reproduction have not been run here. The exact PR-head CI result must
 verify the test before this fix is considered validated; no production or live
 database acceptance is claimed.
+
+### Execution authorization and Windows recovery comparison (2026-10-11)
+
+Further exact diffs in the same primary checkout show additional local changes
+that must not replace the canonical PR versions:
+
+| Paths / area | Local difference | Disposition |
+| --- | --- | --- |
+| `backend/internal/operations/execution_claim.go` | Queries `operation_events.payload` rather than the canonical `payload_json`; changes approved/self-held claim eligibility and timestamp updates. | Reject; the query does not match the event schema and the altered claim/update semantics can invalidate approval or audit chronology. |
+| `backend/internal/operations/execution_claim_memory.go` | Reorders review-time checks relative to approved-claim receipt handling. | Reject until memory/Postgres eligibility parity is proven. |
+| `backend/internal/operations/source_approval.go` | Removes reviewed-owner binding and the evidence digest from approval revision checks, and collapses specific stale-receipt diagnostics. | Reject; approval is no longer bound to the complete source revision and ownership context. |
+| `scripts/backup-windows.ps1` | Removes bounded Docker process handling and local-engine result validation, plus detection of uncovered volume mounts and portions of the recovery-asset coverage contract. | Reject; it weakens bounded execution and risks claiming incomplete backups are complete. |
+| `scripts/initialize-windows.ps1` | Removes ACL/content post-replacement verification and verified rollback, and stops preserving configured private Docker subnets when regenerating the environment file. | Reject; it weakens recovery/permission integrity and can silently change network configuration. |
+| `scripts/test-restore-windows.ps1` | Removes isolated contract-test mode and substitutes direct Docker-dependent execution. | Reject; retain the deterministic isolated recovery contract coverage. |
+
+The schema comparison was checked against `backend/internal/models/operation.go`
+and `backend/migrations/pre/0002_baseline.up.sql`; the safety dispositions are
+source-derived. No Windows installer/restore run or PostgreSQL integration run
+was performed during this comparison. These paths remain part of the unresolved
+122-path divergence set; no files were imported or removed.
+
+### Runner dependency and contract fixture comparison (2026-10-11)
+
+The PR's Promptfoo runner package and lockfile pin `promptfoo` 0.124.1, pin the
+transitive `get-uri` `basic-ftp` override to 6.2.1, and explicitly install the
+Linux libsql optional package. Its Docker build omits other optional packages.
+The primary checkout's alternate package downgrades Promptfoo to 0.123.1 and
+removes those dependency safeguards; `app.mjs` still reports 0.124.1, making
+that alternative internally inconsistent. The package and lockfile variants
+were not copied into the PR.
+
+The audit also found the PR's backend Promptfoo HTTP fixtures still advertised
+0.123.1 even though the shipped runner reports 0.124.1. Updated
+`backend/internal/promptfoo/service_test.go` fixtures to the pinned runner
+version so the contract tests model the actual image. Go tests could not be run
+locally because the Go toolchain is unavailable; the PR's hosted backend test
+job remains the verification gate. This fixture correction does not imply a
+live Promptfoo/model-provider execution or safety certification.
+
+The primary checkout's DeepTeam lock still contains a pinned Sentry SDK, while
+its alternate input/lock files differ. The runner code currently has no direct
+Sentry import, so this audit did not infer whether that dependency is required
+transitively or remove it; that dependency difference remains open pending
+lock-generation and runtime evidence.
