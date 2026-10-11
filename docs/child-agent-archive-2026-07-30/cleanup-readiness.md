@@ -1050,3 +1050,43 @@ risks:
 This is still a risk-based review of the remaining high-impact diffs; no claim
 is made that all changed paths have been individually adjudicated. The source
 snapshot remains unreconciled and must not be deleted or merged wholesale.
+
+### Canonical checkout-to-PR content comparison (2026-10-11)
+
+The primary checkout at `e07b9dae` was compared with the canonical PR tree at
+`332f9c3ac4aa179d63e26c9c03b1205b58592d72`. The PR commit descends from the
+primary checkout commit. In the inspected source/config/test/doc candidate set
+(excluding `output/`, `.claude-flow/`, and `.swarm/`), 1,449 paths have content
+identical to the PR tree, 122 paths differ, and 12 paths are absent from the PR
+tree. The absent paths are test-evidence/log outputs, not implementation source.
+The equality count establishes duplication for those bytes only; it does not
+resolve findings in untracked review reports or establish that the distinct
+paths are redundant.
+
+Representative differences already reviewed show why the 122-path remainder
+cannot be copied or discarded as a unit: some local candidates downgrade Go
+versions and remove CI/cleanup contracts; remove SearXNG isolation; regress the
+PostgreSQL-safe approval-lock identity; drop evidence digests or workflow
+success criteria; or weaken secret-scan reporting. Other paths still need
+individual disposition. No local candidate was imported on the basis of this
+comparison, and no differing path is authorized for deletion.
+
+The primary checkout's `output/` tree contained 1,576 files totaling
+126,970,802 bytes at inventory time. It includes source-review reports, test
+receipts, raw test logs, JSON/JSONL output, scripts, binaries, archives, and
+database snapshots. The report set includes both findings and later
+parent-resolution notes; the reports have not all been mapped to exact PR source,
+regression tests, and current CI evidence. Therefore the output tree is retained
+pending a path-level evidence disposition. Exact duplicate generated artifacts
+may be considered later only after their hash, retained copy, and lack of unique
+audit value are recorded.
+
+The PR remains open against `main` at the recorded head. The exact-head GitHub
+check-runs snapshot returned 36 checks: 5 successful, 10 in progress, and 15
+queued. This is not a green or complete CI result. No transcript archive,
+integration snapshot, conflicted merge scratch, local environment file, source
+candidate, test-evidence output, or diagnostic artifact was deleted, moved,
+truncated, compressed, or archived as part of this comparison. Cleanup remains
+unauthorized until the source and evidence reconciliation is complete and each
+specific deletion has a verified retained counterpart or is proven reproducible
+and non-unique.
