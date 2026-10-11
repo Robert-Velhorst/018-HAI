@@ -938,6 +938,11 @@ jobs:
             DB_NAME=hai_migration_runner_test DB_AUTOMIGRATE=false \
             HAI_SEMANTIC_RETRIEVAL_ENABLED=false \
             go run ./cmd/main.go migrate up
+          source_history_log="$RUNNER_TEMP/source-history-page-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
+            -run '^TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres$' \
+            ./internal/source/ -v | tee "$source_history_log"
+          grep -q -- '^--- PASS: TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres (' "$source_history_log"
           trello_repository_log="$RUNNER_TEMP/trello-repository-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race \
             -run '^TestTrelloPostgres' \

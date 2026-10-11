@@ -2271,4 +2271,6 @@ helper intentionally includes ownerless legacy sources, unlike the historical
 HTTP account view. `ExtractionPageForOwner` now filters to exact, non-empty
 owner matches before requesting the page, preserving the previous tenant
 boundary while retaining SQL pagination. A new exact-head CI run is required
-before claiming verification.
+before claiming verification. The existing real-Postgres CI job did not run
+this DSN-gated repository test, so it now explicitly runs and requires that
+test's pass marker before executing the other connected-source regressions.
