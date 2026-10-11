@@ -1657,7 +1657,38 @@ The merge scratch has no `MERGE_HEAD`; keep it intact until its origin and all
 remaining conflict semantics are reconciled.
 
 Exact-head Actions run `38112556687` for PR head
-`bb62666ee07cdf550242d2057412ed288bf00f47` was still running at
+`bb62666ee07cdf550242d2057412ed288bf00f47` was still running at that earlier
+checkpoint. No current CI status is inferred from that historical run.
+
+### October 11, 2026: follow-up branch and connector review
+
+The Autofever connector was ported separately into PR #36 as `e4abace3` after
+checking the sibling Autofever implementation and hardening the HAI adapter
+with owner binding, HTTPS/host policy, redirect refusal, bounded responses,
+cancellation, and redacted operational errors. Focused source tests and the
+complete backend Go test suite passed before that commit was pushed.
+
+The four-commit `agent/ci-worker-control-hardening` branch was compared against
+the current PR tree. Its Worker Control adapter is not imported: PR #36 already
+contains a later implementation, and the branch's older `service.go` differs
+by thousands of lines and would discard unrelated source-service behavior.
+The branch's Go 1.25.13 pin was not imported because it is stale; the official
+Go release history lists Go 1.27.2 as released on 2026-10-08. The migration
+rollback-test change was not imported because it scans and rolls back
+migrations outside the deliberately bounded fixture used by the current test;
+the current PR has newer rollback guards and a narrower migration fixture.
+
+The independent workflow-model change removing GORM's generated unique-index
+tag was cherry-picked as `73a30856`, leaving the versioned migration as the
+sole owner of that constraint. The local shell has no Go executable, so this
+commit still needs exact-head CI validation. No other changes from the
+Worker Control branch were copied.
+
+The Autofever port and schema-model fix do not complete the broader branch or
+archive reconciliation. Keep source branches, transcripts, snapshots, scratch
+trees, and diagnostic data until each remaining source difference is reviewed
+and preservation is verified; this checkpoint authorizes no additional local
+cleanup.
 `2026-10-11 04:47 UTC`: 16 jobs succeeded, 10 were in progress, 10 were
 queued, and none had failed. PR #36 remains open and unmerged; no local files
 are eligible for cleanup from this checkpoint.
