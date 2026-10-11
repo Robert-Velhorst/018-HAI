@@ -2381,3 +2381,26 @@ recovery step; retry; preservation of previously loaded results; and a guard
 that disables a new background pass until the feed/operation state is current.
 The older toast-plus-alert patch was therefore not copied. This is a verified
 duplicate/superseded disposition, not an unreviewed candidate.
+
+### October 11, 2026: ambient branch connected-source revocation crosswalk
+
+Reviewed ambient branch commit `c558ddfc` (`Make connected-source revocation
+terminal`) against the current #36 source implementation. The principal
+security invariant is already implemented in #36: ordinary source updates use
+an owner/connector/version-bound conditional update that rejects a revoked
+row; explicit revoke uses a transactional mutation; and Google OAuth token
+creation, refresh, and source revocation serialize against the source row so a
+late consent or refresh response cannot restore credentials after revocation.
+The current tree also contains regression coverage for revoked-source updates,
+OAuth revocation races, and grant binding (`backend/internal/source/service_test.go`,
+`oauth_test.go`, and `google_oauth_atomic_persistence_postgres_test.go`). The
+older commit's broad `UpdateSource`/`SaveOAuthToken` rewrite is not copied: #36
+has more specific conditional-update and Google-grant persistence paths, and
+the legacy generic `SaveOAuthToken` method has no production call site.
+
+Verification boundary: this was a source and test crosswalk, not a successful
+local Go test run. The current environment has no `go` executable. Exact-head
+GitHub CI run `38164082335` was still active when checked; backend/IDP and
+Postgres integration results remain pending there. The ambient branch itself
+remains unmerged and preserved; its other divergent paths have not thereby been
+reviewed.
