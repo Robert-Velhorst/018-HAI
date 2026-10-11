@@ -994,3 +994,27 @@ session have not yet been exercised against a fresh owned-stack browser run;
 the required uncertainty-record fixtures also remain missing. Therefore the
 exact-head browser acceptance and transcript semantic crosswalk are still
 open, PR #36 remains unmerged, and the cleanup readiness gate remains false.
+
+### October 11, 2026: exact-head browser run 38098898912
+
+Run `38098898912` tested PR head
+`f6bc6967068e31bb5c96a15f812478c3c1b98e3c`. The repository checks completed
+with 35 successful jobs; `Browser acceptance (owned disposable stack)` failed
+with 122 failed cases. The retained report at
+`D:\codex-temp\hai-browser-report-38098898912` contains 112 module-route
+preference cases whose expected theme control was absent after navigation,
+eight cases blocked by the still-unprovisioned owner-scoped uncertain workflow
+and task IDs, and two keyboard/control-room cases. At least one matrix session
+renewal returned HTTP 429; the IDP log also shows repeated logins for the same
+synthetic owner. This confirms the added renew-on-401 path is not yet a valid
+session-lifecycle fix. The earlier acceptance-test rewrite was typechecked but
+was not evidenced as passing by this run. Keep all required fixtures and
+assertions; do not treat the failed browser run as acceptance evidence.
+
+No new files were removed. The transcript archive and candidate files remain
+protected because the ledger is not yet fully integrated/committed and PR #36
+is open, unmerged, and has a failing browser job. A targeted removal of the
+local generated `frontend/dist/app` output was rejected by the command policy;
+it was not retried through another deletion mechanism. Browser reports, source
+archives, scratch/snapshot trees, test evidence, and unrelated untracked
+diagnostics remain preserved.
