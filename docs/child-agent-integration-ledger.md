@@ -2279,3 +2279,16 @@ existing full-record owner lookup needed the model's `raw_item_id` and other
 columns not used by the paged query. The fixture now declares the complete
 extraction model schema; rerun the exact Postgres job before treating the SQL
 test as passed.
+
+### October 11, 2026: idle model-maintenance scheduler
+
+Compared PR #34's model-maintenance scheduler changes with current #36. The
+current startup launches the daily model-maintenance worker even when policy
+has no configured eligible enabled model, and it launches that worker while
+`LLM_MODEL_MAINTENANCE_ENABLED=false`. Ported the eligibility check so the
+model worker starts only when model maintenance is enabled and a provider/model
+pair is currently eligible. Kept strict provider-probe scheduler startup
+separate and before this guard: the older PR #34 guard would also suppress
+required readiness probes. Focused and full backend CI verification are
+pending on the latest pushed head; the branch remains preserved for continued
+file-by-file comparison.

@@ -382,6 +382,23 @@ func (s *Service) maintenanceEligibleProvider(provider Provider) bool {
 	return s.policy.FreeCloudQuotaAllowed && provider.QuotaRemaining != 0
 }
 
+func (s *Service) hasEligibleModelMaintenanceWork() bool {
+	if s == nil {
+		return false
+	}
+	for _, provider := range s.Policy().Providers {
+		if !s.maintenanceEligibleProvider(provider) {
+			continue
+		}
+		for _, model := range provider.Models {
+			if model.Enabled {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ensureModelFresh performs at most one maintenance operation per configured
 // model every LLM_MODEL_MAINTENANCE_INTERVAL_HOURS (24 by default).
 // It runs immediately before routing/generation, so a stale successful result

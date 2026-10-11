@@ -39,6 +39,9 @@ func StartModelMaintenanceScheduler(ctx context.Context, service *Service, backg
 	if normalizeProbePolicy(service.policy).RequireRecentLiveProviderProbe {
 		startProviderProbeScheduler(ctx, service, backgroundAllowed)
 	}
+	if !modelMaintenanceEnabled() || !service.hasEligibleModelMaintenanceWork() {
+		return
+	}
 	startModelMaintenanceScheduler(service, func() {
 		runModelMaintenanceSchedulerWithWait(
 			ctx,

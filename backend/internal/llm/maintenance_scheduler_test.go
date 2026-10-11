@@ -64,6 +64,21 @@ func (r *completedDuringModelMaintenanceLeaseRepository) AcquireModelMaintenance
 	return func() { r.releases.Add(1) }, true, nil
 }
 
+func TestServiceReportsWhetherModelMaintenanceWorkIsEligible(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
+	policy := testPolicyWithoutEndpoints()
+	service := &Service{policy: policy}
+	if service.hasEligibleModelMaintenanceWork() {
+		t.Fatal("an unconfigured model endpoint must not start maintenance work")
+	}
+
+	policy.Providers[0].EndpointURL = "http://127.0.0.1:11434"
+	service.policy = policy
+	if !service.hasEligibleModelMaintenanceWork() {
+		t.Fatal("a configured enabled local model should allow maintenance work")
+	}
+}
+
 type blockingContextMaintenanceHistoryRepository struct {
 	*fakeModelMaintenanceRepository
 	started chan string
