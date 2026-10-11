@@ -1680,9 +1680,11 @@ the current PR has newer rollback guards and a narrower migration fixture.
 
 The independent workflow-model change removing GORM's generated unique-index
 tag was cherry-picked as `73a30856`, leaving the versioned migration as the
-sole owner of that constraint. The local shell has no Go executable, so this
-commit still needs exact-head CI validation. No other changes from the
-Worker Control branch were copied.
+sole owner of that constraint. Go was not on the shell's `PATH`; the staged
+Go 1.27.2 toolchain was invoked directly and `go test ./...` in `backend/`
+passed. This local suite does not run the separately tagged real-Postgres
+migration integration, so that exact-head CI check remains necessary. No other
+changes from the Worker Control branch were copied.
 
 The Autofever port and schema-model fix do not complete the broader branch or
 archive reconciliation. Keep source branches, transcripts, snapshots, scratch
