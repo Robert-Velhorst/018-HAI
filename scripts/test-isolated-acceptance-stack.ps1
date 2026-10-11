@@ -26,6 +26,23 @@ try {
 
 # Load the real guard without creating or deleting any runtime resources.
 . $launcher -Action Validate -EvidenceDirectory $preparedDirectory
+$script:gatewayRequests = 0
+$script:gatewaySleeps = 0
+function Invoke-WebRequest {
+    $script:gatewayRequests++
+    if ($script:gatewayRequests -lt 3) { throw 'Synthetic transient gateway 502.' }
+    return [pscustomobject]@{ StatusCode = 200; Content = '<app-root></app-root>' }
+}
+function Start-Sleep { $script:gatewaySleeps++ }
+try {
+    Wait-AcceptanceGateway -Uri 'http://127.0.0.1:58144/login' -Attempts 4 -DelaySeconds 0
+    if ($script:gatewayRequests -ne 3 -or $script:gatewaySleeps -ne 2) {
+        throw 'Gateway readiness did not retry transient failures before succeeding.'
+    }
+    Write-Output 'PASS: gateway readiness retries transient upstream failures'
+} finally {
+    Remove-Item -LiteralPath Function:Invoke-WebRequest, Function:Start-Sleep
+}
 $syntheticValues = @{}
 foreach ($line in Get-Content -LiteralPath (Join-Path $preparedDirectory 'synthetic.env')) {
     if ($line -notmatch '^([A-Z][A-Z0-9_]*)=(.*)$') { throw 'Synthetic environment contains an invalid line.' }

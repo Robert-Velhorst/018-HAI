@@ -46,6 +46,19 @@ function Invoke-ExclusiveAcceptanceStart([scriptblock]$Start) {
     }
 }
 
+function Wait-AcceptanceGateway([string]$Uri, [int]$Attempts = 30, [int]$DelaySeconds = 2) {
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        try {
+            $page = Invoke-WebRequest -Uri $Uri -TimeoutSec 5
+            if ($page.StatusCode -eq 200 -and $page.Content -match '<app-root') { return }
+        } catch {
+            # nginx can briefly return 502 while the isolated upstreams finish starting.
+        }
+        if ($attempt -lt $Attempts) { Start-Sleep -Seconds $DelaySeconds }
+    }
+    throw "The declared loopback gateway did not serve the HAI application after $Attempts readiness attempts."
+}
+
 function Get-PropertyNames($Value) {
     if ($Value -is [Collections.IDictionary]) { return @($Value.Keys) }
     return @($Value.PSObject.Properties.Name)
@@ -339,8 +352,7 @@ if ($Action -eq 'Start') {
         $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $manifest.port)
         try { $listener.Start() } finally { $listener.Stop() }
         Invoke-Docker -Arguments ($composeArgs + @('up', '-d', '--build', '--wait', '--wait-timeout', '300')) -LogPath (Join-Path $EvidenceDirectory 'start.log')
-        $page = Invoke-WebRequest -Uri "http://127.0.0.1:$($manifest.port)/login" -TimeoutSec 10
-        if ($page.StatusCode -ne 200 -or $page.Content -notmatch '<app-root') { throw 'The declared loopback gateway did not serve the HAI application.' }
+        Wait-AcceptanceGateway -Uri "http://127.0.0.1:$($manifest.port)/login"
         Write-Output "Acceptance URL: http://127.0.0.1:$($manifest.port)"
     }
     return
