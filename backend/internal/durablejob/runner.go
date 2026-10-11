@@ -183,28 +183,6 @@ func (r *Runner) ensureScheduled(kind, payload string, runAt time.Time, maxAttem
 	return created, nil
 }
 
-// EnsureScheduledForPayload schedules one active job for this exact payload.
-// Use this for resource-scoped work such as a source sync: a pending retry for
-// one source must not suppress other sources, and repeated scans must not add
-// duplicate retry chains for the same source.
-func (r *Runner) EnsureScheduledForPayload(kind, payload string, runAt time.Time, maxAttempts int) (bool, error) {
-	if runAt.IsZero() {
-		runAt = r.now()
-	}
-	created, err := r.repo.EnqueueIfNoActiveMatchingPayload(&models.DurableJob{
-		Queue:       r.queue,
-		Kind:        kind,
-		Payload:     payload,
-		RunAt:       runAt.UTC(),
-		MaxAttempts: maxAttempts,
-		Status:      models.DurableJobPending,
-	})
-	if err != nil {
-		return false, fmt.Errorf("ensure resource job %s: %w", kind, err)
-	}
-	return created, nil
-}
-
 // RegisterRecurring turns a periodic task into a durable, self-rescheduling
 // singleton job — the replacement for an in-process ticker. The work survives
 // restarts and gets bounded retry with backoff.

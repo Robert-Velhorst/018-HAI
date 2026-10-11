@@ -185,18 +185,6 @@ http {
             proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
         }
 
-        # A2A is deliberately separate from browser identity. The well-known
-        # Agent Card contains no owner data and returns 404 while the bridge is
-        # disabled. SendMessage requires the dedicated bridge bearer token and
-        # is independently throttled before the bounded backend parser runs.
-        location = /.well-known/agent-card.json {
-            limit_req zone=hai_a2a_bridge burst=10 nodelay;
-            proxy_pass http://$backend_upstream;
-            proxy_set_header Authorization "";
-            proxy_set_header Cookie "";
-            proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
-        }
-
         location = /api/v1/a2a {
             limit_req zone=hai_a2a_bridge burst=5 nodelay;
             limit_except POST { deny all; }
