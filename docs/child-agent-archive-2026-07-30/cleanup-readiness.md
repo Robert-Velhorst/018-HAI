@@ -921,10 +921,13 @@ reported `source_archive_verified=true`, but
 `committed_ledger_verified=false`, `merged_pull_request_verified=false`, and
 `cleanup_gate_ready=false`. It performed no deletion.
 
-PR #36 is open at head `d6cb0903dd63e15ed9da685c8f42d831eda8c535`; exact-head
-Actions run `38108110220` is queued overall. Passing individual checks and
-running jobs do not constitute final acceptance. The 793-path event crosswalk
-and semantic attribution of retained/aborted transcript work remain
-incomplete, so even hash-verified candidate files are not yet eligible for
-removal. Preserve all 18 source transcripts until those gaps are closed and
-the repository cleanup gate passes after merge to `main`.
+At the source-verification checkpoint, PR #36 was open at head
+`d6cb0903dd63e15ed9da685c8f42d831eda8c535`; exact-head run `38108110220` was
+queued overall. This ledger update was subsequently pushed as
+`b720ea1c1092b3b40ed0344fcf1264048a97d245`. At publication, the PR remains
+open and its new exact-head run `38108719169` is queued. Neither status is
+final acceptance. The 793-path event crosswalk and semantic attribution of
+retained/aborted transcript work remain incomplete, so even hash-verified
+candidate files are not eligible for removal. Preserve all 18 source
+transcripts until those gaps are closed and the repository cleanup gate passes
+after merge to `main`.

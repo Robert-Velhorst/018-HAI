@@ -1568,10 +1568,12 @@ their recorded SHA-256 hashes. The check reports `source_archive_verified`,
 but `committed_ledger_verified=false`, `merged_pull_request_verified=false`,
 and `cleanup_gate_ready=false`. No transcript was changed or deleted.
 
-PR #36 is currently open at `d6cb0903dd63e15ed9da685c8f42d831eda8c535`.
-Its exact-head Actions run `38108110220` remains queued overall; some checks
-have started or passed, while many matrix jobs remain queued or in progress.
-This is not final CI acceptance. The PR has not been merged into `main`.
+At the archive-verification checkpoint, PR #36 was open at
+`d6cb0903dd63e15ed9da685c8f42d831eda8c535`; exact-head run `38108110220` was
+queued overall. The ledger update containing this checkpoint was subsequently
+pushed as `b720ea1c1092b3b40ed0344fcf1264048a97d245`. At publication, PR #36
+remains open and the new exact-head run `38108719169` is queued. Neither run
+is final CI acceptance, and the PR has not been merged into `main`.
 
 Archive byte/hash integrity and candidate-report presence do not prove the
 unresolved transcript patch/event content is semantically integrated. The
