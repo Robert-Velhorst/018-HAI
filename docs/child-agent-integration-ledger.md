@@ -916,6 +916,44 @@ replace it. This spot review is not evidence that the other 73 differences are
 resolved. The primary checkout was not modified, and these observations do not
 authorize removal of its files or any source data.
 
+## Primary-checkout tracked diff refresh (2026-10-11)
+
+A fresh read-only comparison against PR worktree `3c62dcb2` found 682 tracked
+paths changed in the secondary checkout. The paths exist in both trees. After
+normalizing CRLF and LF, 607 are equivalent and 75 have substantive content
+differences. This is a new checkpoint, not a cumulative count: it supersedes
+the previous 74-difference snapshot because the outcome-evaluation integration
+test has since changed to share its request across concurrent goroutines.
+
+Targeted review reconfirmed that the PR version of
+`backend/internal/background/worker.go` contains paused-mode deferral and
+emergency-stop gates absent from the secondary checkout;
+`backend/internal/pursuit/service.go` propagates success criteria through
+intake; `frontend/src/app/pages/framework-registry/framework-registry.component.ts`
+loads and displays durable preference history; and
+`docs/optional-runtime-profiles.md` documents the opt-in SearXNG profile and
+network-overlap recovery. The secondary outcome-evaluation integration test
+uses per-goroutine copied requests, while the PR version intentionally shares
+an immutable request to exercise the newly fixed production race. The PR's
+browser acceptance test now expects a fail-closed runtime preflight and tests
+the persisted review state; the secondary version still expects an approval
+path unavailable in the isolated stack. These checked variants do not justify
+copying secondary-checkout content into the PR.
+
+The `.env.example` comparison was performed on variable names only; no values
+were read into the report or printed. The secondary checkout has no unique
+environment keys. The PR adds `HAI_SEARXNG_SECRET`,
+`HAI_A2A_LOCAL_SUBNET`, and `HAI_HOST_RUNTIME_INTERNAL_SUBNET`; the matching
+Compose, setup, and profile documentation were inspected in this pass. This
+does not validate any machine's `.env.local` contents or authorize deleting
+local configuration.
+
+This targeted review does not semantically resolve the other differing files.
+The 75-file inventory remains open for file-by-file triage; no secondary
+checkout file was modified or deleted. The transcript, scratch, diagnostics,
+and cleanup gates are unchanged, and no local deletion is authorized by this
+checkpoint.
+
 ## Exact-head CI regression review and fixes (2026-10-11)
 
 The completed GitHub Actions run `38093710608` tested the PR merge commit and
