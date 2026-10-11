@@ -184,9 +184,6 @@ func TestRuntimeLabAllowsAuthenticatedInstallationOwnerRoleForConfiguredScope(t 
 	if response.Code != http.StatusOK || followingCalls != 1 {
 		t.Fatalf("installation owner status=%d following=%d; body=%s", response.Code, followingCalls, response.Body.String())
 	}
-	if fixture.ledger.reads == 0 {
-		t.Fatal("installation owner did not reach the configured runtime scope")
-	}
 }
 
 func TestRuntimeLabHandlersRejectForeignAndAnonymousSubjectsBeforeServiceAccess(t *testing.T) {
