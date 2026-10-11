@@ -542,10 +542,6 @@ export class PursuitsComponent implements OnInit, OnDestroy {
       this.selectPursuitById(this.requestedPursuitId, false);
       return;
     }
-    if (!this.selected && this.pursuits.length) {
-      this.selectPursuit(this.pursuits[0]);
-      return;
-    }
     if (this.selected) {
       const refreshed = this.pursuits.find((item) => item.id === this.selected?.pursuit.id);
       if (refreshed) {

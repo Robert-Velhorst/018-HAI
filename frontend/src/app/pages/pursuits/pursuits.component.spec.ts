@@ -114,6 +114,17 @@ describe('PursuitsComponent action lanes', () => {
     ));
   });
 
+  it('keeps the basic pursuit list compact until the user selects a pursuit', () => {
+    const pursuit = { id: 'pursuit-1', title: 'Inspect only on demand' } as any;
+    spyOn(component, 'selectPursuit');
+
+    (component as any).applyPursuits([pursuit]);
+
+    expect(component.pursuits).toEqual([pursuit]);
+    expect(component.selectPursuit).not.toHaveBeenCalled();
+    expect(component.selected).toBeUndefined();
+  });
+
   afterEach(() => localStorage.removeItem('hai.module-view.v1.pursuits'));
 
   it('keeps Advanced mode scoped to Pursuits and remembers it across service instances', () => {
