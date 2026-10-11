@@ -2300,6 +2300,25 @@ regression cases for credentials, query parameters, and fragments. This is
 consistent with the existing maintenance endpoint parser, which already
 rejects those URL components. Exact-head backend CI is pending.
 
+The same PR's System Status page changed healthy readiness checks from a fixed
+15-second interval to state-aware polling. Ported that resource behavior into
+the current #36 component while preserving its module preferences and stale-data
+presentation: healthy status polls every 120 seconds, degraded status or a
+failed probe every 60 seconds, and `not_ready` recovery every 15 seconds. Hidden
+tabs cancel the pending timer and refresh on return. Each request has a
+10-second timeout, only one request may be in flight, and destruction clears
+the timer/listener. That reduces healthy readiness requests by 87.5% compared
+with the prior four-per-minute cadence; it is a per-endpoint reduction, not a
+claim of 87.5% lower total application resource use.
+
+Local verification on the #36 working tree used bundled Node 24.19.0:
+`npm test -- --watch=false --browsers=ChromeHeadless` passed 176 Node-side
+contract checks and all 1,369 Angular browser tests. `npm run build` passed;
+the build emitted bundle and component-style budget warnings, which remain
+visible and are not counted as a clean warning-free build. The isolated System
+Status spec passed 9/9 before the full suite. Remote exact-head CI is still
+required after this update.
+
 ### October 11, 2026: open-PR source crosswalk
 
 Compared the current remote heads of open PRs #33 and #35 with `main` and the

@@ -1,6 +1,6 @@
 import { NEVER, of, Subject, throwError } from 'rxjs';
 import { CommonModule } from '@angular/common';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -26,12 +26,13 @@ describe('SystemStatusComponent', () => {
     response.next({
       status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [],
     });
+    response.complete();
     component.refresh(true);
 
     expect(service.readiness).toHaveBeenCalledTimes(2);
   });
 
-  it('refreshes once when a hidden status page becomes visible again', () => {
+  it('refreshes once when a hidden status page becomes visible again', fakeAsync(() => {
     const response = new Subject<ISystemReadiness>();
     const service = { readiness: jasmine.createSpy('readiness').and.returnValue(response.asObservable()) };
     const notification = { error: jasmine.createSpy('error') };
@@ -52,10 +53,86 @@ describe('SystemStatusComponent', () => {
     response.next({
       status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [],
     });
+    response.complete();
     document.dispatchEvent(new Event('visibilitychange'));
     expect(service.readiness).toHaveBeenCalledTimes(2);
     component.ngOnDestroy();
-  });
+  }));
+
+  it('backs off while healthy and polls faster for degraded and recovery states', fakeAsync(() => {
+    const service = { readiness: jasmine.createSpy('readiness') };
+    service.readiness.and.returnValues(
+      of({ status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] }),
+      of({ status: 'degraded', service: 'backend', summary: { ok: 0, warn: 1, fail: 0 }, checks: [] }),
+      of({ status: 'not_ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 1 }, checks: [] }),
+      of({ status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] })
+    );
+    const component = new SystemStatusComponent(
+      service as never,
+      { error: jasmine.createSpy('error') } as never,
+      new ModuleViewPreferencesService(document)
+    );
+
+    component.ngOnInit();
+    tick(119999);
+    expect(service.readiness).toHaveBeenCalledTimes(1);
+    tick(1);
+    expect(service.readiness).toHaveBeenCalledTimes(2);
+    tick(59999);
+    expect(service.readiness).toHaveBeenCalledTimes(2);
+    tick(1);
+    expect(service.readiness).toHaveBeenCalledTimes(3);
+    tick(14999);
+    expect(service.readiness).toHaveBeenCalledTimes(3);
+    tick(1);
+    expect(service.readiness).toHaveBeenCalledTimes(4);
+    component.ngOnDestroy();
+    tick(120000);
+    expect(service.readiness).toHaveBeenCalledTimes(4);
+  }));
+
+  it('pauses healthy polling while hidden and refreshes immediately on return', fakeAsync(() => {
+    const service = {
+      readiness: jasmine.createSpy('readiness').and.returnValue(of({
+        status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [],
+      })),
+    };
+    const component = new SystemStatusComponent(
+      service as never,
+      { error: jasmine.createSpy('error') } as never,
+      new ModuleViewPreferencesService(document)
+    );
+    const hidden = spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
+
+    component.ngOnInit();
+    hidden.and.returnValue(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+    tick(120000);
+    expect(service.readiness).toHaveBeenCalledTimes(1);
+
+    hidden.and.returnValue(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(service.readiness).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+  }));
+
+  it('times out a stalled readiness request and schedules a degraded retry', fakeAsync(() => {
+    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(NEVER) };
+    const component = new SystemStatusComponent(
+      service as never,
+      { error: jasmine.createSpy('error') } as never,
+      new ModuleViewPreferencesService(document)
+    );
+
+    component.ngOnInit();
+    tick(10000);
+    expect(component.loadError).toBeTrue();
+    tick(59999);
+    expect(service.readiness).toHaveBeenCalledTimes(1);
+    tick(1);
+    expect(service.readiness).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+  }));
 
   it('preserves last good status and explains that a failed poll may be stale', () => {
     const service = { readiness: jasmine.createSpy('readiness').and.returnValue(throwError(() => new Error('probe unavailable'))) };

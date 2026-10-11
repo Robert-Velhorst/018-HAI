@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
-import { Subscription, interval } from 'rxjs';
+import { finalize, timeout } from 'rxjs';
 import {
   ISystemCheck,
   ISystemReadiness,
@@ -30,6 +30,10 @@ const GROUP_TITLES: Record<string, string> = {
 };
 
 const MODULE_ID = 'system-status';
+const READY_POLL_MS = 120000;
+const DEGRADED_POLL_MS = 60000;
+const RECOVERY_POLL_MS = 15000;
+const READINESS_TIMEOUT_MS = 10000;
 
 @Component({
     changeDetection: ChangeDetectionStrategy.Eager,
@@ -46,14 +50,15 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   loadError = false;
   lastUpdated?: Date;
 
-  private pollSub?: Subscription;
+  private pollTimer?: ReturnType<typeof setTimeout>;
   private refreshInFlight = false;
+  private destroyed = false;
   private readonly onVisibilityChange = (): void => {
-    // A hidden dashboard cannot be acted on. Avoid probing dependencies while
-    // it is in the background, then immediately catch up when it is visible.
-    if (!document.hidden) {
-      this.refresh(true);
+    if (document.hidden) {
+      this.clearPollTimer();
+      return;
     }
+    this.refresh(true);
   };
 
   constructor(
@@ -68,31 +73,31 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.refresh();
-    // Readiness is a live signal; poll it so the page reflects a dependency
-    // going down without the operator reloading.
-    this.pollSub = interval(15000).subscribe(() => {
-      if (!document.hidden) {
-        this.refresh(true);
-      }
-    });
     document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.refresh();
   }
 
   ngOnDestroy(): void {
-    this.pollSub?.unsubscribe();
+    this.destroyed = true;
+    this.clearPollTimer();
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
   }
 
   refresh(silent = false): void {
-    if (silent && this.refreshInFlight) {
+    this.clearPollTimer();
+    if (this.refreshInFlight) {
       return;
     }
     if (!silent) {
       this.loading = true;
     }
     this.refreshInFlight = true;
-    this.systemStatusService.readiness().subscribe({
+    this.systemStatusService.readiness().pipe(
+      timeout(READINESS_TIMEOUT_MS),
+      finalize(() => {
+        this.refreshInFlight = false;
+      })
+    ).subscribe({
       next: (readiness) => {
         this.readiness = readiness;
         this.groups = this.buildGroups(readiness.checks);
@@ -100,12 +105,12 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         this.lastUpdated = new Date();
         this.loading = false;
         this.loadError = false;
-        this.refreshInFlight = false;
+        this.scheduleNextPoll();
       },
       error: () => {
         this.loading = false;
         this.loadError = true;
-        this.refreshInFlight = false;
+        this.scheduleNextPoll();
         if (!silent) {
           this.notification.error(
             'System status unavailable',
@@ -114,6 +119,34 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         }
       },
     });
+  }
+
+  private scheduleNextPoll(): void {
+    if (this.destroyed || document.hidden) {
+      return;
+    }
+    this.clearPollTimer();
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = undefined;
+      this.refresh(true);
+    }, this.pollDelay());
+  }
+
+  private pollDelay(): number {
+    if (this.readiness?.status === 'not_ready') {
+      return RECOVERY_POLL_MS;
+    }
+    if (this.loadError || this.readiness?.status === 'degraded') {
+      return DEGRADED_POLL_MS;
+    }
+    return READY_POLL_MS;
+  }
+
+  private clearPollTimer(): void {
+    if (this.pollTimer !== undefined) {
+      clearTimeout(this.pollTimer);
+      this.pollTimer = undefined;
+    }
   }
 
   statusLabel(): string {
