@@ -1959,3 +1959,12 @@ framework taxonomy. No source file was deleted. These additions are in the PR
 worktree and are not considered durable until committed, merged, and rechecked
 against the manifest. Historical report claims remain dated evidence, not
 current runtime or external acceptance proof.
+
+The framework registry already contains the 55 versioned catalog entries
+derived from the supplied taxonomy. Added
+`TestBuiltinCatalogSectionsExistInImportedTaxonomySource` so the checked-in
+source must retain the 55 sequential numbered sections expected by the
+catalog's existing section-to-ID contract. The focused
+`go test -count=1 ./internal/frameworkregistry` passes. This guards source and
+catalog structure; it does not claim every candidate implementation or
+external framework runtime is operational.
