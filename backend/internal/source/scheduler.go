@@ -11,16 +11,17 @@ import (
 )
 
 type Scheduler struct {
-	service  Service
-	interval time.Duration
-	running  atomic.Bool
+	service           Service
+	interval          time.Duration
+	backgroundAllowed func() bool
+	running           atomic.Bool
 }
 
-func NewScheduler(service Service, interval time.Duration) *Scheduler {
+func NewScheduler(service Service, interval time.Duration, allowed ...func() bool) *Scheduler {
 	if interval < 15*time.Second {
 		interval = 10 * time.Minute
 	}
-	return &Scheduler{service: service, interval: interval}
+	return &Scheduler{service: service, interval: interval, backgroundAllowed: schedulerBackgroundGate(allowed)}
 }
 
 // StartScheduler starts scheduled source syncing.
@@ -30,19 +31,20 @@ func NewScheduler(service Service, interval time.Duration) *Scheduler {
 // durable queue cannot be reached — or SOURCE_SCHEDULER_DURABLE is explicitly
 // disabled — it falls back to the legacy in-process ticker and says so, rather
 // than silently running no scheduler at all.
-func StartScheduler(ctx context.Context, service Service) {
+func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) {
 	if !schedulerEnabled() {
 		return
 	}
 	interval := schedulerInterval()
+	backgroundAllowed := schedulerBackgroundGate(allowed)
 	if durableSchedulerEnabled() {
-		if err := startDurableScheduler(ctx, service, interval); err != nil {
+		if err := startDurableScheduler(ctx, service, interval, backgroundAllowed); err != nil {
 			log.Printf("source scheduler: durable queue unavailable (%v); falling back to the in-process ticker", err)
 		} else {
 			return
 		}
 	}
-	scheduler := NewScheduler(service, interval)
+	scheduler := NewScheduler(service, interval, backgroundAllowed)
 	go scheduler.Start(ctx)
 }
 
@@ -72,6 +74,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) runOnce() {
+	if s.backgroundAllowed != nil && !s.backgroundAllowed() {
+		return
+	}
 	if !s.running.CompareAndSwap(false, true) {
 		return
 	}
@@ -84,6 +89,13 @@ func (s *Scheduler) runOnce() {
 	if result.Due > 0 || result.Failed > 0 {
 		log.Printf("source scheduler checked=%d due=%d completed=%d failed=%d", result.Checked, result.Due, result.Completed, result.Failed)
 	}
+}
+
+func schedulerBackgroundGate(allowed []func() bool) func() bool {
+	if len(allowed) > 0 && allowed[0] != nil {
+		return allowed[0]
+	}
+	return func() bool { return true }
 }
 
 func schedulerEnabled() bool {

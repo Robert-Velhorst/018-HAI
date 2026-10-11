@@ -274,19 +274,43 @@
 }
 
 .dropdown-menu {
+  .ant-menu {
+    min-width: 152px;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--hai-surface, #ffffff);
+    border: 1px solid var(--hai-border, #e4e9f0);
+    border-radius: 8px;
+    box-shadow: 0 10px 24px rgba(16, 24, 40, 0.12);
+  }
+
   &__item {
     display: flex;
     align-items: center;
+    min-height: 36px;
+    margin: 0;
+    padding: 0 10px;
+    color: var(--hai-text, #172033);
+    line-height: 1.35;
+    border-radius: 6px;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--hai-blue-soft, #eaf2ff);
+      outline: 0;
+    }
 
     &__icon {
       margin-right: 8px;
     }
 
     &:last-child {
-      color: red;
+      color: var(--hai-red, #d83d46);
 
       &__icon {
-        color: red;
+        color: var(--hai-red, #d83d46);
       }
     }
   }

@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
-import { HttpClientTestingModule } from '@angular/common/http/testing';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzButtonModule } from 'ng-zorro-antd/button';
@@ -14,6 +14,7 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { IFrameworkView } from '../../models/framework-registry.model.interface';
 import { FrameworkRegistryInspectorComponent } from './framework-registry-inspector.component';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('FrameworkRegistryInspectorComponent role rendering', () => {
   let fixture: ComponentFixture<FrameworkRegistryInspectorComponent>;
@@ -54,11 +55,9 @@ describe('FrameworkRegistryInspectorComponent role rendering', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      declarations: [FrameworkRegistryInspectorComponent],
-      imports: [
-        CommonModule,
+    declarations: [FrameworkRegistryInspectorComponent],
+    imports: [CommonModule,
         FormsModule,
-        HttpClientTestingModule,
         NoopAnimationsModule,
         NzAlertModule,
         NzButtonModule,
@@ -70,6 +69,7 @@ describe('FrameworkRegistryInspectorComponent role rendering', () => {
         NzTagModule,
         NzTooltipModule,
       ],
+      providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FrameworkRegistryInspectorComponent);

@@ -1,6 +1,6 @@
 import { FormBuilder } from '@angular/forms'
 import { convertToParamMap } from '@angular/router'
-import { of } from 'rxjs'
+import { of, throwError } from 'rxjs'
 import { GroundedAnswersComponent } from './grounded-answers.component'
 
 describe('GroundedAnswersComponent RAGFlow evidence boundary', () => {
@@ -128,5 +128,16 @@ describe('GroundedAnswersComponent RAGFlow evidence boundary', () => {
     expect(researchService.probe).toHaveBeenCalled()
     expect(researchService.search).not.toHaveBeenCalled()
     expect(component.researchProbe?.reachable).toBeTrue()
+  })
+
+  it('preserves verification history when its refresh fails', () => {
+    const { component, verificationService } = createComponent()
+    component.runs = [{ id: 'run-1' } as any]
+    verificationService.runs.and.returnValue(throwError(() => new Error('history unavailable')))
+
+    component.loadRuns()
+
+    expect(component.runs.map((run) => run.id)).toEqual(['run-1'])
+    expect(component.runsUnavailable).toBeTrue()
   })
 })

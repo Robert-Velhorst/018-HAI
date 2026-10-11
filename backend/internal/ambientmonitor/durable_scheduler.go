@@ -68,7 +68,7 @@ func RegisterDurableScheduling(runner *durablejob.Runner, service schedulerServi
 	return runner.RegisterRecurring(monitorSweepJobKind, interval, monitorMaxAttempts, func(ctx context.Context) error {
 		if !allowed() {
 			observeSweep(observer, SweepMetrics{Result: SweepResultSkipped})
-			return nil
+			return durablejob.Defer("background processing is paused by safety policy")
 		}
 		return runMonitorSweep(ctx, service, time.Now().UTC(), allowed, observer)
 	})
@@ -100,7 +100,10 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 	for _, scope := range scopes {
 		if ctx.Err() != nil || !allowed() {
 			observation.Result = SweepResultInterrupted
-			return nil
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return durablejob.Defer("background processing is paused by safety policy")
 		}
 		recovered, err := service.RecoverExpiredLeases(ctx, scope, now)
 		if err != nil {
@@ -117,7 +120,10 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 		for processed := 0; processed < monitorBatchLimit(); processed++ {
 			if ctx.Err() != nil || !allowed() {
 				observation.Result = SweepResultInterrupted
-				return nil
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return durablejob.Defer("background processing is paused by safety policy")
 			}
 			asOf := time.Now().UTC().Truncate(time.Microsecond)
 			result, err := service.ProcessDue(ctx, ProcessDueRequest{
@@ -202,7 +208,10 @@ func monitorSweepInterval() time.Duration {
 }
 
 func monitorPollInterval() time.Duration {
-	return envSeconds("OUTCOME_MONITOR_POLL_SECONDS", 15, 1, 300)
+	// Outcome monitoring is advisory and queued work is lease-protected. A
+	// 30-second idle poll halves the default database wake-ups while preserving
+	// a bounded recovery delay for the local-first single-node deployment.
+	return envSeconds("OUTCOME_MONITOR_POLL_SECONDS", 30, 1, 300)
 }
 
 func monitorLeaseDuration() time.Duration {

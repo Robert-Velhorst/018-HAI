@@ -65,6 +65,16 @@ export interface IFrameworkView extends IFramework {
   preferenceUpdatedAt?: string;
 }
 
+export interface IFrameworkFamilyRecord extends IFramework {
+  section: number;
+}
+
+export interface IFrameworkFamilyTaxonomy {
+  version: string;
+  digest: string;
+  families: IFrameworkFamilyRecord[];
+}
+
 export interface IFrameworkPreferencePatch {
   state: FrameworkPreferenceState;
   pinned?: boolean;

@@ -6,6 +6,7 @@ import (
 )
 
 func TestKafkaConfigTrimsRequiredValues(t *testing.T) {
+	t.Setenv(eventBusEnabled, "true")
 	t.Setenv(loggerTopic, " idp-logs ")
 	t.Setenv(mailTopic, " idp-mail ")
 	t.Setenv(brokersAddr, " kafka:9092, ,backup:9092 ")
@@ -23,6 +24,25 @@ func TestKafkaConfigTrimsRequiredValues(t *testing.T) {
 	}
 }
 
+func TestKafkaConfigAllowsDisabledEventBusWithoutKafkaSettings(t *testing.T) {
+	t.Setenv(eventBusEnabled, "false")
+	t.Setenv(loggerTopic, "")
+	t.Setenv(mailTopic, "")
+	t.Setenv(brokersAddr, "")
+	t.Setenv(clientID, "")
+
+	cfg, err := newKafkaConfig()
+	if err != nil {
+		t.Fatalf("newKafkaConfig() error = %v", err)
+	}
+	if cfg.Enabled {
+		t.Fatal("disabled event bus must remain disabled")
+	}
+	if len(cfg.BrokersAddr) != 0 || cfg.LoggerTopic != "" || cfg.MailTopic != "" {
+		t.Fatalf("disabled config should not retain Kafka settings: %#v", cfg)
+	}
+}
+
 func TestKafkaConfigRejectsMissingRequiredValues(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -35,6 +55,7 @@ func TestKafkaConfigRejectsMissingRequiredValues(t *testing.T) {
 		{name: "client id", key: clientID, want: clientID},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Setenv(eventBusEnabled, "true")
 			t.Setenv(loggerTopic, "logs")
 			t.Setenv(mailTopic, "mail")
 			t.Setenv(brokersAddr, "kafka:9092")

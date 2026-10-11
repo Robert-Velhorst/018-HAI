@@ -2,9 +2,12 @@ FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec
 
 WORKDIR /app
 
+# Cache dependencies independently from application source. A normal code
+# change should rebuild the binary, not redownload the complete module graph.
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy the application after the stable dependency layer.
 COPY . .
 
 # The backend does not require libc. A static, stripped binary lets the runtime

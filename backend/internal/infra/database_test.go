@@ -1,0 +1,86 @@
+package infra
+
+import (
+	"errors"
+	"testing"
+
+	"gorm.io/gorm"
+)
+
+func TestGetDefaultDBCachesOnlySuccessfulMigration(t *testing.T) {
+	resetDefaultDBForTest()
+	defer resetDefaultDBForTest()
+
+	originalOpen := openConfiguredDB
+	originalMigrate := runDefaultMigrations
+	defer func() {
+		openConfiguredDB = originalOpen
+		runDefaultMigrations = originalMigrate
+	}()
+
+	db := &gorm.DB{}
+	opens := 0
+	migrations := 0
+	openConfiguredDB = func() (*gorm.DB, error) {
+		opens++
+		return db, nil
+	}
+	runDefaultMigrations = func(got *gorm.DB) error {
+		migrations++
+		if got != db {
+			t.Fatal("migration received a different database connection")
+		}
+		return nil
+	}
+
+	first, err := GetDefaultDB()
+	if err != nil {
+		t.Fatalf("first GetDefaultDB: %v", err)
+	}
+	second, err := GetDefaultDB()
+	if err != nil {
+		t.Fatalf("second GetDefaultDB: %v", err)
+	}
+	if first != db || second != db {
+		t.Fatalf("GetDefaultDB = %p, %p; want cached %p", first, second, db)
+	}
+	if opens != 1 || migrations != 1 {
+		t.Fatalf("open/migration calls = %d/%d, want 1/1", opens, migrations)
+	}
+}
+
+func TestGetDefaultDBRetriesAfterMigrationFailure(t *testing.T) {
+	resetDefaultDBForTest()
+	defer resetDefaultDBForTest()
+
+	originalOpen := openConfiguredDB
+	originalMigrate := runDefaultMigrations
+	defer func() {
+		openConfiguredDB = originalOpen
+		runDefaultMigrations = originalMigrate
+	}()
+
+	opens := 0
+	migrations := 0
+	openConfiguredDB = func() (*gorm.DB, error) {
+		opens++
+		return nil, nil
+	}
+	runDefaultMigrations = func(*gorm.DB) error {
+		migrations++
+		if migrations == 1 {
+			return errors.New("temporary migration failure")
+		}
+		return nil
+	}
+
+	if _, err := GetDefaultDB(); err == nil {
+		t.Fatal("first GetDefaultDB should surface migration failure")
+	}
+	if _, err := GetDefaultDB(); err != nil {
+		t.Fatalf("GetDefaultDB should retry after a failed migration: %v", err)
+	}
+	if opens != 2 || migrations != 2 {
+		t.Fatalf("open/migration calls = %d/%d, want 2/2", opens, migrations)
+	}
+}

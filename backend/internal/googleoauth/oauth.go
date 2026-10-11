@@ -54,9 +54,25 @@ type Config struct {
 // A connector whose OAuth app is not configured must say so rather than pretend
 // to work.
 func (c Config) Configured() bool {
-	return strings.TrimSpace(c.ClientID) != "" &&
-		strings.TrimSpace(c.ClientSecret) != "" &&
-		strings.TrimSpace(c.RedirectURL) != ""
+	return configuredValue(c.ClientID) &&
+		configuredValue(c.ClientSecret) &&
+		configuredValue(c.RedirectURL)
+}
+
+// configuredValue rejects the sample values commonly copied from .env.example.
+// Treating those as credentials lets the UI begin a consent flow that can never
+// complete and misrepresents an unconfigured deployment as ready.
+func configuredValue(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return false
+	}
+	for _, marker := range []string{"your-", "your_", "replace", "changeme", "change-me", "<set-", "<your"} {
+		if strings.Contains(value, marker) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c Config) authEndpoint() string {

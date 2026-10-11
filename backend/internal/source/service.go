@@ -41,6 +41,12 @@ const (
 	ModeIncrementalSync    = "incremental_sync"
 )
 
+var sharedSourceHTTPTransport struct {
+	sync.Mutex
+	key       string
+	transport *http.Transport
+}
+
 type CreateSourceRequest struct {
 	OwnerIdentity     string   `json:"-"`
 	ConnectorKey      string   `json:"connectorKey"`
@@ -155,6 +161,17 @@ type ConnectionHealth struct {
 
 type ConnectionHealthService interface {
 	ConnectionHealth(sourceID uuid.UUID) (*ConnectionHealth, error)
+}
+
+type ContextSyncService interface {
+	SyncContext(ctx context.Context, sourceID uuid.UUID, request ImportRequest) (*SyncResult, error)
+}
+
+func syncSourceWithContext(ctx context.Context, service Service, sourceID uuid.UUID, request ImportRequest) (*SyncResult, error) {
+	if contextual, ok := service.(ContextSyncService); ok {
+		return contextual.SyncContext(ctx, sourceID, request)
+	}
+	return service.Sync(sourceID, request)
 }
 
 type OverviewService interface {
@@ -422,6 +439,11 @@ func (s *service) CreateSource(request CreateSourceRequest) (*models.ConnectedSo
 	connector, err := s.connectorByKey(connectorKey)
 	if err != nil {
 		return nil, err
+	}
+	if connectorKey == trelloConnectorKey {
+		if err := validateTrelloSourceRequest(request, connector); err != nil {
+			return nil, err
+		}
 	}
 	if connectorKey == odooJSON2ConnectorKey {
 		if _, err := odooJSON2ConfigFromEnv(); err != nil {
@@ -746,6 +768,36 @@ func (s *service) ConnectionHealth(sourceID uuid.UUID) (*ConnectionHealth, error
 		health.Reason = "source access was revoked"
 		return health, nil
 	}
+	if source.ConnectorKey == trelloConnectorKey {
+		health.Configured = trelloConfigured()
+		if !health.Configured {
+			health.Status = "configuration_required"
+			health.Reason = "Trello read-only credentials are not configured"
+			return health, nil
+		}
+		if source.LocalOnly {
+			health.Status = "configuration_required"
+			health.Reason = "Trello board sources must remain remote read-only; reconnect with local-only disabled"
+			return health, nil
+		}
+		if _, err := trelloBoardID(source.SyncTarget); err != nil {
+			health.Status = "configuration_required"
+			health.Reason = "Trello board target needs review: " + err.Error()
+			return health, nil
+		}
+		// Environment variables and a syntactically valid board id prove only
+		// that the connector can be attempted. They do not prove that Trello
+		// accepted the token or that it can read this board, so do not surface a
+		// false "ready" state before an explicit sync provides evidence.
+		health.Authorized = false
+		if source.Enabled {
+			health.Status = "configuration_ready"
+			health.Reason = "least-privilege read-only Trello credentials and board target are configured; run a sync to verify live board access"
+		} else {
+			health.Reason = "Trello source is paused"
+		}
+		return health, nil
+	}
 	if !isGoogleOAuthConnector(source.ConnectorKey) {
 		health.Authorized = source.Enabled
 		health.Reason = "connector health is derived from its enabled and synchronization state"
@@ -797,6 +849,25 @@ func (s *service) ConnectionHealth(sourceID uuid.UUID) (*ConnectionHealth, error
 	return health, nil
 }
 
+func validateTrelloSourceRequest(request CreateSourceRequest, connector models.SourceConnector) error {
+	if !trelloConfigured() {
+		return fmt.Errorf("Trello connector requires %s and a least-privilege read-only %s before a board can be connected", trelloAPIKeyEnv, trelloReadTokenEnv)
+	}
+	if request.LocalOnly {
+		return fmt.Errorf("Trello is a remote read-only source; localOnly must be false")
+	}
+	if category := strings.TrimSpace(request.Category); category != "" && category != connector.Category {
+		return fmt.Errorf("Trello must use the %s category", connector.Category)
+	}
+	if _, err := trelloBoardID(request.SyncTarget); err != nil {
+		return err
+	}
+	if _, err := trelloBaseURL(); err != nil {
+		return fmt.Errorf("Trello API configuration is invalid: %w", err)
+	}
+	return nil
+}
+
 func (s *service) Sync(sourceID uuid.UUID, request ImportRequest) (*SyncResult, error) {
 	return s.SyncContext(context.Background(), sourceID, request)
 }
@@ -804,6 +875,9 @@ func (s *service) Sync(sourceID uuid.UUID, request ImportRequest) (*SyncResult, 
 func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request ImportRequest) (*SyncResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if !s.beginSync(sourceID) {
 		return nil, ErrSyncInProgress
@@ -1101,7 +1175,7 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 		s.audit(sourceID, "source.laro_read", fmt.Sprintf("read %d bounded, owner-scoped LARO legal record(s)", len(items)))
 	}
 	if len(items) == 0 && source.ConnectorKey == workerControlConnectorKey {
-		items, adapterCursor, err = fetchWorkerControlSource(context.Background(), source.Cursor, source.DefaultProjectKey)
+		items, adapterCursor, err = fetchWorkerControlSource(ctx, source.Cursor, source.DefaultProjectKey)
 		if err != nil {
 			now := time.Now().UTC()
 			job.Status = "failed"
@@ -2893,6 +2967,8 @@ func fetchJSONFeed(ctx context.Context, source *models.ConnectedSource) ([]Impor
 	return normalizeFeedItems(envelope.Items, source), firstNonEmpty(strings.TrimSpace(envelope.NextCursor), source.Cursor), nil
 }
 
+const githubSourcePageSize = 100
+
 func fetchGitHubSource(ctx context.Context, source *models.ConnectedSource) ([]ImportItem, string, error) {
 	if source == nil {
 		return nil, "", fmt.Errorf("source is required")
@@ -2922,31 +2998,45 @@ func fetchGitHubSource(ctx context.Context, source *models.ConnectedSource) ([]I
 	}
 	items := []ImportItem{}
 	latest := strings.TrimSpace(source.Cursor)
+	maxPages := githubSourceMaxPages()
 	for _, endpoint := range endpoints {
-		value, err := fetchGitHubJSON(ctx, parsedBase, endpoint.path, source.Cursor)
-		if err != nil {
-			return nil, "", fmt.Errorf("fetch github %s: %w", endpoint.kind, err)
-		}
-		records := githubRecords(value, endpoint.kind)
-		for _, record := range records {
-			item, updated := githubImportItem(record, endpoint.kind, source.DefaultProjectKey, repository)
-			if item.ExternalID == "" || item.Content == "" {
-				continue
+		for page := 1; page <= maxPages; page++ {
+			if err := ctx.Err(); err != nil {
+				return nil, "", err
 			}
-			items = append(items, item)
-			if updated > latest {
-				latest = updated
+			value, err := fetchGitHubJSON(ctx, parsedBase, endpoint.path, source.Cursor, page)
+			if err != nil {
+				return nil, "", fmt.Errorf("fetch github %s page %d: %w", endpoint.kind, page, err)
+			}
+			pageRecordCount := githubRecordCount(value, endpoint.kind)
+			records := githubRecords(value, endpoint.kind)
+			for _, record := range records {
+				item, updated := githubImportItem(record, endpoint.kind, source.DefaultProjectKey, repository)
+				if item.ExternalID == "" || item.Content == "" {
+					continue
+				}
+				items = append(items, item)
+				if updated > latest {
+					latest = updated
+				}
+			}
+			if pageRecordCount < githubSourcePageSize {
+				break
+			}
+			if page == maxPages {
+				return nil, "", fmt.Errorf("github %s sync reached the %d-page safety limit; raise GITHUB_SOURCE_MAX_PAGES (maximum 20) and retry to avoid an incomplete import", endpoint.kind, maxPages)
 			}
 		}
 	}
 	return items, latest, nil
 }
 
-func fetchGitHubJSON(ctx context.Context, base *url.URL, resourcePath, cursor string) (any, error) {
+func fetchGitHubJSON(ctx context.Context, base *url.URL, resourcePath, cursor string, page int) (any, error) {
 	target := *base
 	target.Path = strings.TrimRight(base.Path, "/") + resourcePath
 	query := target.Query()
-	query.Set("per_page", "100")
+	query.Set("per_page", strconv.Itoa(githubSourcePageSize))
+	query.Set("page", strconv.Itoa(page))
 	query.Set("state", "all")
 	query.Set("sort", "updated")
 	query.Set("direction", "asc")
@@ -2989,6 +3079,14 @@ func fetchGitHubJSON(ctx context.Context, base *url.URL, resourcePath, cursor st
 	return value, nil
 }
 
+func githubSourceMaxPages() int {
+	pages, err := strconv.Atoi(strings.TrimSpace(os.Getenv("GITHUB_SOURCE_MAX_PAGES")))
+	if err != nil || pages < 1 || pages > 20 {
+		return 5
+	}
+	return pages
+}
+
 func githubRecords(value any, kind string) []map[string]any {
 	if object, ok := value.(map[string]any); ok {
 		if kind == "workflow_run" {
@@ -2996,12 +3094,45 @@ func githubRecords(value any, kind string) []map[string]any {
 				return githubRecordSlice(runs)
 			}
 		}
+		if kind == "issue" && isGitHubPullRequest(object) {
+			return nil
+		}
 		return []map[string]any{object}
 	}
 	if list, ok := value.([]any); ok {
-		return githubRecordSlice(list)
+		records := githubRecordSlice(list)
+		if kind != "issue" {
+			return records
+		}
+		issues := make([]map[string]any, 0, len(records))
+		for _, record := range records {
+			if !isGitHubPullRequest(record) {
+				issues = append(issues, record)
+			}
+		}
+		return issues
 	}
 	return nil
+}
+
+func githubRecordCount(value any, kind string) int {
+	if object, ok := value.(map[string]any); ok {
+		if kind == "workflow_run" {
+			if runs, ok := object["workflow_runs"].([]any); ok {
+				return len(runs)
+			}
+		}
+		return 1
+	}
+	if list, ok := value.([]any); ok {
+		return len(list)
+	}
+	return 0
+}
+
+func isGitHubPullRequest(record map[string]any) bool {
+	_, found := record["pull_request"]
+	return found
 }
 
 func githubRecordSlice(items []any) []map[string]any {
@@ -3098,9 +3229,30 @@ func sourceHTTPAddressBlocked(host string) bool {
 }
 
 func sourceHTTPTransport() *http.Transport {
-	dialer := &net.Dialer{Timeout: sourceHTTPTimeout()}
-	return &http.Transport{
-		Proxy: nil,
+	key := strings.Join([]string{
+		strings.TrimSpace(os.Getenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS")),
+		strings.TrimSpace(os.Getenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL")),
+		sourceHTTPTimeout().String(),
+	}, "|")
+
+	sharedSourceHTTPTransport.Lock()
+	defer sharedSourceHTTPTransport.Unlock()
+	if sharedSourceHTTPTransport.transport != nil && sharedSourceHTTPTransport.key == key {
+		return sharedSourceHTTPTransport.transport
+	}
+	if sharedSourceHTTPTransport.transport != nil {
+		// Do not retain connections created under a previous network policy.
+		sharedSourceHTTPTransport.transport.CloseIdleConnections()
+	}
+
+	transport := &http.Transport{
+		Proxy:                 nil,
+		MaxIdleConns:          16,
+		MaxIdleConnsPerHost:   4,
+		MaxConnsPerHost:       8,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: sourceHTTPTimeout(),
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(address)
 			if err != nil {
@@ -3118,9 +3270,13 @@ func sourceHTTPTransport() *http.Transport {
 			if len(resolved) == 0 {
 				return nil, fmt.Errorf("json-feed host resolved to no addresses")
 			}
+			dialer := &net.Dialer{Timeout: sourceHTTPTimeout()}
 			return dialer.DialContext(ctx, network, net.JoinHostPort(resolved[0].IP.String(), port))
 		},
 	}
+	sharedSourceHTTPTransport.key = key
+	sharedSourceHTTPTransport.transport = transport
+	return transport
 }
 
 func sourceHTTPTimeout() time.Duration {

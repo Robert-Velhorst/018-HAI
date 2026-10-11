@@ -44,19 +44,18 @@ const (
 // syncJobPayload identifies which source a sync job refers to.
 type syncJobPayload struct {
 	SourceID string `json:"sourceId"`
-	Name     string `json:"name,omitempty"`
 }
 
 // startDurableScheduler builds the durable runner over the default queue,
 // registers the source handlers, and starts the worker loop. Any failure is
 // returned so the caller can fall back to the legacy ticker.
-func startDurableScheduler(ctx context.Context, service Service, interval time.Duration) error {
+func startDurableScheduler(ctx context.Context, service Service, interval time.Duration, allowed ...func() bool) error {
 	repo, err := durablejob.DefaultRepository()
 	if err != nil {
 		return err
 	}
 	runner := durablejob.NewRunner(repo, durablejob.Options{Queue: "source"})
-	if err := RegisterDurableScheduling(runner, service, interval); err != nil {
+	if err := RegisterDurableScheduling(runner, service, interval, allowed...); err != nil {
 		return err
 	}
 	go runner.Start(ctx, durablePollInterval())
@@ -80,7 +79,7 @@ func durablePollInterval() time.Duration {
 // RegisterDurableScheduling wires the source sync handlers into a durable
 // runner and makes sure exactly one scan job is scheduled. Call it once at
 // startup; it is safe across restarts because the scan job is a singleton.
-func RegisterDurableScheduling(runner *durablejob.Runner, service Service, interval time.Duration) error {
+func RegisterDurableScheduling(runner *durablejob.Runner, service Service, interval time.Duration, allowed ...func() bool) error {
 	if runner == nil || service == nil {
 		return fmt.Errorf("durable scheduling needs both a runner and a source service")
 	}
@@ -88,8 +87,9 @@ func RegisterDurableScheduling(runner *durablejob.Runner, service Service, inter
 		interval = 10 * time.Minute
 	}
 
-	runner.Register(JobKindSync, syncHandler(service))
-	if err := runner.RegisterRecurring(JobKindScan, interval, scanMaxAttempts, scanWork(runner, service)); err != nil {
+	backgroundAllowed := schedulerBackgroundGate(allowed)
+	runner.Register(JobKindSync, syncHandler(service, backgroundAllowed))
+	if err := runner.RegisterRecurring(JobKindScan, interval, scanMaxAttempts, scanWork(runner, service, backgroundAllowed)); err != nil {
 		return fmt.Errorf("schedule source scan: %w", err)
 	}
 	log.Printf("source scheduler: durable scan job scheduled (interval %s)", interval)
@@ -100,19 +100,32 @@ func RegisterDurableScheduling(runner *durablejob.Runner, service Service, inter
 // recurring wrapper owns rescheduling. Enqueuing is safe to repeat: Sync refuses
 // concurrent runs for the same source and upserts by external id, so a retried
 // scan cannot corrupt state.
-func scanWork(runner *durablejob.Runner, service Service) func(context.Context) error {
+func scanWork(runner *durablejob.Runner, service Service, allowed ...func() bool) func(context.Context) error {
+	backgroundAllowed := schedulerBackgroundGate(allowed)
 	return func(ctx context.Context) error {
+		if backgroundAllowed != nil && !backgroundAllowed() {
+			return durablejob.Defer("background processing is paused by safety policy")
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		now := time.Now().UTC()
 		due, err := service.DueSources(now)
 		if err != nil {
 			return fmt.Errorf("list due sources: %w", err)
 		}
 		for _, item := range due {
-			payload, errMarshal := json.Marshal(syncJobPayload{SourceID: item.ID.String(), Name: item.Name})
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			// The payload is also the durable deduplication key. Keep it to the
+			// immutable source identity so renaming a source cannot queue a second
+			// active sync for the same record.
+			payload, errMarshal := json.Marshal(syncJobPayload{SourceID: item.ID.String()})
 			if errMarshal != nil {
 				return fmt.Errorf("encode sync payload for %s: %w", item.Name, errMarshal)
 			}
-			if _, errEnqueue := runner.Enqueue(JobKindSync, string(payload), now, syncMaxAttempts); errEnqueue != nil {
+			if _, errEnqueue := runner.EnsureScheduledForPayload(JobKindSync, string(payload), now, syncMaxAttempts); errEnqueue != nil {
 				return fmt.Errorf("enqueue sync for %s: %w", item.Name, errEnqueue)
 			}
 		}
@@ -125,8 +138,12 @@ func scanWork(runner *durablejob.Runner, service Service) func(context.Context) 
 
 // syncHandler syncs the single source named in the payload. Returning an error
 // hands the job back to the durable retry/backoff policy.
-func syncHandler(service Service) durablejob.Handler {
+func syncHandler(service Service, allowed ...func() bool) durablejob.Handler {
+	backgroundAllowed := schedulerBackgroundGate(allowed)
 	return func(ctx context.Context, job durablejob.Job) error {
+		if backgroundAllowed != nil && !backgroundAllowed() {
+			return durablejob.Defer("background processing is paused by safety policy")
+		}
 		var payload syncJobPayload
 		if err := json.Unmarshal([]byte(job.Payload), &payload); err != nil {
 			// Malformed payload will never succeed; surface it so the job
@@ -148,7 +165,7 @@ func syncHandler(service Service) durablejob.Handler {
 		}
 		if result != nil && result.Job.Status != "completed" {
 			// Partial failures keep the cursor; retrying is the correct response.
-			return fmt.Errorf("sync %s finished with status %s: %s", payload.Name, result.Job.Status, result.Job.Message)
+			return fmt.Errorf("sync source %s finished with status %s: %s", payload.SourceID, result.Job.Status, result.Job.Message)
 		}
 		return nil
 	}

@@ -10,8 +10,9 @@ import (
 )
 
 type Scheduler struct {
-	service Service
-	running atomic.Bool
+	service           Service
+	backgroundAllowed func() bool
+	running           atomic.Bool
 }
 
 // StartScheduler starts ambient scanning.
@@ -19,23 +20,24 @@ type Scheduler struct {
 // It prefers the durable path (persisted, retried, crash-recovered — see
 // durable_scheduler.go) and falls back to the legacy in-process ticker, saying
 // so, if the durable queue cannot be reached.
-func StartScheduler(ctx context.Context, service Service) {
+func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) {
 	policy := policyFromEnv()
 	if !policy.SchedulerEnabled {
 		return
 	}
 	interval := time.Duration(policy.ScanIntervalSeconds) * time.Second
+	backgroundAllowed := schedulerBackgroundGate(allowed)
 	if interval < 30*time.Second {
 		interval = 5 * time.Minute
 	}
 	if durableSchedulerEnabled() {
-		if err := startDurableScheduler(ctx, service, interval); err != nil {
+		if err := startDurableScheduler(ctx, service, interval, backgroundAllowed); err != nil {
 			log.Printf("ambient scheduler: durable queue unavailable (%v); falling back to the in-process ticker", err)
 		} else {
 			return
 		}
 	}
-	scheduler := &Scheduler{service: service}
+	scheduler := &Scheduler{service: service, backgroundAllowed: backgroundAllowed}
 	go scheduler.Start(ctx, interval)
 }
 
@@ -64,7 +66,7 @@ func runOnStartup() bool {
 }
 
 func (s *Scheduler) runOnce() {
-	if s.service == nil || !s.running.CompareAndSwap(false, true) {
+	if s.service == nil || (s.backgroundAllowed != nil && !s.backgroundAllowed()) || !s.running.CompareAndSwap(false, true) {
 		return
 	}
 	defer s.running.Store(false)
@@ -76,4 +78,11 @@ func (s *Scheduler) runOnce() {
 	if scan.Created > 0 || scan.Updated > 0 || scan.Advanced > 0 {
 		log.Printf("ambient scan examined=%d created=%d updated=%d deduplicated=%d advanced=%d filtered=%d skipped=%d blocked=%d", scan.ItemsExamined, scan.Created, scan.Updated, scan.Deduplicated, scan.Advanced, scan.Filtered, scan.Skipped, scan.Blocked)
 	}
+}
+
+func schedulerBackgroundGate(allowed []func() bool) func() bool {
+	if len(allowed) > 0 && allowed[0] != nil {
+		return allowed[0]
+	}
+	return func() bool { return true }
 }

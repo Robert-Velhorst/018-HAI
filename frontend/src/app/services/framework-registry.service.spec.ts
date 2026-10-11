@@ -1,14 +1,16 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import {
   IConstitution,
   IConstitutionHistoryPage,
   IFrameworkRegistryOverview,
+  IFrameworkFamilyTaxonomy,
   IFrameworkSelectionDecision,
   IFrameworkSelectionRequest,
   IFrameworkView,
 } from '../models/framework-registry.model.interface';
 import { FrameworkRegistryService } from './framework-registry.service';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('FrameworkRegistryService', () => {
   let service: FrameworkRegistryService;
@@ -114,8 +116,39 @@ describe('FrameworkRegistryService', () => {
     selectionContract: ['classify the task'],
   };
 
+  const taxonomy: IFrameworkFamilyTaxonomy = {
+    version: '1.1.0',
+    digest: 'd'.repeat(64),
+    families: Array.from({ length: 55 }, (_, index) => ({
+      section: index + 1,
+      id: `${framework.id}-${index + 1}`,
+      version: framework.version,
+      name: `${framework.name} ${index + 1}`,
+      family: framework.family,
+      purpose: framework.purpose,
+      suitableProblemTypes: framework.suitableProblemTypes,
+      triggerConditions: framework.triggerConditions,
+      requiredInputs: framework.requiredInputs,
+      producedOutputs: framework.producedOutputs,
+      requiredAgents: framework.requiredAgents,
+      workflowTemplate: framework.workflowTemplate,
+      decisionRules: framework.decisionRules,
+      safetyInvariants: framework.safetyInvariants,
+      authorityRequirement: framework.authorityRequirement,
+      maximumAutonomyLevel: framework.maximumAutonomyLevel,
+      riskCeiling: framework.riskCeiling,
+      evidenceRequirements: framework.evidenceRequirements,
+      evaluationMethod: framework.evaluationMethod,
+      conflictsWith: framework.conflictsWith,
+      userSpecificAdaptations: framework.userSpecificAdaptations,
+      source: framework.source,
+      provenance: framework.provenance,
+      status: framework.status,
+    })),
+  };
+
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [HttpClientTestingModule] });
+    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] });
     service = TestBed.inject(FrameworkRegistryService);
     http = TestBed.inject(HttpTestingController);
   });
@@ -219,6 +252,14 @@ describe('FrameworkRegistryService', () => {
     const request = http.expectOne('/api/v1/framework-registry/selections?limit=10');
     expect(request.request.method).toBe('GET');
     request.flush({ selections: [selection] });
+  });
+
+  it('loads and validates the immutable family taxonomy', () => {
+    service.familyTaxonomy().subscribe((result) => expect(result).toEqual(taxonomy));
+
+    const request = http.expectOne('/api/v1/framework-registry/family-taxonomy');
+    expect(request.request.method).toBe('GET');
+    request.flush(taxonomy);
   });
 
   it('accepts legacy selection history without a recorded risk ceiling', () => {

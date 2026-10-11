@@ -164,6 +164,13 @@ func TestSyncContextCancelsTrelloWithoutExposingCredentials(t *testing.T) {
 	}
 }
 
+func TestTrelloImportItemRetainsCanonicalProvenanceWhenURLFieldsAreMissing(t *testing.T) {
+	item := trelloImportItem(trelloCard{ID: "card-without-url", Name: "Evidence"}, "Board", "Inbox", "project")
+	if item.SourceURI != "https://trello.com/c/card-without-url" {
+		t.Fatalf("SourceURI = %q, want canonical card URL fallback", item.SourceURI)
+	}
+}
+
 func TestSyncTrelloPreservesComplexCardAcceptanceShape(t *testing.T) {
 	actions := make([]map[string]any, 0, 30)
 	for i := 0; i < 30; i++ {
