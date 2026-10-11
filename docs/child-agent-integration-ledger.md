@@ -1457,3 +1457,48 @@ Node checks and 1,331 Angular tests locally. The production build was not
 available under the installed Node 25.2.1 because the project explicitly
 requires Node `^24.15.0`. GitHub's Node 24 frontend build passed on the prior
 PR head, before this CSS cleanup; the current head requires its own CI result.
+
+### October 11, 2026: refreshed tracked-source semantic comparison
+
+The source checkouts were refreshed at primary working-tree HEAD `e07b9da`
+and PR head `f8e927f88cd1e330123256946086690f06d3b2e3`. Both trees remain
+untouched by the comparison. Direct diffs confirm the PR implementation is
+the more complete version in several areas that could otherwise look like
+primary-only work:
+
+- `backend/internal/workflow/service.go` in the PR validates and persists
+  bounded success criteria, includes them in source-revision identity, and
+  forwards them into task execution. The primary working tree lacks this
+  behavior.
+- `backend/internal/frameworkregistry/service.go` in the PR records
+  owner-attributed, redacted preference-change reasons and exposes bounded,
+  owner-scoped preference history. The PR router wires that history endpoint.
+- `backend/internal/phase2/handler.go` in the PR evaluates the full persisted
+  operation for execution admission and effect policy rather than authorizing
+  from title/description/type alone. Its optional diagnostic response is
+  gated on test mode and an explicit test-only flag.
+- `backend/internal/operations/service.go` in the PR compares and retains the
+  raw source-evidence SHA-256, preserving evidence identity independently of
+  normalized JSON.
+- The PR router wires browser verification to the workflow linker; it does
+  not register an unlinked default handler before workflow construction.
+- `.github/workflows/ci.yml` in the PR adds dedicated cleanup-readiness safety
+  contracts and newer pinned toolchain/test configuration. These changes are
+  not candidates to copy from the primary tree.
+
+No code was copied from these primary variants. This is a focused semantic
+batch, not completion of the remaining tracked-path or 38 untracked-path
+review: the primary checkout has 692 modified tracked paths, and source-like
+untracked files, machine-local data, excluded artifacts, and transcript
+patch-event attribution remain outside the comparison above.
+
+The PR remains open at `f8e927f88cd1e330123256946086690f06d3b2e3`. Exact-head
+CI run `38107670416` is active: the cleanup-readiness contract and several
+backend/runner jobs have passed, while Windows installer, browser acceptance,
+and other matrix jobs are still running or queued. Browser full-scope
+acceptance still requires persisted synthetic uncertain-workflow and
+uncertain-task fixtures; the suite intentionally fails when these are absent.
+Do not treat the active run, a first-scope browser run, or this source batch as
+final acceptance. The July archive and local checkout/diagnostic cleanup
+remain ineligible until source and transcript crosswalks and PR acceptance are
+complete.
