@@ -20,6 +20,22 @@ type CompositeResolver struct {
 	taskReview executionauth.ApprovalResolver
 	workflow   executionauth.ApprovalResolver
 	portfolio  executionauth.ApprovalResolver
+	additional []ApprovalResolverRegistration
+}
+
+// ApprovalResolverRegistration adds a server-owned approval namespace without
+// weakening the three canonical resolvers. Prefixes must be explicit and
+// disjoint so a reference is always routed to exactly one durable source.
+type ApprovalResolverRegistration struct {
+	Prefix   string
+	Resolver executionauth.ApprovalResolver
+}
+
+func RegisterApprovalResolver(
+	prefix string,
+	resolver executionauth.ApprovalResolver,
+) ApprovalResolverRegistration {
+	return ApprovalResolverRegistration{Prefix: prefix, Resolver: resolver}
 }
 
 var _ executionauth.ApprovalResolver = (*CompositeResolver)(nil)
@@ -28,6 +44,7 @@ func NewCompositeResolver(
 	taskReview executionauth.ApprovalResolver,
 	workflow executionauth.ApprovalResolver,
 	portfolio executionauth.ApprovalResolver,
+	additional ...ApprovalResolverRegistration,
 ) (*CompositeResolver, error) {
 	if isNilApprovalResolver(taskReview) {
 		return nil, fmt.Errorf("%w: task review resolver is required", ErrInvalidRequest)
@@ -38,10 +55,28 @@ func NewCompositeResolver(
 	if isNilApprovalResolver(portfolio) {
 		return nil, fmt.Errorf("%w: portfolio approval resolver is required", ErrInvalidRequest)
 	}
+	seen := map[string]struct{}{
+		taskReviewPrefix:        {},
+		workflowDecisionPrefix:  {},
+		portfolioDecisionPrefix: {},
+	}
+	for index := range additional {
+		additional[index].Prefix = strings.TrimSpace(additional[index].Prefix)
+		if additional[index].Prefix == "" ||
+			!strings.HasSuffix(additional[index].Prefix, ":") ||
+			isNilApprovalResolver(additional[index].Resolver) {
+			return nil, fmt.Errorf("%w: additional approval resolver is invalid", ErrInvalidRequest)
+		}
+		if _, exists := seen[additional[index].Prefix]; exists {
+			return nil, fmt.Errorf("%w: duplicate approval resolver prefix", ErrInvalidRequest)
+		}
+		seen[additional[index].Prefix] = struct{}{}
+	}
 	return &CompositeResolver{
 		taskReview: taskReview,
 		workflow:   workflow,
 		portfolio:  portfolio,
+		additional: append([]ApprovalResolverRegistration(nil), additional...),
 	}, nil
 }
 
@@ -68,6 +103,16 @@ func (r *CompositeResolver) Resolve(
 	case strings.HasPrefix(sourceID, portfolioDecisionPrefix):
 		return r.portfolio.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
 	default:
+		for _, registration := range r.additional {
+			if strings.HasPrefix(sourceID, registration.Prefix) {
+				return registration.Resolver.Resolve(
+					ctx,
+					ownerIdentity,
+					sourceID,
+					bindingDigest,
+				)
+			}
+		}
 		return executionauth.ResolvedApproval{}, ErrUnsupportedApprovalReference
 	}
 }

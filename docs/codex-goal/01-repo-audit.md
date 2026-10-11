@@ -1,5 +1,9 @@
 # Repository Integrity & File/Dependency Audit
 
+> Historical inventory. Compose entrypoints have since been consolidated into
+> one source-built topology; see the root README and operator runbook for the
+> current deployment contract.
+
 **Phases covered:** 000 (Repository integrity and true starting point), 001 (Complete file and dependency audit)
 **Audit date:** 2026-07-06
 **Method:** Structural inspection + real build/compile execution. This is a broad audit pass; it establishes ground truth and a starting point, not a line-by-line functional verification of every subsystem.

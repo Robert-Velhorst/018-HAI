@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // Handler serves the always-on runtime control API (§30/§31): background status,
@@ -92,6 +93,75 @@ func (h *Handler) Resume(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"emergencyStop": state})
 }
 
+type prepareControlApprovalRequest struct {
+	Action     string `json:"action"`
+	TargetMode string `json:"targetMode,omitempty"`
+}
+
+// PrepareControlApproval creates a short-lived, exact-bound request from
+// current server state. It does not approve or execute anything.
+func (h *Handler) PrepareControlApproval(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthenticated.Error()})
+		return
+	}
+	var req prepareControlApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval request is required"})
+		return
+	}
+	prepared, err := h.svc.PrepareControlApproval(
+		c.Request.Context(),
+		actor,
+		req.Action,
+		req.TargetMode,
+	)
+	if err != nil {
+		c.JSON(controlErrorStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, prepared)
+}
+
+type decideControlApprovalRequest struct {
+	Decision string `json:"decision"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// DecideControlApproval appends the owner's decision. An approved response
+// contains references for the separate execution call, never a client-minted
+// approval assertion.
+func (h *Handler) DecideControlApproval(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthenticated.Error()})
+		return
+	}
+	requestID, err := uuid.Parse(c.Param("id"))
+	if err != nil || requestID == uuid.Nil || c.Param("id") != requestID.String() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval request id is invalid"})
+		return
+	}
+	var req decideControlApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval decision is required"})
+		return
+	}
+	decision, err := h.svc.DecideControlApproval(
+		c.Request.Context(),
+		actor,
+		requestID,
+		req.Decision,
+		req.Reason,
+	)
+	if err != nil {
+		c.JSON(controlErrorStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, decision)
+}
+
 type modeRequest struct {
 	Mode string `json:"mode"`
 	controlAuthorizationRequest
@@ -125,10 +195,19 @@ func controlErrorStatus(err error) int {
 		return http.StatusForbidden
 	case errors.Is(err, ErrAuthorizationUnavailable):
 		return http.StatusServiceUnavailable
+	case errors.Is(err, ErrControlApprovalUnavailable):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, ErrControlApprovalNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, ErrControlPersistence):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, ErrEmergencyStopStateChanged),
-		errors.Is(err, ErrAutonomyModeStateChanged):
+		errors.Is(err, ErrAutonomyModeStateChanged),
+		errors.Is(err, ErrControlApprovalExpired),
+		errors.Is(err, ErrControlApprovalDecided),
+		errors.Is(err, ErrControlApprovalStale),
+		errors.Is(err, ErrControlChangeNotRequired),
+		errors.Is(err, ErrControlApprovalNotRequired):
 		return http.StatusConflict
 	default:
 		return http.StatusBadRequest

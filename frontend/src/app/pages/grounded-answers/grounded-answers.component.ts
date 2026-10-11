@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -17,6 +17,7 @@ import { VERIFICATION_SERVICE_TOKEN } from '../../services/verification/verifica
 import { IVerificationService } from '../../services/verification.service.interface';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-grounded-answers',
   templateUrl: './grounded-answers.component.html',

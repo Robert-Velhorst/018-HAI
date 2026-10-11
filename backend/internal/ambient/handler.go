@@ -39,7 +39,18 @@ func (h *Handler) Overview(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for ambient access"})
 		return
 	}
-	result, err := h.service.OverviewForOwner(ownerIdentity)
+	viewMode := strings.TrimSpace(c.Query("view"))
+	if viewMode != "" && viewMode != "full" && viewMode != "summary" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ambient overview view must be full or summary"})
+		return
+	}
+	var result *Overview
+	var err error
+	if viewMode == "summary" {
+		result, err = h.service.OverviewSummaryForOwner(ownerIdentity)
+	} else {
+		result, err = h.service.OverviewForOwner(ownerIdentity)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

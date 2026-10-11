@@ -3,11 +3,13 @@
 package frameworkregistry
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"automation-hub-backend/internal/infra"
@@ -21,6 +23,29 @@ import (
 )
 
 const frameworkRegistryMigrationVersion = "pre/0003_framework_registry"
+
+func frameworkRegistryLifecycleMigrations(t *testing.T) fstest.MapFS {
+	t.Helper()
+	files := fstest.MapFS{}
+	for _, version := range []string{
+		"0001_extensions",
+		"0002_baseline",
+		"0003_framework_registry",
+		"0004_task_state_storage",
+		"0005_framework_operating_contract",
+		"0006_durable_job_fencing",
+	} {
+		for _, suffix := range []string{"up.sql", "down.sql"} {
+			path := "pre/" + version + "." + suffix
+			data, err := migrations.Files.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read lifecycle migration %s: %v", path, err)
+			}
+			files[path] = &fstest.MapFile{Data: data}
+		}
+	}
+	return files
+}
 
 func openFrameworkRegistryPostgresTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -127,15 +152,16 @@ func TestFrameworkRegistryPostgresIntegrationRequiredEnvironment(t *testing.T) {
 
 func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	db := openFrameworkRegistryPostgresTestDB(t)
+	files := frameworkRegistryLifecycleMigrations(t)
 
-	applied, err := infra.ApplyMigrations(db, migrations.Files, "pre")
+	applied, err := infra.ApplyMigrations(db, files, "pre")
 	if err != nil {
 		t.Fatalf("apply pre migrations: %v", err)
 	}
 	if applied < 3 {
 		t.Fatalf("applied %d pre migrations, want at least 3", applied)
 	}
-	if rerun, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil || rerun != 0 {
+	if rerun, err := infra.ApplyMigrations(db, files, "pre"); err != nil || rerun != 0 {
 		t.Fatalf("migration runner rerun = %d, %v; want 0, nil", rerun, err)
 	}
 
@@ -177,7 +203,7 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 
 	if err := infra.RollbackMigration(
 		db,
-		migrations.Files,
+		files,
 		"pre",
 		frameworkRegistryMigrationVersion,
 	); err == nil || !strings.Contains(err.Error(), "rollback later migrations first") {
@@ -195,7 +221,7 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	} {
 		if err := infra.RollbackMigration(
 			db,
-			migrations.Files,
+			files,
 			"pre",
 			version,
 		); err != nil {
@@ -204,7 +230,7 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	}
 	if err := infra.RollbackMigration(
 		db,
-		migrations.Files,
+		files,
 		"pre",
 		frameworkRegistryMigrationVersion,
 	); err == nil || !strings.Contains(err.Error(), "is not applied") {
@@ -236,7 +262,7 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	// The down SQL is intentionally safe to run again after all objects are
 	// gone. This protects manual recovery and repeated local test teardown.
 	executeEmbeddedMigration(t, db, "pre/0003_framework_registry.down.sql")
-	reapplied, err := infra.ApplyMigrations(db, migrations.Files, "pre")
+	reapplied, err := infra.ApplyMigrations(db, files, "pre")
 	if err != nil {
 		t.Fatalf("reapply framework registry migration: %v", err)
 	}
@@ -253,6 +279,7 @@ func TestFrameworkRegistryPostgresOwnerScopeConstraintsAndHistory(t *testing.T) 
 	executeEmbeddedMigration(t, db, "pre/0001_extensions.up.sql")
 	executeEmbeddedMigration(t, db, "pre/0003_framework_registry.up.sql")
 	executeEmbeddedMigration(t, db, "pre/0005_framework_operating_contract.up.sql")
+	executeEmbeddedMigration(t, db, "pre/0029_framework_selector_v5_digest.up.sql")
 	repo := NewGormRepository(db)
 
 	t.Run("preferences are owner scoped and unique per owner and framework", func(t *testing.T) {

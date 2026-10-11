@@ -2,8 +2,11 @@ package task
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -60,12 +63,217 @@ func TestPlanIncludesSuccessCriteriaAndValidationGate(t *testing.T) {
 	}
 }
 
+func TestTaskExecutionCancelsLLMGenerationWithTaskContext(t *testing.T) {
+	requestStarted := make(chan struct{})
+	releaseProvider := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requestStarted)
+		<-releaseProvider
+	}))
+	defer func() {
+		close(releaseProvider)
+		server.CloseClientConnections()
+		server.Close()
+	}()
+
+	providers, err := json.Marshal([]llm.Provider{{
+		ID: "localai", Name: "LocalAI", Enabled: true, Local: true,
+		EndpointURL: server.URL,
+		Models: []llm.Model{{
+			ID: "task-local-model", Name: "Task local model", Tier: llm.TierLocal,
+			Enabled: true, MaxDifficulty: 5, MaxReasoning: "very_high",
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("marshal providers: %v", err)
+	}
+	t.Setenv("LLM_PROVIDERS_JSON", string(providers))
+	llmService, err := llm.NewServiceFromEnv()
+	if err != nil {
+		t.Fatalf("NewServiceFromEnv: %v", err)
+	}
+	llmService.WithFinalEffectAuthorization(
+		llm.FinalEffectAuthorizerFunc(func(context.Context, llm.FinalEffectAuthorizationRequest) error { return nil }),
+		llm.EmergencyStopEvaluatorFunc(func(context.Context) (llm.EmergencyStopState, error) {
+			return llm.EmergencyStopState{}, nil
+		}),
+	)
+	taskService := &service{llmService: llmService}
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan *ExecutionResult, 1)
+	go func() {
+		resultCh <- taskService.executeAllowedSteps(&CompletionPlan{
+			ID:            "task-cancel-generation",
+			OwnerIdentity: "alice",
+			Request:       "Summarize context",
+			RealGoal:      "Summarize context",
+			ProjectKey:    "018-hai",
+			RiskAssessment: RiskAssessment{
+				AllowedNow: true,
+			},
+			ModelDecision: llm.RouteDecision{
+				SelectedProviderID: "localai",
+				SelectedModelID:    "task-local-model",
+				SelectedModelName:  "Task local model",
+				Tier:               llm.TierLocal,
+			},
+		}, IntakeRequest{Request: "Summarize context", ProjectKey: "018-hai", executionContext: ctx})
+	}()
+
+	select {
+	case <-requestStarted:
+	case result := <-resultCh:
+		t.Fatalf("task generation returned before provider call: %#v", result)
+	case <-time.After(time.Second):
+		t.Fatal("task generation did not reach the provider")
+	}
+	cancel()
+	var result *ExecutionResult
+	select {
+	case result = <-resultCh:
+	case <-time.After(time.Second):
+		t.Fatal("task execution did not return after cancellation")
+	}
+	if result == nil || result.LLMGeneration == nil || result.LLMGeneration.Status != "stopped" {
+		t.Fatalf("task generation result = %#v", result)
+	}
+	if !strings.Contains(result.BlockedReason, "caller canceled") || !hasTaskAction(result.Actions, "task.cancelled", "stopped") {
+		t.Fatalf("task cancellation was not surfaced truthfully: %#v", result)
+	}
+	if hasTaskAction(result.Actions, "verification.answer", "completed") {
+		t.Fatalf("task continued into verification after cancellation: %#v", result.Actions)
+	}
+}
+
 func TestPlanReturnsConfigurationErrorWhenLLMRouterIsMissing(t *testing.T) {
 	service := NewService(&fakeMemoryService{}, nil)
 
 	_, err := service.Plan(IntakeRequest{Request: "Prepare a bounded task plan"})
 	if !errors.Is(err, ErrTaskLLMRouterNotConfigured) {
 		t.Fatalf("Plan error = %v, want %v", err, ErrTaskLLMRouterNotConfigured)
+	}
+}
+
+func TestLowRiskReadOnlyAPIRuntimeCompletesWithoutModelOrApproval(t *testing.T) {
+	t.Setenv("HAI_EMERGENCY_STOP", "false")
+	t.Setenv("LLM_PROVIDERS_JSON", "[]")
+	t.Setenv("LLM_POLICY_JSON", "")
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "false")
+
+	llmService, err := llm.NewServiceFromEnv()
+	if err != nil {
+		t.Fatalf("NewServiceFromEnv: %v", err)
+	}
+	executor := &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}
+	service := NewServiceWithEngines(
+		&fakeMemoryService{},
+		llmService,
+		nil,
+		nil,
+		executor,
+	)
+
+	plan, err := service.Run(IntakeRequest{
+		OwnerIdentity:  "alice",
+		Request:        "Launch the local dashboard API for a bounded health review using the configured local dashboard automation.",
+		ProjectKey:     "018-HAI",
+		AutomationID:   executor.result.AutomationID,
+		ExecuteAllowed: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if plan.RiskAssessment.ApprovalRequired || plan.RiskAssessment.ApprovalGranted {
+		t.Fatalf("bounded read-only runtime acquired an approval requirement: %#v", plan.RiskAssessment)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("executor calls = %d, want 1; risk=%#v preflight=%#v", executor.calls, plan.RiskAssessment, plan.FrameworkEvidencePreflight)
+	}
+	if plan.ExecutionResult == nil || !deterministicReadOnlyRuntimeCompleted(plan.ExecutionResult.ToolExecution) {
+		t.Fatalf("deterministic runtime result was not retained: %#v", plan.ExecutionResult)
+	}
+	if plan.ModelDecision.SelectedModelID != "" {
+		t.Fatalf("deterministic runtime unexpectedly selected model %q", plan.ModelDecision.SelectedModelID)
+	}
+	if !plan.ValidationResult.Passed || plan.CompletionStatus != "validated" {
+		t.Fatalf("deterministic runtime did not validate: completion=%q validation=%#v preflight=%#v", plan.CompletionStatus, plan.ValidationResult, plan.FrameworkEvidencePreflight)
+	}
+}
+
+func TestLowRiskReadOnlyAPIRuntimeIgnoresUnknownHumanCapacity(t *testing.T) {
+	t.Setenv("HAI_EMERGENCY_STOP", "false")
+	t.Setenv("LLM_PROVIDERS_JSON", "[]")
+	t.Setenv("LLM_POLICY_JSON", "")
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "false")
+
+	llmService, err := llm.NewServiceFromEnv()
+	if err != nil {
+		t.Fatalf("NewServiceFromEnv: %v", err)
+	}
+	executor := &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}
+	provider := &operatingContextProviderStub{capacity: &frameworkregistry.CapacitySnapshot{
+		Status:      "unknown",
+		NeedsReview: true,
+		Constraints: []string{"no owner-confirmed capacity snapshot is available"},
+	}}
+	service := NewServiceWithDependencies(
+		&fakeMemoryService{},
+		llmService,
+		nil,
+		nil,
+		executor,
+		nil,
+		nil,
+		nil,
+		provider,
+	)
+
+	plan, err := service.Run(IntakeRequest{
+		OwnerIdentity:  "alice",
+		Request:        "Probe the local backend readiness endpoint and verify HTTP 200.",
+		ProjectKey:     "018-HAI",
+		AutomationID:   executor.result.AutomationID,
+		ExecuteAllowed: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if executor.calls != 1 || plan.CompletionStatus != "validated" || !plan.ValidationResult.Passed {
+		t.Fatalf("bounded automation was blocked by unrelated human capacity: calls=%d plan=%#v", executor.calls, plan)
+	}
+	if plan.RiskAssessment.ApprovalRequired || !plan.RiskAssessment.AllowedNow {
+		t.Fatalf("bounded automation acquired a human-capacity approval gate: %#v", plan.RiskAssessment)
+	}
+	if provider.capacityCalls != 1 {
+		t.Fatalf("operating capacity was not evaluated exactly once: %d", provider.capacityCalls)
+	}
+}
+
+func TestUnapprovedHighRiskRuntimeStillBlocksBeforeExecutor(t *testing.T) {
+	t.Setenv("HAI_EMERGENCY_STOP", "false")
+	executor := &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}
+	service := NewServiceWithEngines(
+		&fakeMemoryService{},
+		newTaskTestLLMService(t),
+		nil,
+		nil,
+		executor,
+	)
+
+	plan, err := service.Run(IntakeRequest{
+		OwnerIdentity:  "alice",
+		Request:        "Delete the external account and all retained records.",
+		AutomationID:   executor.result.AutomationID,
+		ExecuteAllowed: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !plan.RiskAssessment.ApprovalRequired || plan.RiskAssessment.AllowedNow {
+		t.Fatalf("high-risk action escaped the approval gate: %#v", plan.RiskAssessment)
+	}
+	if executor.calls != 0 {
+		t.Fatalf("high-risk executor calls = %d, want zero", executor.calls)
 	}
 }
 
@@ -217,6 +425,33 @@ func TestFrameworkOperatingContractBlocksUnavailableCapacityAndUnassignedTeamExe
 	}
 }
 
+func TestFrameworkOperatingContractBlocksUnassignedSpecialistInSingleEngineMode(t *testing.T) {
+	risk := applyFrameworkRisk(
+		RiskAssessment{AllowedNow: true},
+		&frameworkregistry.SelectionDecision{
+			MaximumAutonomyLevel: 8,
+			Capacity:             frameworkregistry.CapacitySnapshot{Status: "available"},
+			Coordination:         frameworkregistry.CoordinationPlan{Mode: "single_engine"},
+			Delegations: []frameworkregistry.DelegationContract{
+				{Delegatee: "hai_task_engine", State: "ready"},
+				{Delegatee: "health_admin_assistant", State: "requires_assignment"},
+			},
+			ActionAutonomy: []frameworkregistry.ActionAutonomyDecision{{
+				Action: "execute_reversible_low_risk_action", RequiredLevel: 8, EffectiveCeiling: 8, Allowed: true,
+			}},
+		},
+		IntakeAnalysis{NeedsTools: true},
+		IntakeRequest{ExecuteAllowed: true},
+	)
+
+	if risk.AllowedNow {
+		t.Fatalf("single-engine fallback silently bypassed an unassigned required specialist: %#v", risk)
+	}
+	if !strings.Contains(strings.Join(risk.Reasons, "\n"), "every required delegated participant") {
+		t.Fatalf("missing-specialist reason was not retained: %#v", risk.Reasons)
+	}
+}
+
 func TestRequiredFrameworkAutonomyDistinguishesApprovedAndAutomaticExecution(t *testing.T) {
 	intake := IntakeAnalysis{NeedsTools: true}
 	if got := requiredFrameworkAutonomy(intake, IntakeRequest{
@@ -277,6 +512,26 @@ func TestAnalyzeIntakeRequiresRuntimeForTechnicalImplementation(t *testing.T) {
 	}
 }
 
+func TestAnalyzeIntakeUsesExplicitAutomationForReadOnlyProbe(t *testing.T) {
+	analysis := analyzeIntake(IntakeRequest{
+		Request:      "Probe the local backend readiness endpoint and verify HTTP 200.",
+		AutomationID: uuid.NewString(),
+	})
+	if !analysis.NeedsTools || analysis.NeedsLocalExecution {
+		t.Fatalf("explicit API automation was not classified as a controlled non-local tool: %#v", analysis)
+	}
+	if analysis.TaskType != "automation" || analysis.RequiredReasoning != "low" {
+		t.Fatalf("read-only automation classification = %#v", analysis)
+	}
+	tools := routeTools(analysis, IntakeRequest{
+		Request:      "Probe the local backend readiness endpoint and verify HTTP 200.",
+		AutomationID: uuid.NewString(),
+	})
+	if !containsString(tools.SelectedTools, "automation.launch") {
+		t.Fatalf("controlled automation tool was not selected: %#v", tools)
+	}
+}
+
 func TestPlanRefreshesDueSourcesBeforeSourceSearch(t *testing.T) {
 	mem := &fakeMemoryService{}
 	src := &fakeTaskSourceService{}
@@ -284,26 +539,91 @@ func TestPlanRefreshesDueSourcesBeforeSourceSearch(t *testing.T) {
 	service := NewService(mem, llmService, src)
 
 	plan, err := service.Plan(IntakeRequest{
-		Request:    "Summarize local project files and source context",
-		ProjectKey: "018-HAI",
+		OwnerIdentity: "alice",
+		Request:       "Summarize local project files and source context",
+		ProjectKey:    "018-HAI",
 	})
 	if err != nil {
 		t.Fatalf("Plan: %v", err)
 	}
-	if src.refreshCalls != 1 {
-		t.Fatalf("refreshCalls = %d, want 1", src.refreshCalls)
+	if src.refreshCalls != 0 || len(src.ownerRefreshOwners) != 1 || src.ownerRefreshOwners[0] != "alice" {
+		t.Fatalf("source refresh = global %d / owner %#v, want one Alice-scoped refresh", src.refreshCalls, src.ownerRefreshOwners)
 	}
 	if src.searchCalls != 1 {
 		t.Fatalf("searchCalls = %d, want 1", src.searchCalls)
 	}
-	if len(src.order) < 2 || src.order[0] != "refresh" || src.order[1] != "search" {
-		t.Fatalf("order = %#v, want refresh before search", src.order)
+	if len(src.order) < 2 || src.order[0] != "owner-refresh" || src.order[1] != "search" {
+		t.Fatalf("order = %#v, want owner-scoped refresh before search", src.order)
 	}
 	if plan.ContextPlan.SourceRefresh == nil {
 		t.Fatalf("expected source refresh result in context plan")
 	}
 	if len(plan.ContextPlan.SourceContext) != 1 {
 		t.Fatalf("source context = %d, want 1", len(plan.ContextPlan.SourceContext))
+	}
+}
+
+func TestTaskSourceRefreshPropagatesTaskCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	src := &fakeTaskSourceService{refreshStarted: make(chan struct{})}
+	svc := NewService(&fakeMemoryService{}, newTaskTestLLMService(t), src).(*service)
+
+	type result struct {
+		run *source.ScheduledSyncRun
+		err error
+	}
+	finished := make(chan result, 1)
+	go func() {
+		run, _, err := svc.refreshSourcesForTask(
+			IntakeRequest{OwnerIdentity: "alice", Request: "Summarize the connected documents", executionContext: ctx},
+			IntakeAnalysis{NeedsDocuments: true},
+		)
+		finished <- result{run: run, err: err}
+	}()
+	select {
+	case <-src.refreshStarted:
+	case <-time.After(time.Second):
+		t.Fatal("context-aware source refresh did not start")
+	}
+	cancel()
+	select {
+	case got := <-finished:
+		if !errors.Is(got.err, context.Canceled) {
+			t.Fatalf("refresh sources error = %v, want context canceled", got.err)
+		}
+		if got.run != nil || len(src.ownerRefreshOwners) != 0 {
+			t.Fatalf("canceled refresh used detached path: run=%#v owners=%#v", got.run, src.ownerRefreshOwners)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("source refresh did not stop after task cancellation")
+	}
+}
+
+func TestPlanSkipsConnectedSourceSearchForBoundedReadOnlyAutomation(t *testing.T) {
+	mem := &fakeMemoryService{}
+	src := &fakeTaskSourceService{}
+	service := NewService(mem, newTaskTestLLMService(t), src)
+
+	plan, err := service.Plan(IntakeRequest{
+		OwnerIdentity: "alice",
+		Request:       "Probe the local backend readiness endpoint and verify HTTP 200.",
+		ProjectKey:    "018-HAI",
+		AutomationID:  uuid.NewString(),
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	if src.refreshCalls != 0 || len(src.ownerRefreshOwners) != 0 {
+		t.Fatalf("bounded automation refreshed connected sources: global=%d owner=%#v", src.refreshCalls, src.ownerRefreshOwners)
+	}
+	if src.searchCalls != 0 || len(src.searchRequests) != 0 {
+		t.Fatalf("bounded automation searched connected sources: calls=%d requests=%#v", src.searchCalls, src.searchRequests)
+	}
+	if len(plan.ContextPlan.SourceContext) != 0 {
+		t.Fatalf("bounded automation loaded source context: %#v", plan.ContextPlan.SourceContext)
+	}
+	if !strings.Contains(plan.ContextPlan.Explanation, "retrieval skipped") {
+		t.Fatalf("context explanation does not disclose the source skip: %q", plan.ContextPlan.Explanation)
 	}
 }
 
@@ -337,6 +657,25 @@ func TestPlanScopesMemoryAndSourceSearchToOwnerAndSkipsGlobalRefresh(t *testing.
 	}
 	if len(src.searchRequests) != 1 || src.searchRequests[0].OwnerIdentity != "alice" {
 		t.Fatalf("source search requests = %#v, want owner alice", src.searchRequests)
+	}
+}
+
+func TestPlanContextReachesMemoryRetrieval(t *testing.T) {
+	type contextKey struct{}
+	mem := &fakeMemoryService{}
+	service := NewService(mem, newTaskTestLLMService(t))
+	ctx := context.WithValue(context.Background(), contextKey{}, "request-bound")
+
+	_, err := service.(PlanningContextService).PlanContext(ctx, IntakeRequest{
+		OwnerIdentity: "alice",
+		Request:       "Prepare a bounded project status brief",
+		ProjectKey:    "018-HAI",
+	})
+	if err != nil {
+		t.Fatalf("PlanContext: %v", err)
+	}
+	if mem.lastRetrieveContext == nil || mem.lastRetrieveContext.Value(contextKey{}) != "request-bound" {
+		t.Fatal("task planning did not propagate its request context to memory retrieval")
 	}
 }
 
@@ -1210,6 +1549,7 @@ func (f *fakeFrameworkSelector) PlanSelection(request frameworkregistry.Selectio
 type fakeMemoryService struct {
 	ownerCreateOwners   []string
 	ownerRetrieveOwners []string
+	lastRetrieveContext context.Context
 	memories            map[uuid.UUID]models.ContextMemory
 }
 
@@ -1397,6 +1737,7 @@ type fakeTaskSourceService struct {
 	calendarOwner      string
 	calendarStart      time.Time
 	calendarEnd        time.Time
+	refreshStarted     chan struct{}
 }
 
 func (s *fakeTaskSourceService) CalendarBusyIntervalsForOwner(ownerIdentity string, start, end time.Time) ([]source.CalendarBusyInterval, error) {
@@ -1420,7 +1761,15 @@ func (s *fakeTaskSourceService) Sources(includeDisabled bool) ([]models.Connecte
 	return nil, nil
 }
 
-func (s *fakeTaskSourceService) SyncJobs(sourceID *uuid.UUID) ([]models.SourceSyncJob, error) {
+func (s *fakeTaskSourceService) SourcesForOwner(ownerIdentity string, includeDisabled bool) ([]models.ConnectedSource, error) {
+	return nil, nil
+}
+
+func (s *fakeTaskSourceService) SyncJobs(sourceID *uuid.UUID, limit int) ([]models.SourceSyncJob, error) {
+	return nil, nil
+}
+
+func (s *fakeTaskSourceService) SyncJobsForOwner(ownerIdentity string, limit int) ([]models.SourceSyncJob, error) {
 	return nil, nil
 }
 
@@ -1428,11 +1777,15 @@ func (s *fakeTaskSourceService) Sync(sourceID uuid.UUID, request source.ImportRe
 	return nil, nil
 }
 
+func (s *fakeTaskSourceService) SyncContext(context.Context, uuid.UUID, source.ImportRequest) (*source.SyncResult, error) {
+	return nil, nil
+}
+
 func (s *fakeTaskSourceService) StartGoogleOAuth(sourceID uuid.UUID) (string, error) {
 	return "", nil
 }
 
-func (s *fakeTaskSourceService) CompleteGoogleOAuth(ctx context.Context, code, state string) (uuid.UUID, error) {
+func (s *fakeTaskSourceService) CompleteGoogleOAuth(ctx context.Context, code, state, ownerIdentity string) (uuid.UUID, error) {
 	return uuid.Nil, nil
 }
 
@@ -1450,6 +1803,15 @@ func (s *fakeTaskSourceService) RunDueScheduledSyncsForOwner(now time.Time, owne
 	s.ownerRefreshOwners = append(s.ownerRefreshOwners, ownerIdentity)
 	s.order = append(s.order, "owner-refresh")
 	return &source.ScheduledSyncRun{Checked: 1, Due: 1, Completed: 1}, nil
+}
+
+func (s *fakeTaskSourceService) RunDueScheduledSyncsForOwnerContext(ctx context.Context, now time.Time, ownerIdentity string) (*source.ScheduledSyncRun, error) {
+	if s.refreshStarted == nil {
+		return s.RunDueScheduledSyncsForOwner(now, ownerIdentity)
+	}
+	close(s.refreshStarted)
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
 
 func (s *fakeTaskSourceService) Reindex(sourceID uuid.UUID) (*source.SyncResult, error) {
@@ -1495,6 +1857,14 @@ func (s *fakeTaskSourceService) ExtractionsForOwner(ownerIdentity, projectKey st
 	return nil, nil
 }
 
+func (s *fakeTaskSourceService) ExtractionsForOwnerLimit(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.SourceExtraction, error) {
+	return nil, nil
+}
+
+func (s *fakeTaskSourceService) ExtractionForOwner(ownerIdentity string, id uuid.UUID) (*models.SourceExtraction, error) {
+	return nil, gorm.ErrRecordNotFound
+}
+
 func (s *fakeTaskSourceService) UpdateExtraction(id uuid.UUID, request models.SourceExtraction) (*models.SourceExtraction, error) {
 	return nil, nil
 }
@@ -1507,7 +1877,11 @@ func (s *fakeTaskSourceService) DeleteExtraction(id uuid.UUID) error {
 	return nil
 }
 
-func (s *fakeTaskSourceService) AuditLogs(sourceID *uuid.UUID) ([]models.SourceAuditLog, error) {
+func (s *fakeTaskSourceService) AuditLogs(sourceID *uuid.UUID, limit int) ([]models.SourceAuditLog, error) {
+	return nil, nil
+}
+
+func (s *fakeTaskSourceService) AuditLogsForOwner(ownerIdentity string, limit int) ([]models.SourceAuditLog, error) {
 	return nil, nil
 }
 
@@ -1595,4 +1969,9 @@ func (f *fakeMemoryService) RetrieveForOwner(ownerIdentity string, request memor
 		f.memories[result.UsedContext[index].Memory.ID] = result.UsedContext[index].Memory
 	}
 	return result, nil
+}
+
+func (f *fakeMemoryService) RetrieveForOwnerContext(ctx context.Context, ownerIdentity string, request memory.RetrieveRequest) (*memory.RetrieveResult, error) {
+	f.lastRetrieveContext = ctx
+	return f.RetrieveForOwner(ownerIdentity, request)
 }

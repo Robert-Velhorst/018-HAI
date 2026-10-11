@@ -9,7 +9,7 @@ Compose stack. It is not an unrestricted desktop agent: planning, execution,
 verification, and approval are separate; external effects remain blocked until a
 reviewed runtime, policy, and evidence path are configured.
 
-> **Current repository state, evidence reviewed through 2026-08-09:** this repository
+> **Current repository state, evidence reviewed through 2026-08-14:** this repository
 > implements a governed local operating layer, including the Angular dashboard,
 > Go engines, IDP, Compose topology, pursuit/workflow routing, persistence, and
 > safety gates. On the development workspace used for this review, the rebuilt
@@ -17,8 +17,8 @@ reviewed runtime, policy, and evidence path are configured.
 > regression run served the shared shell and eight representative deep routes,
 > changed Basic to Advanced view state, and passed a narrow mobile check without
 > console errors, HTTP failures, redirects, framework overlays, or horizontal
-> overflow. The full backend and IDP suites, Angular production build, 379
-> frontend tests, 17 CI contract tests, Compose validation, and Postgres-backed
+> overflow. The full backend and IDP suites, Angular production build, 421
+> frontend tests, 34 CI workflow-contract tests, Compose validation, and Postgres-backed
 > critical-path checks have been exercised. The task review queue also passed
 > against the retained live PostgreSQL data. These observations are
 > local-environment evidence, not a claim that every Windows machine or account
@@ -154,17 +154,17 @@ Constitution, run an approval-gated task, or resolve a task review item.
 
 | Area | Implemented capability | Important operating boundary |
 | --- | --- | --- |
-| Operator UI | Angular onboarding, Quick Capture, Control Center, Command Dashboard, HAI OS, pursuits, workflow exceptions, sources, memory, LLM policy, grounded answers, task planning, and the Framework Registry. | A dashboard card is operational visibility, not proof that an external action occurred. |
+| Operator UI | Angular onboarding, Quick Capture, Control Center, Command Dashboard, Operational Brain, HAI OS, pursuits, workflow exceptions, sources, memory, LLM policy, grounded answers, task planning, and the Framework Registry. | A dashboard card or projected relationship is operational visibility, not proof that an external action occurred. |
 | Pursuits and workflows | Durable pursuits, workflow states, checklists, decisions, open loops, blockers, follow-ups, approvals, review queues, retries, task-attempt evidence, read-only VA delegation briefs, ambient opportunity routing, navigable related-pursuit links, owner-scoped internal reminder proposals, an append-only reminder preparation/decision ledger, and calendar-aware resource/dependency planning. | In the canonical routed stack, new source, assistant, or ambient context is matched to an active pursuit first; otherwise it becomes an approval-gated candidate, not executable work. Resource plans and reminder projections are advisory, owner-scoped, conservative, and non-executing. A reminder preparation request or approval is evidence only: it cannot create a Calendar event, schedule or send a notification or message, invoke a provider, execute a follow-up, or mutate the source checklist. No reminder worker consumes this ledger. |
-| Memory and knowledge | Compact memory, retrieval, deduplication, correction, export/deletion planning, provenance, encrypted user-authorized conversation capture, and source/extraction links. | Raw imported conversations are not automatically promoted to trusted facts. |
-| Source ingestion | Allowlisted local files; MBOX/EML, ICS, Trello JSON, WhatsApp exports, Odoo/HERP snapshots, normalized JSON feeds, synced document folders, read-only GitHub, Gmail, Google Drive, Google Contacts, Google Calendar, Trello, and ShareT sync. | Gmail and Trello have bounded live acceptance evidence but are unconfigured by default. ShareT has a bounded, paginated, read-only adapter with contract coverage; its live token activation remains operator-gated. Drive, Contacts, and Calendar have unit/contract coverage but still need real sandbox acceptance runs. Imported contacts remain review candidates. Meaningful events within 14 days may create source-backed preparation work; past events stay context-only. Overlaps within 30 days create stable review-gated conflict records, while moved or cancelled events retract stale work. No Calendar or ShareT write-back exists. WhatsApp and browser accounts remain export/local-folder paths. |
-| LLM routing | Local-first routing, seven-tier model policy, local/OpenAI-compatible endpoint probes, fallback logging, cached/repeated-prompt controls, and a EUR 0 paid default. | A configured endpoint is not live-proven until it passes a bounded probe and validated task. Paid generation remains disabled by default. |
-| Verification | Source-grounded answers, claim/evidence status, schema/deterministic validation, review routing, and verification-gated task completion. | Model confidence alone never authorizes a factual claim or consequential action. |
-| Controlled execution | Reviewed API, script, Docker, Hermes, Odysseus, and OpenClaw adapter surfaces with bounded output, workspace/host allowlists, audit records, verification, emergency stop, and an internal action-bound approval proof before mutating side effects. | Direct mutating HTTP launches cannot create the proof and fail closed. The approved task-review path issues a short-lived proof signed by a stable deployment key; PostgreSQL atomically records its one allowed consumption across restarts and backend instances. External runtimes remain disabled until explicitly configured and validated, and external side effects still require postcondition/idempotency evidence. |
+| Memory and knowledge | Compact memory, retrieval, deduplication, correction, export/deletion planning, provenance, encrypted user-authorized conversation capture, source/extraction links, and owner-scoped SQL-paginated library search/filtering. | Raw imported conversations are not automatically promoted to trusted facts. Production-scale latency still needs release-target measurement with a representative dataset. |
+| Source ingestion | Allowlisted local files; MBOX/EML, ICS, Trello JSON, WhatsApp exports, Odoo/HERP snapshots, normalized JSON feeds, synced document folders, read-only GitHub, Gmail, Google Drive, Google Contacts, Google Calendar, Trello, and ShareT sync. | Gmail and Trello have bounded live acceptance evidence but are unconfigured by default. ShareT has a bounded, paginated, read-only adapter with contract coverage; its live token activation remains operator-gated. Drive, Contacts, and Calendar have unit/contract coverage but still need real sandbox acceptance runs. HTTP handlers and durable workers propagate cancellation through remote reads and semantic indexing; canceled or failed runs retain and record the prior cursor for retry. Imported contacts remain review candidates. Meaningful events within 14 days may create source-backed preparation work; past events stay context-only. Overlaps within 30 days create stable review-gated conflict records, while moved or cancelled events retract stale work. No Calendar or ShareT write-back exists. WhatsApp and browser accounts remain export/local-folder paths. |
+| LLM routing | Local-first routing, seven-tier model policy, named configurable provider integrations only, local/OpenAI-compatible endpoint probes, fallback logging, cached/repeated-prompt controls, request-cancellable direct and interactive task generation, and a EUR 0 paid default. Synthetic tier-filler providers are rejected by regression tests. | A configured endpoint is not live-proven until it passes a bounded probe and validated task. Paid generation remains disabled by default. Canceled API calls are recorded as stopped with zero local token/cost accounting; remote-provider disconnect behavior remains a separate acceptance gate. |
+| Verification | Source-grounded answers, claim/evidence status, schema/deterministic validation, review routing, exact-owner authenticated history, and verification-gated task completion. | Model confidence alone never authorizes a factual claim or consequential action. Ownerless legacy verification rows are internal migration data and are not exposed to authenticated accounts. |
+| Controlled execution | Reviewed API, script, Docker, Hermes, Odysseus, and OpenClaw adapter surfaces with bounded output, workspace/host allowlists, audit records, verification, emergency stop, and an internal action-bound approval proof before mutating side effects. | Direct mutating HTTP launches cannot create the proof and fail closed. The approved task-review path issues a short-lived proof signed by a stable deployment key; PostgreSQL atomically records its one allowed consumption across restarts and backend instances. HTTP and Docker socket effects inherit request cancellation. Allowlisted scripts plus Hermes and OpenClaw CLI runs inherit request cancellation and terminate their process trees on Linux and Windows; Docker readiness probes use the same bounded process control. External runtimes remain disabled until explicitly configured and validated, and external side effects still require postcondition/idempotency evidence. |
 | Optional local runners | Disabled-by-default Compose profiles for aggregate security scans, no-tool planning drafts, selected-folder document extraction, and disposable patch proposals. | They publish no host ports and have private networks, read-only mounts, and resource limits. Configuration or container health is not live proof; each real snapshot, model, or document path still needs retained approval, audit, and verification evidence. |
 | Proactive planning | Ambient scans identify stale work, blockers, approvals, open loops, contradiction candidates, and delegation opportunities. Governance Control records owner `accept`, `dismiss`, bounded `snooze`, indefinite `suppress`, and `resume` feedback in an immutable owner-scoped ledger that changes later attention evaluation. | Ambient mode is suggestion-first and cannot bypass approval, verification, leases, audit, or emergency stop. Attention feedback has `canExecute:false`, grants no delivery or execution authority, and invokes no notification or external effect. |
-| Advisory ambient outcome monitor | Governance Control can bind an existing outcome indicator to one of three fixed read-only local collectors: `workflow_open_loop_count`, `workflow_verified_completion_count`, or `overdue_commitment_count`. A durable singleton sweep leases due targets, appends immutable source-digested observations and run receipts, composes them into the existing outcome-evaluation service, and may surface an owner-scoped proactivity inbox decision. | The monitor is `advisory_monitor_only`. It cannot execute or deliver work, notify anyone, write Calendar data, mutate a workflow, authorize a mandate, or mutate learning. It reads only canonical local ledgers and accepts no caller-supplied SQL, URL, script, expression, or arbitrary tool instruction. Live external-account correctness and target-machine acceptance remain separate gates. |
-| Operations | nginx gateway, IDP, Postgres, Redis, Kafka, health/readiness, support bundle, doctor/reconcile/migrate commands, versioned SQL migrations, a durable job runner (persisted retry + crash recovery), CI, Compose validation, and local smoke coverage. | **Source, workflow, and ambient** scheduling all run on the durable worker: each is a self-rescheduling singleton job with backoff retry and lease-based crash recovery, and each falls back to its in-process ticker (logging that it did) if the queue is unreachable. The workflow schedule may process ordinary workflow/open-loop work; it does not deliver or execute reminder activation records. No reminder worker is active. This is a single-node worker, not a distributed or HA platform. |
+| Advisory ambient outcome monitor | Governance Control can bind an existing outcome indicator to one of three fixed read-only local collectors: `workflow_open_loop_count`, `workflow_verified_completion_count`, or `overdue_commitment_count`. A durable singleton sweep leases due targets, appends immutable source-digested observations and run receipts, composes them into the existing outcome-evaluation service, and may surface an owner-scoped proactivity inbox decision. A mandatory disposable-PostgreSQL release lifecycle proves due collection, transient retry without recollection, pause/resume, active/expired lease recovery, owner isolation, exact replay, and whole-schema advisory-only effects with an explicit CI pass marker. A signed Windows gateway/UI pass also proves outcome/target creation, due collection, pinned handoff inspection, pause/resume, and expired-lease recovery. | The monitor is `advisory_monitor_only`. It cannot execute or deliver work, notify anyone, write Calendar data, mutate a workflow, authorize a mandate, or mutate learning. It reads only canonical local ledgers and accepts no caller-supplied SQL, URL, script, expression, or arbitrary tool instruction. Live external-account correctness, signed two-real-account isolation, and each distinct Windows release target remain separate gates. |
+| Operations | nginx gateway, IDP, Postgres, Redis, Kafka, health/readiness, support bundle, doctor/reconcile/migrate commands, versioned SQL migrations, a durable job runner (persisted retry + crash recovery), CI, Compose validation, local smoke coverage, and an opt-in bearer-protected Prometheus endpoint. | **Source, workflow, and ambient** scheduling all run on the durable worker: each is a self-rescheduling singleton job with backoff retry and lease-based crash recovery, and each falls back to its in-process ticker (logging that it did) if the queue is unreachable. Outcome-monitor metrics are bounded and tenant-free; scraping, retention, dashboards, and alerts remain operator-managed. The workflow schedule may process ordinary workflow/open-loop work; it does not deliver or execute reminder activation records. No reminder worker is active. This is a single-node worker, not a distributed or HA platform. |
 
 ### Readiness Terms
 
@@ -191,7 +191,9 @@ The guarded API surface is under
 - `GET /outcomes/:outcomeId/monitor/:targetId/observations` and `/runs` expose
   bounded immutable history;
 - `POST /monitors/run-due` performs a bounded advisory pass; and
-- `POST /monitors/recover` releases only expired leases.
+- `POST /monitors/recover` releases only expired collection and advisory
+  composition leases. It reports each recovered class separately, leaves active
+  work untouched, and grants no execution or delivery authority.
 
 The durable scheduler is configured with
 `OUTCOME_MONITOR_SCHEDULER_ENABLED`, `OUTCOME_MONITOR_SWEEP_SECONDS`,
@@ -200,6 +202,16 @@ The durable scheduler is configured with
 out-of-range values fall back to bounded defaults documented in
 `.env.example`. Disabling the scheduler does not remove the records or grant a
 different execution path.
+
+When the opt-in Prometheus endpoint is enabled, the same scheduler records
+`hai_outcome_monitor_sweep_duration_seconds`, bounded discovered scope gauges,
+completed/failed/interrupted/skipped sweep totals, recovered lease totals, and
+collection/composition claimed, completed, retrying, and failed item totals.
+These fixed labels contain no owner, workspace, target, source, prompt, record,
+or failure-detail value. The discovered-scope gauges are capped by
+`OUTCOME_MONITOR_SCOPE_LIMIT`; they are operational pressure signals, not exact
+global backlog counts. Prometheus scraping, retention, dashboards, and alert
+thresholds remain operator-managed.
 
 Required acceptance before relying on this path includes exact replay without
 duplicate observations or inbox items, two-owner isolation, active-lease
@@ -228,11 +240,11 @@ either observability server.
 | Status | Current position |
 | --- | --- |
 | Canonical product | This Go/Angular/Postgres/Docker Compose repository. The separate Manus React/tRPC/MySQL implementation is reference-only. |
-| Local platform | The current Windows Compose workspace has retained end-to-end acceptance evidence for password login, read-only local source registration and sync, explicit pursuit creation, governed high-risk workflow intake, durable approval, and one bounded worker pass. A 2026-08-09 regression pass also covered the rebuilt shared shell, eight deep routes, Basic/Advanced disclosure, mobile overflow, and a clean browser console. A separate fresh-clone Windows 11 acceptance run is still required. |
+| Local platform | The current Windows host has retained clean-clone and end-to-end Compose acceptance evidence for generated first-run secrets, password login, read-only local source registration and sync, explicit pursuit creation, governed high-risk workflow intake, durable approval, and one bounded worker pass. A 2026-08-09 regression pass also covered the rebuilt shared shell, eight deep routes, Basic/Advanced disclosure, mobile overflow, and a clean browser console. Repeat the clean-clone run on every distinct release target before trusting that installation. |
 | Core operating flow | Pursuits, workflows, task attempts, approvals, verification, audit, compact memory, source extraction, and ambient proposals are implemented and persisted. |
 | Intake safety | New source, assistant, and ambient input is matched to an active pursuit or becomes a non-executable candidate. An approval-capable user must accept a candidate before its first governed workflow is created. |
 | External accounts | Local/export ingestion and read-only GitHub sync are available. Gmail and Trello have bounded live acceptance evidence. Google Drive, Google Contacts, and primary Google Calendar have separate read-only OAuth adapters with bounded backfills and native change/sync cursors, but no retained live sandbox acceptance evidence yet. Contact candidates require review. Calendar event times feed deterministic due dates, bounded preparation proposals, and overlap review; moving or cancelling source events retracts stale Calendar-derived work without deleting obligations. These paths cannot write back. WhatsApp and browser connectors are not live. |
-| Models and runtimes | Local/free-first routing and guarded adapter surfaces exist. No provider or runtime is live-proven until its scoped probe, approved task, audit, and verification evidence exist. |
+| Models and runtimes | Local/free-first routing and guarded adapter surfaces exist. The opt-in private Ollama profile has a retained Windows acceptance run for `qwen2.5:0.5b`: live probe, local-tier route, bounded generation, provider-reported token usage, EUR 0 cost, redacted persisted history, and fully ready health all passed. Other providers and runtimes remain unproven until their own scoped evidence exists. |
 | Production readiness | Not claimed. Clean-machine deployment and bounded acceptance for each newly enabled provider or mutable runtime remain release gates. |
 
 ### Verification Snapshot
@@ -242,10 +254,10 @@ target-machine checks before relying on a path for real work.
 
 | Surface | Current evidence | Still required before operational trust |
 | --- | --- | --- |
-| Local Compose and gateway | The local services are running; `/`, `/control-center`, `/healthz`, and `/readyz` are served through nginx. Both health probes are intentionally public; protected `/api/v1/*` engine routes still require a signed session. Angular deep links return the application shell. | Fresh-clone Windows 11 run with a newly created `.env.local`. |
+| Local Compose and gateway | A separate clean checkout on this Windows host generated a new `.env.local`, built the canonical stack from source, reached healthy state with empty volumes, signed in the first-run owner, and completed a bounded governed workflow. The current retained stack serves `/`, `/control-center`, `/healthz`, and `/readyz` through nginx; protected `/api/v1/*` engine routes require a signed session. | Repeat the clean-clone acceptance chain on every distinct Windows 11 release target and retain its evidence. |
 | Browser session | The unauthenticated session check returns HTTP 200 with `authenticated:false` and no-store caching; Angular routes a browser without a refreshable session to `/login`. A signed-in Playwright acceptance run completed source intake, pursuit creation, exact runtime selection, durable approval, read-only execution, terminal verification, and creation of an immutable completion attestation. The 2026-08-09 regression run reported no console or HTTP failures. | Repeat the acceptance run on each release target and add retained coverage for any new mutable or external action. |
-| Go and Angular code | The full backend and IDP Go suites, frontend production build, 379 headless Angular tests, 17 executable CI contract tests, migration-chain checks, live workflow-repository PostgreSQL tests, and signed-in browser acceptance passes are green. The production initial bundle is about 836 kB raw; five existing page-style budget warnings remain below the configured 18 kB error ceiling. | Keep these gates green and reduce the remaining style-budget warnings before a production release. The browser exercise proves the local governed flows only; it does not prove Calendar write, message delivery, paid-provider invocation, or mutable external side effects. |
-| Sources and LLMs | Local/export ingestion, provider probes, GitHub sync, and bounded Gmail/Trello acceptance evidence exist. | A scoped local-model task and any newly configured account need their own retained audit and verification evidence. |
+| Go and Angular code | The full backend and IDP Go suites, frontend production build, 421 headless Angular tests, 55 executable CI/smoke/gateway contract tests, migration-chain checks, live memory/workflow PostgreSQL tests, and signed-in browser acceptance passes are green. The production initial bundle is about 626 kB raw and currently builds without page-style budget warnings. | Keep these gates green and retain the configured style and initial-bundle budgets. The browser exercise proves the local governed flows only; it does not prove Calendar write, message delivery, paid-provider invocation, or mutable external side effects. |
+| Sources and LLMs | Local/export ingestion, provider probes, GitHub sync, bounded Gmail/Trello evidence, and one scoped zero-cost Ollama generation acceptance exist. Generation history stores usage/audit metadata without prompt or output content. | Every newly configured account, model, or provider still needs its own retained probe, bounded task, audit, and verification evidence. |
 | Runtimes and external effects | Script, Docker, Hermes, Odysseus, and OpenClaw adapters have bounded, approval-aware interfaces. The local registry-to-read-only-API path is acceptance-tested with deterministic receipt verification. | Explicit upstream installation, narrow allowlists, a reviewed dry run, and a verified approved task for every mutable or external adapter. |
 
 ## Current Safe Operator Flows
@@ -481,37 +493,200 @@ Postgres + Redis + Kafka
 ```
 
 The local deployment targets Windows 11 with Docker Desktop. The control-plane
-backend, IDP, and nginx configuration manager use Go 1.25.12 and share an
+backend, IDP, and nginx configuration manager use Go 1.25.13 and share an
 executable CI alignment contract. They use Gin, Gorm, Postgres, and
 Sarama/Kafka where applicable. The frontend uses Angular 22.1.1,
 ng-zorro-antd 22.0.1, TypeScript 6.0.3, and the supported esbuild/Vite
 application builder.
 Versioned SQL migrations are the schema source of truth and `DB_AUTOMIGRATE`
-defaults to `false`. Startup applies pre-phase migrations, optionally runs
-development-only AutoMigrate when explicitly enabled, then applies
-post-phase migrations. See
+defaults to `false`. Compose runs a one-shot `backend-migrate` container with
+the schema-owner identity before starting the long-lived backend under a
+separate DML-only role with `DB_RUN_MIGRATIONS=false`. The migrator applies
+pre-phase migrations, optionally runs development-only AutoMigrate when
+explicitly enabled, then applies post-phase migrations. See
 [migration safety](docs/migrations.md).
 
 ## Quick Start
 
 ### Prerequisites
 
-- Windows 11 with Docker Desktop, or another Docker Compose-capable environment.
+- Windows 11 with current Docker Desktop, or another environment with Docker
+  Compose 2.20 or newer (required for the canonical `include` entrypoint).
 - Git.
 - Node.js 22.22.3 with npm 10.9.8 for frontend development outside Docker.
   npm and `package-lock.json` are the sole frontend package-manager contract.
-- Go 1.25.12 for control-plane backend, IDP, and nginx-config-manager
+- Go 1.25.13 for control-plane backend, IDP, and nginx-config-manager
   development outside Docker. Their modules, Docker builders, and CI toolchains
   are checked for version alignment.
 
 ### Start the local stack
 
 ```powershell
-Copy-Item .env.example .env.local
-# Edit .env.local: set a unique FIRST_RUN_ADMIN_PASSWORD and BACKEND_API_SHARED_KEY.
-docker compose --env-file .env.local -f docker-compose.local.yml config --quiet
-docker compose --env-file .env.local -f docker-compose.local.yml up --build -d
-docker compose --env-file .env.local -f docker-compose.local.yml ps
+powershell -ExecutionPolicy Bypass -File .\scripts\initialize-windows.ps1
+docker compose config --quiet
+docker compose up --build -d
+docker compose ps
+```
+
+### Windows 11 installer
+
+For a product-style local install, build the Inno Setup executable and use its
+Start menu shortcuts instead of manually running Compose. The installer keeps
+the actual source-built stack loopback-only, stores first-run secrets outside
+the application directory, and refuses to start a second competing HAI stack.
+See [Windows installer](docs/windows-installer.md).
+
+The Windows initializer prompts for the first-run owner credentials and writes
+an ignored `.env.local` with independent cryptographic secrets, separate random
+database-owner and runtime-role passwords, a loopback-only gateway, production
+mode, local-login bypass disabled, and a token-authenticated local A2A planning
+connector bound to the first-run owner. The connector can return planning drafts
+but cannot execute, approve, mutate, or disclose source context; its public
+ngrok mode remains disabled. The initializer never prints the password or
+generated secrets. Do not start production from an unchanged copy of `.env.example`: its
+placeholders are deliberately rejected by readiness and IDP startup.
+The default `docker-compose.yml` is a thin entrypoint to the same canonical
+source-built topology in `docker-compose.local.yml`; no legacy external HAI
+images or alternate broker topology remain reachable through Compose.
+
+The backend image is a static Go binary on a digest-pinned Alpine runtime. It
+runs as UID/GID `10001`, uses a read-only root filesystem, drops all Linux
+capabilities, and receives only the documented writable media, workspace, and
+temporary mounts. Compose defaults cap it at 512 MiB, 1.5 CPUs, 256 processes,
+and 128 MiB of temporary storage. Advanced operators can tune the five
+`BACKEND_MEMORY_LIMIT`, `BACKEND_MEMORY_RESERVATION`, `BACKEND_CPU_LIMIT`,
+`BACKEND_PIDS_LIMIT`, and `BACKEND_TMPFS_SIZE` values in `.env.local`; lowering
+them requires a representative migration, ingestion, and workflow load test.
+Database diagnostics default to parameterized error-only output through
+`DB_LOG_LEVEL=error`. Operators may temporarily select `silent`, `warn`, or
+`info`, but query values remain parameterized at every level so restricted
+source, memory, approval, and life-ontology payloads are not copied into Docker
+logs. Verbose levels should be limited to a bounded diagnostic window.
+The reference build reduced the Docker-reported backend image size from
+71,322,131 to 24,462,696 bytes (65.7%) and the binary from 82,091,894 to
+61,526,200 bytes (25.1%).
+
+The identity service follows the same runtime boundary: a static Go binary on
+a digest-pinned Alpine image, UID/GID `10001`, a read-only root filesystem,
+no Linux capabilities, and `no-new-privileges`. Compose bounds it to 256 MiB,
+1 CPU, 128 processes, and a 32 MiB temporary filesystem by default; operators
+can tune `IDP_MEMORY_LIMIT`, `IDP_MEMORY_RESERVATION`, `IDP_CPU_LIMIT`,
+`IDP_PIDS_LIMIT`, and `IDP_TMPFS_SIZE` after representative authentication and
+account-recovery testing. Backend and gateway startup now wait for the IDP's
+HTTP `/healthz` check instead of treating an open TCP socket as readiness. The
+reference build reduced the Docker-reported IDP image size from 53,495,733 to
+15,684,852 bytes (70.7%) and the binary from 45,153,741 to 34,312,376 bytes
+(24.0%).
+
+The Nginx config manager is also a static, digest-pinned Alpine service under
+UID/GID `10001`, a read-only root filesystem, and a writable route-config mount
+only. Its default envelope is 128 MiB, 0.5 CPU, 64 processes, and 16 MiB of
+temporary storage, configurable through the `NGINX_CONFIG_MANAGER_*` variables.
+Its HTTP health check reports ready only after the Kafka partition consumer is
+active; closed message channels now fail the process for restart, and generated
+route files are flushed and atomically renamed into place. The reference build
+reduced its Docker-reported image size from 37,546,819 to 8,437,021 bytes
+(77.5%) and its binary from 14,649,290 to 11,493,560 bytes (21.5%).
+
+The Angular frontend runs behind a digest-pinned Nginx runtime as UID/GID
+`101` with one worker, a read-only root filesystem, and no Linux capabilities.
+It listens only on the internal port 8080 and exposes a dedicated `/healthz`
+route; both gateway configurations use that same upstream. Compose defaults to
+64 MiB, 0.25 CPU, 32 processes, and a 16 MiB temporary filesystem. The pinned
+runtime image remains effectively unchanged at 6.86 MB, while the reference
+idle Windows run fell from 17 to 3 processes and from 15.02 MiB to 2.44 MiB of
+memory (83.8%). The current production Angular build remains lazy-loaded at
+625.73 kB initial raw output and approximately 82.64 kB estimated transfer
+size.
+
+High-volume control-plane reads are bounded at the API boundary. Task history
+defaults to 10 records, rejects limits above 50, and returns the compact fields
+needed by the history UI rather than each plan's complete context, routing,
+execution, and verification graph. Framework selection history also defaults
+to 10 records, while workflow provenance resolves its recorded selection
+through the exact owner-scoped `/framework-registry/selections/:id` route. On
+the retained Windows stack this reduced the task-history response from
+11,220,099 to 4,959 bytes (99.96%) and the recent framework-history response
+from 1,300,711 to 297,648 bytes (77.12%); one exact selection was 29,067 bytes.
+These are point-in-time data-dependent measurements, not fixed response-size
+guarantees.
+
+The governance catalog follows the same progressive-loading contract. Its
+summary response includes pack identity, status, sensitivity, locality, and
+method count; opening a pack loads the existing exact effective-pack route with
+the complete safeguards and advisory playbook. The retained 24-pack catalog
+measured 6,822 bytes in summary form versus 925,600 bytes in full form (99.26%
+less); the inspected 65-method Work and venture detail was 78,440 bytes.
+
+Pursuit dashboards also use an explicit summary view while exact pursuit detail
+continues to carry success criteria, stop conditions, dependencies, resource
+limits, and evidence. On the retained local dataset, the summary response was
+67,748 bytes versus 100,289 bytes for the backward-compatible full response
+(32.45% less). Command Dashboard startup now issues that request once rather
+than twice.
+
+Connected Sources requests only the eight extraction and audit records, plus
+the six sync jobs, that its progressive evidence panels render. Extraction,
+sync-job, and audit-history endpoints default to the newest 100 records and
+accept an explicit limit from 1 through 500. Ownership scope and the row limit
+are both applied by PostgreSQL, so a request neither loads another account's
+history nor performs an unbounded in-process filter. Extraction mutations also
+resolve the exact owner-scoped record by ID instead of loading the owner's full
+history. With 387 retained owner-visible audit records, the eight-record page
+request measured 1,795 bytes instead of 100,447 bytes (98.21% less).
+
+The gateway keeps login, registration, recovery, local-preview, logout, and
+user-management mutations in the bounded identity rate-limit zone. Read-only
+session and capability checks use exact GET-only locations so rapid navigation
+cannot exhaust the login bucket and incorrectly redirect an authenticated
+operator to the login page.
+
+Governance Control keeps pending controlled-learning proposals in its Basic
+decision data, but no longer downloads the complete outcome evidence history
+until the Advanced controlled-learning section is opened. The retained browser
+measurement observed zero outcome-history requests at Basic startup and loaded
+the 239,701-byte history only after that explicit disclosure.
+
+The public gateway uses the same digest-pinned slim Nginx base as UID/GID
+`101`, with one worker, a read-only root filesystem, and no Linux capabilities.
+Only its internal port 8080 is exposed to the Compose network; the configurable
+host port remains loopback-bound by default. Compose limits the gateway to
+64 MiB, 0.25 CPU, 32 processes, and a 32 MiB temporary filesystem. The ngrok
+profile reaches that private port and still passes through the gateway's
+authentication, rate limiting, and owner-scoped backend controls.
+
+The local event bus retains the Kafka wire protocol and stable `kafka:9092`
+address, but now uses one digest-pinned Redpanda Community Edition broker. This
+removes the Java/KRaft idle cost without changing the Sarama clients, durable
+backend outbox, config-manager consumer inbox, health model, or application
+topics. The broker is limited to one shard, 256 MiB, 0.5 CPU, and 96 processes.
+Development mode, write caching, and unsafe fsync bypass are disabled so an
+acknowledged outbox event crosses a real durability boundary. Its health check
+performs a real metadata request through `rpk`, while the
+config manager's active Kafka-protocol consumer remains the end-to-end delivery
+readiness signal. A local Windows benchmark reached ready state and created a
+topic at about 58.7 MiB and 3 processes with disk flushes retained, compared
+with about 364 MiB and 64
+processes for the replaced idle Java broker on the same host. These are
+point-in-time local measurements, not throughput guarantees.
+
+Redpanda data uses `018-hai-redpanda-data`. The former
+`018-hai-kafka-kraft-data`, `018-hai-kafka-data`,
+`018-hai-zookeeper-data`, and `018-hai-zookeeper-log` volumes are never mounted
+or deleted by this cutover; an operator must verify that no required event or
+offset exists only in a legacy volume before removing it. Never use
+`docker compose down -v` during that review. Redpanda Community Edition is
+source-available under BSL 1.1, not an MIT/Apache dependency; HAI uses only its
+free Kafka-compatible local broker features and does not offer it as a
+third-party streaming or queuing service. `generic-auto` remains in the opt-in
+`compatibility` profile. `backend-migrate` is an additional one-shot
+container: it exits before steady state and does not increase that footprint.
+
+Start the retired internal compatibility target only for an explicit legacy
+test. It is no longer exposed through the public gateway:
+
+```powershell
+docker compose --profile compatibility up -d generic-auto
 ```
 
 Open [http://localhost](http://localhost).
@@ -534,12 +709,23 @@ If the Postgres data volume already exists, changing first-run values does not
 rewrite the existing account. Do not commit `.env.local`, Docker state,
 database directories, uploaded material, frontend build output, or secrets.
 
+`HAI_LEGACY_DATA_OWNER_IDENTITY` names the one authenticated owner who may read
+ownerless Pursuit, Source, Memory, conversation-archive, semantic-search, and
+Verification records created before identity scoping existed. Other operators
+remain exact-owner isolated, and the migration owner still cannot mutate or
+delete ownerless records through authenticated APIs. Keep it unset to fail
+closed, or set it to the first-run owner only until a reviewed data migration
+has assigned every legacy record.
+
 ### Optional Google sign-in and password recovery
 
 The local password login works without external accounts. The login page only
 offers Google sign-in or email recovery after their private credentials are set
 in `.env.local`; it will not route an operator to a broken OAuth flow or claim a
-reset code was delivered when no mail sender exists.
+reset code was delivered when no mail sender exists. Password replacement and
+single-use token consumption occur in one conditional PostgreSQL update. A
+failed mail delivery clears only the token from that exact attempt, so it cannot
+erase a newer concurrent recovery request.
 
 For a dedicated Google OAuth **web** client, register this redirect URI for the
 local gateway:
@@ -556,10 +742,16 @@ The Gmail, Drive, Contacts, and Calendar connected-source callback is separate. 
 requests only its own read-only scope. Also set independent
 `HAI_OAUTH_TOKEN_ENCRYPTION_KEY` and `HAI_OAUTH_STATE_SIGNING_KEY` values; HAI
 does not fall back to JWT or backend secrets. Google redirects the browser, so a
-public tunnel is not required for this local callback.
+public tunnel is not required for this local callback. The callback requires
+the initiating HAI session and a short-lived, owner-bound, single-use state.
+Only its SHA-256 digest is stored; a restarted consent flow invalidates the
+earlier attempt, and success, denial, replay, expiry, or source revocation fail
+closed without persisting the browser state secret.
 
 For reset emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_REQUIRE_STARTTLS=true` in `.env.local`.
+`SMTP_TIMEOUT_SECONDS` defaults to 10 seconds and bounds the complete SMTP
+delivery attempt; an abandoned HTTP request cancels the in-flight delivery.
 Use a dedicated mailbox or provider app password over STARTTLS (typically port
 587), never a primary mailbox password. Recreate the IDP container after
 changing either integration:
@@ -584,13 +776,40 @@ Expected behavior:
 - `/` serves the Angular shell.
 - `/healthz` and `/readyz` reach the backend through nginx without a session.
   They are intentionally public liveness/readiness probes and return backend
-  health JSON (`/readyz` uses HTTP `200` or `503` according to readiness).
+  health JSON (`/readyz` uses HTTP `200` or `503` and exposes aggregate counts,
+  not internal dependency details). Both responses are marked `no-store`.
 - Protected engine routes such as `/api/v1/llm/policy` return `401` without a
   signed session, not anonymous application data.
+- Signed-in operators can inspect the full live readiness report at
+  `/api/v1/system/readiness` or on the System Status page.
 
-If port 80 is already in use, change the nginx port mapping in
-`docker-compose.local.yml` from `\"80:80\"` to, for example, `\"8088:80\"`, then
-open `http://localhost:8088`.
+If port 80 is already in use, set `GATEWAY_HOST_PORT=8088` in `.env.local`,
+recreate `gateway`, and open `http://localhost:8088`.
+
+### Fast Windows development loop
+
+After the full stack is running, rebuild and replace only the Angular frontend:
+
+```powershell
+.\scripts\rebuild-frontend.ps1 -EnvFile .\.env.local
+```
+
+The script uses Compose `--no-deps`, waits for the frontend health check, and
+verifies that the backend container identity did not change. Use the normal
+Compose command when backend, IDP, database, gateway, or environment settings
+changed; this shortcut is intentionally frontend-only.
+
+Measure HAI's current Docker footprint without counting other projects running
+in Docker Desktop:
+
+```powershell
+.\scripts\measure-hai-resources.ps1
+```
+
+The report selects running containers by the
+`com.docker.compose.project=018-hai` label and prints per-service plus aggregate
+CPU and memory. Pass `-AsJson` for machine-readable output or `-ProjectName`
+when using a deliberate non-default Compose project name.
 
 For the target-machine acceptance sequence, use
 [fresh-clone dry run](docs/fresh-clone-dryrun.md). For diagnosis, use
@@ -605,6 +824,32 @@ startup when local login bypass is enabled, cookies are not secure, secrets are
 placeholders, the gateway is not loopback-bound, or Google OAuth callbacks do
 not match the fixed ngrok origin. The tunnel reaches only nginx on the private
 Docker network and publishes no database, backend, IDP, or inspector port.
+Before reporting success, the launcher verifies the real public HTTPS origin,
+anonymous session isolation, frontend shell, HSTS, and the configured A2A
+exposure state; a failed probe stops the tunnel.
+
+When the ngrok profile has an authtoken but the account's fixed endpoint is
+unknown, discover it without exposing HAI or disturbing another ngrok agent:
+
+```powershell
+$publicUrl = .\scripts\discover-ngrok-windows.ps1 -InspectionPort 4045
+```
+
+The helper starts a short-lived isolated agent against an unused local port,
+validates the assigned HTTPS hostname, then stops only that exact process. It
+fails if its inspection port is occupied or the assigned endpoint is already
+online. Do not use ngrok pooling to bypass that conflict: reserve a separate
+HAI domain so requests cannot be distributed across unrelated applications.
+
+The optional A2A connector remains a planning-only integration surface. It is
+local by default. An ngrok edge policy returns 404 for its Agent Card and task
+path unless public A2A is explicitly enabled. To expose that bounded endpoint
+through the same fixed ngrok origin, explicitly enable its public mode,
+configure its separate token and owner, and set its URL to
+`${HAI_NGROK_URL}/api/v1/a2a`. Validate the local
+chain with `scripts/smoke-a2a-bridge.ps1`; after starting a real reviewed tunnel,
+use `scripts/smoke-a2a-bridge.ps1 -Public`. Neither path grants execution,
+approval, source, memory, provider, or runtime authority.
 
 See [governed ngrok cloud access](docs/ngrok-cloud-access.md) for token ACL,
 configuration, validation, start, stop, and recovery instructions.
@@ -645,6 +890,7 @@ HAI does not create automatic memory from them and has no LARO write path.
 | Route | Purpose |
 | --- | --- |
 | `/control-center` | Primary operational overview and bounded maintenance actions. |
+| `/operational-brain` | Owner-scoped map of work, knowledge, sources, memory, agents, and inherited agent constraints. |
 | `/command-dashboard` | Robert-only decisions, open loops, source-backed context, memory-derived work, and unified approval actions for pursuits and linked workflows. |
 | `/pursuits` | Long-running objectives with workflow, source, memory, verification, blocker, approval, activity, and related-pursuit links. |
 | `/workflow-engine` | Work queue, approvals, quality gates, interruptions, retries, follow-ups, and read-only internal reminder proposals. |
@@ -700,6 +946,29 @@ catalog entries cover Qwen, DeepSeek, Llama, Mistral/Mixtral, Gemma, Phi, and
 other configured provider models. Provider status must be read as configuration
 and probe history, not as a live-service guarantee.
 
+HAI also includes an opt-in, private Ollama profile. It exposes no host port,
+loads one model at a time, permits one parallel request, and defaults to a 2 GB
+memory / 2 CPU ceiling. Configure the exact reviewed tag in an ignored local
+environment file, then start and verify it:
+
+```powershell
+# In .env.local:
+# OLLAMA_BASE_URL=http://ollama-local:11434
+# OLLAMA_MODEL_IDS=qwen2.5:0.5b
+# LLM_REQUIRE_RECENT_LIVE_PROBE=true
+
+docker compose --env-file .env.local -f docker-compose.local.yml `
+  --profile local-model up -d ollama-local backend
+docker compose --env-file .env.local -f docker-compose.local.yml `
+  --profile local-model exec ollama-local ollama pull qwen2.5:0.5b
+.\scripts\smoke-ollama-provider.ps1 -EnvFile .\.env.local
+```
+
+The smoke performs a real authenticated probe, route, bounded generation, token
+and EUR 0 accounting check, redacted-history check, and readiness check. Model
+output remains an unvalidated draft; this acceptance proves the operational
+provider path, not factual correctness.
+
 ### Agent runtimes
 
 Hermes, Odysseus, and OpenClaw are optional controlled adapters. HAI can inspect
@@ -723,17 +992,17 @@ normal access and allowlist policy.
 
 ```powershell
 # Backend (use Docker when Go is not installed locally)
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.12 go test ./...
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.12 go vet ./...
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.12 go build ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13@sha256:14e75143c833c7398ea3a5e4c673aeaae35f40e781e6b060e2f97b72c475c975 go test ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13@sha256:14e75143c833c7398ea3a5e4c673aeaae35f40e781e6b060e2f97b72c475c975 go vet ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.25.13@sha256:14e75143c833c7398ea3a5e4c673aeaae35f40e781e6b060e2f97b72c475c975 go build ./...
 
-# Identity service (Go 1.25.12)
+# Identity service (Go 1.25.13)
 Set-Location idp
 go vet ./...
 go test ./...
 go build ./...
 
-# Nginx configuration service (Go 1.25.12)
+# Nginx configuration service (Go 1.25.13)
 Set-Location ..\nginx-config-manager
 go vet ./...
 go test ./...
@@ -748,6 +1017,9 @@ npm.cmd run test -- --watch=false --browsers=ChromeHeadlessNoSandbox
 # Compose contract
 Set-Location ..
 docker compose --env-file .env.example -f docker-compose.local.yml config --quiet
+$env:HAI_ENV_FILE = '.env.example'
+docker compose -f docker-compose.yml config --quiet
+Remove-Item Env:HAI_ENV_FILE
 ```
 
 With the matching local Go toolchains installed, run the backend commands from
@@ -782,7 +1054,8 @@ browser-extension/       Explicit user-authorized conversation capture
 scripts/                 Smoke and operational verification scripts
 docs/                    Architecture, runbooks, evidence, audits, and roadmap
 .github/workflows/       CI pipeline
-docker-compose.local.yml Windows/local-first Compose topology
+docker-compose.yml       Default entrypoint to the canonical local topology
+docker-compose.local.yml Canonical Windows/local-first Compose topology
 .env.example             Environment template; copy to untracked .env.local
 generic-auto/            Legacy service, not the canonical HAI engine
 gate/                    Legacy gateway/config area; local Compose uses nginx-config/
@@ -799,6 +1072,7 @@ gate/                    Legacy gateway/config area; local Compose uses nginx-co
 - [Verification and anti-hallucination policy](docs/anti-hallucination-verification.md)
 - [Source-grounded answer engine](docs/source-grounded-answer-engine.md)
 - [Automation Control Center](docs/automation-control-center-blueprint.md)
+- [Operational Brain](docs/OPERATIONAL_BRAIN.md)
 - [Release process](docs/release-process.md)
 - [Privacy impact assessment](docs/privacy-impact-assessment.md)
 

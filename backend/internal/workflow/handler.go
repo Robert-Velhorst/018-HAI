@@ -1,7 +1,9 @@
 package workflow
 
 import (
+	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -328,7 +330,7 @@ func (h *Handler) ReminderDeliveryHistory(c *gin.Context) {
 
 func (h *Handler) RunDueReminderDeliveries(c *gin.Context) {
 	var request RunDueRequest
-	if c.Request.ContentLength > 0 {
+	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&request); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -536,9 +538,14 @@ func (h *Handler) respondScopedWorkflow(c *gin.Context, id uuid.UUID, status int
 
 func (h *Handler) RunDue(c *gin.Context) {
 	var request RunDueRequest
-	_ = c.ShouldBindJSON(&request)
-	result, err := h.service.RunDueForOwner(verifiedWorkflowOwner(c), request)
+	if !bindOptionalWorkflowRunRequest(c, &request, "invalid workflow run request") {
+		return
+	}
+	result, err := RunDueForOwnerWithContext(h.service, c.Request.Context(), verifiedWorkflowOwner(c), request)
 	if err != nil {
+		if requestContextEnded(err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowRunFailedMessage})
 		return
 	}
@@ -553,8 +560,11 @@ func (h *Handler) RunOne(c *gin.Context) {
 	if !h.ensureWorkflowMutable(c, id) {
 		return
 	}
-	result, err := h.service.RunOneForOwner(verifiedWorkflowOwner(c), id)
+	result, err := RunOneForOwnerWithContext(h.service, c.Request.Context(), verifiedWorkflowOwner(c), id)
 	if err != nil {
+		if requestContextEnded(err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowRunFailedMessage})
 		return
 	}
@@ -563,9 +573,14 @@ func (h *Handler) RunOne(c *gin.Context) {
 
 func (h *Handler) RecoverStaleClaims(c *gin.Context) {
 	var request RunDueRequest
-	_ = c.ShouldBindJSON(&request)
-	result, err := h.service.RecoverStaleClaimsForOwner(verifiedWorkflowOwner(c), request)
+	if !bindOptionalWorkflowRunRequest(c, &request, "invalid workflow recovery request") {
+		return
+	}
+	result, err := RecoverStaleClaimsForOwnerWithContext(h.service, c.Request.Context(), verifiedWorkflowOwner(c), request)
 	if err != nil {
+		if requestContextEnded(err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowRecoveryFailedMessage})
 		return
 	}
@@ -574,13 +589,33 @@ func (h *Handler) RecoverStaleClaims(c *gin.Context) {
 
 func (h *Handler) RunDueOpenLoops(c *gin.Context) {
 	var request RunDueRequest
-	_ = c.ShouldBindJSON(&request)
-	result, err := h.service.RunDueOpenLoopsForOwner(verifiedWorkflowOwner(c), request)
+	if !bindOptionalWorkflowRunRequest(c, &request, "invalid workflow follow-up request") {
+		return
+	}
+	result, err := RunDueOpenLoopsForOwnerWithContext(h.service, c.Request.Context(), verifiedWorkflowOwner(c), request)
 	if err != nil {
+		if requestContextEnded(err) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowOpenLoopRunFailedMessage})
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+func requestContextEnded(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func bindOptionalWorkflowRunRequest(c *gin.Context, request *RunDueRequest, message string) bool {
+	if c.Request.ContentLength == 0 {
+		return true
+	}
+	if err := c.ShouldBindJSON(request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": message})
+		return false
+	}
+	return true
 }
 
 func (h *Handler) Overview(c *gin.Context) {

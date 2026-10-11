@@ -1,9 +1,13 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -11,6 +15,11 @@ const (
 	kafkaBrokers  string = "KAFKA_BROKERS"
 	kafkaTopic    string = "KAFKA_TOPIC"
 	reloadEnabled string = "NGINX_RELOAD_ENABLED"
+	healthPort    string = "NGINX_CONFIG_MANAGER_HEALTH_PORT"
+	consumerGroup string = "NGINX_CONFIG_MANAGER_GROUP_ID"
+	inboxDir      string = "NGINX_CONFIG_MANAGER_INBOX_DIR"
+	maxAttempts   string = "NGINX_CONFIG_MANAGER_MAX_EVENT_ATTEMPTS"
+	retention     string = "NGINX_CONFIG_MANAGER_INBOX_RETENTION_HOURS"
 )
 
 type Configuration struct {
@@ -18,23 +27,40 @@ type Configuration struct {
 	Brokers       []string
 	Topic         string
 	ReloadEnabled bool
+	HealthPort    string
+	ConsumerGroup string
+	InboxDir      string
+	MaxAttempts   int
+	Retention     time.Duration
 }
 
 var AppConfig Configuration
 
 func Init() {
-	kafkaBrokersList := getStringListFromEnv(kafkaBrokers, "kafka1:9092,kafka2:9093,kafka3:9094")
+	configuredDir := getEnvString(configDir, "/app/sites-enabled")
+	kafkaBrokersList := getStringListFromEnv(kafkaBrokers, "")
 	AppConfig = Configuration{
-		ConfigDir:     getEnvString(configDir, "/app/sites-enabled"),
+		ConfigDir:     configuredDir,
 		Brokers:       kafkaBrokersList,
 		Topic:         getEnvString(kafkaTopic, "automation-events"),
 		ReloadEnabled: getEnvBool(reloadEnabled, false),
+		HealthPort:    getEnvString(healthPort, "8081"),
+		ConsumerGroup: getEnvString(consumerGroup, "hai-nginx-config-manager-v1"),
+		InboxDir:      getEnvString(inboxDir, filepath.Join(configuredDir, ".hai-event-inbox")),
+		MaxAttempts:   getEnvInt(maxAttempts, 5, 1, 100),
+		Retention:     time.Duration(getEnvInt(retention, 720, 1, 24*365)) * time.Hour,
 	}
 }
 
 func getStringListFromEnv(envVarName, defaultValue string) []string {
 	value := getEnvString(envVarName, defaultValue)
-	return strings.Split(value, ",")
+	result := make([]string, 0)
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func getEnvString(key string, defaultValue string) string {
@@ -60,4 +86,37 @@ func getEnvBool(key string, defaultValue bool) bool {
 		log.Printf("Invalid boolean for %s: %s. Using default: %v", key, value, defaultValue)
 		return defaultValue
 	}
+}
+
+func getEnvInt(key string, defaultValue, minimum, maximum int) int {
+	value, exists := os.LookupEnv(key)
+	if !exists || strings.TrimSpace(value) == "" {
+		log.Printf("Using default value for %s: %d", key, defaultValue)
+		return defaultValue
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < minimum || parsed > maximum {
+		log.Printf("Invalid integer for %s: %s. Using default: %d", key, value, defaultValue)
+		return defaultValue
+	}
+	return parsed
+}
+
+func (c Configuration) Validate() error {
+	if len(c.Brokers) == 0 {
+		return fmt.Errorf("KAFKA_BROKERS must contain at least one broker")
+	}
+	if strings.TrimSpace(c.Topic) == "" {
+		return fmt.Errorf("KAFKA_TOPIC is required")
+	}
+	if strings.TrimSpace(c.ConsumerGroup) == "" {
+		return fmt.Errorf("NGINX_CONFIG_MANAGER_GROUP_ID is required")
+	}
+	if strings.TrimSpace(c.InboxDir) == "" {
+		return fmt.Errorf("NGINX_CONFIG_MANAGER_INBOX_DIR is required")
+	}
+	if c.MaxAttempts < 1 || c.Retention <= 0 {
+		return fmt.Errorf("inbox retry and retention settings must be positive")
+	}
+	return nil
 }

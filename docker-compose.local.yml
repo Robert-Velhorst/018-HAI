@@ -1,11 +1,38 @@
+x-hai-service-defaults: &hai-service-defaults
+  logging:
+    driver: local
+    options:
+      max-size: ${HAI_LOG_MAX_SIZE:-10m}
+      max-file: ${HAI_LOG_MAX_FILES:-3}
+      compress: "true"
+
+x-backend-build: &backend-build
+  context: ./backend
+  dockerfile: Dockerfile
+
 services:
   idp:
+    <<: *hai-service-defaults
     build:
       context: ./idp
       dockerfile: Dockerfile
     container_name: 018-hai-idp
     hostname: idp
     restart: unless-stopped
+    stop_grace_period: 20s
+    user: "10001:10001"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${IDP_TMPFS_SIZE:-32m}
+    mem_limit: ${IDP_MEMORY_LIMIT:-256m}
+    mem_reservation: ${IDP_MEMORY_RESERVATION:-48m}
+    cpus: ${IDP_CPU_LIMIT:-1.0}
+    pids_limit: ${IDP_PIDS_LIMIT:-128}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       postgres-idp:
         condition: service_healthy
@@ -14,6 +41,8 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      GIN_MODE: release
+      RUN_MODE: ${RUN_MODE:-production}
       BLOCKING_TIME_EXPONENTIATION_BASIS: ${BLOCKING_TIME_EXPONENTIATION_BASIS}
       MAX_LOGIN_ATTEMPTS_BEFORE_BLOCK: ${MAX_LOGIN_ATTEMPTS_BEFORE_BLOCK}
       MIN_TIME_BETWEEN_ATTEMPTS_IN_SECONDS: ${MIN_TIME_BETWEEN_ATTEMPTS_IN_SECONDS}
@@ -34,6 +63,10 @@ services:
       DB_NAME: ${IDP_DB_NAME}
       DB_HOST: ${IDP_DB_HOST}
       DB_PORT: ${DB_PORT}
+      DB_MAX_OPEN_CONNS: ${IDP_DB_MAX_OPEN_CONNS:-8}
+      DB_MAX_IDLE_CONNS: ${IDP_DB_MAX_IDLE_CONNS:-2}
+      DB_CONN_MAX_IDLE_TIME: ${IDP_DB_CONN_MAX_IDLE_TIME:-5m}
+      DB_CONN_MAX_LIFETIME: ${IDP_DB_CONN_MAX_LIFETIME:-30m}
       WEB_SERVER_PORT: ${WEB_SERVER_PORT}
       BASE_URL: ${BASE_URL}
       FIRST_RUN_ADMIN_EMAIL: ${FIRST_RUN_ADMIN_EMAIL}
@@ -58,9 +91,11 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_REQUIRE_STARTTLS: ${SMTP_REQUIRE_STARTTLS:-true}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
     healthcheck:
-      test: ["CMD-SHELL", "bash -ec '</dev/tcp/127.0.0.1/${WEB_SERVER_PORT}'"]
-      interval: 10s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${WEB_SERVER_PORT}/healthz"]
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
       retries: 12
       start_period: 30s
@@ -68,32 +103,98 @@ services:
       - service-hub
       - idp-network
 
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: 018-hai-backend
-    hostname: backend
-    restart: unless-stopped
+  backend-migrate:
+    <<: *hai-service-defaults
+    image: 018-hai-backend:local
+    container_name: 018-hai-backend-migrate
+    restart: "no"
+    user: "10001:10001"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    mem_limit: ${BACKEND_MIGRATION_MEMORY_LIMIT:-256m}
+    mem_reservation: ${BACKEND_MIGRATION_MEMORY_RESERVATION:-32m}
+    cpus: ${BACKEND_MIGRATION_CPU_LIMIT:-0.75}
+    pids_limit: ${BACKEND_MIGRATION_PIDS_LIMIT:-128}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       postgres-automation:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
-      idp:
-        condition: service_started
     environment:
-      SERVER_PORT: ${SERVER_PORT}
-      BASE_URL: ${BASE_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      BACKEND_API_SHARED_KEY: ${BACKEND_API_SHARED_KEY}
-      HAI_MEMORY_ENCRYPTION_KEY: ${HAI_MEMORY_ENCRYPTION_KEY}
-      HAI_APPROVAL_PROOF_SIGNING_KEY: ${HAI_APPROVAL_PROOF_SIGNING_KEY}
+      GIN_MODE: release
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       DB_NAME: ${AUTOMATION_DB_NAME}
       DB_HOST: ${AUTOMATION_DB_HOST}
       DB_PORT: ${DB_PORT}
+      DB_RUNTIME_USER: ${DB_RUNTIME_USER:-hai_runtime}
+      DB_RUNTIME_PASSWORD: ${DB_RUNTIME_PASSWORD:-change-this-runtime-database-password}
+      DB_AUTOMIGRATE: "false"
+      DB_LOG_LEVEL: ${DB_LOG_LEVEL:-error}
+      HAI_SEMANTIC_RETRIEVAL_ENABLED: ${HAI_SEMANTIC_RETRIEVAL_ENABLED}
+      IMAGE_SAVE_DIR: /tmp/images
+    command: ["migrate", "up"]
+    networks:
+      - automation-hub-network
+
+  backend:
+    <<: *hai-service-defaults
+    image: 018-hai-backend:local
+    build: *backend-build
+    container_name: 018-hai-backend
+    hostname: backend
+    restart: unless-stopped
+    stop_grace_period: 20s
+    user: "10001:10001"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${BACKEND_TMPFS_SIZE:-128m}
+    mem_limit: ${BACKEND_MEMORY_LIMIT:-512m}
+    mem_reservation: ${BACKEND_MEMORY_RESERVATION:-96m}
+    cpus: ${BACKEND_CPU_LIMIT:-1.5}
+    pids_limit: ${BACKEND_PIDS_LIMIT:-256}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    depends_on:
+      backend-migrate:
+        condition: service_completed_successfully
+      postgres-automation:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      idp:
+        condition: service_healthy
+    environment:
+      GIN_MODE: release
+      SERVER_PORT: ${SERVER_PORT}
+      BASE_URL: ${BASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      BACKEND_API_SHARED_KEY: ${BACKEND_API_SHARED_KEY}
+      HAI_LEGACY_DATA_OWNER_IDENTITY: ${HAI_LEGACY_DATA_OWNER_IDENTITY:-noodzakelijkonline@gmail.com}
+      HAI_MEMORY_ENCRYPTION_KEY: ${HAI_MEMORY_ENCRYPTION_KEY}
+      HAI_APPROVAL_PROOF_SIGNING_KEY: ${HAI_APPROVAL_PROOF_SIGNING_KEY}
+      # Mutable control state is deliberately isolated from the read-only
+      # application filesystem. This volume stores only emergency-stop and
+      # autonomy-mode state; PostgreSQL remains the approval/audit ledger.
+      HAI_PHASE2_STATE_DIR: /var/lib/hai/phase2-state
+      DB_USER: ${DB_RUNTIME_USER:-hai_runtime}
+      DB_PASSWORD: ${DB_RUNTIME_PASSWORD:-change-this-runtime-database-password}
+      DB_NAME: ${AUTOMATION_DB_NAME}
+      DB_HOST: ${AUTOMATION_DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_RUN_MIGRATIONS: "false"
+      DB_MAX_OPEN_CONNS: ${BACKEND_DB_MAX_OPEN_CONNS:-16}
+      DB_MAX_IDLE_CONNS: ${BACKEND_DB_MAX_IDLE_CONNS:-4}
+      DB_CONN_MAX_IDLE_TIME: ${BACKEND_DB_CONN_MAX_IDLE_TIME:-5m}
+      DB_CONN_MAX_LIFETIME: ${BACKEND_DB_CONN_MAX_LIFETIME:-30m}
+      DB_LOG_LEVEL: ${DB_LOG_LEVEL:-error}
       IMAGE_MAX_SIZE_IN_MB: ${IMAGE_MAX_SIZE_IN_MB}
       IMAGE_EXTENSIONS: ${IMAGE_EXTENSIONS}
       IMAGE_SAVE_DIR: ${IMAGE_SAVE_DIR}
@@ -221,6 +322,9 @@ services:
       HAI_A2A_BRIDGE_TOKEN: ${HAI_A2A_BRIDGE_TOKEN:-}
       HAI_A2A_BRIDGE_OWNER_ID: ${HAI_A2A_BRIDGE_OWNER_ID:-}
       HAI_A2A_BRIDGE_URL: ${HAI_A2A_BRIDGE_URL:-http://127.0.0.1/api/v1/a2a}
+      HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED: ${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED:-false}
+      HAI_NGROK_URL: ${HAI_NGROK_URL:-}
+      LOCAL_LOGIN_BYPASS_ENABLED: ${LOCAL_LOGIN_BYPASS_ENABLED:-false}
       HAI_LM_EVAL_ENABLED: ${HAI_LM_EVAL_ENABLED:-false}
       HAI_LM_EVAL_BASE_URL: ${HAI_LM_EVAL_BASE_URL:-http://lm-eval-runner:8080}
       HAI_LM_EVAL_TIMEOUT_SECONDS: ${HAI_LM_EVAL_TIMEOUT_SECONDS:-130}
@@ -291,6 +395,8 @@ services:
       HAI_OPENLIT_ENABLED: ${HAI_OPENLIT_ENABLED:-false}
       HAI_OPENLIT_OTLP_ENDPOINT: ${HAI_OPENLIT_OTLP_ENDPOINT:-}
       HAI_OPENLIT_TIMEOUT_SECONDS: ${HAI_OPENLIT_TIMEOUT_SECONDS:-8}
+      OPERATIONAL_GRAPH_MAX_NODES: ${OPERATIONAL_GRAPH_MAX_NODES:-1000}
+      OPERATIONAL_GRAPH_CACHE_SECONDS: ${OPERATIONAL_GRAPH_CACHE_SECONDS:-5}
       HAI_WASI_ENABLED: ${HAI_WASI_ENABLED}
       HAI_WASI_RUNNER_URL: ${HAI_WASI_RUNNER_URL}
       HAI_WASI_RUNNER_TOKEN: ${HAI_WASI_RUNNER_TOKEN:-}
@@ -406,6 +512,7 @@ services:
       FREE_CLOUD_OPENAI_BASE_URL: ${FREE_CLOUD_OPENAI_BASE_URL}
       FREE_CLOUD_API_KEY: ${FREE_CLOUD_API_KEY}
       LLM_GENERATION_TIMEOUT_SECONDS: ${LLM_GENERATION_TIMEOUT_SECONDS}
+      LLM_MAX_OUTPUT_TOKENS: ${LLM_MAX_OUTPUT_TOKENS:-2048}
       HAI_MCP_PREFLIGHT_ENABLED: ${HAI_MCP_PREFLIGHT_ENABLED}
       HAI_MCP_PREFLIGHT_SERVERS: ${HAI_MCP_PREFLIGHT_SERVERS}
       HAI_MCP_PREFLIGHT_TIMEOUT_SECONDS: ${HAI_MCP_PREFLIGHT_TIMEOUT_SECONDS}
@@ -468,18 +575,20 @@ services:
       - ./automation-scripts:/root/automation-scripts:ro
       - ./connected-sources:/root/connected-sources:ro
       - ./agent-workspaces:/root/agent-workspaces
+      - phase2-control-state:/var/lib/hai/phase2-state
       - ${CLOUDQUERY_SUMMARY_HOST_DIR:-./cloudquery-summary}:/cloudquery-summary:ro
     # /readyz, not a TCP probe: an open socket only proves the process is
     # listening. curl -f fails on the 503 that /readyz returns when a critical
     # dependency is unreachable, so `docker ps` stops reporting a backend with a
     # dead database as healthy.
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${SERVER_PORT}/readyz > /dev/null"]
-      interval: 10s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${SERVER_PORT}/readyz"]
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
-      # 3 strikes (~30s) before unhealthy: long enough to ride out a dependency
-      # blip, short enough that a real outage is reflected quickly. start_period
-      # still covers the slower first boot while migrations run.
+      # Three consecutive misses (~90s) prevent a brief local dependency stall
+      # from flapping the stack while still surfacing sustained outages.
+      # start_period covers the slower first boot while migrations run.
       retries: 3
       start_period: 40s
     networks:
@@ -501,18 +610,33 @@ services:
       - coding-runners-internal
 
   frontend:
+    <<: *hai-service-defaults
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: 018-hai-frontend
     hostname: frontend
     restart: unless-stopped
+    user: "101:101"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${FRONTEND_TMPFS_SIZE:-16m}
+    mem_limit: ${FRONTEND_MEMORY_LIMIT:-64m}
+    mem_reservation: ${FRONTEND_MEMORY_RESERVATION:-8m}
+    cpus: ${FRONTEND_CPU_LIMIT:-0.25}
+    pids_limit: ${FRONTEND_PIDS_LIMIT:-32}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
       retries: 12
       start_period: 20s
@@ -520,6 +644,7 @@ services:
       - service-hub
 
   browser-verifier:
+    <<: *hai-service-defaults
     build:
       context: ./services/browser-verifier
       dockerfile: Dockerfile
@@ -536,7 +661,8 @@ services:
         - CMD-SHELL
         - >-
           node -e 'fetch("http://127.0.0.1:8080/healthz").then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))'
-      interval: 10s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
       retries: 6
       start_period: 15s
@@ -547,6 +673,7 @@ services:
   # ./security-snapshots. They cannot inspect the repository, Docker socket,
   # connected sources, or host filesystem unless content is copied there.
   gitleaks-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/gitleaks-runner
     profiles: ["security-scanning"]
@@ -574,6 +701,7 @@ services:
     networks: [security-runners-internal]
 
   gosec-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/gosec-runner
     profiles: ["security-scanning"]
@@ -601,6 +729,7 @@ services:
     networks: [security-runners-internal]
 
   syft-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/syft-runner
     profiles: ["security-scanning"]
@@ -628,6 +757,7 @@ services:
     networks: [security-runners-internal]
 
   grype-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/grype-runner
     profiles: ["security-scanning"]
@@ -657,6 +787,7 @@ services:
     networks: [security-runners-internal]
 
   trivy-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/trivy-runner
     profiles: ["security-scanning"]
@@ -687,6 +818,7 @@ services:
   # publishes no host port. Model tags are pulled by HAI's dedicated mini-SWE
   # maintenance gate before use; image upgrades remain an operator action.
   ollama-miniswe:
+    <<: *hai-service-defaults
     image: ${HAI_RUNNER_OLLAMA_IMAGE:-ollama/ollama:0.11.10}
     profiles: ["patch-proposals"]
     restart: unless-stopped
@@ -708,7 +840,40 @@ services:
       start_period: 20s
     networks: [coding-runners-internal]
 
+  # Optional zero-cost local inference for HAI's canonical LLM router. The
+  # service is internal-only and remains absent from the default stack. HAI
+  # must still configure one exact OLLAMA_MODEL_IDS allowlist and complete a
+  # live provider probe before routing any task here.
+  ollama-local:
+    <<: *hai-service-defaults
+    image: ${HAI_OLLAMA_IMAGE:-ollama/ollama:0.32.11@sha256:e790300fb6494a09b0c493954b1aa39c560bb900043a8a3b77f38a42a160bfc2}
+    profiles: ["local-model"]
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: ${HAI_OLLAMA_KEEP_ALIVE:-5m}
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+    expose: ["11434"]
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=256m"]
+    volumes:
+      - ollama-local-data:/root/.ollama
+    mem_limit: ${HAI_OLLAMA_MEMORY_LIMIT:-2g}
+    cpus: ${HAI_OLLAMA_CPU_LIMIT:-2.0}
+    pids_limit: 256
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 30s
+    networks: [service-hub]
+
   agent-framework-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/agent-framework-runner
     profiles: ["agent-framework-planning"]
@@ -736,6 +901,7 @@ services:
     networks: [agent-runners-internal]
 
   crewai-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/crewai-runner
     profiles: ["crewai-planning"]
@@ -763,6 +929,7 @@ services:
     networks: [agent-runners-internal]
 
   docling-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/docling-runner
     profiles: ["local-document-extraction"]
@@ -792,6 +959,7 @@ services:
     networks: [document-runners-internal]
 
   miniswe-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/miniswe-runner
     profiles: ["patch-proposals"]
@@ -823,31 +991,47 @@ services:
     networks: [coding-runners-internal]
 
   nginx:
-    image: nginx:alpine
+    <<: *hai-service-defaults
+    image: nginx:stable-alpine-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c
     container_name: gateway
     hostname: gateway
     restart: unless-stopped
+    user: "101:101"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${GATEWAY_TMPFS_SIZE:-32m}
+    mem_limit: ${GATEWAY_MEMORY_LIMIT:-64m}
+    mem_reservation: ${GATEWAY_MEMORY_RESERVATION:-16m}
+    cpus: ${GATEWAY_CPU_LIMIT:-0.25}
+    pids_limit: ${GATEWAY_PIDS_LIMIT:-32}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       BACKEND_API_SHARED_KEY: ${BACKEND_API_SHARED_KEY}
+    entrypoint: ["/bin/sh", "-c"]
     command:
-      - /bin/sh
-      - -c
-      - envsubst '$$BACKEND_API_SHARED_KEY' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'
+      - |
+        envsubst '$$BACKEND_API_SHARED_KEY' < /etc/nginx/nginx.conf.template > /tmp/nginx.conf
+        exec nginx -c /tmp/nginx.conf -g 'daemon off;'
     depends_on:
       frontend:
         condition: service_healthy
       backend:
-        condition: service_started
+        condition: service_healthy
       idp:
-        condition: service_started
+        condition: service_healthy
     ports:
-      - "${GATEWAY_HOST_BIND:-127.0.0.1}:${GATEWAY_HOST_PORT:-8088}:80"
+      - "${GATEWAY_HOST_BIND:-127.0.0.1}:${GATEWAY_HOST_PORT:-8088}:8080"
     volumes:
       - ./nginx-config/nginx.conf.template:/etc/nginx/nginx.conf.template:ro
       - ./nginx-config/sites-enabled:/etc/nginx/sites-enabled:ro
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
       retries: 12
       start_period: 20s
@@ -859,6 +1043,7 @@ services:
   # insecure cookies, placeholder secrets, and mismatched OAuth callbacks.
   # The inspector/API is reachable only inside this container.
   ngrok:
+    <<: *hai-service-defaults
     image: ngrok/ngrok:alpine@sha256:85bea0e9c697bdad142b09cd9704420812cc44b5ae417ec4c7ac74d0a49d72f2
     profiles: ["cloud-tunnel"]
     container_name: 018-hai-ngrok
@@ -873,10 +1058,18 @@ services:
       LOCAL_LOGIN_BYPASS_ENABLED: ${LOCAL_LOGIN_BYPASS_ENABLED:-false}
       IDP_COOKIE_SECURE: ${IDP_COOKIE_SECURE:-false}
       GATEWAY_HOST_BIND: ${GATEWAY_HOST_BIND:-127.0.0.1}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-0}
+      HAI_A2A_BRIDGE_ENABLED: ${HAI_A2A_BRIDGE_ENABLED:-false}
+      HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED: ${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED:-false}
+      HAI_A2A_BRIDGE_TOKEN: ${HAI_A2A_BRIDGE_TOKEN:-}
+      HAI_A2A_BRIDGE_OWNER_ID: ${HAI_A2A_BRIDGE_OWNER_ID:-}
+      HAI_A2A_BRIDGE_URL: ${HAI_A2A_BRIDGE_URL:-http://127.0.0.1/api/v1/a2a}
     entrypoint: ["/bin/sh", "/etc/hai/start-ngrok.sh"]
     volumes:
       - ./deploy/ngrok/ngrok.yml:/etc/ngrok.yml:ro
       - ./deploy/ngrok/start-ngrok.sh:/etc/hai/start-ngrok.sh:ro
+      - ./deploy/ngrok/public-policy.yml:/etc/hai/public-policy.yml:ro
+      - ./deploy/ngrok/private-a2a-policy.yml:/etc/hai/private-a2a-policy.yml:ro
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
@@ -889,7 +1082,8 @@ services:
     pids_limit: 64
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:4040/api/endpoints | grep -q '\"url\"'"]
-      interval: 10s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
       retries: 12
       start_period: 15s
@@ -897,28 +1091,55 @@ services:
       - service-hub
 
   nginxconfigmanager:
+    <<: *hai-service-defaults
     build:
       context: ./nginx-config-manager
       dockerfile: Dockerfile
     container_name: 018-hai-nginx-config-manager
     restart: unless-stopped
+    user: "10001:10001"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=${NGINX_CONFIG_MANAGER_TMPFS_SIZE:-16m}
+    mem_limit: ${NGINX_CONFIG_MANAGER_MEMORY_LIMIT:-128m}
+    mem_reservation: ${NGINX_CONFIG_MANAGER_MEMORY_RESERVATION:-16m}
+    cpus: ${NGINX_CONFIG_MANAGER_CPU_LIMIT:-0.5}
+    pids_limit: ${NGINX_CONFIG_MANAGER_PIDS_LIMIT:-64}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     environment:
       BROKERS_ADDR: ${BROKERS_ADDR}
       KAFKA_BROKERS: ${KAFKA_BROKERS}
       KAFKA_TOPIC: ${KAFKA_TOPIC}
       CONFIG_DIR: ${CONFIG_DIR}
       NGINX_RELOAD_ENABLED: ${NGINX_RELOAD_ENABLED}
+      NGINX_CONFIG_MANAGER_HEALTH_PORT: ${NGINX_CONFIG_MANAGER_HEALTH_PORT:-8081}
+      NGINX_CONFIG_MANAGER_GROUP_ID: ${NGINX_CONFIG_MANAGER_GROUP_ID:-hai-nginx-config-manager-v1}
+      NGINX_CONFIG_MANAGER_INBOX_DIR: ${NGINX_CONFIG_MANAGER_INBOX_DIR:-/app/sites-enabled/.hai-event-inbox}
+      NGINX_CONFIG_MANAGER_MAX_EVENT_ATTEMPTS: ${NGINX_CONFIG_MANAGER_MAX_EVENT_ATTEMPTS:-5}
+      NGINX_CONFIG_MANAGER_INBOX_RETENTION_HOURS: ${NGINX_CONFIG_MANAGER_INBOX_RETENTION_HOURS:-720}
     depends_on:
       kafka:
         condition: service_healthy
       nginx:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - ./nginx-config/sites-enabled:/app/sites-enabled
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${NGINX_CONFIG_MANAGER_HEALTH_PORT:-8081}/healthz"]
+      interval: 30s
+      start_interval: 2s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     networks:
       - service-hub
 
   ortools-solver:
+    <<: *hai-service-defaults
     build:
       context: ./services/ortools-solver
     profiles: ["optimization"]
@@ -944,6 +1165,7 @@ services:
       - service-hub
 
   evidently-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/evidently-runner
     profiles: ["evaluation"]
@@ -967,6 +1189,7 @@ services:
       - evidently-internal
 
   guardrails-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/guardrails-runner
     profiles: ["validation"]
@@ -990,6 +1213,7 @@ services:
       - guardrails-internal
 
   pydantic-ai-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/pydantic-ai-runner
     profiles: ["typed-planning"]
@@ -1024,6 +1248,7 @@ services:
   # exposes exactly two read-only tools and is bound to the host loopback only.
   # It does not make HAI's normal API or any write/action endpoint available.
   fastmcp-bridge:
+    <<: *hai-service-defaults
     build:
       context: ./services/fastmcp-bridge
     profiles: ["mcp-bridge"]
@@ -1051,6 +1276,7 @@ services:
       - fastmcp-internal
 
   lm-eval-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/lm-eval-runner
     profiles: ["model-evaluation"]
@@ -1079,6 +1305,7 @@ services:
       - lm-eval-internal
 
   promptfoo-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/promptfoo-runner
     profiles: ["safety-evaluation"]
@@ -1109,6 +1336,7 @@ services:
       - promptfoo-internal
 
   deepteam-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/deepteam-runner
     profiles: ["deepteam-evaluation"]
@@ -1148,6 +1376,7 @@ services:
       - deepteam-internal
 
   deepeval-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/deepeval-runner
     profiles: ["deepeval-evaluation"]
@@ -1190,6 +1419,7 @@ services:
       - deepeval-internal
 
   garak-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/garak-runner
     profiles: ["garak-evaluation"]
@@ -1229,6 +1459,7 @@ services:
       - garak-internal
 
   whispercpp-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/whispercpp-runner
     profiles: ["local-transcription"]
@@ -1263,6 +1494,7 @@ services:
       - whispercpp-internal
 
   wasi-runner:
+    <<: *hai-service-defaults
     build:
       context: ./services/wasi-runner
     profiles: ["wasi"]
@@ -1292,6 +1524,7 @@ services:
   # from HAI's primary Postgres instance and is enabled only with
   # `--profile durability`. No Temporal port is exposed to the host.
   temporal-postgres:
+    <<: *hai-service-defaults
     image: postgres:17-alpine
     profiles: ["durability"]
     restart: unless-stopped
@@ -1303,7 +1536,8 @@ services:
       - temporal-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
-      interval: 10s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
       retries: 12
       start_period: 10s
@@ -1311,6 +1545,7 @@ services:
       - service-hub
 
   temporal-schema:
+    <<: *hai-service-defaults
     image: temporalio/admin-tools:1.31.2
     profiles: ["durability"]
     restart: "no"
@@ -1334,6 +1569,7 @@ services:
       - service-hub
 
   temporal:
+    <<: *hai-service-defaults
     image: temporalio/server:1.31.2
     profiles: ["durability"]
     restart: unless-stopped
@@ -1354,7 +1590,8 @@ services:
       - ./services/temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "7233"]
-      interval: 10s
+      interval: 30s
+      start_interval: 2s
       timeout: 5s
       retries: 12
       start_period: 30s
@@ -1366,6 +1603,7 @@ services:
       - service-hub
 
   temporal-namespace:
+    <<: *hai-service-defaults
     image: temporalio/admin-tools:1.31.2
     profiles: ["durability"]
     restart: "no"
@@ -1386,10 +1624,31 @@ services:
       - service-hub
 
   postgres-idp:
-    image: postgres:17-alpine
+    <<: *hai-service-defaults
+    image: postgres:17-alpine@sha256:dc17045ccfd343b49600570ea734b9c4991cf1c3f3302e67df51e3b402dd55c4
     container_name: 018-hai-postgres-idp
     hostname: postgres-idp
     restart: unless-stopped
+    init: true
+    mem_limit: ${POSTGRES_IDP_MEMORY_LIMIT:-128m}
+    mem_reservation: ${POSTGRES_IDP_MEMORY_RESERVATION:-24m}
+    cpus: ${POSTGRES_IDP_CPU_LIMIT:-0.5}
+    pids_limit: ${POSTGRES_IDP_PIDS_LIMIT:-64}
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    command:
+      - postgres
+      - -c
+      - shared_buffers=16MB
+      - -c
+      - max_connections=16
+      - -c
+      - work_mem=1MB
+      - -c
+      - maintenance_work_mem=8MB
+      - -c
+      - effective_cache_size=64MB
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -1401,7 +1660,7 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${IDP_DB_NAME}"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 12
       start_period: 10s
@@ -1409,12 +1668,33 @@ services:
       - idp-network
 
   postgres-automation:
+    <<: *hai-service-defaults
     # Pinned upstream pgvector Postgres 17 image. Existing data stays in the
     # named volume; take a backup before changing a live database image.
-    image: pgvector/pgvector:0.8.5-pg17-bookworm
+    image: pgvector/pgvector:0.8.5-pg17-bookworm@sha256:d2ef61f42ef767baa5a1475393303cc235bcd92febd9d7014eddb48b41f3bad0
     container_name: 018-hai-postgres-automation
     hostname: postgres-automation
     restart: unless-stopped
+    init: true
+    mem_limit: ${POSTGRES_AUTOMATION_MEMORY_LIMIT:-256m}
+    mem_reservation: ${POSTGRES_AUTOMATION_MEMORY_RESERVATION:-64m}
+    cpus: ${POSTGRES_AUTOMATION_CPU_LIMIT:-0.75}
+    pids_limit: ${POSTGRES_AUTOMATION_PIDS_LIMIT:-96}
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - max_connections=24
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=16MB
+      - -c
+      - effective_cache_size=128MB
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -1426,7 +1706,7 @@ services:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${AUTOMATION_DB_NAME}"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 12
       start_period: 10s
@@ -1434,16 +1714,41 @@ services:
       - automation-hub-network
 
   redis:
-    image: redis:7-alpine
+    <<: *hai-service-defaults
+    image: redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2
     container_name: 018-hai-redis
     hostname: redis
     restart: unless-stopped
-    command: ["redis-server", "--port", "${REDIS_PORT}"]
+    init: true
+    mem_limit: ${REDIS_MEMORY_LIMIT:-128m}
+    mem_reservation: ${REDIS_MEMORY_RESERVATION:-16m}
+    cpus: ${REDIS_CPU_LIMIT:-0.25}
+    pids_limit: ${REDIS_PIDS_LIMIT:-32}
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
+    command:
+      - redis-server
+      - --port
+      - ${REDIS_PORT}
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --save
+      - "60"
+      - "1000"
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - noeviction
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-6380}:${REDIS_PORT}"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "${REDIS_PORT}", "ping"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
       retries: 12
       start_period: 10s
@@ -1454,60 +1759,82 @@ services:
       - idp-network
       - automation-hub-network
 
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
-    container_name: 018-hai-zookeeper
-    restart: unless-stopped
-    environment:
-      ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_PORT}
-      ZOOKEEPER_TICK_TIME: 2000
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 ${ZOOKEEPER_PORT}"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-    networks:
-      - kafka-network
-
   kafka:
-    image: confluentinc/cp-kafka:7.6.1
+    <<: *hai-service-defaults
+    # HAI uses the Kafka protocol, but the local single-user broker is
+    # Redpanda Community Edition. It avoids the Java/KRaft idle footprint
+    # while retaining the same kafka:9092 contract for every existing client.
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.1@sha256:9a47c1f8d6736f98fa2616f6f0b715c051cb0bdac1a1176e38321bf45a5b572d
     container_name: 018-hai-kafka
     hostname: kafka
     restart: unless-stopped
-    depends_on:
-      zookeeper:
-        condition: service_healthy
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:${ZOOKEEPER_PORT}
-      KAFKA_LISTENERS: INTERNAL://:9092
-      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    init: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=32m
+    mem_limit: ${KAFKA_MEMORY_LIMIT:-256m}
+    mem_reservation: ${KAFKA_MEMORY_RESERVATION:-64m}
+    cpus: ${KAFKA_CPU_LIMIT:-0.5}
+    pids_limit: ${KAFKA_PIDS_LIMIT:-96}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    command:
+      - redpanda
+      - start
+      - --kafka-addr
+      - internal://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://kafka:9092
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --advertise-rpc-addr
+      - kafka:33145
+      - --smp
+      - "1"
+      # Docker Desktop shares fractional CPU with the rest of Windows. Let
+      # Seastar sleep instead of busy-polling while preserving fsync durability.
+      - --overprovisioned=true
+      - --unsafe-bypass-fsync=false
+      - --lock-memory=false
+      - --reserve-memory
+      - 0M
+      - --check=false
+      - --default-log-level
+      - warn
     healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server 127.0.0.1:9092 >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 10s
+      test: ["CMD", "rpk", "cluster", "info", "-X", "brokers=127.0.0.1:9092"]
+      interval: 30s
+      timeout: 5s
       retries: 18
-      start_period: 30s
+      start_period: 15s
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
     networks:
-      - kafka-network
       - service-hub
 
   generic-auto:
+    <<: *hai-service-defaults
+    profiles: ["compatibility"]
     build:
       context: ./generic-auto
       dockerfile: dockerfile
     container_name: 018-hai-generic-auto
     restart: unless-stopped
+    user: "65532:65532"
+    init: true
+    read_only: true
+    mem_limit: ${GENERIC_AUTO_MEMORY_LIMIT:-32m}
+    mem_reservation: ${GENERIC_AUTO_MEMORY_RESERVATION:-6m}
+    cpus: ${GENERIC_AUTO_CPU_LIMIT:-0.1}
+    pids_limit: ${GENERIC_AUTO_PIDS_LIMIT:-16}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/ || exit 1"]
-      interval: 10s
+      test: ["CMD", "/server", "-healthcheck"]
+      interval: 30s
       timeout: 5s
       retries: 12
       start_period: 10s
@@ -1517,9 +1844,6 @@ services:
 networks:
   idp-network:
     name: 018-hai-idp-network
-    driver: bridge
-  kafka-network:
-    name: 018-hai-kafka-network
     driver: bridge
   automation-hub-network:
     name: 018-hai-automation-hub-network
@@ -1589,7 +1913,15 @@ volumes:
     name: 018-hai-postgres-idp-data
   postgres-automation-data:
     name: 018-hai-postgres-automation-data
+  redis-data:
+    name: 018-hai-redis-data
+  redpanda-data:
+    name: 018-hai-redpanda-data
+  phase2-control-state:
+    name: 018-hai-phase2-control-state
   temporal-postgres-data:
     name: 018-hai-temporal-postgres-data
   runner-ollama-data:
     name: 018-hai-runner-ollama-data
+  ollama-local-data:
+    name: 018-hai-ollama-local-data

@@ -70,7 +70,7 @@ func newLocalRemoteProvider(id, name, baseURLEnv, modelID string, arch Architect
 	p := newRemoteProvider(id, name, baseURLEnv, modelID, arch, lanes)
 	p.local = true
 	if p.baseURL != "" {
-		if err := validateLocalEndpointURL(p.baseURL); err != nil {
+		if err := validateLocalEndpointURLForProvider(p.baseURL, id); err != nil {
 			p.configErr = err.Error()
 		}
 	}

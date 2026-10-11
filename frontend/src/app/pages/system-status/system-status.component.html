@@ -20,8 +20,8 @@
 
   <div *ngIf="loadError && !readiness" class="load-error">
     <span nz-icon nzType="disconnect"></span>
-    Could not reach the readiness probe. If you were redirected to sign in, your
-    session may have expired.
+    Could not load detailed system readiness. If you were redirected to sign in,
+    your session may have expired.
   </div>
 
   <ng-container *ngIf="readiness">
@@ -61,10 +61,111 @@
         <span nz-icon nzType="bulb" nzTheme="outline"></span>
         Recommended next actions
       </h3>
-      <ul>
-        <li *ngFor="let action of recommendedActions">{{ action }}</li>
+      <ul class="recommended-list">
+        <li *ngFor="let action of recommendedActions">
+          <div class="recommended-copy">
+            <strong>{{ action.checkName }}</strong>
+            <span>{{ action.detail }}</span>
+          </div>
+          <a
+            *ngIf="action.route && action.actionLabel"
+            nz-button
+            nzType="default"
+            [routerLink]="action.route"
+          >
+            {{ action.actionLabel }}
+            <span nz-icon nzType="arrow-right"></span>
+          </a>
+        </li>
       </ul>
     </div>
+
+    <section id="event-delivery" class="delivery-panel" aria-labelledby="delivery-title">
+      <div class="delivery-heading">
+        <div>
+          <span class="eyebrow">Durable automation events</span>
+          <h2 id="delivery-title">{{ deliveryStateLabel() }}</h2>
+        </div>
+        <span class="delivery-freshness" *ngIf="eventDelivery?.checkedAt">
+          Checked {{ eventDelivery.checkedAt | date: 'HH:mm:ss' }}
+        </span>
+      </div>
+
+      <div class="delivery-error" *ngIf="eventDeliveryError">
+        Delivery detail is unavailable. The readiness result above remains authoritative for queue health.
+      </div>
+
+      <ng-container *ngIf="eventDelivery as delivery">
+        <div class="delivery-metrics" aria-label="Automation event delivery totals">
+          <div><strong>{{ delivery.pending }}</strong><span>Pending</span></div>
+          <div [class.metric-danger]="delivery.deadLettered > 0"><strong>{{ delivery.deadLettered }}</strong><span>Dead letter</span></div>
+          <div><strong>{{ delivery.published }}</strong><span>Published in retention window</span></div>
+        </div>
+
+        <div class="delivery-failures" *ngIf="delivery.recentFailures.length">
+          <div class="delivery-failure" *ngFor="let failure of delivery.recentFailures">
+            <div class="delivery-failure-copy">
+              <strong>{{ failure.eventType | titlecase }} event</strong>
+              <span>{{ failure.status === 'dead_lettered' ? 'Retry budget exhausted' : 'Retry scheduled' }} &middot; attempt {{ failure.attemptCount }}/{{ failure.maxAttempts }}</span>
+              <small>{{ failure.lastError }}</small>
+            </div>
+            <button
+              *ngIf="failure.status === 'dead_lettered'"
+              nz-button
+              nzType="default"
+              type="button"
+              [nzLoading]="retryingEventId === failure.id"
+              [disabled]="!!retryingEventId"
+              title="Reset the bounded delivery retry budget after correcting the broker or consumer problem"
+              (click)="retryEventDelivery(failure)"
+            >
+              Retry delivery
+            </button>
+          </div>
+        </div>
+      </ng-container>
+    </section>
+
+    <section class="connector-panel" aria-labelledby="connector-title">
+      <div class="connector-summary" [ngClass]="connectorStateClass()">
+        <div class="connector-icon" aria-hidden="true">
+          <span nz-icon [nzType]="connectorStatus?.configured ? 'api' : 'disconnect'"></span>
+        </div>
+        <div class="connector-copy">
+          <span class="eyebrow">HAI interoperability</span>
+          <h2 id="connector-title">{{ connectorStateLabel() }}</h2>
+          <p *ngIf="connectorStatus as connector; else connectorFallback">
+            {{ connector.configError || connector.scope }}
+          </p>
+          <ng-template #connectorFallback>
+            <p>{{ connectorStatusError ? 'The authenticated connector status could not be loaded.' : 'Reading the configured connector boundary.' }}</p>
+          </ng-template>
+        </div>
+        <div class="connector-meta" *ngIf="connectorStatus as connector">
+          <span>{{ connector.transport === 'fixed_ngrok_https' ? 'Fixed ngrok HTTPS' : 'Private/local' }}</span>
+          <code *ngIf="connector.endpoint">{{ connector.endpoint }}</code>
+        </div>
+      </div>
+
+      <hai-progressive-section
+        *ngIf="connectorStatus as connector"
+        moduleId="system-status"
+        sectionId="connector-contract"
+        title="Connector contract"
+        summary="Capabilities and enforced restrictions"
+      >
+        <div class="connector-contract">
+          <div>
+            <h3>Available</h3>
+            <ul><li *ngFor="let capability of connector.capabilities">{{ capability }}</li></ul>
+          </div>
+          <div>
+            <h3>Never granted by this connector</h3>
+            <ul><li *ngFor="let restriction of connector.restrictions">{{ restriction }}</li></ul>
+          </div>
+        </div>
+      </hai-progressive-section>
+    </section>
 
     <div class="groups">
       <nz-card

@@ -419,11 +419,14 @@ func postgresCompositionSnapshotColumns(snapshot CompositionSnapshot) (postgresC
 }
 
 func postgresSnapshotCursorKey(key string, ordinal int) (string, error) {
-	payload, err := json.Marshal([]any{key, ordinal})
+	encodedKey, err := json.Marshal(key)
 	if err != nil {
 		return "", fmt.Errorf("marshal composition snapshot cursor: %w", err)
 	}
-	return string(payload), nil
+	// PostgreSQL jsonb_build_array(... )::text places one space after the
+	// comma. This text column is compared byte-for-byte by the integrity
+	// trigger, so emit the database's canonical representation exactly.
+	return fmt.Sprintf("[%s, %d]", encodedKey, ordinal), nil
 }
 
 func decodePostgresComposition(row postgresCompositionRow, owner, workspace string) (CompositionDelivery, error) {

@@ -40,6 +40,19 @@ type OSSInsightRepositoryScout interface {
 	DiscoverRepositoriesFor(OSSInsightDiscoveryScope) (OSSInsightRepositoryDiscoveryReport, error)
 }
 
+type OSSInsightRepositoryContextScout interface {
+	DiscoverRepositoriesContext(context.Context) (OSSInsightRepositoryDiscoveryReport, error)
+	DiscoverReviewableRepositoriesContext(context.Context) (OSSInsightRepositoryDiscoveryReport, error)
+	DiscoverRepositoriesForContext(context.Context, OSSInsightDiscoveryScope) (OSSInsightRepositoryDiscoveryReport, error)
+}
+
+func discoverRepositoriesFor(ctx context.Context, scout OSSInsightRepositoryScout, scope OSSInsightDiscoveryScope) (OSSInsightRepositoryDiscoveryReport, error) {
+	if contextual, ok := scout.(OSSInsightRepositoryContextScout); ok {
+		return contextual.DiscoverRepositoriesForContext(ctx, scope)
+	}
+	return scout.DiscoverRepositoriesFor(scope)
+}
+
 type OSSInsightRepositoryDiscovery struct {
 	Collection         string                `json:"collection"`
 	Disposition        CollectionDisposition `json:"disposition"`
@@ -73,39 +86,39 @@ type discoveryTriage struct {
 // from presenting known overlapping control planes or high-risk execution
 // surfaces as equally suitable implementation candidates.
 var repositoryDiscoveryTriages = map[string]discoveryTriage{
-	"hkuds/rag-anything":             {discoveryTriageReference, "Overlaps HAI's bounded RAGFlow bridge and source-linked retrieval; require a measured retrieval gap before reconsideration."},
-	"osu-nlp-group/hipporag":         {discoveryTriageReference, "Overlaps HAI's source-linked graph and RAGFlow retrieval boundaries; do not create a second memory or graph authority."},
-	"flowiseai/flowise":              {discoveryTriageReference, "A broad visual agent and workflow platform would duplicate HAI's routing, approval, audit, and execution control plane."},
-	"langgenius/dify":                {discoveryTriageReference, "A broad agent and RAG platform would duplicate HAI's source, memory, routing, and workflow authorities."},
-	"falkordb/falkordb":              {discoveryTriageReference, "HAI retains Postgres and its candidate graph rather than adding another graph database without a measured scale need."},
-	"apache/airflow":                 {discoveryTriageReference, "Airflow's scheduler and worker model overlaps HAI's bounded Temporal workflow layer."},
-	"netflix/metaflow":               {discoveryTriageReference, "Metaflow's orchestration and remote-compute model is outside HAI's local workflow authority."},
-	"ray-project/ray":                {discoveryTriageDeferred, "Distributed compute is not justified for the current local-first control plane and requires a separate resource and security design."},
-	"zenml-io/zenml":                 {discoveryTriageReference, "MLOps pipelines and metadata would duplicate HAI's model policy, evaluation, provenance, and audit paths."},
-	"e2b-dev/open-computer-use":      {discoveryTriageDeferred, "A general computer-use surface must not create a second host-execution path outside HAI's controlled runtime and approvals."},
-	"lavague-ai/lavague":             {discoveryTriageDeferred, "Browser agent execution remains behind HAI's allowlisted verification and approval flow."},
-	"web-infra-dev/midscene":         {discoveryTriageDeferred, "Browser automation remains behind HAI's allowlisted verification and approval flow."},
-	"nanobrowser/nanobrowser":        {discoveryTriageDeferred, "Browser automation remains behind HAI's allowlisted verification and approval flow."},
-	"aorwall/moatless-tools":         {discoveryTriageDeferred, "Code-agent execution remains behind HAI's workspace-constrained mini-SWE and verification path."},
-	"qodo-ai/qodo-cover":             {discoveryTriageDeferred, "Automated test generation needs an approved repository scope, local model, and test sandbox before it can be reconsidered."},
-	"awslabs/mcp":                    {discoveryTriageDeferred, "Cloud-provider MCP tooling must not inherit account, credential, network, or spend authority from a catalog discovery."},
-	"stripe/agent-toolkit":           {discoveryTriageDeferred, "Financial account and action tooling requires a separate regulated-use and approval design."},
-	"supabase-community/supabase-mcp": {discoveryTriageDeferred, "Database MCP tooling requires a named local adapter and explicit data-scope review before consideration."},
-	"tavily-ai/tavily-mcp":           {discoveryTriageReference, "HAI's local SearXNG discovery path remains the preferred web-research boundary."},
-	"google/adk-python":              {discoveryTriageReference, "A general agent framework would create a parallel orchestration and tool-authority plane."},
-	"google/adk-java":                {discoveryTriageReference, "A general agent framework would create a parallel orchestration and tool-authority plane."},
+	"hkuds/rag-anything":                          {discoveryTriageReference, "Overlaps HAI's bounded RAGFlow bridge and source-linked retrieval; require a measured retrieval gap before reconsideration."},
+	"osu-nlp-group/hipporag":                      {discoveryTriageReference, "Overlaps HAI's source-linked graph and RAGFlow retrieval boundaries; do not create a second memory or graph authority."},
+	"flowiseai/flowise":                           {discoveryTriageReference, "A broad visual agent and workflow platform would duplicate HAI's routing, approval, audit, and execution control plane."},
+	"langgenius/dify":                             {discoveryTriageReference, "A broad agent and RAG platform would duplicate HAI's source, memory, routing, and workflow authorities."},
+	"falkordb/falkordb":                           {discoveryTriageReference, "HAI retains Postgres and its candidate graph rather than adding another graph database without a measured scale need."},
+	"apache/airflow":                              {discoveryTriageReference, "Airflow's scheduler and worker model overlaps HAI's bounded Temporal workflow layer."},
+	"netflix/metaflow":                            {discoveryTriageReference, "Metaflow's orchestration and remote-compute model is outside HAI's local workflow authority."},
+	"ray-project/ray":                             {discoveryTriageDeferred, "Distributed compute is not justified for the current local-first control plane and requires a separate resource and security design."},
+	"zenml-io/zenml":                              {discoveryTriageReference, "MLOps pipelines and metadata would duplicate HAI's model policy, evaluation, provenance, and audit paths."},
+	"e2b-dev/open-computer-use":                   {discoveryTriageDeferred, "A general computer-use surface must not create a second host-execution path outside HAI's controlled runtime and approvals."},
+	"lavague-ai/lavague":                          {discoveryTriageDeferred, "Browser agent execution remains behind HAI's allowlisted verification and approval flow."},
+	"web-infra-dev/midscene":                      {discoveryTriageDeferred, "Browser automation remains behind HAI's allowlisted verification and approval flow."},
+	"nanobrowser/nanobrowser":                     {discoveryTriageDeferred, "Browser automation remains behind HAI's allowlisted verification and approval flow."},
+	"aorwall/moatless-tools":                      {discoveryTriageDeferred, "Code-agent execution remains behind HAI's workspace-constrained mini-SWE and verification path."},
+	"qodo-ai/qodo-cover":                          {discoveryTriageDeferred, "Automated test generation needs an approved repository scope, local model, and test sandbox before it can be reconsidered."},
+	"awslabs/mcp":                                 {discoveryTriageDeferred, "Cloud-provider MCP tooling must not inherit account, credential, network, or spend authority from a catalog discovery."},
+	"stripe/agent-toolkit":                        {discoveryTriageDeferred, "Financial account and action tooling requires a separate regulated-use and approval design."},
+	"supabase-community/supabase-mcp":             {discoveryTriageDeferred, "Database MCP tooling requires a named local adapter and explicit data-scope review before consideration."},
+	"tavily-ai/tavily-mcp":                        {discoveryTriageReference, "HAI's local SearXNG discovery path remains the preferred web-research boundary."},
+	"google/adk-python":                           {discoveryTriageReference, "A general agent framework would create a parallel orchestration and tool-authority plane."},
+	"google/adk-java":                             {discoveryTriageReference, "A general agent framework would create a parallel orchestration and tool-authority plane."},
 	"agent-network-protocol/agentnetworkprotocol": {discoveryTriageReference, "HAI retains its bounded A2A interoperability profile instead of adopting another agent-network control plane."},
-	"coral-protocol/anemoi":          {discoveryTriageReference, "HAI retains its bounded A2A interoperability profile instead of adopting another agent-network control plane."},
-	"coqui-ai/tts":                   {discoveryTriageDeferred, "Voice output needs explicit user intent, model provenance, retention, and delivery controls before adoption."},
-	"suno-ai/bark":                   {discoveryTriageDeferred, "Voice output needs explicit user intent, model provenance, retention, and delivery controls before adoption."},
-	"myshell-ai/openvoice":           {discoveryTriageDeferred, "Voice output needs explicit user intent, model provenance, retention, and delivery controls before adoption."},
-	"agenta-ai/agenta":               {discoveryTriageReference, "Evaluation and prompt-management surfaces overlap HAI's bounded local evaluation and audit profiles."},
-	"pydantic/logfire":               {discoveryTriageReference, "Observability is covered by HAI audit plus opt-in Prometheus, Langfuse, OpenLIT, and MLflow profiles."},
-	"uptrain-ai/uptrain":             {discoveryTriageReference, "Evaluation is covered by HAI's bounded Promptfoo, DeepEval, Evidently, Garak, and LM Evaluation Harness profiles."},
-	"microsoft/responsible-ai-toolbox": {discoveryTriageReference, "Responsible-AI analysis requires a concrete measured fairness or model-risk use case before a separate toolbox is introduced."},
-	"fairlearn/fairlearn":             {discoveryTriageReference, "Fairness analysis requires a concrete measured fairness or model-risk use case before a separate toolbox is introduced."},
-	"trusted-ai/aif360":               {discoveryTriageReference, "Fairness analysis requires a concrete measured fairness or model-risk use case before a separate toolbox is introduced."},
-	"trusted-ai/aix360":               {discoveryTriageReference, "Explainability analysis requires a concrete measured model-risk use case before a separate toolbox is introduced."},
+	"coral-protocol/anemoi":                       {discoveryTriageReference, "HAI retains its bounded A2A interoperability profile instead of adopting another agent-network control plane."},
+	"coqui-ai/tts":                                {discoveryTriageDeferred, "Voice output needs explicit user intent, model provenance, retention, and delivery controls before adoption."},
+	"suno-ai/bark":                                {discoveryTriageDeferred, "Voice output needs explicit user intent, model provenance, retention, and delivery controls before adoption."},
+	"myshell-ai/openvoice":                        {discoveryTriageDeferred, "Voice output needs explicit user intent, model provenance, retention, and delivery controls before adoption."},
+	"agenta-ai/agenta":                            {discoveryTriageReference, "Evaluation and prompt-management surfaces overlap HAI's bounded local evaluation and audit profiles."},
+	"pydantic/logfire":                            {discoveryTriageReference, "Observability is covered by HAI audit plus opt-in Prometheus, Langfuse, OpenLIT, and MLflow profiles."},
+	"uptrain-ai/uptrain":                          {discoveryTriageReference, "Evaluation is covered by HAI's bounded Promptfoo, DeepEval, Evidently, Garak, and LM Evaluation Harness profiles."},
+	"microsoft/responsible-ai-toolbox":            {discoveryTriageReference, "Responsible-AI analysis requires a concrete measured fairness or model-risk use case before a separate toolbox is introduced."},
+	"fairlearn/fairlearn":                         {discoveryTriageReference, "Fairness analysis requires a concrete measured fairness or model-risk use case before a separate toolbox is introduced."},
+	"trusted-ai/aif360":                           {discoveryTriageReference, "Fairness analysis requires a concrete measured fairness or model-risk use case before a separate toolbox is introduced."},
+	"trusted-ai/aix360":                           {discoveryTriageReference, "Explainability analysis requires a concrete measured model-risk use case before a separate toolbox is introduced."},
 }
 
 // OSSInsightKnownProfileHit is a source repository HAI already represents in
@@ -135,7 +148,7 @@ type OSSInsightRepositoryDiscoveryReport struct {
 	SourceQueryLimit        int                             `json:"sourceQueryLimit,omitempty"`
 	CollectionsAtQueryLimit int                             `json:"collectionsAtQueryLimit,omitempty"`
 	KnownProfileHits        int                             `json:"knownProfileHits"`
-	KnownProfiles           []OSSInsightKnownProfileHit      `json:"knownProfiles,omitempty"`
+	KnownProfiles           []OSSInsightKnownProfileHit     `json:"knownProfiles,omitempty"`
 	KnownProfilesTruncated  bool                            `json:"knownProfilesTruncated"`
 	Discoveries             []OSSInsightRepositoryDiscovery `json:"discoveries,omitempty"`
 	MissingCollections      []string                        `json:"missingCollections,omitempty"`
@@ -169,14 +182,26 @@ func NewOSSInsightRepositoryScout(client *http.Client) OSSInsightRepositoryScout
 }
 
 func (s *ossInsightRepositoryScout) DiscoverRepositories() (OSSInsightRepositoryDiscoveryReport, error) {
-	return s.DiscoverRepositoriesFor(OSSInsightCandidateScope)
+	return s.DiscoverRepositoriesContext(context.Background())
 }
 
 func (s *ossInsightRepositoryScout) DiscoverReviewableRepositories() (OSSInsightRepositoryDiscoveryReport, error) {
-	return s.DiscoverRepositoriesFor(OSSInsightReviewableScope)
+	return s.DiscoverReviewableRepositoriesContext(context.Background())
 }
 
 func (s *ossInsightRepositoryScout) DiscoverRepositoriesFor(scope OSSInsightDiscoveryScope) (OSSInsightRepositoryDiscoveryReport, error) {
+	return s.DiscoverRepositoriesForContext(context.Background(), scope)
+}
+
+func (s *ossInsightRepositoryScout) DiscoverRepositoriesContext(ctx context.Context) (OSSInsightRepositoryDiscoveryReport, error) {
+	return s.DiscoverRepositoriesForContext(ctx, OSSInsightCandidateScope)
+}
+
+func (s *ossInsightRepositoryScout) DiscoverReviewableRepositoriesContext(ctx context.Context) (OSSInsightRepositoryDiscoveryReport, error) {
+	return s.DiscoverRepositoriesForContext(ctx, OSSInsightReviewableScope)
+}
+
+func (s *ossInsightRepositoryScout) DiscoverRepositoriesForContext(parent context.Context, scope OSSInsightDiscoveryScope) (OSSInsightRepositoryDiscoveryReport, error) {
 	scope, err := normalizedDiscoveryScope(scope)
 	if err != nil {
 		return OSSInsightRepositoryDiscoveryReport{}, err
@@ -188,7 +213,10 @@ func (s *ossInsightRepositoryScout) DiscoverRepositoriesFor(scope OSSInsightDisc
 		report.Cached = true
 		return report, nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), ossInsightRequestTimeout)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, ossInsightRequestTimeout)
 	defer cancel()
 	report, err := s.discoverRepositories(ctx, scope)
 	if err == nil {

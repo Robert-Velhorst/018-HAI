@@ -23,7 +23,8 @@ bad()  { echo "  FAIL: $1"; fail=$((fail + 1)); }
 PHASE2_PKGS="backend/internal/operations backend/internal/background backend/internal/executionbroker backend/internal/accountfeed backend/internal/modelintelligence backend/internal/hardwareprofile backend/internal/runtimelab backend/internal/opscontrol backend/internal/autonomypolicy backend/internal/privacyfilter backend/internal/phase2"
 
 echo "==> 1. No fake/stub/TODO markers in Phase 2 source (excluding tests)"
-markers="$(grep -rniE 'TODO|FIXME|XXX|not implemented|not yet implemented|hardcoded|placeholder|dummy' ${PHASE2_PKGS} 2>/dev/null | grep -v '_test.go' || true)"
+marker_pattern='(^|[^[:alnum:]_])(TODO|FIXME|XXX|not implemented|not yet implemented|hardcoded|placeholder|dummy)([^[:alnum:]_]|$)'
+markers="$(grep -rniE "${marker_pattern}" ${PHASE2_PKGS} 2>/dev/null | grep -v '_test.go' || true)"
 if [ -z "${markers}" ]; then
   ok "no unfinished/hardcoded/placeholder markers"
 else
@@ -41,10 +42,15 @@ grep -q 'Never fabricate output' backend/internal/modelintelligence/dspark.go 2>
   && ok "DSpark never fabricates output" \
   || bad "DSpark fabrication guard missing"
 
-# Runtime lab external runtimes must refuse execution.
-grep -q 'Never fake execution' backend/internal/runtimelab/remote_runtime.go 2>/dev/null \
-  && ok "external runtimes never fake execution" \
-  || bad "external runtime no-fake-execution guard missing"
+# Runtime lab external runtimes must refuse execution, and that refusal must be
+# covered by an executable regression test. Do not make this gate depend on a
+# comment that can drift independently from behavior.
+if grep -q 'execution is not enabled: discovery is not execution authority' backend/internal/runtimelab/remote_runtime.go 2>/dev/null \
+  && grep -q 'func TestExternalRuntimeExecuteRefuses' backend/internal/runtimelab/service_test.go 2>/dev/null; then
+  ok "external runtimes refuse execution with regression coverage"
+else
+  bad "external runtime fail-closed execution guard or regression test missing"
+fi
 
 # Account bridges must never report a connected status from config alone.
 grep -q 'never fakes OAuth or connected status' backend/internal/accountfeed/bridge.go 2>/dev/null \

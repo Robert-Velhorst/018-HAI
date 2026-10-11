@@ -6,6 +6,29 @@ on:
   pull_request:
 
 jobs:
+  windows-installer:
+    name: Windows installer build
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Installer payload and safety contract
+        shell: pwsh
+        run: ./scripts/test-windows-installer-contract.ps1
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./scripts/build-windows-installer.ps1 -Version "ci-$($env:GITHUB_SHA.Substring(0, 7))"
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: hai-windows-installer
+          path: installer/release/HAI-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
+
   backend:
     name: Backend build and tests
     runs-on: ubuntu-latest
@@ -14,10 +37,10 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.25.13"
           cache-dependency-path: backend/go.sum
       - run: go vet ./...
       - run: go test ./...
@@ -37,10 +60,10 @@ jobs:
       run:
         working-directory: idp
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.25.13"
           cache-dependency-path: idp/go.sum
       - run: go vet ./...
       - run: go test ./...
@@ -58,10 +81,10 @@ jobs:
       run:
         working-directory: nginx-config-manager
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.25.13"
           cache-dependency-path: nginx-config-manager/go.sum
       - run: go vet ./...
       - run: go test ./...
@@ -79,8 +102,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22.22.3"
           cache: npm
@@ -101,12 +124,109 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: CI workflow contract
         run: python3 scripts/test_ci_contract.py
       - name: Gateway authentication contract
         run: python3 nginx-config/test_gateway_contract.py
       - run: docker compose --env-file .env.example -f docker-compose.local.yml config
+      - name: Kafka protocol broker acceptance
+        run: |
+          set -euo pipefail
+          cleanup() {
+            docker compose --env-file .env.example -f docker-compose.local.yml down --remove-orphans || true
+          }
+          trap cleanup EXIT
+          docker compose --env-file .env.example -f docker-compose.local.yml up -d kafka
+          broker_ready=""
+          for _ in $(seq 1 30); do
+            if docker compose --env-file .env.example -f docker-compose.local.yml exec -T kafka \
+              rpk cluster info -X brokers=127.0.0.1:9092 >/dev/null 2>&1; then
+              broker_ready=1
+              break
+            fi
+            sleep 1
+          done
+          [ -n "$broker_ready" ] || {
+            docker compose --env-file .env.example -f docker-compose.local.yml logs kafka
+            exit 1
+          }
+          docker compose --env-file .env.example -f docker-compose.local.yml exec -T kafka \
+            rpk topic create hai-ci-contract --if-not-exists -X brokers=127.0.0.1:9092
+          topic_description="$(docker compose --env-file .env.example -f docker-compose.local.yml exec -T kafka \
+            rpk topic describe hai-ci-contract -X brokers=127.0.0.1:9092)"
+          grep -q PARTITION <<<"$topic_description"
+          kafka_command="$(docker compose --env-file .env.example -f docker-compose.local.yml exec -T kafka \
+            cat /proc/1/cmdline | tr '\\0' ' ')"
+          if ! grep -q -- '--unsafe-bypass-fsync=false' <<<"$kafka_command"; then
+            echo 'Kafka runtime did not retain the required fsync policy.' >&2
+            exit 1
+          fi
+          if grep -q -- '--unsafe-bypass-fsync=true' <<<"$kafka_command"; then
+            echo 'Kafka runtime enabled unsafe fsync bypass.' >&2
+            exit 1
+          fi
+          kafka_logs="$(docker compose --env-file .env.example -f docker-compose.local.yml logs kafka)"
+          if grep -q -- '--unsafe-bypass-fsync=true' <<<"$kafka_logs"; then
+            echo 'Kafka started with unsafe fsync bypass enabled.' >&2
+            exit 1
+          fi
+      - name: Default Compose entrypoint resolves to canonical local stack
+        run: HAI_ENV_FILE=.env.example docker compose -f docker-compose.yml config
+      - name: Service-local Compose entrypoints resolve to canonical stack
+        run: |
+          for entrypoint in backend/docker-compose.yml idp/docker-compose.yml gate/docker-compose.yml kafka/docker-compose.yaml; do
+            HAI_ENV_FILE=../.env.example docker compose -f "$entrypoint" config --quiet
+          done
+      - name: Ngrok container fail-closed gate
+        run: |
+          sh -n deploy/ngrok/start-ngrok.sh
+          env \
+            RUN_MODE=production \
+            LOCAL_LOGIN_BYPASS_ENABLED=false \
+            IDP_COOKIE_SECURE=true \
+            GATEWAY_HOST_BIND=127.0.0.1 \
+            RATE_LIMIT_PER_MINUTE=120 \
+            NGROK_AUTHTOKEN=ci-ngrok-token-000000000000 \
+            HAI_NGROK_URL=https://hai-ci.ngrok.app \
+            HAI_A2A_BRIDGE_ENABLED=true \
+            HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=true \
+            HAI_A2A_BRIDGE_TOKEN=ci-a2a-token-00000000000000000000 \
+            HAI_A2A_BRIDGE_OWNER_ID=owner@example.test \
+            HAI_A2A_BRIDGE_URL=https://hai-ci.ngrok.app/api/v1/a2a \
+            HAI_NGROK_VALIDATE_ONLY=true \
+            sh deploy/ngrok/start-ngrok.sh
+          if env \
+            RUN_MODE=production \
+            LOCAL_LOGIN_BYPASS_ENABLED=false \
+            IDP_COOKIE_SECURE=true \
+            GATEWAY_HOST_BIND=127.0.0.1 \
+            RATE_LIMIT_PER_MINUTE=120 \
+            NGROK_AUTHTOKEN=ci-ngrok-token-000000000000 \
+            HAI_NGROK_URL=https://hai-ci.ngrok.app \
+            HAI_A2A_BRIDGE_ENABLED=true \
+            HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=true \
+            HAI_A2A_BRIDGE_TOKEN=ci-a2a-token-00000000000000000000 \
+            HAI_A2A_BRIDGE_OWNER_ID=owner@example.test \
+            HAI_A2A_BRIDGE_URL=https://other.ngrok.app/api/v1/a2a \
+            HAI_NGROK_VALIDATE_ONLY=true \
+            sh deploy/ngrok/start-ngrok.sh; then
+            echo "mismatched public A2A origin unexpectedly passed" >&2
+            exit 1
+          fi
+          if env \
+            RUN_MODE=production \
+            LOCAL_LOGIN_BYPASS_ENABLED=false \
+            IDP_COOKIE_SECURE=true \
+            GATEWAY_HOST_BIND=127.0.0.1 \
+            RATE_LIMIT_PER_MINUTE=0 \
+            NGROK_AUTHTOKEN=ci-ngrok-token-000000000000 \
+            HAI_NGROK_URL=https://hai-ci.ngrok.app \
+            HAI_NGROK_VALIDATE_ONLY=true \
+            sh deploy/ngrok/start-ngrok.sh; then
+            echo "disabled rate limit unexpectedly passed" >&2
+            exit 1
+          fi
       - name: Nginx syntax
         run: |
           python3 - "$RUNNER_TEMP/hai-nginx.conf" <<'PY'
@@ -121,17 +241,17 @@ jobs:
           docker run --rm \
             -v "$RUNNER_TEMP/hai-nginx.conf:/etc/nginx/nginx.conf:ro" \
             -v "$PWD/nginx-config/sites-enabled:/etc/nginx/sites-enabled:ro" \
-            nginx:alpine nginx -t
+            nginx:stable-alpine-slim@sha256:ddde39c6e51f02fde7410c2e9c234cf2d0a4c7bdbbe176aeb37d8ad7ab4eb58c nginx -t
 
   authenticated-smoke:
     name: Authenticated control-plane smoke
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.25.13"
           cache-dependency-path: backend/go.sum
       - name: Smoke authentication contract
         run: python3 scripts/test_smoke_auth_contract.py
@@ -139,7 +259,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y jq postgresql postgresql-client
-          echo "$(pg_config --bindir)" >> "$GITHUB_PATH"
+          pg_config --bindir >> "$GITHUB_PATH"
       - name: Run authenticated smoke suites
         run: |
           set -euo pipefail
@@ -185,10 +305,10 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.25.13"
           cache-dependency-path: backend/go.sum
       - name: Create isolated integration databases
         env:
@@ -198,10 +318,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client
           for database in \
-            hai_migration_runner_test \
-            hai_framework_registry_test \
+             hai_migration_runner_test \
+             hai_migration_lifecycle_test \
+             hai_executionauth_test \
+             hai_framework_registry_test \
             hai_task_state_test \
-            hai_agent_registry_test
+            hai_agent_registry_test \
+            hai_ambient_monitor_test
           do
             createdb \
               --host=127.0.0.1 \
@@ -215,22 +338,35 @@ jobs:
           HAI_REQUIRE_POSTGRES_INTEGRATION: "true"
         run: |
           set -euo pipefail
-          infra_log="$RUNNER_TEMP/migration-infra.log"
-          registry_log="$RUNNER_TEMP/framework-registry-postgres.log"
+           infra_log="$RUNNER_TEMP/migration-infra.log"
+           lifecycle_log="$RUNNER_TEMP/migration-lifecycle.log"
+           executionauth_log="$RUNNER_TEMP/execution-authorization-postgres.log"
+           registry_log="$RUNNER_TEMP/framework-registry-postgres.log"
           task_log="$RUNNER_TEMP/task-state-postgres.log"
           agent_registry_log="$RUNNER_TEMP/agent-registry-postgres.log"
-          migration_dsn="host=localhost user=postgres password=postgres dbname=hai_migration_runner_test port=5432 sslmode=disable TimeZone=UTC"
-          registry_dsn="host=localhost user=postgres password=postgres dbname=hai_framework_registry_test port=5432 sslmode=disable TimeZone=UTC"
+          ambient_monitor_log="$RUNNER_TEMP/ambient-monitor-postgres.log"
+           migration_dsn="host=localhost user=postgres password=postgres dbname=hai_migration_runner_test port=5432 sslmode=disable TimeZone=UTC"
+           lifecycle_dsn="host=localhost user=postgres password=postgres dbname=hai_migration_lifecycle_test port=5432 sslmode=disable TimeZone=UTC"
+           executionauth_dsn="host=localhost user=postgres password=postgres dbname=hai_executionauth_test port=5432 sslmode=disable TimeZone=UTC"
+           registry_dsn="host=localhost user=postgres password=postgres dbname=hai_framework_registry_test port=5432 sslmode=disable TimeZone=UTC"
           task_dsn="host=localhost user=postgres password=postgres dbname=hai_task_state_test port=5432 sslmode=disable TimeZone=UTC"
           agent_registry_dsn="host=localhost user=postgres password=postgres dbname=hai_agent_registry_test port=5432 sslmode=disable TimeZone=UTC"
+          ambient_monitor_dsn="host=localhost user=postgres password=postgres dbname=hai_ambient_monitor_test port=5432 sslmode=disable TimeZone=UTC"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -tags integration \
-            -run '^(TestConcurrentMigrationRunnersSerializeAndRecheck|TestLegacyBaselineRejectsDifferentExistingPrimaryKey|TestRunMigrationsAppliesAndIsIdempotent|TestRollbackMigrationReversesPostMigration)$' \
+            -run '^(TestConcurrentMigrationRunnersSerializeAndRecheck|TestLegacyBaselineRejectsDifferentExistingPrimaryKey|TestRunMigrationsAppliesAndIsIdempotent|TestRollbackMigrationReversesPostMigration|TestRuntimeRoleCanUseApplicationDataButCannotOwnSchema)$' \
             ./internal/infra/ -v | tee "$infra_log"
           grep -q -- '^--- PASS: TestConcurrentMigrationRunnersSerializeAndRecheck' "$infra_log"
           grep -q -- '^--- PASS: TestLegacyBaselineRejectsDifferentExistingPrimaryKey' "$infra_log"
           grep -q -- '^--- PASS: TestRunMigrationsAppliesAndIsIdempotent' "$infra_log"
-          grep -q -- '^--- PASS: TestRollbackMigrationReversesPostMigration' "$infra_log"
-          HAI_TEST_DATABASE_DSN="$registry_dsn" go test -count=1 -tags integration \
+           grep -q -- '^--- PASS: TestRollbackMigrationReversesPostMigration' "$infra_log"
+           grep -q -- '^--- PASS: TestRuntimeRoleCanUseApplicationDataButCannotOwnSchema' "$infra_log"
+           HAI_TEST_DATABASE_DSN="$lifecycle_dsn" go test -p 1 -count=1 -tags integration \
+             ./migrations/ -v | tee "$lifecycle_log"
+           grep -q -- '^--- PASS: TestWorkflowReminderActivationLedgerIsImmutableOwnerScopedAndLinearInPostgres' "$lifecycle_log"
+           HAI_TEST_DATABASE_DSN="$executionauth_dsn" go test -p 1 -count=1 \
+             -run '^TestPostgres' ./internal/executionauth/ -v | tee "$executionauth_log"
+           grep -q -- '^--- PASS: TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals' "$executionauth_log"
+           HAI_TEST_DATABASE_DSN="$registry_dsn" go test -count=1 -tags integration \
             ./internal/frameworkregistry/ -v | tee "$registry_log"
           grep -q -- '^--- PASS: TestFrameworkRegistryPostgresIntegrationRequiredEnvironment' "$registry_log"
           grep -q -- '^--- PASS: TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun' "$registry_log"
@@ -244,6 +380,14 @@ jobs:
             ./internal/agentregistry/ -v | tee "$agent_registry_log"
           grep -q -- '^--- PASS: TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers' "$agent_registry_log"
           grep -q -- '^--- PASS: TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema' "$agent_registry_log"
+          HAI_AMBIENT_MONITOR_POSTGRES_TEST_DSN="$ambient_monitor_dsn" go test -p 1 -count=1 \
+            -run '^(TestPostgresCollectorsMatchOwnerScopedCanonicalRecords|TestPostgresCollectorSnapshotUsesReadOnlyRepeatableRead|TestPostgresRepositoryLifecycle|TestPostgresCompositionRepositoryLifecycle|TestPostgresAdvisoryReleaseLifecycle)$' \
+            ./internal/ambientmonitor/ -v | tee "$ambient_monitor_log"
+          grep -q -- '^--- PASS: TestPostgresCollectorsMatchOwnerScopedCanonicalRecords' "$ambient_monitor_log"
+          grep -q -- '^--- PASS: TestPostgresCollectorSnapshotUsesReadOnlyRepeatableRead' "$ambient_monitor_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryLifecycle' "$ambient_monitor_log"
+          grep -q -- '^--- PASS: TestPostgresCompositionRepositoryLifecycle' "$ambient_monitor_log"
+          grep -q -- '^--- PASS: TestPostgresAdvisoryReleaseLifecycle' "$ambient_monitor_log"
 
   # Boots the real backend against a real Postgres + Redis and runs the
   # two-account isolation acceptance test over HTTP: two authenticated owners
@@ -277,10 +421,10 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.25.12"
+          go-version: "1.25.13"
           cache-dependency-path: backend/go.sum
       - name: Build backend
         working-directory: backend
@@ -293,9 +437,10 @@ jobs:
           DB_USER: postgres
           DB_PASSWORD: postgres
           DB_NAME: automation_hub
-          # Empty CI database: let the schema materialise on boot.
-          DB_AUTOMIGRATE: "true"
+          # Empty CI database: production migrations are the schema authority.
+          DB_AUTOMIGRATE: "false"
           JWT_SECRET: devsecret
+          HAI_APPROVAL_PROOF_SIGNING_KEY: ci-isolation-approval-proof-signing-key-v1
           SERVER_PORT: "8080"
           REDIS_ADDR: localhost:6379
           # Keep the acceptance run deterministic: no background schedulers.
@@ -353,8 +498,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Python CI and authentication contracts
@@ -367,7 +512,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $null = [ScriptBlock]::Create((Get-Content scripts/discover-ngrok-windows.ps1 -Raw))
+          $null = [ScriptBlock]::Create((Get-Content scripts/smoke-ollama-provider.ps1 -Raw))
           $null = [ScriptBlock]::Create((Get-Content scripts/start-ngrok.ps1 -Raw))
+          $null = [ScriptBlock]::Create((Get-Content scripts/prepare-ngrok-windows.ps1 -Raw))
+          & .\scripts\test-ngrok-ownership.ps1
           try {
             & .\scripts\start-ngrok.ps1 -ValidateOnly -EnvFile .env.example
             throw "Insecure example environment unexpectedly passed ngrok preflight"
@@ -375,6 +524,72 @@ jobs:
             if ($_.Exception.Message -notmatch "IDP_COOKIE_SECURE") {
               throw
             }
+          }
+      - name: Windows backup PowerShell contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $null = [ScriptBlock]::Create((Get-Content scripts/backup-windows.ps1 -Raw))
+          $null = [ScriptBlock]::Create((Get-Content scripts/test-restore-windows.ps1 -Raw))
+          & .\scripts\test-windows-recovery-contract.ps1
+          $spacedRecovery = Join-Path $env:RUNNER_TEMP "HAI recovery path with spaces"
+          try {
+            [IO.Directory]::CreateDirectory($spacedRecovery) | Out-Null
+            foreach ($name in @(
+              "test-windows-recovery-contract.ps1",
+              "windows-recovery-contract.ps1",
+              "test-restore-windows.ps1"
+            )) {
+              Copy-Item -LiteralPath (Join-Path "scripts" $name) -Destination $spacedRecovery
+            }
+            & (Join-Path $spacedRecovery "test-windows-recovery-contract.ps1")
+          } finally {
+            if ([IO.Directory]::Exists($spacedRecovery)) {
+              [IO.Directory]::Delete($spacedRecovery, $true)
+            }
+          }
+      - name: Windows first-run environment contract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $envPath = Join-Path $env:RUNNER_TEMP "hai-windows.env"
+          $dollar = [char]36
+          $ownerPassword = "CI${dollar}1Fresh${dollar}&Clone-123!"
+          $output = & .\scripts\initialize-windows.ps1 `
+            -EnvFile $envPath `
+            -AdminEmail "owner@example.test" `
+            -AdminPasswordPlainText $ownerPassword `
+            -GatewayPort 18080
+          $content = Get-Content -LiteralPath $envPath -Raw
+          if ($content -match "(?m)^[A-Z0-9_]+=(?:change-this-[^\r\n]*|ChangeMe123!)$") {
+            throw "Generated Windows environment still contains a shipped placeholder"
+          }
+          foreach ($name in @(
+            "BACKEND_API_SHARED_KEY",
+            "HAI_MEMORY_ENCRYPTION_KEY",
+            "JWT_SECRET",
+            "HAI_APPROVAL_PROOF_SIGNING_KEY",
+            "DB_PASSWORD",
+            "DB_RUNTIME_PASSWORD",
+            "HAI_A2A_BRIDGE_TOKEN"
+          )) {
+            if ($content -notmatch "(?m)^$name=[0-9a-f]{64}$") {
+              throw "$name was not generated as an independent 32-byte secret"
+            }
+          }
+          foreach ($expected in @(
+            "FIRST_RUN_ADMIN_PASSWORD='$ownerPassword'",
+            "HAI_A2A_BRIDGE_ENABLED=true",
+            "HAI_A2A_BRIDGE_OWNER_ID=owner@example.test",
+            "HAI_A2A_BRIDGE_URL=http://127.0.0.1:18080/api/v1/a2a",
+            "HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=false"
+          )) {
+            if ($content -notmatch "(?m)^$([Regex]::Escape($expected))$") {
+              throw "Generated Windows environment is missing $expected"
+            }
+          }
+          if (($output | Out-String) -match [Regex]::Escape($ownerPassword)) {
+            throw "Windows initializer printed the owner password"
           }
       - name: Git Bash syntax and space-containing path
         shell: pwsh

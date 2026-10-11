@@ -367,8 +367,9 @@ settlement replay retries only the evidence write and never repeats workflow
 work.
 
 Memories and sources are scoped by project key; project-scoped queries never
-leak across projects (proven by isolation tests). Multi-user ownership/roles are
-modelled (`internal/rbac`) but not yet enforced in middleware.
+leak across projects (proven by isolation tests). Multi-user roles are persisted
+by the IDP, signed into access tokens, verified by backend identity middleware,
+and enforced through route-specific `internal/rbac` permission guards.
 
 ## Advisory Ambient Outcome Monitoring
 

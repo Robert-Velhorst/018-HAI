@@ -29,7 +29,7 @@ func (f *fakeCounter) IncrementWindow(_ context.Context, key string, _ time.Dura
 }
 
 func redisLimiterWith(c counter, limit int) *RedisLimiter {
-	return &RedisLimiter{counter: c, limit: limit, window: time.Minute, prefix: "ratelimit:", failOpen: true}
+	return &RedisLimiter{counter: c, limit: limit, window: time.Minute, prefix: "ratelimit:", fallback: Memory(limit, time.Minute)}
 }
 
 func TestRedisLimiterAllowsUpToLimitThenBlocks(t *testing.T) {
@@ -74,26 +74,26 @@ func TestRedisLimiterCountsPerKey(t *testing.T) {
 	}
 }
 
-// A rate limiter must not become a single point of failure: if Redis is
-// unreachable, requests are allowed rather than the whole API returning 429.
-func TestRedisLimiterFailsOpenWhenRedisErrors(t *testing.T) {
+// A Redis outage must not make a configured resource ceiling disappear. The
+// local fallback keeps the process available and still bounds each key.
+func TestRedisLimiterUsesBoundedLocalFallbackWhenRedisErrors(t *testing.T) {
 	fc := newFakeCounter()
 	fc.err = errors.New("connection refused")
 	limiter := redisLimiterWith(fc, 1)
 
-	d := limiter.Allow(context.Background(), "1.2.3.4")
-	if !d.Allowed {
-		t.Fatal("request blocked while Redis is down, want fail-open allow")
+	if d := limiter.Allow(context.Background(), "1.2.3.4"); !d.Allowed {
+		t.Fatal("first request blocked while Redis is down")
+	}
+	if d := limiter.Allow(context.Background(), "1.2.3.4"); d.Allowed {
+		t.Fatal("second request escaped the local fallback ceiling")
 	}
 }
 
-// Fail-closed is available for deployments that prefer rejecting over
-// over-serving when the store is down.
-func TestRedisLimiterFailsClosedWhenConfigured(t *testing.T) {
+func TestRedisLimiterFailsClosedWithoutFallback(t *testing.T) {
 	fc := newFakeCounter()
 	fc.err = errors.New("connection refused")
 	limiter := redisLimiterWith(fc, 1)
-	limiter.failOpen = false
+	limiter.fallback = nil
 
 	if d := limiter.Allow(context.Background(), "1.2.3.4"); d.Allowed {
 		t.Fatal("request allowed while Redis is down and fail-closed, want blocked")

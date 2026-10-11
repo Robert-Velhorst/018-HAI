@@ -64,3 +64,35 @@ func TestKeysAreIsolated(t *testing.T) {
 		t.Fatalf("key a exceeded its own limit")
 	}
 }
+
+func TestLimiterBoundsUniqueKeyMemory(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	l := New(1, time.Minute)
+	l.maxEntries = 2
+
+	if !l.Allow("oldest", start) || !l.Allow("newer", start.Add(time.Second)) || !l.Allow("newest", start.Add(2*time.Second)) {
+		t.Fatal("first request for a new key should be allowed")
+	}
+	if len(l.counts) != 2 {
+		t.Fatalf("stored keys = %d, want bounded size 2", len(l.counts))
+	}
+	if _, exists := l.counts["oldest"]; exists {
+		t.Fatal("oldest active key was not evicted at the memory ceiling")
+	}
+}
+
+func TestLimiterPrunesExpiredKeysBeforeEvictingActiveOnes(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	l := New(1, time.Minute)
+	l.maxEntries = 2
+	l.Allow("expired", start)
+	l.Allow("active", start.Add(61*time.Second))
+	l.Allow("new", start.Add(62*time.Second))
+
+	if _, exists := l.counts["expired"]; exists {
+		t.Fatal("expired key remained after the limiter reached its memory ceiling")
+	}
+	if _, exists := l.counts["active"]; !exists {
+		t.Fatal("active key was evicted while an expired key was available")
+	}
+}

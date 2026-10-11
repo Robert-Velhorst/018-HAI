@@ -1,39 +1,46 @@
-# Stage 1: Compiling the application
-FROM golang:1.25.12 AS builder
+FROM golang:1.25.13@sha256:14e75143c833c7398ea3a5e4c673aeaae35f40e781e6b060e2f97b72c475c975 AS builder
 
-# Set the Current Working Directory inside the container
 WORKDIR /app
 
-# Cache dependencies independently from application source. A normal code
-# change should rebuild the binary, not redownload the complete module graph.
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the application after the stable dependency layer.
 COPY . .
 
-# Navigate to the cmd directory where the main.go file resides
-WORKDIR /app/cmd
+# The backend does not require libc. A static, stripped binary lets the runtime
+# image stay small and removes the dynamic-library surface that CGO introduced.
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath \
+    -tags "netgo,osusergo" \
+    -ldflags "-s -w" \
+    -o /out/hai-backend \
+    ./cmd
 
-# Build the Go app
-RUN CGO_ENABLED=1 GOOS=linux go build -o app ./main.go
+# Alpine supplies the CA bundle needed by outbound HTTPS and BusyBox wget for
+# the Compose readiness probe. Pin the runtime digest so production rebuilds do
+# not silently pick up a different base image.
+FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
 
-# Stage 2: Build the minimal docker image
-FROM ubuntu:24.04
+RUN addgroup -S -g 10001 hai \
+    && adduser -S -D -H -u 10001 -G hai hai \
+    && mkdir -p /app/docs /root/images /root/automation-scripts \
+        /root/connected-sources /root/agent-workspaces \
+        /var/lib/hai/phase2-state \
+    && chown -R 10001:10001 /root/images /root/agent-workspaces \
+        /var/lib/hai/phase2-state \
+    && chmod 0711 /root \
+    && chmod 0750 /root/images /root/agent-workspaces \
+        /var/lib/hai/phase2-state \
+    && chmod 0550 /root/automation-scripts /root/connected-sources
 
-# curl backs the container healthcheck, which polls /readyz. It has to live in
-# the runtime image, not just the builder.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
-WORKDIR /root/
+COPY --from=builder /out/hai-backend /app/hai-backend
+COPY --from=builder /app/docs /app/docs
 
-# Copy the pre-built binary from the previous stage
-COPY --from=builder /app/cmd/app /root/
-COPY --from=builder /app/docs /root/docs
+ENV HOME=/tmp \
+    TMPDIR=/tmp
 
+USER 10001:10001
 
-
-# Command to run
-CMD ["/root/app"]
+ENTRYPOINT ["/app/hai-backend"]

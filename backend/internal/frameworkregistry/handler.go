@@ -166,6 +166,15 @@ func (h *Handler) Selections(c *gin.Context) {
 	respondFramework(c, gin.H{"selections": result}, err, http.StatusOK)
 }
 
+func (h *Handler) Selection(c *gin.Context) {
+	owner, ok := frameworkOwner(c)
+	if !ok {
+		return
+	}
+	result, err := h.service.Selection(c.Request.Context(), owner, c.Param("id"))
+	respondFramework(c, result, err, http.StatusOK)
+}
+
 func (h *Handler) Constitution(c *gin.Context) {
 	owner, ok := frameworkOwner(c)
 	if !ok {

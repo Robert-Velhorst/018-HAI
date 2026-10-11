@@ -29,6 +29,7 @@ type Service struct {
 	ops           *operations.Service
 	runner        BackgroundRunner
 	authorization ExecutionAuthorizer
+	approvals     ControlApprovalRepository
 	owner         string
 	space         string
 	now           func() time.Time
@@ -79,7 +80,10 @@ func (s *Service) DisengageEmergencyStop(
 		return s.control.EmergencyState(), fmt.Errorf("%w: %v", ErrControlPersistence, err)
 	}
 	if !state.Engaged {
-		return state, nil
+		// Do not report a replayed recovery command as a fresh success. A caller
+		// can read Status to observe an already-clear stop; the mutation endpoint
+		// must describe that no state change remains to authorize.
+		return state, ErrControlChangeNotRequired
 	}
 	resourceID := emergencyStopResourceID(state.Revision)
 	if err := s.authorizeSafetyChange(

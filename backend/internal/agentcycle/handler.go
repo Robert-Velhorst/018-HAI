@@ -2,6 +2,8 @@ package agentcycle
 
 import (
 	"automation-hub-backend/internal/identity"
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -27,9 +29,21 @@ func (h *Handler) Run(c *gin.Context) {
 		return
 	}
 	var request RunRequest
-	_ = c.ShouldBindJSON(&request)
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid agent cycle request"})
+			return
+		}
+	}
 	request.OwnerIdentity = ownerIdentity
-	result := h.service.Run(request)
+	result, err := h.service.RunContext(c.Request.Context(), request)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "agent cycle failed"})
+		return
+	}
 	status := http.StatusOK
 	if result.Status == "failed" {
 		status = http.StatusServiceUnavailable

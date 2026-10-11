@@ -94,23 +94,20 @@
 .status-strip {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 
-  button {
+  > div {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 8px;
     color: inherit;
-    cursor: help;
     min-height: 72px;
     padding: 12px 14px;
     text-align: left;
 
-    &:hover,
-    &:focus-visible {
+    &:hover {
       border-color: var(--blue);
       box-shadow: var(--shadow);
-      outline: 0;
     }
 
     &.attention strong {
@@ -272,6 +269,58 @@
   min-height: 620px;
 }
 
+.library-query {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.library-search {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+
+  button {
+    min-width: 96px;
+  }
+}
+
+.library-filters {
+  background: var(--surface-muted);
+
+  summary {
+    color: var(--text-soft);
+    font-size: 12px;
+  }
+}
+
+.library-filter-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+
+  label {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  label > span {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+  }
+}
+
+.library-filter-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .memory-list,
 .review-list,
 .correction-list,
@@ -282,8 +331,24 @@
 }
 
 .memory-list {
-  max-height: 654px;
+  max-height: 580px;
   overflow: auto;
+}
+
+.memory-pagination {
+  align-items: center;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 9px 12px;
+
+  > span {
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+  }
 }
 
 .memory-row {
@@ -720,8 +785,18 @@ details {
 
   .status-strip,
   .action-rail,
-  .field-grid {
+  .field-grid,
+  .library-filter-grid {
     grid-template-columns: 1fr;
+  }
+
+  .library-search {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-pagination {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .action-tile {

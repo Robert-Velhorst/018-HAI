@@ -58,6 +58,50 @@ func TestOverviewHandlerRequiresVerifiedOwner(t *testing.T) {
 	}
 }
 
+func TestOverviewHandlerUsesBoundedSummaryView(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &ambientResolutionService{}
+	handler := NewHandler(service)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/ambient/overview", handler.Overview)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ambient/overview?view=summary", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("summary overview status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.summaryCalls != 1 || service.summaryOwner != "alice" || service.overviewCalls != 0 {
+		t.Fatalf("summary/overview calls = %d/%d owners=%q/%q, want summary alice only", service.summaryCalls, service.overviewCalls, service.summaryOwner, service.overviewOwner)
+	}
+}
+
+func TestOverviewHandlerRejectsUnknownView(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &ambientResolutionService{}
+	handler := NewHandler(service)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/ambient/overview", handler.Overview)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ambient/overview?view=everything", nil))
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unknown overview view status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+	if service.summaryCalls != 0 || service.overviewCalls != 0 {
+		t.Fatalf("unknown view reached service: summary=%d overview=%d", service.summaryCalls, service.overviewCalls)
+	}
+}
+
 func TestAcceptHandlerRejectsAnotherOwnersPursuitOpportunity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	pursuitID := uuid.New()
@@ -276,6 +320,8 @@ type ambientResolutionService struct {
 	dismissRequest ResolutionRequest
 	overviewCalls  int
 	overviewOwner  string
+	summaryCalls   int
+	summaryOwner   string
 }
 
 func (s *ambientResolutionService) Overview() (*Overview, error) {
@@ -286,6 +332,12 @@ func (s *ambientResolutionService) OverviewForOwner(ownerIdentity string) (*Over
 	s.overviewCalls++
 	s.overviewOwner = ownerIdentity
 	return &Overview{}, nil
+}
+
+func (s *ambientResolutionService) OverviewSummaryForOwner(ownerIdentity string) (*Overview, error) {
+	s.summaryCalls++
+	s.summaryOwner = ownerIdentity
+	return &Overview{Opportunities: []models.AmbientOpportunity{}, Scans: []models.AmbientScan{}}, nil
 }
 
 func (s *ambientResolutionService) Scan(string) (*models.AmbientScan, error) {

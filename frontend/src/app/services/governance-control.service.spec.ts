@@ -19,7 +19,8 @@ describe('GovernanceControlService', () => {
     const listRequest = http.expectOne(
       (request) =>
         request.url === '/api/v1/execution-authorizations' &&
-        request.params.get('limit') === '25'
+        request.params.get('limit') === '25' &&
+        request.params.get('view') === 'summary'
     )
     expect(listRequest.request.method).toBe('GET')
     listRequest.flush({ receipts: [], count: 0, limit: 25 })
@@ -30,6 +31,18 @@ describe('GovernanceControlService', () => {
     )
     expect(consumptionRequest.request.method).toBe('GET')
     consumptionRequest.flush({})
+  })
+
+  it('requests full authorization evidence only when explicitly asked', () => {
+    service.listExecutionReceipts(25, 'full').subscribe()
+
+    const request = http.expectOne((candidate) =>
+      candidate.url === '/api/v1/execution-authorizations' &&
+      candidate.params.get('limit') === '25' &&
+      candidate.params.get('view') === 'full'
+    )
+    expect(request.request.method).toBe('GET')
+    request.flush({ receipts: [], count: 0, limit: 25 })
   })
 
   it('sends optimistic mandate lifecycle revisions', () => {
@@ -202,13 +215,13 @@ describe('GovernanceControlService', () => {
     preferenceRequest.flush({})
   })
 
-  it('normalizes optional domain-pack collections at the API boundary', () => {
-    let methods: unknown[] | undefined
+  it('loads the bounded domain-pack summary catalog', () => {
+    let methodCount: number | undefined
     service.domainCatalog().subscribe((catalog) => {
-      methods = catalog.packs[0].pack.playbook.methods
+      methodCount = catalog.packs[0].pack.methodCount
     })
 
-    const request = http.expectOne('/api/v1/domain-packs')
+    const request = http.expectOne('/api/v1/domain-packs?view=summary')
     request.flush({
       metadata: { version: '1.1.0', digest: 'catalog-digest', packCount: 1 },
       packs: [{
@@ -221,17 +234,12 @@ describe('GovernanceControlService', () => {
           description: 'Legal work',
           sensitive: true,
           defaultEnabled: true,
-          retention: {
-            defaultDays: 365,
-            localOnly: true,
-            deletionReview: true,
-            archiveProvenance: true,
-          },
+          methodCount: 4,
         },
       }],
     })
 
-    expect(methods).toEqual([])
+    expect(methodCount).toBe(4)
   })
 
   it('loads advisory teams and whole-life context from registered read APIs', () => {

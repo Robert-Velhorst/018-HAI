@@ -2,6 +2,7 @@ package verification
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +53,9 @@ func TestAnswerHandlerIgnoresClientHumanApproval(t *testing.T) {
 	if service.request.OwnerIdentity != "alice" {
 		t.Fatalf("owner identity = %q, want alice", service.request.OwnerIdentity)
 	}
+	if service.answerContext != request.Context() {
+		t.Fatal("verification handler did not pass the HTTP request context")
+	}
 	evidence := service.request.ExternalEvidence[0]
 	if evidence.Authority != "" || evidence.Official || evidence.Primary {
 		t.Fatalf("client authority assertions reached verification service: %#v", evidence)
@@ -59,7 +63,13 @@ func TestAnswerHandlerIgnoresClientHumanApproval(t *testing.T) {
 }
 
 type capturingVerificationService struct {
-	request AnswerRequest
+	request       AnswerRequest
+	answerContext context.Context
+}
+
+func (s *capturingVerificationService) AnswerContext(ctx context.Context, request AnswerRequest) (*VerificationResult, error) {
+	s.answerContext = ctx
+	return s.Answer(request)
 }
 
 func (s *capturingVerificationService) Answer(request AnswerRequest) (*VerificationResult, error) {

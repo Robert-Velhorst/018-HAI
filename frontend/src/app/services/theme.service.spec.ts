@@ -1,4 +1,14 @@
-import { BulbOutline, StarOutline } from '@ant-design/icons-angular/icons'
+import {
+  BulbOutline,
+  CheckCircleFill,
+  CloseCircleFill,
+  HomeOutline,
+  ProjectOutline,
+  ReadOutline,
+  StarOutline,
+  WalletOutline,
+  WarningFill,
+} from '@ant-design/icons-angular/icons'
 import { HAI_ICONS } from '../app.module'
 import { ThemeService } from './theme.service'
 
@@ -23,5 +33,16 @@ describe('ThemeService icon registration', () => {
     expect(service.icon()).toBe(StarOutline.name)
     expect(registeredNames).toContain(service.icon())
     expect(registeredNames).not.toContain('moon')
+  })
+
+  it('registers dynamic capacity and filled health-state icons', () => {
+    const registered = new Set(HAI_ICONS.map((icon) => `${icon.name}:${icon.theme}`))
+
+    for (const icon of [HomeOutline, ProjectOutline, ReadOutline, WalletOutline]) {
+      expect(registered).toContain(`${icon.name}:${icon.theme}`)
+    }
+    for (const icon of [CheckCircleFill, CloseCircleFill, WarningFill]) {
+      expect(registered).toContain(`${icon.name}:${icon.theme}`)
+    }
   })
 })

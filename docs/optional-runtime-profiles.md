@@ -31,6 +31,7 @@ gateway, frontend, IDP, databases, Kafka, and Redis do not join them.
 
 | Compose profile | Services | Input or dependency | Maximum per service | Capability boundary |
 | --- | --- | --- | --- | --- |
+| `local-model` | Canonical Ollama provider | One explicitly reviewed local model tag | 2 GB, 2 CPU, 256 PIDs by default | Private HAI inference only; no host port, one loaded model, one parallel request, paid cost fixed at EUR 0 |
 | `security-scanning` | Gitleaks, Gosec, Syft, Grype, Trivy | Named read-only subfolders under `./security-snapshots`; Grype also reads `./grype-db` | 512 MB-1 GB, 1-1.5 CPU, 128-192 PIDs | Aggregate/redacted scan evidence only; no fixes, source output, commits, or execution |
 | `agent-framework-planning` | Microsoft Agent Framework runner | One canonical local model endpoint/tag | 768 MB, 1 CPU, 192 PIDs | Two fixed no-tool planning roles return one review-only structured draft |
 | `crewai-planning` | CrewAI runner | One canonical local model endpoint/tag | 768 MB, 1 CPU, 192 PIDs | Two fixed no-tool planning roles return one review-only structured draft |
@@ -53,6 +54,28 @@ upgraded.
 
 Copy `.env.example` to `.env.local`, generate unique runner tokens, and enable
 only one reviewed profile at a time.
+
+For the canonical local model profile, set `OLLAMA_BASE_URL` to the exact
+Compose-internal service and list only reviewed model tags:
+
+```text
+OLLAMA_BASE_URL=http://ollama-local:11434
+OLLAMA_MODEL_IDS=qwen2.5:0.5b
+LLM_REQUIRE_RECENT_LIVE_PROBE=true
+```
+
+```powershell
+docker compose --env-file .env.local -f docker-compose.local.yml `
+  --profile local-model up -d ollama-local backend
+docker compose --env-file .env.local -f docker-compose.local.yml `
+  --profile local-model exec ollama-local ollama pull qwen2.5:0.5b
+.\scripts\smoke-ollama-provider.ps1 -EnvFile .\.env.local
+```
+
+The acceptance script fails unless the provider is live, the router selects the
+exact local model, generation is bounded and costs EUR 0, token usage comes from
+the provider, redacted history contains the matching audit/telemetry record,
+and `/readyz` remains fully ready.
 
 For a security snapshot named `review-snapshot`:
 
@@ -124,10 +147,11 @@ server or claim the bridge is live because its configuration fields exist.
 ## Evidence Status
 
 The repository contains the adapters, runner implementations, unit contracts,
-and this Compose topology. `docker compose config` proves that the topology is
-syntactically resolvable; it does not build every image, preload a model,
-provision an offline advisory database, parse a real document, or prove a
-scanner/agent result.
+and this Compose topology. `docker compose config` proves only that the topology
+is syntactically resolvable. The canonical `local-model` profile has separate
+retained Windows evidence for one `qwen2.5:0.5b` route and generation; that does
+not prove other model tags, machines, scanners, planners, document extractors,
+or patch agents.
 
 A profile becomes **live-proven** only after a bounded approved run on the
 target machine records:

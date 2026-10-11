@@ -6,6 +6,7 @@ import (
 	"automation-hub-backend/internal/source"
 	"automation-hub-backend/internal/sourceevidence"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -81,6 +82,25 @@ type Service interface {
 	RunDetailsForOwner(ownerIdentity string, id uuid.UUID) (*VerificationResult, error)
 }
 
+// ContextService binds an interactive verification pass to its caller without
+// changing the legacy Service contract used by focused test doubles.
+type ContextService interface {
+	AnswerContext(context.Context, AnswerRequest) (*VerificationResult, error)
+}
+
+func AnswerWithContext(service Service, ctx context.Context, request AnswerRequest) (*VerificationResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if contextual, ok := service.(ContextService); ok {
+		return contextual.AnswerContext(ctx, request)
+	}
+	return service.Answer(request)
+}
+
 type PursuitLinker interface {
 	LinkVerificationForOwner(ownerIdentity string, pursuitID, verificationID uuid.UUID) error
 }
@@ -97,6 +117,10 @@ type service struct {
 
 type ConnectedSourceSearcher interface {
 	Search(source.SearchRequest) (*source.SearchResult, error)
+}
+
+type contextConnectedSourceSearcher interface {
+	SearchContext(context.Context, source.SearchRequest) (*source.SearchResult, error)
 }
 
 // ClaimProjector copies eligible source-backed claims into immutable semantic
@@ -168,6 +192,16 @@ func DefaultService() Service {
 }
 
 func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
+	return s.AnswerContext(context.Background(), request)
+}
+
+func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*VerificationResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	pursuitID, err := requestedPursuitID(request.PursuitID)
 	if err != nil {
 		return nil, err
@@ -191,7 +225,11 @@ func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
 		return nil, err
 	}
 
-	evidence := s.collectEvidence(run.ID, request, questions, &logs)
+	evidence, err := s.collectEvidence(ctx, run.ID, request, questions, &logs)
+	if err != nil {
+		s.markCanceledRun(run, err)
+		return nil, err
+	}
 	answer := buildAnswer(request, mode, evidence)
 	claims := decomposeClaims(run.ID, answer, mode, request)
 	verifiedClaims := verifyClaims(claims, evidence, request, mode)
@@ -203,22 +241,36 @@ func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
 	run.SourcesUsed = sourceLabels(filterEvidence(evidence, true))
 	run.SourcesRejected = sourceLabels(filterRejectedEvidence(evidence))
 	run.MissingSources = missingSources(request, evidence)
+	if err := s.stopIfCanceled(ctx, run); err != nil {
+		return nil, err
+	}
 	run, err = s.repo.UpdateRun(run)
 	if err != nil {
 		return nil, err
 	}
 	for _, item := range evidence {
+		if err := s.stopIfCanceled(ctx, run); err != nil {
+			return nil, err
+		}
 		_, _ = s.repo.CreateEvidence(&item)
 	}
 	for _, claim := range verifiedClaims {
+		if err := s.stopIfCanceled(ctx, run); err != nil {
+			return nil, err
+		}
 		_, _ = s.repo.CreateClaim(&claim)
 	}
 	knowledgeClaimIDs := []string(nil)
 	knowledgeError := ""
 	if s.claimProjector != nil {
 		knowledgeClaimIDs, err = s.claimProjector.ProjectClaims(
-			context.Background(), request, *run, verifiedClaims, evidence,
+			ctx, request, *run, verifiedClaims, evidence,
 		)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			cancelErr := firstVerificationContextError(ctx, err)
+			s.markCanceledRun(run, cancelErr)
+			return nil, cancelErr
+		}
 		if err != nil {
 			knowledgeError = "semantic claim projection failed"
 			logs = append(logs, knowledgeError)
@@ -227,6 +279,9 @@ func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
 			logs = append(logs, "source-backed claims projected into immutable semantic knowledge")
 			s.audit(run.ID, "verification.knowledge_projected", fmt.Sprintf("projected %d semantic claim(s)", len(knowledgeClaimIDs)))
 		}
+	}
+	if err := s.stopIfCanceled(ctx, run); err != nil {
+		return nil, err
 	}
 	s.audit(run.ID, "verification.completed", "important claims decomposed and verified before acceptance")
 	if request.AllowMemoryUpdate {
@@ -243,6 +298,9 @@ func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
 		KnowledgeError:    knowledgeError,
 	}
 	if pursuitID != uuid.Nil {
+		if err := s.stopIfCanceled(ctx, run); err != nil {
+			return nil, err
+		}
 		result.PursuitID = pursuitID.String()
 		if err := s.pursuitLinker.LinkVerificationForOwner(request.OwnerIdentity, pursuitID, run.ID); err != nil {
 			result.PursuitLinkError = err.Error()
@@ -255,6 +313,31 @@ func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
 		}
 	}
 	return result, nil
+}
+
+func (s *service) stopIfCanceled(ctx context.Context, run *models.VerificationRun) error {
+	if ctx == nil || ctx.Err() == nil {
+		return nil
+	}
+	s.markCanceledRun(run, ctx.Err())
+	return ctx.Err()
+}
+
+func (s *service) markCanceledRun(run *models.VerificationRun, cause error) {
+	if run == nil || (!errors.Is(cause, context.Canceled) && !errors.Is(cause, context.DeadlineExceeded)) {
+		return
+	}
+	run.Status = StatusNeedsReview
+	run.MissingSources = "verification request stopped before completion"
+	_, _ = s.repo.UpdateRun(run)
+	s.audit(run.ID, "verification.stopped", "caller context ended before verification completed")
+}
+
+func firstVerificationContextError(ctx context.Context, fallback error) error {
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return fallback
 }
 
 func requestedPursuitID(value string) (uuid.UUID, error) {
@@ -286,19 +369,8 @@ func (s *service) RunDetailsForOwner(ownerIdentity string, id uuid.UUID) (*Verif
 }
 
 func (s *service) runDetailsForOwner(ownerIdentity string, id uuid.UUID) (*VerificationResult, error) {
-	runs, err := s.RunsForOwner(ownerIdentity)
+	run, err := s.repo.FindRunForOwner(ownerIdentity, id)
 	if err != nil {
-		return nil, err
-	}
-	var run *models.VerificationRun
-	for index := range runs {
-		if runs[index].ID == id {
-			copy := runs[index]
-			run = &copy
-			break
-		}
-	}
-	if run == nil {
 		return nil, fmt.Errorf("verification run not found")
 	}
 	claims, err := s.repo.FindClaims(id)
@@ -318,17 +390,30 @@ func (s *service) runDetailsForOwner(ownerIdentity string, id uuid.UUID) (*Verif
 	}, nil
 }
 
-func (s *service) collectEvidence(runID uuid.UUID, request AnswerRequest, questions []string, logs *[]string) []models.VerificationEvidence {
+func (s *service) collectEvidence(ctx context.Context, runID uuid.UUID, request AnswerRequest, questions []string, logs *[]string) ([]models.VerificationEvidence, error) {
 	evidence := []models.VerificationEvidence{}
 	if s.sourceService != nil {
 		for _, question := range questions {
-			result, err := s.sourceService.Search(source.SearchRequest{
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			searchRequest := source.SearchRequest{
 				OwnerIdentity:    request.OwnerIdentity,
 				Query:            question,
 				ProjectKey:       request.ProjectKey,
 				Limit:            6,
 				IncludeSensitive: request.IncludeSensitive,
-			})
+			}
+			var result *source.SearchResult
+			var err error
+			if contextual, ok := s.sourceService.(contextConnectedSourceSearcher); ok {
+				result, err = contextual.SearchContext(ctx, searchRequest)
+			} else {
+				result, err = s.sourceService.Search(searchRequest)
+			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+				return nil, firstVerificationContextError(ctx, err)
+			}
 			if err == nil {
 				for _, ranked := range result.UsedContext {
 					item := models.VerificationEvidence{
@@ -346,8 +431,11 @@ func (s *service) collectEvidence(runID uuid.UUID, request AnswerRequest, questi
 						item.RejectReason = "connected-source provenance resolver is unavailable"
 					} else {
 						snapshot, resolveErr := s.sourceEvidence.Resolve(
-							context.Background(), request.OwnerIdentity, ranked.Extraction.ID.String(),
+							ctx, request.OwnerIdentity, ranked.Extraction.ID.String(),
 						)
+						if errors.Is(resolveErr, context.Canceled) || errors.Is(resolveErr, context.DeadlineExceeded) || ctx.Err() != nil {
+							return nil, firstVerificationContextError(ctx, resolveErr)
+						}
 						payloadDigest := sourceevidence.ExtractionPayloadDigest(ranked.Extraction)
 						if resolveErr != nil || snapshot.SourceID != ranked.Extraction.SourceID.String() ||
 							snapshot.RawItemID != ranked.Extraction.RawItemID.String() ||
@@ -370,6 +458,9 @@ func (s *service) collectEvidence(runID uuid.UUID, request AnswerRequest, questi
 		*logs = append(*logs, "connected-source index is not configured; using only supplied evidence")
 	}
 	for _, input := range request.ExternalEvidence {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		authority := normalizeAuthorityResolution(s.authorityResolver.ResolveExternalEvidence(request, input))
 		score := evidenceQuality(input, authority, request.Question)
 		if !authority.Trusted {
@@ -390,11 +481,14 @@ func (s *service) collectEvidence(runID uuid.UUID, request AnswerRequest, questi
 			RejectReason: rejectReason(score, input, authority),
 		})
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	evidence = deduplicateEvidence(evidence)
 	sort.SliceStable(evidence, func(i, j int) bool {
 		return evidence[i].QualityScore > evidence[j].QualityScore
 	})
-	return evidence
+	return evidence, nil
 }
 
 func deduplicateEvidence(values []models.VerificationEvidence) []models.VerificationEvidence {

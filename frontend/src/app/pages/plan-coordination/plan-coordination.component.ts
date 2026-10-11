@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { ActivatedRoute } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
@@ -27,6 +27,7 @@ interface PreviewForm {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-plan-coordination',
   templateUrl: './plan-coordination.component.html',

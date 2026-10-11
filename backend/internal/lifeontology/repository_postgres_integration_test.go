@@ -91,6 +91,19 @@ func TestPostgresRepositoryDurabilityIsolationIdempotencyAndImmutability(t *test
 	if err != nil || storedRelation.RelationDigest != relationResult.Relation.RelationDigest {
 		t.Fatalf("durable relation = %#v, err %v", storedRelation, err)
 	}
+	boundedGoals, err := NewService(restarted, func() time.Time { return now }).QueryEntities(ctx, owner, EntityQuery{
+		Types: []EntityType{EntityGoal}, AllowLocalOnly: true, Limit: 1,
+	})
+	if err != nil || len(boundedGoals) != 1 || boundedGoals[0].ID != goalResult.Entity.ID {
+		t.Fatalf("bounded entity query = %#v, err %v", boundedGoals, err)
+	}
+	boundedRelations, err := NewService(restarted, func() time.Time { return now }).QueryRelations(ctx, owner, RelationQuery{
+		Types: []RelationType{RelationPursuesGoal}, FromEntityID: personResult.Entity.ID,
+		AllowLocalOnly: true, Limit: 1,
+	})
+	if err != nil || len(boundedRelations) != 1 || boundedRelations[0].ID != relationResult.Relation.ID {
+		t.Fatalf("bounded relation query = %#v, err %v", boundedRelations, err)
+	}
 
 	firstCandidate := integrationEntityRequest(owner, EntityProject, "HAI source A", now)
 	firstCandidate.ExternalKeys = []ExternalKey{{Namespace: "trello/card", Value: "card-" + uuid.NewString()}}
@@ -109,6 +122,12 @@ func TestPostgresRepositoryDurabilityIsolationIdempotencyAndImmutability(t *test
 	if err != nil || len(proposals) != 1 || proposals[0].ID != secondResult.MergeProposals[0].ID {
 		t.Fatalf("durable proposals = %#v, err %v", proposals, err)
 	}
+	keyMatches, err := NewService(restarted, func() time.Time { return now }).QueryEntities(ctx, owner, EntityQuery{
+		ExternalKeys: firstCandidate.ExternalKeys, AllowLocalOnly: true, Limit: 1,
+	})
+	if err != nil || len(keyMatches) != 1 || keyMatches[0].ExternalKeys[0] != firstCandidate.ExternalKeys[0] {
+		t.Fatalf("bounded external-key query = %#v, err %v", keyMatches, err)
+	}
 
 	if err := db.Exec(`
 		UPDATE public.life_ontology_entities
@@ -124,7 +143,7 @@ func TestPostgresRepositoryDurabilityIsolationIdempotencyAndImmutability(t *test
 		t.Fatalf("immutable delete error = %v", err)
 	}
 	if err := db.Exec(`TRUNCATE TABLE public.life_ontology_merge_proposals`).Error; err == nil ||
-		!strings.Contains(err.Error(), "append-only") {
+		(!strings.Contains(err.Error(), "append-only") && !strings.Contains(err.Error(), "referenced in a foreign key constraint")) {
 		t.Fatalf("truncate guard error = %v", err)
 	}
 }

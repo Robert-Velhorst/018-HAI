@@ -70,7 +70,7 @@
     </nz-card>
   </div>
 
-  <details class="rl__parity">
+  <details class="rl__parity" (toggle)="onParityToggle($event)">
     <summary>
       <span>External runtime feature parity</span>
       <small *ngIf="parityOverview as parity">

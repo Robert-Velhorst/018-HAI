@@ -68,10 +68,11 @@ func tokenCodec() (*googleoauth.Codec, error) {
 	return googleoauth.NewCodec(config.AppConfig.OAuthTokenEncryptionKey)
 }
 
-// --- signed, stateless CSRF state -------------------------------------------
-// The state carries the source id and an expiry, HMAC-signed with a server
-// secret. It needs no server-side storage, so it survives a restart mid-flow
-// and cannot be forged without the secret. Format: base64(payload)."."base64(mac).
+// --- signed, durable, single-use CSRF state ---------------------------------
+// The browser value carries the source id and expiry, HMAC-signed with a server
+// secret. Only its SHA-256 digest is stored, owner-bound, in PostgreSQL so the
+// attempt survives restarts but cannot be replayed. Format:
+// base64(payload)."."base64(mac).
 
 func stateSecret() ([]byte, error) {
 	s := strings.TrimSpace(config.AppConfig.OAuthStateSigningKey)
@@ -82,54 +83,60 @@ func stateSecret() ([]byte, error) {
 	return sum[:], nil
 }
 
-func signState(sourceID uuid.UUID) (string, error) {
+func signState(sourceID uuid.UUID) (string, time.Time, error) {
 	nonce, err := googleoauth.NewState()
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
-	payload := fmt.Sprintf("%s|%d|%s", sourceID.String(), time.Now().Add(10*time.Minute).Unix(), nonce)
+	expiresAt := time.Now().UTC().Add(10 * time.Minute).Truncate(time.Second)
+	payload := fmt.Sprintf("%s|%d|%s", sourceID.String(), expiresAt.Unix(), nonce)
 	enc := base64.RawURLEncoding.EncodeToString([]byte(payload))
 	secret, err := stateSecret()
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(enc))
-	return enc + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+	return enc + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), expiresAt, nil
 }
 
-func verifyState(state string) (uuid.UUID, error) {
+func verifyState(state string) (uuid.UUID, time.Time, error) {
 	parts := strings.SplitN(strings.TrimSpace(state), ".", 2)
 	if len(parts) != 2 {
-		return uuid.Nil, fmt.Errorf("malformed oauth state")
+		return uuid.Nil, time.Time{}, fmt.Errorf("malformed oauth state")
 	}
 	secret, err := stateSecret()
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, time.Time{}, err
 	}
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(parts[0]))
 	expected := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(expected), []byte(parts[1])) {
-		return uuid.Nil, fmt.Errorf("oauth state signature mismatch")
+		return uuid.Nil, time.Time{}, fmt.Errorf("oauth state signature mismatch")
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("oauth state decode: %w", err)
+		return uuid.Nil, time.Time{}, fmt.Errorf("oauth state decode: %w", err)
 	}
 	fields := strings.Split(string(raw), "|")
 	if len(fields) != 3 {
-		return uuid.Nil, fmt.Errorf("oauth state payload shape")
+		return uuid.Nil, time.Time{}, fmt.Errorf("oauth state payload shape")
 	}
 	exp, err := strconv.ParseInt(fields[1], 10, 64)
 	if err != nil || time.Now().Unix() > exp {
-		return uuid.Nil, fmt.Errorf("oauth state expired; restart the connection")
+		return uuid.Nil, time.Time{}, fmt.Errorf("oauth state expired; restart the connection")
 	}
 	id, err := uuid.Parse(fields[0])
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("oauth state source id invalid")
+		return uuid.Nil, time.Time{}, fmt.Errorf("oauth state source id invalid")
 	}
-	return id, nil
+	return id, time.Unix(exp, 0).UTC(), nil
+}
+
+func oauthStateDigest(state string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(state)))
+	return fmt.Sprintf("%x", digest[:])
 }
 
 // StartGoogleOAuth returns the least-privilege Google consent URL for the
@@ -142,12 +149,23 @@ func (s *service) StartGoogleOAuth(sourceID uuid.UUID) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := rejectRevokedSource(source); err != nil {
+		return "", err
+	}
 	cfg, err := googleOAuthConfigForConnector(source.ConnectorKey)
 	if err != nil {
 		return "", err
 	}
-	state, err := signState(sourceID)
+	state, expiresAt, err := signState(sourceID)
 	if err != nil {
+		return "", err
+	}
+	if err := s.repo.SaveOAuthState(&models.SourceOAuthState{
+		SourceID:      sourceID,
+		OwnerIdentity: source.OwnerIdentity,
+		StateDigest:   oauthStateDigest(state),
+		ExpiresAt:     expiresAt,
+	}); err != nil {
 		return "", err
 	}
 	return cfg.AuthorizeURL(state), nil
@@ -155,19 +173,29 @@ func (s *service) StartGoogleOAuth(sourceID uuid.UUID) (string, error) {
 
 // CompleteGoogleOAuth handles the callback: verify state, exchange the code, and
 // store the encrypted tokens against the source.
-func (s *service) CompleteGoogleOAuth(ctx context.Context, code, state string) (uuid.UUID, error) {
-	if !googleOAuthReady() {
-		return uuid.Nil, fmt.Errorf("google oauth is not configured")
+func (s *service) CompleteGoogleOAuth(ctx context.Context, code, state, ownerIdentity string) (uuid.UUID, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return uuid.Nil, ErrOAuthStateInvalid
+	}
+	sourceID, _, err := verifyState(state)
+	if err != nil {
+		return uuid.Nil, ErrOAuthStateInvalid
+	}
+	if err := s.repo.ConsumeOAuthState(sourceID, ownerIdentity, oauthStateDigest(state), time.Now().UTC()); err != nil {
+		return uuid.Nil, err
 	}
 	if strings.TrimSpace(code) == "" {
 		return uuid.Nil, fmt.Errorf("missing authorization code")
 	}
-	sourceID, err := verifyState(state)
-	if err != nil {
-		return uuid.Nil, err
+	if !googleOAuthReady() {
+		return uuid.Nil, fmt.Errorf("google oauth is not configured")
 	}
 	source, err := s.repo.FindSource(sourceID)
 	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := rejectRevokedSource(source); err != nil {
 		return uuid.Nil, err
 	}
 	cfg, err := googleOAuthConfigForConnector(source.ConnectorKey)
@@ -176,6 +204,16 @@ func (s *service) CompleteGoogleOAuth(ctx context.Context, code, state string) (
 	}
 	token, err := cfg.ExchangeCode(ctx, code)
 	if err != nil {
+		return uuid.Nil, err
+	}
+	// Consent can complete after the operator revoked the source in another
+	// session. Re-read before persistence; the repository repeats this check
+	// under a source-row lock so revocation and credential storage serialize.
+	source, err = s.repo.FindSource(sourceID)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	if err := rejectRevokedSource(source); err != nil {
 		return uuid.Nil, err
 	}
 	if err := s.storeToken(sourceID, token); err != nil {
@@ -224,6 +262,9 @@ func (s *service) storeToken(sourceID uuid.UUID, token *googleoauth.Token) error
 func (s *service) googleAccessToken(ctx context.Context, sourceID uuid.UUID, connectorKey string) (string, error) {
 	source, err := s.repo.FindSource(sourceID)
 	if err != nil {
+		return "", err
+	}
+	if err := rejectRevokedSource(source); err != nil {
 		return "", err
 	}
 	if source.ConnectorKey != connectorKey {

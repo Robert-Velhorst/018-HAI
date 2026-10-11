@@ -1,6 +1,7 @@
 package memoryengine
 
 import (
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 
@@ -118,7 +119,7 @@ func (r *GormRepository) FindInsightsForOwner(ownerIdentity, kind, projectKey st
 	var insights []models.AIMemoryInsight
 	query := r.DB.Where("status <> ?", "superseded")
 	if ownerIdentity != "" {
-		query = query.Where("owner_identity = ?", ownerIdentity)
+		query = applyOwnerReadScope(query, ownerIdentity)
 	}
 	if kind != "" {
 		query = query.Where("kind = ?", kind)
@@ -136,6 +137,13 @@ func (r *GormRepository) FindInsightsForOwner(ownerIdentity, kind, projectKey st
 func applyConversationOwnerScope(query *gorm.DB, ownerIdentity string) *gorm.DB {
 	if ownerIdentity == "" {
 		return query
+	}
+	return applyOwnerReadScope(query, ownerIdentity)
+}
+
+func applyOwnerReadScope(query *gorm.DB, ownerIdentity string) *gorm.DB {
+	if identity.CanReadLegacyOwnerlessData(ownerIdentity) {
+		return query.Where("owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL", ownerIdentity)
 	}
 	return query.Where("owner_identity = ?", ownerIdentity)
 }

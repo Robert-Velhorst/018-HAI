@@ -3,6 +3,7 @@ package ambientmonitor
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -224,48 +225,63 @@ func (reader *gormCollectorSourceReader) workflowOpenLoops(ctx context.Context, 
 	if reader == nil || reader.db == nil {
 		return sourceSnapshot{}, ErrCollectorUnavailable
 	}
-	var count int64
-	if err := reader.db.WithContext(ctx).Raw(workflowOpenLoopCountSQL, owner, now).Scan(&count).Error; err != nil {
-		return sourceSnapshot{}, err
-	}
-	rows := make([]sourceSnapshotRecord, 0, workflowOpenLoopLimit)
-	if err := reader.db.WithContext(ctx).Raw(workflowOpenLoopSnapshotSQL, owner, now).Scan(&rows).Error; err != nil {
-		return sourceSnapshot{}, err
-	}
-	normalizeSnapshotRecords(rows)
-	return sourceSnapshot{Count: count, Records: rows}, nil
+	return reader.readSnapshot(ctx, workflowOpenLoopLimit,
+		workflowOpenLoopCountSQL, []any{owner, now},
+		workflowOpenLoopSnapshotSQL, []any{owner, now},
+	)
 }
 
 func (reader *gormCollectorSourceReader) workflowVerifiedCompletions(ctx context.Context, owner string) (sourceSnapshot, error) {
 	if reader == nil || reader.db == nil {
 		return sourceSnapshot{}, ErrCollectorUnavailable
 	}
-	var count int64
-	if err := reader.db.WithContext(ctx).Raw(workflowVerifiedCompletionCountSQL, owner).Scan(&count).Error; err != nil {
-		return sourceSnapshot{}, err
-	}
-	rows := make([]sourceSnapshotRecord, 0, sourceSnapshotLimit)
-	if err := reader.db.WithContext(ctx).Raw(workflowVerifiedCompletionSnapshotSQL, owner).Scan(&rows).Error; err != nil {
-		return sourceSnapshot{}, err
-	}
-	normalizeSnapshotRecords(rows)
-	return sourceSnapshot{Count: count, Records: rows}, nil
+	return reader.readSnapshot(ctx, sourceSnapshotLimit,
+		workflowVerifiedCompletionCountSQL, []any{owner},
+		workflowVerifiedCompletionSnapshotSQL, []any{owner},
+	)
 }
 
 func (reader *gormCollectorSourceReader) overdueCommitments(ctx context.Context, owner string, now time.Time) (sourceSnapshot, error) {
 	if reader == nil || reader.db == nil {
 		return sourceSnapshot{}, ErrCollectorUnavailable
 	}
-	var count int64
-	if err := reader.db.WithContext(ctx).Raw(overdueCommitmentCountSQL, owner, now).Scan(&count).Error; err != nil {
+	return reader.readSnapshot(ctx, sourceSnapshotLimit,
+		overdueCommitmentCountSQL, []any{owner, now},
+		overdueCommitmentSnapshotSQL, []any{owner, now},
+	)
+}
+
+func (reader *gormCollectorSourceReader) readSnapshot(
+	ctx context.Context,
+	capacity int,
+	countSQL string,
+	countArgs []any,
+	recordsSQL string,
+	recordsArgs []any,
+) (sourceSnapshot, error) {
+	var snapshot sourceSnapshot
+	err := withCollectorSnapshot(ctx, reader.db, func(tx *gorm.DB) error {
+		if err := tx.Raw(countSQL, countArgs...).Scan(&snapshot.Count).Error; err != nil {
+			return err
+		}
+		snapshot.Records = make([]sourceSnapshotRecord, 0, capacity)
+		return tx.Raw(recordsSQL, recordsArgs...).Scan(&snapshot.Records).Error
+	})
+	if err != nil {
 		return sourceSnapshot{}, err
 	}
-	rows := make([]sourceSnapshotRecord, 0, sourceSnapshotLimit)
-	if err := reader.db.WithContext(ctx).Raw(overdueCommitmentSnapshotSQL, owner, now).Scan(&rows).Error; err != nil {
-		return sourceSnapshot{}, err
+	normalizeSnapshotRecords(snapshot.Records)
+	return snapshot, nil
+}
+
+func withCollectorSnapshot(ctx context.Context, db *gorm.DB, read func(*gorm.DB) error) error {
+	if db == nil || read == nil {
+		return ErrCollectorUnavailable
 	}
-	normalizeSnapshotRecords(rows)
-	return sourceSnapshot{Count: count, Records: rows}, nil
+	return db.WithContext(ctx).Transaction(read, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+		ReadOnly:  true,
+	})
 }
 
 func validateSourceSnapshot(kind SourceKind, observedAt time.Time, snapshot sourceSnapshot) error {

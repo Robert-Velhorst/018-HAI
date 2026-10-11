@@ -9,12 +9,15 @@ import (
 	"time"
 )
 
+const defaultMaxEntries = 4096
+
 // Limiter is a per-key fixed-window counter. It is safe for concurrent use.
 type Limiter struct {
-	mu     sync.Mutex
-	limit  int
-	window time.Duration
-	counts map[string]*windowCount
+	mu         sync.Mutex
+	limit      int
+	window     time.Duration
+	maxEntries int
+	counts     map[string]*windowCount
 }
 
 type windowCount struct {
@@ -26,9 +29,10 @@ type windowCount struct {
 // A non-positive limit or window yields a disabled limiter that always allows.
 func New(limit int, window time.Duration) *Limiter {
 	return &Limiter{
-		limit:  limit,
-		window: window,
-		counts: make(map[string]*windowCount),
+		limit:      limit,
+		window:     window,
+		maxEntries: defaultMaxEntries,
+		counts:     make(map[string]*windowCount),
 	}
 }
 
@@ -49,6 +53,9 @@ func (l *Limiter) Allow(key string, now time.Time) bool {
 
 	entry, ok := l.counts[key]
 	if !ok || now.Sub(entry.windowStart) >= l.window {
+		if !ok {
+			l.makeRoom(now)
+		}
 		l.counts[key] = &windowCount{windowStart: now, count: 1}
 		return true
 	}
@@ -57,6 +64,35 @@ func (l *Limiter) Allow(key string, now time.Time) bool {
 	}
 	entry.count++
 	return true
+}
+
+// makeRoom bounds local fallback memory. Expired windows are removed first;
+// if every entry is still active, the oldest window is evicted. Rotating
+// arbitrary client keys can therefore weaken only their own local fallback
+// accounting, not grow the process without bound.
+func (l *Limiter) makeRoom(now time.Time) {
+	if l.maxEntries <= 0 || len(l.counts) < l.maxEntries {
+		return
+	}
+	for key, entry := range l.counts {
+		if now.Sub(entry.windowStart) >= l.window {
+			delete(l.counts, key)
+		}
+	}
+	if len(l.counts) < l.maxEntries {
+		return
+	}
+	var oldestKey string
+	var oldest time.Time
+	for key, entry := range l.counts {
+		if oldestKey == "" || entry.windowStart.Before(oldest) {
+			oldestKey = key
+			oldest = entry.windowStart
+		}
+	}
+	if oldestKey != "" {
+		delete(l.counts, oldestKey)
+	}
 }
 
 // Remaining returns how many requests key may still make in its current window

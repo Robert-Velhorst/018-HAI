@@ -29,6 +29,16 @@ describe('TaskPlanService', () => {
 		call.flush({});
 	});
 
+	it('loads a bounded recent task history by default', () => {
+		service.logs().subscribe();
+
+		const call = http.expectOne((request) =>
+			request.url === '/api/v1/task/logs' && request.params.get('limit') === '10'
+		);
+		expect(call.request.method).toBe('GET');
+		call.flush([]);
+	});
+
 	it('posts approved-task recovery to the owner-scoped reconciliation route', () => {
 		const request = { apply: false, olderThanMinutes: 30, limit: 50 };
 		service.reconcileApprovedReviews(request).subscribe();

@@ -25,7 +25,9 @@ compute only after it has a path that can satisfy and verify the task.
 - `POST /api/v1/task/run`: runs the allowed parts of the success engine and
   validates the result.
 - `POST /api/v1/task/success`: alias for running the success engine.
-- `GET /api/v1/task/logs`: lists recent task plans and runs.
+- `GET /api/v1/task/logs?limit=10`: lists compact recent task-plan and run
+  summaries. The default is 10 and the maximum is 50; full execution and
+  context graphs are intentionally excluded from this list response.
 - `GET /api/v1/task/review-queue`: lists blocked or unresolved tasks needing
   human review.
 

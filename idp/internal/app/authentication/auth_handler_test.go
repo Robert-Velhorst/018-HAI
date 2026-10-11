@@ -1,6 +1,7 @@
 package authentication
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -31,6 +32,24 @@ func TestRequestPasswordResetDoesNotRevealServiceErrors(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "If recovery is available")
 	require.NotContains(t, recorder.Body.String(), "not implemented")
+}
+
+func TestRequestPasswordResetForwardsRequestContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &middlewareAuthService{}
+	router := gin.New()
+	router.POST("/request-password-reset", NewHandler(service).RequestPasswordReset)
+
+	requestContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	form := url.Values{"email": {"operator@example.com"}}
+	request := httptest.NewRequest(http.MethodPost, "/request-password-reset", strings.NewReader(form.Encode())).WithContext(requestContext)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, requestContext, service.passwordResetContext)
 }
 
 func TestIsUserAuthenticatedRefreshesSessionAndReturnsVerifiedTokenInternally(t *testing.T) {

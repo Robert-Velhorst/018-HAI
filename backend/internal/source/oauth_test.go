@@ -2,8 +2,10 @@ package source
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -64,8 +66,71 @@ func TestGoogleOAuthStateFailsClosedWithoutDedicatedKey(t *testing.T) {
 	previous := config.AppConfig
 	t.Cleanup(func() { config.AppConfig = previous })
 	config.AppConfig.OAuthStateSigningKey = ""
-	if _, err := signState(uuid.Nil); err == nil {
+	if _, _, err := signState(uuid.Nil); err == nil {
 		t.Fatal("signState must fail without a dedicated signing key")
+	}
+}
+
+func configureGoogleOAuthTest(t *testing.T) {
+	t.Helper()
+	previous := config.AppConfig
+	t.Cleanup(func() { config.AppConfig = previous })
+	config.AppConfig.GoogleOAuthClientID = "client"
+	config.AppConfig.GoogleOAuthClientSecret = "secret"
+	config.AppConfig.GoogleOAuthRedirectURL = "https://example.test/callback"
+	config.AppConfig.OAuthTokenEncryptionKey = "token-key"
+	config.AppConfig.OAuthStateSigningKey = "state-key"
+}
+
+func oauthStateFromAuthorizeURL(t *testing.T, authorizeURL string) string {
+	t.Helper()
+	parsed, err := url.Parse(authorizeURL)
+	if err != nil {
+		t.Fatalf("parse authorize URL: %v", err)
+	}
+	state := parsed.Query().Get("state")
+	if state == "" {
+		t.Fatalf("authorize URL has no state: %s", authorizeURL)
+	}
+	return state
+}
+
+func TestGoogleOAuthStateIsOwnerBoundRotatedAndSingleUseAcrossServiceRestart(t *testing.T) {
+	configureGoogleOAuthTest(t)
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, OwnerIdentity: "alice", ConnectorKey: gmailConnectorKey,
+		Enabled: true, Status: "active",
+	})
+	firstService := NewService(repo, nil).(*service)
+	firstURL, err := firstService.StartGoogleOAuth(sourceID)
+	if err != nil {
+		t.Fatalf("first StartGoogleOAuth: %v", err)
+	}
+	firstState := oauthStateFromAuthorizeURL(t, firstURL)
+	secondURL, err := firstService.StartGoogleOAuth(sourceID)
+	if err != nil {
+		t.Fatalf("second StartGoogleOAuth: %v", err)
+	}
+	secondState := oauthStateFromAuthorizeURL(t, secondURL)
+	if firstState == secondState {
+		t.Fatal("restarted consent must rotate state")
+	}
+	if _, err := firstService.CompleteGoogleOAuth(context.Background(), "", firstState, "alice"); !errors.Is(err, ErrOAuthStateInvalid) {
+		t.Fatalf("superseded state error = %v, want ErrOAuthStateInvalid", err)
+	}
+	if _, err := firstService.CompleteGoogleOAuth(context.Background(), "", secondState, "bob"); !errors.Is(err, ErrOAuthStateInvalid) {
+		t.Fatalf("foreign owner error = %v, want ErrOAuthStateInvalid", err)
+	}
+
+	// A new service process shares PostgreSQL state in production; using the
+	// same repository proves the contract survives a process restart.
+	restartedService := NewService(repo, nil).(*service)
+	if _, err := restartedService.CompleteGoogleOAuth(context.Background(), "", secondState, "alice"); err == nil || !strings.Contains(err.Error(), "missing authorization code") {
+		t.Fatalf("first owner completion error = %v, want consumed state then missing code", err)
+	}
+	if _, err := restartedService.CompleteGoogleOAuth(context.Background(), "", secondState, "alice"); !errors.Is(err, ErrOAuthStateInvalid) {
+		t.Fatalf("replayed state error = %v, want ErrOAuthStateInvalid", err)
 	}
 }
 
@@ -133,5 +198,44 @@ func TestGoogleConnectionHealthDistinguishesDisconnectedAndReady(t *testing.T) {
 	health, err = service.ConnectionHealth(sourceID)
 	if err != nil || health.Status != "ready" || !health.Authorized || health.CursorPhase != "history" {
 		t.Fatalf("ready health = %#v, %v", health, err)
+	}
+}
+
+func TestRevokedGoogleSourceCannotStartCompleteOrUseOAuth(t *testing.T) {
+	configureGoogleOAuthTest(t)
+
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, OwnerIdentity: "alice", ConnectorKey: gmailConnectorKey,
+		Enabled: true, Status: "active", UpdatedAt: time.Now().UTC(),
+	})
+	service := NewService(repo, nil).(*service)
+	authorizeURL, err := service.StartGoogleOAuth(sourceID)
+	if err != nil {
+		t.Fatalf("StartGoogleOAuth: %v", err)
+	}
+	state := oauthStateFromAuthorizeURL(t, authorizeURL)
+	expected, err := repo.FindSource(sourceID)
+	if err != nil {
+		t.Fatalf("FindSource: %v", err)
+	}
+	if _, err := repo.RevokeSource(expected, "alice", time.Now().UTC()); err != nil {
+		t.Fatalf("RevokeSource: %v", err)
+	}
+
+	if _, err := service.StartGoogleOAuth(sourceID); !errors.Is(err, ErrSourceRevoked) {
+		t.Fatalf("StartGoogleOAuth error = %v, want ErrSourceRevoked", err)
+	}
+	if _, err := service.CompleteGoogleOAuth(context.Background(), "unused-code", state, "alice"); !errors.Is(err, ErrOAuthStateInvalid) {
+		t.Fatalf("CompleteGoogleOAuth error = %v, want ErrOAuthStateInvalid", err)
+	}
+	if _, err := service.googleAccessToken(context.Background(), sourceID, gmailConnectorKey); !errors.Is(err, ErrSourceRevoked) {
+		t.Fatalf("googleAccessToken error = %v, want ErrSourceRevoked", err)
+	}
+	if len(repo.oauthTokens) != 0 {
+		t.Fatalf("revoked source stored OAuth credentials: %#v", repo.oauthTokens)
+	}
+	if len(repo.oauthStates) != 0 {
+		t.Fatalf("revoked source retained OAuth attempts: %#v", repo.oauthStates)
 	}
 }

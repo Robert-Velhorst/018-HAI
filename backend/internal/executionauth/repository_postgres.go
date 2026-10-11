@@ -61,12 +61,13 @@ func (r *PostgresRepository) CreateOrGet(
 			evidence_json, constitution_id, constitution_version,
 			constitution_digest, mandate_id, mandate_decision_id,
 			agent_id, assignment_id, task_review_decision_id,
-			workflow_decision_id, portfolio_proposal_decision_id
+			workflow_decision_id, portfolio_proposal_decision_id,
+			control_decision_id
 		) VALUES (
 			?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS jsonb),
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		)
 		ON CONFLICT (owner_identity, idempotency_key) DO NOTHING`,
 		receipt.ID,
@@ -108,6 +109,7 @@ func (r *PostgresRepository) CreateOrGet(
 		references.taskReviewDecisionID,
 		references.workflowDecisionID,
 		references.portfolioProposalDecisionID,
+		references.controlDecisionID,
 	)
 	if result.Error != nil {
 		return Receipt{}, false, fmt.Errorf(
@@ -502,7 +504,8 @@ const receiptSelect = `
 		evidence_json, constitution_id, constitution_version,
 		constitution_digest, mandate_id, mandate_decision_id,
 		agent_id, assignment_id, task_review_decision_id,
-		workflow_decision_id, portfolio_proposal_decision_id
+		workflow_decision_id, portfolio_proposal_decision_id,
+		control_decision_id
 	FROM public.execution_authorization_receipts
 `
 
@@ -519,6 +522,7 @@ func scanReceipt(scanner receiptScanner) (Receipt, error) {
 	var mandateID, mandateDecisionID sql.NullString
 	var agentID, assignmentID sql.NullString
 	var taskReviewDecisionID, workflowDecisionID, portfolioProposalDecisionID sql.NullString
+	var controlDecisionID sql.NullString
 	err := scanner.Scan(
 		&receipt.ID,
 		&receipt.ContractVersion,
@@ -559,6 +563,7 @@ func scanReceipt(scanner receiptScanner) (Receipt, error) {
 		&taskReviewDecisionID,
 		&workflowDecisionID,
 		&portfolioProposalDecisionID,
+		&controlDecisionID,
 	)
 	if err != nil {
 		return Receipt{}, err
@@ -589,6 +594,7 @@ func scanReceipt(scanner receiptScanner) (Receipt, error) {
 		taskReviewDecisionID,
 		workflowDecisionID,
 		portfolioProposalDecisionID,
+		controlDecisionID,
 	) {
 		return Receipt{}, fmt.Errorf("stored receipt reference columns do not match evidence")
 	}
@@ -606,6 +612,7 @@ type receiptReferences struct {
 	taskReviewDecisionID        any
 	workflowDecisionID          any
 	portfolioProposalDecisionID any
+	controlDecisionID           any
 }
 
 func encodeReceipt(receipt Receipt) ([]byte, receiptReferences, error) {
@@ -729,6 +736,14 @@ func receiptReferencesFromEvidence(
 			)
 		}
 		result.portfolioProposalDecisionID = approvalID
+	case strings.HasPrefix(sourceID, "control-decision:"):
+		if strings.TrimPrefix(sourceID, "control-decision:") !=
+			referenceString(approvalID) {
+			return receiptReferences{}, fmt.Errorf(
+				"opscontrol approval source does not match its decision",
+			)
+		}
+		result.controlDecisionID = approvalID
 	default:
 		return receiptReferences{}, fmt.Errorf(
 			"approval source type is unsupported",
@@ -767,6 +782,7 @@ func (r receiptReferences) match(
 	taskReviewDecisionID sql.NullString,
 	workflowDecisionID sql.NullString,
 	portfolioProposalDecisionID sql.NullString,
+	controlDecisionID sql.NullString,
 ) bool {
 	return referenceString(r.constitutionID) == nullString(constitutionID) &&
 		referenceInt(r.constitutionVersion) == nullInt(constitutionVersion) &&
@@ -777,7 +793,8 @@ func (r receiptReferences) match(
 		referenceString(r.assignmentID) == nullString(assignmentID) &&
 		referenceString(r.taskReviewDecisionID) == nullString(taskReviewDecisionID) &&
 		referenceString(r.workflowDecisionID) == nullString(workflowDecisionID) &&
-		referenceString(r.portfolioProposalDecisionID) == nullString(portfolioProposalDecisionID)
+		referenceString(r.portfolioProposalDecisionID) == nullString(portfolioProposalDecisionID) &&
+		referenceString(r.controlDecisionID) == nullString(controlDecisionID)
 }
 
 func referenceString(value any) string {

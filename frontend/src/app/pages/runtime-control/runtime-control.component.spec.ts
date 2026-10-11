@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons-angular/icons'
 import { of, throwError } from 'rxjs'
 import { NZ_ICONS } from 'ng-zorro-antd/icon'
+import { NzModalService } from 'ng-zorro-antd/modal'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { IAuthSession } from '../../models/auth-session.model.interface'
 import {
@@ -25,6 +26,7 @@ describe('RuntimeControlComponent role boundaries', () => {
   let component: RuntimeControlComponent
   let runtimeService: jasmine.SpyObj<RuntimeControlService>
   let authSessionService: jasmine.SpyObj<AuthSessionService>
+  let modal: jasmine.SpyObj<NzModalService>
   let notification: jasmine.SpyObj<NzNotificationService>
 
   const ownerSession: IAuthSession = {
@@ -97,6 +99,8 @@ describe('RuntimeControlComponent role boundaries', () => {
       'status',
       'readiness',
       'pause',
+      'prepareControlApproval',
+      'decideControlApproval',
       'resume',
       'setMode',
       'verifyEmergencyStop',
@@ -105,6 +109,7 @@ describe('RuntimeControlComponent role boundaries', () => {
     authSessionService = jasmine.createSpyObj<AuthSessionService>('AuthSessionService', [
       'session',
     ])
+    modal = jasmine.createSpyObj<NzModalService>('NzModalService', ['confirm'])
     notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', [
       'success',
       'warning',
@@ -114,6 +119,25 @@ describe('RuntimeControlComponent role boundaries', () => {
     runtimeService.status.and.returnValue(of(activeStatus))
     runtimeService.readiness.and.returnValue(of(readiness))
     runtimeService.pause.and.returnValue(of({ emergencyStop: activeStatus.emergencyStop }))
+    runtimeService.prepareControlApproval.and.returnValue(of({
+      requestId: '11111111-1111-4111-8111-111111111111',
+      action: 'opscontrol.emergency-stop.clear',
+      resourceType: 'opscontrol-emergency-stop',
+      resourceId: 'emergency-stop:revision-1',
+      target: 'disengaged',
+      bindingDigest: 'a'.repeat(64),
+      expiresAt: '2099-07-30T12:05:00Z',
+    }))
+    runtimeService.decideControlApproval.and.returnValue(of({
+      requestId: '11111111-1111-4111-8111-111111111111',
+      decisionId: '22222222-2222-4222-8222-222222222222',
+      decision: 'approved',
+      idempotencyKey: 'opscontrol:11111111-1111-4111-8111-111111111111',
+      taskId: 'opscontrol:11111111-1111-4111-8111-111111111111',
+      approvalSourceId: 'control-decision:22222222-2222-4222-8222-222222222222',
+      approvalBindingDigest: 'a'.repeat(64),
+      expiresAt: '2099-07-30T12:05:00Z',
+    }))
     runtimeService.resume.and.returnValue(of({ emergencyStop: activeStatus.emergencyStop }))
     runtimeService.setMode.and.returnValue(of({ mode: 'read_only' }))
     runtimeService.verifyEmergencyStop.and.returnValue(of({
@@ -139,6 +163,7 @@ describe('RuntimeControlComponent role boundaries', () => {
       providers: [
         { provide: RuntimeControlService, useValue: runtimeService },
         { provide: AuthSessionService, useValue: authSessionService },
+        { provide: NzModalService, useValue: modal },
         { provide: NzNotificationService, useValue: notification },
         {
           provide: NZ_ICONS,
@@ -169,11 +194,75 @@ describe('RuntimeControlComponent role boundaries', () => {
     expect(button('Resume').disabled).toBeFalse()
 
     button('Resume').click()
+    expect(runtimeService.resume).not.toHaveBeenCalled()
+    expect(modal.confirm).toHaveBeenCalled()
+    ;(modal.confirm.calls.mostRecent().args[0]!.nzOnOk as () => void)()
     component.setMode('read_only')
 
-    expect(runtimeService.resume).toHaveBeenCalled()
+    expect(runtimeService.prepareControlApproval).toHaveBeenCalledWith('resume', undefined)
+    expect(runtimeService.decideControlApproval).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      'approved',
+      'Owner approved this exact emergency-stop recovery.'
+    )
+    expect(runtimeService.resume).toHaveBeenCalledWith(jasmine.objectContaining({
+      approvalSourceId: 'control-decision:22222222-2222-4222-8222-222222222222',
+      approvalBindingDigest: 'a'.repeat(64),
+    }))
     expect(runtimeService.setMode).toHaveBeenCalledWith('read_only')
     expect(component.canAdministerRuntime).toBeTrue()
+  })
+
+  it('requires and consumes an exact approval before increasing autonomy', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.status.and.returnValue(of({
+      ...activeStatus,
+      mode: 'read_only',
+      storedMode: 'read_only',
+    }))
+    createComponent()
+
+    component.setMode('autonomous_safe')
+
+    expect(runtimeService.setMode).not.toHaveBeenCalled()
+    expect(modal.confirm).toHaveBeenCalled()
+    ;(modal.confirm.calls.mostRecent().args[0]!.nzOnOk as () => void)()
+    expect(runtimeService.prepareControlApproval).toHaveBeenCalledWith(
+      'set_mode',
+      'autonomous_safe'
+    )
+    expect(runtimeService.setMode).toHaveBeenCalledWith(
+      'autonomous_safe',
+      jasmine.objectContaining({
+        approvalSourceId: 'control-decision:22222222-2222-4222-8222-222222222222',
+      })
+    )
+  })
+
+  it('does not weaken a control when approval evidence is incomplete', () => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.status.and.returnValue(of({
+      ...activeStatus,
+      emergencyStop: { ...activeStatus.emergencyStop, engaged: true },
+      backgroundProcessingActive: false,
+    }))
+    runtimeService.decideControlApproval.and.returnValue(of({
+      requestId: '11111111-1111-4111-8111-111111111111',
+      decisionId: '22222222-2222-4222-8222-222222222222',
+      decision: 'approved',
+      expiresAt: '2099-07-30T12:05:00Z',
+    }))
+    createComponent()
+
+    component.resume()
+    ;(modal.confirm.calls.mostRecent().args[0]!.nzOnOk as () => void)()
+
+    expect(runtimeService.resume).not.toHaveBeenCalled()
+    expect(notification.error).toHaveBeenCalledWith(
+      'Resume failed',
+      'HAI returned incomplete or expired control-approval evidence.'
+    )
+    expect(component.busy).toBeFalse()
   })
 
   it('keeps emergency stop, recovery, and verification available to an operator', () => {

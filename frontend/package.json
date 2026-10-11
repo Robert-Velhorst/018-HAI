@@ -5,6 +5,8 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "check:theme": "node scripts/check-ng-zorro-theme.mjs",
+    "prebuild": "npm run check:theme",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"

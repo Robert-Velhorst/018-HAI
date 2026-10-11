@@ -36,6 +36,9 @@ for s in "${SUITES[@]}"; do
   else
     line="${reported_line:-==> Result: missing or invalid}"
     summary+=("FAIL  ${s}  (${line#*==> })")
+    echo "--- ${s} failure output ---" >&2
+    printf '%s\n' "${out}" >&2
+    echo "--- end ${s} failure output ---" >&2
     overall=1
   fi
   echo

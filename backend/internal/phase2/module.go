@@ -300,7 +300,7 @@ func defaultExecutionAuthorizationService(ownerIdentity string) *executionauth.S
 		return nil
 	}
 	active, _, err := frameworks.ActiveConstitution(ownerIdentity)
-	if err != nil || !hasDurableActiveConstitution(active) {
+	if err != nil || !hasExecutionConstitution(active) {
 		return nil
 	}
 	constitution, err := executionauth.NewConstitutionPolicyAdapter(frameworks)
@@ -355,9 +355,16 @@ func defaultExecutionAuthorizationService(ownerIdentity string) *executionauth.S
 	return service
 }
 
-func hasDurableActiveConstitution(value frameworkregistry.Constitution) bool {
+func hasExecutionConstitution(value frameworkregistry.Constitution) bool {
 	if value.Status != frameworkregistry.ConstitutionActive {
 		return false
+	}
+	// The immutable built-in baseline is the safe first-run Constitution. It
+	// explicitly permits only allowlisted, reversible, low-risk local checks;
+	// accepting it here keeps a fresh install operational without allowing an
+	// arbitrary non-persisted Constitution to authorize execution.
+	if strings.TrimSpace(value.ID) == frameworkregistry.DefaultConstitution().ID {
+		return true
 	}
 	id, err := uuid.Parse(strings.TrimSpace(value.ID))
 	return err == nil && id != uuid.Nil

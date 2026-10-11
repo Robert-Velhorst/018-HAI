@@ -25,6 +25,12 @@ type leakingAgentListRepository struct {
 	agent agentregistry.Agent
 }
 
+type cancellationAwareAgentListRepository struct{}
+
+func (cancellationAwareAgentListRepository) List(ctx context.Context, _ string) ([]agentregistry.Agent, error) {
+	return nil, ctx.Err()
+}
+
 func (r leakingAgentListRepository) List(context.Context, string) ([]agentregistry.Agent, error) {
 	return []agentregistry.Agent{r.agent}, nil
 }
@@ -237,6 +243,24 @@ func TestLoadOperatingContextFailsClosedOnAgentProviderError(t *testing.T) {
 	}
 	if len(got.AvailableAgents) != 1 || got.AvailableAgents[0].ID != explicit[0].ID {
 		t.Fatalf("explicit cards changed: %#v", got.AvailableAgents)
+	}
+}
+
+func TestLoadOperatingContextPropagatesTaskCancellationToAgentRegistry(t *testing.T) {
+	provider, err := NewAgentContextProvider(cancellationAwareAgentListRepository{})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc := &service{agentContext: provider}
+
+	_, err = svc.loadOperatingContext(IntakeRequest{
+		OwnerIdentity:    "alice",
+		executionContext: ctx,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("load operating context error = %v, want context canceled", err)
 	}
 }
 

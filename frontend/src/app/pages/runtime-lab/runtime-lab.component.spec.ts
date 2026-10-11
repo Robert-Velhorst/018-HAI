@@ -60,7 +60,12 @@ describe('RuntimeLabComponent MCP readiness', () => {
       safetyNote: 'No permission is granted.',
     }));
     mcpService.overview.and.returnValue(of({ enabled: true, scope: 'Read-only MCP preflight.', servers: [{ id: 'github', catalogName: 'GitHub MCP Server', configured: true }] }));
-    return { component: new RuntimeLabComponent(runtimeService, mcpService, notification, router), mcpService, notification };
+    return {
+      component: new RuntimeLabComponent(runtimeService, mcpService, notification, router),
+      runtimeService,
+      mcpService,
+      notification,
+    };
   }
 
   it('loads MCP readiness alongside runtime summaries', () => {
@@ -71,24 +76,53 @@ describe('RuntimeLabComponent MCP readiness', () => {
     expect(component.mcpOverview?.servers[0].catalogName).toBe('GitHub MCP Server');
   });
 
-  it('loads the source-reviewed runtime parity inventory without changing readiness', () => {
-    const { component } = make();
+  it('keeps advanced runtime evidence out of the basic refresh', () => {
+    const { component, runtimeService } = make();
     component.refresh();
 
+    expect(runtimeService.overview).toHaveBeenCalledTimes(1);
+    expect(runtimeService.featureParity).not.toHaveBeenCalled();
+    expect(runtimeService.capabilities).not.toHaveBeenCalled();
+    expect(component.parityOverview).toBeUndefined();
+    expect(component.capabilityOverview).toBeUndefined();
+  });
+
+  it('loads source-reviewed parity and capability contracts when advanced evidence opens', () => {
+    const { component, runtimeService } = make();
+
+    component.onParityToggle({ target: { open: true } } as any);
+
+    expect(runtimeService.featureParity).toHaveBeenCalledTimes(1);
+    expect(runtimeService.capabilities).toHaveBeenCalledTimes(1);
     expect(component.parityOverview?.inventories[0].runtimeId).toBe('openclaw');
     expect(component.parityOverview?.inventories[0].readinessCeiling).toBe('declared');
     expect(component.parityLoading).toBeFalse();
-  });
-
-  it('loads non-executable HAI capability cards separately from runtime claims', () => {
-    const { component } = make();
-    component.refresh();
-
     const cards = component.cardsForRuntime('openclaw');
     expect(cards.length).toBe(1);
     expect(cards[0].readinessLevel).toBe('declared');
     expect(cards[0].canInvoke).toBeFalse();
     expect(cards[0].canExecuteExternalEffect).toBeFalse();
+  });
+
+  it('does not refetch advanced evidence when an already-loaded section is reopened', () => {
+    const { component, runtimeService } = make();
+
+    component.onParityToggle({ target: { open: true } } as any);
+    component.onParityToggle({ target: { open: false } } as any);
+    component.onParityToggle({ target: { open: true } } as any);
+
+    expect(runtimeService.featureParity).toHaveBeenCalledTimes(1);
+    expect(runtimeService.capabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes advanced evidence only while its section is open', () => {
+    const { component, runtimeService } = make();
+
+    component.onParityToggle({ target: { open: true } } as any);
+    component.refresh();
+
+    expect(runtimeService.featureParity).toHaveBeenCalledTimes(2);
+    expect(runtimeService.capabilities).toHaveBeenCalledTimes(2);
   });
 
   it('labels and counts runtime dispositions for progressive inspection', () => {

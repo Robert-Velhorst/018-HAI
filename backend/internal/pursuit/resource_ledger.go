@@ -186,52 +186,62 @@ func (s *service) resourceUsageForPursuit(ownerIdentity string, pursuit models.P
 		usage.BlockingReason = "resource usage cannot be verified; new work is paused while a pursuit ceiling is configured"
 		return usage
 	}
-	usage.Available = true
-	usage.EventCount = totals.EventCount
-	usage.LatestRecordedAt = totals.LatestRecordedAt
-	usage.EffortRecordedHours = roundResource(float64(totals.EffortMinutes) / 60)
-	usage.SpendIncurredEUR = roundResource(float64(totals.IncurredMinor) / 100)
-	usage.SpendRefundedEUR = roundResource(float64(totals.RefundedMinor) / 100)
-	netMinor := totals.IncurredMinor - totals.RefundedMinor
-	if netMinor < 0 {
-		netMinor = 0
-	}
-	usage.SpendNetEUR = roundResource(float64(netMinor) / 100)
+	reserved := PursuitResourceReservationTotals{}
 	if reservations, ok := s.repo.(pursuitResourceReservationSummaryRepository); ok {
-		reserved, reservationErr := reservations.SummarizeActiveResourceReservations(effectiveOwner, pursuit.ID)
+		var reservationErr error
+		reserved, reservationErr = reservations.SummarizeActiveResourceReservations(effectiveOwner, pursuit.ID)
 		if reservationErr != nil {
 			usage.State = "unavailable"
 			usage.Available = false
 			usage.BlockingReason = "active resource reservations cannot be verified; new work is paused"
 			return usage
 		}
-		usage.EffortReservedHours = roundResource(float64(reserved.EffortMinutes) / 60)
-		usage.SpendReservedEUR = roundResource(float64(reserved.CostMicros) / 1_000_000)
-		usage.ActiveReservations = reserved.ReservationCount
-		usage.LatestReservedAt = reserved.LatestReservedAt
 	}
+	active := []models.PursuitResourceReservation{}
 	if reservations, ok := s.repo.(pursuitResourceReservationRepository); ok {
-		active, reservationErr := reservations.FindActiveResourceReservations(effectiveOwner, pursuit.ID, 50)
+		var reservationErr error
+		active, reservationErr = reservations.FindActiveResourceReservations(effectiveOwner, pursuit.ID, 50)
 		if reservationErr != nil {
 			usage.State = "unavailable"
 			usage.Available = false
 			usage.BlockingReason = "active resource reservation detail cannot be verified; new work is paused"
 			return usage
 		}
-		now := time.Now().UTC()
-		for _, reservation := range active {
-			item := PursuitActiveResourceReservation{
-				ID: reservation.ID, OperationID: reservation.OperationID,
-				EstimatedEffortMinutes: reservation.EstimatedEffortMinutes,
-				EstimatedCostEUR:       roundResource(float64(reservation.EstimatedCostMicros) / 1_000_000),
-				Reason:                 reservation.Reason, Actor: reservation.Actor, ReservedAt: reservation.ReservedAt,
-			}
-			item.Stale = !reservation.ReservedAt.IsZero() && now.Sub(reservation.ReservedAt) >= staleResourceReservationAge
-			if item.Stale {
-				item.ReviewReason = "No settlement has been recorded for at least 24 hours; confirm the operation is no longer running before release."
-			}
-			usage.Reservations = append(usage.Reservations, item)
+	}
+	return pursuitResourceUsageFromRecords(pursuit, totals, reserved, active, time.Now().UTC())
+}
+
+func pursuitResourceUsageFromRecords(pursuit models.Pursuit, totals PursuitResourceTotals, reserved PursuitResourceReservationTotals, active []models.PursuitResourceReservation, now time.Time) PursuitResourceUsage {
+	usage := PursuitResourceUsage{
+		State: "within_limits", Available: true, LimitsConfigured: true,
+		EffortLimitHours: pursuit.ResourceLimits.MaxEffortHours,
+		SpendLimitEUR:    pursuit.ResourceLimits.MaxSpendEUR,
+		Reservations:     []PursuitActiveResourceReservation{},
+		EventCount:       totals.EventCount, LatestRecordedAt: totals.LatestRecordedAt,
+		ActiveReservations: reserved.ReservationCount, LatestReservedAt: reserved.LatestReservedAt,
+	}
+	usage.EffortRecordedHours = roundResource(float64(totals.EffortMinutes) / 60)
+	usage.EffortReservedHours = roundResource(float64(reserved.EffortMinutes) / 60)
+	usage.SpendIncurredEUR = roundResource(float64(totals.IncurredMinor) / 100)
+	usage.SpendRefundedEUR = roundResource(float64(totals.RefundedMinor) / 100)
+	usage.SpendReservedEUR = roundResource(float64(reserved.CostMicros) / 1_000_000)
+	netMinor := totals.IncurredMinor - totals.RefundedMinor
+	if netMinor < 0 {
+		netMinor = 0
+	}
+	usage.SpendNetEUR = roundResource(float64(netMinor) / 100)
+	for _, reservation := range active {
+		item := PursuitActiveResourceReservation{
+			ID: reservation.ID, OperationID: reservation.OperationID,
+			EstimatedEffortMinutes: reservation.EstimatedEffortMinutes,
+			EstimatedCostEUR:       roundResource(float64(reservation.EstimatedCostMicros) / 1_000_000),
+			Reason:                 reservation.Reason, Actor: reservation.Actor, ReservedAt: reservation.ReservedAt,
 		}
+		item.Stale = !reservation.ReservedAt.IsZero() && now.Sub(reservation.ReservedAt) >= staleResourceReservationAge
+		if item.Stale {
+			item.ReviewReason = "No settlement has been recorded for at least 24 hours; confirm the operation is no longer running before release."
+		}
+		usage.Reservations = append(usage.Reservations, item)
 	}
 	usage.EffortCommittedHours = roundResource(usage.EffortRecordedHours + usage.EffortReservedHours)
 	usage.SpendCommittedEUR = roundResource(usage.SpendNetEUR + usage.SpendReservedEUR)

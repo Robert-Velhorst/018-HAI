@@ -8,7 +8,7 @@ import { ThemeService } from './services/theme.service';
   styleUrls: ['./app.component.scss']
 })
 export class AppComponent {
-  title = 'app';
+  readonly title = 'HAI Automation Hub';
 
   constructor(private themeService: ThemeService) {}
 }

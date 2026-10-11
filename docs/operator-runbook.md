@@ -11,22 +11,114 @@ by the action.
 
 ## Start And Stop
 
-Create an untracked `.env.local` from `.env.example`, replace placeholder
-secrets, and use the local Compose file:
+Run the Windows initializer to create the ignored `.env.local`, then use the
+default Compose entrypoint. It delegates to the single source-built topology in
+`docker-compose.local.yml`:
 
 ```bash
-docker compose -f docker-compose.local.yml --env-file .env.local up -d --build
-docker compose -f docker-compose.local.yml --env-file .env.local ps
+docker compose up -d --build
+docker compose ps
 ```
 
 Stop the stack without deleting volumes:
 
 ```bash
-docker compose -f docker-compose.local.yml --env-file .env.local down
+docker compose down
 ```
+
+Compose gives the backend and identity provider 20 seconds to drain HTTP
+requests. Their signal-aware application context also cancels source,
+workflow, ambient, model-maintenance, catalog-maintenance, Temporal, and
+outcome-monitor workers before process exit. A forced kill does not provide
+this guarantee and should be reserved for an unresponsive process.
 
 Do not add `-v` unless the reviewed operation is intentionally deleting local
 database and queue volumes.
+
+The backend remains read-only except for explicitly mounted operational data.
+Emergency-stop and autonomy-mode state live in the dedicated
+`018-hai-phase2-control-state` volume at `/var/lib/hai/phase2-state`; approval,
+authorization, consumption, and audit evidence remain in PostgreSQL. Preserve
+both stores during backup and recovery. Deleting only the control-state volume
+does not erase approval evidence, but it removes the current stop/mode state and
+therefore requires a fail-closed recovery review before execution is resumed.
+
+### Database Ownership Boundary
+
+The automation database uses two identities. `DB_USER` is the schema owner and
+is passed only to Postgres and the one-shot `backend-migrate` service.
+`DB_RUNTIME_USER` is the long-lived backend identity. The migrator creates or
+rotates that role, grants table DML plus required sequence/function use, and
+explicitly withholds schema creation, migration-ledger access, `TRUNCATE`, role
+administration, database creation, replication, and row-security bypass.
+It also removes inherited role memberships, resets role-level configuration,
+and fails closed if a pre-existing runtime role owns database objects; ownership
+must be reassigned to the migration owner before startup can continue.
+Compose starts the backend only after `backend-migrate` exits successfully, and
+the backend itself runs with `DB_RUN_MIGRATIONS=false`.
+
+An `.env.local` created before this boundary was introduced must receive fresh,
+independent `DB_PASSWORD` and `DB_RUNTIME_PASSWORD` values before the next
+start. Generate a separate 32-byte random secret for each and add them to the
+ignored file. The Windows initializer and Unix `generate-secrets.sh` do this
+automatically for new environments. A missing, weak, or shipped database-owner
+password fails the IDP closed in production; a missing or shipped runtime-role
+password fails the migrator closed.
+
+After an upgrade, verify both the one-shot result and runtime identity:
+
+```bash
+docker compose -f docker-compose.local.yml --env-file .env.local ps -a backend-migrate backend
+docker compose -f docker-compose.local.yml --env-file .env.local exec backend /app/hai-backend doctor
+```
+
+### Kafka-Protocol Broker Cutover And Rollback
+
+The local stack keeps the Kafka API and `kafka:9092` address but runs a
+digest-pinned Redpanda Community Edition broker with one shard. Its active data
+volume is `018-hai-redpanda-data`. Backend and IDP Sarama producers and the
+nginx config-manager consumer require no protocol or address change.
+
+HAI does not use Redpanda's development mode. The Compose command explicitly
+sets `--unsafe-bypass-fsync=false`, and the production cluster default keeps
+`write_caching_default=false`, so a successful `acks=all` response is flushed
+to disk. Do not replace these with `dev-container` or `--overprovisioned`: both
+enable an unsafe fsync bypass in the current image.
+
+The cutover intentionally does not mount or modify the former
+`018-hai-kafka-kraft-data`, `018-hai-kafka-data`,
+`018-hai-zookeeper-data`, or `018-hai-zookeeper-log` volumes. Kafka and
+Redpanda storage formats are not an in-place migration boundary, so queued
+events and offsets in a detached legacy log do not transfer automatically.
+The backend's transactional outbox remains authoritative for undelivered
+automation events, but an operator must still review legacy broker state before
+removing any volume. `down -v`, `docker volume prune`, and broad Docker cleanup
+are prohibited while that review is pending.
+
+After the first start, require all of the following before accepting the
+cutover:
+
+```powershell
+docker compose --env-file .env.local -f docker-compose.local.yml ps kafka nginxconfigmanager
+docker compose --env-file .env.local -f docker-compose.local.yml exec kafka rpk cluster info -X brokers=127.0.0.1:9092
+docker compose --env-file .env.local -f docker-compose.local.yml exec kafka rpk cluster config get write_caching_default
+Invoke-WebRequest http://127.0.0.1/readyz -UseBasicParsing
+```
+
+If `018-hai-redpanda-data` was first created by an earlier development-mode
+candidate, correct its persisted cluster setting once and recreate all clients
+so no stale broker connection survives the cutover:
+
+```powershell
+docker compose --env-file .env.local -f docker-compose.local.yml exec kafka rpk cluster config set write_caching_default false
+docker compose --env-file .env.local -f docker-compose.local.yml up -d --force-recreate idp backend nginxconfigmanager
+```
+
+Then run `scripts\smoke-event-pipeline.ps1`. It creates and deletes one
+disposable read-only health automation through the authenticated loopback API,
+confirms both generated-config effects, and requires two topic-offset advances.
+A healthy broker alone proves Kafka-protocol transport, not application
+delivery.
 
 ## Health Checks
 
@@ -42,8 +134,51 @@ Gateway `/healthz` and `/readyz` are intentionally public. They expose only
 service status. Operational `/api/v1/*` routes remain authenticated unless a
 route is explicitly documented as a public callback.
 
+Use the signed-in System Status page or authenticated
+`GET /api/v1/system/readiness` when individual dependency checks are needed.
+
 `degraded` is not equivalent to full capability. For example, a missing LLM
 provider may leave the control plane available while generation is unavailable.
+
+### Automation Event Delivery
+
+Automation create, update, and delete operations commit their Kafka delivery
+intent in the same Postgres transaction as the automation mutation. A broker
+outage therefore does not turn a successful API mutation into an ambiguous
+failure. The backend retries the committed event with a stable event ID,
+bounded exponential backoff, a fenced worker lease, and at-least-once delivery.
+The nginx-config consumer treats redelivery idempotently.
+
+The nginx-config consumer uses the stable
+`NGINX_CONFIG_MANAGER_GROUP_ID` cursor and starts at the oldest uncommitted
+offset. Events published while that service is stopped are therefore consumed
+after it returns. It writes payload-free completion receipts below
+`NGINX_CONFIG_MANAGER_INBOX_DIR` before advancing offsets. A replay first checks
+that persistent inbox. The filesystem effect also compares rendered content
+before replacing a file and treats an already-absent delete as successful, so
+the narrow crash window between applying an effect and writing its receipt is
+still replay-safe. Processing failures remain uncommitted until the configured
+retry budget is exhausted; poison messages then receive a durable dead-letter
+receipt and no longer block the partition. Receipts are pruned after the
+configured retention period in bounded startup batches.
+
+Inspect owner-scoped delivery health at `GET /api/v1/event-delivery/`. The
+response contains pending, published, and dead-letter counts, the oldest
+pending timestamp, and up to ten recent failures. Event payloads are
+intentionally excluded from this endpoint. Readiness also reports the
+`kafka.connection` and `events.outbox` probes independently.
+
+A dead letter is never silently discarded. After correcting the broker or
+consumer problem, an authenticated owner with admin permission may queue one
+again with `POST /api/v1/event-delivery/{event-id}/retry`. The operation resets
+the bounded retry counter and the dispatcher wakes on its next poll. Published
+delivery rows older than 30 days are pruned in bounded batches; domain audit and
+verification records are separate and are not removed by this retention job.
+
+If `KAFKA_BROKERS` is empty or unreachable, mutations remain available because
+their events are durable in Postgres, but readiness is degraded and delivery
+stays pending. Do not describe those events as published until the outbox state
+confirms it.
 
 ## Identity And Permission Contract
 
@@ -980,8 +1115,11 @@ See [Database Migrations And Rollback Safety](migrations.md).
   rotate while approved actions are awaiting execution.
 - **Backups:** follow [backup and restore](backup-restore.md); test restore
   evidence, not only dump creation.
-- **Rate limiting:** if exposed beyond loopback, configure
-  `RATE_LIMIT_PER_MINUTE` and verify Redis-backed enforcement.
+- **Rate limiting:** ngrok preflight requires a positive
+  `RATE_LIMIT_PER_MINUTE`; verify Redis-backed enforcement before exposure.
+  The gateway separately throttles public authentication and A2A requests with
+  fixed one-MiB zones so Redis failure does not leave those entry points
+  unbounded.
 - **Emergency stop:** set `HAI_EMERGENCY_STOP=true` in `.env.local` and recreate
   the backend service. Confirm task, workflow, LLM, automation, and runtime
   execution are blocked while read/review surfaces remain available.
@@ -1016,9 +1154,10 @@ include raw source content, tokens, passwords, approval proofs, or private
 request payloads.
 
 Repository tests prove implementation contracts, not real-world capability.
-Before operational trust still require:
+Before operational trust on a release target still require:
 
-- a clean Windows 11 clone, migration, sign-in, and browser journey;
+- repeating the retained clean-clone, migration, sign-in, and browser journey
+  on that distinct Windows 11 target;
 - a two-real-account owner-isolation exercise;
 - one bounded configured local-model task;
 - separately approved and evidenced live connector/runtime exercises;

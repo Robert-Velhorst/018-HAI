@@ -182,6 +182,36 @@ func TestQueriesFilterDomainTypeRelationTemporalAndLocalOnly(t *testing.T) {
 	}
 }
 
+func TestServiceUsesBoundedRepositoryQueries(t *testing.T) {
+	repo := &boundedQueryRepositorySpy{MemoryRepository: NewMemoryRepository()}
+	service := NewService(repo, func() time.Time { return fixedNow() })
+
+	if _, err := service.QueryEntities(context.Background(), "owner-1", EntityQuery{
+		ExternalKeys: []ExternalKey{{Namespace: " TRELLO/CARD ", Value: " card-1 "}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.entityCalls != 1 || repo.entityQuery.Limit != defaultLimit ||
+		len(repo.entityQuery.ExternalKeys) != 1 ||
+		repo.entityQuery.ExternalKeys[0] != (ExternalKey{Namespace: "trello/card", Value: "card-1"}) {
+		t.Fatalf("bounded entity query = calls:%d query:%#v", repo.entityCalls, repo.entityQuery)
+	}
+
+	if _, err := service.QueryRelations(context.Background(), "owner-1", RelationQuery{Limit: 7}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.relationCalls != 1 || repo.relationQuery.Limit != 7 {
+		t.Fatalf("bounded relation query = calls:%d query:%#v", repo.relationCalls, repo.relationQuery)
+	}
+
+	if _, err := service.ListMergeProposals(context.Background(), "owner-1", 9); err != nil {
+		t.Fatal(err)
+	}
+	if repo.proposalCalls != 1 || repo.proposalLimit != 9 {
+		t.Fatalf("bounded merge proposal query = calls:%d limit:%d", repo.proposalCalls, repo.proposalLimit)
+	}
+}
+
 func TestSuggestionsAreExplainableDeterministicAndAuthorityFree(t *testing.T) {
 	service := NewService(nil, func() time.Time { return fixedNow() })
 	person := mustEntity(t, service, entityRequest(EntityPerson, "Robert"))
@@ -294,6 +324,34 @@ func TestPublicServiceHasNoExecutionOrApprovalMethods(t *testing.T) {
 			t.Fatalf("advisory service exposes forbidden method %s", forbidden)
 		}
 	}
+}
+
+type boundedQueryRepositorySpy struct {
+	*MemoryRepository
+	entityCalls   int
+	entityQuery   EntityQuery
+	relationCalls int
+	relationQuery RelationQuery
+	proposalCalls int
+	proposalLimit int
+}
+
+func (r *boundedQueryRepositorySpy) QueryEntities(_ context.Context, _ string, query EntityQuery) ([]Entity, error) {
+	r.entityCalls++
+	r.entityQuery = query
+	return []Entity{}, nil
+}
+
+func (r *boundedQueryRepositorySpy) QueryRelations(_ context.Context, _ string, query RelationQuery) ([]Relation, error) {
+	r.relationCalls++
+	r.relationQuery = query
+	return []Relation{}, nil
+}
+
+func (r *boundedQueryRepositorySpy) ListMergeProposalsWithLimit(_ context.Context, _ string, limit int) ([]MergeProposal, error) {
+	r.proposalCalls++
+	r.proposalLimit = limit
+	return []MergeProposal{}, nil
 }
 
 func TestOperationalProjectionCreatesIdempotentCrossEntityGraph(t *testing.T) {

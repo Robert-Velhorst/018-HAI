@@ -1,9 +1,32 @@
 
-// Custom Theming for NG-ZORRO
-// For more information: https://ng.ant.design/docs/customize-theme/en
-@import "../node_modules/ng-zorro-antd/ng-zorro-antd.less";
+// Load only the NG-ZORRO component styles used by HAI. The default bundle
+// imports every component family and adds hundreds of kilobytes of unused CSS.
+@import "../node_modules/ng-zorro-antd/style/default.less";
+@import "../node_modules/ng-zorro-antd/style/patch.less";
 
-// Override less variables to here
-// View all variables: https://github.com/NG-ZORRO/ng-zorro-antd/blob/master/components/style/themes/default.less
-
-// @primary-color: #1890ff;
+@import "../node_modules/ng-zorro-antd/icon/style/entry.less";
+@import "../node_modules/ng-zorro-antd/alert/style/entry.less";
+@import "../node_modules/ng-zorro-antd/button/style/entry.less";
+@import "../node_modules/ng-zorro-antd/card/style/entry.less";
+@import "../node_modules/ng-zorro-antd/checkbox/style/entry.less";
+@import "../node_modules/ng-zorro-antd/drawer/style/entry.less";
+@import "../node_modules/ng-zorro-antd/dropdown/style/entry.less";
+@import "../node_modules/ng-zorro-antd/empty/style/entry.less";
+@import "../node_modules/ng-zorro-antd/form/style/entry.less";
+@import "../node_modules/ng-zorro-antd/input/style/entry.less";
+@import "../node_modules/ng-zorro-antd/input-number/style/entry.less";
+@import "../node_modules/ng-zorro-antd/layout/style/entry.less";
+@import "../node_modules/ng-zorro-antd/list/style/entry.less";
+@import "../node_modules/ng-zorro-antd/menu/style/entry.less";
+@import "../node_modules/ng-zorro-antd/modal/style/entry.less";
+@import "../node_modules/ng-zorro-antd/notification/style/entry.less";
+@import "../node_modules/ng-zorro-antd/pagination/style/entry.less";
+@import "../node_modules/ng-zorro-antd/radio/style/entry.less";
+@import "../node_modules/ng-zorro-antd/select/style/entry.less";
+@import "../node_modules/ng-zorro-antd/spin/style/entry.less";
+@import "../node_modules/ng-zorro-antd/steps/style/entry.less";
+@import "../node_modules/ng-zorro-antd/table/style/entry.less";
+@import "../node_modules/ng-zorro-antd/tag/style/entry.less";
+@import "../node_modules/ng-zorro-antd/timeline/style/entry.less";
+@import "../node_modules/ng-zorro-antd/tooltip/style/entry.less";
+@import "../node_modules/ng-zorro-antd/upload/style/entry.less";

@@ -8,6 +8,36 @@ import (
 	"time"
 )
 
+func TestCreateEvaluationAllowsOnlyBoundedMonotonicClockAdvance(t *testing.T) {
+	ctx := context.Background()
+	now := testAsOf
+	service := NewServiceWithClock(NewMemoryRepository(), func() time.Time { return now })
+	outcome := validRequest().Outcome
+	stored, created, err := service.StoreOutcome(ctx, "owner-1", "workspace-1", "outcome-1", StoreOutcomeRequest{
+		IdempotencyKey: "monotonic-outcome", ExpectedRevision: 0, Outcome: outcome,
+	})
+	if err != nil || !created {
+		t.Fatalf("StoreOutcome() = (%+v, %v, %v)", stored, created, err)
+	}
+	request := CreateEvaluationRequest{
+		IdempotencyKey: "monotonic-evaluation", OutcomeRevision: stored.Revision, OutcomeAuditDigest: stored.AuditDigest,
+		Observations: []Observation{
+			observation("monotonic-obs-1", 12, testStart.Add(5*24*time.Hour)),
+			observation("monotonic-obs-2", 16, testStart.Add(15*24*time.Hour)),
+		},
+		AsOf: now.Add(outcomeMonotonicClockAllowance),
+	}
+	record, created, err := service.CreateEvaluation(ctx, "owner-1", "workspace-1", "outcome-1", request)
+	if err != nil || !created || !record.RecordedAt.Equal(request.AsOf) {
+		t.Fatalf("bounded evaluation = (%+v, %v, %v)", record, created, err)
+	}
+	request.IdempotencyKey = "future-evaluation"
+	request.AsOf = now.Add(outcomeMonotonicClockAllowance + time.Microsecond)
+	if _, _, err := service.CreateEvaluation(ctx, "owner-1", "workspace-1", "outcome-1", request); !errors.Is(err, ErrInvalidTimeWindow) {
+		t.Fatalf("materially future evaluation error = %v, want %v", err, ErrInvalidTimeWindow)
+	}
+}
+
 func TestServiceStoresOwnerScopedAdvisoryRecordsIdempotently(t *testing.T) {
 	now := time.Date(2026, time.February, 2, 12, 0, 0, 0, time.UTC)
 	repository := NewMemoryRepository()

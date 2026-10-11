@@ -61,12 +61,16 @@ func validateEndpointURL(raw string) error {
 // local machine. host.docker.internal is accepted so the Docker backend can
 // reach a server deliberately bound on the Windows host.
 func validateLocalEndpointURL(raw string) error {
+	return validateLocalEndpointURLForProvider(raw, "")
+}
+
+func validateLocalEndpointURLForProvider(raw, providerID string) error {
 	if err := validateEndpointURL(raw); err != nil {
 		return err
 	}
 	u, _ := url.Parse(raw)
 	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(u.Hostname())), ".")
-	if host == "localhost" || host == "host.docker.internal" {
+	if host == "localhost" || host == "host.docker.internal" || (providerID == "ollama" && host == "ollama-local") {
 		return nil
 	}
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {

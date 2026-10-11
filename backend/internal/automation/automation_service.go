@@ -27,6 +27,7 @@ import (
 	"automation-hub-backend/internal/events"
 	"automation-hub-backend/internal/executionauth"
 	"automation-hub-backend/internal/models"
+	"automation-hub-backend/internal/processcontrol"
 	"automation-hub-backend/internal/safety"
 	"automation-hub-backend/internal/util"
 
@@ -155,6 +156,7 @@ type service struct {
 	approvalProofs  ApprovalProofService
 	executionAuth   ExecutionAuthorizer
 	finalEffects    *executionauth.FinalEffectBridge
+	httpClient      *http.Client
 }
 
 func NewService(repo Repository, publisher events.Publisher) Service {
@@ -252,6 +254,7 @@ func NewServiceWithRuntimeRegistryApprovalProofsExecutionAuthorizationAndFinalEf
 		approvalProofs:  approvalProofs,
 		executionAuth:   executionAuthorizer,
 		finalEffects:    finalEffects,
+		httpClient:      noRedirectHTTPClient(10 * time.Second),
 	}
 }
 
@@ -303,14 +306,19 @@ func (s *service) Create(automation *models.Automation) (*models.Automation, err
 		return nil, err
 	}
 
+	event := &events.AutomationEvent{
+		Type:       events.CreateEvent,
+		Automation: automation,
+	}
+	if durableRepo, ok := s.repo.(DurableEventRepository); ok {
+		return durableRepo.CreateWithEvent(automation, event)
+	}
+
 	automationCreated, err := s.repo.Create(automation)
 	if err != nil {
 		return nil, err
 	}
-	event := &events.AutomationEvent{
-		Type:       events.CreateEvent,
-		Automation: automationCreated,
-	}
+	event.Automation = automationCreated
 	err = s.publisher.Publish(event)
 	if err != nil {
 		log.Printf("Failed to publish create event to Kafka: %v", err)
@@ -368,13 +376,21 @@ func (s *service) Update(automation *models.Automation) (*models.Automation, err
 		return nil, errValidate
 	}
 
-	automationUpdated, err := s.repo.Update(automation)
-	automationUpdated.OldUrlPath = oldUrlPath
-
+	automation.OldUrlPath = oldUrlPath
 	event := &events.AutomationEvent{
 		Type:       events.UpdateEvent,
-		Automation: automationUpdated,
+		Automation: automation,
 	}
+	if durableRepo, ok := s.repo.(DurableEventRepository); ok {
+		return durableRepo.UpdateWithEvent(automation, event)
+	}
+
+	automationUpdated, err := s.repo.Update(automation)
+	if err != nil {
+		return nil, err
+	}
+	automationUpdated.OldUrlPath = oldUrlPath
+	event.Automation = automationUpdated
 
 	err = s.publisher.Publish(event)
 	if err != nil {
@@ -391,14 +407,17 @@ func (s *service) Delete(id uuid.UUID) error {
 		return err
 	}
 
-	err = s.repo.Delete(id)
-	if err != nil {
-		return err
-	}
-
 	event := &events.AutomationEvent{
 		Type:       events.DeleteEvent,
 		Automation: automation,
+	}
+	if durableRepo, ok := s.repo.(DurableEventRepository); ok {
+		return durableRepo.DeleteWithEvent(id, event)
+	}
+
+	err = s.repo.Delete(id)
+	if err != nil {
+		return err
 	}
 
 	err = s.publisher.Publish(event)
@@ -496,12 +515,17 @@ func (s *service) RunHealthCheck(id uuid.UUID) (*HealthResult, error) {
 			failureReason = "health check target must be an absolute http or https URL"
 			break
 		}
+		if parsed.User != nil {
+			status = classifyFailure(automation.ConsecutiveFailures + 1)
+			failureReason = "health check target must not contain credentials"
+			break
+		}
 		if reason := networkTargetBlockedReason(parsed.Hostname(), "AUTOMATION_HEALTH_ALLOWED_HOSTS", defaultAPILaunchAllowedHosts, "AUTOMATION_HEALTH_ALLOW_LINK_LOCAL"); reason != "" {
 			status = classifyFailure(automation.ConsecutiveFailures + 1)
 			failureReason = reason
 			break
 		}
-		client := noRedirectHTTPClient(10 * time.Second)
+		client := s.directHTTPClient()
 		resp, errGet := client.Get(target)
 		if errGet != nil {
 			status = classifyFailure(automation.ConsecutiveFailures + 1)
@@ -1616,6 +1640,9 @@ func (s *service) executeAPILaunch(
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return blockedLaunch("API launch target must be an absolute http or https URL", started, append(audit, "api target rejected"))
 	}
+	if parsed.User != nil {
+		return blockedLaunch("API launch target must not contain credentials", started, append(audit, "api target credentials rejected"))
+	}
 	host := parsed.Hostname()
 	allowedHosts := allowedCSVEnv("AUTOMATION_API_ALLOWED_HOSTS", defaultAPILaunchAllowedHosts)
 	if !hostAllowed(host, allowedHosts) {
@@ -1627,8 +1654,12 @@ func (s *service) executeAPILaunch(
 	if method != http.MethodGet && method != http.MethodHead && method != http.MethodPost {
 		return blockedLaunch("API launch supports only GET, HEAD, or POST without a request body", started, append(audit, "api method rejected"))
 	}
-	client := noRedirectHTTPClient(10 * time.Second)
-	req, err := http.NewRequest(method, target, nil)
+	client := s.directHTTPClient()
+	executionContext := request.ExecutionContext
+	if executionContext == nil {
+		executionContext = context.Background()
+	}
+	req, err := http.NewRequestWithContext(executionContext, method, target, nil)
 	if err != nil {
 		return failedLaunch(err.Error(), started, append(audit, "api request creation failed"))
 	}
@@ -1652,6 +1683,9 @@ func (s *service) executeAPILaunch(
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if executionContext.Err() != nil {
+			return failedLaunch("API launch canceled before completion", started, append(audit, "api request canceled with its caller context"))
+		}
 		return failedLaunch(err.Error(), started, append(audit, "api request failed"))
 	}
 	defer resp.Body.Close()
@@ -1706,9 +1740,14 @@ func (s *service) executeScriptLaunch(
 		return blockedLaunch(err.Error(), started, append(audit, "script hash pin rejected"))
 	}
 	timeoutSeconds := intEnv("AUTOMATION_SCRIPT_TIMEOUT_SECONDS", 30)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	executionContext := request.ExecutionContext
+	if executionContext == nil {
+		executionContext = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(executionContext, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, scriptPath)
+	processcontrol.Configure(cmd)
 	cmd.Dir = filepath.Dir(scriptPath)
 	cmd.Env = safeScriptEnvironment(automation)
 	_, authorizationAudit, err := s.authorizeExternalLaunch(
@@ -1742,6 +1781,9 @@ func (s *service) executeScriptLaunch(
 	outputText := trimOutput(output.Bytes(), int64(outputLimit))
 	if output.Truncated() {
 		audit = append(audit, fmt.Sprintf("script output truncated at %d bytes", outputLimit))
+	}
+	if executionContext.Err() != nil {
+		return failedLaunch("script execution canceled before completion", started, append(audit, "script process canceled with its caller context"))
 	}
 	if ctx.Err() == context.DeadlineExceeded {
 		return launchExecution{
@@ -1856,7 +1898,13 @@ func (s *service) executeDockerLaunch(
 	}
 	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 	endpoint := "http://docker/containers/" + url.PathEscape(containerName) + "/start"
-	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
+	executionContext := request.ExecutionContext
+	if executionContext == nil {
+		executionContext = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(executionContext, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
 	if err != nil {
 		return failedLaunch(err.Error(), started, append(audit, "docker request creation failed"))
 	}
@@ -1879,6 +1927,12 @@ func (s *service) executeDockerLaunch(
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return failedLaunch("Docker start request was canceled and stopped", started, append(audit, "docker socket request canceled with its caller context"))
+		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return failedLaunch("Docker start request exceeded its timeout and was stopped", started, append(audit, "docker socket request stopped at its timeout"))
+		}
 		return failedLaunch(err.Error(), started, append(audit, "docker socket request failed"))
 	}
 	defer resp.Body.Close()
@@ -2313,13 +2367,66 @@ func tokenAllowed(value string, allowed map[string]bool) bool {
 	return allowed["*"] || allowed[value]
 }
 
+type automationLookupIPAddr func(context.Context, string) ([]net.IPAddr, error)
+
 func noRedirectHTTPClient(timeout time.Duration) *http.Client {
+	return noRedirectHTTPClientWithResolver(timeout, net.DefaultResolver.LookupIPAddr)
+}
+
+func noRedirectHTTPClientWithResolver(timeout time.Duration, lookup automationLookupIPAddr) *http.Client {
+	dialTimeout := timeout
+	if dialTimeout <= 0 || dialTimeout > 10*time.Second {
+		dialTimeout = 10 * time.Second
+	}
+	dialer := &net.Dialer{Timeout: dialTimeout}
 	return &http.Client{
 		Timeout: timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
+		Transport: &http.Transport{
+			Proxy:                 nil,
+			MaxIdleConns:          16,
+			MaxIdleConnsPerHost:   2,
+			IdleConnTimeout:       30 * time.Second,
+			TLSHandshakeTimeout:   5 * time.Second,
+			ResponseHeaderTimeout: dialTimeout,
+			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(address)
+				if err != nil {
+					return nil, fmt.Errorf("automation: invalid network address: %w", err)
+				}
+				resolved, err := lookup(ctx, host)
+				if err != nil {
+					return nil, fmt.Errorf("automation: resolve network target: %w", err)
+				}
+				if len(resolved) == 0 {
+					return nil, fmt.Errorf("automation: network target resolved to no addresses")
+				}
+				for _, candidate := range resolved {
+					if automationIPAddressBlocked(candidate.IP) {
+						return nil, fmt.Errorf("automation: network target resolved to blocked address space")
+					}
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(resolved[0].IP.String(), port))
+			},
+		},
 	}
+}
+
+func (s *service) directHTTPClient() *http.Client {
+	if s.httpClient != nil {
+		return s.httpClient
+	}
+	return noRedirectHTTPClient(10 * time.Second)
+}
+
+func automationIPAddressBlocked(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	return ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.String() == "169.254.169.254"
 }
 
 func networkTargetBlockedReason(host, allowedHostsEnv, fallbackAllowedHosts, allowLinkLocalEnv string) string {

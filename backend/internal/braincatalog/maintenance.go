@@ -2,6 +2,7 @@ package braincatalog
 
 import (
 	"automation-hub-backend/internal/models"
+	"context"
 	"os"
 	"strconv"
 	"strings"
@@ -12,23 +13,23 @@ const (
 	defaultCatalogRevalidationIntervalHours = 24
 	minimumCatalogRevalidationIntervalHours = 1
 	maximumCatalogRevalidationIntervalHours = 24
-	defaultCatalogRevalidationBatchSize      = 8
-	minimumCatalogRevalidationBatchSize      = 1
-	maximumCatalogRevalidationBatchSize      = 20
+	defaultCatalogRevalidationBatchSize     = 8
+	minimumCatalogRevalidationBatchSize     = 1
+	maximumCatalogRevalidationBatchSize     = 20
 )
 
 // CatalogRevalidationRun is a bounded evidence sweep. It reports only static
 // catalog metadata and never installs, starts, configures, or adopts a tool.
 type CatalogRevalidationRun struct {
-	Enabled          bool                              `json:"enabled"`
-	Eligible         int                               `json:"eligible"`
-	Checked          int                               `json:"checked"`
-	Reused           int                               `json:"reused"`
-	Failed           int                               `json:"failed"`
-	Results          []UpstreamReview                  `json:"results"`
-	CollectionReview *CatalogCollectionRevalidationRun `json:"collectionReview,omitempty"`
+	Enabled                   bool                                       `json:"enabled"`
+	Eligible                  int                                        `json:"eligible"`
+	Checked                   int                                        `json:"checked"`
+	Reused                    int                                        `json:"reused"`
+	Failed                    int                                        `json:"failed"`
+	Results                   []UpstreamReview                           `json:"results"`
+	CollectionReview          *CatalogCollectionRevalidationRun          `json:"collectionReview,omitempty"`
 	RepositoryDiscoveryReview *CatalogRepositoryDiscoveryRevalidationRun `json:"repositoryDiscoveryReview,omitempty"`
-	RunAt            time.Time                         `json:"runAt"`
+	RunAt                     time.Time                                  `json:"runAt"`
 }
 
 // CatalogCollectionRevalidationRun captures only public source-index drift.
@@ -53,14 +54,14 @@ type CatalogRepositoryDiscoveryRevalidationRun struct {
 }
 
 type CatalogMaintenanceService struct {
-	reviewer UpstreamReviewer
-	history  UpstreamReviewHistoryRepository
-	collectionReviewer OSSInsightCollectionReviewer
-	collectionHistory  CollectionReviewHistoryRepository
-	repositoryScout    OSSInsightRepositoryScout
+	reviewer                   UpstreamReviewer
+	history                    UpstreamReviewHistoryRepository
+	collectionReviewer         OSSInsightCollectionReviewer
+	collectionHistory          CollectionReviewHistoryRepository
+	repositoryScout            OSSInsightRepositoryScout
 	repositoryDiscoveryHistory RepositoryDiscoveryReviewHistoryRepository
-	now      func() time.Time
-	entries  func() []Entry
+	now                        func() time.Time
+	entries                    func() []Entry
 }
 
 func NewCatalogMaintenanceService(reviewer UpstreamReviewer, history UpstreamReviewHistoryRepository) *CatalogMaintenanceService {
@@ -95,20 +96,30 @@ func (s *CatalogMaintenanceService) WithRepositoryDiscoveryMaintenance(scout OSS
 // entries. Recent durable records make hourly scheduling safe and avoid
 // unnecessary pressure on GitHub's public API.
 func (s *CatalogMaintenanceService) RunDueRevalidations() CatalogRevalidationRun {
+	return s.RunDueRevalidationsContext(context.Background())
+}
+
+func (s *CatalogMaintenanceService) RunDueRevalidationsContext(ctx context.Context) CatalogRevalidationRun {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if s == nil {
 		return CatalogRevalidationRun{Results: []UpstreamReview{}, RunAt: time.Now().UTC()}
 	}
 	now := s.now().UTC()
 	enabled := catalogRevalidationEnabled()
 	run := CatalogRevalidationRun{Enabled: enabled, Results: []UpstreamReview{}, RunAt: now}
-	run.CollectionReview = s.RunDueCollectionRevalidation()
-	run.RepositoryDiscoveryReview = s.RunDueRepositoryDiscoveryRevalidation()
+	run.CollectionReview = s.RunDueCollectionRevalidationContext(ctx)
+	run.RepositoryDiscoveryReview = s.RunDueRepositoryDiscoveryRevalidationContext(ctx)
 	if !enabled || s.reviewer == nil || s.history == nil {
 		return run
 	}
 	limit := catalogRevalidationBatchSize()
 	interval := catalogRevalidationInterval()
 	for _, entry := range s.entries() {
+		if ctx.Err() != nil {
+			return run
+		}
 		if _, _, err := githubRepositoryPath(entry.UpstreamURL); err != nil {
 			continue
 		}
@@ -128,7 +139,10 @@ func (s *CatalogMaintenanceService) RunDueRevalidations() CatalogRevalidationRun
 			run.Reused++
 			continue
 		}
-		review, err := s.reviewer.Review(entry)
+		review, err := reviewUpstream(ctx, s.reviewer, entry)
+		if ctx.Err() != nil {
+			return run
+		}
 		if err != nil {
 			review = failedMaintenanceReview(entry, now)
 			run.Failed++
@@ -147,13 +161,20 @@ func (s *CatalogMaintenanceService) RunDueRevalidations() CatalogRevalidationRun
 // OSS Insight gap scan. It uses the already-screened reviewable scope and does
 // not install packages, download source archives, or create catalog entries.
 func (s *CatalogMaintenanceService) RunDueRepositoryDiscoveryRevalidation() *CatalogRepositoryDiscoveryRevalidationRun {
+	return s.RunDueRepositoryDiscoveryRevalidationContext(context.Background())
+}
+
+func (s *CatalogMaintenanceService) RunDueRepositoryDiscoveryRevalidationContext(ctx context.Context) *CatalogRepositoryDiscoveryRevalidationRun {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	now := time.Now().UTC()
 	if s != nil && s.now != nil {
 		now = s.now().UTC()
 	}
 	run := &CatalogRepositoryDiscoveryRevalidationRun{
 		Enabled: catalogRevalidationEnabled() && catalogRepositoryDiscoveryRevalidationEnabled(),
-		RunAt: now,
+		RunAt:   now,
 	}
 	if s == nil || !run.Enabled || s.repositoryScout == nil || s.repositoryDiscoveryHistory == nil {
 		return run
@@ -169,7 +190,10 @@ func (s *CatalogMaintenanceService) RunDueRepositoryDiscoveryRevalidation() *Cat
 		run.Review = repositoryDiscoveryReviewFromRecord(*latest)
 		return run
 	}
-	report, err := s.repositoryScout.DiscoverReviewableRepositories()
+	report, err := discoverRepositoriesFor(ctx, s.repositoryScout, OSSInsightReviewableScope)
+	if ctx.Err() != nil {
+		return run
+	}
 	var record *models.BrainCatalogRepositoryDiscoveryReview
 	if err != nil {
 		run.Failed = true
@@ -195,6 +219,13 @@ func (s *CatalogMaintenanceService) RunDueRepositoryDiscoveryRevalidation() *Cat
 // the fixed public OSS Insight index. A durable daily result makes the hourly
 // scheduler inexpensive while preserving visible source-drift evidence.
 func (s *CatalogMaintenanceService) RunDueCollectionRevalidation() *CatalogCollectionRevalidationRun {
+	return s.RunDueCollectionRevalidationContext(context.Background())
+}
+
+func (s *CatalogMaintenanceService) RunDueCollectionRevalidationContext(ctx context.Context) *CatalogCollectionRevalidationRun {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	now := time.Now().UTC()
 	if s != nil && s.now != nil {
 		now = s.now().UTC()
@@ -214,7 +245,10 @@ func (s *CatalogMaintenanceService) RunDueCollectionRevalidation() *CatalogColle
 		run.Review = collectionReviewFromRecord(*latest)
 		return run
 	}
-	review, err := s.collectionReviewer.ReviewCollections()
+	review, err := reviewCollections(ctx, s.collectionReviewer)
+	if ctx.Err() != nil {
+		return run
+	}
 	if err != nil {
 		run.Failed = true
 		review = failedCollectionMaintenanceReview(now)
@@ -247,7 +281,7 @@ func failedCollectionMaintenanceReview(checkedAt time.Time) OSSInsightCollection
 	return OSSInsightCollectionReview{
 		CheckedAt: checkedAt.UTC().Format(time.RFC3339), SourceURL: ossInsightCollectionsURL,
 		ExpectedTotal: len(expectedOSSInsightCollections()),
-		Message: "OSS Insight collection index could not be revalidated. HAI has not changed its catalog, discovered repositories, or activated any project.",
+		Message:       "OSS Insight collection index could not be revalidated. HAI has not changed its catalog, discovered repositories, or activated any project.",
 	}
 }
 
@@ -260,7 +294,7 @@ func failedCollectionPersistenceReview(checkedAt time.Time) OSSInsightCollection
 func failedRepositoryDiscoveryMaintenanceReview(checkedAt time.Time) OSSInsightRepositoryDiscoveryMaintenanceReview {
 	return OSSInsightRepositoryDiscoveryMaintenanceReview{
 		CheckedAt: checkedAt.UTC().Format(time.RFC3339), SourceURL: ossInsightCollectionsURL,
-		Scope: OSSInsightReviewableScope,
+		Scope:   OSSInsightReviewableScope,
 		Message: "OSS Insight repository gap review could not be completed. HAI has not changed the catalog, installed a project, or activated a runtime.",
 	}
 }
