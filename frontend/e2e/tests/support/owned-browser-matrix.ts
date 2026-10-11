@@ -211,11 +211,9 @@ export async function signIn(matrix: OwnedBrowserMatrix): Promise<void> {
   const { page } = matrix;
   await matrix.ensureAuthenticated();
   await page.goto('/control-center');
-  await expect(page).toHaveURL(/\/(?:control-center|onboarding)(?:\?|$)/);
-  if (new URL(page.url()).pathname === '/onboarding') {
-    await page.getByRole('button', { name: 'Skip', exact: true }).click();
-  }
   await expect(page).toHaveURL(/\/control-center(?:\?|$)/);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('hai_onboarded')))
+    .toBe('true');
   await matrix.settle();
   matrix.assertHealthy();
 }

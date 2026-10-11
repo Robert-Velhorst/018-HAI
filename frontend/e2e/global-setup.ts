@@ -49,6 +49,12 @@ export default async function globalSetup(_config: FullConfig) {
       }
       const state = await api.storageState();
       if (state.cookies.length === 0) throw new Error('Synthetic browser authentication did not establish a session cookie.');
+      const origin = new URL(baseURL).origin;
+      state.origins = state.origins.filter((entry) => entry.origin !== origin);
+      state.origins.push({
+        origin,
+        localStorage: [{ name: 'hai_onboarded', value: 'true' }],
+      });
       await writeFile(storageStatePath, JSON.stringify(state), { flag: 'wx', mode: 0o600 });
     } finally {
       await api.dispose();

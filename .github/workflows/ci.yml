@@ -593,6 +593,10 @@ jobs:
             E2E_BASE_URL: `http://127.0.0.1:${manifest.port}`,
             E2E_OPERATOR_EMAIL: manifest.email, E2E_OPERATOR_PASSWORD: manifest.password,
             E2E_ALLOW_MUTATION: 'true', E2E_ISOLATED_STACK: 'true',
+            // Full uncertainty cases require persisted synthetic records whose
+            // IDs are deliberately not fabricated by the browser test. CI runs
+            // the documented first scope until the owned-stack fixture setup exists.
+            E2E_MATRIX_SCOPE: 'first',
             PLAYWRIGHT_HTML_OUTPUT_DIR: path.join(evidence, 'browser-report'),
           });
           const docker = args => {
