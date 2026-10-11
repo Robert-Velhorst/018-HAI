@@ -1899,6 +1899,15 @@ rewrite, or normalize these retained files; the 2026-08-09 receipt is
 historical evidence of its then-current post-delete check, not proof of their
 current lengths or contents.
 
+The pinned HAI parent-session log
+`C:\Users\NO\.codex\sessions\2026\05\30\rollout-2026-05-30T23-31-07-019e7acc-44f2-7c90-a04e-253f6d43df28.jsonl`
+currently measures `14,826,950,232` bytes and contains references to each of
+the ten retained child IDs (234-336 occurrences per ID). These matches include
+repeated session-state references and do not prove that the parent log contains
+the complete child transcripts or recovers the nine size discrepancies. Keep
+the parent log and all ten retained child files intact pending a content-level
+reconciliation.
+
 The current manifest records 97 children for August 4-5, of which 88 were
 completed; across the audited August dates it records 114 children and 104
 completed. It does not substantiate a count of 116 completed children for
