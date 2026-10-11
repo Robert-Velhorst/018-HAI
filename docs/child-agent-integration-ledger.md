@@ -2086,3 +2086,52 @@ contains source/archive material or active containers. No original source,
 archive, worktree, environment file, database, runtime data, image, or Docker
 resource was deleted. Broader local cleanup remains gated on completing the
 branch and archive reconciliation.
+
+### October 11, 2026: PR #34 additions reconciled path by path
+
+Compared files present only on `origin/codex/windows-installer` against the
+current PR #36 tree. The three `.env-*` files were excluded by path and their
+contents were not opened. The remaining additions were adjudicated as follows:
+
+- Ported the Google OAuth route regression into
+  `backend/internal/router/source_oauth_routes_test.go`, adapted to today's
+  handler/service signatures. It verifies anonymous initiation is forbidden
+  and a sessionless callback reaches signed-state validation (invalid state is
+  rejected). `go test ./internal/router` passes.
+- Did not port `backend/internal/accountfeed/bridge_test.go`: the old test
+  reports provider-native API credentials as account-feed grants, while the
+  current account-feed contract explicitly separates its normalized imports
+  from live owner-scoped source connectors.
+- Did not copy the three scheduler configuration tests: current durable
+  scheduler tests already cover bounded poll intervals; the old tests also
+  reference a legacy-fallback helper absent from this tree.
+- Did not copy `backend/internal/ambientmonitor/release_acceptance_postgres_test.go`,
+  `backend/internal/llm/maintenance_context_test.go`, or
+  `backend/internal/pursuit/dashboard_projection_test.go` unchanged. The first
+  uses obsolete fixture helpers, the second targets removed maintenance APIs,
+  and the third asserts a projection contract that conflicts with current
+  source-provenance requirements. They need fresh tests against current
+  contracts if a specific uncovered behavior is later identified.
+- Did not copy `backend/internal/router/lifecycle_compat.go` or its test: the
+  helper has no current call site, so importing it would add unused lifecycle
+  code rather than repair an active path.
+- Did not copy the PR #34 durable-job queue/lease index migration: its
+  `post/0005` filename conflicts with the current migration sequence, and no
+  query-plan or workload evidence justifies adding another index beside the
+  current queue and owned-lease indexes.
+- Did not copy the old IDP password-policy, reset-token, default-service, or
+  user-handler additions. Current password/reset behavior has newer code and
+  service/repository integration tests; the old test helpers and user-service
+  interface do not match the current implementation, and the old default
+  logger/sender is already replaced by `event_bus.go`.
+- Did not copy `installer/windows/Start-HAI-Cloud.ps1`: it calls
+  `Assert-HaiLocalEnvironment`, which is absent from the current installer
+  support API. Its underlying `scripts/start-ngrok.ps1` already exists with
+  ownership and public-exposure guards; a current installer entrypoint would
+  need deliberate product/UI integration, not this stale wrapper.
+
+The new OAuth test and gateway correction are in the pushed PR #36 history;
+the other additions above are documented as reviewed, not silently treated as
+integrated. This closes only the PR #34 branch-additions sub-inventory. It does
+not complete PR #34's full changed-file comparison, the other local branches,
+or the archive/transcript inventories. No source or branch files were deleted.
