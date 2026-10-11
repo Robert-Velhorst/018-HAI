@@ -1602,6 +1602,42 @@ transcripts and their possible earlier patch events have not been semantically
 reconciled. The existing automated gate therefore cannot authorize removal
 from either supplemental folder; no local HAI files were deleted.
 
+### October 11, 2026: captured branch-only feature review
+
+Compared the three captured inventory branches with unique commits against
+PR #36. These are historical refs in the integration snapshot, not verified
+live remote branches; no branch was merged or deleted.
+
+- The four unique `agent-ci-worker-control-hardening` commits were reviewed.
+  The Worker Control source connector is already in the PR as
+  `backend/internal/source/worker_control.go`, with connector registration,
+  bounded owner-scoped read-only ingestion, revocable credential configuration,
+  provenance checks, and focused sync/configuration tests. No duplicate port
+  was made.
+- The `windows-installer` branch's installer and recovery feature family is
+  present in the PR (`installer/windows/`, `scripts/build-windows-installer.ps1`,
+  `docs/windows-installer.md`, and Windows contract tests). The captured branch
+  versions differ from the PR's current files and were not copied over them;
+  those differences need a later line-by-line review before claiming semantic
+  equivalence.
+- The captured Trello incremental-action proposal was inspected. It replaces
+  complete paginated board reconciliation with an action-cursor fast path. The
+  PR's live connector instead uses bounded complete pagination, explicitly
+  reconciles closed and missing-card tombstones, and verifies card content
+  hashes. The proposed fast path does not establish equivalent tombstone and
+  cursor guarantees, so it was not ported. Reduced API reads remain an
+  optimization opportunity, not an accepted behavior change.
+- The broader `ambient-composition-control` ref contains many additional
+  commits touching runtime, installer, migration, frontend, and resource
+  behavior. Commit-name and file overlap alone cannot prove their semantics
+  are integrated. This audit records only the feature-level dispositions
+  above; the remaining unique commits and the 1,794 modified snapshot paths
+  remain unreconciled.
+
+No local artifacts were changed or removed. This checkpoint is not full source
+reconciliation and does not authorize transcript, snapshot, scratch, output,
+or diagnostic cleanup.
+
 ### October 11, 2026: merge-scratch conflict provenance
 
 The separate detached merge scratch is at
