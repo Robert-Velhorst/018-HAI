@@ -1731,6 +1731,19 @@ for replacing the current installer or recovery implementation. The local
 untracked executable files; they remain untouched and are not cleanup
 candidates. The rest of both branches is still under review.
 
+### October 11, 2026: supplemental transcript integrity recheck
+
+Ran `scripts/test-hai-supplemental-transcript-cleanup-readiness.ps1` read-only
+from the current integration worktree at `d88ffcf0`. It verified all nine
+manifest entries across the two supplemental source roots and their exact
+14,013,737,298 logical bytes. SHA-256 matched for all three completed
+candidate transcripts (4,651,926,405 bytes total), and all 21 report-linked
+source paths are present and tracked in this PR tree. The six aborted or
+nonterminal transcripts remain retained. The verifier reports
+`cleanup_authorized=false` and `deletion_performed=false`; path and hash
+verification do not replace the still-incomplete transcript event/content
+crosswalk or the merge gate.
+
 ### October 11, 2026: integration snapshot comparison and exact-head CI
 
 The `codex/hai-integration-snapshot` checkout is at commit
