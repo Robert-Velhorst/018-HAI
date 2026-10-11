@@ -1414,12 +1414,15 @@ nothing. The existing paused-mode test covered only newly ingested work, so a
 focused regression was added to assert that an already-classified safe
 operation is deferred, remains unexecuted, and receives a next-review time.
 
-GitHub Actions backend tests passed for the prior PR head, but this new
-regression has not yet run in CI. Local execution was unavailable because Go
-is not installed on this machine's PATH. No source from the primary checkout
-was copied. The 108-file semantic review is incomplete, PR #36 is still open,
-and local data cleanup remains gated on further source/archive reconciliation
-and final PR verification.
+The repository-pinned Go 1.27.2 toolchain was later located under
+`D:\codex-temp\hai-go-toolchain-1.27.2`; `go test -p 2
+./internal/background ./internal/operations ./internal/workflow
+./internal/phase2 ./internal/executionauth` passed locally, including the new
+regression. The GitHub run for PR head `e27522ba` was still evaluating the
+full backend/browser matrix at the time of this update. No source from the
+primary checkout was copied. The 108-file semantic review is incomplete, PR
+#36 is still open, and local data cleanup remains gated on further
+source/archive reconciliation and final PR verification.
 
 ### October 11, 2026: untracked source-candidate comparison
 
