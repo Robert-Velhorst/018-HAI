@@ -2059,3 +2059,30 @@ and lifecycle behavior. The live-Trello launcher is a candidate for separate
 review; no live credentials or Trello account were accessed. Existing worktrees,
 archives, local runtime data, and source files remain untouched. Cleanup is still
 blocked on full branch/archive reconciliation and a verified preservation gate.
+
+### October 11, 2026: gateway/frontend port mismatch found in hosted acceptance
+
+CI runs `38156961155` and `38157147190` both failed only in browser acceptance.
+Downloaded, redacted evidence for run `38157147190` shows the frontend container
+serving its health endpoint on port `8080`, while the dashboard gateway sent
+`/login` to `frontend:80` and repeatedly received connection-refused responses.
+This is a real deployment defect, not a readiness-delay issue; all containers
+were reported healthy because the frontend health check probes `8080` directly
+and the gateway health check does not exercise the SPA route.
+
+Fixed `nginx-config/nginx.conf.template` to proxy to `frontend:8080` and added a
+gateway contract test that cross-checks this upstream against the frontend's
+actual listen port. Commit `b6ddf35f03f2153d22ab4b7cb6c53a02f8d1c946` is pushed
+to PR #36. Local verification: 19 gateway tests, 110 CI contract tests, the
+isolated-stack safety contract suite, and `git diff --check` passed. The fix is
+not yet confirmed by hosted browser acceptance: at the time of this entry, no
+Actions run for the new exact PR head was visible and PR mergeability was
+`UNKNOWN`.
+
+The redacted CI artifact remains available in GitHub Actions. Its temporary
+local inspection copy and the synthetic evidence directory created by the
+non-starting safety-contract test are disposable only after confirming neither
+contains source/archive material or active containers. No original source,
+archive, worktree, environment file, database, runtime data, image, or Docker
+resource was deleted. Broader local cleanup remains gated on completing the
+branch and archive reconciliation.
