@@ -28,7 +28,10 @@ func TestChatGPTLogsToolLoopLetsModelChooseAndChainTools(t *testing.T) {
 		`{"action":"answer","answer":"The latest instruction was to use bounded retries (conversation c-2, message m-7)."}`,
 	}
 	var requests []llm.GenerateRequest
-	generate := func(request llm.GenerateRequest) (*llm.GenerationResult, error) {
+	generate := func(ctx context.Context, request llm.GenerateRequest) (*llm.GenerationResult, error) {
+		if ctx == nil {
+			t.Fatal("model generation did not receive the execution context")
+		}
 		requests = append(requests, request)
 		output := outputs[len(requests)-1]
 		return &llm.GenerationResult{Status: "completed", Output: output}, nil
@@ -54,7 +57,7 @@ func TestChatGPTLogsToolLoopCanAnswerWithoutCallingTool(t *testing.T) {
 		status: chatgptlogs.Status{Enabled: true, Configured: true},
 		tools:  []chatgptlogs.ToolDescriptor{{Name: "search", Description: "search", Arguments: `{}`}},
 	}
-	generate := func(llm.GenerateRequest) (*llm.GenerationResult, error) {
+	generate := func(_ context.Context, _ llm.GenerateRequest) (*llm.GenerationResult, error) {
 		return &llm.GenerationResult{Status: "completed", Output: `{"action":"answer","answer":"No history lookup is needed."}`}, nil
 	}
 	outcome := runChatGPTLogsToolLoop(context.Background(), provider, generate, llm.GenerateRequest{Task: "Say hello"})
@@ -74,7 +77,7 @@ func TestChatGPTLogsToolLoopRecordsRejectedCallAndRecovers(t *testing.T) {
 		`{"action":"answer","answer":"I cannot support that claim from the available evidence."}`,
 	}
 	index := 0
-	generate := func(llm.GenerateRequest) (*llm.GenerationResult, error) {
+	generate := func(_ context.Context, _ llm.GenerateRequest) (*llm.GenerationResult, error) {
 		result := &llm.GenerationResult{Status: "completed", Output: outputs[index]}
 		index++
 		return result, nil
@@ -93,7 +96,7 @@ func TestChatGPTLogsToolLoopEnforcesCallLimit(t *testing.T) {
 	for index := 0; index < maxChatGPTLogsToolCalls; index++ {
 		provider.items = append(provider.items, chatgptlogs.ContextItem{Provider: "daemon", Tool: "search", Content: "bounded result", Untrusted: true})
 	}
-	generate := func(llm.GenerateRequest) (*llm.GenerationResult, error) {
+	generate := func(_ context.Context, _ llm.GenerateRequest) (*llm.GenerationResult, error) {
 		return &llm.GenerationResult{Status: "completed", Output: `{"action":"tool","tool":"search","arguments":{"query":"keep searching"}}`}, nil
 	}
 	outcome := runChatGPTLogsToolLoop(context.Background(), provider, generate, llm.GenerateRequest{Task: "Find everything"})
@@ -134,7 +137,10 @@ func TestTheLoopAnswersFromEvidenceItAlreadyGatheredWhenDecisionsStop(t *testing
 		"The ship date was friday (message m-9).",
 	}
 	var requests []llm.GenerateRequest
-	generate := func(request llm.GenerateRequest) (*llm.GenerationResult, error) {
+	generate := func(ctx context.Context, request llm.GenerateRequest) (*llm.GenerationResult, error) {
+		if ctx == nil {
+			t.Fatal("closing generation did not receive the execution context")
+		}
 		requests = append(requests, request)
 		return &llm.GenerationResult{Status: "completed", Output: outputs[len(requests)-1]}, nil
 	}
@@ -164,7 +170,7 @@ func TestTheLoopStillFailsWhenDecisionsStopBeforeAnythingWasRead(t *testing.T) {
 		status: chatgptlogs.Status{Enabled: true, Configured: true},
 		tools:  []chatgptlogs.ToolDescriptor{{Name: "search", Description: "search", Arguments: `{}`}},
 	}
-	generate := func(llm.GenerateRequest) (*llm.GenerationResult, error) {
+	generate := func(_ context.Context, _ llm.GenerateRequest) (*llm.GenerationResult, error) {
 		return &llm.GenerationResult{Status: "completed", Output: "prose, not a decision"}, nil
 	}
 
