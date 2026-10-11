@@ -4,5 +4,8 @@
 # optional runtimes profile-gated. Keeping this small wrapper prevents the
 # obsolete prebuilt-image and multi-broker configuration from being started by
 # accident when a developer uses Docker Compose's default filename.
+name: 018-hai
+
 include:
   - path: ./docker-compose.local.yml
+    env_file: ${HAI_ENV_FILE:-.env.local}

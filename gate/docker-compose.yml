@@ -1,4 +1,7 @@
 # Compatibility entry point. The gateway is managed by the canonical local
 # HAI topology; this prevents an obsolete standalone gateway image path.
+name: 018-hai
+
 include:
   - path: ../docker-compose.local.yml
+    env_file: ${HAI_ENV_FILE:-../.env.local}

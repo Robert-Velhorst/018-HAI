@@ -1,3 +1,6 @@
 # Compatibility entry point. The IDP shares the canonical local HAI topology.
+name: 018-hai
+
 include:
   - path: ../docker-compose.local.yml
+    env_file: ${HAI_ENV_FILE:-../.env.local}

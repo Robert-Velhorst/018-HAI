@@ -1314,16 +1314,28 @@ class CIWorkflowContractTest(unittest.TestCase):
 
     def test_all_compose_entry_points_delegate_to_the_source_built_stack(self) -> None:
         expected = {
-            "docker-compose.yml": "./docker-compose.local.yml",
-            "backend/docker-compose.yml": "../docker-compose.local.yml",
-            "idp/docker-compose.yml": "../docker-compose.local.yml",
-            "gate/docker-compose.yml": "../docker-compose.local.yml",
+            "docker-compose.yml": ("./docker-compose.local.yml", ".env.local"),
+            "backend/docker-compose.yml": (
+                "../docker-compose.local.yml",
+                "../.env.local",
+            ),
+            "idp/docker-compose.yml": (
+                "../docker-compose.local.yml",
+                "../.env.local",
+            ),
+            "gate/docker-compose.yml": (
+                "../docker-compose.local.yml",
+                "../.env.local",
+            ),
         }
-        for compose_file, local_stack_path in expected.items():
+        for compose_file, (local_stack_path, env_file_path) in expected.items():
             with self.subTest(compose_file=compose_file):
                 content = (ROOT / compose_file).read_text(encoding="utf-8")
+                self.assertIn("name: 018-hai", content)
                 self.assertIn("include:", content)
                 self.assertIn(local_stack_path, content)
+                self.assertIn("HAI_ENV_FILE", content)
+                self.assertIn(env_file_path, content)
                 self.assertNotIn("jacksonbarreto/", content)
 
     def test_cross_platform_secret_generator_covers_every_required_backend_key(self) -> None:

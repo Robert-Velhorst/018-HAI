@@ -1,4 +1,7 @@
 # Compatibility entry point. The backend is part of the canonical local HAI
 # topology; do not start it with an obsolete standalone image/database stack.
+name: 018-hai
+
 include:
   - path: ../docker-compose.local.yml
+    env_file: ${HAI_ENV_FILE:-../.env.local}
