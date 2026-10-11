@@ -661,6 +661,9 @@ func TestHandlerBoundsExtractionHistoryAndReportsExactTotal(t *testing.T) {
 	if total := response.Header().Get("X-Total-Count"); total != "3" {
 		t.Fatalf("X-Total-Count = %q, want 3", total)
 	}
+	if got := repo.lastExtractionPageLimit; got != 2 {
+		t.Fatalf("repository extraction page limit = %d, want 2", got)
+	}
 }
 
 func TestHandlerRejectsOwnerlessLegacySourceAndExtractionMutations(t *testing.T) {

@@ -744,24 +744,27 @@ func (h *Handler) Extractions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid extraction limit"})
 		return
 	}
-	ownedSourceIDs, err := h.ownedSourceIDs(owner)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "connected-source access is unavailable"})
+	pageService, ok := h.service.(ExtractionPageService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "bounded source extraction access is unavailable"})
 		return
 	}
-	extractions, err := h.service.ExtractionsForOwner(owner, c.Query("projectKey"), includeArchived)
+	page, err := pageService.ExtractionPageForOwner(owner, c.Query("projectKey"), includeArchived, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "source extractions are unavailable"})
 		return
 	}
-	extractions = filterExtractionsForSources(extractions, ownedSourceIDs)
-	total := len(extractions)
-	if len(extractions) > limit {
-		extractions = extractions[:limit]
+	if page == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "source extractions are unavailable"})
+		return
 	}
-	c.Header("X-Total-Count", strconv.Itoa(total))
-	c.Header("X-Result-Limit", strconv.Itoa(limit))
-	c.JSON(http.StatusOK, extractions)
+	items := page.Items
+	if items == nil {
+		items = []models.SourceExtraction{}
+	}
+	c.Header("X-Total-Count", strconv.FormatInt(page.TotalCount, 10))
+	c.Header("X-Result-Limit", strconv.Itoa(page.Limit))
+	c.JSON(http.StatusOK, items)
 }
 
 func extractionPageLimit(value string) (int, error) {
@@ -1207,16 +1210,6 @@ func (h *Handler) requireMutableExtraction(c *gin.Context, id uuid.UUID) bool {
 	}
 	c.JSON(http.StatusNotFound, gin.H{"error": "source extraction not found"})
 	return false
-}
-
-func filterExtractionsForSources(extractions []models.SourceExtraction, sourceIDs map[uuid.UUID]bool) []models.SourceExtraction {
-	visible := make([]models.SourceExtraction, 0, len(extractions))
-	for _, extraction := range extractions {
-		if sourceIDs[extraction.SourceID] {
-			visible = append(visible, extraction)
-		}
-	}
-	return visible
 }
 
 func filterRankedExtractions(extractions []RankedExtraction, sourceIDs map[uuid.UUID]bool) []RankedExtraction {

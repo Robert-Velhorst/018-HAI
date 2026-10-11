@@ -2252,3 +2252,18 @@ pass before this finding is considered integrated. `git diff --check` passes.
 No PR #34 branch content, local source, worktree, archive, database, or
 runtime data was deleted. The full PR #34 divergent-file review remains open;
 this entry records one reviewed behavior and its port, not a completion claim.
+
+### October 11, 2026: connected-source extraction pagination
+
+The connected-sources extraction endpoint accepted a result limit but loaded
+all extractions for every owned source, filtered the full result in memory,
+then sliced the response. The service and repository already provided an
+owner-scoped page query, but the HTTP handler was not using it. The handler now
+calls that bounded service path, preserves the JSON-array response and exact
+total/result-limit headers, returns a clear unavailable response if a service
+does not support bounded access, and returns an empty JSON array for no items.
+Repository ordering now uses `updated_at DESC, id DESC` so page boundaries are
+stable when timestamps tie. Handler and repository regression checks cover
+the passed limit and total/page contents. Go and PostgreSQL-backed test
+execution remain pending because Go is not installed in this Windows
+worktree; exact-head GitHub CI is required before claiming verification.

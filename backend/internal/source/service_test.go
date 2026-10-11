@@ -3548,6 +3548,7 @@ type fakeSourceRepo struct {
 	extractions                map[uuid.UUID]*models.SourceExtraction
 	index                      []models.SourceIndexEntry
 	lastExtractionSourceIDs    []uuid.UUID
+	lastExtractionPageLimit    int
 	lastVisibleSourceOwner     string
 	findSourcesCalls           int
 	visibleSourcesCalls        int
@@ -4083,11 +4084,30 @@ func (r *fakeSourceRepo) FindExtractionsForSources(sourceIDs []uuid.UUID, projec
 }
 
 func (r *fakeSourceRepo) FindExtractionPageForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool, limit int) ([]models.SourceExtraction, int64, error) {
-	items, err := r.FindExtractionsForSources(sourceIDs, projectKey, includeArchived)
-	if err != nil {
-		return nil, 0, err
+	r.lastExtractionSourceIDs = append([]uuid.UUID{}, sourceIDs...)
+	r.lastExtractionPageLimit = limit
+	if len(sourceIDs) == 0 {
+		return []models.SourceExtraction{}, 0, nil
 	}
-	total := int64(len(items))
+	allowed := make(map[uuid.UUID]bool, len(sourceIDs))
+	for _, id := range sourceIDs {
+		allowed[id] = true
+	}
+	items := make([]models.SourceExtraction, 0, limit)
+	var total int64
+	for _, extraction := range r.extractions {
+		if !allowed[extraction.SourceID] || (projectKey != "" && extraction.ProjectKey != projectKey) || (!includeArchived && extraction.Archived) {
+			continue
+		}
+		total++
+		items = append(items, *extraction)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].UpdatedAt.Equal(items[j].UpdatedAt) {
+			return items[i].ID.String() > items[j].ID.String()
+		}
+		return items[i].UpdatedAt.After(items[j].UpdatedAt)
+	})
 	if len(items) > limit {
 		items = items[:limit]
 	}

@@ -88,6 +88,15 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 	if len(items) != 2 || items[0].ID != aliceLatestHigh || items[1].ID != aliceLatestLow {
 		t.Fatalf("bounded owner history = %#v", items)
 	}
+	pageItems, totalCount, err := repository.FindExtractionPageForSources(
+		[]uuid.UUID{aliceSource}, "018-HAI", false, 2,
+	)
+	if err != nil {
+		t.Fatalf("FindExtractionPageForSources: %v", err)
+	}
+	if totalCount != 4 || len(pageItems) != 2 || pageItems[0].ID != aliceLatestHigh || pageItems[1].ID != aliceLatestLow {
+		t.Fatalf("bounded extraction page = items %#v total %d, want latest two of four Alice records", pageItems, totalCount)
+	}
 
 	resolved, err := repository.FindExtractionForOwner(aliceLatestHigh, "alice")
 	if err != nil || resolved.ID != aliceLatestHigh {

@@ -905,7 +905,7 @@ func (r *GormRepository) FindExtractionPageForSources(sourceIDs []uuid.UUID, pro
 		return nil, 0, err
 	}
 	var extractions []models.SourceExtraction
-	if err := query.Order("updated_at desc").Limit(limit).Find(&extractions).Error; err != nil {
+	if err := query.Order("updated_at desc").Order("id desc").Limit(limit).Find(&extractions).Error; err != nil {
 		return nil, 0, err
 	}
 	return extractions, total, nil
