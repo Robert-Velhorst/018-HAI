@@ -1257,3 +1257,33 @@ semantic crosswalk or permission to remove them. The gate still reports
 `cleanup_gate_ready=false`, `deletion_performed=false`, and
 `cleanup_authorized=false` because committed-ledger verification on canonical
 `main` and the merged-PR verification have not passed.
+
+### October 11, 2026: refreshed local cleanup inventory and PR checks
+
+A fresh read-only cleanup inventory ran from this PR worktree at
+`244b6669d8a74d0f24ac0077c528079c81f26248`. It reports zero eligible
+synthetic temporary fixtures. The eight transcript candidates (7,939,888,699
+bytes) remain blocked because PR #36 is open and the cleanup command must run
+from canonical `main`; this inventory intentionally skipped the expensive
+archive hash audit, so the separately recorded 18-file hash verification
+above remains the latest source-integrity evidence. Fifteen PR diagnostics and
+tool downloads (31,505,884 bytes) remain blocked until the PR is merged at the
+exact local HEAD. The active PR worktree has 22 untracked files and is retained.
+
+The Docker inventory remains incomplete: three anonymous volumes mounted by
+HAI containers are unrecognized, the 10,189,079-byte recovery bundle has
+unverified ACL evidence, and two HAI images remain under retention review. No
+container, volume, recovery bundle, or image is eligible for cleanup. The
+secondary checkout has 692 modified tracked entries and 2,475 untracked files;
+it remains preserved while the source, transcript, and working-tree audit is
+unfinished. Shared applications and the Go toolchain are not cleanup targets.
+No local files, containers, volumes, or images were removed.
+
+GitHub CLI confirms PR #36 is open against `main` at the same exact head as
+the local PR checkout. Exact-head run `38105148528` has passed the cleanup
+safety contracts, authenticated control-plane smoke, two-account isolation,
+secret scan, frontend compiler/build stages, and multiple runner/container
+contracts. At the latest refresh, frontend unit tests, backend/IDP tests,
+real-Postgres migration integration, browser acceptance, guarded Windows
+runtime, installer guards, and additional runner contracts were still pending.
+The PR is not ready to merge, and local cleanup gates remain closed.
