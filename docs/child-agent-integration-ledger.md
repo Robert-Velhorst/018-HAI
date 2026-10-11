@@ -1968,3 +1968,27 @@ catalog's existing section-to-ID contract. The focused
 `go test -count=1 ./internal/frameworkregistry` passes. This guards source and
 catalog structure; it does not claim every candidate implementation or
 external framework runtime is operational.
+
+### October 11, 2026: additional snapshot comparison and PR update
+
+The current PR #36 head is `fa8b69cd4d6a7a5afcabbd14853a1b6dad5739b9` on
+`codex/hai-runtime-release`, targeting `main`. The branch was updated without
+force-pushing. Exact-head Actions run `38150045368` is queued; its checks are
+not treated as passing until GitHub reports terminal results.
+
+Rechecked the two retained snapshots without changing their worktrees. The
+integration snapshot at `D:\codex-temp\hai-integration-snapshot` remains at
+`91c8620c557229f1da4ed15fcbb7088c6a6947a7`, with 1,790 staged paths, 19
+unstaged paths, no untracked paths, and no conflicts. Compared staged Git blob
+IDs against the current PR tree while excluding ten sensitive-name paths
+without reading their contents: 1,531 staged blobs are identical, 245 differ,
+and four paths are absent from the PR. The divergent and absent paths have not
+been copied; they require content-level review before integration.
+
+The merge scratch at `D:\codex-temp\hai-merge-scratch-20261010` remains at
+`e3843448a3e2af8a11556251af6a3861dd1a8577`, with 17 resolved staged paths and
+189 unmerged paths. Its conflicts remain untouched. Both snapshots still
+contain `.env-backend`, `.env-gateway`, and `.env-idp`; their contents were
+not opened, hashed, staged, or published. No local source, archive, or
+diagnostic was removed. The PR is open and not merged, so no cleanup gate is
+satisfied by this update.
