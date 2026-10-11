@@ -1884,3 +1884,27 @@ disposable-stack browser-acceptance job still in progress at this check. This
 is not yet a completed CI gate. No transcript, archive, source checkout,
 patch/log evidence, secret-bearing file, or runtime data was deleted in this
 pass.
+
+### October 11, 2026: August transcript retention-size drift
+
+Performed a read-only path and length check for the 114 August entries in
+`docs/child-agent-transcript-manifest.csv` under
+`C:\Users\NO\.codex\sessions\2026`. All 104 previously deleted candidate
+paths remain absent, and all ten `retain` paths still exist. However, only one
+of the ten retained files currently matches its recorded `logical_bytes`;
+nine differ. Their combined current file lengths total `3,207,933,505` bytes,
+while the manifest records `21,882,851,783` bytes. The cause and content-level
+integrity of the nine mismatches have not been established. Do not delete,
+rewrite, or normalize these retained files; the 2026-08-09 receipt is
+historical evidence of its then-current post-delete check, not proof of their
+current lengths or contents.
+
+The current manifest records 97 children for August 4-5, of which 88 were
+completed; across the audited August dates it records 114 children and 104
+completed. It does not substantiate a count of 116 completed children for
+August 4-5. Any external count or alternate archive source still needs to be
+identified and reconciled before the inventory can be called exhaustive.
+
+PR #36 is open at `e45ed503418b5e7534991e52c3edc8e2e884c65b`.
+Exact-head Actions run `38118885565` was queued/in progress at this check; no
+result from it is inferred here. The size audit made no local changes.
