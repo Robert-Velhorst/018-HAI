@@ -6,6 +6,7 @@ $scriptText = Get-Content -LiteralPath $scriptPath -Raw
 $required = @(
     'test-hai-temp-fixture-cleanup-readiness.ps1',
     'test-hai-transcript-cleanup-readiness.ps1',
+    'test-hai-supplemental-transcript-cleanup-readiness.ps1',
     'remove-hai-completed-session-transcripts.ps1',
     'test-hai-volume-cleanup-readiness.ps1',
     'reported_volume_size_status = [string]$volumes.report.reported_volume_size_status',
@@ -23,6 +24,7 @@ $required = @(
     'mode = ''read_only_inventory''',
     'cleanup_authorized = $false',
     'source_archive_integrity',
+    'supplemental_completed_session_transcripts',
     'RequireSourceArchive = $true',
     'VerifyTranscriptArchive',
     'if ($VerifyTranscriptArchive)',

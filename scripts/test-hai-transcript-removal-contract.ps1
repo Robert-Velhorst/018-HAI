@@ -10,6 +10,8 @@ foreach ($token in @(
     'cleanup_gate_ready -ne $true',
     'REMOVE HAI COMPLETED SESSIONS',
     'SupportsShouldProcess = $true',
+    'test-hai-supplemental-transcript-cleanup-readiness.ps1',
+    'supplemental_source_archive_verified',
     '$PSCmdlet.ShouldProcess',
     'candidate_after_ledger_commit',
     'final_report_preserved',

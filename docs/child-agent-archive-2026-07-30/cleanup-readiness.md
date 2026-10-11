@@ -941,15 +941,21 @@ checked above: `D:\codex-temp\completed-agent-sessions` (3 files,
 parent session; the three completed transcripts are unique and hash-verified,
 while all six aborted/nonterminal transcripts remain protected.
 
-The original verifier and transcript-removal script do not cover these roots.
-Therefore their cleanup readiness must not be inferred from the 18-file
-verifier, even after a future merge. The overall known archive is now 27 files
-and 34,752,906,420 bytes. The supplemental audit, manifest, and completed
-reports are in `supplemental-child-batch-audit.md`,
+The original verifier does not cover these roots. A separate read-only verifier
+now checks their exact two-root inventory, all nine sizes, hashes for the three
+completed candidates, candidate report IDs, and all 21 report-linked source
+paths against tracked repository files. It also refuses reparse-point roots or
+ancestors and uncommitted changes to its manifest/report evidence. The
+transcript-removal preflight now requires that supplemental verifier to pass in
+addition to the original archive, merged-PR, and CI gates. A unified
+multi-root removal operation is not implemented: the existing remover can only
+remove candidates from the original 18-file root, so the three supplemental
+candidates remain protected. The six aborted/nonterminal supplemental files
+remain protected regardless. The overall known archive is 27 files and
+34,752,906,420 bytes. Supplemental audit artifacts remain in
+`supplemental-child-batch-audit.md`,
 `supplemental-child-transcript-manifest.csv`, and
-`supplemental-child-final-reports.md`. A unified multi-root manifest,
-retained-event reconciliation, and cleanup-tool support remain required before
-any deletion.
+`supplemental-child-final-reports.md`.
 
 ## Additional HAI source snapshots (2026-10-11)
 

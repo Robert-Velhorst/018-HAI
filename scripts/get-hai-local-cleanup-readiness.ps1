@@ -1,6 +1,10 @@
 [CmdletBinding()]
 param(
     [string]$TranscriptRoot = 'D:\codex-temp\hai-completed-agent-sessions',
+    [string[]]$SupplementalTranscriptRoots = @(
+        'D:\codex-temp\completed-agent-sessions',
+        'D:\codex-temp\session-log-relief'
+    ),
     [string]$RecoveryArchiveRoot = (Join-Path $env:LOCALAPPDATA 'HAI\volume-recovery'),
     [ValidateRange(1, 8760)]
     [int]$MinimumFixtureAgeHours = 24,
@@ -46,6 +50,18 @@ $transcriptIntegrity = if ($VerifyTranscriptArchive) {
         name = 'transcript_source_integrity'
         status = 'not_requested'
         blocker = 'Full transcript enumeration and candidate SHA-256 verification were skipped. Pass -VerifyTranscriptArchive for this I/O-intensive check.'
+        report = $null
+    }
+}
+$supplementalTranscriptIntegrity = if ($VerifyTranscriptArchive) {
+    Get-ReadOnlyReport 'supplemental_transcript_source_integrity' 'test-hai-supplemental-transcript-cleanup-readiness.ps1' @{
+        TranscriptRoots = $SupplementalTranscriptRoots
+    }
+} else {
+    [pscustomobject]@{
+        name = 'supplemental_transcript_source_integrity'
+        status = 'not_requested'
+        blocker = 'Supplemental transcript roots and hashes were not enumerated. Pass -VerifyTranscriptArchive for this I/O-intensive check.'
         report = $null
     }
 }
@@ -303,6 +319,26 @@ if ($transcripts.status -eq 'reported') {
         status = 'blocked'
         blocker = $transcripts.blocker
         source_archive_integrity = $integritySummary
+        source_hash_audit_requested = [bool]$VerifyTranscriptArchive
+    })
+}
+
+if ($supplementalTranscriptIntegrity.status -eq 'reported') {
+    $targets.Add([pscustomobject][ordered]@{
+        id = 'supplemental_completed_session_transcripts'
+        source_paths = @($SupplementalTranscriptRoots)
+        status = if ($supplementalTranscriptIntegrity.report.result -ceq 'supplemental_source_archive_verified') { 'verified_retain_until_pr_merge' } else { 'blocked' }
+        candidate_count = [int]$supplementalTranscriptIntegrity.report.candidate_files
+        candidate_bytes = [long]$supplementalTranscriptIntegrity.report.candidate_bytes
+        source_archive_integrity = $supplementalTranscriptIntegrity.report
+        blocker = 'Supplemental transcripts remain protected until the complete source reconciliation is merged and an approved cleanup receipt is recorded.'
+    })
+} else {
+    $targets.Add([pscustomobject][ordered]@{
+        id = 'supplemental_completed_session_transcripts'
+        source_paths = @($SupplementalTranscriptRoots)
+        status = 'blocked'
+        blocker = [string]$supplementalTranscriptIntegrity.blocker
         source_hash_audit_requested = [bool]$VerifyTranscriptArchive
     })
 }

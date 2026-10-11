@@ -1,6 +1,10 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [string]$TranscriptRoot = 'D:\codex-temp\hai-completed-agent-sessions',
+    [string[]]$SupplementalTranscriptRoots = @(
+        'D:\codex-temp\completed-agent-sessions',
+        'D:\codex-temp\session-log-relief'
+    ),
     [string[]]$ChildIds = @(),
     [switch]$Apply,
     [string]$ConfirmationPhrase = ''
@@ -12,6 +16,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $archiveRoot = Join-Path $repoRoot 'docs/child-agent-archive-2026-07-30'
 $manifestPath = Join-Path $archiveRoot 'child-agent-transcript-manifest.csv'
 $readinessScript = Join-Path $PSScriptRoot 'test-hai-transcript-cleanup-readiness.ps1'
+$supplementalReadinessScript = Join-Path $PSScriptRoot 'test-hai-supplemental-transcript-cleanup-readiness.ps1'
 
 function Get-HaiTranscriptReadiness {
     try {
@@ -22,6 +27,15 @@ function Get-HaiTranscriptReadiness {
         $report = ($output -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
         if ($report.cleanup_gate_ready -ne $true -or $report.cleanup_authorized -ne $false -or $report.deletion_performed -ne $false) {
             return [pscustomobject]@{ ready = $false; reason = 'source, committed-ledger, merged-PR, or no-deletion contract did not pass'; report = $report }
+        }
+        $supplementalOutput = @(& $supplementalReadinessScript -TranscriptRoots $SupplementalTranscriptRoots)
+        if ($supplementalOutput.Count -eq 0) {
+            return [pscustomobject]@{ ready = $false; reason = 'supplemental transcript source verification did not return a report'; report = $null }
+        }
+        $supplemental = ($supplementalOutput -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
+        if ($supplemental.result -cne 'supplemental_source_archive_verified' -or
+            $supplemental.deletion_performed -ne $false -or $supplemental.cleanup_authorized -ne $false) {
+            return [pscustomobject]@{ ready = $false; reason = 'supplemental transcript roots, hashes, reports, or no-deletion contract failed'; report = $supplemental }
         }
         return [pscustomobject]@{ ready = $true; reason = $null; report = $report }
     } catch {
