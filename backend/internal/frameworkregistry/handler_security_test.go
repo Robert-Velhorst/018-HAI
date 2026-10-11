@@ -66,6 +66,57 @@ func TestPublicSelectionRejectsClientApprovalAndRiskAssertions(t *testing.T) {
 	}
 }
 
+func TestSelectionHandlerReturnsOneOwnerScopedDecision(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service, err := NewService(NewMemoryRepository())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	decision, err := service.Select(SelectionRequest{
+		OwnerIdentity: "alice",
+		Request:       "Create a source-grounded project summary.",
+	})
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/selections/"+decision.ID, nil)
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = request
+	context.Params = gin.Params{{Key: "id", Value: decision.ID}}
+	context.Set(identity.ContextSubjectKey, "alice")
+
+	NewHandler(service).Selection(context)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
+	}
+	var result SelectionDecision
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode selection: %v", err)
+	}
+	if result.ID != decision.ID {
+		t.Fatalf("selection id = %q, want %q", result.ID, decision.ID)
+	}
+
+	otherOwnerResponse := httptest.NewRecorder()
+	otherOwnerContext, _ := gin.CreateTestContext(otherOwnerResponse)
+	otherOwnerContext.Request = request.Clone(request.Context())
+	otherOwnerContext.Params = gin.Params{{Key: "id", Value: decision.ID}}
+	otherOwnerContext.Set(identity.ContextSubjectKey, "bob")
+
+	NewHandler(service).Selection(otherOwnerContext)
+
+	if otherOwnerResponse.Code != http.StatusNotFound {
+		t.Fatalf(
+			"cross-owner status = %d, want 404: %s",
+			otherOwnerResponse.Code,
+			otherOwnerResponse.Body.String(),
+		)
+	}
+}
+
 func TestPublicSelectionRejectsEveryTrustedOrAuthorityRaisingField(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, err := NewService(NewMemoryRepository())

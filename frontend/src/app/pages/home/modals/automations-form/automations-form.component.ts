@@ -1,10 +1,11 @@
-import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core'
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnInit, Output } from '@angular/core'
 import { FormBuilder, FormGroup, Validators } from '@angular/forms'
 import { NzUploadChangeParam, NzUploadFile } from 'ng-zorro-antd/upload'
 import { IAutomationModel } from '../../../../models/automation.model.interface'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-automations-form-modal',
   templateUrl: './automations-form.component.html',

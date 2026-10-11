@@ -7,6 +7,8 @@
 db_data_automation/
 db_data_idp/
 images/
+backups/
+nginx-config/sites-enabled/.hai-event-inbox/
 
 # Dependencies and build output.
 frontend/node_modules/
@@ -40,11 +42,16 @@ security-snapshots/
 # threads, sync summaries). Keep the folder, never the contents.
 /connected-sources/*
 !/connected-sources/.gitkeep
+!/connected-sources/e2e-fixture/
+!/connected-sources/e2e-fixture/.gitkeep
 
 # Generated diagnostics, work reports, and support bundles.
 /*.pdf
 support-bundle-*.zip
 support-bundle-*.tar.gz
+
+# Generated Windows installer payloads and executables.
+/installer/release/
 
 # Local tooling and agent runtime state (not part of the delivered product).
 .claude/

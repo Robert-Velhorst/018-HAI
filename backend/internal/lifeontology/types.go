@@ -383,3 +383,12 @@ type Repository interface {
 	GetContactReviewDecisionByIdempotency(context.Context, string, string) (ContactReviewDecision, error)
 	ListContactReviewDecisions(context.Context, string, int) ([]ContactReviewDecision, error)
 }
+
+// BoundedQueryRepository lets durable stores apply owner, privacy, temporal,
+// and result bounds before transferring immutable envelopes to the service.
+// Returned envelopes still pass the repository's full integrity validation.
+type BoundedQueryRepository interface {
+	QueryEntities(context.Context, string, EntityQuery) ([]Entity, error)
+	QueryRelations(context.Context, string, RelationQuery) ([]Relation, error)
+	ListMergeProposalsWithLimit(context.Context, string, int) ([]MergeProposal, error)
+}

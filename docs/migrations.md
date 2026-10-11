@@ -44,12 +44,19 @@ after it has shipped; add a new numbered pair.
 ## Runner
 
 `internal/infra/migrate.go` loads the embedded files, applies each pending
-migration in its own transaction, and records it. `RunMigrations`, called by
-startup and `GetDefaultDB`, executes:
+migration in its own transaction, and records it. `RunMigrations` executes:
 
 ```text
 pre -> optional development AutoMigrate -> post
 ```
+
+The production Compose path invokes that sequence only from the non-root,
+one-shot `backend-migrate` service using the schema-owner credentials. It then
+creates or rotates the least-privilege runtime role. The long-lived backend is
+gated on successful migration, connects as that runtime role, and sets
+`DB_RUN_MIGRATIONS=false`. Direct/non-Compose development retains the historic
+default of running migrations from `GetDefaultDB` unless the variable is
+explicitly disabled.
 
 ### CLI
 
@@ -508,13 +515,16 @@ remain false. Here, "delivery" names an internal durable handoff record; it is
 not authorization to send a message, invoke a provider, mutate a workflow, or
 perform any external effect.
 
-Migration `0050` pins the immutable run and observation identities and digests,
-but it does not yet pin the exact outcome-definition revision, proactivity
-policy/feedback history, or composer implementation version used by a delayed
-attempt. A later retry can therefore compose against newer advisory state. A
-`succeeded` delivery proves that the handoff was processed, not that the exact
-historical outcome/proactivity snapshot can be reconstructed. Snapshot pinning
-and end-to-end replay acceptance remain release gates.
+Migration `0051` closes the historical-replay ambiguity left by `0050`. Before
+the completed monitor run is committed, it pins the exact outcome revision and
+audit digest, proactivity policy/signal/decision/feedback watermarks, composer
+version, capture time, and canonical snapshot digest. Every composition attempt
+binds that digest, and legacy unpinned deliveries are dead-lettered rather than
+being recomposed against newer state. Deterministic package tests prove delayed
+replay uses the pinned outcome and attention context after current state
+advances. Disposable-PostgreSQL lifecycle and signed-browser acceptance remain
+release gates; a `succeeded` handoff is still advisory processing evidence, not
+authorization for an external effect.
 
 ## Immutable Plan Graph
 
@@ -541,6 +551,18 @@ backend migrate down pre/0052_plan_graph_contract
 Applying this migration creates no task, workflow, approval, runtime call, or
 external effect. Accepted plan revisions remain coordination evidence only and
 retain `canExecute: false` at the API boundary.
+
+## Owner-scoped Memory Query Indexes
+
+`pre/0061_context_memory_owner_query_indexes` enables `pg_trgm` when needed and
+adds four indexes for the authenticated memory-library query path: owner/archive
+freshness, owner/project/archive freshness, owner/case-insensitive-kind/archive
+freshness, and trigram search over the normalized title/content/source
+expression.
+
+The migration changes no table shape or row data. Its down migration removes
+only these four HAI indexes. It deliberately leaves the `pg_trgm` extension in
+place because another schema object or future migration may share it.
 
 ## Rules
 

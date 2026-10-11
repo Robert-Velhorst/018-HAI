@@ -766,7 +766,10 @@ dd {
 }
 
 @media (max-width: 1320px) {
-  .llm-status-strip,
+  .llm-status-strip {
+    grid-template-columns: 1fr !important;
+  }
+
   .llm-workspace,
   .catalog-workbench,
   .diagnostics-grid {

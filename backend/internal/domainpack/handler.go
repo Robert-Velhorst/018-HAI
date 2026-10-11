@@ -45,6 +45,11 @@ func (handler *Handler) Catalog(c *gin.Context) {
 	if !ok {
 		return
 	}
+	viewMode := strings.TrimSpace(c.Query("view"))
+	if viewMode != "" && viewMode != "full" && viewMode != "summary" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "domain pack catalog view must be full or summary"})
+		return
+	}
 	packs := handler.registry.List()
 	views := make([]PackView, 0, len(packs))
 	for _, pack := range packs {
@@ -54,6 +59,29 @@ func (handler *Handler) Catalog(c *gin.Context) {
 			return
 		}
 		views = append(views, view)
+	}
+	if viewMode == "summary" {
+		summaries := make([]PackSummaryView, 0, len(views))
+		for _, view := range views {
+			summaries = append(summaries, PackSummaryView{
+				Pack: PackSummary{
+					ID:             view.Pack.ID,
+					Version:        view.Pack.Version,
+					Name:           view.Pack.Name,
+					Description:    view.Pack.Description,
+					Sensitive:      view.Pack.Sensitive,
+					DefaultEnabled: view.Pack.DefaultEnabled,
+					MethodCount:    len(view.Pack.Playbook.Methods),
+				},
+				Enabled:   view.Enabled,
+				LocalOnly: view.LocalOnly,
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"metadata": handler.registry.Metadata(),
+			"packs":    summaries,
+		})
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"metadata": handler.registry.Metadata(),

@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit } from "@angular/core";
+import { ChangeDetectionStrategy, Component, Inject, OnInit } from "@angular/core";
 import { FormBuilder, FormGroup, Validators } from "@angular/forms";
 import { NzNotificationService } from "ng-zorro-antd/notification";
 import { AUTH_SERVICE_TOKEN } from "../../services/auth/auth.service.token";
@@ -6,6 +6,7 @@ import { IAuthService } from "../../services/auth.service.interface";
 import { Router } from "@angular/router";
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: "app-login",
   templateUrl: "./login.component.html",

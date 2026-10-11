@@ -188,6 +188,27 @@
   color: var(--hai-muted);
 }
 
+.login-password-toggle {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--hai-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  place-items: center;
+}
+
+.login-password-toggle:hover,
+.login-password-toggle:focus-visible {
+  color: var(--hai-blue);
+  background: var(--hai-blue-soft);
+  outline: 2px solid var(--hai-blue);
+  outline-offset: 1px;
+}
+
 :host-context(.hai-theme-dark) {
   background:
     linear-gradient(180deg, rgba(8, 17, 31, .88), rgba(8, 17, 31, 0) 260px),

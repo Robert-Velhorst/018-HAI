@@ -3,6 +3,7 @@ package llm
 import (
 	"automation-hub-backend/internal/models"
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -27,10 +28,7 @@ func TestGenerateHandlerIgnoresClientPaidApprovalFlag(t *testing.T) {
 	}))
 	defer server.Close()
 
-	policy := testPolicyWithoutEndpoints()
-	paidIndex := providerIndex(t, policy, "paid-provider")
-	policy.Providers[paidIndex].Enabled = true
-	policy.Providers[paidIndex].EndpointURL = server.URL
+	policy := withTestPaidProvider(testPolicyWithoutEndpoints(), server.URL)
 	policy.PaidCallsAllowed = true
 	policy.DailyPaidBudgetEUR = 1
 	handler := &Handler{service: &Service{policy: policy}}
@@ -39,9 +37,9 @@ func TestGenerateHandlerIgnoresClientPaidApprovalFlag(t *testing.T) {
 		Task:              "Handle a difficult verification task",
 		AllowPaidApproved: true,
 		RouteDecision: &RouteDecision{
-			SelectedProviderID: "paid-provider",
-			SelectedModelID:    "paid-high-capability",
-			SelectedModelName:  "Paid high capability model",
+			SelectedProviderID: "test-paid-provider",
+			SelectedModelID:    "test-paid-high-capability",
+			SelectedModelName:  "Test paid high capability model",
 			Tier:               TierExpensive,
 		},
 	})
@@ -68,6 +66,71 @@ func TestGenerateHandlerIgnoresClientPaidApprovalFlag(t *testing.T) {
 	}
 	if result.Status != "blocked" {
 		t.Fatalf("status = %q, want blocked", result.Status)
+	}
+}
+
+func TestGenerateHandlerCancelsProviderWithHTTPContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	requestStarted := make(chan struct{})
+	releaseProvider := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requestStarted)
+		<-releaseProvider
+	}))
+	defer func() {
+		close(releaseProvider)
+		server.CloseClientConnections()
+		server.Close()
+	}()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.Providers[0].EndpointURL = server.URL
+	service := withTrustedTestFinalEffects(t, &Service{policy: policy, usage: map[string]UsageCounter{}})
+	handler := NewHandlerWithEffectContext(service, func(*gin.Context) (EffectContext, error) {
+		return *trustedTestEffectContext(), nil
+	})
+	body, err := json.Marshal(GenerateRequest{
+		Task: "Summarize this short note",
+		RouteDecision: &RouteDecision{
+			SelectedProviderID: "ollama",
+			SelectedModelID:    "phi3:mini",
+			SelectedModelName:  "Phi small local",
+			Tier:               TierLocal,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	requestContext, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodPost, "/generate", bytes.NewReader(body)).WithContext(requestContext)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	ginContext, _ := gin.CreateTestContext(response)
+	ginContext.Request = request
+	done := make(chan struct{})
+	go func() {
+		handler.Generate(ginContext)
+		close(done)
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("provider request did not start")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("generation handler did not return after HTTP cancellation")
+	}
+
+	var result GenerationResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if response.Code != http.StatusOK || result.Status != "stopped" {
+		t.Fatalf("canceled handler response = %d %#v", response.Code, result)
 	}
 }
 
@@ -121,6 +184,27 @@ func TestRunDueModelMaintenanceHandlerReturnsAggregateOnly(t *testing.T) {
 
 	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte("\"eligible\":0")) || !bytes.Contains(response.Body.Bytes(), []byte("\"results\":[]")) {
 		t.Fatalf("maintenance run = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRunDueModelMaintenanceHandlerStopsWithCanceledRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	history := &fakeModelMaintenanceRepository{}
+	service := &Service{policy: testPolicyWithoutEndpoints(), maintenanceHistory: history, maintenanceRunning: map[string]*sync.Mutex{}}
+	handler := NewHandler(service)
+	response := httptest.NewRecorder()
+	ginContext, _ := gin.CreateTestContext(response)
+	requestContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	ginContext.Request = httptest.NewRequest(http.MethodPost, "/model-maintenance/run", nil).WithContext(requestContext)
+
+	handler.RunDueModelMaintenance(ginContext)
+
+	if response.Body.Len() != 0 {
+		t.Fatalf("canceled handler wrote a response body: %s", response.Body.String())
+	}
+	if len(history.records) != 0 {
+		t.Fatalf("canceled handler persisted maintenance records: %#v", history.records)
 	}
 }
 

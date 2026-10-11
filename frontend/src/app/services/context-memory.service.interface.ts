@@ -3,6 +3,8 @@ import {
   IContextMemory,
   IContextMemoryRequest,
   IMemoryExport,
+  IMemoryPageResult,
+  IMemoryQueryParams,
   IMemoryRetrieveRequest,
   IMemoryRetrieveResult,
   ISemanticMemoryReindexResult,
@@ -10,6 +12,7 @@ import {
 
 export interface IContextMemoryService {
   list(projectKey?: string, includeArchived?: boolean): Observable<IContextMemory[]>;
+  query(params: IMemoryQueryParams): Observable<IMemoryPageResult>;
   create(request: IContextMemoryRequest): Observable<IContextMemory>;
   update(id: string, request: IContextMemoryRequest): Observable<IContextMemory>;
   archive(id: string): Observable<IContextMemory>;

@@ -8,12 +8,12 @@
     </button>
 
     <nav>
-      <section class="hai-navigation__group" *ngFor="let group of groups">
+      <section class="hai-navigation__group" *ngFor="let group of groups; trackBy: trackGroup">
         <h2>{{ group.label }}</h2>
         <button
           type="button"
           class="hai-navigation__item"
-          *ngFor="let module of groupModules(group.id)"
+          *ngFor="let module of groupModules(group.id); trackBy: trackModule"
           [class.hai-navigation__item--active]="isActive(module)"
           [attr.aria-current]="isActive(module) ? 'page' : null"
           [attr.title]="module.title + ': ' + module.description"
@@ -46,10 +46,10 @@
         <i nz-icon [nzType]="viewMode === 'advanced' ? 'compress' : 'expand'" nzTheme="outline"></i>
         <span>{{ viewMode === 'advanced' ? 'Advanced' : 'Basic' }}</span>
       </button>
-      <button type="button" class="hai-icon-control" [attr.title]="navigationLabel()" (click)="cycleNavigationMode()">
+      <button type="button" class="hai-icon-control" [attr.title]="navigationLabel()" [attr.aria-label]="navigationLabel()" (click)="cycleNavigationMode()">
         <i nz-icon nzType="menu-fold" nzTheme="outline"></i>
       </button>
-      <button type="button" class="hai-icon-control" [attr.title]="'Switch to ' + (themeMode === 'dark' ? 'light' : 'dark') + ' theme'" (click)="toggleTheme()">
+      <button type="button" class="hai-icon-control" [attr.title]="'Switch to ' + (themeMode === 'dark' ? 'light' : 'dark') + ' theme'" [attr.aria-label]="'Switch to ' + (themeMode === 'dark' ? 'light' : 'dark') + ' theme'" (click)="toggleTheme()">
         <i nz-icon [nzType]="themeMode === 'dark' ? 'eye-invisible' : 'bulb'" nzTheme="outline"></i>
       </button>
     </header>

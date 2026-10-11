@@ -585,6 +585,30 @@ func TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals(t *testing.T) {
 		t.Fatalf("workflow approval source = %q", storedWorkflow.ApprovalSourceID)
 	}
 
+	controlDecisionID := createControlDecisionFixture(t, db, owner, now)
+	controlSourceID := "control-decision:" + controlDecisionID.String()
+	controlReceipt := postgresTestReceipt(owner, OutcomeAuthorized, now.Add(7*time.Second))
+	bindReceiptApproval(
+		&controlReceipt,
+		controlSourceID,
+		controlDecisionID,
+		owner,
+		now,
+	)
+	storedControl, created, err := repository.CreateOrGet(ctx, controlReceipt)
+	if err != nil || !created {
+		t.Fatalf("create control-approved receipt = (%t, %v)", created, err)
+	}
+	if storedControl.ApprovalSourceID != controlSourceID {
+		t.Fatalf("control approval source = %q", storedControl.ApprovalSourceID)
+	}
+
+	replay := postgresTestReceipt(owner, OutcomeAuthorized, now.Add(8*time.Second))
+	bindReceiptApproval(&replay, controlSourceID, controlDecisionID, owner, now)
+	if _, _, err := repository.CreateOrGet(ctx, replay); err == nil {
+		t.Fatal("database allowed one control decision to authorize two receipts")
+	}
+
 	crossOwner := workflowReceipt
 	crossOwner.ID = uuid.New()
 	crossOwner.OwnerIdentity = "other-" + owner
@@ -794,6 +818,51 @@ func createWorkflowDecisionFixture(
 		t.Fatalf("create workflow decision fixture: %v", err)
 	}
 	return workflowID, decisionID
+}
+
+func createControlDecisionFixture(
+	t *testing.T,
+	db *gorm.DB,
+	owner string,
+	now time.Time,
+) uuid.UUID {
+	t.Helper()
+	requestID := uuid.New()
+	decisionID := uuid.New()
+	bindingDigest := postgresDigest("opscontrol-" + requestID.String())
+	if err := db.Exec(`
+		INSERT INTO public.opscontrol_approval_requests (
+			id, owner_identity, idempotency_key, task_id, action,
+			resource_type, resource_id, target, binding_digest,
+			created_by, created_at, expires_at
+		) VALUES (?, ?, ?, ?, 'opscontrol.emergency-stop.clear',
+			'opscontrol-emergency-stop', 'emergency-stop:revision-1',
+			'disengaged', ?, ?, ?, ?)`,
+		requestID,
+		owner,
+		"opscontrol:"+requestID.String(),
+		"opscontrol:"+requestID.String(),
+		bindingDigest,
+		owner,
+		now,
+		now.Add(5*time.Minute),
+	).Error; err != nil {
+		t.Fatalf("create control approval request fixture: %v", err)
+	}
+	if err := db.Exec(`
+		INSERT INTO public.opscontrol_approval_decisions (
+			id, request_id, owner_identity, decision, reason, actor, created_at
+		) VALUES (?, ?, ?, 'approved', ?, ?, ?)`,
+		decisionID,
+		requestID,
+		owner,
+		"approved exact emergency-stop recovery",
+		owner,
+		now.Add(time.Second),
+	).Error; err != nil {
+		t.Fatalf("create control approval decision fixture: %v", err)
+	}
+	return decisionID
 }
 
 func bindReceiptApproval(

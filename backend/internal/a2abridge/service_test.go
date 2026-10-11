@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"automation-hub-backend/internal/task"
 
@@ -51,6 +52,20 @@ func TestDraftCreatesSanitizedPreviewWithoutExecution(t *testing.T) {
 	}
 }
 
+func TestBoundedPreservesUnicodeAtTheLimit(t *testing.T) {
+	value := strings.Repeat("e", 77) + "\u20acuro"
+	result := bounded(value, 80)
+	if !utf8.ValidString(result) {
+		t.Fatalf("bounded returned invalid UTF-8: %q", result)
+	}
+	if utf8.RuneCountInString(result) != 80 || !strings.HasSuffix(result, "...") {
+		t.Fatalf("bounded unicode result = %q (%d runes)", result, utf8.RuneCountInString(result))
+	}
+	if strings.ContainsRune(result, utf8.RuneError) {
+		t.Fatalf("bounded replaced a split rune: %q", result)
+	}
+}
+
 func TestStatusRejectsExternalEndpointAndWrongToken(t *testing.T) {
 	service := NewService(Config{Enabled: true, Token: testBridgeToken, OwnerID: "owner", URL: "https://example.com/a2a"}, &previewStub{})
 	if service.Status().Configured {
@@ -58,6 +73,64 @@ func TestStatusRejectsExternalEndpointAndWrongToken(t *testing.T) {
 	}
 	if configuredService(&previewStub{}).Authorize("wrong") {
 		t.Fatal("wrong token authorized")
+	}
+}
+
+func TestPublicNgrokBridgeRequiresExactFailClosedProductionConfiguration(t *testing.T) {
+	valid := Config{
+		Enabled:     true,
+		Token:       testBridgeToken,
+		OwnerID:     "owner@example.test",
+		URL:         "https://hai-example.ngrok.app/api/v1/a2a",
+		PublicNgrok: true,
+		NgrokURL:    "https://hai-example.ngrok.app",
+		RunMode:     "production",
+	}
+	if status := NewService(valid, &previewStub{}).Status(); !status.Configured || status.Transport != "fixed_ngrok_https" {
+		t.Fatalf("valid public bridge status = %#v", status)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Config)
+	}{
+		{name: "explicit opt in", mutate: func(c *Config) { c.PublicNgrok = false }},
+		{name: "production mode", mutate: func(c *Config) { c.RunMode = "development" }},
+		{name: "login bypass disabled", mutate: func(c *Config) { c.LocalLoginBypass = true }},
+		{name: "https only", mutate: func(c *Config) { c.URL = "http://hai-example.ngrok.app/api/v1/a2a" }},
+		{name: "known ngrok host", mutate: func(c *Config) { c.URL = "https://example.com/api/v1/a2a" }},
+		{name: "matching origin", mutate: func(c *Config) { c.NgrokURL = "https://other.ngrok.app" }},
+		{name: "exact endpoint path", mutate: func(c *Config) { c.URL = "https://hai-example.ngrok.app/a2a" }},
+		{name: "no public port", mutate: func(c *Config) { c.URL = "https://hai-example.ngrok.app:8443/api/v1/a2a" }},
+		{name: "public flag cannot label local URL", mutate: func(c *Config) { c.URL = "http://127.0.0.1/api/v1/a2a" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			config := valid
+			test.mutate(&config)
+			status := NewService(config, &previewStub{}).Status()
+			if status.Configured || status.ConfigError == "" {
+				t.Fatalf("misconfigured public bridge status = %#v", status)
+			}
+		})
+	}
+}
+
+func TestLocalBridgeRequiresExactEndpointPath(t *testing.T) {
+	service := NewService(Config{Enabled: true, Token: testBridgeToken, OwnerID: "owner", URL: "http://127.0.0.1/not-a2a"}, &previewStub{})
+	if status := service.Status(); status.Configured || !strings.Contains(status.ConfigError, "/api/v1/a2a") {
+		t.Fatalf("local path validation status = %#v", status)
+	}
+}
+
+func TestLocalBridgeRejectsLANEndpointAndWhitespaceToken(t *testing.T) {
+	lan := NewService(Config{Enabled: true, Token: testBridgeToken, OwnerID: "owner", URL: "http://192.168.1.10/api/v1/a2a"}, &previewStub{})
+	if status := lan.Status(); status.Configured || !strings.Contains(status.ConfigError, "must be local") {
+		t.Fatalf("LAN endpoint status = %#v", status)
+	}
+	spaced := NewService(Config{Enabled: true, Token: "aaaaaaaaaaaaaaaa aaaaaaaaaaaaaaaa", OwnerID: "owner", URL: "http://127.0.0.1/api/v1/a2a"}, &previewStub{})
+	if status := spaced.Status(); status.Configured || !strings.Contains(status.ConfigError, "non-whitespace") {
+		t.Fatalf("whitespace token status = %#v", status)
 	}
 }
 
@@ -129,5 +202,37 @@ func TestHandlerRejectsOldShapesAndUnsupportedA2AVersion(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "-32009") {
 		t.Fatalf("version response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestHandlerRejectsAmbiguousJSONRPCEnvelopesBeforePlanning(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	planner := &previewStub{}
+	handler := NewHandler(configuredService(planner))
+	router := gin.New()
+	router.POST("/api/v1/a2a", handler.Send)
+
+	valid := `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"message-1","role":"ROLE_USER","parts":[{"text":"test"}]}}}`
+	tests := map[string]string{
+		"trailing document":   valid + `{}`,
+		"object id":           `{"jsonrpc":"2.0","id":{"unsafe":true},"method":"SendMessage","params":{"message":{"messageId":"message-1","role":"ROLE_USER","parts":[{"text":"test"}]}}}`,
+		"unknown envelope":    `{"jsonrpc":"2.0","id":1,"method":"SendMessage","unexpected":true,"params":{"message":{"messageId":"message-1","role":"ROLE_USER","parts":[{"text":"test"}]}}}`,
+		"unknown message key": `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"message-1","role":"ROLE_USER","unexpected":true,"parts":[{"text":"test"}]}}}`,
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/a2a", strings.NewReader(body))
+			request.Header.Set("Authorization", "Bearer "+testBridgeToken)
+			request.Header.Set("A2A-Version", "1.0")
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+		})
+	}
+	if len(planner.requests) != 0 {
+		t.Fatalf("ambiguous envelopes reached planner: %#v", planner.requests)
 	}
 }

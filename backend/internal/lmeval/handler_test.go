@@ -26,7 +26,9 @@ func TestHandlerDoesNotAcceptArbitraryModelOrSuiteParameters(t *testing.T) {
 		t.Fatalf("run endpoint must ignore caller-selected model or suite: %d", recorder.Code)
 	}
 	recorder = httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/run", strings.NewReader(`{"model":"external"}`)))
+	request := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader(`{"model":"external"}`))
+	request.ContentLength = -1
+	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("run endpoint must reject caller-supplied run payloads: %d", recorder.Code)
 	}

@@ -15,16 +15,17 @@ recorded honestly.
 | Any test skipped "because obvious"? | No — new logic has real assertions; adversarial + large-dataset + isolation cases included. |
 | Any flaky test hidden? | No — the `agentruntime` flake is recorded openly in the bug-hunt log with a fix recommendation. |
 | Any secret committed? | No — `.env*` untouched; support bundle excludes secret values; audit entries redact sensitive keys. |
-| Any claim of full-stack boot? | Critical-path smoke ran 7/7 against a **real local Postgres**; the full **Docker Compose** multi-service boot is honestly **not run here** (Docker unavailable) — marked as such, not claimed. |
+| Any claim of full-stack boot? | The canonical Compose stack and a separate clean-checkout run are retained for the current Windows host, including empty-volume build, health, first-run sign-in, and a bounded governed workflow. This evidence is explicitly not generalized to another release target. |
 
 ## Residual honest gaps (not excuses — tracked)
 
-1. Several new utilities are tested but not yet wired into the live app
-   (rbac/upload/apierror/autonomygate/actionresolver) — `technical-debt.md`.
-2. Critical-path smoke is automated and passing (local Postgres); the full
-   **Docker Compose** multi-service smoke is not run here (Docker unavailable) —
-   `fresh-clone-dryrun.md`.
-3. Frontend polish (accessibility/responsive/onboarding) outstanding.
+1. Shared error-envelope and path-helper adoption is not yet universal; live
+   execution, RBAC, upload safety, autonomy, and action-resolution boundaries
+   are wired and tested — `technical-debt.md`.
+2. Current-host clean-clone Compose acceptance is retained; every distinct
+   release target must repeat the documented chain — `fresh-clone-dryrun.md`.
+3. Deeper accessibility, cross-browser, and target-user acceptance remain
+   release-quality work rather than unimplemented control-plane behavior.
 
 ## Conclusion
 

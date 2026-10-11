@@ -10,7 +10,6 @@ import "automation-hub-idp/internal/app/services/iservice"
 
 type tokenBlockListServiceImpl struct {
 	client *redis.Client
-	ctx    context.Context
 }
 
 func NewRedisTokenBlockListService() iservice.TokenBlockListService {
@@ -18,21 +17,18 @@ func NewRedisTokenBlockListService() iservice.TokenBlockListService {
 		Addr: config.RedisConfig.RedisAddr,
 	})
 
-	ctx := context.TODO()
-
 	return &tokenBlockListServiceImpl{
 		client: rdb,
-		ctx:    ctx,
 	}
 }
 
-func (r *tokenBlockListServiceImpl) AddToBlockList(jwtUUID string, expirationTime time.Duration) error {
-	err := r.client.Set(r.ctx, jwtUUID, 1, expirationTime).Err()
+func (r *tokenBlockListServiceImpl) AddToBlockList(ctx context.Context, jwtUUID string, expirationTime time.Duration) error {
+	err := r.client.Set(ctx, jwtUUID, 1, expirationTime).Err()
 	return err
 }
 
-func (r *tokenBlockListServiceImpl) IsInBlockList(jwtUUID string) (bool, error) {
-	_, err := r.client.Get(r.ctx, jwtUUID).Result()
+func (r *tokenBlockListServiceImpl) IsInBlockList(ctx context.Context, jwtUUID string) (bool, error) {
+	_, err := r.client.Get(ctx, jwtUUID).Result()
 	if err != nil {
 		if err == redis.Nil {
 			return false, nil

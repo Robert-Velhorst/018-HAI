@@ -138,6 +138,23 @@ describe('FrameworkRegistryService', () => {
     request.flush({ frameworks: [framework] });
   });
 
+  it('normalizes legacy null empty collections without weakening array validation', () => {
+    service.frameworks().subscribe((result) => {
+      expect(result).toEqual([framework]);
+      expect(result[0].conflictsWith).toEqual([]);
+      expect(result[0].adaptations).toEqual([]);
+    });
+
+    const request = http.expectOne('/api/v1/framework-registry/frameworks');
+    request.flush({
+      frameworks: [{
+        ...framework,
+        conflictsWith: null,
+        adaptations: null,
+      }],
+    });
+  });
+
   it('loads one framework for inspection', () => {
     service.framework('truth-evidence').subscribe((result) => expect(result).toEqual(framework));
 
@@ -199,7 +216,7 @@ describe('FrameworkRegistryService', () => {
   it('normalizes selection history', () => {
     service.selections().subscribe((result) => expect(result).toEqual([selection]));
 
-    const request = http.expectOne('/api/v1/framework-registry/selections');
+    const request = http.expectOne('/api/v1/framework-registry/selections?limit=10');
     expect(request.request.method).toBe('GET');
     request.flush({ selections: [selection] });
   });
@@ -219,7 +236,7 @@ describe('FrameworkRegistryService', () => {
       expect(result[0].selected[0].riskCeiling).toBeUndefined();
     });
 
-    const request = http.expectOne('/api/v1/framework-registry/selections');
+    const request = http.expectOne('/api/v1/framework-registry/selections?limit=10');
     request.flush({ selections: [legacySelection] });
   });
 
@@ -227,7 +244,7 @@ describe('FrameworkRegistryService', () => {
     let error: unknown;
     service.selections().subscribe({ error: (value) => (error = value) });
 
-    const request = http.expectOne('/api/v1/framework-registry/selections');
+    const request = http.expectOne('/api/v1/framework-registry/selections?limit=10');
     request.flush({
       selections: [{
         ...selection,
@@ -246,7 +263,7 @@ describe('FrameworkRegistryService', () => {
     const { taskRiskLevel: _taskRiskLevel, ...missingRisk } = selection;
     service.selections().subscribe({ error: (value) => (error = value) });
 
-    const request = http.expectOne('/api/v1/framework-registry/selections');
+    const request = http.expectOne('/api/v1/framework-registry/selections?limit=10');
     request.flush({ selections: [missingRisk] });
 
     expect(error).toEqual(jasmine.any(Error));
@@ -389,7 +406,7 @@ describe('FrameworkRegistryService', () => {
       expect(result[0].actionAutonomy?.[0].allowed).toBeFalse();
     });
 
-    const request = http.expectOne('/api/v1/framework-registry/selections');
+    const request = http.expectOne('/api/v1/framework-registry/selections?limit=10');
     request.flush({ selections: [operatingSelection] });
   });
 

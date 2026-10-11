@@ -3,12 +3,14 @@ package task
 import (
 	"automation-hub-backend/internal/identity"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -93,6 +95,52 @@ func TestRunHandlerUsesVerifiedOwner(t *testing.T) {
 	}
 	if service.runRequest.OwnerIdentity != "alice" {
 		t.Fatalf("task owner = %q, want verified owner alice", service.runRequest.OwnerIdentity)
+	}
+}
+
+func TestRunHandlerPassesHTTPContextToContextAwareService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &contextCapturingTaskService{}
+	handler := NewHandler(service)
+	requestContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodPost, "/task/run", strings.NewReader(`{"request":"Summarize context"}`)).WithContext(requestContext)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	ginContext, _ := gin.CreateTestContext(response)
+	ginContext.Request = request
+	ginContext.Set(identity.ContextSubjectKey, "alice")
+
+	handler.Run(ginContext)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	if service.runContext == nil || !errors.Is(service.runContext.Err(), context.Canceled) {
+		t.Fatalf("task service context = %v, want canceled HTTP context", service.runContext)
+	}
+}
+
+func TestPlanHandlerPassesHTTPContextToContextAwareService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &contextCapturingTaskService{}
+	handler := NewHandler(service)
+	requestContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodPost, "/task/plan", strings.NewReader(`{"request":"Plan context"}`)).WithContext(requestContext)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	ginContext, _ := gin.CreateTestContext(response)
+	ginContext.Request = request
+	ginContext.Set(identity.ContextSubjectKey, "alice")
+
+	handler.Plan(ginContext)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", response.Code, response.Body.String())
+	}
+	if service.planContext == nil || !errors.Is(service.planContext.Err(), context.Canceled) {
+		t.Fatalf("task planning context = %v, want canceled HTTP context", service.planContext)
 	}
 }
 
@@ -234,6 +282,57 @@ func TestLogsHandlerUsesVerifiedOwnerScopedView(t *testing.T) {
 	if service.logsOwner != "alice" {
 		t.Fatalf("logs owner = %q, want verified owner alice", service.logsOwner)
 	}
+	if service.logsLimit != defaultTaskLogLimit {
+		t.Fatalf("logs limit = %d, want %d", service.logsLimit, defaultTaskLogLimit)
+	}
+}
+
+func TestLogsHandlerRejectsUnboundedHistoryRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	request := httptest.NewRequest(http.MethodGet, "/task/logs?limit=51", nil)
+	response := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(response)
+	context.Request = request
+	context.Set(identity.ContextSubjectKey, "alice")
+
+	NewHandler(&capturingTaskService{}).Logs(context)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestCompletionPlanHistoryExcludesHeavyExecutionDetails(t *testing.T) {
+	createdAt := time.Date(2026, time.August, 14, 9, 30, 0, 0, time.UTC)
+	items := completionPlanHistory([]CompletionPlan{{
+		ID:         "plan-1",
+		CreatedAt:  createdAt,
+		Request:    "Prepare a verified project brief",
+		ProjectKey: "hai",
+		Intake: IntakeAnalysis{
+			TaskType:        "research",
+			SuccessCriteria: []string{"Sources are cited"},
+		},
+		CompletionStatus: "verified",
+		ExecutionPlan: ExecutionPlan{
+			AuditEvents: []string{"large-step"},
+		},
+	}})
+
+	encoded, err := json.Marshal(items)
+	if err != nil {
+		t.Fatalf("marshal history: %v", err)
+	}
+	response := string(encoded)
+	for _, forbidden := range []string{"executionPlan", "contextPlan", "large-step"} {
+		if strings.Contains(response, forbidden) {
+			t.Fatalf("history response exposed %q: %s", forbidden, response)
+		}
+	}
+	if !strings.Contains(response, `"request":"Prepare a verified project brief"`) ||
+		!strings.Contains(response, `"successCriteria":["Sources are cited"]`) {
+		t.Fatalf("history response omitted the compact UI contract: %s", response)
+	}
 }
 
 func TestTaskHandlersRejectRequestsWithoutVerifiedOwner(t *testing.T) {
@@ -340,15 +439,64 @@ func TestResolveReviewItemExplainsUncertainOperationConfirmationContract(t *test
 	}
 }
 
+func TestTaskOperationErrorResponsesExplainRecovery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, test := range []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantBody   string
+	}{
+		{
+			name:       "canceled operation",
+			err:        ErrTaskOperationCanceled,
+			wantStatus: http.StatusConflict,
+			wantBody:   "new idempotency key",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(response)
+
+			writeTaskOperationError(context, test.err, "task operation failed")
+
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", response.Code, test.wantStatus, response.Body.String())
+			}
+			if !strings.Contains(response.Body.String(), test.wantBody) {
+				t.Fatalf("response does not explain recovery: %s", response.Body.String())
+			}
+		})
+	}
+}
+
 type capturingTaskService struct {
 	planRequest  IntakeRequest
 	runRequest   IntakeRequest
 	planErr      error
 	runErr       error
 	logsOwner    string
+	logsLimit    int
 	queueOwner   string
 	resolveOwner string
 	resolveErr   error
+}
+
+type contextCapturingTaskService struct {
+	capturingTaskService
+	planContext context.Context
+	runContext  context.Context
+}
+
+func (s *contextCapturingTaskService) PlanContext(ctx context.Context, request IntakeRequest) (*CompletionPlan, error) {
+	s.planContext = ctx
+	return s.Plan(request)
+}
+
+func (s *contextCapturingTaskService) RunContext(ctx context.Context, request IntakeRequest) (*CompletionPlan, error) {
+	s.runContext = ctx
+	return s.Run(request)
 }
 
 func (s *capturingTaskService) Plan(request IntakeRequest) (*CompletionPlan, error) {
@@ -382,6 +530,12 @@ func (s *capturingTaskService) ResolveReviewItem(id string, decision ApprovalDec
 func (s *capturingTaskService) LogsForOwner(ownerIdentity string) []CompletionPlan {
 	s.logsOwner = ownerIdentity
 	return nil
+}
+
+func (s *capturingTaskService) LogsForOwnerWithLimit(ownerIdentity string, limit int) ([]CompletionPlan, error) {
+	s.logsOwner = ownerIdentity
+	s.logsLimit = limit
+	return nil, nil
 }
 
 func (s *capturingTaskService) ReviewQueueForOwner(ownerIdentity string) []ReviewQueueItem {

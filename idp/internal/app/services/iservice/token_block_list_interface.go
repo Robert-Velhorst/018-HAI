@@ -1,8 +1,11 @@
 package iservice
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 type TokenBlockListService interface {
-	AddToBlockList(jwtUUID string, expirationTime time.Duration) error
-	IsInBlockList(jwtUUID string) (bool, error)
+	AddToBlockList(ctx context.Context, jwtUUID string, expirationTime time.Duration) error
+	IsInBlockList(ctx context.Context, jwtUUID string) (bool, error)
 }

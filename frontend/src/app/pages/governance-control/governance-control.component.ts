@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnDestroy, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core'
 import { NzModalService } from 'ng-zorro-antd/modal'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { catchError, forkJoin, map, of, Subscription, switchMap, throwError } from 'rxjs'
@@ -20,9 +20,11 @@ import {
   ContactReviewDecisionResult,
   DomainClassificationResult,
   DomainPackPreferenceStatus,
+  DomainPackSummaryView,
   DomainPackView,
   ExecutionAuthorizationConsumption,
   ExecutionAuthorizationReceipt,
+  ExecutionAuthorizationSummary,
   GovernanceRisk,
   LearningApplicationSummary,
   LearningDecisionKind,
@@ -130,6 +132,7 @@ interface MonitorCompositionProvenanceDetail {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-governance-control',
   templateUrl: './governance-control.component.html',
@@ -146,13 +149,13 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     domains: this.newSurfaceState(),
   }
 
-  receipts: ExecutionAuthorizationReceipt[] = []
+  receipts: ExecutionAuthorizationSummary[] = []
   mandates: StandingMandate[] = []
   mandateDecisions: MandateAuthorizationDecision[] = []
   proposals: LearningProposal[] = []
   learningOutcomes: LearningOutcomeRecord[] = []
   agents: AgentRecord[] = []
-  domainPacks: DomainPackView[] = []
+  domainPacks: DomainPackSummaryView[] = []
   catalogVersion = ''
   catalogDigest = ''
 
@@ -410,28 +413,38 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
   }
 
   refresh(): void {
-    this.loadExecution()
+    const openSections = this.preferences.get(this.moduleId).openSections
+    this.loadExecution(openSections['execution-receipts'] === true)
     this.loadMandates()
-    this.loadLearning()
+    this.loadLearning(openSections['controlled-learning'] === true)
     this.loadAgents()
     this.loadDomains()
-    this.loadAgentTeams(true, true)
-    this.loadLifeContext(true, true)
-    this.loadLifeLedger(true, true)
-    this.loadProactivity(true, true)
-    if (this.advisoryScope.workspaceId.trim()) this.loadResilienceStatus(true, true)
-    if (this.advisoryScope.workspaceId.trim() && this.advisoryScope.outcomeId.trim()) {
+
+    if (openSections['agent-teams']) this.loadAgentTeams(true, true)
+    if (openSections['whole-life-context']) this.loadLifeContext(true, true)
+    if (openSections['life-ledger-overview']) this.loadLifeLedger(true, true)
+    if (openSections['proactivity-policy']) this.loadProactivity(true, true)
+    if (openSections['resilience-status'] && this.advisoryScope.workspaceId.trim()) {
+      this.loadResilienceStatus(true, true)
+    }
+    if (
+      openSections['outcome-evaluations'] &&
+      this.advisoryScope.workspaceId.trim() &&
+      this.advisoryScope.outcomeId.trim()
+    ) {
       this.loadOutcomeEvidence(true, true)
     }
-    if (this.mandateDecisionState.loaded || this.preferences.get(this.moduleId).openSections['standing-mandates']) {
+    if (this.mandateDecisionState.loaded || openSections['standing-mandates']) {
       this.loadMandateDecisions(true, true)
     }
   }
 
-  loadExecution(): void {
+  loadExecution(full = false): void {
     this.beginLoad('execution')
     this.surfaceSubscriptions.execution?.unsubscribe()
-    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50).subscribe({
+    this.surfaceSubscriptions.execution = this.service
+      .listExecutionReceipts(50, full ? 'full' : 'summary')
+      .subscribe({
       next: (response) => {
         this.receipts = response.receipts || []
         this.finishLoad('execution')
@@ -452,12 +465,14 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
-  loadLearning(): void {
+  loadLearning(includeOutcomeHistory = false): void {
     this.beginLoad('learning')
     this.surfaceSubscriptions.learning?.unsubscribe()
     this.surfaceSubscriptions.learning = forkJoin({
       proposals: this.service.listLearningProposals(100),
-      outcomes: this.service.listLearningOutcomes(100),
+      outcomes: includeOutcomeHistory
+        ? this.service.listLearningOutcomes(100)
+        : of({ outcomes: this.learningOutcomes }),
     }).subscribe({
       next: (response) => {
         this.proposals = response.proposals.proposals || []
@@ -466,6 +481,14 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
       },
       error: (error) => this.failLoad('learning', error, 'Learning evidence and proposals are unavailable.'),
     })
+  }
+
+  loadExecutionSection(open: boolean): void {
+    if (open) this.loadExecution(true)
+  }
+
+  loadLearningSection(open: boolean): void {
+    if (open) this.loadLearning(true)
   }
 
   loadAgents(): void {
@@ -1157,6 +1180,32 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
+  recoverAmbientMonitors(): void {
+    if (this.monitorMutating) return
+    const workspaceId = this.advisoryScope.workspaceId.trim()
+    if (!workspaceId || !this.monitorTargets.length) return
+
+    this.monitorMutating = true
+    this.ambientMonitor.recover(workspaceId, new Date().toISOString()).subscribe({
+      next: (result) => {
+        this.monitorMutating = false
+        if (result.recovered > 0) {
+          this.notification.success(
+            'Expired monitor work recovered',
+            `${result.collectionRecovered} collection lease${result.collectionRecovered === 1 ? '' : 's'} and ${result.compositionRecovered} advisory handoff lease${result.compositionRecovered === 1 ? '' : 's'} returned to their durable queues.`
+          )
+        } else {
+          this.notification.info(
+            'No expired monitor work',
+            'No expired collection or advisory handoff leases needed recovery.'
+          )
+        }
+        this.loadAmbientMonitor(true)
+      },
+      error: (error) => this.failMonitorMutation(error, 'Expired monitor work could not be recovered.'),
+    })
+  }
+
   get selectedMonitorTarget(): MonitorTarget | undefined {
     return this.monitorTargets.find((target) => target.id === this.selectedMonitorTargetId)
   }
@@ -1504,7 +1553,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     this.inspectorVisible = true
   }
 
-  openReceipt(receipt: ExecutionAuthorizationReceipt): void {
+  openReceipt(receipt: ExecutionAuthorizationSummary): void {
     this.resetInspector('receipt')
     this.inspectorLoading = true
     this.inspectorVisible = true
@@ -1588,7 +1637,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
-  openDomain(view: DomainPackView): void {
+  openDomain(view: DomainPackSummaryView): void {
     this.resetInspector('domain')
     this.inspectorLoading = true
     this.inspectorVisible = true
@@ -1609,7 +1658,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
-  domainById(id: string): DomainPackView | undefined {
+  domainById(id: string): DomainPackSummaryView | undefined {
     return this.domainPacks.find((view) => view.pack.id === id)
   }
 
@@ -2364,7 +2413,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     return value.id
   }
 
-  trackByPackId(_: number, value: DomainPackView): string {
+  trackByPackId(_: number, value: DomainPackSummaryView): string {
     return value.pack.id
   }
 

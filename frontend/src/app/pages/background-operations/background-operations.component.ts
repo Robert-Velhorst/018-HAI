@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
 import { forkJoin } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
@@ -13,6 +13,7 @@ import {
 import { BackgroundOperationsService } from '../../services/background-operations.service'
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-background-operations',
   templateUrl: './background-operations.component.html',

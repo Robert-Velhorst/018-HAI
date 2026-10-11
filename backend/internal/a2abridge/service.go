@@ -1,7 +1,6 @@
-// Package a2abridge implements a deliberately small, local-only subset of the
-// Agent2Agent protocol. It gives one named peer a non-executable HAI planning
-// draft without exposing sources, memory, credentials, workflow mutation, or
-// runtime controls.
+// Package a2abridge implements a deliberately small subset of the Agent2Agent
+// protocol. It gives one named peer a non-executable HAI planning draft without
+// exposing sources, memory, credentials, workflow mutation, or runtime controls.
 package a2abridge
 
 import (
@@ -11,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"automation-hub-backend/internal/task"
@@ -21,18 +21,26 @@ const (
 	tokenEnv   = "HAI_A2A_BRIDGE_TOKEN"
 	ownerEnv   = "HAI_A2A_BRIDGE_OWNER_ID"
 	urlEnv     = "HAI_A2A_BRIDGE_URL"
+	publicEnv  = "HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED"
+	ngrokEnv   = "HAI_NGROK_URL"
+	runModeEnv = "RUN_MODE"
+	bypassEnv  = "LOCAL_LOGIN_BYPASS_ENABLED"
 )
 
 var (
-	ErrUnavailable  = errors.New("local A2A bridge is not configured")
+	ErrUnavailable  = errors.New("A2A planning bridge is not configured")
 	ErrInvalidInput = errors.New("A2A task input is invalid")
 )
 
 type Config struct {
-	Enabled bool
-	Token   string
-	OwnerID string
-	URL     string
+	Enabled          bool
+	Token            string
+	OwnerID          string
+	URL              string
+	PublicNgrok      bool
+	NgrokURL         string
+	RunMode          string
+	LocalLoginBypass bool
 }
 
 type Status struct {
@@ -44,6 +52,7 @@ type Status struct {
 	Capabilities []string `json:"capabilities"`
 	Restrictions []string `json:"restrictions"`
 	Scope        string   `json:"scope"`
+	Transport    string   `json:"transport"`
 }
 
 type AgentCard struct {
@@ -105,10 +114,14 @@ type Service struct {
 
 func DefaultConfig() Config {
 	return Config{
-		Enabled: strings.EqualFold(strings.TrimSpace(os.Getenv(enabledEnv)), "true"),
-		Token:   strings.TrimSpace(os.Getenv(tokenEnv)),
-		OwnerID: strings.TrimSpace(os.Getenv(ownerEnv)),
-		URL:     strings.TrimSpace(os.Getenv(urlEnv)),
+		Enabled:          envTrue(enabledEnv),
+		Token:            strings.TrimSpace(os.Getenv(tokenEnv)),
+		OwnerID:          strings.TrimSpace(os.Getenv(ownerEnv)),
+		URL:              strings.TrimSpace(os.Getenv(urlEnv)),
+		PublicNgrok:      envTrue(publicEnv),
+		NgrokURL:         strings.TrimSpace(os.Getenv(ngrokEnv)),
+		RunMode:          strings.TrimSpace(os.Getenv(runModeEnv)),
+		LocalLoginBypass: envTrue(bypassEnv),
 	}
 }
 
@@ -117,15 +130,15 @@ func NewService(config Config, planner task.PreviewService) *Service {
 	if !config.Enabled {
 		return s
 	}
-	if len(config.Token) < 32 || strings.ContainsAny(config.Token, "\r\n") {
-		s.err = tokenEnv + " must contain at least 32 non-newline characters"
+	if len(config.Token) < 32 || strings.IndexFunc(config.Token, unicode.IsSpace) >= 0 {
+		s.err = tokenEnv + " must contain at least 32 non-whitespace characters"
 		return s
 	}
 	if !validOwner(config.OwnerID) {
 		s.err = ownerEnv + " must contain one configured owner identity"
 		return s
 	}
-	if err := validateLocalURL(config.URL); err != nil {
+	if err := validateBridgeURL(config); err != nil {
 		s.err = err.Error()
 		return s
 	}
@@ -140,23 +153,32 @@ func NewServiceFromEnv(planner task.PreviewService) *Service {
 }
 
 func (s *Service) Status() Status {
+	transport := "local"
+	provider := "A2A local planning bridge"
+	peerScope := "local peer"
+	if s.config.PublicNgrok {
+		transport = "fixed_ngrok_https"
+		provider = "A2A governed ngrok planning bridge"
+		peerScope = "peer through the fixed governed ngrok endpoint"
+	}
 	return Status{
 		Enabled:     s.config.Enabled,
 		Configured:  s.configured(),
-		Provider:    "A2A local planning bridge",
+		Provider:    provider,
 		Endpoint:    s.config.URL,
 		ConfigError: s.err,
 		Capabilities: []string{
 			"authenticated non-executable planning drafts",
 			"A2A 1.0-shaped Agent Card and SendMessage envelope",
-			"one configured local peer token and owner scope",
+			"one configured bearer-token peer and owner scope",
 		},
 		Restrictions: []string{
 			"no workflow, task, source, memory, approval, policy, or runtime mutation",
 			"no source evidence, memory records, credentials, raw audit records, files, or tool inventory exposure",
-			"no streaming, task polling, push notifications, peer discovery, remote URL, or external-agent invocation",
+			"no streaming, task polling, push notifications, peer discovery, arbitrary remote URL, or outbound external-agent invocation",
 		},
-		Scope: "A configured local peer can request a bounded SendMessage planning draft for one configured owner. This limited endpoint is not a full A2A task-lifecycle server; HAI retains the authoritative workflow, approval, execution, source, memory, verification, and audit paths.",
+		Scope:     "One configured " + peerScope + " can request a bounded SendMessage planning draft for one configured owner. This limited endpoint is not a full A2A task-lifecycle server; HAI retains the authoritative workflow, approval, execution, source, memory, verification, and audit paths.",
+		Transport: transport,
 	}
 }
 
@@ -173,11 +195,11 @@ func (s *Service) AgentCard() (*AgentCard, error) {
 	}
 	return &AgentCard{
 		Name:        "HAI controlled planning",
-		Description: "Local, token-authenticated SendMessage planning drafts only. This limited bridge cannot execute, approve, mutate, or disclose HAI internals.",
+		Description: "Token-authenticated SendMessage planning drafts only. This limited bridge cannot execute, approve, mutate, or disclose HAI internals.",
 		SupportedInterfaces: []AgentInterface{{
 			URL: s.config.URL, ProtocolBinding: "JSONRPC", ProtocolVersion: "1.0",
 		}},
-		Version:            "1.0.1",
+		Version:            "1.0.2",
 		Capabilities:       AgentCapabilities{Streaming: false, PushNotifications: false, ExtendedAgentCard: false},
 		DefaultInputModes:  []string{"text/plain"},
 		DefaultOutputModes: []string{"application/json"},
@@ -188,9 +210,9 @@ func (s *Service) AgentCard() (*AgentCard, error) {
 			Examples:    []string{"Plan how to prepare a source-backed response without sending it."},
 		}},
 		SecuritySchemes: map[string]any{
-			"haiLocalBearer": map[string]any{"httpAuthSecurityScheme": map[string]string{"scheme": "Bearer", "description": "Configured local A2A bridge token."}},
+			"haiBearer": map[string]any{"httpAuthSecurityScheme": map[string]string{"scheme": "Bearer", "description": "Dedicated HAI A2A bridge token."}},
 		},
-		SecurityRequirements: []map[string][]string{{"haiLocalBearer": {}}},
+		SecurityRequirements: []map[string][]string{{"haiBearer": {}}},
 	}, nil
 }
 
@@ -234,32 +256,83 @@ func validOwner(value string) bool {
 	return value != "" && len(value) <= 255 && !strings.ContainsAny(value, "\r\n")
 }
 
-func validateLocalURL(raw string) error {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
+func validateBridgeURL(config Config) error {
+	raw := strings.TrimSpace(config.URL)
+	parsed, err := url.Parse(raw)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return errors.New(urlEnv + " must be a plain local HTTP(S) URL without credentials, query data, or fragments")
+		return errors.New(urlEnv + " must be a plain HTTP(S) URL without credentials, query data, or fragments")
+	}
+	if parsed.Path != "/api/v1/a2a" || parsed.RawPath != "" {
+		return errors.New(urlEnv + " must use the exact /api/v1/a2a path")
 	}
 	host := strings.ToLower(parsed.Hostname())
-	if host != "localhost" && host != "host.docker.internal" && host != "gateway" && net.ParseIP(host) == nil {
-		return errors.New(urlEnv + " must resolve to localhost, host.docker.internal, gateway, or a literal local IP")
+	if isLocalHost(host) {
+		if config.PublicNgrok {
+			return errors.New(urlEnv + " must use the configured ngrok origin when " + publicEnv + " is enabled")
+		}
+		return nil
 	}
-	if ip := net.ParseIP(host); ip != nil && !ip.IsLoopback() && !ip.IsPrivate() {
-		return errors.New(urlEnv + " must use a loopback or private-network IP")
+	if !config.PublicNgrok {
+		return errors.New(urlEnv + " must be local unless " + publicEnv + " is explicitly enabled")
+	}
+	if !strings.EqualFold(strings.TrimSpace(config.RunMode), "production") {
+		return errors.New(runModeEnv + " must be production for the public A2A bridge")
+	}
+	if config.LocalLoginBypass {
+		return errors.New(bypassEnv + " must be false for the public A2A bridge")
+	}
+	if parsed.Scheme != "https" || parsed.Port() != "" || !validNgrokHost(host) {
+		return errors.New(urlEnv + " must use a fixed HTTPS ngrok hostname without a port")
+	}
+	origin, err := validateNgrokOrigin(config.NgrokURL)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(parsed.Scheme, origin.Scheme) || !strings.EqualFold(parsed.Host, origin.Host) {
+		return errors.New(urlEnv + " must use the same origin as " + ngrokEnv)
 	}
 	return nil
 }
+
+func isLocalHost(host string) bool {
+	if host == "localhost" || host == "host.docker.internal" || host == "gateway" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func validateNgrokOrigin(raw string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.Port() != "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" || !validNgrokHost(strings.ToLower(parsed.Hostname())) {
+		return nil, errors.New(ngrokEnv + " must be a fixed HTTPS ngrok origin without credentials, port, path, query, or fragment")
+	}
+	return parsed, nil
+}
+
+func validNgrokHost(host string) bool {
+	for _, suffix := range []string{".ngrok.app", ".ngrok.dev", ".ngrok-free.app", ".ngrok-free.dev"} {
+		if len(host) > len(suffix) && strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func envTrue(name string) bool { return strings.EqualFold(strings.TrimSpace(os.Getenv(name)), "true") }
 
 func normalize(value string) string { return strings.Join(strings.Fields(value), " ") }
 
 func bounded(value string, max int) string {
 	value = normalize(value)
-	if len(value) <= max {
+	runes := []rune(value)
+	if len(runes) <= max {
 		return value
 	}
 	if max < 4 {
-		return value[:max]
+		return string(runes[:max])
 	}
-	return strings.TrimSpace(value[:max-3]) + "..."
+	return strings.TrimSpace(string(runes[:max-3])) + "..."
 }
 
 func boundedList(values []string, limit, width int) []string {

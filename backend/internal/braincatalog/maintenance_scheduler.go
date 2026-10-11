@@ -21,7 +21,7 @@ func StartCatalogRevalidationScheduler(ctx context.Context, service *CatalogMain
 		if backgroundAllowed != nil && !backgroundAllowed() {
 			return
 		}
-		service.RunDueRevalidations()
+		service.RunDueRevalidationsContext(ctx)
 	}
 	go func() {
 		run()

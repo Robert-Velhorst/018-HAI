@@ -23,6 +23,12 @@ type Handler func(ctx context.Context, job Job) error
 // allowed to assume the holder died and reclaim it.
 const DefaultLease = 5 * time.Minute
 
+// maxIdlePollMultiplier bounds idle backoff so work enqueued by another
+// process is still discovered promptly. With the default 15-second worker
+// interval, an empty queue settles at one database poll per minute instead of
+// four, while active queues are drained without waiting for another tick.
+const maxIdlePollMultiplier = 4
+
 // Runner claims due jobs, executes their handler, and applies the retry policy.
 // It is safe to run several Runners (in one process or many) against the same
 // queue: claiming uses FOR UPDATE SKIP LOCKED.
@@ -268,23 +274,69 @@ func (r *Runner) safeInvoke(ctx context.Context, handler Handler, job models.Dur
 	return handler(ctx, job)
 }
 
-// Start polls the queue until the context is cancelled. This is the long-running
-// worker loop; call it from a goroutine at startup.
+// Start polls the queue until the context is cancelled. It runs once
+// immediately, drains active batches without an artificial delay, and backs
+// off to at most four times the configured interval while the queue is empty.
+// Repository errors retain the base interval so a database recovery is noticed
+// promptly. This is the long-running worker loop; call it from a goroutine at
+// startup.
 func (r *Runner) Start(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	idleCycles := 0
+	delay := time.Duration(0)
 	for {
+		if !waitForNextRun(ctx, delay) {
+			return
+		}
+		processed, err := r.RunOnce(ctx)
+		if err != nil {
+			// A repository error is transient (e.g. DB blip); retry at the
+			// configured base interval instead of extending idle backoff.
+			idleCycles = 0
+			delay = interval
+			continue
+		}
+		if processed > 0 {
+			idleCycles = 0
+			delay = 0
+			continue
+		}
+		idleCycles++
+		delay = adaptiveIdleDelay(interval, idleCycles)
+	}
+}
+
+func waitForNextRun(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
 		select {
 		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if _, err := r.RunOnce(ctx); err != nil {
-				// A repository error is transient (e.g. DB blip); the next tick retries.
-				continue
-			}
+			return false
+		default:
+			return true
 		}
 	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func adaptiveIdleDelay(base time.Duration, idleCycles int) time.Duration {
+	if base <= 0 {
+		base = 5 * time.Second
+	}
+	if idleCycles <= 0 {
+		return base
+	}
+	multiplier := 1 << min(idleCycles-1, 2)
+	if multiplier > maxIdlePollMultiplier {
+		multiplier = maxIdlePollMultiplier
+	}
+	return time.Duration(multiplier) * base
 }

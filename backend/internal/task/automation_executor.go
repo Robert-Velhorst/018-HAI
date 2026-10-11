@@ -132,6 +132,7 @@ func (e *AutomationToolExecutor) Execute(request ToolExecutionRequest) (*ToolExe
 		ApprovalBindingDigest: request.ApprovalBindingDigest,
 		Governance:            request.Governance,
 		ApprovalProof:         proof,
+		ExecutionContext:      request.executionContext,
 	})
 	if err != nil {
 		return nil, err

@@ -1,6 +1,8 @@
 package memory
 
 import (
+	"context"
+
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 
@@ -15,6 +17,21 @@ type Repository interface {
 	FindAll(projectKey string, includeArchived bool) ([]models.ContextMemory, error)
 	FindByHash(projectKey, kind, contentHash string) (*models.ContextMemory, error)
 	Delete(id uuid.UUID) error
+}
+
+// OwnerScopedRepository lets the production repository apply the authenticated
+// owner boundary inside the database. Service fallbacks preserve compatibility
+// for trusted in-memory workers, but authenticated paths must never load other
+// owners' rows merely to discard them in Go.
+type OwnerScopedRepository interface {
+	FindAllForOwner(ownerIdentity, projectKey string, includeArchived bool) ([]models.ContextMemory, error)
+}
+
+// OwnerQueryRepository performs bounded browse/search work in persistence.
+// Context cancellation stops obsolete HTTP searches during navigation or a
+// newer query, and PageResult preserves the public API contract.
+type OwnerQueryRepository interface {
+	QueryForOwner(context.Context, string, string, bool, QueryParams) (PageResult, error)
 }
 
 type GormRepository struct {
@@ -64,6 +81,15 @@ func (r *GormRepository) FindAll(projectKey string, includeArchived bool) ([]mod
 	if !includeArchived {
 		query = query.Where("archived = ?", false)
 	}
+	if err := query.Find(&memories).Error; err != nil {
+		return nil, err
+	}
+	return memories, nil
+}
+
+func (r *GormRepository) FindAllForOwner(ownerIdentity, projectKey string, includeArchived bool) ([]models.ContextMemory, error) {
+	var memories []models.ContextMemory
+	query := r.scopeQuery(r.DB, ownerIdentity, projectKey, includeArchived).Order("updated_at DESC, created_at DESC, id DESC")
 	if err := query.Find(&memories).Error; err != nil {
 		return nil, err
 	}

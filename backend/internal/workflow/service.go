@@ -426,6 +426,79 @@ type Service interface {
 	Overview() Overview
 }
 
+// ContextOwnerBatchService is an optional boundary for interactive owner-scoped
+// batches. Durable schedulers keep using the background-context Service methods,
+// while HTTP and agent-cycle callers can stop before another atomic work unit is
+// claimed after their request is cancelled.
+type ContextOwnerBatchService interface {
+	RecoverStaleClaimsForOwnerContext(context.Context, string, RunDueRequest) (*ClaimRecoverySummary, error)
+	RunDueForOwnerContext(context.Context, string, RunDueRequest) (*WorkflowRunSummary, error)
+	RunDueOpenLoopsForOwnerContext(context.Context, string, RunDueRequest) (*OpenLoopRunSummary, error)
+}
+
+type ContextOwnerSingleRunService interface {
+	RunOneForOwnerContext(context.Context, string, uuid.UUID) (*WorkflowRunResult, error)
+}
+
+func RecoverStaleClaimsForOwnerWithContext(service interface {
+	RecoverStaleClaimsForOwner(string, RunDueRequest) (*ClaimRecoverySummary, error)
+}, ctx context.Context, ownerIdentity string, request RunDueRequest) (*ClaimRecoverySummary, error) {
+	ctx = normalizeBatchContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cancellable, ok := service.(ContextOwnerBatchService); ok {
+		return cancellable.RecoverStaleClaimsForOwnerContext(ctx, ownerIdentity, request)
+	}
+	return service.RecoverStaleClaimsForOwner(ownerIdentity, request)
+}
+
+func RunDueForOwnerWithContext(service interface {
+	RunDueForOwner(string, RunDueRequest) (*WorkflowRunSummary, error)
+}, ctx context.Context, ownerIdentity string, request RunDueRequest) (*WorkflowRunSummary, error) {
+	ctx = normalizeBatchContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cancellable, ok := service.(ContextOwnerBatchService); ok {
+		return cancellable.RunDueForOwnerContext(ctx, ownerIdentity, request)
+	}
+	return service.RunDueForOwner(ownerIdentity, request)
+}
+
+func RunDueOpenLoopsForOwnerWithContext(service interface {
+	RunDueOpenLoopsForOwner(string, RunDueRequest) (*OpenLoopRunSummary, error)
+}, ctx context.Context, ownerIdentity string, request RunDueRequest) (*OpenLoopRunSummary, error) {
+	ctx = normalizeBatchContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cancellable, ok := service.(ContextOwnerBatchService); ok {
+		return cancellable.RunDueOpenLoopsForOwnerContext(ctx, ownerIdentity, request)
+	}
+	return service.RunDueOpenLoopsForOwner(ownerIdentity, request)
+}
+
+func RunOneForOwnerWithContext(service interface {
+	RunOneForOwner(string, uuid.UUID) (*WorkflowRunResult, error)
+}, ctx context.Context, ownerIdentity string, id uuid.UUID) (*WorkflowRunResult, error) {
+	ctx = normalizeBatchContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cancellable, ok := service.(ContextOwnerSingleRunService); ok {
+		return cancellable.RunOneForOwnerContext(ctx, ownerIdentity, id)
+	}
+	return service.RunOneForOwner(ownerIdentity, id)
+}
+
+func normalizeBatchContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
 // AuthorizedEffectRecoveryIntake is a narrow internal recovery boundary for
 // an effect whose exact authorization receipt has already been consumed. It
 // preserves historical plan provenance but does not grant workflow execution.
@@ -521,7 +594,6 @@ func (s *service) Intake(request IntakeRequest) (*WorkflowRecord, error) {
 		}
 		mandateID = &parsedMandateID
 	}
-	_ = s.ensureDefaultRules()
 	sourceType := strings.TrimSpace(request.SourceType)
 	sourceID := strings.TrimSpace(request.SourceID)
 	sourceRevision := workflowSourceRevision(request, input)
@@ -922,7 +994,6 @@ func (s *service) Dashboard() (*WorkflowDashboard, error) {
 }
 
 func (s *service) DashboardForOwner(ownerIdentity string) (*WorkflowDashboard, error) {
-	_ = s.ensureDefaultRules()
 	items, err := s.ItemsForOwner(ownerIdentity, false)
 	if err != nil {
 		return nil, err
@@ -951,6 +1022,9 @@ func (s *service) DashboardForOwner(ownerIdentity string) (*WorkflowDashboard, e
 	rules, err := s.repo.FindRules()
 	if err != nil {
 		return nil, err
+	}
+	if len(rules) == 0 {
+		rules = defaultWorkflowRules()
 	}
 	dashboard := &WorkflowDashboard{
 		Counts: map[string]int64{
@@ -1786,6 +1860,14 @@ func (s *service) RecoverStaleClaims(request RunDueRequest) (*ClaimRecoverySumma
 }
 
 func (s *service) RecoverStaleClaimsForOwner(ownerIdentity string, request RunDueRequest) (*ClaimRecoverySummary, error) {
+	return s.RecoverStaleClaimsForOwnerContext(context.Background(), ownerIdentity, request)
+}
+
+func (s *service) RecoverStaleClaimsForOwnerContext(ctx context.Context, ownerIdentity string, request RunDueRequest) (*ClaimRecoverySummary, error) {
+	ctx = normalizeBatchContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	now := time.Now().UTC()
 	limit := normalizeRunLimit(request.Limit)
@@ -1793,8 +1875,14 @@ func (s *service) RecoverStaleClaimsForOwner(ownerIdentity string, request RunDu
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	loops, err := s.repo.FindExpiredOpenLoopClaimsForOwner(ownerIdentity, now, limit)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	summary := &ClaimRecoverySummary{
@@ -1802,6 +1890,9 @@ func (s *service) RecoverStaleClaimsForOwner(ownerIdentity string, request RunDu
 		Results: []ClaimRecoveryResult{},
 	}
 	for _, item := range items {
+		if err := ctx.Err(); err != nil {
+			return summary, err
+		}
 		recovered, changed, recoverErr := s.repo.RecoverExpiredWorkflowClaim(item, now)
 		if recoverErr != nil {
 			summary.Skipped++
@@ -1836,6 +1927,9 @@ func (s *service) RecoverStaleClaimsForOwner(ownerIdentity string, request RunDu
 		s.audit(recovered.ID, "workflow.worker_recovered", StateInProgress, StateBlocked, message, "worker_lease_expired", "claim lease recovery", recovered.SourceURI, "workflow-recovery")
 	}
 	for _, loop := range loops {
+		if err := ctx.Err(); err != nil {
+			return summary, err
+		}
 		recovered, changed, recoverErr := s.repo.RecoverExpiredOpenLoopClaim(loop, now)
 		if recoverErr != nil {
 			summary.Skipped++
@@ -1879,9 +1973,20 @@ func (s *service) RunDue(request RunDueRequest) (*WorkflowRunSummary, error) {
 }
 
 func (s *service) RunDueForOwner(ownerIdentity string, request RunDueRequest) (*WorkflowRunSummary, error) {
+	return s.RunDueForOwnerContext(context.Background(), ownerIdentity, request)
+}
+
+func (s *service) RunDueForOwnerContext(ctx context.Context, ownerIdentity string, request RunDueRequest) (*WorkflowRunSummary, error) {
+	ctx = normalizeBatchContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	items, err := s.repo.FindRunnableItemsForOwner(ownerIdentity, time.Now().UTC(), normalizeRunLimit(request.Limit))
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	summary := &WorkflowRunSummary{
@@ -1899,6 +2004,9 @@ func (s *service) RunDueForOwner(ownerIdentity string, request RunDueRequest) (*
 		return summary, nil
 	}
 	for _, item := range items {
+		if err := ctx.Err(); err != nil {
+			return summary, err
+		}
 		result := s.claimAndRunWorkflow(ownerIdentity, item)
 		summary.Results = append(summary.Results, result)
 		switch result.Status {
@@ -1919,6 +2027,14 @@ func (s *service) RunDueForOwner(ownerIdentity string, request RunDueRequest) (*
 // precise operator command used after review; all concrete task/runtime effects
 // still pass through the task runner's authorization and verification gates.
 func (s *service) RunOneForOwner(ownerIdentity string, id uuid.UUID) (*WorkflowRunResult, error) {
+	return s.RunOneForOwnerContext(context.Background(), ownerIdentity, id)
+}
+
+func (s *service) RunOneForOwnerContext(ctx context.Context, ownerIdentity string, id uuid.UUID) (*WorkflowRunResult, error) {
+	ctx = normalizeBatchContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	item, err := s.repo.FindItem(id)
 	if err != nil || item == nil || strings.TrimSpace(item.OwnerIdentity) != ownerIdentity {
@@ -1929,6 +2045,9 @@ func (s *service) RunOneForOwner(ownerIdentity string, id uuid.UUID) (*WorkflowR
 		s.decide(item.ID, "worker_execution", "blocked", reason, "emergency stop", false, "workflow-worker")
 		s.audit(item.ID, "workflow.worker_blocked", item.CurrentState, item.CurrentState, reason, "emergency_stop", "emergency stop", item.SourceURI, "workflow-worker")
 		return &WorkflowRunResult{WorkflowID: item.ID, Status: "blocked", State: item.CurrentState, Attempts: item.RetryCount, Message: reason}, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	result := s.claimAndRunWorkflow(ownerIdentity, *item)
 	return &result, nil
@@ -1972,9 +2091,20 @@ func (s *service) RunDueOpenLoops(request RunDueRequest) (*OpenLoopRunSummary, e
 }
 
 func (s *service) RunDueOpenLoopsForOwner(ownerIdentity string, request RunDueRequest) (*OpenLoopRunSummary, error) {
+	return s.RunDueOpenLoopsForOwnerContext(context.Background(), ownerIdentity, request)
+}
+
+func (s *service) RunDueOpenLoopsForOwnerContext(ctx context.Context, ownerIdentity string, request RunDueRequest) (*OpenLoopRunSummary, error) {
+	ctx = normalizeBatchContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	loops, err := s.repo.FindDashboardOpenLoopsForOwner(ownerIdentity, time.Now().UTC())
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	limit := normalizeRunLimit(request.Limit)
@@ -1996,6 +2126,9 @@ func (s *service) RunDueOpenLoopsForOwner(ownerIdentity string, request RunDueRe
 		return summary, nil
 	}
 	for _, loop := range loops {
+		if err := ctx.Err(); err != nil {
+			return summary, err
+		}
 		claimedAt := time.Now().UTC()
 		claimID := uuid.NewString()
 		claimed, acquired, claimErr := s.repo.ClaimDueOpenLoopForOwner(ownerIdentity, loop.ID, claimID, claimedAt, claimedAt.Add(claimLeaseDuration()))
@@ -3024,7 +3157,10 @@ func (s *service) requireQualityGate(workflowID uuid.UUID, gateName, status, rea
 }
 
 func (s *service) Overview() Overview {
-	rules := s.ensureDefaultRules()
+	rules, err := s.repo.FindRules()
+	if err != nil || len(rules) == 0 {
+		rules = defaultWorkflowRules()
+	}
 	return Overview{
 		States: []string{StateNewInput, StateClassified, StateLinked, StateChecklistGenerated, StateWaitingInput, StateNeedsApproval, StateReady, StateInProgress, StateCompleted, StateArchived, StateBlocked},
 		SafetyRules: []string{
@@ -3038,17 +3174,6 @@ func (s *service) Overview() Overview {
 		Capabilities: engineCapabilities(),
 		Rules:        rules,
 	}
-}
-
-func (s *service) ensureDefaultRules() []models.WorkflowRule {
-	for _, rule := range defaultWorkflowRules() {
-		_, _ = s.repo.SaveRule(&rule)
-	}
-	rules, err := s.repo.FindRules()
-	if err != nil {
-		return defaultWorkflowRules()
-	}
-	return rules
 }
 
 func (s *service) audit(workflowID uuid.UUID, eventType, from, to, message, trigger, rule, sourceURI, actor string) {

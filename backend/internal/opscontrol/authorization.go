@@ -79,9 +79,6 @@ func (s *Service) authorizeSafetyChange(
 	if auth.ActorIdentity == "" {
 		return ErrUnauthenticated
 	}
-	if strings.TrimSpace(s.owner) == "" {
-		return fmt.Errorf("%w: owner identity is not configured", ErrAuthorizationUnavailable)
-	}
 	if s.authorization == nil {
 		return ErrAuthorizationUnavailable
 	}
@@ -92,7 +89,7 @@ func (s *Service) authorizeSafetyChange(
 
 	effectDigest, err := controlEffectDigest(controlEffect{
 		Version:       1,
-		OwnerIdentity: s.owner,
+		OwnerIdentity: auth.ActorIdentity,
 		Action:        action,
 		ResourceType:  resourceType,
 		ResourceID:    resourceID,
@@ -106,7 +103,7 @@ func (s *Service) authorizeSafetyChange(
 	}
 
 	request := executionauth.Request{
-		OwnerIdentity:         s.owner,
+		OwnerIdentity:         auth.ActorIdentity,
 		IdempotencyKey:        auth.IdempotencyKey,
 		ActorIdentity:         auth.ActorIdentity,
 		ActorKind:             executionauth.ActorHuman,

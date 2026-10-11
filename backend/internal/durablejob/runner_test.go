@@ -519,3 +519,65 @@ func TestRunnerDeadLettersUnknownKindAndSurvivesPanic(t *testing.T) {
 		t.Fatalf("expected the panic to be recorded as the job error")
 	}
 }
+
+func TestAdaptiveIdleDelayBoundsDatabasePolling(t *testing.T) {
+	base := 15 * time.Second
+	tests := []struct {
+		idleCycles int
+		want       time.Duration
+	}{
+		{idleCycles: 0, want: base},
+		{idleCycles: 1, want: base},
+		{idleCycles: 2, want: 30 * time.Second},
+		{idleCycles: 3, want: time.Minute},
+		{idleCycles: 20, want: time.Minute},
+	}
+	for _, test := range tests {
+		if got := adaptiveIdleDelay(base, test.idleCycles); got != test.want {
+			t.Fatalf("idle cycles %d: delay=%s, want %s", test.idleCycles, got, test.want)
+		}
+	}
+}
+
+func TestRunnerStartRunsImmediatelyAndDrainsActiveBatches(t *testing.T) {
+	repo := newFakeRepo()
+	now := time.Now().UTC()
+	runner := NewRunner(repo, Options{
+		WorkerID: "w1",
+		Batch:    1,
+		Now:      func() time.Time { return now },
+	})
+	runs := make(chan struct{}, 2)
+	runner.Register("ready", func(context.Context, models.DurableJob) error {
+		runs <- struct{}{}
+		return nil
+	})
+	for range 2 {
+		if _, err := runner.Enqueue("ready", "{}", now, 2); err != nil {
+			t.Fatalf("enqueue: %v", err)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.Start(ctx, time.Hour)
+	}()
+
+	for range 2 {
+		select {
+		case <-runs:
+		case <-time.After(250 * time.Millisecond):
+			cancel()
+			<-done
+			t.Fatal("runner did not immediately drain an active batch")
+		}
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("runner did not stop promptly after cancellation")
+	}
+}

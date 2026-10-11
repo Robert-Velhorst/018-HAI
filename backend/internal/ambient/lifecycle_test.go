@@ -162,14 +162,13 @@ func TestDismissOpportunityWithoutUsefulNoteDoesNotStoreMemory(t *testing.T) {
 }
 
 type ambientRepositoryStub struct {
-	opportunity *models.AmbientOpportunity
-	needs       []models.AmbientNeed
-	overrides   []models.AmbientNeedOverride
-	scans       []models.AmbientScan
-}
-
-func (r *ambientRepositoryStub) EnsureNeeds([]models.AmbientNeed) error {
-	return nil
+	opportunity                *models.AmbientOpportunity
+	needs                      []models.AmbientNeed
+	overrides                  []models.AmbientNeedOverride
+	scans                      []models.AmbientScan
+	saveOpportunityCalls       int
+	opportunitiesForOwnerCalls int
+	lastScanLimit              int
 }
 
 func (r *ambientRepositoryStub) Needs() ([]models.AmbientNeed, error) {
@@ -216,11 +215,16 @@ func (r *ambientRepositoryStub) FindOpportunity(uuid.UUID) (*models.AmbientOppor
 	return &copy, nil
 }
 
-func (r *ambientRepositoryStub) FindOpportunityByFingerprint(string) (*models.AmbientOpportunity, error) {
+func (r *ambientRepositoryStub) FindOpportunityByFingerprint(fingerprint string) (*models.AmbientOpportunity, error) {
+	if r.opportunity != nil && r.opportunity.Fingerprint != "" && r.opportunity.Fingerprint == fingerprint {
+		copy := *r.opportunity
+		return &copy, nil
+	}
 	return nil, nil
 }
 
 func (r *ambientRepositoryStub) SaveOpportunity(item *models.AmbientOpportunity) (*models.AmbientOpportunity, error) {
+	r.saveOpportunityCalls++
 	copy := *item
 	r.opportunity = &copy
 	return item, nil
@@ -234,6 +238,7 @@ func (r *ambientRepositoryStub) Opportunities(string, int) ([]models.AmbientOppo
 }
 
 func (r *ambientRepositoryStub) OpportunitiesForOwner(ownerIdentity, status string, limit int) ([]models.AmbientOpportunity, error) {
+	r.opportunitiesForOwnerCalls++
 	items, _ := r.Opportunities(status, limit)
 	result := make([]models.AmbientOpportunity, 0, len(items))
 	for _, item := range items {
@@ -257,12 +262,16 @@ func (r *ambientRepositoryStub) Scans(int) ([]models.AmbientScan, error) {
 	return r.scans, nil
 }
 
-func (r *ambientRepositoryStub) ScansForOwner(ownerIdentity string, _ int) ([]models.AmbientScan, error) {
+func (r *ambientRepositoryStub) ScansForOwner(ownerIdentity string, limit int) ([]models.AmbientScan, error) {
+	r.lastScanLimit = limit
 	result := []models.AmbientScan{}
 	for _, scan := range r.scans {
 		if scan.OwnerIdentity == ownerIdentity {
 			result = append(result, scan)
 		}
+	}
+	if len(result) > limit {
+		result = result[:limit]
 	}
 	return result, nil
 }

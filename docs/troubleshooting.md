@@ -19,19 +19,19 @@ envelope:
 | `conflict` | 409 | Duplicate `Idempotency-Key`, or a state conflict | Use a new key for a genuinely new operation |
 | `validation_failed` | 422 | A data invariant was broken (see `internal/invariants`) | Read `details` for the offending field(s) and correct them |
 | `rate_limited` | 429 | Per-IP rate limit exceeded (`RATE_LIMIT_PER_MINUTE`) | Back off and retry after `Retry-After`; raise the limit if legitimate |
-| `unavailable` | 503 | Not ready — a required configuration check failed | Run `backend doctor` or `GET /readyz` and fix failing checks |
+| `unavailable` | 503 | Not ready — a required configuration check failed | Run `backend doctor` or inspect authenticated `GET /api/v1/system/readiness` and fix failing checks |
 | `internal_error` | 500 | Unhandled server error | Check server logs; capture a support bundle |
 
 ## First diagnostics
 
 1. **Liveness:** `GET /healthz` → `{"status":"ok"}` means the process is up.
-2. **Readiness:** `GET /readyz` → 200 ready / 503 not-ready with the failing checks listed.
+2. **Readiness:** `GET /readyz` returns aggregate 200 ready/degraded or 503 not-ready state; signed-in operators use `GET /api/v1/system/readiness` for individual checks.
 3. **Config self-check:** run `backend doctor` for a full readiness report
    (`ok`/`warn`/`fail` per setting) with a non-zero exit code on any failure.
 
 ## Common situations
 
-- **`/readyz` returns 503 with `database.*` failures** — the DB env
+- **`/api/v1/system/readiness` reports `database.*` failures** — the DB env
   (`DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`) is incomplete. Fix and restart.
 - **API returns 401 everywhere** — `BACKEND_API_SHARED_KEY` is set on the server
   but the client is not sending `X-HAI-Backend-Key`.

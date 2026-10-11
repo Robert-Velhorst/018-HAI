@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 
@@ -267,7 +268,11 @@ func (s *service) Search(ctx context.Context, request SearchRequest) ([]Match, e
 		args = append(args, projectKey)
 	}
 	if owner := strings.TrimSpace(request.OwnerIdentity); owner != "" {
-		query += ` AND (cs.owner_identity = ? OR cs.owner_identity = '' OR cs.owner_identity IS NULL)`
+		if identity.CanReadLegacyOwnerlessData(owner) {
+			query += ` AND (cs.owner_identity = ? OR cs.owner_identity = '' OR cs.owner_identity IS NULL)`
+		} else {
+			query += ` AND cs.owner_identity = ?`
+		}
 		args = append(args, owner)
 	}
 	query += ` ORDER BY emb.embedding <=> ?::vector ASC LIMIT ?`
@@ -365,7 +370,11 @@ func (s *service) SearchMemory(ctx context.Context, request MemorySearchRequest)
 		args = append(args, projectKey)
 	}
 	if owner := strings.TrimSpace(request.OwnerIdentity); owner != "" {
-		query += ` AND (cm.owner_identity = ? OR cm.owner_identity = '' OR cm.owner_identity IS NULL)`
+		if identity.CanReadLegacyOwnerlessData(owner) {
+			query += ` AND (cm.owner_identity = ? OR cm.owner_identity = '' OR cm.owner_identity IS NULL)`
+		} else {
+			query += ` AND cm.owner_identity = ?`
+		}
 		args = append(args, owner)
 	}
 	query += ` ORDER BY emb.embedding <=> ?::vector ASC LIMIT ?`

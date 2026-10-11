@@ -20,6 +20,18 @@ export interface ITaskPlanRequest {
   approvalNote?: string;
 }
 
+export interface ITaskPlanHistoryItem {
+  id: string;
+  createdAt: string;
+  request: string;
+  projectKey?: string;
+  intake: {
+    taskType: string;
+    successCriteria: string[];
+  };
+  completionStatus: string;
+}
+
 export interface IIntakeAnalysis {
   taskType: string;
   riskLevel: string;

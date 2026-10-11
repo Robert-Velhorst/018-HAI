@@ -3,7 +3,7 @@
 ## Backend (Go)
 
 Module `automation-hub-backend` declares Go 1.25 and recommends the exact
-Go 1.25.12 toolchain used by its Docker builder and CI jobs.
+Go 1.25.13 toolchain used by its digest-pinned Docker builder and CI jobs.
 Direct dependencies of note:
 
 | Dependency | Purpose | Notes |
@@ -29,7 +29,7 @@ drag/drop dependency were removed.
 | Item | Action |
 | --- | --- |
 | Vulnerability scanning | Backend, IDP, and nginx manager `govulncheck` v1.6.0 scans are pinned, clean, and blocking after 40-to-0 and 31-to-0 remediations. Frontend `npm audit --audit-level=high` is also blocking after the Angular 22 migration reduced 91 findings to 3 moderate development-tool findings and 0 high/critical; see `docs/dependency-vulnerabilities.md`. |
-| Go version alignment | All three Go modules, Docker builders, and CI jobs are pinned to Go 1.25.12 and checked by `scripts/test_ci_contract.py`. |
+| Go version alignment | All three Go modules, digest-pinned Docker builders, and CI jobs are pinned to Go 1.25.13 and checked by `scripts/test_ci_contract.py`. |
 | Committed binary `hai-engine-control.zip` | Remove from VCS; move to release assets. |
 | Dependency freshness | Adopt a scheduled `go list -m -u all` / `npm outdated` review (register #95). |
 

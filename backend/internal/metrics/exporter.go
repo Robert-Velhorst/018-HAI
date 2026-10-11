@@ -1,6 +1,7 @@
 // Package metrics exposes a small, opt-in Prometheus surface for HAI service
-// health. It deliberately tracks HTTP mechanics only: source contents,
-// prompts, identities, credentials, and record IDs never become labels.
+// health. It deliberately tracks bounded operational mechanics only: source
+// contents, prompts, identities, credentials, and record IDs never become
+// labels.
 package metrics
 
 import (
@@ -12,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"automation-hub-backend/internal/ambientmonitor"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,11 +29,17 @@ const (
 // Exporter owns an isolated registry so tests and embedded deployments do not
 // conflict through Prometheus's global registry.
 type Exporter struct {
-	enabled  bool
-	token    string
-	registry *prometheus.Registry
-	requests *prometheus.CounterVec
-	duration *prometheus.HistogramVec
+	enabled               bool
+	token                 string
+	registry              *prometheus.Registry
+	requests              *prometheus.CounterVec
+	duration              *prometheus.HistogramVec
+	monitorSweepDuration  prometheus.Histogram
+	monitorSweeps         *prometheus.CounterVec
+	monitorDueScopes      *prometheus.GaugeVec
+	monitorLeaseRecovered *prometheus.CounterVec
+	monitorItems          *prometheus.CounterVec
+	monitorLastSuccess    prometheus.Gauge
 }
 
 // NewFromEnv creates a disabled exporter unless HAI_PROMETHEUS_ENABLED is set
@@ -61,18 +70,115 @@ func New(enabled bool, token string) (*Exporter, error) {
 		Help:      "HAI HTTP request duration by matched route and method.",
 		Buckets:   prometheus.DefBuckets,
 	}, []string{"method", "route"})
-	registry.MustRegister(requests, duration)
+	monitorSweepDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "hai", Subsystem: "outcome_monitor", Name: "sweep_duration_seconds",
+		Help:    "Duration of bounded durable outcome-monitor sweeps.",
+		Buckets: []float64{0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+	})
+	monitorSweeps := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hai", Subsystem: "outcome_monitor", Name: "sweeps_total",
+		Help: "Durable outcome-monitor sweeps by bounded result.",
+	}, []string{"result"})
+	monitorDueScopes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "hai", Subsystem: "outcome_monitor", Name: "due_scopes_discovered",
+		Help: "Scopes discovered by the latest bounded outcome-monitor sweep; this is capped, not an exact global backlog.",
+	}, []string{"kind"})
+	monitorLeaseRecovered := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hai", Subsystem: "outcome_monitor", Name: "leases_recovered_total",
+		Help: "Expired outcome-monitor leases recovered by lease class.",
+	}, []string{"kind"})
+	monitorItems := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "hai", Subsystem: "outcome_monitor", Name: "items_total",
+		Help: "Bounded outcome-monitor item outcomes by stage and result.",
+	}, []string{"stage", "result"})
+	monitorLastSuccess := prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "hai", Subsystem: "outcome_monitor", Name: "last_success_timestamp_seconds",
+		Help: "Unix timestamp of the latest completed durable outcome-monitor sweep.",
+	})
+	registry.MustRegister(
+		requests, duration, monitorSweepDuration, monitorSweeps, monitorDueScopes,
+		monitorLeaseRecovered, monitorItems, monitorLastSuccess,
+	)
 
-	return &Exporter{
-		enabled:  enabled,
-		token:    token,
-		registry: registry,
-		requests: requests,
-		duration: duration,
-	}, nil
+	exporter := &Exporter{
+		enabled:               enabled,
+		token:                 token,
+		registry:              registry,
+		requests:              requests,
+		duration:              duration,
+		monitorSweepDuration:  monitorSweepDuration,
+		monitorSweeps:         monitorSweeps,
+		monitorDueScopes:      monitorDueScopes,
+		monitorLeaseRecovered: monitorLeaseRecovered,
+		monitorItems:          monitorItems,
+		monitorLastSuccess:    monitorLastSuccess,
+	}
+	if enabled {
+		exporter.initializeOutcomeMonitorSeries()
+	}
+	return exporter, nil
 }
 
 func (e *Exporter) Enabled() bool { return e != nil && e.enabled }
+
+func (e *Exporter) initializeOutcomeMonitorSeries() {
+	for _, result := range []string{
+		ambientmonitor.SweepResultCompleted,
+		ambientmonitor.SweepResultFailed,
+		ambientmonitor.SweepResultInterrupted,
+		ambientmonitor.SweepResultSkipped,
+	} {
+		e.monitorSweeps.WithLabelValues(result)
+	}
+	for _, kind := range []string{"collection", "composition"} {
+		e.monitorDueScopes.WithLabelValues(kind).Set(0)
+		e.monitorLeaseRecovered.WithLabelValues(kind)
+	}
+	for _, outcome := range [][2]string{
+		{"collection", "claimed"}, {"collection", "completed"}, {"collection", "failed"},
+		{"composition", "claimed"}, {"composition", "completed"},
+		{"composition", "retrying"}, {"composition", "failed"},
+	} {
+		e.monitorItems.WithLabelValues(outcome[0], outcome[1])
+	}
+}
+
+// ObserveOutcomeMonitorSweep records only fixed-cardinality scheduler outcomes.
+// The scheduler summary contains no tenant identity or user-controlled labels.
+func (e *Exporter) ObserveOutcomeMonitorSweep(observation ambientmonitor.SweepMetrics) {
+	if !e.Enabled() {
+		return
+	}
+	result := observation.Result
+	switch result {
+	case ambientmonitor.SweepResultCompleted, ambientmonitor.SweepResultFailed,
+		ambientmonitor.SweepResultInterrupted, ambientmonitor.SweepResultSkipped:
+	default:
+		result = ambientmonitor.SweepResultFailed
+	}
+	e.monitorSweepDuration.Observe(max(0, observation.Duration.Seconds()))
+	e.monitorSweeps.WithLabelValues(result).Inc()
+	e.monitorDueScopes.WithLabelValues("collection").Set(float64(max(0, observation.DueCollectionScopes)))
+	e.monitorDueScopes.WithLabelValues("composition").Set(float64(max(0, observation.DueCompositionScopes)))
+	e.monitorLeaseRecovered.WithLabelValues("collection").Add(float64(max(0, observation.CollectionLeasesRecovered)))
+	e.monitorLeaseRecovered.WithLabelValues("composition").Add(float64(max(0, observation.CompositionLeasesRecovered)))
+	recordMonitorItems(e.monitorItems, "collection", "claimed", observation.CollectionClaimed)
+	recordMonitorItems(e.monitorItems, "collection", "completed", observation.CollectionCompleted)
+	recordMonitorItems(e.monitorItems, "collection", "failed", observation.CollectionFailed)
+	recordMonitorItems(e.monitorItems, "composition", "claimed", observation.CompositionClaimed)
+	recordMonitorItems(e.monitorItems, "composition", "completed", observation.CompositionSucceeded)
+	recordMonitorItems(e.monitorItems, "composition", "retrying", observation.CompositionRetrying)
+	recordMonitorItems(e.monitorItems, "composition", "failed", observation.CompositionFailed)
+	if result == ambientmonitor.SweepResultCompleted {
+		e.monitorLastSuccess.SetToCurrentTime()
+	}
+}
+
+func recordMonitorItems(counter *prometheus.CounterVec, stage, result string, count int) {
+	if count > 0 {
+		counter.WithLabelValues(stage, result).Add(float64(count))
+	}
+}
 
 // Middleware records only route templates. It avoids raw paths so UUIDs,
 // emails, document names, and other user-provided values cannot create labels.

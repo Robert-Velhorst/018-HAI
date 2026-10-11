@@ -1,4 +1,4 @@
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
@@ -15,8 +15,10 @@ export class AmbientService {
 
   constructor(private http: HttpClient) {}
 
-  overview(): Observable<IAmbientOverview> {
-    return this.http.get<IAmbientOverview>(`${this.apiUrl}/overview`);
+  overview(view: 'full' | 'summary' = 'full'): Observable<IAmbientOverview> {
+    return this.http.get<IAmbientOverview>(`${this.apiUrl}/overview`, {
+      params: new HttpParams().set('view', view),
+    });
   }
 
   scan(): Observable<IAmbientScan> {

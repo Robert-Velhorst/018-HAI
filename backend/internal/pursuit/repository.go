@@ -1,6 +1,7 @@
 package pursuit
 
 import (
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 	"fmt"
@@ -89,9 +90,8 @@ func (r *GormRepository) FindAll(includeArchived bool) ([]models.Pursuit, error)
 	return r.findAllForOwner("", includeArchived)
 }
 
-// FindAllForOwner enforces the ownership predicate in Postgres. Ownerless
-// records remain visible to support local single-user data created before
-// identity-aware ownership was introduced.
+// FindAllForOwner enforces the ownership predicate in Postgres. Only the
+// configured migration owner can additionally inspect ownerless legacy rows.
 func (r *GormRepository) FindAllForOwner(ownerIdentity string, includeArchived bool) ([]models.Pursuit, error) {
 	return r.findAllForOwner(ownerIdentity, includeArchived)
 }
@@ -103,7 +103,7 @@ func (r *GormRepository) findAllForOwner(ownerIdentity string, includeArchived b
 		query = query.Where("archived = ?", false)
 	}
 	if ownerIdentity != "" {
-		query = query.Where("owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL", ownerIdentity)
+		query = query.Where(ownerVisibilitySQL("owner_identity", ownerIdentity), ownerIdentity)
 	}
 	if err := query.Find(&pursuits).Error; err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (r *GormRepository) LinkVisibleToOwner(ownerIdentity, linkType, linkID stri
 	if ownerIdentity == "" {
 		return false, true, nil
 	}
-	visibleOwner := "owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL"
+	visibleOwner := ownerVisibilitySQL("owner_identity", ownerIdentity)
 
 	switch strings.TrimSpace(linkType) {
 	case LinkPursuit:
@@ -211,7 +211,7 @@ func (r *GormRepository) sourceItemVisibleToOwner(ownerIdentity, linkID string) 
 func (r *GormRepository) visibleSourceIDs(ownerIdentity string) *gorm.DB {
 	return r.DB.Model(&models.ConnectedSource{}).
 		Select("id").
-		Where("owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL", ownerIdentity)
+		Where(ownerVisibilitySQL("owner_identity", ownerIdentity), ownerIdentity)
 }
 
 func (r *GormRepository) CreateLink(link *models.PursuitLink) (*models.PursuitLink, error) {
@@ -307,12 +307,19 @@ func (r *GormRepository) findVisibleLink(ownerIdentity, condition string, args .
 		Joins("JOIN pursuits ON pursuits.id = pursuit_links.pursuit_id").
 		Where(condition, args...)
 	if ownerIdentity != "" {
-		query = query.Where("pursuits.owner_identity = ? OR pursuits.owner_identity = '' OR pursuits.owner_identity IS NULL", ownerIdentity)
+		query = query.Where(ownerVisibilitySQL("pursuits.owner_identity", ownerIdentity), ownerIdentity)
 	}
 	if err := query.Order("pursuit_links.confidence DESC, pursuit_links.created_at DESC").First(&link).Error; err != nil {
 		return nil, err
 	}
 	return &link, nil
+}
+
+func ownerVisibilitySQL(column, ownerIdentity string) string {
+	if identity.CanReadLegacyOwnerlessData(ownerIdentity) {
+		return column + " = ? OR " + column + " = '' OR " + column + " IS NULL"
+	}
+	return column + " = ?"
 }
 
 func (r *GormRepository) CreateActivity(activity *models.PursuitActivity) (*models.PursuitActivity, error) {
@@ -570,10 +577,20 @@ func (r *GormRepository) FindLinkedSourceItems(ids []uuid.UUID) ([]models.Source
 	if len(ids) == 0 {
 		return items, nil
 	}
-	if err := r.DB.Where("id IN ?", ids).Order("updated_at DESC").Find(&items).Error; err != nil {
+	// Pursuit responses expose provenance metadata, never the duplicated raw
+	// source body. Rich content stays behind the owner-scoped source endpoint.
+	if err := r.DB.Select(pursuitSourceItemProjectionColumns).
+		Where("id IN ?", ids).
+		Order("updated_at DESC").
+		Find(&items).Error; err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+var pursuitSourceItemProjectionColumns = []string{
+	"id", "source_id", "external_id", "project_key", "item_type", "title",
+	"source_uri", "metadata", "fetched_at", "created_at", "updated_at",
 }
 
 func (r *GormRepository) FindLinkedExtractions(ids []uuid.UUID) ([]models.SourceExtraction, error) {

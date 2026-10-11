@@ -1,6 +1,7 @@
 package memoryengine
 
 import (
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/memory"
 	"automation-hub-backend/internal/models"
 	pursuitpkg "automation-hub-backend/internal/pursuit"
@@ -599,6 +600,7 @@ func TestAuthenticatedUserCannotDeleteOwnerlessLegacyConversation(t *testing.T) 
 }
 
 func TestAuthenticatedOwnerCannotReadOwnerlessLegacyRecords(t *testing.T) {
+	t.Setenv(identity.LegacyDataOwnerEnv, "migration-owner")
 	legacyConversationID := uuid.New()
 	repo := &memoryEngineRepoStub{
 		conversations: []models.AIConversationArchive{
@@ -622,6 +624,31 @@ func TestAuthenticatedOwnerCannotReadOwnerlessLegacyRecords(t *testing.T) {
 	insights, err := service.InsightsForOwner("alice", "", "", nil, 10)
 	if err != nil || len(insights) != 1 || insights[0].OwnerIdentity != "alice" {
 		t.Fatalf("owner-scoped insights = %#v, err=%v", insights, err)
+	}
+}
+
+func TestConfiguredLegacyOwnerCanReadButNotDeleteOwnerlessArchive(t *testing.T) {
+	t.Setenv(identity.LegacyDataOwnerEnv, "alice")
+	legacyConversationID := uuid.New()
+	repo := &memoryEngineRepoStub{
+		conversations: []models.AIConversationArchive{{ID: legacyConversationID, Platform: "chatgpt", ExternalID: "legacy", SourceURI: "https://chatgpt.com/c/legacy"}},
+		insights:      []models.AIMemoryInsight{{ID: uuid.New(), ConversationID: legacyConversationID, Kind: "decision", Text: "Legacy decision", Status: insightStatusVerified}},
+	}
+	service := NewService(repo, nil, nil, "test-memory-encryption-secret")
+
+	conversations, err := service.ConversationsForOwner("alice", 10)
+	if err != nil || len(conversations) != 1 || conversations[0].ID != legacyConversationID {
+		t.Fatalf("migration-owner conversations = %#v, err=%v", conversations, err)
+	}
+	insights, err := service.InsightsForOwner("alice", "", "", nil, 10)
+	if err != nil || len(insights) != 1 {
+		t.Fatalf("migration-owner insights = %#v, err=%v", insights, err)
+	}
+	if err := service.DeleteConversationForOwner("alice", legacyConversationID); err == nil {
+		t.Fatal("migration owner deleted ownerless archive")
+	}
+	if conversations, err = service.ConversationsForOwner("bob", 10); err != nil || len(conversations) != 0 {
+		t.Fatalf("non-migration owner saw legacy archive: conversations=%#v err=%v", conversations, err)
 	}
 }
 
@@ -787,7 +814,7 @@ func (r *memoryEngineRepoStub) FindInsightsForOwner(ownerIdentity, kind, project
 }
 
 func memoryEngineRecordVisibleTo(recordOwner, ownerIdentity string) bool {
-	return ownerIdentity == "" || recordOwner == ownerIdentity
+	return ownerIdentity == "" || recordOwner == ownerIdentity || (recordOwner == "" && identity.CanReadLegacyOwnerlessData(ownerIdentity))
 }
 
 func (r *memoryEngineRepoStub) ArchiveInsights(conversationID uuid.UUID, revision int) error {
