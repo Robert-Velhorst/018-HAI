@@ -2276,6 +2276,32 @@ gate/                    Legacy gateway/config area; local Compose uses nginx-co
 - [Release process](docs/release-process.md)
 - [Privacy impact assessment](docs/privacy-impact-assessment.md)
 
+### Architecture, integration, and operations records
+
+These records provide design context, implementation mapping, or dated
+verification evidence. A plan or historical report is not proof that a feature
+is deployed or currently passes its external acceptance gates.
+
+- [Account-feed bridge contracts](docs/account-feed-bridges.md)
+- [Operation lifecycle ledger](docs/operation-ledger.md)
+- [Trello webhook contract](docs/trello-webhooks.md)
+- [Completion-first routing blueprint](docs/completion-first-context-routing-blueprint.md)
+- [Backend Phase 2 architecture notes](docs/backend-phase2-architecture.md) (historical; verify against the current tree)
+- [Phase 2 architecture diff and acceptance record](docs/phase2-architecture-diff.md) (historical branch report)
+- [Framework-of-frameworks source taxonomy](docs/source-material/whole-life-framework-taxonomy.txt)
+- [OSS Insight capability curation](docs/ossinsight-brain-curation.md)
+- [External-engine archive review](docs/external-engine-archive-review.md)
+- [Anthropic Skills integration contract](docs/anthropic-skills-integration.md)
+- [DeepSeek Harness Windows bridge plan](docs/superpowers/plans/2026-08-24-deepseek-host-bridge.md) (plan; deployment and acceptance are separate)
+- [OpenClaw maintenance plan](docs/superpowers/plans/2026-09-04-openclaw-maintenance.md) (plan and dated refinements; see remaining gates)
+- [Gitleaks false-positive baseline](docs/security/gitleaks-false-positive-baseline.md)
+- [Local HAI cleanup receipt](docs/local-hai-data-cleanup-receipt-2026-10-10.md) (machine-specific, dated operational record)
+- [Child-agent integration ledger](docs/child-agent-integration-ledger.md)
+- [Local HAI import manifest](docs/local-hai-import-manifest-2026-10-11.csv) (source/destination hashes and documented transformations)
+- [Completed child-agent reports](docs/child-agent-final-reports.md) (historical reports; current-state verification is separate)
+- [Archived July 30 child-agent reports](docs/child-agent-archive-2026-07-30/child-agent-final-reports.md)
+- [Archived implementation and verification artifacts](output/README.md)
+
 ## License
 
 See [LICENSE](LICENSE).

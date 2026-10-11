@@ -1,0 +1,15 @@
+ok  	automation-hub-backend/internal/infra	1.317s
+ok  	automation-hub-backend/internal/health	0.133s
+ok  	automation-hub-backend/internal/operations	0.668s
+ok  	automation-hub-backend/internal/background	0.760s
+ok  	automation-hub-backend/internal/executionbroker	1.697s
+ok  	automation-hub-backend/internal/executionauth	0.872s
+ok  	automation-hub-backend/internal/frameworkregistry	0.801s
+ok  	automation-hub-backend/internal/frameworkevidence	0.117s
+ok  	automation-hub-backend/internal/sourceevidence	0.165s
+ok  	automation-hub-backend/internal/automation	0.651s
+ok  	automation-hub-backend/internal/phase2	0.527s
+ok  	automation-hub-backend/internal/runtimelab	0.408s
+ok  	automation-hub-backend/internal/opscontrol	2.220s
+ok  	automation-hub-backend/internal/accountfeed	0.790s
+ok  	automation-hub-backend/migrations	0.188s

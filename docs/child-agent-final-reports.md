@@ -6,6 +6,11 @@ credential-shaped values are redacted; the manifest retains the SHA-256 of
 the original terminal message. Aborted and nonterminal transcripts are not
 represented as completed work and must be retained.
 
+> **Historical record:** Entries describe their recorded checkpoint, not the
+> current runtime or external-provider acceptance. Local source paths have
+> been normalized to repository-relative links. A trailing `:line` is the
+> original report's line coordinate and may not match the current file.
+
 ## 019fba31-a317-7bb0-8aa8-f830a4a9bcf0
 
 - Date: 2026-08-01
@@ -14,7 +19,7 @@ represented as completed work and must be retained.
 - Original report SHA-256: `1ef6d31cc603c0a183fb5a2acd592bc4559624873063c1c6a126e61bc49df922`
 - Transcript: `08/01/rollout-2026-08-01T00-00-43-019fba31-a317-7bb0-8aa8-f830a4a9bcf0.jsonl`
 
-Implemented entirely within [backend/internal/proactivity](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity).
+Implemented entirely within [backend/internal/proactivity](../backend/internal/proactivity/).
 
 Key additions:
 
@@ -40,7 +45,7 @@ err = proactivity.RegisterRoutes(v1, handler, proactivity.RouteGuards{
 })
 ```
 
-The constructor is defined in [handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/handler.go:53).
+The constructor is defined in [handler.go](../backend/internal/proactivity/handler.go):53.
 
 Routes mounted beneath the supplied group:
 
@@ -72,7 +77,7 @@ The unrelated dirty worktree was left untouched; no router, migration, or other 
 - Original report SHA-256: `b27411475496c2df2ecf07b058d317810ec716289e00df354c7629686efe547e`
 - Transcript: `08/01/rollout-2026-08-01T00-00-43-019fba31-a411-7510-9686-8ce1b06e9d6c.jsonl`
 
-Implemented entirely within [`backend/internal/outcomeevaluation`](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation).
+Implemented entirely within [`backend/internal/outcomeevaluation`](../backend/internal/outcomeevaluation/).
 
 **Integration Contract**
 Mount using `RegisterRoutes(apiGroup, NewHandler(NewService(repository)), guards)`. All five guards are mandatory; registration fails closed if any are absent.
@@ -90,7 +95,7 @@ Routes under a parent such as `/api/v1`:
 
 The API provides optimistic outcome revisions, idempotent evaluations/corrections, configurable bounded histories, defensive repository copies, strict JSON/content types, provenance validation, cross-owner invisibility, opaque internal errors, and digest verification. There are no execute, apply, approval, or policy-changing endpoints.
 
-Core contracts are in [`repository.go`](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\repository.go:10), [`service.go`](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\service.go:10), and [`handler.go`](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\handler.go:30).
+Core contracts are in [`repository.go`](../backend/internal/outcomeevaluation/repository.go):10, [`service.go`](../backend/internal/outcomeevaluation/service.go):10, and [`handler.go`](../backend/internal/outcomeevaluation/handler.go):30.
 
 **Verification**
 - `go test -count=1 -race ./internal/outcomeevaluation` passed.
@@ -106,7 +111,7 @@ Core contracts are in [`repository.go`](C:\Users\NO\Documents\Codex\2026-05-30\g
 - Original report SHA-256: `19812114426979db60621948350e9cdd008f4427a0afeb2f3b8627aee3ca4ac5`
 - Transcript: `08/01/rollout-2026-08-01T00-05-39-019fba36-2a10-7a83-9a62-77db81483cc8.jsonl`
 
-Implemented entirely within [backend/internal/resilience](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resilience).
+Implemented entirely within [backend/internal/resilience](../backend/internal/resilience/).
 
 **Integration**
 ```go
@@ -122,7 +127,7 @@ err = resilience.RegisterRoutes(apiV1, handler, resilience.RouteGuards{
 })
 ```
 
-Registration fails when any dependency or guard is missing. Production repositories must implement the atomic CAS interface in [repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resilience/repository.go:59). The memory implementation is process-local reference storage, with histories bounded to `1..1000` entries.
+Registration fails when any dependency or guard is missing. Production repositories must implement the atomic CAS interface in [repository.go](../backend/internal/resilience/repository.go):59. The memory implementation is process-local reference storage, with histories bounded to `1..1000` entries.
 
 Assuming `apiV1` is `/api/v1`, routes are:
 
@@ -213,7 +218,7 @@ Implemented durable PostgreSQL persistence for `lifeontology`.
 
 Key additions:
 
-- [repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/repository_postgres.go:21)
+- [repository_postgres.go](../backend/internal/lifeontology/repository_postgres.go):21
   - `NewPostgresRepository(db)`
   - `DefaultRepository()`
   - Owner-scoped immutable entities, relations, and merge proposals
@@ -221,17 +226,17 @@ Key additions:
   - Strict JSON decoding and full envelope revalidation
   - Fails closed for nil databases, corrupt payloads, metadata mismatches, and owner mismatches
 
-- [0019_life_ontology.up.sql](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0019_life_ontology.up.sql)
+- [0019_life_ontology.up.sql](../backend/migrations/pre/0019_life_ontology.up.sql)
   - Composite owner-scoped keys and foreign keys
   - Payload and digest constraints
   - Immutable update/delete triggers
   - Truncate prevention
 
-- [0019_life_ontology.down.sql](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0019_life_ontology.down.sql)
+- [0019_life_ontology.down.sql](../backend/migrations/pre/0019_life_ontology.down.sql)
   - Refuses rollback when records exist
   - No `CASCADE`
 
-- Migration tail updated at [migration_chain_contract_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/migration_chain_contract_test.go:97).
+- Migration tail updated at [migration_chain_contract_test.go](../backend/migrations/migration_chain_contract_test.go):97.
 
 Verification passed:
 
@@ -265,10 +270,10 @@ _The child completed without a terminal text report._
 - Original report SHA-256: `bb969e5b9d0b35de766a7b26fc2901b9fd9ea1fe8c97edad64205b499e9d7a9a`
 - Transcript: `08/01/rollout-2026-08-01T00-23-41-019fba46-ac34-7730-829b-ed9f07026d7a.jsonl`
 
-Implemented the production Postgres repository exclusively within [`backend/internal/proactivity`](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity).
+Implemented the production Postgres repository exclusively within [`backend/internal/proactivity`](../backend/internal/proactivity/).
 
 **Added**
-- [`repository_postgres.go`](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/repository_postgres.go)
+- [`repository_postgres.go`](../backend/internal/proactivity/repository_postgres.go)
   - `NewPostgresRepository(db)`
   - `DefaultRepository()` with no memory fallback
   - Atomic, owner-scoped idempotency across policies, signal batches, and decision batches
@@ -276,9 +281,9 @@ Implemented the production Postgres repository exclusively within [`backend/inte
   - Bounded policy, signal, latest-signal, and decision queries
   - Fail-closed behavior for nil databases, missing schema, corrupt records, and authority-bearing decisions
   - Batch-to-child consistency verification
-- [`postgres_schema_contract.go`](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/postgres_schema_contract.go)
+- [`postgres_schema_contract.go`](../backend/internal/proactivity/postgres_schema_contract.go)
   - Exact future migration contract covering six tables, columns, checks, foreign keys, indexes, and owner-scoped uniqueness
-- [`repository_postgres_test.go`](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/repository_postgres_test.go)
+- [`repository_postgres_test.go`](../backend/internal/proactivity/repository_postgres_test.go)
   - Corrupt/unknown/trailing JSON rejection
   - Owner and metadata mismatch rejection
   - Authority-bearing decision rejection
@@ -308,9 +313,9 @@ No router, migration, frontend, or other package was edited.
 Implemented the production Postgres repository for `outcomeevaluation`.
 
 **Files**
-- [repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/repository_postgres.go:27)
-- [repository_postgres_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/repository_postgres_test.go:11)
-- [repository_postgres_integration_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/repository_postgres_integration_test.go:21)
+- [repository_postgres.go](../backend/internal/outcomeevaluation/repository_postgres.go):27
+- [repository_postgres_test.go](../backend/internal/outcomeevaluation/repository_postgres_test.go):11
+- [repository_postgres_integration_test.go](../backend/internal/outcomeevaluation/repository_postgres_integration_test.go):21
 
 Implemented:
 
@@ -346,8 +351,8 @@ Implemented:
 Implemented the production Postgres repository entirely within `backend/internal/resilience`.
 
 **Changed**
-- [repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resilience/repository_postgres.go)
-- [repository_postgres_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resilience/repository_postgres_test.go)
+- [repository_postgres.go](../backend/internal/resilience/repository_postgres.go)
+- [repository_postgres_test.go](../backend/internal/resilience/repository_postgres_test.go)
 
 The implementation includes:
 
@@ -419,13 +424,13 @@ Only the requested migration files and tests were changed.
 Focused frontend work is complete. No backend or unrelated files were changed.
 
 **Changed Paths**
-- [governance-control.model.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/governance-control.model.ts)
-- [governance-control.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.ts)
-- [governance-control.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.spec.ts)
-- [governance-control.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts)
-- [governance-control.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html)
-- [governance-control.component.scss](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.scss)
-- [governance-control.component.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.spec.ts)
+- [governance-control.model.ts](../frontend/src/app/models/governance-control.model.ts)
+- [governance-control.service.ts](../frontend/src/app/services/governance-control.service.ts)
+- [governance-control.service.spec.ts](../frontend/src/app/services/governance-control.service.spec.ts)
+- [governance-control.component.ts](../frontend/src/app/pages/governance-control/governance-control.component.ts)
+- [governance-control.component.html](../frontend/src/app/pages/governance-control/governance-control.component.html)
+- [governance-control.component.scss](../frontend/src/app/pages/governance-control/governance-control.component.scss)
+- [governance-control.component.spec.ts](../frontend/src/app/pages/governance-control/governance-control.component.spec.ts)
 
 **Results**
 - Focused Karma tests: `30 SUCCESS`
@@ -447,9 +452,9 @@ Git currently reports these frontend paths as untracked. They were not staged or
 Implemented focused `lifeledger` backend coverage.
 
 Changed:
-- [handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeledger/handler.go): strict `limit` validation from `1..200`; malformed values return `400`.
-- [handler_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeledger/handler_test.go): malformed limits, authentication-first handling, owner isolation, and spoofing rejection.
-- [repository_postgres_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeledger/repository_postgres_test.go): PostgreSQL revision/idempotency, owner isolation, estimate/incurred distinction, fail-closed behavior, and append-only `UPDATE`/`DELETE`/`TRUNCATE` checks.
+- [handler.go](../backend/internal/lifeledger/handler.go): strict `limit` validation from `1..200`; malformed values return `400`.
+- [handler_test.go](../backend/internal/lifeledger/handler_test.go): malformed limits, authentication-first handling, owner isolation, and spoofing rejection.
+- [repository_postgres_test.go](../backend/internal/lifeledger/repository_postgres_test.go): PostgreSQL revision/idempotency, owner isolation, estimate/incurred distinction, fail-closed behavior, and append-only `UPDATE`/`DELETE`/`TRUNCATE` checks.
 
 Verification passed:
 - Full `./internal/lifeledger` package tests.
@@ -467,9 +472,9 @@ Verification passed:
 
 Updated only the requested documentation:
 
-- [framework-operating-contract-matrix.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:154)
-- [completion-matrix.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/completion-matrix.md:40)
-- [requirements-traceability.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/requirements-traceability.md:22)
+- [framework-operating-contract-matrix.md](framework-operating-contract-matrix.md):154
+- [completion-matrix.md](completion-matrix.md):40
+- [requirements-traceability.md](requirements-traceability.md):22
 
 Documented:
 
@@ -500,9 +505,9 @@ go test ./internal/lifeledger ./internal/standingmandate ./migrations ./internal
 Implemented the bounded life-ledger hardening.
 
 Changed:
-- [validation.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeledger/validation.go)
-- [service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeledger/service_test.go)
-- [handler_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeledger/handler_test.go)
+- [validation.go](../backend/internal/lifeledger/validation.go)
+- [service_test.go](../backend/internal/lifeledger/service_test.go)
+- [handler_test.go](../backend/internal/lifeledger/handler_test.go)
 
 Enforced verification levels:
 - `estimate`: `needs_review`, `source_supported`, `human_confirmed`, `verified`
@@ -532,9 +537,9 @@ No router, migration, documentation, or frontend files were touched.
 Implemented frontend life-ledger authoring support matching the Go API contracts.
 
 Changed:
-- [governance-control.model.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/governance-control.model.ts)
-- [governance-control.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.ts)
-- [governance-control.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.spec.ts)
+- [governance-control.model.ts](../frontend/src/app/models/governance-control.model.ts)
+- [governance-control.service.ts](../frontend/src/app/services/governance-control.service.ts)
+- [governance-control.service.spec.ts](../frontend/src/app/services/governance-control.service.spec.ts)
 
 Added typed support for:
 - Current commitment retrieval and revision history.
@@ -570,21 +575,21 @@ This closes a safety-critical gap in HAI’s core chain:
 
 ### Why This Is The Priority
 
-The authoritative specification requires approval evidence, immutable execution records, deduplication, restart safety, and exactly-once-effect design ([spec](C:/Users/NO/.codex/attachments/93918613-a076-4511-90fb-5419285c652e/pasted-text-1.txt:621), [approval framework](C:/Users/NO/.codex/attachments/93918613-a076-4511-90fb-5419285c652e/pasted-text-1.txt:690)).
+The authoritative specification requires approval evidence, immutable execution records, deduplication, restart safety, and exactly-once-effect design ([spec](source-material/whole-life-framework-taxonomy.txt):621, [approval framework](source-material/whole-life-framework-taxonomy.txt):690).
 
 The project’s own matrix explicitly identifies the gap:
 
 > “Approval proof replay state is process-local and not distributed.”
 
-See [framework-operating-contract-matrix.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:39) and its remaining-work section at [line 241](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:241).
+See [framework-operating-contract-matrix.md](framework-operating-contract-matrix.md):39 and its remaining-work section at [line 241](framework-operating-contract-matrix.md):241.
 
 Current implementation confirms this:
 
-- [approval_proof.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/automation/approval_proof.go:143) stores consumed proofs in a Go map.
-- [approval_proof.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/automation/approval_proof.go:168) creates a new random signing key at process startup.
-- [automation_service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/automation/automation_service.go:656) can mint another proof from the same durable approval decision.
-- [automation_service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/automation/automation_service.go:1531) consumes that proof only through the process-local service.
-- The durable authorization schema uniquely consumes a receipt, but does not prevent one approval source from producing multiple distinct receipts. See [migration 0024](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0024_execution_authorization_schema_compatibility.up.sql:211) and [its consumption constraint](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0024_execution_authorization_schema_compatibility.up.sql:340).
+- [approval_proof.go](../backend/internal/automation/approval_proof.go):143 stores consumed proofs in a Go map.
+- [approval_proof.go](../backend/internal/automation/approval_proof.go):168 creates a new random signing key at process startup.
+- [automation_service.go](../backend/internal/automation/automation_service.go):656 can mint another proof from the same durable approval decision.
+- [automation_service.go](../backend/internal/automation/automation_service.go):1531 consumes that proof only through the process-local service.
+- The durable authorization schema uniquely consumes a receipt, but does not prevent one approval source from producing multiple distinct receipts. See [migration 0024](../backend/migrations/pre/0024_execution_authorization_schema_compatibility.up.sql):211 and [its consumption constraint](../backend/migrations/pre/0024_execution_authorization_schema_compatibility.up.sql):340.
 
 Therefore, two workers or a restarted backend could reuse the same underlying approval decision for repeated execution.
 
@@ -592,7 +597,7 @@ Therefore, two workers or a restarted backend could reuse the same underlying ap
 
 Extend these existing modules:
 
-1. [approval_proof.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/automation/approval_proof.go:138)
+1. [approval_proof.go](../backend/internal/automation/approval_proof.go):138
    Retain the memory implementation for unit tests, but introduce a PostgreSQL-backed production service.
 
 2. Add `backend/internal/automation/approval_proof_repository.go` and `approval_proof_repository_postgres.go`
@@ -604,16 +609,16 @@ Extend these existing modules:
 
    Store owner, approval source, automation, action digest, scope, token digest, expiry and consumption evidence. Enforce uniqueness over the exact approval binding.
 
-4. [automation_service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/automation/automation_service.go:1108)
+4. [automation_service.go](../backend/internal/automation/automation_service.go):1108
    Require durable atomic consumption before API, script, Docker, or agent-runtime access.
 
-5. [automation_executor.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/automation_executor.go:43)
+5. [automation_executor.go](../backend/internal/task/automation_executor.go):43
    Preserve the existing exact-action binding while using the durable service.
 
-6. [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:475)
+6. [routes.go](../backend/internal/router/routes.go):475
    Construct and inject the PostgreSQL service. Production must fail closed rather than silently falling back to memory.
 
-7. [inspection_handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/inspection_handler.go:47)
+7. [inspection_handler.go](../backend/internal/executionauth/inspection_handler.go):47
    Expose redacted approval-exercise status alongside authorization receipts.
 
 8. Extend Governance Control’s existing receipt inspector, without introducing another dashboard:
@@ -667,15 +672,15 @@ The live database already contains 1 connected source, 1 raw item, 1 sync job, 3
 
 With the repository exactly as configured:
 
-1. The suite skips at [acceptance.spec.ts:37](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/e2e/tests/acceptance.spec.ts:37) because `E2E_OPERATOR_PASSWORD` is missing.
-2. Supplying a password without overriding the base URL produces a connection failure because [playwright.config.ts:4](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/e2e/playwright.config.ts:4) targets port `8080`.
-3. After correcting the URL, `getByLabel(/email/i)` at [acceptance.spec.ts:29](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/e2e/tests/acceptance.spec.ts:29) fails. The login inputs have placeholders but no associated labels or ARIA labels. The password locator has the same problem.
+1. The suite skips at [acceptance.spec.ts:37](../frontend/e2e/tests/acceptance.spec.ts):37 because `E2E_OPERATOR_PASSWORD` is missing.
+2. Supplying a password without overriding the base URL produces a connection failure because [playwright.config.ts:4](../frontend/e2e/playwright.config.ts):4 targets port `8080`.
+3. After correcting the URL, `getByLabel(/email/i)` at [acceptance.spec.ts:29](../frontend/e2e/tests/acceptance.spec.ts):29 fails. The login inputs have placeholders but no associated labels or ARIA labels. The password locator has the same problem.
 4. `/home/connected-sources` and `/home/workflow-engine` are invalid. Current routes are `/connected-sources` and `/workflow-engine`.
 5. `source-connect`, `source-connected`, and `source-sync` do not exist anywhere in the Angular source. Conditional `count()` checks silently skip both steps, creating false coverage.
 6. Even on the correct workflow route, the test clicks `workflow-create` without filling the required `input` field. `intake()` returns immediately, so `workflow-apply-transition` never appears.
 7. Unmatched intake can create a pursuit candidate requiring explicit acceptance instead of a workflow. The test does not handle that supported lifecycle.
 8. `workflow-apply-transition` is a state transition, not the approval action claimed by the test.
-9. `panel-activity-audit` exists only on Control Center at [control-center.component.html:508](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/control-center/control-center.component.html:508). The test remains on Workflow Engine, so its final assertion fails.
+9. `panel-activity-audit` exists only on Control Center at [control-center.component.html:508](../frontend/src/app/pages/control-center/control-center.component.html):508. The test remains on Workflow Engine, so its final assertion fails.
 
 **Seed And Authentication**
 
@@ -731,13 +736,13 @@ Implemented the governed contact-review frontend in Governance Control.
 - Existing warnings remain for the 1.07 MB initial bundle, several soft SCSS budgets, and non-LTS Node.js 25.
 
 Changed paths:
-- [governance-control.model.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/governance-control.model.ts)
-- [governance-control.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.ts)
-- [governance-control.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.spec.ts)
-- [governance-control.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts)
-- [governance-control.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html)
-- [governance-control.component.scss](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.scss)
-- [governance-control.component.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.spec.ts)
+- [governance-control.model.ts](../frontend/src/app/models/governance-control.model.ts)
+- [governance-control.service.ts](../frontend/src/app/services/governance-control.service.ts)
+- [governance-control.service.spec.ts](../frontend/src/app/services/governance-control.service.spec.ts)
+- [governance-control.component.ts](../frontend/src/app/pages/governance-control/governance-control.component.ts)
+- [governance-control.component.html](../frontend/src/app/pages/governance-control/governance-control.component.html)
+- [governance-control.component.scss](../frontend/src/app/pages/governance-control/governance-control.component.scss)
+- [governance-control.component.spec.ts](../frontend/src/app/pages/governance-control/governance-control.component.spec.ts)
 
 No backend or documentation files were changed.
 
@@ -752,31 +757,31 @@ No backend or documentation files were changed.
 **Findings**
 
 1. **High: rollback destroys immutable review evidence while promoted contacts remain.**
-[0027 down migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0027_contact_review_decisions.down.sql:1) drops the complete decision ledger, but canonical contacts remain in `life_ontology_entities`. This breaks provenance and permits re-deciding previously finalized subjects after reapplication.
+[0027 down migration](../backend/migrations/pre/0027_contact_review_decisions.down.sql):1 drops the complete decision ledger, but canonical contacts remain in `life_ontology_entities`. This breaks provenance and permits re-deciding previously finalized subjects after reapplication.
 **Fix:** make rollback refuse when decision rows exist, or treat this as an irreversible migration. Never drop populated audit/evidence tables.
 
 2. **High: append-only and owner isolation are not security boundaries in the default deployment.**
-The application applies migrations using its runtime connection in [database.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/infra/database.go:35), while the default database user is PostgreSQL superuser `postgres` in [.env.example](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/.env.example:10). That role can disable/drop the triggers at [0027 up migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0027_contact_review_decisions.up.sql:76). There is also no row-level security.
+The application applies migrations using its runtime connection in [database.go](../backend/internal/infra/database.go):35, while the default database user is PostgreSQL superuser `postgres` in [.env.example](../.env.example):10. That role can disable/drop the triggers at [0027 up migration](../backend/migrations/pre/0027_contact_review_decisions.up.sql):76. There is also no row-level security.
 **Fix:** separate migrator and runtime roles. Grant runtime only `SELECT`/`INSERT`, revoke DDL/`UPDATE`/`DELETE`/`TRUNCATE`, and add forced owner-scoped RLS where multi-owner isolation is expected.
 
 3. **High: PostgreSQL permits orphaned or falsely bound decisions.**
-The migration only creates a foreign key for `canonical_entity_id` at [lines 20-23](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0027_contact_review_decisions.up.sql:20). `subject_id` and `candidateEntityIds` are not linked to candidate entities or merge proposals. The payload check merely requires the array to exist at [lines 45-50](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0027_contact_review_decisions.up.sql:45). Go validation checks ID syntax, not repository existence, at [contact_review.go:313](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/contact_review.go:313).
+The migration only creates a foreign key for `canonical_entity_id` at [lines 20-23](../backend/migrations/pre/0027_contact_review_decisions.up.sql):20. `subject_id` and `candidateEntityIds` are not linked to candidate entities or merge proposals. The payload check merely requires the array to exist at [lines 45-50](../backend/migrations/pre/0027_contact_review_decisions.up.sql):45. Go validation checks ID syntax, not repository existence, at [contact_review.go:313](../backend/internal/lifeontology/contact_review.go):313.
 **Fix:** persist candidate IDs as columns with owner-scoped foreign keys. Use separate candidate/merge decision tables or a constraint trigger that verifies subject type, proposal membership, candidate count, and canonical entity properties atomically.
 
 4. **Medium: secret material can enter the immutable ledger.**
-Contact-review validation only bounds reason/name/summary lengths at [contact_review.go:287](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/contact_review.go:287). It does not call the existing secret detector used by normal entities at [validation.go:434](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/validation.go:434). This especially affects `reason`, and all text on reject/keep-distinct decisions.
+Contact-review validation only bounds reason/name/summary lengths at [contact_review.go:287](../backend/internal/lifeontology/contact_review.go):287. It does not call the existing secret detector used by normal entities at [validation.go:434](../backend/internal/lifeontology/validation.go):434. This especially affects `reason`, and all text on reject/keep-distinct decisions.
 **Fix:** reject or redact secrets in every decision text field before hashing and insertion.
 
 5. **Medium: decision timestamps can be arbitrarily backdated.**
-`decidedAt` comes directly from the request at [handler.go:192](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/handler.go:192), and validation only rejects future times at [contact_review.go:290](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/contact_review.go:290). An immutable decision can therefore claim to have occurred years earlier.
+`decidedAt` comes directly from the request at [handler.go:192](../backend/internal/lifeontology/handler.go):192, and validation only rejects future times at [contact_review.go:290](../backend/internal/lifeontology/contact_review.go):290. An immutable decision can therefore claim to have occurred years earlier.
 **Fix:** set authoritative `decidedAt` from the server clock. Store user-supplied historical time separately as `assertedAt`, with bounded skew and provenance.
 
 6. **Medium: listing performs an unbounded database scan.**
-The repository loads and validates every owner decision at [repository_postgres.go:424](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/repository_postgres.go:424); only afterward does the service truncate the result at [contact_review.go:103](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/contact_review.go:103). The immutable table can grow indefinitely.
+The repository loads and validates every owner decision at [repository_postgres.go:424](../backend/internal/lifeontology/repository_postgres.go):424; only afterward does the service truncate the result at [contact_review.go:103](../backend/internal/lifeontology/contact_review.go):103. The immutable table can grow indefinitely.
 **Fix:** pass limit/cursor into the repository and use indexed keyset pagination in SQL.
 
 7. **Low: `IF NOT EXISTS` can conceal schema drift.**
-The migration uses `CREATE TABLE IF NOT EXISTS` at [line 1](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0027_contact_review_decisions.up.sql:1) and `CREATE INDEX IF NOT EXISTS` at [line 72](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0027_contact_review_decisions.up.sql:72). A sufficiently similar pre-existing object can bypass intended constraints or index definitions.
+The migration uses `CREATE TABLE IF NOT EXISTS` at [line 1](../backend/migrations/pre/0027_contact_review_decisions.up.sql):1 and `CREATE INDEX IF NOT EXISTS` at [line 72](../backend/migrations/pre/0027_contact_review_decisions.up.sql):72. A sufficiently similar pre-existing object can bypass intended constraints or index definitions.
 **Fix:** use strict creation in versioned migrations or explicitly validate catalog definitions before recording the migration.
 
 **Verification**
@@ -798,19 +803,19 @@ The migration uses `CREATE TABLE IF NOT EXISTS` at [line 1](C:/Users/NO/Document
 **Findings**
 
 1. **[P1] Framework risk ceilings are validated but never enforced.**
-`RiskCeiling` is mandatory in the schema and catalog validation, but candidate selection only evaluates textual scoring and coverage. A high-risk request can therefore select a low-risk framework. See [types.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/types.go:46), [catalog.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/catalog.go:694), and [selector.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:281). This violates the specification’s risk-ceiling requirement at [pasted-text-1.txt](/C:/Users/NO/.codex/attachments/93918613-a076-4511-90fb-5419285c652e/pasted-text-1.txt:1804).
+`RiskCeiling` is mandatory in the schema and catalog validation, but candidate selection only evaluates textual scoring and coverage. A high-risk request can therefore select a low-risk framework. See [types.go](../backend/internal/frameworkregistry/types.go):46, [catalog.go](../backend/internal/frameworkregistry/catalog.go):694, and [selector.go](../backend/internal/frameworkregistry/selector.go):281. This violates the specification’s risk-ceiling requirement at [whole-life-framework-taxonomy.txt](source-material/whole-life-framework-taxonomy.txt):1804.
 
 2. **[P1] Missing required specialists do not block execution.**
-When a required role has no verified agent, the registry creates an unassigned placeholder ([operating_context.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/operating_context.go:417)). The coordinator then falls back to `single_engine` ([operating_context.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/operating_context.go:597)), while execution checks unready delegations only for multi-agent modes ([service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:2549)). Consequently, a framework can require a specialist while the generic task engine proceeds without one.
+When a required role has no verified agent, the registry creates an unassigned placeholder ([operating_context.go](../backend/internal/frameworkregistry/operating_context.go):417). The coordinator then falls back to `single_engine` ([operating_context.go](../backend/internal/frameworkregistry/operating_context.go):597), while execution checks unready delegations only for multi-agent modes ([service.go](../backend/internal/task/service.go):2549). Consequently, a framework can require a specialist while the generic task engine proceeds without one.
 
 3. **[P1] Most framework operating fields remain descriptive metadata.**
-Selection aggregates agents, evidence, evaluation methods, and input descriptions, but drops `ProducedOutputs`, `WorkflowTemplate`, `DecisionRules`, and `SafetyInvariants` ([selector.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:328)). Task execution still receives a generic task sequence ([service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:2636)). Required inputs are recorded as context descriptions, not checked for satisfaction before execution. The registry therefore selects named disciplines without compiling much of their actual behavior.
+Selection aggregates agents, evidence, evaluation methods, and input descriptions, but drops `ProducedOutputs`, `WorkflowTemplate`, `DecisionRules`, and `SafetyInvariants` ([selector.go](../backend/internal/frameworkregistry/selector.go):328). Task execution still receives a generic task sequence ([service.go](../backend/internal/task/service.go):2636). Required inputs are recorded as context descriptions, not checked for satisfaction before execution. The registry therefore selects named disciplines without compiling much of their actual behavior.
 
 4. **[P2] Chief-of-staff selection happens before relevant owner and pursuit context is retrieved.**
-Framework selection runs at [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:891), while memory, source, and life-ontology retrieval happen later at lines [955](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:955), [963](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:963), and [973](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:973). `PursuitID` contributes only identifier text to keyword classification ([selector.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:468)); the pursuit’s objective, commitments, evidence, and state cannot influence the selection.
+Framework selection runs at [service.go](../backend/internal/task/service.go):891, while memory, source, and life-ontology retrieval happen later at lines [955](../backend/internal/task/service.go):955, [963](../backend/internal/task/service.go):963, and [973](../backend/internal/task/service.go):973. `PursuitID` contributes only identifier text to keyword classification ([selector.go](../backend/internal/frameworkregistry/selector.go):468); the pursuit’s objective, commitments, evidence, and state cannot influence the selection.
 
 5. **[P2] The learning step records outcomes but does not improve framework selection.**
-The learning recorder stores selected framework IDs only as tags ([controlled_learning.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/controlled_learning.go:78)). Future selections use only the catalog, preferences, Constitution, and current request ([service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/service.go:290)). There is no framework-fit result, selection-decision linkage, per-framework success metric, or reviewed adaptation feeding back into scoring.
+The learning recorder stores selected framework IDs only as tags ([controlled_learning.go](../backend/internal/task/controlled_learning.go):78). Future selections use only the catalog, preferences, Constitution, and current request ([service.go](../backend/internal/frameworkregistry/service.go):290). There is no framework-fit result, selection-decision linkage, per-framework success metric, or reviewed adaptation feeding back into scoring.
 
 **Prioritized Slice**
 
@@ -833,30 +838,30 @@ No files were edited. `go test ./internal/frameworkregistry ./internal/task` pas
 
 **Findings**
 1. **[P0] System actors can self-declare their authority and safety profile.**
-`executionauth.Request` accepts caller-supplied stage, risk, reversibility, autonomy, authority, tools, data scopes, and paths ([types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:60)). Validation checks values and ranges, not whether they truthfully describe the effect ([validation.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/validation.go:73)). Only `ActorAgent` receives assignment and allowlist checks ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:185)); system actors bypass the tool, data, runtime, and folder controls at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:407).
+`executionauth.Request` accepts caller-supplied stage, risk, reversibility, autonomy, authority, tools, data scopes, and paths ([types.go](../backend/internal/executionauth/types.go):60). Validation checks values and ranges, not whether they truthfully describe the effect ([validation.go](../backend/internal/executionauth/validation.go):73). Only `ActorAgent` receives assignment and allowlist checks ([service.go](../backend/internal/executionauth/service.go):185); system actors bypass the tool, data, runtime, and folder controls at [service.go](../backend/internal/executionauth/service.go):407.
 
-   Consequently, an internal component can submit `ActorSystem + StageExecution + RiskLow + Reversible=true + RequestedAutonomy=8`. The approval calculation at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:254) can authorize this without approval or mandate. Constitution capabilities are also derived from those caller-controlled labels and strings ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:616)). Task orchestration uses this privileged system identity at [automation_executor.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/automation_executor.go:124).
+   Consequently, an internal component can submit `ActorSystem + StageExecution + RiskLow + Reversible=true + RequestedAutonomy=8`. The approval calculation at [service.go](../backend/internal/executionauth/service.go):254 can authorize this without approval or mandate. Constitution capabilities are also derived from those caller-controlled labels and strings ([service.go](../backend/internal/executionauth/service.go):616). Task orchestration uses this privileged system identity at [automation_executor.go](../backend/internal/task/automation_executor.go):124.
 
    This conflicts directly with specification sections 1, 19, and 29-31: least delegated authority, derived per-action autonomy, strong workload identity, deny-by-default, and confused-deputy protection.
 
 2. **[P1] Level-10 standing mandates can be non-expiring, approval-free, and consumption-unbounded.**
-`ExpiresAt` is optional and only validated when supplied ([validation.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/standingmandate/validation.go:59)). `ApprovalNever` is valid at every autonomy level ([validation.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/standingmandate/validation.go:203)), while maximum risk is optional. A resource scope with no IDs covers every resource of that type ([evaluator.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/standingmandate/evaluator.go:205)).
+`ExpiresAt` is optional and only validated when supplied ([validation.go](../backend/internal/standingmandate/validation.go):59). `ApprovalNever` is valid at every autonomy level ([validation.go](../backend/internal/standingmandate/validation.go):203), while maximum risk is optional. A resource scope with no IDs covers every resource of that type ([evaluator.go](../backend/internal/standingmandate/evaluator.go):205).
 
-   The model contains no maximum executions, cumulative spend, rate limit, or privacy budget ([types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/standingmandate/types.go:83)). Once authorized, a mandate substitutes for case approval at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:274). This does not meet “fully autonomous inside a tightly bounded mandate” or time/budget-limited standing approval.
+   The model contains no maximum executions, cumulative spend, rate limit, or privacy budget ([types.go](../backend/internal/standingmandate/types.go):83). Once authorized, a mandate substitutes for case approval at [service.go](../backend/internal/executionauth/service.go):274. This does not meet “fully autonomous inside a tightly bounded mandate” or time/budget-limited standing approval.
 
 3. **[P1] Connected-source content has no instruction-authority or taint boundary.**
-Workflow intake records source metadata and a caller-provided `RequiresReview`, but no trust level, instruction authority, prompt-injection status, or data classification ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:45)). Review is forced only when the caller sets that flag ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:472)).
+Workflow intake records source metadata and a caller-provided `RequiresReview`, but no trust level, instruction authority, prompt-injection status, or data classification ([service.go](../backend/internal/workflow/service.go):45). Review is forced only when the caller sets that flag ([service.go](../backend/internal/workflow/service.go):472).
 
-   Otherwise, raw email/document/chat text is keyword-classified, defaults to low-risk administrative work, and becomes `autonomous_safe` ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2955)). One matching automation may be selected automatically ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:488)), after which the source-derived description is passed to the task engine ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2069)). Final authorization limits many high-risk effects, but the chain remains vulnerable to context manipulation and low-risk confused-deputy actions.
+   Otherwise, raw email/document/chat text is keyword-classified, defaults to low-risk administrative work, and becomes `autonomous_safe` ([service.go](../backend/internal/workflow/service.go):2955). One matching automation may be selected automatically ([service.go](../backend/internal/workflow/service.go):488), after which the source-derived description is passed to the task engine ([service.go](../backend/internal/workflow/service.go):2069). Final authorization limits many high-risk effects, but the chain remains vulnerable to context manipulation and low-risk confused-deputy actions.
 
 4. **[P1] Case approvals expire but cannot be withdrawn or revoked.**
-Resolved approvals contain identity, binding, approver, and expiry, but no revocation state or revision ([types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:103)). Task and workflow approval resolvers accept an approved decision for 15 minutes ([task_review_resolver.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionapproval/task_review_resolver.go:24)); final rechecking only resolves the same record again ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:571)). There is no withdrawal state for immediate user correction, contrary to sections 1 and 20.
+Resolved approvals contain identity, binding, approver, and expiry, but no revocation state or revision ([types.go](../backend/internal/executionauth/types.go):103). Task and workflow approval resolvers accept an approved decision for 15 minutes ([task_review_resolver.go](../backend/internal/executionapproval/task_review_resolver.go):24); final rechecking only resolves the same record again ([service.go](../backend/internal/executionauth/service.go):571). There is no withdrawal state for immediate user correction, contrary to sections 1 and 20.
 
 5. **[P2] Standing-mandate purpose is descriptive, not enforced.**
-A mandate stores `Purpose`, but `ActionRequest` contains no requested purpose ([types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/standingmandate/types.go:104)). Scope matching only considers action, risk, project, domain, tool, and resource ([evaluator.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/standingmandate/evaluator.go:189)). Authority granted for one declared purpose can therefore be reused for another purpose with matching technical identifiers.
+A mandate stores `Purpose`, but `ActionRequest` contains no requested purpose ([types.go](../backend/internal/standingmandate/types.go):104). Scope matching only considers action, risk, project, domain, tool, and resource ([evaluator.go](../backend/internal/standingmandate/evaluator.go):189). Authority granted for one declared purpose can therefore be reused for another purpose with matching technical identifiers.
 
 6. **[P2] Constitution activation lacks security-sensitive reauthentication.**
-Activation correctly requires the owner, an exact confirmation phrase, a note, current base version, and draft validation ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/service.go:846)). However, the request contains no recent-authentication, MFA, session-age, or independent approval evidence ([types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/types.go:483)). A stolen authenticated admin session can amend the Constitution immediately.
+Activation correctly requires the owner, an exact confirmation phrase, a note, current base version, and draft validation ([service.go](../backend/internal/frameworkregistry/service.go):846). However, the request contains no recent-authentication, MFA, session-age, or independent approval evidence ([types.go](../backend/internal/frameworkregistry/types.go):483). A stolen authenticated admin session can amend the Constitution immediately.
 
 **Highest-Value Bounded Patch**
 Add a mandatory `SystemWorkloadPolicyResolver` to `executionauth.Service`.
@@ -894,23 +899,23 @@ No files were edited. I could not execute the focused Go tests because the curre
 
 **Audit Findings**
 
-1. **[P0] Revoked sources remain usable as knowledge.** Revocation deletes OAuth credentials and marks the connector revoked, but retained extractions, indexes, and derived memories remain available ([repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/source/repository.go:118)). Source visibility does not check `Enabled`, `Status`, or `RevokedAt` ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/source/service.go:1285)). Those memories and extractions subsequently enter task planning ([task/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:956)). This violates sections 21, 23, and 25: forgetting, permission filtering, and revocation propagation.
+1. **[P0] Revoked sources remain usable as knowledge.** Revocation deletes OAuth credentials and marks the connector revoked, but retained extractions, indexes, and derived memories remain available ([repository.go](../backend/internal/source/repository.go):118). Source visibility does not check `Enabled`, `Status`, or `RevokedAt` ([service.go](../backend/internal/source/service.go):1285). Those memories and extractions subsequently enter task planning ([task/service.go](../backend/internal/task/service.go):956). This violates sections 21, 23, and 25: forgetting, permission filtering, and revocation propagation.
 
-2. **[P1] The knowledge graph is implemented but disconnected from the application.** The graph supports temporal, source-linked claims ([claim_types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/knowledgegraph/claim_types.go:26)), but router startup wires memory, sources, and verification without constructing the graph service ([routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:184)). The frontend calls `/sources/knowledge-graph` ([connected-source.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/connected-source/connected-source.service.ts:100)), while no such route exists in the source route group ([routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:1039)). The catalog nevertheless advertises it as operational ([integration_boundary.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/braincatalog/integration_boundary.go:54)).
+2. **[P1] The knowledge graph is implemented but disconnected from the application.** The graph supports temporal, source-linked claims ([claim_types.go](../backend/internal/knowledgegraph/claim_types.go):26), but router startup wires memory, sources, and verification without constructing the graph service ([routes.go](../backend/internal/router/routes.go):184). The frontend calls `/sources/knowledge-graph` ([connected-source.service.ts](../frontend/src/app/services/connected-source/connected-source.service.ts):100), while no such route exists in the source route group ([routes.go](../backend/internal/router/routes.go):1039). The catalog nevertheless advertises it as operational ([integration_boundary.go](../backend/internal/braincatalog/integration_boundary.go):54).
 
-3. **[P1] Heuristic source summaries become memory without verification.** Extraction uses keyword and string heuristics ([source/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/source/service.go:1776)). Any summary not marked sensitive or uncertain is promoted automatically with fixed confidence `0.68` ([source/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/source/service.go:1804)). Task generation then consumes it as context ([task/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:2011)). Section 24 requires claims to remain observations or hypotheses until supported.
+3. **[P1] Heuristic source summaries become memory without verification.** Extraction uses keyword and string heuristics ([source/service.go](../backend/internal/source/service.go):1776). Any summary not marked sensitive or uncertain is promoted automatically with fixed confidence `0.68` ([source/service.go](../backend/internal/source/service.go):1804). Task generation then consumes it as context ([task/service.go](../backend/internal/task/service.go):2011). Section 24 requires claims to remain observations or hypotheses until supported.
 
-4. **[P1] Verification can succeed without durable claim evidence.** Errors from evidence and claim persistence are discarded ([verification/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/verification/service.go:163)); memory-write errors are also ignored ([verification/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/verification/service.go:471)). A run can consequently report completion while its evidence trail is incomplete.
+4. **[P1] Verification can succeed without durable claim evidence.** Errors from evidence and claim persistence are discarded ([verification/service.go](../backend/internal/verification/service.go):163); memory-write errors are also ignored ([verification/service.go](../backend/internal/verification/service.go):471). A run can consequently report completion while its evidence trail is incomplete.
 
-5. **[P1] Claim verification is token overlap, not evidence entailment.** Support is calculated from lexical overlap plus a quality score ([verification/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/verification/service.go:427)); contradiction detection recognizes only a few positive/negative words ([verification/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/verification/service.go:609)). Citation precision, temporal validity, quote accuracy, source hierarchy, corroboration, and structured contradiction resolution from section 24 are absent.
+5. **[P1] Claim verification is token overlap, not evidence entailment.** Support is calculated from lexical overlap plus a quality score ([verification/service.go](../backend/internal/verification/service.go):427); contradiction detection recognizes only a few positive/negative words ([verification/service.go](../backend/internal/verification/service.go):609). Citation precision, temporal validity, quote accuracy, source hierarchy, corroboration, and structured contradiction resolution from section 24 are absent.
 
-6. **[P2] Memory is a flat record store rather than the section-21 lifecycle.** A memory contains one arbitrary kind, one confidence value, and one source reference ([context_memory.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/context_memory.go:8)). Similar records are concatenated and assigned the higher confidence, potentially merging conflicting statements while retaining only one source ([memory/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/memory/service.go:621)). There is no correction lineage, supersession, temporal validity, negative memory, retention policy, or provenance-preserving consolidation.
+6. **[P2] Memory is a flat record store rather than the section-21 lifecycle.** A memory contains one arbitrary kind, one confidence value, and one source reference ([context_memory.go](../backend/internal/models/context_memory.go):8). Similar records are concatenated and assigned the higher confidence, potentially merging conflicting statements while retaining only one source ([memory/service.go](../backend/internal/memory/service.go):621). There is no correction lineage, supersession, temporal validity, negative memory, retention policy, or provenance-preserving consolidation.
 
-7. **[P2] Graph retrieval omits most section-23 controls.** It loads all owner nodes and edges, performs token matching, then bounded graph traversal ([retrieval.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/knowledgegraph/retrieval.go:29)). Ranking uses lexical relevance, project, confidence, recency, and verification only ([retrieval.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/knowledgegraph/retrieval.go:207)). The request has no permission purpose, sensitivity ceiling, authority requirement, retrieval strategy, or context-token budget ([types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/knowledgegraph/types.go:225)).
+7. **[P2] Graph retrieval omits most section-23 controls.** It loads all owner nodes and edges, performs token matching, then bounded graph traversal ([retrieval.go](../backend/internal/knowledgegraph/retrieval.go):29). Ranking uses lexical relevance, project, confidence, recency, and verification only ([retrieval.go](../backend/internal/knowledgegraph/retrieval.go):207). The request has no permission purpose, sensitivity ceiling, authority requirement, retrieval strategy, or context-token budget ([types.go](../backend/internal/knowledgegraph/types.go):225).
 
-8. **[P2] Incremental sync lacks general reconciliation and tombstones.** Raw items and extractions have hashes but no upstream version, deletion state, schema version, or supersession lineage ([connected_source.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/connected_source.go:66)). Deleted or corrected upstream records can therefore remain active unless a connector handles that case explicitly.
+8. **[P2] Incremental sync lacks general reconciliation and tombstones.** Raw items and extractions have hashes but no upstream version, deletion state, schema version, or supersession lineage ([connected_source.go](../backend/internal/models/connected_source.go):66). Deleted or corrected upstream records can therefore remain active unless a connector handles that case explicitly.
 
-9. **[P2] Section-34 evaluation is infrastructure, not an operational feedback loop.** The generic evaluation package defines versioned datasets and reproducible run records ([evaluation/types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/evaluation/types.go:44)), but it is not wired into routes or task/workflow completion. The separate outcome evaluator is exposed ([routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:298)), yet evaluations require explicit API creation rather than automatic observation after execution. Groundedness, false-autonomy, recovery, correction burden, and longitudinal-value metrics are not collected from live runs.
+9. **[P2] Section-34 evaluation is infrastructure, not an operational feedback loop.** The generic evaluation package defines versioned datasets and reproducible run records ([evaluation/types.go](../backend/internal/evaluation/types.go):44), but it is not wired into routes or task/workflow completion. The separate outcome evaluator is exposed ([routes.go](../backend/internal/router/routes.go):298), yet evaluations require explicit API creation rather than automatic observation after execution. Groundedness, false-autonomy, recovery, correction burden, and longitudinal-value metrics are not collected from live runs.
 
 **Bounded High-Value Patch**
 
@@ -936,23 +941,23 @@ No files were edited. This was a static audit; the local shell does not currentl
 
 **Findings**
 
-1. **[P1] Governance Control is not committed source.** The entire [governance-control component](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts:295), its frontend service, and the [agent-team handler](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/agent_team_handler.go:32) are untracked. They may work locally, but a clean clone or deployment does not contain them. Governance UI readiness cannot currently be claimed.
+1. **[P1] Governance Control is not committed source.** The entire [governance-control component](../frontend/src/app/pages/governance-control/governance-control.component.ts):295, its frontend service, and the [agent-team handler](../backend/internal/frameworkregistry/agent_team_handler.go):32 are untracked. They may work locally, but a clean clone or deployment does not contain them. Governance UI readiness cannot currently be claimed.
 
-2. **[P1] Basic/Advanced mode has two independent authorities.** The shell stores and applies per-module mode at [app-shell.component.ts:73](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/app-shell.component.ts:73), while Framework Registry independently reads and writes the same storage key at [framework-registry.component.ts:972](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry.component.ts:972). It also renders a second switch at [framework-registry.component.html:22](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry.component.html:22). Either control can contradict the other, violating the single progressive-disclosure contract.
+2. **[P1] Basic/Advanced mode has two independent authorities.** The shell stores and applies per-module mode at [app-shell.component.ts:73](../frontend/src/app/control-room/app-shell.component.ts):73, while Framework Registry independently reads and writes the same storage key at [framework-registry.component.ts:972](../frontend/src/app/pages/framework-registry/framework-registry.component.ts):972. It also renders a second switch at [framework-registry.component.html:22](../frontend/src/app/pages/framework-registry/framework-registry.component.html):22. Either control can contradict the other, violating the single progressive-disclosure contract.
 
-3. **[P1] Unavailable overview data is presented as real zero values.** When the overview request fails, Enabled, Pinned, and Experimental become `0` at [framework-registry.component.html:339](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry.component.html:339), despite partial-failure handling at [framework-registry.component.ts:326](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry.component.ts:326). These should display unavailable or derive counts from successfully loaded framework records.
+3. **[P1] Unavailable overview data is presented as real zero values.** When the overview request fails, Enabled, Pinned, and Experimental become `0` at [framework-registry.component.html:339](../frontend/src/app/pages/framework-registry/framework-registry.component.html):339, despite partial-failure handling at [framework-registry.component.ts:326](../frontend/src/app/pages/framework-registry/framework-registry.component.ts):326. These should display unavailable or derive counts from successfully loaded framework records.
 
-4. **[P2] Module primary actions are dead metadata.** Framework Registry and Governance declare `Select frameworks` and `Review governance` at [module-registry.ts:56](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/module-registry.ts:56), but the shell renders only identity and view controls at [app-shell.component.html:40](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/app-shell.component.html:40). No production code consumes `primaryAction` or its capability identifier.
+4. **[P2] Module primary actions are dead metadata.** Framework Registry and Governance declare `Select frameworks` and `Review governance` at [module-registry.ts:56](../frontend/src/app/control-room/module-registry.ts):56, but the shell renders only identity and view controls at [app-shell.component.html:40](../frontend/src/app/control-room/app-shell.component.html):40. No production code consumes `primaryAction` or its capability identifier.
 
-5. **[P2] Collapsed governance sections do not defer their work.** `refresh()` eagerly loads teams, life context, ledger, and proactivity at [governance-control.component.ts:323](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts:323). Consequently, section-open loaders such as [governance-control.component.html:174](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html:174) do not provide the required lazy-loading behavior.
+5. **[P2] Collapsed governance sections do not defer their work.** `refresh()` eagerly loads teams, life context, ledger, and proactivity at [governance-control.component.ts:323](../frontend/src/app/pages/governance-control/governance-control.component.ts):323. Consequently, section-open loaders such as [governance-control.component.html:174](../frontend/src/app/pages/governance-control/governance-control.component.html):174 do not provide the required lazy-loading behavior.
 
-6. **[P2] Agent-team governance stops at a read-only list.** Team records at [governance-control.component.html:198](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html:198) are not clickable and expose no lifecycle actions. The frontend service only implements list at [governance-control.service.ts:242](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.ts:242), although the local backend defines guarded version, event, activation, suspension, retirement, revocation, membership, delegation, and consensus routes at [agent_team_handler.go:44](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/agent_team_handler.go:44). These routes remain a local-only capability until committed.
+6. **[P2] Agent-team governance stops at a read-only list.** Team records at [governance-control.component.html:198](../frontend/src/app/pages/governance-control/governance-control.component.html):198 are not clickable and expose no lifecycle actions. The frontend service only implements list at [governance-control.service.ts:242](../frontend/src/app/services/governance-control.service.ts):242, although the local backend defines guarded version, event, activation, suspension, retirement, revocation, membership, delegation, and consensus routes at [agent_team_handler.go:44](../backend/internal/frameworkregistry/agent_team_handler.go):44. These routes remain a local-only capability until committed.
 
-7. **[P2] Manual framework recommendations cannot be linked to a task plan.** The API contract supports `taskPlanId` at [framework-registry.model.interface.ts:76](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/framework-registry.model.interface.ts:76), and the backend persists it at [repository.go:829](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/repository.go:829). The page draft omits it at [framework-registry.component.ts:44](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry.component.ts:44), so selections remain isolated recommendations rather than task-plan governance records.
+7. **[P2] Manual framework recommendations cannot be linked to a task plan.** The API contract supports `taskPlanId` at [framework-registry.model.interface.ts:76](../frontend/src/app/models/framework-registry.model.interface.ts):76, and the backend persists it at [repository.go:829](../backend/internal/frameworkregistry/repository.go):829. The page draft omits it at [framework-registry.component.ts:44](../frontend/src/app/pages/framework-registry/framework-registry.component.ts):44, so selections remain isolated recommendations rather than task-plan governance records.
 
 **Already Aligned**
 
-The registry data model closely covers the specification’s required versioned fields, including purpose, triggers, workflow, safety, authority, evidence, conflicts, adaptations, provenance, and lifecycle at [framework-registry.model.interface.ts:23](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/framework-registry.model.interface.ts:23). Its recommendation path is source-backed and explicitly keeps approval separate from execution.
+The registry data model closely covers the specification’s required versioned fields, including purpose, triggers, workflow, safety, authority, evidence, conflicts, adaptations, provenance, and lifecycle at [framework-registry.model.interface.ts:23](../frontend/src/app/models/framework-registry.model.interface.ts):23. Its recommendation path is source-backed and explicitly keeps approval separate from execution.
 
 **One Bounded Slice**
 
@@ -968,7 +973,7 @@ No files were edited. This was a static source and Git worktree audit; live brow
 - Original report SHA-256: `3df10344657853bf769a654b7e4843aba071f98d4719650ddcd348cf2ffa4d74`
 - Transcript: `08/04/rollout-2026-08-04T05-25-28-019fcace-087c-78e2-b3c5-daae071b26de.jsonl`
 
-Implemented selector risk-ceiling coverage in [selector_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\frameworkregistry\selector_test.go:168):
+Implemented selector risk-ceiling coverage in [selector_test.go](../backend/internal/frameworkregistry/selector_test.go):168:
 
 - Optional framework below task risk is omitted.
 - Exact risk ceiling is accepted.
@@ -987,30 +992,30 @@ Focused Docker tests passed, including all `TestBuildSelection*` tests. The comp
 - Transcript: `08/04/rollout-2026-08-04T05-26-08-019fcace-a461-76e1-99a7-6bfe282d7a45.jsonl`
 
 **Audit Findings**
-1. **The current v5 migration is incomplete.** [0029 up](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0029_framework_selector_v5_digest.up.sql:1) only requires a nonzero operating digest. It does not persist or validate the task risk and effective risk ceiling.
-2. **v5 risk enforcement exists only during selection.** [selector.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:221) filters incompatible frameworks, but the resulting decision lacks a top-level risk contract that downstream execution can independently enforce.
-3. **The risk contract is not covered by the operating digest.** [operating_context.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/operating_context.go:103) hashes autonomy and operating context, but not task risk or effective risk ceiling.
-4. **Selection identity is not version-bound.** [selector.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:1294) omits selector version, catalog digest, task risk, and effective risk ceiling. Equivalent timestamped v4/v5 decisions can theoretically collide.
-5. **Downstream authorization does not receive the ceiling.** [governance_binding.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/governance_binding.go:18) and [executionauth/types.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:167) carry framework digests but not selector version or risk limits.
+1. **The current v5 migration is incomplete.** [0029 up](../backend/migrations/pre/0029_framework_selector_v5_digest.up.sql):1 only requires a nonzero operating digest. It does not persist or validate the task risk and effective risk ceiling.
+2. **v5 risk enforcement exists only during selection.** [selector.go](../backend/internal/frameworkregistry/selector.go):221 filters incompatible frameworks, but the resulting decision lacks a top-level risk contract that downstream execution can independently enforce.
+3. **The risk contract is not covered by the operating digest.** [operating_context.go](../backend/internal/frameworkregistry/operating_context.go):103 hashes autonomy and operating context, but not task risk or effective risk ceiling.
+4. **Selection identity is not version-bound.** [selector.go](../backend/internal/frameworkregistry/selector.go):1294 omits selector version, catalog digest, task risk, and effective risk ceiling. Equivalent timestamped v4/v5 decisions can theoretically collide.
+5. **Downstream authorization does not receive the ceiling.** [governance_binding.go](../backend/internal/task/governance_binding.go):18 and [executionauth/types.go](../backend/internal/executionauth/types.go):167 carry framework digests but not selector version or risk limits.
 6. **Frontend and documentation still describe v4.** The runtime constants are already v5, while fixtures and operational documentation remain v4.
 
 **Required Backend Files**
 Core selector and audit contract:
 
-- [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/service.go:17): retain `selector-v5`; retain catalog `v2` because `evaluation` changed to version `1.1.0` with a high-risk ceiling.
-- [selector.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:201): calculate and return `taskRiskLevel` and `effectiveRiskCeiling`; include both in identity.
-- [types.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/types.go:208): add risk ceiling to selected frameworks and top-level decision.
-- [operating_context.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/operating_context.go:20): include the risk contract in the v5 operating digest.
-- [catalog.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/catalog.go:384) and [catalog_test.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/catalog_test.go:15): retain the v2 catalog and reviewed v2 golden digest.
-- [framework_registry.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/framework_registry.go:28): add nullable persisted task-risk and effective-ceiling fields.
-- [repository.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/repository.go:775): require the fields for v5 writes, tolerate missing values for v4 history.
+- [service.go](../backend/internal/frameworkregistry/service.go):17: retain `selector-v5`; retain catalog `v2` because `evaluation` changed to version `1.1.0` with a high-risk ceiling.
+- [selector.go](../backend/internal/frameworkregistry/selector.go):201: calculate and return `taskRiskLevel` and `effectiveRiskCeiling`; include both in identity.
+- [types.go](../backend/internal/frameworkregistry/types.go):208: add risk ceiling to selected frameworks and top-level decision.
+- [operating_context.go](../backend/internal/frameworkregistry/operating_context.go):20: include the risk contract in the v5 operating digest.
+- [catalog.go](../backend/internal/frameworkregistry/catalog.go):384 and [catalog_test.go](../backend/internal/frameworkregistry/catalog_test.go):15: retain the v2 catalog and reviewed v2 golden digest.
+- [framework_registry.go](../backend/internal/models/framework_registry.go):28: add nullable persisted task-risk and effective-ceiling fields.
+- [repository.go](../backend/internal/frameworkregistry/repository.go):775: require the fields for v5 writes, tolerate missing values for v4 history.
 
 Migration and persistence tests:
 
-- [0029 up](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0029_framework_selector_v5_digest.up.sql:1)
-- [0029 down](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0029_framework_selector_v5_digest.down.sql:1)
-- [migration_contract_test.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/migration_contract_test.go:60)
-- [migration_chain_contract_test.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/migration_chain_contract_test.go:90)
+- [0029 up](../backend/migrations/pre/0029_framework_selector_v5_digest.up.sql):1
+- [0029 down](../backend/migrations/pre/0029_framework_selector_v5_digest.down.sql):1
+- [migration_contract_test.go](../backend/internal/frameworkregistry/migration_contract_test.go):60
+- [migration_chain_contract_test.go](../backend/migrations/migration_chain_contract_test.go):90
 - `selector_test.go`, `service_test.go`, `operating_context_test.go`, `repository_test.go`, `repository_integration_test.go`, and `repository_postgres_test.go`.
 
 Downstream enforcement:
@@ -1031,7 +1036,7 @@ Use `0029`; do not rewrite applied migrations.
 - Continue requiring real operating digests for both v4 and v5.
 - Do not backfill v4 rows. Historical decisions cannot truthfully acquire evidence they never recorded.
 - Make rollback refuse while any v5 rows exist. Append-only v5 evidence must be exported/retained; it must not be silently downgraded.
-- Keep [0003](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0003_framework_registry.up.sql:29) and [0005](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0005_framework_operating_contract.up.sql:1) unchanged as historical migration contracts.
+- Keep [0003](../backend/migrations/pre/0003_framework_registry.up.sql):29 and [0005](../backend/migrations/pre/0005_framework_operating_contract.up.sql):1 unchanged as historical migration contracts.
 
 **Digest Behavior**
 - **Catalog digest:** changes to v2 because framework metadata changed.
@@ -1045,8 +1050,8 @@ Use `0029`; do not rewrite applied migrations.
 **Frontend Files**
 Must become version-aware:
 
-- [framework-registry.model.interface.ts](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/framework-registry.model.interface.ts:93)
-- [framework-registry.service.ts](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/framework-registry.service.ts:329)
+- [framework-registry.model.interface.ts](../frontend/src/app/models/framework-registry.model.interface.ts):93
+- [framework-registry.service.ts](../frontend/src/app/services/framework-registry.service.ts):329
 - `framework-registry-recommendation.component.ts/html`
 - `workflow.model.interface.ts`
 - `workflow-engine.component.ts/html`
@@ -1075,17 +1080,17 @@ No files were edited.
 
 **Audit Findings**
 
-1. **The contract is split.** In the current uncommitted working tree, Go `SelectedFramework` includes `RiskCeiling`, and the selector populates it from the effective catalog view ([types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/types.go:208), [selector.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:342)). Repository `HEAD` does not yet contain either change.
+1. **The contract is split.** In the current uncommitted working tree, Go `SelectedFramework` includes `RiskCeiling`, and the selector populates it from the effective catalog view ([types.go](../backend/internal/frameworkregistry/types.go):208, [selector.go](../backend/internal/frameworkregistry/selector.go):342). Repository `HEAD` does not yet contain either change.
 
-2. **New API and persistence records include it.** `/select` and `/selections` return `SelectionDecision` directly ([handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/handler.go:134)). New selections serialize the complete `SelectedFramework` into `selected_json` ([repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/repository.go:839)). No database column migration is required.
+2. **New API and persistence records include it.** `/select` and `/selections` return `SelectionDecision` directly ([handler.go](../backend/internal/frameworkregistry/handler.go):134). New selections serialize the complete `SelectedFramework` into `selected_json` ([repository.go](../backend/internal/frameworkregistry/repository.go):839). No database column migration is required.
 
-3. **Historical compatibility is unresolved.** Existing immutable JSON records lack `riskCeiling`. They decode to an empty Go string and are returned as `"riskCeiling": ""` ([repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/repository.go:966)). They cannot safely be backfilled because selection rows reject updates.
+3. **Historical compatibility is unresolved.** Existing immutable JSON records lack `riskCeiling`. They decode to an empty Go string and are returned as `"riskCeiling": ""` ([repository.go](../backend/internal/frameworkregistry/repository.go):966). They cannot safely be backfilled because selection rows reject updates.
 
-4. **Angular drops the field.** `ISelectedFramework` does not define `riskCeiling` ([framework-registry.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/framework-registry.model.interface.ts:93)), and the service manually reconstructs selected records without it ([framework-registry.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/framework-registry.service.ts:329)). The duplicated workflow model also omits it ([workflow.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/workflow.model.interface.ts:225)).
+4. **Angular drops the field.** `ISelectedFramework` does not define `riskCeiling` ([framework-registry.model.interface.ts](../frontend/src/app/models/framework-registry.model.interface.ts):93), and the service manually reconstructs selected records without it ([framework-registry.service.ts](../frontend/src/app/services/framework-registry.service.ts):329). The duplicated workflow model also omits it ([workflow.model.interface.ts](../frontend/src/app/models/workflow.model.interface.ts):225).
 
-5. **Neither UI explains the ceiling.** Recommendation cards show family and score; Advanced contracts show autonomy and authority but not risk ([framework-registry-recommendation.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.html:102)). History only shows date, domain, primary framework, authority, and review ([framework-registry.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry.component.html:663)).
+5. **Neither UI explains the ceiling.** Recommendation cards show family and score; Advanced contracts show autonomy and authority but not risk ([framework-registry-recommendation.component.html](../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.html):102). History only shows date, domain, primary framework, authority, and review ([framework-registry.component.html](../frontend/src/app/pages/framework-registry/framework-registry.component.html):663).
 
-6. **The algorithm version is stale.** Risk-ceiling filtering materially changes selection semantics, but the result still records `selector-v5` ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/service.go:19)).
+6. **The algorithm version is stale.** Risk-ceiling filtering materially changes selection semantics, but the result still records `selector-v5` ([service.go](../backend/internal/frameworkregistry/service.go):19).
 
 **Smallest Coherent Change Set**
 
@@ -1120,12 +1125,12 @@ Key changes:
 - Blank/v4 historical records remain compatible without inferred risk values.
 
 Changed:
-- [governance_binding.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/governance_binding.go:18)
-- [governance_binding_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/governance_binding_test.go:11)
-- [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:163)
-- [validation.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/validation.go:15)
-- [validation_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/validation_test.go:168)
-- [service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service_test.go:441)
+- [governance_binding.go](../backend/internal/task/governance_binding.go):18
+- [governance_binding_test.go](../backend/internal/task/governance_binding_test.go):11
+- [types.go](../backend/internal/executionauth/types.go):163
+- [validation.go](../backend/internal/executionauth/validation.go):15
+- [validation_test.go](../backend/internal/executionauth/validation_test.go):168
+- [service_test.go](../backend/internal/executionauth/service_test.go):441
 
 Verified through Docker:
 
@@ -1147,10 +1152,10 @@ No framework registry, migration, frontend, or documentation files were edited.
 
 Implemented fail-closed selector-v5 propagation and enforcement.
 
-- [workflow/service.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\workflow\service.go:104): propagates workflow risk, persists explicit `TaskRiskLevel` and `EffectiveRiskCeiling`, validates v5 ceilings, and preserves blank v4 history.
-- [workflowtask/runner.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\workflowtask\runner.go:315): performs a side-effect-free preview before execution, rejects missing/downgraded v5 contracts, and verifies the executed contract against preflight.
-- [workflow/service_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\workflow\service_test.go:2256)
-- [workflowtask/runner_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\workflowtask\runner_test.go:369)
+- [workflow/service.go](../backend/internal/workflow/service.go):104: propagates workflow risk, persists explicit `TaskRiskLevel` and `EffectiveRiskCeiling`, validates v5 ceilings, and preserves blank v4 history.
+- [workflowtask/runner.go](../backend/internal/workflowtask/runner.go):315: performs a side-effect-free preview before execution, rejects missing/downgraded v5 contracts, and verifies the executed contract against preflight.
+- [workflow/service_test.go](../backend/internal/workflow/service_test.go):2256
+- [workflowtask/runner_test.go](../backend/internal/workflowtask/runner_test.go):369
 
 Verification passed:
 
@@ -1171,38 +1176,38 @@ The current upstream `frameworkregistry.SelectionDecision` does not yet emit the
 
 **Audit Findings**
 1. **Phase 2 is not wired to the selector resolver.** The main router installs `WithFrameworkSelectionResolver`, but `defaultExecutionAuthorizationService` returns a service without it. Selector-v5 executions through this path will fail closed.
-[router/routes.go:402](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:402)
-[phase2/module.go:295](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/phase2/module.go:295)
+[router/routes.go:402](../backend/internal/router/routes.go):402
+[phase2/module.go:295](../backend/internal/phase2/module.go):295
 
 2. **The in-progress resolver implementation currently breaks focused tests.** Existing selector-v5 service tests do not inject a resolver, so authorization stops with `framework.selection_unverified` before Constitution evaluation.
-[executionauth/service_test.go:401](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service_test.go:401)
-[executionauth/service_test.go:449](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service_test.go:449)
+[executionauth/service_test.go:401](../backend/internal/executionauth/service_test.go):401
+[executionauth/service_test.go:449](../backend/internal/executionauth/service_test.go):449
 
 3. **The repository test has an ordering assumption.** It creates records with identical timestamps and expects the new selector-v5 record at `ListSelections()[0]`; UUID ordering can return the older record. The new point lookup should replace that assertion.
-[frameworkregistry/repository_test.go:179](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/repository_test.go:179)
+[frameworkregistry/repository_test.go:179](../backend/internal/frameworkregistry/repository_test.go):179
 
 4. **The router adapter ignores cancellation and lacks a nil-result guard.** It accepts `context.Context` but discards it, while the GORM lookup does not call `WithContext(ctx)`. A custom repository returning `(nil, nil)` would panic in the adapter.
-[router/execution_authorization_adapters.go:22](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/execution_authorization_adapters.go:22)
-[frameworkregistry/repository.go:130](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/repository.go:130)
+[router/execution_authorization_adapters.go:22](../backend/internal/router/execution_authorization_adapters.go):22
+[frameworkregistry/repository.go:130](../backend/internal/frameworkregistry/repository.go):130
 
 **Persistence Contract**
 - Selection records contain owner, task-plan identity, selector version, risk contract, autonomy ceiling, approval requirement, and all reproducibility digests.
-[models/framework_registry.go:25](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/framework_registry.go:25)
+[models/framework_registry.go:25](../backend/internal/models/framework_registry.go):25
 - `Select` generates a deterministic ID and persists the completed decision.
-[frameworkregistry/service.go:269](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/service.go:269)
+[frameworkregistry/service.go:269](../backend/internal/frameworkregistry/service.go):269
 - The new lookup correctly queries by both `owner_identity` and UUID. Cross-owner access therefore returns not found.
-[frameworkregistry/repository.go:130](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/repository.go:130)
+[frameworkregistry/repository.go:130](../backend/internal/frameworkregistry/repository.go):130
 - PostgreSQL rejects updates, deletes, and truncation of selection history.
-[0003_framework_registry.up.sql:144](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0003_framework_registry.up.sql:144)
+[0003_framework_registry.up.sql:144](../backend/migrations/pre/0003_framework_registry.up.sql):144
 - Selector-v5 risk fields and constraints already exist, so no new schema migration is required.
-[0029_framework_selector_v5_digest.up.sql:1](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0029_framework_selector_v5_digest.up.sql:1)
+[0029_framework_selector_v5_digest.up.sql:1](../backend/migrations/pre/0029_framework_selector_v5_digest.up.sql):1
 
 **Smallest Fail-Closed Design**
 1. Retain `GetSelection(owner, id)` in the repository and `Selection(owner, id)` in the service. Do not scan recent history.
-[frameworkregistry/service.go:587](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/service.go:587)
+[frameworkregistry/service.go:587](../backend/internal/frameworkregistry/service.go):587
 
 2. Keep the narrow `FrameworkSelectionResolver` and immutable snapshot in `executionauth`.
-[executionauth/types.go:163](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:163)
+[executionauth/types.go:163](../backend/internal/executionauth/types.go):163
 
 3. For every selector-v5 request:
    - Require a configured resolver.
@@ -1212,13 +1217,13 @@ The current upstream `frameworkregistry.SelectionDecision` does not yet emit the
    - Run this before Constitution, mandate, approval, or agent policy evaluation.
 
 The current verification location and comparison set are correct.
-[executionauth/framework_selection.go:8](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/framework_selection.go:8)
-[executionauth/service.go:168](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:168)
+[executionauth/framework_selection.go:8](../backend/internal/executionauth/framework_selection.go):8
+[executionauth/service.go:168](../backend/internal/executionauth/service.go):168
 
 4. Add a nil-result guard and preferably propagate `context.Context` into `GetSelection` and GORM `WithContext`.
 
 5. Wire the same resolver into both router and Phase 2 composition. Because `executionauth` already imports `frameworkregistry` for the Constitution adapter, placing a reusable selection adapter beside that adapter creates no new import edge.
-[executionauth/constitution_adapter.go:3](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/constitution_adapter.go:3)
+[executionauth/constitution_adapter.go:3](../backend/internal/executionauth/constitution_adapter.go):3
 
 **Import-Cycle Risk**
 Do not make `frameworkregistry.Service` return `executionauth.FrameworkSelectionSnapshot`: `executionauth` already imports `frameworkregistry`, so importing `executionauth` back into `frameworkregistry` would create a cycle. Keep the DTO/interface owned by `executionauth`, with an adapter in `executionauth`, router, Phase 2, or a neutral adapter package.
@@ -1244,17 +1249,17 @@ Focused read-only test run currently fails in `frameworkregistry` and `execution
 - Transcript: `08/04/rollout-2026-08-04T06-17-32-019fcafd-b602-75b3-9139-d3f92ae37853.jsonl`
 
 **Audit Findings**
-1. **High: preconditions are evaluated after tools run.** Framework requirements are copied into the validation plan at [service.go:2291](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:2291), but `Run` calls `executeAllowedSteps` before `validatePlan` at [service.go:670](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:670). The actual external launch occurs at [service.go:1612](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1612).
-2. **High: high-stakes facts can be verified only after an external effect.** Source-grounding and claim verification run at [service.go:1747](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1747), after the automation has completed. This is unsafe for legal, health, financial, travel, emergency, and communication actions.
-3. **High: requirements are untyped strings matched fuzzily.** Criteria pass through token-overlap matching at [validation.go:902](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/validation.go:902). A runtime launch reference can therefore support loosely related requirements without a requirement-specific deterministic validator.
-4. **Medium: authorization cannot enforce catalog evidence.** `GovernanceEvidence` carries framework metadata and generic references, but not requirement IDs, phases, or validated assertions at [types.go:163](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:163).
-5. **Medium: framework attribution is flattened.** Selection aggregates every framework’s requirements into one deduplicated string list at [selector.go:339](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:339), making per-framework enforcement and exceptions difficult.
+1. **High: preconditions are evaluated after tools run.** Framework requirements are copied into the validation plan at [service.go:2291](../backend/internal/task/service.go):2291, but `Run` calls `executeAllowedSteps` before `validatePlan` at [service.go:670](../backend/internal/task/service.go):670. The actual external launch occurs at [service.go:1612](../backend/internal/task/service.go):1612.
+2. **High: high-stakes facts can be verified only after an external effect.** Source-grounding and claim verification run at [service.go:1747](../backend/internal/task/service.go):1747, after the automation has completed. This is unsafe for legal, health, financial, travel, emergency, and communication actions.
+3. **High: requirements are untyped strings matched fuzzily.** Criteria pass through token-overlap matching at [validation.go:902](../backend/internal/task/validation.go):902. A runtime launch reference can therefore support loosely related requirements without a requirement-specific deterministic validator.
+4. **Medium: authorization cannot enforce catalog evidence.** `GovernanceEvidence` carries framework metadata and generic references, but not requirement IDs, phases, or validated assertions at [types.go:163](../backend/internal/executionauth/types.go):163.
+5. **Medium: framework attribution is flattened.** Selection aggregates every framework’s requirements into one deduplicated string list at [selector.go:339](../backend/internal/frameworkregistry/selector.go):339, making per-framework enforcement and exceptions difficult.
 
 Existing independent controls do correctly cover owner identity, exact approval binding, autonomy/risk ceilings, emergency stop, idempotency, and atomic authorization-receipt consumption. They do not cover all catalog prerequisites.
 
 **Phase Classification**
 
-`P` = pre-execution prerequisite, `X` = evidence created atomically during execution, `O` = postcondition. Classification uses the earliest safe enforcement phase. Catalog anchors refer to [catalog.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/catalog.go:48).
+`P` = pre-execution prerequisite, `X` = evidence created atomically during execution, `O` = postcondition. Classification uses the earliest safe enforcement phase. Catalog anchors refer to [catalog.go](../backend/internal/frameworkregistry/catalog.go):48.
 
 | Catalog entries | Classification |
 |---|---|
@@ -1301,15 +1306,15 @@ Existing independent controls do correctly cover owner identity, exact approval 
 | `memory-knowledge-implementations` L588 | P before adoption: classification, PostgreSQL benchmark, export/deletion behavior |
 | `policy-security-implementations` L600 | P: threat model, license/maintenance status, migration/recovery plan |
 | `evaluation-observability-implementations` L612 | P: coverage gap, privacy review, reproducible evaluation |
-| Selector-added requirement [selector.go:373](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/selector.go:373) | P: active Constitution and applicable authority decision |
+| Selector-added requirement [selector.go:373](../backend/internal/frameworkregistry/selector.go):373 | P: active Constitution and applicable authority decision |
 
 **Most Unsafe Cases**
 
 - A legal email, payment, health action, booking, public message, or emergency workflow can execute before primary sources, calculations, recipient verification, current schedules, or recovery information pass evidence validation.
 - A runtime or agent can be invoked before its agent card, tool allowlist, runtime health, threat model, sandbox contract, or rollback plan is proven.
 - Privacy requirements such as permission, data classification, and processing location do not participate in `AllowedNow`.
-- `action receipt` and `postcondition verification` can both match the same launch evidence at [validation.go:817](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/validation.go:817), despite representing different phases and facts.
-- Validation failure can occur after an irreversible effect. The existing retry logic does reuse a completed tool result rather than blindly repeating it, which is a useful safeguard at [service.go:1564](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1564).
+- `action receipt` and `postcondition verification` can both match the same launch evidence at [validation.go:817](../backend/internal/task/validation.go):817, despite representing different phases and facts.
+- Validation failure can occur after an irreversible effect. The existing retry logic does reuse a completed tool result rather than blindly repeating it, which is a useful safeguard at [service.go:1564](../backend/internal/task/service.go):1564.
 
 **Minimal Typed Design**
 ```go
@@ -1356,17 +1361,17 @@ No files were edited. Focused Go tests could not run because Go is not available
 
 **Audit Findings**
 
-1. **P0: selector-v5 provenance can be forged.** Authorization copies caller-provided governance into the receipt without resolving `FrameworkSelectionID` against its owner-scoped registry record. A nonexistent or foreign selection can therefore carry invented digests, a higher autonomy ceiling, or `requiresApproval=false`. The existing test even authorizes the fake ID `selection-1`. See [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:123), [validation.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/validation.go:303), and [service_test.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service_test.go:401).
+1. **P0: selector-v5 provenance can be forged.** Authorization copies caller-provided governance into the receipt without resolving `FrameworkSelectionID` against its owner-scoped registry record. A nonexistent or foreign selection can therefore carry invented digests, a higher autonomy ceiling, or `requiresApproval=false`. The existing test even authorizes the fake ID `selection-1`. See [service.go](../backend/internal/executionauth/service.go):123, [validation.go](../backend/internal/executionauth/validation.go):303, and [service_test.go](../backend/internal/executionauth/service_test.go):401.
 
-2. **P0: no exact selection resolver exists.** The framework repository exposes only bounded history listing, not `GetSelection(owner, id)`. Scanning the newest 100 records would be unsafe and incomplete. See [frameworkregistry/service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/service.go:22) and [repository.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/repository.go:130).
+2. **P0: no exact selection resolver exists.** The framework repository exposes only bounded history listing, not `GetSelection(owner, id)`. Scanning the newest 100 records would be unsafe and incomplete. See [frameworkregistry/service.go](../backend/internal/frameworkregistry/service.go):22 and [repository.go](../backend/internal/frameworkregistry/repository.go):130.
 
-3. **P1: authorization recheck ignores framework provenance.** `AuthorizeAndConsume` rechecks stop, system workload, Constitution, agent, mandate, and approval, but not the selector-v5 record. See [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:563).
+3. **P1: authorization recheck ignores framework provenance.** `AuthorizeAndConsume` rechecks stop, system workload, Constitution, agent, mandate, and approval, but not the selector-v5 record. See [service.go](../backend/internal/executionauth/service.go):563.
 
-4. **P1: legacy selector-v4 remains executable, not merely readable.** Tests prove decoding compatibility, but no test defines whether a new side effect may rely on v4 governance. Current authorization silently skips v5 risk, maximum-autonomy, and approval checks. See [validation.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/validation.go:261) and [workflow/service_test.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service_test.go:2316).
+4. **P1: legacy selector-v4 remains executable, not merely readable.** Tests prove decoding compatibility, but no test defines whether a new side effect may rely on v4 governance. Current authorization silently skips v5 risk, maximum-autonomy, and approval checks. See [validation.go](../backend/internal/executionauth/validation.go):261 and [workflow/service_test.go](../backend/internal/workflow/service_test.go):2316.
 
-5. **P1: many governance rejections cannot produce durable receipts.** Normalization returns before receipt construction. Structurally valid provenance mismatches should be resolved after receipt initialization and persisted as denials; malformed owner/idempotency requests can remain non-durable. See [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:75).
+5. **P1: many governance rejections cannot produce durable receipts.** Normalization returns before receipt construction. Structurally valid provenance mismatches should be resolved after receipt initialization and persisted as denials; malformed owner/idempotency requests can remain non-durable. See [service.go](../backend/internal/executionauth/service.go):75.
 
-6. **P1: memory receipts are not deeply immutable.** `cloneReceipt` does not clone selector-v5 pointer fields or `Governance.EvidenceReferences`. Mutating a returned receipt can modify stored evidence without changing `DecisionDigest`. See [repository.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/repository.go:169).
+6. **P1: memory receipts are not deeply immutable.** `cloneReceipt` does not clone selector-v5 pointer fields or `Governance.EvidenceReferences`. Mutating a returned receipt can modify stored evidence without changing `DecisionDigest`. See [repository.go](../backend/internal/executionauth/repository.go):169.
 
 7. **P2: selector-v5 repository test is ordering-sensitive.** One combined run failed because it assumes the new v5 record is `selections[0]` when two records have equal timestamps and random UUID ordering. The isolated test passed 100 repetitions, confirming a flaky suite interaction/order assumption rather than reliable identification by ID.
 
@@ -1420,10 +1425,10 @@ Read-only audit; no files changed. Focused Docker test run:
 
 Updated only:
 
-- [framework-operating-contract-matrix.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\framework-operating-contract-matrix.md)
-- [framework-registry.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\framework-registry.md)
-- [requirements-traceability.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\requirements-traceability.md)
-- [completion-matrix.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\completion-matrix.md)
+- [framework-operating-contract-matrix.md](framework-operating-contract-matrix.md)
+- [framework-registry.md](framework-registry.md)
+- [requirements-traceability.md](requirements-traceability.md)
+- [completion-matrix.md](completion-matrix.md)
 
 Documented exact owner-scoped selector-v5 resolution, immutable field comparison, fail-closed authorization and consumption recheck, main router and Phase2 composition, and typed three-phase evidence contracts.
 
@@ -1439,7 +1444,7 @@ Validation: `git diff --check` passed. No code or tests were run for this docume
 - Original report SHA-256: `5495bc44901b7cae2fbfee1825724061162bacb9a53065df745aab1886c8a03d`
 - Transcript: `08/04/rollout-2026-08-04T06-39-02-019fcb11-647e-7783-aaeb-607c8d2d1e1d.jsonl`
 
-Added [framework_evidence_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\task\framework_evidence_test.go) with all eight requested cases. No production files or existing tests were edited.
+Added [framework_evidence_test.go](../backend/internal/task/framework_evidence_test.go) with all eight requested cases. No production files or existing tests were edited.
 
 Verification:
 
@@ -1467,17 +1472,17 @@ The smallest honest implementation depends on the claim being made:
 A digest carried only by the caller is **bound evidence, not independently verified evidence**.
 
 **Current State**
-- `CompletionPlan` contains `FrameworkEvidencePreflight`: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:298).
-- Preflight runs immediately before execution: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:672).
-- Governance is then constructed and passed to the executor: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1598).
-- The completed plan is not appended to durable task state until after execution and validation: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:760).
-- The earlier pursuit-attempt record contains status and summary fields, but no preflight assertions or digest: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:826).
+- `CompletionPlan` contains `FrameworkEvidencePreflight`: [service.go](../backend/internal/task/service.go):298.
+- Preflight runs immediately before execution: [service.go](../backend/internal/task/service.go):672.
+- Governance is then constructed and passed to the executor: [service.go](../backend/internal/task/service.go):1598.
+- The completed plan is not appended to durable task state until after execution and validation: [service.go](../backend/internal/task/service.go):760.
+- The earlier pursuit-attempt record contains status and summary fields, but no preflight assertions or digest: [service.go](../backend/internal/task/service.go):826.
 
 Therefore, when `executionauth.Authorize()` runs, no durable preflight record exists to resolve.
 
-The final completion plan is stored as a complete sanitized JSON snapshot with a SHA-256 payload digest: [state_repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/state_repository.go:155). PostgreSQL makes these rows append-only: [0004_task_state_storage.up.sql](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0004_task_state_storage.up.sql:326).
+The final completion plan is stored as a complete sanitized JSON snapshot with a SHA-256 payload digest: [state_repository.go](../backend/internal/task/state_repository.go):155. PostgreSQL makes these rows append-only: [0004_task_state_storage.up.sql](../backend/migrations/pre/0004_task_state_storage.up.sql):326.
 
-However, the existing exact lookup is only by owner and task-plan ID and returns the nominal latest snapshot: [state_repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/state_repository_postgres.go:71). This is unsuitable for preflight resolution because:
+However, the existing exact lookup is only by owner and task-plan ID and returns the nominal latest snapshot: [state_repository_postgres.go](../backend/internal/task/state_repository_postgres.go):71. This is unsuitable for preflight resolution because:
 
 - Multiple payloads may exist for one task-plan ID.
 - Their stored `created_at` comes from the unchanged plan creation time.
@@ -1485,16 +1490,16 @@ However, the existing exact lookup is only by owner and task-plan ID and returns
 - The repository methods do not accept `context.Context`.
 
 **Missing Binding**
-`executionGovernanceEvidence()` currently hashes framework, risk, domain-pack, resource, and evidence-reference fields, but not preflight state: [governance_binding.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/governance_binding.go:38). Preflight is also absent from generated evidence references: [governance_binding.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/governance_binding.go:187).
+`executionGovernanceEvidence()` currently hashes framework, risk, domain-pack, resource, and evidence-reference fields, but not preflight state: [governance_binding.go](../backend/internal/task/governance_binding.go):38. Preflight is also absent from generated evidence references: [governance_binding.go](../backend/internal/task/governance_binding.go):187.
 
-`GovernanceEvidence` has no preflight field: [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:197).
+`GovernanceEvidence` has no preflight field: [types.go](../backend/internal/executionauth/types.go):197.
 
 Once added, it will automatically become cryptographically bound because:
 
-- The authorization request digest hashes the complete normalized `Request`, including governance: [digest.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/digest.go:20).
-- Governance is copied into receipt evidence: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:137).
-- The receipt decision digest covers receipt evidence: [digest.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/digest.go:33).
-- Receipt evidence is durably serialized to PostgreSQL: [repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/repository_postgres.go:607).
+- The authorization request digest hashes the complete normalized `Request`, including governance: [digest.go](../backend/internal/executionauth/digest.go):20.
+- Governance is copied into receipt evidence: [service.go](../backend/internal/executionauth/service.go):137.
+- The receipt decision digest covers receipt evidence: [digest.go](../backend/internal/executionauth/digest.go):33.
+- Receipt evidence is durably serialized to PostgreSQL: [repository_postgres.go](../backend/internal/executionauth/repository_postgres.go):607.
 
 **Recommended Shape**
 For immediate provenance binding:
@@ -1517,11 +1522,11 @@ framework_selection_id
 preflight_digest
 ```
 
-Then define `FrameworkEvidencePreflightResolver` in `executionauth` and implement its adapter outside `executionauth`, following the existing task-review resolver pattern: [task_review_resolver.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionapproval/task_review_resolver.go:34).
+Then define `FrameworkEvidencePreflightResolver` in `executionauth` and implement its adapter outside `executionauth`, following the existing task-review resolver pattern: [task_review_resolver.go](../backend/internal/executionapproval/task_review_resolver.go):34.
 
-This avoids an import cycle. `task` already imports `executionauth`; `executionauth` must not import `task`. The router already creates the task repository before constructing authorization, so it can inject the adapter: [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:365).
+This avoids an import cycle. `task` already imports `executionauth`; `executionauth` must not import `task`. The router already creates the task repository before constructing authorization, so it can inject the adapter: [routes.go](../backend/internal/router/routes.go):365.
 
-Authorization should resolve and compare the immutable preflight during both `Authorize` and the pre-consumption recheck, matching the existing framework-selection pattern: [framework_selection.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/framework_selection.go:8), [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:587).
+Authorization should resolve and compare the immutable preflight during both `Authorize` and the pre-consumption recheck, matching the existing framework-selection pattern: [framework_selection.go](../backend/internal/executionauth/framework_selection.go):8, [service.go](../backend/internal/executionauth/service.go):587.
 
 **Required Tests**
 - Canonical preflight digest is deterministic and changes with any relevant assertion.
@@ -1575,10 +1580,10 @@ Verification:
 Implemented the neutral framework-evidence persistence layer.
 
 **Package**
-- [repository.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\frameworkevidence\repository.go)
-- [repository_postgres.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\frameworkevidence\repository_postgres.go)
-- [repository_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\frameworkevidence\repository_test.go)
-- [repository_postgres_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\frameworkevidence\repository_postgres_test.go)
+- [repository.go](../backend/internal/frameworkevidence/repository.go)
+- [repository_postgres.go](../backend/internal/frameworkevidence/repository_postgres.go)
+- [repository_test.go](../backend/internal/frameworkevidence/repository_test.go)
+- [repository_postgres_test.go](../backend/internal/frameworkevidence/repository_postgres_test.go)
 
 The API exposes:
 
@@ -1591,10 +1596,10 @@ Resolve(context.Context, ownerIdentity, taskPlanID,
 It includes exact-byte/deep-copy payload handling, strict lowercase SHA256 validation, owner-scoped resolution, `passed`-only records, deterministic idempotent replay, conflicting-replay rejection, memory/GORM repositories, and `DefaultRepository()` via `infra.GetDefaultDB()`.
 
 **Migration**
-- [0030 up](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\pre\0030_framework_evidence_preflights.up.sql)
-- [0030 down](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\pre\0030_framework_evidence_preflights.down.sql)
-- [contract test](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\framework_evidence_preflights_contract_test.go)
-- [PostgreSQL test](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\framework_evidence_preflights_postgres_test.go)
+- [0030 up](../backend/migrations/pre/0030_framework_evidence_preflights.up.sql)
+- [0030 down](../backend/migrations/pre/0030_framework_evidence_preflights.down.sql)
+- [contract test](../backend/migrations/framework_evidence_preflights_contract_test.go)
+- [PostgreSQL test](../backend/migrations/framework_evidence_preflights_postgres_test.go)
 
 The table rejects updates, deletes, truncation, invalid JSON bytes, noncanonical identifiers, uppercase/invalid digests, and non-passing statuses.
 
@@ -1616,22 +1621,22 @@ Live PostgreSQL cases compiled but skipped because `HAI_TEST_DATABASE_DSN` is un
 - Transcript: `08/04/rollout-2026-08-04T07-20-22-019fcb37-3c9c-7cb1-88d0-d1b79f53cf5f.jsonl`
 
 **Audit Findings**
-The working tree is slightly ahead of the stated premise: task preflight now re-resolves source evidence in [framework_evidence.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\task\framework_evidence.go:804). That protects plan construction, but the controlled-execution boundary remains vulnerable.
+The working tree is slightly ahead of the stated premise: task preflight now re-resolves source evidence in [framework_evidence.go](../backend/internal/task/framework_evidence.go):804. That protects plan construction, but the controlled-execution boundary remains vulnerable.
 
 1. **P1: source evidence is not reverified by `executionauth`.**
-   Authorization resolves only the preflight owner/task/selection/digest/status. The adapter discards `AssertionsJSON`, including extraction IDs, URIs, snapshot digests, and freshness evidence: [framework_evidence_preflight_adapter.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\executionauth\framework_evidence_preflight_adapter.go:40). A source can be revoked, archived, corrected, or become stale after task preflight and still pass authorization and consumption.
+   Authorization resolves only the preflight owner/task/selection/digest/status. The adapter discards `AssertionsJSON`, including extraction IDs, URIs, snapshot digests, and freshness evidence: [framework_evidence_preflight_adapter.go](../backend/internal/executionauth/framework_evidence_preflight_adapter.go):40. A source can be revoked, archived, corrected, or become stale after task preflight and still pass authorization and consumption.
 
 2. **P1: current freshness proof can refresh unrelated records.**
-   [evidence_resolver.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\source\evidence_resolver.go:99) prefers source-wide `LastSyncedAt`. Synchronizing one item therefore makes every extraction belonging to that source appear fresh. Freshness should use the specific raw item’s `FetchedAt`.
+   [sourceevidence/repository.go](../backend/internal/sourceevidence/repository.go):185 prefers source-wide `LastSyncedAt`. Synchronizing one item therefore makes every extraction belonging to that source appear fresh. Freshness should use the specific raw item’s `FetchedAt`.
 
 3. **P1: persisted assertions are not cryptographically checked.**
-   The repository explicitly leaves preflight-digest semantics to callers: [repository.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\frameworkevidence\repository.go:30). Before execution authorization trusts structured source claims parsed from that record, the neutral package must recompute the canonical digest and reject mismatches.
+   The repository explicitly leaves preflight-digest semantics to callers: [repository.go](../backend/internal/frameworkevidence/repository.go):30. Before execution authorization trusts structured source claims parsed from that record, the neutral package must recompute the canonical digest and reject mismatches.
 
 4. **P2: the current resolver is not one owner-scoped snapshot query.**
-   It performs unscoped `FindExtraction` followed by unscoped `FindSource`: [evidence_resolver.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\source\evidence_resolver.go:73). It does not independently validate the referenced raw item, raw URI, or raw content hash. The baseline schema also has no foreign keys joining these records.
+   It performs unscoped `FindExtraction` followed by unscoped `FindSource`: [sourceevidence/repository.go](../backend/internal/sourceevidence/repository.go):121. It does not independently validate the referenced raw item, raw URI, or raw content hash. The baseline schema also has no foreign keys joining these records.
 
 5. **P2: ownerless sources remain searchable.**
-   [service.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\source\service.go:1313) treats an empty stored owner as visible. Controlled execution must require exact non-empty owner equality.
+   [service.go](../backend/internal/source/service.go):1313 treats an empty stored owner as visible. Controlled execution must require exact non-empty owner equality.
 
 6. **P2: “source authority” cannot currently be proven.**
    The database can prove direct raw-item provenance, ownership, URI, hash, and freshness. It cannot prove that a source is authoritative or official. Requirements such as “source authority and freshness” should be split into independently enforceable validators rather than letting `fresh_source` overclaim authority.
@@ -1686,7 +1691,7 @@ Add an `executionauth.SourceEvidenceResolver` port and inject an adapter backed 
 - Keep the current task-level resolver for early feedback, but never treat it as execution authority.
 
 **Composition**
-Create one shared `sourceevidence.Repository` in [routes.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\router\routes.go:370), then inject it into both the task service and `executionauth.Service`. Wire the same resolver into the Phase 2 composition root. No new evidence table is required.
+Create one shared `sourceevidence.Repository` in [routes.go](../backend/internal/router/routes.go):370, then inject it into both the task service and `executionauth.Service`. Wire the same resolver into the Phase 2 composition root. No new evidence table is required.
 
 **Required Tests**
 - Owner, extraction, source, raw-item, URI, hash, revision, and project mismatches.
@@ -1712,7 +1717,7 @@ No files were edited. Focused tests passed for `source`, `task`, `executionauth`
 
 Added focused tests at:
 
-- [repository_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/sourceevidence/repository_test.go)
+- [repository_test.go](../backend/internal/sourceevidence/repository_test.go)
 
 Coverage includes digest determinism/sensitivity, exact claim verification, owner/ID/digest/validator failures, stale/future evidence, max-age boundaries, and a gated PostgreSQL repository test.
 
@@ -1733,7 +1738,7 @@ PostgreSQL integration was skipped because `HAI_TEST_DATABASE_DSN` and destructi
 - Original report SHA-256: `3ab712e989132ce1bf85661d079629a5969afdb7c205d4ba81a2c9e7a2680247`
 - Transcript: `08/04/rollout-2026-08-04T08-06-01-019fcb61-06b7-7be3-8afa-13d6e2bab55d.jsonl`
 
-Added two fail-closed regression tests in [framework_evidence_preflight_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/framework_evidence_preflight_test.go:347):
+Added two fail-closed regression tests in [framework_evidence_preflight_test.go](../backend/internal/executionauth/framework_evidence_preflight_test.go):347:
 
 - Verified source assertion without `sourceClaims` is denied with `source.evidence_unverified`.
 - Malformed assertions JSON is denied with `source.evidence_unverified`.
@@ -1756,7 +1761,7 @@ The test file was already untracked in the existing worktree. No commit was crea
 
 Added the focused regression test in:
 
-- [repository_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkevidence/repository_test.go)
+- [repository_test.go](../backend/internal/frameworkevidence/repository_test.go)
 
 It mutates stored `AssertionsJSON` without changing the digest and confirms `Resolve` returns `ErrConflict` due canonical digest mismatch.
 
@@ -1778,9 +1783,9 @@ No commit created. Note: the test file is currently untracked in the worktree.
 
 Updated only:
 
-- [framework-registry.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\framework-registry.md)
-- [compliance-boundaries.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\compliance-boundaries.md)
-- [requirements-traceability.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\requirements-traceability.md)
+- [framework-registry.md](framework-registry.md)
+- [compliance-boundaries.md](compliance-boundaries.md)
+- [requirements-traceability.md](requirements-traceability.md)
 
 Documented both preauthorization resolution points, raw-item `fetched_at` freshness, provenance/truth limitations, and inspection redaction. `git diff --check` passed. No commit created.
 
@@ -1796,9 +1801,9 @@ Implemented deterministic semantic claim assessment, scoped strictly to `backend
 
 Changed paths:
 
-- [claim_assessment.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/knowledgegraph/claim_assessment.go)
-- [claim_assessment_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/knowledgegraph/claim_assessment_test.go)
-- [claim_types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/knowledgegraph/claim_types.go)
+- [claim_assessment.go](../backend/internal/knowledgegraph/claim_assessment.go)
+- [claim_assessment_test.go](../backend/internal/knowledgegraph/claim_assessment_test.go)
+- [claim_types.go](../backend/internal/knowledgegraph/claim_types.go)
 
 Implemented:
 
@@ -1830,9 +1835,9 @@ No commit was created.
 
 Updated only the requested documentation files:
 
-- [completion-matrix.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\completion-matrix.md:67)
-- [requirements-traceability.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\requirements-traceability.md:48)
-- [framework-operating-contract-matrix.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\framework-operating-contract-matrix.md:52)
+- [completion-matrix.md](completion-matrix.md):67
+- [requirements-traceability.md](requirements-traceability.md):48
+- [framework-operating-contract-matrix.md](framework-operating-contract-matrix.md):52
 
 The documentation now covers redacted generation telemetry, exact validation outcome updates, durable calibration refresh, conservative evidence-based routing, unvalidated direct API calls, and the real-credentials requirement for external-provider acceptance.
 
@@ -1854,27 +1859,27 @@ No files were edited.
 
 **Primary Touch Points**
 
-- Add `PursuitResourceEvent` and `PursuitResourceUsage` near the existing limits in [pursuit.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/pursuit.go:81).
+- Add `PursuitResourceEvent` and `PursuitResourceUsage` near the existing limits in [pursuit.go](../backend/internal/models/pursuit.go):81.
   - Store money as integer EUR cents.
   - Store effort as integer seconds or minutes, never floating-point hours.
   - Include owner, pursuit ID, event kind, amount, source operation ID, evidence URI, idempotency key, request digest, record digest, observed time, and recorded time.
-- Add a small `ResourceUsageRepository` beside the broad repository interface in [repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/repository.go:14).
+- Add a small `ResourceUsageRepository` beside the broad repository interface in [repository.go](../backend/internal/pursuit/repository.go):14.
   - `AppendResourceEvent`
   - `ListResourceEvents`
   - `GetResourceUsage`
   - `ReserveWithinLimits` for atomic check-and-reserve
-- Inject it explicitly into the service at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:764). Keep the main `Repository` interface from growing further.
-- Add usage to `PursuitDetail` at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:384), populate it during detail assembly at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:1345), and add concise consumed/remaining/exceeded fields to `PursuitSummary`.
-- Turn `pursuitNewWorkBlockerReason` at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:6144) into a service-level gate accepting owner-scoped usage.
+- Inject it explicitly into the service at [service.go](../backend/internal/pursuit/service.go):764. Keep the main `Repository` interface from growing further.
+- Add usage to `PursuitDetail` at [service.go](../backend/internal/pursuit/service.go):384, populate it during detail assembly at [service.go](../backend/internal/pursuit/service.go):1345, and add concise consumed/remaining/exceeded fields to `PursuitSummary`.
+- Turn `pursuitNewWorkBlockerReason` at [service.go](../backend/internal/pursuit/service.go):6144 into a service-level gate accepting owner-scoped usage.
 - Reuse that gate at the current creation paths:
-  - Intake: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:2971)
-  - Planning: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:3177)
-  - Approved next action: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:3373)
-- Also enforce it in the direct task boundary at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:1263). This path currently bypasses stop, dependency, target, and resource blocker checks.
+  - Intake: [service.go](../backend/internal/pursuit/service.go):2971
+  - Planning: [service.go](../backend/internal/pursuit/service.go):3177
+  - Approved next action: [service.go](../backend/internal/pursuit/service.go):3373
+- Also enforce it in the direct task boundary at [service.go](../backend/internal/pursuit/service.go):1263. This path currently bypasses stop, dependency, target, and resource blocker checks.
 
 **Execution Boundary**
 
-The task engine checks pursuit eligibility before `Plan`, `Preview`, and `Run` at [task/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:620). That is useful but insufficient:
+The task engine checks pursuit eligibility before `Plan`, `Preview`, and `Run` at [task/service.go](../backend/internal/task/service.go):620. That is useful but insufficient:
 
 - Reserve resources atomically immediately before execution.
 - Release unused reservations afterward.
@@ -1882,11 +1887,11 @@ The task engine checks pursuit eligibility before `Plan`, `Preview`, and `Run` a
 - Do not merely calculate usage during page rendering.
 - When the ledger is unavailable and a spend/effort limit exists, fail closed.
 
-Workflow execution passes pursuit context into the task engine at [workflow/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2104). However, workflows linked to multiple pursuits deliberately return no pursuit ID at [workflow/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2217). Resource-limited ambiguous workflows must require an explicit allocation decision instead of executing uncharged.
+Workflow execution passes pursuit context into the task engine at [workflow/service.go](../backend/internal/workflow/service.go):2104. However, workflows linked to multiple pursuits deliberately return no pursuit ID at [workflow/service.go](../backend/internal/workflow/service.go):2217. Resource-limited ambiguous workflows must require an explicit allocation decision instead of executing uncharged.
 
 **Routes And Security**
 
-Add under the existing owner-authenticated pursuit group in [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:1755):
+Add under the existing owner-authenticated pursuit group in [routes.go](../backend/internal/router/routes.go):1755:
 
 - `GET /pursuits/:id/resources` with `PermRead`
 - `GET /pursuits/:id/resource-events` with `PermRead`
@@ -1896,8 +1901,8 @@ Add under the existing owner-authenticated pursuit group in [routes.go](C:/Users
 Handler requirements:
 
 - Use the verified session owner and actor; never accept them from JSON.
-- Preserve the ownerless-record rule: legacy records remain readable but not mutable, as enforced at [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:1066).
-- Use bounded request bodies and `DisallowUnknownFields`, following [lifeledger/handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeledger/handler.go:175).
+- Preserve the ownerless-record rule: legacy records remain readable but not mutable, as enforced at [service.go](../backend/internal/pursuit/service.go):1066.
+- Use bounded request bodies and `DisallowUnknownFields`, following [lifeledger/handler.go](../backend/internal/lifeledger/handler.go):175.
 - Validate evidence ownership and source-operation ownership.
 - Never let a pursuit ceiling override the global paid-budget or approval policy.
 
@@ -1905,7 +1910,7 @@ Handler requirements:
 
 Add `pre/0034_pursuit_resource_usage_ledger.{up,down}.sql`.
 
-Follow [0026_life_commitment_cost_ledgers.up.sql](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0026_life_commitment_cost_ledgers.up.sql:39):
+Follow [0026_life_commitment_cost_ledgers.up.sql](../backend/migrations/pre/0026_life_commitment_cost_ledgers.up.sql):39:
 
 - Owner-scoped idempotency uniqueness.
 - Database constraints for event kinds, positive integer quantities, UUIDs, and digests.
@@ -1914,17 +1919,17 @@ Follow [0026_life_commitment_cost_ledgers.up.sql](C:/Users/NO/Documents/Codex/20
 - Fail-closed down migration when records exist.
 - Owner/pursuit/time and source-operation indexes.
 
-Do not register this table with Gorm `AutoMigrate` in [database.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/infra/database.go:82); explicit SQL should remain authoritative for an immutable ledger.
+Do not register this table with Gorm `AutoMigrate` in [database.go](../backend/internal/infra/database.go):82; explicit SQL should remain authoritative for an immutable ledger.
 
-Update the migration tail expectation in [migration_chain_contract_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/migration_chain_contract_test.go:90).
+Update the migration tail expectation in [migration_chain_contract_test.go](../backend/migrations/migration_chain_contract_test.go):90.
 
 **Tests To Add**
 
-- Service limit tests beside [service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service_test.go:234).
-- Extend `fakeRepo` or add a dedicated fake resource repository at [service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service_test.go:4763).
-- Handler tests for cross-owner reads/writes, owner spoofing, duplicate requests, and ownerless legacy mutation denial in [handler_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/handler_test.go:121).
+- Service limit tests beside [service_test.go](../backend/internal/pursuit/service_test.go):234.
+- Extend `fakeRepo` or add a dedicated fake resource repository at [service_test.go](../backend/internal/pursuit/service_test.go):4763.
+- Handler tests for cross-owner reads/writes, owner spoofing, duplicate requests, and ownerless legacy mutation denial in [handler_test.go](../backend/internal/pursuit/handler_test.go):121.
 - Task tests proving `Plan`, `Preview`, initial execution, and retry all stop at the ceiling.
-- Workflow tests for uniquely linked and ambiguously linked pursuits near [workflow/service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service_test.go:1395).
+- Workflow tests for uniquely linked and ambiguously linked pursuits near [workflow/service_test.go](../backend/internal/workflow/service_test.go):1395.
 - Migration contract test plus PostgreSQL integration covering append-only triggers, constraints, idempotency, rollback refusal, and concurrent reservation enforcement.
 
 **Accounting Risks**
@@ -1954,36 +1959,36 @@ The cleanest design is: server-computed resource usage in the existing pursuit d
 
 **Model Contract**
 
-- Add `IPursuitResourceUsage`, `IPursuitResourceDimension`, `IPursuitResourceEvent`, and `IPursuitResourceEventList` near [pursuit.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/pursuit.model.interface.ts:52).
-- Add `resourceUsage` to `IPursuitDetail` at [line 408](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/pursuit.model.interface.ts:408).
+- Add `IPursuitResourceUsage`, `IPursuitResourceDimension`, `IPursuitResourceEvent`, and `IPursuitResourceEventList` near [pursuit.model.interface.ts](../frontend/src/app/models/pursuit.model.interface.ts):52.
+- Add `resourceUsage` to `IPursuitDetail` at [line 408](../frontend/src/app/models/pursuit.model.interface.ts):408.
 - Keep states explicit: `not_configured`, `within_limit`, `near_limit`, `exceeded`, `unavailable`. Never represent unavailable data as zero.
 - Use integer minor units for money. Angular should display backend-computed used, remaining, limit, and exceeded values rather than recomputing them.
 - Event fields should include kind, amount/unit, evidence, verification status, occurred/recorded timestamps, idempotency key, and record digest.
 
 **Service**
 
-- Extend [pursuit.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.ts:61) with a bounded `resourceEvents(id, limit)` GET.
-- Normalize `resourceUsage` and nullable event arrays at [line 171](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.ts:171).
+- Extend [pursuit.service.ts](../frontend/src/app/services/pursuit.service.ts):61 with a bounded `resourceEvents(id, limit)` GET.
+- Normalize `resourceUsage` and nullable event arrays at [line 171](../frontend/src/app/services/pursuit.service.ts):171.
 - Preserve `unavailable` and absent timestamps. Do not default financial or effort fields to `0`.
 - Keep events outside the normal pursuit detail payload to avoid loading an unbounded ledger on every selection.
 
 **Component**
 
-- Add ledger state beside `selected` at [pursuits.component.ts:38](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:38): events, loading, error, loaded pursuit ID, selected event, and subscription.
-- Reset/cancel ledger state whenever `loadPursuitDetail()` changes selection at [line 294](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:294). Otherwise a slow response for pursuit A can populate pursuit B.
+- Add ledger state beside `selected` at [pursuits.component.ts:38](../frontend/src/app/pages/pursuits/pursuits.component.ts):38: events, loading, error, loaded pursuit ID, selected event, and subscription.
+- Reset/cancel ledger state whenever `loadPursuitDetail()` changes selection at [line 294](../frontend/src/app/pages/pursuits/pursuits.component.ts):294. Otherwise a slow response for pursuit A can populate pursuit B.
 - Add `onResourceLedgerOpen()`, `loadResourceLedger(force)`, `inspectResourceEvent()`, and presentation-only status/format helpers.
 - Unsubscribe from the ledger request in `ngOnDestroy()`.
 - Do not add event aggregation logic to the component.
 
 **Template**
 
-- Place a concise two-dimension resource strip directly after the outcome contract at [pursuits.component.html:396](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.html:396), before the general metrics at line 429.
+- Place a concise two-dimension resource strip directly after the outcome contract at [pursuits.component.html:396](../frontend/src/app/pages/pursuits/pursuits.component.html):396, before the general metrics at line 429.
 - Basic view should show only:
   - `Effort: 4.5h / 12h`
   - `Spend: EUR 45 / EUR 100`
   - Visible state text such as `within limit`, `near limit`, `exceeded`, or `usage unavailable`
   - Last recorded timestamp
-- Add a `hai-progressive-section` before the current linked-record blocks at [line 933](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.html:933):
+- Add a `hai-progressive-section` before the current linked-record blocks at [line 933](../frontend/src/app/pages/pursuits/pursuits.component.html):933:
   - `moduleId="pursuits"`
   - `sectionId="resource-ledger"`
   - `(openChange)="onResourceLedgerOpen($event)"`
@@ -1992,23 +1997,23 @@ The cleanest design is: server-computed resource usage in the existing pursuit d
 
 **Shared Patterns**
 
-- Import `ControlRoomModule`, `NzDrawerModule`, and `NzSpinModule` in [pursuits.module.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.module.ts:23).
-- Register `resource-ledger` in the Pursuits `advancedSectionIds` at [module-registry.ts:21](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/module-registry.ts:21).
-- Reuse the lazy ledger pattern in [governance-control.component.ts:479](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts:479) and its immutable record presentation at [governance-control.component.html:626](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html:626).
+- Import `ControlRoomModule`, `NzDrawerModule`, and `NzSpinModule` in [pursuits.module.ts](../frontend/src/app/pages/pursuits/pursuits.module.ts):23.
+- Register `resource-ledger` in the Pursuits `advancedSectionIds` at [module-registry.ts:21](../frontend/src/app/control-room/module-registry.ts):21.
+- Reuse the lazy ledger pattern in [governance-control.component.ts:479](../frontend/src/app/pages/governance-control/governance-control.component.ts):479 and its immutable record presentation at [governance-control.component.html:626](../frontend/src/app/pages/governance-control/governance-control.component.html):626.
 
 **Risks**
 
-- Restored-open progressive sections do not emit `openChange`; [progressive-section.component.ts:19](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/progressive-section.component.ts:19) must trigger lazy loading for a persisted open section.
-- Add `aria-controls` and a stable content ID to [progressive-section.component.html:2](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/progressive-section.component.html:2).
-- Do not copy the pursuit page’s remaining hardcoded light colors around [pursuits.component.scss:414](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.scss:414); use shared tokens.
-- Collapse the resource strip to one column below 700px using the existing responsive boundary at [line 1017](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.scss:1017).
+- Restored-open progressive sections do not emit `openChange`; [progressive-section.component.ts:19](../frontend/src/app/control-room/progressive-section.component.ts):19 must trigger lazy loading for a persisted open section.
+- Add `aria-controls` and a stable content ID to [progressive-section.component.html:2](../frontend/src/app/control-room/progressive-section.component.html):2.
+- Do not copy the pursuit page’s remaining hardcoded light colors around [pursuits.component.scss:414](../frontend/src/app/pages/pursuits/pursuits.component.scss):414; use shared tokens.
+- Collapse the resource strip to one column below 700px using the existing responsive boundary at [line 1017](../frontend/src/app/pages/pursuits/pursuits.component.scss):1017.
 - Important context must remain visible; do not place resource state only in `title` tooltips.
 
 **Tests**
 
-- Expand [pursuit.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.spec.ts:3) for null normalization, unknown state preservation, event arrays, endpoint, and limit parameter.
-- Expand [pursuits.component.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.spec.ts:131) for lazy loading, deduplication, retry, stale-response protection, and status labels.
-- Extend [acceptance.spec.ts:81](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/e2e/tests/acceptance.spec.ts:81) to verify Basic summary visibility, Advanced disclosure persistence, empty ledger state, and an immutable event inspection path.
+- Expand [pursuit.service.spec.ts](../frontend/src/app/services/pursuit.service.spec.ts):3 for null normalization, unknown state preservation, event arrays, endpoint, and limit parameter.
+- Expand [pursuits.component.spec.ts](../frontend/src/app/pages/pursuits/pursuits.component.spec.ts):131 for lazy loading, deduplication, retry, stale-response protection, and status labels.
+- Extend [acceptance.spec.ts:81](../frontend/e2e/tests/acceptance.spec.ts):81 to verify Basic summary visibility, Advanced disclosure persistence, empty ledger state, and an immutable event inspection path.
 
 No files were changed and no tests were run for this audit.
 
@@ -2024,29 +2029,29 @@ No files were changed and no tests were run for this audit.
 No files were edited. The current pursuit resource gate is fail-closed but **not atomic**: it reads recorded usage before planning, then execution occurs later without reserving capacity. Concurrent runs can therefore pass independently and oversubscribe the same pursuit.
 
 **Current Path**
-1. `Plan`, `Preview`, and `Run` invoke the pursuit guard before building a plan. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:619)
-2. The guard loads full pursuit detail and checks the recorded usage projection. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:1266)
-3. Usage is calculated by separately summing immutable events. [resource_repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/resource_repository.go:60)
-4. `Run` then builds a new plan, persists a `running` attempt, runs evidence preflight, and executes. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:652)
-5. Controlled-runtime execution begins inside `executeAllowedSteps`. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1615)
-6. LLM generation is another resource-consuming boundary. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1732)
-7. Failed validation can immediately execute a second attempt. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:750)
+1. `Plan`, `Preview`, and `Run` invoke the pursuit guard before building a plan. [service.go](../backend/internal/task/service.go):619
+2. The guard loads full pursuit detail and checks the recorded usage projection. [service.go](../backend/internal/pursuit/service.go):1266
+3. Usage is calculated by separately summing immutable events. [resource_repository.go](../backend/internal/pursuit/resource_repository.go):60
+4. `Run` then builds a new plan, persists a `running` attempt, runs evidence preflight, and executes. [service.go](../backend/internal/task/service.go):652
+5. Controlled-runtime execution begins inside `executeAllowedSteps`. [service.go](../backend/internal/task/service.go):1615
+6. LLM generation is another resource-consuming boundary. [service.go](../backend/internal/task/service.go):1732
+7. Failed validation can immediately execute a second attempt. [service.go](../backend/internal/task/service.go):750
 
 **Existing Estimates**
-- The plan exposes estimates through `CompletionPlan.ResourceDecision`. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:308)
-- Effort lives in `ResourceDecision.Scheduled[].PlannedDurationMinutes`; there is no aggregate pursuit-attempt effort field. [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resourceplanner/types.go:126)
-- HAI deliberately uses pessimistic durations in conservative mode. [resource_planning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/resource_planning.go:155), [planner.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resourceplanner/planner.go:283)
-- Spend lives in `ResourceDecision.Budget.Estimated.CostMicros`; only the first planned step receives model/tool usage. [resource_planning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/resource_planning.go:85)
-- Actual/provider-derived LLM cost becomes available in `GenerationResult.EstimatedCostEUR` after token usage is known. The name is misleading because this value is recalculated from actual reported/estimated usage. [policy.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/llm/policy.go:905)
+- The plan exposes estimates through `CompletionPlan.ResourceDecision`. [service.go](../backend/internal/task/service.go):308
+- Effort lives in `ResourceDecision.Scheduled[].PlannedDurationMinutes`; there is no aggregate pursuit-attempt effort field. [types.go](../backend/internal/resourceplanner/types.go):126
+- HAI deliberately uses pessimistic durations in conservative mode. [resource_planning.go](../backend/internal/task/resource_planning.go):155, [planner.go](../backend/internal/resourceplanner/planner.go):283
+- Spend lives in `ResourceDecision.Budget.Estimated.CostMicros`; only the first planned step receives model/tool usage. [resource_planning.go](../backend/internal/task/resource_planning.go):85
+- Actual/provider-derived LLM cost becomes available in `GenerationResult.EstimatedCostEUR` after token usage is known. The name is misleading because this value is recalculated from actual reported/estimated usage. [policy.go](../backend/internal/llm/policy.go):905
 - Retry routing replaces `ModelDecision` but does not rebuild `ResourceDecision`, so the original spend estimate is stale for the fallback attempt.
 
 **Required Touch Points**
-- **Model:** add `PursuitResourceReservation` and lifecycle/audit records beside the existing limits and events. Use effort minutes and **EUR micros**, since cents would round cheap model reservations to zero. [pursuit.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/pursuit.go:81)
-- **Migration:** add `0035_pursuit_resource_reservations`. The current `0034` advisory lock protects refund validation only; it does not enforce ceilings. [0034 migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0034_pursuit_resource_ledger.up.sql:36)
-- **Repository:** extend `pursuitResourceRepository` with atomic reserve, mark-executing, consume, release, and reconciliation methods. [resource_repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/resource_repository.go:11)
-- **Projection:** include reserved, executing, consumed, released, available, and reconciliation-needed quantities in `PursuitResourceUsage`. [resource_ledger.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/resource_ledger.go:43)
-- **Task contract:** extend `PursuitTaskGuard` or add a reservation-manager interface implemented by the already-injected pursuit service. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:271), [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:574)
-- **Attempt audit:** link reservations by `task_plan_id` and attempt number. Current attempt persistence is separate and non-transactional. [repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/repository.go:321)
+- **Model:** add `PursuitResourceReservation` and lifecycle/audit records beside the existing limits and events. Use effort minutes and **EUR micros**, since cents would round cheap model reservations to zero. [pursuit.go](../backend/internal/models/pursuit.go):81
+- **Migration:** add `0035_pursuit_resource_reservations`. The current `0034` advisory lock protects refund validation only; it does not enforce ceilings. [0034 migration](../backend/migrations/pre/0034_pursuit_resource_ledger.up.sql):36
+- **Repository:** extend `pursuitResourceRepository` with atomic reserve, mark-executing, consume, release, and reconciliation methods. [resource_repository.go](../backend/internal/pursuit/resource_repository.go):11
+- **Projection:** include reserved, executing, consumed, released, available, and reconciliation-needed quantities in `PursuitResourceUsage`. [resource_ledger.go](../backend/internal/pursuit/resource_ledger.go):43
+- **Task contract:** extend `PursuitTaskGuard` or add a reservation-manager interface implemented by the already-injected pursuit service. [service.go](../backend/internal/task/service.go):271, [routes.go](../backend/internal/router/routes.go):574
+- **Attempt audit:** link reservations by `task_plan_id` and attempt number. Current attempt persistence is separate and non-transactional. [repository.go](../backend/internal/pursuit/repository.go):321
 
 **Reservation Lifecycle**
 - Do not reserve during `Preview` or ordinary `Plan`.
@@ -2054,7 +2059,7 @@ No files were edited. The current pursuit resource gate is fail-closed but **not
 - Mark the reservation `executing` immediately before the first tool or model effect.
 - Consume attempt 1 before validation can initiate attempt 2.
 - Recalculate attempt 2 from the fallback `ModelDecision`; do not reuse the original cost estimate.
-- Exclude controlled-runtime cost from attempt 2 when successful runtime evidence is reused. Existing reuse occurs here: [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1618).
+- Exclude controlled-runtime cost from attempt 2 when successful runtime evidence is reused. Existing reuse occurs here: [service.go](../backend/internal/task/service.go):1618.
 - Release only when execution definitely never started.
 - After a crash, timeout, or indeterminate external result, retain the hold as `executing/needs_review`; never automatically release it.
 - Consume actual provider cost when known. Effort needs an explicit accounting policy because wall-clock runtime is not necessarily human effort.
@@ -2063,9 +2068,9 @@ No files were edited. The current pursuit resource gate is fail-closed but **not
 - The current read-check-execute sequence is a TOCTOU race.
 - Reservation SQL must acquire the same pursuit-scoped advisory lock as resource-event insertion and lock the pursuit row while reading current JSON limits.
 - The atomic check must include recorded events plus all active/executing reservations.
-- `plan.ID` is generated anew for every build, so it cannot alone prevent duplicate client execution. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:934)
-- The HTTP idempotency middleware is in-memory, expires after ten minutes, rejects rather than replays, and its key is not passed into the task request. [idempotency.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/idempotency.go:13)
-- Workflow retries need a stable operation key derived from workflow ID and durable retry number. The workflow runner currently passes neither to task orchestration. [runner.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflowtask/runner.go:318)
+- `plan.ID` is generated anew for every build, so it cannot alone prevent duplicate client execution. [service.go](../backend/internal/task/service.go):934
+- The HTTP idempotency middleware is in-memory, expires after ten minutes, rejects rather than replays, and its key is not passed into the task request. [idempotency.go](../backend/internal/router/idempotency.go):13
+- Workflow retries need a stable operation key derived from workflow ID and durable retry number. The workflow runner currently passes neither to task orchestration. [runner.go](../backend/internal/workflowtask/runner.go):318
 - Reserve/consume/release races require compare-and-transition semantics. Identical replay must return the original receipt; changed amounts under the same key must conflict.
 
 **Focused Tests**
@@ -2077,7 +2082,7 @@ No files were edited. The current pursuit resource gate is fail-closed but **not
 - Retry: fallback estimate is recalculated and successful runtime execution is not reserved twice.
 - Failure: pre-effect failure releases; post-effect timeout remains held for reconciliation.
 - Workflow: repeated lease execution uses the same durable operation key.
-- Extend existing coverage at [service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service_test.go:977), [pursuit service tests](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service_test.go:362), and [PostgreSQL migration test](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pursuit_resource_ledger_postgres_test.go:14).
+- Extend existing coverage at [service_test.go](../backend/internal/task/service_test.go):977, [pursuit service tests](../backend/internal/pursuit/service_test.go):362, and [PostgreSQL migration test](../backend/migrations/pursuit_resource_ledger_postgres_test.go):14.
 
 ## 019fcc60-afb2-7ca1-949c-31c54da46060
 
@@ -2091,31 +2096,31 @@ No files were edited. The current pursuit resource gate is fail-closed but **not
 
 1. **High: pursuit ceilings are not atomically reserved before execution.**
 The task engine checks current pursuit eligibility, then plans and executes later. Two different workflows for the same pursuit can both pass the check before either records usage. The workflow lease only serializes one workflow, not all workflows belonging to a pursuit.
-Evidence: [task/service.go:652](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:652), [task/service.go:693](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:693), [workflow/repository.go:247](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/repository.go:247).
+Evidence: [task/service.go:652](../backend/internal/task/service.go):652, [task/service.go:693](../backend/internal/task/service.go):693, [workflow/repository.go:247](../backend/internal/workflow/repository.go):247.
 
 2. **High: ambiguous workflows execute without pursuit attribution.**
 When multiple same-owner pursuits link to one workflow, `workflowTaskPursuitID` returns `("", nil)`. Execution continues, bypassing the pursuit lifecycle/resource guard because an empty pursuit ID is treated as unrestricted. The existing test explicitly codifies this behavior.
-Evidence: [workflow/service.go:2217](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2217), [workflow/service.go:2104](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2104), [task/service.go:816](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:816), [workflow/service_test.go:1416](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service_test.go:1416).
+Evidence: [workflow/service.go:2217](../backend/internal/workflow/service.go):2217, [workflow/service.go:2104](../backend/internal/workflow/service.go):2104, [task/service.go:816](../backend/internal/task/service.go):816, [workflow/service_test.go:1416](../backend/internal/workflow/service_test.go):1416.
 
 3. **High: the ledger records consumption after the fact but has no reservation state.**
 Supported events are only `effort_recorded`, `spend_incurred`, and `spend_refund`. The database lock protects refund consistency, not ceiling allocation. There is no active-reservation amount included in usage totals.
-Evidence: [0034_pursuit_resource_ledger.up.sql:16](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0034_pursuit_resource_ledger.up.sql:16), [0034_pursuit_resource_ledger.up.sql:36](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0034_pursuit_resource_ledger.up.sql:36), [resource_repository.go:60](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/resource_repository.go:60).
+Evidence: [0034_pursuit_resource_ledger.up.sql:16](../backend/migrations/pre/0034_pursuit_resource_ledger.up.sql):16, [0034_pursuit_resource_ledger.up.sql:36](../backend/migrations/pre/0034_pursuit_resource_ledger.up.sql):36, [resource_repository.go:60](../backend/internal/pursuit/resource_repository.go):60.
 
 4. **High: workflow execution does not automatically settle effort or spend.**
 Resource events are currently appended through the pursuit API. The task execution path does not append a consumption or release event. Workflow-owned runs are also deliberately excluded from the direct pursuit-attempt ledger. Consequently, successful execution can leave pursuit usage unchanged.
-Evidence: [pursuit/handler.go:161](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/handler.go:161), [task/service.go:835](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:835).
+Evidence: [pursuit/handler.go:161](../backend/internal/pursuit/handler.go):161, [task/service.go:835](../backend/internal/task/service.go):835.
 
 5. **Medium: zero links and ambiguous links collapse to the same empty identity.**
 A genuinely standalone workflow, a workflow whose link is missing, a foreign-owner-only link, and a multiply linked workflow all reach execution without a pursuit ID. The system cannot distinguish intentional standalone execution from corrupted allocation.
-Evidence: [workflow/service.go:2222](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2222), [workflow/repository.go:443](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/repository.go:443).
+Evidence: [workflow/service.go:2222](../backend/internal/workflow/service.go):2222, [workflow/repository.go:443](../backend/internal/workflow/repository.go):443.
 
 6. **Medium: the task boundary does not verify the workflow-to-pursuit pair.**
 It validates the pursuit lifecycle, but does not confirm that `WorkflowID` remains linked to that pursuit. Both values are propagated internally, but atomic reservation must revalidate the pair inside the reservation transaction.
-Evidence: [task/service.go:808](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:808), [task/state_repository.go:97](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/state_repository.go:97).
+Evidence: [task/service.go:808](../backend/internal/task/service.go):808, [task/state_repository.go:97](../backend/internal/task/state_repository.go):97.
 
 7. **Medium: resource planning is advisory and global-budget oriented.**
 It estimates conservative duration, model cost, tokens, and tool calls, but explicitly cannot execute or grant authority. It receives global paid-budget usage rather than the pursuit’s remaining effort/spend.
-Evidence: [task/resource_planning.go:17](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/resource_planning.go:17), [task/resource_planning.go:125](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/resource_planning.go:125), [resourceplanner/planner.go:14](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resourceplanner/planner.go:14).
+Evidence: [task/resource_planning.go:17](../backend/internal/task/resource_planning.go):17, [task/resource_planning.go:125](../backend/internal/task/resource_planning.go):125, [resourceplanner/planner.go:14](../backend/internal/resourceplanner/planner.go):14.
 
 **Working Path**
 
@@ -2123,7 +2128,7 @@ Exactly one same-owner pursuit propagates correctly:
 
 `WorkflowItem → TaskRunRequest → task.IntakeRequest → CompletionPlan → verification.AnswerRequest`
 
-Evidence: [workflow/service.go:2122](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2122), [workflowtask/runner.go:318](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflowtask/runner.go:318), [task/service.go:1082](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1082), [task/service.go:1804](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:1804).
+Evidence: [workflow/service.go:2122](../backend/internal/workflow/service.go):2122, [workflowtask/runner.go:318](../backend/internal/workflowtask/runner.go):318, [task/service.go:1082](../backend/internal/task/service.go):1082, [task/service.go:1804](../backend/internal/task/service.go):1804.
 
 **Safest Minimal Rule**
 
@@ -2166,8 +2171,8 @@ No files were edited.
 
 Added only these new test files:
 
-- [pursuit_resource_reservations_contract_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pursuit_resource_reservations_contract_test.go)
-- [pursuit_resource_reservations_postgres_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pursuit_resource_reservations_postgres_test.go)
+- [pursuit_resource_reservations_contract_test.go](../backend/migrations/pursuit_resource_reservations_contract_test.go)
+- [pursuit_resource_reservations_postgres_test.go](../backend/migrations/pursuit_resource_reservations_postgres_test.go)
 
 Verified:
 
@@ -2193,8 +2198,8 @@ No implementation files were edited.
 Implemented the workflow ambiguity fix.
 
 Changed:
-- [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2233)
-- [service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service_test.go:1416)
+- [service.go](../backend/internal/workflow/service.go):2233
+- [service_test.go](../backend/internal/workflow/service_test.go):1416
 
 Behavior:
 - Multiple same-owner pursuit links now block automatic execution.
@@ -2220,11 +2225,11 @@ Other pre-existing workflow changes were left untouched.
 
 Updated documentation only for the advisory pursuit portfolio planner:
 
-- [completion-matrix.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\completion-matrix.md)
-- [requirements-traceability.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\requirements-traceability.md)
-- [domain-model.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\domain-model.md)
-- [operator-runbook.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\operator-runbook.md)
-- [framework-operating-contract-matrix.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\framework-operating-contract-matrix.md)
+- [completion-matrix.md](completion-matrix.md)
+- [requirements-traceability.md](requirements-traceability.md)
+- [domain-model.md](domain-model.md)
+- [operator-runbook.md](operator-runbook.md)
+- [framework-operating-contract-matrix.md](framework-operating-contract-matrix.md)
 
 Documented explicit estimates and capacity, pure 25-factor evaluation, deterministic dependency scheduling, ledger-based exclusions, approval visibility, the `advisory_only` boundary, and remaining execution/calendar gaps.
 
@@ -2238,7 +2243,7 @@ No code was touched. `git diff --check` passed; tests were not run because this 
 - Original report SHA-256: `acf7cb9dc4b761400f89d7e3863ff2865e5638faef28b517722e2440dd69f703`
 - Transcript: `08/04/rollout-2026-08-04T15-26-32-019fccf4-55e9-7081-aee7-203895f117f2.jsonl`
 
-Added focused route-permission coverage in [owner_decision_permissions_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/owner_decision_permissions_test.go:51).
+Added focused route-permission coverage in [owner_decision_permissions_test.go](../backend/internal/router/owner_decision_permissions_test.go):51.
 
 Verified:
 - Unauthenticated requests return `401`, even with a forged `X-HAI-Role: owner`.
@@ -2282,12 +2287,12 @@ Implemented the governed portfolio-allocation persistence slice.
 - Resource ceilings remain enforced by the existing reservation trigger.
 
 **Changed Paths**
-- [pursuit.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/pursuit.go:206)
-- [portfolio_acceptance_repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_acceptance_repository.go:25)
-- [0038 up migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0038_pursuit_portfolio_allocations.up.sql)
-- [0038 down migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0038_pursuit_portfolio_allocations.down.sql)
-- [migration contract test](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_acceptance_repository_test.go:11)
-- [PostgreSQL repository tests](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_acceptance_repository_postgres_test.go:23)
+- [pursuit.go](../backend/internal/models/pursuit.go):206
+- [portfolio_acceptance_repository.go](../backend/internal/pursuit/portfolio_acceptance_repository.go):25
+- [0038 up migration](../backend/migrations/pre/0038_pursuit_portfolio_allocations.up.sql)
+- [0038 down migration](../backend/migrations/pre/0038_pursuit_portfolio_allocations.down.sql)
+- [migration contract test](../backend/internal/pursuit/portfolio_acceptance_repository_test.go):11
+- [PostgreSQL repository tests](../backend/internal/pursuit/portfolio_acceptance_repository_postgres_test.go):23
 
 **Verification**
 - Pursuit package tests: passed.
@@ -2306,15 +2311,15 @@ Implemented the governed portfolio-allocation persistence slice.
 Implemented frontend-only durable portfolio allocation history.
 
 **Changed**
-- Added bounded `GET /api/v1/pursuits/portfolio-allocations?limit=N`: [pursuit.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.ts:66)
+- Added bounded `GET /api/v1/pursuits/portfolio-allocations?limit=N`: [pursuit.service.ts](../frontend/src/app/services/pursuit.service.ts):66
 - History loads only when the portfolio planner opens.
 - Added loading, retryable error, empty, and populated states.
 - Records show allocation status, timestamp, plan ID, `allocation_only` authority, reservations, schedules, and approval flags.
 - Unsafe records claiming different authority or execution capability reject the entire response.
 - Current accepted/replayed allocations reconcile by allocation ID, preventing duplicates.
 - History provides only inspection and refresh controls, with no approval or execution actions.
-- UI implementation: [pursuits.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.html:1676)
-- State and validation: [pursuits.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:338)
+- UI implementation: [pursuits.component.html](../frontend/src/app/pages/pursuits/pursuits.component.html):1676
+- State and validation: [pursuits.component.ts](../frontend/src/app/pages/pursuits/pursuits.component.ts):338
 
 This slice changed five files: the service and its spec, plus the Pursuits component TypeScript, template, and spec. No model or SCSS change was required.
 
@@ -2347,13 +2352,13 @@ Added the frontend-only immutable execution-proposal flow to Pursuits:
 
 **Changed Paths**
 
-- [pursuit.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/pursuit.model.interface.ts)
-- [pursuit.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.ts)
-- [pursuit.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.spec.ts)
-- [pursuits.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts)
-- [pursuits.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.html)
-- [pursuits.component.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.spec.ts)
-- [styles.scss](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/styles.scss)
+- [pursuit.model.interface.ts](../frontend/src/app/models/pursuit.model.interface.ts)
+- [pursuit.service.ts](../frontend/src/app/services/pursuit.service.ts)
+- [pursuit.service.spec.ts](../frontend/src/app/services/pursuit.service.spec.ts)
+- [pursuits.component.ts](../frontend/src/app/pages/pursuits/pursuits.component.ts)
+- [pursuits.component.html](../frontend/src/app/pages/pursuits/pursuits.component.html)
+- [pursuits.component.spec.ts](../frontend/src/app/pages/pursuits/pursuits.component.spec.ts)
+- [styles.scss](../frontend/src/styles.scss)
 
 **Verification**
 
@@ -2381,10 +2386,10 @@ The live POST was intentionally not submitted during browser QA, so no immutable
 
 Updated documentation only for the governed execution-proposal stage:
 
-- [domain-model.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/domain-model.md:140)
-- [operator-runbook.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/operator-runbook.md:400)
-- [requirements-traceability.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/requirements-traceability.md:37)
-- [completion-matrix.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/completion-matrix.md:64)
+- [domain-model.md](domain-model.md):140
+- [operator-runbook.md](operator-runbook.md):400
+- [requirements-traceability.md](requirements-traceability.md):37
+- [completion-matrix.md](completion-matrix.md):64
 
 Documented the route, exact confirmation, owner scope, immutable digest bindings, three statuses, replay/new-snapshot behavior, and strict `proposal_only`/`canExecute:false` boundary. It explicitly states that this stage cannot approve, consume approvals, enqueue, run tools, settle reservations, or execute.
 
@@ -2410,13 +2415,13 @@ Key behavior:
 - Displays settlement, replay, evidence, and updated resource usage.
 
 **Changed Paths**
-- [pursuit.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/pursuit.model.interface.ts:1100)
-- [pursuit.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.ts:135)
-- [pursuit.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.spec.ts:292)
-- [pursuits.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:986)
-- [pursuits.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.html:2095)
-- [pursuits.component.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.spec.ts:866)
-- [styles.scss](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/styles.scss:2297)
+- [pursuit.model.interface.ts](../frontend/src/app/models/pursuit.model.interface.ts):1100
+- [pursuit.service.ts](../frontend/src/app/services/pursuit.service.ts):135
+- [pursuit.service.spec.ts](../frontend/src/app/services/pursuit.service.spec.ts):292
+- [pursuits.component.ts](../frontend/src/app/pages/pursuits/pursuits.component.ts):986
+- [pursuits.component.html](../frontend/src/app/pages/pursuits/pursuits.component.html):2095
+- [pursuits.component.spec.ts](../frontend/src/app/pages/pursuits/pursuits.component.spec.ts):866
+- [styles.scss](../frontend/src/styles.scss):2297
 
 **Verification**
 - Focused pursuit tests: `46 SUCCESS`
@@ -2441,22 +2446,22 @@ Do not merge the proposed settlement command as-is. Owner, item, receipt, consum
 **Findings**
 
 1. **P0: completion is checked using a mutable workflow row outside the settlement transaction.**
-   [`SettlePortfolioWorkflowForOwner`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_settlement.go:50) reads `CurrentState`, `CompletedAt`, `LastTaskPlanID`, and `VerificationStatus`, then later opens a separate reservation transaction. Concurrent changes can invalidate that evidence before settlement.
+   [`SettlePortfolioWorkflowForOwner`](../backend/internal/pursuit/portfolio_workflow_settlement.go):50 reads `CurrentState`, `CompletedAt`, `LastTaskPlanID`, and `VerificationStatus`, then later opens a separate reservation transaction. Concurrent changes can invalidate that evidence before settlement.
 
-   Worker completion also updates the workflow first and records transition, decision, and audit evidence afterward through helpers that discard persistence errors: [service.go:2220](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2220), [service.go:2985](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2985).
+   Worker completion also updates the workflow first and records transition, decision, and audit evidence afterward through helpers that discard persistence errors: [service.go:2220](../backend/internal/workflow/service.go):2220, [service.go:2985](../backend/internal/workflow/service.go):2985.
 
    **Required fix:** persist an immutable completion attestation atomically with workflow completion. Settlement must lock and revalidate that attestation, proposal item, workflow, and reservation in one database transaction.
 
 2. **P1: `schema_validated` incorrectly qualifies for settlement.**
-   [`portfolioSettlementAcceptsVerification`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_settlement.go:244) accepts it, while the established pursuit completion policy deliberately excludes it in [`acceptedCompletionStatus`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:5165). Schema validity proves output shape, not completed work.
+   [`portfolioSettlementAcceptsVerification`](../backend/internal/pursuit/portfolio_workflow_settlement.go):244 accepts it, while the established pursuit completion policy deliberately excludes it in [`acceptedCompletionStatus`](../backend/internal/pursuit/service.go):5165. Schema validity proves output shape, not completed work.
 
 3. **P1: the settlement record cannot prove which item, receipt, and workflow authorized it.**
-   [`PursuitResourceReservationSettlement`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/pursuit.go:133) stores reservation, owner, pursuit, usage, and a synthetic evidence URI. Its [digest](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/resource_reservation.go:300) omits proposal item, decision, receipt consumption, workflow, and completion-proof digests.
+   [`PursuitResourceReservationSettlement`](../backend/internal/models/pursuit.go):133 stores reservation, owner, pursuit, usage, and a synthetic evidence URI. Its [digest](../backend/internal/pursuit/resource_reservation.go):300 omits proposal item, decision, receipt consumption, workflow, and completion-proof digests.
 
    Add an append-only `portfolio_reservation_settlement_proofs` record, transactionally bound to the generic settlement.
 
 4. **P1: duplicate workflow lookup weakens receipt uniqueness.**
-   [`loadPortfolioSettlementWorkflow`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_settlement.go:207) checks only the requested workflow. It does not reject one receipt linked to multiple workflows. Reuse [`loadPortfolioWorkflowEffect`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization.go:582), which explicitly detects conflicting workflows.
+   [`loadPortfolioSettlementWorkflow`](../backend/internal/pursuit/portfolio_workflow_settlement.go):207 checks only the requested workflow. It does not reject one receipt linked to multiple workflows. Reuse [`loadPortfolioWorkflowEffect`](../backend/internal/pursuit/portfolio_workflow_authorization.go):582, which explicitly detects conflicting workflows.
 
 **Methods To Reuse**
 
@@ -2555,13 +2560,13 @@ This is the strongest credential-free next step because it closes HAI’s existi
 
 **Current Gap**
 
-- Settlement already records estimated-versus-actual effort and cost in [controlled_learning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/controlled_learning.go:74).
-- Outcome evidence is intentionally prevented from directly proposing or applying changes in [controlled_learning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/controlled_learning.go:21).
-- The controlled-learning service supports proposals in [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/controlledlearning/service.go:113).
-- Its default promoter only records application evidence; it does not alter planning recommendations in [ledger_promoter.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/controlledlearning/ledger_promoter.go:12).
-- Portfolio planning still requires every estimate to be manually supplied in [portfolio_planning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_planning.go:109) and [pursuits.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.html:1435).
-- The completion matrix explicitly says HAI must not invent missing estimates in [completion-matrix.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/completion-matrix.md:62).
-- The architectural boundary is documented in [domain-model.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/domain-model.md:303).
+- Settlement already records estimated-versus-actual effort and cost in [controlled_learning.go](../backend/internal/pursuit/controlled_learning.go):74.
+- Outcome evidence is intentionally prevented from directly proposing or applying changes in [controlled_learning.go](../backend/internal/pursuit/controlled_learning.go):21.
+- The controlled-learning service supports proposals in [service.go](../backend/internal/controlledlearning/service.go):113.
+- Its default promoter only records application evidence; it does not alter planning recommendations in [ledger_promoter.go](../backend/internal/controlledlearning/ledger_promoter.go):12.
+- Portfolio planning still requires every estimate to be manually supplied in [portfolio_planning.go](../backend/internal/pursuit/portfolio_planning.go):109 and [pursuits.component.html](../frontend/src/app/pages/pursuits/pursuits.component.html):1435.
+- The completion matrix explicitly says HAI must not invent missing estimates in [completion-matrix.md](completion-matrix.md):62.
+- The architectural boundary is documented in [domain-model.md](domain-model.md):303.
 
 **Precise Implementation Surface**
 
@@ -2573,7 +2578,7 @@ Add a pursuit-owned calibration model and repository, avoiding a circular depend
 - `backend/migrations/pre/0045_pursuit_resource_estimate_calibrations.up.sql`
 - Corresponding guarded rollback migration.
 
-Wire the target-specific promoter beside the existing controlled-learning composition in [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:257).
+Wire the target-specific promoter beside the existing controlled-learning composition in [routes.go](../backend/internal/router/routes.go):257.
 
 The applied record should contain:
 
@@ -2667,7 +2672,7 @@ No files were edited. This was a static, read-only trace audit; tests were not r
 
 **Findings**
 1. **P1: Verified portfolio settlement never reaches controlled learning.**
-   Task completion already calls `recordVerifiedLearningOutcome` through `ControlledLearningRecorder` in [controlled_learning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/controlled_learning.go:16). Portfolio settlement commits its proof and immediately returns in [portfolio_workflow_settlement.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_settlement.go:261), while the pursuit service has no learning dependency in [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:772).
+   Task completion already calls `recordVerifiedLearningOutcome` through `ControlledLearningRecorder` in [controlled_learning.go](../backend/internal/task/controlled_learning.go):16. Portfolio settlement commits its proof and immediately returns in [portfolio_workflow_settlement.go](../backend/internal/pursuit/portfolio_workflow_settlement.go):261, while the pursuit service has no learning dependency in [service.go](../backend/internal/pursuit/service.go):772.
 
    **Smallest missing operational link:** inject the same narrow `RecordOutcome` capability into the pursuit service. After successful settlement, record one idempotent `EvidenceVerifiedOutcome` containing:
    - Settlement proof URI and digest.
@@ -2677,18 +2682,18 @@ No files were edited. This was a static, read-only trace audit; tests were not r
    - Verification status `verified` or `test_passed`.
    - No automatic proposal, policy change, or memory mutation.
 
-   The replay branch at [portfolio_workflow_settlement.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_settlement.go:91) must retry the idempotent learning write so a transient learning failure can recover without creating another settlement.
+   The replay branch at [portfolio_workflow_settlement.go](../backend/internal/pursuit/portfolio_workflow_settlement.go):91 must retry the idempotent learning write so a transient learning failure can recover without creating another settlement.
 
 2. **P2: Controlled-learning evidence is API-accessible but invisible in the frontend.**
-   The router exposes `GET /controlled-learning/outcomes` in [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:904), but `GovernanceControlService` and `loadLearning()` only retrieve proposals in [governance-control.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts:366). A settlement-derived outcome would therefore exist but remain undiscoverable.
+   The router exposes `GET /controlled-learning/outcomes` in [routes.go](../backend/internal/router/routes.go):904, but `GovernanceControlService` and `loadLearning()` only retrieve proposals in [governance-control.component.ts](../frontend/src/app/pages/governance-control/governance-control.component.ts):366. A settlement-derived outcome would therefore exist but remain undiscoverable.
 
    Add a read-only learning-outcome list/detail method and show recent evidence separately from change proposals. This should not auto-create a proposal.
 
 3. **Not a defect: settlement should not directly create an outcome evaluation.**
-   `CreateEvaluation` requires an existing outcome revision and indicator-scoped observations in [storage_types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/storage_types.go:47) and [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/service.go:117). Settlement has no trustworthy workspace/outcome/indicator mapping. Any future bridge should propose a source-backed observation for review, not invent that mapping.
+   `CreateEvaluation` requires an existing outcome revision and indicator-scoped observations in [storage_types.go](../backend/internal/outcomeevaluation/storage_types.go):47 and [service.go](../backend/internal/outcomeevaluation/service.go):117. Settlement has no trustworthy workspace/outcome/indicator mapping. Any future bridge should propose a source-backed observation for review, not invent that mapping.
 
 **Recommended Tests**
-- Extend [portfolio_workflow_settlement_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_settlement_test.go:15): exactly one learning outcome for initial settlement and replay.
+- Extend [portfolio_workflow_settlement_test.go](../backend/internal/pursuit/portfolio_workflow_settlement_test.go):15: exactly one learning outcome for initial settlement and replay.
 - Verify proof and attestation digests, owner, project, verification, and estimated/actual metrics.
 - Simulate learning failure after committed settlement; replay must recover without duplicate accounting.
 - Assert rejected or insufficiently verified settlements record no learning.
@@ -2733,7 +2738,7 @@ Relevant specification locations: lines `526`, `551-554`, `1137-1189`, `1260-128
 
 **Existing Implementation**
 
-Verified settlement is production-oriented in [portfolio_workflow_settlement.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_settlement.go:22):
+Verified settlement is production-oriented in [portfolio_workflow_settlement.go](../backend/internal/pursuit/portfolio_workflow_settlement.go):22:
 
 - Owner-only settlement.
 - Exact confirmation phrase.
@@ -2742,9 +2747,9 @@ Verified settlement is production-oriented in [portfolio_workflow_settlement.go]
 - Only `verified` or `test_passed` completion is eligible.
 - Actual effort and cost are recorded without rerunning completed work.
 
-Settlement evidence becomes a review-only learning outcome in [controlled_learning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/controlled_learning.go:21). It records expected-versus-actual effort and cost with source references and idempotent evidence identity.
+Settlement evidence becomes a review-only learning outcome in [controlled_learning.go](../backend/internal/pursuit/controlled_learning.go):21. It records expected-versus-actual effort and cost with source references and idempotent evidence identity.
 
-The durable models are in [pursuit.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/pursuit.go:133), with database enforcement in [0044_workflow_completion_settlement_proofs.up.sql](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0044_workflow_completion_settlement_proofs.up.sql:1).
+The durable models are in [pursuit.go](../backend/internal/models/pursuit.go):133, with database enforcement in [0044_workflow_completion_settlement_proofs.up.sql](../backend/migrations/pre/0044_workflow_completion_settlement_proofs.up.sql):1.
 
 Generic controlled learning already provides:
 
@@ -2754,9 +2759,9 @@ Generic controlled learning already provides:
 - Immutable application/event records.
 - Owner-isolated routes under `/api/v1/controlled-learning`.
 
-Core files are [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/controlledlearning/types.go:116), [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/controlledlearning/service.go:93), [application_service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/controlledlearning/application_service.go:16), and [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:905).
+Core files are [types.go](../backend/internal/controlledlearning/types.go):116, [service.go](../backend/internal/controlledlearning/service.go):93, [application_service.go](../backend/internal/controlledlearning/application_service.go):16, and [routes.go](../backend/internal/router/routes.go):905.
 
-The owner review UI exists in [governance-control.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts:1106).
+The owner review UI exists in [governance-control.component.ts](../frontend/src/app/pages/governance-control/governance-control.component.ts):1106.
 
 **Material Gaps**
 
@@ -2766,7 +2771,7 @@ The owner review UI exists in [governance-control.component.ts](C:/Users/NO/Docu
 - Generic proposed changes are insufficiently structured for deterministic planning.
 - The default promoter records a synthetic ledger application but changes no planner behavior.
 - No immutable, queryable calibration revision exists.
-- Portfolio planning still requires caller-supplied duration and usage in [portfolio_planning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_planning.go:145).
+- Portfolio planning still requires caller-supplied duration and usage in [portfolio_planning.go](../backend/internal/pursuit/portfolio_planning.go):145.
 - Planning decisions do not bind an approved calibration revision or digest.
 - Outcome queries lack safe project/cohort/metric/time aggregation.
 - There are no minimum-sample, outlier, confidence, drift, supersession, or expiry rules.
@@ -2835,34 +2840,34 @@ This confirms current internal contracts remain consistent. It does not prove th
 HAI already has two related read paths:
 
 - Proposal recovery for 1–20 allocation IDs: `PortfolioExecutionProposalHistoryForOwner`.
-  - Validates bounded unique IDs at [portfolio_execution_proposal.go:77](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_proposal.go:77).
-  - Uses two bulk queries through `ListLatestPortfolioExecutionProposals` at [portfolio_execution_proposal_repository.go:108](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_proposal_repository.go:108).
-  - Missing or foreign allocations are silently omitted at [portfolio_execution_proposal.go:127](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_proposal.go:127).
+  - Validates bounded unique IDs at [portfolio_execution_proposal.go:77](../backend/internal/pursuit/portfolio_execution_proposal.go):77.
+  - Uses two bulk queries through `ListLatestPortfolioExecutionProposals` at [portfolio_execution_proposal_repository.go:108](../backend/internal/pursuit/portfolio_execution_proposal_repository.go):108.
+  - Missing or foreign allocations are silently omitted at [portfolio_execution_proposal.go:127](../backend/internal/pursuit/portfolio_execution_proposal.go):127.
 
 - Coordination preview for one proposal ID: `PortfolioDispatchCoordinationForOwner`.
   - Response types are `PortfolioCoordinationResult` and `PortfolioCoordinationItem`.
-  - [portfolio_dispatch.go:58](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:58)
-  - Owner validation and evidence loading begin at [portfolio_dispatch.go:86](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:86).
+  - [portfolio_dispatch.go:58](../backend/internal/pursuit/portfolio_dispatch.go):58
+  - Owner validation and evidence loading begin at [portfolio_dispatch.go:86](../backend/internal/pursuit/portfolio_dispatch.go):86.
   - It remains observational: `authority = coordination_preview_only`, `canExecute = false`.
-  - Eligibility only reads and validates the latest explicit decision at [portfolio_dispatch.go:456](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:456).
+  - Eligibility only reads and validates the latest explicit decision at [portfolio_dispatch.go:456](../backend/internal/pursuit/portfolio_dispatch.go):456.
 
 The routes correctly separate read and mutation:
 
 - Single preview uses `GET` plus `PermRead`.
 - Dispatch uses `POST` plus `PermExecute` and an additional approval check.
-- [routes.go:1800](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:1800)
-- [handler.go:267](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/handler.go:267)
+- [routes.go:1800](../backend/internal/router/routes.go):1800
+- [handler.go:267](../backend/internal/pursuit/handler.go):267
 
 **N+1 Finding**
 
 The single-proposal preview is read-only but query-heavy:
 
-- Proposal and items: 2 queries at [portfolio_dispatch_repository.go:24](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch_repository.go:24).
+- Proposal and items: 2 queries at [portfolio_dispatch_repository.go:24](../backend/internal/pursuit/portfolio_dispatch_repository.go):24.
 - Dispatch runs: 1 query.
 - Latest dispatch results: 1 query.
-- Every non-terminal item calls `portfolioDispatchEligibility()` inside the item loop at [portfolio_dispatch.go:122](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:122).
-- `loadCurrentPortfolioWorkflowApprovalForItem()` performs one decision snapshot and then reloads the complete snapshot at [portfolio_workflow_authorization.go:694](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization.go:694).
-- Those paths perform approximately 13 queries per item through [portfolio_execution_decision_repository.go:14](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_decision_repository.go:14) and [portfolio_execution_decision_repository.go:65](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_decision_repository.go:65).
+- Every non-terminal item calls `portfolioDispatchEligibility()` inside the item loop at [portfolio_dispatch.go:122](../backend/internal/pursuit/portfolio_dispatch.go):122.
+- `loadCurrentPortfolioWorkflowApprovalForItem()` performs one decision snapshot and then reloads the complete snapshot at [portfolio_workflow_authorization.go:694](../backend/internal/pursuit/portfolio_workflow_authorization.go):694.
+- Those paths perform approximately 13 queries per item through [portfolio_execution_decision_repository.go:14](../backend/internal/pursuit/portfolio_execution_decision_repository.go):14 and [portfolio_execution_decision_repository.go:65](../backend/internal/pursuit/portfolio_execution_decision_repository.go):65.
 
 Approximate query count is therefore:
 
@@ -2893,7 +2898,7 @@ Contract:
 
 **Exact Changes**
 
-1. [portfolio_dispatch_repository.go:15](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch_repository.go:15)
+1. [portfolio_dispatch_repository.go:15](../backend/internal/pursuit/portfolio_dispatch_repository.go):15
 
 Add a separate read interface:
 
@@ -2922,7 +2927,7 @@ Use a fixed maximum of eight owner-filtered queries:
 
 Do not call `LoadPortfolioDispatchProposal`, `LoadPortfolioExecutionProposalDecisionSnapshot`, or `LoadPortfolioWorkflowEffectApprovalSnapshot` in loops.
 
-3. [portfolio_dispatch.go:86](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:86)
+3. [portfolio_dispatch.go:86](../backend/internal/pursuit/portfolio_dispatch.go):86
 
 Add:
 
@@ -2934,7 +2939,7 @@ PortfolioDispatchCoordinationBatchForOwner(
 
 Factor the existing result assembly into a pure helper. Make the existing single-proposal method delegate to the batch method with one ID, removing its present N+1 behavior too.
 
-4. [handler.go:267](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/handler.go:267)
+4. [handler.go:267](../backend/internal/pursuit/handler.go):267
 
 Add `PortfolioDispatchCoordinationBatch`:
 
@@ -2943,9 +2948,9 @@ Add `PortfolioDispatchCoordinationBatch`:
 - Type-assert the new service method.
 - Map malformed scope to `400`, missing/foreign to `404`, invalid immutable evidence to `409`, and unavailable storage to `503`.
 
-The existing allocation-history parser at [handler.go:224](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/handler.go:224) provides the closest pattern.
+The existing allocation-history parser at [handler.go:224](../backend/internal/pursuit/handler.go):224 provides the closest pattern.
 
-5. [routes.go:1800](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:1800)
+5. [routes.go:1800](../backend/internal/router/routes.go):1800
 
 Register the collection route before the parameterized route:
 
@@ -2957,7 +2962,7 @@ GET("/portfolio-execution-proposals/coordination",
 
 6. Tests
 
-Extend [portfolio_dispatch_test.go:25](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch_test.go:25) with:
+Extend [portfolio_dispatch_test.go:25](../backend/internal/pursuit/portfolio_dispatch_test.go):25 with:
 
 - 1 and 20 proposal boundaries.
 - Empty, 21 IDs, duplicate and malformed IDs.
@@ -2968,17 +2973,17 @@ Extend [portfolio_dispatch_test.go:25](C:/Users/NO/Documents/Codex/2026-05-30/gi
 - One batch repository call regardless of item count.
 - Existing single preview delegates to the same batch path.
 
-Add handler parsing tests beside [portfolio_dispatch_test.go:199](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch_test.go:199).
+Add handler parsing tests beside [portfolio_dispatch_test.go:199](../backend/internal/pursuit/portfolio_dispatch_test.go):199.
 
-Add authenticated read-permission coverage beside [owner_decision_permissions_test.go:200](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/owner_decision_permissions_test.go:200).
+Add authenticated read-permission coverage beside [owner_decision_permissions_test.go:200](../backend/internal/router/owner_decision_permissions_test.go):200.
 
 Add a PostgreSQL integration test for grouping, owner isolation, top-ten run limits and latest-result selection. `DISTINCT ON` behavior should not be validated with SQLite.
 
 **Index Risk**
 
-The decisions index already supports the batch lookup at [0040_pursuit_portfolio_execution_proposal_decisions.up.sql:49](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0040_pursuit_portfolio_execution_proposal_decisions.up.sql:49).
+The decisions index already supports the batch lookup at [0040_pursuit_portfolio_execution_proposal_decisions.up.sql:49](../backend/migrations/pre/0040_pursuit_portfolio_execution_proposal_decisions.up.sql):49.
 
-The latest-dispatch query currently orders by `proposal_item_id`, but the existing index is owner/proposal/time at [0045_pursuit_portfolio_dispatch_coordination.up.sql:127](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0045_pursuit_portfolio_dispatch_coordination.up.sql:127). This removes N+1 but may still require a sort. Add a read index only if PostgreSQL `EXPLAIN ANALYZE` confirms it:
+The latest-dispatch query currently orders by `proposal_item_id`, but the existing index is owner/proposal/time at [0045_pursuit_portfolio_dispatch_coordination.up.sql:127](../backend/migrations/pre/0045_pursuit_portfolio_dispatch_coordination.up.sql):127. This removes N+1 but may still require a sort. Add a read index only if PostgreSQL `EXPLAIN ANALYZE` confirms it:
 
 ```sql
 (owner_identity, proposal_item_id, attempted_at DESC, attempt_number DESC, id DESC)
@@ -2999,22 +3004,22 @@ No files were edited. Several audited dispatch files are already modified or unt
 **Audit Findings**
 
 1. **Recovered proposals stop before coordination recovery.**
-   Valid proposal history is stored and decision histories are loaded, but coordination is not requested in [pursuits.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:444). The UI therefore falls back to the manual “Refresh eligibility” action.
+   Valid proposal history is stored and decision histories are loaded, but coordination is not requested in [pursuits.component.ts](../frontend/src/app/pages/pursuits/pursuits.component.ts):444. The UI therefore falls back to the manual “Refresh eligibility” action.
 
 2. **Coordination requests are globally serialized and cancellable.**
-   One `portfolioDispatchCoordinationSub` and one `portfolioDispatchCoordinationLoadingId` serve every proposal at [pursuits.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:121) and [line 844](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:844). Consequently:
+   One `portfolioDispatchCoordinationSub` and one `portfolioDispatchCoordinationLoadingId` serve every proposal at [pursuits.component.ts](../frontend/src/app/pages/pursuits/pursuits.component.ts):121 and [line 844](../frontend/src/app/pages/pursuits/pursuits.component.ts):844. Consequently:
    - The first automatic request would block every later proposal.
    - Removing the loading guard alone would make later requests unsubscribe earlier ones.
    - One proposal loading disables refresh for all proposals in the template.
 
 3. **A failed refresh can leave stale coordination actionable.**
-   Network and validation failures set an error but do not remove an older summary or selections at [pursuits.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:852). `canDispatchPortfolioWorkflows()` can consequently continue using the previous summary.
+   Network and validation failures set an error but do not remove an older summary or selections at [pursuits.component.ts](../frontend/src/app/pages/pursuits/pursuits.component.ts):852. `canDispatchPortfolioWorkflows()` can consequently continue using the previous summary.
 
 4. **The frontend omits the backend’s freshness contract.**
-   The backend returns `freshness.status = "current_coordination_snapshot"` with `revalidationRequired: true` in [portfolio_dispatch.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:68). `IPursuitPortfolioCoordinationResult` has no `freshness` field in [pursuit.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/pursuit.model.interface.ts:1076), so Angular cannot prove that a restored result is current.
+   The backend returns `freshness.status = "current_coordination_snapshot"` with `revalidationRequired: true` in [portfolio_dispatch.go](../backend/internal/pursuit/portfolio_dispatch.go):68. `IPursuitPortfolioCoordinationResult` has no `freshness` field in [pursuit.model.interface.ts](../frontend/src/app/models/pursuit.model.interface.ts):1076, so Angular cannot prove that a restored result is current.
 
 5. **Coordination validation has two structural gaps.**
-   [validPortfolioDispatchCoordination](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:1013) does not reject:
+   [validPortfolioDispatchCoordination](../frontend/src/app/pages/pursuits/pursuits.component.ts):1013 does not reject:
    - Duplicate coordination entries that omit another proposal item.
    - Counters that total correctly but do not match actual item eligibility categories.
 
@@ -3043,7 +3048,7 @@ freshness: {
 
    Automatic recovery should call a private `ensurePortfolioDispatchCoordination(proposal)` after all recovered proposals pass validation. It should skip an exact cached proposal digest and deduplicate an in-flight read.
 
-   Manual refresh, decision completion at [line 1811](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:1811), and dispatch completion at [line 995](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:995) should request a forced refresh. If one is already running, record one trailing refresh instead of issuing duplicates or dropping the refresh.
+   Manual refresh, decision completion at [line 1811](../frontend/src/app/pages/pursuits/pursuits.component.ts):1811, and dispatch completion at [line 995](../frontend/src/app/pages/pursuits/pursuits.component.ts):995 should request a forced refresh. If one is already running, record one trailing refresh instead of issuing duplicates or dropping the refresh.
 
 3. **Fail-closed state invalidation**
    - Clear coordination and selections before a forced refresh.
@@ -3054,7 +3059,7 @@ freshness: {
    - Never automatically select items, populate the confirmation phrase, dispatch, or create approvals.
 
 4. **Template behavior**
-   Update [pursuits.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.html:1905):
+   Update [pursuits.component.html](../frontend/src/app/pages/pursuits/pursuits.component.html):1905:
    - Bind loading and disablement to the current proposal only.
    - Show “Restoring current eligibility…” during automatic recovery.
    - Show the per-proposal error and an explicit retry state when unavailable.
@@ -3064,13 +3069,13 @@ freshness: {
 
 **Existing API**
 
-No service endpoint change is required. The existing encoded read-only endpoint is correctly implemented in [pursuit.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.ts:106) and tested in [pursuit.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/pursuit.service.spec.ts:201).
+No service endpoint change is required. The existing encoded read-only endpoint is correctly implemented in [pursuit.service.ts](../frontend/src/app/services/pursuit.service.ts):106 and tested in [pursuit.service.spec.ts](../frontend/src/app/services/pursuit.service.spec.ts):201.
 
-A backend batch service exists at [portfolio_dispatch.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:170), but no HTTP route exposes it; the router currently exposes only the single-proposal endpoint at [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:1801). The minimum Angular fix should not depend on that unavailable route.
+A backend batch service exists at [portfolio_dispatch.go](../backend/internal/pursuit/portfolio_dispatch.go):170, but no HTTP route exposes it; the router currently exposes only the single-proposal endpoint at [routes.go](../backend/internal/router/routes.go):1801. The minimum Angular fix should not depend on that unavailable route.
 
 **Required Tests**
 
-Update [pursuits.component.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.spec.ts:644) and add coverage for:
+Update [pursuits.component.spec.ts](../frontend/src/app/pages/pursuits/pursuits.component.spec.ts):644 and add coverage for:
 
 - A recovered proposal automatically loads coordination once.
 - Two recovered proposals load independently; neither request cancels the other.
@@ -3098,23 +3103,23 @@ No files were edited and no tests were run during this read-only audit.
 **Findings**
 
 1. **P1: The batch recovery route is not deployed.**
-   Source registers the endpoint in [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:1801), but the healthy live backend returns `404 page not found` after authenticated local login. The coordinator files are currently untracked or modified, so the running image is behind the working tree.
+   Source registers the endpoint in [routes.go](../backend/internal/router/routes.go):1801, but the healthy live backend returns `404 page not found` after authenticated local login. The coordinator files are currently untracked or modified, so the running image is behind the working tree.
 
 2. **P1: No backend test exercises the batch coordinator.**
-   `PortfolioDispatchCoordinationBatchForOwner` has no service, handler, router, or PostgreSQL test. Existing dispatch tests cover only single-proposal coordination and execution in [portfolio_dispatch_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch_test.go:25).
+   `PortfolioDispatchCoordinationBatchForOwner` has no service, handler, router, or PostgreSQL test. Existing dispatch tests cover only single-proposal coordination and execution in [portfolio_dispatch_test.go](../backend/internal/pursuit/portfolio_dispatch_test.go):25.
 
 3. **P1: Unknown-ID behavior is implicit, not proven.**
-   Unknown and foreign-owned IDs are silently omitted at [portfolio_dispatch.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:213). This can be a secure contract because it avoids an ownership oracle, but tests must prove:
+   Unknown and foreign-owned IDs are silently omitted at [portfolio_dispatch.go](../backend/internal/pursuit/portfolio_dispatch.go):213. This can be a secure contract because it avoids an ownership oracle, but tests must prove:
    - Unknown and foreign IDs behave identically.
    - Known results retain request order.
    - Mixed requests cannot leak which omitted ID exists.
    - The frontend visibly marks missing proposals unavailable.
 
 4. **P2: Frontend validation is not fully fail-closed.**
-   [pursuits.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:1013) does not validate coordination freshness and does not reject duplicate item IDs. A duplicated item could replace another item while preserving array length and counters. Dispatch-result validation has the same uniqueness gap at line 1038.
+   [pursuits.component.ts](../frontend/src/app/pages/pursuits/pursuits.component.ts):1013 does not validate coordination freshness and does not reject duplicate item IDs. A duplicated item could replace another item while preserving array length and counters. Dispatch-result validation has the same uniqueness gap at line 1038.
 
 5. **P2: PostgreSQL-specific behavior is untested.**
-   The repository uses window functions and `DISTINCT ON` in [portfolio_dispatch_repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch_repository.go:103), but there is no dispatch PostgreSQL integration test. Current migration tests inspect SQL text rather than execute coordination scenarios.
+   The repository uses window functions and `DISTINCT ON` in [portfolio_dispatch_repository.go](../backend/internal/pursuit/portfolio_dispatch_repository.go):103, but there is no dispatch PostgreSQL integration test. Current migration tests inspect SQL text rather than execute coordination scenarios.
 
 **Controls Present**
 
@@ -3122,7 +3127,7 @@ No files were edited and no tests were run during this read-only audit.
 - Input bounds are `1..20`; duplicates and invalid UUIDs are rejected.
 - Known results follow caller-supplied proposal order.
 - Every coordination result uses `coordination_preview_only` and `canExecute: false`.
-- Batch recovery resets all frontend selections to `false` at [pursuits.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/pursuits/pursuits.component.ts:921).
+- Batch recovery resets all frontend selections to `false` at [pursuits.component.ts](../frontend/src/app/pages/pursuits/pursuits.component.ts):921.
 - Freshness says `current_coordination_snapshot` while explicitly requiring dispatch revalidation.
 - The coordinator performs reads only and never creates decisions, receipts, workflows, or approval authority.
 - Route protection is authenticated-owner middleware plus `PermRead`; error mapping is `400` validation, `409` evidence conflict, and `503` unavailable storage.
@@ -3157,34 +3162,34 @@ I compared all 55 framework families with all 55 rows in HAI’s operating-contr
 **Top 10 Gaps**
 
 1. **Real connected-source coverage remains the largest operational gap.**
-   The `/api/v1/sources` API and `/connected-sources` UI exist, but only Gmail and Trello have bounded live evidence. Drive, Contacts, and Calendar remain contract-tested; WhatsApp/browser accounts, webhooks, and folder watchers are absent. This limits families 25, 26, and 38 because HAI cannot reliably notice new real-world events. [README](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/README.md:406>) · [completion matrix](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/completion-matrix.md:28>)
+   The `/api/v1/sources` API and `/connected-sources` UI exist, but only Gmail and Trello have bounded live evidence. Drive, Contacts, and Calendar remain contract-tested; WhatsApp/browser accounts, webhooks, and folder watchers are absent. This limits families 25, 26, and 38 because HAI cannot reliably notice new real-world events. [README](../README.md):406 · [completion matrix](completion-matrix.md):28
 
 2. **The advanced workflow graph is isolated from the actual Workflow Engine.**
-   `workflowgraph` defines immutable versions, branching, timers, approvals, parallel joins, bounded cycles, optimistic concurrency, and compensation. But only repository interfaces exist; the evaluator and compensation planner deliberately do not mutate or execute. No router or Angular references exist outside the package. [repository.go](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflowgraph/repository.go:5>) · [evaluator.go](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflowgraph/evaluator.go:10>) · [compensation.go](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflowgraph/compensation.go:24>)
+   `workflowgraph` defines immutable versions, branching, timers, approvals, parallel joins, bounded cycles, optimistic concurrency, and compensation. But only repository interfaces exist; the evaluator and compensation planner deliberately do not mutate or execute. No router or Angular references exist outside the package. [repository.go](../backend/internal/workflowgraph/repository.go):5 · [evaluator.go](../backend/internal/workflowgraph/evaluator.go):10 · [compensation.go](../backend/internal/workflowgraph/compensation.go):24
 
 3. **External-effect verification is not independently complete.**
-   `/api/v1/verification` and `/grounded-answers` provide useful claim and run inspection, but some execution/postcondition checks still rely on the task-level validation result. There is no requirement-specific verifier for every runtime/provider, and network ambiguity prevents exactly-once external-effect proof. [routes.go](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:1225>) · [framework matrix](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:37>)
+   `/api/v1/verification` and `/grounded-answers` provide useful claim and run inspection, but some execution/postcondition checks still rely on the task-level validation result. There is no requirement-specific verifier for every runtime/provider, and network ambiguity prevents exactly-once external-effect proof. [routes.go](../backend/internal/router/routes.go):1225 · [framework matrix](framework-operating-contract-matrix.md):37
 
 4. **Model routing is sophisticated locally but not proven against real provider outcomes.**
-   `/api/v1/llm`, `/api/v1/model-intelligence`, `/llm-policy`, and `/model-intelligence` exist. Direct generation remains `unvalidated` until another trusted validator records an outcome; model capability, price, fallback quality, and completion calibration still need retained live provider evidence. [framework matrix](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:52>) · [model service](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/model-intelligence.service.ts:22>)
+   `/api/v1/llm`, `/api/v1/model-intelligence`, `/llm-policy`, and `/model-intelligence` exist. Direct generation remains `unvalidated` until another trusted validator records an outcome; model capability, price, fallback quality, and completion calibration still need retained live provider evidence. [framework matrix](framework-operating-contract-matrix.md):52 · [model service](../frontend/src/app/services/model-intelligence.service.ts):22
 
 5. **Agent teams cannot yet perform governed runtime dispatch.**
-   Team lifecycle, membership, messages, delegation assessment, and consensus APIs are substantial and visible in Governance Control. However, contracts and consensus are explicitly advisory and cannot grant execution authority; distributed A2A transport and cryptographic identity/signing remain absent. [agent_team_handler.go](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/agent_team_handler.go:44>) · [agent_team_types.go](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/agent_team_types.go:52>)
+   Team lifecycle, membership, messages, delegation assessment, and consensus APIs are substantial and visible in Governance Control. However, contracts and consensus are explicitly advisory and cannot grant execution authority; distributed A2A transport and cryptographic identity/signing remain absent. [agent_team_handler.go](../backend/internal/frameworkregistry/agent_team_handler.go):44 · [agent_team_types.go](../backend/internal/frameworkregistry/agent_team_types.go):52
 
 6. **Privacy enforcement lacks a durable lifecycle control plane.**
-   Privacy scan records are stored only in a process-local slice. Retention is a pure age evaluator over memories and performs no I/O; no durable retention-policy, legal-hold, purpose, consent, or deletion-decision API/UI was found. [privacy service](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/privacyfilter/service.go:19>) · [retention.go](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/retention/retention.go:1>)
+   Privacy scan records are stored only in a process-local slice. Retention is a pure age evaluator over memories and performs no I/O; no durable retention-policy, legal-hold, purpose, consent, or deletion-decision API/UI was found. [privacy service](../backend/internal/privacyfilter/service.go):19 · [retention.go](../backend/internal/retention/retention.go):1
 
 7. **The claim graph is strong, but memory and graph coverage are incomplete.**
-   Claims support provenance, validity intervals, conflicts, supersession, corrections, verification states, and temporal retrieval. The remaining weakness is coverage: conceptual memory types are not independently lifecycle-managed, and several product ledgers still lack projection adapters into the whole-life graph. [knowledgegraph types](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/knowledgegraph/types.go:84>) · [framework matrix](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:40>)
+   Claims support provenance, validity intervals, conflicts, supersession, corrections, verification states, and temporal retrieval. The remaining weakness is coverage: conceptual memory types are not independently lifecycle-managed, and several product ledgers still lack projection adapters into the whole-life graph. [knowledgegraph types](../backend/internal/knowledgegraph/types.go):84 · [framework matrix](framework-operating-contract-matrix.md):40
 
 8. **Observability is mostly audit records and manual aggregate snapshots.**
-   Prometheus exposes a small opt-in surface. Langfuse and OpenLIT accept only owner-triggered aggregate snapshots; OpenLIT explicitly has no SDK or automatic instrumentation. End-to-end HTTP/task/model/tool/provider trace correlation, SLOs, alert rules, retention, and operator-facing incident drill-down remain missing. [OpenLIT service](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/openlit/service.go:96>) · [agent tool catalog](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/agent-tool-catalog.md:61>)
+   Prometheus exposes a small opt-in surface. Langfuse and OpenLIT accept only owner-triggered aggregate snapshots; OpenLIT explicitly has no SDK or automatic instrumentation. End-to-end HTTP/task/model/tool/provider trace correlation, SLOs, alert rules, retention, and operator-facing incident drill-down remain missing. [OpenLIT service](../backend/internal/openlit/service.go):96 · [agent tool catalog](agent-tool-catalog.md):61
 
 9. **Formal optimization is a detached proposal service.**
-   `/api/v1/planning-optimizer` can probe OR-Tools and produce bounded proposals, but it cannot alter workflows, tasks, or calendars, and no Angular integration exists. It is not yet fed automatically from pursuits, LifeOps capacity, connected Calendar state, resource ledgers, or longitudinal uncertainty calibration. [planning service](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/planningoptimizer/service.go:1>) · [routes.go](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:1659>)
+   `/api/v1/planning-optimizer` can probe OR-Tools and produce bounded proposals, but it cannot alter workflows, tasks, or calendars, and no Angular integration exists. It is not yet fed automatically from pursuits, LifeOps capacity, connected Calendar state, resource ledgers, or longitudinal uncertainty calibration. [planning service](../backend/internal/planningoptimizer/service.go):1 · [routes.go](../backend/internal/router/routes.go):1659
 
 10. **Several personal-operating domains remain catalog entries rather than engines.**
-    Habits, health, legal/case management, relationships, travel, and emergency continuity have catalog definitions, classification, preferences, and playbooks. They lack typed domain records, source adapters, lifecycle workflows, domain-specific validators, and dedicated Basic/Advanced operational views. [framework matrix](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:63>) · [domain-pack routes](<C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:746>)
+    Habits, health, legal/case management, relationships, travel, and emergency continuity have catalog definitions, classification, preferences, and playbooks. They lack typed domain records, source adapters, lifecycle workflows, domain-specific validators, and dedicated Basic/Advanced operational views. [framework matrix](framework-operating-contract-matrix.md):63 · [domain-pack routes](../backend/internal/router/routes.go):746
 
 **Next Vertical Slice**
 
@@ -3211,27 +3216,27 @@ No files were edited and no tests were run during this audit.
 
 **Findings**
 
-1. **[P1] No end-to-end ambient monitoring loop exists.** Services are constructed independently: ontology projections are wired, but `proactivity`, `outcomeevaluation`, `workflow`, and `lifeledger` are never composed into an orchestrator. [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:288)
+1. **[P1] No end-to-end ambient monitoring loop exists.** Services are constructed independently: ontology projections are wired, but `proactivity`, `outcomeevaluation`, `workflow`, and `lifeledger` are never composed into an orchestrator. [routes.go](../backend/internal/router/routes.go):288
    Result: a ledger/workflow change cannot automatically become an outcome observation, interruption decision, and owner-facing review item.
 
-2. **[P1] Long-term outcome evaluation is manual, not monitored.** `Observation` is defined, but there is no independently appendable observation ledger or monitoring schedule. Observations must be supplied inside each `CreateEvaluationRequest`. [storage_types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/storage_types.go:47), [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/service.go:117)
-   Routes expose manual evaluations and corrections only. [handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/handler.go:46)
+2. **[P1] Long-term outcome evaluation is manual, not monitored.** `Observation` is defined, but there is no independently appendable observation ledger or monitoring schedule. Observations must be supplied inside each `CreateEvaluationRequest`. [storage_types.go](../backend/internal/outcomeevaluation/storage_types.go):47, [service.go](../backend/internal/outcomeevaluation/service.go):117
+   Routes expose manual evaluations and corrections only. [handler.go](../backend/internal/outcomeevaluation/handler.go):46
 
-3. **[P1] Triggering is real but restricted to pre-existing workflow open loops.** The durable scheduler recovers claims, processes due open loops, and runs due workflows. [scheduler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/scheduler.go:74), [durable_scheduler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/durable_scheduler.go:41)
-   A due loop creates a checklist item and proposal, but does not emit a proactivity signal or outcome observation. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2012)
+3. **[P1] Triggering is real but restricted to pre-existing workflow open loops.** The durable scheduler recovers claims, processes due open loops, and runs due workflows. [scheduler.go](../backend/internal/workflow/scheduler.go):74, [durable_scheduler.go](../backend/internal/workflow/durable_scheduler.go):41
+   A due loop creates a checklist item and proposal, but does not emit a proactivity signal or outcome observation. [service.go](../backend/internal/workflow/service.go):2012
 
-4. **[P1] Proactivity is a genuine interruption policy engine, but invocation is manual.** Quiet hours, cooldown, attention budgets, thresholds and channels exist, while authority remains explicitly false. [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/types.go:69), [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/types.go:165)
-   Signals and evaluations only enter through explicit HTTP calls. [handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/handler.go:69)
+4. **[P1] Proactivity is a genuine interruption policy engine, but invocation is manual.** Quiet hours, cooldown, attention budgets, thresholds and channels exist, while authority remains explicitly false. [types.go](../backend/internal/proactivity/types.go):69, [types.go](../backend/internal/proactivity/types.go):165
+   Signals and evaluations only enter through explicit HTTP calls. [handler.go](../backend/internal/proactivity/handler.go):69
 
-5. **[P2] Owner interruption controls exist internally but are not exposed.** The service supports accept, dismiss, snooze, suppress and resume with immutable feedback history. [feedback.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/feedback.go:18)
+5. **[P2] Owner interruption controls exist internally but are not exposed.** The service supports accept, dismiss, snooze, suppress and resume with immutable feedback history. [feedback.go](../backend/internal/proactivity/feedback.go):18
    `RegisterRoutes` exposes no feedback or actionable-inbox endpoints. This leaves §27’s review interaction incomplete.
 
-6. **[P2] Standing-mandate stop conditions are action-time checks, not continuous interrupts.** Facts are supplied by each action request and evaluated only during `Authorize`. [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/standingmandate/types.go:157), [evaluator.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/standingmandate/evaluator.go:98)
+6. **[P2] Standing-mandate stop conditions are action-time checks, not continuous interrupts.** Facts are supplied by each action request and evaluated only during `Authorize`. [types.go](../backend/internal/standingmandate/types.go):157, [evaluator.go](../backend/internal/standingmandate/evaluator.go):98
    This is a valid execution boundary, but it cannot detect changed facts or interrupt already-running work.
 
-7. **[P2] Life records cannot drive incremental monitoring.** Life Ledger stores due dates and statuses, but its repository only supports ordinary listing/history, with no due, changed-since, or claimable scan contract. [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeledger/types.go:155) Life Ontology likewise has no change cursor/outbox. [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/types.go:372)
+7. **[P2] Life records cannot drive incremental monitoring.** Life Ledger stores due dates and statuses, but its repository only supports ordinary listing/history, with no due, changed-since, or claimable scan contract. [types.go](../backend/internal/lifeledger/types.go):155 Life Ontology likewise has no change cursor/outbox. [types.go](../backend/internal/lifeontology/types.go):372
 
-8. **[P2] §37 learning and outcome monitoring are parallel systems.** Task `OutcomeMonitoring` is planning metadata copied from the framework decision. [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:2505) Verified task results and workflow corrections enter `controlledlearning`, not `outcomeevaluation`. [controlled_learning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/controlled_learning.go:43)
+8. **[P2] §37 learning and outcome monitoring are parallel systems.** Task `OutcomeMonitoring` is planning metadata copied from the framework decision. [service.go](../backend/internal/task/service.go):2505 Verified task results and workflow corrections enter `controlledlearning`, not `outcomeevaluation`. [controlled_learning.go](../backend/internal/task/controlled_learning.go):43
 
 **Verdict**
 
@@ -3240,7 +3245,7 @@ No files were edited and no tests were run during this audit.
 - Real longitudinal evaluator: **implemented but manually fed**
 - Closed trigger → monitor → policy → owner interaction loop: **absent**
 
-This matches the specification’s careful “Structured,” rather than “Enforced,” wording for §§26–27. [framework-operating-contract-matrix.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:45)
+This matches the specification’s careful “Structured,” rather than “Enforced,” wording for §§26–27. [framework-operating-contract-matrix.md](framework-operating-contract-matrix.md):45
 
 **Recommended Next Slice**
 
@@ -3309,39 +3314,39 @@ No files were edited and no tests were run. The audited implementation is largel
 **Findings**
 
 1. **[P1] Complete proactivity controls exist in the backend but are unreachable from the frontend.**
-   The API supports owner-scoped `accept`, `dismiss`, `snooze`, `suppress`, and `resume`, including reasons, idempotency, signal-digest validation, and bounded snooze times ([feedback.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/feedback.go:20), [handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/handler.go:68)). The engine enforces those controls during evaluation ([engine.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/engine.go:156)).
+   The API supports owner-scoped `accept`, `dismiss`, `snooze`, `suppress`, and `resume`, including reasons, idempotency, signal-digest validation, and bounded snooze times ([feedback.go](../backend/internal/proactivity/feedback.go):20, [handler.go](../backend/internal/proactivity/handler.go):68). The engine enforces those controls during evaluation ([engine.go](../backend/internal/proactivity/engine.go):156).
 
-   The Angular service exposes only policy, signal, and decision reads ([governance-control.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.ts:354)). The UI renders eight read-only signals and decisions without inspection or feedback controls ([governance-control.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html:390)).
+   The Angular service exposes only policy, signal, and decision reads ([governance-control.service.ts](../frontend/src/app/services/governance-control.service.ts):354). The UI renders eight read-only signals and decisions without inspection or feedback controls ([governance-control.component.html](../frontend/src/app/pages/governance-control/governance-control.component.html):390).
 
    Missing frontend contracts: `GET/POST /proactivity/feedback`, policy `PUT`, reason entry, snooze date/time, suppress/resume, feedback history, and record inspector.
 
 2. **[P1] Ambient and proactivity are separate suggestion lifecycles, so an operator decision is not globally respected.**
-   Ambient exposes only `accept` and `dismiss` ([ambient.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/ambient.service.ts:30)). Dismissal applies a fixed environment-controlled cooldown ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambient/service.go:743)); it does not create proactivity `snooze` or `suppress` feedback.
+   Ambient exposes only `accept` and `dismiss` ([ambient.service.ts](../frontend/src/app/services/ambient.service.ts):30). Dismissal applies a fixed environment-controlled cooldown ([service.go](../backend/internal/ambient/service.go):743); it does not create proactivity `snooze` or `suppress` feedback.
 
-   Both frontend requests send `{}`, although the backend supports a resolution note. Consequently, dismissed feedback never satisfies the backend’s 12-character learning threshold ([ambient-brain.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/ambient-brain/ambient-brain.component.ts:279), [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambient/service.go:1291)).
+   Both frontend requests send `{}`, although the backend supports a resolution note. Consequently, dismissed feedback never satisfies the backend’s 12-character learning threshold ([ambient-brain.component.ts](../frontend/src/app/pages/ambient-brain/ambient-brain.component.ts):279, [service.go](../backend/internal/ambient/service.go):1291).
 
    Missing API/domain bridge: one canonical suggestion ID and feedback ledger shared by Ambient Brain, Control Center, HAI OS, and proactivity.
 
 3. **[P1] Control Center’s “Snooze” action is not a snooze.**
-   It transitions the workflow to `waiting_external_input` without a wake time or resurfacing schedule ([control-center.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/control-center/control-center.component.ts:376)). This can leave work parked indefinitely and misrepresents what the action does.
+   It transitions the workflow to `waiting_external_input` without a wake time or resurfacing schedule ([control-center.component.ts](../frontend/src/app/pages/control-center/control-center.component.ts):376). This can leave work parked indefinitely and misrepresents what the action does.
 
-   The approval buttons operate on workflow approvals, not proactive suggestions ([control-center.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/control-center/control-center.component.ts:345)). Ambient data is reduced to scan activity and totals ([control-center.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/control-center/control-center.component.ts:495)).
+   The approval buttons operate on workflow approvals, not proactive suggestions ([control-center.component.ts](../frontend/src/app/pages/control-center/control-center.component.ts):345). Ambient data is reduced to scan activity and totals ([control-center.component.ts](../frontend/src/app/pages/control-center/control-center.component.ts):495).
 
 4. **[P1] Per-module progressive disclosure has competing state owners and incomplete coverage.**
-   The shared shell persists mode, sections, and navigation under `hai.module-view.v1.<module>` ([module-view-preferences.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/module-view-preferences.service.ts:6)). Framework Registry independently reads and overwrites the same key using a schema that omits `navigationMode` ([framework-registry.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry.component.ts:35), [framework-registry.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/framework-registry.model.interface.ts:371)). The shell and page can therefore disagree or erase each other’s preference fields.
+   The shared shell persists mode, sections, and navigation under `hai.module-view.v1.<module>` ([module-view-preferences.service.ts](../frontend/src/app/control-room/module-view-preferences.service.ts):6). Framework Registry independently reads and overwrites the same key using a schema that omits `navigationMode` ([framework-registry.component.ts](../frontend/src/app/pages/framework-registry/framework-registry.component.ts):35, [framework-registry.model.interface.ts](../frontend/src/app/models/framework-registry.model.interface.ts):371). The shell and page can therefore disagree or erase each other’s preference fields.
 
-   `ambient-brain`, `workflow-engine`, and `hai-os` have no registered advanced sections ([module-registry.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/module-registry.ts:17)). The workflow reminder’s `reminder-drawer__advanced` section is not among the shell’s persisted selectors ([app-shell.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/app-shell.component.ts:21), [workflow-engine.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/workflow-engine/workflow-engine.component.html:1083)).
+   `ambient-brain`, `workflow-engine`, and `hai-os` have no registered advanced sections ([module-registry.ts](../frontend/src/app/control-room/module-registry.ts):17). The workflow reminder’s `reminder-drawer__advanced` section is not among the shell’s persisted selectors ([app-shell.component.ts](../frontend/src/app/control-room/app-shell.component.ts):21, [workflow-engine.component.html](../frontend/src/app/pages/workflow-engine/workflow-engine.component.html):1083).
 
 5. **[P2] Workflow suggestions have partial controls, but no snooze or suppression lifecycle.**
-   Generic proposals can be approved, rejected, or returned for changes. Reminder preparations can be prepared, approved, rejected, and revoked ([workflow-engine.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/workflow-engine/workflow-engine.component.html:1028)). There is no snooze or suppress status/API for either contract.
+   Generic proposals can be approved, rejected, or returned for changes. Reminder preparations can be prepared, approved, rejected, and revoked ([workflow-engine.component.html](../frontend/src/app/pages/workflow-engine/workflow-engine.component.html):1028). There is no snooze or suppress status/API for either contract.
 
-   The API loads up to 100 reminder proposals, but the UI shows only three with no “view all” path ([workflow.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/workflow/workflow.service.ts:87), [workflow-engine.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/workflow-engine/workflow-engine.component.html:89)). A decision-history API exists but is not consumed by the component ([workflow.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/workflow/workflow.service.ts:122)).
+   The API loads up to 100 reminder proposals, but the UI shows only three with no “view all” path ([workflow.service.ts](../frontend/src/app/services/workflow/workflow.service.ts):87, [workflow-engine.component.html](../frontend/src/app/pages/workflow-engine/workflow-engine.component.html):89). A decision-history API exists but is not consumed by the component ([workflow.service.ts](../frontend/src/app/services/workflow/workflow.service.ts):122).
 
 6. **[P2] Framework recommendations explain their choice but cannot be resolved as recommendations.**
-   The screen shows selection reason, why-now, responsible actor, risk ceiling, approval reasons, and framework inspectors ([framework-registry-recommendation.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.html:35)). There is no accept/reject/snooze/suppress API or state. “Approval required” is informational only. `Clear` removes only the local display and draft, not the recorded selection ([framework-registry.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/framework-registry/framework-registry.component.ts:486)).
+   The screen shows selection reason, why-now, responsible actor, risk ceiling, approval reasons, and framework inspectors ([framework-registry-recommendation.component.html](../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.html):35). There is no accept/reject/snooze/suppress API or state. “Approval required” is informational only. `Clear` removes only the local display and draft, not the recorded selection ([framework-registry.component.ts](../frontend/src/app/pages/framework-registry/framework-registry.component.ts):486).
 
 7. **[P2] HAI OS is an overview, not an actionable suggestion surface.**
-   Its only API is `GET /api/v1/os/overview` ([hai-os.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/hai-os/hai-os.service.ts:15)). It can route to pursuits and show aggregated Ambient counts, but cannot inspect an individual proactive suggestion or accept, reject, snooze, or suppress it ([hai-os.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/hai-os/hai-os.component.html:43)). Its metrics, operating planes, readiness, and governance sections are always rendered rather than progressively disclosed.
+   Its only API is `GET /api/v1/os/overview` ([hai-os.service.ts](../frontend/src/app/services/hai-os/hai-os.service.ts):15). It can route to pursuits and show aggregated Ambient counts, but cannot inspect an individual proactive suggestion or accept, reject, snooze, or suppress it ([hai-os.component.html](../frontend/src/app/pages/hai-os/hai-os.component.html):43). Its metrics, operating planes, readiness, and governance sections are always rendered rather than progressively disclosed.
 
 **Capability Matrix**
 
@@ -3367,13 +3372,13 @@ No files were changed. This was a static code-path audit; browser behavior and l
 Implemented `backend/internal/ambientmonitor` within the exclusive scope.
 
 **Added**
-- [types.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\types.go)
-- [validation.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\validation.go)
-- [service.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\service.go)
-- [repository.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\repository.go)
-- [service_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\service_test.go)
-- [validation_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\validation_test.go)
-- [security_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\security_test.go)
+- [types.go](../backend/internal/ambientmonitor/types.go)
+- [validation.go](../backend/internal/ambientmonitor/validation.go)
+- [service.go](../backend/internal/ambientmonitor/service.go)
+- [repository.go](../backend/internal/ambientmonitor/repository.go)
+- [service_test.go](../backend/internal/ambientmonitor/service_test.go)
+- [validation_test.go](../backend/internal/ambientmonitor/validation_test.go)
+- [security_test.go](../backend/internal/ambientmonitor/security_test.go)
 
 The package includes owner/workspace/outcome/indicator scoping, closed source kinds, scheduling and enabled state, generation-fenced leases, recovery, immutable observations/runs, exact idempotency, deterministic collectors, retryable advisory composition, and uniformly disabled authority capabilities.
 
@@ -3396,10 +3401,10 @@ The package includes owner/workspace/outcome/indicator scoping, closed source ki
 
 Implemented migration `0049` within the exclusive four-file scope:
 
-- [0049 up migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0049_outcome_attention_monitor.up.sql)
-- [0049 rollback](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0049_outcome_attention_monitor.down.sql)
-- [Contract test](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/outcome_attention_monitor_contract_test.go)
-- [PostgreSQL lifecycle test](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/outcome_attention_monitor_postgres_test.go)
+- [0049 up migration](../backend/migrations/pre/0049_outcome_attention_monitor.up.sql)
+- [0049 rollback](../backend/migrations/pre/0049_outcome_attention_monitor.down.sql)
+- [Contract test](../backend/migrations/outcome_attention_monitor_contract_test.go)
+- [PostgreSQL lifecycle test](../backend/migrations/outcome_attention_monitor_postgres_test.go)
 
 It includes immutable observation/run ledgers, revisioned monitor targets, lease and claim validation, source and digest constraints, advisory-only authority, run-backed target projections, due/history indexes, restricted foreign keys, and fail-closed rollback.
 
@@ -3411,7 +3416,7 @@ Verification:
 - Exactly the four authorized files changed.
 - Nothing was committed.
 
-The complete migrations package still fails because [migration_chain_contract_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/migration_chain_contract_test.go:145) hardcodes the migration tail through `0048`. I left it untouched because it falls outside the exclusive write scope.
+The complete migrations package still fails because [migration_chain_contract_test.go](../backend/migrations/migration_chain_contract_test.go):145 hardcodes the migration tail through `0048`. I left it untouched because it falls outside the exclusive write scope.
 
 ## 019fcf85-35dc-73f0-8cb0-e8bc6032afc9
 
@@ -3423,9 +3428,9 @@ The complete migrations package still fails because [migration_chain_contract_te
 
 Implemented within the exclusive three-file scope:
 
-- [ambient-monitor.model.interface.ts](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\frontend\src\app\models\ambient-monitor.model.interface.ts)
-- [ambient-monitor.service.ts](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\frontend\src\app\services\ambient-monitor.service.ts)
-- [ambient-monitor.service.spec.ts](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\frontend\src\app\services\ambient-monitor.service.spec.ts)
+- [ambient-monitor.model.interface.ts](../frontend/src/app/models/ambient-monitor.model.interface.ts)
+- [ambient-monitor.service.ts](../frontend/src/app/services/ambient-monitor.service.ts)
+- [ambient-monitor.service.spec.ts](../frontend/src/app/services/ambient-monitor.service.spec.ts)
 
 The contract includes typed targets, observations, runs, requests, list responses, encoded path segments, bounded `HttpParams` limits, and literal advisory-only authority. Write payloads are allowlisted, preventing owner identity or authority fields from reaching the API.
 
@@ -3450,8 +3455,8 @@ Existing unrelated bundle and component-style budget warnings remain.
 Implemented without committing.
 
 Changed:
-- [repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/repository_postgres.go)
-- [repository_postgres_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/repository_postgres_test.go)
+- [repository_postgres.go](../backend/internal/ambientmonitor/repository_postgres.go)
+- [repository_postgres_test.go](../backend/internal/ambientmonitor/repository_postgres_test.go)
 
 Includes owner/workspace isolation, lease fencing, immutable observation/run appends, completion replay, due-scope discovery, bounded lists, and `DefaultRepository`.
 
@@ -3482,8 +3487,8 @@ No commit was created.
 
 Implemented the fixed read-only ambient collectors:
 
-- [collectors.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/collectors.go)
-- [collectors_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/collectors_test.go)
+- [collectors.go](../backend/internal/ambientmonitor/collectors.go)
+- [collectors_test.go](../backend/internal/ambientmonitor/collectors_test.go)
 
 Included:
 
@@ -3507,7 +3512,7 @@ Verification: focused package tests passed three consecutive runs. Only the two 
 
 Implemented the advisory composition layer without expanding beyond the two-file scope.
 
-- [composer.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composer.go:56)
+- [composer.go](../backend/internal/ambientmonitor/composer.go):56
   - Implements `ambientmonitor.Sink`.
   - Loads owner/workspace-scoped outcomes and validates indicators.
   - Converts immutable in-window monitor observations into source-supported outcome evidence using safe `hai://` provenance.
@@ -3516,7 +3521,7 @@ Implemented the advisory composition layer without expanding beyond the two-file
   - Sanitizes downstream errors without leaking credentials.
   - Exposes no execution, sending, notification, calendar, workflow, mandate, or learning capabilities.
 
-- [composer_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composer_test.go:38)
+- [composer_test.go](../backend/internal/ambientmonitor/composer_test.go):38
   - Exact replay produces one evaluation, policy, signal, decision, and inbox item.
   - Out-of-window observations are excluded.
   - Cross-owner observations are rejected before writes.
@@ -3543,8 +3548,8 @@ Nothing was committed.
 
 Implemented the guarded ambient monitor HTTP API in:
 
-- [handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/handler.go)
-- [handler_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/handler_test.go)
+- [handler.go](../backend/internal/ambientmonitor/handler.go)
+- [handler_test.go](../backend/internal/ambientmonitor/handler_test.go)
 
 Added:
 
@@ -3585,10 +3590,10 @@ Implemented the Angular Governance Control integration for the ambient outcome m
 - No execution, delivery, notification, calendar, workflow mutation, learning mutation, or mandate controls were added.
 
 Changed:
-- [governance-control.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts)
-- [governance-control.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html)
-- [governance-control.component.scss](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.scss)
-- [governance-control.component.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.spec.ts)
+- [governance-control.component.ts](../frontend/src/app/pages/governance-control/governance-control.component.ts)
+- [governance-control.component.html](../frontend/src/app/pages/governance-control/governance-control.component.html)
+- [governance-control.component.scss](../frontend/src/app/pages/governance-control/governance-control.component.scss)
+- [governance-control.component.spec.ts](../frontend/src/app/pages/governance-control/governance-control.component.spec.ts)
 
 Verification:
 - Focused Governance Control tests: `34 SUCCESS`
@@ -3668,13 +3673,13 @@ Covered fixed collectors, immutable ledgers, durable scheduling, guarded routes,
 
 **Audit Findings**
 1. **Critical: composition can be permanently lost after monitor completion.**
-   `Complete` atomically writes the observation/run, releases the lease, and advances `next_run_at` ([repository_postgres.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/repository_postgres.go:455)). Composition only starts after that transaction returns ([service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/service.go:397)). A crash between those operations leaves no durable indication that composition is missing. The scheduler retry finds no due target because its schedule was already advanced.
+   `Complete` atomically writes the observation/run, releases the lease, and advances `next_run_at` ([repository_postgres.go](../backend/internal/ambientmonitor/repository_postgres.go):455). Composition only starts after that transaction returns ([service.go](../backend/internal/ambientmonitor/service.go):397). A crash between those operations leaves no durable indication that composition is missing. The scheduler retry finds no due target because its schedule was already advanced.
 
 2. **High: downstream idempotency is replay-safe but not discoverably recoverable.**
-   Evaluation, signal, and decision writes use deterministic keys, but execute sequentially without a composition ledger ([composer.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composer.go:90)). A partial write can be retried safely only if something already knows which run to replay.
+   Evaluation, signal, and decision writes use deterministic keys, but execute sequentially without a composition ledger ([composer.go](../backend/internal/ambientmonitor/composer.go):90). A partial write can be retried safely only if something already knows which run to replay.
 
 3. **High: replay inputs are not completely immutable.**
-   The composer reloads the current outcome revision. `CreateEvaluation` rejects revisions that are no longer current ([service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/outcomeevaluation/service.go:129)). `EvaluateStored` reads the owner’s current policy, latest signals, decision history, and feedback ([service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/service.go:206)). A delayed first attempt can therefore produce different results from an immediate attempt.
+   The composer reloads the current outcome revision. `CreateEvaluation` rejects revisions that are no longer current ([service.go](../backend/internal/outcomeevaluation/service.go):129). `EvaluateStored` reads the owner’s current policy, latest signals, decision history, and feedback ([service.go](../backend/internal/proactivity/service.go):206). A delayed first attempt can therefore produce different results from an immediate attempt.
 
 4. **Medium: composition status is ephemeral.**
    `Completion.Composed` exists only in memory. `FindCompletion` always reconstructs it as false, while immutable runs store `signal_count = 0`. APIs cannot distinguish pending, partially composed, retrying, terminal, or dead-lettered runs.
@@ -3682,7 +3687,7 @@ Covered fixed collectors, immutable ledgers, durable scheduling, guarded routes,
 5. **Medium: automatic target disabling is another unreceipted crash boundary.**
    `DisableTarget` occurs after all downstream writes. A crash can leave composition complete but the expired target enabled.
 
-The specification explicitly requires transactional outbox, checkpoint/resume, leases, dead-letter isolation, reconciliation, orphan detection, and immutable ledgers ([specification](/C:/Users/NO/.codex/attachments/93918613-a076-4511-90fb-5419285c652e/pasted-text-1.txt:621)).
+The specification explicitly requires transactional outbox, checkpoint/resume, leases, dead-letter isolation, reconciliation, orphan detection, and immutable ledgers ([specification](source-material/whole-life-framework-taxonomy.txt):621).
 
 **Proposed State Machine**
 Monitor completion transaction:
@@ -3860,10 +3865,10 @@ Implemented migration `0050` without editing ambient-monitor Go code.
 - Down migration refuses non-empty ledgers.
 
 **Changed Files**
-- [0050 up migration](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0050_outcome_monitor_composition_delivery.up.sql)
-- [0050 down migration](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0050_outcome_monitor_composition_delivery.down.sql)
-- [Contract tests](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/outcome_monitor_composition_delivery_contract_test.go)
-- [PostgreSQL lifecycle tests](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/outcome_monitor_composition_delivery_postgres_test.go)
+- [0050 up migration](../backend/migrations/pre/0050_outcome_monitor_composition_delivery.up.sql)
+- [0050 down migration](../backend/migrations/pre/0050_outcome_monitor_composition_delivery.down.sql)
+- [Contract tests](../backend/migrations/outcome_monitor_composition_delivery_contract_test.go)
+- [PostgreSQL lifecycle tests](../backend/migrations/outcome_monitor_composition_delivery_postgres_test.go)
 
 Verification passed:
 
@@ -3886,39 +3891,39 @@ The files remain uncommitted.
 
 1. **[P0] Schedulers have no managed lifecycle or graceful shutdown.**
    Application startup calls a blocking `gin.Run` without a signal-aware root context or `http.Server.Shutdown`; schedulers are created during route assembly with `context.Background()` and return no stop/wait handle. Cancellation in the runner can also return while the handler goroutine continues running. Introduce one process context, start workers after route construction, stop accepting HTTP traffic on shutdown, cancel workers, and wait with a bounded timeout.
-   [main.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/cmd/main.go:34)
-   [router.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/router.go:43)
-   [routes.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:369)
-   [runner.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/durablejob/runner.go:225)
+   [main.go](../backend/cmd/main.go):34
+   [router.go](../backend/internal/router/router.go):43
+   [routes.go](../backend/internal/router/routes.go):369
+   [runner.go](../backend/internal/durablejob/runner.go):225
 
 2. **[P1] Ambient target leases can expire while still being accepted.**
    A sweep captures one timestamp, claims up to 20 targets, and processes them sequentially. Each completion retains that original timestamp even though collection may happen minutes later. PostgreSQL validates lease expiry against this stale `run.FinishedAt`, not commit time, and ambient target leases have no heartbeat. Claim one target at a time or heartbeat target leases, derive `FinishedAt` after collection, and fence completion against database/current time.
-   [durable_scheduler.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/durable_scheduler.go:44)
-   [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/service.go:447)
-   [repository_postgres.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/repository_postgres.go:471)
+   [durable_scheduler.go](../backend/internal/ambientmonitor/durable_scheduler.go):44
+   [service.go](../backend/internal/ambientmonitor/service.go):447
+   [repository_postgres.go](../backend/internal/ambientmonitor/repository_postgres.go):471
 
 3. **[P1] A crash after monitor completion can permanently skip composition.**
    `Complete` durably stores the observation/run, releases the lease, and advances `next_run_at` before `Compose` executes. Only one immediate in-process replay exists. A crash between these operations, or two sink failures, leaves no durable pending marker; the next sweep sees the target as not due. Persist a composition outbox/receipt atomically with monitor completion.
-   [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/service.go:397)
-   [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/service.go:464)
-   [repository_postgres.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/repository_postgres.go:508)
-   [0049 migration](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0049_outcome_attention_monitor.up.sql:203)
+   [service.go](../backend/internal/ambientmonitor/service.go):397
+   [service.go](../backend/internal/ambientmonitor/service.go):464
+   [repository_postgres.go](../backend/internal/ambientmonitor/repository_postgres.go):508
+   [0049 migration](../backend/migrations/pre/0049_outcome_attention_monitor.up.sql):203
 
 4. **[P1] Recurring jobs have a duplicate-schedule failure window.**
    `RegisterRecurring` enqueues the next occurrence before the current occurrence is marked terminal. If enqueue succeeds but `MarkSucceeded`/`MarkDead` fails or loses its lease, the current occurrence can run again and enqueue another future job. The returned `RowsAffected` boolean is ignored. Move terminal transition and next-occurrence creation into one repository transaction protected by the existing queue/kind advisory lock, and treat a false ownership result as lease loss.
-   [runner.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/durablejob/runner.go:152)
-   [runner.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/durablejob/runner.go:212)
-   [repository.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/durablejob/repository.go:84)
+   [runner.go](../backend/internal/durablejob/runner.go):152
+   [runner.go](../backend/internal/durablejob/runner.go):212
+   [repository.go](../backend/internal/durablejob/repository.go):84
 
 5. **[P1] Emergency-stop permission is checked only once per sweep.**
    `allowed()` is evaluated before entering `runMonitorSweep`, then every discovered scope continues without another check. A safety-mode change during a long sweep therefore does not stop remaining background work. Check permission and context before every scope, target claim, and composition retry; stop cleanly without recording a task failure when permission is withdrawn.
-   [durable_scheduler.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/durable_scheduler.go:36)
-   [durable_scheduler.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/durable_scheduler.go:50)
+   [durable_scheduler.go](../backend/internal/ambientmonitor/durable_scheduler.go):36
+   [durable_scheduler.go](../backend/internal/ambientmonitor/durable_scheduler.go):50
 
 6. **[P2] Worker failure is operationally invisible.**
    `Runner.Start` silently discards repository errors and exposes no readiness, last-success, last-error, or stopped state. The HTTP service can remain healthy while the monitor has stopped making progress. Return a managed worker handle and publish bounded lifecycle telemetry through readiness/diagnostics.
-   [runner.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/durablejob/runner.go:271)
-   [durable_scheduler.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/durable_scheduler.go:69)
+   [runner.go](../backend/internal/durablejob/runner.go):271
+   [durable_scheduler.go](../backend/internal/ambientmonitor/durable_scheduler.go):69
 
 **Minimal Integration Approach**
 
@@ -3939,17 +3944,17 @@ The files remain uncommitted.
 - Transcript: `08/05/rollout-2026-08-05T05-09-57-019fcfe6-3104-7760-a32d-b10d0c99a638.jsonl`
 
 **Audit Findings**
-1. **Composition is not durably represented.** `Completion.Composed` exists only in the immediate response and is absent from persisted `MonitorRun`. A reload therefore cannot prove whether advisory composition succeeded. [types.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/types.go:141), [service.go](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/service.go:407)
+1. **Composition is not durably represented.** `Completion.Composed` exists only in the immediate response and is absent from persisted `MonitorRun`. A reload therefore cannot prove whether advisory composition succeeded. [types.go](../backend/internal/ambientmonitor/types.go):141, [service.go](../backend/internal/ambientmonitor/service.go):407
 
-2. **Basic view can be misleading.** It shows the collection run as `Completed` even when downstream outcome/proactivity composition failed. Composition needs a separate status, not an extension of collection status. [governance-control.component.html](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html:563)
+2. **Basic view can be misleading.** It shows the collection run as `Completed` even when downstream outcome/proactivity composition failed. Composition needs a separate status, not an extension of collection status. [governance-control.component.html](../frontend/src/app/pages/governance-control/governance-control.component.html):563
 
-3. **Advanced disclosure is visual, not computational.** Loading the monitor automatically fetches 50 observations and 50 runs before Advanced history is opened. Composition history must not join this eager path. [governance-control.component.ts](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts:793), [governance-control.component.ts](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts:845)
+3. **Advanced disclosure is visual, not computational.** Loading the monitor automatically fetches 50 observations and 50 runs before Advanced history is opened. Composition history must not join this eager path. [governance-control.component.ts](../frontend/src/app/pages/governance-control/governance-control.component.ts):793, [governance-control.component.ts](../frontend/src/app/pages/governance-control/governance-control.component.ts):845
 
 4. **History errors are coupled.** `forkJoin` means one failed history request prevents both histories from updating. Composition needs independent summary/history state and subscriptions.
 
 5. **Failures currently depend on transient notifications.** The due-pass toast correctly reports failures, but durable composition failures cannot survive refresh until a composition ledger and read API exist.
 
-6. **Current component tests do not render the template.** They instantiate the class directly, so Basic/Advanced visibility and accessible failure presentation are untested. [governance-control.component.spec.ts](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.spec.ts:289)
+6. **Current component tests do not render the template.** They instantiate the class directly, so Basic/Advanced visibility and accessible failure presentation are untested. [governance-control.component.spec.ts](../frontend/src/app/pages/governance-control/governance-control.component.spec.ts):289
 
 **Smallest Contract**
 ```ts
@@ -4061,7 +4066,7 @@ No files were edited.
 - Original report SHA-256: `15704a9ffb2c788e6372bbee56f66f7e651b88b1cf279f0eb5ea5fabb56101e6`
 - Transcript: `08/05/rollout-2026-08-05T05-32-04-019fcffa-6fd6-73c0-b427-7ae6ac8cf798.jsonl`
 
-Implemented focused PostgreSQL integration coverage in [composition_repository_postgres_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composition_repository_postgres_test.go:19).
+Implemented focused PostgreSQL integration coverage in [composition_repository_postgres_test.go](../backend/internal/ambientmonitor/composition_repository_postgres_test.go):19.
 
 Covered:
 
@@ -4095,13 +4100,13 @@ No migrations, frontend files, documentation, Git state, or Playwright artifacts
 
 Added focused backend coverage in:
 
-- [handler_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\handler_test.go:211)
+- [handler_test.go](../backend/internal/ambientmonitor/handler_test.go):211
   - Owner/workspace/target isolation
   - Attempt-to-delivery/target binding
   - Advisory-only authority flags
   - Invalid limits for both composition endpoints
   - New routes included in route-surface checks
-- [durable_scheduler_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\ambientmonitor\durable_scheduler_test.go:55)
+- [durable_scheduler_test.go](../backend/internal/ambientmonitor/durable_scheduler_test.go):55
   - Permission withdrawal after the first scoped batch stops further recovery and processing
 
 Verification:
@@ -4122,11 +4127,11 @@ Verification:
 
 Updated only the requested documentation and migration-chain test:
 
-- [migrations.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\migrations.md)
-- [completion-matrix.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\completion-matrix.md)
-- [acceptance-test-matrix.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\acceptance-test-matrix.md)
-- [requirements-traceability.md](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\docs\requirements-traceability.md)
-- [migration_chain_contract_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\migration_chain_contract_test.go)
+- [migrations.md](migrations.md)
+- [completion-matrix.md](completion-matrix.md)
+- [acceptance-test-matrix.md](acceptance-test-matrix.md)
+- [requirements-traceability.md](requirements-traceability.md)
+- [migration_chain_contract_test.go](../backend/migrations/migration_chain_contract_test.go)
 
 The documentation now distinguishes collection completion from composition success, covers pending/retry/dead-letter states and immutable attempt receipts, preserves the advisory-only authority boundary, and records the unpinned outcome/proactivity snapshot limitation.
 
@@ -4158,11 +4163,11 @@ Implemented and verified migration 0051.
 - Advisory execution authority remains disabled.
 
 **Changed paths**
-- [0051 up migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql)
-- [0051 down migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.down.sql)
-- [Contract tests](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/outcome_monitor_composition_snapshot_contract_test.go)
-- [PostgreSQL lifecycle tests](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/outcome_monitor_composition_snapshot_postgres_test.go)
-- [Migration chain contract](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/migration_chain_contract_test.go)
+- [0051 up migration](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql)
+- [0051 down migration](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.down.sql)
+- [Contract tests](../backend/migrations/outcome_monitor_composition_snapshot_contract_test.go)
+- [PostgreSQL lifecycle tests](../backend/migrations/outcome_monitor_composition_snapshot_postgres_test.go)
+- [Migration chain contract](../backend/migrations/migration_chain_contract_test.go)
 
 **Validation**
 - Migration package tests: passed.
@@ -4207,12 +4212,12 @@ Behavior:
 - PostgreSQL uses an exact compound-selector query.
 
 **Changed Paths**
-- [repository.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\repository.go:21)
-- [service.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\service.go:97)
-- [repository_postgres.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\repository_postgres.go:146)
-- [exact_revision_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\exact_revision_test.go:1)
-- [repository_postgres_integration_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\repository_postgres_integration_test.go:107)
-- [repository_postgres_test.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\outcomeevaluation\repository_postgres_test.go:96)
+- [repository.go](../backend/internal/outcomeevaluation/repository.go):21
+- [service.go](../backend/internal/outcomeevaluation/service.go):97
+- [repository_postgres.go](../backend/internal/outcomeevaluation/repository_postgres.go):146
+- [exact_revision_test.go](../backend/internal/outcomeevaluation/exact_revision_test.go):1
+- [repository_postgres_integration_test.go](../backend/internal/outcomeevaluation/repository_postgres_integration_test.go):107
+- [repository_postgres_test.go](../backend/internal/outcomeevaluation/repository_postgres_test.go):96
 
 Package tests, `go vet`, race tests, and disposable PostgreSQL lifecycle tests pass. The full backend run remains blocked by unrelated existing undefined types in `internal/proactivity`. No commit was created.
 
@@ -4268,14 +4273,14 @@ func (s *Service) EvaluateStoredSnapshot(
 - Memory and PostgreSQL repositories implement the same contract.
 
 **Changed Paths**
-- [snapshot.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/snapshot.go)
-- [snapshot_repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/snapshot_repository.go)
-- [snapshot_repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/snapshot_repository_postgres.go)
-- [repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/repository.go)
-- [repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/repository_postgres.go)
-- [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/service.go)
-- [snapshot_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/snapshot_test.go)
-- [repository_postgres_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/repository_postgres_test.go)
+- [snapshot.go](../backend/internal/proactivity/snapshot.go)
+- [snapshot_repository.go](../backend/internal/proactivity/snapshot_repository.go)
+- [snapshot_repository_postgres.go](../backend/internal/proactivity/snapshot_repository_postgres.go)
+- [repository.go](../backend/internal/proactivity/repository.go)
+- [repository_postgres.go](../backend/internal/proactivity/repository_postgres.go)
+- [service.go](../backend/internal/proactivity/service.go)
+- [snapshot_test.go](../backend/internal/proactivity/snapshot_test.go)
+- [repository_postgres_test.go](../backend/internal/proactivity/repository_postgres_test.go)
 
 **Verification**
 - Proactivity tests: passed.
@@ -4312,7 +4317,7 @@ Verification:
 - Nothing committed or pushed.
 - In-app visual QA could not attach from this background task; production template compilation passed.
 
-Changed files: [ambient-monitor.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/ambient-monitor.model.interface.ts), [governance-control.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.ts), [HTML](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.html), and [tests](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/governance-control/governance-control.component.spec.ts).
+Changed files: [ambient-monitor.model.interface.ts](../frontend/src/app/models/ambient-monitor.model.interface.ts), [governance-control.component.ts](../frontend/src/app/pages/governance-control/governance-control.component.ts), [HTML](../frontend/src/app/pages/governance-control/governance-control.component.html), and [tests](../frontend/src/app/pages/governance-control/governance-control.component.spec.ts).
 
 ## 019fd028-9409-7030-ab89-9c1a84d5cad4
 
@@ -4323,31 +4328,31 @@ Changed files: [ambient-monitor.model.interface.ts](C:/Users/NO/Documents/Codex/
 - Transcript: `08/05/rollout-2026-08-05T06-22-28-019fd028-9409-7030-ab89-9c1a84d5cad4.jsonl`
 
 **Audit Findings**
-1. **P0: PostgreSQL cannot persist or reload the new snapshot contract.** The completion insert omits every 0051 snapshot column, despite the trigger requiring `attention_snapshot` and an exact digest ([repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/repository_postgres.go:516), [0051 up](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql:482)). The select, row projection, and decoder also omit the snapshot ([composition_repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composition_repository_postgres.go:14), [decoder](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composition_repository_postgres.go:366)).
+1. **P0: PostgreSQL cannot persist or reload the new snapshot contract.** The completion insert omits every 0051 snapshot column, despite the trigger requiring `attention_snapshot` and an exact digest ([repository_postgres.go](../backend/internal/ambientmonitor/repository_postgres.go):516, [0051 up](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql):482). The select, row projection, and decoder also omit the snapshot ([composition_repository_postgres.go](../backend/internal/ambientmonitor/composition_repository_postgres.go):14, [decoder](../backend/internal/ambientmonitor/composition_repository_postgres.go):366).
 
    **Action:** serialize `Attention` to JSON and insert every snapshot scalar/digest. Extend the select/row/decoder and verify the persisted snapshot equals the requested snapshot.
 
-2. **P0: Snapshot capture errors are silently converted into legacy rows.** `Service.Complete` ignores `captureErr` and retains `legacy_unpinned` ([service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/service.go:277)). Workers subsequently reject that record as `snapshot_unavailable`.
+2. **P0: Snapshot capture errors are silently converted into legacy rows.** `Service.Complete` ignores `captureErr` and retains `legacy_unpinned` ([service.go](../backend/internal/ambientmonitor/service.go):277). Workers subsequently reject that record as `snapshot_unavailable`.
 
    **Action:** expose capture failure explicitly. Either persist a deliberate review/dead-letter state or fail completion without silently changing provenance. Use an injected clock in snapshot tests.
 
-3. **P1: `CaptureSnapshot` performs a policy write before full input validation.** It calls `ensureDefaultPolicy`, which may record a policy, before composition inspects historical observations ([composer.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composer.go:79), [policy creation](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composer.go:188)). The cross-scope test confirms this unwanted side effect.
+3. **P1: `CaptureSnapshot` performs a policy write before full input validation.** It calls `ensureDefaultPolicy`, which may record a policy, before composition inspects historical observations ([composer.go](../backend/internal/ambientmonitor/composer.go):79, [policy creation](../backend/internal/ambientmonitor/composer.go):188). The cross-scope test confirms this unwanted side effect.
 
    **Action:** make capture read-only. Seed the default policy during onboarding/configuration, or return `policy_unavailable` without mutation.
 
-4. **P1: SQL validates attention cursor shape, but not its cryptographic contents.** It regex-checks `inputDigest` and `windowDigest`, then checks counts and head cursors ([0051 up](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql:180), [signal checks](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql:219)). It does not recompute the three window digests or `inputDigest`; Go does ([snapshot.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/proactivity/snapshot.go:341)).
+4. **P1: SQL validates attention cursor shape, but not its cryptographic contents.** It regex-checks `inputDigest` and `windowDigest`, then checks counts and head cursors ([0051 up](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql):180, [signal checks](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql):219). It does not recompute the three window digests or `inputDigest`; Go does ([snapshot.go](../backend/internal/proactivity/snapshot.go):341).
 
    **Action:** reproduce the canonical proactivity digest calculation in SQL, or enforce an application-only insertion boundary and add database tamper tests covering historical records, window digests, and input digest.
 
-5. **P1: Legacy and Go deliveries use different binding-digest algorithms.** Go binds delivery identity plus `SnapshotDigest` using canonical JSON ([composition_delivery.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composition_delivery.go:144)). The SQL run trigger uses pipe-concatenation without the snapshot digest ([0051 up](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql:834)).
+5. **P1: Legacy and Go deliveries use different binding-digest algorithms.** Go binds delivery identity plus `SnapshotDigest` using canonical JSON ([composition_delivery.go](../backend/internal/ambientmonitor/composition_delivery.go):144). The SQL run trigger uses pipe-concatenation without the snapshot digest ([0051 up](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql):834).
 
    **Action:** use one binding algorithm or store a binding-contract version. Also choose one enqueue owner: explicit Go enqueue for pinned records and a clearly defined trigger path for legacy fallback.
 
-6. **P1: Attempt receipts carry the snapshot but remain only partially self-verifying.** The migration now adds `snapshot_digest` with a delivery FK ([0051 up](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql:701)), and Go compares it during settlement ([composition_repository_postgres.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composition_repository_postgres.go:245)). However, decoding only validates digest syntax; it does not recompute `RequestDigest` or `RecordDigest` ([decoder](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composition_repository_postgres.go:400)).
+6. **P1: Attempt receipts carry the snapshot but remain only partially self-verifying.** The migration now adds `snapshot_digest` with a delivery FK ([0051 up](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql):701), and Go compares it during settlement ([composition_repository_postgres.go](../backend/internal/ambientmonitor/composition_repository_postgres.go):245). However, decoding only validates digest syntax; it does not recompute `RequestDigest` or `RecordDigest` ([decoder](../backend/internal/ambientmonitor/composition_repository_postgres.go):400).
 
    **Action:** recompute both receipt digests on read and reject mismatches as corrupt storage.
 
-7. **P2: Composer versions now match, but the compatibility proof is not a default CI gate.** Go and SQL both use `ambient-outcome-attention-v2` ([composition_delivery.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/ambientmonitor/composition_delivery.go:16), [0051 up](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql:539)). The cross-language PostgreSQL digest test requires destructive-test environment variables and was skipped in the normal migration run.
+7. **P2: Composer versions now match, but the compatibility proof is not a default CI gate.** Go and SQL both use `ambient-outcome-attention-v2` ([composition_delivery.go](../backend/internal/ambientmonitor/composition_delivery.go):16, [0051 up](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.up.sql):539). The cross-language PostgreSQL digest test requires destructive-test environment variables and was skipped in the normal migration run.
 
    **Action:** run the isolated PostgreSQL 0051 lifecycle test in CI with a disposable database.
 
@@ -4367,9 +4372,9 @@ Changed files: [ambient-monitor.model.interface.ts](C:/Users/NO/Documents/Codex/
 No files were edited.
 
 **Implemented Operationally**
-- **Human sovereignty:** versioned owner constitution, protected rules, activation history, execution-policy checks, approval boundaries, and emergency stop. See [frameworkregistry/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/service.go:608), [constitution_execution_policy.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/constitution_execution_policy.go:1), and [constitution_execution_policy_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/constitution_execution_policy_test.go:1).
-- **Whole-life operations:** canonical 24-domain taxonomy, domain links, need observations, capacity snapshots, exact 12-level goal hierarchy, and all 25 prioritization factors. See [lifeops/types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeops/types.go:13), [lifeops/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeops/service.go:417), and [lifeops/service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeops/service_test.go:1).
-- **Intake and execution plumbing:** source extraction can create governed workflow candidates with deduplication, source links, evidence claims, checklists, reminders, review gates, transitions, and audit events. Task planning consumes operating context and capacity. See [workflow/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:500), [source/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/source/service.go:1988), and [task/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:966).
+- **Human sovereignty:** versioned owner constitution, protected rules, activation history, execution-policy checks, approval boundaries, and emergency stop. See [frameworkregistry/service.go](../backend/internal/frameworkregistry/service.go):608, [constitution_execution_policy.go](../backend/internal/frameworkregistry/constitution_execution_policy.go):1, and [constitution_execution_policy_test.go](../backend/internal/frameworkregistry/constitution_execution_policy_test.go):1.
+- **Whole-life operations:** canonical 24-domain taxonomy, domain links, need observations, capacity snapshots, exact 12-level goal hierarchy, and all 25 prioritization factors. See [lifeops/types.go](../backend/internal/lifeops/types.go):13, [lifeops/service.go](../backend/internal/lifeops/service.go):417, and [lifeops/service_test.go](../backend/internal/lifeops/service_test.go):1.
+- **Intake and execution plumbing:** source extraction can create governed workflow candidates with deduplication, source links, evidence claims, checklists, reminders, review gates, transitions, and audit events. Task planning consumes operating context and capacity. See [workflow/service.go](../backend/internal/workflow/service.go):500, [source/service.go](../backend/internal/source/service.go):1988, and [task/service.go](../backend/internal/task/service.go):966.
 - **Operational UI/API:** owner-authenticated LifeOps routes and a `/life-ops` management interface exist.
 
 **Catalog / Reference Only**
@@ -4378,7 +4383,7 @@ No files were edited.
 - Several sovereignty principles remain policy prose unless expressible as deny, approval, or authority-ceiling rules.
 
 **Top 3 Gaps**
-1. **Conflicting canonical ontologies:** `lifeops` has 24 domains, while `lifeontology` uses 11 collapsed domains and immutable projections. There is no authoritative binding joining source facts, memories, pursuits, workflows, tasks, and goal nodes. See [lifeontology/types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/lifeontology/types.go:38).
+1. **Conflicting canonical ontologies:** `lifeops` has 24 domains, while `lifeontology` uses 11 collapsed domains and immutable projections. There is no authoritative binding joining source facts, memories, pursuits, workflows, tasks, and goal nodes. See [lifeontology/types.go](../backend/internal/lifeontology/types.go):38.
 2. **No unified intake-to-priority chain:** workflow intake uses keyword classification, basic entity extraction, limited deadline parsing, and a separate additive priority score. It does not automatically create a LifeOps goal, derive need/capacity context, or run the 25-factor priority engine.
 3. **Constraints are unevenly enforced:** capacity and priority logic are meaningful but path-dependent. Fixed weighted scoring can numerically trade away health, safety, legal obligations, consent, or dignity; other workflow/proactivity paths bypass it entirely.
 
@@ -4407,20 +4412,20 @@ Fresh package tests were not completed because Go was unavailable on the shell p
 
 | Families | Status | Evidence |
 |---|---|---|
-| **8. Organizations** | **Partially operational** | HAI selects and persists modes including sequential, hierarchical, parallel-specialist, and debate/critic configurations in [operating_context.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/operating_context.go:595). Team lifecycle, membership and consensus records are durable, but teams do not execute work. |
-| **9. Agent identity** | **Operational contract** | Durable owner-scoped agent registry, capabilities, authority ceilings, allowlists, health, availability, reliability and assignments exist in [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/agentregistry/types.go:92). CRUD, transitions and assignments have authenticated routes in [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:884) and UI controls. Rich agent cards are partly synthesized rather than independently attested records. |
-| **10. Delegation** | **Operational contract, no delivery** | Delegation envelopes contain objectives, authority, constraints, budgets, evidence and lifecycle transitions in [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/agentcoordination/types.go:97). Tasks generate delegation plans, but no production worker consumes them. |
-| **11. Communication** | **Operational schema, transport missing** | Typed correlated messages, confidentiality, expiry, acknowledgement, provenance and idempotency are defined in [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/agentcoordination/types.go:12). The coordinator can dispatch through interfaces, but only test implementations of `Transport` and `DispatchStore` were found. |
-| **12. Coordination** | **Advisory operational** | Durable teams, consensus outcomes and coordination previews exist. The task integration explicitly enriches plans without granting execution authority in [agent_team_context.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/agent_team_context.go:12). No real fan-out/fan-in agent run occurs. |
+| **8. Organizations** | **Partially operational** | HAI selects and persists modes including sequential, hierarchical, parallel-specialist, and debate/critic configurations in [operating_context.go](../backend/internal/frameworkregistry/operating_context.go):595. Team lifecycle, membership and consensus records are durable, but teams do not execute work. |
+| **9. Agent identity** | **Operational contract** | Durable owner-scoped agent registry, capabilities, authority ceilings, allowlists, health, availability, reliability and assignments exist in [types.go](../backend/internal/agentregistry/types.go):92. CRUD, transitions and assignments have authenticated routes in [routes.go](../backend/internal/router/routes.go):884 and UI controls. Rich agent cards are partly synthesized rather than independently attested records. |
+| **10. Delegation** | **Operational contract, no delivery** | Delegation envelopes contain objectives, authority, constraints, budgets, evidence and lifecycle transitions in [types.go](../backend/internal/agentcoordination/types.go):97. Tasks generate delegation plans, but no production worker consumes them. |
+| **11. Communication** | **Operational schema, transport missing** | Typed correlated messages, confidentiality, expiry, acknowledgement, provenance and idempotency are defined in [types.go](../backend/internal/agentcoordination/types.go):12. The coordinator can dispatch through interfaces, but only test implementations of `Transport` and `DispatchStore` were found. |
+| **12. Coordination** | **Advisory operational** | Durable teams, consensus outcomes and coordination previews exist. The task integration explicitly enriches plans without granting execution authority in [agent_team_context.go](../backend/internal/task/agent_team_context.go):12. No real fan-out/fan-in agent run occurs. |
 | **13. Reasoning** | **Catalog/reference-only** | ReAct, Reflexion, Self-Refine, Tree/Graph of Thoughts and related methods are catalog entries. Selection records a broad reasoning family, but the chosen method does not alter prompts, execution loops or validation. |
-| **14. Cognitive architectures** | **Partial operational loop** | [agentcycle/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/agentcycle/service.go:126) runs source, workflow, ambient, pursuit and memory maintenance passes. BDI, OODA, MAPE-K and other named architectures remain catalog concepts rather than selectable stateful engines. |
+| **14. Cognitive architectures** | **Partial operational loop** | [agentcycle/service.go](../backend/internal/agentcycle/service.go):126 runs source, workflow, ambient, pursuit and memory maintenance passes. BDI, OODA, MAPE-K and other named architectures remain catalog concepts rather than selectable stateful engines. |
 | **15. Uncertainty** | **Narrow implementation** | Reliability scoring, duration ranges, calibration and uncertainty review thresholds exist. General expected-utility, value-of-information, regret and sensitivity decision engines are only described in catalog contracts. |
 | **16. Planning** | **Partially operational** | The resource planner performs dependency ordering, capacity scheduling, deadlines, critical-path/slack, budgets and replanning. The task bridge largely creates sequential dependencies; HTN, STRIPS/PDDL, partial-order planning, A*, MCTS and MIP are not implemented engines. |
-| **17. Workflow modeling** | **Strongest operational family** | Persistent workflow items, transitions, approvals, leases, retries, evidence and completion attestations exist in [workflow.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/workflow.go:9). The BPMN-like [workflowgraph/types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflowgraph/types.go:10) supports parallelism and compensation structurally, but has no production repository, routes or runtime integration. |
+| **17. Workflow modeling** | **Strongest operational family** | Persistent workflow items, transitions, approvals, leases, retries, evidence and completion attestations exist in [workflow.go](../backend/internal/models/workflow.go):9. The BPMN-like [workflowgraph/types.go](../backend/internal/workflowgraph/types.go):10 supports parallelism and compensation structurally, but has no production repository, routes or runtime integration. |
 
 **Catalog Boundary**
 
-The 55-entry framework taxonomy explicitly exists independently of implementation in [family_taxonomy.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/family_taxonomy.go:8). Therefore catalog presence, selection metadata and dashboard presentation are not evidence that the corresponding reasoning or organizational method executes.
+The 55-entry framework taxonomy explicitly exists independently of implementation in [family_taxonomy.go](../backend/internal/frameworkregistry/family_taxonomy.go):8. Therefore catalog presence, selection metadata and dashboard presentation are not evidence that the corresponding reasoning or organizational method executes.
 
 **Top 3 Gaps**
 
@@ -4447,7 +4452,7 @@ No files were edited. Focused Go tests were not run because Go is unavailable on
 - Transcript: `08/05/rollout-2026-08-05T07-26-44-019fd063-6caf-71a3-a1bc-f465676d9bcb.jsonl`
 
 **Operationally Implemented**
-- Shared authenticated shell with 25 lazy-loaded routes, persistent theme/navigation/view preferences, and guarded access: [app-routing.module.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/app-routing.module.ts:7).
+- Shared authenticated shell with 25 lazy-loaded routes, persistent theme/navigation/view preferences, and guarded access: [app-routing.module.ts](../frontend/src/app/app-routing.module.ts):7.
 - Sovereignty and governance: versioned Constitution, framework selection, preferences, mandates, authorization receipts, controlled learning, domain packs, agent registry, life ledger, outcome monitoring, and proactivity.
 - Life operations: needs, capacity, goal hierarchy, priority evaluation, pursuits, intake, portfolio planning, workflows, approvals, retries, reminders, and reviewed execution.
 - Knowledge plane: connected-source management, memory CRUD/retrieval, grounded-answer generation, claim review/correction, provenance, and verification history.
@@ -4457,14 +4462,14 @@ No files were edited. Focused Go tests were not run because Go is unavailable on
 **Catalog Or Reference Only**
 - Framework families 51-55 remain experimental integrations. Brain Catalog mainly provides status, probes, revalidation, recommendations, and export controls. Catalog presence does not activate a tool.
 - Most personal packs 39-50 are policy/domain templates operating through generic pursuits, sources, workflows, and approvals. Finance evidence and work delivery have stronger implementations; health, legal, relationships, travel, home/assets, and emergency-domain automation lack dedicated end-to-end adapters.
-- `/hai-os` is a read-only architecture/readiness aggregator, not an operational engine surface: [hai-os.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/hai-os/hai-os.component.ts:27).
+- `/hai-os` is a read-only architecture/readiness aggregator, not an operational engine surface: [hai-os.component.ts](../frontend/src/app/pages/hai-os/hai-os.component.ts):27.
 
 **Top Three Gaps**
-1. **Progressive disclosure is incomplete.** Registry `primaryAction` and `advancedSectionIds` metadata are never consumed outside tests. Only seven page templates use `hai-progressive-section`; remaining Basic/Advanced behavior relies partly on global page-specific CSS selectors: [module-registry.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/module-registry.ts:10), [styles.scss](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/styles.scss:1338).
+1. **Progressive disclosure is incomplete.** Registry `primaryAction` and `advancedSectionIds` metadata are never consumed outside tests. Only seven page templates use `hai-progressive-section`; remaining Basic/Advanced behavior relies partly on global page-specific CSS selectors: [module-registry.ts](../frontend/src/app/control-room/module-registry.ts):10, [styles.scss](../frontend/src/styles.scss):1338.
 
-2. **Backend capability exceeds frontend exposure.** Governance only lists agent teams, while the backend supports versioning, lifecycle, messages, delegation assessment, and consensus. Capacity history, knowledge-claim assessment, and parts of memory-engine search/conversation inspection are similarly underexposed: [governance-control.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/governance-control.service.ts:252), [agent_team_handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/frameworkregistry/agent_team_handler.go:56).
+2. **Backend capability exceeds frontend exposure.** Governance only lists agent teams, while the backend supports versioning, lifecycle, messages, delegation assessment, and consensus. Capacity history, knowledge-claim assessment, and parts of memory-engine search/conversation inspection are similarly underexposed: [governance-control.service.ts](../frontend/src/app/services/governance-control.service.ts):252, [agent_team_handler.go](../backend/internal/frameworkregistry/agent_team_handler.go):56.
 
-3. **There is no authoritative unified plan graph.** Planning is split across task plans, pursuits, workflows, an opaque one-lane optimizer proposal, and optional Temporal follow-ups. The optimizer explicitly cannot modify workflows or calendars: [planningoptimizer/service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/planningoptimizer/service.go:1).
+3. **There is no authoritative unified plan graph.** Planning is split across task plans, pursuits, workflows, an opaque one-lane optimizer proposal, and optional Temporal follow-ups. The optimizer explicitly cannot modify workflows or calendars: [planningoptimizer/service.go](../backend/internal/planningoptimizer/service.go):1.
 
 **Recommended Next Slice**
 Build **Plan and Coordination** end to end, but first add its missing backend dependency: an owner-scoped, immutable, revisioned plan-graph contract containing dependency edges, temporal constraints, resource estimates, critical path, framework/evidence digests, assigned agents, approval state, workflow/run bindings, and repair history.
@@ -4541,14 +4546,14 @@ Stopped. Implementation files are preserved and uncommitted.
 Stopped. Files preserved; nothing committed or pushed.
 
 **Changed Files**
-- [plan-graph.model.interface.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/models/plan-graph.model.interface.ts)
-- [plan-graph.service.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/plan-graph.service.ts)
-- [plan-graph.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/plan-graph.service.spec.ts)
-- [plan-coordination.module.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/plan-coordination/plan-coordination.module.ts)
-- [plan-coordination.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/plan-coordination/plan-coordination.component.ts)
-- [plan-coordination.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/plan-coordination/plan-coordination.component.html)
-- [plan-coordination.component.scss](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/plan-coordination/plan-coordination.component.scss)
-- [plan-coordination.component.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/plan-coordination/plan-coordination.component.spec.ts)
+- [plan-graph.model.interface.ts](../frontend/src/app/models/plan-graph.model.interface.ts)
+- [plan-graph.service.ts](../frontend/src/app/services/plan-graph.service.ts)
+- [plan-graph.service.spec.ts](../frontend/src/app/services/plan-graph.service.spec.ts)
+- [plan-coordination.module.ts](../frontend/src/app/pages/plan-coordination/plan-coordination.module.ts)
+- [plan-coordination.component.ts](../frontend/src/app/pages/plan-coordination/plan-coordination.component.ts)
+- [plan-coordination.component.html](../frontend/src/app/pages/plan-coordination/plan-coordination.component.html)
+- [plan-coordination.component.scss](../frontend/src/app/pages/plan-coordination/plan-coordination.component.scss)
+- [plan-coordination.component.spec.ts](../frontend/src/app/pages/plan-coordination/plan-coordination.component.spec.ts)
 
 **Known Issues**
 - The page is intentionally not added to routing, navigation, or the module registry, per the assigned file restrictions.
@@ -4567,62 +4572,62 @@ Stopped. Files preserved; nothing committed or pushed.
 - Transcript: `08/05/rollout-2026-08-05T07-37-22-019fd06d-2629-7ba0-976a-9535ae978360.jsonl`
 
 **Integration Finding**
-No `plangraph` package, API, or frontend route currently exists. The repository already has a capable deterministic planning kernel in [resourceplanner](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resourceplanner/types.go:1) and immutable accepted portfolio allocations. `plangraph` should unify their provenance and execution bindings, not introduce another scheduling algorithm.
+No `plangraph` package, API, or frontend route currently exists. The repository already has a capable deterministic planning kernel in [resourceplanner](../backend/internal/resourceplanner/types.go):1 and immutable accepted portfolio allocations. `plangraph` should unify their provenance and execution bindings, not introduce another scheduling algorithm.
 
 **Backend Checklist**
 1. Create `backend/internal/plangraph/` with `types.go`, `validation.go`, `digest.go`, `repository.go`, `repository_postgres.go`, `service.go`, `handler.go`, and focused tests.
-2. Reuse `resourceplanner.Request` and `Decision`, including dependencies, resources, schedules, blockers, approval flags, replanning reasons, and digests at [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resourceplanner/types.go:106).
-3. Preserve its advisory boundary: it cannot execute, consume approval, or access external systems [planner.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/resourceplanner/planner.go:14).
+2. Reuse `resourceplanner.Request` and `Decision`, including dependencies, resources, schedules, blockers, approval flags, replanning reasons, and digests at [types.go](../backend/internal/resourceplanner/types.go):106.
+3. Preserve its advisory boundary: it cannot execute, consume approval, or access external systems [planner.go](../backend/internal/resourceplanner/planner.go):14.
 4. Model immutable plan revisions, nodes, dependency edges, resource allocations, evidence bindings, agent assignments, decisions, repair history, and workflow/task/run bindings.
 5. Bind each revision digest to owner, workspace, plan ID, revision, parent revision, normalized graph, framework selection, evidence preflight, capacity snapshot, goal/priority context, algorithm version, and creation time.
 6. Require `expectedRevision` and `expectedDigest` for acceptance and replanning. Reject stale writes with `409 Conflict`.
 7. Define narrow dependency interfaces inside `plangraph`; adapt pursuit, workflow, LifeOps, framework, and agent services in the router to avoid import cycles.
-8. Instantiate the service only after the final pursuit decorators at [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:521), but before task composition at [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:632).
-9. If task execution must be graph-bound, add `task.WithPlanGraph(...)` before `planningPreview` and `workflowRunner.Set` at [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:684).
-10. Add the import beside `planningoptimizer` at [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:70).
+8. Instantiate the service only after the final pursuit decorators at [routes.go](../backend/internal/router/routes.go):521, but before task composition at [routes.go](../backend/internal/router/routes.go):632.
+9. If task execution must be graph-bound, add `task.WithPlanGraph(...)` before `planningPreview` and `workflowRunner.Set` at [routes.go](../backend/internal/router/routes.go):684.
+10. Add the import beside `planningoptimizer` at [routes.go](../backend/internal/router/routes.go):70.
 11. Register:
    - `GET /api/v1/plans`
    - `GET /api/v1/plans/:id`
    - `POST /api/v1/plans/preview`
    - `POST /api/v1/plans/:id/accept`
    - `POST /api/v1/plans/:id/replan`
-12. Apply `PermRead` to reads and pure previews, `PermWrite` to proposed revisions, and `PermApprove` to acceptance. Follow the explicit owner/role guard pattern at [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:811).
+12. Apply `PermRead` to reads and pure previews, `PermWrite` to proposed revisions, and `PermApprove` to acceptance. Follow the explicit owner/role guard pattern at [routes.go](../backend/internal/router/routes.go):811.
 13. Register static paths before `/:id` paths to prevent Gin route conflicts.
-14. Derive owner identity exclusively from authenticated context. Never accept it from request JSON; the frontend already tests this boundary at [life-ops.service.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/services/life-ops.service.spec.ts:53).
+14. Derive owner identity exclusively from authenticated context. Never accept it from request JSON; the frontend already tests this boundary at [life-ops.service.spec.ts](../frontend/src/app/services/life-ops.service.spec.ts):53.
 
 **Migration Checklist**
 15. Recheck the migration tail immediately before editing. It is currently `0051`; the likely next pair is `pre/0052_plan_graph.up.sql` and `.down.sql`.
 16. Add append-only tables for revisions, nodes, edges, decisions, bindings, and repairs. Use owner/workspace composite keys and no cascading deletion.
 17. Add database constraints for bounded payload sizes, contiguous positive revisions, valid digest formats, node/edge ownership, endpoint existence, and accepted-revision consistency.
 18. Add triggers rejecting update, delete, and truncate on immutable evidence.
-19. Make rollback refuse non-empty plan ledgers, following [0051 down migration](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/pre/0051_outcome_monitor_composition_snapshot.down.sql:1).
-20. Add `0052_plan_graph` to the exact governance tail in [migration_chain_contract_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/migration_chain_contract_test.go:90).
+19. Make rollback refuse non-empty plan ledgers, following [0051 down migration](../backend/migrations/pre/0051_outcome_monitor_composition_snapshot.down.sql):1.
+20. Add `0052_plan_graph` to the exact governance tail in [migration_chain_contract_test.go](../backend/migrations/migration_chain_contract_test.go):90.
 21. Add migration contract and disposable-PostgreSQL lifecycle tests.
-22. Do not rely on GORM AutoMigrate. Versioned SQL is authoritative [database.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/infra/database.go:47).
-23. Prefer package-local SQL row types. If shared GORM models are introduced, add them to the development-only list beginning at [database.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/infra/database.go:81).
-24. No embed change is needed; `pre/*.sql` is already embedded automatically at [embed.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/migrations/embed.go:16).
+22. Do not rely on GORM AutoMigrate. Versioned SQL is authoritative [database.go](../backend/internal/infra/database.go):47.
+23. Prefer package-local SQL row types. If shared GORM models are introduced, add them to the development-only list beginning at [database.go](../backend/internal/infra/database.go):81.
+24. No embed change is needed; `pre/*.sql` is already embedded automatically at [embed.go](../backend/migrations/embed.go):16.
 
 **Frontend Checklist**
 25. Add `models/plan-graph.model.ts`, `services/plan-graph.service.ts`, and their tests.
-26. Create a lazy `pages/plan-coordination/` module following [life-ops.module.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/pages/life-ops/life-ops.module.ts:13).
-27. Add authenticated `/plans` routing inside the shell’s route collection at [app-routing.module.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/app-routing.module.ts:7).
-28. Register “Plan coordination” in the Work group near Pursuits and Workflows at [module-registry.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/module-registry.ts:17).
+26. Create a lazy `pages/plan-coordination/` module following [life-ops.module.ts](../frontend/src/app/pages/life-ops/life-ops.module.ts):13.
+27. Add authenticated `/plans` routing inside the shell’s route collection at [app-routing.module.ts](../frontend/src/app/app-routing.module.ts):7.
+28. Register “Plan coordination” in the Work group near Pursuits and Workflows at [module-registry.ts](../frontend/src/app/control-room/module-registry.ts):17.
 29. Suggested Advanced section IDs: `dependency-graph`, `timeline`, `capacity`, `agent-coordination`, `evidence`, `revisions`, and `execution-trace`.
-30. Add registry assertions beside the existing uniqueness and route tests at [module-registry.spec.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/module-registry.spec.ts:3).
-31. No shell navigation edit is required; it renders directly from the registry at [app-shell.component.html](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/app-shell.component.html:10).
-32. Import `ControlRoomModule` and use `hai-progressive-section`; it already persists module-specific disclosure state [progressive-section.component.ts](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/frontend/src/app/control-room/progressive-section.component.ts:9).
+30. Add registry assertions beside the existing uniqueness and route tests at [module-registry.spec.ts](../frontend/src/app/control-room/module-registry.spec.ts):3.
+31. No shell navigation edit is required; it renders directly from the registry at [app-shell.component.html](../frontend/src/app/control-room/app-shell.component.html):10.
+32. Import `ControlRoomModule` and use `hai-progressive-section`; it already persists module-specific disclosure state [progressive-section.component.ts](../frontend/src/app/control-room/progressive-section.component.ts):9.
 33. Use `NzDrawerModule` for node inspection. The planned shared `HaiInspectorDrawer` does not currently exist.
 34. Basic view should show only next executable node, blockers, owner, approval status, and schedule. Load graph topology, evidence, revisions, and traces only when Advanced sections open.
 35. Registry `primaryAction` metadata is not rendered by the shell, so the page must provide its own real Preview/Replan action.
 
 **Documentation And Verification**
-36. Add traceability after the current portfolio planning rows in [requirements-traceability.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/requirements-traceability.md:34).
-37. Update formal planning and workflow-modeling status at [framework-operating-contract-matrix.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/framework-operating-contract-matrix.md:35).
-38. Add implementation, migration, rollback, and authority boundaries to `docs/completion-matrix.md` and [migrations.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/docs/migrations.md:41).
+36. Add traceability after the current portfolio planning rows in [requirements-traceability.md](requirements-traceability.md):34.
+37. Update formal planning and workflow-modeling status at [framework-operating-contract-matrix.md](framework-operating-contract-matrix.md):35.
+38. Add implementation, migration, rollback, and authority boundaries to `docs/completion-matrix.md` and [migrations.md](migrations.md):41.
 39. Do not claim operational execution until task/workflow records persist and independently revalidate the exact plan revision and digest.
 40. Run focused backend tests for `./internal/plangraph`, `./internal/router`, and `./migrations`, then full `go test ./...`.
 41. Run Angular service/component/registry tests, production build, Compose validation, migration status/up, authenticated API acceptance, restart persistence, and browser Basic/Advanced checks.
-42. Use the documented Windows/Docker commands at [README.md](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/README.md:686).
+42. Use the documented Windows/Docker commands at [README.md](../README.md):686.
 
 **Primary Pitfalls**
 - `routes.go`, frontend routing, module registry, and requirement ledgers are already modified in the dirty worktree. Patch around current content; never replace whole files.
@@ -4646,7 +4651,7 @@ No files were edited and no tests were run during this read-only review.
 
 1. **Task orchestration is not yet connected to Plan Graph.** `task.IntakeRequest`, `CompletionPlan`, and `service` contain no accepted-plan binding or resolver. The current path is `Handler.Run` → `service.Run` → `withTaskOperation` → `runOperation` → `executeAllowedSteps`.
 
-2. **The Plan Graph side is already prepared.** [`plangraph.AcceptedRevisionReference`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/types.go:92), `AcceptedRevisionBinding`, `AcceptedRevisionResolver`, and [`Service.ResolveAccepted`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/service.go:203) now exist. They enforce:
+2. **The Plan Graph side is already prepared.** [`plangraph.AcceptedRevisionReference`](../backend/internal/plangraph/types.go):92, `AcceptedRevisionBinding`, `AcceptedRevisionResolver`, and [`Service.ResolveAccepted`](../backend/internal/plangraph/service.go):203 now exist. They enforce:
    - Authenticated owner scope
    - Exact latest revision and digest
    - Accepted status
@@ -4656,13 +4661,13 @@ No files were edited and no tests were run during this read-only review.
 
 3. **A node ID is mandatory.** `planId`, revision, and digest identify a plan container, but not the planned task. The existing `NodeID` requirement correctly prevents an arbitrary task from citing an unrelated node.
 
-4. **Approval persistence currently excludes plan provenance.** [`ReviewRequestDigest`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/state_repository.go:139) hashes pursuit, workflow, request, project, automation, mandate, and criteria, but no Plan Graph reference. An approval would therefore not presently bind a specific plan revision.
+4. **Approval persistence currently excludes plan provenance.** [`ReviewRequestDigest`](../backend/internal/task/state_repository.go):139 hashes pursuit, workflow, request, project, automation, mandate, and criteria, but no Plan Graph reference. An approval would therefore not presently bind a specific plan revision.
 
-5. **Execution authorization does not yet record the accepted plan.** [`executionGovernanceEvidence`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/governance_binding.go:19) creates `TaskPlanDigest`, but its canonical payload does not contain Plan Graph provenance.
+5. **Execution authorization does not yet record the accepted plan.** [`executionGovernanceEvidence`](../backend/internal/task/governance_binding.go):19 creates `TaskPlanDigest`, but its canonical payload does not contain Plan Graph provenance.
 
 **Minimum Integration**
 
-In [`task/service.go`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:38):
+In [`task/service.go`](../backend/internal/task/service.go):38:
 
 - Add a task-facing binding with `planId`, `planRevision`, `planDigest`, and `planNodeId`.
 - Add it to `IntakeRequest`.
@@ -4671,27 +4676,27 @@ In [`task/service.go`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-git
 - Inject it through a focused `WithAcceptedPlanResolver` configurator to avoid changing every constructor.
 - Do not add it to `ExecuteAllowed`, `HumanApproved`, approval provenance, or mandate fields.
 
-In [`task/state_repository.go`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/state_repository.go:121):
+In [`task/state_repository.go`](../backend/internal/task/state_repository.go):121:
 
 - Add the reference to `storedReviewRequest`.
 - Include all four fields in `ReviewRequestDigest`.
 - Preserve them through `encodeStoredReviewRequest` and `decodeStoredReviewRequest`.
 - Existing immutable JSON payloads mean no database migration is required for minimum correctness.
 
-In [`task/service.go`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/service.go:684):
+In [`task/service.go`](../backend/internal/task/service.go):684:
 
 - Resolve the reference at the start of `runOperation`, before `buildPlan`.
 - Re-resolve from the verified binding immediately before `toolExecutor.Execute` to close the replan race.
 - Approved review reruns already call `s.Run`, so they will automatically be revalidated.
 - Completed idempotency replays should return their historical result without executing or requiring the old plan to remain current.
 
-In [`task/governance_binding.go`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/governance_binding.go:85):
+In [`task/governance_binding.go`](../backend/internal/task/governance_binding.go):85:
 
 - Include plan ID, revision, digest, and node ID in the canonical task-governance payload.
 - Add an evidence reference such as `plan-graph://<id>/revisions/<revision>/nodes/<node>#sha256:<digest>`.
 - Continue carrying it through the existing `ToolExecutionRequest.Governance` and `automation.TaskLaunchRequest.Governance`; separate execution-authority fields are unnecessary.
 
-In [`router/routes.go`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:133):
+In [`router/routes.go`](../backend/internal/router/routes.go):133:
 
 - Retain `planGraphService := plangraph.NewService(...)` instead of constructing it only inside the handler.
 - Inject that same instance into `taskService`.
@@ -4702,7 +4707,7 @@ HTTP owner identity is correctly derived from the verified JWT principal:
 
 - `identityMiddleware` sets `identity.ContextSubjectKey`.
 - `requireAuthenticatedOwner` rejects missing principals.
-- [`requireTaskOwner`](/C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/handler.go:139) reads that subject.
+- [`requireTaskOwner`](../backend/internal/task/handler.go):139 reads that subject.
 - `Handler.Run` overwrites `request.OwnerIdentity`.
 - Plan resolution must use this owner directly, never the `taskStateOwnerIdentity` internal fallback.
 
@@ -4756,7 +4761,7 @@ No files were changed and no tests were run during this read-only audit.
 - Transcript: `08/05/rollout-2026-08-05T08-45-43-019fd0ab-bc61-7920-bb6b-c8a49630f6a7.jsonl`
 
 **Audit Result**
-The workflow path is strongly approval-gated, but immutable coordination-plan binding is currently missing. Plan Graph ends at its API registration in [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:133); its accepted revision is not carried by `WorkflowItem`, the workflow worker, task planning, or final execution authorization.
+The workflow path is strongly approval-gated, but immutable coordination-plan binding is currently missing. Plan Graph ends at its API registration in [routes.go](../backend/internal/router/routes.go):133; its accepted revision is not carried by `WorkflowItem`, the workflow worker, task planning, or final execution authorization.
 
 **Required Binding**
 Use three explicitly non-authoritative fields:
@@ -4769,13 +4774,13 @@ CoordinationPlanDigest   string
 
 They must always be all present or all absent.
 
-1. Add them to `models.WorkflowItem` in [workflow.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/workflow.go:9).
-2. Add them to `workflow.IntakeRequest` and `workflow.TaskRunRequest` in [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:45).
+1. Add them to `models.WorkflowItem` in [workflow.go](../backend/internal/models/workflow.go):9.
+2. Add them to `workflow.IntakeRequest` and `workflow.TaskRunRequest` in [service.go](../backend/internal/workflow/service.go):45.
 3. Include them in `workflowSourceRevision`, preventing source deduplication from silently retaining an obsolete plan.
-4. Include them in `workflowAPIIntakeSourceID` in [handler.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/handler.go:119).
-5. Propagate them through `workflowtask.Runner.RunWorkflowTask` into `task.IntakeRequest` in [runner.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflowtask/runner.go:318).
+4. Include them in `workflowAPIIntakeSourceID` in [handler.go](../backend/internal/workflow/handler.go):119.
+5. Propagate them through `workflowtask.Runner.RunWorkflowTask` into `task.IntakeRequest` in [runner.go](../backend/internal/workflowtask/runner.go):318.
 6. Include the digest in `workflowTaskOperationKey`; otherwise a new accepted revision can replay a task result created from an older plan.
-7. Add them to `executionauth.GovernanceEvidence` in [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:234) and to the deterministic task-governance digest in [governance_binding.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/task/governance_binding.go:19).
+7. Add them to `executionauth.GovernanceEvidence` in [types.go](../backend/internal/executionauth/types.go):234 and to the deterministic task-governance digest in [governance_binding.go](../backend/internal/task/governance_binding.go):19.
 
 **Resolver**
 Add this narrow method to `plangraph.Service`:
@@ -4790,7 +4795,7 @@ ValidateAcceptedRevision(
 ) error
 ```
 
-It should use [Service.Get](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/service.go:190) to require:
+It should use [Service.Get](../backend/internal/plangraph/service.go):190 to require:
 
 - Exact owner, ID, revision, and digest match.
 - `StatusAccepted`.
@@ -4805,14 +4810,14 @@ Three checks are warranted:
 
 1. In `workflow.Intake`, before `CreateItem`, to reject invalid or foreign bindings.
 2. In `runWorkflowItem`, immediately after the atomic worker claim and again before completion is attested.
-3. Most importantly, in `executionauth.Service.recheck` immediately before receipt consumption in [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:632). This closes the replan-after-preflight race before an external side effect.
+3. Most importantly, in `executionauth.Service.recheck` immediately before receipt consumption in [service.go](../backend/internal/executionauth/service.go):632. This closes the replan-after-preflight race before an external side effect.
 
 A failed check should call the existing review-required path, release the worker claim, and never retry execution blindly.
 
 **Owner Identity**
 The authoritative owner sources are already correct:
 
-- API intake overwrites client input using `identity.ContextSubjectKey` through [verifiedWorkflowOwner](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/handler.go:437).
+- API intake overwrites client input using `identity.ContextSubjectKey` through [verifiedWorkflowOwner](../backend/internal/workflow/handler.go):437.
 - Background workers use persisted `WorkflowItem.OwnerIdentity`.
 - The plan resolver must always receive that trusted owner, never a JSON-supplied owner.
 
@@ -4820,12 +4825,12 @@ The authoritative owner sources are already correct:
 Plan acceptance must not set `HumanApproved`, `ApprovalStatus`, `ExecuteAllowed`, or autonomy authority. These existing gates remain mandatory:
 
 - Workflow approval guard and durable `WorkflowDecision`.
-- Exact approval provenance from `workflowApprovalProof` in [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/workflow/service.go:2300).
+- Exact approval provenance from `workflowApprovalProof` in [service.go](../backend/internal/workflow/service.go):2300.
 - Exact automation action binding from `PrepareWorkflowApprovalBinding`.
 - Task-side approval verification in `verifiedApprovalDecisionForExecution`.
 - Active standing-mandate evaluation, owner/revision/digest checks, and expiry/revocation recheck.
 - Emergency stop, Constitution, framework selection, source evidence, agent/tool/folder allowlists, risk and autonomy ceilings.
-- `executionauth.AuthorizeAndConsume` in [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:387).
+- `executionauth.AuthorizeAndConsume` in [service.go](../backend/internal/executionauth/service.go):387.
 - Runtime verification, quality gates, immutable launch evidence, and completion attestation.
 
 The coordination-plan digest should also enter the automation action digest so replanning invalidates an earlier case approval. It remains approval context, never approval itself.
@@ -4869,27 +4874,27 @@ No files were edited and no tests were run; this was a read-only audit.
 **Audit Findings**
 
 1. **Accepted Plan Graph revisions are not currently bound to pursuit orchestration.**
-   `PortfolioPlanningRequest.PlanID` is only an opaque resource-planner identifier. `PlanPortfolioForOwner` never resolves `plangraph.Plan`, checks its revision/digest, or verifies pursuit-node bindings. See [portfolio_planning.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_planning.go:29).
+   `PortfolioPlanningRequest.PlanID` is only an opaque resource-planner identifier. `PlanPortfolioForOwner` never resolves `plangraph.Plan`, checks its revision/digest, or verifies pursuit-node bindings. See [portfolio_planning.go](../backend/internal/pursuit/portfolio_planning.go):29.
 
 2. **The Plan Graph service is not injected into the pursuit service.**
-   `routes.go` constructs it inline for its HTTP handler, then separately constructs `pursuitService`. See [routes.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/router/routes.go:133) and [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:772).
+   `routes.go` constructs it inline for its HTTP handler, then separately constructs `pursuitService`. See [routes.go](../backend/internal/router/routes.go):133 and [service.go](../backend/internal/pursuit/service.go):772.
 
 3. **Existing pursuit records already form a strong immutable chain.**
    Allocation → proposal → proposal item → decision → dispatch → authorization receipt → workflow. Parent record digests are propagated correctly. The accepted Plan Graph revision should be added at the allocation root rather than creating another orchestration system.
 
 4. **Plan acceptance correctly grants no execution authority.**
-   `plangraph.Plan.CanExecute` is forced false, and validation rejects executable plans. See [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/types.go:88) and [validation.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/validation.go:108).
+   `plangraph.Plan.CanExecute` is forced false, and validation rejects executable plans. See [types.go](../backend/internal/plangraph/types.go):88 and [validation.go](../backend/internal/plangraph/validation.go):108.
 
 **Minimum Implementation**
 
-1. Add `(*plangraph.Service).ResolveAcceptedLatest(ctx, owner, id, revision, digest)` in [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/service.go:184). It must require:
+1. Add `(*plangraph.Service).ResolveAcceptedLatest(ctx, owner, id, revision, digest)` in [service.go](../backend/internal/plangraph/service.go):184. It must require:
    - Exact owner-scoped ID, revision, and digest.
    - `StatusAccepted`.
    - `CanExecute == false`.
    - The referenced revision is still the latest revision.
    - A newer draft therefore invalidates the old accepted revision for new work.
 
-2. Add pursuit-local `AcceptedPlanRevisionResolver`, `PlanRevisionBinding`, `WithAcceptedPlanRevisionResolver`, and `service.acceptedPlanResolver` in [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/service.go:772).
+2. Add pursuit-local `AcceptedPlanRevisionResolver`, `PlanRevisionBinding`, `WithAcceptedPlanRevisionResolver`, and `service.acceptedPlanResolver` in [service.go](../backend/internal/pursuit/service.go):772.
 
 3. Extend `PortfolioPlanningRequest` with required `AcceptedPlan PlanRevisionBinding`. In `PlanPortfolioForOwner`, verify every requested pursuit has a matching `Node.Bindings.PursuitID` in the exact accepted revision.
 
@@ -4958,10 +4963,10 @@ No files were changed. I could not run the focused Go tests because `go.exe` is 
 Implemented the bounded Plan Graph enhancement.
 
 Changed:
-- [types.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/types.go:106): added full `Nodes` and `Edges` to `AcceptedRevisionBinding`.
-- [service.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/service.go:243): `ResolveAccepted` now returns defensive graph clones while preserving `CanExecute=false`.
-- [validation.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/validation.go:271): added deep node cloning, including timestamp pointers.
-- [service_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/plangraph/service_test.go:205): verifies complete graph availability, mutation isolation, and absence of execution authority.
+- [types.go](../backend/internal/plangraph/types.go):106: added full `Nodes` and `Edges` to `AcceptedRevisionBinding`.
+- [service.go](../backend/internal/plangraph/service.go):243: `ResolveAccepted` now returns defensive graph clones while preserving `CanExecute=false`.
+- [validation.go](../backend/internal/plangraph/validation.go):271: added deep node cloning, including timestamp pointers.
+- [service_test.go](../backend/internal/plangraph/service_test.go):205: verifies complete graph availability, mutation isolation, and absence of execution authority.
 
 Verification passed:
 
@@ -4983,11 +4988,11 @@ Nothing was staged or committed, and no files outside `backend/internal/plangrap
 Implemented the durable pursuit portfolio allocation binding.
 
 Changes:
-- Added the four optional coordination fields to [pursuit.go](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\internal\models\pursuit.go:254).
-- Added [0054 up migration](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\pre\0054_pursuit_portfolio_coordination_plan_binding.up.sql).
-- Added [0054 safe down migration](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\pre\0054_pursuit_portfolio_coordination_plan_binding.down.sql).
-- Added [migration contract tests](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\pursuit_portfolio_coordination_plan_binding_contract_test.go).
-- Added `0054` to the [migration chain test](C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk\backend\migrations\migration_chain_contract_test.go:132).
+- Added the four optional coordination fields to [pursuit.go](../backend/internal/models/pursuit.go):254.
+- Added [0054 up migration](../backend/migrations/pre/0054_pursuit_portfolio_coordination_plan_binding.up.sql).
+- Added [0054 safe down migration](../backend/migrations/pre/0054_pursuit_portfolio_coordination_plan_binding.down.sql).
+- Added [migration contract tests](../backend/migrations/pursuit_portfolio_coordination_plan_binding_contract_test.go).
+- Added `0054` to the [migration chain test](../backend/migrations/migration_chain_contract_test.go):132.
 
 The database now enforces:
 - Legacy unbound rows remain valid.
@@ -5013,43 +5018,43 @@ Nothing was staged or committed. A live PostgreSQL migration was not applied.
 - Transcript: `08/05/rollout-2026-08-05T09-07-40-019fd0bf-d215-7000-bcb1-7c0ec54a96fe.jsonl`
 
 **Critical Finding**
-`plan_binding.go` already reads `CoordinationPlanID`, `CoordinationPlanRevision`, `CoordinationPlanDigest`, and `CoordinationPlanNodeID`, and migration `0054` creates those columns. However, the current [PursuitPortfolioAllocation model](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/models/pursuit.go:241) does not define them.
+`plan_binding.go` already reads `CoordinationPlanID`, `CoordinationPlanRevision`, `CoordinationPlanDigest`, and `CoordinationPlanNodeID`, and migration `0054` creates those columns. However, the current [PursuitPortfolioAllocation model](../backend/internal/models/pursuit.go):241 does not define them.
 
-This is a deterministic compile mismatch and must be corrected before downstream integration. The fields must also remain part of `digestPortfolioAllocation`, as already expected in [portfolio_acceptance.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_acceptance.go:407).
+This is a deterministic compile mismatch and must be corrected before downstream integration. The fields must also remain part of `digestPortfolioAllocation`, as already expected in [portfolio_acceptance.go](../backend/internal/pursuit/portfolio_acceptance.go):407.
 
 **Execution Chain**
 | Boundary | Current function | Smallest safe insertion |
 |---|---|---|
-| Proposal preparation | [PreparePortfolioExecutionProposalsForOwner](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_proposal.go:140) | After allocation evidence and expected digest validation at lines 173-178, before proposal construction/replay lookup. Resolve `coordinationReferenceForAllocation(snapshot.Allocation)` and verify every allocation pursuit remains represented in the accepted revision. |
-| Proposal approval | [DecidePortfolioExecutionProposalItemForOwner](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_decision.go:70) | Only for `approved`, after source/item/state validation at lines 108-124 and before replay/new decision creation. Do not require plan freshness for reject or revoke, otherwise a stale plan could prevent revocation. |
-| Dispatch | [DispatchPortfolioWorkflowsForOwner](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:241) | Revalidate only for non-terminal items, after the terminal-result skip at lines 318-321 and before `dispatchOnePortfolioWorkflow`. This preserves completed/replayed dispatch inspection when the plan later changes. |
-| Per-item dispatch | [dispatchOnePortfolioWorkflow](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:341) | No separate authority logic should be added. It should continue delegating to authorization and consumption; those boundaries must independently revalidate the plan. |
-| Authorization receipt | [AuthorizePortfolioWorkflowEffectForOwner](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization.go:247) | After current approval validation at lines 287-294, before building the effect and issuing the receipt. |
-| Canonical authorization recheck | [PortfolioWorkflowEffectApprovalResolver.Resolve](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization.go:151) | After `validatePortfolioWorkflowEffectApproval` and before `buildPortfolioWorkflowEffect`. This is the strongest central location because `executionauth.Authorize` uses it initially and `AuthorizeAndConsume` invokes it again through `recheck`. |
-| First receipt consumption | [ExecutePortfolioWorkflowEffectForOwner](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization.go:398) | In the `ErrNotFound` consumption branch, after approval validation at lines 491-493 and immediately before `AuthorizeAndConsume`. Require the exact plan to still be latest and accepted here. |
+| Proposal preparation | [PreparePortfolioExecutionProposalsForOwner](../backend/internal/pursuit/portfolio_execution_proposal.go):140 | After allocation evidence and expected digest validation at lines 173-178, before proposal construction/replay lookup. Resolve `coordinationReferenceForAllocation(snapshot.Allocation)` and verify every allocation pursuit remains represented in the accepted revision. |
+| Proposal approval | [DecidePortfolioExecutionProposalItemForOwner](../backend/internal/pursuit/portfolio_execution_decision.go):70 | Only for `approved`, after source/item/state validation at lines 108-124 and before replay/new decision creation. Do not require plan freshness for reject or revoke, otherwise a stale plan could prevent revocation. |
+| Dispatch | [DispatchPortfolioWorkflowsForOwner](../backend/internal/pursuit/portfolio_dispatch.go):241 | Revalidate only for non-terminal items, after the terminal-result skip at lines 318-321 and before `dispatchOnePortfolioWorkflow`. This preserves completed/replayed dispatch inspection when the plan later changes. |
+| Per-item dispatch | [dispatchOnePortfolioWorkflow](../backend/internal/pursuit/portfolio_dispatch.go):341 | No separate authority logic should be added. It should continue delegating to authorization and consumption; those boundaries must independently revalidate the plan. |
+| Authorization receipt | [AuthorizePortfolioWorkflowEffectForOwner](../backend/internal/pursuit/portfolio_workflow_authorization.go):247 | After current approval validation at lines 287-294, before building the effect and issuing the receipt. |
+| Canonical authorization recheck | [PortfolioWorkflowEffectApprovalResolver.Resolve](../backend/internal/pursuit/portfolio_workflow_authorization.go):151 | After `validatePortfolioWorkflowEffectApproval` and before `buildPortfolioWorkflowEffect`. This is the strongest central location because `executionauth.Authorize` uses it initially and `AuthorizeAndConsume` invokes it again through `recheck`. |
+| First receipt consumption | [ExecutePortfolioWorkflowEffectForOwner](../backend/internal/pursuit/portfolio_workflow_authorization.go):398 | In the `ErrNotFound` consumption branch, after approval validation at lines 491-493 and immediately before `AuthorizeAndConsume`. Require the exact plan to still be latest and accepted here. |
 | Consumed-effect recovery | Same function, lines 480-537 | In the `consumptionErr == nil` branch, verify immutable historical plan provenance but do not require that revision to remain latest. Authority already comes from the matching receipt and consumption record. Requiring latest-plan freshness here could strand an already-consumed effect. |
 
 **Required Snapshot Changes**
 The proposal snapshot already carries the correct parent:
 
-- [portfolioExecutionProposalSnapshot](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_proposal.go:50) contains `Allocation`.
-- [LoadPortfolioExecutionProposalSnapshot](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_proposal_repository.go:19) loads it owner-scoped.
+- [portfolioExecutionProposalSnapshot](../backend/internal/pursuit/portfolio_execution_proposal.go):50 contains `Allocation`.
+- [LoadPortfolioExecutionProposalSnapshot](../backend/internal/pursuit/portfolio_execution_proposal_repository.go):19 loads it owner-scoped.
 
 The downstream snapshots do not carry it:
 
-- Add `Allocation models.PursuitPortfolioAllocation` to [portfolioExecutionProposalDecisionSnapshot](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_decision.go:48).
-- Load it through `Proposal.AllocationID` in [loadPortfolioExecutionProposalDecisionSnapshot](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_decision_repository.go:65).
-- Add the same field to [PortfolioWorkflowEffectApprovalSnapshot](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization.go:101).
-- Copy it in [LoadPortfolioWorkflowEffectApprovalSnapshot](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_execution_decision_repository.go:14).
+- Add `Allocation models.PursuitPortfolioAllocation` to [portfolioExecutionProposalDecisionSnapshot](../backend/internal/pursuit/portfolio_execution_decision.go):48.
+- Load it through `Proposal.AllocationID` in [loadPortfolioExecutionProposalDecisionSnapshot](../backend/internal/pursuit/portfolio_execution_decision_repository.go):65.
+- Add the same field to [PortfolioWorkflowEffectApprovalSnapshot](../backend/internal/pursuit/portfolio_workflow_authorization.go):101.
+- Copy it in [LoadPortfolioWorkflowEffectApprovalSnapshot](../backend/internal/pursuit/portfolio_execution_decision_repository.go):14.
 - Add allocation evidence to `portfolioDispatchCoordinationEvidence`, or have `LoadPortfolioDispatchProposal` return the allocation alongside the proposal and items.
 
 **Receipt And Recovery Structures**
 The single-use boundary is correctly separated:
 
-- [executionauth.Receipt](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:275)
-- [executionauth.Consumption](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/types.go:309)
-- [Service.AuthorizeAndConsume](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/executionauth/service.go:387)
-- [loadPortfolioWorkflowEffect](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization.go:582) recovers an existing receipt-linked workflow.
+- [executionauth.Receipt](../backend/internal/executionauth/types.go):275
+- [executionauth.Consumption](../backend/internal/executionauth/types.go):309
+- [Service.AuthorizeAndConsume](../backend/internal/executionauth/service.go):387
+- [loadPortfolioWorkflowEffect](../backend/internal/pursuit/portfolio_workflow_authorization.go):582 recovers an existing receipt-linked workflow.
 - `workflow.Intake` deduplicates by receipt source identity, but currently resolves accepted-plan freshness before deduplication.
 
 For interrupted post-consumption recovery, a narrow trusted workflow recovery method is needed. It should accept only a matching consumed receipt plus the immutable historical plan binding. Ordinary `workflow.Intake` should continue requiring the latest accepted plan.
@@ -5089,8 +5094,8 @@ Only the three requested files were edited. Nothing was staged or committed.
 
 Implemented the pursuit portfolio authorization/consumption revalidation slice in:
 
-- [portfolio_workflow_authorization.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization.go)
-- [portfolio_workflow_authorization_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_workflow_authorization_test.go)
+- [portfolio_workflow_authorization.go](../backend/internal/pursuit/portfolio_workflow_authorization.go)
+- [portfolio_workflow_authorization_test.go](../backend/internal/pursuit/portfolio_workflow_authorization_test.go)
 
 Key behavior:
 
@@ -5122,11 +5127,11 @@ A repeated `-count=3` run exposed one intermittent, unrelated proposal-history t
 
 Implemented pursuit portfolio dispatch coordination revalidation.
 
-- Dispatch now loads owner-scoped immutable allocation evidence and verifies its digest against the proposal in [portfolio_dispatch_repository.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch_repository.go:25).
+- Dispatch now loads owner-scoped immutable allocation evidence and verifies its digest against the proposal in [portfolio_dispatch_repository.go](../backend/internal/pursuit/portfolio_dispatch_repository.go):25.
 - Plan identity, revision, digest, node, and allocation provenance are included in request/run evidence hashing.
-- Every non-terminal item revalidates its accepted plan immediately before dispatch in [portfolio_dispatch.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch.go:345).
+- Every non-terminal item revalidates its accepted plan immediately before dispatch in [portfolio_dispatch.go](../backend/internal/pursuit/portfolio_dispatch.go):345.
 - Terminal durable results bypass revalidation, remaining replayable after later replanning.
-- Added stale-plan and terminal-replay tests in [portfolio_dispatch_test.go](C:/Users/NO/Documents/Codex/2026-05-30/github-plugin-github-openai-curated-noodzakelijk/backend/internal/pursuit/portfolio_dispatch_test.go:85).
+- Added stale-plan and terminal-replay tests in [portfolio_dispatch_test.go](../backend/internal/pursuit/portfolio_dispatch_test.go):85.
 
 Verification passed:
 

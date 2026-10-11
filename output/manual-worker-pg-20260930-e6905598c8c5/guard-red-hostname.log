@@ -1,0 +1,9 @@
+{"Time":"2026-09-30T21:49:09.021831489Z","Action":"start","Package":"automation-hub-backend/internal/source"}
+{"Time":"2026-09-30T21:49:09.093418539Z","Action":"run","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation"}
+{"Time":"2026-09-30T21:49:09.093480526Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"=== RUN   TestManualWorkerPostgresClaimIsolation\n"}
+{"Time":"2026-09-30T21:49:09.094515773Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"    manual_worker_postgres_test.go:181: refusing destructive PostgreSQL test: host must be a literal loopback IP address\n"}
+{"Time":"2026-09-30T21:49:09.094596348Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"--- FAIL: TestManualWorkerPostgresClaimIsolation (0.00s)\n"}
+{"Time":"2026-09-30T21:49:09.094610888Z","Action":"fail","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Elapsed":0}
+{"Time":"2026-09-30T21:49:09.095616873Z","Action":"output","Package":"automation-hub-backend/internal/source","Output":"FAIL\n"}
+{"Time":"2026-09-30T21:49:09.10500338Z","Action":"output","Package":"automation-hub-backend/internal/source","Output":"FAIL\tautomation-hub-backend/internal/source\t0.083s\n"}
+{"Time":"2026-09-30T21:49:09.105060838Z","Action":"fail","Package":"automation-hub-backend/internal/source","Elapsed":0.083}

@@ -1,0 +1,370 @@
+[
+  {
+    "sha256": "d714860c3ec182593181501818904e1e05bb48dc202dc198f62085372d2ca9ae",
+    "path": "backend\\go.mod"
+  },
+  {
+    "sha256": "ccb49d267a1192b1bca2a5e8f6602607e14ddea6abf21661414808cb7bc5d347",
+    "path": "backend\\go.sum"
+  },
+  {
+    "sha256": "194624d0df30ab76052a333925c9d5f5f9380b5fdcb65b79fc8286f10b3bf1a1",
+    "path": "backend\\internal\\durablejob\\integration_test.go"
+  },
+  {
+    "sha256": "46b971fd3957acf6ef72fde195885f47f66250be4939ab9235dc73dd25e248a9",
+    "path": "backend\\internal\\durablejob\\migration_contract_test.go"
+  },
+  {
+    "sha256": "a485d1cff2e4e173553cbd5cef79529f29cf1f32bc7fb0f1caa92d574e2108f9",
+    "path": "backend\\internal\\durablejob\\reaper_recurring_integration_test.go"
+  },
+  {
+    "sha256": "ea2f5ead90cd42eb38475db83abd02f78e40c66566d70ca91a3ea755801d5f6a",
+    "path": "backend\\internal\\durablejob\\repository.go"
+  },
+  {
+    "sha256": "a2fa26404f25b86a31cb3b8e576abd678ae4fd90364eff66dd3caa537cb669a8",
+    "path": "backend\\internal\\durablejob\\runner_test.go"
+  },
+  {
+    "sha256": "19ea951354c843a44fa350f8790308d4e5a7c70d06fca0924fc8e6548e8dadf5",
+    "path": "backend\\internal\\durablejob\\runner.go"
+  },
+  {
+    "sha256": "e0c994e49ef9089f337146d5b27f3a4a50ed05305ebc7183b6cbfb948c11a2b5",
+    "path": "backend\\internal\\pgtestguard\\postgres_test.go"
+  },
+  {
+    "sha256": "4f8bc04491410d5657da8f7a1078ec245b6f23133613441a9ba9e8dcaba24c16",
+    "path": "backend\\internal\\pgtestguard\\postgres.go"
+  },
+  {
+    "sha256": "e90d64ba141a01ba53690521fce216d3d317565417629517b5caf8f3b917ead8",
+    "path": "backend\\internal\\source\\agent_instructions.go"
+  },
+  {
+    "sha256": "27f9e44fa8b69db93adce4a9b73c1cc52b8291fff410b51d678c87eca5ac770c",
+    "path": "backend\\internal\\source\\airbyte_inventory_test.go"
+  },
+  {
+    "sha256": "47eecb06cdcca7a92e237dd8f7233049dadf6acbd08630679103dcd08f4f493c",
+    "path": "backend\\internal\\source\\airbyte_inventory.go"
+  },
+  {
+    "sha256": "67dbe2e7eeaa9589f8b5d1fc9215ab3cb4f07da3f1996f4425162adc446b4392",
+    "path": "backend\\internal\\source\\authorization_security_test.go"
+  },
+  {
+    "sha256": "9c736d4b22ec6a32699ebeeef31704dd041b9bdf62f1b0f57f3e6f1b426d9244",
+    "path": "backend\\internal\\source\\authorization.go"
+  },
+  {
+    "sha256": "438452e8ee3768fd166e37d830384042d75a180689f63ec988e30efa834969b7",
+    "path": "backend\\internal\\source\\calendar_test.go"
+  },
+  {
+    "sha256": "78d2dce40f93be55737a5c17f5b9206e5205b5a3bddffbedbddefc9e71acb8b0",
+    "path": "backend\\internal\\source\\calendar.go"
+  },
+  {
+    "sha256": "945fe2e4253d008b837364dd770aa98a09cfb8f5ece5bb55c22413e34c389215",
+    "path": "backend\\internal\\source\\cloudquery_summary.go"
+  },
+  {
+    "sha256": "fb7d44f9e080cfaaf6e320ba22131a54163c62012ad5901ff6f126bbab85b823",
+    "path": "backend\\internal\\source\\contacts_test.go"
+  },
+  {
+    "sha256": "3e4dfbbd03e884142055b12497d98cba0ca5d31ee571974ee21936a60f05208e",
+    "path": "backend\\internal\\source\\contacts.go"
+  },
+  {
+    "sha256": "a3098f5e7d0f41088aa3c410e9a0ff6fc6780fc5ff66df58bcb8a4a31157502d",
+    "path": "backend\\internal\\source\\content_safety_test.go"
+  },
+  {
+    "sha256": "2693f000e1ef8931a89a37e33e0a60d5e8ecc3dd9930069ea19d4a651ab6a30a",
+    "path": "backend\\internal\\source\\content_safety.go"
+  },
+  {
+    "sha256": "247f3a84de5fa92efff05d28eb4eca47f294e092ee0c66f7a381712440eda417",
+    "path": "backend\\internal\\source\\docling_source_test.go"
+  },
+  {
+    "sha256": "fd16b8f89e79224269b31493c4a8518fa61f904e72a57e2e9442c6edd6465dd8",
+    "path": "backend\\internal\\source\\drive_test.go"
+  },
+  {
+    "sha256": "6bfd774f8a4cf6b696e3738378d4f03f6bfc52727dd4ec2922b9c32f0a783121",
+    "path": "backend\\internal\\source\\drive.go"
+  },
+  {
+    "sha256": "f2d28e057ef8631d06a7f2743038a3b67e6ee5391beccb2c465428012dd68482",
+    "path": "backend\\internal\\source\\durable_scheduler_test.go"
+  },
+  {
+    "sha256": "c311c7b34ac2c9c7cf8ec881990104f656061dbd2f0f13a639ae93dfc1560f7e",
+    "path": "backend\\internal\\source\\durable_scheduler.go"
+  },
+  {
+    "sha256": "fb4b1001ee8012a55fb50a6b95fa75d6e58ac6ff20906dde15aeeac0abfe5bec",
+    "path": "backend\\internal\\source\\extraction_correction_fake_test.go"
+  },
+  {
+    "sha256": "10ab47139e432b11de3f1b5905b6fae3a443b5670942d601f89a8827a64fa09d",
+    "path": "backend\\internal\\source\\extraction_correction_repository.go"
+  },
+  {
+    "sha256": "b7c7747c32196df33208712eba4022846fae9daa093f21eb876a4d6b4d24ddf7",
+    "path": "backend\\internal\\source\\extraction_correction_worker_fence_postgres_test.go"
+  },
+  {
+    "sha256": "a9bbaa0fd01b454a48ed2c843b7696b140c0543d78986a10db0280d45b4ddf33",
+    "path": "backend\\internal\\source\\extraction_correction.go"
+  },
+  {
+    "sha256": "785522cb4469402ed049ae6429727898de20d390dccb9c6100f45da3262c17e6",
+    "path": "backend\\internal\\source\\extraction_patch_postgres_test.go"
+  },
+  {
+    "sha256": "2adfa84186c2a78477f0c2dacce3d0da139cf6b7f466de86ddd0ea1bb3d5f3be",
+    "path": "backend\\internal\\source\\extraction_patch.go"
+  },
+  {
+    "sha256": "378ae3e0b9d08cdaed2a6a2d1a29876b163632db7cea7e3239af3dcfea043cf5",
+    "path": "backend\\internal\\source\\fabric_patterns.go"
+  },
+  {
+    "sha256": "f91a652aef32596565ac5f721d52a8d2b3d854d165dbd91a91150c8eae7c916b",
+    "path": "backend\\internal\\source\\github_incremental_pagination_test.go"
+  },
+  {
+    "sha256": "4c4646fca9ca2724a93522c74bf7beb504f33734a90afae6275145c3ef42fb98",
+    "path": "backend\\internal\\source\\github_quality_evidence_test.go"
+  },
+  {
+    "sha256": "96a52adef150faad8067e758c59b4ac13db5a875d5634efac2021b63d4576eb4",
+    "path": "backend\\internal\\source\\github_quality_evidence.go"
+  },
+  {
+    "sha256": "7eb251687efa135f97d1b710fc7b82421a8590e9f71abb7fa14a10107c717338",
+    "path": "backend\\internal\\source\\github_source_owner_test.go"
+  },
+  {
+    "sha256": "5cc4cd9a2ccfcc1f0974e442bc5cca991044df20bc103a291a757d71e14463e4",
+    "path": "backend\\internal\\source\\gmail_live_test.go"
+  },
+  {
+    "sha256": "e6d506eb383a059284870042c8c04abdbade36bd2c2de05ad8b0afeb07f10dc5",
+    "path": "backend\\internal\\source\\google_oauth_atomic_persistence_postgres_test.go"
+  },
+  {
+    "sha256": "f92ad586c05b2c4fd56752fa91863c38260d4bad43266dab96438a70f3fd3145",
+    "path": "backend\\internal\\source\\google_oauth_reconnect_postgres_test.go"
+  },
+  {
+    "sha256": "6d3c56b2344e4ad57e099292d9b59eb0fcff566f53adfde47078f080ece86d17",
+    "path": "backend\\internal\\source\\google_oauth_retry_test.go"
+  },
+  {
+    "sha256": "ac74fa87156aa599e4cc6573ca64a154a4ee2ba5cf8b540c18b865d1d5d0bc1a",
+    "path": "backend\\internal\\source\\google_oauth_retry.go"
+  },
+  {
+    "sha256": "e072af0914ff0d1a2e23cc90fa77019525a2a55ed59ea5c879dac09ba82e0439",
+    "path": "backend\\internal\\source\\handler_test.go"
+  },
+  {
+    "sha256": "8d99e49f68e519fa1ea661a674a5cb1a50ce1a407ea682d0132892d2f6578452",
+    "path": "backend\\internal\\source\\handler.go"
+  },
+  {
+    "sha256": "423be4bcbe7f0cfa9f64ea088a65d8562ad4543398ae829a69f9387836a74aaa",
+    "path": "backend\\internal\\source\\laro_test.go"
+  },
+  {
+    "sha256": "269106a39ae0754d2df6a123741de8c577047f2c02987def425193419934787d",
+    "path": "backend\\internal\\source\\laro.go"
+  },
+  {
+    "sha256": "024dc2041cdbf62d90adf6102920ef437a169b6bea6b576b500611cbc67a1b3e",
+    "path": "backend\\internal\\source\\life_ontology_projection_test.go"
+  },
+  {
+    "sha256": "6472a23359375ec31b63f8c8895e66f4c8a6fe9cf392d0159290311c78597273",
+    "path": "backend\\internal\\source\\life_ontology_projection.go"
+  },
+  {
+    "sha256": "47b91d72b94979f18e7da0ac06708efe4e90c6695c51c64cad87b9d837131467",
+    "path": "backend\\internal\\source\\manual_context_test.go"
+  },
+  {
+    "sha256": "b3bdd9211e3acabd07cd14298b34d5bfe42febfa5c3c19414e7f4af40429e625",
+    "path": "backend\\internal\\source\\manual_sync_postgres_test.go"
+  },
+  {
+    "sha256": "4a438e30ec5bd96634bb4427f878dd4adbad51b664174b902fd27d300bd13b8d",
+    "path": "backend\\internal\\source\\manual_sync_test.go"
+  },
+  {
+    "sha256": "36b3e7d5de3335efebcab9817fcdebe73c072575978e2c9ffa2d049d5fe876b0",
+    "path": "backend\\internal\\source\\manual_sync.go"
+  },
+  {
+    "sha256": "d1d3a96124aa6e17fe24b3bfad6b2acbb3e42c1594acf988789348beaa8dba20",
+    "path": "backend\\internal\\source\\manual_worker_postgres_test.go"
+  },
+  {
+    "sha256": "f6de82b442dbc3532bf37db7b1f8a3b92442f253e8a16d9e186368a940515730",
+    "path": "backend\\internal\\source\\manual_worker_test.go"
+  },
+  {
+    "sha256": "9a42d7e19deb7b615a9052db3812bd1dcb66affa4411a88fb93d40e68a982519",
+    "path": "backend\\internal\\source\\manual_worker.go"
+  },
+  {
+    "sha256": "b31a93ae4c563dd071b790fc5b3d0a4d5e56fc761370a1485e75921491c7b319",
+    "path": "backend\\internal\\source\\oauth_test.go"
+  },
+  {
+    "sha256": "eb4750f110817b1c14a69614965c83c6de79932bb98a91c4e73dbbd76aeff125",
+    "path": "backend\\internal\\source\\oauth.go"
+  },
+  {
+    "sha256": "f9aeb181094d93847e2dc85e355ed756876ce7e3d4fb39fd793763b24e02c953",
+    "path": "backend\\internal\\source\\odoo_herp_test.go"
+  },
+  {
+    "sha256": "3ce941f0697298c17f8d415a42e7876a79098a6a373e72f1ecbe2935f0abffc8",
+    "path": "backend\\internal\\source\\odoo_json2_test.go"
+  },
+  {
+    "sha256": "c4646972f79e8b4c70d5de784e55f8504b9c8a3ac411c331681de4e2c242c513",
+    "path": "backend\\internal\\source\\odoo_json2.go"
+  },
+  {
+    "sha256": "2f415310f230e2d6642dd8f10cda6aa3a8fc774caec442a1bd472f22b1814c57",
+    "path": "backend\\internal\\source\\openspec_artifacts.go"
+  },
+  {
+    "sha256": "69a289b3d09c7550d080d356c561115173ba452a61eb3740aca88a9426780084",
+    "path": "backend\\internal\\source\\provider_sync_error_test.go"
+  },
+  {
+    "sha256": "9a7fd74a3b4e697c0489b4c29c2f8ab119f3b5a80db7b1c1264b84fbe4b27e0b",
+    "path": "backend\\internal\\source\\provider_sync_error.go"
+  },
+  {
+    "sha256": "c31d480eeeebdc99a95c05ea648aaa9980a95dd8ea1927455c110657edcab0b5",
+    "path": "backend\\internal\\source\\pursuit_intake_integration_test.go"
+  },
+  {
+    "sha256": "0f9d333c04f0a02a8e0a3ef915034ec6761d9156bac07b8e2756b8cdf8ec247e",
+    "path": "backend\\internal\\source\\repository.go"
+  },
+  {
+    "sha256": "b1f3317d9afd4cb62b3bf92934e4774774e393309be9cf1d2f3d6e304256f599",
+    "path": "backend\\internal\\source\\scheduler_test.go"
+  },
+  {
+    "sha256": "f351f5147e0b33fa7f0a758d6f1883ebd122f66a74a1946affd093ba0ad62818",
+    "path": "backend\\internal\\source\\scheduler.go"
+  },
+  {
+    "sha256": "22d4f5045cec7ae1eb2eda9104837386c2f3924677d8432e11fa4bd7e2c50795",
+    "path": "backend\\internal\\source\\semantic_cancellation_test.go"
+  },
+  {
+    "sha256": "61edd8e2c55966f42ebc073d841d9d9a11e62c534e5d44ed155338191288c135",
+    "path": "backend\\internal\\source\\service_test.go"
+  },
+  {
+    "sha256": "1d0be508e46be2dfa3f78ed345b3add69696a312ae6a08522c4ea187b5283e15",
+    "path": "backend\\internal\\source\\service.go"
+  },
+  {
+    "sha256": "ef86de5a1806fb0628fc2f40f7ad55e7c6c2f8392c85a6ece5296e5e608b1837",
+    "path": "backend\\internal\\source\\sharet_test.go"
+  },
+  {
+    "sha256": "b9ccab41056ea255ccb1e60e9c1b69887dc9d9e2f08406cd70f12d1034a6afd8",
+    "path": "backend\\internal\\source\\sharet.go"
+  },
+  {
+    "sha256": "0d377120aad60740cb9c24919443f253f61cdda5c9f7c2996cdd8eef09accd40",
+    "path": "backend\\internal\\source\\trello_config_test.go"
+  },
+  {
+    "sha256": "b85c5ac173fc3ab536b3567f74fb2ddb84ca54a19100038c6963ec4522a536d1",
+    "path": "backend\\internal\\source\\trello_durable.go"
+  },
+  {
+    "sha256": "3c33499009944263ff70de4bbceef68e0932aca25db22686425078768b135ebb",
+    "path": "backend\\internal\\source\\trello_live_test.go"
+  },
+  {
+    "sha256": "8d0969d2d51a3bcd17c2137916a14a70946683a5cd6154c19701df03a3470b95",
+    "path": "backend\\internal\\source\\trello_owner_scope_test.go"
+  },
+  {
+    "sha256": "af78bfc0d0d5093c346a18b34d35ac23a1df9380e43537c70c43b81a482021ca",
+    "path": "backend\\internal\\source\\trello_pursuit_workflow_postgres_integration_test.go"
+  },
+  {
+    "sha256": "f7a4e904bc72c1b0e7b2f5522ac108337ac327743d4940e74837990eff8e7554",
+    "path": "backend\\internal\\source\\trello_reopen_test.go"
+  },
+  {
+    "sha256": "43f0ac8f6a19faf93ab2796ab61a480a823ce2b3430764d4f9ced3e51a8baf56",
+    "path": "backend\\internal\\source\\trello_resumable_test.go"
+  },
+  {
+    "sha256": "f283d0e0e8a1af8645ee82e62ee31a022f14f5d3bcc16bb89b48795136b716d7",
+    "path": "backend\\internal\\source\\trello_sync_repository_postgres_integration_test.go"
+  },
+  {
+    "sha256": "bc1a405158b9032fdc5540855375348be08097daff06f7ce46e3cf7370d941fc",
+    "path": "backend\\internal\\source\\trello_sync_repository_test.go"
+  },
+  {
+    "sha256": "8bf7a06226cf38f9ea15e1a93754e9b9ee5edca3915d2201bac567c868f1cc4e",
+    "path": "backend\\internal\\source\\trello_sync_repository.go"
+  },
+  {
+    "sha256": "3b827cf54ab092d3607b96879aa8f7088b43a0bcc017b19cd40b6a05e99a1678",
+    "path": "backend\\internal\\source\\trello_test.go"
+  },
+  {
+    "sha256": "a3bb941669e2bbf2f329fcc78fe117bcb77c6c6cf5ed9855b282fa5d7e5f0ab4",
+    "path": "backend\\internal\\source\\trello_webhook_postgres_test.go"
+  },
+  {
+    "sha256": "75af7a2f988d08b94ebbf6e9ed80e9866d83f7a566545a80f2a070a1c33c2802",
+    "path": "backend\\internal\\source\\trello_webhook_reconcile.go"
+  },
+  {
+    "sha256": "c8b72de0b6fee2fb919bef1aef53c3c0c1769e96effa88793ad7478e47807707",
+    "path": "backend\\internal\\source\\trello_webhook_repository.go"
+  },
+  {
+    "sha256": "857f5ebb559d4d2172c194a91e8cfb50292a0251bd021f0bc950e262307bfbbe",
+    "path": "backend\\internal\\source\\trello_webhook_test.go"
+  },
+  {
+    "sha256": "eb1521aefffdc02f74e2596bebeab21d80350493234f6bd3f326185b82420e7a",
+    "path": "backend\\internal\\source\\trello_webhook.go"
+  },
+  {
+    "sha256": "2d8b2df785890a92d1724ad933de7f760310debd06428d444bde411e5202101f",
+    "path": "backend\\internal\\source\\trello.go"
+  },
+  {
+    "sha256": "4ef28fc1cb6fd3632c724f46f8bec0263050388bae3f12f48ab4172b6f0c02d4",
+    "path": "backend\\internal\\source\\worker_control_test.go"
+  },
+  {
+    "sha256": "729d897788fde29446e65d4a30d868571a54af0cc2d3911f8c90dbf0ac5ec5c8",
+    "path": "backend\\internal\\source\\worker_control.go"
+  }
+]

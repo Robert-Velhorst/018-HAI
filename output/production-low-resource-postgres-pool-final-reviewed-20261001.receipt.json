@@ -1,0 +1,32 @@
+{
+  "startedAt": "2026-10-01T21:34:04.7142902+00:00",
+  "finishedAt": "2026-10-01T21:34:32.7911081+00:00",
+  "packages": [
+    "infra",
+    "health",
+    "operations",
+    "background",
+    "executionbroker",
+    "executionauth",
+    "frameworkregistry",
+    "automation",
+    "phase2",
+    "runtimelab",
+    "opscontrol",
+    "accountfeed",
+    "migrations"
+  ],
+  "runPattern": ".",
+  "outputMode": "compact-package-results",
+  "integrationTag": false,
+  "deadlineSeconds": 360,
+  "timedOut": false,
+  "exitCode": 0,
+  "completedSuccessfully": true,
+  "goVersion": "go1.25.13 windows/amd64",
+  "dockerStarted": false,
+  "dependencyDownloadsEnabled": false,
+  "destructiveDatabaseTestsEnabled": false,
+  "goWorkers": 1,
+  "heapSoftLimit": "384MiB"
+}

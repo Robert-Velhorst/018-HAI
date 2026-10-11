@@ -1936,3 +1936,26 @@ archive path or deletion candidate was identified from this provenance check.
 PR #36 is open at `efc8e7cb8bfc057d4f7265a96aec1a9ca08c4487`.
 GitHub reports 34 successful checks and two still in progress; no check
 failure is reported. No local transcript or session data was changed.
+
+### October 11, 2026: supporting report and source-material import
+
+Imported 13 historical implementation/verification reports and their 64
+linked supporting files from the superseded HAI checkout into `output/`.
+Forty-four of the 77 output source files are byte-identical to their source;
+29 have only line endings normalized for portable Git storage, and four
+Markdown reports also have repository-relative links in place of
+machine-specific absolute paths. The generated `output/README.md` explains the
+historical scope and limits of these records. A separate user-provided
+whole-life framework taxonomy is preserved at
+`docs/source-material/whole-life-framework-taxonomy.txt`; its original
+attachment SHA-256 is recorded separately from the LF-normalized Git blob hash.
+
+File-level source and destination sizes, SHA-256 values, and transfer status
+are recorded in `docs/local-hai-import-manifest-2026-10-11.csv`. Destination
+hashes refer to the staged Git blob bytes; `.gitattributes` keeps these text
+artifacts LF-normalized across platforms. The manifest contains 79 rows: 77
+imported reports/supporting files, the generated output index, and the
+framework taxonomy. No source file was deleted. These additions are in the PR
+worktree and are not considered durable until committed, merged, and rechecked
+against the manifest. Historical report claims remain dated evidence, not
+current runtime or external acceptance proof.

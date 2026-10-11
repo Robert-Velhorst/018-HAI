@@ -1,0 +1,1823 @@
+Robert, HAI should not be based on one agent framework. It needs a framework-of-frameworks: a governed personal operating system that selects the appropriate reasoning, planning, decision, safety, and domain framework for each situation.
+
+Based on [repo #018-HAI](https://github.com/Noodzakelijk-Online/018-HAI), you already have significant pieces: pursuits, workflows, candidates, approvals, verification, provenance, audit, memory, model routing, controlled runtimes, ambient scans, and an emergency stop. What is still missing is one coherent taxonomy governing how all these mechanisms cooperate across a person’s entire life.
+
+```mermaid
+flowchart TD
+    A["Human constitution and life needs"] --> B["Goals, pursuits and obligations"]
+    B --> C["Chief-of-staff orchestrator"]
+    C --> D["Specialist agent teams"]
+    D --> E["Governed workflows and tools"]
+    E --> F["Evidence, verification and audit"]
+    F --> G["Memory, review and learning"]
+    G --> B
+```
+
+## 1. Human-sovereignty framework
+
+This is the supreme layer. Every other framework is subordinate to it.
+
+* Human-in-command
+* Meaningful human control
+* Personal constitutional rules
+* Informed and revocable consent
+* Least delegated authority
+* Purpose limitation
+* Preference fidelity
+* Value-alignment hierarchy
+* Dignity and personal autonomy
+* Non-manipulation
+* Non-coercion
+* Corrigibility
+* Contestability
+* Right to explanation
+* Right to correction
+* Right to forget
+* Right to disengage
+* Reversibility-first
+* Proportionality
+* Subsidiarity: decide at the lowest safe level
+* Stewardship or fiduciary-duty model
+* Conflict-of-interest disclosure
+* Uncertainty disclosure
+* No-fake-success
+* Evidence-before-claim
+* User override and emergency stop
+* Constitutional amendment procedure
+* Protected rules that agents cannot rewrite themselves
+
+HAI should have a versioned “Robert Constitution” containing values, prohibitions, standing permissions, preferences, relationships, financial boundaries, communication rules, and escalation requirements.
+
+## 2. Whole-life ontology framework
+
+HAI needs a standard model of everything it may manage:
+
+* Person, identity and roles
+* Family and household
+* Friends and social relationships
+* Health and personal care
+* Safety and security
+* Housing and household
+* Food and nutrition
+* Finances and assets
+* Work and clients
+* Businesses and ventures
+* Education and learning
+* Legal matters and government
+* Transport and mobility
+* Communication and correspondence
+* Digital life and accounts
+* Possessions, tools and inventory
+* Animals and dependants
+* Community and politics
+* Leisure and recreation
+* Creativity
+* Meaning, values and spirituality
+* Environment and sustainability
+* Long-term legacy
+* Emergencies and contingencies
+
+Every pursuit, task, memory, document, contact, obligation, risk, cost, asset and outcome should belong to one or more life domains.
+
+## 3. Human-needs and wellbeing frameworks
+
+Useful models HAI should understand, without treating any one of them as absolute truth:
+
+* Maslow’s Hierarchy of Needs
+* Alderfer’s ERG model
+* Max-Neef’s Fundamental Human Needs
+* Self-Determination Theory: autonomy, competence, relatedness
+* Sen and Nussbaum’s Capability Approach
+* PERMA: positive emotion, engagement, relationships, meaning, accomplishment
+* SPIRE: spiritual, physical, intellectual, relational, emotional
+* Wheel of Life
+* Eight Dimensions of Wellness
+* Biopsychosocial model
+* International Classification of Functioning, Disability and Health
+* Activities of Daily Living
+* Instrumental Activities of Daily Living
+* Social Determinants of Health
+* Quality-of-life assessment
+* Ikigai
+* Salutogenesis
+* Strengths-based approach
+* Trauma-informed support
+* Neurodiversity-affirming support
+* Spoon Theory and energy accounting
+* Occupational balance
+* Caregiver-burden assessment
+* Resilience and protective-factors model
+
+HAI should combine these into a needs-state model, not blindly assume that “higher” goals always outrank immediate health, safety, rest or executive-function needs.
+
+## 4. Personal-state and capacity framework
+
+A personal assistant must understand not only what should be done, but what is realistically possible now.
+
+* Physical energy
+* Cognitive energy
+* Emotional capacity
+* Available time
+* Attention quality
+* Pain, illness and migraine state
+* Sleep and fatigue
+* Stress and overload
+* Mobility
+* Location
+* Available tools and devices
+* Available helpers
+* Financial liquidity
+* Weather and environmental conditions
+* Social appropriateness
+* Deadline pressure
+* Interruption sensitivity
+* Recovery requirements
+* Task-switching costs
+* Sensory load
+* Decision fatigue
+* Risk tolerance
+* Confidence and readiness
+
+This becomes a constraint layer over planning. A “perfect” plan that ignores exhaustion, migraines, transport or missing equipment is not a valid plan.
+
+## 5. Goal hierarchy framework
+
+HAI needs a formal hierarchy:
+
+1. Values and constitutional principles
+2. Life needs and responsibilities
+3. Vision and desired future states
+4. Strategic outcomes
+5. Pursuits
+6. Programmes and cases
+7. Projects
+8. Workflows
+9. Tasks
+10. Atomic actions
+11. Verification conditions
+12. Measured outcomes
+
+Relevant named frameworks include:
+
+* SMART and SMARTER goals
+* OKRs
+* WOOP
+* GROW
+* BHAGs
+* North Star Metric
+* Vision–Mission–Strategy–Tactics
+* Theory of Change
+* Logic Models
+* Impact Mapping
+* Outcome Mapping
+* Benefits Realisation Management
+* Objectives–Signals–Measures
+* Means–Ends Analysis
+* Backward planning
+* Future-back strategy
+* Mission command
+* Commitment-based management
+* Goal–Question–Metric
+* Definition of Done
+* Definition of Ready
+* Acceptance criteria
+* Exit criteria and abandonment criteria
+
+A pursuit must include both “what success looks like” and “when we stop spending resources on this.”
+
+## 6. Intake and triage framework
+
+Everything entering HAI—email, document, message, observation, idea, bill, request or detected problem—needs structured triage:
+
+* Capture
+* Authenticate source
+* Classify
+* Extract entities
+* Link to people, organisations and pursuits
+* Identify commitments
+* Identify deadlines
+* Detect risks
+* Detect contradictions
+* Determine urgency
+* Determine whether action is required
+* Match an active pursuit
+* Create a candidate pursuit when unmatched
+* Ask for clarification when necessary
+* Delegate, defer, archive or discard
+* Record provenance
+* Create follow-up conditions
+
+Applicable frameworks:
+
+* GTD inbox processing
+* Inbox Zero
+* Eisenhower Matrix
+* Triage matrix
+* ABCDE prioritisation
+* 4Ds: do, defer, delegate, delete
+* OODA
+* Sense–Make Sense–Respond
+* Cynefin
+* Recognition-primed decision-making
+* Incident severity classification
+* Signal–noise filtering
+* Event–condition–action rules
+* Complex event processing
+
+## 7. Prioritisation framework
+
+HAI should not use one simplistic priority score. It needs multi-criteria prioritisation using:
+
+* Importance
+* Urgency
+* Human need affected
+* Deadline
+* Cost of delay
+* Expected value
+* Harm avoided
+* Probability of success
+* Effort
+* Duration
+* Dependencies
+* Reversibility
+* Risk
+* Legal obligation
+* Relationship consequences
+* Available capacity
+* Energy fit
+* Opportunity cost
+* Strategic alignment
+* Learning value
+* Compounding value
+* Staleness
+* Commitment age
+* Number of people blocked
+* Whether another agent can handle it
+
+Named models:
+
+* Eisenhower Matrix
+* RICE
+* ICE
+* WSJF
+* Cost of Delay
+* Value-versus-Effort
+* Impact–Effort Matrix
+* MoSCoW
+* Kano
+* Pareto principle
+* Weighted scoring
+* Analytic Hierarchy Process
+* TOPSIS
+* Multi-Criteria Decision Analysis
+* Expected utility
+* Expected value of information
+* Regret minimisation
+* Minimax and minimax regret
+* Satisficing
+* Opportunity scoring
+* Real-options reasoning
+* Reversible versus irreversible doors
+* Critical-ratio scheduling
+* Earliest-deadline-first
+* Shortest-job-first
+* Aging and priority inheritance
+
+## 8. Multi-agent organisational frameworks
+
+HAI needs several orchestration modes, chosen per pursuit:
+
+* Supervisor–worker
+* Hierarchical agent organisation
+* Chief-of-staff with specialists
+* Planner–executor
+* Planner–executor–critic
+* Generator–verifier
+* Researcher–analyst–writer–editor
+* Proposer–reviewer–approver
+* Maker–checker
+* Red team–blue team
+* Debate and judge
+* Committee or jury
+* Mixture of experts
+* Society of Mind
+* Blackboard architecture
+* Shared-workspace architecture
+* Contract Net Protocol
+* Auction or market-based allocation
+* Swarm organisation
+* Peer-to-peer collaboration
+* Federated agents
+* Dynamic team formation
+* Role-based agent teams
+* Capability-based dispatch
+* Case-based specialist selection
+* Human–AI mixed teams
+* Multi-model ensembles
+* Independent parallel investigation
+* Adversarial collaboration
+* Sequential hand-off
+* Follow-the-sun continuation
+* Escalation chain
+* Incident-command organisation
+
+HAI should support several of these, not permanently force every problem through one supervisor pattern.
+
+## 9. Agent identity and capability framework
+
+Every agent should have an explicit agent card containing:
+
+* Identity
+* Owner
+* Purpose
+* Role
+* Domain competence
+* Available tools
+* Required permissions
+* Data-access boundaries
+* Cost profile
+* Model requirements
+* Reliability history
+* Risk ceiling
+* Allowed actions
+* Forbidden actions
+* Input and output schemas
+* Expected evidence
+* Escalation route
+* Availability
+* Version
+* Dependencies
+* Health status
+* Evaluation score
+* Revocation status
+
+This prevents vague “general agents” from acquiring undefined powers.
+
+## 10. Delegation and accountability frameworks
+
+Useful frameworks include:
+
+* RACI
+* RASCI
+* DACI
+* RAPID
+* MOCHA
+* DRI
+* Accountable-agent model
+* Principal–agent framework
+* Delegation contracts
+* Service-level agreements
+* Operating-level agreements
+* Acceptance contracts
+* Capability leases
+* Time-limited mandates
+* Authority matrices
+* Separation of duties
+* Four-eyes principle
+* Handoff checklists
+* Escalation ladders
+
+A delegation object should specify the desired outcome, authority, budget, deadline, constraints, evidence requirements, completion conditions and escalation rules.
+
+## 11. Agent communication frameworks
+
+HAI needs structured communication, not uncontrolled natural-language chatter:
+
+* Typed messages
+* Request–response
+* Command–event
+* Proposal–acceptance
+* Question–answer
+* Inform–acknowledge
+* Delegate–report
+* Challenge–defend
+* Review–revise
+* Escalate–resolve
+* Publish–subscribe
+* Blackboard posting
+* Shared artifact exchange
+* Capability discovery
+* Conversation correlation
+* Idempotent message processing
+* Message expiry
+* Confidentiality labels
+* Provenance and signatures
+
+Relevant standards and protocols:
+
+* Model Context Protocol
+* Agent2Agent Protocol
+* FIPA ACL
+* KQML
+* OpenAPI
+* AsyncAPI
+* JSON-RPC
+* CloudEvents
+* Webhooks
+* Activity Streams
+* OAuth 2.x
+* OpenID Connect
+* WebAuthn
+* SCIM
+
+MCP connects agents to tools, resources and workflows; A2A is intended for communication and task coordination between agents. They therefore complement one another rather than compete. [MCP architecture](https://modelcontextprotocol.io/docs/learn/architecture), [A2A announcement](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/).
+
+## 12. Multi-agent coordination patterns
+
+* Sequential workflow
+* Parallel workflow
+* Fan-out/fan-in
+* Scatter–gather
+* MapReduce
+* Pipeline
+* Directed acyclic graph
+* Conditional branching
+* Event-driven choreography
+* Central orchestration
+* Round-robin collaboration
+* Consensus
+* Majority voting
+* Weighted voting
+* Quorum
+* Leader election
+* Work stealing
+* Bidding and auctions
+* Barrier synchronisation
+* Speculative parallel execution
+* Fastest-valid-answer selection
+* Redundant execution
+* Cross-checking
+* Conflict detection
+* Deadlock detection
+* Livelock detection
+* Duplicate-work suppression
+* Shared-resource locking
+* Lease-based ownership
+
+## 13. Cognitive and reasoning frameworks
+
+HAI’s reasoning engine should be able to select among:
+
+* ReAct
+* Plan-and-Execute
+* Reflexion
+* Self-Refine
+* Chain of Thought
+* Tree of Thoughts
+* Graph of Thoughts
+* Least-to-Most prompting
+* Step-back prompting
+* Decomposition
+* Self-consistency
+* Debate
+* Deliberate planning
+* Hypothesis generation and testing
+* Abductive reasoning
+* Deductive reasoning
+* Inductive reasoning
+* Analogical reasoning
+* Causal reasoning
+* Counterfactual reasoning
+* Constraint reasoning
+* Temporal reasoning
+* Spatial reasoning
+* Case-based reasoning
+* Bayesian reasoning
+* Socratic questioning
+* Devil’s advocate
+* Pre-mortem
+* Post-mortem
+* First-principles reasoning
+* Systems thinking
+* Lateral thinking
+* Design thinking
+* Computational thinking
+* Critical thinking
+* Scientific method
+* Dialectical reasoning
+* Argument mapping
+
+## 14. Cognitive-agent architectures
+
+* Belief–Desire–Intention
+* PEAS: performance, environment, actuators, sensors
+* OODA
+* MAPE-K
+* Sense–Plan–Act
+* Sense–Think–Act
+* Perceive–Reason–Act–Learn
+* Observe–Interpret–Decide–Act–Verify
+* Dual-process reasoning
+* Global Workspace Theory
+* Blackboard systems
+* Production-rule systems
+* SOAR-style cognitive architecture
+* ACT-R-inspired memory separation
+* Predictive processing
+* Active inference
+* Utility-based agents
+* Goal-based agents
+* Model-based agents
+* Reflex agents
+* Hybrid reactive–deliberative agents
+
+For HAI, the best default loop is:
+
+**Sense → authenticate → interpret → correlate → prioritise → plan → simulate → authorise → act → verify → reconcile → learn.**
+
+## 15. Decision-making under uncertainty
+
+* Bayesian decision theory
+* Expected utility
+* Expected value
+* Expected value of perfect information
+* Expected value of sample information
+* Decision trees
+* Influence diagrams
+* Monte Carlo simulation
+* Scenario planning
+* Sensitivity analysis
+* Robust decision-making
+* Real-options analysis
+* Minimax
+* Maximin
+* Minimax regret
+* Precautionary principle
+* Satisficing
+* Recognition-primed decisions
+* Naturalistic decision-making
+* Reference-class forecasting
+* Base-rate reasoning
+* Calibration
+* Confidence intervals
+* Probability ranges
+* Assumption-based planning
+* Red teaming
+* Premortems
+* Reversible experiments
+* Safe-to-fail probes
+* Explore–exploit trade-offs
+* Multi-armed bandits
+
+## 16. Formal planning frameworks
+
+* Hierarchical Task Networks
+* STRIPS
+* PDDL
+* Goal-stack planning
+* Partial-order planning
+* Temporal planning
+* Contingency planning
+* Probabilistic planning
+* Constraint-satisfaction problems
+* Constraint programming
+* Mixed-integer optimisation
+* Graph search
+* A*
+* Monte Carlo Tree Search
+* Critical Path Method
+* PERT
+* Resource-constrained project scheduling
+* Job-shop scheduling
+* Calendar scheduling
+* Time-window planning
+* Route optimisation
+* Dependency graphs
+* Milestone planning
+* Rolling-wave planning
+* Scenario branches
+* Plan repair
+* Replanning
+* Receding-horizon control
+
+## 17. Workflow modelling frameworks
+
+* Finite-state machines
+* Statecharts
+* BPMN
+* Petri nets
+* DAG workflows
+* Case Management Model and Notation
+* Decision Model and Notation
+* Event-driven process chains
+* Kanban
+* Scrum
+* Scrumban
+* Personal Kanban
+* Lean workflow
+* Theory of Constraints
+* Drum–Buffer–Rope
+* Stage-Gate
+* Checklists
+* Standard operating procedures
+* Playbooks
+* Runbooks
+* Recipes
+* Policy-as-code
+* Rules engines
+
+HAI already uses state machines and governed workflow ledgers. BPMN-like modelling would add branching, compensation, parallelism and human tasks without replacing the existing pursuit model.
+
+## 18. Reliable execution frameworks
+
+* Idempotency
+* At-least-once delivery
+* At-most-once delivery
+* Deduplication
+* Transactional outbox
+* Inbox pattern
+* Saga pattern
+* Compensating transactions
+* Two-phase actions: prepare and commit
+* Dry-run
+* Preview and diff
+* Postcondition verification
+* Checkpoint and resume
+* Leases
+* Heartbeats
+* Timeouts
+* Retry budgets
+* Exponential backoff
+* Jitter
+* Circuit breakers
+* Bulkheads
+* Rate limiting
+* Token buckets
+* Dead-letter queues
+* Poison-message isolation
+* Graceful cancellation
+* Rollback
+* Reconciliation
+* Repair workflows
+* Orphan detection
+* Exactly-once-effect design
+* Immutable execution ledger
+
+## 19. Autonomy-level framework
+
+HAI should use explicit autonomy levels per action, not one global “autonomous” switch:
+
+0. Observe only
+1. Inform
+2. Recommend
+3. Draft
+4. Plan and simulate
+5. Prepare action
+6. Execute after case-specific approval
+7. Execute under standing approval
+8. Execute automatically if reversible and low-risk
+9. Execute and notify
+10. Fully autonomous inside a tightly bounded mandate
+
+The level should depend on:
+
+* Risk
+* Reversibility
+* confidence
+* financial impact
+* legal significance
+* audience
+* privacy
+* scope
+* novelty
+* past reliability
+* available verification
+* user capacity
+* standing permission
+* potential harm
+* blast radius
+
+## 20. Approval framework
+
+* Approval before planning
+* Approval before data access
+* Approval before tool use
+* Approval before expenditure
+* Approval before communication
+* Approval before commitment
+* Approval before execution
+* Approval before publication
+* Approval before deletion
+* Approval before privilege escalation
+* Approval before self-modification
+* Single approval
+* Batch approval
+* Standing approval
+* Conditional approval
+* Time-limited approval
+* Budget-limited approval
+* Two-person approval
+* Reauthentication
+* Approval expiry
+* Withdrawal and revocation
+* Break-glass emergency approval
+* Denial with reason
+* Request-for-clarification
+* Approval evidence and receipt
+
+## 21. Memory architecture
+
+HAI needs distinct memory types:
+
+* Sensory memory
+* Working memory
+* Conversation memory
+* Episodic memory
+* Semantic memory
+* Procedural memory
+* Prospective memory
+* Autobiographical memory
+* Preference memory
+* Decision memory
+* Relationship memory
+* Spatial memory
+* Temporal memory
+* Source memory
+* Skill memory
+* Case memory
+* Organisational memory
+* Agent-specific memory
+* Shared team memory
+* Negative memory: what failed
+* Constitutional memory: protected rules
+
+Memory lifecycle:
+
+**Capture → normalise → classify → extract → deduplicate → link → score → store → retrieve → consolidate → correct → archive → forget/delete.**
+
+## 22. Personal knowledge-management frameworks
+
+* PARA
+* CODE
+* Building a Second Brain
+* Zettelkasten
+* Evergreen Notes
+* Atomic notes
+* Johnny.Decimal
+* Maps of Content
+* Progressive summarisation
+* Digital gardening
+* Commonplace book
+* Personal wiki
+* Knowledge graphs
+* Concept maps
+* Mind maps
+* Cornell Notes
+* Bullet Journal
+* GTD reference system
+* LYT
+* Folder–tag–link hybrid systems
+* Source–claim–evidence organisation
+* Case-file organisation
+* Timeline-first organisation
+
+## 23. Retrieval and context frameworks
+
+* Lexical retrieval
+* Vector retrieval
+* Hybrid retrieval
+* Metadata-filtered retrieval
+* Graph retrieval
+* Temporal retrieval
+* Geospatial retrieval
+* Relationship-aware retrieval
+* Case-based retrieval
+* Multi-hop retrieval
+* Reranking
+* Reciprocal Rank Fusion
+* Query expansion
+* Query decomposition
+* HyDE
+* Self-RAG
+* Corrective RAG
+* Agentic RAG
+* GraphRAG
+* RAPTOR-style hierarchical retrieval
+* Contextual compression
+* Hierarchical summaries
+* Rolling conversation summaries
+* Working-set selection
+* Semantic caching
+* Prefix caching
+* Source-summary caching
+* Retrieval permission filtering
+* Context-budget allocation
+
+Ranking should combine relevance, recency, confidence, provenance, authority, privacy, temporal validity and pursuit relationship.
+
+## 24. Knowledge and truth framework
+
+* Claim–evidence graphs
+* Epistemic status
+* Source hierarchy
+* Primary-versus-secondary sources
+* Provenance
+* Chain of custody
+* Citation integrity
+* Corroboration
+* Triangulation
+* Contradiction detection
+* Contradiction resolution
+* Temporal validity
+* Bitemporal data
+* Entity resolution
+* Record linkage
+* Fact–opinion–prediction separation
+* Observation–inference separation
+* Confidence calibration
+* Bayesian updating
+* Assumption registers
+* Evidence matrices
+* Argument maps
+* Toulmin argument model
+* Burden-of-proof tracking
+* Falsifiability
+* Reproducibility
+* Freshness and expiry
+* Versioned facts
+* Supersession
+* Retraction and correction
+* Unknown/uncertain states
+
+HAI should never reduce all knowledge to a single “confidence” number.
+
+## 25. Data-ingestion and synchronisation frameworks
+
+* ETL
+* ELT
+* Change Data Capture
+* Event sourcing
+* CQRS
+* Batch ingestion
+* Streaming ingestion
+* Polling
+* Webhooks
+* File watching
+* Incremental sync
+* Full reconciliation
+* Snapshot ingestion
+* Data contracts
+* Schema registries
+* Schema evolution
+* Canonical data models
+* Master-data management
+* Data lineage
+* W3C PROV
+* FAIR data principles
+* Deduplication
+* Conflict-free replicated data types
+* Last-write-wins
+* Three-way merge
+* Source-of-truth hierarchy
+* Tombstones
+* Consent and revocation propagation
+
+## 26. Perception and ambient-intelligence framework
+
+* Voice activity detection
+* Speech recognition
+* Speaker identification
+* Speaker diarisation
+* Natural-language understanding
+* Text-to-speech
+* OCR
+* Document-layout understanding
+* Image classification
+* Object detection
+* Scene understanding
+* Plant and disease identification
+* Location awareness
+* Time awareness
+* Calendar context
+* Device and sensor context
+* Weather context
+* Presence detection
+* Activity recognition
+* Anomaly detection
+* Geofencing
+* Event–condition–action triggers
+* Ambient suggestions
+* Contextual reminders
+* Interruption management
+* Privacy zones
+* Recording indicators
+* Bystander-consent rules
+
+## 27. Human–AI interaction frameworks
+
+* Mixed-initiative interaction
+* Conversational turn-taking
+* Progressive disclosure
+* Recognition over recall
+* Calm technology
+* Peripheral awareness
+* Explainable interaction
+* Preview-before-action
+* Undo
+* Editable drafts
+* Confidence display
+* Evidence display
+* Exception-based dashboards
+* Notification hierarchy
+* Interruptibility modelling
+* Adaptive verbosity
+* Multimodal redundancy
+* Error prevention
+* Error recovery
+* WCAG
+* Inclusive design
+* Universal design
+* Cognitive accessibility
+* Plain-language principles
+* Voice-first and hands-free operation
+* Graceful handoff to humans
+
+## 28. Privacy frameworks
+
+* Privacy by Design
+* Privacy by Default
+* GDPR principles
+* Data minimisation
+* Purpose limitation
+* Storage limitation
+* Lawfulness and transparency
+* Data-subject rights
+* Consent management
+* Legitimate-interest assessment
+* Data Protection Impact Assessment
+* Records of processing activities
+* Local-first computing
+* Selective disclosure
+* Contextual integrity
+* Information-flow control
+* Data classification
+* Field-level encryption
+* End-to-end encryption
+* Pseudonymisation
+* Anonymisation
+* Differential privacy
+* Redaction
+* Secret detection
+* Retention schedules
+* Legal holds
+* Secure deletion
+* Data portability
+* Privacy budgets
+* Bystander privacy
+
+## 29. Security frameworks
+
+* Zero Trust
+* Least privilege
+* Need-to-know
+* Deny by default
+* Capability-based security
+* RBAC
+* ABAC
+* ReBAC
+* Policy-based access control
+* Separation of duties
+* Just-in-time access
+* Just-enough administration
+* Strong workload identity
+* Mutual authentication
+* Sandboxing
+* Network segmentation
+* Egress controls
+* Tool allowlists
+* Domain allowlists
+* Path and workspace allowlists
+* Secret vaults
+* Credential rotation
+* Signed artifacts
+* Secure bootstrapping
+* Tamper-evident logs
+* Defence in depth
+* Secure-by-design
+* Secure-by-default
+* Threat-informed defence
+
+NIST Zero Trust explicitly rejects implicit trust based merely on network location or asset ownership, which is particularly relevant to local agents with powerful device access. [NIST SP 800-207](https://csrc.nist.gov/pubs/sp/800/207/final).
+
+## 30. Agentic threat-modelling frameworks
+
+* STRIDE
+* DREAD
+* Attack trees
+* Abuse cases
+* Misuse cases
+* MITRE ATT&CK
+* MITRE ATLAS
+* OWASP LLM Top 10
+* OWASP Agentic Applications Top 10
+* Prompt-injection threat modelling
+* Tool-poisoning analysis
+* Memory-poisoning analysis
+* Confused-deputy analysis
+* Privilege-compounding analysis
+* Identity spoofing
+* Agent impersonation
+* Goal manipulation
+* Context manipulation
+* Data exfiltration
+* Excessive agency
+* Unbounded consumption
+* Cascading failure
+* Multi-agent collusion
+* Approval fatigue
+* Supply-chain compromise
+* Unsafe self-modification
+* Insecure agent-to-agent communication
+* Human manipulation
+* Audit tampering
+
+OWASP now maintains a dedicated peer-reviewed agentic-security framework for agents that plan and act across complex workflows. [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/).
+
+## 31. Safety-engineering frameworks
+
+* FMEA
+* FMECA
+* HAZOP
+* STPA
+* Fault-tree analysis
+* Event-tree analysis
+* Bow-tie analysis
+* Swiss-cheese model
+* ALARP
+* Safety cases
+* Assurance cases
+* Hazard logs
+* Defence in depth
+* Fail-safe
+* Fail-closed
+* Graceful degradation
+* Safe states
+* Independent protection layers
+* Blast-radius containment
+* Reversibility analysis
+* Precondition and postcondition checks
+* Safety interlocks
+* Emergency stops
+* Watchdogs
+* Rate and resource limits
+* Chaos testing
+* Adversarial testing
+
+## 32. AI governance frameworks
+
+* NIST AI RMF: Govern, Map, Measure, Manage
+* NIST Generative AI Profile
+* ISO/IEC 42001
+* ISO/IEC 23894
+* ISO/IEC 22989
+* ISO/IEC 23053
+* ISO/IEC 27001
+* ISO/IEC 27701
+* ISO/IEC 29100
+* ISO/IEC 25010
+* OECD AI Principles
+* EU AI Act risk classification
+* EU trustworthy-AI assessment
+* IEEE 7000-series
+* Algorithmic Impact Assessments
+* Model cards
+* System cards
+* Data sheets for datasets
+* AI inventories
+* Risk registers
+* Incident registers
+* Change-control boards
+* Post-market monitoring
+* Responsible-AI maturity models
+
+NIST describes the AI RMF as a voluntary trustworthiness framework and is currently revising version 1.0; its Generative AI Profile adds GenAI-specific risks. [NIST AI RMF](https://www.nist.gov/itl/ai-risk-management-framework), [NIST AI 600-1](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence). ISO/IEC 42001 provides the management-system layer. [ISO/IEC 42001](https://www.iso.org/standard/42001).
+
+Because HAI is developed and used in the Netherlands, its capability registry should also classify functions against the EU AI Act’s risk-based structure and human-oversight requirements. [European Commission AI Act overview](https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai).
+
+## 33. Model-intelligence framework
+
+* Model registry
+* Provider registry
+* Capability profiles
+* Task-lane classification
+* Model routing
+* Model cascades
+* Local-versus-cloud routing
+* Privacy-aware routing
+* Cost-aware routing
+* Latency-aware routing
+* Context-length routing
+* Modality-aware routing
+* Language-aware routing
+* Quality–cost Pareto frontier
+* Model ensembles
+* Specialist models
+* Generator–verifier separation
+* Independent verifier models
+* Fallback chains
+* Hedged requests
+* Dynamic reasoning effort
+* Token budgeting
+* Context budgeting
+* Compute budgeting
+* Energy-aware scheduling
+* Semantic caching
+* Prompt caching
+* Batching
+* Quantisation
+* Structured outputs
+* Constrained decoding
+* Tool calling
+* Confidence calibration
+* Provider-health monitoring
+* Performance drift detection
+
+HAI already contains much of this conceptually through its seven-tier model policy and architecture-aware routing.
+
+## 34. Evaluation framework
+
+Evaluation must occur at several layers:
+
+* Deterministic validators
+* Schema validation
+* Unit tests
+* Integration tests
+* Contract tests
+* End-to-end tests
+* Scenario tests
+* Simulation
+* Sandbox tests
+* Golden datasets
+* Regression suites
+* Adversarial tests
+* Red-team tests
+* Property-based tests
+* Metamorphic testing
+* Differential testing
+* Model-based testing
+* Formal verification
+* Human review
+* Expert review
+* Pairwise comparison
+* Rubric scoring
+* LLM-as-judge with validation
+* Multi-judge consensus
+* Shadow-mode evaluation
+* Canary deployment
+* A/B testing
+* Longitudinal outcome evaluation
+
+Agent-specific measurements:
+
+* Task success
+* Outcome success
+* Constraint adherence
+* Groundedness
+* Factual accuracy
+* Completeness
+* Calibration
+* Correct tool selection
+* Permission compliance
+* Privacy compliance
+* Plan quality
+* Step efficiency
+* Recovery rate
+* Escalation quality
+* Human correction rate
+* False-autonomy rate
+* Cost per successful outcome
+* Time saved
+* Cognitive burden avoided
+* Unnecessary interruptions
+* User trust
+* Long-term value
+
+## 35. Observability framework
+
+* Logs
+* Metrics
+* Traces
+* Distributed traces
+* Agent spans
+* Tool-call spans
+* Model-call spans
+* Workflow timelines
+* Event correlation
+* Prompt and context lineage
+* Token and cost accounting
+* Decision provenance
+* Approval provenance
+* Data lineage
+* Error taxonomies
+* Health checks
+* Readiness checks
+* Liveness checks
+* Synthetic monitoring
+* Audit events
+* User-visible activity history
+* Service-level indicators
+* Service-level objectives
+* Error budgets
+
+OpenTelemetry is the logical neutral standard for traces, metrics and logs across HAI, external runtimes and specialist agents. [OpenTelemetry](https://opentelemetry.io/docs/what-is-opentelemetry/).
+
+## 36. Reliability and resilience frameworks
+
+* Site Reliability Engineering
+* Incident management
+* Incident Command System
+* Blameless postmortems
+* Business continuity
+* Disaster recovery
+* RTO and RPO
+* 3-2-1 backups
+* Point-in-time recovery
+* Graceful degradation
+* Offline-first operation
+* Dependency health
+* Load shedding
+* Backpressure
+* Rate limiting
+* Circuit breaking
+* Bulkheads
+* Failover
+* Redundancy
+* Chaos engineering
+* Capacity planning
+* Queue-depth monitoring
+* Reconciliation
+* State repair
+* Data-integrity checks
+* Version rollback
+* Feature flags
+* Canary releases
+* Kill switches
+
+## 37. Learning and controlled self-improvement
+
+* PDCA
+* OODA
+* Double-loop learning
+* Triple-loop learning
+* After Action Reviews
+* Blameless postmortems
+* Bayesian updating
+* Case-based learning
+* Experience replay
+* Reflection
+* Error analysis
+* Root-cause analysis
+* Five Whys
+* Fishbone diagrams
+* DMAIC
+* Hypothesis-driven improvement
+* Multi-armed bandits
+* Safe experimentation
+* Shadow deployment
+* Champion–challenger
+* Skill mining
+* Reusable-plan extraction
+* Prompt versioning
+* Policy versioning
+* Eval-driven development
+* Preference learning
+* Feedback learning
+* Human correction learning
+* Drift detection
+* Outcome reconciliation
+
+Crucially, learning may update recommendations and skills, but not constitutional rules, permissions or safety boundaries without explicit approval.
+
+# Personal operating frameworks
+
+## 38. Productivity and attention
+
+* Getting Things Done
+* Horizons of Focus
+* PARA
+* Personal Kanban
+* Scrum
+* Scrumban
+* Time blocking
+* Day theming
+* Pomodoro
+* 1–3–5 Rule
+* Ivy Lee Method
+* Most Important Tasks
+* Eat the Frog
+* Two-Minute Rule
+* Timeboxing
+* Batching
+* Deep Work
+* Maker versus Manager Schedule
+* Energy-based scheduling
+* Attention residue management
+* WIP limits
+* Tickler files
+* Waiting-for lists
+* Weekly Review
+* Shutdown ritual
+* Commitment inventory
+* Default calendar
+* Buffer management
+
+## 39. Behaviour-change and habit frameworks
+
+* Fogg Behavior Model
+* Tiny Habits
+* COM-B
+* Behaviour Change Wheel
+* EAST
+* MINDSPACE
+* Nudge theory
+* Implementation intentions
+* Habit stacking
+* Cue–routine–reward
+* Transtheoretical Model
+* Motivational interviewing
+* Self-monitoring
+* Commitment devices
+* Temptation bundling
+* Environmental design
+* Friction reduction
+* Reward substitution
+* Identity-based habits
+* Relapse prevention
+* Adaptive reminders
+* Streaks with compassionate recovery
+* Social accountability
+
+## 40. Health and personal-care pack
+
+* Biopsychosocial assessment
+* SOAP
+* SBAR
+* PQRST symptom description
+* Red-flag triage
+* Shared decision-making
+* Medication reconciliation
+* Medication-rights checklist
+* Care-plan cycles
+* ADL/IADL monitoring
+* Sleep hygiene
+* Pacing
+* Energy envelope
+* Pain diary
+* Trigger tracking
+* Symptom trend analysis
+* Preventive-care schedules
+* Escalation thresholds
+* Emergency contacts
+* Caregiver coordination
+* Accessibility accommodations
+
+This pack should support decisions and documentation, not silently replace qualified medical professionals.
+
+## 41. Financial-management pack
+
+* Zero-based budgeting
+* Envelope budgeting
+* 50/30/20
+* Pay-yourself-first
+* Cash-flow forecasting
+* Sinking funds
+* Emergency-fund ladder
+* Debt snowball
+* Debt avalanche
+* Net-worth tracking
+* Asset–liability management
+* Liquidity management
+* Expected-value decisions
+* Scenario analysis
+* Sensitivity analysis
+* Total Cost of Ownership
+* Life-cycle costing
+* Opportunity cost
+* Risk-adjusted return
+* Fraud controls
+* Four-eyes payments
+* Spending mandates
+* Subscription review
+* Tax-calendar management
+* Financial document retention
+
+## 42. Home, garden and asset-management pack
+
+* Asset registry
+* Preventive maintenance
+* Predictive maintenance
+* Reliability-Centred Maintenance
+* FMEA
+* Seasonal maintenance
+* 5S
+* Visual management
+* ABC inventory
+* XYZ inventory
+* Reorder points
+* Min–max stocking
+* Bill of materials
+* Tool tracking
+* Warranty tracking
+* Inspection checklists
+* Energy monitoring
+* Water monitoring
+* Waste hierarchy
+* Circular-economy principles
+* Integrated Pest Management
+* Plant-health monitoring
+* Weather-aware planning
+* Work-order management
+* Contractor and quotation comparison
+
+## 43. Work and service-delivery pack
+
+* Standard operating procedures
+* Checklists
+* Job breakdown
+* Work packages
+* Critical Path
+* PERT
+* Lean
+* 5S
+* Kaizen
+* Theory of Constraints
+* Value-stream mapping
+* DMAIC
+* Root-cause analysis
+* Quality gates
+* Safety briefings
+* Toolbox talks
+* Resource planning
+* Capacity planning
+* Skills matrices
+* RACI
+* Service blueprints
+* Customer journey mapping
+* CRM pipelines
+* Quote–accept–deliver–invoice–follow-up
+* Scope-change control
+* Time-and-material tracking
+* Cost estimation
+* Lessons learned
+
+## 44. Entrepreneurship and venture pack
+
+* Business Model Canvas
+* Lean Canvas
+* Value Proposition Canvas
+* Jobs to Be Done
+* Lean Startup
+* Build–Measure–Learn
+* Customer Development
+* Design Thinking
+* Double Diamond
+* Effectuation
+* Causation versus effectuation
+* Blue Ocean Strategy
+* Strategy Canvas
+* SWOT
+* TOWS
+* PESTEL
+* Porter’s Five Forces
+* VRIO
+* Ansoff Matrix
+* BCG Matrix
+* GE–McKinsey Matrix
+* Three Horizons
+* Wardley Mapping
+* Crossing the Chasm
+* Technology Adoption Lifecycle
+* Stage-Gate
+* Product–market fit
+* North Star Metric
+* AARRR
+* Unit economics
+* Cohort analysis
+* TAM/SAM/SOM
+* Scenario planning
+* Theory of Change
+* Stakeholder mapping
+* OKRs
+* Balanced Scorecard
+
+## 45. Legal, government and case-management pack
+
+* IRAC
+* CRAC
+* CREAC
+* FIRAC
+* Claim–issue–evidence matrices
+* Chronology
+* Procedural timeline
+* Deadline and limitation tracking
+* Burden-of-proof mapping
+* Elements-of-claim analysis
+* Authority hierarchy
+* Primary-source verification
+* Evidence chain of custody
+* Document authenticity
+* Contradiction matrix
+* Damage schedules
+* Remedy mapping
+* Stakeholder mapping
+* Escalation ladders
+* Complaint–objection–appeal workflows
+* Freedom-of-information workflows
+* GDPR access and correction workflows
+* Legal-hold management
+* Correspondence registers
+* Promise and commitment tracking
+
+## 46. Communication pack
+
+* BLUF
+* Pyramid Principle
+* SCQA
+* 7Cs of Communication
+* Audience–Purpose–Message
+* AIDA
+* PAS
+* FAB
+* Situation–Behaviour–Impact
+* DESC
+* Nonviolent Communication
+* Active listening
+* Reflective listening
+* Motivational interviewing
+* Steelmanning
+* Argument mapping
+* Negotiation preparation
+* BATNA
+* ZOPA
+* Interest-based negotiation
+* Difficult-conversation framework
+* Formal-government correspondence
+* Email triage
+* Thread and commitment extraction
+* Approval-before-send
+* Recipient verification
+
+## 47. Relationship and care pack
+
+* Nonviolent Communication
+* Gottman principles
+* Active–constructive responding
+* Attachment-informed communication
+* Family-systems thinking
+* Transactional Analysis
+* Drama Triangle and Empowerment Dynamic
+* Circle of control
+* Boundary-setting
+* Love Languages as a conversational heuristic
+* Conflict de-escalation
+* Restorative practices
+* Interest-based negotiation
+* Care plans
+* Shared calendars
+* Household responsibility matrices
+* Reciprocity tracking without scorekeeping
+* Important-date reminders
+* Social-capacity management
+* Safeguarding escalation
+
+## 48. Learning and competence pack
+
+* Bloom’s Taxonomy
+* Revised Bloom
+* Feynman Technique
+* Active recall
+* Spaced repetition
+* Interleaving
+* Retrieval practice
+* Deliberate practice
+* Mastery learning
+* Kolb learning cycle
+* Experiential learning
+* Zone of Proximal Development
+* Scaffolding
+* Cognitive Load Theory
+* Dual coding
+* Worked examples
+* Testing effect
+* Leitner system
+* 70–20–10
+* Competency matrices
+* Skills-gap analysis
+* Learning objectives
+* Formative and summative assessment
+* Teach-back
+* Portfolio-based evidence
+
+## 49. Travel and mobility pack
+
+* Door-to-door journey planning
+* Time-dependent routing
+* Multi-objective route optimisation
+* Travelling-salesperson variants
+* Accessibility constraints
+* Transfer-risk scoring
+* Buffer planning
+* Weather-aware routing
+* Fare optimisation
+* Energy and fatigue planning
+* Last-mile planning
+* Contingency routes
+* Geofenced reminders
+* Packing checklists
+* Live disruption management
+
+## 50. Emergency and continuity pack
+
+* Personal emergency plan
+* Incident Command System
+* Triage
+* Severity classification
+* Contact trees
+* Evacuation plans
+* Shelter-in-place plans
+* Medical-information card
+* Emergency funds
+* Go-bags
+* Pet emergency plans
+* Utility outage plans
+* Communication fallback
+* Data backup and recovery
+* Account-recovery kits
+* Decision authority during incapacity
+* After-action review
+
+# Software implementation frameworks
+
+These are implementation options, not concepts HAI should blindly install.
+
+## 51. Agent-development frameworks
+
+* LangGraph
+* Microsoft AutoGen
+* Microsoft Agent Framework
+* Semantic Kernel
+* OpenAI Agents SDK
+* Google Agent Development Kit
+* CrewAI
+* PydanticAI
+* LlamaIndex Agents
+* Haystack Agents
+* Hugging Face smolagents
+* Agno
+* BeeAI
+* Mastra
+* LangChain
+* DSPy
+* Letta
+* CAMEL
+* MetaGPT
+* AutoGPT
+* SuperAGI
+* Flowise
+* Langflow
+
+Given HAI’s existing Go architecture, I would not replace its core with one of these. HAI should expose adapters so agents built in several frameworks can participate under HAI’s governance.
+
+## 52. Durable workflow and automation platforms
+
+* Temporal
+* Restate
+* Azure Durable Functions
+* Camunda
+* Zeebe
+* Netflix Conductor
+* Argo Workflows
+* Prefect
+* Dagster
+* Apache Airflow
+* n8n
+* Windmill
+* Kestra
+* Node-RED
+* Apache NiFi
+* Dapr Workflows
+
+Temporal or Restate concepts become relevant when HAI moves beyond its current in-process, single-node worker model.
+
+## 53. Memory and knowledge implementations
+
+* PostgreSQL
+* pgvector
+* OpenSearch
+* Elasticsearch
+* Qdrant
+* Weaviate
+* Milvus
+* Chroma
+* Neo4j
+* ArangoDB
+* Memgraph
+* Graphiti
+* Mem0
+* Zep
+* Letta memory
+* LangMem
+* Apache AGE
+* RDF and SPARQL stores
+
+HAI should retain PostgreSQL as the canonical ledger and add specialised indexes or stores only behind replaceable interfaces.
+
+## 54. Policy, identity and security implementations
+
+* Open Policy Agent
+* Cedar
+* Casbin
+* SpiceDB
+* OpenFGA
+* Keycloak
+* Authentik
+* HashiCorp Vault
+* SOPS
+* Sigstore
+* in-toto
+* TUF
+* SLSA
+* CycloneDX
+* SPDX
+* AIBOM
+* gVisor
+* Firecracker
+* WebAssembly sandboxes
+* container isolation
+* seccomp
+* AppArmor
+
+## 55. Evaluation and observability implementations
+
+* OpenTelemetry
+* Langfuse
+* Arize Phoenix
+* MLflow
+* Promptfoo
+* DeepEval
+* Ragas
+* TruLens
+* OpenAI Evals
+* Giskard
+* Garak
+* Evidently
+* Grafana
+* Prometheus
+* Loki
+* Tempo
+* Jaeger
+* Sentry
+
+# What HAI already covers versus what it still needs
+
+| Framework area                    | Current repo position          | Main missing layer                                                         |
+| --------------------------------- | ------------------------------ | -------------------------------------------------------------------------- |
+| Pursuits and workflows            | Strong                         | Rich dependency, resource and temporal planning                            |
+| Approval and controlled execution | Strong                         | Unified autonomy-level and standing-mandate model                          |
+| Verification, evidence and audit  | Strong                         | Full claim graph, temporal truth and calibration                           |
+| Memory and source ingestion       | Moderate–strong                | Rich personal knowledge graph and memory-type separation                   |
+| Model intelligence                | Strong conceptually            | Live-proven providers and longitudinal routing results                     |
+| Multi-agent runtime               | Adapter surfaces exist         | True agent-team lifecycle, contracts, consensus and conflict resolution    |
+| Personal operating system         | Fragmentary                    | Whole-life ontology, needs model, capacity and resource planning           |
+| Interoperability                  | Limited                        | Generic MCP, A2A and real scoped connectors                                |
+| Proactivity                       | Suggestion-first ambient scans | Trigger framework, interruption policy and long-term outcome monitoring    |
+| Learning                          | Technical feedback loops       | User-outcome learning, preference correction and reusable skill extraction |
+| Distributed reliability           | Explicitly absent              | Durable multi-worker orchestration, leases, heartbeats and HA              |
+| Domain expertise                  | Mostly generic                 | Versioned health, finance, legal, home, work and relationship packs        |
+
+## My recommended HAI framework architecture
+
+HAI should introduce a **Framework Registry**. Every framework should be a versioned object with:
+
+* Framework ID and version
+* Family
+* Purpose
+* Suitable problem types
+* Trigger conditions
+* Required inputs
+* Produced outputs
+* Required agents
+* Workflow template
+* Decision rules
+* Safety invariants
+* Authority requirements
+* Risk ceiling
+* Evidence requirements
+* Evaluation method
+* Conflicts with other frameworks
+* User-specific adaptations
+* Source and provenance
+* Active, experimental or deprecated status
+
+Then the Chief-of-Staff agent can determine:
+
+1. Which life domain is affected?
+2. Which need, commitment or pursuit is involved?
+3. Which framework or combination fits the problem?
+4. Which specialist agents are required?
+5. What authority may they receive?
+6. Which actions require Robert’s approval?
+7. What constitutes verified completion?
+8. What should be learned afterward?
+
+That is the difference between an autonomous assistant that merely “does tasks” and a genuine Personal AI Operating System that can govern an entire portfolio of life, work, cases, relationships and ventures without becoming chaotic or unsafe.

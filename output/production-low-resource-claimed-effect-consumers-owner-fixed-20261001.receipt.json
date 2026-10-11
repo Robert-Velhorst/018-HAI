@@ -1,0 +1,24 @@
+{
+  "startedAt": "2026-10-01T18:37:00.0435750+00:00",
+  "finishedAt": "2026-10-01T18:37:13.6547839+00:00",
+  "packages": [
+    "background",
+    "runtimelab",
+    "opscontrol",
+    "accountfeed",
+    "automation"
+  ],
+  "runPattern": ".",
+  "outputMode": "compact-package-results",
+  "integrationTag": false,
+  "deadlineSeconds": 360,
+  "timedOut": false,
+  "exitCode": 0,
+  "completedSuccessfully": true,
+  "goVersion": "go1.25.13 windows/amd64",
+  "dockerStarted": false,
+  "dependencyDownloadsEnabled": false,
+  "destructiveDatabaseTestsEnabled": false,
+  "goWorkers": 1,
+  "heapSoftLimit": "384MiB"
+}

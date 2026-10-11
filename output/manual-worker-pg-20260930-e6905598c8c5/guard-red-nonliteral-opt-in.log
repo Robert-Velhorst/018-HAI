@@ -1,0 +1,9 @@
+{"Time":"2026-09-30T21:49:15.978199788Z","Action":"start","Package":"automation-hub-backend/internal/source"}
+{"Time":"2026-09-30T21:49:16.06274204Z","Action":"run","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation"}
+{"Time":"2026-09-30T21:49:16.062813546Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"=== RUN   TestManualWorkerPostgresClaimIsolation\n"}
+{"Time":"2026-09-30T21:49:16.06367073Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"    manual_worker_postgres_test.go:181: refusing manual worker PostgreSQL connection: HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS must be literal true\n"}
+{"Time":"2026-09-30T21:49:16.063742467Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"--- FAIL: TestManualWorkerPostgresClaimIsolation (0.00s)\n"}
+{"Time":"2026-09-30T21:49:16.063824481Z","Action":"fail","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Elapsed":0}
+{"Time":"2026-09-30T21:49:16.065047977Z","Action":"output","Package":"automation-hub-backend/internal/source","Output":"FAIL\n"}
+{"Time":"2026-09-30T21:49:16.075357756Z","Action":"output","Package":"automation-hub-backend/internal/source","Output":"FAIL\tautomation-hub-backend/internal/source\t0.096s\n"}
+{"Time":"2026-09-30T21:49:16.075426757Z","Action":"fail","Package":"automation-hub-backend/internal/source","Elapsed":0.097}

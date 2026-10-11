@@ -1,0 +1,5 @@
+ok  	automation-hub-backend/internal/background	0.712s
+ok  	automation-hub-backend/internal/runtimelab	0.429s
+ok  	automation-hub-backend/internal/opscontrol	2.780s
+ok  	automation-hub-backend/internal/accountfeed	0.924s
+ok  	automation-hub-backend/internal/automation	0.674s
