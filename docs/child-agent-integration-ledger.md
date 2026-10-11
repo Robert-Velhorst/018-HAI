@@ -2029,3 +2029,33 @@ resource was deleted in this checkpoint. PR #34 and #35, remaining branch-only
 behavior, archive reconciliation, and exact local cleanup candidates remain
 open work; local cleanup is still unsafe because preservation reconciliation
 remains incomplete.
+
+### October 11, 2026: branch-specific audit and PR #34 scheduler review
+
+Refreshed remote refs and open PR metadata. PR #36 is open and mergeable at
+base `37de3e04e766ac3f7df04aeaddaf774904a7ebca`; its current pushed head is
+`9f2e1ba9304b60b9647f6550be3cf69ce2a2a4c3`. PR #35's head is an ancestor of
+PR #36, so its commit history is included there. PR #33 and PR #34 heads are
+not ancestors of #36 and are not marked reconciled or safe to close.
+
+PR #33's only branch-added non-environment paths are three tests already
+reviewed in the prior entry; the branch's worker-control implementation is
+byte-identical to PR #36. PR #34 is substantially stale relative to #36: its
+snapshot removes over 1,100 paths present in #36, so wholesale merge/cherry-pick
+would regress current code. Its Windows no-fake-claims audit was ported as two
+new scripts and wired only into the Windows CI job. Fixed the audit's root-commit
+fallback: it now requires a resolvable merge base (PR base, explicit override,
+push-before SHA, or `origin/main`) and fails closed when unavailable. Full Git
+history is fetched only for the Windows audit job. Local verification passed:
+13 audit checks, 110 Python CI contract tests, and `git diff --check`. Commit
+`9f2e1ba9304b60b9647f6550be3cf69ce2a2a4c3` is pushed to PR #36. Its exact-head
+Actions run `38156961155` is queued; hosted checks remain unverified.
+
+PR #34 also contains branch-specific scheduler-readiness instrumentation,
+compatibility tests, and a live-Trello acceptance launcher. These have not yet
+been accepted or discarded: the older scheduler files cannot be copied without
+reworking them against PR #36's current durable scheduler, explicit fallback,
+and lifecycle behavior. The live-Trello launcher is a candidate for separate
+review; no live credentials or Trello account were accessed. Existing worktrees,
+archives, local runtime data, and source files remain untouched. Cleanup is still
+blocked on full branch/archive reconciliation and a verified preservation gate.
