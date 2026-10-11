@@ -1390,3 +1390,33 @@ machine-local `.env` files were read in this comparison. This batch has no
 missing product-code port identified; the remaining source-diff and transcript
 crosswalk inventories remain open, so this result does not authorize local
 checkout, archive, or diagnostic cleanup.
+
+### October 11, 2026: refreshed source comparison and pause-path test
+
+The current primary checkout working tree (HEAD `e07b9da`, with 692 tracked
+paths modified) was compared with the PR worktree at `0a116d6a`. Within the
+1,878 tracked source/documentation files covered by the text-extension filter,
+108 have content differences after CRLF/LF normalization and zero are missing
+from the PR checkout. This snapshot includes uncommitted tracked primary-tree
+content and supersedes prior difference counts only for this stated
+population; untracked files, generated data, binaries, and the wider transcript
+patch-event crosswalk are not covered.
+
+The sampled PR variants preserve raw source-evidence SHA-256 on ingest and
+refresh (`operations/domain.go`, `operations/service.go`), validate and persist
+bounded workflow success criteria (`workflow/service.go`), use transactionally
+bound execution authorization rather than the generic policy-only check
+(`phase2/handler.go`), and encode advisory-lock claim identities without
+ambiguous separator concatenation (`executionauth/repository_postgres.go`).
+The paused worker path claims previously classified low-risk work only to
+recheck the current policy and defer it; emergency-stop mode still processes
+nothing. The existing paused-mode test covered only newly ingested work, so a
+focused regression was added to assert that an already-classified safe
+operation is deferred, remains unexecuted, and receives a next-review time.
+
+GitHub Actions backend tests passed for the prior PR head, but this new
+regression has not yet run in CI. Local execution was unavailable because Go
+is not installed on this machine's PATH. No source from the primary checkout
+was copied. The 108-file semantic review is incomplete, PR #36 is still open,
+and local data cleanup remains gated on further source/archive reconciliation
+and final PR verification.

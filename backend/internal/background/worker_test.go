@@ -793,6 +793,50 @@ func TestPausedModeIngestsButProcessesNothing(t *testing.T) {
 	}
 }
 
+func TestPausedModeDefersPreviouslyClassifiedSafeOperation(t *testing.T) {
+	w, svc, _ := buildWorker(t, autonomypolicy.ModePaused, "[]")
+	created, err := svc.Ingest(operations.NewOperationInput{
+		OwnerUserID:   "user-1",
+		WorkspaceID:   "local",
+		Title:         "Organize local notes",
+		OperationType: "organize",
+		SourceType:    "manual",
+		DedupeKey:     "paused-existing-safe-operation",
+	})
+	if err != nil {
+		t.Fatalf("ingest operation: %v", err)
+	}
+	created.Operation.CurrentDecision = string(operations.DecisionRunSafeLocalWorker)
+	created.Operation.RiskLevel = string(operations.RiskLow)
+	created.Operation.AutonomyLevel = string(operations.AutonomyAuto)
+	created.Operation.OwnerType = string(operations.OwnerHAI)
+	created.Operation.RequiresApproval = false
+	created.Operation.RecommendedAction = "run safe local worker"
+	created.Operation.VerificationStatus = string(operations.VerificationPending)
+	classified, err := svc.Transition(created.Operation, operations.StatusClassified, "hai", "", "classified before pause")
+	if err != nil {
+		t.Fatalf("transition to classified: %v", err)
+	}
+
+	report, err := w.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if report.AutoExecuted != 0 || report.Verified != 0 || report.DeferredByPolicy != 1 {
+		t.Fatalf("paused mode should defer without executing: %+v", report)
+	}
+	current, err := svc.Get("user-1", "local", classified.ID)
+	if err != nil {
+		t.Fatalf("load operation: %v", err)
+	}
+	if current.Status != string(operations.StatusClassified) {
+		t.Fatalf("paused operation status = %q, want %q", current.Status, operations.StatusClassified)
+	}
+	if current.NextReviewAt == nil {
+		t.Fatal("paused operation should have a scheduled review after policy deferral")
+	}
+}
+
 func TestReadOnlyModeObservesOnly(t *testing.T) {
 	w, svc, _ := buildWorker(t, autonomypolicy.ModeReadOnly, twoItemFeed)
 	rep, err := w.RunOnce(context.Background())
