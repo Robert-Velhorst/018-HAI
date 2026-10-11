@@ -991,3 +991,19 @@ This is a representative safety review, not a complete review of all 1,794
 changed paths. No code was copied from the integration snapshot. Continue
 reviewing the remaining changed paths in bounded subsystem batches, and retain
 the snapshot until the full reconciliation and post-merge cleanup gate pass.
+
+Additional configuration and release-path differences were then inspected:
+
+| Area | Observed snapshot difference | Current disposition |
+| --- | --- | --- |
+| Secret-file hygiene | Removes `.env-backend`, `.env-gateway`, and `.env-idp` ignore rules while adding those files to the snapshot index. | Reject; do not publish the files or the ignore-rule removal. |
+| SearXNG discovery | Deletes the optional local-only Compose profile, network definitions, settings, and related documentation/tests. | Do not import; this removes an existing capability and its isolation configuration. |
+| Docker network setup | Removes configurable private subnets and Windows initialization code that preserves the operator's selected subnet values. | Do not import without overlap and upgrade-path evidence. |
+| Windows environment migration | Removes post-replacement ACL/content verification and the verified rollback path for the existing environment file. | Reject as-is; failure recovery and permission-preservation guarantees regress. |
+| Isolated acceptance | Removes service-dependency validation and changes backend tmpfs ownership setup. | Do not import without disposable-stack acceptance and permission tests. |
+| CI and secret scanning | Removes transcript-integrity execution from CI, drops approval-claim/Postgres test selection, and removes the explicit pull-request base revision from secret scanning. | Reject as-is; coverage and scan scope are reduced. |
+
+These findings cover additional high-impact paths, not every remaining test,
+documentation, frontend, or service diff in the snapshot. The complete
+path-by-path reconciliation is still open; counts and this representative
+review are not evidence that remaining files are redundant.
