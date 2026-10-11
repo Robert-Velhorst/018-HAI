@@ -1445,3 +1445,15 @@ profile boundaries; the PR versions are retained. No candidate file was
 copied. The remaining 38-way semantic disposition and all archive child-local
 attribution are still open, so no secondary checkout or archive cleanup is
 eligible.
+
+### October 11, 2026: Runtime Lab style deduplication
+
+The tracked frontend comparison found a duplicated set of DeepSeek runtime
+policy/status selectors in `frontend/src/app/pages/runtime-lab/runtime-lab.component.scss`.
+The duplicate block was removed from the PR source; the single remaining block
+still covers the template's configured state, policy details, and blocker
+status. `npm.cmd test -- --watch=false --browsers=ChromeHeadless` passed 175
+Node checks and 1,331 Angular tests locally. The production build was not
+available under the installed Node 25.2.1 because the project explicitly
+requires Node `^24.15.0`. GitHub's Node 24 frontend build passed on the prior
+PR head, before this CSS cleanup; the current head requires its own CI result.
