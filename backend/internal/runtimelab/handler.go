@@ -6,6 +6,7 @@ import (
 
 	"automation-hub-backend/internal/apierror"
 	"automation-hub-backend/internal/identity"
+	"automation-hub-backend/internal/rbac"
 
 	"github.com/gin-gonic/gin"
 )
@@ -97,7 +98,10 @@ func (h *Handler) Attempts(c *gin.Context) {
 }
 
 // HTTP callers cannot use the configured operator's service as their deputy.
-// Authentication and route permissions remain the router's responsibility.
+// The signed installation-owner role is the sole cross-scope exception: the
+// IDP owner UUID differs from the legacy configured service namespace in
+// existing installations. Authentication and route permissions remain the
+// router's responsibility.
 func (h *Handler) requireConfiguredOwner(c *gin.Context) bool {
 	value, exists := c.Get(identity.ContextSubjectKey)
 	owner, valid := value.(string)
@@ -111,7 +115,7 @@ func (h *Handler) requireConfiguredOwner(c *gin.Context) bool {
 		c.AbortWithStatusJSON(err.HTTPStatus(), err.Envelope())
 		return false
 	}
-	if owner != h.svc.owner {
+	if owner != h.svc.owner && c.GetString(identity.ContextRoleKey) != string(rbac.RoleOwner) {
 		err := apierror.New(apierror.CodeForbidden, "runtime lab is restricted to its configured owner")
 		c.AbortWithStatusJSON(err.HTTPStatus(), err.Envelope())
 		return false

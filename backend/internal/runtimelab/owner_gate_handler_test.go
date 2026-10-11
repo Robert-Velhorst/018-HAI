@@ -149,13 +149,16 @@ func newRuntimeLabHandlerFixture(t *testing.T) *runtimeLabHandlerFixture {
 }
 
 func runtimeLabOwnerRequest(endpoint runtimeLabOwnerEndpoint, subject any, present bool, runtimeID string) (*httptest.ResponseRecorder, int) {
+	return runtimeLabOwnerRequestAsRole(endpoint, subject, present, runtimeID, "admin")
+}
+
+func runtimeLabOwnerRequestAsRole(endpoint runtimeLabOwnerEndpoint, subject any, present bool, runtimeID, role string) (*httptest.ResponseRecorder, int) {
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		if present {
 			c.Set(identity.ContextSubjectKey, subject)
 		}
-		// Even an administrative role does not grant another operator's scope.
-		c.Set(identity.ContextRoleKey, "admin")
+		c.Set(identity.ContextRoleKey, role)
 		c.Next()
 	})
 	followingCalls := 0
@@ -172,6 +175,18 @@ func runtimeLabOwnerRequest(endpoint runtimeLabOwnerEndpoint, subject any, prese
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response, followingCalls
+}
+
+func TestRuntimeLabAllowsAuthenticatedInstallationOwnerRoleForConfiguredScope(t *testing.T) {
+	fixture := newRuntimeLabHandlerFixture(t)
+	endpoint := runtimeLabOwnerEndpoints(fixture.handler)[0]
+	response, followingCalls := runtimeLabOwnerRequestAsRole(endpoint, "idp-owner-uuid", true, "hermes", "owner")
+	if response.Code != http.StatusOK || followingCalls != 1 {
+		t.Fatalf("installation owner status=%d following=%d; body=%s", response.Code, followingCalls, response.Body.String())
+	}
+	if fixture.ledger.reads == 0 {
+		t.Fatal("installation owner did not reach the configured runtime scope")
+	}
 }
 
 func TestRuntimeLabHandlersRejectForeignAndAnonymousSubjectsBeforeServiceAccess(t *testing.T) {
