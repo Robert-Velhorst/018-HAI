@@ -111,10 +111,18 @@ func (h *Handler) requireConfiguredOwner(c *gin.Context) bool {
 		c.AbortWithStatusJSON(err.HTTPStatus(), err.Envelope())
 		return false
 	}
-	if owner != h.svc.owner {
+	if owner != h.svc.owner && !hasConfiguredOwnerScope(c, h.svc.owner) {
 		err := apierror.New(apierror.CodeForbidden, "runtime lab is restricted to its configured owner")
 		c.AbortWithStatusJSON(err.HTTPStatus(), err.Envelope())
 		return false
 	}
 	return true
+}
+
+func hasConfiguredOwnerScope(c *gin.Context, configuredOwner string) bool {
+	roleValue, _ := c.Get(identity.ContextRoleKey)
+	role, _ := roleValue.(string)
+	scopeValue, _ := c.Get(identity.ContextOperatorScopeKey)
+	scope, _ := scopeValue.(string)
+	return strings.EqualFold(strings.TrimSpace(role), "owner") && scope != "" && scope == strings.TrimSpace(scope) && scope == configuredOwner
 }

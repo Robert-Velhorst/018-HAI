@@ -47,13 +47,21 @@ func identityMiddleware() gin.HandlerFunc {
 			return
 		}
 		if claims.Role != "" {
-			c.Set(contextRoleKey, strings.ToLower(strings.TrimSpace(claims.Role)))
+			role := strings.ToLower(strings.TrimSpace(claims.Role))
+			c.Set(contextRoleKey, role)
+			if role == "owner" && canonicalOperatorScope(claims.OperatorScope) {
+				c.Set(identity.ContextOperatorScopeKey, claims.OperatorScope)
+			}
 		}
 		if principal := claims.Principal(); principal != "" {
 			c.Set(contextSubjectKey, principal)
 		}
 		c.Next()
 	}
+}
+
+func canonicalOperatorScope(scope string) bool {
+	return scope != "" && scope == strings.TrimSpace(scope) && len(scope) <= 256 && !strings.ContainsAny(scope, "\x00\r\n")
 }
 
 // requireAuthenticatedOwner separates browser and API requests from controlled

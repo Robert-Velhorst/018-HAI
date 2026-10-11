@@ -19,6 +19,7 @@ import (
 	"gorm.io/gorm"
 	"math"
 	"net/mail"
+	"os"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -347,7 +348,7 @@ func (a *service) issueSession(user *models.User) (*dto.TokenDetails, error) {
 	if err != nil {
 		return nil, errors.New("failed to generate refresh token")
 	}
-	td.AccessToken, td.AtExpires, err = a.generateAccessTokenWithVersion(user.ID, userRole(user.Role), td.RefreshUUID, td.RtExpires, user.SessionVersion)
+	td.AccessToken, td.AtExpires, err = a.generateAccessTokenForUserFamily(user, td.RefreshUUID, td.RefreshUUID, td.RtExpires)
 	if err != nil {
 		a.revokeFailedIssuance(user, td.RefreshUUID, td.RtExpires)
 		return nil, errors.New("failed to generate access token")
@@ -615,7 +616,7 @@ func (a *service) RefreshToken(ctx context.Context, refreshToken string) (*dto.T
 		a.logger.Error("Failed to generate replacement refresh token: %v", err)
 		return nil, err
 	}
-	newAccessToken, atExpires, err := a.generateAccessTokenForFamilyWithVersion(user.ID, userRole(user.Role), newRefreshUUID, familyUUID, refreshExp, user.SessionVersion)
+	newAccessToken, atExpires, err := a.generateAccessTokenForUserFamily(user, newRefreshUUID, familyUUID, refreshExp)
 	if err != nil {
 		a.logger.Error("Failed to generate new access token: %v", err)
 		return nil, err
@@ -942,6 +943,40 @@ func (a *service) generateAccessTokenWithVersion(userID uuid.UUID, role, refresh
 }
 
 func (a *service) generateAccessTokenForFamilyWithVersion(userID uuid.UUID, role, refreshUUID, familyUUID string, refreshExp int64, sessionVersion int64) (string, int64, error) {
+	return a.generateAccessTokenForFamilyWithVersionAndScope(userID, role, refreshUUID, familyUUID, refreshExp, sessionVersion, "")
+}
+
+func (a *service) generateAccessTokenForUserFamily(user *models.User, refreshUUID, familyUUID string, refreshExp int64) (string, int64, error) {
+	if user == nil {
+		return "", 0, errors.New("user is unavailable")
+	}
+	return a.generateAccessTokenForFamilyWithVersionAndScope(
+		user.ID, userRole(user.Role), refreshUUID, familyUUID, refreshExp, user.SessionVersion, configuredOperatorScope(user),
+	)
+}
+
+func configuredOperatorScope(user *models.User) string {
+	if user == nil || userRole(user.Role) != "owner" {
+		return ""
+	}
+	adminEmail := strings.TrimSpace(os.Getenv("FIRST_RUN_ADMIN_EMAIL"))
+	if adminEmail == "" {
+		adminEmail = "noodzakelijkonline@gmail.com"
+	}
+	if !strings.EqualFold(strings.TrimSpace(user.Email), adminEmail) {
+		return ""
+	}
+	scope := os.Getenv("HAI_PHASE2_OWNER")
+	if scope == "" {
+		scope = "local-operator"
+	}
+	if scope != strings.TrimSpace(scope) || scope == "" || len(scope) > 256 || strings.ContainsAny(scope, "\x00\r\n") {
+		return ""
+	}
+	return scope
+}
+
+func (a *service) generateAccessTokenForFamilyWithVersionAndScope(userID uuid.UUID, role, refreshUUID, familyUUID string, refreshExp int64, sessionVersion int64, operatorScope string) (string, int64, error) {
 	now := time.Now()
 	if refreshExp <= now.Unix() || strings.TrimSpace(refreshUUID) == "" || strings.TrimSpace(familyUUID) == "" {
 		return "", 0, errors.New("refresh session is expired")
@@ -966,6 +1001,9 @@ func (a *service) generateAccessTokenForFamilyWithVersion(userID uuid.UUID, role
 	claims["family_uuid"] = familyUUID
 	claims["refresh_exp"] = refreshExp
 	claims["session_version"] = sessionVersion
+	if operatorScope != "" {
+		claims["hai_operator_scope"] = operatorScope
+	}
 	claims["exp"] = expires
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

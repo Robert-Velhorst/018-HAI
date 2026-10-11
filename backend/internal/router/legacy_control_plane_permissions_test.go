@@ -332,6 +332,10 @@ func performLegacyControlPlaneRequest(engine *gin.Engine, method, path, body, ro
 }
 
 func performLegacyControlPlaneIdentityRequest(engine *gin.Engine, method, path, body, subject, role string) *httptest.ResponseRecorder {
+	return performLegacyControlPlaneIdentityRequestWithScope(engine, method, path, body, subject, role, "")
+}
+
+func performLegacyControlPlaneIdentityRequestWithScope(engine *gin.Engine, method, path, body, subject, role, scope string) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set(backendAPIKeyHeader, legacyControlPlaneAPIKey)
@@ -340,15 +344,39 @@ func performLegacyControlPlaneIdentityRequest(engine *gin.Engine, method, path, 
 	}
 	if role != "" {
 		request.Header.Set("Authorization", "Bearer "+identity.SignToken(identity.Claims{
-			Subject:   subject,
-			Role:      role,
-			Issuer:    "hai-idp",
-			Audience:  "hai",
-			TokenType: "access",
-			IssuedAt:  time.Now().Unix(),
-			Expiry:    time.Now().Add(time.Hour).Unix(),
+			Subject:       subject,
+			Role:          role,
+			OperatorScope: scope,
+			Issuer:        "hai-idp",
+			Audience:      "hai",
+			TokenType:     "access",
+			IssuedAt:      time.Now().Unix(),
+			Expiry:        time.Now().Add(time.Hour).Unix(),
 		}, legacyControlPlaneJWTSecret))
 	}
 	engine.ServeHTTP(recorder, request)
 	return recorder
+}
+
+func TestLegacyControlPlaneRuntimeLabAcceptsOnlySignedInstallationScope(t *testing.T) {
+	engine := newLegacyControlPlanePermissionEngine(t)
+	for _, test := range []struct {
+		name    string
+		subject string
+		role    string
+		scope   string
+		want    int
+	}{
+		{"configured scope", "first-run-admin-uuid", "owner", "configured-owner", http.StatusOK},
+		{"wrong scope", "first-run-admin-uuid", "owner", "another-installation", http.StatusForbidden},
+		{"scope on operator role", "operator-user", "operator", "configured-owner", http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := performLegacyControlPlaneIdentityRequestWithScope(engine, http.MethodGet,
+				"/api/v1/runtime-lab/feature-parity", "", test.subject, test.role, test.scope)
+			if response.Code != test.want {
+				t.Fatalf("status = %d, want %d: %s", response.Code, test.want, response.Body.String())
+			}
+		})
+	}
 }

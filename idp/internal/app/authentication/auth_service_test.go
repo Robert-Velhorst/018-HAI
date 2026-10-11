@@ -364,6 +364,36 @@ func TestGenerateAccessTokenDowngradesUnknownRole(t *testing.T) {
 	require.NotNil(t, claims["exp"])
 }
 
+func TestOperatorScopeIsBoundToConfiguredFirstRunAdmin(t *testing.T) {
+	setupAuthConfig(t)
+	t.Setenv("FIRST_RUN_ADMIN_EMAIL", "robert@example.com")
+	t.Setenv("HAI_PHASE2_OWNER", "local-operator")
+
+	for _, test := range []struct {
+		name string
+		user *models.User
+		want string
+	}{
+		{"configured owner", &models.User{ID: uuid.New(), Email: "Robert@Example.com", Role: "owner"}, "local-operator"},
+		{"other owner", &models.User{ID: uuid.New(), Email: "other@example.com", Role: "owner"}, ""},
+		{"configured operator", &models.User{ID: uuid.New(), Email: "robert@example.com", Role: "operator"}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := configuredOperatorScope(test.user); got != test.want {
+				t.Fatalf("configuredOperatorScope() = %q, want %q", got, test.want)
+			}
+			token, _, err := (&service{jwtSecret: testSigningSecret}).generateAccessTokenForUserFamily(
+				test.user, uuid.NewString(), uuid.NewString(), time.Now().Add(time.Hour).Unix())
+			require.NoError(t, err)
+			_, claims, err := (&service{logger: noopLogger{}, jwtSecret: testSigningSecret}).parseAndValidateToken(token)
+			require.NoError(t, err)
+			if got, _ := claims["hai_operator_scope"].(string); got != test.want {
+				t.Fatalf("signed scope = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestGetSessionFromTokenMapsRolePermissions(t *testing.T) {
 	setupAuthConfig(t)
 

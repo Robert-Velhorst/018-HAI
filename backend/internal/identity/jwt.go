@@ -18,17 +18,17 @@ import (
 )
 
 var (
-	ErrMalformed = errors.New("identity: malformed token")
-	ErrKey       = errors.New("identity: signing secret is not configured")
-	ErrTokenSize = errors.New("identity: token exceeds maximum size")
-	ErrAlgorithm = errors.New("identity: unexpected signing algorithm")
-	ErrSignature = errors.New("identity: invalid signature")
-	ErrExpired   = errors.New("identity: token expired")
-	ErrIssuedAt  = errors.New("identity: invalid token issued-at time")
-	ErrNotBefore = errors.New("identity: token is not valid yet")
-	ErrTokenType = errors.New("identity: token is not an access token")
-	ErrIssuer    = errors.New("identity: unexpected token issuer")
-	ErrAudience  = errors.New("identity: unexpected token audience")
+	ErrMalformed  = errors.New("identity: malformed token")
+	ErrKey        = errors.New("identity: signing secret is not configured")
+	ErrTokenSize  = errors.New("identity: token exceeds maximum size")
+	ErrAlgorithm  = errors.New("identity: unexpected signing algorithm")
+	ErrSignature  = errors.New("identity: invalid signature")
+	ErrExpired    = errors.New("identity: token expired")
+	ErrIssuedAt   = errors.New("identity: invalid token issued-at time")
+	ErrNotBefore  = errors.New("identity: token is not valid yet")
+	ErrTokenType  = errors.New("identity: token is not an access token")
+	ErrIssuer     = errors.New("identity: unexpected token issuer")
+	ErrAudience   = errors.New("identity: unexpected token audience")
 	ErrPrincipal  = errors.New("identity: stable principal is missing")
 	ErrKeyRing    = errors.New("identity: too many verification secrets")
 	ErrClaimOrder = errors.New("identity: inconsistent token time claims")
@@ -45,21 +45,23 @@ const (
 
 	// ContextRoleKey and ContextSubjectKey identify verified JWT claims stored
 	// on a Gin request. Route handlers use these values for audit provenance.
-	ContextRoleKey    = "role"
-	ContextSubjectKey = "subject"
+	ContextRoleKey          = "role"
+	ContextSubjectKey       = "subject"
+	ContextOperatorScopeKey = "operator_scope"
 )
 
 // Claims are the subset of JWT claims the backend cares about.
 type Claims struct {
-	Subject   string `json:"sub"`
-	UserID    string `json:"user_id"`
-	Role      string `json:"role"`
-	Issuer    string `json:"iss"`
-	Audience  string `json:"aud"`
-	TokenType string `json:"token_type"`
-	IssuedAt  int64  `json:"iat,omitempty"`
-	NotBefore int64  `json:"nbf,omitempty"`
-	Expiry    int64  `json:"exp,omitempty"`
+	Subject       string `json:"sub"`
+	UserID        string `json:"user_id"`
+	Role          string `json:"role"`
+	OperatorScope string `json:"hai_operator_scope,omitempty"`
+	Issuer        string `json:"iss"`
+	Audience      string `json:"aud"`
+	TokenType     string `json:"token_type"`
+	IssuedAt      int64  `json:"iat,omitempty"`
+	NotBefore     int64  `json:"nbf,omitempty"`
+	Expiry        int64  `json:"exp,omitempty"`
 }
 
 // Principal returns the stable identity claim used by the issuing IDP. HAI's
