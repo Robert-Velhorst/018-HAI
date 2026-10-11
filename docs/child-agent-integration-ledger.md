@@ -1602,6 +1602,30 @@ transcripts and their possible earlier patch events have not been semantically
 reconciled. The existing automated gate therefore cannot authorize removal
 from either supplemental folder; no local HAI files were deleted.
 
+### October 11, 2026: merge-scratch conflict provenance
+
+The separate detached merge scratch is at
+`e3843448a3e2af8a11556251af6a3861dd1a8577`, 80 commits behind and 0 commits
+ahead of the PR branch. Its index has 189 unmerged paths. Comparing the
+canonical PR tree to the available index stages found all 189 paths present in
+the PR: 170 PR blobs equal stage 2, none equal stage 3, and 19 equal neither
+stage. This is blob-level provenance only; it does not prove the semantic
+contents of every conflict were integrated.
+
+Sampled conflict diffs for phase-2 execution policy and Windows environment
+migration confirm that the PR retains exact source-approval checks, policy
+rechecks at the effect boundary, verified rollback, and preservation of
+configured private subnets. The alternate conflict side removes or weakens
+those guarantees. No conflict was resolved and no scratch file was changed.
+The merge scratch has no `MERGE_HEAD`; keep it intact until its origin and all
+remaining conflict semantics are reconciled.
+
+Exact-head Actions run `38112556687` for PR head
+`bb62666ee07cdf550242d2057412ed288bf00f47` was still running at
+`2026-10-11 04:47 UTC`: 16 jobs succeeded, 10 were in progress, 10 were
+queued, and none had failed. PR #36 remains open and unmerged; no local files
+are eligible for cleanup from this checkpoint.
+
 ### October 11, 2026: integration snapshot comparison and exact-head CI
 
 The `codex/hai-integration-snapshot` checkout is at commit
