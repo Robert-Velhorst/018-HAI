@@ -2204,6 +2204,24 @@ contract remains a separate open candidate. The full #34 changed-file and
 other-branch inventories remain unfinished; this safety finding does not
 authorize branch or local artifact deletion.
 
+### October 11, 2026: ambient-composition branch inventory refresh
+
+Refreshed `origin/codex/ambient-composition-control` against the pushed PR #36
+tree. The ref has 134 non-merge commits not reachable from #36; a stable
+patch-ID comparison found only one exact patch match against #36's 1,048
+non-merge commits. Patch-ID mismatch is not evidence that behavior is absent,
+because equivalent code may have been rebased, rewritten, or superseded.
+
+The branch-tip tree has 6 paths not present in #36: 3 environment files, which
+were not opened, and 3 historical test files previously reviewed as
+incompatible with current contracts. It has 1,139 #36-only paths and 820
+shared paths with different contents. These counts disprove a safe wholesale
+merge but do not finish the 134-commit semantic crosswalk. Several commit
+subjects describe potentially valuable lifecycle, cancellation, resource,
+database-query, and progressive-loading work; each still needs behavior-level
+comparison against current code/tests. The ref remains preserved and no local
+artifact or branch was deleted.
+
 ### October 11, 2026: queued sync superseded by operator pause
 
 The PR #34 durable-source review exposed a retry-policy gap in the current
