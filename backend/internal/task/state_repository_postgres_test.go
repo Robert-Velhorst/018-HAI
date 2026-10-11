@@ -337,14 +337,14 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 	if err != nil {
 		t.Fatalf("reapply task-state migration: %v", err)
 	}
-	if reapplied != len(taskStatePreMigrationVersionsAfter(t, "pre/0003_framework_registry")) || !taskStateRelationExists(t, db, "task_review_items") {
+	if reapplied != len(taskStatePreMigrationVersionsAfter(t, files, "pre/0003_framework_registry")) || !taskStateRelationExists(t, db, "task_review_items") {
 		t.Fatalf("task-state migration reapply = %d, relation=%t", reapplied, taskStateRelationExists(t, db, "task_review_items"))
 	}
 }
 
-func taskStatePreMigrationVersionsAfter(t *testing.T, version string) []string {
+func taskStatePreMigrationVersionsAfter(t *testing.T, fsys fs.FS, version string) []string {
 	t.Helper()
-	entries, err := fs.ReadDir(migrations.Files, "pre")
+	entries, err := fs.ReadDir(fsys, "pre")
 	if err != nil {
 		t.Fatalf("read pre migrations: %v", err)
 	}

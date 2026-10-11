@@ -240,7 +240,9 @@ jobs:
           import sys
           source = Path("nginx-config/nginx.conf.template").read_text(encoding="utf-8")
           Path(sys.argv[1]).write_text(
-              source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key"),
+              source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key")
+                    .replace("${HAI_NGROK_HOST}", "hai-ci.ngrok.app")
+                    .replace("${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED}", "false"),
               encoding="utf-8",
           )
           PY
