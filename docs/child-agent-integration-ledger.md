@@ -1917,3 +1917,22 @@ identified and reconciled before the inventory can be called exhaustive.
 PR #36 is open at `e45ed503418b5e7534991e52c3edc8e2e884c65b`.
 Exact-head Actions run `38118885565` was queued/in progress at this check; no
 result from it is inferred here. The size audit made no local changes.
+
+### October 11, 2026: provenance check for the reported 116-child count
+
+Searched the indexed HAI Codex conversation from August 14 that surfaced the
+reported “116 completed HAI child transcripts from August 4-5” wording. The
+matching text is embedded in a large user-supplied Codex safety-assessment
+prompt that quotes earlier HAI history. Its source metadata identifies the
+August 14 session and its parent workspace, but the match is not a transcript
+manifest, archive listing, content hash, or independent preservation receipt.
+It therefore explains where the wording reappears, but does not establish
+that 116 completed child transcripts existed for those dates or that their
+contents are preserved elsewhere. The checked-in manifest remains the only
+inventory currently reconciled here: 97 children / 88 completed on August
+4-5, and 114 / 104 completed across its audited August dates. No additional
+archive path or deletion candidate was identified from this provenance check.
+
+PR #36 is open at `efc8e7cb8bfc057d4f7265a96aec1a9ca08c4487`.
+GitHub reports 34 successful checks and two still in progress; no check
+failure is reported. No local transcript or session data was changed.
