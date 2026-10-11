@@ -1992,3 +1992,40 @@ contain `.env-backend`, `.env-gateway`, and `.env-idp`; their contents were
 not opened, hashed, staged, or published. No local source, archive, or
 diagnostic was removed. The PR is open and not merged, so no cleanup gate is
 satisfied by this update.
+
+### October 11, 2026: merged-main conflict reconciliation and readiness retry
+
+PR #36 (`codex/hai-runtime-release`) now includes current `main` at
+`37de3e04e766ac3f7df04aeaddaf774904a7ebca` through merge commit
+`10741d92bed4f8ac2c68fe53d3ea1f336ed0f847`. The exact-head hosted CI run
+`38155723976` completed with one failure: the owned browser-acceptance stack's
+single immediate `/login` probe received HTTP 502 from nginx during upstream
+startup. Other reported jobs in that run succeeded. Updated the isolated stack
+launcher to retry the loopback gateway for a bounded 60-second window and
+added a mocked regression test; no Docker stack was started by that test.
+
+The fix is commit `4f9d1b5ecaae52ae880e3d729d667a3e2fbc29ff`, pushed by
+fast-forward to the existing PR #36 branch. The PR remains open against
+`main` at base `37de3e04e766ac3f7df04aeaddaf774904a7ebca`; GitHub had not yet
+computed mergeability at the last check. Exact-head Actions run `38156381037`
+was queued, so no hosted result is claimed. Local evidence for this patch:
+the isolated-stack contract suite, startup-guard suite, `scripts/test_ci_contract.py`
+(110 tests), and `git diff --check` passed. This does not substitute for a
+successful hosted disposable-stack browser run.
+
+PR #33 branch comparison confirms its `backend/internal/source/worker_control.go`
+is byte-identical to the current PR #36 tree. Its historical migration names
+`0060`-`0067` map to the already-present current migrations `0119`-`0126`;
+they are not copied a second time. The branch also contains `.env-backend`,
+`.env-gateway`, and `.env-idp`; these are excluded without opening or copying
+their contents. Three branch-only tests were inspected: the ambient-monitor
+release test depends on absent helpers and is not a direct copy candidate; the
+model-maintenance test targets APIs absent from the current tree; the pursuit
+projection test asserts an obsolete omission of source URIs. No claim is made
+that these branches are fully reconciled or ready to close.
+
+No source archive, transcript, scratch worktree, local runtime data, or Docker
+resource was deleted in this checkpoint. PR #34 and #35, remaining branch-only
+behavior, archive reconciliation, and exact local cleanup candidates remain
+open work; local cleanup is still unsafe because preservation reconciliation
+remains incomplete.
