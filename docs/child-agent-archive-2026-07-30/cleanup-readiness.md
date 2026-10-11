@@ -931,3 +931,39 @@ retained/aborted transcript work remain incomplete, so even hash-verified
 candidate files are not eligible for removal. Preserve all 18 source
 transcripts until those gaps are closed and the repository cleanup gate passes
 after merge to `main`.
+
+## Supplemental archive discovery (2026-10-11)
+
+Two additional HAI-related folders were found outside the 18-file source root
+checked above: `D:\codex-temp\completed-agent-sessions` (3 files,
+4,651,926,405 bytes) and `D:\codex-temp\session-log-relief` (6 files,
+9,361,810,893 bytes). Their metadata links all nine files to the same HAI
+parent session; the three completed transcripts are unique and hash-verified,
+while all six aborted/nonterminal transcripts remain protected.
+
+The original verifier and transcript-removal script do not cover these roots.
+Therefore their cleanup readiness must not be inferred from the 18-file
+verifier, even after a future merge. The overall known archive is now 27 files
+and 34,752,906,420 bytes. The supplemental audit, manifest, and completed
+reports are in `supplemental-child-batch-audit.md`,
+`supplemental-child-transcript-manifest.csv`, and
+`supplemental-child-final-reports.md`. A unified multi-root manifest,
+retained-event reconciliation, and cleanup-tool support remain required before
+any deletion.
+
+## Supplemental archive discovery (2026-10-11)
+
+Two additional HAI-related folders were found outside the 18-file source root
+checked above: `D:\codex-temp\completed-agent-sessions` (3 files,
+4,651,926,405 bytes) and `D:\codex-temp\session-log-relief` (6 files,
+9,361,810,893 bytes). Their metadata links all nine files to the same HAI
+parent session; the three completed transcripts are unique and hash-verified,
+while all six aborted/nonterminal transcripts remain protected.
+
+The original verifier and transcript-removal script do not cover these roots.
+Therefore their cleanup readiness must not be inferred from the 18-file
+verifier, even after a future merge. The overall known archive is now 27 files
+and 34,752,906,420 bytes. The supplemental audit is in
+`supplemental-child-batch-audit.md`; a unified multi-root manifest, retained-
+event reconciliation, and cleanup-tool support remain required before any
+deletion.

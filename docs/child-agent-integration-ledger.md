@@ -1582,3 +1582,41 @@ source-difference dispositions are still incomplete. Therefore the eight
 candidate files (about 7.94 GB) remain candidates only, the ten retained
 files (about 12.80 GB) remain protected, and no local transcript or checkout
 cleanup is authorized by the repository readiness gate.
+
+### October 11, 2026: supplemental July 30 child batches discovered
+
+Two additional folders, `D:\codex-temp\completed-agent-sessions` and
+`D:\codex-temp\session-log-relief`, contain nine more transcripts linked by
+metadata to the same HAI root session. Three are completed unique children
+and six are aborted/nonterminal. All 21 source paths named by the three
+completed reports are present and tracked in PR #36. The full frontend suite
+passed (175 Node checks and 1,331 Angular tests), and the CI contract suite
+passed all 108 tests. The three completed source transcripts also have
+full-file SHA-256 hashes recorded in
+`docs/child-agent-archive-2026-07-30/supplemental-child-batch-audit.md`.
+
+This supplements, but does not modify, the existing 18-row manifest or its
+single-root cleanup verifier. The combined known July 30 set is 27 files / 25
+unique child IDs / 34,752,906,420 bytes. The six newly found unfinished
+transcripts and their possible earlier patch events have not been semantically
+reconciled. The existing automated gate therefore cannot authorize removal
+from either supplemental folder; no local HAI files were deleted.
+
+### October 11, 2026: supplemental July 30 child batches discovered
+
+Two additional folders, `D:\codex-temp\completed-agent-sessions` and
+`D:\codex-temp\session-log-relief`, contain nine more transcripts linked by
+metadata to the same HAI root session. Three are completed unique children
+and six are aborted/nonterminal. All 21 source paths named by the three
+completed reports are present and tracked in PR #36. The full frontend suite
+passed (175 Node checks and 1,331 Angular tests), and the CI contract suite
+passed all 108 tests. The three completed source transcripts also have
+full-file SHA-256 hashes recorded in
+`docs/child-agent-archive-2026-07-30/supplemental-child-batch-audit.md`.
+
+This supplements, but does not modify, the existing 18-row manifest or its
+single-root cleanup verifier. The combined known July 30 set is 27 files / 25
+unique child IDs / 34,752,906,420 bytes. The six newly found unfinished
+transcripts and their possible earlier patch events have not been semantically
+reconciled. The existing automated gate therefore cannot authorize removal
+from either supplemental folder; no local HAI files were deleted.
