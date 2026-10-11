@@ -1246,6 +1246,9 @@ jobs:
       - name: Windows no-fake-claims audit
         shell: pwsh
         run: ./scripts/test-no-fake-claims-audit.ps1
+      - name: Live Trello acceptance launcher contract
+        shell: pwsh
+        run: ./scripts/test-live-trello-launcher.ps1
       - name: Git Bash syntax and space-containing path
         shell: pwsh
         run: |
