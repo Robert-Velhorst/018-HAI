@@ -1,5 +1,3 @@
-import { DefaultUrlSerializer, PRIMARY_OUTLET } from '@angular/router'
-
 export type HaiModuleGroup = 'work' | 'intelligence' | 'system'
 
 export interface HaiAdvancedSectionIdPrefix {
@@ -311,20 +309,6 @@ export function resolveProgressiveSection(
     sectionId: sectionFragment,
     ancestorIds: ancestors,
     requiredMode: requiresAdvanced ? 'advanced' : 'basic',
-  }
-}
-
-export function moduleForUrl(url: string): HaiModuleDefinition {
-  const fallback = HAI_MODULES.find((module) => module.id === 'control-center')!
-  try {
-    const segments = new DefaultUrlSerializer().parse(url).root.children[PRIMARY_OUTLET]?.segments || []
-    // An encoded slash inside a segment must not become a route boundary.
-    return HAI_MODULES.find((module) => {
-      const parts = module.route.split('/').filter(Boolean)
-      return parts.length <= segments.length && parts.every((part, index) => segments[index].path === part)
-    }) || fallback
-  } catch {
-    return fallback
   }
 }
 

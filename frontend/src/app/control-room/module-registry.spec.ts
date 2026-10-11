@@ -3,10 +3,10 @@ import {
   HAI_MODULE_GROUPS,
   isAdvancedSectionRegistered,
   isProgressiveSectionRegistered,
-  moduleForUrl,
   progressiveSectionParentFor,
   resolveProgressiveSection,
 } from './module-registry';
+import { moduleForUrl } from './module-url';
 import { AUTHENTICATED_PAGE_PATHS } from '../app-routing.module';
 
 // Audited shared disclosure IDs plus stable Control Center IDs reserved for the owner-led migration.

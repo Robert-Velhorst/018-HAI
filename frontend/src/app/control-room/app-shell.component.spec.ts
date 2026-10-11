@@ -8,7 +8,7 @@ import { RuntimeControlService } from '../services/runtime-control.service'
 import { ModuleViewPreferencesService } from './module-view-preferences.service'
 import { ThemeService } from '../services/theme.service'
 import { AppShellComponent } from './app-shell.component'
-import { moduleForUrl } from './module-registry'
+import { moduleForUrl } from './module-url'
 
 describe('AppShellComponent', () => {
   const status: IBackgroundStatus = {

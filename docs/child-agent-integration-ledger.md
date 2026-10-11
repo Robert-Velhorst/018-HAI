@@ -2135,3 +2135,30 @@ the other additions above are documented as reviewed, not silently treated as
 integrated. This closes only the PR #34 branch-additions sub-inventory. It does
 not complete PR #34's full changed-file comparison, the other local branches,
 or the archive/transcript inventories. No source or branch files were deleted.
+
+### October 11, 2026: browser acceptance runner import failure
+
+Exact-head PR #36 run `38158217614` passed backend, frontend, IDP, migration,
+Windows, cleanup-safety, and provider-fixture jobs, but browser acceptance
+failed before discovering tests. Its retained Playwright report records three
+collection errors: importing `frontend/src/app/control-room/module-registry.ts`
+loaded Angular Router's partially compiled `PlatformLocation`, but the
+standalone Node Playwright runner does not load `@angular/compiler`. The report
+therefore listed zero tests; this was an acceptance-harness defect, not a
+browser route failure.
+
+Moved the Angular-dependent URL parser into `module-url.ts`, leaving the shared
+module registry free of Angular runtime imports, and updated the shell and
+registry specs to use the new parser module. Local verification on Node 25.2.1
+(the project specifies Node 24.15.0) passed E2E test discovery (142 tests), E2E
+TypeScript checking, the focused Angular module-registry suite (22 tests), and
+`git diff --check`. The exact-head hosted browser acceptance rerun is still
+required; no Docker stack was started locally.
+
+In the same checkpoint, `test-hai-supplemental-transcript-cleanup-readiness.ps1`
+verified both supplemental source roots against all 9 manifest paths and
+14,013,737,298 bytes, checked all 3 completed-candidate hashes and all 21
+report-linked source paths, and identified 6 retained transcripts.
+`deletion_performed` and `cleanup_authorized` were both false. This read-only
+source check does not complete retained-transcript semantic reconciliation or
+authorize local cleanup.

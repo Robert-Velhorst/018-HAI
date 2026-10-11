@@ -9,9 +9,9 @@ import {
   HAI_MODULE_GROUPS,
   HAI_MODULES,
   HaiModuleDefinition,
-  moduleForUrl,
   resolveProgressiveSection,
 } from './module-registry'
+import { moduleForUrl } from './module-url'
 import { HaiNavigationMode, HaiViewMode, ModuleViewPreferencesService } from './module-view-preferences.service'
 import { ThemeMode, ThemeService } from '../services/theme.service'
 import { RuntimeControlService } from '../services/runtime-control.service'
