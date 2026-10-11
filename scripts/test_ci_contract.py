@@ -81,6 +81,7 @@ const filesystem = {
   readFileSync: filename => {
     if (filename === path.join(evidence, 'manifest.json')) return JSON.stringify(manifest);
     if (filename === path.join(evidence, 'compose.json')) return JSON.stringify({ services: { backend: { environment: { JWT_SECRET: key, SMTP_PASSWORD: '' } } } });
+    if (filename === path.join(evidence, 'start.log') && input.scenario === 'start-failure') return `startup ${password} ${key}`;
     throw new Error('Unexpected private file read');
   },
   mkdirSync: () => {},
@@ -1509,6 +1510,21 @@ class CIWorkflowContractTest(unittest.TestCase):
         for command in ("npm ci", "npm run typecheck", "npx playwright install --with-deps chromium"):
             self.assertRegex(dependencies, rf"(?m)^          {re.escape(command)}$")
 
+    @unittest.skipUnless(shutil.which("node"), "Node is required to execute the workflow test-process contract")
+    def test_browser_startup_failure_publishes_only_redacted_diagnostics(self) -> None:
+        result = exercise_browser_program("start-failure")
+        self.assertIsNotNone(result["error"])
+        startup = [
+            (Path(filename).name, content)
+            for filename, content in result["files"].items()
+            if Path(filename).name == "start-redacted.log"
+        ]
+        self.assertEqual(len(startup), 1)
+        _, content = startup[0]
+        self.assertNotIn(result["password"], content)
+        self.assertNotIn(result["key"], content)
+        self.assertEqual(content, "startup [REDACTED] [REDACTED]")
+
     def test_browser_artifacts_are_explicit_unique_and_exclude_private_configuration(self) -> None:
         upload = browser_step("Retain browser acceptance reports and guarded logs")
         self.assertIn("if: ${{ always() && env.HAI_ACCEPTANCE_EVIDENCE != '' }}", upload)
@@ -1519,6 +1535,7 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertEqual([line.strip() for line in paths.group(1).splitlines()], [
             "${{ env.HAI_ACCEPTANCE_EVIDENCE }}/browser-report/",
             "${{ env.HAI_ACCEPTANCE_EVIDENCE }}/browser-results/",
+            "${{ env.HAI_ACCEPTANCE_EVIDENCE }}/start-redacted.log",
             "${{ env.HAI_ACCEPTANCE_EVIDENCE }}/owner-logs/*.log",
         ])
 

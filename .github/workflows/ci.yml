@@ -601,7 +601,17 @@ jobs:
             return result.stdout;
           };
           try {
-            run('pwsh', ['-NoProfile', '-File', launcher, '-Action', 'Start', '-EvidenceDirectory', evidence]);
+            try {
+              run('pwsh', ['-NoProfile', '-File', launcher, '-Action', 'Start', '-EvidenceDirectory', evidence]);
+            } catch (failure) {
+              try {
+                const startupLog = fs.readFileSync(path.join(evidence, 'start.log'), 'utf8');
+                fs.writeFileSync(path.join(evidence, 'start-redacted.log'), redact(startupLog));
+              } catch (_) {
+                // Preserve the original startup failure if no diagnostic log was produced.
+              }
+              throw failure;
+            }
             run('python3', ['-c', [
               'import json, sys, time, urllib.request',
               'for attempt in range(60):',
@@ -659,6 +669,7 @@ jobs:
           path: |
             ${{ env.HAI_ACCEPTANCE_EVIDENCE }}/browser-report/
             ${{ env.HAI_ACCEPTANCE_EVIDENCE }}/browser-results/
+            ${{ env.HAI_ACCEPTANCE_EVIDENCE }}/start-redacted.log
             ${{ env.HAI_ACCEPTANCE_EVIDENCE }}/owner-logs/*.log
           if-no-files-found: warn
           retention-days: 14

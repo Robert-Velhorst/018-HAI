@@ -438,10 +438,10 @@ func TestPostgresRepositoryRejectsExpiredApprovalAtConsumption(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	owner := "expired-approval-claim-" + uuid.NewString() + "@example.com"
 	receipt := postgresTestReceipt(owner, OutcomeAuthorized, now.Add(-time.Second))
-	receipt.ApprovalSourceID = "approval:expired-at-claim"
+	receipt.ApprovalSourceID = ownerControlApprovalSourcePrefix + "expired-at-claim"
 	receipt.Evidence.Approval = ApprovalEvidence{
 		SourceID:       receipt.ApprovalSourceID,
-		DecisionID:     uuid.NewString(),
+		DecisionID:     postgresDigest("expired-approval-" + uuid.NewString()),
 		DecisionDigest: postgresDigest("expired-approval-decision"),
 		ApprovedBy:     owner,
 		ApprovedAt:     now.Add(-2 * time.Minute),
@@ -751,45 +751,43 @@ func TestPostgresFinalEffectExerciseIsAtomicAndOwnerScoped(t *testing.T) {
 func TestPostgresFinalEffectExerciseRejectsStaleAuthority(t *testing.T) {
 	repository, db := executionAuthorizationPostgresRepository(t)
 	ctx := context.Background()
-	now := time.Now().UTC().Truncate(time.Microsecond)
 	tests := []struct {
-		name           string
-		consumedAt     time.Time
-		exercisedAt    time.Time
-		approval       bool
-		approvalExpiry time.Time
+		name             string
+		staleConsumption bool
+		approvalLifetime time.Duration
 	}{
 		{
-			name:        "database time rejects stale consumption despite backdated caller time",
-			consumedAt:  now.Add(-finalEffectFreshnessWindow - time.Second),
-			exercisedAt: now.Add(-finalEffectFreshnessWindow),
+			name:             "database time rejects stale consumption despite backdated caller time",
+			staleConsumption: true,
 		},
 		{
-			name:           "approval expired within freshness window",
-			consumedAt:     now.Add(-5 * time.Second),
-			exercisedAt:    now,
-			approval:       true,
-			approvalExpiry: now.Add(-time.Second),
+			name:             "approval expires within freshness window",
+			approvalLifetime: time.Second,
 		},
 		{
-			name:           "approval expired immediately before effect boundary",
-			consumedAt:     now.Add(-5 * time.Second),
-			exercisedAt:    now,
-			approval:       true,
-			approvalExpiry: now.Add(-time.Microsecond),
+			name:             "approval expires immediately before effect boundary",
+			approvalLifetime: time.Second,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			consumedAt := time.Now().UTC().Truncate(time.Microsecond)
+			if test.staleConsumption {
+				consumedAt = consumedAt.Add(-finalEffectFreshnessWindow - time.Second)
+			}
+			approvalExpiry := time.Time{}
+			if test.approvalLifetime > 0 {
+				approvalExpiry = time.Now().UTC().Add(test.approvalLifetime)
+			}
 			owner := "stale-effect-owner-" + uuid.NewString() + "@example.com"
 			approvalSource := ""
 			approvalDecisionID := uuid.Nil
-			if test.approval {
+			if test.approvalLifetime > 0 {
 				approvalDecisionID, approvalSource = createTaskReviewDecisionFixture(
 					t,
 					db,
 					owner,
-					test.consumedAt.Add(-10*time.Second),
+					consumedAt.Add(-10*time.Second),
 				)
 			}
 			finalRequest, err := BuildAgentRuntimeFinalEffectRequest(
@@ -808,7 +806,7 @@ func TestPostgresFinalEffectExerciseRejectsStaleAuthority(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FinalEffectDigest: %v", err)
 			}
-			receipt := postgresTestReceipt(owner, OutcomeAuthorized, test.consumedAt.Add(-time.Second))
+			receipt := postgresTestReceipt(owner, OutcomeAuthorized, consumedAt.Add(-time.Second))
 			receipt.TaskID = finalRequest.TaskID
 			receipt.Action = AgentRuntimeExecuteAction
 			receipt.ResourceType = AgentRuntimeResourceType
@@ -825,8 +823,8 @@ func TestPostgresFinalEffectExerciseRejectsStaleAuthority(t *testing.T) {
 					DecisionID:     approvalDecisionID.String(),
 					DecisionDigest: postgresDigest("stale-effect-approval"),
 					ApprovedBy:     owner,
-					ApprovedAt:     test.consumedAt.Add(-time.Second),
-					ExpiresAt:      test.approvalExpiry,
+					ApprovedAt:     consumedAt.Add(-time.Second),
+					ExpiresAt:      approvalExpiry,
 				}
 			}
 			if _, created, err := repository.CreateOrGet(ctx, receipt); err != nil || !created {
@@ -838,9 +836,14 @@ func TestPostgresFinalEffectExerciseRejectsStaleAuthority(t *testing.T) {
 			}
 			consumption := postgresTestConsumption(receipt)
 			consumption.ExecutionTarget = target
-			consumption.ConsumedAt = test.consumedAt
+			consumption.ConsumedAt = consumedAt
 			if err := repository.Consume(ctx, consumption); err != nil {
 				t.Fatalf("Consume: %v", err)
+			}
+			if !approvalExpiry.IsZero() {
+				if wait := time.Until(approvalExpiry); wait > 0 {
+					time.Sleep(wait + 10*time.Millisecond)
+				}
 			}
 			proof := agentruntime.FinalEffectAuthorizationProof{
 				ReceiptID:                  receipt.ID.String(),
@@ -849,7 +852,7 @@ func TestPostgresFinalEffectExerciseRejectsStaleAuthority(t *testing.T) {
 				RuntimeRequestDigest:       effectDigest,
 				RuntimeProof:               effectDigest,
 			}
-			exercise := finalEffectExercise(finalRequest, proof, test.exercisedAt)
+			exercise := finalEffectExercise(finalRequest, proof, time.Now().UTC())
 			if err := repository.ExerciseFinalEffect(ctx, exercise); !errors.Is(err, ErrFinalEffectExpired) {
 				t.Fatalf("ExerciseFinalEffect error = %v, want ErrFinalEffectExpired", err)
 			}
@@ -950,6 +953,43 @@ func TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals(t *testing.T) {
 		now,
 	).Error; err == nil {
 		t.Fatal("database accepted workflow decision with mismatched owner")
+	}
+}
+
+func TestPostgresReceiptPersistsOpsControlReviewProvenance(t *testing.T) {
+	repository, db := executionAuthorizationPostgresRepository(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	owner := "opscontrol-review-provenance-" + uuid.NewString() + "@example.com"
+	decisionID, taskReviewSource := createTaskReviewDecisionFixture(t, db, owner, now)
+	itemID := strings.TrimPrefix(taskReviewSource, "task-review:")
+	receipt := postgresTestReceipt(owner, OutcomeAuthorized, now.Add(time.Second))
+	receipt.ApprovalSourceID = "opscontrol-review:" + itemID
+	receipt.Evidence.Approval = ApprovalEvidence{
+		SourceID:       receipt.ApprovalSourceID,
+		DecisionID:     decisionID.String(),
+		DecisionDigest: postgresDigest("opscontrol-review-decision:" + decisionID.String()),
+		ApprovedBy:     owner,
+		ApprovedAt:     now,
+		ExpiresAt:      now.Add(10 * time.Minute),
+	}
+
+	stored, created, err := repository.CreateOrGet(ctx, receipt)
+	if err != nil || !created {
+		t.Fatalf("create opscontrol-review receipt = (%t, %v)", created, err)
+	}
+	if stored.ApprovalSourceID != receipt.ApprovalSourceID ||
+		stored.Evidence.Approval.DecisionID != decisionID.String() {
+		t.Fatalf("stored opscontrol-review provenance = %#v", stored.Evidence.Approval)
+	}
+
+	reloaded, err := repository.Get(ctx, owner, receipt.ID)
+	if err != nil {
+		t.Fatalf("reload opscontrol-review receipt: %v", err)
+	}
+	if reloaded.ApprovalSourceID != receipt.ApprovalSourceID ||
+		reloaded.Evidence.Approval.DecisionID != decisionID.String() {
+		t.Fatalf("reloaded opscontrol-review provenance = %#v", reloaded.Evidence.Approval)
 	}
 }
 

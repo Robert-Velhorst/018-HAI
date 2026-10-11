@@ -178,17 +178,19 @@ func TestPostgresAuthorizeAndConsumeInCallerTransaction(t *testing.T) {
 func TestPostgresAuthorizeAndConsumeClaimsTaskReviewApprovalInTransaction(t *testing.T) {
 	repository, db := executionAuthorizationPostgresRepository(t)
 	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	owner := "executionauth-task-review-" + uuid.NewString()
-	decisionID, sourceID := createTaskReviewDecisionFixture(t, db, owner, fixedNow().Add(-time.Minute))
+	decisionID, sourceID := createTaskReviewDecisionFixture(t, db, owner, now.Add(-time.Minute))
 	decisionDigest := postgresDigest("task-review-approval-" + decisionID.String())
 	bindingDigest := postgresDigest("task-review-" + strings.TrimPrefix(sourceID, "task-review:"))
 	resolver := &transactionAwareTestApprovalResolver{approval: ResolvedApproval{
 		SourceID: sourceID, DecisionID: decisionID.String(),
 		DecisionDigest: decisionDigest, BindingDigest: bindingDigest,
-		ApprovedBy: owner, ApprovedAt: fixedNow().Add(-time.Minute),
-		ExpiresAt: fixedNow().Add(10 * time.Minute),
+		ApprovedBy: owner, ApprovedAt: now.Add(-time.Minute),
+		ExpiresAt: now.Add(10 * time.Minute),
 	}}
 	service := newTestService(t, repository, permissiveConstitution(), resolver, nil)
+	service.now = func() time.Time { return now }
 	request := baseRequest("task-review-transaction-" + uuid.NewString())
 	request.OwnerIdentity = owner
 	request.ActorIdentity = owner

@@ -4,7 +4,6 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 NGINX_TEMPLATE = (ROOT / "nginx-config" / "nginx.conf.template").read_text(encoding="utf-8")
-NGINX_CONFIG = (ROOT / "nginx-config" / "nginx.conf").read_text(encoding="utf-8")
 COMPOSE = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
 LEGACY_COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
@@ -58,7 +57,6 @@ class GatewayAuthContractTest(unittest.TestCase):
 
     def test_gateway_hides_nginx_version_without_changing_local_surface(self) -> None:
         self.assertIn("server_tokens off;", NGINX_TEMPLATE)
-        self.assertIn("server_tokens off;", NGINX_CONFIG)
 
         gateway = compose_service_block("nginx")
         self.assertIn('"127.0.0.1:${GATEWAY_HOST_PORT:-8088}:80"', gateway)
@@ -78,20 +76,20 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertIn("proxy_pass http://$backend_upstream;", backend_readiness)
         self.assertNotIn("auth_request", backend_readiness)
 
-    def test_direct_nginx_config_retains_the_safe_gateway_contract(self) -> None:
+    def test_gateway_template_retains_the_safe_gateway_contract(self) -> None:
         upload = location_block(
             "location = /api/v1/agent-runtimes/openclaw/ecosystem/upload",
-            NGINX_CONFIG,
+            NGINX_TEMPLATE,
         )
-        backend = location_block("location /api/v1 {", NGINX_CONFIG)
-        auth = location_block("location /auth-verify", NGINX_CONFIG)
+        backend = location_block("location /api/v1 {", NGINX_TEMPLATE)
+        auth = location_block("location /auth-verify", NGINX_TEMPLATE)
         self.assertIn("auth_request /auth-verify;", upload)
         self.assertIn("client_max_body_size 752m;", upload)
         self.assertIn('proxy_set_header Authorization "Bearer $hai_verified_access_token";', upload)
         self.assertIn("auth_request /auth-verify;", backend)
         self.assertIn('proxy_set_header Authorization "Bearer $hai_verified_access_token";', backend)
         self.assertIn("internal;", auth)
-        self.assertNotIn("location ~ ^/api/v1/", NGINX_CONFIG)
+        self.assertNotIn("location ~ ^/api/v1/", NGINX_TEMPLATE)
 
     def test_openclaw_upload_gateway_limit_matches_backend_envelope(self) -> None:
         block = location_block("location = /api/v1/agent-runtimes/openclaw/ecosystem/upload")
@@ -107,18 +105,14 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertNotIn("location ~", backend)
 
     def test_compatibility_and_generated_routes_propagate_rotated_cookies(self) -> None:
-        static_route = (ROOT / "nginx-config" / "sites-enabled" / "generic-auto.conf").read_text(
-            encoding="utf-8"
-        )
         generated_route = (
             ROOT / "nginx-config-manager" / "internal" / "app" / "autoconfig" / "config_template.go"
         ).read_text(encoding="utf-8")
-        for route in (static_route, generated_route):
-            self.assertIn("auth_request /auth-verify;", route)
-            self.assertIn("$upstream_http_x_hai_refreshed_access_cookie", route)
-            self.assertIn("$upstream_http_x_hai_refreshed_refresh_cookie", route)
-            self.assertIn("add_header Set-Cookie $hai_refreshed_access_cookie always;", route)
-            self.assertIn("add_header Set-Cookie $hai_refreshed_refresh_cookie always;", route)
+        self.assertIn("auth_request /auth-verify;", generated_route)
+        self.assertIn("$upstream_http_x_hai_refreshed_access_cookie", generated_route)
+        self.assertIn("$upstream_http_x_hai_refreshed_refresh_cookie", generated_route)
+        self.assertIn("add_header Set-Cookie $hai_refreshed_access_cookie always;", generated_route)
+        self.assertIn("add_header Set-Cookie $hai_refreshed_refresh_cookie always;", generated_route)
 
     def test_host_runtime_bridge_is_not_exposed_by_dashboard_gateway(self) -> None:
         bridge = location_block("location ^~ /api/v1/host-runtime/")
@@ -138,16 +132,15 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertNotIn("auth_request", host_gateway)
 
     def test_local_agent_bridge_protocols_are_not_exposed_by_dashboard_gateway(self) -> None:
-        for config_name, config in (("template", NGINX_TEMPLATE), ("direct", NGINX_CONFIG)):
-            for marker in (
-                "location = /api/v1/a2a",
-                "location ^~ /api/v1/a2a/",
-                "location ^~ /api/v1/mcp-agent/",
-            ):
-                with self.subTest(config=config_name, marker=marker):
-                    bridge = location_block(marker, config)
-                    self.assertIn("return 404;", bridge)
-                    self.assertNotIn("proxy_pass", bridge)
+        for marker in (
+            "location = /api/v1/a2a",
+            "location ^~ /api/v1/a2a/",
+            "location ^~ /api/v1/mcp-agent/",
+        ):
+            with self.subTest(marker=marker):
+                bridge = location_block(marker, NGINX_TEMPLATE)
+                self.assertIn("return 404;", bridge)
+                self.assertNotIn("proxy_pass", bridge)
 
     def test_optional_agent_bridges_remain_loopback_only_and_narrow(self) -> None:
         a2a_gateway = (ROOT / "nginx-config" / "a2a-local.conf.template").read_text(
@@ -211,36 +204,20 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertIn('proxy_set_header X-HAI-Auth-Subrequest "1";', block)
 
     def test_idp_locations_overwrite_client_ip_forwarding_headers(self) -> None:
-        configurations = (
-            (
-                "template",
-                NGINX_TEMPLATE,
-                (
-                    "location = /api/v1/auth/local-preview",
-                    "location ^~ /api/v1/auth/",
-                    "location ^~ /api/v1/user/",
-                    "location /auth-verify",
-                ),
-            ),
-            (
-                "direct",
-                NGINX_CONFIG,
-                (
-                    "location ^~ /api/v1/auth/",
-                    "location ^~ /api/v1/user/",
-                    "location /auth-verify",
-                ),
-            ),
+        markers = (
+            "location = /api/v1/auth/local-preview",
+            "location ^~ /api/v1/auth/",
+            "location ^~ /api/v1/user/",
+            "location /auth-verify",
         )
-        for config_name, config, markers in configurations:
-            for marker in markers:
-                with self.subTest(config=config_name, marker=marker):
-                    block = location_block(marker, config)
-                    self.assertIn("proxy_set_header X-Forwarded-For $remote_addr;", block)
-                    self.assertIn("proxy_set_header X-Real-IP $remote_addr;", block)
-                    self.assertIn('proxy_set_header Forwarded "";', block)
-                    self.assertNotIn("$proxy_add_x_forwarded_for", block)
-                    self.assertNotIn("$http_x_forwarded_for", block)
+        for marker in markers:
+            with self.subTest(marker=marker):
+                block = location_block(marker, NGINX_TEMPLATE)
+                self.assertIn("proxy_set_header X-Forwarded-For $remote_addr;", block)
+                self.assertIn("proxy_set_header X-Real-IP $remote_addr;", block)
+                self.assertIn('proxy_set_header Forwarded "";', block)
+                self.assertNotIn("$proxy_add_x_forwarded_for", block)
+                self.assertNotIn("$http_x_forwarded_for", block)
 
     def test_idp_namespaces_cannot_request_or_receive_verified_token_header(self) -> None:
         for marker in (
