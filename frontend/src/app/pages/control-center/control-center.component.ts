@@ -666,6 +666,10 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
     const dashboard = this.pursuitDashboard
     return !!dashboard && typeof dashboard.counts?.['active'] === 'number' &&
       Number.isFinite(dashboard.counts['active']) && dashboard.counts['active'] >= 0 &&
+      ['needsRobert', 'blocked', 'stale'].every((key) =>
+        typeof dashboard.counts?.[key] === 'number' &&
+        Number.isFinite(dashboard.counts[key]) && dashboard.counts[key] >= 0
+      ) &&
       Array.isArray(dashboard.decisionQueue) && Array.isArray(dashboard.needsRobert) &&
       Array.isArray(dashboard.blocked) && Array.isArray(dashboard.reviewDue) &&
       Array.isArray(dashboard.planningNeeded)
@@ -984,14 +988,9 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
   pursuitAttentionCount(): number {
     const dashboard = this.pursuitDashboard
     if (!dashboard) return 0
-    // The backend serialises empty lists as null (Go nil slices), so a brand-new
-    // account with no pursuits sends null here — guard each list rather than
-    // assuming an array.
-    return (
-      (dashboard.needsRobert?.length ?? 0) +
-      (dashboard.blocked?.length ?? 0) +
-      (dashboard.stale?.length ?? 0)
-    )
+    return Number(dashboard.counts?.['needsRobert'] || 0) +
+      Number(dashboard.counts?.['blocked'] || 0) +
+      Number(dashboard.counts?.['stale'] || 0)
   }
 
   private buildCommandActions(): CommandAction[] {

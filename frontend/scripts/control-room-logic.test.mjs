@@ -1029,6 +1029,15 @@ const { ControlCenterComponent } = await loadComponentLogic(new URL('../src/app/
   '../../control-room/progressive-section.component': 'data:text/javascript,export class HaiProgressiveSectionComponent {}',
 })
 
+test('control center attention metric uses uncapped pursuit queue counts', () => {
+  const component = Object.create(ControlCenterComponent.prototype)
+  component.pursuitDashboard = {
+    counts: { active: 8, needsRobert: 7, blocked: 5, stale: 3 },
+    decisionQueue: [], needsRobert: [{ pursuit: { id: 'one' } }], blocked: [], stale: [], reviewDue: [], planningNeeded: [],
+  }
+  assert.equal(component.pursuitAttentionCount(), 15)
+})
+
 test('ambient and control center source actions reject credentials and URL normalization tricks', () => {
   const previousWindow = globalThis.window
   const opened = []; const notices = []
