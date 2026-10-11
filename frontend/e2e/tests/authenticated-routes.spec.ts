@@ -12,6 +12,7 @@ test.describe('authenticated module route audit', () => {
 
     for (const module of HAI_MODULES) {
       await test.step(`${module.title} (${module.route})`, async () => {
+        const isOnboarding = module.id === 'onboarding';
         if (module.showInNavigation === false) {
           await page.goto(module.route);
         } else {
@@ -28,7 +29,11 @@ test.describe('authenticated module route audit', () => {
         await expect(page).toHaveTitle(moduleDocumentTitle(module));
         await expect(page.locator('#hai-main')).toHaveAttribute('data-hai-module', module.id);
         await expect(page.locator('#hai-main')).toBeVisible();
-        await expect(page.locator('.hai-module-identity strong')).toHaveText(module.title);
+        if (isOnboarding) {
+          await expect(page.getByRole('heading', { name: 'Getting started with HAI', exact: true })).toBeVisible();
+        } else {
+          await expect(page.locator('.hai-module-identity strong')).toHaveText(module.title);
+        }
         await expect(page.locator('app-login')).toHaveCount(0);
       });
     }
