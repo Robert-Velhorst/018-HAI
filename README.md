@@ -1759,8 +1759,9 @@ general importer accepts `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`,
 `.yaml`, `.yml`, and `.log`; export connectors also support `.mbox`, `.eml`,
 and `.ics` within the same allowlisted root.
 
-For the owner-bound, read-only Autofever source, see
-[Autofever connector setup and verification](docs/autofever-connector.md).
+Autofever is not currently connected: the sibling 028 application does not
+provide HAI with a vehicle-review feed. See the
+[Autofever integration status and prerequisite](docs/autofever-connector.md).
 
 ### Import Phase 2 local feed records
 

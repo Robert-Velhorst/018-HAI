@@ -772,6 +772,53 @@ func TestConnectorsExposeOperationalLocalAdapters(t *testing.T) {
 	}
 }
 
+func TestAutofeverRemainsDisabledWithoutAnUpstreamFeedContract(t *testing.T) {
+	service := NewService(newFakeSourceRepo(), &fakeSourceMemoryService{})
+	connectors, err := service.Connectors()
+	if err != nil {
+		t.Fatalf("Connectors: %v", err)
+	}
+	for _, connector := range connectors {
+		if connector.ConnectorKey != "autofever" {
+			continue
+		}
+		if connector.Enabled || connector.AdapterStatus != AdapterNotImplemented {
+			t.Fatalf("Autofever connector = %#v, want disabled and not implemented", connector)
+		}
+		if !strings.Contains(connector.StatusReason, "does not expose a HAI feed") {
+			t.Fatalf("Autofever status reason = %q, want missing upstream HAI feed", connector.StatusReason)
+		}
+		_, err := service.CreateSource(CreateSourceRequest{
+			ConnectorKey: "autofever", Name: "Legacy Autofever", Enabled: true,
+			LocalOnly: false, Category: "vehicle_intelligence",
+		})
+		if err == nil || !strings.Contains(err.Error(), "disabled") {
+			t.Fatalf("CreateSource error = %v, want disabled connector rejection", err)
+		}
+		return
+	}
+	t.Fatal("disabled legacy Autofever connector missing from catalog")
+}
+
+func TestLegacyAutofeverSourceCannotSyncOrImportItems(t *testing.T) {
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, OwnerIdentity: "alice", ConnectorKey: "autofever", Name: "Legacy Autofever",
+		Category: "vehicle_intelligence", Enabled: true, LocalOnly: false, Status: "active",
+	})
+	service := NewService(repo, &fakeSourceMemoryService{})
+	_, err := service.Sync(sourceID, ImportRequest{
+		Mode: ModeIncrementalSync,
+		Items: []ImportItem{{ExternalID: "fake-vehicle", Title: "Synthetic listing", Content: "Must not be imported"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "upstream HAI feed") {
+		t.Fatalf("Sync error = %v, want unavailable upstream contract rejection", err)
+	}
+	if len(repo.rawItems) != 0 || len(repo.extractions) != 0 || len(repo.jobs) != 0 {
+		t.Fatalf("disabled Autofever source persisted sync data: raw=%d extractions=%d jobs=%d", len(repo.rawItems), len(repo.extractions), len(repo.jobs))
+	}
+}
+
 func TestTrelloConnectorCatalogSeparatesPollingFromWebhookReadiness(t *testing.T) {
 	t.Setenv(trelloAPIKeyEnv, "test-key")
 	t.Setenv(trelloReadTokenEnv, "test-read-token")

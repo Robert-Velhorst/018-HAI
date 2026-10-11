@@ -1695,11 +1695,17 @@ checkpoint. No current CI status is inferred from that historical run.
 
 ### October 11, 2026: follow-up branch and connector review
 
-The Autofever connector was ported separately into PR #36 as `e4abace3` after
-checking the sibling Autofever implementation and hardening the HAI adapter
-with owner binding, HTTPS/host policy, redirect refusal, bounded responses,
-cancellation, and redacted operational errors. Focused source tests and the
-complete backend Go test suite passed before that commit was pushed.
+The Autofever adapter was previously ported into PR #36 as `e4abace3` and its
+local contract tests passed. A later direct audit of the sibling
+`Robert-Velhorst/028-autofever` source contradicted the claimed upstream
+contract: its current application is an incomplete illness-notification
+prototype and exposes neither `/api/integrations/hai/feed` nor vehicle-review
+records. The adapter and its credential plumbing have therefore been removed
+from the active implementation; the legacy catalog entry is disabled and
+existing source records are preserved but cannot sync. The earlier test result
+proved only the mocked HAI-side adapter behavior, not a real upstream
+integration. A provider contract and live authorized acceptance remain
+prerequisites.
 
 The four-commit `agent/ci-worker-control-hardening` branch was compared against
 the current PR tree. Its Worker Control adapter is not imported: PR #36 already
@@ -1719,8 +1725,9 @@ passed. This local suite does not run the separately tagged real-Postgres
 migration integration, so that exact-head CI check remains necessary. No other
 changes from the Worker Control branch were copied.
 
-The Autofever port and schema-model fix do not complete the broader branch or
-archive reconciliation. Keep source branches, transcripts, snapshots, scratch
+The Autofever audit correction and schema-model fix do not complete the
+broader branch or archive reconciliation. Keep source branches, transcripts,
+snapshots, scratch
 trees, and diagnostic data until each remaining source difference is reviewed
 and preservation is verified; this checkpoint authorizes no additional local
 cleanup.
