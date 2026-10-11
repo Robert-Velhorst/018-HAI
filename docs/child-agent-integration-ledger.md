@@ -1346,3 +1346,25 @@ cleanup-safety contract job; the other checks, including backend, frontend,
 database, browser, Windows, installer, and runner acceptance, were pending at
 the latest refresh. Do not merge or clean the local worktrees until those
 checks and the remaining source/transcript crosswalk are complete.
+
+### October 11, 2026: browser-matrix refreshed-session handoff
+
+The retained browser report for run `38104459435` records route-matrix tests
+falling back to onboarding when the expected theme control was absent, followed
+by refusal to repeat password login after the synthetic owner session expired.
+The session refresh rotated cookies, but the next serial test context loaded
+the unchanged original storage-state file. The fixture now persists refreshed
+state only after confirming the authenticated session and validates that the
+state file resolves under the run-owned evidence directory. Global setup now
+creates that private state in a temporary child directory of the already
+validated evidence root; existing global teardown removes it, and the CI
+workflow uploads only explicit report, screenshot/result, and guarded-log
+subdirectories. This change does not make the acceptance test itself pass.
+
+The e2e TypeScript typecheck and all 108 `scripts.test_ci_contract` tests pass
+locally. The fix is at commit `6cbc4475e2551c42c5cd5d144e1dbf9642c456d9`,
+confirmed at the remote PR branch head. Exact-head run `38105996226` is queued;
+older browser acceptance run `38105148528` remains in progress, so real
+browser verification is pending. PR #36 remains open and unstable. The source
+delta review and cleanup gates are unchanged: no archive, checkout, Docker
+volume, image, or diagnostic cleanup is authorized by current evidence.
