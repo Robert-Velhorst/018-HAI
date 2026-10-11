@@ -12,7 +12,7 @@ http {
         # cannot leave the gateway pinned to its former IP address.
         set $backend_upstream backend:80;
         set $idp_upstream idp:8080;
-        set $frontend_upstream frontend:80;
+        set $frontend_upstream frontend:8080;
         set $generic_auto_upstream generic-auto:80;
 
         # Health endpoints are intentionally unauthenticated and must not fall

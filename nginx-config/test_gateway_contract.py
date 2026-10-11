@@ -104,6 +104,13 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertIn("proxy_pass http://$backend_upstream;", backend)
         self.assertNotIn("location ~", backend)
 
+    def test_dashboard_gateway_targets_the_frontend_listening_port(self) -> None:
+        frontend_config = (ROOT / "frontend" / "nginx-custom.conf").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("listen 8080;", frontend_config)
+        self.assertIn("set $frontend_upstream frontend:8080;", NGINX_TEMPLATE)
+
     def test_compatibility_and_generated_routes_propagate_rotated_cookies(self) -> None:
         generated_route = (
             ROOT / "nginx-config-manager" / "internal" / "app" / "autoconfig" / "config_template.go"
