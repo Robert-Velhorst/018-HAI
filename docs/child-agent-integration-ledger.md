@@ -1626,6 +1626,23 @@ Exact-head Actions run `38112556687` for PR head
 queued, and none had failed. PR #36 remains open and unmerged; no local files
 are eligible for cleanup from this checkpoint.
 
+### October 11, 2026: untracked verification-runner source review
+
+The primary checkout's untracked `output/` tree contains 12 PowerShell
+verification/cleanup runners (the remainder of the 1,576-file, 126,970,802-byte
+tree is primarily JSON/JSONL reports, logs, and evidence). Static extraction
+found 31 distinct Go test identifiers referenced by the runners; every
+identifier resolves to a test in the canonical PR tree. The hosted CI workflow
+explicitly runs the 13 durable-session PostgreSQL/Redis regressions and selected
+real-PostgreSQL suites referenced by the runners.
+
+These scripts orchestrate tests against the checked-in Go packages; they are
+not additional HAI runtime implementations. They also include local Docker
+ownership, no-pull, resource-limit, source-integrity, and test-skip checks that
+are not equivalent to simply having the named test functions. They remain
+retained as verification evidence until the exact runner behavior and reports
+are reconciled; no runner was executed, copied, or deleted in this review.
+
 ### October 11, 2026: integration snapshot comparison and exact-head CI
 
 The `codex/hai-integration-snapshot` checkout is at commit
