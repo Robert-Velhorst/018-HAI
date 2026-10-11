@@ -1287,3 +1287,31 @@ contracts. At the latest refresh, frontend unit tests, backend/IDP tests,
 real-Postgres migration integration, browser acceptance, guarded Windows
 runtime, installer guards, and additional runner contracts were still pending.
 The PR is not ready to merge, and local cleanup gates remain closed.
+
+### October 11, 2026: secondary checkout commit ancestry and source-file delta
+
+The secondary checkout remains at `e07b9daeb3ba2630ecbe12a64d948f791203c241`.
+Git confirms this commit is an ancestor of the PR branch, with zero commits
+unique to the secondary checkout and 148 commits between that checkout and
+the PR branch at `e08427b5abe8c57d64393ba58d208eaed291e9eb`. No committed
+branch history needs to be imported from the secondary checkout.
+
+A current read-only enumeration found 839 source-like untracked files under
+the secondary checkout after excluding generated output, dependency, coverage,
+and test-evidence directories. Every path exists in the PR checkout; 797 are
+content-identical after normalizing CRLF/LF, and 42 differ. This is path and
+content inventory only, not a completed semantic review of the 42 variants.
+Targeted checks of execution claims, source-approval receipts, OpenClaw
+signing-key handling, the owned browser matrix, and Promptfoo dependency
+versions confirm the PR contains the newer reviewed implementations. The
+older secondary variants were not copied over. The 75 tracked content
+differences remain unclassified as a whole.
+
+Exact-head Actions run `38105368794` for commit `e08427b5abe8c57d64393ba58d208eaed291e9eb`
+has passing cleanup-safety contracts, Compose validation, local provider
+contract, secret scan, Windows path contract, two-account isolation, and
+several runner/image jobs. Backend, frontend unit tests, IDP, migrations,
+browser acceptance, guarded Windows runtime, installer guards, and other
+runner jobs are still pending at this refresh. No cleanup condition has
+changed: keep both checkouts, the transcript archive, diagnostics, Docker
+volumes, and recovery bundle intact.
