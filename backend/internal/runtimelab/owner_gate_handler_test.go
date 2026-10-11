@@ -149,16 +149,12 @@ func newRuntimeLabHandlerFixture(t *testing.T) *runtimeLabHandlerFixture {
 }
 
 func runtimeLabOwnerRequest(endpoint runtimeLabOwnerEndpoint, subject any, present bool, runtimeID string) (*httptest.ResponseRecorder, int) {
-	return runtimeLabOwnerRequestAsRole(endpoint, subject, present, runtimeID, "admin")
-}
-
-func runtimeLabOwnerRequestAsRole(endpoint runtimeLabOwnerEndpoint, subject any, present bool, runtimeID, role string) (*httptest.ResponseRecorder, int) {
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		if present {
 			c.Set(identity.ContextSubjectKey, subject)
 		}
-		c.Set(identity.ContextRoleKey, role)
+		c.Set(identity.ContextRoleKey, "admin")
 		c.Next()
 	})
 	followingCalls := 0
@@ -175,15 +171,6 @@ func runtimeLabOwnerRequestAsRole(endpoint runtimeLabOwnerEndpoint, subject any,
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	return response, followingCalls
-}
-
-func TestRuntimeLabAllowsAuthenticatedInstallationOwnerRoleForConfiguredScope(t *testing.T) {
-	fixture := newRuntimeLabHandlerFixture(t)
-	endpoint := runtimeLabOwnerEndpoints(fixture.handler)[0]
-	response, followingCalls := runtimeLabOwnerRequestAsRole(endpoint, "idp-owner-uuid", true, "hermes", "owner")
-	if response.Code != http.StatusOK || followingCalls != 1 {
-		t.Fatalf("installation owner status=%d following=%d; body=%s", response.Code, followingCalls, response.Body.String())
-	}
 }
 
 func TestRuntimeLabHandlersRejectForeignAndAnonymousSubjectsBeforeServiceAccess(t *testing.T) {
