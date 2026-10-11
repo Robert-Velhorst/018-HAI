@@ -1858,3 +1858,29 @@ patches, credentials, runtime data, merge scratch, and all transcript archives
 remain untouched. In particular, the 27 known July 30 transcripts remain
 ineligible for cleanup until the semantic crosswalk and merge/preservation
 gates are complete.
+
+### October 11, 2026: archived-session scope check and cleanup-gate refresh
+
+Re-ran `scripts/test-hai-transcript-cleanup-readiness.ps1` against
+`D:\codex-temp\hai-completed-agent-sessions`. It verified all 18 manifest
+entries and `20,739,169,122` logical source bytes, including the eight
+candidate hashes. The verifier reports `source_archive_verified=true`,
+`committed_ledger_verified=false`, `merged_pull_request_verified=false`,
+`cleanup_gate_ready=false`, and `deletion_performed=false`. No archive content
+was changed.
+
+Inventoried the 26 files under `C:\Users\NO\.codex\archived_sessions` by
+session metadata and searched for the canonical HAI repository identifiers.
+Eight session files contain HAI-related identifiers, but their recorded
+working directories are other projects. The matching records are injected
+developer/memory context or sidebar/project-list metadata; none is a
+user-authored HAI request. No HAI code change or source artifact was identified
+in this set. These are mixed conversation archives, not HAI-only build caches,
+so they remain preserved and are not cleanup candidates.
+
+The current PR #36 head remains `9509b7832e65a7a1fa486ef6d694df18bde1e49d`.
+Exact-head Actions run `38118106367` has 35 successful jobs and only the owned
+disposable-stack browser-acceptance job still in progress at this check. This
+is not yet a completed CI gate. No transcript, archive, source checkout,
+patch/log evidence, secret-bearing file, or runtime data was deleted in this
+pass.
