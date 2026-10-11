@@ -172,10 +172,11 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
         await context.storageState({ path: target.storageStatePath });
       },
       settle: async () => {
-        await expect.poll(() => [...pending].map((request) => {
+        const checkpointRequests = new Set(pending);
+        await expect.poll(() => [...checkpointRequests].filter((request) => pending.has(request)).map((request) => {
           try { return new URL(request.url()).pathname } catch { return 'invalid-request-url' }
         }).sort(), { timeout: 15_000, intervals: [100, 250, 500] }).toEqual([]);
-        // Allow the actual renderer to commit the final response, without networkidle or sleeps.
+        // Drain the reads already in flight; recurring background refreshes must not hold the UI hostage.
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       },
       assertHealthy: () => {
