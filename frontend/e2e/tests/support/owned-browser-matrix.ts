@@ -58,6 +58,7 @@ export function ownedMatrixTarget(info: TestInfo): OwnedMatrixTarget {
     }
     const html = process.env.PLAYWRIGHT_HTML_OUTPUT_DIR || '';
     if (!path.isAbsolute(info.project.outputDir) || !path.isAbsolute(html)
+      || !inside(root, resolvedDestination(storageStatePath))
       || !inside(root, resolvedDestination(info.project.outputDir))
       || !inside(root, resolvedDestination(html))) throw new Error('destination');
   } catch {
@@ -167,6 +168,8 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
         if (state?.authenticated !== true) {
           throw new Error('Synthetic owner session is no longer authenticated; refusing another password login.');
         }
+        // Refresh-token rotation must be carried into the next serial test context.
+        await context.storageState({ path: target.storageStatePath });
       },
       settle: async () => {
         await expect.poll(() => health.pendingReads, { timeout: 15_000, intervals: [100, 250, 500] }).toBe(0);
