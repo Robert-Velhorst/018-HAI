@@ -1007,3 +1007,17 @@ These findings cover additional high-impact paths, not every remaining test,
 documentation, frontend, or service diff in the snapshot. The complete
 path-by-path reconciliation is still open; counts and this representative
 review are not evidence that remaining files are redundant.
+
+### Frontend and browser-acceptance review (2026-10-11)
+
+| Area | Observed snapshot difference | Current disposition |
+| --- | --- | --- |
+| Browser matrix authentication | Replaces the run-scoped synthetic storage-state setup and refresh-aware session reuse with credentials in the per-test fixture and a fresh login from `signIn`. | Do not import as-is; verify login-rate-limit behavior, secret-safe artifacts, and test isolation first. |
+| Workflow review response | Replaces the explicit `reviewRequired` path that pauses the worker, reloads persisted workflow state, and refreshes the page with a generic uncertain result. | Reject as-is; it can hide the server's approval state from the operator. |
+| Workflow match control | Removes the page-loading action guard from the button and deletes the test asserting matching does not run while loading. | Do not import without an equivalent readiness guard and focused regression coverage. |
+| Authentication response contract | Changes `login` from `Observable<void>` to an inferred generic object response and deletes the test for the successful empty response. | Reject as-is; it weakens the declared contract without evidence of a backend response change. |
+| End-to-end workflow proposal | Adds an isolated browser path for approval followed by a bounded read-only run and verification. | Potentially useful, but not accepted until the preceding auth, approval-state, fixture-isolation, and exact-runtime contracts are verified on the PR branch. |
+
+No frontend or browser code from this batch has been copied into the PR. The
+end-to-end execution proposal remains a candidate for a separately tested,
+fail-closed port; the snapshot's broader changes are not required to adopt it.
