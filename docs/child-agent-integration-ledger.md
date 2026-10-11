@@ -1556,3 +1556,27 @@ in progress and cleanup-readiness contracts passed. Results from `f8e927f`
 and earlier heads do not establish final acceptance for this ledger head.
 PR #36 remains open and cleanup remains gated on full reconciliation and
 current-head acceptance.
+
+### October 11, 2026: current archive integrity and PR gate recheck
+
+The source archive `D:\codex-temp\hai-completed-agent-sessions` was checked
+read-only against the committed manifest with
+`scripts/test-hai-transcript-cleanup-readiness.ps1 -TranscriptRoot`. All 18
+manifest paths match the source inventory and logical byte total
+(`20,739,169,122` bytes); all eight unique completed candidate files match
+their recorded SHA-256 hashes. The check reports `source_archive_verified`,
+but `committed_ledger_verified=false`, `merged_pull_request_verified=false`,
+and `cleanup_gate_ready=false`. No transcript was changed or deleted.
+
+PR #36 is currently open at `d6cb0903dd63e15ed9da685c8f42d831eda8c535`.
+Its exact-head Actions run `38108110220` remains queued overall; some checks
+have started or passed, while many matrix jobs remain queued or in progress.
+This is not final CI acceptance. The PR has not been merged into `main`.
+
+Archive byte/hash integrity and candidate-report presence do not prove the
+unresolved transcript patch/event content is semantically integrated. The
+793-path event crosswalk, retained/aborted child attribution, and remaining
+source-difference dispositions are still incomplete. Therefore the eight
+candidate files (about 7.94 GB) remain candidates only, the ten retained
+files (about 12.80 GB) remain protected, and no local transcript or checkout
+cleanup is authorized by the repository readiness gate.

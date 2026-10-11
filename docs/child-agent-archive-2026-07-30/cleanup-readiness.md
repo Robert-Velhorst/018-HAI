@@ -910,3 +910,21 @@ These counts establish provenance and exact-text deduplication, not unique
 tasks or semantic integration. The 793-path event crosswalk and child-local
 attribution remain incomplete. The audit changed no transcript and does not
 alter the existing retention or cleanup decision.
+
+## Live archive and PR gate recheck (2026-10-11)
+
+The read-only cleanup-readiness verifier was run against
+`D:\codex-temp\hai-completed-agent-sessions`. It verified all 18 manifest
+paths, the complete logical byte total of `20,739,169,122`, and the recorded
+SHA-256 values for all eight unique completed candidate files. The verifier
+reported `source_archive_verified=true`, but
+`committed_ledger_verified=false`, `merged_pull_request_verified=false`, and
+`cleanup_gate_ready=false`. It performed no deletion.
+
+PR #36 is open at head `d6cb0903dd63e15ed9da685c8f42d831eda8c535`; exact-head
+Actions run `38108110220` is queued overall. Passing individual checks and
+running jobs do not constitute final acceptance. The 793-path event crosswalk
+and semantic attribution of retained/aborted transcript work remain
+incomplete, so even hash-verified candidate files are not yet eligible for
+removal. Preserve all 18 source transcripts until those gaps are closed and
+the repository cleanup gate passes after merge to `main`.
