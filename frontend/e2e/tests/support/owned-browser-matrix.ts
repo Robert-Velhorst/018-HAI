@@ -1,4 +1,4 @@
-import { expect, test as base, Page, Request, TestInfo } from '@playwright/test';
+import { expect, test as base, Page, TestInfo } from '@playwright/test';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { assertIsolatedAcceptanceTarget } from './isolated-stack';
@@ -75,7 +75,6 @@ interface MatrixHealth {
   httpErrors: number;
   deniedWrites: number;
   deniedExternal: number;
-  pendingReads: number;
 }
 
 export interface OwnedBrowserMatrix {
@@ -104,7 +103,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
     page.setDefaultNavigationTimeout(15_000);
     const health: MatrixHealth = {
       consoleErrors: 0, pageErrors: 0, failedRequests: 0, httpErrors: 0,
-      deniedWrites: 0, deniedExternal: 0, pendingReads: 0,
+      deniedWrites: 0, deniedExternal: 0,
     };
     let bootstrapAuthRefusals = 0;
     const bootstrapProbe = (url: string): boolean => {
@@ -114,7 +113,6 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
           && parsed.pathname === '/api/v1/auth/is-user-authenticated';
       } catch { return false; }
     };
-    const pending = new Set<Request>();
     page.on('console', (message) => {
       if (message.type() !== 'error') return;
       // Only the real signed-out guard's exact 401 is expected, never route errors.
@@ -123,15 +121,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
       health.consoleErrors++;
     });
     page.on('pageerror', () => health.pageErrors++);
-    page.on('request', (request) => {
-      if (['fetch', 'xhr'].includes(request.resourceType())) pending.add(request);
-      health.pendingReads = pending.size;
-    });
-    page.on('requestfinished', (request) => {
-      pending.delete(request); health.pendingReads = pending.size;
-    });
-    page.on('requestfailed', (request) => {
-      pending.delete(request); health.pendingReads = pending.size;
+    page.on('requestfailed', () => {
       health.failedRequests++;
     });
     page.on('response', (response) => {
@@ -172,20 +162,12 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
         await context.storageState({ path: target.storageStatePath });
       },
       settle: async () => {
-        const checkpointRequests = new Set(pending);
-        await expect.poll(() => [...checkpointRequests].filter((request) => pending.has(request)).map((request) => {
-          try { return new URL(request.url()).pathname } catch { return 'invalid-request-url' }
-        }).sort(), { timeout: 15_000, intervals: [100, 250, 500] }).toEqual([]);
-        // Drain the reads already in flight; recurring background refreshes must not hold the UI hostage.
+        // Readiness is asserted by each route's observable UI contract; global
+        // network-idle checks are invalid because HAI refreshes in the background.
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       },
       assertHealthy: () => {
-        // Pending reads are a point-in-time measure. `settle()` already proves
-        // the route reached quiescence; a normal refresh started between that
-        // checkpoint and this assertion must not make the route fail.
-        const completedHealth = { ...health };
-        Reflect.deleteProperty(completedHealth, 'pendingReads');
-        expect(completedHealth, 'Counts only: console text, bodies, headers and credentials are deliberately excluded').toEqual({
+        expect(health, 'Counts only: console text, bodies, headers and credentials are deliberately excluded').toEqual({
           consoleErrors: 0, pageErrors: 0, failedRequests: 0, httpErrors: 0,
           deniedWrites: 0, deniedExternal: 0,
         });

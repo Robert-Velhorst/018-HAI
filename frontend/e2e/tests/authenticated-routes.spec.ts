@@ -12,14 +12,18 @@ test.describe('authenticated module route audit', () => {
 
     for (const module of HAI_MODULES) {
       await test.step(`${module.title} (${module.route})`, async () => {
-        const group = page.locator(`details[data-hai-nav-group="${module.group}"]`);
-        const navigation = page.locator('.hai-navigation__item', { hasText: module.title });
-        if (!(await navigation.isVisible())) {
-          const isOpen = await group.evaluate((element) => (element as HTMLDetailsElement).open);
-          if (!isOpen) await group.locator(':scope > summary').click();
+        if (module.showInNavigation === false) {
+          await page.goto(module.route);
+        } else {
+          const group = page.locator(`details[data-hai-nav-group="${module.group}"]`);
+          const navigation = page.locator('.hai-navigation__item', { hasText: module.title });
+          if (!(await navigation.isVisible())) {
+            const isOpen = await group.evaluate((element) => (element as HTMLDetailsElement).open);
+            if (!isOpen) await group.locator(':scope > summary').click();
+          }
+          await expect(navigation).toBeVisible();
+          await navigation.click();
         }
-        await expect(navigation).toBeVisible();
-        await navigation.click();
         await expect(page).toHaveURL(new RegExp(`${module.route.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[/?#]|$)`));
         await expect(page).toHaveTitle(moduleDocumentTitle(module));
         await expect(page.locator('#hai-main')).toHaveAttribute('data-hai-module', module.id);
