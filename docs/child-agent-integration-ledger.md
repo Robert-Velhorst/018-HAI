@@ -1502,3 +1502,57 @@ Do not treat the active run, a first-scope browser run, or this source batch as
 final acceptance. The July archive and local checkout/diagnostic cleanup
 remain ineligible until source and transcript crosswalks and PR acceptance are
 complete.
+
+### October 11, 2026: wider untracked-source and safety-path review
+
+A second, broader untracked-text comparison used an expanded extension set and
+excluded output, dependency, build, coverage, browser, VCS, and test-evidence
+directories. It found 865 source-like candidates, 46 content differences
+after line-ending normalization, and four paths absent from the PR tree. The
+four are `.claude-flow/agents/store.json`, `.claude-flow/policy/state.json`,
+`.claude-flow/terminals/store.json`, and `.swarm/model-router-state.json`.
+They are generated agent/runtime state rather than HAI product source or
+deployable assets; they are intentionally not copied into the repository. The
+865/46 inventory is broader than the earlier 833/38 filter and must not be
+read as a like-for-like count change.
+
+Additional direct comparison confirms the PR carries the stronger behavior in
+these areas:
+
+- Account-feed worker regression: the PR requires newly ingested source work
+  to reach `awaiting_approval` without verification or a host effect. The
+  primary checkout's version instead expects verification. The PR package
+  passed an uncached `go test -count=1 -p 2 ./internal/background` run.
+- Source-operation ingestion and approval: the PR persists raw-evidence
+  digests through refresh, includes them in approval revision binding, and
+  permits a future review reminder to be overridden only after an exact
+  source receipt is verifiable. Focused source-approval and claim tests are in
+  the PR; no alternate implementation was copied.
+- PostgreSQL migration tests: the PR exercises the current migration tail,
+  refuses out-of-order rollback while later-phase migrations remain, and
+  checks data-loss rollback protection in a separate isolated database rather
+  than dismantling runtime tables.
+- Browser acceptance: the PR keeps refreshed owner cookies in a run-owned
+  temporary path, excludes credentials from the browser fixture, validates
+  evidence-root ownership, and avoids collecting trace bodies.
+- Windows/acceptance tooling: the PR preserves operator-selected network
+  ranges, clears inherited secrets in synthetic acceptance configuration,
+  isolates installer profile writes inside the uniquely owned smoke root,
+  and only permits unavailable Docker inventory on an explicitly identified
+  disposable GitHub-hosted Windows runner.
+- Secret reporting in the PR validates the comparison revision in CI and
+  redacts candidate values while retaining bounded rule/path/commit metadata.
+
+No source was copied in this batch. This remains a sampled semantic review of
+the 46 differing files, not a signed-off disposition of every one of them.
+The primary checkout's modified tracked files, excluded/generated output,
+private runtime state, July transcript child attribution, and exact archive
+crosswalk still require further reconciliation before any local deletion.
+
+The ledger-only follow-up is now on PR head `228a1ceec4669fb5eeb23320d7d39fb4e381f850`.
+The exact-head Actions run is `38107937213`; at the latest refresh it was
+queued overall, with browser, backend, frontend, and Windows installer jobs
+in progress and cleanup-readiness contracts passed. Results from `f8e927f`
+and earlier heads do not establish final acceptance for this ledger head.
+PR #36 remains open and cleanup remains gated on full reconciliation and
+current-head acceptance.
