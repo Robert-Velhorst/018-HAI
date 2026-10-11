@@ -2299,3 +2299,36 @@ Provider readiness now rejects all three components, with separate route-level
 regression cases for credentials, query parameters, and fragments. This is
 consistent with the existing maintenance endpoint parser, which already
 rejects those URL components. Exact-head backend CI is pending.
+
+### October 11, 2026: open-PR source crosswalk
+
+Compared the current remote heads of open PRs #33 and #35 with `main` and the
+PR #36 source branch at `61a370f020c4fa5db21f340847dd42d25ec3d100`.
+
+- PR #35 (`feat/chatgpt-logs-mcp-tool-loop`, head
+  `95155a58e8d0a295f2361e913cda7e870cb9cb38`) is an ancestor of PR #36. Its
+  model-directed, bounded ChatGPT-history MCP adapter and task/UI integration
+  are therefore already present in the consolidated #36 history via merge
+  commit `0ddf1cb3`. It does not need a second source port. PR #35 remains open
+  and GitHub currently reports it conflicting; its last observed CI run
+  `38121339049` failed backend vet, frontend dependency audit, authenticated
+  smoke, migration, IDP/nginx vulnerability, and two-account build checks.
+  Those failures must not be described as resolved merely because the code is
+  present in #36.
+- PR #33 (`agent/ci-worker-control-hardening`, head
+  `429f453e26045456ff437c0aa3561ab88dd1d5f9`) is not an ancestor of `main` or
+  #36, but its `worker_control.go` adapter and test blobs are byte-identical to
+  current `main` at `37de3e04e766ac3f7df04aeaddaf774904a7ebca`; the same files
+  also exist in #36. Of its 25 paths changed from its merge base, 14 blobs are
+  already identical to `main` and 11 differ. The divergent snapshot removes or
+  regresses newer configuration and ingestion safeguards, including bounded
+  GitHub pagination/completeness handling and stricter HTTP transport policy.
+  Do not merge or port the PR #33 branch wholesale. Its connector implementation
+  is already represented in the canonical tree; the remaining 11 paths need
+  individual, behavior-based review before any selective port.
+
+The comparison used remote Git object IDs and ancestry checks, not line-count
+addition. PR #35's presence is proven by Git ancestry; PR #33's connector
+presence is proven by exact file-blob identity and current-tree lookup. Neither
+check proves live Worker Control account acceptance or ChatGPT-history daemon
+acceptance. No branch was deleted, force-pushed, or merged by this crosswalk.
