@@ -261,6 +261,7 @@ describe('WorkflowEngineComponent', () => {
 
   it('renders returned pursuit matches immediately after an operator requests them', () => {
     const { component, pursuitService, changeDetector } = createComponent();
+    component.dataLoaded = true;
     component.intakeForm.patchValue({ input: 'Prepare the evidence bundle', projectKey: 'vivare' });
     pursuitService.match.and.returnValue(of([{
       pursuit: { id: '11111111-1111-4111-8111-111111111111', title: 'Vivare evidence bundle' },
@@ -274,6 +275,17 @@ describe('WorkflowEngineComponent', () => {
     expect(component.pursuitMatches.length).toBe(1);
     expect(component.selectedPursuitMatch?.pursuit.id).toBe('11111111-1111-4111-8111-111111111111');
     expect(changeDetector.detectChanges).toHaveBeenCalled();
+  });
+
+  it('does not request pursuit matches while the workflow page is loading', () => {
+    const { component, pursuitService } = createComponent();
+    component.dataLoaded = true;
+    component.loading = true;
+    component.intakeForm.patchValue({ input: 'Prepare the evidence bundle', projectKey: 'vivare' });
+
+    component.matchPursuits();
+
+    expect(pursuitService.match).not.toHaveBeenCalled();
   });
 
   it('starts manual intake without executable demo provenance', () => {

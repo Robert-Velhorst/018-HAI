@@ -1,4 +1,4 @@
-import { expect, test as base, Page, TestInfo } from '@playwright/test';
+import { expect, request, test as base, Page, TestInfo } from '@playwright/test';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { assertIsolatedAcceptanceTarget } from './isolated-stack';
@@ -80,6 +80,7 @@ interface MatrixHealth {
 export interface OwnedBrowserMatrix {
   page: Page;
   target: OwnedMatrixTarget;
+  ensureAuthenticated(): Promise<void>;
   settle(): Promise<void>;
   assertHealthy(): void;
   capture(name: string): Promise<void>;
@@ -151,6 +152,44 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
     });
     const matrix: OwnedBrowserMatrix = {
       page, target,
+      ensureAuthenticated: async () => {
+        const session = await context.request.get(`${target.origin}/api/v1/auth/is-user-authenticated`, {
+          timeout: 10_000,
+        });
+        if (session.ok()) return;
+        if (session.status() !== 401) {
+          throw new Error(`Synthetic owner session check failed (HTTP ${session.status()}).`);
+        }
+
+        const email = process.env.E2E_OPERATOR_EMAIL || '';
+        const password = process.env.E2E_OPERATOR_PASSWORD || '';
+        assertIsolatedAcceptanceTarget(target.origin, process.env.E2E_ISOLATED_STACK, email);
+        if (!password) throw new Error('Matrix requires the disposable owner password.');
+
+        const api = await request.newContext({ baseURL: target.origin });
+        try {
+          const login = await api.post('/api/v1/auth/login', {
+            data: { email, password, rememberMe: true }, timeout: 10_000,
+          });
+          if (!login.ok()) {
+            throw new Error(`Synthetic owner session renewal failed (HTTP ${login.status()}).`);
+          }
+          const state = await api.storageState();
+          if (state.cookies.length === 0) {
+            throw new Error('Synthetic owner session renewal returned no session cookies.');
+          }
+          await context.addCookies(state.cookies);
+        } finally {
+          await api.dispose();
+        }
+
+        const renewed = await context.request.get(`${target.origin}/api/v1/auth/is-user-authenticated`, {
+          timeout: 10_000,
+        });
+        if (!renewed.ok()) {
+          throw new Error(`Synthetic owner session renewal was rejected (HTTP ${renewed.status()}).`);
+        }
+      },
       settle: async () => {
         await expect.poll(() => health.pendingReads, { timeout: 15_000, intervals: [100, 250, 500] }).toBe(0);
         // Allow the actual renderer to commit the final response, without networkidle or sleeps.
@@ -189,6 +228,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
 
 export async function signIn(matrix: OwnedBrowserMatrix): Promise<void> {
   const { page } = matrix;
+  await matrix.ensureAuthenticated();
   await page.goto('/control-center');
   await expect(page).toHaveURL(/\/(?:control-center|onboarding)(?:\?|$)/);
   if (new URL(page.url()).pathname === '/onboarding') {

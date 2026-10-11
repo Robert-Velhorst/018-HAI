@@ -948,3 +948,49 @@ workflow-record reconciliation fix addresses that observed defect, but requires
 a new exact-head CI run. PR #36 remains open and unmerged. No branch cleanup or
 local deletion is authorized by this CI diagnosis; archive, working-tree,
 scratch, snapshot, and diagnostic gaps remain open.
+
+### October 11, 2026: exact-head browser run 38096541735
+
+Run `38096541735` tested PR head `ab9e377a790866fd71cfee6dcf08f3cbc68a5856`.
+Backend build/tests and the other non-browser checks passed; the owned-stack
+browser job failed after 28 minutes. Its retained report contains 124 failed
+cases: 114 route cases attempted to focus a theme control while the rendered
+page was the login form, eight uncertainty cases failed because the required
+owner-scoped record IDs were never provisioned, and two failures occurred in
+the operator acceptance flow (pursuit matching produced no response, and the
+blocked workflow had no approval controls).
+
+The IDP log confirms authenticated-session checks returned HTTP 401 during the
+matrix. The matrix now verifies the owner session before route navigation and
+renews it only against the validated disposable loopback target when it has
+expired or been invalidated. Its E2E TypeScript check passes; this change has
+not yet been exercised in a new browser run. The two persisted uncertainty
+fixtures are still not provisioned; their strict checks remain enabled. The
+acceptance-flow failures also remain open and must be reconciled against the
+actual blocked/review safety state, not hidden by loosening assertions. The
+run report is retained locally at
+`D:\codex-temp\hai-browser-report-38096541735` and in GitHub Actions. PR #36
+remains open; the transcript cleanup verifier still reports
+`cleanup_gate_ready=false`, so no transcript or worktree deletion was done.
+
+### October 11, 2026: local remediation and verification
+
+The pursuit-match button now uses the workflow actions' loading and
+availability predicate, and its handler continues to reject matching while a
+different action is running. A component regression test covers the loading
+case. The browser acceptance path waits for the button to become enabled and
+ends at the expected fail-closed blocked preflight: the isolated stack does
+not provision verified participants, a capable model, or required framework
+evidence, so the prior test's attempted approval and follow-on execution were
+invalid. Those prerequisites were not fabricated and no safety gate was
+relaxed.
+
+Local verification on the PR worktree passed: the five control-room compiler
+checks, E2E TypeScript check, all 175 frontend Node logic tests, all 1,331
+Angular/Karma tests, production build, and `git diff --check`. The build retains
+existing stylesheet-budget warnings in task blueprint, app shell, workflow
+engine, and pursuits. The updated browser acceptance path and renewed matrix
+session have not yet been exercised against a fresh owned-stack browser run;
+the required uncertainty-record fixtures also remain missing. Therefore the
+exact-head browser acceptance and transcript semantic crosswalk are still
+open, PR #36 remains unmerged, and the cleanup readiness gate remains false.

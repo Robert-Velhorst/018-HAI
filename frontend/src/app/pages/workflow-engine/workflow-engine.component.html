@@ -345,7 +345,7 @@
               </ng-template>
             </div>
             <div class="pursuit-match-actions">
-              <button type="button" nz-button nzType="default" data-testid="workflow-match-pursuit" (click)="matchPursuits()" [nzLoading]="matchingPursuits" [disabled]="matchingPursuits || !hasIntakeInput()">
+              <button type="button" nz-button nzType="default" data-testid="workflow-match-pursuit" (click)="matchPursuits()" [nzLoading]="matchingPursuits" [disabled]="workflowActionsDisabled() || !hasIntakeInput()">
                 <i nz-icon nzType="branches" nzTheme="outline"></i>
                 Review matches
               </button>

@@ -5,10 +5,12 @@ import { assertIsolatedAcceptanceTarget } from './support/isolated-stack';
  * Real operator acceptance path:
  *
  * login -> local source registration -> bounded sync -> governed workflow
- * intake -> exact runtime selection -> one bounded, read-only workflow run.
+ * intake -> exact runtime selection -> fail-closed execution preflight.
  *
  * The source is the owner-scoped, read-only connected-sources mount. This test
  * never authorizes an external provider or requests an irreversible action.
+ * The isolated stack has no verified model/participant/framework evidence, so
+ * this acceptance path must stop at the expected blocked preflight.
  */
 
 const email = process.env.E2E_OPERATOR_EMAIL || 'operator@example.com';
@@ -158,7 +160,9 @@ test.describe('HAI operator acceptance flow', () => {
           && response.request().method() === 'POST',
         { timeout: 30_000 },
       );
-      await page.getByTestId('workflow-match-pursuit').click();
+      const matchButton = page.getByTestId('workflow-match-pursuit');
+      await expect(matchButton).toBeEnabled();
+      await matchButton.click();
       const matches = await (await matchResponse).json() as Array<{ pursuit?: { title?: string } }>;
       expect(matches.some((match) => match.pursuit?.title === pursuitName)).toBeTruthy();
       const pursuitMatch = page.locator('.pursuit-match-card').filter({ hasText: pursuitName });
@@ -190,7 +194,7 @@ test.describe('HAI operator acceptance flow', () => {
       await expect(page.getByTestId('workflow-selected-state')).toHaveText('ready');
     });
 
-    await test.step('block execution until runtime and governance prerequisites are verified', async () => {
+    await test.step('preserve the fail-closed block until runtime and governance prerequisites are verified', async () => {
       const exactRun = page.getByTestId('workflow-run-selected');
       await expect(exactRun).toBeVisible();
       await exactRun.click();
@@ -214,38 +218,8 @@ test.describe('HAI operator acceptance flow', () => {
       expect(result.message).toContain('framework evidence preconditions were not verified before execution');
       expect(result.message).toContain('no execution result was produced');
       await expect(page.getByTestId('workflow-selected-state')).toHaveText('blocked');
-      await expect(page.getByTestId('workflow-approval-controls')).toBeVisible();
-      const approvalResponse = page.waitForResponse((response) =>
-        response.request().method() === 'POST'
-        && new URL(response.url()).pathname === `/api/v1/workflow/${result.workflowId}/approval`);
-      await page.getByTestId('workflow-approve').click();
-      const approved = await approvalResponse;
-      expect(approved.ok(), await approved.text()).toBeTruthy();
-      const approvedRecord = await approved.json();
-      expect(approvedRecord.item.id).toBe(result.workflowId);
-      expect(approvedRecord.item.approvalStatus).toBe('approved');
       await expect(page.getByTestId('workflow-approval-controls')).toHaveCount(0);
-      await expect(page.getByTestId('workflow-selected-state')).toHaveText('ready');
-    });
-
-    await test.step('run only the selected owner-approved workflow', async () => {
-      await page.getByTestId('workflow-run-selected').click();
-      const confirmation = page.getByRole('dialog');
-      await expect(confirmation.getByText('Run this selected workflow?')).toBeVisible();
-      const runResponse = page.waitForResponse((response) =>
-        response.request().method() === 'POST'
-        && /\/api\/v1\/workflow\/[^/]+\/run$/.test(new URL(response.url()).pathname));
-      await confirmation.getByRole('button', { name: 'Run this workflow', exact: true }).click();
-      const response = await runResponse;
-      expect(response.ok(), await response.text()).toBeTruthy();
-      const result = await response.json();
-      const resultContext = JSON.stringify(result, null, 2);
-      expect(result.status, resultContext).toBe('completed');
-      expect(result.state, resultContext).toBe('completed');
-      await expect(page.getByText(/workflow completed/i).first()).toBeVisible();
-      await expect(page.getByText(/last operation/i).first()).toBeVisible();
-      await expect(page.getByTestId('workflow-selected-state')).toHaveText('completed');
-      await expect(page.getByTestId('workflow-selected-verification')).not.toHaveText('-');
+      await expect(page.getByTestId('workflow-run-selected-controls')).toHaveCount(0);
     });
   });
 });
