@@ -1602,6 +1602,39 @@ transcripts and their possible earlier patch events have not been semantically
 reconciled. The existing automated gate therefore cannot authorize removal
 from either supplemental folder; no local HAI files were deleted.
 
+### October 11, 2026: current PR and local snapshot reconciliation
+
+The current PR #36 head is `f9012189f4b4ce95ef4a6823ca8ad8a7702d9a5b` on
+`codex/hai-runtime-release`; it remains open and unmerged. At the time of this
+checkpoint, 35 of 36 GitHub checks had succeeded, no completed check had failed,
+and the owned disposable-stack browser acceptance check was still running. Do
+not treat this as a completed CI gate.
+
+The local `D:\codex-temp\hai-integration-snapshot` checkout is based on
+`91c8620c557229f1da4ed15fcbb7088c6a6947a7`, the current `main` base, and has
+1,790 staged paths plus 19 unstaged paths. Git-filter-aware blob comparison
+found 1,674 staged versions byte-identical to the PR working tree and 116
+different; this is a source-state comparison, not evidence that every
+historical file or transcript has been semantically integrated. Review of
+representative authorization, approval, source, and Windows recovery changes
+found snapshot variants that remove or weaken protections present in the PR,
+including approval revision binding, source connector behavior, fail-closed
+runtime checks, and installer/recovery isolation. Those variants were not
+copied. The snapshot's two focused scanner-related changes are already present
+in the current PR: a per-run CI-only approval signing fixture and a synthetic
+privacy-scanner token assembled at runtime.
+
+The snapshot's uncommitted October 10 archive analysis reports 542 deduplicated
+nontrivial completion texts across six retained July 30 histories; this is not
+542 verified distinct tasks. Their semantic crosswalk to reports, source
+changes, and accepted tests remains incomplete. The original 18-file archive
+(20,739,169,122 bytes), the supplemental six retained histories, and the local
+snapshot/worktrees remain preserved. A generated `frontend/node_modules` cache
+in the active PR worktree was removed in a separate cleanup pass after path
+and link checks (280,611,707 bytes); it is reproducible with `npm ci`. No
+transcript, patch, environment file, runtime database, or worktree was deleted
+as part of this reconciliation.
+
 ### October 11, 2026: captured branch-only feature review
 
 Compared the three captured inventory branches with unique commits against
