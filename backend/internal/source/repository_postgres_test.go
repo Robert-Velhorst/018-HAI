@@ -35,10 +35,25 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 		CREATE TEMP TABLE source_extractions (
 			id uuid PRIMARY KEY,
 			source_id uuid NOT NULL,
-			project_key varchar(255),
-			summary text,
+			raw_item_id uuid DEFAULT '00000000-0000-0000-0000-000000000000',
+			project_key varchar(255) DEFAULT '',
+			content_type varchar(80) DEFAULT '',
+			text text DEFAULT '',
+			summary text DEFAULT '',
+			entities text DEFAULT '',
+			dates text DEFAULT '',
+			tasks text DEFAULT '',
+			decisions text DEFAULT '',
+			follow_ups text DEFAULT '',
+			source_uri varchar(1024) DEFAULT '',
+			source_label varchar(512) DEFAULT '',
+			content_hash varchar(64) DEFAULT '',
+			sensitive boolean DEFAULT false,
+			uncertain boolean DEFAULT false,
 			archived boolean DEFAULT false,
-			updated_at timestamptz
+			last_indexed_at timestamptz,
+			created_at timestamptz NOT NULL DEFAULT now(),
+			updated_at timestamptz NOT NULL DEFAULT now()
 		) ON COMMIT DROP
 	`).Error; err != nil {
 		t.Fatalf("create temporary source tables: %v", err)

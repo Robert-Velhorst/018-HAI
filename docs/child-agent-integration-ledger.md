@@ -2274,3 +2274,8 @@ boundary while retaining SQL pagination. A new exact-head CI run is required
 before claiming verification. The existing real-Postgres CI job did not run
 this DSN-gated repository test, so it now explicitly runs and requires that
 test's pass marker before executing the other connected-source regressions.
+The first explicit run exposed an incomplete temporary table fixture: an
+existing full-record owner lookup needed the model's `raw_item_id` and other
+columns not used by the paged query. The fixture now declares the complete
+extraction model schema; rerun the exact Postgres job before treating the SQL
+test as passed.
