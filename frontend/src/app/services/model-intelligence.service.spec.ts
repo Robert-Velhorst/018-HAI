@@ -1,13 +1,14 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing'
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { ModelIntelligenceService } from './model-intelligence.service'
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('ModelIntelligenceService', () => {
   let service: ModelIntelligenceService
   let http: HttpTestingController
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [HttpClientTestingModule] })
+    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] })
     service = TestBed.inject(ModelIntelligenceService)
     http = TestBed.inject(HttpTestingController)
   })

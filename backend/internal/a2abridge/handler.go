@@ -60,8 +60,12 @@ func (h *Handler) Send(c *gin.Context) {
 		writeRPCError(c, nil, -32600, "invalid JSON-RPC request")
 		return
 	}
-	if request.JSONRPC != "2.0" || !validJSONRPCID(request.ID) {
-		writeRPCError(c, request.ID, -32600, "JSON-RPC 2.0 request id is required")
+	// Invalid request IDs are not safe to reflect into an error response.
+	if request.JSONRPC != "2.0" || !validRequestID(request.ID) || !validJSONRPCID(request.ID) {
+		// An invalid JSON-RPC id cannot safely be echoed in an error response.
+		// Use null as required for an invalid request rather than reflecting an
+		// object or array supplied by an untrusted peer.
+		writeRPCError(c, nil, -32600, "JSON-RPC 2.0 request id is required")
 		return
 	}
 	if strings.TrimSpace(c.GetHeader("A2A-Version")) != a2aVersion {
@@ -231,6 +235,30 @@ func acceptsJSON(contentType string) bool {
 func validMessageID(value string) bool {
 	value = strings.TrimSpace(value)
 	return value != "" && utf8.RuneCountInString(value) <= 255 && !strings.ContainsAny(value, "\r\n")
+}
+
+func validRequestID(raw json.RawMessage) bool {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
+	if len(raw) == 0 || string(raw) == "null" || len(raw) > 255 {
+		return false
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return false
+	}
+	switch value := value.(type) {
+	case string:
+		return strings.TrimSpace(value) != "" && utf8.RuneCountInString(value) <= 128 && !strings.ContainsAny(value, "\r\n")
+	case json.Number:
+		return strings.TrimSpace(value.String()) != ""
+	default:
+		return false
+	}
 }
 
 func bearerToken(header string) string {

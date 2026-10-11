@@ -61,6 +61,8 @@ export class TaskBlueprintComponent implements OnInit {
   lastCommand?: IAssistantCommandResult;
   logs: ITaskPlanHistoryItem[] = [];
   reviewQueue: IReviewQueueItem[] = [];
+  logsUnavailable = false;
+  reviewQueueUnavailable = false;
   loading = false;
   running = false;
   cycling = false;
@@ -386,15 +388,21 @@ export class TaskBlueprintComponent implements OnInit {
 
   loadLogs(): void {
     this.taskPlanService.logs().pipe(timeout(this.loadTimeoutMs)).subscribe({
-      next: (logs) => (this.logs = logs || []),
-      error: () => (this.logs = []),
+      next: (logs) => {
+        this.logs = logs || [];
+        this.logsUnavailable = false;
+      },
+      error: () => (this.logsUnavailable = true),
     });
   }
 
   loadReviewQueue(): void {
     this.taskPlanService.reviewQueue().pipe(timeout(this.loadTimeoutMs)).subscribe({
-      next: (items) => (this.reviewQueue = items || []),
-      error: () => (this.reviewQueue = []),
+      next: (items) => {
+        this.reviewQueue = items || [];
+        this.reviewQueueUnavailable = false;
+      },
+      error: () => (this.reviewQueueUnavailable = true),
     });
   }
 

@@ -196,7 +196,26 @@
         </section>
       </details>
 
-      <section class="quiet-dashboard" *ngIf="!hasLiveWork()">
+      <section class="dashboard-unavailable" *ngIf="hasDashboardLoadError()" role="status" aria-live="polite">
+        <i nz-icon nzType="warning" nzTheme="outline"></i>
+        <div>
+          <h2>Dashboard data is incomplete</h2>
+          <p>{{ dashboardLoadErrors.join(', ') }} could not be loaded. HAI cannot confirm that there is no work waiting.</p>
+        </div>
+        <button
+          type="button"
+          nz-button
+          nzType="default"
+          data-testid="dashboard-unavailable-refresh"
+          title="Retry the unavailable dashboard requests"
+          (click)="refresh()"
+          [nzLoading]="loading"
+        >
+          Retry
+        </button>
+      </section>
+
+      <section class="quiet-dashboard" *ngIf="!hasLiveWork() && !hasDashboardLoadError()">
         <div class="quiet-dashboard__icon">
           <i nz-icon nzType="check-circle" nzTheme="outline"></i>
         </div>
@@ -650,6 +669,24 @@
           </div>
         </div>
 
+        <section class="dashboard-unavailable" *ngIf="hasDiagnosticsLoadError()" role="status" aria-live="polite">
+          <i nz-icon nzType="warning" nzTheme="outline"></i>
+          <div>
+            <h2>Technical diagnostics are incomplete</h2>
+            <p>{{ diagnosticsLoadErrors.join(', ') }} could not be loaded. HAI cannot confirm that these controls are clear.</p>
+          </div>
+          <button
+            type="button"
+            nz-button
+            nzType="default"
+            data-testid="diagnostics-unavailable-refresh"
+            (click)="loadDiagnosticsData(true)"
+            [nzLoading]="diagnosticsListLoading"
+          >
+            Retry
+          </button>
+        </section>
+
         <div class="health-strip" *ngIf="summary as health">
           <span><strong>{{ health.total }}</strong> registered</span>
           <span class="healthy"><strong>{{ health.healthy }}</strong> healthy</span>
@@ -773,7 +810,7 @@
           </article>
         </div>
 
-        <div class="empty-state compact" *ngIf="!diagnosticsListLoading && !automations.length">
+        <div class="empty-state compact" *ngIf="!diagnosticsListLoading && !automations.length && !hasDiagnosticsLoadError()">
           <i nz-icon nzType="tool" nzTheme="outline"></i>
           <div>
             <strong>No automations registered</strong>

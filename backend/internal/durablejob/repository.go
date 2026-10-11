@@ -24,11 +24,19 @@ type Repository interface {
 	// EnqueueIfNoActive atomically creates a job only when no pending or
 	// running job of the same kind exists.
 	EnqueueIfNoActive(job *models.DurableJob) (bool, error)
+	// EnqueueIfNoActiveMatchingPayload atomically creates a job only when no
+	// pending or running job has the same queue, kind, and payload. It keeps
+	// independent source jobs concurrent while preventing a periodic scanner
+	// from repeatedly queuing the same source during a slow retry.
+	EnqueueIfNoActiveMatchingPayload(job *models.DurableJob) (bool, error)
 	// ClaimDue atomically leases up to limit jobs that are due at now.
 	ClaimDue(workerID, queue string, now time.Time, limit int) ([]models.DurableJob, error)
 	MarkSucceeded(id uuid.UUID, workerID string, leaseGeneration int64, now time.Time) (bool, error)
 	// MarkForRetry returns a job to pending with a future RunAt.
 	MarkForRetry(id uuid.UUID, workerID string, leaseGeneration int64, runAt time.Time, attempts int, lastErr string) (bool, error)
+	// MarkDeferred returns a deliberately paused job to pending without
+	// incrementing attempts. Policy gates use it to preserve work for resume.
+	MarkDeferred(id uuid.UUID, workerID string, leaseGeneration int64, runAt time.Time, reason string) (bool, error)
 	MarkDead(id uuid.UUID, workerID string, leaseGeneration int64, now time.Time, attempts int, lastErr string) (bool, error)
 	// ExtendLease heartbeats a running job only while the caller still owns its
 	// current lease generation.
@@ -82,20 +90,35 @@ func normalizeJob(job *models.DurableJob) {
 }
 
 func (r *gormRepository) EnqueueIfNoActive(job *models.DurableJob) (bool, error) {
+	return r.enqueueIfNoActive(job, false)
+}
+
+func (r *gormRepository) EnqueueIfNoActiveMatchingPayload(job *models.DurableJob) (bool, error) {
+	return r.enqueueIfNoActive(job, true)
+}
+
+func (r *gormRepository) enqueueIfNoActive(job *models.DurableJob, matchPayload bool) (bool, error) {
 	normalizeJob(job)
 	created := false
 	err := r.db.Transaction(func(tx *gorm.DB) error {
-		// Serialize singleton creation per queue and kind without holding a
-		// table lock. PostgreSQL text values cannot contain NUL bytes, so use a
-		// fixed-width digest instead of the in-memory composite-key separator.
-		lockKey := fmt.Sprintf("%x", sha256.Sum256([]byte(job.Queue+"\x00"+job.Kind)))
+		// Serialize active-job creation without holding a table lock. PostgreSQL
+		// text values cannot contain NUL bytes, so use a fixed-width digest
+		// instead of an in-memory composite-key separator.
+		lockMaterial := job.Queue + "\x00" + job.Kind
+		if matchPayload {
+			lockMaterial += "\x00" + job.Payload
+		}
+		lockKey := fmt.Sprintf("%x", sha256.Sum256([]byte(lockMaterial)))
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
 			return err
 		}
+		query := tx.Model(&models.DurableJob{}).
+			Where("queue = ? AND kind = ? AND status IN ?", job.Queue, job.Kind, []string{models.DurableJobPending, models.DurableJobRunning})
+		if matchPayload {
+			query = query.Where("payload = ?", job.Payload)
+		}
 		var count int64
-		if err := tx.Model(&models.DurableJob{}).
-			Where("queue = ? AND kind = ? AND status IN ?", job.Queue, job.Kind, []string{models.DurableJobPending, models.DurableJobRunning}).
-			Count(&count).Error; err != nil {
+		if err := query.Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
@@ -171,6 +194,17 @@ func (r *gormRepository) MarkForRetry(id uuid.UUID, workerID string, leaseGenera
 		"run_at":     runAt,
 		"attempts":   attempts,
 		"last_error": lastErr,
+		"locked_by":  "",
+		"locked_at":  nil,
+	})
+	return result.RowsAffected == 1, result.Error
+}
+
+func (r *gormRepository) MarkDeferred(id uuid.UUID, workerID string, leaseGeneration int64, runAt time.Time, reason string) (bool, error) {
+	result := r.ownedLease(id, workerID, leaseGeneration).Updates(map[string]any{
+		"status":     models.DurableJobPending,
+		"run_at":     runAt,
+		"last_error": reason,
 		"locked_by":  "",
 		"locked_at":  nil,
 	})

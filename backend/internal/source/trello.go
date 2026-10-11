@@ -230,7 +230,14 @@ func fetchTrelloSource(ctx context.Context, source *models.ConnectedSource) ([]I
 func trelloImportItem(card trelloCard, boardName, listName, projectKey string) ImportItem {
 	list := firstNonEmpty(strings.TrimSpace(listName), "(unknown list)")
 	labels := trelloLabelNames(card.Labels)
-	provenance := firstNonEmpty(strings.TrimSpace(card.ShortURL), strings.TrimSpace(card.URL))
+	// Trello normally returns shortUrl, but provenance is mandatory for every
+	// imported source item. Keep a canonical card link even when a partial API
+	// response omits both URL fields.
+	provenance := firstNonEmpty(
+		strings.TrimSpace(card.ShortURL),
+		strings.TrimSpace(card.URL),
+		"https://trello.com/c/"+url.PathEscape(strings.TrimSpace(card.ID)),
+	)
 	lines := []string{
 		"Trello card: " + card.Name,
 		"Board: " + boardName,

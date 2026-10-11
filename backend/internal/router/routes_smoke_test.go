@@ -6,16 +6,39 @@ import (
 	"strings"
 	"testing"
 
+	"automation-hub-backend/internal/autonomypolicy"
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/mcppreflight"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/planningoptimizer"
+	"automation-hub-backend/internal/safety"
 	"automation-hub-backend/internal/serena"
 
 	"github.com/gin-gonic/gin"
 )
 
 type optimizerRouteRepository struct{}
+
+func TestBackgroundProcessingGateRequiresClearEmergencyStopAndRunnableMode(t *testing.T) {
+	restoreClear := safety.SetEmergencyStopProvider(safety.EmergencyStopProviderFunc(func() (bool, string, error) {
+		return false, "", nil
+	}))
+	defer restoreClear()
+	if !backgroundProcessingAllowed(autonomypolicy.ModeAutonomousSafe) {
+		t.Fatal("autonomous-safe mode with a clear stop should allow background processing")
+	}
+	if backgroundProcessingAllowed(autonomypolicy.ModePaused) {
+		t.Fatal("paused mode must block background processing")
+	}
+
+	restoreStopped := safety.SetEmergencyStopProvider(safety.EmergencyStopProviderFunc(func() (bool, string, error) {
+		return true, "operator stop", nil
+	}))
+	defer restoreStopped()
+	if backgroundProcessingAllowed(autonomypolicy.ModeAutonomousSafe) {
+		t.Fatal("an active persisted emergency stop must block background processing")
+	}
+}
 
 func (optimizerRouteRepository) Create(run *models.OptimizationProposalRun) (*models.OptimizationProposalRun, error) {
 	return run, nil

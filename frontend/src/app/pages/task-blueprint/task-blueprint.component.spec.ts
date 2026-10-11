@@ -1,6 +1,6 @@
 import { FormBuilder } from '@angular/forms';
 import { ActivatedRoute, Router, convertToParamMap } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { NzModalService } from 'ng-zorro-antd/modal';
 import { TaskBlueprintComponent } from './task-blueprint.component';
@@ -432,5 +432,21 @@ describe('TaskBlueprintComponent pursuit context', () => {
 
     expect(component.mcpToolCallArguments(call)).toBe('no arguments');
     expect(component.mcpToolCallResultLabel(call)).toBe('query is required');
+  });
+
+  it('preserves plan history and approval decisions when their refresh fails', () => {
+    const { component, taskPlans } = createComponent();
+    component.logs = [{ id: 'plan-1' } as any];
+    component.reviewQueue = [{ id: 'review-1' } as any];
+    taskPlans.logs.and.returnValue(throwError(() => new Error('history unavailable')));
+    taskPlans.reviewQueue.and.returnValue(throwError(() => new Error('queue unavailable')));
+
+    component.loadLogs();
+    component.loadReviewQueue();
+
+    expect(component.logs.map((plan) => plan.id)).toEqual(['plan-1']);
+    expect(component.reviewQueue.map((item) => item.id)).toEqual(['review-1']);
+    expect(component.logsUnavailable).toBeTrue();
+    expect(component.reviewQueueUnavailable).toBeTrue();
   });
 });

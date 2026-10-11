@@ -35,7 +35,7 @@ func NewUserService(repo irepository.UserRepository, logger iservice.Logger, has
 }
 
 func GetDefaultUserService() (UserService, error) {
-	logger, err := services.NewKafkaLogger(config.KafkaConfig.BrokersAddr, config.KafkaConfig.LoggerTopic)
+	logger, err := services.DefaultLogger()
 	if err != nil {
 		return nil, err
 	}

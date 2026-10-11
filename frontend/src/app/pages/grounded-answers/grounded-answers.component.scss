@@ -38,6 +38,17 @@
   width: 100%;
 }
 
+.history-unavailable {
+  align-items: center;
+  background: var(--hai-surface-muted, #f7f8fa);
+  border: 1px solid var(--hai-border, #e5e7eb);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+}
+
 .research-scope {
   color: var(--hai-text-secondary, #667085);
   margin-bottom: 12px;

@@ -22,7 +22,7 @@
         <p>Read enabled local feeds, create operations, and execute only reversible work permitted by the active policy.</p>
         <span class="bg-ops__safety"><span nz-icon nzType="safety-certificate"></span> No emails, publishing, payments, or deletions run here.</span>
       </div>
-      <button nz-button nzType="primary" [nzLoading]="running" (click)="runBackground()">
+      <button nz-button nzType="primary" [nzLoading]="running" [disabled]="!hasEnabledFeeds()" (click)="runBackground()" [title]="hasEnabledFeeds() ? 'Read enabled feeds and process governed local work' : 'Connect and enable an account feed before running a pass'">
         <span nz-icon nzType="play-circle"></span> Run pass
       </button>
     </article>
@@ -51,13 +51,18 @@
     </div>
   </section>
 
-  <section class="bg-ops__run-result" *ngIf="lastReport || lastRunError" [class.bg-ops__run-result--error]="lastRunError">
-    <span nz-icon [nzType]="lastRunError ? 'close-circle' : 'check-circle'"></span>
+  <section class="bg-ops__run-result" *ngIf="lastReport || lastRunError || lastRunNotice" [class.bg-ops__run-result--error]="lastRunError" [class.bg-ops__run-result--notice]="lastRunNotice">
+    <span nz-icon [nzType]="lastRunError ? 'close-circle' : lastRunNotice ? 'info-circle' : 'check-circle'"></span>
     <div *ngIf="lastRunError; else reportSummary">
       <strong>The background pass did not start</strong>
       <p>{{ lastRunError }}</p>
     </div>
     <ng-template #reportSummary>
+      <div *ngIf="lastRunNotice; else completedReport">
+        <strong>Connect a source before running a pass</strong>
+        <p>{{ lastRunNotice }}</p>
+      </div>
+      <ng-template #completedReport>
       <div *ngIf="lastReport as report">
         <strong>Last background pass complete</strong>
         <p>{{ report.feedsRead }} feeds checked, {{ report.operationsCreated }} operations created, {{ report.verified }} verified.</p>
@@ -65,6 +70,7 @@
           <li *ngFor="let error of report.errors">{{ error }}</li>
         </ul>
       </div>
+      </ng-template>
     </ng-template>
   </section>
 
@@ -122,10 +128,11 @@
         <span class="bg-ops__empty-icon" nz-icon nzType="inbox"></span>
         <div>
           <h3>{{ loading ? 'Loading operations' : 'Nothing needs action yet' }}</h3>
-          <p *ngIf="!loading">Connect a local source or run a pass to turn incoming information into safe, reviewable operations.</p>
+          <p *ngIf="!loading && hasEnabledFeeds()">Run a pass to turn enabled-source information into safe, reviewable operations.</p>
+          <p *ngIf="!loading && !hasEnabledFeeds()">No account feed is enabled for this engine. Connect or enable a feed before running a pass.</p>
           <p *ngIf="loading">Fetching the current decision ledger.</p>
           <div class="bg-ops__empty-actions" *ngIf="!loading">
-            <button nz-button nzType="primary" (click)="runBackground()" [nzLoading]="running">Run a safe pass</button>
+            <button nz-button nzType="primary" (click)="runBackground()" [nzLoading]="running" [disabled]="!hasEnabledFeeds()">Run a safe pass</button>
             <button nz-button (click)="openSources()">Manage sources</button>
           </div>
         </div>

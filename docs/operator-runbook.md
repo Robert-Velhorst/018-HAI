@@ -900,14 +900,16 @@ Only the latest approved preparation can be revoked. Approval evidence expires
 after 10 minutes and still grants no effect authority. Preparation or approval
 cannot create or change a Calendar event, schedule or send a notification,
 email, or other message, run a provider/runtime, execute an open-loop follow-up,
-or mutate the source workflow/checklist. No reminder worker is active. The
-existing workflow/open-loop scheduler is a separate subsystem and does not
-consume these records. Any future reminder delivery needs a separate reviewed
-authorization, effect ledger, idempotent executor, and postcondition evidence.
+or mutate the source workflow/checklist. After a separate exact owner delivery
+authorization, the workflow scheduler can record one source-bound internal
+proactivity signal and immutable delivery receipt. It cannot send a Calendar
+event, email, chat message, provider request, or follow-up. Any external
+delivery still needs its own reviewed authorization, effect ledger, idempotent
+executor, and postcondition evidence.
 
 Current retained acceptance evidence includes the migration-chain contract,
 isolated PostgreSQL `0046`+`0047` ledger test, live workflow-repository
-PostgreSQL test, full Go suite, 324 Angular tests, production build, and a
+PostgreSQL test, full Go suite, 380 Angular tests, production build, and a
 signed-in browser prepare/approve/persist/cleanup exercise. That browser run
 proves persistence and UI/API coordination only; it did not execute or test a
 reminder effect.
@@ -1009,7 +1011,7 @@ History limits are bounded; keep operator requests smaller than the maximum.
 | --- | ---: | --- |
 | `OUTCOME_MONITOR_SCHEDULER_ENABLED` | `true` | Enables the persisted `outcome-monitor.sweep` singleton. |
 | `OUTCOME_MONITOR_SWEEP_SECONDS` | `300` | 60-86400 seconds between recurring sweeps. |
-| `OUTCOME_MONITOR_POLL_SECONDS` | `15` | 1-300 seconds between durable queue polls. |
+| `OUTCOME_MONITOR_POLL_SECONDS` | `30` | 1-300 seconds between durable queue polls. The default halves idle queue wake-ups while keeping advisory recovery bounded. |
 | `OUTCOME_MONITOR_LEASE_SECONDS` | `120` | 5-1800 seconds; repository/database rules cap an active lease to one hour. |
 | `OUTCOME_MONITOR_SCOPE_LIMIT` | `50` | 1-100 due owner/workspace scopes per sweep. |
 | `OUTCOME_MONITOR_BATCH_LIMIT` | `20` | 1-100 targets claimed per scope. |
@@ -1080,7 +1082,7 @@ Relevant pre-phase migrations:
 | `pre/0043_pursuit_activity_idempotency` | Nullable deterministic audit keys for interruption-safe pursuit effect recording without rewriting history |
 | `pre/0044_workflow_completion_settlement_proofs` | Immutable verified/test-passed workflow completion attestations and receipt-bound portfolio settlement proofs |
 | `pre/0045_pursuit_portfolio_dispatch_coordination` | Immutable owner-scoped portfolio dispatch requests and append-only per-item attempt, receipt, workflow, replay, and failure evidence |
-| `pre/0046_workflow_reminder_activation_ledger` | Append-only owner-scoped internal-reminder preparation requests and chained decision evidence; no delivery job or external effect |
+| `pre/0046_workflow_reminder_activation_ledger` | Append-only owner-scoped internal-reminder preparation requests and chained decision evidence; delivery requires a separate exact owner authorization and can only record a local proactivity signal, never an external effect |
 | `pre/0047_workflow_reminder_activation_decision_order` | Strict database guard requiring every new decision timestamp to advance beyond the current request chain tip |
 | `pre/0048_proactivity_attention_feedback` | Append-only owner-scoped attention feedback bound to advisory decisions; controls later surfacing only and grants no delivery or execution authority |
 
@@ -1140,7 +1142,7 @@ See [Database Migrations And Rollback Safety](migrations.md).
 | Review resolution returns 404 | Confirm owner scope and review ID. Do not search another owner's records. |
 | Review resolution returns 409 | The revision was already resolved or changed state. Refresh before taking another action. |
 | Review is stuck `approved` | Follow the indeterminate-outcome procedure, preview reconciliation, verify the proposed disposition, then apply it. Never retry the action from the recovery path. |
-| Reminder preparation is `approved` but nothing was delivered | This is expected: approval records non-executing evidence only. Confirm `canExecute:false`; do not retry providers or Calendar. No reminder worker is active. |
+| Reminder preparation is `approved` but nothing was delivered | This is expected until a separate exact delivery authorization exists and the reminder is due. Confirm `canExecute:false`; do not retry providers or Calendar. The worker can only record an internal proactivity signal, never an external effect. |
 | A proactive item remains hidden | Inspect its latest Governance Control feedback. An active snooze or suppression intentionally controls attention only; append `resume` to restore evaluation. Never infer that hidden work was completed or externally handled. |
 | System workload is denied | Inspect the authorization receipt's redacted `systemWorkload.policyId` and request classification. Do not weaken the policy or relabel the caller. Register a reviewed exact workload contract only when a new built-in process is intentionally introduced. |
 | Runaway or uncertain execution | Enable emergency stop, preserve logs/evidence, and inspect the external target before retrying. |

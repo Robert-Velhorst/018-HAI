@@ -35,6 +35,45 @@ func NewController(dir string) *Controller {
 	return c
 }
 
+// SeedInitialState records the configured startup controls only when this is a
+// fresh state directory. Later starts always retain the operator's persisted
+// decision, even if an environment file has changed in the meantime.
+func (c *Controller) SeedInitialState(
+	mode autonomypolicy.Mode,
+	emergencyStop bool,
+	actor string,
+	now time.Time,
+) error {
+	if _, err := autonomypolicy.ParseMode(string(mode)); err != nil {
+		return err
+	}
+	if err := c.seedModeIfAbsent(mode); err != nil {
+		return err
+	}
+	return c.emergency.SeedIfAbsent(emergencyStop, actor, now)
+}
+
+func (c *Controller) seedModeIfAbsent(mode autonomypolicy.Mode) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.modeErr != nil {
+		return c.modeErr
+	}
+	if _, err := os.Stat(c.modePath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		c.modeErr = fmt.Errorf("inspect persisted autonomy mode: %w", err)
+		return c.modeErr
+	}
+	if err := c.persistMode(mode); err != nil {
+		c.modeErr = fmt.Errorf("persist initial autonomy mode: %w", err)
+		return c.modeErr
+	}
+	c.mode = mode
+	return nil
+}
+
 func (c *Controller) loadMode() {
 	data, err := os.ReadFile(c.modePath)
 	if err != nil {

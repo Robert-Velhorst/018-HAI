@@ -916,6 +916,131 @@ small {
   margin-top: 8px;
 }
 
+/* Workflow Engine follows the command-center rule: capture the next signal first,
+   then reveal the queue and operational controls when there is work to inspect. */
+app-workflow-engine .workflow-more-tools {
+  position: relative;
+}
+
+app-workflow-engine .workflow-more-tools summary {
+  align-items: center;
+  border: 1px solid var(--hai-border);
+  border-radius: 6px;
+  color: var(--hai-text);
+  cursor: pointer;
+  display: inline-flex;
+  gap: 7px;
+  list-style: none;
+  min-height: 32px;
+  padding: 0 11px;
+}
+
+app-workflow-engine .workflow-more-tools summary::-webkit-details-marker {
+  display: none;
+}
+
+app-workflow-engine .workflow-more-tools__body {
+  background: var(--hai-surface);
+  border: 1px solid var(--hai-border);
+  border-radius: 8px;
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 184px;
+  padding: 10px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 10;
+}
+
+app-workflow-engine .workflow-more-tools__body button {
+  justify-content: flex-start;
+  width: 100%;
+}
+
+app-workflow-engine .action-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+app-workflow-engine .workflow-quiet,
+app-workflow-engine .workflow-empty {
+  background: var(--hai-surface);
+  border: 1px solid var(--hai-border);
+  border-radius: 8px;
+}
+
+app-workflow-engine .workflow-quiet {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  margin: 20px 28px 0;
+  padding: 20px 22px;
+}
+
+app-workflow-engine .workflow-quiet__icon,
+app-workflow-engine .workflow-empty > i {
+  align-items: center;
+  background: var(--hai-blue-soft);
+  border-radius: 8px;
+  color: var(--hai-blue);
+  display: inline-flex;
+  font-size: 22px;
+  height: 46px;
+  justify-content: center;
+  width: 46px;
+}
+
+app-workflow-engine .workflow-quiet h2,
+app-workflow-engine .workflow-quiet p,
+app-workflow-engine .workflow-empty h2,
+app-workflow-engine .workflow-empty p {
+  margin: 0;
+}
+
+app-workflow-engine .workflow-quiet h2,
+app-workflow-engine .workflow-empty h2 {
+  color: var(--hai-text);
+  font-size: 16px;
+}
+
+app-workflow-engine .workflow-quiet p,
+app-workflow-engine .workflow-empty p {
+  color: var(--hai-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+app-workflow-engine .workflow-main.workflow-main--idle {
+  grid-template-columns: minmax(0, 920px);
+  justify-content: center;
+  padding-top: 16px;
+}
+
+app-workflow-engine .workflow-empty {
+  align-items: center;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 46px minmax(0, 1fr);
+  min-height: 104px;
+  padding: 20px 22px;
+}
+
+@media (max-width: 700px) {
+  app-workflow-engine .workflow-quiet {
+    grid-template-columns: 46px minmax(0, 1fr);
+    margin: 16px 16px 0;
+  }
+
+  app-workflow-engine .workflow-quiet button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}
+
 .reminder-focus {
   align-items: center;
   background: #f8fafc;

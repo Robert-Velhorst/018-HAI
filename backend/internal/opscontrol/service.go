@@ -50,6 +50,16 @@ func NewService(stateDir string, broker *executionbroker.Broker, ops *operations
 // Control returns the controller (implements the background worker's Control).
 func (s *Service) Control() *Controller { return s.control }
 
+// SeedInitialState applies configured controls only to an empty state
+// directory. Persisted operator choices always win on every subsequent boot.
+func (s *Service) SeedInitialState(
+	mode autonomypolicy.Mode,
+	emergencyStop bool,
+	actor string,
+) error {
+	return s.control.SeedInitialState(mode, emergencyStop, actor, s.now().UTC())
+}
+
 // SetBackgroundRunner wires the background pass used by emergency-stop
 // verification.
 func (s *Service) SetBackgroundRunner(r BackgroundRunner) { s.runner = r }

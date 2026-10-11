@@ -694,6 +694,10 @@
       </div>
 
       <nz-card nzTitle="Assistant Command History" class="full-band">
+        <div class="command-history-unavailable" *ngIf="commandLogsUnavailable" role="status">
+          <span>Command history is unavailable. Existing records are retained and HAI will not infer that no commands exist.</span>
+          <button nz-button nzType="link" type="button" (click)="loadCommandLogs()">Retry</button>
+        </div>
         <nz-table [nzData]="commandLogs" nzSize="small" [nzPageSize]="8">
           <thead>
             <tr>
@@ -718,7 +722,7 @@
             </tr>
           </tbody>
         </nz-table>
-        <nz-empty *ngIf="!commandLogs.length" nzNotFoundContent="No assistant commands yet."></nz-empty>
+        <nz-empty *ngIf="!commandLogsUnavailable && !commandLogs.length" nzNotFoundContent="No assistant commands yet."></nz-empty>
       </nz-card>
     </nz-content>
   </nz-layout>

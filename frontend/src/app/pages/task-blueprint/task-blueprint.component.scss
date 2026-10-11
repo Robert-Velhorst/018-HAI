@@ -70,6 +70,14 @@ textarea {
   letter-spacing: 0;
 }
 
+.data-unavailable {
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  margin: 0 0 12px;
+  padding: 8px 10px;
+}
+
 .candidate-context-toggle {
   align-items: flex-start;
   background: var(--panel-soft);

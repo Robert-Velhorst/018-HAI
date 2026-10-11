@@ -216,6 +216,11 @@ func (m *Module) evidencePackRepository() (EvidencePackRepository, error) {
 // registers the background runner used by emergency-stop verification.
 func (m *Module) OpsControl() *opscontrol.Service {
 	svc := opscontrol.NewService(m.cfg.StateDir, m.broker, m.svc, m.cfg.OwnerUserID, m.cfg.WorkspaceID)
+	// Environment values establish only the first persistent state. If seeding
+	// fails, Controller and EmergencyStopStore remain fail-closed and surface
+	// the persistence fault through readiness/status rather than weakening a
+	// prior operator decision.
+	_ = svc.SeedInitialState(m.cfg.Mode, m.cfg.EmergencyStop, m.cfg.OwnerUserID)
 	m.control = svc.Control()
 	m.worker.WithControl(m.control)
 	svc.SetBackgroundRunner(func(ctx context.Context) (int, error) {

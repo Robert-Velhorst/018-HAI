@@ -10,7 +10,7 @@
         Calendar are honest contracts — they show exact setup requirements and never fake OAuth or a connected status.
       </p>
     </div>
-    <button nz-button nzType="primary" (click)="syncAll()">
+    <button nz-button nzType="primary" (click)="syncAll()" [nzLoading]="syncingAll" [disabled]="syncingAll">
       <span nz-icon nzType="sync"></span> Sync all
     </button>
   </header>
@@ -30,7 +30,7 @@
           <td>{{ f.lastItemsRead }}</td>
           <td><nz-tag [nzColor]="f.feed.enabled ? 'green' : 'default'">{{ f.feed.enabled ? 'on' : 'off' }}</nz-tag></td>
           <td>
-            <button nz-button nzSize="small" [nzLoading]="syncing[f.feed.id]" (click)="sync(f)">Sync</button>
+            <button nz-button nzSize="small" [nzLoading]="syncing[f.feed.id]" [disabled]="syncing[f.feed.id]" (click)="sync(f)">Sync</button>
           </td>
         </tr>
       </tbody>

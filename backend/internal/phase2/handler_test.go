@@ -1,7 +1,9 @@
 package phase2
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,10 +12,23 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/autonomypolicy"
+	"automation-hub-backend/internal/background"
 	"automation-hub-backend/internal/operations"
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestBackgroundRunHTTPStatusIsActionable(t *testing.T) {
+	if got := backgroundRunHTTPStatus(background.ErrBusy); got != http.StatusConflict {
+		t.Fatalf("busy status = %d, want %d", got, http.StatusConflict)
+	}
+	if got := backgroundRunHTTPStatus(context.Canceled); got != http.StatusServiceUnavailable {
+		t.Fatalf("cancelled status = %d, want %d", got, http.StatusServiceUnavailable)
+	}
+	if got := backgroundRunHTTPStatus(errors.New("storage unavailable")); got != http.StatusInternalServerError {
+		t.Fatalf("unexpected failure status = %d, want %d", got, http.StatusInternalServerError)
+	}
+}
 
 const feedJSON = `[
   {"externalId":"a1","title":"Organize workspace notes","body":"Consolidate personal notes into a local file"},
