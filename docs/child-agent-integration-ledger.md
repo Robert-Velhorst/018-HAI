@@ -2182,6 +2182,28 @@ command passed all 96 tests on Node 25.2.1; the repository requests Node 24.15.0
 The hosted run was still in progress at this checkpoint. No source archive,
 worktree, database, runtime data, or diagnostic artifact was deleted.
 
+### October 11, 2026: PR #34 source/Trello safety comparison
+
+Compared the current #36 source scheduler/service/Trello implementation with
+the open #34 `codex/windows-installer` tree. The PR #34 Trello transport puts
+the API key and token in the URL query, uses a simplified request path without
+the current bounded aggregate request/page budgets and rate-limit handling,
+and its board-action optimization skips closed cards without the current
+closed/unavailable-card archival reconciliation. Current #36 uses the
+Authorization header, rejects redirects, bounds provider reads/retries, and
+retains the authoritative fallback/reconciliation path. These older changes
+are intentionally not ported; the newer current implementation is safer and
+has stronger state recovery.
+
+PR #34 also proposes converting terminal scheduler failures into review
+workflows. Its optional reporter returns no error, and its implementation
+silently exits if source lookup fails; workflow/audit persistence failures are
+recorded only best-effort. Do not treat that implementation as integrated or
+reliable terminal delivery. A durable, idempotent failure-notification/outbox
+contract remains a separate open candidate. The full #34 changed-file and
+other-branch inventories remain unfinished; this safety finding does not
+authorize branch or local artifact deletion.
+
 ### October 11, 2026: queued sync superseded by operator pause
 
 The PR #34 durable-source review exposed a retry-policy gap in the current
