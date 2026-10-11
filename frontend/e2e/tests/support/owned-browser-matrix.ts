@@ -121,7 +121,11 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
       health.consoleErrors++;
     });
     page.on('pageerror', () => health.pageErrors++);
-    page.on('requestfailed', () => {
+    page.on('requestfailed', (request) => {
+      // SPA route changes can intentionally cancel a request that is no longer
+      // relevant. Do not report Chromium's navigation-abort signal as a broken
+      // network request; genuine transport failures still fail the audit.
+      if (request.failure()?.errorText === 'net::ERR_ABORTED') return;
       health.failedRequests++;
     });
     page.on('response', (response) => {
