@@ -68,9 +68,17 @@ export class PursuitService {
   }
 
   dashboard(includePursuits: boolean = false): Observable<IPursuitDashboard> {
-    const options = includePursuits
-      ? { params: new HttpParams().set('includePursuits', 'true') }
-      : undefined;
+    return this.requestDashboard(includePursuits, 'full');
+  }
+
+  dashboardSummary(): Observable<IPursuitDashboard> {
+    return this.requestDashboard(false, 'summary');
+  }
+
+  private requestDashboard(includePursuits: boolean, view: 'full' | 'summary'): Observable<IPursuitDashboard> {
+    let params = new HttpParams().set('view', view);
+    if (includePursuits) params = params.set('includePursuits', 'true');
+    const options = { params };
     return this.http.get<IPursuitDashboard>(`${this.apiUrl}/dashboard`, options).pipe(
       map((dashboard) => this.normalizeDashboard(dashboard)),
     );

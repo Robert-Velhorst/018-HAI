@@ -19,6 +19,25 @@ describe('PursuitService project dossier', () => {
 });
 
 describe('PursuitService response normalization', () => {
+  it('requests the compact actionable dashboard projection', (done) => {
+    const http = {
+      get: jasmine.createSpy('get').and.returnValue(of({
+        counts: { active: 1 }, pursuits: [], decisionQueue: [], needsRobert: [], vaReady: [],
+        systemReady: [], blocked: [], stale: [], reviewDue: [], planningNeeded: [],
+        recentlyChanged: [], highRisk: [], completionCandidates: [],
+      })),
+    };
+    const service = new PursuitService(http as any);
+
+    service.dashboardSummary().subscribe(() => {
+      const [url, options] = http.get.calls.mostRecent().args;
+      expect(url).toBe('/api/v1/pursuits/dashboard');
+      expect(options.params.get('view')).toBe('summary');
+      expect(options.params.has('includePursuits')).toBeFalse();
+      done();
+    });
+  });
+
   it('requests already-loaded active pursuits only when a dashboard consumer needs them', (done) => {
     const http = {
       get: jasmine.createSpy('get').and.returnValue(of({

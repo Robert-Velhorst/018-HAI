@@ -187,14 +187,14 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
           return of(undefined)
         })
       ),
-      ambient: this.ambientService.overview().pipe(
+      ambient: this.ambientService.overview('summary').pipe(
         timeout(HttpTimeoutPolicy.readMs),
         catchError((error) => {
           this.recordDashboardLoadFailure('Ambient scan', error)
           return of(undefined)
         })
       ),
-      pursuits: this.pursuitService.dashboard().pipe(
+      pursuits: this.pursuitService.dashboardSummary().pipe(
         timeout(HttpTimeoutPolicy.readMs),
         catchError((error) => {
           this.recordDashboardLoadFailure('Pursuit status', error)

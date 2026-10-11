@@ -87,6 +87,11 @@ func (h *Handler) ReconcileLifeDomains(c *gin.Context) {
 }
 
 func (h *Handler) Dashboard(c *gin.Context) {
+	view := strings.ToLower(strings.TrimSpace(c.Query("view")))
+	if view != "" && view != "full" && view != "summary" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pursuit dashboard view must be full or summary"})
+		return
+	}
 	ownerIdentity := pursuitOwner(c)
 	var (
 		record *Dashboard
@@ -107,6 +112,9 @@ func (h *Handler) Dashboard(c *gin.Context) {
 	if err != nil {
 		writePursuitServiceError(c, http.StatusInternalServerError, err, "pursuit dashboard is unavailable")
 		return
+	}
+	if view == "summary" {
+		record = dashboardSummary(record)
 	}
 	c.JSON(http.StatusOK, record)
 }

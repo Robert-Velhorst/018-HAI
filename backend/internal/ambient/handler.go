@@ -16,6 +16,10 @@ type Handler struct {
 	service Service
 }
 
+type overviewSummaryService interface {
+	OverviewSummaryForOwner(ownerIdentity string) (*Overview, error)
+}
+
 func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
@@ -40,7 +44,23 @@ func (h *Handler) Overview(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for ambient access"})
 		return
 	}
-	result, err := h.service.OverviewForOwner(ownerIdentity)
+	view := strings.ToLower(strings.TrimSpace(c.Query("view")))
+	if view != "" && view != "full" && view != "summary" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ambient overview view must be full or summary"})
+		return
+	}
+	var result *Overview
+	var err error
+	if view == "summary" {
+		projector, ok := h.service.(overviewSummaryService)
+		if !ok {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ambient summary view is unavailable"})
+			return
+		}
+		result, err = projector.OverviewSummaryForOwner(ownerIdentity)
+	} else {
+		result, err = h.service.OverviewForOwner(ownerIdentity)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "ambient overview is unavailable")})
 		return

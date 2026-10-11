@@ -36,6 +36,50 @@ func TestDashboardSerializesEmptyQueuesAsArrays(t *testing.T) {
 	}
 }
 
+func TestDashboardSummaryBoundsQueuesAndPreservesActionContext(t *testing.T) {
+	full := models.Pursuit{
+		ID: uuid.New(), Title: "Review source evidence", OwnerIdentity: "alice",
+		Description: "Detail-only private context", CompletionDefinition: "Evidence is verified.",
+		SuccessCriteria: []models.PursuitSuccessCriterion{{ID: "criterion-1", Description: "Verify source"}},
+		ResourceLimits: models.PursuitResourceLimits{MaxEffortHours: 4},
+	}
+	dashboard := &Dashboard{
+		Counts: map[string]int64{"active": 2},
+		NeedsRobert: []PursuitListItem{
+			{Pursuit: full, NeedsRobert: 1, NextAction: "Review the source."},
+			{Pursuit: models.Pursuit{ID: uuid.New(), Title: "Another pursuit"}, NeedsRobert: 1},
+		},
+		DecisionQueue: []PursuitDashboardDecision{{
+			Pursuit: full,
+			Decision: PursuitDecision{
+				ID: "decision-1", WorkflowID: "workflow-1", DecisionType: "approval",
+				Status: "pending", Recommended: "Review the response.", Reason: "External effect.",
+				RiskLevel: "high", EvidenceURI: "private://evidence/1", YesLabel: "Approve",
+				NoLabel: "Reject", RequiresApproval: true, Actor: "alice",
+			},
+		}},
+	}
+
+	summary := dashboardSummary(dashboard)
+	if len(summary.NeedsRobert) != 1 || summary.NeedsRobert[0].Pursuit.ID != full.ID || summary.NeedsRobert[0].NextAction == "" {
+		t.Fatalf("summary lost the primary actionable item: %#v", summary.NeedsRobert)
+	}
+	compact := summary.NeedsRobert[0].Pursuit
+	if compact.OwnerIdentity != "" || compact.Description != "" || compact.CompletionDefinition != "" || compact.SuccessCriteria != nil || compact.ResourceLimits.MaxEffortHours != 0 {
+		t.Fatalf("summary retained detail-only pursuit fields: %#v", compact)
+	}
+	decision := summary.DecisionQueue[0].Decision
+	if decision.ID != "decision-1" || decision.Status != "pending" || decision.Recommended == "" || !decision.RequiresApproval || decision.YesLabel != "Approve" {
+		t.Fatalf("summary lost decision context: %#v", decision)
+	}
+	if decision.WorkflowID != "" || decision.EvidenceURI != "" || decision.Actor != "" {
+		t.Fatalf("summary retained decision-detail fields: %#v", decision)
+	}
+	if dashboard.NeedsRobert[0].Pursuit.OwnerIdentity != "alice" || dashboard.DecisionQueue[0].Decision.WorkflowID != "workflow-1" {
+		t.Fatal("summary mutated the full dashboard source")
+	}
+}
+
 func TestDetailSerializesEmptyConversationsAsArray(t *testing.T) {
 	service := NewService(newFakeRepo(), nil)
 	pursuit, err := service.Create(CreateRequest{Title: "Empty conversation context", OwnerIdentity: "alice"})

@@ -165,6 +165,60 @@ func TestPursuitRoutesRequireAnAuthenticatedOwner(t *testing.T) {
 	}
 }
 
+func TestDashboardSummaryKeepsActionablePreviewAndOmitsPrivateDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	service := NewService(repo, nil)
+	created, err := service.Create(CreateRequest{
+		Title:                "Compact actionable summary",
+		Description:          "Detail-only private context",
+		OwnerIdentity:        "alice",
+		CompletionDefinition: "Evidence has been reviewed.",
+		SuccessCriteria:      []models.PursuitSuccessCriterion{{ID: "criterion-1", Description: "Review evidence"}},
+		ResourceLimits:       models.PursuitResourceLimits{MaxEffortHours: 4},
+	})
+	if err != nil {
+		t.Fatalf("Create pursuit: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/pursuits/dashboard", NewHandler(service).Dashboard)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/pursuits/dashboard?view=summary", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("summary status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var dashboard Dashboard
+	if err := json.Unmarshal(response.Body.Bytes(), &dashboard); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if len(dashboard.RecentlyChanged) != 1 || dashboard.RecentlyChanged[0].Pursuit.ID != created.ID || dashboard.RecentlyChanged[0].Pursuit.Title != created.Title {
+		t.Fatalf("summary omitted actionable preview: %#v", dashboard.RecentlyChanged)
+	}
+	item := dashboard.RecentlyChanged[0].Pursuit
+	if item.OwnerIdentity != "" || item.Description != "" || item.CompletionDefinition != "" || item.SuccessCriteria != nil || item.ResourceLimits.MaxEffortHours != 0 {
+		t.Fatalf("summary retained detail-only fields: %#v", item)
+	}
+}
+
+func TestDashboardRejectsUnknownView(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/pursuits/dashboard", NewHandler(NewService(newFakeRepo(), nil)).Dashboard)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/pursuits/dashboard?view=everything", nil))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("unknown view status = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
+	}
+}
+
 func TestReconcileLifeDomainsUsesAuthenticatedOwner(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newFakeRepo()
