@@ -1,13 +1,15 @@
 package automation
 
 import (
-	"automation-hub-backend/internal/infra"
-	"automation-hub-backend/internal/models"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"automation-hub-backend/internal/events"
+	"automation-hub-backend/internal/infra"
+	"automation-hub-backend/internal/models"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -48,12 +50,25 @@ type Repository interface {
 }
 
 type GormUserRepository struct {
-	DB *gorm.DB
+	DB             *gorm.DB
+	outboxNotifier func()
 }
 
 func NewGormUserRepository(db *gorm.DB) Repository {
 	return &GormUserRepository{
 		DB: db,
+	}
+}
+
+func (r *GormUserRepository) SetOutboxNotifier(notify func()) {
+	if r != nil {
+		r.outboxNotifier = notify
+	}
+}
+
+func (r *GormUserRepository) notifyOutbox() {
+	if r != nil && r.outboxNotifier != nil {
+		r.outboxNotifier()
 	}
 }
 
@@ -82,11 +97,56 @@ func (r *GormUserRepository) Create(automation *models.Automation) (*models.Auto
 	return automation, nil
 }
 
+// CreateWithEvent commits the automation and its delivery intent together.
+func (r *GormUserRepository) CreateWithEvent(automation *models.Automation, event *events.AutomationEvent) (*models.Automation, error) {
+	if r == nil || r.DB == nil || automation == nil || event == nil || event.Type != events.CreateEvent {
+		return nil, fmt.Errorf("automation create requires storage, automation, and create event")
+	}
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(automation).Error; err != nil {
+			return err
+		}
+		event.Automation = automation
+		return events.EnqueueTx(tx, event)
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.notifyOutbox()
+	return automation, nil
+}
+
 func (r *GormUserRepository) Update(automation *models.Automation) (*models.Automation, error) {
 	err := r.DB.Save(automation).Error
 	if err != nil {
 		return nil, err
 	}
+	return automation, nil
+}
+
+// UpdateWithEvent commits the automation and its delivery intent together.
+func (r *GormUserRepository) UpdateWithEvent(automation *models.Automation, event *events.AutomationEvent) (*models.Automation, error) {
+	if r == nil || r.DB == nil || automation == nil || event == nil || event.Type != events.UpdateEvent || automation.ID == uuid.Nil {
+		return nil, fmt.Errorf("automation update requires storage, persisted automation, and update event")
+	}
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&models.Automation{}).
+			Where("id = ?", automation.ID).
+			Select("*").
+			Updates(automation)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		event.Automation = automation
+		return events.EnqueueTx(tx, event)
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.notifyOutbox()
 	return automation, nil
 }
 
@@ -149,6 +209,28 @@ func (r *GormUserRepository) Delete(id uuid.UUID) error {
 		return err
 	}
 	return nil
+}
+
+// DeleteWithEvent commits the soft delete and its delivery intent together.
+func (r *GormUserRepository) DeleteWithEvent(id uuid.UUID, automation *models.Automation, event *events.AutomationEvent) error {
+	if r == nil || r.DB == nil || id == uuid.Nil || automation == nil || automation.ID != id || event == nil || event.Type != events.DeleteEvent {
+		return fmt.Errorf("automation delete requires storage, persisted automation, and delete event")
+	}
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Delete(&models.Automation{}, id)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		event.Automation = automation
+		return events.EnqueueTx(tx, event)
+	})
+	if err == nil {
+		r.notifyOutbox()
+	}
+	return err
 }
 
 func (r *GormUserRepository) FindAll() ([]*models.Automation, error) {

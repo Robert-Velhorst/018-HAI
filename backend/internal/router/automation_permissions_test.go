@@ -1,14 +1,16 @@
 package router
 
 import (
-	"automation-hub-backend/internal/agentruntime"
-	"automation-hub-backend/internal/automation"
-	"automation-hub-backend/internal/identity"
-	"automation-hub-backend/internal/models"
 	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"automation-hub-backend/internal/agentruntime"
+	"automation-hub-backend/internal/automation"
+	"automation-hub-backend/internal/events"
+	"automation-hub-backend/internal/identity"
+	"automation-hub-backend/internal/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -61,6 +63,47 @@ func TestAutomationRoutesApplySignedRolePermissions(t *testing.T) {
 	newEngine("owner").ServeHTTP(ownerConfig, httptest.NewRequest(http.MethodPatch, "/api/v1/automation/swap/"+firstID.String()+"/"+secondID.String(), nil))
 	if ownerConfig.Code != http.StatusOK {
 		t.Fatalf("owner reorder status = %d, want %d: %s", ownerConfig.Code, http.StatusOK, ownerConfig.Body.String())
+	}
+}
+
+func TestAutomationEventDeliveryRoutesRequireVerifiedAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	newEngine := func(role string, subject string) *gin.Engine {
+		engine := gin.New()
+		v1 := engine.Group("/api/v1")
+		v1.Use(func(c *gin.Context) {
+			if subject != "" {
+				c.Set(identity.ContextSubjectKey, subject)
+			}
+			if role != "" {
+				c.Set(identity.ContextRoleKey, role)
+			}
+			c.Next()
+		})
+		initializeAutomationEventRoutes(v1, events.NewHandler(nil))
+		return engine
+	}
+
+	for _, test := range []struct {
+		name, role, subject, method string
+		want                        int
+	}{
+		{name: "anonymous read", method: http.MethodGet, want: http.StatusUnauthorized},
+		{name: "operator read", role: "operator", subject: "operator-1", method: http.MethodGet, want: http.StatusForbidden},
+		{name: "viewer retry", role: "viewer", subject: "viewer-1", method: http.MethodPost, want: http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := "/api/v1/automation/events/delivery"
+			if test.method == http.MethodPost {
+				path += "/" + uuid.NewString() + "/retry"
+			}
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(test.method, path, nil)
+			newEngine(test.role, test.subject).ServeHTTP(recorder, request)
+			if recorder.Code != test.want {
+				t.Fatalf("status = %d, want %d: %s", recorder.Code, test.want, recorder.Body.String())
+			}
+		})
 	}
 }
 

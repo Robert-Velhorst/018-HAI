@@ -189,7 +189,7 @@ func Diagnose(cfg config.Configuration) Report {
 
 	// Event bus.
 	if countNonEmpty(cfg.Brokers) == 0 {
-		add("kafka.brokers", SeverityWarn, "KAFKA_BROKERS is empty; event publishing is disabled")
+		add("kafka.brokers", SeverityWarn, "KAFKA_BROKERS is empty; automation events remain queued in the durable outbox")
 	} else {
 		add("kafka.brokers", SeverityOK, fmt.Sprintf("%d broker(s)", countNonEmpty(cfg.Brokers)))
 	}

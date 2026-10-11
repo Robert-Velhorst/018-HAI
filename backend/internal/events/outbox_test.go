@@ -67,6 +67,16 @@ func TestOutboxRetryDelayIsBounded(t *testing.T) {
 	}
 }
 
+func TestOutboxFailureMessageRedactsCredentialsAndBoundsLength(t *testing.T) {
+	message := safeOutboxFailureMessage(errors.New("broker rejected token=synthetic-secret-value"))
+	if strings.Contains(message, "synthetic-secret-value") || !strings.Contains(message, "REDACTED") {
+		t.Fatalf("outbox failure message did not redact the credential: %q", message)
+	}
+	if got := len(safeOutboxFailureMessage(errors.New(strings.Repeat("x", 1200)))); got != 1000 {
+		t.Fatalf("oversized outbox failure length = %d, want 1000", got)
+	}
+}
+
 func TestPostgresOutboxCommitDispatchAndRollback(t *testing.T) {
 	db := outboxPostgresDB(t)
 	store := NewOutboxStore(db)

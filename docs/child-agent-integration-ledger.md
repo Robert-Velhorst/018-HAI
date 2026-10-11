@@ -2425,3 +2425,29 @@ passed, all 110 tests in `scripts/test_ci_contract.py` passed, and
 `git diff --check` passed. This ports the wrapper behavior, not the ambient
 branch's full Compose topology rewrite; the remaining 133 branch-only commits
 and other divergent paths remain unreviewed.
+
+### October 11, 2026: durable automation event delivery wired into production
+
+The checked-in outbox table, dispatcher, and operator handler were not connected
+to the production automation CRUD path. Added GORM repository methods that
+commit create, update, or soft-delete mutations and their outbox event in one
+PostgreSQL transaction. The service uses those methods when available and keeps
+the existing direct-publisher fallback for other repository implementations.
+The update uses an id-bound `UPDATE` rather than GORM `Save`, so a concurrent
+delete cannot be undone by an upsert. Successful mutations wake the dispatcher;
+it runs under the API lifecycle, closes its publisher on shutdown, and is only
+started when Kafka brokers are configured. With no broker configured, events
+remain durable and visible rather than being silently dropped.
+
+Added owner-authenticated, admin-only delivery status and dead-letter retry
+routes under `/api/v1/automation/events/delivery`; a successful retry wakes the
+worker. Persisted error details pass through secret redaction and a 1,000-byte
+bound. Updated readiness and doctor messages to describe queued delivery.
+
+Verification: `go test ./internal/automation ./internal/events ./internal/router
+./internal/doctor ./internal/health` passed using the cached Go 1.27.2 image.
+The new PostgreSQL mutation/rollback integration test is present but was skipped
+locally because `HAI_TEST_DATABASE_DSN` is not configured. The earlier exact-head
+PR CI predates this change, so GitHub validation for the new commit is still
+required. This is a selective completion of the durable-event path, not a
+review of the remaining divergent branch commits or external Kafka acceptance.

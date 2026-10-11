@@ -137,8 +137,8 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 }
 
 // KafkaProbe connects to the configured brokers. Kafka being down is a
-// degradation rather than an outage: the event publisher falls back to a no-op,
-// so this is reported as a warning and does not make the service unready.
+// degradation rather than an outage: automation changes remain durable in the
+// database outbox and are delivered when the broker becomes available.
 func KafkaProbe(cfg config.Configuration) doctor.Probe {
 	brokers := nonEmpty(cfg.Brokers)
 	return doctor.Probe{
@@ -146,7 +146,7 @@ func KafkaProbe(cfg config.Configuration) doctor.Probe {
 		Critical: false,
 		Run: func(ctx context.Context) error {
 			if len(brokers) == 0 {
-				return fmt.Errorf("KAFKA_BROKERS is empty; event publishing is disabled and events are dropped")
+				return fmt.Errorf("KAFKA_BROKERS is empty; automation events remain queued until a broker is configured")
 			}
 			saramaCfg := sarama.NewConfig()
 			saramaCfg.Net.DialTimeout = DefaultTimeout

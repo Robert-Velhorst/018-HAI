@@ -809,9 +809,24 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			return fmt.Errorf("initialize durable automation approval proofs: %w", err)
 		}
 		automationRepository := automation.DefaultRepository()
+		eventPublisher := events.DefaultPublisher()
+		eventOutbox := events.NewOutboxStore(maintenanceDB)
+		eventDispatcher := events.NewOutboxDispatcher(eventOutbox, eventPublisher)
+		if notifier, ok := automationRepository.(interface{ SetOutboxNotifier(func()) }); ok {
+			notifier.SetOutboxNotifier(eventDispatcher.Notify)
+		}
+		initializeAutomationEventRoutes(v1, events.NewHandler(eventOutbox, eventDispatcher.Notify))
+		if len(config.AppConfig.Brokers) > 0 {
+			if !lifecycle.Go(runtimeCtx, "automation-event-outbox", func() {
+				defer eventPublisher.Close()
+				eventDispatcher.Run(runtimeCtx)
+			}) {
+				_ = eventPublisher.Close()
+			}
+		}
 		automationService := automation.NewServiceWithRuntimeRegistryApprovalProofsExecutionAuthorizationAndFinalEffects(
 			automationRepository,
-			*events.DefaultPublisher(),
+			eventPublisher,
 			runtimeRegistry,
 			approvalProofService,
 			executionAuthorizationService,
@@ -1486,6 +1501,13 @@ func initializeAutomationsRoutes(apiVersion *gin.RouterGroup, autoHandler *autom
 	}
 
 	return nil
+}
+
+func initializeAutomationEventRoutes(apiVersion *gin.RouterGroup, handler *events.Handler) {
+	delivery := apiVersion.Group("/automation/events/delivery")
+	delivery.Use(automation.RequireAuthenticatedOperator(), requireAuthenticatedOwner())
+	delivery.GET("", requirePermission(rbac.PermAdmin), handler.Stats)
+	delivery.POST("/:id/retry", requirePermission(rbac.PermAdmin), handler.Retry)
 }
 
 func initializeLLMRoutes(apiVersion *gin.RouterGroup, llmHandler *llm.Handler) {

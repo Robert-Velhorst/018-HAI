@@ -179,6 +179,12 @@ type automationEventPublisher interface {
 	Publish(*events.AutomationEvent) error
 }
 
+type durableAutomationEventRepository interface {
+	CreateWithEvent(*models.Automation, *events.AutomationEvent) (*models.Automation, error)
+	UpdateWithEvent(*models.Automation, *events.AutomationEvent) (*models.Automation, error)
+	DeleteWithEvent(uuid.UUID, *models.Automation, *events.AutomationEvent) error
+}
+
 func NewService(repo Repository, publisher automationEventPublisher) Service {
 	return NewServiceWithRuntimeRegistry(repo, publisher, agentruntime.DefaultRegistry())
 }
@@ -328,16 +334,24 @@ func (s *service) Create(automation *models.Automation) (*models.Automation, err
 		return nil, err
 	}
 
-	automationCreated, err := s.repo.Create(automation)
+	var automationCreated *models.Automation
+	event := &events.AutomationEvent{
+		Type:       events.CreateEvent,
+		Automation: automation,
+	}
+	if durable, ok := s.repo.(durableAutomationEventRepository); ok {
+		automationCreated, err = durable.CreateWithEvent(automation, event)
+		if err != nil {
+			return nil, err
+		}
+		return automationCreated, nil
+	}
+	automationCreated, err = s.repo.Create(automation)
 	if err != nil {
 		return nil, err
 	}
-	event := &events.AutomationEvent{
-		Type:       events.CreateEvent,
-		Automation: automationCreated,
-	}
-	err = s.publisher.Publish(event)
-	if err != nil {
+	event.Automation = automationCreated
+	if err := s.publisher.Publish(event); err != nil {
 		log.Printf("Failed to publish create event to Kafka: %v", err)
 		return nil, err
 	}
@@ -398,23 +412,30 @@ func (s *service) Update(automation *models.Automation) (*models.Automation, err
 	if errValidate := automation.Validate(); errValidate != nil {
 		return nil, errValidate
 	}
-
-	automationUpdated, err := s.repo.Update(automation)
-	if err != nil {
-		return nil, err
-	}
-	automationUpdated.OldUrlPath = oldUrlPath
+	automation.OldUrlPath = oldUrlPath
 
 	event := &events.AutomationEvent{
 		Type:       events.UpdateEvent,
-		Automation: automationUpdated,
+		Automation: automation,
 	}
-
-	err = s.publisher.Publish(event)
-	if err != nil {
-		log.Printf("Failed to publish update event to Kafka: %v", err)
-		return nil, err
+	var automationUpdated *models.Automation
+	if durable, ok := s.repo.(durableAutomationEventRepository); ok {
+		automationUpdated, err = durable.UpdateWithEvent(automation, event)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		automationUpdated, err = s.repo.Update(automation)
+		if err != nil {
+			return nil, err
+		}
+		event.Automation = automationUpdated
+		if err := s.publisher.Publish(event); err != nil {
+			log.Printf("Failed to publish update event to Kafka: %v", err)
+			return nil, err
+		}
 	}
+	automationUpdated.OldUrlPath = oldUrlPath
 
 	return automationUpdated, nil
 }
@@ -425,18 +446,17 @@ func (s *service) Delete(id uuid.UUID) error {
 		return err
 	}
 
-	err = s.repo.Delete(id)
-	if err != nil {
-		return err
-	}
-
 	event := &events.AutomationEvent{
 		Type:       events.DeleteEvent,
 		Automation: automation,
 	}
-
-	err = s.publisher.Publish(event)
-	if err != nil {
+	if durable, ok := s.repo.(durableAutomationEventRepository); ok {
+		return durable.DeleteWithEvent(id, automation, event)
+	}
+	if err := s.repo.Delete(id); err != nil {
+		return err
+	}
+	if err := s.publisher.Publish(event); err != nil {
 		log.Printf("Failed to publish delete event to Kafka: %v", err)
 		return err
 	}

@@ -480,6 +480,75 @@ func TestCreateRejectsUnsafeHostForGeneratedNginxConfig(t *testing.T) {
 	}
 }
 
+func TestCRUDUsesDurableAutomationEventsWhenRepositorySupportsThem(t *testing.T) {
+	base := newFakeAutomationRepo(nil)
+	repo := &durableEventAutomationRepo{fakeAutomationRepo: base}
+	publisher := &countingAutomationEventPublisher{}
+	service := newTestService(repo, publisher)
+
+	created, err := service.Create(&models.Automation{Name: "First Automation", Host: "backend", Port: 80})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if repo.createEvent == nil || repo.createEvent.Type != events.CreateEvent {
+		t.Fatalf("durable create event = %#v", repo.createEvent)
+	}
+
+	updated, err := service.Update(&models.Automation{
+		ID: created.ID, Name: "Updated Automation", Host: "backend", Port: 80,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if repo.updateEvent == nil || repo.updateEvent.Type != events.UpdateEvent || repo.updateEvent.Automation.OldUrlPath != created.URLPath {
+		t.Fatalf("durable update event did not preserve old path: %#v", repo.updateEvent)
+	}
+
+	if err := service.Delete(updated.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if repo.deleteEvent == nil || repo.deleteEvent.Type != events.DeleteEvent {
+		t.Fatalf("durable delete event = %#v", repo.deleteEvent)
+	}
+	if publisher.calls != 0 {
+		t.Fatalf("durable CRUD also published directly %d times", publisher.calls)
+	}
+}
+
+type durableEventAutomationRepo struct {
+	*fakeAutomationRepo
+	createEvent *events.AutomationEvent
+	updateEvent *events.AutomationEvent
+	deleteEvent *events.AutomationEvent
+}
+
+func (r *durableEventAutomationRepo) CreateWithEvent(item *models.Automation, event *events.AutomationEvent) (*models.Automation, error) {
+	if item.ID == uuid.Nil {
+		item.ID = uuid.New()
+	}
+	r.createEvent = event
+	r.automation = item
+	return item, nil
+}
+
+func (r *durableEventAutomationRepo) UpdateWithEvent(item *models.Automation, event *events.AutomationEvent) (*models.Automation, error) {
+	r.updateEvent = event
+	r.automation = item
+	return item, nil
+}
+
+func (r *durableEventAutomationRepo) DeleteWithEvent(_ uuid.UUID, _ *models.Automation, event *events.AutomationEvent) error {
+	r.deleteEvent = event
+	return nil
+}
+
+type countingAutomationEventPublisher struct{ calls int }
+
+func (p *countingAutomationEventPublisher) Publish(*events.AutomationEvent) error {
+	p.calls++
+	return nil
+}
+
 func testMultipartFileHeader(t *testing.T, fieldName, fileName string, content []byte) *multipart.FileHeader {
 	t.Helper()
 	var body bytes.Buffer
