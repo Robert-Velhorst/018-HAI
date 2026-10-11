@@ -676,6 +676,24 @@ func TestTaskStatePayloadsAndMetadataAreBounded(t *testing.T) {
 	}
 }
 
+func TestCompletionPlanSerializationNormalizesNilSuccessCriteria(t *testing.T) {
+	row, err := completionPlanToModel("alice", taskStateTestPlan("empty-criteria", "alice", time.Now().UTC()))
+	if err != nil {
+		t.Fatalf("serialize completion plan: %v", err)
+	}
+	var payload struct {
+		Intake struct {
+			SuccessCriteria json.RawMessage `json:"successCriteria"`
+		} `json:"intake"`
+	}
+	if err := json.Unmarshal([]byte(row.PayloadJSON), &payload); err != nil {
+		t.Fatalf("decode serialized completion plan: %v", err)
+	}
+	if string(payload.Intake.SuccessCriteria) != "[]" {
+		t.Fatalf("nil success criteria serialized as %s, want []", payload.Intake.SuccessCriteria)
+	}
+}
+
 func TestMemoryTaskStateRepositoryRejectsCompletionWithoutActiveApproval(t *testing.T) {
 	repo := NewMemoryTaskStateRepository()
 	item := taskStateTestReviewItem("alice", "plan", time.Now().UTC())
@@ -697,6 +715,7 @@ func taskStateTestPlan(id, owner string, createdAt time.Time) CompletionPlan {
 		CreatedAt:        createdAt,
 		Request:          "Prepare a source-grounded result",
 		RealGoal:         "Produce a verified result",
+		Intake:           IntakeAnalysis{TaskType: "general"},
 		ValidationResult: ValidationResult{Status: "not_run"},
 		CompletionStatus: "planned",
 	}

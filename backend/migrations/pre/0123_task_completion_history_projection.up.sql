@@ -55,7 +55,7 @@ BEGIN
           AND source.payload_json ->> 'request' = NEW.request_summary
           AND COALESCE(source.payload_json ->> 'projectKey', '') = NEW.project_key
           AND source.payload_json #>> '{intake,taskType}' = NEW.task_type
-          AND COALESCE(source.payload_json #> '{intake,successCriteria}', '[]'::jsonb) = NEW.success_criteria
+          AND COALESCE(NULLIF(source.payload_json #> '{intake,successCriteria}', 'null'::jsonb), '[]'::jsonb) = NEW.success_criteria
           AND source.payload_json ->> 'completionStatus' = NEW.completion_status
           AND (source.payload_json ->> 'createdAt')::timestamptz = NEW.created_at
     ) THEN
@@ -79,7 +79,7 @@ BEGIN
         NEW.id, NEW.owner_identity, NEW.task_plan_id, NEW.created_at,
         NEW.payload_json ->> 'request', COALESCE(NEW.payload_json ->> 'projectKey', ''),
         NEW.payload_json #>> '{intake,taskType}',
-        COALESCE(NEW.payload_json #> '{intake,successCriteria}', '[]'::jsonb),
+        COALESCE(NULLIF(NEW.payload_json #> '{intake,successCriteria}', 'null'::jsonb), '[]'::jsonb),
         NEW.completion_status, NEW.payload_digest
     );
     RETURN NEW;
@@ -122,7 +122,7 @@ INSERT INTO public.task_completion_plan_history (
 SELECT id, owner_identity, task_plan_id, created_at,
     payload_json ->> 'request', COALESCE(payload_json ->> 'projectKey', ''),
     payload_json #>> '{intake,taskType}',
-    COALESCE(payload_json #> '{intake,successCriteria}', '[]'::jsonb),
+    COALESCE(NULLIF(payload_json #> '{intake,successCriteria}', 'null'::jsonb), '[]'::jsonb),
     completion_status, payload_digest
 FROM public.task_completion_plan_logs
 ON CONFLICT (completion_log_id) DO NOTHING;

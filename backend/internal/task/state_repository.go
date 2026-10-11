@@ -326,6 +326,9 @@ func completionPlanToModel(ownerIdentity string, plan CompletionPlan) (models.Ta
 		return models.TaskCompletionPlanLog{}, fmt.Errorf("completion plan createdAt is required")
 	}
 	plan.CreatedAt = normalizeTaskStateTimestamp(plan.CreatedAt)
+	if plan.Intake.SuccessCriteria == nil {
+		plan.Intake.SuccessCriteria = []string{}
+	}
 	plan.OwnerIdentity = ownerIdentity
 	payload, digest, err := marshalSanitizedJSONObject(plan)
 	if err != nil {

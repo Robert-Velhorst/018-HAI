@@ -29,9 +29,12 @@ gateway, frontend, IDP, databases, Kafka, and Redis do not join them.
 
 ## Profile Matrix
 
+This matrix lists the profiles defined in `docker-compose.local.yml`. A local
+inference server installed or run separately is provider configuration, not a
+Compose profile.
+
 | Compose profile | Services | Input or dependency | Maximum per service | Capability boundary |
 | --- | --- | --- | --- | --- |
-| `local-model` | Canonical Ollama provider | One explicitly reviewed local model tag | 2 GB, 2 CPU, 256 PIDs by default | Private HAI inference only; no host port, one loaded model, one parallel request, paid cost fixed at EUR 0 |
 | `security-scanning` | Gitleaks, Gosec, Syft, Grype, Trivy | Named read-only subfolders under `./security-snapshots`; Grype also reads `./grype-db` | 512 MB-1 GB, 1-1.5 CPU, 128-192 PIDs | Aggregate/redacted scan evidence only; no fixes, source output, commits, or execution |
 | `agent-framework-planning` | Microsoft Agent Framework runner | One canonical local model endpoint/tag | 768 MB, 1 CPU, 192 PIDs | Two fixed no-tool planning roles return one review-only structured draft |
 | `crewai-planning` | CrewAI runner | One canonical local model endpoint/tag | 768 MB, 1 CPU, 192 PIDs | Two fixed no-tool planning roles return one review-only structured draft |

@@ -244,19 +244,17 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 		return db.Create(&oversizedRow).Error
 	})
 
-	badPayload := `{"unexpected":true}`
-	badDigest := sha256.Sum256([]byte(badPayload))
-	badRow := models.TaskCompletionPlanLog{
-		ID:                 uuid.New(),
-		OwnerIdentity:      owner,
-		TaskPlanID:         uuid.NewString(),
-		CompletionStatus:   "planned",
-		VerificationStatus: "not_run",
-		PayloadJSON:        badPayload,
-		PayloadDigest:      fmt.Sprintf("%x", badDigest[:]),
-		ProvenanceSource:   taskCompletionProvenance,
-		CreatedAt:          time.Now().UTC().Add(time.Minute),
+	badRow, err := completionPlanToModel(owner, taskStateTestPlan("malformed-json-plan", owner, time.Now().UTC().Add(time.Minute)))
+	if err != nil {
+		t.Fatalf("build malformed completion row: %v", err)
 	}
+	badRow.PayloadJSON = strings.TrimSuffix(badRow.PayloadJSON, "}") + `,"unexpected":true}`
+	canonicalPayload, err := canonicalTaskStateJSONObject(badRow.PayloadJSON)
+	if err != nil {
+		t.Fatalf("canonicalize malformed completion row: %v", err)
+	}
+	badDigest := sha256.Sum256(canonicalPayload)
+	badRow.PayloadDigest = fmt.Sprintf("%x", badDigest[:])
 	if err := db.Create(&badRow).Error; err != nil {
 		t.Fatalf("insert structurally malformed completion row: %v", err)
 	}
@@ -348,7 +346,12 @@ func taskStateOriginalMigrationBoundary(t *testing.T) fs.FS {
 	}
 	// Later migrations retain irreversible execution evidence; this test owns
 	// only the original task-state version boundary in its disposable database.
-	boundary := fstest.MapFS{}
+	// Include an inert paired post migration so rollback can verify that the
+	// later phase is empty without requiring the full production migration set.
+	boundary := fstest.MapFS{
+		"post/0000_empty_boundary.up.sql":   &fstest.MapFile{Data: []byte("SELECT 1;"), Mode: 0444},
+		"post/0000_empty_boundary.down.sql": &fstest.MapFile{Data: []byte("SELECT 1;"), Mode: 0444},
+	}
 	for _, path := range paths {
 		version := strings.TrimSuffix(strings.TrimSuffix(path, ".up.sql"), ".down.sql")
 		if version > "pre/0004_task_state_storage" {

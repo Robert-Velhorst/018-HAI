@@ -27,6 +27,9 @@ func TestTaskCompletionHistoryProjectionIsBoundAndAppendOnly(t *testing.T) {
 		"trg_task_completion_plan_history_no_truncate",
 		"idx_task_completion_plan_history_owner_created",
 		"insert into public.task_completion_plan_history",
+		"nullif(source.payload_json #> '{intake,successcriteria}', 'null'::jsonb)",
+		"nullif(new.payload_json #> '{intake,successcriteria}', 'null'::jsonb)",
+		"nullif(payload_json #> '{intake,successcriteria}', 'null'::jsonb)",
 	} {
 		if !strings.Contains(up, required) {
 			t.Fatalf("up migration missing %q", required)

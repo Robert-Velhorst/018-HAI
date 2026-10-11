@@ -154,8 +154,10 @@ check "emergency stop still engaged after restart" 'true' \
 echo "==> Resume re-enables processing"
 resume_authorization="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/resume/approval")"
 check "resume approval is effect-bound" 'true' \
-  "$(echo "${resume_authorization}" | jq -r '(.idempotencyKey != "") and (.taskId != "") and (.approvalSourceId | startswith("opscontrol-owner:")) and (.approvalBindingDigest | length == 64)')"
-resume_response="$(curl -sS -w $'\n%{http_code}' "${hdr[@]}" -X POST "${BASE}/background/resume" -d "${resume_authorization}")"
+  "$(echo "${resume_authorization}" | jq -r '(.reviewItemId != "") and (.approvalSourceId | startswith("opscontrol-review:")) and (.approvalBindingDigest | length == 64)')"
+resume_review_id="$(echo "${resume_authorization}" | jq -r '.reviewItemId')"
+resume_payload="$(jq -n --arg confirmation "RESUME BACKGROUND PROCESSING" --arg note "CI owner approved the exact emergency-stop revision." '{confirmation:$confirmation,note:$note}')"
+resume_response="$(curl -sS -w $'\n%{http_code}' "${hdr[@]}" -X POST "${BASE}/background/resume-approval/${resume_review_id}/approve-and-resume" -d "${resume_payload}")"
 resume_status="${resume_response##*$'\n'}"
 resume_body="${resume_response%$'\n'*}"
 if [ "${resume_status}" != "200" ]; then
