@@ -951,19 +951,21 @@ reports are in `supplemental-child-batch-audit.md`,
 retained-event reconciliation, and cleanup-tool support remain required before
 any deletion.
 
-## Supplemental archive discovery (2026-10-11)
+## Additional HAI source snapshots (2026-10-11)
 
-Two additional HAI-related folders were found outside the 18-file source root
-checked above: `D:\codex-temp\completed-agent-sessions` (3 files,
-4,651,926,405 bytes) and `D:\codex-temp\session-log-relief` (6 files,
-9,361,810,893 bytes). Their metadata links all nine files to the same HAI
-parent session; the three completed transcripts are unique and hash-verified,
-while all six aborted/nonterminal transcripts remain protected.
+The read-only cleanup inventory also found two HAI Git snapshots outside the
+primary checkout and PR worktree:
 
-The original verifier and transcript-removal script do not cover these roots.
-Therefore their cleanup readiness must not be inferred from the 18-file
-verifier, even after a future merge. The overall known archive is now 27 files
-and 34,752,906,420 bytes. The supplemental audit is in
-`supplemental-child-batch-audit.md`; a unified multi-root manifest, retained-
-event reconciliation, and cleanup-tool support remain required before any
-deletion.
+| Snapshot | Git state at inspection | Decision |
+| --- | --- | --- |
+| `D:\codex-temp\hai-integration-snapshot` | Branch `codex/hai-integration-snapshot`, HEAD `91c8620c557229f1da4ed15fcbb7088c6a6947a7`; 1,794 tracked changed paths, 1,790 staged, 19 unstaged, 0 untracked, 0 unmerged | Retain; compare its changes against the canonical PR before any cleanup. |
+| `D:\codex-temp\hai-merge-scratch-20261010` | Detached HEAD `e3843448a3e2af8a11556251af6a3861dd1a8577`; 206 tracked changed paths, 17 staged, 0 unstaged, 0 untracked, 189 unmerged | Retain; conflicted work is not reconciled. |
+
+Both snapshots contain `.env-backend`, `.env-gateway`, and `.env-idp`. The
+inventory recorded filenames only; it did not read, copy, or publish their
+contents. No source code from either snapshot has been copied into the PR.
+These counts are a point-in-time observation, not a cleanup authorization.
+The readiness script now reports both snapshots as retain-only cleanup targets
+and always sets `cleanup_authorized=false` and `deletion_performed=false` for
+them. Their individual file changes still require reconciliation before they
+can be considered redundant.

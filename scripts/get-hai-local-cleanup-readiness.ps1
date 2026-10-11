@@ -205,6 +205,64 @@ if (Test-Path -LiteralPath $secondaryWorktreePath -PathType Container) {
     }
 }
 
+$auxiliaryWorktrees = [Collections.Generic.List[object]]::new()
+$auxiliaryWorktreeDefinitions = @(
+    [pscustomobject]@{ id = 'integration_snapshot'; path = 'D:\codex-temp\hai-integration-snapshot' },
+    [pscustomobject]@{ id = 'merge_scratch'; path = 'D:\codex-temp\hai-merge-scratch-20261010' }
+)
+foreach ($definition in $auxiliaryWorktreeDefinitions) {
+    $target = [pscustomobject][ordered]@{
+        id = [string]$definition.id
+        source_path = [string]$definition.path
+        status = 'not_present'
+        repository = $null
+        branch = $null
+        head = $null
+        tracked_change_count = $null
+        staged_path_count = $null
+        unstaged_path_count = $null
+        untracked_file_count = $null
+        unmerged_path_count = $null
+        environment_file_names = @()
+        blocker = $null
+        cleanup_authorized = $false
+        deletion_performed = $false
+    }
+    if (Test-Path -LiteralPath $definition.path -PathType Container) {
+        $target.status = 'retain_unverified'
+        $target.blocker = 'Local HAI snapshot exists; preserve until every staged, unstaged, conflicted, and environment-bearing change is reconciled.'
+        if ($null -ne $git) {
+            $auxiliaryGitPrefix = @('-c', "safe.directory=$($definition.path)", '-C', $definition.path)
+            $auxiliaryOrigin = (& $git.Source @auxiliaryGitPrefix remote get-url origin 2>$null | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0 -and $auxiliaryOrigin -match '(?i)(github\.com[:/]Robert-Velhorst/018-HAI(?:\.git)?$)') {
+                $auxiliaryBranch = (& $git.Source @auxiliaryGitPrefix branch --show-current 2>$null | Out-String).Trim()
+                $auxiliaryHead = (& $git.Source @auxiliaryGitPrefix rev-parse HEAD 2>$null | Out-String).Trim().ToLowerInvariant()
+                $auxiliaryStatus = @(& $git.Source @auxiliaryGitPrefix status --porcelain=v1 --untracked-files=all 2>$null)
+                if ($LASTEXITCODE -eq 0 -and $auxiliaryHead -match '^[0-9a-f]{40}$') {
+                    $target.repository = 'Robert-Velhorst/018-HAI'
+                    $target.branch = if ([string]::IsNullOrWhiteSpace($auxiliaryBranch)) { '(detached HEAD)' } else { $auxiliaryBranch }
+                    $target.head = $auxiliaryHead
+                    $target.tracked_change_count = @($auxiliaryStatus | Where-Object { -not ([string]$_).StartsWith('??', [StringComparison]::Ordinal) }).Count
+                    $target.staged_path_count = @($auxiliaryStatus | Where-Object { ([string]$_).Length -ge 2 -and ([string]$_)[0] -match '^[AMDRC]$' }).Count
+                    $target.unstaged_path_count = @($auxiliaryStatus | Where-Object { ([string]$_).Length -ge 2 -and ([string]$_)[1] -match '^[AMDRC]$' }).Count
+                    $target.untracked_file_count = @($auxiliaryStatus | Where-Object { ([string]$_).StartsWith('??', [StringComparison]::Ordinal) }).Count
+                    $target.unmerged_path_count = @($auxiliaryStatus | Where-Object { ([string]$_).Length -ge 2 -and ([string]$_).Substring(0, 2).Contains('U') }).Count
+                    $target.environment_file_names = @(@('.env-backend', '.env-gateway', '.env-idp') | Where-Object { Test-Path -LiteralPath (Join-Path $definition.path $_) -PathType Leaf })
+                    $target.status = if ($target.unmerged_path_count -gt 0) { 'retain_conflicted' } else { 'retain_unreconciled' }
+                    $target.blocker = if ($target.environment_file_names.Count -gt 0) {
+                        'Unreconciled HAI changes and local environment files are present; preserve the checkout and never publish its environment-file contents.'
+                    } elseif ($target.unmerged_path_count -gt 0) {
+                        'Unresolved Git conflicts are present; preserve the checkout until conflicts and all worktree changes are reviewed.'
+                    } else {
+                        'Unreconciled staged, unstaged, or untracked HAI changes are present; preserve until compared with the canonical PR.'
+                    }
+                }
+            }
+        }
+    }
+    $auxiliaryWorktrees.Add($target)
+}
+
 $targets = [Collections.Generic.List[object]]::new()
 if ($temp.status -eq 'reported') {
     $candidateDirectories = @($temp.report.directories | Where-Object disposition -CEQ 'candidate_manual_cleanup')
@@ -350,6 +408,6 @@ $report = [pscustomobject][ordered]@{
         'Do not remove the active PR worktree or toolchain before PR #36 is merged and its checks pass.',
         'Do not remove retained, aborted, duplicate-ID, or nonterminal transcripts.'
     )
-    cleanup_targets = @($targets) + @($worktreeTarget, $secondaryWorktreeTarget, $toolchainTarget)
+    cleanup_targets = @($targets) + @($worktreeTarget, $secondaryWorktreeTarget) + @($auxiliaryWorktrees) + @($toolchainTarget)
 }
 $report | ConvertTo-Json -Depth 10

@@ -39,7 +39,15 @@ $required = @(
     'status = if (Test-Path -LiteralPath $sharedToolchainPath -PathType Container) { ''retain_shared'' } else { ''not_present'' }',
     "id = 'secondary_hai_checkout'",
     'Separate local HAI checkout; preserve it until its branch, changes, and relationship to the PR checkout are reconciled.',
-    'cleanup_targets = @($targets) + @($worktreeTarget, $secondaryWorktreeTarget, $toolchainTarget)'
+    "id = 'integration_snapshot'",
+    "id = 'merge_scratch'",
+    "'retain_conflicted'",
+    'unmerged_path_count = $null',
+    "'(detached HEAD)'",
+    "-match '^[AMDRC]$'",
+    "'.env-backend', '.env-gateway', '.env-idp'",
+    'environment-file contents.',
+    'cleanup_targets = @($targets) + @($worktreeTarget, $secondaryWorktreeTarget) + @($auxiliaryWorktrees) + @($toolchainTarget)'
 )
 foreach ($token in $required) {
     if (-not $scriptText.Contains($token)) { throw "Unified HAI cleanup inventory is missing contract token: $token" }
