@@ -308,6 +308,34 @@ func TestRunOnceDoesNotExposeFeedFailureSecrets(t *testing.T) {
 	}
 }
 
+func TestRunOnceStopsBeforeAnyWorkWhenContextIsCancelled(t *testing.T) {
+	w, svc, workspace := buildWorker(t, autonomypolicy.ModeAutonomousSafe, twoItemFeed)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	report, err := w.RunOnce(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunOnce() error = %v, want context cancellation", err)
+	}
+	if report.FeedsRead != 0 || report.ItemsIngested != 0 || report.OperationsCreated != 0 || report.AutoExecuted != 0 {
+		t.Fatalf("cancelled pass performed work: %#v", report)
+	}
+	operations, err := svc.List(operations.Filter{OwnerUserID: "user-1", WorkspaceID: "local"})
+	if err != nil {
+		t.Fatalf("list operations: %v", err)
+	}
+	if len(operations) != 0 {
+		t.Fatalf("cancelled pass created operations: %#v", operations)
+	}
+	entries, err := os.ReadDir(workspace)
+	if err != nil {
+		t.Fatalf("read workspace: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("cancelled pass created artifacts: %#v", entries)
+	}
+}
+
 func TestEmergencyStopProcessesNothing(t *testing.T) {
 	w, svc, _ := buildWorker(t, autonomypolicy.ModeAutonomousSafe, twoItemFeed)
 	w.opts.EmergencyStop = true

@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http'
 import { Router } from '@angular/router'
 import { Subject, of, throwError } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
@@ -7,9 +8,10 @@ import { BackgroundOperationsComponent } from './background-operations.component
 
 describe('BackgroundOperationsComponent action submission', () => {
   function createComponent(service: jasmine.SpyObj<BackgroundOperationsService>) {
-    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['success', 'error', 'warning'])
+    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['success', 'error', 'warning', 'info'])
     const router = jasmine.createSpyObj<Router>('Router', ['navigate'])
     const component = new BackgroundOperationsComponent(service, notification, router)
+    component.feeds = [{ enabled: true } as any]
     spyOn(component, 'refresh')
     return { component, notification }
   }
@@ -146,9 +148,10 @@ describe('BackgroundOperationsComponent background run recovery', () => {
     const backgroundRun = new Subject<any>()
     const service = jasmine.createSpyObj<BackgroundOperationsService>('BackgroundOperationsService', ['runBackground'])
     service.runBackground.and.returnValue(backgroundRun.asObservable())
-    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['success', 'error', 'warning'])
+    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['success', 'error', 'warning', 'info'])
     const router = jasmine.createSpyObj<Router>('Router', ['navigate'])
     const component = new BackgroundOperationsComponent(service, notification, router)
+    component.feeds = [{ enabled: true } as any]
     spyOn(component, 'refresh')
 
     component.runBackground()
@@ -158,5 +161,53 @@ describe('BackgroundOperationsComponent background run recovery', () => {
 
     backgroundRun.next({ operationsCreated: 0, verified: 0, awaitingApproval: 0 })
     backgroundRun.complete()
+  })
+})
+
+describe('BackgroundOperationsComponent', () => {
+  function make(): BackgroundOperationsComponent {
+    const service = {
+      dashboard: () => of({}),
+      list: () => of({ operations: [] }),
+      feeds: () => of({ feeds: [] }),
+      events: () => of({ events: [] }),
+    }
+    const notification = jasmine.createSpyObj('notification', ['error', 'success', 'warning', 'info'])
+    const router = jasmine.createSpyObj('router', ['navigate'])
+    return new BackgroundOperationsComponent(service as any, notification, router)
+  }
+
+  it('does not start a pass until an account feed is enabled', () => {
+    const component = make()
+
+    component.runBackground()
+
+    expect(component.lastRunNotice).toContain('No enabled account feed')
+    expect(component.lastRunError).toBe('')
+    expect(component.running).toBeFalse()
+  })
+
+  it('reports whether a configured feed can be scanned', () => {
+    const component = make()
+    component.feeds = [{ name: 'Trello', provider: 'trello', accountLabel: 'Robert', sourceType: 'trello', enabled: true }]
+
+    expect(component.hasEnabledFeeds()).toBeTrue()
+  })
+
+  it('gives an owner-permission recovery path for authorization failures', () => {
+    const component = make()
+
+    const message = component.backgroundRunError(new HttpErrorResponse({ status: 403 }))
+
+    expect(message).toContain('owner account')
+  })
+
+  it('does not present backend unavailability as an operation failure', () => {
+    const component = make()
+
+    const message = component.backgroundRunError(new HttpErrorResponse({ status: 503 }))
+
+    expect(message).toContain('temporarily unavailable')
+    expect(message).toContain('were not changed')
   })
 })

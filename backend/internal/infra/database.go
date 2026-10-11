@@ -46,6 +46,12 @@ var defaultDatabaseState struct {
 	identity databaseIdentity
 }
 
+var (
+	defaultDBMu          sync.Mutex
+	openConfiguredDB     = OpenDefaultDB
+	runDefaultMigrations = RunMigrations
+)
+
 func NewPostgresDatabase(user, password, dbName, dbHost string, dbPort int) (*gorm.DB, error) {
 	settings, err := loadPoolSettings(
 		defaultMaxOpenConnections,
@@ -121,6 +127,8 @@ func OpenDefaultDB() (*gorm.DB, error) {
 }
 
 func GetDefaultDB() (*gorm.DB, error) {
+	defaultDBMu.Lock()
+	defer defaultDBMu.Unlock()
 	identity := databaseIdentity{
 		user:     config.AppConfig.DbUser,
 		password: config.AppConfig.DbPassword,
@@ -135,13 +143,13 @@ func GetDefaultDB() (*gorm.DB, error) {
 		return defaultDatabaseState.database, nil
 	}
 
-	db, err := NewPostgresDatabase(identity.user, identity.password, identity.name, identity.host, identity.port)
+	db, err := openConfiguredDB()
 	if err != nil {
 		return nil, err
 	}
 
 	if databaseMigrationsEnabled() {
-		if err := RunMigrations(db); err != nil {
+		if err := runDefaultMigrations(db); err != nil {
 			closeDatabase(db)
 			return nil, err
 		}
@@ -154,6 +162,15 @@ func GetDefaultDB() (*gorm.DB, error) {
 	defaultDatabaseState.identity = identity
 
 	return db, nil
+}
+
+func resetDefaultDBForTest() {
+	defaultDBMu.Lock()
+	defer defaultDBMu.Unlock()
+	defaultDatabaseState.Lock()
+	defer defaultDatabaseState.Unlock()
+	defaultDatabaseState.database = nil
+	defaultDatabaseState.identity = databaseIdentity{}
 }
 
 // databaseMigrationsEnabled preserves the historical single-process behavior

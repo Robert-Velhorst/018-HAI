@@ -4,7 +4,7 @@
       <div class="header-content">
         <h1 class="header-content__title">Grounded Answers</h1>
         <div class="header-content__actions">
-          <button nz-button nzType="default" (click)="loadRuns()">
+          <button nz-button nzType="default" (click)="loadRuns()" [nzLoading]="runsLoading" [disabled]="runsLoading">
             <i nz-icon nzType="reload" nzTheme="outline"></i>
             Refresh
           </button>
@@ -322,6 +322,10 @@
       </nz-card>
 
       <nz-card nzTitle="Verification Runs" class="section-card">
+        <div *ngIf="runsUnavailable" class="history-unavailable" role="status" aria-live="polite">
+          <span>Verification history is unavailable. Showing the last confirmed records, if any.</span>
+          <button nz-button nzSize="small" nzType="default" (click)="loadRuns()" [disabled]="runsLoading">Retry</button>
+        </div>
         <nz-table [nzData]="runs" nzSize="small" [nzPageSize]="8">
           <thead>
             <tr>

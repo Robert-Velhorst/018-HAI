@@ -12,8 +12,9 @@ import (
 )
 
 type Scheduler struct {
-	service Service
-	running atomic.Bool
+	service           Service
+	backgroundAllowed func() bool
+	running           atomic.Bool
 }
 
 // StartScheduler starts ambient scanning.
@@ -22,18 +23,20 @@ type Scheduler struct {
 // durable_scheduler.go). A failed durable queue stops the scheduler by default
 // rather than silently using a non-recoverable ticker. The fallback is only
 // available when explicitly enabled for local development.
-func StartScheduler(ctx context.Context, service Service) {
+func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) {
 	policy := policyFromEnv()
 	if !policy.SchedulerEnabled {
 		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Detail: "disabled by AMBIENT_SCHEDULER_ENABLED"})
 		return
 	}
 	interval := time.Duration(policy.ScanIntervalSeconds) * time.Second
+	backgroundAllowed := schedulerBackgroundGate(allowed)
 	if interval < 30*time.Second {
 		interval = 5 * time.Minute
 	}
+	backgroundAllowed := schedulerBackgroundGate(allowed)
 	if durableSchedulerEnabled() {
-		if err := startDurableScheduler(ctx, service, interval); err != nil {
+		if err := startDurableScheduler(ctx, service, interval, backgroundAllowed); err != nil {
 			if !legacyFallbackEnabled() {
 				schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Durable: true, Detail: "durable queue unavailable: " + err.Error()})
 				log.Printf("ambient scheduler: durable queue unavailable (%v); scheduler not started; set DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED=true only for local development", err)
@@ -53,7 +56,7 @@ func StartScheduler(ctx context.Context, service Service) {
 	} else if legacyFallbackEnabled() {
 		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Running: true, Detail: "explicitly enabled legacy fallback"})
 	}
-	scheduler := &Scheduler{service: service}
+	scheduler := &Scheduler{service: service, backgroundAllowed: backgroundAllowed}
 	go scheduler.Start(ctx, interval)
 }
 
@@ -87,7 +90,7 @@ func runOnStartup() bool {
 }
 
 func (s *Scheduler) runOnce() {
-	if s.service == nil || !s.running.CompareAndSwap(false, true) {
+	if s.service == nil || (s.backgroundAllowed != nil && !s.backgroundAllowed()) || !s.running.CompareAndSwap(false, true) {
 		return
 	}
 	defer s.running.Store(false)
@@ -99,4 +102,11 @@ func (s *Scheduler) runOnce() {
 	if scan.Created > 0 || scan.Updated > 0 || scan.Advanced > 0 {
 		log.Printf("ambient scan examined=%d created=%d updated=%d deduplicated=%d advanced=%d filtered=%d skipped=%d blocked=%d", scan.ItemsExamined, scan.Created, scan.Updated, scan.Deduplicated, scan.Advanced, scan.Filtered, scan.Skipped, scan.Blocked)
 	}
+}
+
+func schedulerBackgroundGate(allowed []func() bool) func() bool {
+	if len(allowed) > 0 && allowed[0] != nil {
+		return allowed[0]
+	}
+	return func() bool { return true }
 }

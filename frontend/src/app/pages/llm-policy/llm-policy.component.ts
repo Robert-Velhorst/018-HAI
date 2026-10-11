@@ -55,6 +55,9 @@ export class LLMPolicyComponent implements OnInit {
   maintenance: ILLMModelMaintenanceResult[] = [];
   logs: ILLMRouteDecision[] = [];
   generations: ILLMGenerationResult[] = [];
+  maintenanceUnavailable = false;
+  logsUnavailable = false;
+  generationsUnavailable = false;
   decision?: ILLMRouteDecision;
   policyActions: PolicyActionCard[] = [];
   catalogGroups: TierCatalogGroup[] = [];
@@ -169,7 +172,7 @@ export class LLMPolicyComponent implements OnInit {
     });
   }
 
-  private loadModelMaintenanceHistory(force = false): void {
+  loadModelMaintenanceHistory(force = false): void {
     if (this.maintenanceHistoryLoading || (!force && this.maintenanceHistoryLoaded)) {
       return;
     }
@@ -177,11 +180,12 @@ export class LLMPolicyComponent implements OnInit {
     this.llmPolicyService.getModelMaintenanceHistory().subscribe({
       next: (records) => {
         this.maintenance = records || [];
+        this.maintenanceUnavailable = false;
         this.maintenanceHistoryLoaded = true;
         this.maintenanceHistoryLoading = false;
       },
       error: () => {
-        this.maintenance = [];
+        this.maintenanceUnavailable = true;
         this.maintenanceHistoryLoading = false;
       },
     });
@@ -266,12 +270,13 @@ export class LLMPolicyComponent implements OnInit {
     this.llmPolicyService.getLogs().subscribe({
       next: (logs) => {
         this.logs = logs;
+        this.logsUnavailable = false;
         this.logsLoaded = true;
         this.logsLoading = false;
         this.rebuildActionCards();
       },
       error: () => {
-        this.logs = [];
+        this.logsUnavailable = true;
         this.logsLoading = false;
         this.rebuildActionCards();
       },
@@ -286,12 +291,13 @@ export class LLMPolicyComponent implements OnInit {
     this.llmPolicyService.getGenerationHistory().subscribe({
       next: (records) => {
         this.generations = records || [];
+        this.generationsUnavailable = false;
         this.generationHistoryLoaded = true;
         this.generationHistoryLoading = false;
         this.rebuildActionCards();
       },
       error: () => {
-        this.generations = [];
+        this.generationsUnavailable = true;
         this.generationHistoryLoading = false;
         this.rebuildActionCards();
       },
@@ -359,11 +365,15 @@ export class LLMPolicyComponent implements OnInit {
         : 'No capable model under policy'
       : 'No route selected yet';
     const auditHistoryLoaded = this.generationHistoryLoaded || this.logsLoaded;
-    const latestLogMetric = auditHistoryLoaded
-      ? this.generations[0]
-        ? `${this.validationLabel(this.generations[0].validationStatus)} / ${this.generations[0].modelName || this.generations[0].modelId}`
-        : this.logs[0]?.selectedModelName || (this.logs.length ? 'Blocked route recorded' : 'No recent decisions')
-      : 'Open verified routing evidence';
+    const latestLogMetric = this.generationsUnavailable
+      ? 'Generation history unavailable'
+      : this.logsUnavailable
+        ? 'Routing history unavailable'
+        : auditHistoryLoaded && this.generations[0]
+      ? `${this.validationLabel(this.generations[0].validationStatus)} / ${this.generations[0].modelName || this.generations[0].modelId}`
+      : auditHistoryLoaded
+        ? this.logs[0]?.selectedModelName || (this.logs.length ? 'Blocked route recorded' : 'No recent decisions')
+        : 'Open verified routing evidence';
     this.policyActions = [
       {
         title: 'Route task',
@@ -413,7 +423,7 @@ export class LLMPolicyComponent implements OnInit {
         title: 'Review routing log',
         detail: 'Inspect recent choices and fallback paths.',
         icon: 'history',
-        metric: auditHistoryLoaded ? `${this.generations.length} outcomes` : 'on demand',
+        metric: this.generationsUnavailable ? 'Unavailable' : auditHistoryLoaded ? `${this.generations.length} outcomes` : 'on demand',
         secondaryMetric: latestLogMetric,
         context:
           'Opens the trace of selected models, skipped options, estimated cost, validation pressure, and fallback history.',

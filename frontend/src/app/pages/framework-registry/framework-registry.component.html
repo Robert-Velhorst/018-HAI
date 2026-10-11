@@ -359,6 +359,66 @@
       </div>
     </section>
 
+    <section class="progressive-section" *ngIf="isAdvanced">
+      <button
+        type="button"
+        class="progressive-section__summary"
+        id="family-taxonomy-summary"
+        [attr.aria-expanded]="sectionOpen('family-taxonomy')"
+        aria-controls="family-taxonomy-panel"
+        (click)="toggleSection('family-taxonomy')"
+      >
+        <span>
+          <strong>Framework taxonomy</strong>
+          <small>Versioned 55-family map used by HAI's selection engine</small>
+        </span>
+        <span nz-icon [nzType]="sectionOpen('family-taxonomy') ? 'up' : 'down'" aria-hidden="true"></span>
+      </button>
+      <div
+        class="progressive-section__body taxonomy-panel"
+        id="family-taxonomy-panel"
+        role="region"
+        aria-labelledby="family-taxonomy-summary"
+        *ngIf="sectionOpen('family-taxonomy')"
+      >
+        <ng-container *ngIf="familyTaxonomy as taxonomy; else taxonomyState">
+          <div class="taxonomy-panel__meta">
+            <span>Version <strong>{{ taxonomy.version }}</strong></span>
+            <span>{{ taxonomy.families.length }} numbered families</span>
+            <code [title]="taxonomy.digest">{{ shortDigest(taxonomy.digest) }}</code>
+          </div>
+          <div class="catalog-table">
+            <nz-table #taxonomyTable [nzData]="taxonomy.families" [nzFrontPagination]="false" nzSize="small">
+              <thead>
+                <tr><th>Section</th><th>Family</th><th>Framework</th><th>Risk ceiling</th></tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let family of taxonomyTable.data">
+                  <td>{{ family.section }}</td>
+                  <td>{{ humanize(family.family) }}</td>
+                  <td>
+                    <button type="button" class="framework-title" (click)="openFrameworkById(family.id)">
+                      <strong>{{ family.name }}</strong>
+                      <small>{{ family.purpose }}</small>
+                    </button>
+                  </td>
+                  <td><nz-tag [nzColor]="riskColor(family.riskCeiling)">{{ humanize(family.riskCeiling) }}</nz-tag></td>
+                </tr>
+              </tbody>
+            </nz-table>
+          </div>
+        </ng-container>
+        <ng-template #taxonomyState>
+          <div class="empty-state" role="status">
+            <span nz-icon [nzType]="familyTaxonomyLoading ? 'loading' : 'database'" aria-hidden="true"></span>
+            <strong>{{ familyTaxonomyLoading ? 'Loading taxonomy' : 'Framework taxonomy unavailable' }}</strong>
+            <p>{{ familyTaxonomyLoading ? 'Retrieving the immutable, versioned framework map.' : (loadErrors['familyTaxonomy'] || 'Open this section again to retry.') }}</p>
+            <button nz-button type="button" *ngIf="!familyTaxonomyLoading" (click)="loadFamilyTaxonomy()">Retry</button>
+          </div>
+        </ng-template>
+      </div>
+    </section>
+
     <section class="surface catalog-panel" aria-labelledby="framework-catalog-heading">
       <div class="section-heading catalog-heading">
         <div>

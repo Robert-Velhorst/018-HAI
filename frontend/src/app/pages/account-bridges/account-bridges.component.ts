@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
 import { forkJoin } from 'rxjs'
+import { finalize, timeout } from 'rxjs/operators'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
   IBridgeContract,
@@ -21,6 +22,9 @@ export class AccountBridgesComponent implements OnInit {
   loading = false
   overviewLoadError = ''
   syncing: Record<string, boolean> = {}
+  syncingAll = false
+  private readonly loadTimeoutMs = 6000
+  private readonly operationTimeoutMs = 30000
 
   constructor(
     private service: AccountBridgesService,
@@ -36,16 +40,14 @@ export class AccountBridgesComponent implements OnInit {
     this.loading = true
     this.overviewLoadError = ''
     forkJoin({
-      bridges: this.service.bridges(),
-      feeds: this.service.feeds(),
-    }).subscribe({
+      bridges: this.service.bridges().pipe(timeout(this.loadTimeoutMs)),
+      feeds: this.service.feeds().pipe(timeout(this.loadTimeoutMs)),
+    }).pipe(finalize(() => { this.loading = false })).subscribe({
       next: ({ bridges, feeds }) => {
         this.bridges = bridges.bridges ?? []
         this.feeds = feeds.feeds ?? []
-        this.loading = false
       },
       error: () => {
-        this.loading = false
         this.overviewLoadError = 'Could not load account bridges. The displayed setup and feed status may be incomplete.'
         this.notification.error('Error', 'Failed to load account bridges.')
       },
@@ -53,10 +55,15 @@ export class AccountBridgesComponent implements OnInit {
   }
 
   sync(f: IFeedHealth): void {
+    if (this.syncing[f.feed.id]) {
+      return
+    }
     this.syncing[f.feed.id] = true
-    this.service.sync(f.feed.id).subscribe({
+    this.service.sync(f.feed.id).pipe(
+      timeout(this.operationTimeoutMs),
+      finalize(() => { this.syncing[f.feed.id] = false })
+    ).subscribe({
       next: (rep) => {
-        this.syncing[f.feed.id] = false
         this.notification.success(
           'Synced',
           `${f.feed.name}: ${rep.itemsRead} read, ${rep.operationsCreated} new operations.`
@@ -64,14 +71,20 @@ export class AccountBridgesComponent implements OnInit {
         this.refresh()
       },
       error: (err) => {
-        this.syncing[f.feed.id] = false
         this.notification.error('Error', err?.error?.error ?? 'Sync failed.')
       },
     })
   }
 
   syncAll(): void {
-    this.service.syncDue().subscribe({
+    if (this.syncingAll) {
+      return
+    }
+    this.syncingAll = true
+    this.service.syncDue().pipe(
+      timeout(this.operationTimeoutMs),
+      finalize(() => { this.syncingAll = false })
+    ).subscribe({
       next: (res) => {
         const created = (res.reports ?? []).reduce((n, r) => n + r.operationsCreated, 0)
         this.notification.success('Synced all', `${created} new operations across ${res.reports?.length ?? 0} feeds.`)

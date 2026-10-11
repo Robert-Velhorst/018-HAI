@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, Inject, OnInit, ViewEncapsulation } from '@angular/core'
 import { Router } from '@angular/router'
 import { forkJoin, of } from 'rxjs'
-import { catchError, timeout } from 'rxjs/operators'
+import { catchError, finalize, timeout } from 'rxjs/operators'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { IAgentCycleRunResult } from '../../models/agent-cycle.model.interface'
 import {
@@ -81,6 +81,7 @@ interface NavigationItem {
   selector: 'app-control-center',
   templateUrl: './control-center.component.html',
   styleUrls: ['./control-center.component.scss'],
+  encapsulation: ViewEncapsulation.None,
 })
 export class ControlCenterComponent implements OnInit {
   readonly currentHour = new Date().getHours()
@@ -100,6 +101,8 @@ export class ControlCenterComponent implements OnInit {
   recentMemoriesView: IContextMemory[] = []
   commandActionsView: CommandAction[] = []
   lastAgentCycle?: IAgentCycleRunResult
+  dashboardLoadErrors: string[] = []
+  diagnosticsLoadErrors: string[] = []
 
   loading = false
   overviewLoadError = ''
@@ -113,6 +116,7 @@ export class ControlCenterComponent implements OnInit {
   archivingMemoryId = ''
   diagnosticsExpanded = false
   mobileNavigationOpen = false
+  private readonly operationTimeoutMs = 30000
   private checkingIds = new Set<string>()
   private launchingIds = new Set<string>()
 
@@ -197,6 +201,7 @@ export class ControlCenterComponent implements OnInit {
     if (this.loading) {
       return
     }
+    this.dashboardLoadErrors = []
     this.loading = true
     this.overviewLoadError = ''
     const failedLoads: string[] = []
@@ -205,6 +210,7 @@ export class ControlCenterComponent implements OnInit {
         timeout(2500),
         catchError(() => {
           failedLoads.push('workflow')
+          this.recordDashboardLoadFailure('Workflow status')
           return of(undefined)
         })
       ),
@@ -212,6 +218,7 @@ export class ControlCenterComponent implements OnInit {
         timeout(2500),
         catchError(() => {
           failedLoads.push('ambient priorities')
+          this.recordDashboardLoadFailure('Ambient scan')
           return of(undefined)
         })
       ),
@@ -219,6 +226,7 @@ export class ControlCenterComponent implements OnInit {
         timeout(1800),
         catchError(() => {
           failedLoads.push('pursuits')
+          this.recordDashboardLoadFailure('Pursuit status')
           return of(undefined)
         })
       ),
@@ -244,6 +252,16 @@ export class ControlCenterComponent implements OnInit {
         this.loading = false
       },
     })
+  }
+
+  hasDashboardLoadError(): boolean {
+    return this.dashboardLoadErrors.length > 0 || !!this.overviewLoadError
+  }
+
+  private recordDashboardLoadFailure(label: string): void {
+    if (!this.dashboardLoadErrors.includes(label)) {
+      this.dashboardLoadErrors = [...this.dashboardLoadErrors, label]
+    }
   }
 
   loadMemories(force = false): void {
@@ -281,16 +299,19 @@ export class ControlCenterComponent implements OnInit {
     this.diagnosticsListLoading = true
     this.diagnosticsLoadError = ''
     const failedLoads: string[] = []
+    this.diagnosticsLoadErrors = []
     forkJoin({
       automations: this.automationsService.getAutomations().pipe(
         catchError(() => {
           failedLoads.push('automations')
-          return of(undefined)
+          this.recordDiagnosticsLoadFailure('Automation registry')
+          return of(undefined as IAutomationModel[] | undefined)
         })
       ),
       summary: this.automationsService.getHealthSummary().pipe(
         catchError(() => {
           failedLoads.push('automation health')
+          this.recordDiagnosticsLoadFailure('Automation health')
           return of(undefined)
         })
       ),
@@ -298,6 +319,7 @@ export class ControlCenterComponent implements OnInit {
         timeout(2500),
         catchError(() => {
           failedLoads.push('runtime health')
+          this.recordDiagnosticsLoadFailure('Runtime overview')
           return of(undefined)
         })
       ),
@@ -316,6 +338,9 @@ export class ControlCenterComponent implements OnInit {
         if (failedLoads.length) {
           this.diagnosticsLoadError = `Could not load ${failedLoads.join(' or ')}. Existing diagnostic data is retained and may be incomplete.`
         }
+        this.diagnosticsLoadErrors = failedLoads.length
+          ? this.diagnosticsLoadErrors
+          : []
         this.diagnosticsLoaded = this.diagnosticsLoaded || !!result.automations || !!result.summary || !!result.runtimes
         this.diagnosticsListLoading = false
         this.rebuildViewModel()
@@ -330,9 +355,25 @@ export class ControlCenterComponent implements OnInit {
     })
   }
 
+  hasDiagnosticsLoadError(): boolean {
+    return this.diagnosticsLoadErrors.length > 0
+  }
+
+  private recordDiagnosticsLoadFailure(label: string): void {
+    if (!this.diagnosticsLoadErrors.includes(label)) {
+      this.diagnosticsLoadErrors = [...this.diagnosticsLoadErrors, label]
+    }
+  }
+
   runScan(): void {
+    if (this.scanning) {
+      return
+    }
     this.scanning = true
-    this.agentCycleService.run({ trigger: 'command-center', limit: 5 }).subscribe({
+    this.agentCycleService.run({ trigger: 'command-center', limit: 5 }).pipe(
+      timeout(this.operationTimeoutMs),
+      finalize(() => (this.scanning = false))
+    ).subscribe({
       next: (result) => {
         this.lastAgentCycle = result
         if (result.dashboard) {
@@ -344,7 +385,6 @@ export class ControlCenterComponent implements OnInit {
             scans: [result.ambientScan, ...(this.ambientOverview.scans || [])].slice(0, 10),
           }
         }
-        this.scanning = false
         this.rebuildViewModel()
         if (result.status === 'completed') {
           this.notification.success(result.executionScope === 'owner_scoped' ? 'Personal operating refresh completed' : 'Agent cycle completed', this.agentCycleSummary(result))
@@ -356,7 +396,6 @@ export class ControlCenterComponent implements OnInit {
         this.refresh()
       },
       error: (error) => {
-        this.scanning = false
         this.notification.error(
           'Agent cycle failed',
           error?.error?.error || 'The operational cycle could not complete.'
@@ -366,6 +405,9 @@ export class ControlCenterComponent implements OnInit {
   }
 
   resolveApproval(item: IWorkflowItem, approved: boolean): void {
+    if (this.resolvingId) {
+      return
+    }
     this.resolvingId = item.id
     this.workflowService
       .resolveApproval(item.id, {
@@ -375,6 +417,7 @@ export class ControlCenterComponent implements OnInit {
           : 'Rejected from the household operations dashboard.',
         actor: 'operator',
       })
+      .pipe(timeout(this.operationTimeoutMs))
       .subscribe({
         next: () => {
           this.resolvingId = ''
@@ -397,6 +440,9 @@ export class ControlCenterComponent implements OnInit {
   }
 
   snooze(item: IWorkflowItem): void {
+    if (this.resolvingId) {
+      return
+    }
     this.resolvingId = item.id
     this.workflowService
       .transition(item.id, {
@@ -404,6 +450,7 @@ export class ControlCenterComponent implements OnInit {
         message: 'Snoozed from the household operations dashboard.',
         actor: 'operator',
       })
+      .pipe(timeout(this.operationTimeoutMs))
       .subscribe({
         next: () => {
           this.resolvingId = ''
@@ -425,8 +472,9 @@ export class ControlCenterComponent implements OnInit {
 
   archiveMemory(memory: IContextMemory): void {
     if (!memory.id) return
+    if (this.archivingMemoryId) return
     this.archivingMemoryId = memory.id
-    this.memoryService.archive(memory.id).subscribe({
+    this.memoryService.archive(memory.id).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: () => {
         this.archivingMemoryId = ''
         this.memories = this.memories.filter((item) => item.id !== memory.id)
@@ -487,7 +535,7 @@ export class ControlCenterComponent implements OnInit {
   }
 
   hasLiveWork(): boolean {
-    return this.loading || this.attentionItemsView.length > 0 || this.activeItemsView.length > 0
+    return this.loading || this.hasDashboardLoadError() || this.attentionItemsView.length > 0 || this.activeItemsView.length > 0
   }
 
   private buildRecentActivity(): ActivityEntry[] {
@@ -587,8 +635,16 @@ export class ControlCenterComponent implements OnInit {
         detail: 'Register a script, service, API, or workflow target.',
         icon: 'plus',
         tone: 'blue',
-        primaryMetric: `${this.automations.length} registered`,
-        secondaryMetric: 'Opens automation registry',
+        primaryMetric: this.hasDiagnosticsLoadError()
+          ? 'Unavailable'
+          : this.diagnosticsLoaded
+          ? `${this.automations.length} registered`
+          : 'Open registry',
+        secondaryMetric: this.hasDiagnosticsLoadError()
+          ? 'Reload technical checks'
+          : this.diagnosticsLoaded
+          ? 'Automation health loaded'
+          : 'Health detail loads on demand',
         context: 'Use this when HAI needs a new controlled runtime target, health check, launch path, dependency note, or automation entry.',
         route: '/home',
       },
@@ -1087,8 +1143,9 @@ export class ControlCenterComponent implements OnInit {
   runHealthCheck(automation: IAutomationModel): void {
     if (!automation.id) return
     const id = automation.id
+    if (this.checkingIds.has(id)) return
     this.checkingIds.add(id)
-    this.automationsService.runHealthCheck(id).subscribe({
+    this.automationsService.runHealthCheck(id).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (result) => {
         this.checkingIds.delete(id)
         automation.status = result.status
@@ -1124,8 +1181,9 @@ export class ControlCenterComponent implements OnInit {
   launch(automation: IAutomationModel): void {
     if (!automation.id) return
     const id = automation.id
+    if (this.launchingIds.has(id)) return
     this.launchingIds.add(id)
-    this.automationsService.launchAutomation(id).subscribe({
+    this.automationsService.launchAutomation(id).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (result) => {
         this.launchingIds.delete(id)
         automation.lastLaunchAt = result.launchedAt
@@ -1161,7 +1219,7 @@ export class ControlCenterComponent implements OnInit {
     this.diagnosticsLoading = true
     this.diagnostics = undefined
     this.diagnosticsName = automation.name
-    this.automationsService.getDiagnostics(automation.id).subscribe({
+    this.automationsService.getDiagnostics(automation.id).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (diagnostics) => {
         this.diagnostics = diagnostics
         this.diagnosticsLoading = false

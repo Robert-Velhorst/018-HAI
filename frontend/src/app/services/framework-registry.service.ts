@@ -9,6 +9,8 @@ import {
   IConstitutionHistoryPage,
   IConstitutionSnapshot,
   FrameworkLifecycleStatus,
+  IFrameworkFamilyRecord,
+  IFrameworkFamilyTaxonomy,
   IFrameworkPreferencePatch,
   IFrameworkRegistryOverview,
   IFrameworkSelectionDecision,
@@ -51,6 +53,12 @@ export class FrameworkRegistryService {
   overview(): Observable<IFrameworkRegistryOverview> {
     return this.http.get<IFrameworkRegistryOverview>(`${this.apiUrl}/overview`).pipe(
       map((response) => this.normalizeOverview(response))
+    );
+  }
+
+  familyTaxonomy(): Observable<IFrameworkFamilyTaxonomy> {
+    return this.http.get<unknown>(`${this.apiUrl}/family-taxonomy`).pipe(
+      map((response) => this.normalizeFamilyTaxonomy(response))
     );
   }
 
@@ -320,6 +328,71 @@ export class FrameworkRegistryService {
       result.preferenceUpdatedAt = this.requireDateString(
         record,
         'preferenceUpdatedAt',
+        resource
+      );
+    }
+    return result;
+  }
+
+  private normalizeFamilyTaxonomy(value: unknown): IFrameworkFamilyTaxonomy {
+    const record = this.requireRecord(
+      this.sanitizeInbound(value),
+      'family taxonomy'
+    );
+    const families = this.requireArray(record, 'families', 'family taxonomy').map(
+      (entry, index) => this.normalizeFamilyRecord(entry, index + 1)
+    );
+    if (families.length !== 55) {
+      throw this.contractError('family taxonomy');
+    }
+    return {
+      version: this.requireString(record, 'version', 'family taxonomy'),
+      digest: this.requireDigest(record, 'digest', 'family taxonomy'),
+      families,
+    };
+  }
+
+  private normalizeFamilyRecord(value: unknown, section: number): IFrameworkFamilyRecord {
+    const resource = `family taxonomy item ${section}`;
+    const record = this.requireRecord(this.sanitizeInbound(value), resource);
+    if (this.requireInteger(record, 'section', resource, 1, 55) !== section) {
+      throw this.contractError('family taxonomy');
+    }
+    const result: IFrameworkFamilyRecord = {
+      section,
+      id: this.requireString(record, 'id', resource),
+      version: this.requireString(record, 'version', resource),
+      name: this.requireString(record, 'name', resource),
+      family: this.requireString(record, 'family', resource),
+      purpose: this.requireString(record, 'purpose', resource),
+      suitableProblemTypes: this.requireStringArray(record, 'suitableProblemTypes', resource),
+      triggerConditions: this.requireStringArray(record, 'triggerConditions', resource),
+      requiredInputs: this.requireStringArray(record, 'requiredInputs', resource),
+      producedOutputs: this.requireStringArray(record, 'producedOutputs', resource),
+      requiredAgents: this.requireStringArray(record, 'requiredAgents', resource),
+      workflowTemplate: this.requireStringArray(record, 'workflowTemplate', resource),
+      decisionRules: this.requireStringArray(record, 'decisionRules', resource),
+      safetyInvariants: this.requireStringArray(record, 'safetyInvariants', resource),
+      authorityRequirement: this.requireString(record, 'authorityRequirement', resource),
+      maximumAutonomyLevel: this.requireInteger(record, 'maximumAutonomyLevel', resource, 0, 10),
+      riskCeiling: this.requireString(record, 'riskCeiling', resource),
+      evidenceRequirements: this.requireStringArray(record, 'evidenceRequirements', resource),
+      evaluationMethod: this.requireStringArray(record, 'evaluationMethod', resource),
+      conflictsWith: this.requireStringArray(record, 'conflictsWith', resource),
+      userSpecificAdaptations: this.requireStringArray(record, 'userSpecificAdaptations', resource),
+      source: this.requireString(record, 'source', resource),
+      provenance: this.requireString(record, 'provenance', resource),
+      status: this.requireEnum<FrameworkLifecycleStatus>(
+        record,
+        'status',
+        resource,
+        ['active', 'experimental', 'deprecated']
+      ),
+    };
+    if (record['candidateImplementations'] !== undefined) {
+      result.candidateImplementations = this.requireStringArray(
+        record,
+        'candidateImplementations',
         resource
       );
     }

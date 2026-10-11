@@ -758,6 +758,25 @@
   min-width: 0;
 }
 
+.command-history-unavailable {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin: 12px 0;
+  padding: 9px 10px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.command-history-unavailable span {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 :host ::ng-deep .ant-table-content {
   max-width: 100%;
   overflow-x: auto;

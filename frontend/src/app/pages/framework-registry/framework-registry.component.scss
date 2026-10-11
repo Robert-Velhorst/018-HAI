@@ -185,6 +185,27 @@
   background: var(--hai-surface);
 }
 
+.taxonomy-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  align-items: center;
+  margin-bottom: 14px;
+  color: var(--hai-muted);
+  font-size: 12px;
+
+  strong {
+    color: var(--hai-text);
+  }
+
+  code {
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 .inline-error-list {
   margin: 6px 0 0;
   padding-left: 18px;

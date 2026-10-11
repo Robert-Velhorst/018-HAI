@@ -22,6 +22,7 @@ import {
   IConstitutionDraftRequest,
   IConstitutionHistoryEntry,
   IFrameworkModuleViewPreferences,
+  IFrameworkFamilyTaxonomy,
   IFrameworkPreferencePatch,
   IFrameworkRegistryOverview,
   IFrameworkSelectionDecision,
@@ -39,6 +40,7 @@ const DEFAULT_OPEN_SECTIONS: Record<string, boolean> = {
   'selection-history': false,
   'constitution-history': false,
   'constitution-governance': false,
+  'family-taxonomy': false,
 };
 
 interface ISelectionDraft {
@@ -108,6 +110,8 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   constitutionHistoryTruncated = false;
   constitutionSource = '';
   constitutionDraft?: IConstitution;
+  familyTaxonomy?: IFrameworkFamilyTaxonomy;
+  familyTaxonomyLoading = false;
 
   viewMode: FrameworkViewMode = 'basic';
   openSections: Record<string, boolean> = { ...DEFAULT_OPEN_SECTIONS };
@@ -131,6 +135,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   private inspectorSubscription?: Subscription;
   private refreshSubscription?: Subscription;
   private overviewSubscription?: Subscription;
+  private familyTaxonomySubscription?: Subscription;
   private readonly destroy$ = new Subject<void>();
   private readonly preferenceStateHints = new Map<string, FrameworkPreferenceState>();
 
@@ -191,6 +196,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     this.refreshSubscription?.unsubscribe();
     this.inspectorSubscription?.unsubscribe();
     this.overviewSubscription?.unsubscribe();
+    this.familyTaxonomySubscription?.unsubscribe();
     this.destroy$.next();
     this.destroy$.complete();
   }
@@ -302,6 +308,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
       selections: 'Selection history',
       constitution: 'Constitution',
       constitutionHistory: 'Constitution history',
+      familyTaxonomy: 'Framework taxonomy',
       authorization: 'Authorization',
     };
     return Object.entries(this.loadErrors).map(([key, message]) => ({
@@ -429,11 +436,40 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   toggleSection(sectionId: string): void {
+    const willOpen = !this.sectionOpen(sectionId);
     this.openSections = {
       ...this.openSections,
-      [sectionId]: !this.sectionOpen(sectionId),
+      [sectionId]: willOpen,
     };
     this.persistViewPreference();
+    if (sectionId === 'family-taxonomy' && willOpen) {
+      this.loadFamilyTaxonomy();
+    }
+  }
+
+  shortDigest(value: string): string {
+    return value.length > 16 ? `${value.slice(0, 12)}...${value.slice(-4)}` : value;
+  }
+
+  loadFamilyTaxonomy(): void {
+    if (this.familyTaxonomy || this.familyTaxonomyLoading) {
+      return;
+    }
+    this.familyTaxonomySubscription?.unsubscribe();
+    this.familyTaxonomyLoading = true;
+    delete this.loadErrors['familyTaxonomy'];
+    this.familyTaxonomySubscription = this.service.familyTaxonomy().pipe(
+      takeUntil(this.destroy$),
+      finalize(() => (this.familyTaxonomyLoading = false))
+    ).subscribe({
+      next: (taxonomy) => (this.familyTaxonomy = taxonomy),
+      error: (error: unknown) => {
+        this.loadErrors['familyTaxonomy'] = this.errorMessage(
+          error,
+          'The immutable framework taxonomy is unavailable.'
+        );
+      },
+    });
   }
 
   selectFrameworks(): void {

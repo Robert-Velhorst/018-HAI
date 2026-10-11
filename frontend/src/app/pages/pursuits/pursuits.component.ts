@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, ViewEncapsulation } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -85,6 +85,7 @@ interface PortfolioPursuitDraft {
   selector: 'app-pursuits',
   templateUrl: './pursuits.component.html',
   styleUrls: ['./pursuits.component.scss'],
+  encapsulation: ViewEncapsulation.None,
 })
 export class PursuitsComponent implements OnInit, OnDestroy {
   dashboard?: IPursuitDashboard;

@@ -10,24 +10,26 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
     component: CommandDashboardComponent;
     pursuits: jasmine.SpyObj<any>;
     workflows: jasmine.SpyObj<any>;
+    commands: jasmine.SpyObj<any>;
     notification: jasmine.SpyObj<any>;
   } {
     const pursuits = jasmine.createSpyObj('PursuitService', ['acceptCandidate', 'archive', 'resolveDecision', 'overview']);
     const workflows = jasmine.createSpyObj('WorkflowService', ['resolveApproval', 'resolveProposal']);
+    const commands = jasmine.createSpyObj('AssistantCommandService', ['logs']);
     const notification = jasmine.createSpyObj('NzNotificationService', ['success', 'error']);
     const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
     const component = new CommandDashboardComponent(
       new FormBuilder(),
       {} as any,
       {} as any,
-      {} as any,
+      commands,
       pursuits,
       workflows,
       notification as NzNotificationService,
       router,
     );
     spyOn(component, 'refreshPursuits');
-    return { component, pursuits, workflows, notification };
+    return { component, pursuits, workflows, commands, notification };
   }
 
   function candidateDecision(riskLevel: string = 'medium'): IPursuitDashboardDecision {
@@ -177,5 +179,17 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
     expect(component.pursuitBrief).toBe(priorBrief);
     expect(component.pursuitLoadError).toBe('pursuit service unavailable');
     expect(component.pursuitsLoading).toBeFalse();
+  });
+
+  it('retains confirmed command history when the next ledger read is unavailable', () => {
+    const { component, commands } = createComponent();
+    const history = [{ id: 'command-1', summary: 'Prepared safe next action.' }];
+    component.commandLogs = history as any;
+    commands.logs.and.returnValue(throwError(() => new Error('command ledger unavailable')));
+
+    component.loadCommandLogs();
+
+    expect(component.commandLogs).toEqual(history as any);
+    expect((component as any).commandLogsUnavailable).toBeTrue();
   });
 });

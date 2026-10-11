@@ -536,7 +536,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[0-9a-f]{64})?\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:-[A-Za-z0-9._-]+)?(?:@sha256:[0-9a-f]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
@@ -738,8 +738,13 @@ class CIWorkflowContractTest(unittest.TestCase):
             '"node": "^22.22.3 || ^24.15.0 || >=26.0.0"',
             package,
         )
-        self.assertIn('"@angular/core": "22.1.1"', package)
-        self.assertIn('"@angular/build": "22.1.3"', package)
+        self.assertIn('"@angular/core": "22.2.2"', package)
+        self.assertIn('"@angular/build": "22.2.2"', package)
+        package_data = json.loads(package)
+        self.assertEqual(
+            package_data["dependencies"]["@angular/core"],
+            package_data["devDependencies"]["@angular/build"],
+        )
         self.assertIn('"builder": "@angular/build:application"', angular)
         production_optimization = angular_config["projects"]["app"]["architect"][
             "build"
@@ -782,7 +787,7 @@ class CIWorkflowContractTest(unittest.TestCase):
         )
         self.assertIn('node-version: "22.22.3"', frontend)
         self.assertIn("npm ci --no-audit --no-fund", frontend)
-        self.assertIn("npm audit --audit-level=high", frontend)
+        self.assertIn("npm audit --omit=dev --audit-level=high", frontend)
         self.assertNotIn("continue-on-error", frontend)
         self.assertFalse((ROOT / "frontend" / "pnpm-lock.yaml").exists())
         self.assertFalse((ROOT / "frontend" / "pnpm-workspace.yaml").exists())
@@ -891,9 +896,10 @@ class CIWorkflowContractTest(unittest.TestCase):
             with self.subTest(public_gateway_contract=contract):
                 self.assertIn(contract, preflight)
         self.assertIn(
-            "HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED must remain false",
+            "Get-Setting $settings 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED' 'false'",
             preflight,
         )
+        self.assertIn("if ($publicA2A)", preflight)
         self.assertIn("remote_management: false", config)
         self.assertIn("update_check: false", config)
         self.assertIn("inspect_db_size: -1", config)
@@ -1119,7 +1125,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[0-9a-f]{64})?\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:-[A-Za-z0-9._-]+)?(?:@sha256:[0-9a-f]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
@@ -1150,7 +1156,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[0-9a-f]{64})?\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:-[A-Za-z0-9._-]+)?(?:@sha256:[0-9a-f]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
@@ -1224,7 +1230,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             "^--- PASS: TestRollbackMigrationReversesPostMigration",
             "^--- PASS: TestConcurrentMigrationRunnersSerializeAndRecheck",
             "^--- PASS: TestLegacyBaselineRejectsDifferentExistingPrimaryKey",
-            "^--- PASS: TestRuntimeRoleCanUseDataButCannotAlterSchema",
+            "^--- PASS: TestRuntimeRoleCanUseApplicationDataButCannotOwnSchema",
             "^--- PASS: TestFrameworkRegistryPostgresIntegrationRequiredEnvironment",
             "^--- PASS: TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun",
             "^--- PASS: TestFrameworkRegistryPostgresConstraintsAndImmutability",

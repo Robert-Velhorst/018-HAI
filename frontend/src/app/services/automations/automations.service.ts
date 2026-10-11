@@ -9,7 +9,7 @@ import {
 } from "../../models/automation.model.interface";
 import { IAgentRuntimeStopResult } from "../../models/agent-runtime.model.interface";
 import {Observable} from "rxjs";
-import {HttpClient} from "@angular/common/http";
+import { HttpClient } from "@angular/common/http";
 
 @Injectable({
   providedIn: 'root'

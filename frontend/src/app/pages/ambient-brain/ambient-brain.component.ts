@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
+import { timeout } from 'rxjs';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import {
   IAmbientNeed,
@@ -29,6 +30,7 @@ export class AmbientBrainComponent implements OnInit {
   selectedNeed?: IAmbientNeed;
   selectedOpportunity?: IAmbientOpportunity;
   detailsMode: 'none' | 'autonomy' | 'policy' = 'none';
+  private readonly operationTimeoutMs = 30000;
 
   constructor(
     private ambient: AmbientService,
@@ -168,8 +170,11 @@ export class AmbientBrainComponent implements OnInit {
   }
 
   runScan(): void {
+    if (this.scanning) {
+      return;
+    }
     this.scanning = true;
-    this.ambient.scan().subscribe({
+    this.ambient.scan().pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (scan) => {
         this.scanning = false;
         this.notification.success(

@@ -1,93 +1,144 @@
-import { Router } from '@angular/router'
-import { of, Subject, throwError } from 'rxjs'
-import { NzNotificationService } from 'ng-zorro-antd/notification'
+import { fakeAsync, tick } from '@angular/core/testing'
+import { Subject, throwError } from 'rxjs'
 import { ControlCenterComponent } from './control-center.component'
 
-describe('ControlCenterComponent dashboard refresh', () => {
-  function createComponent() {
-    const workflow = new Subject<any>()
-    const ambient = new Subject<any>()
-    const pursuits = new Subject<any>()
-    const workflowService = jasmine.createSpyObj('WorkflowService', ['dashboard'])
-    const pursuitService = jasmine.createSpyObj('PursuitService', ['dashboard'])
-    const ambientService = jasmine.createSpyObj('AmbientService', ['overview'])
-    workflowService.dashboard.and.returnValue(workflow.asObservable())
-    pursuitService.dashboard.and.returnValue(pursuits.asObservable())
-    ambientService.overview.and.returnValue(ambient.asObservable())
+describe('ControlCenterComponent', () => {
+  function createComponent(
+    agentCycle: { run: jasmine.Spy },
+    automations: Record<string, jasmine.Spy> = {}
+  ) {
+    const notifications = {
+      error: jasmine.createSpy('error'),
+      success: jasmine.createSpy('success'),
+      warning: jasmine.createSpy('warning'),
+    }
 
-    const automationsService = jasmine.createSpyObj('AutomationsService', ['getAutomations', 'getHealthSummary'])
-    const agentRuntimeService = jasmine.createSpyObj('AgentRuntimeService', ['overview'])
     const component = new ControlCenterComponent(
-      automationsService,
-      workflowService,
-      pursuitService,
-      jasmine.createSpyObj('AgentCycleService', ['run']),
-      agentRuntimeService,
-      ambientService,
-      jasmine.createSpyObj('ContextMemoryService', ['list']),
-      { mode: () => 'dark', toggle: () => 'light', label: () => 'Dark', icon: () => 'moon' } as any,
-      jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['success', 'error', 'warning']),
-      jasmine.createSpyObj<Router>('Router', ['navigate'])
+      automations as any,
+      {} as any,
+      {} as any,
+      agentCycle as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      notifications as any,
+      {} as any
     )
-    const rebuild = spyOn<any>(component, 'rebuildViewModel')
-    return { component, workflow, ambient, pursuits, workflowService, pursuitService, ambientService, automationsService, agentRuntimeService, rebuild }
+
+    return { component, notifications }
   }
 
-  it('coalesces the basic dashboard into one in-flight batch and one view rebuild', () => {
-    const { component, workflow, ambient, pursuits, workflowService, pursuitService, ambientService, rebuild } = createComponent()
+  it('does not start overlapping operating-brief refreshes', () => {
+    const run = jasmine.createSpy('run')
+    const response = new Subject<any>()
+    run.and.returnValue(response.asObservable())
+    const { component } = createComponent({ run })
 
-    component.refresh()
-    component.refresh()
+    component.runScan()
+    component.runScan()
 
-    expect(workflowService.dashboard).toHaveBeenCalledTimes(1)
-    expect(ambientService.overview).toHaveBeenCalledTimes(1)
-    expect(pursuitService.dashboard).toHaveBeenCalledTimes(1)
-    expect(component.loading).toBeTrue()
-    expect(rebuild).not.toHaveBeenCalled()
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(component.scanning).toBeTrue()
 
-    workflow.next({ attention: [] })
-    workflow.complete()
-    ambient.next({ needs: [] })
-    ambient.complete()
-    pursuits.next({})
-    pursuits.complete()
-
-    expect(component.loading).toBeFalse()
-    expect(rebuild).toHaveBeenCalledTimes(1)
+    response.error({ error: { error: 'backend unavailable' } })
+    expect(component.scanning).toBeFalse()
   })
 
-  it('keeps prior dashboard state and exposes a partial refresh failure', () => {
-    const { component, workflow, ambient, pursuits, rebuild } = createComponent()
-    const priorWorkflow = { attention: [{ id: 'existing-item' }] }
-    component.workflowDashboard = priorWorkflow as any
+  it('releases the running state when the operating-brief request times out', fakeAsync(() => {
+    const run = jasmine.createSpy('run')
+    run.and.returnValue(new Subject<any>().asObservable())
+    const { component, notifications } = createComponent({ run })
 
-    component.refresh()
+    component.runScan()
+    tick(30000)
 
-    workflow.error(new Error('workflow unavailable'))
-    ambient.next({ needs: [] })
-    ambient.complete()
-    pursuits.error(new Error('pursuits unavailable'))
+    expect(component.scanning).toBeFalse()
+    expect(notifications.error).toHaveBeenCalledWith(
+      'Agent cycle failed',
+      'The operational cycle could not complete.'
+    )
+  }))
 
-    expect(component.workflowDashboard).toBe(priorWorkflow as any)
-    expect(component.overviewLoadError).toContain('workflow')
-    expect(component.overviewLoadError).toContain('pursuits')
-    expect(component.loading).toBeFalse()
-    expect(rebuild).toHaveBeenCalledTimes(1)
+  it('does not duplicate an automation health check while the first request is pending', () => {
+    const run = jasmine.createSpy('run')
+    run.and.returnValue(new Subject<any>().asObservable())
+    const healthCheck = jasmine.createSpy('runHealthCheck')
+    const response = new Subject<any>()
+    healthCheck.and.returnValue(response.asObservable())
+    const { component } = createComponent({ run }, { runHealthCheck: healthCheck })
+    const automation = { id: 'automation-1', name: 'Daily check' } as any
+
+    component.runHealthCheck(automation)
+    component.runHealthCheck(automation)
+
+    expect(healthCheck).toHaveBeenCalledTimes(1)
+    expect(component.isChecking(automation)).toBeTrue()
+
+    response.error({ error: 'timeout' })
+    expect(component.isChecking(automation)).toBeFalse()
   })
 
-  it('retains diagnostics and identifies the unavailable diagnostic lane', () => {
-    const { component, automationsService, agentRuntimeService } = createComponent()
-    const existingAutomation = { id: 'automation-1', name: 'Existing automation', position: 1 } as any
-    component.automations = [existingAutomation]
+  it('does not present an unloaded automation registry as zero registered automations', () => {
+    const run = jasmine.createSpy('run').and.returnValue(new Subject<any>().asObservable())
+    const { component } = createComponent({ run })
+
+    const beforeLoading = (component as any).buildCommandActions()
+      .find((action: any) => action.id === 'automation')
+    expect(beforeLoading.primaryMetric).toBe('Open registry')
+
     component.diagnosticsLoaded = true
-    automationsService.getAutomations.and.returnValue(throwError(() => new Error('gateway unavailable')))
-    automationsService.getHealthSummary.and.returnValue(of({ total: 1, healthy: 1, warning: 0, degraded: 0, broken: 0, unknown: 0 }))
-    agentRuntimeService.overview.and.returnValue(of({ runtimes: [], health: [] }))
+    component.automations = [{ id: 'automation-1' } as any]
+    const afterLoading = (component as any).buildCommandActions()
+      .find((action: any) => action.id === 'automation')
+    expect(afterLoading.primaryMetric).toBe('1 registered')
+  })
 
-    component.loadDiagnosticsData(true)
+  it('does not present failed dashboard data as an empty workload', () => {
+    const run = jasmine.createSpy('run').and.returnValue(new Subject<any>().asObservable())
+    const { component } = createComponent({ run })
+    ;(component as any).workflowService = {
+      dashboard: () => throwError(() => new Error('workflow unavailable')),
+    }
+    ;(component as any).ambientService = {
+      overview: () => throwError(() => new Error('ambient unavailable')),
+    }
+    ;(component as any).pursuitService = {
+      dashboard: () => throwError(() => new Error('pursuit unavailable')),
+    }
 
-    expect(component.automations).toEqual([existingAutomation])
-    expect(component.diagnosticsLoadError).toContain('automations')
-    expect(component.diagnosticsLoaded).toBeTrue()
+    component.refresh()
+
+    expect(component.dashboardLoadErrors).toEqual([
+      'Workflow status',
+      'Ambient scan',
+      'Pursuit status',
+    ])
+    expect(component.hasDashboardLoadError()).toBeTrue()
+    expect(component.hasLiveWork()).toBeTrue()
+  })
+
+  it('does not present failed diagnostics as an empty automation registry', () => {
+    const run = jasmine.createSpy('run').and.returnValue(new Subject<any>().asObservable())
+    const { component } = createComponent({ run })
+    ;(component as any).automationsService = {
+      getAutomations: () => throwError(() => new Error('automations unavailable')),
+      getHealthSummary: () => throwError(() => new Error('health unavailable')),
+    }
+    ;(component as any).agentRuntimeService = {
+      overview: () => throwError(() => new Error('runtimes unavailable')),
+    }
+
+    component.loadDiagnosticsData()
+
+    expect(component.diagnosticsLoadErrors).toEqual([
+      'Automation registry',
+      'Automation health',
+      'Runtime overview',
+    ])
+    expect(component.hasDiagnosticsLoadError()).toBeTrue()
+    const automation = (component as any).buildCommandActions()
+      .find((action: any) => action.id === 'automation')
+    expect(automation.primaryMetric).toBe('Unavailable')
   })
 })

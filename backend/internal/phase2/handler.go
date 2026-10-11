@@ -1,6 +1,7 @@
 package phase2
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -349,7 +350,7 @@ func (h *Handler) RunBackground(c *gin.Context) {
 	}
 	rep, err := h.m.RunBackgroundForOwner(c.Request.Context(), owner)
 	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		c.JSON(backgroundRunHTTPStatus(err), gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, rep)
@@ -387,6 +388,20 @@ func (h *Handler) Overview(c *gin.Context) {
 		"operations": operations,
 		"feeds":      h.feedViews(),
 	})
+}
+
+// backgroundRunHTTPStatus keeps a concurrent run distinguishable from an
+// unexpected engine failure. Clients can safely offer a retry only for the
+// former instead of presenting every failure as a conflict.
+func backgroundRunHTTPStatus(err error) int {
+	switch {
+	case errors.Is(err, background.ErrBusy):
+		return http.StatusConflict
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func authenticatedOwner(c *gin.Context) (string, bool) {

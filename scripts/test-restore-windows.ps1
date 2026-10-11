@@ -138,8 +138,8 @@ try {
     if ($identityTables -lt 1) { throw "Identity restore contains no public tables." }
     Write-Host "Restore drill passed: automation tables=$automationTables; identity tables=$identityTables; safety controls extracted; live state untouched."
 } finally {
-    if ($automationCreated) { & docker exec 018-hai-postgres-automation dropdb -U $dbUser $scratchAutomation 2>$null | Out-Null }
-    if ($identityCreated) { & docker exec 018-hai-postgres-idp dropdb -U $dbUser $scratchIdentity 2>$null | Out-Null }
+    if ($automationCreated) { & docker exec 018-hai-postgres-automation dropdb -U $dbUser --if-exists $scratchAutomation 2>$null | Out-Null }
+    if ($identityCreated) { & docker exec 018-hai-postgres-idp dropdb -U $dbUser --if-exists $scratchIdentity 2>$null | Out-Null }
     & docker exec 018-hai-postgres-automation rm -f $automationTemp 2>$null | Out-Null
     & docker exec 018-hai-postgres-idp rm -f $identityTemp 2>$null | Out-Null
     if ($controlVolumeCreated) { & docker volume rm $scratchControlVolume 2>$null | Out-Null }

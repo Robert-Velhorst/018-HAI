@@ -79,6 +79,7 @@ export class CommandDashboardComponent implements OnInit, AfterViewInit {
   resolvingDashboardDecisionId = '';
   selectedRuntimeSurface?: IAgentRuntimeEcosystemSurface;
   commandLogs: IAssistantCommandResult[] = [];
+  commandLogsUnavailable = false;
   lastCommand?: IAssistantCommandResult;
   commandHistoryLoaded = false;
   @ViewChild('commandHistorySection') commandHistorySection?: HaiProgressiveSectionComponent;
@@ -545,11 +546,11 @@ export class CommandDashboardComponent implements OnInit, AfterViewInit {
     this.assistantCommands.logs().subscribe({
       next: (logs) => {
         this.commandLogs = logs || [];
+        this.commandLogsUnavailable = false;
         this.lastCommand = this.commandLogs[0] || this.lastCommand;
       },
       error: () => {
-        this.commandLogs = [];
-        this.commandHistoryLoaded = false;
+        this.commandLogsUnavailable = true;
       },
     });
   }
@@ -575,6 +576,7 @@ export class CommandDashboardComponent implements OnInit, AfterViewInit {
             this.pursuitBrief = result.agentCycle.pursuitBrief;
           }
           this.commandLogs = [result, ...this.commandLogs].slice(0, 50);
+          this.commandLogsUnavailable = false;
           this.notification.success(action.title, result.nextAction || result.summary);
           this.refresh();
         },

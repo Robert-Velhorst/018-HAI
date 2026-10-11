@@ -13,16 +13,17 @@ import (
 )
 
 type Scheduler struct {
-	service  Service
-	interval time.Duration
-	running  atomic.Bool
+	service           Service
+	interval          time.Duration
+	backgroundAllowed func() bool
+	running           atomic.Bool
 }
 
-func NewScheduler(service Service, interval time.Duration) *Scheduler {
+func NewScheduler(service Service, interval time.Duration, allowed ...func() bool) *Scheduler {
 	if interval < 15*time.Second {
 		interval = 10 * time.Minute
 	}
-	return &Scheduler{service: service, interval: interval}
+	return &Scheduler{service: service, interval: interval, backgroundAllowed: schedulerBackgroundGate(allowed)}
 }
 
 // StartScheduler starts scheduled source syncing.
@@ -33,14 +34,15 @@ func NewScheduler(service Service, interval time.Duration) *Scheduler {
 // stopped and make the loss of crash recovery explicit in the logs. Operators
 // may opt into the legacy in-process ticker only for local development. An
 // explicit SOURCE_SCHEDULER_DURABLE=false remains a deliberate legacy choice.
-func StartScheduler(ctx context.Context, service Service) {
+func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) {
 	if !schedulerEnabled() {
 		schedulerstatus.Record(schedulerstatus.State{Name: "source", Detail: "disabled by SOURCE_SCHEDULER_ENABLED"})
 		return
 	}
 	interval := schedulerInterval()
+	backgroundAllowed := schedulerBackgroundGate(allowed)
 	if durableSchedulerEnabled() {
-		if err := startDurableScheduler(ctx, service, interval); err != nil {
+		if err := startDurableScheduler(ctx, service, interval, backgroundAllowed); err != nil {
 			if !legacyFallbackEnabled() {
 				schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Durable: true, Detail: "durable queue unavailable: " + err.Error()})
 				log.Printf("source scheduler: durable queue unavailable (%v); scheduler not started; set DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED=true only for local development", err)
@@ -60,7 +62,7 @@ func StartScheduler(ctx context.Context, service Service) {
 	} else if legacyFallbackEnabled() {
 		schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Running: true, Detail: "explicitly enabled legacy fallback"})
 	}
-	scheduler := NewScheduler(service, interval)
+	scheduler := NewScheduler(service, interval, backgroundAllowed)
 	go scheduler.Start(ctx)
 }
 
@@ -95,6 +97,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 }
 
 func (s *Scheduler) runOnce() {
+	if s.backgroundAllowed != nil && !s.backgroundAllowed() {
+		return
+	}
 	if !s.running.CompareAndSwap(false, true) {
 		return
 	}
@@ -107,6 +112,13 @@ func (s *Scheduler) runOnce() {
 	if result.Due > 0 || result.Failed > 0 {
 		log.Printf("source scheduler checked=%d due=%d completed=%d failed=%d", result.Checked, result.Due, result.Completed, result.Failed)
 	}
+}
+
+func schedulerBackgroundGate(allowed []func() bool) func() bool {
+	if len(allowed) > 0 && allowed[0] != nil {
+		return allowed[0]
+	}
+	return func() bool { return true }
 }
 
 func schedulerEnabled() bool {

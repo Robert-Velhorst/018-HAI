@@ -288,6 +288,15 @@
       color: var(--red);
     }
   }
+
+  &--notice {
+    background: var(--blue-soft);
+    border-color: color-mix(in srgb, var(--blue) 34%, var(--border));
+
+    > span {
+      color: var(--blue);
+    }
+  }
 }
 
 .bg-ops__workspace {

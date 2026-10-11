@@ -37,6 +37,7 @@ gateway, frontend, IDP, databases, Kafka, and Redis do not join them.
 | `crewai-planning` | CrewAI runner | One canonical local model endpoint/tag | 768 MB, 1 CPU, 192 PIDs | Two fixed no-tool planning roles return one review-only structured draft |
 | `local-document-extraction` | Docling runner | Read-only `./connected-sources` and `./docling-models` | 3 GB, 2 CPU, 256 PIDs | Explicit source-folder extraction only; no upload, write, memory promotion, or action |
 | `patch-proposals` | mini-SWE runner and private Ollama | Exactly one named read-only snapshot under `./mini-swe-workspaces` | Runner 1 GB/1.5 CPU; Ollama 6 GB/4 CPU | Disposable copied workspace and complete diff proposal only; no apply, commit, push, PR, or host shell |
+| `event-bus` | Redpanda and nginx configuration consumer | `HAI_EVENT_BUS_ENABLED=true` plus the configured local broker topics | Redpanda 256 MB/0.5 CPU/96 PIDs; consumer 256 MB/0.5 CPU/128 PIDs | Kafka-compatible account/event delivery and gateway-config events only; no additional policy or execution authority |
 
 Agent Framework and CrewAI must use the same canonical local provider/model pair
 that HAI knows through `OLLAMA_BASE_URL`/`OLLAMA_MODEL_IDS` or another supported

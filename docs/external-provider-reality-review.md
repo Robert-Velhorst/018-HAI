@@ -18,7 +18,7 @@ connected account.
 | Google Contacts | `operational`, unconfigured by default | Separate Contacts read-only grant; bounded People API backfill; native sync token with bounded backfill recovery after token expiry; source-linked candidate records; non-destructive removal tombstones. There is no merge, delete, or provider write-back path. | Unit and contract tested. A real sandbox address-book OAuth/backfill/change/revoke acceptance run is still required. |
 | Google Calendar | `operational`, unconfigured by default | Separate `calendar.readonly` grant; GET-only primary-calendar event listing; bounded one-year initial backfill; native sync token with bounded recovery after token expiry; source-linked event records; 14-day preparation proposals; 30-day overlap detection; cancellation and resolved-conflict retraction. There is no create, update, delete, invitation-response, or provider write-back path. The local ICS path remains available separately. | Unit and contract tested. A real sandbox-calendar OAuth/backfill/change/revoke acceptance run is still required. |
 | GitHub (read-only) | `operational` | Bounded REST sync of repositories, issues, pull requests, commits, and workflow runs. Private or rate-limited access needs a least-privilege token. | Unit-tested. |
-| Kafka event bus | Operational | Configured broker/topic integration. | Compose/local coverage. |
+| Kafka-compatible event bus | Optional, disabled by default | Redpanda broker/topic integration and nginx configuration consumer behind `HAI_EVENT_BUS_ENABLED=true` plus the `event-bus` Compose profile. | Compose contract coverage; no current live event-delivery acceptance run. |
 
 ## Evidence Levels
 

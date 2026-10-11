@@ -14,7 +14,7 @@
         <i nz-icon nzType="reload" nzTheme="outline"></i>
         Refresh
       </button>
-      <button type="button" nz-button nzType="primary" (click)="runDueScheduledSyncs()" [nzLoading]="syncing" title="Refresh due scheduled source sync jobs that belong to your signed-in account">
+      <button type="button" nz-button nzType="primary" (click)="runDueScheduledSyncs()" [nzLoading]="syncing" [disabled]="syncing" title="Refresh due scheduled source sync jobs that belong to your signed-in account">
         <i nz-icon nzType="sync" nzTheme="outline"></i>
         Sync due
       </button>
@@ -65,6 +65,15 @@
         <strong>{{ overview ? failedJobCount() : '—' }}</strong>
         <span>failed jobs</span>
       </div>
+    </section>
+
+    <section class="load-warning" *ngIf="hasLoadWarnings()" role="status" aria-live="polite">
+      <i nz-icon nzType="warning" nzTheme="outline"></i>
+      <div>
+        <strong>Some source data is unavailable</strong>
+        <span>{{ loadWarnings.join(', ') }} could not be loaded. Counts and source status may be incomplete.</span>
+      </div>
+      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" title="Retry unavailable source data">Retry</button>
     </section>
 
     <section class="action-rail" aria-label="Source actions">
@@ -204,7 +213,7 @@
                   data-testid="source-connect"
                   (click)="connectSource()"
                   [nzLoading]="connecting"
-                  [disabled]="sourceForm.invalid || connecting"
+				  [disabled]="sourceForm.invalid || connecting || !selectedConnectorCanConnect()"
                 >
                   Connect source
                 </button>
@@ -252,7 +261,7 @@
               </div>
               <div class="form-footer">
                 <span>Local files stay source-linked and reviewable.</span>
-                <button type="button" nz-button nzType="primary" (click)="syncFolder()" [nzLoading]="syncing">Scan folder</button>
+                <button type="button" nz-button nzType="primary" (click)="syncFolder()" [nzLoading]="syncing" [disabled]="folderForm.invalid || syncing">Scan folder</button>
               </div>
             </form>
           </div>
@@ -274,19 +283,19 @@
                 before either connector can be authorized.
               </p>
               <div class="form-footer">
-                <button type="button" nz-button nzType="primary" (click)="connectGmail()">
+                <button type="button" nz-button nzType="primary" (click)="connectGmail()" [nzLoading]="connecting" [disabled]="connecting || !googleConnectorCanConnect('gmail')" title="Configure valid Google OAuth and HAI encryption keys before connecting Gmail.">
                   <span nz-icon nzType="google"></span>
                   Connect Gmail
                 </button>
-                <button type="button" nz-button nzType="default" (click)="connectGoogleDrive()">
+                <button type="button" nz-button nzType="default" (click)="connectGoogleDrive()" [disabled]="connecting || !googleConnectorCanConnect('google-drive')" title="Configure valid Google OAuth and HAI encryption keys before connecting Drive.">
                   <span nz-icon nzType="folder-open"></span>
                   Connect Drive
                 </button>
-                <button type="button" nz-button nzType="default" (click)="connectGoogleContacts()">
+                <button type="button" nz-button nzType="default" (click)="connectGoogleContacts()" [disabled]="connecting || !googleConnectorCanConnect('google-contacts')" title="Configure valid Google OAuth and HAI encryption keys before connecting Contacts.">
                   <span nz-icon nzType="contacts"></span>
                   Connect Contacts
                 </button>
-                <button type="button" nz-button nzType="default" (click)="connectGoogleCalendar()">
+                <button type="button" nz-button nzType="default" (click)="connectGoogleCalendar()" [disabled]="connecting || !googleConnectorCanConnect('google-calendar')" title="Configure valid Google OAuth and HAI encryption keys before connecting Calendar.">
                   <span nz-icon nzType="calendar"></span>
                   Connect Calendar
                 </button>
@@ -343,7 +352,7 @@
                 <textarea nz-input rows="8" formControlName="pastedExport"></textarea>
               </label>
               <div class="form-footer">
-                <button type="button" nz-button nzType="default" (click)="connectWhatsAppSource()">Connect source</button>
+				<button type="button" nz-button nzType="default" (click)="connectWhatsAppSource()" [nzLoading]="connecting" [disabled]="connecting">Connect source</button>
                 <button type="button" nz-button nzType="default" (click)="syncWhatsAppFolder()" [nzLoading]="syncing">Scan folder</button>
                 <button type="button" nz-button nzType="primary" (click)="importWhatsAppPaste()" [nzLoading]="syncing">Import paste</button>
               </div>
@@ -394,7 +403,7 @@
               </div>
               <div class="form-footer">
                 <span>Write-back stays disabled; risky Odoo actions are approval-gated.</span>
-                <button type="button" nz-button nzType="default" (click)="connectOdooSource()">Connect source</button>
+				<button type="button" nz-button nzType="default" (click)="connectOdooSource()" [nzLoading]="connecting" [disabled]="connecting">Connect source</button>
                 <button type="button" nz-button nzType="primary" (click)="syncOdooApps()" [nzLoading]="syncing">Model apps</button>
               </div>
             </form>
@@ -456,7 +465,7 @@
               </label>
               <div class="form-footer">
                 <span>Manual imports are logged with provenance.</span>
-                <button type="button" nz-button nzType="primary" (click)="sync()" [nzLoading]="syncing">Sync and extract</button>
+                <button type="button" nz-button nzType="primary" (click)="sync()" [nzLoading]="syncing" [disabled]="importForm.invalid || syncing">Sync and extract</button>
               </div>
             </form>
           </div>
@@ -604,6 +613,10 @@
                 <dt>Connection</dt>
                 <dd>{{ statusText(health.status) }} - {{ health.reason }}</dd>
               </div>
+              <div *ngIf="sourceHealthUnavailable(source)">
+                <dt>Connection</dt>
+                <dd>Health check unavailable - refresh before changing authorization.</dd>
+              </div>
               <div *ngIf="sourceHealth(source)?.cursorPhase">
                 <dt>Incremental cursor</dt>
                 <dd>{{ sourceHealth(source)?.cursorPhase }} - provider checkpoint stored</dd>
@@ -624,7 +637,7 @@
               <button type="button" nz-button nzType="default" (click)="reindex(source)">Re-index</button>
               <button
                 type="button"
-                *ngIf="isGoogleSource(source) && (!sourceHealth(source)?.authorized || sourceHealth(source)?.requiresReconnect)"
+                *ngIf="!sourceHealthUnavailable(source) && isGoogleSource(source) && (!sourceHealth(source)?.authorized || sourceHealth(source)?.requiresReconnect)"
                 nz-button
                 nzType="primary"
                 (click)="authorizeGoogleSource(source)"

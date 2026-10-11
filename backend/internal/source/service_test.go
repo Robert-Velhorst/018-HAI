@@ -1044,6 +1044,174 @@ func TestSyncGitHubImportsReadOnlyRepositoryRecords(t *testing.T) {
 	}
 }
 
+func TestGitHubSourcePaginatesBeforeCompletingAnImport(t *testing.T) {
+	var issuePages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/acme/demo":
+			if r.URL.Query().Get("page") != "1" {
+				http.Error(w, "repository page must be one", http.StatusBadRequest)
+				return
+			}
+			_, _ = w.Write([]byte(`{"id":1,"full_name":"acme/demo","updated_at":"2026-07-09T10:00:00Z"}`))
+		case "/repos/acme/demo/issues":
+			page := r.URL.Query().Get("page")
+			issuePages = append(issuePages, page)
+			if page == "1" {
+				records := make([]string, 100)
+				for i := range records {
+					records[i] = fmt.Sprintf(`{"id":%d,"number":%d,"title":"Issue %d","updated_at":"2026-07-09T10:01:00Z"}`, i+10, i+10, i+10)
+				}
+				_, _ = w.Write([]byte("[" + strings.Join(records, ",") + "]"))
+				return
+			}
+			if page == "2" {
+				_, _ = w.Write([]byte(`[{"id":999,"number":999,"title":"Final issue","updated_at":"2026-07-09T10:02:00Z"}]`))
+				return
+			}
+			http.Error(w, "unexpected issue page", http.StatusBadRequest)
+		case "/repos/acme/demo/pulls", "/repos/acme/demo/commits":
+			_, _ = w.Write([]byte(`[]`))
+		case "/repos/acme/demo/actions/runs":
+			_, _ = w.Write([]byte(`{"workflow_runs":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GITHUB_SOURCE_API_BASE_URL", server.URL)
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "127.0.0.1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL", "true")
+
+	items, cursor, err := fetchGitHubSource(context.Background(), &models.ConnectedSource{ConnectorKey: "github", SyncTarget: "acme/demo"})
+	if err != nil {
+		t.Fatalf("fetchGitHubSource: %v", err)
+	}
+	if len(items) != 102 || cursor != "2026-07-09T10:02:00Z" {
+		t.Fatalf("items/cursor = %d/%q, want 102/latest issue timestamp", len(items), cursor)
+	}
+	if strings.Join(issuePages, ",") != "1,2" {
+		t.Fatalf("issue pages = %v, want [1 2]", issuePages)
+	}
+}
+
+func TestGitHubSourceFailsInsteadOfSilentlyTruncatingAtPageLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/acme/demo":
+			_, _ = w.Write([]byte(`{"id":1,"full_name":"acme/demo","updated_at":"2026-07-09T10:00:00Z"}`))
+		case "/repos/acme/demo/issues":
+			records := make([]string, githubSourcePageSize)
+			for i := range records {
+				records[i] = fmt.Sprintf(`{"id":%d,"number":%d,"title":"Issue %d","updated_at":"2026-07-09T10:01:00Z"}`, i+10, i+10, i+10)
+			}
+			_, _ = w.Write([]byte("[" + strings.Join(records, ",") + "]"))
+		default:
+			_, _ = w.Write([]byte(`[]`))
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GITHUB_SOURCE_API_BASE_URL", server.URL)
+	t.Setenv("GITHUB_SOURCE_MAX_PAGES", "1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "127.0.0.1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL", "true")
+
+	_, _, err := fetchGitHubSource(context.Background(), &models.ConnectedSource{ConnectorKey: "github", SyncTarget: "acme/demo"})
+	if err == nil || !strings.Contains(err.Error(), "safety limit") {
+		t.Fatalf("fetchGitHubSource error = %v, want explicit pagination safety limit", err)
+	}
+}
+
+func TestGitHubIssueRecordsExcludePullRequestsHandledByTheirOwnEndpoint(t *testing.T) {
+	records := githubRecords([]any{
+		map[string]any{"id": float64(1), "title": "Issue"},
+		map[string]any{"id": float64(2), "title": "Pull request", "pull_request": map[string]any{"url": "https://api.github.com/repos/acme/demo/pulls/2"}},
+	}, "issue")
+	if len(records) != 1 || githubString(records[0], "title") != "Issue" {
+		t.Fatalf("issue records = %#v, want only the standalone issue", records)
+	}
+}
+
+func TestGitHubIssuePaginationUsesTheUnfilteredPageSize(t *testing.T) {
+	var issuePages []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/repos/acme/demo":
+			_, _ = w.Write([]byte(`{"id":1,"full_name":"acme/demo","updated_at":"2026-07-09T10:00:00Z"}`))
+		case "/repos/acme/demo/issues":
+			page := r.URL.Query().Get("page")
+			issuePages = append(issuePages, page)
+			if page == "1" {
+				records := make([]string, githubSourcePageSize)
+				for i := 0; i < githubSourcePageSize-1; i++ {
+					records[i] = fmt.Sprintf(`{"id":%d,"number":%d,"title":"Issue %d","updated_at":"2026-07-09T10:01:00Z"}`, i+10, i+10, i+10)
+				}
+				records[githubSourcePageSize-1] = `{"id":999,"number":999,"title":"Pull request","pull_request":{"url":"https://api.github.com/repos/acme/demo/pulls/999"},"updated_at":"2026-07-09T10:01:00Z"}`
+				_, _ = w.Write([]byte("[" + strings.Join(records, ",") + "]"))
+				return
+			}
+			if page == "2" {
+				_, _ = w.Write([]byte(`[{"id":1000,"number":1000,"title":"Later issue","updated_at":"2026-07-09T10:02:00Z"}]`))
+				return
+			}
+			http.Error(w, "unexpected issue page", http.StatusBadRequest)
+		case "/repos/acme/demo/pulls", "/repos/acme/demo/commits":
+			_, _ = w.Write([]byte(`[]`))
+		case "/repos/acme/demo/actions/runs":
+			_, _ = w.Write([]byte(`{"workflow_runs":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("GITHUB_SOURCE_API_BASE_URL", server.URL)
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "127.0.0.1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL", "true")
+
+	items, _, err := fetchGitHubSource(context.Background(), &models.ConnectedSource{ConnectorKey: "github", SyncTarget: "acme/demo"})
+	if err != nil {
+		t.Fatalf("fetchGitHubSource: %v", err)
+	}
+	if len(items) != 101 || strings.Join(issuePages, ",") != "1,2" {
+		t.Fatalf("items/pages = %d/%v, want 101 records including page two and issue pages [1 2]", len(items), issuePages)
+	}
+}
+
+func TestSourceHTTPTransportReusesConnectionsOnlyWithinTheSamePolicy(t *testing.T) {
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "127.0.0.1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL", "true")
+	t.Setenv("CONNECTED_SOURCE_HTTP_TIMEOUT_SECONDS", "20")
+	first := sourceHTTPTransport()
+	if next := sourceHTTPTransport(); next != first {
+		t.Fatal("expected the source HTTP transport to be reused for the same policy")
+	}
+
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "api.github.com")
+	if next := sourceHTTPTransport(); next == first {
+		t.Fatal("expected a new transport when the source network policy changes")
+	}
+}
+
+func TestSyncContextStopsBeforeAnyWorkWhenRequestIsCancelled(t *testing.T) {
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, ConnectorKey: "local-folder", Name: "Selected folder", Enabled: true, LocalOnly: true, Status: "active", SyncTarget: ".",
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	service, ok := NewService(repo, &fakeSourceMemoryService{}).(ContextSyncService)
+	if !ok {
+		t.Fatal("default source service must support context-aware sync")
+	}
+	_, err := service.SyncContext(ctx, sourceID, ImportRequest{Mode: ModeManualImport})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("SyncContext error = %v, want context.Canceled", err)
+	}
+}
+
 func TestCreateSourceAllowsOperationalLocalFolder(t *testing.T) {
 	service := NewService(newFakeSourceRepo(), &fakeSourceMemoryService{})
 	source, err := service.CreateSource(CreateSourceRequest{
@@ -1059,6 +1227,54 @@ func TestCreateSourceAllowsOperationalLocalFolder(t *testing.T) {
 	}
 	if source.ConnectorKey != "local-folder" || !source.Enabled {
 		t.Fatalf("source = %#v, want enabled local-folder", source)
+	}
+}
+
+func TestCreateTrelloSourceRequiresConfiguredRemoteBoard(t *testing.T) {
+	service := NewService(newFakeSourceRepo(), &fakeSourceMemoryService{})
+	request := CreateSourceRequest{
+		OwnerIdentity: "alice",
+		ConnectorKey:  trelloConnectorKey,
+		Name:          "Automation board",
+		Enabled:       true,
+		LocalOnly:     false,
+		SyncFrequency: "1h",
+		SyncTarget:    "https://trello.com/b/abc123XY/automation-board",
+	}
+
+	if _, err := service.CreateSource(request); err == nil || !strings.Contains(err.Error(), trelloAPIKeyEnv) {
+		t.Fatalf("unconfigured Trello source error = %v, want credential guidance", err)
+	}
+
+	t.Setenv(trelloAPIKeyEnv, "test-key")
+	t.Setenv(trelloReadTokenEnv, "test-read-token")
+	created, err := service.CreateSource(request)
+	if err != nil {
+		t.Fatalf("configured Trello source: %v", err)
+	}
+	if created.LocalOnly || created.Category != "project_board" || created.SyncTarget != request.SyncTarget {
+		t.Fatalf("created Trello source = %#v", created)
+	}
+	healthService, ok := service.(ConnectionHealthService)
+	if !ok {
+		t.Fatal("default source service does not expose connection health")
+	}
+	health, err := healthService.ConnectionHealth(created.ID)
+	if err != nil {
+		t.Fatalf("Trello connection health: %v", err)
+	}
+	if health.Status != "configuration_ready" || health.Authorized || !strings.Contains(health.Reason, "run a sync") {
+		t.Fatalf("Trello health = %#v, want configured but unverified", health)
+	}
+
+	request.LocalOnly = true
+	if _, err := service.CreateSource(request); err == nil || !strings.Contains(err.Error(), "localOnly") {
+		t.Fatalf("local-only Trello source error = %v, want remote-only rejection", err)
+	}
+	request.LocalOnly = false
+	request.SyncTarget = "not a board"
+	if _, err := service.CreateSource(request); err == nil || !strings.Contains(err.Error(), "board id") {
+		t.Fatalf("invalid Trello target error = %v, want board target rejection", err)
 	}
 }
 

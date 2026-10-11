@@ -138,6 +138,42 @@
   }
 }
 
+.load-warning {
+  align-items: center;
+  background: var(--gold-soft);
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--border));
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  padding: 12px 14px;
+
+  > i {
+    color: var(--gold);
+    font-size: 21px;
+  }
+
+  strong,
+  span {
+    display: block;
+  }
+
+  strong {
+    font-size: 14px;
+  }
+
+  span {
+    color: var(--text-soft);
+    font-size: 12px;
+    line-height: 1.45;
+    margin-top: 2px;
+  }
+
+  button {
+    border-radius: 8px;
+  }
+}
+
 .action-rail {
   display: grid;
   gap: 12px;

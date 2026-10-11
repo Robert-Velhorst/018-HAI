@@ -7,14 +7,16 @@ import (
 )
 
 const (
-	kafkaEnabled string = "IDP_KAFKA_ENABLED"
-	loggerTopic  string = "LOGGER_TOPIC"
-	mailTopic    string = "MAIL_TOPIC"
-	clientID     string = "KAFKA_CLIENT_ID"
-	brokersAddr  string = "BROKERS_ADDR"
+	kafkaEnabled    string = "IDP_KAFKA_ENABLED"
+	eventBusEnabled string = "HAI_EVENT_BUS_ENABLED"
+	loggerTopic     string = "LOGGER_TOPIC"
+	mailTopic       string = "MAIL_TOPIC"
+	clientID        string = "KAFKA_CLIENT_ID"
+	brokersAddr     string = "BROKERS_ADDR"
 )
 
 type kafkaConfig struct {
+	Enabled     bool
 	LoggerTopic string
 	MailTopic   string
 	ClientID    string
@@ -32,6 +34,10 @@ func newOptionalKafkaConfig() (*kafkaConfig, error) {
 }
 
 func newKafkaConfig() (*kafkaConfig, error) {
+	if !getEnvBool(eventBusEnabled, false) {
+		return &kafkaConfig{}, nil
+	}
+
 	logTopic := strings.TrimSpace(getEnvString(loggerTopic, ""))
 	if logTopic == "" {
 		return nil, errors.New("Kafka logger topic is required: set " + loggerTopic)
@@ -59,6 +65,7 @@ func newKafkaConfig() (*kafkaConfig, error) {
 	}
 
 	return &kafkaConfig{
+		Enabled:     true,
 		LoggerTopic: logTopic,
 		MailTopic:   emailTopic,
 		ClientID:    client,

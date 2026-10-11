@@ -26,8 +26,8 @@
       <div class="signal signal--review signal--status" title="Review queue: decisions waiting for you">
         <i nz-icon nzType="audit" nzTheme="outline"></i>
         <span>
-          <strong>{{ reviewQueueOpenCount() }} approvals waiting</strong>
-          <small>{{ reviewQueue.length }} total review items</small>
+          <strong>{{ reviewQueueUnavailable ? 'Approvals unavailable' : reviewQueueOpenCount() + ' approvals waiting' }}</strong>
+          <small>{{ reviewQueueUnavailable ? 'Reload to verify decisions' : reviewQueue.length + ' total review items' }}</small>
         </span>
         <b>?</b>
       </div>
@@ -119,7 +119,7 @@
           <i nz-icon nzType="check-square" nzTheme="outline"></i>
           <span>
             <strong>Approvals</strong>
-            <small>{{ reviewQueueOpenCount() }} waiting</small>
+            <small>{{ reviewQueueUnavailable ? 'Status unavailable' : reviewQueueOpenCount() + ' waiting' }}</small>
           </span>
           <em>Review</em>
         </button>
@@ -146,7 +146,7 @@
           <i nz-icon nzType="clock-circle" nzTheme="outline"></i>
           <span>
             <strong>Last Activity</strong>
-            <small>{{ latestLog()?.request || 'No plans yet' }}</small>
+            <small>{{ latestLog()?.request || (logsUnavailable ? 'History unavailable' : 'No plans yet') }}</small>
           </span>
           <em *ngIf="latestLog()">{{ latestLog()?.createdAt | date: 'shortTime' }}</em>
         </button>
@@ -577,6 +577,7 @@
 
         <article class="inspector-card">
           <h3>Approval Queue <span title="Human decisions that block execution">?</span></h3>
+          <p class="data-unavailable" *ngIf="reviewQueueUnavailable">Approval status is unavailable. Showing last confirmed decisions, if any.</p>
           <div class="review-row" *ngFor="let item of reviewQueue; trackBy: trackById">
             <div>
               <strong>{{ item.reason }}</strong>
@@ -606,7 +607,7 @@
 				{{ reviewRejectLabel(item) }}
             </button>
           </div>
-          <nz-empty *ngIf="!reviewQueue.length" nzNotFoundContent="No tasks waiting for review."></nz-empty>
+          <nz-empty *ngIf="!reviewQueueUnavailable && !reviewQueue.length" nzNotFoundContent="No tasks waiting for review."></nz-empty>
 
 						<div class="reconciliation-control" *ngIf="approvedReviewCount() || reconciliation">
 							<strong>Interrupted approved work</strong>
@@ -1054,6 +1055,7 @@
       <section class="inspector-body" *ngIf="inspectorMode === 'logs'">
         <article class="inspector-card">
           <h3>Recent Plans</h3>
+          <p class="data-unavailable" *ngIf="logsUnavailable">Plan history is unavailable. Showing last confirmed records, if any.</p>
           <button
             type="button"
             class="log-row"
@@ -1064,7 +1066,7 @@
             <strong>{{ log.request }}</strong>
             <span>{{ log.intake.taskType }} · {{ log.completionStatus }} · {{ log.createdAt | date: 'short' }}</span>
           </button>
-          <nz-empty *ngIf="!logs.length" nzNotFoundContent="No task plans yet."></nz-empty>
+          <nz-empty *ngIf="!logsUnavailable && !logs.length" nzNotFoundContent="No task plans yet."></nz-empty>
         </article>
 
         <article class="inspector-card">

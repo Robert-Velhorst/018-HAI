@@ -133,24 +133,34 @@ type Report struct {
 // RunOnce performs a single background pass. It acquires the lease first; if a
 // pass is already running it returns ErrBusy.
 func (w *Worker) RunOnce(ctx context.Context) (Report, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if !w.lease.acquire() {
 		return Report{}, ErrBusy
 	}
 	defer w.lease.release()
 
 	var rep Report
-	w.ingest(ctx, &rep)
+	if err := w.ingest(ctx, &rep); err != nil {
+		return rep, err
+	}
 	if w.effectiveEmergencyStop() {
 		// Emergency stop still ingests for the record but processes nothing.
 		return rep, nil
 	}
-	w.process(ctx, &rep)
+	if err := w.process(ctx, &rep); err != nil {
+		return rep, err
+	}
 	return rep, nil
 }
 
 // ingest reads every feed and creates/refreshes Operations for its items.
-func (w *Worker) ingest(ctx context.Context, rep *Report) {
+func (w *Worker) ingest(ctx context.Context, rep *Report) error {
 	for _, r := range w.readers {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		feed := r.Feed()
 		if !feed.Enabled {
 			continue
@@ -162,6 +172,9 @@ func (w *Worker) ingest(ctx context.Context, rep *Report) {
 			continue
 		}
 		for _, it := range items {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			rep.ItemsIngested++
 			in, err := feed.ToOperationInput(it)
 			if err != nil {
@@ -178,16 +191,24 @@ func (w *Worker) ingest(ctx context.Context, rep *Report) {
 			}
 		}
 	}
+	return nil
 }
 
 // process classifies and routes every actionable Operation currently in `new`.
-func (w *Worker) process(ctx context.Context, rep *Report) {
+
+func (w *Worker) process(ctx context.Context, rep *Report) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	due, err := w.svc.ListDue(w.opts.OwnerUserID, w.opts.WorkspaceID, w.opts.MaxOps)
 	if err != nil {
 		appendBackgroundReportError(rep, "The background operation ledger could not be read. Refresh and retry.", err)
-		return
+		return nil
 	}
 	for _, op := range due {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if op.Status != string(operations.StatusNew) {
 			continue // Phase 2A processes freshly-ingested operations.
 		}
@@ -195,6 +216,7 @@ func (w *Worker) process(ctx context.Context, rep *Report) {
 			appendBackgroundReportError(rep, "One operation could not be processed. Inspect its audit trail before retrying.", err)
 		}
 	}
+	return nil
 }
 
 func appendBackgroundReportError(report *Report, publicMessage string, err error) {
@@ -208,6 +230,9 @@ func appendBackgroundReportError(report *Report, publicMessage string, err error
 }
 
 func (w *Worker) processOne(ctx context.Context, op models.Operation, rep *Report) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	now := w.now().UTC()
 	scan := privacyfilter.Scan(op.Title+"\n"+op.Description, 280)
 	decision := autonomypolicy.Decide(autonomypolicy.Input{
@@ -257,6 +282,9 @@ func (w *Worker) processOne(ctx context.Context, op models.Operation, rep *Repor
 			rep.Triaged++
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	classified, err := w.svc.Transition(op, operations.StatusClassified, "hai", "", classifyMsg)
 	if err != nil {
@@ -275,7 +303,7 @@ func (w *Worker) processOne(ctx context.Context, op models.Operation, rep *Repor
 		}
 		return err
 	case operations.DecisionCreateDraft:
-		return w.runDraft(op, rep, decision)
+		return w.runDraft(ctx, op, rep, decision)
 	case operations.DecisionObserveOnly:
 		rep.Observed++
 		return nil
@@ -311,13 +339,19 @@ func (w *Worker) runSafe(ctx context.Context, op models.Operation, rep *Report) 
 }
 
 // runDraft records an internal draft for a draft-mode operation.
-func (w *Worker) runDraft(op models.Operation, rep *Report, decision autonomypolicy.Decision) error {
+func (w *Worker) runDraft(ctx context.Context, op models.Operation, rep *Report, decision autonomypolicy.Decision) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	drafting, err := w.svc.Transition(op, operations.StatusDrafting, "hai", "", "preparing internal draft")
 	if err != nil {
 		return err
 	}
 	op = *drafting
 	op.ResultSummary = decision.RecommendedAction
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := w.svc.Transition(op, operations.StatusDraftReady, "hai", "", "internal draft ready for review"); err != nil {
 		return err
 	}

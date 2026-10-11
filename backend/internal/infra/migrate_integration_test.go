@@ -20,7 +20,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRuntimeRoleCanUseDataButCannotAlterSchema(t *testing.T) {
+func TestRuntimeRoleCanUseApplicationDataButCannotOwnSchema(t *testing.T) {
 	db := integrationDB(t)
 	runtimeUser := "hai_runtime_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:20]
 	t.Setenv("DB_RUNTIME_USER", runtimeUser)

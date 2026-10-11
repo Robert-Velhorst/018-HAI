@@ -21,7 +21,7 @@ describe('BrainCatalogComponent adapter reviews', () => {
   }
 
   function createComponent() {
-    const catalogService = { adoptionPlan: jasmine.createSpy('adoptionPlan'), revalidate: jasmine.createSpy('revalidate'), revalidateOSSInsightCollections: jasmine.createSpy('revalidateOSSInsightCollections'), discoverOSSInsightRepositories: jasmine.createSpy('discoverOSSInsightRepositories'), discoverReviewableOSSInsightRepositories: jasmine.createSpy('discoverReviewableOSSInsightRepositories'), revalidateOSSInsightDiscovery: jasmine.createSpy('revalidateOSSInsightDiscovery'), recommendCapabilities: jasmine.createSpy('recommendCapabilities') }
+    const catalogService = { adoptionPlan: jasmine.createSpy('adoptionPlan'), revalidate: jasmine.createSpy('revalidate'), revalidateOSSInsightCollections: jasmine.createSpy('revalidateOSSInsightCollections'), collectionRevalidationHistory: jasmine.createSpy('collectionRevalidationHistory'), repositoryDiscoveryRevalidationHistory: jasmine.createSpy('repositoryDiscoveryRevalidationHistory'), discoverOSSInsightRepositories: jasmine.createSpy('discoverOSSInsightRepositories'), discoverReviewableOSSInsightRepositories: jasmine.createSpy('discoverReviewableOSSInsightRepositories'), revalidateOSSInsightDiscovery: jasmine.createSpy('revalidateOSSInsightDiscovery'), recommendCapabilities: jasmine.createSpy('recommendCapabilities') }
     const pursuitService = { create: jasmine.createSpy('create') }
     const ragflowService = { status: jasmine.createSpy('status') }
     const anythingLLMService = { status: jasmine.createSpy('status') }
@@ -126,6 +126,30 @@ describe('BrainCatalogComponent adapter reviews', () => {
 
     expect(component.reviewingCandidateId).toBe('')
     expect(notification.error).toHaveBeenCalledWith('Could not create adapter review', 'No project was installed, configured, or activated. Try again after checking the local pursuit service.')
+  })
+
+  it('retains confirmed maintenance history when a later history read is unavailable', () => {
+    const { component } = createComponent()
+    const catalogService = (component as any).service
+    component.collectionMaintenanceHistory = [{ checkedAt: '2026-08-23T10:00:00Z' }] as any
+    catalogService.collectionRevalidationHistory.and.returnValue(throwError(() => new Error('offline')))
+
+    ;(component as any).loadCollectionMaintenanceHistory()
+
+    expect(component.collectionMaintenanceHistory.length).toBe(1)
+    expect(component.collectionMaintenanceHistoryUnavailable).toBeTrue()
+  })
+
+  it('retains confirmed repository gap-review history when a later read is unavailable', () => {
+    const { component } = createComponent()
+    const catalogService = (component as any).service
+    component.repositoryDiscoveryMaintenanceHistory = [{ checkedAt: '2026-08-23T10:00:00Z' }] as any
+    catalogService.repositoryDiscoveryRevalidationHistory.and.returnValue(throwError(() => new Error('offline')))
+
+    ;(component as any).loadRepositoryDiscoveryMaintenanceHistory()
+
+    expect(component.repositoryDiscoveryMaintenanceHistory.length).toBe(1)
+    expect(component.repositoryDiscoveryMaintenanceHistoryUnavailable).toBeTrue()
   })
 
   it('shows an upstream recheck without changing the catalog entry', () => {
