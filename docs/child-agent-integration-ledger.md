@@ -1368,3 +1368,25 @@ older browser acceptance run `38105148528` remains in progress, so real
 browser verification is pending. PR #36 remains open and unstable. The source
 delta review and cleanup gates are unchanged: no archive, checkout, Docker
 volume, image, or diagnostic cleanup is authorized by current evidence.
+
+### October 11, 2026: runtime configuration semantic triage
+
+A read-only comparison of `.env.example` and its referenced implementation
+against the older primary checkout confirms that the primary checkout has no
+unique configuration keys to port. The current PR couples the configuration
+to implementation for exact loopback source-address allowlists, owner-bound
+Trello and GitHub credentials, explicit opt-in to volatile scheduler fallback,
+NAT64-aware outbound target validation, generated local-preview gateway
+secrets, and private-address-pinned OpenClaw host access. The Windows DSH host
+bridge remains hard-disabled pending authenticated peer identity; its
+configuration comments accurately describe reserved settings rather than an
+operational connector. These controls are referenced by backend code and
+focused tests in the PR tree.
+
+The older checkout's broad `CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL` setting is
+not an equivalent replacement for the PR's exact loopback-address list and
+would weaken the source-fetch boundary if copied. No environment values or
+machine-local `.env` files were read in this comparison. This batch has no
+missing product-code port identified; the remaining source-diff and transcript
+crosswalk inventories remain open, so this result does not authorize local
+checkout, archive, or diagnostic cleanup.
