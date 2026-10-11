@@ -433,6 +433,18 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     });
   }
 
+  setViewMode(mode: 'basic' | 'advanced'): void {
+    this.viewPreferences.setMode(MODULE_ID, mode);
+    document.body.classList.toggle('hai-view-advanced', mode === 'advanced');
+  }
+
+  toggleSection(sectionId: string): void {
+    const preferences = this.viewPreferences.get(MODULE_ID);
+    const open = preferences.openSections[sectionId] !== true;
+    this.viewPreferences.setSection(MODULE_ID, sectionId, open);
+    if (sectionId === 'family-taxonomy') this.onTaxonomyOpen(open);
+  }
+
   openAdvancedCatalog(): void {
     void this.router.navigate(['/framework-registry'], {
       queryParams: { mode: 'advanced' },

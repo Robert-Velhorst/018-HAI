@@ -283,6 +283,21 @@ describe('FrameworkRegistryComponent', () => {
     expect(service.familyTaxonomy).toHaveBeenCalledTimes(1);
   });
 
+  it('loads the immutable taxonomy only when its Advanced section opens', () => {
+    component.setViewMode('advanced');
+
+    expect(service.familyTaxonomy).not.toHaveBeenCalled();
+
+    component.toggleSection('family-taxonomy');
+
+    expect(service.familyTaxonomy).toHaveBeenCalledTimes(1);
+    expect(component.familyTaxonomy).toEqual(familyTaxonomy);
+
+    component.toggleSection('family-taxonomy');
+    component.toggleSection('family-taxonomy');
+    expect(service.familyTaxonomy).toHaveBeenCalledTimes(1);
+  });
+
   it('clears an Advanced-only status filter when returning to Basic view', () => {
     component.statusFilter = 'experimental';
     viewPreferences.setMode('framework-registry', 'advanced');
