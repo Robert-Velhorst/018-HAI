@@ -17,7 +17,7 @@ import { ControlCenterComponent } from './control-center.component'
 
 function emptyPursuitDashboard(overrides: Record<string, unknown> = {}): any {
   return {
-    counts: { active: 0 },
+    counts: { active: 0, needsRobert: 0, blocked: 0, stale: 0 },
     decisionQueue: [], needsRobert: [], vaReady: [], systemReady: [], blocked: [], stale: [],
     reviewDue: [], planningNeeded: [], recentlyChanged: [], highRisk: [], completionCandidates: [],
     ...overrides,
@@ -45,7 +45,7 @@ describe('ControlCenterComponent', () => {
         providers: [
           { provide: AUTOMATIONS_SERVICE_TOKEN, useValue: {} },
           { provide: WorkflowService, useValue: { dashboard: () => of(queue).pipe(delay(1)) } },
-          { provide: PursuitService, useValue: { dashboard: () => of(emptyPursuitDashboard()).pipe(delay(1)) } },
+          { provide: PursuitService, useValue: { dashboardSummary: () => of(emptyPursuitDashboard()).pipe(delay(1)) } },
           { provide: AmbientService, useValue: { overview: () => of(emptyAmbientOverview()).pipe(delay(1)) } },
           { provide: AgentCycleService, useValue: {} },
           { provide: AgentRuntimeService, useValue: {} },
@@ -112,13 +112,21 @@ describe('ControlCenterComponent', () => {
     }
     const router = { navigate: jasmine.createSpy('navigate') }
     const cdr = { markForCheck: jasmine.createSpy('markForCheck') }
+    const workflowService = {
+      dashboard: () => of({
+        counts: { approvals: 0, blocked: 0, dueOpenLoops: 0, ready: 0 },
+        approvalItems: [], blockedItems: [], readyItems: [], dueOpenLoops: [],
+      }),
+    }
+    const pursuitService = { dashboardSummary: () => of(emptyPursuitDashboard()) }
+    const ambientService = { overview: () => of(emptyAmbientOverview()) }
     const component = new ControlCenterComponent(
       automations as any,
-      {} as any,
-      {} as any,
+      workflowService as any,
+      pursuitService as any,
       agentCycle as any,
       {} as any,
-      {} as any,
+      ambientService as any,
       {} as any,
       notifications as any,
       router as any,
@@ -264,7 +272,7 @@ describe('ControlCenterComponent', () => {
     const resolveApproval = jasmine.createSpy('resolveApproval')
     ;(component as any).workflowService = { dashboard: () => workflowResponse.asObservable(), resolveApproval }
     ;(component as any).ambientService = { overview: () => new Subject<any>().asObservable() }
-    ;(component as any).pursuitService = { dashboard: () => new Subject<any>().asObservable() }
+    ;(component as any).pursuitService = { dashboardSummary: () => new Subject<any>().asObservable() }
 
     component.refresh()
     const item = { id: 'stale-workflow-1' } as any
@@ -284,7 +292,7 @@ describe('ControlCenterComponent', () => {
         resolveApproval,
       }
       ;(component as any).ambientService = { overview: () => of(emptyAmbientOverview()) }
-      ;(component as any).pursuitService = { dashboard: () => of(emptyPursuitDashboard()) }
+      ;(component as any).pursuitService = { dashboardSummary: () => of(emptyPursuitDashboard()) }
       component.workflowDashboard = {
         counts: { approvals: 1, blocked: 0, dueOpenLoops: 0 },
         approvalItems: [staleApproval],
@@ -445,7 +453,7 @@ describe('ControlCenterComponent', () => {
       overview: () => throwError(() => new Error('ambient unavailable')),
     }
     ;(component as any).pursuitService = {
-      dashboard: () => throwError(() => new Error('pursuit unavailable')),
+      dashboardSummary: () => throwError(() => new Error('pursuit unavailable')),
     }
 
     component.refresh()
@@ -469,7 +477,7 @@ describe('ControlCenterComponent', () => {
       }),
     }
     ;(component as any).ambientService = { overview: () => of(emptyAmbientOverview()) }
-    ;(component as any).pursuitService = { dashboard: () => of(emptyPursuitDashboard()) }
+    ;(component as any).pursuitService = { dashboardSummary: () => of(emptyPursuitDashboard()) }
 
     component.refresh()
 
@@ -537,7 +545,7 @@ describe('ControlCenterComponent', () => {
       }),
     }
     ;(component as any).ambientService = { overview: () => throwError(() => new Error('offline')) }
-    ;(component as any).pursuitService = { dashboard: () => of(emptyPursuitDashboard()) }
+    ;(component as any).pursuitService = { dashboardSummary: () => of(emptyPursuitDashboard()) }
 
     component.refresh()
 
@@ -561,7 +569,7 @@ describe('ControlCenterComponent', () => {
       overview: jasmine.createSpy('overview').and.returnValues(of(emptyAmbientOverview()), ambient),
     }
     ;(component as any).pursuitService = {
-      dashboard: jasmine.createSpy('dashboard').and.returnValues(of(emptyPursuitDashboard()), pursuits),
+      dashboardSummary: jasmine.createSpy('dashboardSummary').and.returnValues(of(emptyPursuitDashboard()), pursuits),
     }
 
     component.refresh()
@@ -587,10 +595,10 @@ describe('ControlCenterComponent', () => {
     const secondPursuits = new Subject<any>()
     const workflow = jasmine.createSpy('dashboard').and.returnValues(firstWorkflow, secondWorkflow)
     const ambient = jasmine.createSpy('overview').and.returnValues(firstAmbient, secondAmbient)
-    const pursuits = jasmine.createSpy('dashboard').and.returnValues(firstPursuits, secondPursuits)
+    const pursuits = jasmine.createSpy('dashboardSummary').and.returnValues(firstPursuits, secondPursuits)
     ;(component as any).workflowService = { dashboard: workflow }
     ;(component as any).ambientService = { overview: ambient }
-    ;(component as any).pursuitService = { dashboard: pursuits }
+    ;(component as any).pursuitService = { dashboardSummary: pursuits }
 
     component.refresh()
     component.refresh()
@@ -709,7 +717,7 @@ describe('ControlCenterComponent', () => {
       providers: [
         { provide: AUTOMATIONS_SERVICE_TOKEN, useValue: {} },
         { provide: WorkflowService, useValue: { dashboard: () => of({ counts: { approvals: 0, blocked: 0, dueOpenLoops: 0 }, approvalItems: [], blockedItems: [], readyItems: [], dueOpenLoops: [] }) } },
-        { provide: PursuitService, useValue: { dashboard: () => of(emptyPursuitDashboard()) } },
+        { provide: PursuitService, useValue: { dashboardSummary: () => of(emptyPursuitDashboard()) } },
         { provide: AgentCycleService, useValue: {} },
         { provide: AgentRuntimeService, useValue: {} },
         { provide: AmbientService, useValue: { overview: () => of(emptyAmbientOverview()) } },
@@ -805,7 +813,7 @@ describe('ControlCenterComponent', () => {
       providers: [
         { provide: AUTOMATIONS_SERVICE_TOKEN, useValue: {} },
         { provide: WorkflowService, useValue: { dashboard: () => of(emptyQueue) } },
-        { provide: PursuitService, useValue: { dashboard: () => of(emptyPursuitDashboard({ needsRobert: [], blocked: [], stale: [] })) } },
+        { provide: PursuitService, useValue: { dashboardSummary: () => of(emptyPursuitDashboard({ needsRobert: [], blocked: [], stale: [] })) } },
         { provide: AgentCycleService, useValue: {} },
         { provide: AgentRuntimeService, useValue: {} },
         { provide: AmbientService, useValue: { overview: () => of(emptyAmbientOverview()) } },
@@ -1010,10 +1018,10 @@ describe('ControlCenterComponent', () => {
       rules: [],
     }))
     const ambient = jasmine.createSpy('overview').and.returnValue(of(emptyAmbientOverview()))
-    const pursuits = jasmine.createSpy('dashboard').and.returnValue(of(emptyPursuitDashboard()))
+    const pursuits = jasmine.createSpy('dashboardSummary').and.returnValue(of(emptyPursuitDashboard()))
     ;(component as any).workflowService = { dashboard: workflow }
     ;(component as any).ambientService = { overview: ambient }
-    ;(component as any).pursuitService = { dashboard: pursuits }
+    ;(component as any).pursuitService = { dashboardSummary: pursuits }
     component.workflowDashboard = { counts: { approvals: 0, blocked: 0 } } as any
 
     component.runNextAction()
