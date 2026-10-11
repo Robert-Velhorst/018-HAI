@@ -44,6 +44,7 @@ func GetDefaultUserService(existingLogger ...iservice.Logger) (UserService, erro
 		logger, err = services.DefaultLogger()
 		if err != nil {
 			return nil, err
+		}
 	}
 	database, err := infra.GetDefaultDB()
 	if err != nil {

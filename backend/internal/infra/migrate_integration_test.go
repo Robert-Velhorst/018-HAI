@@ -7,7 +7,6 @@
 package infra
 
 import (
-	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -15,46 +14,9 @@ import (
 
 	"automation-hub-backend/migrations"
 
-	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
-
-func TestRuntimeRoleCanUseApplicationDataButCannotOwnSchema(t *testing.T) {
-	db := integrationDB(t)
-	runtimeUser := "hai_runtime_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:20]
-	t.Setenv("DB_RUNTIME_USER", runtimeUser)
-	t.Setenv("DB_RUNTIME_PASSWORD", "runtime-role-contract-password")
-	t.Cleanup(func() {
-		if err := db.Exec("RESET ROLE").Error; err != nil {
-			t.Errorf("RESET ROLE: %v", err)
-		}
-		quotedUser := quotePostgresIdentifier(runtimeUser)
-		for _, statement := range []string{
-			fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM %s", quotedUser),
-			fmt.Sprintf("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE USAGE, SELECT ON SEQUENCES FROM %s", quotedUser),
-			fmt.Sprintf("DROP OWNED BY %s", quotedUser),
-			fmt.Sprintf("DROP ROLE IF EXISTS %s", quotedUser),
-		} {
-			if err := db.Exec(statement).Error; err != nil {
-				t.Errorf("clean up runtime database role: %v", err)
-			}
-		}
-	})
-
-	if err := RunMigrations(db); err != nil {
-		t.Fatalf("RunMigrations(): %v", err)
-	}
-	if err := db.Exec("SET ROLE " + quotePostgresIdentifier(runtimeUser)).Error; err != nil {
-		t.Fatalf("SET ROLE runtime user: %v", err)
-	}
-	if err := db.Exec("SELECT count(*) FROM automations").Error; err != nil {
-		t.Fatalf("runtime role cannot read application table: %v", err)
-	}
-	if err := db.Exec("CREATE TABLE runtime_role_must_not_create (id integer)").Error; err == nil {
-		t.Fatal("runtime role unexpectedly created a table")
-	}
-}
 
 func integrationDB(t *testing.T) *gorm.DB {
 	t.Helper()

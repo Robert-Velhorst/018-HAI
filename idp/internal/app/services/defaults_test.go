@@ -10,12 +10,12 @@ func TestDefaultLoggerUsesLocalLoggerWithoutKafka(t *testing.T) {
 	config.KafkaConfig = nil
 	t.Cleanup(func() { config.KafkaConfig = previous })
 
-	logger, err := NewDefaultLogger()
+	logger, err := DefaultLogger()
 	if err != nil {
-		t.Fatalf("NewDefaultLogger() error = %v", err)
+		t.Fatalf("DefaultLogger() error = %v", err)
 	}
 	if _, ok := logger.(*localLogger); !ok {
-		t.Fatalf("NewDefaultLogger() = %T, want *localLogger", logger)
+		t.Fatalf("DefaultLogger() = %T, want *localLogger", logger)
 	}
 }
 

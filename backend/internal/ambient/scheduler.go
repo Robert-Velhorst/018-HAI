@@ -34,7 +34,6 @@ func StartScheduler(ctx context.Context, service Service, allowed ...func() bool
 	if interval < 30*time.Second {
 		interval = 5 * time.Minute
 	}
-	backgroundAllowed := schedulerBackgroundGate(allowed)
 	if durableSchedulerEnabled() {
 		if err := startDurableScheduler(ctx, service, interval, backgroundAllowed); err != nil {
 			if !legacyFallbackEnabled() {
