@@ -42,6 +42,11 @@ export default async function globalSetup(_config: FullConfig) {
       if (!response.ok()) {
         throw new Error(`Synthetic browser authentication failed (HTTP ${response.status()}).`);
       }
+      const sessionResponse = await api.get('/api/v1/auth/session');
+      const session = await sessionResponse.json().catch(() => null) as { authenticated?: boolean } | null;
+      if (!sessionResponse.ok() || session?.authenticated !== true) {
+        throw new Error('Synthetic browser authentication did not establish a usable owner session.');
+      }
       const state = await api.storageState();
       if (state.cookies.length === 0) throw new Error('Synthetic browser authentication did not establish a session cookie.');
       await writeFile(storageStatePath, JSON.stringify(state), { flag: 'wx', mode: 0o600 });

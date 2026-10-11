@@ -1018,3 +1018,60 @@ local generated `frontend/dist/app` output was rejected by the command policy;
 it was not retried through another deletion mechanism. Browser reports, source
 archives, scratch/snapshot trees, test evidence, and unrelated untracked
 diagnostics remain preserved.
+
+### October 11, 2026: exact-head browser run 38100670744 and local checkout reconciliation
+
+Run `38100670744` tested PR head
+`9a89ce70b3b3643dbc62104d0227d549111ebe08`. All 35 non-browser jobs passed;
+`Browser acceptance (owned disposable stack)` failed after 24 minutes. Its
+retained GitHub artifact `hai-browser-acceptance-38100670744-1` was inspected:
+122 failed test result directories comprise 106 module-route cases where the
+expected theme control was absent and the rendered page was still onboarding,
+eight synthetic-owner session renewals rejected with HTTP 429, and eight strict
+uncertainty cases without the required existing owner-scoped workflow/task
+fixtures. The missing fixtures remain failures, not passes. This run is not
+acceptance evidence and PR #36 remains open and unmerged.
+
+The secondary checkout at
+`C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`
+is the same repository and its `e07b9dae` HEAD is an ancestor of the PR head.
+Its status contains 692 tracked modifications; after normalizing Windows line
+endings, 608 match the current PR files and 74 contain real content differences.
+It also has 2,475 untracked files (about 137 MB): 1,570 under `output` (about
+127 MB, mostly JSONL/log evidence), source/test artifacts, and agent state.
+Across those untracked paths, 895 paths also exist in the PR worktree: 841 are
+byte-identical (about 7.9 MB), and 54 differ (about 1.4 MB). The remaining
+1,580 paths are absent from the PR worktree; this includes four missing
+`backend/internal/outcomeevaluation/test-evidence/20260930-pg-snapshot` records
+(about 470 KB). The other six records in that snapshot directory are already
+byte-identical in the PR worktree.
+These counts were computed read-only. A separate exploratory path inventory
+used a flawed quoted-path parser and was stopped; its partial output is not
+evidence. No source changes were copied, and no files were deleted.
+
+The 74 tracked content differences, 54 divergent same-path untracked files,
+four missing test-evidence records, 1,570 output records, and private
+`.claude-flow`/`.swarm`
+state still require classification or integration. Exact duplicate files are
+not being removed before that reconciliation and PR merge. Docker inventory
+still has unidentified HAI-mounted volumes and unverified recovery state, so
+no Docker data, container, image, checkout, archive, or diagnostic cleanup is
+currently authorized by the safety gates. Transcript semantic crosswalk and
+cleanup gate remain open.
+
+### October 11, 2026: browser-matrix session lifecycle repair
+
+The exact-head browser report showed that the long serial route matrix was
+falling back to repeated password logins when its stored access cookie stopped
+authenticating. The test helper now checks the same `/api/v1/auth/session`
+endpoint used by the frontend. That endpoint validates the owner session and
+uses the existing refresh-token cookie flow to rotate expired access
+credentials; the helper no longer retries password login or risks exhausting
+the IDP login throttle. Global setup now validates the newly established
+session before writing its run-scoped storage state.
+
+Local verification passed: E2E TypeScript typecheck, all 108
+`scripts/test_ci_contract.py` tests, and `git diff --check`. This change has
+not yet been exercised by a fresh owned-stack browser run. The onboarding
+route failures and missing persisted uncertainty fixtures remain open until
+that run provides evidence; no browser acceptance or cleanup gate is claimed.
