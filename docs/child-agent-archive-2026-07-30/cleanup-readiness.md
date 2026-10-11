@@ -969,3 +969,25 @@ The readiness script now reports both snapshots as retain-only cleanup targets
 and always sets `cleanup_authorized=false` and `deletion_performed=false` for
 them. Their individual file changes still require reconciliation before they
 can be considered redundant.
+
+### Integration-snapshot code review (2026-10-11)
+
+The staged snapshot diff was reviewed by subsystem before any source import.
+It is not a safe branch to merge or copy wholesale. The following observed
+differences are behaviorally significant and require isolated review against
+tests and history:
+
+| Area | Observed snapshot difference | Current disposition |
+| --- | --- | --- |
+| Background worker | Removes paused-mode safe-work deferral and the emergency-stop processing gate in `RunOnce`. | Reject as-is; this weakens policy behavior. |
+| Browser verification | Removes workflow-linking request/result fields and relocates route initialization away from the workflow service. | Reject as-is; it drops a review signal already implemented in the PR. |
+| Source evidence | Removes the raw-evidence digest field, digest calculation, and its migration. | Reject as-is; provenance/integrity coverage would regress. |
+| Operation execution | Changes claim eligibility and CAS timestamp updates, including behavior tied to exact approval receipts and audit timestamps. | Do not import without focused concurrency, approval, and audit-order tests. |
+| Pursuit intake | Re-reads scoped detail after intake instead of returning the response-only intake workflow reference. | Reject as-is; response data can be lost. |
+| Test/CI wiring | Removes browser-verification test coverage and Playwright global setup while changing acceptance configuration. | Do not import until exact-head browser acceptance is shown to run. |
+| Local credentials | The staged index adds `.env-backend`, `.env-gateway`, and `.env-idp`. | Never import or publish these files; their contents were not opened. |
+
+This is a representative safety review, not a complete review of all 1,794
+changed paths. No code was copied from the integration snapshot. Continue
+reviewing the remaining changed paths in bounded subsystem batches, and retain
+the snapshot until the full reconciliation and post-merge cleanup gate pass.
