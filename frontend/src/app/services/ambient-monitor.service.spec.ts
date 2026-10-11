@@ -113,4 +113,14 @@ describe('AmbientMonitorService', () => {
     expect(request.request.body.canExecute).toBeUndefined()
     request.flush({ claimed: 0, completions: [], failures: [] })
   })
+
+  it('recovers expired collection and composition leases through the workspace route', () => {
+    service.recover('life/work', '2026-08-05T10:00:00Z').subscribe()
+    const request = http.expectOne(
+      '/api/v1/outcome-evaluations/workspaces/life%2Fwork/monitors/recover'
+    )
+    expect(request.request.method).toBe('POST')
+    expect(request.request.body).toEqual({ asOf: '2026-08-05T10:00:00Z' })
+    request.flush({ recovered: 2, collectionRecovered: 1, compositionRecovered: 1 })
+  })
 })

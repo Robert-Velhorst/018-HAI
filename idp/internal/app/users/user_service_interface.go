@@ -4,6 +4,7 @@ import (
 	"automation-hub-idp/internal/app/models"
 	"automation-hub-idp/internal/app/utils"
 	"github.com/google/uuid"
+	"time"
 )
 
 type UserService interface {
@@ -15,4 +16,7 @@ type UserService interface {
 	DeleteUser(id uuid.UUID) error
 	GetAllUsers(p *utils.Pagination) ([]*models.User, error)
 	UpdatePassword(id uuid.UUID, newPassword string) error
+	StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error
+	ClearPasswordResetIfToken(id uuid.UUID, token string) error
+	CompletePasswordReset(token, newPassword string) error
 }

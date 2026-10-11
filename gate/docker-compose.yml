@@ -1,32 +1,7 @@
-version: '3.5'
-services:
-  nginx:
-    image: nginx:alpine
-    container_name: gateway
-    restart: always
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx-config:/etc/nginx
-    networks:
-      - service-hub
+# Compatibility entrypoint for operators who run Compose from gate/.
+# Gateway behavior is defined only by the canonical HAI topology.
+name: 018-hai
 
-  nginxconfigmanager:
-    image: jacksonbarreto/automation-hub-nginxconfigmanager:latest
-    restart: always
-    env_file:
-      - .env
-    volumes:
-      - ./nginx-config/sites-enabled:/app/sites-enabled
-    networks:
-      - service-hub
-
-volumes:
-  nginx-config:
-
-networks:
-  gate_network:
-    driver: bridge
-  service-hub:
-    driver: bridge
-    name: service-hub
+include:
+  - path: ../docker-compose.local.yml
+    env_file: ${HAI_ENV_FILE:-../.env.local}

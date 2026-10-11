@@ -19,6 +19,17 @@ type UpstreamReviewer interface {
 	Review(Entry) (UpstreamReview, error)
 }
 
+type UpstreamContextReviewer interface {
+	ReviewContext(context.Context, Entry) (UpstreamReview, error)
+}
+
+func reviewUpstream(ctx context.Context, reviewer UpstreamReviewer, entry Entry) (UpstreamReview, error) {
+	if contextual, ok := reviewer.(UpstreamContextReviewer); ok {
+		return contextual.ReviewContext(ctx, entry)
+	}
+	return reviewer.Review(entry)
+}
+
 type githubUpstreamReviewer struct {
 	client *http.Client
 	now    func() time.Time
@@ -37,6 +48,10 @@ func NewUpstreamReviewer(client *http.Client) UpstreamReviewer {
 }
 
 func (r *githubUpstreamReviewer) Review(entry Entry) (UpstreamReview, error) {
+	return r.ReviewContext(context.Background(), entry)
+}
+
+func (r *githubUpstreamReviewer) ReviewContext(parent context.Context, entry Entry) (UpstreamReview, error) {
 	review := UpstreamReview{
 		ID: entry.ID, Name: entry.Name, UpstreamURL: entry.UpstreamURL,
 		CheckedAt: r.now().UTC().Format(time.RFC3339), Disposition: entry.Status,
@@ -45,7 +60,10 @@ func (r *githubUpstreamReviewer) Review(entry Entry) (UpstreamReview, error) {
 	if err != nil {
 		return review, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), ossInsightRequestTimeout)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, ossInsightRequestTimeout)
 	defer cancel()
 	resp, err := githubMetadataGET(ctx, r.client, "https://api.github.com/repos/"+owner+"/"+repo)
 	if err != nil {

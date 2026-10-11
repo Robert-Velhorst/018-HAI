@@ -684,9 +684,22 @@ func (s *Service) Route(request RouteRequest) (RouteDecision, error) {
 }
 
 func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, err error) {
+	return s.GenerateContext(context.Background(), request)
+}
+
+// GenerateContext binds provider inference to the caller lifecycle. HTTP
+// handlers and durable workers should pass their request or job context so an
+// abandoned operation cannot continue consuming model time, tokens, or quota.
+func (s *Service) GenerateContext(ctx context.Context, request GenerateRequest) (result *GenerationResult, err error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	defer func() { s.recordGeneration(result, request) }()
 	started := time.Now().UTC()
-	stopState, stopErr := s.evaluateEmergencyStop(context.Background())
+	stopState, stopErr := s.evaluateEmergencyStop(ctx)
+	if ctx.Err() != nil {
+		return canceledGenerationResult(started, nil, nil, ctx.Err()), nil
+	}
 	if stopErr != nil {
 		return &GenerationResult{
 			Status:     "blocked",
@@ -763,7 +776,13 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 			LoggedAt:         time.Now().UTC(),
 		}, nil
 	}
-	maintenance := s.ensureModelFresh(provider, model, request.EffectContext)
+	maintenance, maintenanceErr := s.ensureModelFreshContext(ctx, provider, model, request.EffectContext)
+	if maintenanceErr != nil {
+		if requestCancelled(maintenanceErr) {
+			return canceledGenerationResult(started, &provider, &model, maintenanceErr), nil
+		}
+		return nil, maintenanceErr
+	}
 	if maintenance.BlocksExecution {
 		// A supplied decision can be older than its per-model maintenance
 		// record. Re-run the full policy once so a failed refresh does not
@@ -811,7 +830,13 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 					LoggedAt:         time.Now().UTC(),
 				}, nil
 			}
-			maintenance = s.ensureModelFresh(provider, model, request.EffectContext)
+			maintenance, maintenanceErr = s.ensureModelFreshContext(ctx, provider, model, request.EffectContext)
+			if maintenanceErr != nil {
+				if requestCancelled(maintenanceErr) {
+					return canceledGenerationResult(started, &provider, &model, maintenanceErr), nil
+				}
+				return nil, maintenanceErr
+			}
 			if maintenance.BlocksExecution {
 				return &GenerationResult{
 					ProviderID:       provider.ID,
@@ -870,7 +895,10 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 		}, nil
 	}
 	if provider.ID == "litellm" {
-		probe := probeProvider(provider, s.policy)
+		probe := probeProviderContext(ctx, provider, s.policy)
+		if err := ctx.Err(); err != nil {
+			return canceledGenerationResult(started, &provider, &model, err), nil
+		}
 		if !probe.Live {
 			return &GenerationResult{
 				ProviderID:       provider.ID,
@@ -887,8 +915,11 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 		}
 	}
 
-	output, reportedUsage, err := s.callProvider(context.Background(), provider, model, endpoint, request)
+	output, reportedUsage, err := s.callProvider(ctx, provider, model, endpoint, request)
 	if err != nil {
+		if ctx.Err() != nil {
+			return canceledGenerationResult(started, &provider, &model, ctx.Err()), nil
+		}
 		return &GenerationResult{
 			ProviderID:       provider.ID,
 			ModelID:          model.ID,
@@ -933,6 +964,27 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 	}, nil
 }
 
+func canceledGenerationResult(started time.Time, provider *Provider, model *Model, cause error) *GenerationResult {
+	result := &GenerationResult{
+		Status:     "stopped",
+		Reason:     "model generation stopped because the caller canceled the operation",
+		DurationMs: time.Since(started).Milliseconds(),
+		LoggedAt:   time.Now().UTC(),
+	}
+	if errors.Is(cause, context.DeadlineExceeded) {
+		result.Reason = "model generation stopped because the caller deadline expired"
+	}
+	if provider != nil {
+		result.ProviderID = provider.ID
+	}
+	if model != nil {
+		result.ModelID = model.ID
+		result.ModelName = model.Name
+		result.Tier = model.Tier
+	}
+	return result
+}
+
 func (s *Service) findProviderModel(providerID, modelID string) (Provider, Model, bool) {
 	for _, provider := range s.policy.Providers {
 		if provider.ID != providerID {
@@ -952,10 +1004,7 @@ func (s *Service) callProvider(ctx context.Context, provider Provider, model Mod
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
 	prompt := buildPrompt(request)
-	maxOutputTokens := request.MaxTokens
-	if maxOutputTokens <= 0 {
-		maxOutputTokens = 800
-	}
+	maxOutputTokens := boundedGenerationMaxTokens(request.MaxTokens)
 	estimatedCostEUR := estimateModelUsageCostEUR(
 		model,
 		estimateTokens(prompt),
@@ -975,6 +1024,13 @@ func (s *Service) callProvider(ctx context.Context, provider Provider, model Mod
 }
 
 func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
+	return probeProviderContext(context.Background(), provider, policy)
+}
+
+func probeProviderContext(parent context.Context, provider Provider, policy Policy) ProviderProbeResult {
+	if parent == nil {
+		parent = context.Background()
+	}
 	started := time.Now().UTC()
 	result := ProviderProbeResult{
 		ProviderID:   provider.ID,
@@ -996,7 +1052,7 @@ func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
 		return result
 	}
 	if provider.ID == "odysseus" {
-		return probeOdysseusProvider(provider, result, started)
+		return probeOdysseusProviderContext(parent, provider, result, started)
 	}
 
 	endpoint := strings.TrimRight(strings.TrimSpace(provider.EndpointURL), "/")
@@ -1004,7 +1060,7 @@ func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
 	if provider.ID == "ollama" {
 		probePath = "/api/tags"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(intEnv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", 5))*time.Second)
+	ctx, cancel := context.WithTimeout(parent, time.Duration(intEnv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", 5))*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+probePath, nil)
 	if err != nil {
@@ -1049,12 +1105,24 @@ func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
 }
 
 func probeOdysseusProvider(provider Provider, result ProviderProbeResult, started time.Time) ProviderProbeResult {
+	return probeOdysseusProviderContext(context.Background(), provider, result, started)
+}
+
+func probeOdysseusProviderContext(parent context.Context, provider Provider, result ProviderProbeResult, started time.Time) ProviderProbeResult {
+	if parent == nil {
+		parent = context.Background()
+	}
 	endpoint := strings.TrimRight(strings.TrimSpace(provider.EndpointURL), "/")
 	paths := []string{"/api/health", "/health", "/api/v1/health", "/"}
 	lastReason := ""
 
 	for _, path := range paths {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(intEnv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", 5))*time.Second)
+		if err := parent.Err(); err != nil {
+			result.Status = "interrupted"
+			result.Reason = "provider probe stopped because the caller was cancelled"
+			return result
+		}
+		ctx, cancel := context.WithTimeout(parent, time.Duration(intEnv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", 5))*time.Second)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+path, nil)
 		if err != nil {
 			cancel()
@@ -1150,13 +1218,15 @@ func (s *Service) callOllama(
 	estimatedCostEUR float64,
 	request GenerateRequest,
 ) (string, providerUsage, error) {
-	payload := map[string]interface{}{
-		"model":  model.ID,
-		"prompt": prompt,
-		"stream": false,
+	options := map[string]interface{}{
+		"num_predict": boundedGenerationMaxTokens(request.MaxTokens),
+		"temperature": request.Temperature,
 	}
-	if request.Temperature > 0 {
-		payload["options"] = map[string]interface{}{"temperature": request.Temperature}
+	payload := map[string]interface{}{
+		"model":   model.ID,
+		"prompt":  prompt,
+		"stream":  false,
+		"options": options,
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -1226,10 +1296,7 @@ func (s *Service) callOpenAICompatible(
 	estimatedCostEUR float64,
 	request GenerateRequest,
 ) (string, providerUsage, error) {
-	maxTokens := request.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = 800
-	}
+	maxTokens := boundedGenerationMaxTokens(request.MaxTokens)
 	payload := map[string]interface{}{
 		"model": model.ID,
 		"messages": []map[string]string{
@@ -1318,6 +1385,24 @@ func (s *Service) callOpenAICompatible(
 		usage.HasOutput = true
 	}
 	return decoded.Choices[0].Message.Content, usage, nil
+}
+
+func boundedGenerationMaxTokens(requested int) int {
+	const (
+		defaultTokens = 800
+		hardLimit     = 32768
+	)
+	configuredLimit := intEnv("LLM_MAX_OUTPUT_TOKENS", hardLimit)
+	if configuredLimit <= 0 || configuredLimit > hardLimit {
+		configuredLimit = hardLimit
+	}
+	if requested <= 0 {
+		requested = defaultTokens
+	}
+	if requested > configuredLimit {
+		return configuredLimit
+	}
+	return requested
 }
 
 func (s *Service) addLog(decision RouteDecision) {
@@ -1788,7 +1873,7 @@ func providerRuntimeReadiness(provider Provider) providerReadiness {
 	if unsafeEndpointHost(host) && strings.ToLower(strings.TrimSpace(os.Getenv("LLM_ALLOW_LINK_LOCAL_ENDPOINTS"))) != "true" {
 		return providerReadiness{configured: false, status: "blocked_endpoint", reason: "provider endpoint uses link-local, metadata, or unspecified address space"}
 	}
-	if isLoopbackOnlyProvider(provider.ID) && !isLocalModelHost(host) {
+	if isLoopbackOnlyProvider(provider.ID) && !isLocalModelHostForProvider(provider.ID, host) {
 		return providerReadiness{configured: false, status: "blocked_endpoint", reason: localProviderDisplayName(provider.ID) + " endpoint must use localhost, loopback, or host.docker.internal"}
 	}
 	if provider.APIKeyEnv != "" && strings.TrimSpace(os.Getenv(provider.APIKeyEnv)) == "" {
@@ -1849,10 +1934,19 @@ func unsafeEndpointHost(host string) bool {
 }
 
 // isLocalModelHost allows a local server on the host OS when HAI itself runs
-// in Docker. It intentionally rejects LAN and public endpoints for llama.cpp:
-// this provider is the explicit local/offline route, not a cloud gateway.
+// in Docker, plus HAI's exact Compose-internal Ollama service name. Arbitrary
+// container, LAN, and public hostnames remain rejected: local providers are an
+// explicit offline route, not a cloud-gateway bypass.
 func isLocalModelHost(host string) bool {
-	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	return isLoopbackModelHost(host) || normalizedModelHost(host) == "ollama-local"
+}
+
+func isLocalModelHostForProvider(providerID, host string) bool {
+	return isLoopbackModelHost(host) || (providerID == "ollama" && normalizedModelHost(host) == "ollama-local")
+}
+
+func isLoopbackModelHost(host string) bool {
+	host = normalizedModelHost(host)
 	if host == "localhost" || host == "host.docker.internal" {
 		return true
 	}
@@ -1860,7 +1954,21 @@ func isLocalModelHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+func normalizedModelHost(host string) string {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	return host
+}
+
+type providerLookupIPAddr func(context.Context, string) ([]net.IPAddr, error)
+
+var sharedProviderHTTPClient = newProviderHTTPClient(net.DefaultResolver.LookupIPAddr)
+
 func noRedirectHTTPClient() *http.Client {
+	return sharedProviderHTTPClient
+}
+
+func newProviderHTTPClient(lookup providerLookupIPAddr) *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	return &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -1869,8 +1977,41 @@ func noRedirectHTTPClient() *http.Client {
 		// maintenance requests. Do not inherit machine proxy settings: local
 		// runtimes must stay local and configured cloud endpoints must be
 		// contacted directly rather than silently through an environment proxy.
-		Transport: &http.Transport{Proxy: nil},
+		Transport: &http.Transport{
+			Proxy:               nil,
+			MaxIdleConns:        32,
+			MaxIdleConnsPerHost: 4,
+			IdleConnTimeout:     60 * time.Second,
+			TLSHandshakeTimeout: 5 * time.Second,
+			DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(address)
+				if err != nil {
+					return nil, fmt.Errorf("LLM provider: invalid network address: %w", err)
+				}
+				resolved, err := lookup(ctx, host)
+				if err != nil {
+					return nil, fmt.Errorf("LLM provider: resolve endpoint: %w", err)
+				}
+				if len(resolved) == 0 {
+					return nil, fmt.Errorf("LLM provider: endpoint resolved to no addresses")
+				}
+				for _, candidate := range resolved {
+					if providerIPAddressBlocked(candidate.IP) {
+						return nil, fmt.Errorf("LLM provider: endpoint resolved to blocked address space")
+					}
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(resolved[0].IP.String(), port))
+			},
+		},
 	}
+}
+
+func providerIPAddressBlocked(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	return ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.String() == "169.254.169.254"
 }
 
 func buildPrompt(request GenerateRequest) string {
@@ -1989,7 +2130,7 @@ func defaultPolicy() Policy {
 	dsparkEndpoint := strings.TrimSpace(os.Getenv("DSPARK_BASE_URL"))
 	dsparkModelID := configuredLocalModelID("DSPARK_MODEL_ID", "dspark-default")
 	dsparkEnabled := false
-	if parsed, err := url.Parse(dsparkEndpoint); err == nil && isLocalModelHost(parsed.Hostname()) {
+	if parsed, err := url.Parse(dsparkEndpoint); err == nil && isLocalModelHostForProvider("dspark", parsed.Hostname()) {
 		dsparkEnabled = envEnabled("DSPARK_ENABLED")
 	}
 	liteLLMEnabled := envEnabled("LITELLM_ENABLED")
@@ -2209,69 +2350,6 @@ func defaultPolicy() Policy {
 					catalogModel("gpt-5.4", "GPT-5.4", TierHigh, []string{"general", "coding", "planning", "verification", "extraction"}, 5, "very_high", 3, 10, true, "default estimate; verify with OpenAI/Codex invoice or override through LLM_PROVIDERS_JSON"),
 					catalogModel("gpt-5.4-mini", "GPT-5.4-mini", TierCheap, []string{"general", "coding", "planning", "extraction"}, 4, "high", 0.25, 1, true, "default estimate; verify with OpenAI/Codex invoice or override through LLM_PROVIDERS_JSON"),
 					catalogModel("gpt-5.3-codex-spark", "GPT-5.3-codex-spark", TierCheap, []string{"general", "coding", "extraction"}, 4, "high", 0.15, 0.6, true, "default estimate; verify with OpenAI/Codex invoice or override through LLM_PROVIDERS_JSON"),
-				},
-			},
-			{
-				ID:             "cheap-provider",
-				Name:           "Cheap API provider",
-				Enabled:        false,
-				Local:          false,
-				Paid:           true,
-				QuotaRemaining: 0,
-				DailyBudgetEUR: 0,
-				Models: []Model{
-					{ID: "cheap-small", Name: "Cheap small model", Tier: TierCheap, Capabilities: []string{"general", "classification", "extraction"}, MaxDifficulty: 3, MaxReasoning: "medium", EstimatedCostEUR: 0.001, RequiresApproval: true, Enabled: true},
-					{ID: "cheap-coder", Name: "Cheap coder model", Tier: TierCheap, Capabilities: []string{"general", "coding", "extraction"}, MaxDifficulty: 4, MaxReasoning: "high", EstimatedCostEUR: 0.003, RequiresApproval: true, Enabled: true},
-				},
-			},
-			{
-				ID:             "acceptable-provider",
-				Name:           "Acceptable API provider",
-				Enabled:        false,
-				Local:          false,
-				Paid:           true,
-				QuotaRemaining: 0,
-				DailyBudgetEUR: 0,
-				Models: []Model{
-					{ID: "acceptable-general", Name: "Acceptable general model", Tier: TierAcceptable, Capabilities: []string{"general", "planning", "extraction"}, MaxDifficulty: 4, MaxReasoning: "high", EstimatedCostEUR: 0.01, RequiresApproval: true, Enabled: true},
-					{ID: "acceptable-coder", Name: "Acceptable coder model", Tier: TierAcceptable, Capabilities: []string{"general", "coding", "planning"}, MaxDifficulty: 4, MaxReasoning: "high", EstimatedCostEUR: 0.015, RequiresApproval: true, Enabled: true},
-				},
-			},
-			{
-				ID:             "high-provider",
-				Name:           "High capability API provider",
-				Enabled:        false,
-				Local:          false,
-				Paid:           true,
-				QuotaRemaining: 0,
-				DailyBudgetEUR: 0,
-				Models: []Model{
-					{ID: "high-reasoning", Name: "High reasoning model", Tier: TierHigh, Capabilities: []string{"general", "coding", "planning", "verification", "extraction"}, MaxDifficulty: 5, MaxReasoning: "very_high", EstimatedCostEUR: 0.03, RequiresApproval: true, Enabled: true},
-				},
-			},
-			{
-				ID:             "premium-provider",
-				Name:           "Premium API provider",
-				Enabled:        false,
-				Local:          false,
-				Paid:           true,
-				QuotaRemaining: 0,
-				DailyBudgetEUR: 0,
-				Models: []Model{
-					{ID: "premium-best", Name: "Premium best-available model", Tier: TierPremium, Capabilities: []string{"general", "coding", "planning", "verification", "extraction"}, MaxDifficulty: 5, MaxReasoning: "very_high", EstimatedCostEUR: 0.04, RequiresApproval: true, Enabled: true},
-				},
-			},
-			{
-				ID:             "paid-provider",
-				Name:           "Paid provider placeholder",
-				Enabled:        false,
-				Local:          false,
-				Paid:           true,
-				QuotaRemaining: 0,
-				DailyBudgetEUR: 0,
-				Models: []Model{
-					{ID: "paid-high-capability", Name: "Paid high capability model", Tier: TierExpensive, Capabilities: []string{"general", "coding", "planning", "verification", "extraction"}, MaxDifficulty: 5, MaxReasoning: "very_high", EstimatedCostEUR: 0.05, RequiresApproval: true, Enabled: true},
-					{ID: "expensive-frontier", Name: "Expensive frontier model", Tier: TierExpensive, Capabilities: []string{"general", "coding", "planning", "verification", "extraction"}, MaxDifficulty: 5, MaxReasoning: "very_high", EstimatedCostEUR: 0.08, RequiresApproval: true, Enabled: true},
 				},
 			},
 		},

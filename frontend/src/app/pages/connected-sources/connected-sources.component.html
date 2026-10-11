@@ -10,7 +10,7 @@
         <i nz-icon [nzType]="themeIcon()" nzTheme="outline"></i>
         {{ themeLabel() }}
       </button>
-      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" title="Reload connectors, sources, jobs, extractions, and audit logs">
+      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" title="Reload source availability and safety totals. Open evidence histories are refreshed too.">
         <i nz-icon nzType="reload" nzTheme="outline"></i>
         Refresh
       </button>
@@ -36,15 +36,15 @@
         <span>of {{ connectors.length }} connectors</span>
       </div>
       <div title="Extracted records available for source-grounded memory and task context">
-        <strong>{{ extractions.length }}</strong>
+        <strong>{{ overview ? overview.extractionCount : '—' }}</strong>
         <span>extracted records</span>
       </div>
       <div title="Records that must stay review-gated or sensitive">
-        <strong>{{ sensitiveExtractionCount() }}</strong>
+        <strong>{{ overview ? sensitiveExtractionCount() : '—' }}</strong>
         <span>sensitive records</span>
       </div>
       <div [class.attention]="failedJobCount() > 0" title="Sync jobs that failed and need attention">
-        <strong>{{ failedJobCount() }}</strong>
+        <strong>{{ overview ? failedJobCount() : '—' }}</strong>
         <span>failed jobs</span>
       </div>
     </section>
@@ -169,6 +169,9 @@
               <label>
                 <span>Sync target</span>
                 <input nz-input formControlName="syncTarget" [placeholder]="syncTargetPlaceholder()" data-testid="source-target" />
+                <small *ngIf="sourceForm.value.connectorKey === 'local-folder'">
+                  Choose an explicit subfolder. HAI will not select the entire connected-source root by default.
+                </small>
               </label>
               <label>
                 <span>Exclude patterns</span>
@@ -565,7 +568,7 @@
               </div>
               <div>
                 <dt>Latest job</dt>
-                <dd>{{ latestJobFor(source)?.status || 'no job yet' }}</dd>
+                <dd>{{ latestJobStatusFor(source) }}</dd>
               </div>
               <div *ngIf="sourceHealth(source) as health">
                 <dt>Connection</dt>
@@ -676,16 +679,35 @@
       </article>
     </section>
 
-    <section class="lower-grid">
-      <section class="panel">
-        <div class="panel-heading">
+    <section class="lower-grid" aria-label="Optional source evidence">
+      <details
+        class="panel progressive-panel"
+        [open]="extractionHistoryOpen"
+        (toggle)="setExtractionHistoryOpen($any($event.target).open)"
+      >
+        <summary class="panel-heading">
           <div>
             <h2>Extracted context</h2>
-            <p>Facts, tasks, dates, and follow-ups stay editable and source-linked.</p>
+            <p>{{ overview ? overview.extractionCount : '—' }} source-linked records · open only when evidence needs inspection.</p>
           </div>
+          <span class="progressive-summary-action">
+            {{ extractionHistoryOpen ? 'Hide records' : 'Inspect records' }}
+            <i nz-icon nzType="down" nzTheme="outline"></i>
+          </span>
+        </summary>
+        <div class="progressive-toolbar" *ngIf="extractionHistoryOpen">
+          <span>Detailed text stays off the page until requested.</span>
           <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="refresh()" title="Include archived extraction records">Show archived</label>
         </div>
-        <div class="record-list">
+        <div class="inline-load-state" *ngIf="extractionHistoryOpen && extractionHistoryLoading" aria-live="polite">
+          <i nz-icon nzType="loading" nzTheme="outline"></i>
+          Loading extracted evidence…
+        </div>
+        <div class="inline-error" *ngIf="extractionHistoryOpen && extractionHistoryError" role="alert">
+          <span>{{ extractionHistoryError }}</span>
+          <button type="button" nz-button nzType="default" (click)="setExtractionHistoryOpen(true)">Retry</button>
+        </div>
+        <div class="record-list" *ngIf="extractionHistoryOpen && !extractionHistoryLoading && !extractionHistoryError">
           <article *ngFor="let extraction of recentExtractions()">
             <div>
               <strong>{{ extraction.summary || extraction.text }}</strong>
@@ -712,16 +734,32 @@
           </article>
           <nz-empty *ngIf="!recentExtractions().length" nzNotFoundContent="No extracted records yet."></nz-empty>
         </div>
-      </section>
+      </details>
 
-      <section class="panel">
-        <div class="panel-heading">
+      <details
+        class="panel progressive-panel"
+        [open]="activityHistoryOpen"
+        (toggle)="setActivityHistoryOpen($any($event.target).open)"
+      >
+        <summary class="panel-heading">
           <div>
             <h2>Sync jobs and audit</h2>
-            <p>Every source action is traceable.</p>
+            <p>{{ overview ? (pendingJobCount() + ' active · ' + failedJobCount() + ' failed') : 'Status unavailable' }} · open for full traceability.</p>
           </div>
+          <span class="progressive-summary-action">
+            {{ activityHistoryOpen ? 'Hide activity' : 'Inspect activity' }}
+            <i nz-icon nzType="down" nzTheme="outline"></i>
+          </span>
+        </summary>
+        <div class="inline-load-state" *ngIf="activityHistoryOpen && activityHistoryLoading" aria-live="polite">
+          <i nz-icon nzType="loading" nzTheme="outline"></i>
+          Loading source activity…
         </div>
-        <div class="timeline">
+        <div class="inline-error" *ngIf="activityHistoryOpen && activityHistoryError" role="alert">
+          <span>{{ activityHistoryError }}</span>
+          <button type="button" nz-button nzType="default" (click)="setActivityHistoryOpen(true)">Retry</button>
+        </div>
+        <div class="timeline" *ngIf="activityHistoryOpen && !activityHistoryLoading && !activityHistoryError">
           <article *ngFor="let job of recentSyncJobs()" [attr.data-status]="statusTone(job.status)">
             <i nz-icon nzType="sync" nzTheme="outline"></i>
             <div>
@@ -740,7 +778,7 @@
           </article>
           <nz-empty *ngIf="!recentSyncJobs().length && !recentAuditLogs().length" nzNotFoundContent="No source activity yet."></nz-empty>
         </div>
-      </section>
+      </details>
     </section>
   </main>
 </section>

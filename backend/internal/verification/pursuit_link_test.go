@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"fmt"
 	"testing"
 
 	"automation-hub-backend/internal/models"
@@ -165,6 +166,16 @@ func (r *fakeVerificationRepository) FindRunsForOwner(ownerIdentity string) ([]m
 		}
 	}
 	return result, nil
+}
+
+func (r *fakeVerificationRepository) FindRunForOwner(ownerIdentity string, id uuid.UUID) (*models.VerificationRun, error) {
+	for _, run := range r.runs {
+		if run.ID == id && (ownerIdentity == "" || run.OwnerIdentity == "" || run.OwnerIdentity == ownerIdentity) {
+			copy := run
+			return &copy, nil
+		}
+	}
+	return nil, fmt.Errorf("verification run not found")
 }
 
 func (r *fakeVerificationRepository) FindClaims(runID uuid.UUID) ([]models.VerificationClaim, error) {

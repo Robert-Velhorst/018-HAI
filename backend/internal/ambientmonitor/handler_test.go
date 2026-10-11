@@ -208,6 +208,84 @@ func TestMonitorConfigurationValidatesOutcomeIndicatorWindowAndEnabledReplay(t *
 	}
 }
 
+func TestRecoverReturnsCollectionAndCompositionLeaseCounts(t *testing.T) {
+	engine, service, now := newAmbientMonitorHTTPTest(t)
+	scope := Scope{OwnerID: "owner-robert", WorkspaceID: "workspace-hai"}
+
+	collectionRequest := testRegisterRequest(scope, now)
+	collectionRequest.IdempotencyKey = "register-stale-collection"
+	collectionRequest.TargetID = "target-stale-collection"
+	collectionRequest.OutcomeID = "outcome-one"
+	collectionRequest.IndicatorID = "indicator-open"
+	if _, _, err := service.RegisterTarget(t.Context(), collectionRequest); err != nil {
+		t.Fatal(err)
+	}
+	collectionClaims, err := service.ClaimDue(t.Context(), ClaimDueRequest{
+		Scope: scope, WorkerID: "collection-worker", Now: now,
+		LeaseDuration: 5 * time.Second, Limit: 1,
+	})
+	if err != nil || len(collectionClaims) != 1 {
+		t.Fatalf("collection claim = (%+v, %v)", collectionClaims, err)
+	}
+
+	compositionRequest := testRegisterRequest(scope, now)
+	compositionRequest.IdempotencyKey = "register-stale-composition"
+	compositionRequest.TargetID = "target-stale-composition"
+	compositionRequest.OutcomeID = "outcome-one"
+	compositionRequest.IndicatorID = "indicator-open"
+	compositionTarget, _, err := service.RegisterTarget(t.Context(), compositionRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	monitorClaims, err := service.ClaimDue(t.Context(), ClaimDueRequest{
+		Scope: scope, WorkerID: "composition-collector", Now: now,
+		LeaseDuration: time.Minute, Limit: 1,
+	})
+	if err != nil || len(monitorClaims) != 1 || monitorClaims[0].ID != compositionTarget.ID {
+		t.Fatalf("composition monitor claim = (%+v, %v)", monitorClaims, err)
+	}
+	completedAt := monitorClaims[0].Lease.ClaimedAt.Add(time.Microsecond)
+	completion, err := service.ProcessClaim(t.Context(), ProcessClaimRequest{
+		IdempotencyKey: "complete-stale-composition", Scope: scope,
+		TargetID: compositionTarget.ID, WorkerID: "composition-collector",
+		LeaseGeneration: monitorClaims[0].Lease.Generation, CompletedAt: completedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compositionClaims, err := service.repository.ClaimDueCompositions(
+		t.Context(), scope.OwnerID, scope.WorkspaceID, "composition-worker",
+		completion.Composition.NextAttemptAt, 5*time.Second, 1,
+	)
+	if err != nil || len(compositionClaims) != 1 {
+		t.Fatalf("composition claim = (%+v, %v)", compositionClaims, err)
+	}
+
+	asOf := compositionClaims[0].Lease.ExpiresAt.Add(time.Second)
+	response := performAmbientRequest(
+		engine, http.MethodPost,
+		"/api/v1/outcome-evaluations/workspaces/workspace-hai/monitors/recover",
+		ambientJSON(t, map[string]any{"asOf": asOf}),
+		"owner-robert", "owner", "application/json",
+	)
+	if response.Code != http.StatusOK ||
+		!strings.Contains(response.Body.String(), `"recovered":2`) ||
+		!strings.Contains(response.Body.String(), `"collectionRecovered":1`) ||
+		!strings.Contains(response.Body.String(), `"compositionRecovered":1`) {
+		t.Fatalf("combined recovery status = %d body=%s", response.Code, response.Body.String())
+	}
+
+	replay := performAmbientRequest(
+		engine, http.MethodPost,
+		"/api/v1/outcome-evaluations/workspaces/workspace-hai/monitors/recover",
+		ambientJSON(t, map[string]any{"asOf": asOf}),
+		"owner-robert", "owner", "application/json",
+	)
+	if replay.Code != http.StatusOK || !strings.Contains(replay.Body.String(), `"recovered":0`) {
+		t.Fatalf("recovery replay status = %d body=%s", replay.Code, replay.Body.String())
+	}
+}
+
 func TestCompositionReadAPIsEnforceScopeTargetBindingAndAdvisoryAuthority(t *testing.T) {
 	engine, service, now := newAmbientMonitorHTTPTest(t)
 	scope := Scope{OwnerID: "owner-robert", WorkspaceID: "workspace-hai"}

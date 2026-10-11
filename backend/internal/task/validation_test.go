@@ -89,7 +89,9 @@ func deterministicReadOnlyToolExecution() *ToolExecutionResult {
 	return &ToolExecutionResult{
 		AutomationID:  uuid.NewString(),
 		LaunchEventID: uuid.NewString(),
+		RuntimeType:   "api",
 		LaunchType:    "api",
+		Target:        "http://backend/readyz",
 		Status:        "completed",
 		Message:       "GET http://backend/readyz returned HTTP 200",
 		ExitCode:      http.StatusOK,

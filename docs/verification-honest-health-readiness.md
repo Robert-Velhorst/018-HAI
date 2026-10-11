@@ -12,11 +12,11 @@ in `docs/operator-runbook.md`.
 - Stack file: `docker-compose.local.yml` with `--env-file .env.local`
 - Go build/test run in `golang:1.23` container (no Go toolchain on host)
 
-> Note on which compose file is authoritative: `docker-compose.local.yml` builds
-> the backend, frontend and IDP **from source**. `docker-compose.yml` pulls
-> prebuilt upstream `jacksonbarreto/*` images and is not the HAI stack. Use the
-> local file. This corrects the earlier `ANALYSIS_REPORT.md`, which recommended
-> the opposite.
+> Current note on Compose authority: `docker-compose.local.yml` defines the one
+> source-built topology. The root and backend `docker-compose.yml` files now
+> delegate to it; the retired `jacksonbarreto/*` images and three-broker
+> ZooKeeper topology are no longer Compose entrypoints. This supersedes the
+> historical warning below while preserving the dated verification record.
 
 ---
 
@@ -50,7 +50,9 @@ docker compose -f docker-compose.local.yml --env-file .env.local up -d --build
 docker compose -f docker-compose.local.yml --env-file .env.local ps
 ```
 
-Result: **11/11 services up, 10 healthy.**
+Result at the time of this historical capture: **11/11 services up, 10 healthy.**
+The current local topology has since replaced the Kafka plus ZooKeeper pair
+with one bounded Kafka KRaft process; the readiness method below is unchanged.
 
 | Service | Status |
 | --- | --- |
@@ -62,9 +64,78 @@ Result: **11/11 services up, 10 healthy.**
 | postgres-idp | Up (healthy) |
 | redis | Up (healthy) |
 | kafka | Up (healthy) |
-| zookeeper | Up (healthy) |
 | generic-auto | Up (healthy) |
 | nginxconfigmanager | Up |
+
+### Historical KRaft cutover evidence (2026-08-09)
+
+The retained-data Windows stack was cut over to a fresh
+`018-hai-kafka-kraft-data` volume without deleting the three legacy Kafka and
+ZooKeeper volumes. The active topology contained ten services and no ZooKeeper
+container. Kafka topic `automation-events` was recreated with one partition,
+leader `1`, and in-sync replica `1`.
+
+An authenticated automation transaction exercised the real backend, Postgres,
+Kafka publisher, and nginx-config-manager consumer: create returned `201`, read
+returned `200`, delete returned `204`, and the deleted record returned `404`.
+The topic end offset advanced from `2` to `4`, and the temporary generated
+route was removed. `/readyz` reported live Postgres, Redis, and Kafka probes as
+reachable with `fail: 0`; it remained truthfully `degraded` only because no LLM
+provider was configured.
+
+Three immediate idle samples placed KRaft at a median 303.4 MiB, 69 processes,
+and 1.13% CPU. The previous Kafka-plus-ZooKeeper pair used about 413.5 MiB and
+98 processes in the pre-cutover sample. The full active HAI stack dropped from
+about 574.2 MiB to 473.2 MiB in the comparable point-in-time measurements.
+
+That first KRaft envelope was subsequently proven unsafe: its 160 MiB heap
+exhausted while the snapshot emitter serialized retained metadata, even though
+the TCP health probe stayed green. The corrected 2026-08-09 validation used a
+256 MiB maximum heap inside a 512 MiB container, retained the same named KRaft
+volume, and produced a new snapshot at offset `25531` without an OOM or snapshot
+error. Three stabilized samples measured a median 352.8 MiB, 69 processes, and
+1.67% CPU for Kafka, while the current nine-service stack measured a median
+498.1 MiB. These later values supersede the lower unsafe memory figure as the
+supported local operating envelope.
+
+### Kafka-protocol Redpanda cutover evidence (2026-08-13)
+
+The replacement broker was first tested side by side on the same Docker
+network using the exact digest pinned in Compose. It reached cluster-ready
+state, created a one-partition topic, and idled at approximately 58.7 MiB with
+3 processes under a 256 MiB/0.5 CPU/96-process envelope while retaining fsync.
+The active Java KRaft
+broker measured approximately 364 MiB and 64 processes immediately beforehand.
+Three stabilized connected-live samples measured a median 153 MiB and 4
+processes after the backend, IDP, config manager, and application transaction.
+Development mode and unsafe fsync bypass are disabled, and the cluster's
+`write_caching_default` must remain false.
+
+The authenticated live application smoke then created a disposable automation
+(`201`), read it (`200`), consumed its create event into a generated nginx
+route, deleted it (`204`), consumed the delete event and removed the route, and
+returned `404` for the deleted record. The topic high watermark advanced by
+exactly two. `/readyz` reported reachable database, Redis, Kafka, and outbox;
+its only warning was the truthful absence of a configured LLM provider.
+
+The new broker writes only to `018-hai-redpanda-data`. All prior Kafka and
+ZooKeeper volumes remain detached and untouched. Their presence is rollback
+evidence, not permission to delete them.
+
+### Fractional-CPU scheduler evidence (2026-08-14)
+
+The local Redpanda process is capped at half a CPU and runs beside the other
+HAI services on Docker Desktop. A controlled run with production-style busy
+polling used 151 MiB and about 1.3% CPU after the authenticated application
+round-trip. The equivalent overprovisioned scheduler run used about 98 MiB and
+0.38% CPU across six samples. Both runs created, read, and deleted a disposable
+automation; created and removed its generated route; returned `404` after
+deletion; and advanced the topic high watermark by exactly two. The final run
+resumed the persisted topic at offset `36` and advanced it to `38`.
+
+Only the scheduler mode changed. Fsync bypass remains disabled, write caching
+remains disabled, the Redpanda development profile is not enabled, and
+`/readyz` returned HTTP 200 after the final run.
 
 ## 3. The readiness lie (before the fix)
 
@@ -117,6 +188,22 @@ HTTP 503  status=not_ready  {ok:17, warn:1, fail:1}
 
 The endpoint now fails, with HTTP 503, for the exact reason readiness exists.
 
+### Local model acceptance update (2026-08-14)
+
+The opt-in private `local-model` profile was started on the retained Windows
+workspace with `qwen2.5:0.5b`. The authenticated acceptance path recorded:
+
+- Ollama live probe: HTTP 200, one model reported;
+- route: `ollama/qwen2.5:0.5b`, local tier, EUR 0, no paid approval;
+- bounded generation: completed with provider-reported 53 input and 5 output
+  tokens;
+- persisted generation history: matching audit and telemetry identifiers,
+  with prompt and output content absent;
+- readiness: HTTP 200, `ready`, 21 ok / 0 warn / 0 fail.
+
+The fixed-output marker was an operational smoke only. The generation record
+correctly remains `unvalidated`; this does not establish factual model quality.
+
 ## 5. Honest container healthcheck
 
 The backend healthcheck now polls `/readyz` with `curl -f`, so it fails on the
@@ -160,7 +247,9 @@ The 401 is correct for protected `/api/v1/*` engine routes: the route now maps
 to the backend, which the gateway guards with its `auth_request` login check.
 `/healthz` and `/readyz` are separate, intentionally public gateway probes.
 Neither requires an IDP session. `/healthz` reports liveness; `/readyz` returns
-the current readiness JSON with HTTP 200 or 503.
+the aggregate readiness state and counts with HTTP 200 or 503. Individual
+dependency checks are available only from authenticated
+`/api/v1/system/readiness`.
 
 ## 8. Two bugs the new probe surfaced immediately
 
@@ -192,11 +281,14 @@ the tri-state semantics.
 ## 10. Frontend — System Status page
 
 A new authenticated page at `/system-status` (nav: Control Center → System →
-System Status) consumes `/readyz` and renders it: an overall banner
+System Status) consumes authenticated `/api/v1/system/readiness` and renders it:
+an overall banner
 (ready/degraded/not ready), a recommended-next-actions list built from the
 non-healthy checks, and per-subsystem cards that sort failures to the top. It
-polls every 15s, and treats a 503 body as data rather than an error, so a
-not-ready backend is shown rather than swallowed.
+polls adaptively (15 seconds while not ready, 60 seconds after errors or while
+degraded, 120 seconds while ready), pauses while the page is hidden, and treats
+a 503 body as data rather than an error, so a not-ready backend is shown rather
+than swallowed.
 
 Build: the Angular image built cleanly; the page compiled into its own lazy
 chunk (`pages-system-status-system-status-module`, 10.53 kB).
@@ -213,14 +305,13 @@ user, through the gateway on :8088):
   Database card sorts to the top and shows the real driver error. Everything
   else stays green. Screenshot: `docs/evidence/system-status-db-down.png`.
 - **Unauthenticated readiness probe** - `/readyz` through the gateway is
-  intentionally public and returns the readiness payload and 200/503 semantics
-  without an IDP session. Protected `/api/v1/*` engine routes still return 401
-  when the session is absent.
+  intentionally public and returns only aggregate readiness plus 200/503
+  semantics without an IDP session. Protected `/api/v1/*` engine routes,
+  including `/api/v1/system/readiness`, return 401 when the session is absent.
 
-Because readiness includes subsystem status, deployment operators must treat
-network exposure of the public gateway as an explicit operational decision.
-Authentication must not be added to `/readyz` without also updating container
-health checks and monitoring clients that rely on a public probe.
+The public probe omits subsystem names, hosts, users, paths, and configuration
+details. Authentication must not be added to `/readyz` without also updating
+container health checks and monitoring clients that rely on a public probe.
 
 Note: the browser check registered a throwaway local account
 (`verify@local.test`) via the open `/api/v1/auth/register` endpoint. It exists
@@ -233,7 +324,11 @@ only in the local Postgres volume.
 The per-IP rate limiter kept its counters in a per-process map, so the limit
 reset on every restart and could not hold across multiple backend instances.
 Counters now live in Redis when `REDIS_ADDR` is set, with an in-process
-fallback when it is not.
+fallback when it is absent at startup or becomes unavailable at runtime. The
+runtime fallback remains bounded; a Redis outage no longer turns an enabled
+limiter into an unlimited pass-through. Its per-key map is capped at 4,096
+entries, pruning expired windows before evicting the oldest active key, so
+rotating client identifiers cannot grow fallback memory indefinitely.
 
 Fixing this surfaced another plumbing gap first: `RATE_LIMIT_PER_MINUTE` was
 defined in `.env` but never passed to the backend container, so the limiter
@@ -270,8 +365,9 @@ without the backend having counted it locally.
 
 Default is unchanged (`RATE_LIMIT_PER_MINUTE=0`, disabled): 12 rapid requests
 all return 200, so normal use is unaffected. Unit tests cover the limit
-boundary, per-key isolation, and fail-open/fail-closed behaviour when Redis is
-unavailable, using a deterministic fake so they need no running Redis.
+boundary, per-key isolation, bounded local failover, and fail-closed behaviour
+when no fallback exists, using a deterministic fake so they need no running
+Redis.
 
 ## 12. Honest connector status
 
@@ -354,14 +450,17 @@ local files. Built against the developer's own Google OAuth app.
 Architecture:
 - `internal/googleoauth`: the authorization-code flow (consent URL with
   `access_type=offline` for a refresh token, code exchange, refresh), an
-  AES-256-GCM codec for tokens at rest, and a read-only Gmail REST client
-  (metadata only). All unit-tested against mock servers.
-- `internal/source/oauth.go`: HMAC-signed, stateless CSRF state; encrypted token
-  storage (`SourceOAuthToken`); transparent token refresh; and a Gmail fetch
-  wired into the sync dispatch.
-- Routes: `sources/oauth/google/start` (authenticated) and `.../callback`. The
-  gateway serves the callback publicly — Google has no HAI session — protected
-  by the signed state, not the login.
+  AES-256-GCM codec for tokens at rest, and a read-only Gmail REST client with
+  bounded message bodies, attachment metadata, and textual attachment content.
+  All are unit-tested against mock servers.
+- `internal/source/oauth.go`: HMAC-signed CSRF state with only an owner-bound,
+  single-use SHA-256 digest retained in PostgreSQL; encrypted token storage
+  (`SourceOAuthToken`); transparent token refresh; and a Gmail fetch wired into
+  the sync dispatch.
+- Routes: `sources/oauth/google/start` and `.../callback` both require a
+  verified HAI role. The callback additionally consumes the exact initiating
+  owner's state before code exchange, so restart, replay, denial, expiry, and
+  revocation fail closed.
 
 Verified on the running stack:
 
@@ -438,11 +537,11 @@ Framework Registry and task-state database tests in isolated PostgreSQL
 databases and to exercise signed-session and Windows shell contracts.
 
 On 2026-07-30, a fresh local verification pass completed the backend unit
-suite, vet, and build; the IDP unit suite, vet, and build; the frontend's 126
+suite, vet, and build; the IDP unit suite, vet, and build; the frontend's 418
 headless unit tests and production build; the Python CI, authentication, and
 gateway contract suites; Compose configuration validation; and Bash syntax
 checks for the smoke scripts. All three Go modules, container builders, and CI
-runners are pinned to the same Go 1.25.12 toolchain by an executable CI
+runners are pinned to the same Go 1.25.13 toolchain by an executable CI
 contract test. Refreshed `govulncheck` v1.6.0 scans report 0 vulnerabilities
 affecting backend, IDP, or nginx configuration manager code; all three pinned
 scans are blocking CI gates. The nginx manager no longer imports the Docker SDK
@@ -466,7 +565,7 @@ high/critical, and `npm audit --audit-level=high` is blocking. See
 The current Angular 22 frontend, IDP, and task-review backend were rebuilt and
 deployed into the retained local Windows Compose stack. The full backend and
 IDP Go suites passed, all 379 frontend tests passed under Node 22.22.3, the
-production frontend build passed, and all 17 executable CI contract tests
+production frontend build passed, and all 29 executable CI contract tests
 passed. An authenticated browser run against `http://localhost` verified login,
 the shared shell, Basic-to-Advanced disclosure, mobile overflow, and meaningful
 content on Control Center, Pursuits, Workflow Engine, Task Blueprint, Connected
@@ -487,6 +586,54 @@ validation, ngrok v3 configuration validation, shell syntax, and positive and
 negative fail-closed gate cases pass. No live ngrok token or public endpoint was
 used in this verification, so external tunnel and callback behavior remains a
 target-environment acceptance gate rather than a readiness claim.
+
+The A2A planning subset now has exact unauthenticated gateway routes for its
+public Agent Card and token-protected `SendMessage` endpoint, plus a dedicated
+nginx throttle and 16 KiB request limit. Its backend accepts only one bounded
+standalone text message and returns a non-executable HAI planning draft. A local
+end-to-end gateway smoke passed, including anonymous denial and authenticated
+success. Synthetic positive and negative ngrok preflight cases also passed.
+No real ngrok credential/domain was available for this verification, so public
+transport remains unproven and does not imply external-agent execution,
+distributed coordination, or full A2A task-lifecycle support.
+
+The backend and IDP now share signal-aware HTTP lifecycles with the backend's
+in-process schedulers and workers. A live Compose SIGTERM cycle drained both
+containers in 3.2 seconds with exit code 0, recovered both to healthy, retained
+all 59 pre-phase and three post-phase migrations, and reconciled all nine
+stored memories without findings. The gateway now serves a strict script CSP,
+COOP `same-origin`, CORP `same-origin`, clickjacking, MIME-sniffing, referrer,
+permissions, and server-token controls. Static contracts and live response
+headers verify the policy, including cookie-refresh locations where nginx
+header inheritance would otherwise be lost.
+
+### 2026-08-14 request and history resource hardening
+
+The shared backend router now rejects known oversized non-multipart request
+bodies before route handlers run and wraps streamed request bodies with a 2 MiB
+hard ceiling. Multipart routes remain explicit: automation image forms are
+bounded by the configured image limit plus form overhead, while the reviewed
+OpenClaw archive route retains its separate 750 MiB archive budget and now
+enforces that budget before multipart parsing. The production HTTP server also
+has bounded header size, request-read time, and idle connection lifetime while
+leaving the response write timeout unset for intentionally long, independently
+bounded provider operations.
+
+Verification detail lookup no longer loads and scans an owner's complete run
+history. It performs one owner-scoped, ID-scoped database query, while the
+history endpoint returns the latest 200 records; an older run remains directly
+addressable by its ID. This keeps normal inspection cost stable as audit
+history grows.
+
+Acceptance evidence: all backend tests and `go vet` passed, execution-boundary
+race tests passed, all 418 frontend tests and the production build passed, all
+55 CI/auth/gateway contracts passed, and both default and local-model Compose
+profiles validated. The rebuilt Windows stack reported 21 ready checks, zero
+warnings, zero failures, and no recent backend error lines. A live oversized
+JSON request returned HTTP 413 before authentication, while a normal write
+still returned HTTP 401. A post-rebuild Ollama generation completed with model
+`qwen2.5:0.5b`, EUR 0 cost, provider-reported 53 input and 5 output tokens,
+recorded audit evidence, and ready system status.
 
 ### Known recovery and deployment gaps
 
@@ -523,9 +670,9 @@ target-environment acceptance gate rather than a readiness claim.
   consent. This historical record does not assert the current readiness of
   other connectors; use the current connector catalog and its live health
   checks for that decision.
-- This verification did not exercise provider-backed LLM generation, paid
-  provider billing, or external quota accounting. The local smoke suites must
-  not be presented as evidence for those external behaviors.
+- This verification exercised bounded local Ollama generation, but not paid or
+  external cloud-provider billing and quota accounting. Local-provider evidence
+  must not be presented as proof of those external behaviors.
 - The signed-JWT smoke fixtures prove route enforcement, not production identity
   provisioning. Production readiness still requires configured IDP secrets,
   real sessions, and operator-owned external authorization.

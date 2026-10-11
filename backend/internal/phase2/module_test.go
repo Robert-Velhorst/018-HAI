@@ -79,17 +79,23 @@ func TestModuleWithExecutionAuthorizationBuildsReadyBroker(t *testing.T) {
 	}
 }
 
-func TestDurableConstitutionAvailabilityRejectsBuiltinFallback(t *testing.T) {
-	if hasDurableActiveConstitution(frameworkregistry.DefaultConstitution()) {
-		t.Fatal("non-persisted built-in fallback must not enable execution")
+func TestExecutionConstitutionAvailabilityAcceptsOnlyTrustedBaselineOrDurableActive(t *testing.T) {
+	if !hasExecutionConstitution(frameworkregistry.DefaultConstitution()) {
+		t.Fatal("trusted built-in baseline must enable bounded low-risk local execution")
 	}
-	if !hasDurableActiveConstitution(frameworkregistry.Constitution{
+	if hasExecutionConstitution(frameworkregistry.Constitution{
+		ID:     "untrusted-runtime-constitution",
+		Status: frameworkregistry.ConstitutionActive,
+	}) {
+		t.Fatal("arbitrary non-persisted Constitution must not enable execution")
+	}
+	if !hasExecutionConstitution(frameworkregistry.Constitution{
 		ID:     "8c508c67-691f-4d35-9487-fcd173f755d4",
 		Status: frameworkregistry.ConstitutionActive,
 	}) {
 		t.Fatal("persistable active Constitution should enable composition")
 	}
-	if hasDurableActiveConstitution(frameworkregistry.Constitution{
+	if hasExecutionConstitution(frameworkregistry.Constitution{
 		ID:     "8c508c67-691f-4d35-9487-fcd173f755d4",
 		Status: frameworkregistry.ConstitutionDraft,
 	}) {

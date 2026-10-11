@@ -143,7 +143,7 @@ func classifyLifeDomains(text string) []LifeDomainAssignment {
 	for _, rule := range domainRules {
 		matched := make([]string, 0)
 		for _, signal := range rule.signals {
-			if containsPhrase(text, signal) {
+			if domainSignalApplies(rule.name, signal, text) {
 				matched = append(matched, signal)
 			}
 		}
@@ -179,6 +179,34 @@ func classifyLifeDomains(text string) []LifeDomainAssignment {
 	})
 	assignments[0].Primary = true
 	return assignments
+}
+
+func domainSignalApplies(domainID, signal, text string) bool {
+	if !containsPhrase(text, signal) {
+		return false
+	}
+	if domainID != "health_wellbeing" || signal != "health" {
+		return true
+	}
+
+	// "Health" is overloaded in an automation hub. Runtime, service, API, and
+	// container health are operational signals, not evidence that the operator
+	// has a personal-care need. Explicit personal or clinical context always
+	// wins so real health requests retain the stricter care-source contract.
+	if containsAnyPhrase(text, []string{
+		"my health", "personal health", "physical health", "mental health",
+		"health condition", "health concern", "health appointment", "health record",
+		"doctor", "medical", "medication", "medicine", "therapy", "symptom",
+		"patient", "wellbeing", "care plan",
+	}) {
+		return true
+	}
+	return !containsAnyPhrase(text, []string{
+		"api", "automation", "backend", "container", "dashboard", "deployment",
+		"endpoint", "frontend", "health check", "health probe", "health status",
+		"healthcheck", "infrastructure", "liveness", "model provider", "readiness",
+		"runtime", "service", "system", "worker",
+	})
 }
 
 func buildNeedsState(request SelectionRequest, domains []LifeDomainAssignment) ([]NeedStateAssessment, error) {
@@ -387,6 +415,18 @@ func buildAgentCards(required []string, available []AgentCard, ceiling int, now 
 	}
 
 	roles := sortedUnique(required)
+	embeddedRoles := make([]string, 0, len(roles))
+	embeddedDependencies := []string{"framework registry", "task state", "approval policy"}
+	for _, role := range roles {
+		key := normalizeIdentifier(role)
+		if candidate, ok := availableByRole[key]; ok && candidate.Verified {
+			continue
+		}
+		if dependency, ok := embeddedTaskEngineRoleDependency(key); ok {
+			embeddedRoles = append(embeddedRoles, key)
+			embeddedDependencies = append(embeddedDependencies, dependency)
+		}
+	}
 	result := make([]AgentCard, 0, len(roles)+1)
 	result = append(result, AgentCard{
 		ID:                    "hai_task_engine",
@@ -394,8 +434,8 @@ func buildAgentCards(required []string, available []AgentCard, ceiling int, now 
 		Owner:                 "authenticated_owner_scope",
 		Purpose:               "coordinate governed task planning, routing, validation, and audit",
 		Role:                  "coordinator",
-		Capabilities:          []string{"classify", "plan", "route", "validate", "audit"},
-		DomainCompetence:      []string{"cross_domain_operational_coordination"},
+		Capabilities:          sortedUnique(append([]string{"classify", "plan", "route", "validate", "audit"}, embeddedRoles...)),
+		DomainCompetence:      sortedUnique(append([]string{"cross_domain_operational_coordination"}, embeddedRoles...)),
 		AllowedTools:          []string{"registered allowlisted tools"},
 		RequiredPermissions:   []string{"owner-scoped task and framework read"},
 		DataAccessBoundaries:  []string{"current authorized task context only"},
@@ -410,7 +450,7 @@ func buildAgentCards(required []string, available []AgentCard, ceiling int, now 
 		EscalationRoute:       "owner-scoped review queue",
 		Availability:          "local process",
 		Version:               "selector-v5",
-		Dependencies:          []string{"framework registry", "task state", "approval policy"},
+		Dependencies:          sortedUnique(embeddedDependencies),
 		HealthStatus:          "available",
 		EvaluationScore:       0,
 		EvaluationScoreSource: "not calibrated against production outcomes",
@@ -422,6 +462,13 @@ func buildAgentCards(required []string, available []AgentCard, ceiling int, now 
 	})
 	for _, role := range roles {
 		key := normalizeIdentifier(role)
+		if card, ok := availableByRole[key]; ok && card.Verified {
+			result = append(result, card)
+			continue
+		}
+		if _, ok := embeddedTaskEngineRoleDependency(key); ok {
+			continue
+		}
 		if card, ok := availableByRole[key]; ok {
 			result = append(result, card)
 			continue
@@ -460,6 +507,65 @@ func buildAgentCards(required []string, available []AgentCard, ceiling int, now 
 		})
 	}
 	return result, nil
+}
+
+// embeddedTaskEngineRoleDependency is an allowlist of role contracts that are
+// implemented by deterministic modules in the canonical Go control plane. A
+// catalog role not listed here must be backed by a fresh external/runtime agent
+// card; it cannot be silently absorbed by the generic task engine.
+func embeddedTaskEngineRoleDependency(role string) (string, bool) {
+	dependencies := map[string]string{
+		"approval_broker":         "execution approval service",
+		"capacity_planner":        "resource planner",
+		"chief_of_staff":          "task orchestration service",
+		"constraint_checker":      "resource planner",
+		"context_planner":         "context planning service",
+		"critic":                  "task validation service",
+		"data_steward":            "source governance service",
+		"delegation_manager":      "framework delegation contracts",
+		"evaluation_agent":        "outcome evaluation service",
+		"evaluation_architect":    "evaluation registry",
+		"evidence_agent":          "source evidence service",
+		"execution_coordinator":   "execution authorization service",
+		"extraction_agent":        "source extraction service",
+		"governance_reviewer":     "framework evidence service",
+		"intake_agent":            "task intake service",
+		"interaction_coordinator": "task interaction service",
+		"interoperability_broker": "MCP and A2A bridges",
+		"knowledge_curator":       "memory consolidation service",
+		"memory_steward":          "memory service",
+		"model_router":            "LLM routing service",
+		"observability_agent":     "operations and audit services",
+		"ontology_steward":        "life ontology service",
+		"opportunity_classifier":  "ambient proposal service",
+		"planner":                 "task planning service",
+		"platform_architect":      "runtime registry",
+		"policy_guardian":         "autonomy policy service",
+		"portfolio_planner":       "pursuit planning service",
+		"privacy_guardian":        "privacy filter service",
+		"privacy_reviewer":        "privacy filter service",
+		"quality_reviewer":        "quality validation service",
+		"reasoning_agent":         "task reasoning service",
+		"recovery_coordinator":    "resilience service",
+		"red_team_reviewer":       "agent threat-model checks",
+		"reliability_monitor":     "durable job service",
+		"reliability_reviewer":    "resilience service",
+		"retrieval_agent":         "context retrieval service",
+		"risk_reviewer":           "task risk service",
+		"runtime_architect":       "runtime registry",
+		"runtime_broker":          "execution broker",
+		"safety_reviewer":         "safety policy service",
+		"scheduler":               "durable job scheduler",
+		"security_architect":      "execution security service",
+		"security_guardian":       "execution security service",
+		"security_reviewer":       "execution security service",
+		"validation_critic":       "task validation service",
+		"verification_critic":     "verification service",
+		"workflow_designer":       "workflow service",
+		"world_state_observer":    "operating context service",
+	}
+	dependency, ok := dependencies[normalizeIdentifier(role)]
+	return dependency, ok
 }
 
 func preferAgentCard(candidate, current AgentCard) bool {

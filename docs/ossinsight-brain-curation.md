@@ -165,9 +165,14 @@ proof that a model is suitable for a real task.
 HAI now includes an opt-in Prometheus exposition endpoint. Set
 `HAI_PROMETHEUS_ENABLED=true` and a separate `HAI_PROMETHEUS_TOKEN`; only then
 does `/metrics` exist. It requires a bearer token and exports HTTP request
-counts and latency using route templates rather than raw paths. The exporter
-does not emit source text, prompts, identities, record IDs, or credentials as
-labels. A Prometheus collector is still separately configured and local by
+counts and latency using route templates rather than raw paths. It also exports
+bounded outcome-monitor sweep latency/result, discovered collection/composition
+scope pressure, expired-lease recovery, processing outcome, retry, and last
+successful-sweep signals. The outcome-monitor dimensions are fixed and do not
+contain owner, workspace, target, source, prompt, record, or failure-detail
+values. Discovered scope counts are capped by the scheduler limit and are not
+represented as an exact global backlog. A Prometheus collector, retention,
+dashboards, and alert rules are still separately configured and local by
 default.
 
 ## Implemented LiteLLM boundary

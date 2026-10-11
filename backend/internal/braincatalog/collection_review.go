@@ -27,6 +27,17 @@ type OSSInsightCollectionReviewer interface {
 	ReviewCollections() (OSSInsightCollectionReview, error)
 }
 
+type OSSInsightCollectionContextReviewer interface {
+	ReviewCollectionsContext(context.Context) (OSSInsightCollectionReview, error)
+}
+
+func reviewCollections(ctx context.Context, reviewer OSSInsightCollectionReviewer) (OSSInsightCollectionReview, error) {
+	if contextual, ok := reviewer.(OSSInsightCollectionContextReviewer); ok {
+		return contextual.ReviewCollectionsContext(ctx)
+	}
+	return reviewer.ReviewCollections()
+}
+
 // OSSInsightCollectionReview reports source freshness without turning source
 // discovery into an adoption or activation decision.
 type OSSInsightCollectionReview struct {
@@ -58,11 +69,18 @@ func NewOSSInsightCollectionReviewer(client *http.Client) OSSInsightCollectionRe
 }
 
 func (r *ossInsightCollectionReviewer) ReviewCollections() (OSSInsightCollectionReview, error) {
+	return r.ReviewCollectionsContext(context.Background())
+}
+
+func (r *ossInsightCollectionReviewer) ReviewCollectionsContext(parent context.Context) (OSSInsightCollectionReview, error) {
 	expected := expectedOSSInsightCollections()
 	review := OSSInsightCollectionReview{
 		CheckedAt: r.now().UTC().Format(time.RFC3339), SourceURL: ossInsightCollectionsURL, ExpectedTotal: len(expected),
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), ossInsightRequestTimeout)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, ossInsightRequestTimeout)
 	defer cancel()
 	resp, err := ossInsightGET(ctx, r.client, ossInsightCollectionsURL)
 	if err != nil {

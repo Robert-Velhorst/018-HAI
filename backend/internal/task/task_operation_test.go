@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -10,6 +11,149 @@ import (
 
 	"github.com/google/uuid"
 )
+
+type cancellationBlockingTaskStateRepository struct {
+	TaskStateRepository
+}
+
+func (r cancellationBlockingTaskStateRepository) ClaimTaskOperationContext(
+	ctx context.Context,
+	_ string,
+	_ string,
+	_ string,
+	_ string,
+	_ string,
+	_ time.Time,
+	_ time.Duration,
+) (TaskOperationClaim, error) {
+	<-ctx.Done()
+	return TaskOperationClaim{}, ctx.Err()
+}
+
+type cancelAfterTaskOperationClaimRepository struct {
+	*MemoryTaskStateRepository
+	cancel context.CancelFunc
+}
+
+func (r cancelAfterTaskOperationClaimRepository) ClaimTaskOperationContext(
+	ctx context.Context,
+	ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string,
+	now time.Time,
+	leaseDuration time.Duration,
+) (TaskOperationClaim, error) {
+	claim, err := claimTaskOperationContext(
+		ctx,
+		r.MemoryTaskStateRepository,
+		ownerIdentity,
+		idempotencyKey,
+		requestDigest,
+		mode,
+		leaseOwner,
+		now,
+		leaseDuration,
+	)
+	if err == nil && claim.Disposition == TaskOperationAcquired {
+		r.cancel()
+	}
+	return claim, err
+}
+
+func TestTaskOperationCancellationInterruptsDurableClaimBeforeExecution(t *testing.T) {
+	repository := cancellationBlockingTaskStateRepository{TaskStateRepository: NewMemoryTaskStateRepository()}
+	taskService := newDurableTaskTestService(t, repository, nil).(*service)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	executed := false
+	go func() {
+		_, err := taskService.withTaskOperation(IntakeRequest{
+			OwnerIdentity:    "alice",
+			IdempotencyKey:   "cancelled-claim:1",
+			Request:          "Prepare a source-backed project summary",
+			executionContext: ctx,
+		}, "plan", func(IntakeRequest) (*CompletionPlan, error) {
+			executed = true
+			return nil, nil
+		})
+		done <- err
+	}()
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("claim cancellation error = %v, want context canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("task operation claim ignored caller cancellation")
+	}
+	if executed {
+		t.Fatal("task callback executed after the durable claim was canceled")
+	}
+}
+
+func TestTaskOperationCancellationAfterClaimRecordsCanceledWithoutReview(t *testing.T) {
+	baseRepository := NewMemoryTaskStateRepository()
+	ctx, cancel := context.WithCancel(context.Background())
+	repository := cancelAfterTaskOperationClaimRepository{
+		MemoryTaskStateRepository: baseRepository,
+		cancel:                    cancel,
+	}
+	taskService := newDurableTaskTestService(t, repository, nil).(*service)
+	executed := false
+	request := IntakeRequest{
+		OwnerIdentity:    "alice",
+		IdempotencyKey:   "cancelled-claim:2",
+		Request:          "Prepare a source-backed project summary",
+		executionContext: ctx,
+	}
+	_, err := taskService.withTaskOperation(request, "plan", func(IntakeRequest) (*CompletionPlan, error) {
+		executed = true
+		return nil, nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("post-claim cancellation error = %v, want context canceled", err)
+	}
+	if executed {
+		t.Fatal("task callback executed after cancellation won the pre-execution race")
+	}
+
+	digest, err := ReviewRequestDigest("alice", request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := baseRepository.ClaimTaskOperation(
+		"alice",
+		request.IdempotencyKey,
+		digest,
+		"plan",
+		"worker:replay",
+		time.Now().UTC(),
+		time.Minute,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim.Disposition != TaskOperationCanceled || claim.Operation.Status != "canceled" {
+		t.Fatalf("canceled operation claim = %#v", claim)
+	}
+	reviews, err := baseRepository.ListReviewItems("alice", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reviews) != 0 {
+		t.Fatalf("pre-execution cancellation created uncertain review work: %#v", reviews)
+	}
+
+	replayService := newDurableTaskTestService(t, baseRepository, nil).(*service)
+	replayRequest := request
+	replayRequest.executionContext = context.Background()
+	if _, err := replayService.withTaskOperation(replayRequest, "plan", func(IntakeRequest) (*CompletionPlan, error) {
+		t.Fatal("canceled operation was executed again with the same idempotency key")
+		return nil, nil
+	}); !errors.Is(err, ErrTaskOperationCanceled) {
+		t.Fatalf("canceled operation replay error = %v, want canceled", err)
+	}
+}
 
 func TestMemoryTaskOperationClaimIsOwnerScopedIdempotentAndFenced(t *testing.T) {
 	repository := NewMemoryTaskStateRepository()

@@ -1,6 +1,8 @@
 package task
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +61,31 @@ func TestAutomationToolExecutorMapsControlledLaunchResult(t *testing.T) {
 	}
 	if launcher.request.ApprovalProof != nil || launcher.issueCalls != 0 {
 		t.Fatalf("unapproved request received an approval proof: request=%#v issues=%d", launcher.request, launcher.issueCalls)
+	}
+}
+
+func TestAutomationToolExecutorPassesTaskExecutionContext(t *testing.T) {
+	id := uuid.New()
+	launcher := &fakeAutomationLauncher{result: &automation.LaunchResult{
+		AutomationID:  id,
+		LaunchEventID: uuid.New(),
+		Status:        "completed",
+		LaunchedAt:    time.Now().UTC(),
+	}}
+	executor := NewAutomationToolExecutor(launcher)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := executor.Execute(ToolExecutionRequest{
+		OwnerIdentity:    "alice",
+		AutomationID:     id.String(),
+		Task:             "Run tests",
+		executionContext: ctx,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if launcher.request.ExecutionContext == nil || !errors.Is(launcher.request.ExecutionContext.Err(), context.Canceled) {
+		t.Fatalf("launch context = %v, want canceled task context", launcher.request.ExecutionContext)
 	}
 }
 

@@ -36,6 +36,7 @@
             formControlName="userName"
             placeholder="Email"
             aria-label="Email"
+            autocomplete="username"
             data-testid="login-email"
           />
         </nz-input-group>
@@ -54,6 +55,7 @@
             nz-input
             formControlName="resetToken"
             placeholder="One-time reset code"
+            autocomplete="one-time-code"
           />
         </nz-input-group>
       </nz-form-control>
@@ -67,7 +69,7 @@
         [nzValidateStatus]="validateForm.controls['password']"
       >
         <nz-input-wrapper>
-          <ng-template nzInputPrefix><i nz-icon nzType="lock"></i></ng-template>
+          <i nz-icon nzType="lock" nzInputPrefix aria-hidden="true"></i>
           <input
             type="password"
             nz-input
@@ -75,15 +77,19 @@
             placeholder="{{ recoveryMode ? 'New password' : 'Password' }}"
             [type]="hidePassword ? 'password' : 'text'"
             [attr.aria-label]="recoveryMode ? 'New password' : 'Password'"
+            [attr.autocomplete]="registrationMode || recoveryMode ? 'new-password' : 'current-password'"
             data-testid="login-password"
           />
-          <ng-template nzInputSuffix>
-            <i
-              nz-icon
-              [nzType]="hidePassword ? 'eye-invisible' : 'eye'"
-              (click)="hidePassword = !hidePassword"
-            ></i>
-          </ng-template>
+          <button
+            nzInputSuffix
+            type="button"
+            class="login-password-toggle"
+            [attr.aria-label]="hidePassword ? 'Show password' : 'Hide password'"
+            [attr.aria-pressed]="!hidePassword"
+            (click)="hidePassword = !hidePassword"
+          >
+            <i nz-icon [nzType]="hidePassword ? 'eye-invisible' : 'eye'" aria-hidden="true"></i>
+          </button>
         </nz-input-wrapper>
       </nz-form-control>
     </nz-form-item>
@@ -101,6 +107,8 @@
             formControlName="confirmPassword"
             placeholder="{{ recoveryMode ? 'Confirm new password' : 'Confirm password' }}"
             [type]="hidePassword ? 'password' : 'text'"
+            autocomplete="new-password"
+            aria-label="Confirm password"
           />
         </nz-input-group>
       </nz-form-control>

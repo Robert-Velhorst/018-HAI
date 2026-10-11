@@ -2,7 +2,9 @@ package llm
 
 import (
 	"automation-hub-backend/internal/models"
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -124,9 +126,27 @@ func TestPaidProviderDisabledByDefault(t *testing.T) {
 	if decision.RequiresApproval {
 		t.Fatalf("default route should not select paid or expensive models")
 	}
-	for _, skipped := range decision.Skipped {
-		if skipped.ProviderID == "paid-provider" && skipped.Reason == "" {
-			t.Fatalf("paid provider skip should include a reason")
+	for _, provider := range service.policy.Providers {
+		if provider.ID == decision.SelectedProviderID && provider.Paid {
+			t.Fatalf("default route selected paid provider %q", provider.ID)
+		}
+	}
+}
+
+func TestDefaultPolicyDoesNotExposeSyntheticProviderFillers(t *testing.T) {
+	forbidden := map[string]bool{
+		"cheap-provider":      true,
+		"acceptable-provider": true,
+		"high-provider":       true,
+		"premium-provider":    true,
+		"paid-provider":       true,
+	}
+	for _, provider := range defaultPolicy().Providers {
+		if forbidden[provider.ID] {
+			t.Fatalf("default policy exposes synthetic provider %q", provider.ID)
+		}
+		if strings.Contains(strings.ToLower(provider.Name), "placeholder") {
+			t.Fatalf("default policy exposes placeholder provider name %q", provider.Name)
 		}
 	}
 }
@@ -156,6 +176,22 @@ func TestPolicyMarksUnconfiguredProviders(t *testing.T) {
 	}
 	if policy.Providers[0].ReadinessStatus != "not_configured" {
 		t.Fatalf("readiness = %q, want not_configured", policy.Providers[0].ReadinessStatus)
+	}
+}
+
+func TestOllamaComposeInternalEndpointIsLocalOnly(t *testing.T) {
+	if !isLocalModelHostForProvider("ollama", "ollama-local") {
+		t.Fatal("canonical Compose-internal Ollama endpoint was rejected")
+	}
+	for _, providerID := range []string{"lm-studio", "llama-cpp", "localai", "vllm", "dspark"} {
+		if isLocalModelHostForProvider(providerID, "ollama-local") {
+			t.Fatalf("provider %q accepted Ollama's private service name", providerID)
+		}
+	}
+	for _, host := range []string{"ollama", "ollama.example.test", "models.internal"} {
+		if isLocalModelHostForProvider("ollama", host) {
+			t.Fatalf("arbitrary hostname accepted as local: %q", host)
+		}
 	}
 }
 
@@ -405,6 +441,13 @@ func TestGenerateCallsOllamaEndpoint(t *testing.T) {
 		if request["model"] != "phi3:mini" {
 			t.Fatalf("model = %v, want phi3:mini", request["model"])
 		}
+		options, ok := request["options"].(map[string]interface{})
+		if !ok || options["num_predict"] != float64(24) {
+			t.Fatalf("options = %#v, want bounded num_predict=24", request["options"])
+		}
+		if options["temperature"] != float64(0) {
+			t.Fatalf("options = %#v, want deterministic temperature=0", request["options"])
+		}
 		_ = json.NewEncoder(w).Encode(map[string]string{"response": "grounded draft"})
 	}))
 	defer server.Close()
@@ -414,7 +457,8 @@ func TestGenerateCallsOllamaEndpoint(t *testing.T) {
 	service := withTrustedTestFinalEffects(t, &Service{policy: policy})
 
 	result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
-		Task: "Summarize this short note",
+		Task:      "Summarize this short note",
+		MaxTokens: 24,
 		RouteDecision: &RouteDecision{
 			SelectedProviderID: "ollama",
 			SelectedModelID:    "phi3:mini",
@@ -430,6 +474,83 @@ func TestGenerateCallsOllamaEndpoint(t *testing.T) {
 	}
 	if result.Output != "grounded draft" {
 		t.Fatalf("output = %q, want grounded draft", result.Output)
+	}
+}
+
+func TestGenerationOutputTokenLimitIsBounded(t *testing.T) {
+	t.Setenv("LLM_MAX_OUTPUT_TOKENS", "128")
+	for _, test := range []struct {
+		requested int
+		want      int
+	}{{requested: 0, want: 128}, {requested: 16, want: 16}, {requested: 1000, want: 128}} {
+		if got := boundedGenerationMaxTokens(test.requested); got != test.want {
+			t.Fatalf("boundedGenerationMaxTokens(%d) = %d, want %d", test.requested, got, test.want)
+		}
+	}
+}
+
+func TestGenerateContextCancelsProviderWithoutChargingUsage(t *testing.T) {
+	requestStarted := make(chan struct{})
+	releaseProvider := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requestStarted)
+		<-releaseProvider
+	}))
+	defer func() {
+		close(releaseProvider)
+		server.CloseClientConnections()
+		server.Close()
+	}()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.Providers[0].EndpointURL = server.URL
+	history := &fakeGenerationHistoryRepository{}
+	service := withTrustedTestFinalEffects(t, &Service{
+		policy:            policy,
+		usage:             map[string]UsageCounter{},
+		generationHistory: history,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	resultCh := make(chan *GenerationResult, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := service.GenerateContext(ctx, withTrustedTestEffect(GenerateRequest{
+			Task: "Summarize this short note",
+			RouteDecision: &RouteDecision{
+				SelectedProviderID: "ollama",
+				SelectedModelID:    "phi3:mini",
+				SelectedModelName:  "Phi small local",
+				Tier:               TierLocal,
+			},
+		}))
+		resultCh <- result
+		errCh <- err
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(time.Second):
+		t.Fatal("provider request did not start")
+	}
+	cancel()
+
+	var result *GenerationResult
+	select {
+	case result = <-resultCh:
+	case <-time.After(time.Second):
+		t.Fatal("GenerateContext did not return after caller cancellation")
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("GenerateContext: %v", err)
+	}
+	if result.Status != "stopped" || result.InputTokens != 0 || result.OutputTokens != 0 || result.EstimatedCostEUR != 0 {
+		t.Fatalf("canceled generation = %#v, want stopped with zero usage", result)
+	}
+	if len(service.usage) != 0 {
+		t.Fatalf("canceled generation updated usage counters: %#v", service.usage)
+	}
+	if len(history.records) != 1 || history.records[0].Status != "stopped" || history.records[0].InputTokens != 0 || history.records[0].OutputTokens != 0 {
+		t.Fatalf("canceled generation history = %#v", history.records)
 	}
 }
 
@@ -511,6 +632,22 @@ func TestProviderHTTPClientDoesNotUseEnvironmentProxy(t *testing.T) {
 	}
 	if err := client.CheckRedirect(nil, nil); err != http.ErrUseLastResponse {
 		t.Fatalf("redirect behavior = %v, want %v", err, http.ErrUseLastResponse)
+	}
+	if client != noRedirectHTTPClient() {
+		t.Fatal("provider calls must reuse the bounded HTTP client")
+	}
+}
+
+func TestProviderHTTPClientRejectsBlockedDNSResolution(t *testing.T) {
+	t.Parallel()
+
+	client := newProviderHTTPClient(func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("169.254.169.254")}}, nil
+	})
+	transport := client.Transport.(*http.Transport)
+	_, err := transport.DialContext(context.Background(), "tcp", "models.example:443")
+	if err == nil || !strings.Contains(err.Error(), "blocked address space") {
+		t.Fatalf("DialContext error = %v, want blocked address rejection", err)
 	}
 }
 
@@ -1257,6 +1394,28 @@ func testPolicyWithoutEndpoints() Policy {
 	return annotatePolicyReadiness(policy)
 }
 
+func withTestPaidProvider(policy Policy, endpoint string) Policy {
+	policy.Providers = append(policy.Providers, Provider{
+		ID:          "test-paid-provider",
+		Name:        "Test paid provider",
+		Enabled:     true,
+		Paid:        true,
+		EndpointURL: endpoint,
+		Models: []Model{{
+			ID:               "test-paid-high-capability",
+			Name:             "Test paid high capability model",
+			Tier:             TierExpensive,
+			Capabilities:     []string{"general", "coding", "planning", "verification", "extraction"},
+			MaxDifficulty:    5,
+			MaxReasoning:     "very_high",
+			EstimatedCostEUR: 0.05,
+			RequiresApproval: true,
+			Enabled:          true,
+		}},
+	})
+	return annotatePolicyReadiness(policy)
+}
+
 func providerIndex(t *testing.T, policy Policy, providerID string) int {
 	t.Helper()
 	for index, provider := range policy.Providers {
@@ -1665,10 +1824,7 @@ func TestLiteLLMGatewayGenerationRequiresLiveProbe(t *testing.T) {
 }
 
 func TestGenerateBlocksPaidWithoutApproval(t *testing.T) {
-	policy := testPolicyWithoutEndpoints()
-	paidIndex := providerIndex(t, policy, "paid-provider")
-	policy.Providers[paidIndex].Enabled = true
-	policy.Providers[paidIndex].EndpointURL = "http://example.invalid"
+	policy := withTestPaidProvider(testPolicyWithoutEndpoints(), "http://example.invalid")
 	policy.PaidCallsAllowed = true
 	policy.DailyPaidBudgetEUR = 1
 	service := &Service{policy: policy}
@@ -1676,9 +1832,9 @@ func TestGenerateBlocksPaidWithoutApproval(t *testing.T) {
 	result, err := service.Generate(GenerateRequest{
 		Task: "Handle a difficult verification task",
 		RouteDecision: &RouteDecision{
-			SelectedProviderID: "paid-provider",
-			SelectedModelID:    "paid-high-capability",
-			SelectedModelName:  "Paid high capability model",
+			SelectedProviderID: "test-paid-provider",
+			SelectedModelID:    "test-paid-high-capability",
+			SelectedModelName:  "Test paid high capability model",
 			Tier:               TierExpensive,
 		},
 	})

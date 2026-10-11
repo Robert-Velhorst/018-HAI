@@ -5,6 +5,7 @@ import (
 	"automation-hub-idp/internal/app/utils"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
+	"time"
 )
 
 type MockUserService struct {
@@ -53,6 +54,21 @@ func (m *MockUserService) ResetPassword(email string, opts ...utils.PasswordRese
 
 func (m *MockUserService) UpdatePassword(id uuid.UUID, newPassword string) error {
 	args := m.Called(id, newPassword)
+	return args.Error(0)
+}
+
+func (m *MockUserService) CompletePasswordReset(token, newPassword string) error {
+	args := m.Called(token, newPassword)
+	return args.Error(0)
+}
+
+func (m *MockUserService) StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error {
+	args := m.Called(id, token, expiresAt)
+	return args.Error(0)
+}
+
+func (m *MockUserService) ClearPasswordResetIfToken(id uuid.UUID, token string) error {
+	args := m.Called(id, token)
 	return args.Error(0)
 }
 

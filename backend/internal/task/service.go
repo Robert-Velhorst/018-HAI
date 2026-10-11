@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -74,6 +75,7 @@ type IntakeRequest struct {
 	Deadline              *time.Time                              `json:"-"`
 	operationID           string
 	reviewItemID          string
+	executionContext      context.Context
 }
 
 type IntakeAnalysis struct {
@@ -259,6 +261,7 @@ type ToolExecutionRequest struct {
 	ApprovalBindingDigest string                           `json:"-"`
 	Governance            executionauth.GovernanceEvidence `json:"-"`
 	approvalDecision      *automation.TaskApprovalDecisionRequest
+	executionContext      context.Context
 }
 
 type ToolExecutionResult struct {
@@ -391,6 +394,17 @@ type Service interface {
 	ResolveReviewItem(id string, decision ApprovalDecision) (*ReviewResolutionResult, error)
 }
 
+// ContextService binds an interactive task run to its caller lifecycle while
+// preserving the legacy Service contract used by durable workflow workers and
+// narrow test doubles.
+type ContextService interface {
+	RunContext(context.Context, IntakeRequest) (*CompletionPlan, error)
+}
+
+type PlanningContextService interface {
+	PlanContext(context.Context, IntakeRequest) (*CompletionPlan, error)
+}
+
 // OwnerScopedService is the authenticated view over task history and approvals.
 // It is intentionally separate from Service so background workers can retain
 // their system-level access without becoming an HTTP data-leak path.
@@ -407,6 +421,18 @@ type OwnerScopedService interface {
 type DurableOwnerScopedService interface {
 	LogsForOwnerWithError(ownerIdentity string) ([]CompletionPlan, error)
 	ReviewQueueForOwnerWithError(ownerIdentity string) ([]ReviewQueueItem, error)
+}
+
+// BoundedDurableOwnerScopedService lets HTTP readers request a smaller recent
+// history without changing the wider internal worker contract.
+type BoundedDurableOwnerScopedService interface {
+	LogsForOwnerWithLimit(ownerIdentity string, limit int) ([]CompletionPlan, error)
+}
+
+// CompactDurableOwnerScopedService serves the immutable list projection used
+// by dashboards without loading full execution plans and evidence payloads.
+type CompactDurableOwnerScopedService interface {
+	HistoryForOwnerWithLimit(ownerIdentity string, limit int) ([]CompletionPlanHistoryItem, error)
 }
 
 const internalTaskStateOwnerIdentity = "urn:hai:internal:task-system"
@@ -649,6 +675,17 @@ func DefaultService() (Service, error) {
 }
 
 func (s *service) Plan(request IntakeRequest) (*CompletionPlan, error) {
+	return s.PlanContext(context.Background(), request)
+}
+
+func (s *service) PlanContext(ctx context.Context, request IntakeRequest) (*CompletionPlan, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	request.executionContext = ctx
 	return s.withTaskOperation(request, "plan", s.planOperation)
 }
 
@@ -704,6 +741,17 @@ func (s *service) Preview(request IntakeRequest) (*CompletionPlan, error) {
 }
 
 func (s *service) Run(request IntakeRequest) (*CompletionPlan, error) {
+	return s.RunContext(context.Background(), request)
+}
+
+func (s *service) RunContext(ctx context.Context, request IntakeRequest) (*CompletionPlan, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	request.executionContext = ctx
 	return s.withTaskOperation(request, "run", s.runOperation)
 }
 
@@ -1073,11 +1121,14 @@ func (s *service) buildPlan(request IntakeRequest, runMode, allowSourceRefresh b
 	var sourceRefresh *source.ScheduledSyncRun
 	var sourceRefreshExplanation string
 	if allowSourceRefresh {
-		sourceRefresh, sourceRefreshExplanation = s.refreshSourcesForTask(request, intake)
+		sourceRefresh, sourceRefreshExplanation, err = s.refreshSourcesForTask(request, intake)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		sourceRefreshExplanation = "Source refresh is disabled for this planning preview."
 	}
-	contextResult, err := memory.RetrieveForOwner(s.memoryService, request.OwnerIdentity, memory.RetrieveRequest{
+	contextResult, err := memory.RetrieveForOwnerContext(s.memoryService, taskExecutionContext(request), request.OwnerIdentity, memory.RetrieveRequest{
 		Query:      request.Request,
 		ProjectKey: request.ProjectKey,
 		Limit:      8,
@@ -1085,7 +1136,10 @@ func (s *service) buildPlan(request IntakeRequest, runMode, allowSourceRefresh b
 	if err != nil {
 		return nil, err
 	}
-	sourceContext, sourceExplanation := s.retrieveSourceContext(request)
+	sourceContext, sourceExplanation, err := s.retrieveSourceContext(taskExecutionContext(request), request, intake)
+	if err != nil {
+		return nil, err
+	}
 	modelDecision, err := s.llmService.Route(llm.RouteRequest{
 		Task:              request.Request,
 		TaskType:          intake.TaskType,
@@ -1104,7 +1158,7 @@ func (s *service) buildPlan(request IntakeRequest, runMode, allowSourceRefresh b
 		return nil, fmt.Errorf("retrieve whole-life context: %w", err)
 	}
 
-	toolDecision := routeTools(intake, request.Request)
+	toolDecision := routeTools(intake, request)
 	minimalityDecision := decideMinimality(request, intake)
 	risk := assessRisk(intake, request)
 	risk = applyFrameworkRisk(risk, frameworkDecision, intake, request)
@@ -1140,6 +1194,11 @@ func (s *service) buildPlan(request IntakeRequest, runMode, allowSourceRefresh b
 		PaidAllowed:    paidAllowed,
 		PaidBudgetEUR:  paidBudget,
 		PaidBudgetUsed: paidUsed,
+		AutomatedExecution: boundedAutomatedExecution(
+			intake,
+			risk,
+			request,
+		),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("plan resource and time feasibility: %w", err)
@@ -1168,7 +1227,7 @@ func (s *service) buildPlan(request IntakeRequest, runMode, allowSourceRefresh b
 				"rank by keyword relevance, recency, confidence, and project match",
 				"load only top relevant memories",
 				"refresh due connected sources when the task likely depends on project, local, or document context",
-				"check connected-source extractions before task planning",
+				"check connected-source extractions before task planning only when the task depends on source context",
 				"preserve source references on returned memories",
 				"apply the selected framework context requirements without loading unrelated private context",
 				"retrieve only source-backed whole-life entities from task-relevant domains",
@@ -1274,7 +1333,7 @@ func (s *service) loadOperatingContext(request IntakeRequest) (IntakeRequest, er
 		request.Capacity = capacity
 	}
 	if s.agentContext != nil && len(request.AvailableAgents) == 0 {
-		agents, err := s.agentContext.LatestAgents(request.OwnerIdentity, now)
+		agents, err := latestAgentsForTask(s.agentContext, request, now)
 		if err != nil {
 			return request, fmt.Errorf("load available agents: %w", err)
 		}
@@ -1303,11 +1362,15 @@ func (s *service) LogsForOwner(ownerIdentity string) []CompletionPlan {
 }
 
 func (s *service) LogsForOwnerWithError(ownerIdentity string) ([]CompletionPlan, error) {
+	return s.LogsForOwnerWithLimit(ownerIdentity, taskStateDefaultLimit)
+}
+
+func (s *service) LogsForOwnerWithLimit(ownerIdentity string, limit int) ([]CompletionPlan, error) {
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	if ownerIdentity == "" {
 		return nil, fmt.Errorf("owner identity is required")
 	}
-	logs, err := s.stateRepository.ListCompletionPlans(ownerIdentity, taskStateDefaultLimit)
+	logs, err := s.stateRepository.ListCompletionPlans(ownerIdentity, normalizeTaskStateLimit(limit))
 	if err != nil {
 		return nil, err
 	}
@@ -1315,6 +1378,22 @@ func (s *service) LogsForOwnerWithError(ownerIdentity string) ([]CompletionPlan,
 		logs[i] = sanitizeCompletionPlanApprovalData(logs[i])
 	}
 	return logs, nil
+}
+
+func (s *service) HistoryForOwnerWithLimit(ownerIdentity string, limit int) ([]CompletionPlanHistoryItem, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, fmt.Errorf("owner identity is required")
+	}
+	limit = normalizeTaskStateLimit(limit)
+	if compact, ok := s.stateRepository.(TaskHistoryRepository); ok {
+		return compact.ListCompletionPlanHistory(ownerIdentity, limit)
+	}
+	logs, err := s.LogsForOwnerWithLimit(ownerIdentity, limit)
+	if err != nil {
+		return nil, err
+	}
+	return completionPlanHistory(logs), nil
 }
 
 func (s *service) ReviewQueue() []ReviewQueueItem {
@@ -1714,11 +1793,15 @@ func (s *service) storeLessons(plan *CompletionPlan) []string {
 
 func (s *service) executeAllowedSteps(plan *CompletionPlan, request IntakeRequest) *ExecutionResult {
 	started := time.Now().UTC()
+	executionContext := taskExecutionContext(request)
 	result := &ExecutionResult{
 		StartedAt:          started,
 		Mode:               executionMode(plan, request),
 		VerificationStatus: verification.StatusNeedsReview,
 		Actions:            []ExecutedAction{},
+	}
+	if executionContext.Err() != nil {
+		return stoppedTaskExecution(result, plan, executionContext.Err(), started)
 	}
 
 	if !plan.RiskAssessment.AllowedNow {
@@ -1796,8 +1879,12 @@ func (s *service) executeAllowedSteps(plan *CompletionPlan, request IntakeReques
 				),
 				Governance:       governance,
 				approvalDecision: approvalDecision,
+				executionContext: taskExecutionContext(request),
 			})
 			if err != nil {
+				if executionContext.Err() != nil {
+					return stoppedTaskExecution(result, plan, executionContext.Err(), toolStarted)
+				}
 				return blockExecution(result, "controlled runtime execution failed: "+err.Error(), plan, toolStarted)
 			}
 			if executed == nil {
@@ -1879,7 +1966,7 @@ func (s *service) executeAllowedSteps(plan *CompletionPlan, request IntakeReques
 				effectContext.ApprovalBindingDigest = approvalDecision.ApprovalBindingDigest
 			}
 		}
-		generation, err := s.llmService.Generate(llm.GenerateRequest{
+		generation, err := s.llmService.GenerateContext(taskExecutionContext(request), llm.GenerateRequest{
 			Task:         plan.RealGoal,
 			SystemPrompt: "Produce a concise draft answer using only the provided context. Do not invent facts; unsupported details will be rejected by verification." + minimalitySystemContract(plan.MinimalityDecision),
 			Context:      context,
@@ -1907,6 +1994,9 @@ func (s *service) executeAllowedSteps(plan *CompletionPlan, request IntakeReques
 			result.Actions = append(result.Actions, executedAction("llm.generate", "failed", plan.ModelDecision.SelectedModelID, err.Error(), generateStarted))
 			plan.Events = append(plan.Events, event("llm", "model generation failed; falling back to source-grounded evidence synthesis"))
 		}
+		if executionContext.Err() != nil {
+			return stoppedTaskExecution(result, plan, executionContext.Err(), generateStarted)
+		}
 	}
 
 	verifyStarted := time.Now().UTC()
@@ -1919,7 +2009,7 @@ func (s *service) executeAllowedSteps(plan *CompletionPlan, request IntakeReques
 		return result
 	}
 
-	verificationResult, err := s.verificationService.Answer(verification.AnswerRequest{
+	verificationResult, err := verification.AnswerWithContext(s.verificationService, executionContext, verification.AnswerRequest{
 		OwnerIdentity:     plan.OwnerIdentity,
 		Question:          verificationQuestion(plan),
 		ProjectKey:        plan.ProjectKey,
@@ -1931,6 +2021,9 @@ func (s *service) executeAllowedSteps(plan *CompletionPlan, request IntakeReques
 		HumanApproved:     plan.RiskAssessment.ApprovalGranted || !plan.RiskAssessment.ApprovalRequired,
 		AllowMemoryUpdate: false,
 	})
+	if executionContext.Err() != nil {
+		return stoppedTaskExecution(result, plan, executionContext.Err(), verifyStarted)
+	}
 	if err != nil {
 		result.CompletedAt = time.Now().UTC()
 		result.Output = "Verification engine failed before a grounded answer could be accepted: " + err.Error()
@@ -1956,6 +2049,13 @@ func (s *service) executeAllowedSteps(plan *CompletionPlan, request IntakeReques
 	result.Actions = append(result.Actions, executedAction("verification.answer", "completed", request.Request, verificationResult.Run.Status, verifyStarted))
 	plan.Events = append(plan.Events, event("verification", "claims were checked against retrieved evidence before completion"))
 	return result
+}
+
+func taskExecutionContext(request IntakeRequest) context.Context {
+	if request.executionContext != nil {
+		return request.executionContext
+	}
+	return context.Background()
 }
 
 func (s *service) recordGenerationValidation(plan *CompletionPlan) {
@@ -2053,6 +2153,20 @@ func blockExecution(result *ExecutionResult, reason string, plan *CompletionPlan
 	if len(result.Actions) == 0 || result.Actions[len(result.Actions)-1].Name != "automation.launch" {
 		result.Actions = append(result.Actions, executedAction("automation.launch", "blocked", plan.Request, reason, started))
 	}
+	plan.Events = append(plan.Events, event("execution", reason))
+	return result
+}
+
+func stoppedTaskExecution(result *ExecutionResult, plan *CompletionPlan, cause error, started time.Time) *ExecutionResult {
+	reason := "task execution stopped because the caller canceled the operation"
+	if errors.Is(cause, context.DeadlineExceeded) {
+		reason = "task execution stopped because the caller deadline expired"
+	}
+	result.CompletedAt = time.Now().UTC()
+	result.Output = reason
+	result.VerificationStatus = verification.StatusNeedsReview
+	result.BlockedReason = reason
+	result.Actions = append(result.Actions, executedAction("task.cancelled", "stopped", plan.Request, reason, started))
 	plan.Events = append(plan.Events, event("execution", reason))
 	return result
 }
@@ -2300,28 +2414,33 @@ func countLabel(count int, label string) string {
 	return strconv.Itoa(count) + " " + label + "s"
 }
 
-func (s *service) refreshSourcesForTask(request IntakeRequest, intake IntakeAnalysis) (*source.ScheduledSyncRun, string) {
+func (s *service) refreshSourcesForTask(request IntakeRequest, intake IntakeAnalysis) (*source.ScheduledSyncRun, string, error) {
 	if s.sourceService == nil {
-		return nil, "Connected-source refresh is not configured."
+		return nil, "Connected-source refresh is not configured.", nil
 	}
 	if !shouldRefreshSourcesForTask(request, intake) {
-		return nil, "Connected-source refresh skipped because the task does not appear to need source-backed context."
+		return nil, "Connected-source refresh skipped because the task does not appear to need source-backed context.", nil
 	}
-	if strings.TrimSpace(request.OwnerIdentity) != "" {
-		result, err := s.sourceService.RunDueScheduledSyncsForOwner(time.Now().UTC(), request.OwnerIdentity)
-		if err != nil {
-			return nil, "Owner-scoped connected-source refresh failed before context retrieval: " + err.Error()
-		}
-		return result, fmt.Sprintf("Owner-scoped connected-source preflight checked %d sources; %d due, %d completed, %d failed, %d skipped.", result.Checked, result.Due, result.Completed, result.Failed, result.Skipped)
+	ownerIdentity := strings.TrimSpace(request.OwnerIdentity)
+	if ownerIdentity == "" {
+		return nil, "Connected-source refresh skipped for an unowned planning preview.", nil
 	}
-	result, err := s.sourceService.RunDueScheduledSyncs(time.Now().UTC())
+	ctx := taskExecutionContext(request)
+	result, err := source.RunDueScheduledSyncsForOwnerWithContext(s.sourceService, ctx, time.Now().UTC(), ownerIdentity)
 	if err != nil {
-		return nil, "Connected-source refresh failed before context retrieval: " + err.Error()
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			return nil, "", firstTaskContextError(ctx, err)
+		}
+		return nil, "Owner-scoped connected-source refresh failed before context retrieval: " + err.Error(), nil
 	}
-	return result, fmt.Sprintf("Connected-source preflight checked %d sources; %d due, %d completed, %d failed, %d skipped.", result.Checked, result.Due, result.Completed, result.Failed, result.Skipped)
+	return result, fmt.Sprintf("Owner-scoped connected-source preflight checked %d sources; %d due, %d completed, %d failed, %d skipped.", result.Checked, result.Due, result.Completed, result.Failed, result.Skipped), nil
 }
 
 func shouldRefreshSourcesForTask(request IntakeRequest, intake IntakeAnalysis) bool {
+	return shouldUseConnectedSourcesForTask(request, intake)
+}
+
+func shouldUseConnectedSourcesForTask(request IntakeRequest, intake IntakeAnalysis) bool {
 	text := strings.ToLower(request.Request + " " + request.ProjectKey)
 	if intake.NeedsDocuments || intake.NeedsLocalExecution {
 		return true
@@ -2339,11 +2458,14 @@ func unsupportedClaimCount(claims []models.VerificationClaim) int {
 	return count
 }
 
-func (s *service) retrieveSourceContext(request IntakeRequest) ([]source.RankedExtraction, string) {
+func (s *service) retrieveSourceContext(ctx context.Context, request IntakeRequest, intake IntakeAnalysis) ([]source.RankedExtraction, string, error) {
 	if s.sourceService == nil {
-		return []source.RankedExtraction{}, "Connected-source retrieval is not configured."
+		return []source.RankedExtraction{}, "Connected-source retrieval is not configured.", nil
 	}
-	result, err := s.sourceService.Search(source.SearchRequest{
+	if !shouldUseConnectedSourcesForTask(request, intake) {
+		return []source.RankedExtraction{}, "Connected-source retrieval skipped because the task does not depend on connected-source context.", nil
+	}
+	result, err := source.SearchWithContext(s.sourceService, ctx, source.SearchRequest{
 		OwnerIdentity:        request.OwnerIdentity,
 		Query:                request.Request,
 		ProjectKey:           request.ProjectKey,
@@ -2351,9 +2473,19 @@ func (s *service) retrieveSourceContext(request IntakeRequest) ([]source.RankedE
 		ExcludeConnectorKeys: source.ManualPlanningContextOnlyConnectorKeys(),
 	})
 	if err != nil {
-		return []source.RankedExtraction{}, "Connected-source retrieval failed or has no available index."
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || (ctx != nil && ctx.Err() != nil) {
+			return nil, "", firstTaskContextError(ctx, err)
+		}
+		return []source.RankedExtraction{}, "Connected-source retrieval failed or has no available index.", nil
 	}
-	return result.UsedContext, result.Explanation
+	return result.UsedContext, result.Explanation, nil
+}
+
+func firstTaskContextError(ctx context.Context, fallback error) error {
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return fallback
 }
 
 func analyzeIntake(request IntakeRequest) IntakeAnalysis {
@@ -2364,10 +2496,11 @@ func analyzeIntake(request IntakeRequest) IntakeAnalysis {
 	risk := "low"
 	reasons := []string{"default completion-first intake"}
 
-	needsTools := requiresControlledExecution(text)
+	configuredAutomation := strings.TrimSpace(request.AutomationID) != ""
+	needsTools := configuredAutomation || requiresControlledExecution(text)
 	needsDocs := containsAny(text, "document", "pdf", "spreadsheet", "slides", "docx")
 	needsWeb := containsAny(text, "latest", "current", "today", "web", "browse", "search")
-	needsLocal := needsTools && containsWordOrPhrase(text, "local", "file", "files", "repo", "repository", "docker", "windows", "code", "build", "test", "tests", "script", "command", "commit", "push")
+	needsLocal := requiresControlledExecution(text) && containsWordOrPhrase(text, "local", "file", "files", "repo", "repository", "docker", "windows", "code", "build", "test", "tests", "script", "command", "commit", "push")
 
 	if containsWordOrPhrase(
 		text,
@@ -2389,6 +2522,12 @@ func analyzeIntake(request IntakeRequest) IntakeAnalysis {
 		difficulty = maxInt(difficulty, 4)
 		reasoning = maxReasoning(reasoning, "high")
 		reasons = append(reasons, "architecture terms detected")
+	}
+	if configuredAutomation && readOnlyAutomationIntent(text) {
+		taskType = "automation"
+		difficulty = 2
+		reasoning = "low"
+		reasons = append(reasons, "configured read-only automation detected")
 	}
 	risk = classifyTaskRisk(text, needsTools)
 	if risk == "high" {
@@ -2584,7 +2723,7 @@ func applyFrameworkExecution(plan ExecutionPlan, decision *frameworkregistry.Sel
 	return plan
 }
 
-func routeTools(intake IntakeAnalysis, request string) ToolRouteDecision {
+func routeTools(intake IntakeAnalysis, request IntakeRequest) ToolRouteDecision {
 	selected := []string{"memory.retrieve", "llm.route", "validator.criteria"}
 	skipped := []string{}
 	blocked := []string{}
@@ -2592,6 +2731,10 @@ func routeTools(intake IntakeAnalysis, request string) ToolRouteDecision {
 
 	if intake.NeedsTools {
 		selected = append(selected, "tool-router")
+	}
+	if strings.TrimSpace(request.AutomationID) != "" {
+		selected = append(selected, "automation.launch")
+		reasons = append(reasons, "the caller selected a controlled automation explicitly")
 	}
 	if intake.NeedsDocuments {
 		selected = append(selected, "document-context-reader")
@@ -2613,8 +2756,8 @@ func routeTools(intake IntakeAnalysis, request string) ToolRouteDecision {
 		reasons = append(reasons, "high-risk tools blocked until human approval")
 	}
 
-	catalogRecommendations := braincatalog.Recommend(intake.TaskType, request)
-	capabilityRecommendations, capabilityRecommendationErr := braincatalog.RecommendForNeed(request)
+	catalogRecommendations := braincatalog.Recommend(intake.TaskType, request.Request)
+	capabilityRecommendations, capabilityRecommendationErr := braincatalog.RecommendForNeed(request.Request)
 	if len(catalogRecommendations) > 0 || (capabilityRecommendationErr == nil && len(capabilityRecommendations.Recommendations) > 0) {
 		reasons = append(reasons, "external agent capabilities are recommendations only until a reviewed adapter is configured")
 		for _, recommendation := range catalogRecommendations {
@@ -2757,7 +2900,7 @@ func applyFrameworkRisk(
 			),
 		)
 	}
-	if request.ExecuteAllowed &&
+	if request.ExecuteAllowed && !boundedAutomatedExecution(intake, risk, request) &&
 		(decision.Capacity.Status == "unavailable" || decision.Capacity.Status == "overloaded") {
 		risk.AllowedNow = false
 		risk.Reasons = append(
@@ -2765,13 +2908,13 @@ func applyFrameworkRisk(
 			"current human capacity is unavailable; execution must be rescheduled or explicitly re-planned without creating new operator commitments",
 		)
 	}
-	if request.ExecuteAllowed && decision.Coordination.Mode != "single_engine" {
+	if request.ExecuteAllowed {
 		for _, delegation := range decision.Delegations {
 			if delegation.State != "ready" {
 				risk.AllowedNow = false
 				risk.Reasons = append(
 					risk.Reasons,
-					"multi-agent execution is blocked until every delegated participant has a fresh verified agent card",
+					"execution is blocked until every required delegated participant has a fresh verified agent card",
 				)
 				break
 			}
@@ -2792,6 +2935,18 @@ func applyFrameworkRisk(
 	}
 	risk.Reasons = uniqueStrings(risk.Reasons)
 	return risk
+}
+
+func boundedAutomatedExecution(
+	intake IntakeAnalysis,
+	risk RiskAssessment,
+	request IntakeRequest,
+) bool {
+	return request.ExecuteAllowed &&
+		strings.TrimSpace(request.AutomationID) != "" &&
+		intake.NeedsTools &&
+		strings.EqualFold(risk.Level, "low") &&
+		!risk.ApprovalRequired
 }
 
 func requiredFrameworkAutonomy(intake IntakeAnalysis, request IntakeRequest) int {
@@ -3111,6 +3266,19 @@ func requiresControlledExecution(value string) bool {
 		"script", "test", "tests",
 	)
 	return action && target
+}
+
+func readOnlyAutomationIntent(value string) bool {
+	if !containsWordOrPhrase(value,
+		"check", "health", "health check", "inspect", "probe", "readiness", "status", "verify",
+	) {
+		return false
+	}
+	return !containsWordOrPhrase(value,
+		"add", "apply", "build", "change", "commit", "create", "delete", "deploy",
+		"implement", "install", "merge", "modify", "move", "publish", "push", "refactor",
+		"rename", "send", "start", "update", "write",
+	)
 }
 
 func containsWordOrPhrase(value string, terms ...string) bool {

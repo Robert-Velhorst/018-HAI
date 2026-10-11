@@ -1,6 +1,7 @@
 package automation
 
 import (
+	"automation-hub-backend/internal/events"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 	"errors"
@@ -30,14 +31,29 @@ type Repository interface {
 	FindApprovalDecision(sourceID string) (*ApprovalDecisionRecord, error)
 }
 
+// DurableEventRepository commits an automation mutation and its event-delivery
+// intent in one database transaction. Production repositories must implement
+// this interface; the narrower Repository remains useful for deterministic
+// unit tests and non-database adapters.
+type DurableEventRepository interface {
+	CreateWithEvent(automation *models.Automation, event *events.AutomationEvent) (*models.Automation, error)
+	UpdateWithEvent(automation *models.Automation, event *events.AutomationEvent) (*models.Automation, error)
+	DeleteWithEvent(id uuid.UUID, event *events.AutomationEvent) error
+}
+
 type GormUserRepository struct {
-	DB *gorm.DB
+	DB             *gorm.DB
+	notifyDispatch func()
 }
 
 func NewGormUserRepository(db *gorm.DB) Repository {
 	return &GormUserRepository{
 		DB: db,
 	}
+}
+
+func NewGormUserRepositoryWithNotifier(db *gorm.DB, notify func()) Repository {
+	return &GormUserRepository{DB: db, notifyDispatch: notify}
 }
 
 func DefaultRepository() Repository {
@@ -65,11 +81,41 @@ func (r *GormUserRepository) Create(automation *models.Automation) (*models.Auto
 	return automation, nil
 }
 
+func (r *GormUserRepository) CreateWithEvent(automation *models.Automation, event *events.AutomationEvent) (*models.Automation, error) {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(automation).Error; err != nil {
+			return err
+		}
+		event.Automation = automation
+		return events.EnqueueTx(tx, event)
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.notifyEventDispatch()
+	return automation, nil
+}
+
 func (r *GormUserRepository) Update(automation *models.Automation) (*models.Automation, error) {
 	err := r.DB.Save(automation).Error
 	if err != nil {
 		return nil, err
 	}
+	return automation, nil
+}
+
+func (r *GormUserRepository) UpdateWithEvent(automation *models.Automation, event *events.AutomationEvent) (*models.Automation, error) {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(automation).Error; err != nil {
+			return err
+		}
+		event.Automation = automation
+		return events.EnqueueTx(tx, event)
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.notifyEventDispatch()
 	return automation, nil
 }
 
@@ -79,6 +125,30 @@ func (r *GormUserRepository) Delete(id uuid.UUID) error {
 		return err
 	}
 	return nil
+}
+
+func (r *GormUserRepository) DeleteWithEvent(id uuid.UUID, event *events.AutomationEvent) error {
+	err := r.DB.Transaction(func(tx *gorm.DB) error {
+		result := tx.Delete(&models.Automation{}, id)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return events.EnqueueTx(tx, event)
+	})
+	if err != nil {
+		return err
+	}
+	r.notifyEventDispatch()
+	return nil
+}
+
+func (r *GormUserRepository) notifyEventDispatch() {
+	if r != nil && r.notifyDispatch != nil {
+		r.notifyDispatch()
+	}
 }
 
 func (r *GormUserRepository) FindAll() ([]*models.Automation, error) {

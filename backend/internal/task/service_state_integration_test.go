@@ -48,6 +48,13 @@ func TestDurableTaskServiceReadsOnlyAuthenticatedOwnerState(t *testing.T) {
 	if len(logs) != 1 || logs[0].ID != "alice-plan" || logs[0].OwnerIdentity != "alice" {
 		t.Fatalf("Alice completion plans = %#v, want only durable Alice state", logs)
 	}
+	history, err := taskService.HistoryForOwnerWithLimit("alice", 10)
+	if err != nil {
+		t.Fatalf("read Alice compact task history: %v", err)
+	}
+	if len(history) != 1 || history[0].ID != "alice-plan" || history[0].Request == "" {
+		t.Fatalf("Alice compact task history = %#v", history)
+	}
 	items, err := taskService.ReviewQueueForOwnerWithError("alice")
 	if err != nil {
 		t.Fatalf("read Alice review queue: %v", err)

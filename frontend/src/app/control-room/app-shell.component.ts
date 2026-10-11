@@ -1,10 +1,12 @@
-import { Component, OnDestroy, OnInit } from '@angular/core'
+import { ChangeDetectorRef, Component, OnDestroy, OnInit } from '@angular/core'
+import { Title } from '@angular/platform-browser'
 import { NavigationEnd, Router } from '@angular/router'
 import { Subscription } from 'rxjs'
 import { filter } from 'rxjs/operators'
-import { HAI_MODULE_GROUPS, HAI_MODULES, HaiModuleDefinition, moduleForUrl } from './module-registry'
+import { HAI_MODULE_GROUPS, HAI_MODULES, HaiModuleDefinition, HaiModuleGroup, moduleDocumentTitle, moduleForUrl } from './module-registry'
 import { HaiNavigationMode, HaiViewMode, ModuleViewPreferencesService } from './module-view-preferences.service'
 import { ThemeMode, ThemeService } from '../services/theme.service'
+import { HttpViewRefreshScheduler } from '../services/http-view-refresh.interceptor'
 
 @Component({
   standalone: false,
@@ -15,6 +17,9 @@ import { ThemeMode, ThemeService } from '../services/theme.service'
 export class AppShellComponent implements OnInit, OnDestroy {
   readonly groups = HAI_MODULE_GROUPS
   readonly modules = HAI_MODULES
+  readonly modulesByGroup = Object.fromEntries(
+    HAI_MODULE_GROUPS.map((group) => [group.id, HAI_MODULES.filter((module) => module.group === group.id)]),
+  ) as Record<HaiModuleGroup, HaiModuleDefinition[]>
   current: HaiModuleDefinition = HAI_MODULES[0]
   themeMode: ThemeMode = 'dark'
   viewMode: HaiViewMode = 'basic'
@@ -36,9 +41,13 @@ export class AppShellComponent implements OnInit, OnDestroy {
     private router: Router,
     private preferences: ModuleViewPreferencesService,
     private themeService: ThemeService,
+    private documentTitle: Title,
+    private changeDetector: ChangeDetectorRef,
+    private httpViewRefresh: HttpViewRefreshScheduler,
   ) {}
 
   ngOnInit(): void {
+    this.httpViewRefresh.registerShell(this.changeDetector)
     this.themeMode = this.themeService.mode()
     this.updateCurrent(this.router.url)
     this.routerSubscription = this.router.events.pipe(filter((event): event is NavigationEnd => event instanceof NavigationEnd))
@@ -47,13 +56,18 @@ export class AppShellComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.httpViewRefresh.unregisterShell(this.changeDetector)
     this.routerSubscription?.unsubscribe()
     document.removeEventListener('toggle', this.onDetailsToggle, true)
   }
 
-  groupModules(groupId: string): HaiModuleDefinition[] {
-    return this.modules.filter((module) => module.group === groupId)
+  groupModules(groupId: HaiModuleGroup): HaiModuleDefinition[] {
+    return this.modulesByGroup[groupId]
   }
+
+  trackGroup(_: number, group: { id: HaiModuleGroup }): HaiModuleGroup { return group.id }
+
+  trackModule(_: number, module: HaiModuleDefinition): string { return module.id }
 
   navigate(module: HaiModuleDefinition): void {
     this.mobileNavigationOpen = false
@@ -89,6 +103,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
   private updateCurrent(url: string): void {
     this.current = moduleForUrl(url)
+    this.documentTitle.setTitle(moduleDocumentTitle(this.current))
     const preferences = this.preferences.get(this.current.id)
     this.viewMode = preferences.mode
     this.navigationMode = preferences.navigationMode

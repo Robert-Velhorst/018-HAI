@@ -10,6 +10,24 @@ import (
 	"time"
 )
 
+func TestCaptureEvaluationSnapshotAllowsOnlyBoundedMonotonicClockAdvance(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	owner := "owner-monotonic-clock"
+	now := time.Date(2026, time.August, 14, 10, 0, 0, 0, time.UTC)
+	service := newService(NewMemoryRepository(), func() time.Time { return now })
+	if _, _, err := service.RecordPolicy(ctx, owner, "policy", DefaultPreferences(owner)); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot, err := service.CaptureEvaluationSnapshot(ctx, owner, now.Add(snapshotMonotonicClockAllowance)); err != nil ||
+		!snapshot.CapturedAt.Equal(now.Add(snapshotMonotonicClockAllowance)) {
+		t.Fatalf("bounded monotonic capture = (%+v, %v)", snapshot, err)
+	}
+	if _, err := service.CaptureEvaluationSnapshot(ctx, owner, now.Add(snapshotMonotonicClockAllowance+time.Microsecond)); !errors.Is(err, ErrSnapshotInvalid) {
+		t.Fatalf("materially future capture error = %v, want %v", err, ErrSnapshotInvalid)
+	}
+}
+
 func TestEvaluateStoredSnapshotKeepsEmptyAdditionalSignalsCompatible(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

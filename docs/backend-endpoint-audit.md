@@ -9,7 +9,7 @@ under `/api/v1` requires `X-HAI-Backend-Key` when configured.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/healthz` | liveness |
-| GET | `/readyz` | readiness (doctor diagnosis; 200/503) |
+| GET | `/readyz` | aggregate readiness only; 200/503 without internal check detail |
 | GET | `/swagger/*` | API docs |
 
 ## Authenticated (`/api/v1`)
@@ -28,7 +28,7 @@ under `/api/v1` requires `X-HAI-Backend-Key` when configured.
 | `/task` | owner-gated plan, run, success, logs, review-queue, review resolution |
 | `/assistant`, `/agent-cycle`, `/autonomy`, `/ambient`, `/os` | owner-gated command/logs, run, overview/stress, scan/needs/proposal resolution, overview |
 | **`/flags`** | GET — feature flags (added this goal run) |
-| **`/system`** | **GET `/info`**, **GET `/support-bundle`** (added this goal run) |
+| **`/system`** | **GET `/info`**, **GET `/readiness`** (live detailed checks), **GET `/support-bundle`** |
 
 ## Findings
 
@@ -73,9 +73,12 @@ under `/api/v1` requires `X-HAI-Backend-Key` when configured.
   `POST /pursuits/:id/candidate/accept` may activate one, and that route plus
   its handler require approval capability before it can create or unlock
   governed work.
-- Authenticated pursuit mutation routes reject ownerless legacy pursuits. They
-  remain read-compatible for local migration, while empty-owner in-process
-  workers retain the only supported path for controlled legacy maintenance.
+- Authenticated Pursuit, Source, Memory, conversation-archive, semantic-search,
+  and Verification reads expose ownerless pre-identity data only to the single
+  `HAI_LEGACY_DATA_OWNER_IDENTITY`. Unset configuration fails closed and every
+  other operator remains exact-owner isolated. Authenticated mutation routes
+  reject ownerless legacy records; empty-owner in-process workers retain the
+  only supported path for controlled legacy maintenance.
 - **Follow-up:** adopt the `apierror` envelope uniformly across handlers (error
   shapes currently vary; frontend depends on the existing shapes — migrate both
   together).

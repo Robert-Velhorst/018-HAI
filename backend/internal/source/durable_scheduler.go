@@ -137,7 +137,7 @@ func syncHandler(service Service) durablejob.Handler {
 		if err != nil {
 			return fmt.Errorf("sync payload has an invalid source id %q: %w", payload.SourceID, err)
 		}
-		result, err := service.Sync(sourceID, ImportRequest{Mode: ModeScheduledSync})
+		result, err := service.SyncContext(ctx, sourceID, ImportRequest{Mode: ModeScheduledSync})
 		if err != nil {
 			if errors.Is(err, ErrSyncInProgress) {
 				// Another worker or an operator is already syncing this source.

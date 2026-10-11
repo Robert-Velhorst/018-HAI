@@ -7,6 +7,7 @@ import (
 	"automation-hub-idp/internal/app/services/iservice"
 	"automation-hub-idp/internal/app/users"
 	"automation-hub-idp/internal/app/utils"
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -71,7 +72,7 @@ func TestRefreshTokenUsesRefreshTokenExpiration(t *testing.T) {
 	refreshToken, refreshUUID, refreshExp, err := svc.generateRefreshToken(userID)
 	require.NoError(t, err)
 
-	tokenDetails, err := svc.RefreshToken(refreshToken)
+	tokenDetails, err := svc.RefreshToken(context.Background(), refreshToken)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenDetails.AccessToken)
 	require.Equal(t, refreshToken, tokenDetails.RefreshToken)
@@ -148,7 +149,7 @@ func TestLogoutRejectsTokenWithoutUserID(t *testing.T) {
 		jwtSecret:        "test-secret",
 	}
 
-	err = svc.Logout(tokenString)
+	err = svc.Logout(context.Background(), tokenString)
 	require.EqualError(t, err, "user ID not found in the token")
 }
 
@@ -170,7 +171,7 @@ func TestRefreshTokenRejectsAccessToken(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, err = svc.RefreshToken(accessToken)
+	_, err = svc.RefreshToken(context.Background(), accessToken)
 	require.EqualError(t, err, "invalid refresh token")
 }
 
@@ -186,7 +187,7 @@ func TestAccessTokenConsumersRejectRefreshToken(t *testing.T) {
 	refreshToken, _, _, err := svc.generateRefreshToken(userID)
 	require.NoError(t, err)
 
-	authenticated, err := svc.IsUserAuthenticated(refreshToken)
+	authenticated, err := svc.IsUserAuthenticated(context.Background(), refreshToken)
 	require.False(t, authenticated)
 	require.EqualError(t, err, "invalid accessToken")
 	_, err = svc.GetIdFromToken(refreshToken)
@@ -255,7 +256,7 @@ func TestRefreshTokenRejectsInactiveOrBlockedUsers(t *testing.T) {
 		refreshToken, _, _, err := svc.generateRefreshToken(userID)
 		require.NoError(t, err)
 
-		_, err = svc.RefreshToken(refreshToken)
+		_, err = svc.RefreshToken(context.Background(), refreshToken)
 		require.EqualError(t, err, "user is unavailable")
 	}
 }
@@ -278,7 +279,7 @@ func TestAccessAndSessionChecksRejectUnavailableUsers(t *testing.T) {
 		token, _, err := svc.generateAccessToken(userID, "owner", uuid.NewString(), time.Now().Add(time.Hour).Unix())
 		require.NoError(t, err)
 
-		authenticated, err := svc.IsUserAuthenticated(token)
+		authenticated, err := svc.IsUserAuthenticated(context.Background(), token)
 		require.False(t, authenticated)
 		require.EqualError(t, err, "user is unavailable")
 		_, err = svc.GetSessionFromToken(token)
@@ -361,7 +362,7 @@ func TestLogoutAttemptsBothRevocations(t *testing.T) {
 	token, _, err := svc.generateAccessToken(userID, "owner", "refresh-id", time.Now().Add(time.Hour).Unix())
 	require.NoError(t, err)
 
-	err = svc.Logout(token)
+	err = svc.Logout(context.Background(), token)
 	require.ErrorContains(t, err, "revoke refresh token")
 	require.Len(t, blockList.added, 2)
 	require.Equal(t, "refresh-id", blockList.added[0])
@@ -418,16 +419,7 @@ func TestConfirmPasswordResetRejectsWeakPasswordBeforeLookup(t *testing.T) {
 }
 
 func TestConfirmPasswordResetUpdatesPasswordAndClearsToken(t *testing.T) {
-	userID := uuid.New()
-	userService := &fakeUserService{
-		userByResetToken: &models.User{
-			ID:                 userID,
-			Email:              "user@example.com",
-			Password:           "old-hash",
-			ResetPasswordToken: "reset-token",
-			ResetTokenExpires:  ptrTime(time.Now().Add(time.Hour)),
-		},
-	}
+	userService := &fakeUserService{}
 	svc := &service{
 		userService: userService,
 		logger:      noopLogger{},
@@ -435,11 +427,17 @@ func TestConfirmPasswordResetUpdatesPasswordAndClearsToken(t *testing.T) {
 
 	err := svc.ConfirmPasswordReset("reset-token", "new-password")
 	require.NoError(t, err)
-	require.Equal(t, "reset-token", userService.lookupResetToken)
-	require.Equal(t, "new-password", userService.updatedPassword)
-	require.NotNil(t, userService.updatedUser)
-	require.Empty(t, userService.updatedUser.ResetPasswordToken)
-	require.Nil(t, userService.updatedUser.ResetTokenExpires)
+	require.Equal(t, "reset-token", userService.completedResetToken)
+	require.Equal(t, "new-password", userService.completedResetPassword)
+}
+
+func TestConfirmPasswordResetMapsConsumedOrExpiredTokenToInvalid(t *testing.T) {
+	userService := &fakeUserService{completeResetErr: users.ErrInvalidResetToken}
+	svc := &service{userService: userService, logger: noopLogger{}}
+
+	err := svc.ConfirmPasswordReset("replayed-token", "new-password")
+	require.EqualError(t, err, "invalid token")
+	require.Equal(t, "replayed-token", userService.completedResetToken)
 }
 
 func TestRequestPasswordResetDoesNotPersistTokenWhenEmailDeliveryIsUnavailable(t *testing.T) {
@@ -451,25 +449,45 @@ func TestRequestPasswordResetDoesNotPersistTokenWhenEmailDeliveryIsUnavailable(t
 		logger:           noopLogger{},
 	}
 
-	_, _, err := svc.RequestPasswordReset("operator@example.com")
+	_, _, err := svc.RequestPasswordReset(context.Background(), "operator@example.com")
 	require.EqualError(t, err, "password reset email delivery is not configured")
-	require.Nil(t, userService.updatedUser)
+	require.Empty(t, userService.storedResetToken)
 }
 
 func TestRequestPasswordResetClearsTokenWhenEmailDeliveryFails(t *testing.T) {
 	setupAuthConfig(t)
-	userService := &fakeUserService{userByEmail: &models.User{ID: uuid.New(), Email: "operator@example.com"}}
+	userID := uuid.New()
+	userService := &fakeUserService{userByEmail: &models.User{ID: userID, Email: "operator@example.com"}}
 	svc := &service{
 		userService:      userService,
 		passwordResetter: fakePasswordResetSender{configured: true, err: errors.New("smtp unavailable")},
 		logger:           noopLogger{},
 	}
 
-	_, _, err := svc.RequestPasswordReset("operator@example.com")
+	_, _, err := svc.RequestPasswordReset(context.Background(), "operator@example.com")
 	require.EqualError(t, err, "failed to send password reset email")
-	require.NotNil(t, userService.updatedUser)
-	require.Empty(t, userService.updatedUser.ResetPasswordToken)
-	require.Nil(t, userService.updatedUser.ResetTokenExpires)
+	require.Equal(t, userID, userService.storedResetUserID)
+	require.NotEmpty(t, userService.storedResetToken)
+	require.Equal(t, userService.storedResetToken, userService.clearedResetToken)
+	require.Equal(t, userID, userService.clearedResetUserID)
+}
+
+func TestRequestPasswordResetStoresDeliveredTokenWithoutRollback(t *testing.T) {
+	setupAuthConfig(t)
+	userID := uuid.New()
+	userService := &fakeUserService{userByEmail: &models.User{ID: userID, Email: "operator@example.com"}}
+	svc := &service{
+		userService:      userService,
+		passwordResetter: fakePasswordResetSender{configured: true},
+		logger:           noopLogger{},
+	}
+
+	token, expiresAt, err := svc.RequestPasswordReset(context.Background(), "operator@example.com")
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+	require.Equal(t, token, userService.storedResetToken)
+	require.Equal(t, expiresAt, userService.storedResetExpiresAt)
+	require.Empty(t, userService.clearedResetToken)
 }
 
 func TestAuthCapabilitiesReflectConfiguredOptionalPaths(t *testing.T) {
@@ -531,6 +549,9 @@ func setupAuthConfig(t *testing.T) {
 	t.Setenv("DB_PORT", "5432")
 	t.Setenv("DB_HOST", "localhost")
 	t.Setenv("DB_NAME", "automation_hub")
+	t.Setenv("DB_USER", "test_user")
+	t.Setenv("DB_PASSWORD", "test_password")
+	t.Setenv("RUN_MODE", "test")
 	t.Setenv("PASSWORD_RESET_TOPIC", "password-reset")
 	t.Setenv("ACCOUNT_BLOCKED_TOPIC", "account-blocked")
 	t.Setenv("ACCOUNT_CREATED_TOPIC", "account-created")
@@ -565,13 +586,21 @@ func ptrTime(value time.Time) *time.Time {
 }
 
 type fakeUserService struct {
-	userByID         *models.User
-	userByEmail      *models.User
-	userByResetToken *models.User
-	lookupResetToken string
-	lookupEmail      string
-	updatedPassword  string
-	updatedUser      *models.User
+	userByID               *models.User
+	userByEmail            *models.User
+	userByResetToken       *models.User
+	lookupResetToken       string
+	lookupEmail            string
+	updatedPassword        string
+	updatedUser            *models.User
+	completedResetToken    string
+	completedResetPassword string
+	completeResetErr       error
+	storedResetUserID      uuid.UUID
+	storedResetToken       string
+	storedResetExpiresAt   time.Time
+	clearedResetUserID     uuid.UUID
+	clearedResetToken      string
 }
 
 func (f *fakeUserService) CreateUser(user models.User) (*models.User, error) {
@@ -619,13 +648,32 @@ func (f *fakeUserService) UpdatePassword(id uuid.UUID, newPassword string) error
 	return nil
 }
 
-type fakeBlockListService struct{}
+func (f *fakeUserService) CompletePasswordReset(token, newPassword string) error {
+	f.completedResetToken = token
+	f.completedResetPassword = newPassword
+	return f.completeResetErr
+}
 
-func (fakeBlockListService) AddToBlockList(jwtUUID string, expirationTime time.Duration) error {
+func (f *fakeUserService) StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error {
+	f.storedResetUserID = id
+	f.storedResetToken = token
+	f.storedResetExpiresAt = expiresAt
 	return nil
 }
 
-func (fakeBlockListService) IsInBlockList(jwtUUID string) (bool, error) {
+func (f *fakeUserService) ClearPasswordResetIfToken(id uuid.UUID, token string) error {
+	f.clearedResetUserID = id
+	f.clearedResetToken = token
+	return nil
+}
+
+type fakeBlockListService struct{}
+
+func (fakeBlockListService) AddToBlockList(context.Context, string, time.Duration) error {
+	return nil
+}
+
+func (fakeBlockListService) IsInBlockList(context.Context, string) (bool, error) {
 	return false, nil
 }
 
@@ -634,7 +682,7 @@ type recordingBlockListService struct {
 	errorsByCall []error
 }
 
-func (f *recordingBlockListService) AddToBlockList(jwtUUID string, _ time.Duration) error {
+func (f *recordingBlockListService) AddToBlockList(_ context.Context, jwtUUID string, _ time.Duration) error {
 	f.added = append(f.added, jwtUUID)
 	call := len(f.added) - 1
 	if call < len(f.errorsByCall) {
@@ -643,7 +691,7 @@ func (f *recordingBlockListService) AddToBlockList(jwtUUID string, _ time.Durati
 	return nil
 }
 
-func (*recordingBlockListService) IsInBlockList(string) (bool, error) {
+func (*recordingBlockListService) IsInBlockList(context.Context, string) (bool, error) {
 	return false, nil
 }
 
@@ -660,7 +708,7 @@ type fakePasswordResetSender struct {
 }
 
 func (f fakePasswordResetSender) Configured() bool { return f.configured }
-func (f fakePasswordResetSender) SendPasswordReset(string, string, time.Time) error {
+func (f fakePasswordResetSender) SendPasswordReset(context.Context, string, string, time.Time) error {
 	return f.err
 }
 

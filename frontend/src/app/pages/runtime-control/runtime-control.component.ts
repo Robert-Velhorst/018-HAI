@@ -1,19 +1,24 @@
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
-import { catchError, finalize, forkJoin, of, switchMap } from 'rxjs'
+import { catchError, finalize, forkJoin, of, switchMap, throwError } from 'rxjs'
+import { NzModalService } from 'ng-zorro-antd/modal'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
   AuthActorRole,
   IAuthSession,
 } from '../../models/auth-session.model.interface'
 import {
+  ControlApprovalAction,
   IBackgroundStatus,
+  IControlAuthorization,
+  IDecidedControlApproval,
   IReadiness,
 } from '../../models/runtime-control.model.interface'
 import { AuthSessionService } from '../../services/auth-session.service'
 import { RuntimeControlService } from '../../services/runtime-control.service'
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-runtime-control',
   templateUrl: './runtime-control.component.html',
@@ -33,6 +38,7 @@ export class RuntimeControlComponent implements OnInit {
   constructor(
     private service: RuntimeControlService,
     private authSessionService: AuthSessionService,
+    private modal: NzModalService,
     private notification: NzNotificationService,
     private router: Router
   ) {}
@@ -108,17 +114,13 @@ export class RuntimeControlComponent implements OnInit {
     )) {
       return
     }
-    this.busy = true
-    this.service.resume().subscribe({
-      next: () => {
-        this.busy = false
-        this.notification.success('Resumed', 'Background processing re-enabled.')
-        this.refresh()
-      },
-      error: () => {
-        this.busy = false
-        this.notification.error('Error', 'Resume failed.')
-      },
+    this.modal.confirm({
+      nzTitle: 'Resume background processing?',
+      nzContent:
+        'HAI will create a five-minute approval for the current emergency-stop revision, record your owner decision, and consume it once. A changed or replayed request will be rejected.',
+      nzOkText: 'Approve and resume',
+      nzCancelText: 'Keep stopped',
+      nzOnOk: () => this.executeApprovedControlChange('resume'),
     })
   }
 
@@ -130,12 +132,42 @@ export class RuntimeControlComponent implements OnInit {
     )) {
       return
     }
-    this.service.setMode(mode).subscribe({
+    const currentMode = this.status?.storedMode
+    if (!currentMode || currentMode === mode) {
+      return
+    }
+    const currentRank = this.modeAuthorityRank(currentMode)
+    const targetRank = this.modeAuthorityRank(mode)
+    if (currentRank < 0 || targetRank < 0) {
+      this.notification.error(
+        'Mode change failed',
+        'HAI returned an unsupported autonomy mode; no control was changed.'
+      )
+      return
+    }
+    if (targetRank > currentRank) {
+      this.modal.confirm({
+        nzTitle: `Increase autonomy to ${mode}?`,
+        nzContent:
+          `This weakens the current ${currentMode} safety boundary. HAI will create a short-lived approval for this exact transition and consume it once.`,
+        nzOkText: 'Approve mode increase',
+        nzCancelText: 'Keep current mode',
+        nzOnOk: () => this.executeApprovedControlChange('set_mode', mode),
+      })
+      return
+    }
+    this.busy = true
+    this.service.setMode(mode).pipe(
+      finalize(() => (this.busy = false))
+    ).subscribe({
       next: () => {
-        this.notification.success('Mode updated', `Autonomy mode set to ${mode}.`)
+        this.notification.success('Mode restricted', `Autonomy mode set to ${mode}.`)
         this.refresh()
       },
-      error: (err) => this.notification.error('Error', err?.error?.error ?? 'Mode change failed.'),
+      error: (err) => this.notification.error(
+        'Mode change failed',
+        this.serverError(err, 'The safer mode could not be persisted.')
+      ),
     })
   }
 
@@ -301,5 +333,97 @@ export class RuntimeControlComponent implements OnInit {
       this.notification.warning(`${action} unavailable`, explanation)
     }
     return false
+  }
+
+  private executeApprovedControlChange(
+    action: ControlApprovalAction,
+    targetMode?: string
+  ): void {
+    if (this.busy) {
+      return
+    }
+    this.busy = true
+    this.service.prepareControlApproval(action, targetMode).pipe(
+      switchMap((prepared) => this.service.decideControlApproval(
+        prepared.requestId,
+        'approved',
+        action === 'resume'
+          ? 'Owner approved this exact emergency-stop recovery.'
+          : `Owner approved this exact autonomy transition to ${targetMode}.`
+      )),
+      switchMap((decision) => {
+        let authorization: IControlAuthorization
+        try {
+          authorization = this.authorizationFromDecision(decision)
+        } catch (error) {
+          return throwError(() => error)
+        }
+        if (action === 'resume') {
+          return this.service.resume(authorization)
+        }
+        if (!targetMode) {
+          return throwError(() => new Error('Approved mode target is missing.'))
+        }
+        return this.service.setMode(targetMode, authorization)
+      }),
+      finalize(() => (this.busy = false))
+    ).subscribe({
+      next: () => {
+        if (action === 'resume') {
+          this.notification.success('Resumed', 'The exact recovery approval was consumed once.')
+        } else {
+          this.notification.success('Mode updated', `Autonomy mode set to ${targetMode}.`)
+        }
+        this.refresh()
+      },
+      error: (err) => this.notification.error(
+        action === 'resume' ? 'Resume failed' : 'Mode change failed',
+        this.serverError(err, 'The exact approval flow did not complete; no safety control was weakened.')
+      ),
+    })
+  }
+
+  private authorizationFromDecision(
+    decision: IDecidedControlApproval
+  ): IControlAuthorization {
+    if (
+      decision.decision !== 'approved' ||
+      !decision.idempotencyKey ||
+      !decision.taskId ||
+      !decision.approvalSourceId ||
+      !decision.approvalBindingDigest ||
+      decision.approvalBindingDigest.length !== 64 ||
+      !decision.expiresAt ||
+      Date.parse(decision.expiresAt) <= Date.now()
+    ) {
+      throw new Error('HAI returned incomplete or expired control-approval evidence.')
+    }
+    return {
+      idempotencyKey: decision.idempotencyKey,
+      taskId: decision.taskId,
+      approvalSourceId: decision.approvalSourceId,
+      approvalBindingDigest: decision.approvalBindingDigest,
+    }
+  }
+
+  private modeAuthorityRank(mode: string): number {
+    switch (mode) {
+      case 'paused':
+        return 0
+      case 'read_only':
+        return 1
+      case 'draft_only':
+        return 2
+      case 'approval_required':
+        return 3
+      case 'autonomous_safe':
+        return 4
+      default:
+        return -1
+    }
+  }
+
+  private serverError(error: any, fallback: string): string {
+    return error?.error?.error ?? error?.message ?? fallback
   }
 }

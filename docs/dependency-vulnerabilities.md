@@ -3,6 +3,18 @@
 Records the actual `govulncheck` result, the CI scanning posture, and the exact
 remediation, so nothing is hand-waved.
 
+## 2026-08-14 Go security patch
+
+GitHub's blocking scans detected new standard-library advisories in Go 1.25.12.
+All four Go modules now recommend Go 1.25.13; the backend, IDP, and nginx
+configuration manager builders use the digest-pinned official 1.25.13 image,
+and every matching CI job uses 1.25.13. Fresh vet, full-test, build, and
+`govulncheck` v1.6.0 runs report zero code-affecting vulnerabilities in all
+three networked services. The scanner still reports unreachable advisories in
+imported or required packages; they remain visible but do not call vulnerable
+symbols. Go's official download feed lists 1.25.13 as a stable release:
+<https://go.dev/dl/?mode=json>.
+
 ## Backend remediation completed (40 to 0)
 
 The 2026-07-30 scan first found 40 code-affecting vulnerabilities under Go
@@ -59,8 +71,8 @@ were removed; npm 10.9.8 and `package-lock.json` are now authoritative.
 
 The migration reduced the audit from **91 findings (4 critical, 59 high, 19
 moderate, 9 low)** to **3 moderate, 0 high, and 0 critical**. The complete
-379-test frontend suite and production build pass. The initial production bundle
-is 836.15 kB, down from approximately 1.40 MB under the old builder.
+418-test frontend suite and production build pass. The initial production bundle
+is approximately 626 kB, down from approximately 1.40 MB under the old builder.
 
 The three remaining records describe one development-tool chain:
 

@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS public.idx_life_ontology_relations_owner_visibility;
+DROP INDEX IF EXISTS public.idx_life_ontology_entities_owner_review_priority;
+DROP INDEX IF EXISTS public.idx_life_ontology_entities_owner_visibility_priority;

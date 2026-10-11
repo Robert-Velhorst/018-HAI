@@ -13,8 +13,20 @@ type Service struct {
 	lifeGraph  LifeOntologyProjector
 }
 
+// A monitor claim and completion can advance a coarse host clock by one
+// microsecond each. Keep that logical movement bounded so immediate handoffs
+// work without permitting materially future outcome records.
+const outcomeMonotonicClockAllowance = 2 * time.Microsecond
+
 func NewService(repository Repository) *Service {
 	return newService(repository, time.Now)
+}
+
+// NewServiceWithClock creates an outcome service with an explicit clock. It is
+// intended for deterministic orchestration and release acceptance where every
+// persisted timestamp must share one controlled time source.
+func NewServiceWithClock(repository Repository, now func() time.Time) *Service {
+	return newService(repository, now)
 }
 
 func newService(repository Repository, now func() time.Time) *Service {
@@ -172,8 +184,11 @@ func (s *Service) CreateEvaluation(ctx context.Context, ownerID, workspaceID, ou
 		return EvaluationRecord{}, false, err
 	}
 	now := s.now().UTC()
-	if request.AsOf.IsZero() || request.AsOf.After(now) {
+	if request.AsOf.IsZero() || request.AsOf.After(now.Add(outcomeMonotonicClockAllowance)) {
 		return EvaluationRecord{}, false, fmt.Errorf("%w: as-of time must not be in the future", ErrInvalidTimeWindow)
+	}
+	if request.AsOf.After(now) {
+		now = request.AsOf.UTC()
 	}
 	normalized, err := normalizeAndValidate(EvaluationRequest{
 		Outcome: current.Outcome, Observations: request.Observations,
@@ -285,8 +300,11 @@ func (s *Service) StoreCorrection(ctx context.Context, ownerID, workspaceID, out
 		return CorrectionRecord{}, false, ErrRevisionConflict
 	}
 	now := s.now().UTC()
-	if request.AsOf.IsZero() || request.AsOf.After(now) {
+	if request.AsOf.IsZero() || request.AsOf.After(now.Add(outcomeMonotonicClockAllowance)) {
 		return CorrectionRecord{}, false, fmt.Errorf("%w: as-of time must not be in the future", ErrInvalidTimeWindow)
+	}
+	if request.AsOf.After(now) {
+		now = request.AsOf.UTC()
 	}
 	normalized, err := normalizeAndValidate(EvaluationRequest{
 		Outcome: current.Outcome, Observations: []Observation{request.Observation},

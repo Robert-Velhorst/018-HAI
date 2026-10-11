@@ -61,6 +61,23 @@ func TestListHandlerPublishesReadOnlyCatalog(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "Catalog discovery is read-only") || !strings.Contains(response.Body.String(), "openhands") || !strings.Contains(response.Body.String(), "OSS Insight") || !strings.Contains(response.Body.String(), "litellm") || !strings.Contains(response.Body.String(), "langfuse") || !strings.Contains(response.Body.String(), "gosec") || !strings.Contains(response.Body.String(), "trivy") || !strings.Contains(response.Body.String(), "collectionScreening") || !strings.Contains(response.Body.String(), `"total":138`) || !strings.Contains(response.Body.String(), "license_review") || !strings.Contains(response.Body.String(), `"implementation"`) || !strings.Contains(response.Body.String(), "/api/v1/llm") {
 		t.Fatalf("catalog response lacks policy or entry: %s", response.Body.String())
 	}
+	if etag := response.Header().Get("ETag"); etag == "" {
+		t.Fatal("catalog response did not include an ETag")
+	}
+	if cache := response.Header().Get("Cache-Control"); !strings.Contains(cache, "private") || !strings.Contains(cache, "must-revalidate") {
+		t.Fatalf("catalog cache policy = %q", cache)
+	}
+	if vary := response.Header().Get("Vary"); !strings.Contains(vary, "Authorization") || !strings.Contains(vary, "Cookie") {
+		t.Fatalf("catalog Vary header = %q", vary)
+	}
+
+	revalidated := httptest.NewRecorder()
+	revalidationRequest := httptest.NewRequest(http.MethodGet, "/", nil)
+	revalidationRequest.Header.Set("If-None-Match", "W/"+response.Header().Get("ETag"))
+	router.ServeHTTP(revalidated, revalidationRequest)
+	if revalidated.Code != http.StatusNotModified || revalidated.Body.Len() != 0 {
+		t.Fatalf("catalog revalidation = %d %q", revalidated.Code, revalidated.Body.String())
+	}
 }
 
 func TestGetHandlerReturnsNotFoundForUnknownEntry(t *testing.T) {

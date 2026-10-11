@@ -431,7 +431,14 @@ func TestAcceptPursuitCandidateKeepsAmbientProposalAsContextOnly(t *testing.T) {
 func TestPursuitOpportunitiesAreFilteredForAuthenticatedOwner(t *testing.T) {
 	aliceID := uuid.New()
 	bobID := uuid.New()
-	engine := NewServiceWithPursuits(nil, nil, nil, &ambientPursuitSpy{owners: map[uuid.UUID]string{aliceID: "alice", bobID: "bob"}}).(*service)
+	pursuits := &ambientPursuitSpy{
+		owners: map[uuid.UUID]string{aliceID: "alice", bobID: "bob"},
+		pursuits: []models.Pursuit{
+			{ID: aliceID, OwnerIdentity: "alice"},
+			{ID: bobID, OwnerIdentity: "bob"},
+		},
+	}
+	engine := NewServiceWithPursuits(nil, nil, nil, pursuits).(*service)
 	visible := engine.visibleOpportunities("alice", []models.AmbientOpportunity{
 		{ID: uuid.New(), OwnerIdentity: "alice", SourceType: "pursuit_stale", SourceID: aliceID.String()},
 		{ID: uuid.New(), OwnerIdentity: "bob", SourceType: "pursuit_stale", SourceID: bobID.String()},
@@ -439,6 +446,105 @@ func TestPursuitOpportunitiesAreFilteredForAuthenticatedOwner(t *testing.T) {
 	})
 	if len(visible) != 1 || visible[0].SourceID != aliceID.String() {
 		t.Fatalf("owner-visible opportunities = %#v", visible)
+	}
+	if pursuits.listForOwnerCalls != 1 || pursuits.detailForOwnerCalls != 0 {
+		t.Fatalf("pursuit visibility calls = list:%d detail:%d, want 1/0", pursuits.listForOwnerCalls, pursuits.detailForOwnerCalls)
+	}
+}
+
+func TestPursuitOpportunityVisibilityUsesOneOwnerScopedRead(t *testing.T) {
+	owned := make([]models.Pursuit, 0, 75)
+	opportunities := make([]models.AmbientOpportunity, 0, 75)
+	for index := 0; index < 75; index++ {
+		id := uuid.New()
+		owned = append(owned, models.Pursuit{ID: id, OwnerIdentity: "alice"})
+		opportunities = append(opportunities, models.AmbientOpportunity{
+			ID: uuid.New(), OwnerIdentity: "alice", SourceType: "pursuit_stale", SourceID: id.String(),
+		})
+	}
+	pursuits := &ambientPursuitSpy{pursuits: owned}
+	engine := NewServiceWithPursuits(nil, nil, nil, pursuits).(*service)
+
+	visible := engine.visibleOpportunities("alice", opportunities)
+	if len(visible) != len(opportunities) {
+		t.Fatalf("visible opportunities = %d, want %d", len(visible), len(opportunities))
+	}
+	if pursuits.listForOwnerCalls != 1 || pursuits.detailForOwnerCalls != 0 {
+		t.Fatalf("pursuit visibility calls = list:%d detail:%d, want 1/0", pursuits.listForOwnerCalls, pursuits.detailForOwnerCalls)
+	}
+}
+
+func TestNonPursuitOpportunityVisibilityDoesNotReadPursuits(t *testing.T) {
+	pursuits := &ambientPursuitSpy{}
+	engine := NewServiceWithPursuits(nil, nil, nil, pursuits).(*service)
+	opportunities := []models.AmbientOpportunity{
+		{ID: uuid.New(), OwnerIdentity: "alice", SourceType: "workflow", SourceID: "workflow-1"},
+	}
+
+	visible := engine.visibleOpportunities("alice", opportunities)
+	if len(visible) != 1 {
+		t.Fatalf("visible opportunities = %d, want 1", len(visible))
+	}
+	if pursuits.listForOwnerCalls != 0 || pursuits.detailForOwnerCalls != 0 {
+		t.Fatalf("non-pursuit visibility calls = list:%d detail:%d, want 0/0", pursuits.listForOwnerCalls, pursuits.detailForOwnerCalls)
+	}
+}
+
+func TestPursuitOpportunityVisibilityFailsClosedWhenOwnerLookupFails(t *testing.T) {
+	pursuitID := uuid.New()
+	pursuits := &ambientPursuitSpy{listForOwnerErr: errors.New("pursuit repository unavailable")}
+	engine := NewServiceWithPursuits(nil, nil, nil, pursuits).(*service)
+
+	visible := engine.visibleOpportunities("alice", []models.AmbientOpportunity{
+		{ID: uuid.New(), OwnerIdentity: "alice", SourceType: "pursuit_stale", SourceID: pursuitID.String()},
+		{ID: uuid.New(), OwnerIdentity: "alice", SourceType: "workflow", SourceID: "workflow-1"},
+	})
+	if len(visible) != 1 || visible[0].SourceType != "workflow" {
+		t.Fatalf("visible opportunities after pursuit lookup failure = %#v", visible)
+	}
+	if pursuits.listForOwnerCalls != 1 || pursuits.detailForOwnerCalls != 0 {
+		t.Fatalf("pursuit visibility calls = list:%d detail:%d, want 1/0", pursuits.listForOwnerCalls, pursuits.detailForOwnerCalls)
+	}
+}
+
+func TestOverviewForOwnerFallsBackToDefaults(t *testing.T) {
+	repo := &ambientRepositoryStub{}
+	engine := NewService(repo, nil, nil)
+
+	overview, err := engine.OverviewForOwner("alice")
+	if err != nil {
+		t.Fatalf("OverviewForOwner: %v", err)
+	}
+	if len(overview.Needs) != len(defaultNeeds()) {
+		t.Fatalf("fallback needs = %d, want %d", len(overview.Needs), len(defaultNeeds()))
+	}
+	if findAmbientNeed(overview.Needs, "safety").PriorityWeight != 100 {
+		t.Fatalf("fallback safety need = %#v", findAmbientNeed(overview.Needs, "safety"))
+	}
+}
+
+func TestOverviewSummaryForOwnerSkipsOpportunitiesAndBoundsScanHistory(t *testing.T) {
+	repo := &ambientRepositoryStub{needs: defaultNeeds()}
+	for index := 0; index < 8; index++ {
+		repo.scans = append(repo.scans, models.AmbientScan{OwnerIdentity: "alice", Trigger: "scheduled"})
+	}
+	engine := NewService(repo, nil, nil)
+
+	overview, err := engine.OverviewSummaryForOwner("alice")
+	if err != nil {
+		t.Fatalf("OverviewSummaryForOwner: %v", err)
+	}
+	if repo.opportunitiesForOwnerCalls != 0 {
+		t.Fatalf("summary loaded %d opportunity collections, want 0", repo.opportunitiesForOwnerCalls)
+	}
+	if repo.lastScanLimit != 3 {
+		t.Fatalf("summary scan limit = %d, want 3", repo.lastScanLimit)
+	}
+	if len(overview.Scans) != 3 {
+		t.Fatalf("summary scans = %d, want 3", len(overview.Scans))
+	}
+	if overview.Opportunities == nil || len(overview.Opportunities) != 0 {
+		t.Fatalf("summary opportunities = %#v, want an empty collection", overview.Opportunities)
 	}
 }
 
@@ -468,6 +574,41 @@ func TestScanForOwnerBuildsPrivatePursuitProposalsOnly(t *testing.T) {
 	}
 	if repo.opportunity.WorkflowID != nil {
 		t.Fatalf("personal scan unexpectedly created executable workflow state: %#v", repo.opportunity)
+	}
+}
+
+func TestValidatePursuitDashboardOwnerRejectsCrossOwnerAndUnscopedLegacyData(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "legacy-owner")
+	alice := models.Pursuit{ID: uuid.New(), OwnerIdentity: "alice"}
+	if err := validatePursuitDashboardOwner("alice", &pursuitpkg.Dashboard{
+		ReviewDue:     []pursuitpkg.PursuitListItem{{Pursuit: alice}},
+		DecisionQueue: []pursuitpkg.PursuitDashboardDecision{{Pursuit: alice}},
+	}); err != nil {
+		t.Fatalf("owner-matched dashboard rejected: %v", err)
+	}
+
+	for name, dashboard := range map[string]*pursuitpkg.Dashboard{
+		"cross-owner item": {
+			ReviewDue: []pursuitpkg.PursuitListItem{{Pursuit: models.Pursuit{ID: uuid.New(), OwnerIdentity: "bob"}}},
+		},
+		"cross-owner decision": {
+			DecisionQueue: []pursuitpkg.PursuitDashboardDecision{{Pursuit: models.Pursuit{ID: uuid.New(), OwnerIdentity: "bob"}}},
+		},
+		"ownerless legacy item": {
+			ReviewDue: []pursuitpkg.PursuitListItem{{Pursuit: models.Pursuit{ID: uuid.New()}}},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validatePursuitDashboardOwner("alice", dashboard); err == nil {
+				t.Fatal("inaccessible dashboard data was accepted")
+			}
+		})
+	}
+
+	if err := validatePursuitDashboardOwner("legacy-owner", &pursuitpkg.Dashboard{
+		ReviewDue: []pursuitpkg.PursuitListItem{{Pursuit: models.Pursuit{ID: uuid.New()}}},
+	}); err != nil {
+		t.Fatalf("migration owner could not read ownerless legacy pursuit: %v", err)
 	}
 }
 
@@ -504,6 +645,20 @@ func TestAmbientNeedProfilesArePrivateToEachOwner(t *testing.T) {
 	}
 }
 
+func TestAmbientNeedUpdateUsesReadOnlyDefaultsFallback(t *testing.T) {
+	repo := &ambientRepositoryStub{}
+	engine := NewService(repo, nil, nil).(*service)
+	priority := 84
+
+	updated, err := engine.UpdateNeedForOwner("alice", "safety", NeedUpdateRequest{PriorityWeight: &priority})
+	if err != nil {
+		t.Fatalf("UpdateNeedForOwner with unseeded repository: %v", err)
+	}
+	if updated.Key != "safety" || updated.PriorityWeight != priority || len(repo.overrides) != 1 {
+		t.Fatalf("fallback update = %#v overrides=%#v", updated, repo.overrides)
+	}
+}
+
 func TestOwnerScanUsesPrivateNeedProfile(t *testing.T) {
 	pursuitID := uuid.New()
 	repo := &ambientRepositoryStub{needs: defaultNeeds()}
@@ -527,6 +682,158 @@ func TestOwnerScanUsesPrivateNeedProfile(t *testing.T) {
 		t.Fatalf("disabled private need still produced a proposal: scan=%#v opportunity=%#v", scan, repo.opportunity)
 	}
 }
+
+func TestStoreCandidatesAvoidsUnchangedHourlyWrite(t *testing.T) {
+	now := time.Date(2026, time.August, 14, 18, 0, 0, 0, time.UTC)
+	candidate := models.AmbientOpportunity{
+		OwnerIdentity: "alice", Fingerprint: strings.Repeat("a", 64), NeedKey: "growth",
+		Title: "Review the active pursuit", Rationale: "The pursuit is due for review.",
+		NextAction: "Review the evidence and choose the next action.", PriorityScore: 72,
+		Urgency: 70, Impact: 75, Effort: 20, Confidence: 85, Risk: 20,
+		EvidenceManifest: `{"type":"pursuit_review_due"}`, Status: StatusProposed,
+	}
+	repo := &ambientRepositoryStub{opportunity: &models.AmbientOpportunity{
+		ID: uuid.New(), OwnerIdentity: candidate.OwnerIdentity, Fingerprint: candidate.Fingerprint,
+		NeedKey: candidate.NeedKey, Title: candidate.Title, Rationale: candidate.Rationale,
+		NextAction: candidate.NextAction, PriorityScore: candidate.PriorityScore,
+		Urgency: candidate.Urgency, Impact: candidate.Impact, Effort: candidate.Effort,
+		Confidence: candidate.Confidence, Risk: candidate.Risk,
+		EvidenceManifest: candidate.EvidenceManifest, Status: StatusProposed,
+		LastSeenAt: now.Add(-time.Hour),
+	}}
+	engine := NewService(repo, nil, nil).(*service)
+	scan := &models.AmbientScan{}
+
+	if err := engine.storeCandidates(scan, []models.AmbientOpportunity{candidate}, Policy{MinimumScore: 0, MinimumConfidence: 0}, now); err != nil {
+		t.Fatalf("storeCandidates: %v", err)
+	}
+	if repo.saveOpportunityCalls != 0 || scan.Updated != 0 || scan.Deduplicated != 1 {
+		t.Fatalf("unchanged candidate writes=%d scan=%#v, want no write and one deduplication", repo.saveOpportunityCalls, scan)
+	}
+	if !repo.opportunity.LastSeenAt.Equal(now.Add(-time.Hour)) {
+		t.Fatalf("unchanged candidate refreshed last seen at %s", repo.opportunity.LastSeenAt)
+	}
+}
+
+func TestStoreCandidatesPersistsSemanticChangeAndDailyFreshness(t *testing.T) {
+	now := time.Date(2026, time.August, 14, 18, 0, 0, 0, time.UTC)
+	base := models.AmbientOpportunity{
+		ID: uuid.New(), OwnerIdentity: "alice", Fingerprint: strings.Repeat("b", 64),
+		NeedKey: "growth", Title: "Plan pursuit", Rationale: "Planning is needed.",
+		NextAction: "Create the first plan.", PriorityScore: 64, Urgency: 60,
+		Impact: 70, Effort: 25, Confidence: 80, Risk: 20,
+		EvidenceManifest: `{"type":"pursuit_planning_needed"}`, Status: StatusProposed,
+		LastSeenAt: now.Add(-time.Hour),
+	}
+	repo := &ambientRepositoryStub{opportunity: &base}
+	engine := NewService(repo, nil, nil).(*service)
+	changed := base
+	changed.NextAction = "Create a source-backed plan."
+	scan := &models.AmbientScan{}
+
+	if err := engine.storeCandidates(scan, []models.AmbientOpportunity{changed}, Policy{}, now); err != nil {
+		t.Fatalf("semantic update: %v", err)
+	}
+	if repo.saveOpportunityCalls != 1 || scan.Updated != 1 || repo.opportunity.NextAction != changed.NextAction || !repo.opportunity.LastSeenAt.Equal(now) {
+		t.Fatalf("semantic update writes=%d scan=%#v item=%#v", repo.saveOpportunityCalls, scan, repo.opportunity)
+	}
+
+	repo.saveOpportunityCalls = 0
+	repo.opportunity.LastSeenAt = now.Add(-ambientLastSeenWriteInterval)
+	scan = &models.AmbientScan{}
+	if err := engine.storeCandidates(scan, []models.AmbientOpportunity{changed}, Policy{}, now); err != nil {
+		t.Fatalf("daily refresh: %v", err)
+	}
+	if repo.saveOpportunityCalls != 1 || scan.Updated != 1 || scan.Deduplicated != 1 || !repo.opportunity.LastSeenAt.Equal(now) {
+		t.Fatalf("daily refresh writes=%d scan=%#v item=%#v", repo.saveOpportunityCalls, scan, repo.opportunity)
+	}
+
+	repo.saveOpportunityCalls = 0
+	repo.opportunity.Status = StatusDismissed
+	repo.opportunity.CooldownUntil = timePointer(now.Add(-time.Minute))
+	scan = &models.AmbientScan{}
+	if err := engine.storeCandidates(scan, []models.AmbientOpportunity{changed}, Policy{}, now); err != nil {
+		t.Fatalf("cooldown reactivation: %v", err)
+	}
+	if repo.saveOpportunityCalls != 1 || scan.Updated != 1 || repo.opportunity.Status != StatusProposed {
+		t.Fatalf("cooldown reactivation writes=%d scan=%#v item=%#v", repo.saveOpportunityCalls, scan, repo.opportunity)
+	}
+}
+
+func TestStoreCandidatesUsesOneBulkFingerprintLookup(t *testing.T) {
+	now := time.Date(2026, time.August, 14, 19, 0, 0, 0, time.UTC)
+	existingA := models.AmbientOpportunity{
+		ID: uuid.New(), OwnerIdentity: "alice", Fingerprint: strings.Repeat("c", 64),
+		NeedKey: "growth", Title: "Review pursuit", Rationale: "Review is due.",
+		NextAction: "Review the pursuit.", PriorityScore: 70, Confidence: 85,
+		Status: StatusProposed, LastSeenAt: now,
+	}
+	existingB := existingA
+	existingB.ID = uuid.New()
+	existingB.Fingerprint = strings.Repeat("d", 64)
+	existingB.Title = "Plan pursuit"
+	existingB.NextAction = "Plan the pursuit."
+	newCandidate := existingA
+	newCandidate.ID = uuid.Nil
+	newCandidate.Fingerprint = strings.Repeat("e", 64)
+	newCandidate.Title = "Unblock pursuit"
+	newCandidate.NextAction = "Resolve the blocker."
+	filtered := existingA
+	filtered.ID = uuid.Nil
+	filtered.Fingerprint = strings.Repeat("f", 64)
+	filtered.PriorityScore = 5
+
+	repo := &ambientBatchRepositoryStub{
+		ambientRepositoryStub: &ambientRepositoryStub{},
+		existing: map[string]models.AmbientOpportunity{
+			existingA.Fingerprint: existingA,
+			existingB.Fingerprint: existingB,
+		},
+	}
+	engine := NewService(repo, nil, nil).(*service)
+	scan := &models.AmbientScan{}
+
+	err := engine.storeCandidates(scan, []models.AmbientOpportunity{existingA, existingB, newCandidate, filtered}, Policy{MinimumScore: 10}, now)
+	if err != nil {
+		t.Fatalf("storeCandidates: %v", err)
+	}
+	if repo.batchCalls != 1 || repo.singleCalls != 0 {
+		t.Fatalf("fingerprint lookups = batch:%d single:%d, want 1/0", repo.batchCalls, repo.singleCalls)
+	}
+	if len(repo.batchFingerprints) != 3 {
+		t.Fatalf("bulk fingerprints = %d, want three eligible candidates", len(repo.batchFingerprints))
+	}
+	if scan.Deduplicated != 2 || scan.Created != 1 || scan.Filtered != 1 {
+		t.Fatalf("scan counters = %#v, want two deduplicated, one created, one filtered", scan)
+	}
+}
+
+type ambientBatchRepositoryStub struct {
+	*ambientRepositoryStub
+	existing          map[string]models.AmbientOpportunity
+	batchCalls        int
+	singleCalls       int
+	batchFingerprints []string
+}
+
+func (r *ambientBatchRepositoryStub) FindOpportunitiesByFingerprints(fingerprints []string) ([]models.AmbientOpportunity, error) {
+	r.batchCalls++
+	r.batchFingerprints = append([]string{}, fingerprints...)
+	result := make([]models.AmbientOpportunity, 0, len(fingerprints))
+	for _, fingerprint := range fingerprints {
+		if item, exists := r.existing[fingerprint]; exists {
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
+func (r *ambientBatchRepositoryStub) FindOpportunityByFingerprint(fingerprint string) (*models.AmbientOpportunity, error) {
+	r.singleCalls++
+	return r.ambientRepositoryStub.FindOpportunityByFingerprint(fingerprint)
+}
+
+func timePointer(value time.Time) *time.Time { return &value }
 
 func findAmbientNeed(needs []models.AmbientNeed, key string) models.AmbientNeed {
 	for _, need := range needs {
@@ -575,16 +882,19 @@ func (s *ambientWorkflowSpy) RunDueOpenLoops(workflow.RunDueRequest) (*workflow.
 }
 
 type ambientPursuitSpy struct {
-	dashboard        *pursuitpkg.Dashboard
-	pursuits         []models.Pursuit
-	details          map[uuid.UUID]models.Pursuit
-	links            []pursuitpkg.LinkRequest
-	linkedPursuitIDs []uuid.UUID
-	owners           map[uuid.UUID]string
-	linkFailures     int
-	autoLinkRequests []pursuitpkg.AutoLinkWorkflowRequest
-	autoLinkResult   *pursuitpkg.AutoLinkResult
-	autoLinkErr      error
+	dashboard           *pursuitpkg.Dashboard
+	pursuits            []models.Pursuit
+	details             map[uuid.UUID]models.Pursuit
+	links               []pursuitpkg.LinkRequest
+	linkedPursuitIDs    []uuid.UUID
+	owners              map[uuid.UUID]string
+	linkFailures        int
+	autoLinkRequests    []pursuitpkg.AutoLinkWorkflowRequest
+	autoLinkResult      *pursuitpkg.AutoLinkResult
+	autoLinkErr         error
+	listForOwnerCalls   int
+	detailForOwnerCalls int
+	listForOwnerErr     error
 }
 
 type ambientPursuitRouterSpy struct {
@@ -618,6 +928,10 @@ func (s *ambientPursuitSpy) List(bool) ([]models.Pursuit, error) {
 }
 
 func (s *ambientPursuitSpy) ListForOwner(ownerIdentity string, _ bool) ([]models.Pursuit, error) {
+	s.listForOwnerCalls++
+	if s.listForOwnerErr != nil {
+		return nil, s.listForOwnerErr
+	}
 	result := []models.Pursuit{}
 	for _, item := range s.pursuits {
 		if item.OwnerIdentity == ownerIdentity {
@@ -658,6 +972,7 @@ func (s *ambientPursuitSpy) AutoLinkWorkflow(request pursuitpkg.AutoLinkWorkflow
 }
 
 func (s *ambientPursuitSpy) DetailForOwner(ownerIdentity string, id uuid.UUID) (*pursuitpkg.PursuitDetail, error) {
+	s.detailForOwnerCalls++
 	if owner, found := s.owners[id]; found && owner != "" && owner != ownerIdentity {
 		return nil, errors.New("pursuit not found")
 	}

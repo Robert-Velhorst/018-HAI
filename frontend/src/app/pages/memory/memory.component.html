@@ -28,16 +28,16 @@
   <main class="memory-content">
     <section class="status-strip" aria-label="Memory status">
       <div title="Active memory records available for retrieval">
-        <strong>{{ activeMemories().length }}</strong>
-        <span>active memories</span>
+        <strong>{{ memoryPage.total }}</strong>
+        <span>matching memories</span>
       </div>
-      <div title="Memory records archived and excluded from normal context">
+      <div title="Archived records on the currently loaded page">
         <strong>{{ archivedCount() }}</strong>
-        <span>archived</span>
+        <span>page archived</span>
       </div>
-      <div title="Memory records with explicit source URI or source label">
+      <div title="Source-linked records on the currently loaded page">
         <strong>{{ sourceLinkedCount() }}</strong>
-        <span>source-linked</span>
+        <span>page source-linked</span>
       </div>
       <div [class.attention]="sourceCorrectionCount() > 0" title="Robert-corrected connected-source lessons available for review">
         <strong>{{ sourceCorrectionCount() }}</strong>
@@ -47,13 +47,13 @@
         <strong>{{ importPursuitLinkCount() }}</strong>
         <span>import pursuit links</span>
       </div>
-      <div title="Average confidence across the currently loaded memory set">
+      <div title="Average confidence across the currently loaded page">
         <strong>{{ averageConfidence() }}</strong>
-        <span>avg confidence</span>
+        <span>page avg confidence</span>
       </div>
-      <div [class.attention]="lowConfidenceCount() > 0" title="Records that may need review or correction">
+      <div [class.attention]="lowConfidenceCount() > 0" title="Records on this page that may need review or correction">
         <strong>{{ lowConfidenceCount() }}</strong>
-        <span>needs review</span>
+        <span>page needs review</span>
       </div>
     </section>
 
@@ -83,8 +83,79 @@
             <h2>Memory library</h2>
             <p>Useful lessons only. Irrelevant context stays unloaded.</p>
           </div>
-          <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="refresh()" title="Include archived records in the library">Archived</label>
+          <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="applyLibraryFilters()" title="Include archived records in the library">Archived</label>
         </div>
+
+        <form class="library-query" [formGroup]="libraryForm" (ngSubmit)="applyLibraryFilters()">
+          <div class="library-search">
+            <input
+              nz-input
+              formControlName="q"
+              maxlength="512"
+              autocomplete="off"
+              aria-label="Search memories"
+              placeholder="Search memory content, summaries, and tags"
+            />
+            <button type="submit" nz-button nzType="primary" [nzLoading]="loading">
+              <i nz-icon nzType="search" nzTheme="outline"></i>
+              Search
+            </button>
+          </div>
+          <details class="library-filters">
+            <summary>Advanced library filters</summary>
+            <div class="library-filter-grid">
+              <label>
+                <span>Project</span>
+                <input nz-input formControlName="projectKey" maxlength="120" placeholder="All projects" />
+              </label>
+              <label>
+                <span>Kind</span>
+                <nz-select formControlName="kind" aria-label="Memory kind">
+                  <nz-option nzValue="" nzLabel="All kinds"></nz-option>
+                  <nz-option nzValue="project" nzLabel="Project"></nz-option>
+                  <nz-option nzValue="preference" nzLabel="Preference"></nz-option>
+                  <nz-option nzValue="decision" nzLabel="Decision"></nz-option>
+                  <nz-option nzValue="source" nzLabel="Source"></nz-option>
+                  <nz-option nzValue="lesson" nzLabel="Lesson"></nz-option>
+                  <nz-option nzValue="procedural" nzLabel="Procedural"></nz-option>
+                </nz-select>
+              </label>
+              <label>
+                <span>Exact tag</span>
+                <input nz-input formControlName="tag" maxlength="255" placeholder="For example: verified" />
+              </label>
+              <label>
+                <span>Sort</span>
+                <nz-select formControlName="sort" aria-label="Memory sort field">
+                  <nz-option nzValue="updatedAt" nzLabel="Last updated"></nz-option>
+                  <nz-option nzValue="createdAt" nzLabel="Created"></nz-option>
+                  <nz-option nzValue="confidence" nzLabel="Confidence"></nz-option>
+                  <nz-option nzValue="kind" nzLabel="Kind"></nz-option>
+                  <nz-option nzValue="relevance" nzLabel="Relevance"></nz-option>
+                </nz-select>
+              </label>
+              <label>
+                <span>Order</span>
+                <nz-select formControlName="order" aria-label="Memory sort order">
+                  <nz-option nzValue="desc" nzLabel="Descending"></nz-option>
+                  <nz-option nzValue="asc" nzLabel="Ascending"></nz-option>
+                </nz-select>
+              </label>
+              <label>
+                <span>Per page</span>
+                <nz-select formControlName="pageSize" aria-label="Memories per page">
+                  <nz-option [nzValue]="12" nzLabel="12"></nz-option>
+                  <nz-option [nzValue]="24" nzLabel="24"></nz-option>
+                  <nz-option [nzValue]="50" nzLabel="50"></nz-option>
+                </nz-select>
+              </label>
+            </div>
+            <div class="library-filter-actions">
+              <button type="button" nz-button nzType="default" (click)="clearLibraryFilters()">Reset filters</button>
+              <button type="submit" nz-button nzType="primary" [nzLoading]="loading">Apply filters</button>
+            </div>
+          </details>
+        </form>
 
         <div class="memory-list">
           <article
@@ -108,8 +179,21 @@
               <span *ngIf="memory.archived" class="status-pill muted">archived</span>
             </div>
           </article>
-          <nz-empty *ngIf="!memories.length && !loading" nzNotFoundContent="No memory records yet."></nz-empty>
+          <nz-empty
+            *ngIf="!memories.length && !loading"
+            [nzNotFoundContent]="libraryForm.value.q || libraryForm.value.kind || libraryForm.value.tag ? 'No memories match these filters.' : 'No memory records yet.'"
+          ></nz-empty>
         </div>
+        <footer class="memory-pagination" *ngIf="memoryPage.total > 0">
+          <span>{{ pageRangeStart() }}-{{ pageRangeEnd() }} of {{ memoryPage.total }}</span>
+          <nz-pagination
+            [nzPageIndex]="memoryPage.page"
+            [nzPageSize]="memoryPage.pageSize"
+            [nzTotal]="memoryPage.total"
+            [nzShowSizeChanger]="false"
+            (nzPageIndexChange)="changeLibraryPage($event)"
+          ></nz-pagination>
+        </footer>
       </aside>
 
       <section class="panel action-panel">

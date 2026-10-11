@@ -27,11 +27,10 @@ type RedisLimiter struct {
 	limit   int
 	window  time.Duration
 	prefix  string
-	// failOpen decides what happens when Redis is unreachable. It is true:
-	// a rate limiter must not become a single point of failure for the whole
-	// API. An unreachable Redis degrades to "allow", loudly logged, rather than
-	// rejecting every request.
-	failOpen bool
+	// fallback preserves a local ceiling when Redis fails after startup. It
+	// keeps the API available without silently turning a configured limiter
+	// into an unlimited pass-through.
+	fallback Enforcer
 }
 
 // NewRedisLimiter builds a Redis-backed Enforcer from an address (host:port).
@@ -53,7 +52,7 @@ func NewRedisLimiter(ctx context.Context, addr string, limit int, window time.Du
 		limit:    limit,
 		window:   window,
 		prefix:   "ratelimit:",
-		failOpen: true,
+		fallback: Memory(limit, window),
 	}, nil
 }
 
@@ -66,9 +65,9 @@ func (r *RedisLimiter) Allow(ctx context.Context, key string) Decision {
 
 	count, reset, err := r.counter.IncrementWindow(ctx, r.prefix+key, r.window)
 	if err != nil {
-		if r.failOpen {
-			log.Printf("ratelimit: redis unavailable, allowing request (fail-open): %v", err)
-			return Decision{Allowed: true, Remaining: -1, RetryAfter: r.window}
+		if r.fallback != nil && r.fallback.Enabled() {
+			log.Printf("ratelimit: redis unavailable, using in-process fallback: %v", err)
+			return r.fallback.Allow(ctx, key)
 		}
 		return Decision{Allowed: false, Remaining: 0, RetryAfter: r.window}
 	}

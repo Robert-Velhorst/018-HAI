@@ -264,7 +264,14 @@
   margin-top: 20px;
 }
 
-
+.automation-card__menu {
+  align-items: center;
+  display: inline-flex;
+  height: 36px;
+  justify-content: center;
+  min-width: 36px;
+  padding: 0;
+}
 
 .dropdown-menu {
   &__item {
@@ -313,4 +320,23 @@
 
 .example-list.cdk-drop-list-dragging .example-box:not(.cdk-drag-placeholder) {
   transition: transform 250ms cubic-bezier(0, 0, 0.2, 1);
+}
+.password-visibility-toggle {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  place-items: center;
+}
+
+.password-visibility-toggle:hover,
+.password-visibility-toggle:focus-visible {
+  color: var(--hai-accent, #1677ff);
+  background: rgb(22 119 255 / 10%);
+  outline: 2px solid transparent;
 }

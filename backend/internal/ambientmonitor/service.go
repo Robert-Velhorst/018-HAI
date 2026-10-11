@@ -460,6 +460,12 @@ func (s *Service) ProcessDue(ctx context.Context, request ProcessDueRequest) (Pr
 			TargetID: target.ID, WorkerID: request.WorkerID,
 			LeaseGeneration: target.Lease.Generation, CompletedAt: s.now().UTC().Truncate(time.Microsecond),
 		}
+		// A fast local collector can finish in the same clock tick as its claim.
+		// Durable target transitions require strictly monotonic timestamps, so do
+		// not ask Postgres to persist a completion at the claim timestamp.
+		if !processRequest.CompletedAt.After(target.Lease.ClaimedAt) {
+			processRequest.CompletedAt = target.Lease.ClaimedAt.Add(time.Microsecond)
+		}
 		completion, processErr := s.ProcessClaim(ctx, processRequest)
 		if processErr != nil {
 			code := processFailureCode(processErr)
@@ -494,8 +500,21 @@ func (s *Service) ProcessDue(ctx context.Context, request ProcessDueRequest) (Pr
 	if len(compositionWorker) > maxIdentifierLength {
 		compositionWorker = "ambient-composition-worker"
 	}
+	// Collection and immutable snapshot capture can finish after the sweep's
+	// original as-of time. Claim compositions against the current service clock
+	// so handoffs enqueued by this pass are eligible immediately, while future
+	// retry schedules remain fenced by their own next-attempt timestamp.
+	compositionAsOf := s.now().UTC().Truncate(time.Microsecond)
+	if compositionAsOf.Before(request.Now) {
+		compositionAsOf = request.Now
+	}
+	for _, completion := range result.Completions {
+		if completion.Composition.Status == CompositionPending && compositionAsOf.Before(completion.Composition.NextAttemptAt) {
+			compositionAsOf = completion.Composition.NextAttemptAt
+		}
+	}
 	compositions, compositionErr := s.ProcessCompositions(ctx, ProcessCompositionsRequest{
-		Scope: request.Scope, WorkerID: compositionWorker, Now: request.Now,
+		Scope: request.Scope, WorkerID: compositionWorker, Now: compositionAsOf,
 		LeaseDuration: request.LeaseDuration, Limit: request.Limit,
 	})
 	if compositionErr != nil {

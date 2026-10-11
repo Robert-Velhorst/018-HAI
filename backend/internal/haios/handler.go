@@ -4,7 +4,6 @@ import (
 	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/llm"
-	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/pursuit"
 	"automation-hub-backend/internal/safety"
 	"net/http"
@@ -167,27 +166,26 @@ func (h *Handler) Overview(c *gin.Context) {
 	}
 	llmPolicy := policy.Policy()
 	now := time.Now().UTC()
-	reviewTotal := h.count(&models.VerificationClaim{}, "needs_review = ? OR status IN ?", true, []string{"unsupported", "uncertain", "conflicting", "needs_review"})
-	reviewTotal += h.count(&models.SourceExtraction{}, "uncertain = ? OR sensitive = ?", true, true)
-	reviewTotal += h.count(&models.AutomationAlert{}, "status = ?", "open")
-	reviewTotal += h.count(&models.WorkflowItem{}, "current_state IN ? OR approval_status = ?", []string{"needs_approval", "blocked"}, "pending")
-	reviewTotal += h.count(&models.WorkflowProposal{}, "status = ?", "open")
-	reviewTotal += h.count(&models.WorkflowQualityGate{}, "status IN ?", []string{"needs_review", "failed"})
-	reviewTotal += h.count(&models.WorkflowOpenLoop{}, "status = ? AND (follow_up_at IS NULL OR follow_up_at <= ?)", "open", now)
+	snapshot, err := h.loadMetricSnapshot(c.Request.Context(), ownerIdentity, now)
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "HAI OS metrics are unavailable"})
+		return
+	}
+	reviewTotal := snapshot.ReviewTotal()
 	emergencyActive := safety.EmergencyStopActive()
 	emergencyReason := "emergency stop is clear"
 	if emergencyActive {
 		emergencyReason = safety.EmergencyStopReason()
 	}
 	pursuitOverview := h.pursuitOverview(ownerIdentity)
-	h.attachAmbientPursuitState(ownerIdentity, &pursuitOverview)
+	attachAmbientPursuitState(snapshot, &pursuitOverview)
 	pursuitStatus := pursuitOverview.Status
 	if pursuitStatus == "" {
 		pursuitStatus = "unavailable"
 	}
 
 	c.JSON(http.StatusOK, HAIOSOverview{
-		GeneratedAt:    time.Now().UTC(),
+		GeneratedAt:    now,
 		CanonicalStack: "Codex Go backend + Angular dashboard + Postgres is the canonical product stack",
 		ReferenceStacks: []ReferenceStackStatus{
 			{Name: "Manus React/tRPC/MySQL", Status: "reference_only", Use: "Use as a product/UX reference and port only deliberately selected behavior into the canonical Go/Angular stack."},
@@ -204,17 +202,17 @@ func (h *Handler) Overview(c *gin.Context) {
 			{Label: "ambient pursuit proposals", Value: int64(pursuitOverview.AmbientProposals), Status: ambientPursuitStatus(pursuitOverview)},
 			{Label: "VA-ready pursuits", Value: int64(pursuitOverview.VAReady), Status: statusForCount(int64(pursuitOverview.VAReady), "ready")},
 			{Label: "system-ready pursuits", Value: int64(pursuitOverview.SystemReady), Status: statusForCount(int64(pursuitOverview.SystemReady), "ready")},
-			{Label: "automations", Value: h.count(&models.Automation{}), Status: statusForCount(h.count(&models.Automation{}), "ready")},
-			{Label: "unhealthy automations", Value: h.count(&models.Automation{}, "status IN ?", []string{"warning", "degraded", "broken"}), Status: statusForZero(h.count(&models.Automation{}, "status IN ?", []string{"warning", "degraded", "broken"}))},
-			{Label: "connected sources", Value: h.count(&models.ConnectedSource{}, "status <> ?", "revoked"), Status: statusForCount(h.count(&models.ConnectedSource{}, "status <> ?", "revoked"), "ready")},
-			{Label: "source extractions", Value: h.count(&models.SourceExtraction{}, "archived = ?", false), Status: statusForCount(h.count(&models.SourceExtraction{}, "archived = ?", false), "indexed")},
-			{Label: "workflow items", Value: h.count(&models.WorkflowItem{}, "archived = ?", false), Status: statusForCount(h.count(&models.WorkflowItem{}, "archived = ?", false), "active")},
-			{Label: "workflow approvals", Value: h.count(&models.WorkflowItem{}, "archived = ? AND current_state = ?", false, "needs_approval"), Status: statusForZero(h.count(&models.WorkflowItem{}, "archived = ? AND current_state = ?", false, "needs_approval"))},
-			{Label: "due open loops", Value: h.count(&models.WorkflowOpenLoop{}, "status = ? AND (follow_up_at IS NULL OR follow_up_at <= ?)", "open", now), Status: statusForZero(h.count(&models.WorkflowOpenLoop{}, "status = ? AND (follow_up_at IS NULL OR follow_up_at <= ?)", "open", now))},
-			{Label: "quality gates needing review", Value: h.count(&models.WorkflowQualityGate{}, "status IN ?", []string{"needs_review", "failed"}), Status: statusForZero(h.count(&models.WorkflowQualityGate{}, "status IN ?", []string{"needs_review", "failed"}))},
-			{Label: "context memories", Value: h.count(&models.ContextMemory{}, "archived = ?", false), Status: statusForCount(h.count(&models.ContextMemory{}, "archived = ?", false), "available")},
+			{Label: "automations", Value: snapshot.Automations, Status: statusForCount(snapshot.Automations, "ready")},
+			{Label: "unhealthy automations", Value: snapshot.UnhealthyAutomations, Status: statusForZero(snapshot.UnhealthyAutomations)},
+			{Label: "connected sources", Value: snapshot.ConnectedSources, Status: statusForCount(snapshot.ConnectedSources, "ready")},
+			{Label: "source extractions", Value: snapshot.SourceExtractions, Status: statusForCount(snapshot.SourceExtractions, "indexed")},
+			{Label: "workflow items", Value: snapshot.WorkflowItems, Status: statusForCount(snapshot.WorkflowItems, "active")},
+			{Label: "workflow approvals", Value: snapshot.WorkflowApprovals, Status: statusForZero(snapshot.WorkflowApprovals)},
+			{Label: "due open loops", Value: snapshot.DueOpenLoops, Status: statusForZero(snapshot.DueOpenLoops)},
+			{Label: "quality gates needing review", Value: snapshot.WorkflowQualityReview, Status: statusForZero(snapshot.WorkflowQualityReview)},
+			{Label: "context memories", Value: snapshot.ContextMemories, Status: statusForCount(snapshot.ContextMemories, "available")},
 			{Label: "llm providers", Value: int64(len(llmPolicy.Providers)), Status: statusForBool(liveProviderConfigured(llmPolicy), "executable", "no_executable")},
-			{Label: "verification runs", Value: h.count(&models.VerificationRun{}), Status: statusForCount(h.count(&models.VerificationRun{}), "active")},
+			{Label: "verification runs", Value: snapshot.VerificationRuns, Status: statusForCount(snapshot.VerificationRuns, "active")},
 			{Label: "needs review", Value: reviewTotal, Status: statusForZero(reviewTotal)},
 		},
 		Planes: []PlaneStatus{
@@ -270,27 +268,13 @@ func pursuitOwner(c *gin.Context) string {
 	return ""
 }
 
-func (h *Handler) attachAmbientPursuitState(ownerIdentity string, overview *PursuitOverview) {
-	ownerIdentity = strings.TrimSpace(ownerIdentity)
-	if h == nil || h.db == nil || overview == nil || ownerIdentity == "" {
+func attachAmbientPursuitState(snapshot ownerMetricSnapshot, overview *PursuitOverview) {
+	if overview == nil {
 		return
 	}
-	var proposals int64
-	var approvals int64
-	_ = h.db.Model(&models.AmbientOpportunity{}).
-		Where("owner_identity = ? AND source_type LIKE ? AND status = ?", ownerIdentity, "pursuit_%", "proposed").
-		Count(&proposals).Error
-	_ = h.db.Model(&models.AmbientOpportunity{}).
-		Where("owner_identity = ? AND source_type LIKE ? AND status = ? AND requires_approval = ?", ownerIdentity, "pursuit_%", "proposed", true).
-		Count(&approvals).Error
-	var scan models.AmbientScan
-	scanStatus := ""
-	if err := h.db.Where("owner_identity = ?", ownerIdentity).Order("started_at DESC").First(&scan).Error; err == nil {
-		scanStatus = scan.Status
-	}
-	overview.AmbientProposals = int(proposals)
-	overview.AmbientApprovalQueue = int(approvals)
-	overview.AmbientLastScan = scanStatus
+	overview.AmbientProposals = int(snapshot.AmbientProposals)
+	overview.AmbientApprovalQueue = int(snapshot.AmbientApprovalQueue)
+	overview.AmbientLastScan = snapshot.AmbientLastScan
 	overview.AmbientLine = ambientPursuitLine(*overview)
 	overview.Queues = append(overview.Queues, PursuitQueueStatus{
 		Name:        "Ambient proposals",
@@ -565,16 +549,6 @@ func pursuitReadinessGate(overview PursuitOverview) ReadinessGate {
 		Evidence: overview.Summary,
 		Next:     overview.Next,
 	}
-}
-
-func (h *Handler) count(model interface{}, query ...interface{}) int64 {
-	var total int64
-	db := h.db.Model(model)
-	if len(query) > 0 {
-		db = db.Where(query[0], query[1:]...)
-	}
-	_ = db.Count(&total).Error
-	return total
 }
 
 func statusForCount(value int64, ready string) string {

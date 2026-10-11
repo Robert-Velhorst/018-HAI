@@ -98,8 +98,14 @@ export class FrameworkRegistryService {
     );
   }
 
-  selections(): Observable<IFrameworkSelectionDecision[]> {
-    return this.http.get<SelectionListResponse>(`${this.apiUrl}/selections`).pipe(
+  selections(limit = 10): Observable<IFrameworkSelectionDecision[]> {
+    const boundedLimit = Number.isInteger(limit) && limit > 0 && limit <= 100
+      ? limit
+      : 10;
+    return this.http.get<SelectionListResponse>(
+      `${this.apiUrl}/selections`,
+      { params: new HttpParams().set('limit', boundedLimit) }
+    ).pipe(
       map((response) => this.normalizeSelectionList(response))
     );
   }
@@ -274,7 +280,11 @@ export class FrameworkRegistryService {
       riskCeiling: this.requireString(record, 'riskCeiling', resource),
       evidenceRequirements: this.requireStringArray(record, 'evidenceRequirements', resource),
       evaluationMethod: this.requireStringArray(record, 'evaluationMethod', resource),
-      conflictsWith: this.requireStringArray(record, 'conflictsWith', resource),
+      conflictsWith: this.requireNullableStringArray(
+        record,
+        'conflictsWith',
+        resource
+      ),
       userSpecificAdaptations: this.requireStringArray(
         record,
         'userSpecificAdaptations',
@@ -293,7 +303,11 @@ export class FrameworkRegistryService {
         0,
         10
       ),
-      adaptations: this.requireStringArray(record, 'adaptations', resource),
+      adaptations: this.requireNullableStringArray(
+        record,
+        'adaptations',
+        resource
+      ),
     };
     if (record['candidateImplementations'] !== undefined) {
       result.candidateImplementations = this.requireStringArray(
@@ -1194,6 +1208,17 @@ export class FrameworkRegistryService {
       throw this.contractError(resource);
     }
     return value as string[];
+  }
+
+  private requireNullableStringArray(
+    record: Record<string, unknown>,
+    key: string,
+    resource: string
+  ): string[] {
+    if (record[key] === null || record[key] === undefined) {
+      return [];
+    }
+    return this.requireStringArray(record, key, resource);
   }
 
   private requireDigest(

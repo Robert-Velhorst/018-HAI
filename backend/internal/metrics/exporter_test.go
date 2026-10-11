@@ -5,6 +5,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"automation-hub-backend/internal/ambientmonitor"
 
 	"github.com/gin-gonic/gin"
 )
@@ -49,6 +52,61 @@ func TestEnabledExporterRequiresSeparateBearerToken(t *testing.T) {
 	}
 	if strings.Contains(body, "not-a-label") {
 		t.Fatalf("raw path leaked into metrics labels: %s", body)
+	}
+}
+
+func TestOutcomeMonitorMetricsStayBoundedAndOperational(t *testing.T) {
+	exporter, err := New(true, "metrics-secret")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	exporter.ObserveOutcomeMonitorSweep(ambientmonitor.SweepMetrics{
+		Duration: 250 * time.Millisecond, Result: ambientmonitor.SweepResultCompleted,
+		DueCollectionScopes: 2, DueCompositionScopes: 1,
+		CollectionLeasesRecovered: 1, CompositionLeasesRecovered: 2,
+		CollectionClaimed: 3, CollectionCompleted: 2, CollectionFailed: 1,
+		CompositionClaimed: 2, CompositionSucceeded: 1, CompositionRetrying: 1,
+	})
+
+	response := httptest.NewRecorder()
+	exporter.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := response.Body.String()
+	checks := []string{
+		`hai_outcome_monitor_sweeps_total{result="completed"} 1`,
+		`hai_outcome_monitor_due_scopes_discovered{kind="collection"} 2`,
+		`hai_outcome_monitor_leases_recovered_total{kind="composition"} 2`,
+		`hai_outcome_monitor_items_total{result="retrying",stage="composition"} 1`,
+		`hai_outcome_monitor_last_success_timestamp_seconds`,
+	}
+	for _, check := range checks {
+		if !strings.Contains(body, check) {
+			t.Fatalf("metrics missing %q: %s", check, body)
+		}
+	}
+	for _, forbidden := range []string{"owner", "workspace", "target", "prompt", "source"} {
+		if strings.Contains(body, forbidden+"=") {
+			t.Fatalf("metrics unexpectedly expose %s label: %s", forbidden, body)
+		}
+	}
+}
+
+func TestEnabledOutcomeMonitorMetricsExposeStableZeroSeries(t *testing.T) {
+	exporter, err := New(true, "metrics-secret")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	response := httptest.NewRecorder()
+	exporter.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := response.Body.String()
+	for _, expected := range []string{
+		`hai_outcome_monitor_sweeps_total{result="skipped"} 0`,
+		`hai_outcome_monitor_due_scopes_discovered{kind="collection"} 0`,
+		`hai_outcome_monitor_leases_recovered_total{kind="composition"} 0`,
+		`hai_outcome_monitor_items_total{result="retrying",stage="composition"} 0`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("metrics missing stable zero series %q: %s", expected, body)
+		}
 	}
 }
 

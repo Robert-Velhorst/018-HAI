@@ -26,7 +26,7 @@
       <details class="pursuit-health" *ngIf="dashboard as view">
         <summary title="Expand pursuit metrics and operating queues">
           <span>Pursuit health</span>
-          <small>{{ count('active') }} active · {{ topQueue().length }} need attention</small>
+          <small>{{ count('active') }} active · {{ count('decisionQueue') }} open decisions</small>
         </summary>
         <section class="metric-strip">
           <button type="button" class="metric-card" title="All active pursuits HAI is tracking." (click)="load()">
@@ -35,23 +35,23 @@
           </button>
           <button type="button" class="metric-card metric-card--alert" title="Open the first pursuit where Robert must approve, decide, or unblock something." (click)="selectFirstFromQueue(view.needsRobert)">
             <span>Needs Robert</span>
-            <strong>{{ view.needsRobert.length }}</strong>
+            <strong>{{ count('needsRobert') }}</strong>
           </button>
           <button type="button" class="metric-card metric-card--warning" title="Open the first pursuit that is blocked, stale, or missing input." (click)="selectFirstFromQueue(view.blocked.length ? view.blocked : view.stale)">
             <span>Blocked or stale</span>
-            <strong>{{ view.blocked.length + view.stale.length }}</strong>
+            <strong>{{ count('blocked') + count('stale') }}</strong>
           </button>
           <button type="button" class="metric-card metric-card--warning" title="Open the first pursuit scheduled for a fresh review." (click)="selectFirstFromQueue(view.reviewDue)">
             <span>Review due</span>
-            <strong>{{ view.reviewDue.length }}</strong>
+            <strong>{{ count('reviewDue') }}</strong>
           </button>
           <button type="button" class="metric-card metric-card--warning" title="Open the first pursuit that needs a concrete workflow before HAI can move it forward." (click)="selectFirstFromQueue(view.planningNeeded)">
             <span>Needs planning</span>
-            <strong>{{ view.planningNeeded.length }}</strong>
+            <strong>{{ count('planningNeeded') }}</strong>
           </button>
           <button type="button" class="metric-card" title="Open the first pursuit that may be ready to close after verification." (click)="selectFirstFromQueue(view.completionCandidates)">
             <span>Completion candidates</span>
-            <strong>{{ view.completionCandidates.length }}</strong>
+            <strong>{{ count('completionCandidates') }}</strong>
           </button>
         </section>
       </details>

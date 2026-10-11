@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"time"
 )
 
 type Logger interface {
@@ -109,4 +110,63 @@ func (r *GormUserRepository) FindByResetToken(token string) (*models.User, error
 		return nil, fmt.Errorf("find user by reset token: %w", err)
 	}
 	return &user, nil
+}
+
+func (r *GormUserRepository) StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error {
+	result := r.DB.Model(&models.User{}).
+		Where("id = ? AND is_active = ?", id, true).
+		Updates(map[string]interface{}{
+			"reset_password_token": token,
+			"reset_token_expires":  expiresAt,
+		})
+	if result.Error != nil {
+		r.logger.Error("Failed to store password reset: %s", result.Error)
+		return fmt.Errorf("store password reset: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return irepository.ErrUserNotFound
+	}
+	return nil
+}
+
+// ClearPasswordResetIfToken rolls back only the token issued by the failed
+// delivery attempt. A newer concurrent request remains intact.
+func (r *GormUserRepository) ClearPasswordResetIfToken(id uuid.UUID, token string) error {
+	result := r.DB.Model(&models.User{}).
+		Where("id = ? AND reset_password_token = ? AND is_active = ?", id, token, true).
+		Updates(map[string]interface{}{
+			"reset_password_token": "",
+			"reset_token_expires":  nil,
+		})
+	if result.Error != nil {
+		r.logger.Error("Failed to clear undelivered password reset: %s", result.Error)
+		return fmt.Errorf("clear password reset: %w", result.Error)
+	}
+	return nil
+}
+
+// ConsumePasswordReset changes the password and invalidates the reset token in
+// one conditional statement. Concurrent or replayed requests cannot both
+// consume the same token, and expired tokens never mutate the user record.
+func (r *GormUserRepository) ConsumePasswordReset(token, passwordHash string) error {
+	result := r.DB.Model(&models.User{}).
+		Where(
+			"reset_password_token = ? AND reset_token_expires IS NOT NULL AND reset_token_expires > CURRENT_TIMESTAMP AND is_active = ?",
+			token,
+			true,
+		).
+		Updates(map[string]interface{}{
+			"password":             passwordHash,
+			"first_access":         false,
+			"reset_password_token": "",
+			"reset_token_expires":  nil,
+		})
+	if result.Error != nil {
+		r.logger.Error("Failed to consume password reset: %s", result.Error)
+		return fmt.Errorf("consume password reset: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return irepository.ErrInvalidResetToken
+	}
+	return nil
 }

@@ -1,65 +1,7 @@
-version: '3.5'
-services:
-  idp:
-    image: jacksonbarreto/idp-automations-hub:latest
-    container_name: idp
-    hostname: idp
-    restart: always
-    depends_on:
-      - postgres
-      - redis
-    env_file:
-      - .env
-    ports:
-      - "${WEB_SERVER_PORT}:${WEB_SERVER_PORT}"
-    networks:
-      - idp_network
-      - service-hub
+# Compatibility entrypoint for operators who run Compose from idp/.
+# The identity provider is part of the one canonical HAI topology.
+name: 018-hai
 
-  postgres:
-    image: postgres:alpine
-    container_name: postgres_idp
-    restart: always
-    env_file:
-      - .env
-    hostname: ${DB_HOST}
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
-      PGPORT: ${DB_PORT}
-      DB_HOST: ${DB_HOST}
-    volumes:
-      - ./db_data:/var/lib/postgresql/data
-      - ./internal/infra/init.sql:/docker-entrypoint-initdb.d/init.sql
-    ports:
-      - "${DB_PORT}:${DB_PORT}"
-    networks:
-      - idp_network
-
-  redis:
-    image: redis:alpine
-    container_name: redis_idp
-    command: --port ${REDIS_PORT}
-    env_file:
-      - .env
-    hostname: ${REDIS_HOST}
-    restart: always
-    ports:
-      - "${REDIS_PORT}:${REDIS_PORT}"
-    volumes:
-      - redis_data:/data
-    networks:
-      - idp_network
-    sysctls:
-      - net.core.somaxconn=511
-volumes:
-  db_data:
-  redis_data:
-
-networks:
-  idp_network:
-    driver: bridge
-  service-hub:
-    name: service-hub
-    external: true
+include:
+  - path: ../docker-compose.local.yml
+    env_file: ${HAI_ENV_FILE:-../.env.local}

@@ -195,6 +195,34 @@ func TestCompositeResolverRejectsUnsupportedReferenceWithoutDelegation(t *testin
 	}
 }
 
+func TestCompositeResolverRoutesRegisteredApprovalNamespace(t *testing.T) {
+	digest := strings.Repeat("b", 64)
+	taskSpy := &approvalResolverSpy{}
+	workflowSpy := &approvalResolverSpy{}
+	portfolioSpy := &approvalResolverSpy{}
+	controlSpy := &approvalResolverSpy{result: executionauth.ResolvedApproval{
+		SourceID: "control-decision:" + uuid.NewString(),
+	}}
+	composite, err := NewCompositeResolver(
+		taskSpy,
+		workflowSpy,
+		portfolioSpy,
+		RegisterApprovalResolver("control-decision:", controlSpy),
+	)
+	if err != nil {
+		t.Fatalf("NewCompositeResolver: %v", err)
+	}
+	result, err := composite.Resolve(
+		context.Background(), "alice", controlSpy.result.SourceID, digest,
+	)
+	if err != nil || result.SourceID != controlSpy.result.SourceID || controlSpy.calls != 1 {
+		t.Fatalf("control result = %#v, %v calls=%d", result, err, controlSpy.calls)
+	}
+	if taskSpy.calls != 0 || workflowSpy.calls != 0 || portfolioSpy.calls != 0 {
+		t.Fatal("registered namespace fell through to canonical resolvers")
+	}
+}
+
 func TestCompositeResolverValidatesConstructionAndState(t *testing.T) {
 	spy := &approvalResolverSpy{}
 	var typedNil *approvalResolverSpy

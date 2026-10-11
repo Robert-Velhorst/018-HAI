@@ -32,4 +32,47 @@ describe('ContextMemoryService', () => {
       explanation: 'Two visible records were indexed locally.',
     });
   });
+
+  it('queries a bounded page with explicit server-side filters', () => {
+    service.query({
+      projectKey: '018-HAI',
+      includeArchived: true,
+      q: 'routing budget',
+      kind: 'decision',
+      tag: 'verified',
+      sort: 'confidence',
+      order: 'asc',
+      page: 2,
+      pageSize: 500,
+    }).subscribe((result) => {
+      expect(result.total).toBe(101);
+      expect(result.pageSize).toBe(100);
+    });
+
+    const request = http.expectOne((candidate) =>
+      candidate.url === '/api/v1/memory/query' &&
+      candidate.params.get('projectKey') === '018-HAI' &&
+      candidate.params.get('includeArchived') === 'true' &&
+      candidate.params.get('q') === 'routing budget' &&
+      candidate.params.get('kind') === 'decision' &&
+      candidate.params.get('tag') === 'verified' &&
+      candidate.params.get('sort') === 'confidence' &&
+      candidate.params.get('order') === 'asc' &&
+      candidate.params.get('page') === '2' &&
+      candidate.params.get('pageSize') === '100'
+    );
+    expect(request.request.method).toBe('GET');
+    request.flush({
+      items: [],
+      total: 101,
+      page: 2,
+      pageSize: 100,
+      totalPages: 2,
+      sort: 'confidence',
+      order: 'asc',
+      search: 'routing budget',
+      kind: 'decision',
+      tag: 'verified',
+    });
+  });
 });

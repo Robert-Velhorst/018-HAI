@@ -240,6 +240,13 @@ export interface RunDueMonitorsRequest {
   limit: number
 }
 
+export interface RecoverAmbientMonitorsResponse {
+  recovered: number
+  collectionRecovered: number
+  compositionRecovered: number
+  authority: AmbientMonitorAuthority
+}
+
 export interface ProcessDueResult {
   claimed: number
   completions: Array<{

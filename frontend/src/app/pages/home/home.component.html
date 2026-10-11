@@ -113,14 +113,18 @@
             </a>
           </div>
           <ng-template #extraTemplate>
-            <i
+            <button
+              nz-button
+              nzType="text"
               nz-dropdown
-              nz-icon
-              nzType="more"
-              nzTheme="outline"
+              class="automation-card__menu"
               [nzDropdownMenu]="cardMenu"
               nzPlacement="bottomRight"
-            ></i>
+              [attr.aria-label]="'Open actions for ' + automation.name"
+              [title]="'Open actions for ' + automation.name"
+            >
+              <i nz-icon nzType="more" nzTheme="outline"></i>
+            </button>
             <nz-dropdown-menu #cardMenu="nzDropdownMenu" class="dropdown-menu">
               <ul nz-menu>
                 <li
@@ -241,14 +245,23 @@
                   formControlName="password"
                   placeholder="Enter password"
                   [type]="hidePassword ? 'password' : 'text'"
+                  aria-label="New password"
+                  autocomplete="new-password"
                 />
-                <ng-template nzInputSuffix>
+                <button
+                  nzInputSuffix
+                  type="button"
+                  class="password-visibility-toggle"
+                  [attr.aria-label]="hidePassword ? 'Show password' : 'Hide password'"
+                  [attr.aria-pressed]="!hidePassword"
+                  (click)="hidePassword = !hidePassword"
+                >
                   <i
                     nz-icon
                     [nzType]="hidePassword ? 'eye-invisible' : 'eye'"
-                    (click)="hidePassword = !hidePassword"
+                    aria-hidden="true"
                   ></i>
-                </ng-template>
+                </button>
               </nz-input-wrapper>
             </nz-form-control>
           </nz-form-item>
@@ -268,14 +281,23 @@
                   formControlName="confirmPassword"
                   placeholder="Confirm password"
                   [type]="hidePasswordConfirm ? 'password' : 'text'"
+                  aria-label="Confirm new password"
+                  autocomplete="new-password"
                 />
-                <ng-template nzInputSuffix>
+                <button
+                  nzInputSuffix
+                  type="button"
+                  class="password-visibility-toggle"
+                  [attr.aria-label]="hidePasswordConfirm ? 'Show password confirmation' : 'Hide password confirmation'"
+                  [attr.aria-pressed]="!hidePasswordConfirm"
+                  (click)="hidePasswordConfirm = !hidePasswordConfirm"
+                >
                   <i
                     nz-icon
                     [nzType]="hidePasswordConfirm ? 'eye-invisible' : 'eye'"
-                    (click)="hidePasswordConfirm = !hidePasswordConfirm"
+                    aria-hidden="true"
                   ></i>
-                </ng-template>
+                </button>
               </nz-input-wrapper>
             </nz-form-control>
           </nz-form-item>

@@ -15,6 +15,11 @@ var (
 	ErrSnapshotUnavailable = errors.New("proactivity evaluation snapshot is unavailable")
 )
 
+// Durable monitor transitions may advance a coarse host clock by one
+// microsecond for a claim and once more for its completion. Accept only that
+// bounded logical-clock movement; materially future snapshots remain invalid.
+const snapshotMonotonicClockAllowance = 2 * time.Microsecond
+
 // PolicySnapshotReference identifies one immutable policy record. All three
 // fields are required so a replay cannot silently substitute another policy.
 type PolicySnapshotReference struct {
@@ -144,7 +149,8 @@ func (s *Service) CaptureEvaluationSnapshot(ctx context.Context, owner string, a
 		return EvaluationSnapshot{}, err
 	}
 	at = snapshotTime(at)
-	if at.After(snapshotTime(s.now())) {
+	now := snapshotTime(s.now())
+	if at.After(now) && at.Sub(now) > snapshotMonotonicClockAllowance {
 		return EvaluationSnapshot{}, fmt.Errorf("%w: capture time cannot be in the future", ErrSnapshotInvalid)
 	}
 	repository, ok := s.repository.(snapshotRepository)

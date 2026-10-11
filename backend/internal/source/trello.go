@@ -1,6 +1,7 @@
 package source
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -143,7 +144,7 @@ func trelloConfigured() bool {
 
 // fetchTrelloSource pulls read-only card metadata from a live Trello board and
 // returns import items plus the advanced cursor. It never writes to Trello.
-func fetchTrelloSource(source *models.ConnectedSource) ([]ImportItem, string, error) {
+func fetchTrelloSource(ctx context.Context, source *models.ConnectedSource) ([]ImportItem, string, error) {
 	if source == nil {
 		return nil, "", fmt.Errorf("source is required")
 	}
@@ -162,12 +163,12 @@ func fetchTrelloSource(source *models.ConnectedSource) ([]ImportItem, string, er
 	}
 
 	var board trelloBoard
-	if err := trelloGetJSON(base, key, token, "/1/boards/"+boardID, url.Values{"fields": {"name,url,shortUrl"}}, &board); err != nil {
+	if err := trelloGetJSON(ctx, base, key, token, "/1/boards/"+boardID, url.Values{"fields": {"name,url,shortUrl"}}, &board); err != nil {
 		return nil, "", fmt.Errorf("fetch trello board: %w", err)
 	}
 
 	var lists []trelloList
-	if err := trelloGetJSON(base, key, token, "/1/boards/"+boardID+"/lists", url.Values{"fields": {"name"}, "filter": {"open"}}, &lists); err != nil {
+	if err := trelloGetJSON(ctx, base, key, token, "/1/boards/"+boardID+"/lists", url.Values{"fields": {"name"}, "filter": {"open"}}, &lists); err != nil {
 		return nil, "", fmt.Errorf("fetch trello lists: %w", err)
 	}
 	listNames := make(map[string]string, len(lists))
@@ -191,7 +192,7 @@ func fetchTrelloSource(source *models.ConnectedSource) ([]ImportItem, string, er
 		"checklist_fields":            {trelloChecklistFields},
 		"checkItem_fields":            {trelloCheckItemFields},
 	}
-	if err := trelloGetJSON(base, key, token, "/1/boards/"+boardID+"/cards", cardQuery, &cards); err != nil {
+	if err := trelloGetJSON(ctx, base, key, token, "/1/boards/"+boardID+"/cards", cardQuery, &cards); err != nil {
 		return nil, "", fmt.Errorf("fetch trello cards: %w", err)
 	}
 
@@ -397,7 +398,7 @@ func trelloBaseURL() (*url.URL, error) {
 // trelloGetJSON issues a single bounded, read-only GET and decodes the body into
 // out. Credentials are attached as query parameters (Trello's auth scheme) and
 // are never included in returned error messages.
-func trelloGetJSON(base *url.URL, key, token, resourcePath string, query url.Values, out any) error {
+func trelloGetJSON(ctx context.Context, base *url.URL, key, token, resourcePath string, query url.Values, out any) error {
 	target := *base
 	target.Path = strings.TrimRight(base.Path, "/") + resourcePath
 	if query == nil {
@@ -407,7 +408,7 @@ func trelloGetJSON(base *url.URL, key, token, resourcePath string, query url.Val
 	query.Set("token", token)
 	target.RawQuery = query.Encode()
 
-	request, err := http.NewRequest(http.MethodGet, target.String(), nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 	if err != nil {
 		return err
 	}
@@ -421,6 +422,9 @@ func trelloGetJSON(base *url.URL, key, token, resourcePath string, query url.Val
 	response, err := client.Do(request)
 	if err != nil {
 		// Do not surface target.String(): it carries the token.
+		if errContext := ctx.Err(); errContext != nil {
+			return errContext
+		}
 		return fmt.Errorf("request to %s failed", resourcePath)
 	}
 	defer response.Body.Close()

@@ -16,7 +16,7 @@ Adversarial review focused on "who can reach what." Findings feed
 | --- | --- | --- | --- |
 | RT1-1 | High (config) | When `BACKEND_API_SHARED_KEY` is empty the API is fully unauthenticated. | By design for trusted local use; now **loudly surfaced** by `doctor` and `/readyz` as a warning. Recommend documenting that the host must not be network-exposed without the key. |
 | RT1-2 | Medium | Constant-time key compare is correct, but a wrong key returns 401 with no lockout. | Acceptable with the new per-IP rate limiter (`RATE_LIMIT_PER_MINUTE`) to blunt brute force; enable it on any non-loopback deployment. |
-| RT1-3 | Medium | RBAC model exists but is not yet enforced in middleware. | Tracked: wire `rbac.Can` into route groups before multi-user use. Model unknown-role-grants-nothing default is safe. |
+| RT1-3 | Medium | Historical finding: RBAC originally existed only as a model. | **Resolved.** The IDP signs persisted roles, backend identity middleware verifies them, and protected route groups apply explicit permission guards. Unknown claims fail closed; role matrices and route-specific tests cover the boundary. |
 | RT1-4 | Low | CORS allows any `chrome-extension://`/`localhost:*` origin. | Appropriate for the local-capture extension; revisit if a hosted deployment is introduced. |
 
 ## Attempted attacks & result
