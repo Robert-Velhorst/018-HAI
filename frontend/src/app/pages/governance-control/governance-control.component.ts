@@ -424,12 +424,15 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     this.loadLearning()
     this.loadAgents()
     this.loadDomains()
-    this.loadAgentTeams(true, true)
-    this.loadLifeContext(true, true)
-    this.loadLifeLedger(true, true)
-    this.loadProactivity(true, true)
-    if (this.advisoryScope.workspaceId.trim()) this.loadResilienceStatus(true, true)
-    if (this.advisoryScope.workspaceId.trim() && this.advisoryScope.outcomeId.trim()) {
+    const openSections = this.preferences.get(this.moduleId).openSections
+    if (openSections['agent-teams']) this.loadAgentTeams(true, true)
+    if (openSections['whole-life-context']) this.loadLifeContext(true, true)
+    if (openSections['life-ledger-overview']) this.loadLifeLedger(true, true)
+    if (openSections['proactivity-policy']) this.loadProactivity(true, true)
+    if (openSections['resilience-status'] && this.advisoryScope.workspaceId.trim()) {
+      this.loadResilienceStatus(true, true)
+    }
+    if (openSections['outcome-evaluations'] && this.advisoryScope.workspaceId.trim() && this.advisoryScope.outcomeId.trim()) {
       this.loadOutcomeEvidence(true, true)
     }
     if (this.mandateDecisionState.loaded || this.preferences.get(this.moduleId).openSections['standing-mandates']) {
@@ -440,7 +443,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
   loadExecution(): void {
     this.beginLoad('execution')
     this.surfaceSubscriptions.execution?.unsubscribe()
-    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50).subscribe({
+    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50, 'summary').subscribe({
       next: (response) => {
         this.receipts = response.receipts || []
         this.finishLoad('execution')

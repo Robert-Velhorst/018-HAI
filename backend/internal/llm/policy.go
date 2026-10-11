@@ -1365,7 +1365,7 @@ func probeProviderWithContext(parent context.Context, provider Provider, policy 
 		result.Reason = redactProviderSecrets(provider, err.Error())
 		return result
 	}
-	raw, readErr := readLimitedResponseBody(resp.Body, 256*1024)
+	raw, readErr := readLimitedResponseBody(resp.Body, providerProbeResponseLimitBytes)
 	probeErr := ctx.Err()
 	_ = resp.Body.Close()
 	if parent.Err() != nil {
@@ -1520,6 +1520,10 @@ func probeOdysseusProvider(parent context.Context, provider Provider, result Pro
 func countProbeModels(provider Provider, raw []byte) int {
 	return len(probeModelIDs(provider, raw))
 }
+
+// providerProbeResponseLimitBytes bounds how much of a provider catalogue HAI
+// will read during a probe.
+const providerProbeResponseLimitBytes = 4 * 1024 * 1024
 
 func probeModelIDs(provider Provider, raw []byte) []string {
 	ids := []string{}

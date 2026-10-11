@@ -1884,3 +1884,27 @@ func TestMiniSWEOllamaEndpointIsExactAndCannotAliasAnotherLocalModelServer(t *te
 		}
 	}
 }
+
+func TestMaintenanceEndpointKeyAcceptsAMountPrefixButNotARoute(t *testing.T) {
+	for endpoint, want := range map[string]string{
+		"https://openrouter.ai/api":     "https://openrouter.ai/api",
+		"https://openrouter.ai/api/v1":  "https://openrouter.ai/api",
+		"https://openrouter.ai/api/v1/": "https://openrouter.ai/api",
+		"https://example.test/v1":       "https://example.test",
+		"https://example.test":          "https://example.test",
+	} {
+		got, err := maintenanceEndpointKey(endpoint)
+		if err != nil || got != want {
+			t.Fatalf("endpoint key for %q = %q, %v; want %q", endpoint, got, err, want)
+		}
+	}
+	for _, endpoint := range []string{
+		"https://example.test/v1/other",
+		"https://example.test/a/b/c",
+		"https://example.test/api/../secret",
+	} {
+		if _, err := maintenanceEndpointKey(endpoint); err == nil {
+			t.Fatalf("route-shaped endpoint accepted: %q", endpoint)
+		}
+	}
+}

@@ -109,16 +109,6 @@ export const HAI_MODULES: HaiModuleDefinition[] = [
     advancedSectionIds: ['layers', 'agent-context', 'quality'],
   },
   {
-    id: 'operational-brain',
-    route: '/operational-brain',
-    group: 'intelligence',
-    title: 'Operational Brain',
-    description: 'See how work, knowledge, sources, memory, and agents connect.',
-    icon: 'node-index',
-    primaryAction: { label: 'Inspect attention map', capability: 'operational-graph:read' },
-    advancedSectionIds: ['layers', 'agent-context', 'quality'],
-  },
-  {
     id: 'knowledge-claims',
     route: '/knowledge-claims',
     group: 'intelligence',

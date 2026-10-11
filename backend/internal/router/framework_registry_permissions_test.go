@@ -238,6 +238,36 @@ func TestFrameworkRegistryRoutesKeepSelectionsPreferencesAndConstitutionsOwnerSc
 	if len(aliceSelectionBody.Selections) != 1 {
 		t.Fatalf("Alice selections = %#v", aliceSelectionBody.Selections)
 	}
+	selectionID := aliceSelectionBody.Selections[0].ID
+	aliceExactSelection := performFrameworkRegistryRouteRequest(
+		engine,
+		http.MethodGet,
+		"/api/v1/framework-registry/selections/"+selectionID,
+		"",
+		"alice",
+		"viewer",
+	)
+	if aliceExactSelection.Code != http.StatusOK {
+		t.Fatalf("Alice exact selection status = %d: %s", aliceExactSelection.Code, aliceExactSelection.Body.String())
+	}
+	var exactSelection frameworkregistry.SelectionDecision
+	if err := json.Unmarshal(aliceExactSelection.Body.Bytes(), &exactSelection); err != nil {
+		t.Fatalf("decode Alice exact selection: %v", err)
+	}
+	if exactSelection.ID != selectionID {
+		t.Fatalf("Alice exact selection id = %q, want %q", exactSelection.ID, selectionID)
+	}
+	bobExactSelection := performFrameworkRegistryRouteRequest(
+		engine,
+		http.MethodGet,
+		"/api/v1/framework-registry/selections/"+selectionID,
+		"",
+		"bob",
+		"viewer",
+	)
+	if bobExactSelection.Code != http.StatusNotFound {
+		t.Fatalf("Bob exact selection status = %d, want %d: %s", bobExactSelection.Code, http.StatusNotFound, bobExactSelection.Body.String())
+	}
 	if strings.Contains(aliceSelections.Body.String(), requestSecret) {
 		t.Fatalf("selection audit response leaked raw request secret: %s", aliceSelections.Body.String())
 	}

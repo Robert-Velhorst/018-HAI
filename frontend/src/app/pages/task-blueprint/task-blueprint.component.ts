@@ -8,6 +8,8 @@ import { timeout } from 'rxjs/operators';
 import {
   ICompletionPlan,
 	IApprovedReviewReconciliationResult,
+  IChatGPTLogsContextItem,
+  IMcpToolCallTrace,
   IReviewQueueItem,
   IToolExecutionResult,
   IValidationCriterionResult,
@@ -102,10 +104,17 @@ export class TaskBlueprintComponent implements OnInit {
   crewProposal?: ICrewAIResponse;
   crewProposalLoading = false;
   private readonly loadTimeoutMs = 6000;
+  // Enough for a call that only reads or drafts.
   private readonly operationTimeoutMs = 20000;
-	private logsRequestId = 0;
-	private historyLoading = false;
-	private reviewQueueRequestId = 0;
+  private logsRequestId = 0;
+  private historyLoading = false;
+  private reviewQueueRequestId = 0;
+  // A run drives a model through a bounded MCP tool loop, which takes minutes.
+  // Giving up after twenty seconds reported failure for work the backend went
+  // on to finish, so this matches the gateway's own ceiling instead.
+  private readonly executionTimeoutMs = 900000;
+  // Enough to read what came back without pasting a whole corpus into the panel.
+  private readonly mcpResultPreviewChars = 4000;
 
   chatMessages: ChatMessage[] = [
     {
@@ -614,7 +623,8 @@ export class TaskBlueprintComponent implements OnInit {
       this.loading = true;
     }
 
-    this.assistantCommandService.command(request).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    const timeoutMs = intent === 'plan' ? this.operationTimeoutMs : this.executionTimeoutMs;
+    this.assistantCommandService.command(request).pipe(timeout(timeoutMs)).subscribe({
       next: (command) => {
 		if (intent !== 'plan') this.uncertainCommand = undefined;
         this.lastCommand = command;
@@ -829,7 +839,7 @@ export class TaskBlueprintComponent implements OnInit {
 			note,
 			confirmation,
       })
-      .pipe(timeout(this.operationTimeoutMs))
+      .pipe(timeout(this.executionTimeoutMs))
       .subscribe({
         next: (result) => {
           this.resolvingReviewId = '';
@@ -1286,6 +1296,76 @@ export class TaskBlueprintComponent implements OnInit {
 
   toolRuntimeEvidenceUri(tool?: IToolExecutionResult): string {
     return tool?.launchEventId ? `automation-launch://${tool.launchEventId}` : '';
+  }
+
+  /**
+   * The data one call returned.
+   *
+   * The trace records that a call happened; the result itself is kept with the
+   * rest of the retrieved context. They are written in the same order, one
+   * context item per call that succeeded, so the nth successful call owns the
+   * nth item. The tool names are compared before anything is shown: on a
+   * mismatch nothing is displayed, because a plausible-looking result from the
+   * wrong call is worse than none.
+   */
+  mcpToolCallResult(call: IMcpToolCallTrace): IChatGPTLogsContextItem | undefined {
+    if (call.status !== 'completed') {
+      return undefined;
+    }
+    const calls = this.plan?.executionResult?.mcpToolCalls || [];
+    const items = this.plan?.contextPlan?.chatgptLogsContext || [];
+    let position = -1;
+    for (const candidate of calls) {
+      if (candidate.status === 'completed') {
+        position += 1;
+      }
+      if (candidate === call) {
+        break;
+      }
+    }
+    const item = position >= 0 ? items[position] : undefined;
+    return item && item.tool === call.tool ? item : undefined;
+  }
+
+  mcpToolCallResultText(call: IMcpToolCallTrace): string {
+    const content = this.mcpToolCallResult(call)?.content || '';
+    if (content.length <= this.mcpResultPreviewChars) {
+      return content;
+    }
+    return `${content.slice(0, this.mcpResultPreviewChars)}\n… ${content.length - this.mcpResultPreviewChars} more characters not shown.`;
+  }
+
+  mcpToolCallLabel(call: IMcpToolCallTrace): string {
+    if (!call.attempt || call.attempt <= 1) {
+      return `${call.round}. ${call.tool}`;
+    }
+    return `attempt ${call.attempt}, ${call.round}. ${call.tool}`;
+  }
+
+  mcpToolCallArguments(call: IMcpToolCallTrace): string {
+    if (call.arguments === undefined || call.arguments === null) {
+      return 'no arguments';
+    }
+    try {
+      return JSON.stringify(call.arguments);
+    } catch {
+      return 'arguments could not be displayed';
+    }
+  }
+
+  mcpToolCallResultLabel(call: IMcpToolCallTrace): string {
+    if (call.status !== 'completed') {
+      return call.detail || call.status;
+    }
+    return `${call.resultChars} chars returned`;
+  }
+
+  mcpToolCallTitle(call: IMcpToolCallTrace): string {
+    const parts = [call.detail || call.status];
+    if (call.sourceUri) {
+      parts.push(call.sourceUri);
+    }
+    return parts.join(' · ');
   }
 
   toolRuntimeEvidenceLabel(tool?: IToolExecutionResult): string {

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, map, throwError } from 'rxjs';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { Observable, catchError, map, of, throwError } from 'rxjs';
 import { IWorkflowService } from '../workflow.service.interface';
 import {
   IWorkflowApprovalResolutionRequest,
@@ -32,9 +32,9 @@ import {
   IWorkflowTransitionRequest,
 } from '../../models/workflow.model.interface';
 
-type WorkflowFrameworkSelectionListResponse =
-  | IWorkflowFrameworkSelectionDecision[]
-  | { selections: IWorkflowFrameworkSelectionDecision[] };
+type WorkflowFrameworkSelectionResponse =
+  | IWorkflowFrameworkSelectionDecision
+  | { selection: IWorkflowFrameworkSelectionDecision };
 
 @Injectable({
   providedIn: 'root',
@@ -93,17 +93,18 @@ export class WorkflowService implements IWorkflowService {
   ): Observable<IWorkflowFrameworkSelectionDecision | undefined> {
     const expectedId = typeof selectionDecisionId === 'string' ? selectionDecisionId.trim() : '';
     if (!this.validReference(expectedId)) return this.invalidRequest();
-    return this.http.get<WorkflowFrameworkSelectionListResponse>(
-      '/api/v1/framework-registry/selections',
-      { params: new HttpParams().set('limit', 200) }
+    return this.http.get<WorkflowFrameworkSelectionResponse>(
+      `/api/v1/framework-registry/selections/${encodeURIComponent(expectedId)}`
     ).pipe(
       map((response) => {
-        const selections = Array.isArray(response) ? response : response.selections ?? [];
-        const selection = selections.find((item) => item.id === expectedId);
+        const selection = 'selection' in response ? response.selection : response;
         return selection && this.hasValidFrameworkRiskContract(selection)
           ? selection
           : undefined;
-      })
+      }),
+      catchError((error: unknown) => error instanceof HttpErrorResponse && error.status === 404
+        ? of(undefined)
+        : throwError(() => error))
     );
   }
 

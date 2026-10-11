@@ -1210,6 +1210,38 @@
             </ol>
           </div>
         </article>
+
+        <article class="inspector-card" *ngIf="plan?.executionResult?.mcpToolCalls?.length">
+          <h3>
+            Conversation History Tool Calls
+            <span title="Read-only MCP calls the model chose during the bounded tool loop">?</span>
+          </h3>
+          <p class="mcp-trace-note">
+            Each result was returned to the model as untrusted data. It cannot become evidence,
+            memory, or an action without independent grounding.
+          </p>
+          <ol class="mcp-trace-list">
+            <li
+              class="mcp-trace-row"
+            *ngFor="let call of plan.executionResult.mcpToolCalls"
+              [title]="mcpToolCallTitle(call)"
+            >
+              <span class="mcp-trace-detail">
+                <strong>{{ mcpToolCallLabel(call) }}</strong>
+                <code>{{ mcpToolCallArguments(call) }}</code>
+              </span>
+              <span class="mcp-trace-status" [class.mcp-trace-status--failed]="call.status !== 'completed'">
+                {{ call.status }}
+                <small>{{ mcpToolCallResultLabel(call) }}</small>
+              </span>
+              <details class="mcp-trace-result" *ngIf="mcpToolCallResult(call) as result">
+                <summary>Show what {{ call.tool }} returned — untrusted data</summary>
+                <small>{{ result.sourceUri }}</small>
+                <pre>{{ mcpToolCallResultText(call) }}</pre>
+              </details>
+            </li>
+          </ol>
+        </article>
       </section>
 
       <section class="inspector-body" *ngIf="inspectorMode === 'logs'">

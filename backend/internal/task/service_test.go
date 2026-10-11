@@ -1941,6 +1941,7 @@ type fakeMemoryService struct {
 	ownerCreateOwners   []string
 	ownerRetrieveOwners []string
 	memories            map[uuid.UUID]models.ContextMemory
+	lastRetrieveContext context.Context
 }
 
 type fakeToolExecutor struct {
@@ -2329,4 +2330,33 @@ func (f *fakeMemoryService) RetrieveForOwner(ownerIdentity string, request memor
 		f.memories[result.UsedContext[index].Memory.ID] = result.UsedContext[index].Memory
 	}
 	return result, nil
+}
+func TestARetryIsSkippedWhenOnlyTheProvenanceStopsTheClaims(t *testing.T) {
+	untrusted := &ExecutionResult{Claims: []models.VerificationClaim{
+		{ClaimText: "a", SupportExplanation: verification.ExplanationUntrustedProvenance},
+		{ClaimText: "b", SupportExplanation: verification.ExplanationUntrustedProvenance},
+	}}
+	if retryCouldChangeTheOutcome(untrusted) {
+		t.Fatal("a second model would be asked to fix what the evidence decided")
+	}
+
+	mixed := &ExecutionResult{Claims: []models.VerificationClaim{
+		{ClaimText: "a", SupportExplanation: verification.ExplanationUntrustedProvenance},
+		{ClaimText: "b", SupportExplanation: "no source precisely supports this claim"},
+	}}
+	if !retryCouldChangeTheOutcome(mixed) {
+		t.Fatal("a claim nothing supported was treated as unfixable")
+	}
+
+	if !retryCouldChangeTheOutcome(&ExecutionResult{}) {
+		t.Fatal("a run without claims was denied a retry")
+	}
+	if !retryCouldChangeTheOutcome(nil) {
+		t.Fatal("a missing result was denied a retry")
+	}
+}
+
+func (f *fakeMemoryService) RetrieveForOwnerContext(ctx context.Context, ownerIdentity string, request memory.RetrieveRequest) (*memory.RetrieveResult, error) {
+	f.lastRetrieveContext = ctx
+	return f.RetrieveForOwner(ownerIdentity, request)
 }

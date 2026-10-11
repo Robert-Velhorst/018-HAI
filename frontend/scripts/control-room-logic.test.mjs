@@ -736,7 +736,7 @@ test('workflow reference validation preserves canonical read and mutation routes
     ['post', `/api/v1/workflow/${id}/interruption/resolve`], ['post', `/api/v1/workflow/${id}/proposals/${child}/resolve`],
     ['patch', `/api/v1/workflow/${id}/checklist/${child}`], ['post', `/api/v1/workflow/reminder-proposals/${child}/activation-requests`],
     ['post', `/api/v1/workflow/reminder-activation-requests/${child}/decisions`], ['get', `/api/v1/workflow/reminder-activation-requests/${child}/decisions`],
-    ['post', `/api/v1/workflow/reminder-activation-requests/${child}/delivery-authorizations`], ['get', '/api/v1/framework-registry/selections'],
+    ['post', `/api/v1/workflow/reminder-activation-requests/${child}/delivery-authorizations`], ['get', `/api/v1/framework-registry/selections/${child}`],
   ])
 })
 

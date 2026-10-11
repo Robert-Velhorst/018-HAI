@@ -32,6 +32,7 @@ import (
 	"automation-hub-backend/internal/braincatalog"
 	"automation-hub-backend/internal/brainskills"
 	"automation-hub-backend/internal/browserverify"
+	"automation-hub-backend/internal/chatgptlogs"
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/controlledlearning"
 	"automation-hub-backend/internal/crewai"
@@ -855,6 +856,10 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		if err != nil {
 			return err
 		}
+		taskService, err = task.WithChatGPTLogsContext(taskService, chatgptlogs.DefaultService())
+		if err != nil {
+			return err
+		}
 		taskService, err = task.WithFrameworkEvidenceRepository(
 			taskService,
 			frameworkEvidenceRepository,
@@ -1195,6 +1200,7 @@ func initializeFrameworkRegistryRoutes(apiVersion *gin.RouterGroup, handler *fra
 		routes.PATCH("/frameworks/:id/preference", requirePermission(rbac.PermAdmin), handler.UpdatePreference)
 		routes.GET("/frameworks/:id/preference-history", requirePermission(rbac.PermRead), handler.PreferenceHistory)
 		routes.GET("/selections", requirePermission(rbac.PermRead), handler.Selections)
+		routes.GET("/selections/:id", requirePermission(rbac.PermRead), handler.Selection)
 		routes.GET("/constitution", requirePermission(rbac.PermRead), handler.Constitution)
 		routes.GET("/constitution/history", requirePermission(rbac.PermRead), handler.ConstitutionHistory)
 		routes.POST("/constitution/drafts", requirePermission(rbac.PermAdmin), handler.CreateConstitutionDraft)
