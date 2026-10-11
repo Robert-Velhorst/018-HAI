@@ -2,7 +2,7 @@ module automation-hub-backend
 
 go 1.25.0
 
-toolchain go1.25.13
+toolchain go1.26.9
 
 require (
 	github.com/IBM/sarama v1.41.2

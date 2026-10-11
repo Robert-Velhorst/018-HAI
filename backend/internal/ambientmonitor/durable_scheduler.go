@@ -79,7 +79,7 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 	observation := SweepMetrics{Result: SweepResultCompleted}
 	defer func() {
 		observation.Duration = time.Since(started)
-		if sweepErr != nil {
+		if sweepErr != nil && observation.Result != SweepResultInterrupted {
 			observation.Result = SweepResultFailed
 		}
 		observeSweep(observer, observation)

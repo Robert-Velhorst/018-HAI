@@ -64,7 +64,7 @@ func TestGetDefaultDBRetriesAfterMigrationFailure(t *testing.T) {
 	migrations := 0
 	openConfiguredDB = func() (*gorm.DB, error) {
 		opens++
-		return &gorm.DB{}, nil
+		return nil, nil
 	}
 	runDefaultMigrations = func(*gorm.DB) error {
 		migrations++
