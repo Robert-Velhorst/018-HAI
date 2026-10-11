@@ -2527,11 +2527,21 @@ func (s *service) ExtractionsForOwner(ownerIdentity, projectKey string, includeA
 }
 
 func (s *service) ExtractionPageForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) (*ExtractionPage, error) {
-	visibleSourceIDs, err := s.visibleSourceIDs(ownerIdentity)
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, errors.New("source owner identity is required")
+	}
+	sources, err := s.repo.FindSourcesVisibleToOwner(ownerIdentity, true)
 	if err != nil {
 		return nil, err
 	}
-	items, totalCount, err := s.repo.FindExtractionPageForSources(sourceIDsFromSet(visibleSourceIDs), projectKey, includeArchived, limit)
+	sourceIDs := make([]uuid.UUID, 0, len(sources))
+	for _, source := range sources {
+		if strings.TrimSpace(source.OwnerIdentity) == ownerIdentity {
+			sourceIDs = append(sourceIDs, source.ID)
+		}
+	}
+	items, totalCount, err := s.repo.FindExtractionPageForSources(sourceIDs, projectKey, includeArchived, limit)
 	if err != nil {
 		return nil, err
 	}

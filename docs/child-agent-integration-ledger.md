@@ -2266,4 +2266,9 @@ Repository ordering now uses `updated_at DESC, id DESC` so page boundaries are
 stable when timestamps tie. Handler and repository regression checks cover
 the passed limit and total/page contents. Go and PostgreSQL-backed test
 execution remain pending because Go is not installed in this Windows
-worktree; exact-head GitHub CI is required before claiming verification.
+worktree. Exact-head CI caught that the general migration-oriented visibility
+helper intentionally includes ownerless legacy sources, unlike the historical
+HTTP account view. `ExtractionPageForOwner` now filters to exact, non-empty
+owner matches before requesting the page, preserving the previous tenant
+boundary while retaining SQL pagination. A new exact-head CI run is required
+before claiming verification.
