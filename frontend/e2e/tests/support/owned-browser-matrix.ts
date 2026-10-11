@@ -1,4 +1,4 @@
-import { expect, test as base, Page, TestInfo } from '@playwright/test';
+import { expect, test as base, Page, Request, TestInfo } from '@playwright/test';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { assertIsolatedAcceptanceTarget } from './isolated-stack';
@@ -114,7 +114,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
           && parsed.pathname === '/api/v1/auth/is-user-authenticated';
       } catch { return false; }
     };
-    const pending = new Set<object>();
+    const pending = new Set<Request>();
     page.on('console', (message) => {
       if (message.type() !== 'error') return;
       // Only the real signed-out guard's exact 401 is expected, never route errors.
@@ -172,7 +172,9 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
         await context.storageState({ path: target.storageStatePath });
       },
       settle: async () => {
-        await expect.poll(() => health.pendingReads, { timeout: 15_000, intervals: [100, 250, 500] }).toBe(0);
+        await expect.poll(() => [...pending].map((request) => {
+          try { return new URL(request.url()).pathname } catch { return 'invalid-request-url' }
+        }).sort(), { timeout: 15_000, intervals: [100, 250, 500] }).toEqual([]);
         // Allow the actual renderer to commit the final response, without networkidle or sleeps.
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       },

@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common'
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, HostListener, OnDestroy, OnInit, ViewChild, ViewEncapsulation } from '@angular/core'
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ElementRef, HostListener, OnDestroy, OnInit, Optional, ViewChild, ViewEncapsulation } from '@angular/core'
 import { NavigationEnd, Router, RouterModule, UrlTree } from '@angular/router'
+import { Title } from '@angular/platform-browser'
 import { NzButtonModule } from 'ng-zorro-antd/button'
 import { NzIconModule } from 'ng-zorro-antd/icon'
 import { Subscription, timeout } from 'rxjs'
@@ -9,6 +10,7 @@ import {
   HAI_MODULE_GROUPS,
   HAI_MODULES,
   HaiModuleDefinition,
+  moduleDocumentTitle,
   resolveProgressiveSection,
 } from './module-registry'
 import { moduleForUrl } from './module-url'
@@ -94,6 +96,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
     private themeService: ThemeService,
     private runtimeControl: RuntimeControlService,
     private readonly changeDetector?: ChangeDetectorRef,
+    @Optional() private readonly title?: Title,
   ) {}
 
   ngOnInit(): void {
@@ -440,6 +443,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
     const previousModule = this.current.id
     if (this.mobileNavigationOpen) this.closeMobileNavigation(!(focusAfterModuleChange && moduleForUrl(url).id !== previousModule))
     this.current = moduleForUrl(url)
+    this.title?.setTitle(moduleDocumentTitle(this.current))
     const moduleChanged = previousModule !== this.current.id
     if (moduleChanged || !this.moduleModeSubscription) {
       this.moduleModeSubscription?.unsubscribe()
