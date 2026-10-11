@@ -3,9 +3,11 @@ import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import '@angular/compiler'
 import { of, Subject, throwError } from 'rxjs'
-import { moduleForUrl } from '../src/app/control-room/module-registry.ts'
 import { loadComponentLogic } from './load-component-logic.mjs'
+import { loadModuleUrlLogic } from './module-url-test-helper.mjs'
 import { launchRecoveryNotice } from '../src/app/control-room/launch-recovery.ts'
+
+const { moduleForUrl } = await loadModuleUrlLogic()
 
 test('launch error recovery is contextual, non-authoritative and contains no raw payload', () => {
   const id = '11111111-1111-4111-8111-111111111111'

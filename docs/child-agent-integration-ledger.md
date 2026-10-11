@@ -2162,3 +2162,22 @@ report-linked source paths, and identified 6 retained transcripts.
 `deletion_performed` and `cleanup_authorized` were both false. This read-only
 source check does not complete retained-transcript semantic reconciliation or
 authorize local cleanup.
+
+### October 11, 2026: PR #35 ancestry and follow-up frontend test correction
+
+Refreshed remote branch refs. PR #35 head
+`95155a58e8d0a295f2361e913cda7e870cb9cb38` is an ancestor of PR #36 head
+`5acd361e21027d019c1d89a94f3b2cdf4886ff6f`; its task MCP changes are already
+in #36 and must not be counted or cherry-picked again. PR #33's Worker Control
+implementation is already byte-identical in #36. PR #33's remaining historical
+test dispositions and PR #34's full divergent snapshot still require their
+documented reviews.
+
+Exact-head CI run `38159090927` exposed two stale frontend logic-test imports
+after `moduleForUrl` moved from `module-registry.ts` to `module-url.ts`. The
+control-room logic and deep-link focus runners now load the production resolver
+through the TypeScript logic loader, with only the registry data bridged into
+the isolated runner. Local rerun of the exact failing resource-regression
+command passed all 96 tests on Node 25.2.1; the repository requests Node 24.15.0.
+The hosted run was still in progress at this checkpoint. No source archive,
+worktree, database, runtime data, or diagnostic artifact was deleted.

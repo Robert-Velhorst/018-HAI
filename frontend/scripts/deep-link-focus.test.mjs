@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { loadComponentLogic } from './load-component-logic.mjs'
+import { bridgeModuleUrl, loadModuleUrlLogic, moduleUrlRegistryImport } from './module-url-test-helper.mjs'
+
+const { moduleForUrl } = await loadModuleUrlLogic()
 
 const { AppShellComponent } = await loadComponentLogic(new URL('../src/app/control-room/app-shell.component.ts', import.meta.url), {
   './module-registry': new URL('../src/app/control-room/module-registry.ts', import.meta.url).href,
+  './module-url': bridgeModuleUrl(moduleForUrl),
 })
 
 // DOM/event/timer fixtures exercise the real shell logic, not a browser or rendered Angular app.
