@@ -1,7 +1,6 @@
 import { request, FullConfig } from '@playwright/test';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { assertIsolatedAcceptanceTarget } from './tests/support/isolated-stack';
 
@@ -17,8 +16,9 @@ export default async function globalSetup(_config: FullConfig) {
 
   const evidencePath = process.env.HAI_ACCEPTANCE_EVIDENCE || '';
   if (!path.isAbsolute(evidencePath)) throw new Error('HAI_ACCEPTANCE_EVIDENCE must be an absolute owned evidence directory.');
+  let evidenceRoot = '';
   try {
-    const evidenceRoot = realpathSync(evidencePath);
+    evidenceRoot = realpathSync(evidencePath);
     const manifest = JSON.parse(await readFile(path.join(evidenceRoot, 'manifest.json'), 'utf8'));
     if (manifest.version !== 1 || !/^[0-9a-f]{32}$/.test(manifest.owner)
       || manifest.project !== `hai-acceptance-${manifest.owner.slice(0, 12)}`
@@ -31,7 +31,7 @@ export default async function globalSetup(_config: FullConfig) {
     throw new Error('Synthetic browser authentication ownership validation failed.');
   }
 
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'hai-e2e-auth-'));
+  const tempRoot = await mkdtemp(path.join(evidenceRoot, '.hai-e2e-auth-'));
   const storageStatePath = path.join(tempRoot, 'storage-state.json');
   try {
     const api = await request.newContext({ baseURL: new URL(baseURL).origin });

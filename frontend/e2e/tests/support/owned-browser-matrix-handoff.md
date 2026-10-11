@@ -1,5 +1,15 @@
 # Owned Browser Matrix Handoff
 
+## Session Refresh Follow-up (2026-10-11)
+
+The run-scoped synthetic owner storage state is kept in a temporary directory
+under the already validated acceptance evidence root. After each confirmed
+authenticated session check, the browser fixture persists the latest rotated
+cookies back to that same state file so the next serial test context does not
+reuse a stale refresh token. The directory is removed by global teardown and
+is not part of the explicit CI artifact upload paths. The fixture also checks
+that this state file remains inside the evidence root before rewriting it.
+
 2026-10-01. Source preparation only, not a passing browser or production-readiness report.
 
 ## Exact Edit Ownership
