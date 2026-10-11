@@ -1613,7 +1613,8 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertEqual(browser["args"], ["test", "--", "--output", str(Path(result["evidence"]) / "browser-results"), "--trace", "off"])
         self.assertEqual(browser["env"]["PLAYWRIGHT_HTML_OUTPUT_DIR"], str(Path(result["evidence"]) / "browser-report"))
         for key, expected in {"E2E_BASE_URL": "http://127.0.0.1:18080", "E2E_OPERATOR_EMAIL": "e2e-owner@example.test",
-                              "E2E_OPERATOR_PASSWORD": result["password"], "E2E_ALLOW_MUTATION": "true", "E2E_ISOLATED_STACK": "true"}.items():
+                              "E2E_OPERATOR_PASSWORD": result["password"], "E2E_ALLOW_MUTATION": "true", "E2E_ISOLATED_STACK": "true",
+                              "E2E_MATRIX_SCOPE": "first"}.items():
             self.assertEqual(browser["env"][key], expected)
         self.assertIn("::add-mask::" + result["password"], result["output"])
         self.assertIn("::add-mask::" + result["key"], result["output"])
