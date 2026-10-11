@@ -1021,3 +1021,16 @@ review are not evidence that remaining files are redundant.
 No frontend or browser code from this batch has been copied into the PR. The
 end-to-end execution proposal remains a candidate for a separately tested,
 fail-closed port; the snapshot's broader changes are not required to adopt it.
+
+### Windows packaging and runner-isolation review (2026-10-11)
+
+The snapshot also removes the installer-payload exception for versioned
+`backend/migrations/{pre,post}/NNNN_*.sql` files. Those files then match the
+general `.sql` exclusion rule. Do not adopt this change until the installer
+payload manifest, first-install path, and upgrade path prove that migrations
+remain available from the packaged backend image or another verified source.
+The same snapshot removes the install smoke test's temporary `LOCALAPPDATA`
+profile override and several `RUNNER_TEMP` ownership/reparse-point checks.
+Although the smoke script still requires a hosted disposable Windows runner and
+checks the application profile is initially empty, retain the stronger isolated
+profile and path-ownership checks until a replacement is independently tested.
