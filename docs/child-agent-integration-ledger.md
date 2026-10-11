@@ -1075,3 +1075,32 @@ Local verification passed: E2E TypeScript typecheck, all 108
 not yet been exercised by a fresh owned-stack browser run. The onboarding
 route failures and missing persisted uncertainty fixtures remain open until
 that run provides evidence; no browser acceptance or cleanup gate is claimed.
+
+### October 11, 2026: outcome-evaluation shared-input race
+
+The secondary checkout's four missing outcome-evaluation artifacts were
+reviewed read-only. `pass-summary.json` records three runs of each of five
+PostgreSQL tests (15 passes, no skips or failures) and hashes the retained
+passing JSONL output. The separate first-run JSONL contains a real race report:
+concurrent `CreateEvaluation` calls shared slices, and
+`normalizeAndValidate` rewrote and sorted caller-owned observations and
+corrections. The prior fixture deep-copy avoided the race in that test without
+making the production normalizer safe for shared caller input.
+
+The PR worktree now copies the observation and correction slices before
+normalizing them, and copies outcome indicators before rewriting/sorting them;
+existing nested source normalization already copies each source slice. The
+PostgreSQL concurrency test now deliberately shares its immutable input across
+goroutines. New unit coverage asserts that normalization leaves caller-owned
+input unchanged and is race-free under concurrent shared reads. The previous
+passing summary and CI provide historical evidence only; this patch has not
+yet run through Go compilation or the PostgreSQL race gate. The available
+local Go executables are zero-byte placeholders, so no local Go test or gofmt
+run was possible; `git diff --check` passed before this checkpoint.
+
+The raw missing migration log, cleanup log, first-run race trace, and passing
+JSONL are local test artifacts, not source. They contain host-specific paths or
+fixture identifiers and are not copied into the repository; relevant test
+results and the race diagnosis are preserved here. Keep those local artifacts
+until the new code passes the exact-head race gate and the broader source
+crosswalk and cleanup conditions are complete.

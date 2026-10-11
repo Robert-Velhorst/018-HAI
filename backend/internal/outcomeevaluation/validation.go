@@ -36,6 +36,8 @@ var (
 )
 
 func normalizeAndValidate(request EvaluationRequest) (EvaluationRequest, error) {
+	request.Observations = append([]Observation(nil), request.Observations...)
+	request.Corrections = append([]UserCorrection(nil), request.Corrections...)
 	request.AsOf = request.AsOf.UTC()
 	request.Outcome = normalizeOutcome(request.Outcome)
 	for i := range request.Observations {
@@ -107,6 +109,7 @@ func normalizeAndValidateOutcome(value IntendedOutcome, recordedAt time.Time) (I
 }
 
 func normalizeOutcome(value IntendedOutcome) IntendedOutcome {
+	value.Indicators = append([]Indicator(nil), value.Indicators...)
 	value.ID = strings.TrimSpace(value.ID)
 	value.Scope = normalizeScope(value.Scope)
 	value.Statement = strings.TrimSpace(value.Statement)

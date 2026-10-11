@@ -140,22 +140,16 @@ func TestPostgresRepositoryLifecycle(t *testing.T) {
 	}, 12)
 	var wait sync.WaitGroup
 	for range 12 {
-		// Independent callers own their request slices. Normalization mutates
-		// them, so sharing one fixture would race before the database write.
-		request, err := cloneValue(evaluationRequest)
-		if err != nil {
-			t.Fatal(err)
-		}
 		wait.Add(1)
-		go func(request CreateEvaluationRequest) {
+		go func() {
 			defer wait.Done()
 			<-start
-			_, wasCreated, createErr := service.CreateEvaluation(context.Background(), owner, workspace, outcomeID, request)
+			_, wasCreated, createErr := service.CreateEvaluation(context.Background(), owner, workspace, outcomeID, evaluationRequest)
 			results <- struct {
 				created bool
 				err     error
 			}{wasCreated, createErr}
-		}(request)
+		}()
 	}
 	close(start)
 	wait.Wait()
