@@ -359,21 +359,26 @@ describe('AppShellComponent', () => {
     intelligenceDetails.append(intelligenceSummary, activeLink)
     intelligenceGroup.appendChild(intelligenceDetails)
     navigation.append(workGroup, intelligenceGroup)
-    document.body.appendChild(navigation)
+    const menuButton = document.createElement('button')
+    document.body.append(navigation, menuButton)
     ;(component as any).mobileNavigation = { nativeElement: navigation }
+    ;(component as any).mobileMenuButton = { nativeElement: menuButton }
 
+    menuButton.focus()
     component.toggleMobileNavigation()
     await afterNativeDisclosureUpdate()
     expect(document.activeElement).toBe(intelligenceSummary)
 
     component.closeMobileNavigation(false)
     intelligenceDetails.open = true
+    menuButton.focus()
     component.toggleMobileNavigation()
     await afterNativeDisclosureUpdate()
     expect(document.activeElement).toBe(activeLink)
 
     component.closeMobileNavigation(false)
     navigation.remove()
+    menuButton.remove()
     component.ngOnDestroy()
   })
 
@@ -723,6 +728,46 @@ describe('AppShellComponent', () => {
     component.ngOnDestroy()
     navigation.remove()
     menuButton.remove()
+  })
+
+  it('does not steal mobile navigation focus after the user moves before the initial focus callback', () => {
+    const scheduled = new Map<number, TimerHandler>()
+    let nextTimer = 1
+    spyOn(window, 'setTimeout').and.callFake(((handler: TimerHandler) => {
+      const timer = nextTimer++
+      scheduled.set(timer, handler)
+      return timer
+    }) as typeof window.setTimeout)
+
+    const component = createShell(() => of(status))
+    const navigation = document.createElement('aside')
+    const group = document.createElement('section')
+    group.className = 'hai-navigation__group--current'
+    const details = document.createElement('details')
+    details.open = true
+    const summary = document.createElement('summary')
+    const currentLink = document.createElement('a')
+    currentLink.href = '/control-center'
+    currentLink.className = 'hai-navigation__item--active'
+    const destinationLink = document.createElement('a')
+    destinationLink.href = '/workflow-engine'
+    details.append(summary, currentLink, destinationLink)
+    group.append(details)
+    navigation.append(group)
+    document.body.append(navigation)
+    ;(component as any).mobileNavigation = { nativeElement: navigation }
+    const currentLinkFocus = spyOn(currentLink, 'focus').and.callThrough()
+
+    component.toggleMobileNavigation()
+    const focusTimer = nextTimer - 1
+    destinationLink.focus()
+    const handler = scheduled.get(focusTimer)
+    if (typeof handler === 'function') handler()
+
+    expect(document.activeElement).toBe(destinationLink)
+    expect(currentLinkFocus).not.toHaveBeenCalled()
+    component.ngOnDestroy()
+    navigation.remove()
   })
 
   it('makes the workspace inert while the mobile navigation dialog is open', async () => {

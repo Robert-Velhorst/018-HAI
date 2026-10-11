@@ -237,7 +237,9 @@ export class AppShellComponent implements OnInit, OnDestroy {
     // Focus must follow the rendered dialog/inert state, not a coalesced future tick.
     this.changeDetector?.detectChanges()
     this.scheduleMobileNavigationFocus(() => {
-      if (this.mobileNavigationOpen) {
+      const navigation = this.mobileNavigation?.nativeElement
+      const menuButton = this.mobileMenuButton?.nativeElement
+      if (this.mobileNavigationOpen && (!navigation?.contains(document.activeElement) || document.activeElement === menuButton)) {
         this.focusMobileNavigationEntry()
       }
     })
