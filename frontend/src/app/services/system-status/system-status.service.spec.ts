@@ -21,6 +21,17 @@ describe('SystemStatusService', () => {
     request.flush({ status: 'ready', service: 'backend', summary: { ok: 1, warn: 0, fail: 0 }, checks: [] })
   })
 
+  it('reads authenticated build provenance from the system info route', () => {
+    service.info().subscribe()
+    const request = http.expectOne('/api/v1/system/info')
+    expect(request.request.method).toBe('GET')
+    request.flush({
+      build: { version: '1.2.3', commit: 'abcdef1234567890', buildTime: '2026-10-11T10:00:00Z', goVersion: 'go1.27.2' },
+      runMode: 'production', allowsRealSideEffects: false, languages: ['en', 'nl'],
+      readiness: { ready: true, ok: 2, warn: 0, fail: 0 },
+    })
+  })
+
   it('reads owner-scoped durable event delivery status', () => {
     service.eventDelivery().subscribe()
     const request = http.expectOne('/api/v1/event-delivery/')

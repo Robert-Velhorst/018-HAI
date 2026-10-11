@@ -7,6 +7,7 @@ import {
   IA2ABridgeStatus,
   IEventDeliveryRetryResult,
   IEventDeliveryStats,
+  ISystemInfo,
   ISystemReadiness,
 } from '../../models/system-status.model.interface';
 
@@ -17,6 +18,7 @@ export class SystemStatusService implements ISystemStatusService {
   // Detailed checks can reveal internal topology. The operator page uses the
   // authenticated endpoint; the public /readyz probe exposes aggregates only.
   private readonly readinessUrl = '/api/v1/system/readiness';
+  private readonly infoUrl = '/api/v1/system/info';
   private readonly eventDeliveryUrl = '/api/v1/event-delivery';
   private readonly connectorStatusUrl = '/api/v1/a2a/status';
 
@@ -41,6 +43,10 @@ export class SystemStatusService implements ISystemStatusService {
           return throwError(() => error);
         })
       );
+  }
+
+  info(): Observable<ISystemInfo> {
+    return this.http.get<ISystemInfo>(this.infoUrl, { observe: 'body' });
   }
 
   eventDelivery(): Observable<IEventDeliveryStats> {

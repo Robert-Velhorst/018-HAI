@@ -81,6 +81,14 @@
     opacity: 0.7;
   }
 
+  .build-info {
+    font-size: 12px;
+    opacity: 0.78;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
   &.status-ok {
     background: var(--hai-green-soft, #f6ffed);
     border: 1px solid color-mix(in srgb, var(--hai-green, #119d68) 55%, transparent);

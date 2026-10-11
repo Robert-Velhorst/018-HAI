@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
-import { finalize, timeout } from 'rxjs';
+import { finalize, Subscription, timeout } from 'rxjs';
 import {
   ISystemCheck,
+  ISystemInfo,
   ISystemReadiness,
   SystemCheckSeverity,
 } from '../../models/system-status.model.interface';
@@ -44,6 +45,7 @@ const READINESS_TIMEOUT_MS = 10000;
 })
 export class SystemStatusComponent implements OnInit, OnDestroy {
   readiness?: ISystemReadiness;
+  systemInfo?: ISystemInfo;
   groups: CheckGroup[] = [];
   recommendedActions: string[] = [];
   loading = false;
@@ -52,6 +54,7 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
 
   private pollTimer?: ReturnType<typeof setTimeout>;
   private refreshInFlight = false;
+  private systemInfoSubscription?: Subscription;
   private destroyed = false;
   private readonly onVisibilityChange = (): void => {
     if (document.hidden) {
@@ -74,13 +77,39 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.loadSystemInfo();
     this.refresh();
   }
 
   ngOnDestroy(): void {
     this.destroyed = true;
     this.clearPollTimer();
+    this.systemInfoSubscription?.unsubscribe();
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
+  }
+
+  buildInfoTitle(info: ISystemInfo): string {
+    return [
+      `Build ${info.build.version}`,
+      `Commit ${info.build.commit}`,
+      `Built ${info.build.buildTime}`,
+      `Runtime ${info.build.goVersion}`,
+      `Mode ${info.runMode}`,
+    ].join(' · ');
+  }
+
+  private loadSystemInfo(): void {
+    this.systemInfoSubscription = this.systemStatusService.info().pipe(
+      timeout(READINESS_TIMEOUT_MS)
+    ).subscribe({
+      next: (info) => {
+        if (!this.destroyed) {
+          this.systemInfo = info;
+        }
+      },
+      // Build metadata is supplemental; a failure must not hide readiness.
+      error: () => undefined,
+    });
   }
 
   refresh(silent = false): void {

@@ -24,6 +24,21 @@ export interface ISystemReadiness {
   checks: ISystemCheck[];
 }
 
+export interface ISystemBuildInfo {
+  version: string;
+  commit: string;
+  buildTime: string;
+  goVersion: string;
+}
+
+export interface ISystemInfo {
+  build: ISystemBuildInfo;
+  runMode: string;
+  allowsRealSideEffects: boolean;
+  languages: string[];
+  readiness: ISystemReadinessSummary & { ready: boolean };
+}
+
 export type EventDeliveryStatus = 'pending' | 'published' | 'dead_lettered';
 
 export interface IEventDeliveryFailure {

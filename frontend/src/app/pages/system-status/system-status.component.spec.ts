@@ -7,14 +7,20 @@ import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { ControlRoomModule } from '../../control-room/control-room.module';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
-import { ISystemReadiness } from '../../models/system-status.model.interface';
+import { ISystemInfo, ISystemReadiness } from '../../models/system-status.model.interface';
 import { SYSTEM_STATUS_SERVICE_TOKEN } from '../../services/system-status/system-status.service.token';
 import { SystemStatusComponent } from './system-status.component';
+
+const sampleSystemInfo: ISystemInfo = {
+  build: { version: '1.2.3', commit: 'abcdef1234567890', buildTime: '2026-10-11T10:00:00Z', goVersion: 'go1.27.2' },
+  runMode: 'production', allowsRealSideEffects: false, languages: ['en', 'nl'],
+  readiness: { ready: true, ok: 2, warn: 0, fail: 0 },
+};
 
 describe('SystemStatusComponent', () => {
   it('does not overlap scheduled readiness refreshes', () => {
     const response = new Subject<ISystemReadiness>();
-    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(response.asObservable()) };
+    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(response.asObservable()), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     const notification = { error: jasmine.createSpy('error') };
     const component = new SystemStatusComponent(service as never, notification as never, new ModuleViewPreferencesService(document));
 
@@ -34,7 +40,7 @@ describe('SystemStatusComponent', () => {
 
   it('refreshes once when a hidden status page becomes visible again', fakeAsync(() => {
     const response = new Subject<ISystemReadiness>();
-    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(response.asObservable()) };
+    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(response.asObservable()), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     const notification = { error: jasmine.createSpy('error') };
     const component = new SystemStatusComponent(service as never, notification as never, new ModuleViewPreferencesService(document));
     const hidden = spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
@@ -60,7 +66,7 @@ describe('SystemStatusComponent', () => {
   }));
 
   it('backs off while healthy and polls faster for degraded and recovery states', fakeAsync(() => {
-    const service = { readiness: jasmine.createSpy('readiness') };
+    const service = { readiness: jasmine.createSpy('readiness'), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     service.readiness.and.returnValues(
       of({ status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] }),
       of({ status: 'degraded', service: 'backend', summary: { ok: 0, warn: 1, fail: 0 }, checks: [] }),
@@ -96,6 +102,7 @@ describe('SystemStatusComponent', () => {
       readiness: jasmine.createSpy('readiness').and.returnValue(of({
         status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [],
       })),
+      info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)),
     };
     const component = new SystemStatusComponent(
       service as never,
@@ -117,7 +124,7 @@ describe('SystemStatusComponent', () => {
   }));
 
   it('times out a stalled readiness request and schedules a degraded retry', fakeAsync(() => {
-    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(NEVER) };
+    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(NEVER), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     const component = new SystemStatusComponent(
       service as never,
       { error: jasmine.createSpy('error') } as never,
@@ -135,7 +142,7 @@ describe('SystemStatusComponent', () => {
   }));
 
   it('preserves last good status and explains that a failed poll may be stale', () => {
-    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(throwError(() => new Error('probe unavailable'))) };
+    const service = { readiness: jasmine.createSpy('readiness').and.returnValue(throwError(() => new Error('probe unavailable'))), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     const notification = { error: jasmine.createSpy('error') };
     const component = new SystemStatusComponent(service as never, notification as never, new ModuleViewPreferencesService(document));
     const previous: ISystemReadiness = {
@@ -153,6 +160,43 @@ describe('SystemStatusComponent', () => {
     expect(component.refreshErrorMessage()).toContain('Last successful status');
   });
 
+  it('loads build provenance once and keeps it supplemental to readiness', () => {
+    const service = {
+      readiness: jasmine.createSpy('readiness').and.returnValue(NEVER),
+      info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)),
+    };
+    const component = new SystemStatusComponent(
+      service as never,
+      { error: jasmine.createSpy('error') } as never,
+      new ModuleViewPreferencesService(document)
+    );
+
+    component.ngOnInit();
+
+    expect(service.info).toHaveBeenCalledTimes(1);
+    expect(component.systemInfo).toEqual(sampleSystemInfo);
+    expect(component.buildInfoTitle(sampleSystemInfo)).toContain('abcdef1234567890');
+    component.ngOnDestroy();
+  });
+
+  it('does not turn unavailable build provenance into a readiness failure', () => {
+    const service = {
+      readiness: jasmine.createSpy('readiness').and.returnValue(NEVER),
+      info: jasmine.createSpy('info').and.returnValue(throwError(() => new Error('metadata unavailable'))),
+    };
+    const component = new SystemStatusComponent(
+      service as never,
+      { error: jasmine.createSpy('error') } as never,
+      new ModuleViewPreferencesService(document)
+    );
+
+    component.ngOnInit();
+
+    expect(component.systemInfo).toBeUndefined();
+    expect(component.loadError).toBeFalse();
+    component.ngOnDestroy();
+  });
+
   it('provides text severity labels in addition to the status icon and color', () => {
     const component = new SystemStatusComponent({} as never, {} as never, new ModuleViewPreferencesService(document));
     expect(component.severityLabel('ok')).toBe('OK');
@@ -163,10 +207,10 @@ describe('SystemStatusComponent', () => {
 
 describe('SystemStatusComponent rendered layout and accessibility', () => {
   let fixture: ComponentFixture<SystemStatusComponent>;
-  let service: { readiness: jasmine.Spy };
+  let service: { readiness: jasmine.Spy; info: jasmine.Spy };
 
   beforeEach(async () => {
-    service = { readiness: jasmine.createSpy('readiness') };
+    service = { readiness: jasmine.createSpy('readiness'), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     service.readiness.and.returnValue(of({
       status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [],
     }));
@@ -207,6 +251,17 @@ describe('SystemStatusComponent rendered layout and accessibility', () => {
     expect(root.querySelector('.group-summary')?.textContent).toContain('Redis cache');
     expect(root.querySelector('hai-progressive-section')?.textContent).not.toContain('redis.connection');
     expect(root.querySelector('.load-error')?.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('renders a compact build identity with accessible full provenance', () => {
+    fixture.componentInstance.systemInfo = sampleSystemInfo;
+    fixture.detectChanges();
+
+    const buildInfo = fixture.nativeElement.querySelector('.build-info') as HTMLElement;
+    expect(buildInfo.textContent).toContain('Running 1.2.3 · abcdef123456');
+    expect(buildInfo.getAttribute('title')).toContain('Built 2026-10-11T10:00:00Z');
+    expect(buildInfo.getAttribute('aria-label')).toContain('go1.27.2');
+    expect(buildInfo.getAttribute('tabindex')).toBe('0');
   });
 
   it('renders textual severity and avoids horizontal overflow in a 320px container', () => {

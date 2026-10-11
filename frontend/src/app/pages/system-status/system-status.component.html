@@ -46,6 +46,15 @@
       <span class="updated" *ngIf="lastUpdated">
         Updated {{ lastUpdated | date: 'HH:mm:ss' }}
       </span>
+      <span
+        class="build-info"
+        *ngIf="systemInfo as info"
+        [title]="buildInfoTitle(info)"
+        [attr.aria-label]="buildInfoTitle(info)"
+        tabindex="0"
+      >
+        Running {{ info.build.version }} · {{ info.build.commit | slice: 0:12 }}
+      </span>
     </div>
 
     <div

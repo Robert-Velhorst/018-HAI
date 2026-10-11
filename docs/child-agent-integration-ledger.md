@@ -2351,3 +2351,23 @@ addition. PR #35's presence is proven by Git ancestry; PR #33's connector
 presence is proven by exact file-blob identity and current-tree lookup. Neither
 check proves live Worker Control account acceptance or ChatGPT-history daemon
 acceptance. No branch was deleted, force-pushed, or merged by this crosswalk.
+
+### October 11, 2026: System Status build provenance
+
+Reviewed PR #34 commit `f0dc3fda` (`feat: show running build provenance`). The
+current backend already exposes the owner-authenticated `/api/v1/system/info`
+contract, so the useful frontend portion was ported rather than copying the
+installer branch. System Status now reads version, commit, build time, Go
+runtime version, and run mode once on page entry and displays a compact running
+build label with keyboard-focusable full details. Metadata failure is
+supplemental and does not alter readiness/error state; its request is bounded
+and unsubscribed when the component is destroyed.
+
+Local verification on bundled Node 24.19.0: focused System Status and service
+tests passed 18/18; the complete frontend run passed 176 Node contract checks
+and 1,374 Angular tests; production build passed. The build still reports the
+existing initial-bundle budget warning (7.53 KB over 1 MB) and four component
+SCSS budget warnings. These are recorded, not suppressed. The new exact-head
+GitHub Actions run is required for remote acceptance. PR #34 remains open and
+its broader divergent-file review remains incomplete; no source worktree or
+branch was removed.
