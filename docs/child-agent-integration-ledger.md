@@ -2462,7 +2462,7 @@ review of the remaining divergent branch commits or external Kafka acceptance.
 ### October 12, 2026: archive integrity and local-source reconciliation
 
 Refreshed the live repository state. PR #36 is open at
-`cfbf13f23d456511bd61260842241b6b0530d4c1`; GitHub reports all 36 checks
+`7d0f4645f1f784d42c6d477bc25d5edceaeefc49`; GitHub reports all 36 checks
 successful and none pending. PRs #33, #34, and #35 are also still open; their
 current listed checks pass. A green check run does not satisfy the archive
 semantic-reconciliation or merge gates.
@@ -2491,6 +2491,17 @@ a synthetic HTTP server and do not establish that the upstream application
 implements this contract. The current PR correctly keeps Autofever disabled
 pending a verified upstream contract; the candidate is not ported or described
 as operational, and its local branch remains preserved for now.
+
+Reviewed the two nginx additions in the conflicted `hai-pr36-integration`
+worktree: `nginx-config/nginx.conf` and
+`nginx-config/sites-enabled/generic-auto.conf`. They are not ported. The former
+hard-codes `X-HAI-Backend-Key` as `change-this-local-backend-key` on API routes,
+instead of using the current template's `${BACKEND_API_SHARED_KEY}` secret
+substitution. The latter exposes `/generic-auto/` through the gateway even
+though `generic-auto` is an opt-in compatibility service, not part of HAI's
+operational path. The current PR retains the environment-substituted secret and
+returns 404 for this public path. The conflicted source worktree remains
+preserved for review; no files were copied from it.
 
 Removed only the clean `hai-tree-compare` checkout after confirming it was at
 the exact PR #36 head and contained no ignored or untracked files. Its 3,147
