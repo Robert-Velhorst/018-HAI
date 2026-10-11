@@ -1020,10 +1020,19 @@ services:
       - ALL
     environment:
       BACKEND_API_SHARED_KEY: ${BACKEND_API_SHARED_KEY}
+      HAI_NGROK_URL: ${HAI_NGROK_URL:-}
+      HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED: ${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED:-false}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        envsubst '$$BACKEND_API_SHARED_KEY' < /etc/nginx/nginx.conf.template > /tmp/nginx.conf
+        set -eu
+        HAI_NGROK_HOST="$${HAI_NGROK_URL#https://}"
+        HAI_NGROK_HOST="$${HAI_NGROK_HOST%%/*}"
+        case "$$HAI_NGROK_HOST" in
+          ""|*[!A-Za-z0-9.-]*) HAI_NGROK_HOST=disabled.invalid ;;
+        esac
+        export HAI_NGROK_HOST
+        envsubst '$$BACKEND_API_SHARED_KEY $${HAI_NGROK_HOST} $${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED}' < /etc/nginx/nginx.conf.template > /tmp/nginx.conf
         exec nginx -c /tmp/nginx.conf -g 'daemon off;'
     depends_on:
       frontend:

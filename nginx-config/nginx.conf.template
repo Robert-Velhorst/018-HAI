@@ -20,6 +20,16 @@ http {
     # this single-owner deployment and avoids reserving unnecessary memory.
     limit_req_zone $binary_remote_addr zone=hai_auth:1m rate=30r/m;
     limit_req_zone $binary_remote_addr zone=hai_a2a_bridge:1m rate=10r/m;
+    # Public A2A is available only on the exact configured ngrok host and
+    # after the second explicit opt-in. The card itself remains local-only.
+    map $host $hai_ngrok_request {
+        default 0;
+        "${HAI_NGROK_HOST}" 1;
+    }
+    map "$host|${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED}" $hai_a2a_ngrok_request {
+        default 0;
+        "${HAI_NGROK_HOST}|false" 1;
+    }
     server {
         listen 8080;
         limit_req_status 429;
@@ -78,7 +88,7 @@ http {
         location = /.well-known/agent-card.json {
             limit_req zone=hai_a2a_bridge burst=10 nodelay;
             limit_except GET { deny all; }
-            if ($hai_a2a_ngrok_request) { return 404; }
+            if ($hai_ngrok_request) { return 404; }
             proxy_pass http://$backend_upstream;
             proxy_set_header X-Original-URI $request_uri;
             proxy_set_header Authorization "";

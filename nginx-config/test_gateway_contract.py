@@ -135,6 +135,19 @@ class GatewayAuthContractTest(unittest.TestCase):
             NGINX_TEMPLATE,
         )
 
+    def test_a2a_ngrok_gate_uses_exact_configured_host_and_explicit_opt_in(self) -> None:
+        self.assertIn('map $host $hai_ngrok_request {', NGINX_TEMPLATE)
+        self.assertIn('"${HAI_NGROK_HOST}" 1;', NGINX_TEMPLATE)
+        self.assertIn(
+            'map "$host|${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED}" $hai_a2a_ngrok_request {',
+            NGINX_TEMPLATE,
+        )
+        self.assertIn('"${HAI_NGROK_HOST}|false" 1;', NGINX_TEMPLATE)
+        card = location_block("location = /.well-known/agent-card.json")
+        send = location_block("location = /api/v1/a2a")
+        self.assertIn("if ($hai_ngrok_request) { return 404; }", card)
+        self.assertIn("if ($hai_a2a_ngrok_request) { return 404; }", send)
+
     def test_public_identity_routes_are_resource_bounded(self) -> None:
         self.assertIn(
             "limit_req_zone $binary_remote_addr zone=hai_auth:1m rate=30r/m;",

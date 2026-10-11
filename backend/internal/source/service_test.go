@@ -966,8 +966,10 @@ func TestCreateSourceRejectsUnconfiguredTrelloWithActionableReason(t *testing.T)
 	if err == nil {
 		t.Fatal("CreateSource succeeded for an unconfigured Trello connector")
 	}
-	if !strings.Contains(err.Error(), "configuration is required") || !strings.Contains(err.Error(), "TRELLO_API_KEY") {
-		t.Fatalf("CreateSource error = %q, want actionable configuration requirement", err)
+	if !strings.Contains(err.Error(), "TRELLO_API_KEY") ||
+		!strings.Contains(err.Error(), "TRELLO_READ_TOKEN") ||
+		!strings.Contains(err.Error(), "least-privilege read-only") {
+		t.Fatalf("CreateSource error = %q, want actionable read-only Trello configuration requirements", err)
 	}
 }
 

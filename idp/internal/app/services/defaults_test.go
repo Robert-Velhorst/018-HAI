@@ -24,9 +24,9 @@ func TestDefaultMessageSenderDropsEventsWithoutKafka(t *testing.T) {
 	config.KafkaConfig = nil
 	t.Cleanup(func() { config.KafkaConfig = previous })
 
-	sender, err := NewDefaultMessageSender()
+	sender, err := DefaultMessageSender()
 	if err != nil {
-		t.Fatalf("NewDefaultMessageSender() error = %v", err)
+		t.Fatalf("DefaultMessageSender() error = %v", err)
 	}
 	if err := sender.Send("account-events", map[string]string{"email": "operator@example.com"}); err != nil {
 		t.Fatalf("local event sender Send() error = %v", err)
