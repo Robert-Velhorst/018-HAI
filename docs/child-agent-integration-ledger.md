@@ -1822,3 +1822,39 @@ unique child IDs / 34,752,906,420 bytes. The six newly found unfinished
 transcripts and their possible earlier patch events have not been semantically
 reconciled. The existing automated gate therefore cannot authorize removal
 from either supplemental folder; no local HAI files were deleted.
+
+### October 11, 2026: old-checkout patch reconciliation and cache cleanup
+
+Rechecked PR #36 at `ccfbda84114dfd099daa1f401ea6506ebd2d5229`; the PR remains
+open against `main`. The exact-head Actions run `38117621117` has 35 successful
+checks and one in progress (owned disposable-stack browser acceptance), with
+no failed checks at this poll. This is not final CI acceptance.
+
+Audited `D:\codex-temp\hai-pr-update-018-20261009\local-working-tree.patch`
+without changing that checkout. The 682-path patch is based on an older tree.
+A reverse-apply check finds 62 divergent paths; Git's three-way simulation
+leaves 60 unmerged paths and one cleanly mergeable test change. Representative
+differences show the current PR has newer Go and Promptfoo versions, stricter
+source/approval ownership and revision checks, stronger Windows environment
+ACL rollback/recovery, and fail-closed runtime behavior. These are not safe
+reasons to replace current files with the older patch. The remaining divergent
+paths still need file-by-file disposition; the old patch and supporting source
+artifacts remain retained.
+
+Ported the cleanly mergeable change to
+`backend/internal/outcomeevaluation/repository_postgres_integration_test.go`:
+each concurrent integration-test caller now gets its own cloned request,
+avoiding a race while request normalization mutates slices. The local package
+test passes. `TestPostgresRepositoryLifecycle` compiled but skipped because
+`HAI_OUTCOME_EVALUATION_TEST_DATABASE_DSN` is not configured, so this local run
+does not prove the live PostgreSQL concurrency scenario. The latest PR CI run
+must cover the pushed change before it is treated as accepted.
+
+Removed only the verified disposable `frontend/node_modules` cache from this
+superseded clone: 37,316 files / 280,611,707 bytes. The cache was a regular
+directory, not a reparse point, and no other process referenced the clone.
+The clone, `dist`, test-evidence JSON, CI logs, downloaded Gitleaks binary,
+patches, credentials, runtime data, merge scratch, and all transcript archives
+remain untouched. In particular, the 27 known July 30 transcripts remain
+ineligible for cleanup until the semantic crosswalk and merge/preservation
+gates are complete.
