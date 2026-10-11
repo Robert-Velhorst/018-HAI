@@ -63,7 +63,15 @@ JSON
 
 echo "==> Starting throwaway PostgreSQL on :${PG_PORT}"
 initdb -D "${PGDATA}" -U "$(whoami)" --auth=trust --locale=C --encoding=UTF8 >/dev/null
-pg_ctl -D "${PGDATA}" -o "-p ${PG_PORT} -h 127.0.0.1 -k ${WORKDIR}" -l "${PGDATA}/server.log" start >/dev/null
+if ! pg_ctl -D "${PGDATA}" -o "-p ${PG_PORT} -h 127.0.0.1 -k ${WORKDIR}" -l "${PGDATA}/server.log" start >/dev/null; then
+  echo "PostgreSQL failed to start; server log:"
+  if [ -f "${PGDATA}/server.log" ]; then
+    cat "${PGDATA}/server.log"
+  else
+    echo "No PostgreSQL server log was created."
+  fi
+  exit 1
+fi
 for i in $(seq 1 30); do
   pg_isready -h 127.0.0.1 -p "${PG_PORT}" >/dev/null 2>&1 && break
   sleep 1
