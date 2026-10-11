@@ -477,6 +477,25 @@ dd {
   padding: 14px;
 }
 
+.data-unavailable {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin: 0 14px 12px;
+  padding: 9px 10px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.data-unavailable span {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .tier-selector button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -408,8 +408,9 @@ This schema stores preparation and decision evidence only. Neither the
 migration nor an `approved` row creates a Calendar event, schedules or sends a
 notification, email, or other message, invokes a provider/runtime, executes an
 open-loop follow-up, mutates workflow/checklist state, or grants effect
-authority. No reminder worker is active, and the existing workflow/open-loop
-scheduler does not consume these tables.
+authority. The separate `0055` through `0057` delivery ledger, not these
+preparation/decision tables directly, lets an owner-authorized workflow worker
+record one internal proactivity signal and immutable receipt.
 
 The reminder mutation routes also bypass the legacy process-local
 `Idempotency-Key` rejection cache. This is intentional: authoritative exact
@@ -428,12 +429,12 @@ backend migrate down pre/0047_workflow_reminder_activation_decision_order
 backend migrate down pre/0046_workflow_reminder_activation_ledger
 ```
 
-The migration-chain contract through `0047`, isolated PostgreSQL `0046`+`0047`
-ledger test, and live workflow-repository PostgreSQL test pass. The full Go
-suite, 324 Angular tests, production build, and signed-in browser
+The migration-chain contract through `0059`, isolated PostgreSQL reminder-ledger
+tests, and live workflow-repository PostgreSQL test pass. The full Go
+suite, 380 Angular tests, production build, and signed-in browser
 prepare/approve/persist/cleanup acceptance also pass. These checks validate the
-non-executing ledger and its operator flow; they do not prove or activate
-Calendar, message, provider, notification, or follow-up effects.
+preparation/decision ledger and its operator flow; they do not prove or
+activate Calendar, message, provider, notification, or follow-up effects.
 
 ## Proactive Attention Feedback
 

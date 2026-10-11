@@ -2,6 +2,7 @@ package durablejob
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -22,6 +23,28 @@ type Handler func(ctx context.Context, job Job) error
 // DefaultLease is how long a claimed job may be held before another worker is
 // allowed to assume the holder died and reclaim it.
 const DefaultLease = 5 * time.Minute
+
+// DefaultDeferDelay prevents a paused policy gate from repeatedly claiming the
+// same job while retaining it for the next permitted worker pass.
+const DefaultDeferDelay = time.Minute
+
+// DeferredError tells the runner that work was deliberately postponed by a
+// safety or availability gate. It is neither a success nor a retryable failure:
+// attempts remain unchanged and the job stays pending for a later pass.
+type DeferredError struct {
+	Reason string
+}
+
+func (e *DeferredError) Error() string {
+	if e == nil || e.Reason == "" {
+		return "job deferred"
+	}
+	return "job deferred: " + e.Reason
+}
+
+// Defer returns a typed handler result for work that must wait without
+// consuming the job retry budget, such as an emergency stop or paused mode.
+func Defer(reason string) error { return &DeferredError{Reason: reason} }
 
 // maxIdlePollMultiplier bounds idle backoff so work enqueued by another
 // process is still discovered promptly. With the default 15-second worker
@@ -122,19 +145,40 @@ func (r *Runner) Enqueue(kind, payload string, runAt time.Time, maxAttempts int)
 // uses this at startup so restarts do not pile up duplicate schedules.
 // It reports whether a new job was created.
 func (r *Runner) EnsureScheduled(kind, payload string, runAt time.Time, maxAttempts int) (bool, error) {
+	return r.ensureScheduled(kind, payload, runAt, maxAttempts, false)
+}
+
+// EnsureScheduledForPayload is the per-work-item counterpart to
+// EnsureScheduled. It permits different payloads of one kind to run in
+// parallel, while ensuring a periodic producer cannot enqueue duplicates for
+// the same work item.
+func (r *Runner) EnsureScheduledForPayload(kind, payload string, runAt time.Time, maxAttempts int) (bool, error) {
+	return r.ensureScheduled(kind, payload, runAt, maxAttempts, true)
+}
+
+func (r *Runner) ensureScheduled(kind, payload string, runAt time.Time, maxAttempts int, matchPayload bool) (bool, error) {
 	if runAt.IsZero() {
 		runAt = r.now()
 	}
-	created, err := r.repo.EnqueueIfNoActive(&models.DurableJob{
+	job := &models.DurableJob{
 		Queue:       r.queue,
 		Kind:        kind,
 		Payload:     payload,
 		RunAt:       runAt.UTC(),
 		MaxAttempts: maxAttempts,
 		Status:      models.DurableJobPending,
-	})
+	}
+	var (
+		created bool
+		err     error
+	)
+	if matchPayload {
+		created, err = r.repo.EnqueueIfNoActiveMatchingPayload(job)
+	} else {
+		created, err = r.repo.EnqueueIfNoActive(job)
+	}
 	if err != nil {
-		return false, fmt.Errorf("ensure singleton %s job: %w", kind, err)
+		return false, fmt.Errorf("ensure active %s job: %w", kind, err)
 	}
 	return created, nil
 }
@@ -217,6 +261,11 @@ func (r *Runner) execute(ctx context.Context, job models.DurableJob) error {
 	}
 	if err == nil {
 		_, markErr := r.repo.MarkSucceeded(job.ID, r.workerID, job.LeaseGeneration, r.now())
+		return markErr
+	}
+	var deferred *DeferredError
+	if errors.As(err, &deferred) {
+		_, markErr := r.repo.MarkDeferred(job.ID, r.workerID, job.LeaseGeneration, r.now().Add(DefaultDeferDelay), deferred.Error())
 		return markErr
 	}
 	if attempt >= job.MaxAttempts {

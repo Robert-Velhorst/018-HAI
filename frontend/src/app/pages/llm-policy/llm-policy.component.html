@@ -549,8 +549,12 @@
               Run due checks
             </button>
           </div>
+          <div class="data-unavailable" *ngIf="maintenanceUnavailable" role="status">
+            <span>Maintenance history is unavailable. Existing records are retained; HAI did not run a replacement check.</span>
+            <button nz-button nzType="link" type="button" (click)="loadModelMaintenanceHistory()">Retry</button>
+          </div>
           <nz-empty
-            *ngIf="!maintenance.length"
+            *ngIf="!maintenanceUnavailable && !maintenance.length"
             nzNotFoundContent="No persisted model maintenance records yet."
           ></nz-empty>
           <div class="event-list" *ngIf="maintenance.length">
@@ -585,7 +589,11 @@
               <p>Real routed calls only. Prompts, outputs, credentials, and source content are excluded.</p>
             </button>
           </div>
-          <nz-empty *ngIf="!generations.length" nzNotFoundContent="No routed generation outcomes recorded yet."></nz-empty>
+          <div class="data-unavailable" *ngIf="generationsUnavailable" role="status">
+            <span>Generation history is unavailable. Existing records are retained and HAI will not infer that no outcomes exist.</span>
+            <button nz-button nzType="link" type="button" (click)="loadGenerationHistory()">Retry</button>
+          </div>
+          <nz-empty *ngIf="!generationsUnavailable && !generations.length" nzNotFoundContent="No routed generation outcomes recorded yet."></nz-empty>
           <div class="event-list" *ngIf="generations.length">
             <article *ngFor="let generation of generations; trackBy: trackByGeneration">
               <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
@@ -646,7 +654,11 @@
               <p>Recent decisions, selected tiers, and fallback counts.</p>
             </button>
           </div>
-          <nz-empty *ngIf="!logs.length" nzNotFoundContent="No routing decisions logged yet."></nz-empty>
+          <div class="data-unavailable" *ngIf="logsUnavailable" role="status">
+            <span>Routing history is unavailable. Existing records are retained and HAI will not infer that no decisions exist.</span>
+            <button nz-button nzType="link" type="button" (click)="loadLogs()">Retry</button>
+          </div>
+          <nz-empty *ngIf="!logsUnavailable && !logs.length" nzNotFoundContent="No routing decisions logged yet."></nz-empty>
           <div class="event-list" *ngIf="logs.length">
             <article *ngFor="let log of logs; trackBy: trackByLog">
               <i nz-icon nzType="history" nzTheme="outline"></i>

@@ -67,6 +67,20 @@ func (f *fakeRepo) EnqueueIfNoActive(job *models.DurableJob) (bool, error) {
 	return err == nil, err
 }
 
+func (f *fakeRepo) EnqueueIfNoActiveMatchingPayload(job *models.DurableJob) (bool, error) {
+	if job.Queue == "" {
+		job.Queue = "default"
+	}
+	for _, existing := range f.jobs {
+		if existing.Queue == job.Queue && existing.Kind == job.Kind && existing.Payload == job.Payload &&
+			(existing.Status == models.DurableJobPending || existing.Status == models.DurableJobRunning) {
+			return false, nil
+		}
+	}
+	_, err := f.Enqueue(job)
+	return err == nil, err
+}
+
 func (f *fakeRepo) ClaimDue(workerID, queue string, now time.Time, limit int) ([]models.DurableJob, error) {
 	if queue == "" {
 		queue = "default"
@@ -110,6 +124,19 @@ func (f *fakeRepo) MarkForRetry(id uuid.UUID, workerID string, leaseGeneration i
 	job.RunAt = runAt
 	job.Attempts = attempts
 	job.LastError = lastErr
+	job.LockedBy = ""
+	job.LockedAt = nil
+	return true, nil
+}
+
+func (f *fakeRepo) MarkDeferred(id uuid.UUID, workerID string, leaseGeneration int64, runAt time.Time, reason string) (bool, error) {
+	job := f.jobs[id]
+	if !fakeLeaseOwned(job, workerID, leaseGeneration) {
+		return false, nil
+	}
+	job.Status = models.DurableJobPending
+	job.RunAt = runAt
+	job.LastError = reason
 	job.LockedBy = ""
 	job.LockedAt = nil
 	return true, nil
@@ -206,6 +233,29 @@ func TestRunnerExecutesJobAndMarksSucceeded(t *testing.T) {
 	}
 }
 
+func TestEnsureScheduledForPayloadDeduplicatesOnlyMatchingWork(t *testing.T) {
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	repo := newFakeRepo()
+	runner := NewRunner(repo, Options{WorkerID: "w1", Queue: "source", Now: fixedClock(&now)})
+
+	created, err := runner.EnsureScheduledForPayload("source.sync", `{"sourceId":"a"}`, now, 5)
+	if err != nil || !created {
+		t.Fatalf("first payload schedule = %v, %v; want true, nil", created, err)
+	}
+	created, err = runner.EnsureScheduledForPayload("source.sync", `{"sourceId":"a"}`, now, 5)
+	if err != nil || created {
+		t.Fatalf("duplicate payload schedule = %v, %v; want false, nil", created, err)
+	}
+	created, err = runner.EnsureScheduledForPayload("source.sync", `{"sourceId":"b"}`, now, 5)
+	if err != nil || !created {
+		t.Fatalf("distinct payload schedule = %v, %v; want true, nil", created, err)
+	}
+
+	if got := len(repo.jobs); got != 2 {
+		t.Fatalf("active jobs = %d, want 2 distinct source syncs", got)
+	}
+}
+
 func TestRunnerRetriesWithBackoffAndSurvivesRestart(t *testing.T) {
 	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
 	repo := newFakeRepo()
@@ -243,6 +293,36 @@ func TestRunnerRetriesWithBackoffAndSurvivesRestart(t *testing.T) {
 	stored, _ = repo.Find(job.ID)
 	if stored.Status != models.DurableJobSucceeded {
 		t.Fatalf("status after restart = %q, want succeeded", stored.Status)
+	}
+}
+
+func TestRunnerDefersPausedWorkWithoutConsumingRetryBudget(t *testing.T) {
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	repo := newFakeRepo()
+	runner := NewRunner(repo, Options{WorkerID: "w1", Now: fixedClock(&now)})
+	runner.Register("paused", func(context.Context, models.DurableJob) error {
+		return Defer("background processing is paused by safety policy")
+	})
+	job, err := runner.Enqueue("paused", "{}", now, 3)
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+
+	if processed, err := runner.RunOnce(context.Background()); err != nil || processed != 1 {
+		t.Fatalf("RunOnce = %d, %v; want 1, nil", processed, err)
+	}
+	stored, err := repo.Find(job.ID)
+	if err != nil {
+		t.Fatalf("Find: %v", err)
+	}
+	if stored.Status != models.DurableJobPending || stored.Attempts != 0 {
+		t.Fatalf("deferred state = %q attempts=%d, want pending/0", stored.Status, stored.Attempts)
+	}
+	if !stored.RunAt.Equal(now.Add(DefaultDeferDelay)) {
+		t.Fatalf("deferred RunAt = %v, want %v", stored.RunAt, now.Add(DefaultDeferDelay))
+	}
+	if stored.LastError != "job deferred: background processing is paused by safety policy" {
+		t.Fatalf("deferred reason = %q", stored.LastError)
 	}
 }
 

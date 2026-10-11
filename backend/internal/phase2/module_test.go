@@ -21,6 +21,51 @@ func TestConfigFromEnvDoesNotInventAFeed(t *testing.T) {
 	}
 }
 
+func TestOpsControlSeedsConfiguredSafetyStateOnlyOnFirstRun(t *testing.T) {
+	stateDir := t.TempDir()
+	initial := NewModuleWithExecutionAuthorization(
+		operations.NewService(operations.NewMemoryRepository()),
+		Config{
+			OwnerUserID:   "robert",
+			WorkspaceID:   "local",
+			WorkspaceDir:  t.TempDir(),
+			StateDir:      stateDir,
+			Mode:          autonomypolicy.ModeApprovalRequired,
+			EmergencyStop: true,
+		},
+		newTestExecutionAuthorizationService(t),
+	)
+	initialControl := initial.OpsControl().Control()
+	if !initialControl.EmergencyStop() {
+		t.Fatal("configured first-run emergency stop must be engaged")
+	}
+	if got := initialControl.StoredMode(); got != autonomypolicy.ModeApprovalRequired {
+		t.Fatalf("stored mode = %q, want configured first-run mode", got)
+	}
+
+	// A later environment change must not silently weaken a persisted operator
+	// stop or replace the established autonomy setting on restart.
+	restarted := NewModuleWithExecutionAuthorization(
+		operations.NewService(operations.NewMemoryRepository()),
+		Config{
+			OwnerUserID:   "robert",
+			WorkspaceID:   "local",
+			WorkspaceDir:  t.TempDir(),
+			StateDir:      stateDir,
+			Mode:          autonomypolicy.ModeAutonomousSafe,
+			EmergencyStop: false,
+		},
+		newTestExecutionAuthorizationService(t),
+	)
+	restartedControl := restarted.OpsControl().Control()
+	if !restartedControl.EmergencyStop() {
+		t.Fatal("persisted emergency stop must survive a restart")
+	}
+	if got := restartedControl.StoredMode(); got != autonomypolicy.ModeApprovalRequired {
+		t.Fatalf("stored mode after restart = %q, want retained operator mode", got)
+	}
+}
+
 func TestRunBackgroundForOwnerRejectsBlankOwnerWithoutEffects(t *testing.T) {
 	m := newTestModule(t)
 	if _, err := m.RunBackgroundForOwner(t.Context(), " \t "); err == nil {

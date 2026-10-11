@@ -15,6 +15,7 @@ to its source, and only promotes useful low-risk facts into memory.
 - ShareT link inventories
 - GitHub repositories, issues, pull requests, commits, and actions
 - LARO case summaries and source-linked legal analyses
+- Worker Control commitment and reminder events
 - selected local folders
 
 The live Google paths are separate least-privilege grants: Gmail read-only,
@@ -34,12 +35,6 @@ then opens owner review. It never deletes canonical people, tasks, obligations,
 or evidence. These adapters have no remote create, update, merge,
 invitation-response, or delete method.
 
-LARO uses a separate `laro` adapter rather than the unauthenticated generic
-JSON feed. Its bearer credential comes only from the protected HAI environment,
-is never stored in the source row or request URL, and can only read LARO's
-bounded `hai:read` feed. HAI marks every LARO extraction sensitive, prevents
-automatic memory promotion, and has no LARO write operation.
-
 The ShareT path uses an operator-created `connector:read` credential stored only
 in the HAI environment. It verifies read capability, follows all link-history
 pages up to an explicit completeness limit, and fails instead of silently
@@ -47,6 +42,17 @@ truncating a larger account. Imported records contain card/board labels,
 permissions, lifecycle state, counts, and public-link provenance. Participant
 email addresses and all credentials are excluded. HAI has no ShareT create,
 update, comment, relay, or revoke method.
+
+LARO uses a separate `laro` adapter rather than the unauthenticated generic
+JSON feed. Its bearer credential comes only from the protected HAI environment,
+is never stored in the source row or request URL, and can only read LARO's
+bounded `hai:read` feed. HAI marks every LARO extraction sensitive, prevents
+automatic memory promotion, and has no LARO write operation.
+
+Worker Control uses a separate `worker-control` adapter and a revocable
+`worker_control:read` key. It incrementally imports immutable commitment and
+reminder events, marks them sensitive and review-required, and exposes no
+dashboard write, reminder-send, Trello, Gmail, or Google Drive authority.
 
 The connector registry is configuration-friendly, so future connector keys can
 be added without changing the task engine. The implementation exposes

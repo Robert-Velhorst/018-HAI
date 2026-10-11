@@ -38,6 +38,22 @@ func TestConfiguredRequiresAllThreeValues(t *testing.T) {
 	}
 }
 
+func TestConfiguredRejectsTemplatePlaceholders(t *testing.T) {
+	for _, value := range []string{
+		"your-google-oauth-client-id",
+		"YOUR_GOOGLE_OAUTH_CLIENT_SECRET",
+		"replace-me",
+		"changeme",
+		"<set-this-value>",
+	} {
+		c := testConfig("")
+		c.ClientSecret = value
+		if c.Configured() {
+			t.Fatalf("template placeholder %q must not enable OAuth", value)
+		}
+	}
+}
+
 func TestAuthorizeURLCarriesConsentParams(t *testing.T) {
 	c := testConfig("")
 	raw := c.AuthorizeURL("state-xyz")

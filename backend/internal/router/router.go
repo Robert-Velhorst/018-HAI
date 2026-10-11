@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os/signal"
 	"strings"
 	"time"
 
@@ -31,17 +32,17 @@ const (
 )
 
 func Initialize() error {
-	return InitializeContext(context.Background())
+	ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
+	defer stop()
+	return InitializeContext(ctx)
 }
 
-// InitializeContext starts the HTTP server and all background workers under a
-// single application lifetime. Cancelling ctx stops accepting requests,
-// drains in-flight handlers, and cancels every scheduler started by routes.
+// InitializeContext starts the HTTP server and background workers under one
+// application lifetime. It is injectable for controlled shutdown tests.
 func InitializeContext(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("application context is required")
 	}
-
 	// Startup config guard: refuse to serve with a broken configuration so a
 	// misconfigured deployment fails fast and loudly rather than half-working.
 	// Warnings (e.g. empty optional keys) do not block startup.
@@ -89,7 +90,6 @@ func InitializeContext(ctx context.Context) error {
 	}
 	return serveUntilCancelled(ctx, server, listener)
 }
-
 func newHTTPServer(address string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              address,
@@ -130,6 +130,23 @@ func serveUntilCancelled(ctx context.Context, server *http.Server, listener net.
 		}
 		return nil
 	}
+}
+
+func serveWithContext(ctx context.Context, server *http.Server, listener net.Listener) error {
+	if server == nil {
+		return errors.New("HTTP server is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if listener == nil {
+		var err error
+		listener, err = net.Listen("tcp", server.Addr)
+		if err != nil {
+			return err
+		}
+	}
+	return serveUntilCancelled(ctx, server, listener)
 }
 
 // newRateLimitEnforcer selects where rate-limit counters live. When REDIS_ADDR

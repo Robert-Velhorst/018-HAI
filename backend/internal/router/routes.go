@@ -24,6 +24,7 @@ import (
 	"automation-hub-backend/internal/autogencompat"
 	"automation-hub-backend/internal/automation"
 	"automation-hub-backend/internal/autonomy"
+	"automation-hub-backend/internal/autonomypolicy"
 	"automation-hub-backend/internal/braincatalog"
 	"automation-hub-backend/internal/browserverify"
 	"automation-hub-backend/internal/config"
@@ -145,9 +146,7 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 		phase2Module := phase2.DefaultModuleWithModelIntel(modelIntelService)
 		opsControlService := phase2Module.OpsControl()
 		safety.SetEmergencyStopProvider(opsControlService.Control())
-		backgroundAllowed := func() bool {
-			return opsControlService.Control().Mode().AllowsBackgroundProcessing()
-		}
+		backgroundAllowed := func() bool { return backgroundProcessingAllowed(opsControlService.Control().Mode()) }
 		initializeMCPPreflightRoutes(v1, mcppreflight.NewHandler(mcppreflight.NewServiceFromEnv()))
 		initializePlanningOptimizerRoutes(v1, planningoptimizer.NewHandler(planningoptimizer.DefaultService()))
 		planGraphRepository, err := plangraph.DefaultRepository()
@@ -790,8 +789,8 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 		initializeA2ABridgeStatusRoutes(v1, a2aBridgeHandler)
 		initializeA2ABridgeRoutes(router, relativePathV1, a2aBridgeHandler)
 		workflowRunner.Set(workflowtask.NewRunner(taskService, automationService))
-		source.StartScheduler(appCtx, sourceService)
-		workflow.StartScheduler(appCtx, workflowService)
+		source.StartScheduler(appCtx, sourceService, backgroundAllowed)
+		workflow.StartScheduler(appCtx, workflowService, backgroundAllowed)
 		mcpBridgeHandler := mcpbridge.NewHandler(mcpbridge.NewServiceFromEnv(workflowService))
 		initializeMCPBridgeStatusRoutes(v1, mcpBridgeHandler)
 		initializeMCPAgentRoutes(router, relativePathV1, mcpBridgeHandler)
@@ -811,7 +810,7 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 		)
 		initializeMemoryEngineRoutes(v1, memoryengine.NewHandler(memoryEngineService))
 		ambientService := ambient.NewServiceWithPursuits(ambient.DefaultRepository(), workflowService, memoryEngineService, pursuitService, memoryService)
-		ambient.StartScheduler(appCtx, ambientService)
+		ambient.StartScheduler(appCtx, ambientService, backgroundAllowed)
 		initializeAmbientRoutes(v1, ambient.NewHandler(ambientService))
 		agentCycleService := agentcycle.NewServiceWithPursuits(sourceService, workflowService, ambientService, pursuitService, memoryService)
 		initializeAgentCycleRoutes(v1, agentcycle.NewHandler(agentCycleService))
@@ -849,6 +848,13 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 	}
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
 	return nil
+}
+
+// backgroundProcessingAllowed is the single gate shared by every autonomous
+// scheduler created by the router. A paused mode and an engaged or unreadable
+// emergency stop are both fail-closed conditions.
+func backgroundProcessingAllowed(mode autonomypolicy.Mode) bool {
+	return mode.AllowsBackgroundProcessing() && !safety.EvaluateEmergencyStop().Active
 }
 
 func initializeExecutionAuthorizationRoutes(

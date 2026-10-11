@@ -216,6 +216,8 @@ func TestHandlerRejectsAmbiguousJSONRPCEnvelopesBeforePlanning(t *testing.T) {
 	tests := map[string]string{
 		"trailing document":   valid + `{}`,
 		"object id":           `{"jsonrpc":"2.0","id":{"unsafe":true},"method":"SendMessage","params":{"message":{"messageId":"message-1","role":"ROLE_USER","parts":[{"text":"test"}]}}}`,
+		"array id":            strings.Replace(valid, `"id":1`, `"id":[]`, 1),
+		"null id":             strings.Replace(valid, `"id":1`, `"id":null`, 1),
 		"unknown envelope":    `{"jsonrpc":"2.0","id":1,"method":"SendMessage","unexpected":true,"params":{"message":{"messageId":"message-1","role":"ROLE_USER","parts":[{"text":"test"}]}}}`,
 		"unknown message key": `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"message-1","role":"ROLE_USER","unexpected":true,"parts":[{"text":"test"}]}}}`,
 	}
@@ -229,6 +231,9 @@ func TestHandlerRejectsAmbiguousJSONRPCEnvelopesBeforePlanning(t *testing.T) {
 			router.ServeHTTP(response, request)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			if strings.Contains(name, "id") && !strings.Contains(response.Body.String(), `"id":null`) {
+				t.Fatalf("invalid request id must be normalized to null: %s", response.Body.String())
 			}
 		})
 	}

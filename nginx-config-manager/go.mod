@@ -1,8 +1,8 @@
 module automation-hub-nginxconfigmanager
 
-go 1.25.0
+go 1.26.0
 
-toolchain go1.25.13
+toolchain go1.26.9
 
 require github.com/IBM/sarama v1.60.1
 
@@ -18,7 +18,7 @@ require (
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.27 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )

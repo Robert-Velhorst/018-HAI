@@ -34,6 +34,17 @@ func TestWorkflowSchedulerCanDisableOpenLoopPass(t *testing.T) {
 	}
 }
 
+func TestWorkflowSchedulerDoesNothingWhenBackgroundIsStopped(t *testing.T) {
+	service := &fakeScheduledWorkflowService{}
+	scheduler := NewScheduler(service, time.Minute, 2, func() bool { return false })
+
+	scheduler.runOnce()
+
+	if len(service.calls) != 0 {
+		t.Fatalf("calls = %#v, want no background work while stopped", service.calls)
+	}
+}
+
 func TestWorkflowSchedulerLimitDefaultsAndCaps(t *testing.T) {
 	t.Setenv("WORKFLOW_SCHEDULER_RUN_LIMIT", "75")
 	if got := schedulerLimit(); got != 50 {

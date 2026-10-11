@@ -101,6 +101,8 @@
                 class="card-container__card__image"
                 [src]="'/api/v1/automation/images/' + automation.image"
                 alt="{{ automation.name }}"
+                loading="lazy"
+                decoding="async"
               />
               <ng-template #noImage>
                 <i

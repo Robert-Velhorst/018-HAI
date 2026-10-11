@@ -7,6 +7,7 @@ import { IAuthSession } from '../../models/auth-session.model.interface';
 import {
   IConstitution,
   IFrameworkRegistryOverview,
+  IFrameworkFamilyTaxonomy,
   IFrameworkSelectionDecision,
   IFrameworkView,
 } from '../../models/framework-registry.model.interface';
@@ -94,6 +95,11 @@ describe('FrameworkRegistryComponent', () => {
     protectedRules: ['Robert is final authority'],
     createdAt: '2026-07-30T10:00:00Z',
   };
+  const familyTaxonomy: IFrameworkFamilyTaxonomy = {
+    version: '1.1.0',
+    digest: 'a'.repeat(64),
+    families: [],
+  };
 
   const selection: IFrameworkSelectionDecision = {
     id: 'selection-1',
@@ -136,6 +142,7 @@ describe('FrameworkRegistryComponent', () => {
     localStorage.removeItem('hai.module-view.v1.framework-registry');
     service = jasmine.createSpyObj<FrameworkRegistryService>('FrameworkRegistryService', [
       'overview',
+      'familyTaxonomy',
       'frameworks',
       'framework',
       'select',
@@ -157,6 +164,7 @@ describe('FrameworkRegistryComponent', () => {
     router = jasmine.createSpyObj<Router>('Router', ['navigate']);
 
     service.overview.and.returnValue(of(overview));
+    service.familyTaxonomy.and.returnValue(of(familyTaxonomy));
     authSessionService.session.and.returnValue(of(ownerSession));
     service.frameworks.and.returnValue(of([framework]));
     service.framework.and.returnValue(of(framework));
@@ -219,6 +227,21 @@ describe('FrameworkRegistryComponent', () => {
     ) as { mode?: string; openSections?: Record<string, boolean> };
     expect(stored.mode).toBe('advanced');
     expect(stored.openSections?.['selection-history']).toBeTrue();
+  });
+
+  it('loads the immutable taxonomy only when its Advanced section opens', () => {
+    component.setViewMode('advanced');
+
+    expect(service.familyTaxonomy).not.toHaveBeenCalled();
+
+    component.toggleSection('family-taxonomy');
+
+    expect(service.familyTaxonomy).toHaveBeenCalledTimes(1);
+    expect(component.familyTaxonomy).toEqual(familyTaxonomy);
+
+    component.toggleSection('family-taxonomy');
+    component.toggleSection('family-taxonomy');
+    expect(service.familyTaxonomy).toHaveBeenCalledTimes(1);
   });
 
   it('clears an Advanced-only status filter when returning to Basic view', () => {

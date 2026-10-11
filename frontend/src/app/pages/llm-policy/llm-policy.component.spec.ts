@@ -1,7 +1,7 @@
 import { FormBuilder } from '@angular/forms'
 import { Router } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
-import { of } from 'rxjs'
+import { of, throwError } from 'rxjs'
 import { ILLMPolicy } from '../../models/llm-policy.model.interface'
 import { ILLMPolicyService } from '../../services/llm-policy.service.interface'
 import { ThemeService } from '../../services/theme.service'
@@ -104,6 +104,22 @@ describe('LLMPolicyComponent', () => {
     expect(component.validationColor('needs_review')).toBe('gold')
     expect(component.validationColor('failed')).toBe('red')
     expect(component.validationColor()).toBe('default')
+  })
+
+  it('retains confirmed routing history when the next audit read is unavailable', () => {
+    const component = createComponent()
+    const service = (component as any).llmPolicyService
+    const history = [{ id: 'route-1', selectedModelName: 'local-model' }]
+
+    component.logs = history as any
+    service.getLogs = jasmine.createSpy('getLogs').and.returnValue(
+      throwError(() => new Error('routing history unavailable'))
+    )
+
+    component.loadLogs()
+
+    expect(component.logs).toEqual(history as any)
+    expect((component as any).logsUnavailable).toBeTrue()
   })
 
   it('distinguishes configured endpoints from catalog-enabled integrations', () => {

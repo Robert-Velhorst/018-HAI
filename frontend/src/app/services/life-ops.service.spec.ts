@@ -1,14 +1,15 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing'
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { CapacitySnapshot, LifeDomain, RecordNeedRequest } from '../models/life-ops.model'
 import { LifeOpsService } from './life-ops.service'
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('LifeOpsService', () => {
   let service: LifeOpsService
   let http: HttpTestingController
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [HttpClientTestingModule] })
+    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] })
     service = TestBed.inject(LifeOpsService)
     http = TestBed.inject(HttpTestingController)
   })
