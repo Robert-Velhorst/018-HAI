@@ -6,6 +6,9 @@
 package accountfeed
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -40,6 +43,23 @@ type Feed struct {
 	ProjectKey    string     `json:"projectKey"`
 	OperationType string     `json:"operationType"` // default op type for items lacking one
 	Enabled       bool       `json:"enabled"`
+	ConfigVersion int64      `json:"configVersion"`
+}
+
+// Bind the pre-read ticket to the exact configuration without exposing paths
+// or provider URLs in its public provenance. Item overrides cannot mint tickets.
+func (f Feed) SourceObservationStart() operations.SourceObservationStart {
+	// Public marshaling redacts credentials; authority must hash the private copy.
+	type sourceFeedConfiguration Feed
+	encoded, _ := json.Marshal(struct {
+		Version int                     `json:"version"`
+		Feed    sourceFeedConfiguration `json:"feed"`
+	}{1, sourceFeedConfiguration(f)})
+	digest := sha256.Sum256(encoded)
+	return operations.SourceObservationStart{
+		OwnerUserID: strings.TrimSpace(f.OwnerUserID), WorkspaceID: firstNonEmpty(strings.TrimSpace(f.WorkspaceID), "local"),
+		OriginID: f.ID, ConfigDigest: hex.EncodeToString(digest[:]), RegistryManaged: true, ConfigVersion: f.ConfigVersion,
+	}
 }
 
 // Validate checks a feed is well-formed before it is used.
@@ -76,6 +96,9 @@ type FeedItem struct {
 	OperationType string         `json:"operationType"`
 	ReceivedAt    *time.Time     `json:"receivedAt"`
 	Metadata      map[string]any `json:"metadata"`
+	Provider      string         `json:"provider,omitempty"`
+	AccountLabel  string         `json:"accountLabel,omitempty"`
+	ProjectKey    string         `json:"projectKey,omitempty"`
 	// RawJSON is the exact original item text, preserved for evidence/audit.
 	RawJSON string `json:"-"`
 }
@@ -102,11 +125,38 @@ func (f Feed) ToOperationInput(it FeedItem) (operations.NewOperationInput, error
 	if err != nil {
 		return operations.NewOperationInput{}, err
 	}
-	revHash := idempotency.SourceRevisionHash(it.Body, metaCanonical)
-	dedupe := idempotency.FeedItemDedupeKey(f.Provider, f.AccountLabel, it.ExternalID, revHash)
+	legacyRevision := idempotency.SourceRevisionHash(it.Body, metaCanonical)
+	legacyDedupe := idempotency.FeedItemDedupeKey(f.Provider, f.AccountLabel, it.ExternalID, legacyRevision)
 
 	opType := firstNonEmpty(it.OperationType, f.OperationType, "review_source_item")
 	evidence := firstNonEmpty(strings.TrimSpace(it.RawJSON), "{}")
+	provider := f.Provider
+	if it.Provider != "" {
+		if _, err := ParseProvider(it.Provider); err != nil {
+			return operations.NewOperationInput{}, err
+		}
+		provider = it.Provider
+	}
+	accountLabel := firstNonEmpty(it.AccountLabel, f.AccountLabel, "feed:"+f.ID.String())
+	if _, err := operations.SourceIdentityDigest(provider, accountLabel, it.ExternalID); err != nil {
+		return operations.NewOperationInput{}, err
+	}
+	var receivedAt *time.Time
+	if it.ReceivedAt != nil {
+		utc := it.ReceivedAt.UTC()
+		receivedAt = &utc
+	}
+	// One identity contract across readers: optional item fields cannot select
+	// the historical algorithm or bypass its operator-reconciliation fence.
+	semantic, err := idempotency.CanonicalJSONString(struct {
+		Title, Body, OperationType string
+		ReceivedAt                 *time.Time
+	}{it.Title, it.Body, opType, receivedAt})
+	if err != nil {
+		return operations.NewOperationInput{}, err
+	}
+	revHash := idempotency.SourceRevisionHash(semantic, metaCanonical)
+	dedupe := idempotency.StructuredFeedItemDedupeKey(provider, accountLabel, it.ExternalID, revHash)
 
 	return operations.NewOperationInput{
 		OwnerUserID:        f.OwnerUserID,
@@ -115,12 +165,16 @@ func (f Feed) ToOperationInput(it FeedItem) (operations.NewOperationInput, error
 		Description:        it.Body,
 		OperationType:      opType,
 		SourceType:         string(f.SourceType),
-		SourceURI:          f.Provider + ":" + f.AccountLabel + ":" + it.ExternalID,
-		SourceReceivedAt:   it.ReceivedAt,
+		SourceURI:          provider + ":" + accountLabel + ":" + it.ExternalID,
+		SourceReceivedAt:   receivedAt,
 		SourceRevisionHash: revHash,
-		ProjectKey:         f.ProjectKey,
+		SourceProvider:     provider,
+		SourceAccount:      accountLabel,
+		SourceExternalID:   it.ExternalID,
+		ProjectKey:         firstNonEmpty(it.ProjectKey, f.ProjectKey),
 		AccountFeedID:      &f.ID,
 		DedupeKey:          dedupe,
+		LegacyDedupeKey:    legacyDedupe,
 		EvidenceJSON:       evidence,
 	}, nil
 }

@@ -123,9 +123,18 @@ func TestPostgresRepositoryDurabilityIsolationIdempotencyAndImmutability(t *test
 		!strings.Contains(err.Error(), "append-only") {
 		t.Fatalf("immutable delete error = %v", err)
 	}
-	if err := db.Exec(`TRUNCATE TABLE public.life_ontology_merge_proposals`).Error; err == nil ||
-		!strings.Contains(err.Error(), "append-only") {
-		t.Fatalf("truncate guard error = %v", err)
+	// CASCADE bypasses the foreign-key restriction that otherwise masks the
+	// append-only TRUNCATE trigger. The failed statement runs in a transaction;
+	// if the trigger is missing, return an error so Gorm rolls back the truncate.
+	truncateErr := db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Exec(`TRUNCATE TABLE public.life_ontology_merge_proposals CASCADE`).Error
+		if err == nil {
+			return errors.New("append-only truncate unexpectedly succeeded")
+		}
+		return err
+	})
+	if truncateErr == nil || !strings.Contains(truncateErr.Error(), "append-only") {
+		t.Fatalf("truncate guard error = %v", truncateErr)
 	}
 }
 

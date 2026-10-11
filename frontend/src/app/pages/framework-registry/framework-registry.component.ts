@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   Subject,
@@ -11,18 +11,19 @@ import {
   takeUntil,
 } from 'rxjs';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 import {
   AuthActorRole,
   IAuthSession,
 } from '../../models/auth-session.model.interface';
 import {
   FrameworkPreferenceState,
-  FrameworkViewMode,
   IConstitution,
   IConstitutionDraftRequest,
   IConstitutionHistoryEntry,
-  IFrameworkModuleViewPreferences,
+  IFrameworkFamilyTaxonomy,
   IFrameworkPreferencePatch,
+  IFrameworkPreferenceChange,
   IFrameworkRegistryOverview,
   IFrameworkSelectionDecision,
   IFrameworkSelectionRequest,
@@ -32,14 +33,7 @@ import {
 import { AuthSessionService } from '../../services/auth-session.service';
 import { FrameworkRegistryService } from '../../services/framework-registry.service';
 
-const VIEW_STORAGE_KEY = 'hai.module-view.v1.framework-registry';
-
-const DEFAULT_OPEN_SECTIONS: Record<string, boolean> = {
-  'selection-context': true,
-  'selection-history': false,
-  'constitution-history': false,
-  'constitution-governance': false,
-};
+const MODULE_ID = 'framework-registry';
 
 interface ISelectionDraft {
   request: string;
@@ -92,10 +86,11 @@ interface IConstitutionRuleSection {
 }
 
 @Component({
-  standalone: false,
-  selector: 'app-framework-registry',
-  templateUrl: './framework-registry.component.html',
-  styleUrls: ['./framework-registry.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-framework-registry',
+    templateUrl: './framework-registry.component.html',
+    styleUrls: ['./framework-registry.component.scss'],
+    standalone: false
 })
 export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   overview?: IFrameworkRegistryOverview;
@@ -107,9 +102,8 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   constitutionHistoryTruncated = false;
   constitutionSource = '';
   constitutionDraft?: IConstitution;
-
-  viewMode: FrameworkViewMode = 'basic';
-  openSections: Record<string, boolean> = { ...DEFAULT_OPEN_SECTIONS };
+  familyTaxonomy?: IFrameworkFamilyTaxonomy;
+  familyTaxonomyLoading = false;
 
   searchText = '';
   familyFilter = 'all';
@@ -125,11 +119,16 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   inspectorError = '';
   selectedFramework?: IFrameworkView;
   preferenceSaving = false;
+  preferenceHistory: IFrameworkPreferenceChange[] = [];
+  preferenceHistoryLoading = false;
+  preferenceHistoryError = '';
   private inspectorReturnFocus?: HTMLElement;
   private inspectedFrameworkId = '';
   private inspectorSubscription?: Subscription;
+  private preferenceHistorySubscription?: Subscription;
   private refreshSubscription?: Subscription;
   private overviewSubscription?: Subscription;
+  private familyTaxonomySubscription?: Subscription;
   private readonly destroy$ = new Subject<void>();
   private readonly preferenceStateHints = new Map<string, FrameworkPreferenceState>();
 
@@ -178,24 +177,26 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     private service: FrameworkRegistryService,
     private authSessionService: AuthSessionService,
     private notification: NzNotificationService,
-    private router: Router
+    private router: Router,
+    private viewPreferences: ModuleViewPreferencesService
   ) {}
 
   ngOnInit(): void {
-    this.restoreViewPreference();
     this.refresh();
   }
 
   ngOnDestroy(): void {
     this.refreshSubscription?.unsubscribe();
     this.inspectorSubscription?.unsubscribe();
+    this.preferenceHistorySubscription?.unsubscribe();
     this.overviewSubscription?.unsubscribe();
+    this.familyTaxonomySubscription?.unsubscribe();
     this.destroy$.next();
     this.destroy$.complete();
   }
 
   get isAdvanced(): boolean {
-    return this.viewMode === 'advanced';
+    return this.viewPreferences.get(MODULE_ID).mode === 'advanced';
   }
 
   get actorRole(): AuthActorRole {
@@ -294,6 +295,23 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     return Object.keys(this.loadErrors).length > 0;
   }
 
+  overviewMetricValue(value: number | null | undefined): number | string {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (!this.overview && this.loading) {
+      return 'Loading…';
+    }
+    if (!this.overview && this.loadErrors['overview']) {
+      return 'Load failed';
+    }
+    return this.overview ? 'Unavailable' : 'Not loaded';
+  }
+
+  isOverviewMetricUnavailable(value: number | null | undefined): boolean {
+    return typeof value !== 'number' || !Number.isFinite(value);
+  }
+
   get loadErrorItems(): Array<{ label: string; message: string }> {
     const labels: Record<string, string> = {
       overview: 'Overview',
@@ -301,6 +319,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
       selections: 'Selection history',
       constitution: 'Constitution',
       constitutionHistory: 'Constitution history',
+      familyTaxonomy: 'Framework taxonomy',
       authorization: 'Authorization',
     };
     return Object.entries(this.loadErrors).map(([key, message]) => ({
@@ -404,35 +423,50 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     });
   }
 
-  setViewMode(mode: FrameworkViewMode): void {
-    this.viewMode = mode;
-    if (mode === 'basic') {
-      this.statusFilter = 'all';
-    }
-    this.persistViewPreference();
-  }
-
   resetView(): void {
-    this.viewMode = 'basic';
-    this.openSections = { ...DEFAULT_OPEN_SECTIONS };
+    this.viewPreferences.reset(MODULE_ID);
     this.statusFilter = 'all';
-    try {
-      window.localStorage.removeItem(VIEW_STORAGE_KEY);
-    } catch {
-      // Hardened browser contexts may disable local storage.
+    document.body.classList.remove('hai-view-advanced');
+    void this.router.navigate(['/framework-registry'], {
+      queryParams: { mode: 'basic' },
+      replaceUrl: true,
+    });
+  }
+
+  openAdvancedCatalog(): void {
+    void this.router.navigate(['/framework-registry'], {
+      queryParams: { mode: 'advanced' },
+      fragment: 'framework-catalog',
+    });
+  }
+
+  onTaxonomyOpen(open: boolean): void {
+    if (open) this.loadFamilyTaxonomy();
+  }
+
+  shortDigest(value: string): string {
+    return value.length > 16 ? `${value.slice(0, 12)}...${value.slice(-4)}` : value;
+  }
+
+  loadFamilyTaxonomy(): void {
+    if (this.familyTaxonomy || this.familyTaxonomyLoading) {
+      return;
     }
-  }
-
-  sectionOpen(sectionId: string): boolean {
-    return this.openSections[sectionId] ?? false;
-  }
-
-  toggleSection(sectionId: string): void {
-    this.openSections = {
-      ...this.openSections,
-      [sectionId]: !this.sectionOpen(sectionId),
-    };
-    this.persistViewPreference();
+    this.familyTaxonomySubscription?.unsubscribe();
+    this.familyTaxonomyLoading = true;
+    delete this.loadErrors['familyTaxonomy'];
+    this.familyTaxonomySubscription = this.service.familyTaxonomy().pipe(
+      takeUntil(this.destroy$),
+      finalize(() => (this.familyTaxonomyLoading = false))
+    ).subscribe({
+      next: (taxonomy) => (this.familyTaxonomy = taxonomy),
+      error: (error: unknown) => {
+        this.loadErrors['familyTaxonomy'] = this.errorMessage(
+          error,
+          'The immutable framework taxonomy is unavailable.'
+        );
+      },
+    });
   }
 
   selectFrameworks(): void {
@@ -510,6 +544,8 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     this.inspectorLoading = true;
     this.inspectorError = '';
     this.selectedFramework = undefined;
+    this.preferenceHistory = [];
+    this.preferenceHistoryError = '';
     this.inspectorSubscription?.unsubscribe();
 
     this.inspectorSubscription = this.service.framework(normalizedId).pipe(
@@ -528,6 +564,26 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
         this.notification.error('Framework could not be opened', this.inspectorError);
       },
     });
+    this.loadPreferenceHistory(normalizedId);
+  }
+
+  loadPreferenceHistory(frameworkId = this.inspectedFrameworkId): void {
+    if (!frameworkId) return;
+    this.preferenceHistorySubscription?.unsubscribe();
+    this.preferenceHistoryLoading = true;
+    this.preferenceHistoryError = '';
+    this.preferenceHistorySubscription = this.service.preferenceHistory(frameworkId).pipe(
+      takeUntil(this.destroy$),
+      finalize(() => (this.preferenceHistoryLoading = false))
+    ).subscribe({
+      next: changes => {
+        if (this.inspectedFrameworkId === frameworkId) this.preferenceHistory = changes;
+      },
+      error: error => {
+        if (this.inspectedFrameworkId !== frameworkId) return;
+        this.preferenceHistoryError = this.errorMessage(error, 'Framework preference history is unavailable.');
+      },
+    });
   }
 
   retryFrameworkInspector(): void {
@@ -539,10 +595,14 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   closeInspector(): void {
     const returnFocus = this.inspectorReturnFocus;
     this.inspectorSubscription?.unsubscribe();
+    this.preferenceHistorySubscription?.unsubscribe();
+    this.preferenceHistorySubscription = undefined;
     this.inspectorSubscription = undefined;
     this.inspectorVisible = false;
     this.inspectorLoading = false;
     this.selectedFramework = undefined;
+    this.preferenceHistory = [];
+    this.preferenceHistoryError = '';
     this.inspectorError = '';
     this.inspectedFrameworkId = '';
     this.inspectorReturnFocus = undefined;
@@ -594,6 +654,7 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
           framework.id === updated.id ? updated : framework
         );
         this.notification.success('Preference saved', `${updated.name} was updated for this owner.`);
+        this.loadPreferenceHistory(updated.id);
         this.refreshOverview();
       },
       error: (error: unknown) => {
@@ -621,19 +682,9 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
   }
 
   openConstitutionGovernance(): void {
-    this.viewMode = 'advanced';
-    this.openSections = {
-      ...this.openSections,
-      'constitution-governance': true,
-    };
-    this.persistViewPreference();
-    window.setTimeout(() => {
-      const summary = document.getElementById('constitution-governance-summary');
-      summary?.scrollIntoView({
-        behavior: this.scrollBehavior(),
-        block: 'start',
-      });
-      summary?.focus({ preventScroll: true });
+    void this.router.navigate(['/framework-registry'], {
+      queryParams: { mode: 'advanced' },
+      fragment: 'constitution-governance',
     });
   }
 
@@ -974,45 +1025,6 @@ export class FrameworkRegistryComponent implements OnInit, OnDestroy {
     const trimmed = value.trim();
     if (trimmed) {
       request[key] = trimmed;
-    }
-  }
-
-  private restoreViewPreference(): void {
-    try {
-      const raw = window.localStorage.getItem(VIEW_STORAGE_KEY);
-      if (!raw) {
-        return;
-      }
-      const parsed = JSON.parse(raw) as Partial<IFrameworkModuleViewPreferences>;
-      if (
-        parsed.version !== 1 ||
-        (parsed.mode !== 'basic' && parsed.mode !== 'advanced') ||
-        !parsed.openSections ||
-        typeof parsed.openSections !== 'object'
-      ) {
-        return;
-      }
-      this.viewMode = parsed.mode;
-      this.openSections = {
-        ...DEFAULT_OPEN_SECTIONS,
-        ...parsed.openSections,
-      };
-    } catch {
-      this.viewMode = 'basic';
-      this.openSections = { ...DEFAULT_OPEN_SECTIONS };
-    }
-  }
-
-  private persistViewPreference(): void {
-    const preference: IFrameworkModuleViewPreferences = {
-      version: 1,
-      mode: this.viewMode,
-      openSections: this.openSections,
-    };
-    try {
-      window.localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(preference));
-    } catch {
-      // View preferences are optional and never block registry operations.
     }
   }
 

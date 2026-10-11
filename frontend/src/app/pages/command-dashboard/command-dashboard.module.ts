@@ -15,6 +15,7 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { CommandDashboardComponent } from './command-dashboard.component';
 import { MEMORY_ENGINE_SERVICE_TOKEN } from '../../services/memory-engine/memory-engine.service.token';
 import { MemoryEngineService } from '../../services/memory-engine/memory-engine.service';
+import { ControlRoomModule } from '../../control-room/control-room.module';
 
 const routes: Routes = [{ path: '', component: CommandDashboardComponent }];
 
@@ -34,6 +35,7 @@ const routes: Routes = [{ path: '', component: CommandDashboardComponent }];
     NzModalModule,
     NzTableModule,
     NzTagModule,
+    ControlRoomModule,
   ],
   providers: [{ provide: MEMORY_ENGINE_SERVICE_TOKEN, useClass: MemoryEngineService }],
 })

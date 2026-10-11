@@ -78,6 +78,9 @@ func (c PeopleClient) ListConnectionsPage(
 	syncToken string,
 	pageSize int,
 ) (PeoplePage, error) {
+	if !validGoogleEndpoint(c.baseURL(), "people.googleapis.com", "/v1") {
+		return PeoplePage{}, fmt.Errorf("people API endpoint must use HTTPS on Google's People API host or a loopback test server")
+	}
 	if pageSize <= 0 || pageSize > 1000 {
 		pageSize = 100
 	}

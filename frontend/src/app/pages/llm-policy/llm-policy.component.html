@@ -15,6 +15,9 @@
       </button>
 
       <div class="header-content__actions">
+        <button type="button" nz-button nzType="default" (click)="resetView()" title="Reset only this module's Basic/Advanced preference">
+          Reset view
+        </button>
         <button
           type="button"
           nz-button
@@ -49,7 +52,7 @@
     </div>
   </header>
 
-  <main class="content-container llm-content" *ngIf="policy as p">
+  <div class="content-container llm-content" *ngIf="policy as p">
     <section class="status-strip llm-status-strip" aria-label="Routing policy state">
       <button
         type="button"
@@ -77,8 +80,8 @@
         (click)="scrollToSection('provider-inventory')"
       >
         <strong>{{ policyBudgetText(p) }}</strong>
-        <span>daily paid budget</span>
-        <i><b [style.width.%]="budgetUsagePercent(p)"></b></i>
+        <span>daily paid budget · {{ usageAccountingLabel(p.usageAccountingStatus) }}</span>
+        <i *ngIf="p.usageAccountingStatus !== 'unavailable'"><b [style.width.%]="budgetUsagePercent(p)"></b></i>
       </button>
 
       <button
@@ -117,6 +120,43 @@
         <strong>{{ tierOrder(p).length }} tiers</strong>
         <span>{{ tierOrder(p).join(' -> ') }}</span>
       </button>
+    </section>
+
+    <section class="provider-health-summary" id="provider-health" aria-label="Provider health">
+      <div class="panel-heading compact">
+        <div>
+          <h2>Provider health</h2>
+          <p>{{ providerHealthSummary(p) }}</p>
+        </div>
+        <button type="button" nz-button nzType="default" (click)="probeProviders()" [nzLoading]="probing">
+          <i nz-icon nzType="api" nzTheme="outline" aria-hidden="true"></i> Probe providers
+        </button>
+      </div>
+      <p class="provider-health-summary__gate" *ngIf="p.requireRecentLiveProviderProbe">
+        Routing requires a recent successful live probe. Unverified or stale providers remain unavailable for routing.
+      </p>
+      <ul class="provider-health-summary__issues" *ngIf="providersNeedingAttention.length; else providerHealthClear">
+        <li *ngFor="let provider of providersNeedingAttention; trackBy: trackByProvider">
+          <strong>{{ provider.name }}</strong>
+          <nz-tag [nzColor]="providerColor(provider)">{{ providerStatus(provider) }}</nz-tag>
+          <span>Probe: {{ providerProbeStatus(provider.id) }}</span>
+          <span>{{ providerAttentionReason(provider) }}</span>
+        </li>
+      </ul>
+      <ng-template #providerHealthClear>
+        <p class="provider-health-summary__clear">No enabled provider setup or probe failure is currently reported.</p>
+      </ng-template>
+      <div class="data-unavailable" *ngIf="maintenanceUnavailable" role="status" aria-live="polite">
+        Model maintenance history is unavailable. HAI will not claim that model checks are current.
+      </div>
+      <ul class="provider-health-summary__issues" *ngIf="maintenanceBlockers.length" aria-label="Models blocked by maintenance checks">
+        <li *ngFor="let record of maintenanceBlockers; trackBy: trackByMaintenance">
+          <strong>{{ record.modelName || record.modelId }}</strong>
+          <nz-tag [nzColor]="maintenanceColor(record)">{{ record.status }}</nz-tag>
+          <span>{{ record.reason }}</span>
+          <span *ngIf="record.blocksExecution">Routing remains blocked until a successful verification.</span>
+        </li>
+      </ul>
     </section>
 
     <section class="policy-action-rail action-rail" aria-label="Primary routing actions">
@@ -294,25 +334,25 @@
               </div>
             </dl>
 
-            <details class="detail-block" open>
-              <summary>Why this model was selected</summary>
+            <hai-progressive-section moduleId="llm-policy" sectionId="route-decision-evidence"
+              class="advanced-section"
+              title="Why this model was selected" summary="Routing evidence, classification, and calibration.">
               <p>{{ d.reason }}</p>
               <p><strong>Outcome evidence:</strong> {{ calibrationSummary(d) }}</p>
               <p>
                 {{ d.classification.taskType }} / difficulty {{ d.classification.difficulty }} /
                 {{ d.classification.requiredReasoning }}
               </p>
-            </details>
+            </hai-progressive-section>
           </ng-container>
         </article>
       </aside>
     </section>
 
-    <details class="advanced-section model-catalog-section" id="model-catalog" open>
-      <summary title="Expand or collapse the seven-tier model catalog">
-        <span>Seven-tier model catalog</span>
-        <small>{{ totalModelCount(p) }} models grouped by local, free, cheap, acceptable, high, premium, and expensive</small>
-      </summary>
+    <hai-progressive-section moduleId="llm-policy" sectionId="model-catalog"
+      class="advanced-section model-catalog-section"
+      title="Seven-tier model catalog"
+      [summary]="totalModelCount(p) + ' models · local, free, cheap, acceptable, high, premium, and expensive'">
 
       <section class="tier-overview" aria-label="Model tier summary">
         <button
@@ -320,6 +360,7 @@
           *ngFor="let tier of tierOrder(p)"
           class="tier-card"
           [class.tier-card--active]="isActiveTier(tier)"
+          [attr.aria-pressed]="isActiveTier(tier)"
           [title]="tierDescription(tier)"
           (click)="setActiveTier(tier)"
         >
@@ -337,12 +378,12 @@
               <p>HAI climbs this order only when validation or capability requires it.</p>
             </div>
           </div>
-          <div class="tier-selector" role="tablist" aria-label="Model routing tiers">
+          <div class="tier-selector" role="group" aria-label="Select a model routing tier">
             <button
               type="button"
               *ngFor="let tier of tierOrder(p)"
               [class.tier-selector__item--active]="isActiveTier(tier)"
-              [attr.aria-selected]="isActiveTier(tier)"
+              [attr.aria-pressed]="isActiveTier(tier)"
               [title]="tierDescription(tier)"
               (click)="setActiveTier(tier)"
             >
@@ -427,13 +468,12 @@
           </ng-template>
         </article>
       </section>
-    </details>
+    </hai-progressive-section>
 
-    <details class="advanced-section" id="provider-inventory">
-      <summary title="Expand or collapse provider readiness, budget, quota, and model detail">
-        <span>Provider inventory</span>
-        <small>{{ enabledProviderCount(p) }} enabled, {{ configuredProviderSummary(p) }} configured endpoints</small>
-      </summary>
+    <hai-progressive-section moduleId="llm-policy" sectionId="provider-inventory"
+      class="advanced-section"
+      title="Provider inventory"
+      [summary]="enabledProviderCount(p) + ' enabled · ' + configuredProviderSummary(p) + ' endpoints configured'">
 
       <div class="provider-grid">
         <article
@@ -459,15 +499,17 @@
               <span>Quota</span>
               <strong>{{ quotaText(provider) }}</strong>
             </div>
-            <button
-              type="button"
+            <div
+              role="group"
+              tabindex="0"
               nz-tooltip
               [nzTooltipTitle]="budgetTooltip(provider)"
               [attr.title]="budgetTooltip(provider)"
+              [attr.aria-label]="'Budget details for ' + provider.name + '. ' + budgetTooltip(provider)"
             >
               <span>Budget</span>
               <strong>{{ budgetText(provider) }}</strong>
-            </button>
+            </div>
             <div title="Provider input and output tokens">
               <span>Tokens</span>
               <strong>{{ formatNumber(totalTokens(provider)) }}</strong>
@@ -478,7 +520,7 @@
             </div>
           </div>
 
-          <div class="usage-meter" [title]="'Provider budget usage: ' + providerBudgetPercent(provider) + '%'">
+          <div *ngIf="provider.usageAccountingStatus !== 'unavailable'" class="usage-meter" [title]="'Provider budget usage: ' + providerBudgetPercent(provider) + '%'">
             <span [style.width.%]="providerBudgetPercent(provider)"></span>
           </div>
 
@@ -494,8 +536,10 @@
             </nz-tag>
           </div>
 
-          <details class="provider-detail">
-            <summary>Endpoint and model detail</summary>
+          <hai-progressive-section moduleId="llm-policy"
+            class="provider-detail"
+            [sectionId]="'provider-detail-' + provider.id"
+            title="Endpoint and model detail" summary="Provider endpoint and model-level availability.">
             <p class="provider-endpoint">{{ provider.endpointUrl || 'Endpoint not configured' }}</p>
             <div class="model-chip-list">
               <button
@@ -513,16 +557,15 @@
                 +{{ hiddenModelCount(provider) }} more in catalog
               </span>
             </div>
-          </details>
+          </hai-progressive-section>
         </article>
       </div>
-    </details>
+    </hai-progressive-section>
 
-    <details class="advanced-section" id="routing-audit">
-      <summary title="Expand or collapse probes, routing logs, and fallback path">
-        <span>Routing audit</span>
-        <small>Provider probes, selected routes, fallback history, and rejected candidates</small>
-      </summary>
+    <hai-progressive-section moduleId="llm-policy" sectionId="routing-audit"
+      class="advanced-section"
+      title="Routing audit"
+      summary="Provider probes, selected routes, fallback history, and rejected candidates.">
 
       <section class="diagnostics-grid">
         <article class="surface-panel">
@@ -531,10 +574,10 @@
               type="button"
               class="section-title-button"
               (click)="runDueModelMaintenance()"
-              title="Check each due model before routing. Only the fixed configured Ollama tag may be pulled; cloud-managed versions are never silently substituted."
+              title="Local Ollama tags can be refreshed and digest-verified. Cloud providers receive a read-only availability check; HAI cannot verify or update their hosted model versions."
             >
               <h2>Daily model checks</h2>
-              <p>Due routable models are checked at most once every 24 hours.</p>
+              <p>Local tags are verified; cloud checks confirm endpoint/catalog availability only.</p>
             </button>
             <button
               type="button"
@@ -547,8 +590,12 @@
               Run due checks
             </button>
           </div>
+          <div class="data-unavailable" *ngIf="maintenanceUnavailable" role="status">
+            <span>Maintenance history is unavailable. Existing records are retained; HAI did not run a replacement check.</span>
+            <button nz-button nzType="link" type="button" (click)="loadModelMaintenanceHistory()">Retry</button>
+          </div>
           <nz-empty
-            *ngIf="!maintenance.length"
+            *ngIf="!maintenanceUnavailable && !maintenance.length"
             nzNotFoundContent="No persisted model maintenance records yet."
           ></nz-empty>
           <div class="event-list" *ngIf="maintenance.length">
@@ -583,7 +630,11 @@
               <p>Real routed calls only. Prompts, outputs, credentials, and source content are excluded.</p>
             </button>
           </div>
-          <nz-empty *ngIf="!generations.length" nzNotFoundContent="No routed generation outcomes recorded yet."></nz-empty>
+          <div class="data-unavailable" *ngIf="generationsUnavailable" role="status">
+            <span>Generation history is unavailable. Existing records are retained and HAI will not infer that no outcomes exist.</span>
+            <button nz-button nzType="link" type="button" (click)="loadGenerationHistory()">Retry</button>
+          </div>
+          <nz-empty *ngIf="!generationsUnavailable && !generations.length" nzNotFoundContent="No routed generation outcomes recorded yet."></nz-empty>
           <div class="event-list" *ngIf="generations.length">
             <article *ngFor="let generation of generations; trackBy: trackByGeneration">
               <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
@@ -644,7 +695,11 @@
               <p>Recent decisions, selected tiers, and fallback counts.</p>
             </button>
           </div>
-          <nz-empty *ngIf="!logs.length" nzNotFoundContent="No routing decisions logged yet."></nz-empty>
+          <div class="data-unavailable" *ngIf="logsUnavailable" role="status">
+            <span>Routing history is unavailable. Existing records are retained and HAI will not infer that no decisions exist.</span>
+            <button nz-button nzType="link" type="button" (click)="loadLogs()">Retry</button>
+          </div>
+          <nz-empty *ngIf="!logsUnavailable && !logs.length" nzNotFoundContent="No routing decisions logged yet."></nz-empty>
           <div class="event-list" *ngIf="logs.length">
             <article *ngFor="let log of logs; trackBy: trackByLog">
               <i nz-icon nzType="history" nzTheme="outline"></i>
@@ -691,6 +746,6 @@
           </div>
         </article>
       </section>
-    </details>
-  </main>
+    </hai-progressive-section>
+  </div>
 </section>

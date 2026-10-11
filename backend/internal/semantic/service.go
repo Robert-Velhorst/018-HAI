@@ -81,7 +81,10 @@ type Config struct {
 	RequestTimeout time.Duration
 }
 
-type disabledService struct{ reason string }
+type disabledService struct {
+	reason string
+	db     *gorm.DB
+}
 
 func (s disabledService) Enabled() bool  { return false }
 func (s disabledService) Reason() string { return s.reason }
@@ -94,8 +97,24 @@ func (s disabledService) Search(context.Context, SearchRequest) ([]Match, error)
 func (s disabledService) IndexMemory(context.Context, *models.ContextMemory) error {
 	return fmt.Errorf("semantic retrieval is disabled: %s", s.reason)
 }
-func (s disabledService) DeleteMemory(context.Context, uuid.UUID) error {
-	return fmt.Errorf("semantic retrieval is disabled: %s", s.reason)
+func (s disabledService) DeleteMemory(ctx context.Context, memoryID uuid.UUID) error {
+	if memoryID == uuid.Nil {
+		return fmt.Errorf("semantic: memory ID is required")
+	}
+	if s.db == nil {
+		return fmt.Errorf("semantic: cannot confirm memory vector cleanup while retrieval is disabled; database handle unavailable: %s", s.reason)
+	}
+	var tableExists bool
+	if err := s.db.WithContext(ctx).Raw(`SELECT to_regclass('semantic_memory_embeddings') IS NOT NULL`).Scan(&tableExists).Error; err != nil {
+		return fmt.Errorf("semantic: cannot confirm memory vector cleanup while retrieval is disabled: check embedding table: %w", err)
+	}
+	if !tableExists {
+		return nil
+	}
+	if err := s.db.WithContext(ctx).Exec(`DELETE FROM semantic_memory_embeddings WHERE memory_id = ?`, memoryID).Error; err != nil {
+		return fmt.Errorf("semantic: cannot confirm memory vector cleanup while retrieval is disabled: delete embedding: %w", err)
+	}
+	return nil
 }
 func (s disabledService) SearchMemory(context.Context, MemorySearchRequest) ([]MemoryMatch, error) {
 	return nil, fmt.Errorf("semantic retrieval is disabled: %s", s.reason)
@@ -112,16 +131,23 @@ type service struct {
 // existing provenance-preserving keyword search path.
 func NewServiceFromEnv() Service {
 	config := ConfigFromEnv()
-	if !config.Enabled {
-		return disabledService{reason: "HAI_SEMANTIC_RETRIEVAL_ENABLED is false or missing"}
-	}
 	db, err := infra.GetDefaultDB()
-	if err != nil {
-		return disabledService{reason: "database unavailable: " + compactError(err)}
+	return serviceFromConfig(db, config, err)
+}
+
+func serviceFromConfig(db *gorm.DB, config Config, dbErr error) Service {
+	if dbErr != nil {
+		return disabledService{reason: "database initialization failed: " + compactError(dbErr), db: db}
+	}
+	if !config.Enabled {
+		return disabledService{reason: "HAI_SEMANTIC_RETRIEVAL_ENABLED is false or missing", db: db}
+	}
+	if db == nil {
+		return disabledService{reason: "database unavailable: database handle is nil"}
 	}
 	service, err := NewService(db, config)
 	if err != nil {
-		return disabledService{reason: compactError(err)}
+		return disabledService{reason: compactError(err), db: db}
 	}
 	return service
 }
@@ -150,7 +176,7 @@ func NewService(db *gorm.DB, config Config) (Service, error) {
 		return nil, fmt.Errorf("semantic: database is required")
 	}
 	if !config.Enabled {
-		return disabledService{reason: "disabled by configuration"}, nil
+		return disabledService{reason: "disabled by configuration", db: db}, nil
 	}
 	if config.BaseURL == "" || config.Model == "" {
 		return nil, fmt.Errorf("semantic: HAI_EMBEDDING_BASE_URL and HAI_EMBEDDING_MODEL are required")
@@ -354,22 +380,7 @@ func (s *service) SearchMemory(ctx context.Context, request MemorySearchRequest)
 	if err != nil {
 		return nil, err
 	}
-	query := `
-		SELECT cm.id AS memory_id, 1 - (emb.embedding <=> ?::vector) AS similarity
-		FROM semantic_memory_embeddings emb
-		JOIN context_memories cm ON cm.id = emb.memory_id
-		WHERE emb.model_id = ? AND cm.archived = FALSE`
-	args := []any{vectorLiteral(vector), s.config.Model}
-	if projectKey := strings.TrimSpace(request.ProjectKey); projectKey != "" {
-		query += ` AND (cm.project_key = ? OR cm.project_key = '' OR cm.project_key IS NULL)`
-		args = append(args, projectKey)
-	}
-	if owner := strings.TrimSpace(request.OwnerIdentity); owner != "" {
-		query += ` AND (cm.owner_identity = ? OR cm.owner_identity = '' OR cm.owner_identity IS NULL)`
-		args = append(args, owner)
-	}
-	query += ` ORDER BY emb.embedding <=> ?::vector ASC LIMIT ?`
-	args = append(args, vectorLiteral(vector), limit)
+	query, args := buildMemorySearchQuery(request, s.config.Model, vector, limit)
 
 	type row struct {
 		MemoryID   uuid.UUID `gorm:"column:memory_id"`
@@ -401,6 +412,30 @@ func (s *service) SearchMemory(ctx context.Context, request MemorySearchRequest)
 		}
 	}
 	return matches, nil
+}
+
+func buildMemorySearchQuery(request MemorySearchRequest, model string, vector []float64, limit int) (string, []any) {
+	query := `
+		SELECT cm.id AS memory_id, 1 - (emb.embedding <=> ?::vector) AS similarity
+		FROM semantic_memory_embeddings emb
+		JOIN context_memories cm ON cm.id = emb.memory_id
+		WHERE emb.model_id = ? AND cm.archived = FALSE`
+	args := []any{vectorLiteral(vector), model}
+	if projectKey := strings.TrimSpace(request.ProjectKey); projectKey != "" {
+		query += ` AND (cm.project_key = ? OR cm.project_key = '' OR cm.project_key IS NULL)`
+		args = append(args, projectKey)
+	}
+	if owner := strings.TrimSpace(request.OwnerIdentity); owner != "" {
+		// Ownerless legacy memories are quarantined from authenticated reads.
+		// Including them here can both violate that boundary for direct callers
+		// and crowd the limited semantic result set before the memory service
+		// applies its own owner-scoped candidate filter.
+		query += ` AND cm.owner_identity = ?`
+		args = append(args, owner)
+	}
+	query += ` ORDER BY emb.embedding <=> ?::vector ASC LIMIT ?`
+	args = append(args, vectorLiteral(vector), limit)
+	return query, args
 }
 
 func (s *service) embed(ctx context.Context, input string) ([]float64, error) {

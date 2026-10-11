@@ -1,7 +1,10 @@
 package autonomy
 
 import (
+	"automation-hub-backend/internal/apierror"
+	"automation-hub-backend/internal/identity"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,18 +18,24 @@ func NewHandler(service Service) *Handler {
 }
 
 func (h *Handler) Overview(c *gin.Context) {
-	result, err := h.service.Overview()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	owner := strings.TrimSpace(c.GetString(identity.ContextSubjectKey))
+	if owner == "" {
+		err := apierror.New(apierror.CodeUnauthorized, "an authenticated owner is required for autonomy telemetry")
+		c.AbortWithStatusJSON(err.HTTPStatus(), err.Envelope())
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	result, err := h.service.OverviewForOwner(owner)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "autonomy overview is unavailable")})
+		return
+	}
+	c.JSON(http.StatusOK, publicOverview(result))
 }
 
 func (h *Handler) Stress(c *gin.Context) {
 	run, results, err := h.service.RunStressSuite()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "autonomy stress suite could not be completed")})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"run": run, "results": results})

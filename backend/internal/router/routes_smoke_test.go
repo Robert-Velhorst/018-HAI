@@ -6,16 +6,39 @@ import (
 	"strings"
 	"testing"
 
+	"automation-hub-backend/internal/autonomypolicy"
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/mcppreflight"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/planningoptimizer"
+	"automation-hub-backend/internal/safety"
 	"automation-hub-backend/internal/serena"
 
 	"github.com/gin-gonic/gin"
 )
 
 type optimizerRouteRepository struct{}
+
+func TestBackgroundProcessingGateRequiresClearEmergencyStopAndRunnableMode(t *testing.T) {
+	restoreClear := safety.SetEmergencyStopProvider(safety.EmergencyStopProviderFunc(func() (bool, string, error) {
+		return false, "", nil
+	}))
+	defer restoreClear()
+	if !backgroundProcessingAllowed(autonomypolicy.ModeAutonomousSafe) {
+		t.Fatal("autonomous-safe mode with a clear stop should allow background processing")
+	}
+	if backgroundProcessingAllowed(autonomypolicy.ModePaused) {
+		t.Fatal("paused mode must block background processing")
+	}
+
+	restoreStopped := safety.SetEmergencyStopProvider(safety.EmergencyStopProviderFunc(func() (bool, string, error) {
+		return true, "operator stop", nil
+	}))
+	defer restoreStopped()
+	if backgroundProcessingAllowed(autonomypolicy.ModeAutonomousSafe) {
+		t.Fatal("an active persisted emergency stop must block background processing")
+	}
+}
 
 func (optimizerRouteRepository) Create(run *models.OptimizationProposalRun) (*models.OptimizationProposalRun, error) {
 	return run, nil
@@ -57,6 +80,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 
 	agentRuntimes := r.Group("/api/v1").Group("/agent-runtimes")
 	agentRuntimes.GET("/", mark("agentRuntimeRegistry"))
+	agentRuntimes.GET("/overview", mark("agentRuntimeOverview"))
 	agentRuntimes.GET("/health", mark("agentRuntimeHealth"))
 	agentRuntimes.GET("/:id/skills", mark("agentRuntimeSkills"))
 	agentRuntimes.POST("/:id/tasks/:taskId/stop", mark("agentRuntimeStopTask"))
@@ -174,6 +198,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	sources.POST("/search", mark("sourceSearch"))
 	sources.POST("/sync-due", mark("sourceSyncDue"))
 	sources.GET("/extractions", mark("sourceExtractions"))
+	sources.GET("/extraction-corrections/:id", mark("sourceExtractionCorrection"))
 	sources.GET("/audit-logs", mark("sourceAuditLogs"))
 	sources.PATCH("/extractions/:id", mark("sourceExtractionUpdate"))
 	sources.POST("/extractions/:id/archive", mark("sourceExtractionArchive"))
@@ -192,6 +217,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 
 	operationsRoutes := r.Group("/api/v1").Group("/operations")
 	operationsRoutes.GET("", mark("operationsList"))
+	operationsRoutes.GET("/overview", mark("operationsOverview"))
 	operationsRoutes.GET("/dashboard", mark("operationsDashboard"))
 	operationsRoutes.GET("/:id", mark("operationsGet"))
 	operationsRoutes.GET("/:id/events", mark("operationsEvents"))
@@ -279,6 +305,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	workflowRoutes.GET("/overview", mark("workflowOverview"))
 	workflowRoutes.GET("/approvals", mark("workflowApprovals"))
 	workflowRoutes.GET("/dashboard", mark("workflowDashboard"))
+	workflowRoutes.GET("/project-dossier", mark("workflowProjectDossier"))
 	workflowRoutes.GET("/reminder-proposals", mark("workflowReminderProposals"))
 	workflowRoutes.GET("/", mark("workflowItems"))
 	workflowRoutes.POST("/intake", mark("workflowIntake"))
@@ -296,6 +323,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	pursuits := r.Group("/api/v1").Group("/pursuits")
 	pursuits.GET("/", mark("pursuitList"))
 	pursuits.POST("/", mark("pursuitCreate"))
+	pursuits.POST("/reconcile-life-domains", mark("pursuitReconcileLifeDomains"))
 	pursuits.GET("/dashboard", mark("pursuitDashboard"))
 	pursuits.GET("/brief", mark("pursuitBrief"))
 	pursuits.GET("/decisions", mark("pursuitDecisions"))
@@ -331,6 +359,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"GET", "/api/v1/automation/images/logo.png", "image"},
 		{"PATCH", "/api/v1/automation/swap/1/2", "swap"},
 		{"GET", "/api/v1/agent-runtimes/", "agentRuntimeRegistry"},
+		{"GET", "/api/v1/agent-runtimes/overview", "agentRuntimeOverview"},
 		{"GET", "/api/v1/agent-runtimes/health", "agentRuntimeHealth"},
 		{"GET", "/api/v1/agent-runtimes/openclaw/skills", "agentRuntimeSkills"},
 		{"POST", "/api/v1/agent-runtimes/openclaw/tasks/task-1/stop", "agentRuntimeStopTask"},
@@ -415,6 +444,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"POST", "/api/v1/sources/search", "sourceSearch"},
 		{"POST", "/api/v1/sources/sync-due", "sourceSyncDue"},
 		{"GET", "/api/v1/sources/extractions", "sourceExtractions"},
+		{"GET", "/api/v1/sources/extraction-corrections/abc", "sourceExtractionCorrection"},
 		{"GET", "/api/v1/sources/audit-logs", "sourceAuditLogs"},
 		{"PATCH", "/api/v1/sources/extractions/abc", "sourceExtractionUpdate"},
 		{"POST", "/api/v1/sources/extractions/abc/archive", "sourceExtractionArchive"},
@@ -442,6 +472,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"GET", "/api/v1/workflow/overview", "workflowOverview"},
 		{"GET", "/api/v1/workflow/approvals", "workflowApprovals"},
 		{"GET", "/api/v1/workflow/dashboard", "workflowDashboard"},
+		{"GET", "/api/v1/workflow/project-dossier?projectKey=Case-A", "workflowProjectDossier"},
 		{"GET", "/api/v1/workflow/reminder-proposals", "workflowReminderProposals"},
 		{"GET", "/api/v1/workflow/", "workflowItems"},
 		{"POST", "/api/v1/workflow/intake", "workflowIntake"},
@@ -457,6 +488,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"PATCH", "/api/v1/workflow/abc/checklist/def", "workflowChecklist"},
 		{"GET", "/api/v1/pursuits/", "pursuitList"},
 		{"POST", "/api/v1/pursuits/", "pursuitCreate"},
+		{"POST", "/api/v1/pursuits/reconcile-life-domains", "pursuitReconcileLifeDomains"},
 		{"GET", "/api/v1/pursuits/dashboard", "pursuitDashboard"},
 		{"GET", "/api/v1/pursuits/brief", "pursuitBrief"},
 		{"POST", "/api/v1/pursuits/match", "pursuitMatch"},
@@ -636,8 +668,13 @@ func TestPlanningOptimizerRoutesRequireOwnerAndWritePermission(t *testing.T) {
 func TestBackendAPIKeyMiddlewareDisabledWithoutKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	previous := config.AppConfig.BackendAPIKey
-	t.Cleanup(func() { config.AppConfig.BackendAPIKey = previous })
+	previousRunMode := config.AppConfig.RunMode
+	t.Cleanup(func() {
+		config.AppConfig.BackendAPIKey = previous
+		config.AppConfig.RunMode = previousRunMode
+	})
 	config.AppConfig.BackendAPIKey = ""
+	config.AppConfig.RunMode = "demo"
 
 	r := gin.New()
 	r.Use(backendAPIKeyMiddleware())
@@ -651,6 +688,77 @@ func TestBackendAPIKeyMiddlewareDisabledWithoutKey(t *testing.T) {
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", w.Code, http.StatusNoContent)
+	}
+}
+
+func TestBackendAPIKeyMiddlewareFailsClosedWithoutKeyInProduction(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	previous := config.AppConfig.BackendAPIKey
+	previousRunMode := config.AppConfig.RunMode
+	t.Cleanup(func() {
+		config.AppConfig.BackendAPIKey = previous
+		config.AppConfig.RunMode = previousRunMode
+	})
+	config.AppConfig.BackendAPIKey = ""
+	config.AppConfig.RunMode = "production"
+
+	r := gin.New()
+	r.Use(backendAPIKeyMiddleware())
+	r.GET("/protected", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/protected", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+	if !strings.Contains(w.Body.String(), "backend API key is not securely configured") {
+		t.Fatalf("response did not explain fail-closed configuration: %s", w.Body.String())
+	}
+}
+
+func TestBackendAPIKeyMiddlewareFailsClosedForPlaceholderKeyInProduction(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	previous := config.AppConfig.BackendAPIKey
+	previousRunMode := config.AppConfig.RunMode
+	t.Cleanup(func() {
+		config.AppConfig.BackendAPIKey = previous
+		config.AppConfig.RunMode = previousRunMode
+	})
+	config.AppConfig.BackendAPIKey = "change-this-local-backend-key"
+	config.AppConfig.RunMode = "production"
+
+	r := gin.New()
+	r.Use(backendAPIKeyMiddleware())
+	r.GET("/protected", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	req.Header.Set(backendAPIKeyHeader, config.AppConfig.BackendAPIKey)
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestMemoryEngineEncryptionSecretRequiresDedicatedKeyInProduction(t *testing.T) {
+	if got := memoryEngineEncryptionSecret(config.Configuration{
+		RunMode:       "production",
+		BackendAPIKey: "strong-backend-key",
+	}); got != "" {
+		t.Fatalf("production memory secret = %q, want no shared-key fallback", got)
+	}
+	if got := memoryEngineEncryptionSecret(config.Configuration{
+		RunMode:         "production",
+		BackendAPIKey:   "strong-backend-key",
+		MemoryEngineKey: "separate-memory-key",
+	}); got != "separate-memory-key" {
+		t.Fatalf("production dedicated memory secret = %q", got)
+	}
+	if got := memoryEngineEncryptionSecret(config.Configuration{
+		RunMode:       "demo",
+		BackendAPIKey: "demo-backend-key",
+	}); got != "demo-backend-key" {
+		t.Fatalf("demo memory fallback = %q", got)
 	}
 }
 
@@ -675,6 +783,35 @@ func TestLocalCaptureCORSAllowsExtensionPreflight(t *testing.T) {
 	}
 	if got := w.Header().Get("Access-Control-Allow-Headers"); got != "Authorization, Content-Type, X-HAI-Backend-Key" {
 		t.Fatalf("allow headers = %q", got)
+	}
+}
+
+func TestLocalCaptureCORSAllowsStrictLoopbackOrigins(t *testing.T) {
+	for _, origin := range []string{
+		"http://localhost:4200",
+		"http://127.0.0.1:4200",
+		"http://[::1]:4200",
+		"moz-extension://example-extension",
+	} {
+		if !localCaptureOriginAllowed(origin) {
+			t.Fatalf("origin %q must be allowed", origin)
+		}
+	}
+}
+
+func TestLocalCaptureCORSRejectsLookalikeAndMalformedOrigins(t *testing.T) {
+	for _, origin := range []string{
+		"http://localhost.evil:4200",
+		"http://127.0.0.1.evil:4200",
+		"http://localhost:invalid",
+		"http://localhost:4200/untrusted-path",
+		"http://localhost:4200?token=secret",
+		"chrome-extension://example-extension/path",
+		"https://localhost:4200",
+	} {
+		if localCaptureOriginAllowed(origin) {
+			t.Fatalf("origin %q must be rejected", origin)
+		}
 	}
 }
 

@@ -1,5 +1,11 @@
 import { FormBuilder } from '@angular/forms';
+import { CommonModule } from '@angular/common';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { ReactiveFormsModule } from '@angular/forms';
 import { of, throwError } from 'rxjs';
+import { ControlRoomModule } from '../../control-room/control-room.module';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 import { ContextMemoryService } from '../../services/context-memory/context-memory.service';
 import { QuickCaptureComponent } from './quick-capture.component';
 
@@ -69,5 +75,57 @@ describe('QuickCaptureComponent', () => {
     expect(c.submitted).toBeFalse();
     expect(c.saveError).toContain('Could not save');
     expect(c.form.value.content).toBe('Prepare the evidence list.');
+  });
+});
+
+describe('QuickCaptureComponent progressive disclosure', () => {
+  let fixture: ComponentFixture<QuickCaptureComponent>;
+  let memoryService: jasmine.SpyObj<ContextMemoryService>;
+
+  beforeEach(async () => {
+    memoryService = jasmine.createSpyObj<ContextMemoryService>('ContextMemoryService', ['create']);
+    memoryService.create.and.returnValue(of({} as any));
+    await TestBed.configureTestingModule({
+      declarations: [QuickCaptureComponent],
+      imports: [CommonModule, ReactiveFormsModule, ControlRoomModule],
+      schemas: [NO_ERRORS_SCHEMA],
+      providers: [{ provide: ContextMemoryService, useValue: memoryService }],
+    }).compileComponents();
+    TestBed.inject(ModuleViewPreferencesService).reset('quick-capture');
+    fixture = TestBed.createComponent(QuickCaptureComponent);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    fixture?.destroy();
+    TestBed.inject(ModuleViewPreferencesService).reset('quick-capture');
+    localStorage.removeItem('hai_quick_capture_draft');
+  });
+
+  it('keeps capture and failure feedback in Basic while persisting its detail disclosure', () => {
+    const page: HTMLElement = fixture.nativeElement;
+    expect(page.querySelector('#qc-title-input')).not.toBeNull();
+    expect(page.querySelector('#qc-content-input')).not.toBeNull();
+    expect(page.querySelector('button[type="submit"]')?.textContent).toContain('Save to memory');
+
+    expect(page.querySelector('hai-progressive-section[sectionid="capture-details"] .hai-progressive-section')).toBeNull();
+
+    memoryService.create.and.returnValue(throwError(() => new Error('offline')));
+    fixture.componentInstance.form.setValue({ title: 'Keep this draft', content: 'Retry after the memory service returns.' });
+    fixture.componentInstance.submit();
+    fixture.detectChanges();
+
+    expect(page.querySelector('.quick-capture__error')?.textContent).toContain('Your draft is still available');
+    const preferences = TestBed.inject(ModuleViewPreferencesService);
+    preferences.setMode('quick-capture', 'advanced');
+    fixture.detectChanges();
+    const section = page.querySelector('hai-progressive-section[sectionid="capture-details"]') as HTMLElement;
+    expect(section.getAttribute('moduleid')).toBe('quick-capture');
+    expect(section.querySelector('.hai-progressive-section--advanced')).not.toBeNull();
+    expect(section.querySelector('.hai-progressive-section__content')).toBeNull();
+
+    (section.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(TestBed.inject(ModuleViewPreferencesService).get('quick-capture').openSections['capture-details']).toBeTrue();
   });
 });

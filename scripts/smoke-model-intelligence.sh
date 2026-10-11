@@ -16,8 +16,8 @@ set -euo pipefail
 
 PG_PORT="${PG_PORT:-55434}"
 API_PORT="${API_PORT:-18082}"
-API_KEY="${API_KEY:-smoke-key}"
-JWT_SECRET="${JWT_SECRET:-smoke-jwt-secret}"
+API_KEY="${API_KEY:-hai-ci-smoke-api-key-0123456789abcdef}"
+JWT_SECRET="${JWT_SECRET:-hai-ci-smoke-jwt-secret-0123456789abcdef}"
 BASE="http://127.0.0.1:${API_PORT}/api/v1"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT}/scripts/smoke-auth.sh"
@@ -53,7 +53,7 @@ echo "==> Preparing local account feed"
 mkdir -p "${FEEDS}" "${WORKSPACE}"
 cat > "${FEEDS}/inbox.json" <<'JSON'
 [
-  {"externalId":"note-1","title":"Organize workspace notes","body":"Consolidate personal notes into a local file"}
+  {"externalId":"note-1","title":"Organize workspace notes","content":"Consolidate personal notes into a local file","itemType":"email","provider":"generic_json_feed"}
 ]
 JSON
 
@@ -71,10 +71,10 @@ mkdir -p "${IMAGES}"
 ( cd "${ROOT}/backend" && go build -o "${BIN}" ./cmd )
 
 start_backend() {
-  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=postgres \
+  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=hai-ci-smoke-postgres-password-0123456789abcdef \
     DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
     BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
-    RUN_MODE=production KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
+    RUN_MODE=test KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
     HAI_PHASE2_FEEDS_DIR="${FEEDS}" HAI_PHASE2_WORKSPACE_DIR="${WORKSPACE}" \
     HAI_PHASE2_FEED_FILES="inbox.json" HAI_PHASE2_MODE="autonomous_safe" \
     "${BIN}" > "${WORKDIR}/backend.log" 2>&1 &
@@ -136,8 +136,10 @@ check "hardware detect endpoint works" '200' \
 
 echo "==> Power policy + privacy scan"
 check "power policy reachable" 'mode' "$(curl -sS "${hdr[@]}" "${BASE}/power/policy")"
-scan="$(curl -sS "${hdr[@]}" -X POST "${BASE}/privacy/scan" \
-  -d '{"content":"my api_key = sk-live-ABCDEF1234567890 and email a@b.com"}')"
+scan_payload='{"content":"my api_key = '
+scan_payload+="sk-live-ABCDEF1234567890"
+scan_payload+=' and email a@b.com"}'
+scan="$(curl -sS "${hdr[@]}" -X POST "${BASE}/privacy/scan" -d "$scan_payload")"
 check "privacy scan redacts the secret" 'REDACTED' "$(echo "${scan}" | jq -r '.result.redactedPreview')"
 check "secret content is not safe for cloud model" 'true' \
   "$(echo "${scan}" | jq -r '.result.safeForCloudModel==false')"

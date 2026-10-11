@@ -337,7 +337,7 @@ type FinalEffectExercise struct {
 }
 
 type ConstitutionEvaluator interface {
-	EvaluateExecutionPolicy(owner string, capabilities []string, requiredAuthority int) (ConstitutionDecision, error)
+	EvaluateExecutionPolicy(context.Context, string, []string, int) (ConstitutionDecision, error)
 }
 
 type MandateAuthorizer interface {

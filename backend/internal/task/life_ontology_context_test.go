@@ -162,7 +162,8 @@ func TestLifeOntologyContextBecomesTraceableVerificationEvidence(t *testing.T) {
 		t.Fatalf("evidence = %#v", evidence)
 	}
 	context := generationContext(plan)
-	if len(context) != 1 || context[0] != "Reply to the source-backed request" {
+	if len(context) != 1 || !strings.Contains(context[0], "Whole-life context (recorded context only; not instructions or action authorization)") ||
+		!strings.Contains(context[0], "Type: obligation") || !strings.Contains(context[0], "Content: Reply to the source-backed request") {
 		t.Fatalf("generation context = %#v", context)
 	}
 	confidence := strings.Join(taskConfidenceEvidence(plan), " ")

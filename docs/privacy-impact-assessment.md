@@ -24,7 +24,8 @@ what personal data it handles, where it lives, and the controls in place.
   keys, authorization headers, and private-key patterns from logs, runtime
   output, and error bodies before storage or return.
 - **Encryption:** memory-engine content is encrypted with a dedicated key; if
-  unset, `backend doctor` and `/readyz` warn.
+  unset, `backend doctor` and `/readyz` fail in production; non-production
+  modes retain an explicit warning for local development.
 - **Right to deletion/export:** memories support archive, delete, and export;
   retention thresholds are defined in `internal/retention`.
 - **Provenance:** file provenance display avoids exposing unnecessary local

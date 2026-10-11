@@ -1,12 +1,16 @@
 package migrations_test
 
 import (
+	"context"
+	"errors"
 	"io/fs"
-	"os"
+	"net"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
+	"automation-hub-backend/internal/pgtestguard"
 	"automation-hub-backend/migrations"
 
 	"github.com/google/uuid"
@@ -25,6 +29,7 @@ func migrationFilesThrough(t *testing.T, version string) fs.FS {
 	}
 	files := fstest.MapFS{
 		"pre": &fstest.MapFile{Mode: fs.ModeDir},
+		"post": &fstest.MapFile{Mode: fs.ModeDir},
 	}
 	entries, err := fs.ReadDir(migrations.Files, "pre")
 	if err != nil {
@@ -53,61 +58,185 @@ func migrationFilesThrough(t *testing.T, version string) fs.FS {
 // and data are never modified by migration lifecycle tests.
 func openIsolatedMigrationDatabase(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping migration integration test")
-	}
-	if !strings.EqualFold(strings.TrimSpace(os.Getenv("HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS")), "true") {
-		t.Skip("HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS=true is required")
-	}
-
-	adminConfig, err := pgx.ParseConfig(dsn)
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")
+	adminConfig, err := isolatedMigrationDatabaseConfig(dsn)
 	if err != nil {
-		t.Fatalf("parse Postgres test DSN: %v", err)
+		t.Fatalf("refusing unsafe isolated migration database configuration: %s", isolatedMigrationFailure(err))
 	}
-	adminConfig.Database = "postgres"
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	t.Cleanup(cancel)
 	adminSQL := stdlib.OpenDB(*adminConfig)
-	admin, err := gorm.Open(postgres.New(postgres.Config{Conn: adminSQL}), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+	adminSQL.SetMaxOpenConns(1)
+	adminSQL.SetMaxIdleConns(1)
+	t.Cleanup(func() {
+		if err := adminSQL.Close(); err != nil {
+			t.Errorf("cannot close isolated migration administration pool: %s", isolatedMigrationFailure(err))
+		}
 	})
-	if err != nil {
-		_ = adminSQL.Close()
-		t.Fatalf("open Postgres administration connection: %v", err)
+	var administrationDatabase string
+	if err := adminSQL.QueryRowContext(ctx, "SELECT pg_catalog.current_database()").Scan(&administrationDatabase); err != nil || administrationDatabase != adminConfig.Database {
+		t.Fatalf("cannot verify dedicated migration administration database: %s", isolatedMigrationFailure(err))
 	}
 
 	databaseName := "hai_migration_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	quotedDatabase := `"` + databaseName + `"`
-	if err := admin.Exec("CREATE DATABASE " + quotedDatabase).Error; err != nil {
-		_ = adminSQL.Close()
-		t.Fatalf("create isolated migration database: %v", err)
+	quotedDatabase := pgx.Identifier{databaseName}.Sanitize()
+	// Never reuse a colliding name or derive cleanup ownership from existence.
+	if _, err := adminSQL.ExecContext(ctx, "CREATE DATABASE "+quotedDatabase+" TEMPLATE template0"); err != nil {
+		t.Fatalf("cannot create a new owned migration test database: %s", isolatedMigrationFailure(err))
+	}
+	var ownedDatabaseOID int64
+	t.Cleanup(func() {
+		// Test pools and connections close first. Never kill other sessions.
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cleanupCancel()
+		var currentOID int64
+		if ownedDatabaseOID == 0 {
+			t.Error("cannot prove isolated migration database ownership; refusing cleanup")
+			return
+		}
+		if err := adminSQL.QueryRowContext(cleanupCtx, "SELECT oid::bigint FROM pg_catalog.pg_database WHERE datname = $1", databaseName).Scan(&currentOID); err != nil || currentOID != ownedDatabaseOID {
+			t.Errorf("isolated migration database identity changed or unavailable; refusing cleanup: %s", isolatedMigrationFailure(err))
+			return
+		}
+		if _, err := adminSQL.ExecContext(cleanupCtx, "DROP DATABASE "+quotedDatabase); err != nil {
+			t.Errorf("cannot drop owned migration test database %s: %s", databaseName, isolatedMigrationFailure(err))
+		}
+	})
+	if err := adminSQL.QueryRowContext(ctx, "SELECT oid::bigint FROM pg_catalog.pg_database WHERE datname = $1", databaseName).Scan(&ownedDatabaseOID); err != nil {
+		t.Fatalf("cannot record newly created migration test database identity: %s", isolatedMigrationFailure(err))
 	}
 
-	testConfig, err := pgx.ParseConfig(dsn)
-	if err != nil {
-		_ = admin.Exec("DROP DATABASE " + quotedDatabase + " WITH (FORCE)").Error
-		_ = adminSQL.Close()
-		t.Fatalf("parse isolated Postgres test DSN: %v", err)
-	}
+	testConfig := adminConfig.Copy()
 	testConfig.Database = databaseName
 	testSQL := stdlib.OpenDB(*testConfig)
+	testSQL.SetMaxOpenConns(4)
+	testSQL.SetMaxIdleConns(4)
+	t.Cleanup(func() {
+		if err := testSQL.Close(); err != nil {
+			t.Errorf("cannot close isolated migration test pool: %s", isolatedMigrationFailure(err))
+		}
+	})
 	testDB, err := gorm.Open(postgres.New(postgres.Config{Conn: testSQL}), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Silent),
+		DisableAutomaticPing: true,
+		Logger:               logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
-		_ = testSQL.Close()
-		_ = admin.Exec("DROP DATABASE " + quotedDatabase + " WITH (FORCE)").Error
-		_ = adminSQL.Close()
-		t.Fatalf("open isolated migration database: %v", err)
+		t.Fatalf("cannot open isolated migration database: %s", isolatedMigrationFailure(err))
 	}
+	var connectedDatabase, searchPath string
+	if err := testSQL.QueryRowContext(ctx, "SELECT pg_catalog.current_database(), pg_catalog.current_setting('search_path')").Scan(&connectedDatabase, &searchPath); err != nil ||
+		connectedDatabase != databaseName || searchPath != testConfig.RuntimeParams["search_path"] {
+		t.Fatalf("isolated migration database identity or namespace differs from its owned target: %s", isolatedMigrationFailure(err))
+	}
+	return testDB.WithContext(ctx)
+}
 
-	t.Cleanup(func() {
-		_ = testSQL.Close()
-		if err := admin.Exec("DROP DATABASE " + quotedDatabase + " WITH (FORCE)").Error; err != nil {
-			t.Errorf("drop isolated migration database %s: %v", databaseName, err)
+func isolatedMigrationDatabaseConfig(dsn string) (*pgx.ConnConfig, error) {
+	if err := pgtestguard.ValidateDedicatedPostgresTestDSN(dsn, "hai_migration_runner_test"); err != nil {
+		return nil, err
+	}
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return nil, err
+	}
+	config.ConnectTimeout = 5 * time.Second
+	config.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	if config.RuntimeParams == nil {
+		config.RuntimeParams = make(map[string]string)
+	}
+	config.RuntimeParams["search_path"] = "public,pg_catalog"
+	config.RuntimeParams["statement_timeout"] = "120000"
+	config.RuntimeParams["lock_timeout"] = "5000"
+	config.RuntimeParams["idle_in_transaction_session_timeout"] = "120000"
+	return config, nil
+}
+
+// SQLSTATE/deadline diagnostics preserve the failure class without echoing DSNs.
+func isolatedMigrationFailure(err error) string {
+	if err == nil {
+		return "unexpected database identity"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "deadline exceeded"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	var state interface{ SQLState() string }
+	if errors.As(err, &state) {
+		return "SQLSTATE " + state.SQLState()
+	}
+	return "connection or database I/O failure; private diagnostics withheld"
+}
+
+func isLoopbackPostgresConfig(config *pgx.ConnConfig) bool {
+	if config == nil || !isLoopbackPostgresHost(config.Host) {
+		return false
+	}
+	for _, fallback := range config.Fallbacks {
+		if fallback == nil || !isLoopbackPostgresHost(fallback.Host) {
+			return false
 		}
-		if err := adminSQL.Close(); err != nil {
-			t.Errorf("close Postgres administration connection: %v", err)
-		}
-	})
-	return testDB
+	}
+	return true
+}
+
+func TestIsLoopbackPostgresConfig(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		hosts string
+		local bool
+	}{
+		{name: "loopback", hosts: "127.0.0.1", local: true},
+		{name: "localhost", hosts: "localhost", local: true},
+		{name: "all loopback fallbacks", hosts: "127.0.0.1,::1,localhost", local: true},
+		{name: "remote primary", hosts: "192.0.2.10,127.0.0.1"},
+		{name: "remote fallback", hosts: "127.0.0.1,192.0.2.10"},
+		{name: "remote last fallback", hosts: "127.0.0.1,::1,db.example.com"},
+		{name: "socket fallback", hosts: "127.0.0.1,/tmp"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			config, err := pgx.ParseConfig("host=" + test.hosts + " user=postgres dbname=postgres sslmode=prefer")
+			if err != nil {
+				t.Fatalf("parse test config: %v", err)
+			}
+			if got := isLoopbackPostgresConfig(config); got != test.local {
+				t.Fatalf("isLoopbackPostgresConfig = %t, want %t", got, test.local)
+			}
+		})
+	}
+	if isLoopbackPostgresConfig(nil) {
+		t.Fatal("nil config must be rejected")
+	}
+}
+
+func isLoopbackPostgresHost(host string) bool {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+func TestIsLoopbackPostgresHost(t *testing.T) {
+	for _, test := range []struct {
+		host  string
+		local bool
+	}{
+		{host: "localhost", local: true},
+		{host: "LOCALHOST", local: true},
+		{host: "127.0.0.1", local: true},
+		{host: "::1", local: true},
+		{host: "[::1]", local: true},
+		{host: "db.internal", local: false},
+		{host: "8.8.8.8", local: false},
+		{host: "localhost.example", local: false},
+	} {
+		t.Run(test.host, func(t *testing.T) {
+			if got := isLoopbackPostgresHost(test.host); got != test.local {
+				t.Fatalf("isLoopbackPostgresHost(%q) = %t, want %t", test.host, got, test.local)
+			}
+		})
+	}
 }

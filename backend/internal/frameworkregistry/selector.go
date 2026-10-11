@@ -622,7 +622,7 @@ func approvalRequirement(request SelectionRequest, text string, highRisk bool) (
 	if highRisk {
 		reasons = append(reasons, "the task is classified as high risk")
 	}
-	if containsAnyPhrase(text, []string{"send", "publish", "post publicly", "pay", "purchase", "delete", "file with", "sign", "account change"}) {
+	if containsRequestedConsequentialAction(text, []string{"send", "publish", "post publicly", "pay", "purchase", "delete", "file with", "sign", "account change"}) {
 		reasons = append(reasons, "the requested side effect can create an external, financial, public, account, or destructive consequence")
 	}
 	required := len(reasons) > 0
@@ -883,7 +883,7 @@ func frameworkCeilingAppliesToOperation(view FrameworkView, request SelectionReq
 }
 
 func requestsConsequentialSideEffect(taskText string) bool {
-	return containsAnyPhrase(taskText, []string{
+	return containsRequestedConsequentialAction(taskText, []string{
 		"send",
 		"file with",
 		"submit",
@@ -987,11 +987,27 @@ func exactFrameworkIntentMatch(view FrameworkView, taskText string) bool {
 			!containsPhrase(taskText, normalized) {
 			continue
 		}
+		if isConsequentialActionDescriptor(normalized) && !containsRequestedConsequentialAction(taskText, []string{normalized}) {
+			continue
+		}
 		tokens := meaningfulTokens(normalized)
 		if len(tokens) == 1 && isLifeDomainSignal(tokens[0]) {
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+func isConsequentialActionDescriptor(value string) bool {
+	for _, phrase := range []string{
+		"send", "send legal", "file with", "file legal", "submit", "publish", "post publicly", "public post", "public accusation",
+		"pay", "purchase", "transfer money", "delete", "remove permanently", "destroy", "overwrite", "sign", "sign contract",
+		"account change", "change account", "reset account", "close account", "government filing", "medical decision",
+	} {
+		if normalizeText(value) == normalizeText(phrase) {
+			return true
+		}
 	}
 	return false
 }
@@ -1424,6 +1440,51 @@ func containsAnyPhrase(text string, phrases []string) bool {
 		}
 	}
 	return false
+}
+
+// containsRequestedConsequentialAction keeps explicit safety constraints from
+// being mistaken for requested side effects. It recognizes only direct, local
+// negation around an action phrase; ambiguous wording stays conservative.
+func containsRequestedConsequentialAction(text string, phrases []string) bool {
+	words := strings.Fields(normalizeText(text))
+	for _, phrase := range phrases {
+		action := strings.Fields(normalizeText(phrase))
+		if len(action) == 0 || len(action) > len(words) {
+			continue
+		}
+		for start := 0; start+len(action) <= len(words); start++ {
+			if !matchesWords(words[start:start+len(action)], action) {
+				continue
+			}
+			if !consequentialActionIsExplicitlyProhibited(words, start) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func matchesWords(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func consequentialActionIsExplicitlyProhibited(words []string, actionStart int) bool {
+	if actionStart == 0 {
+		return false
+	}
+	previous := words[actionStart-1]
+	if previous == "never" || previous == "without" || previous == "avoid" || previous == "prevent" || previous == "prohibit" || previous == "forbid" || previous == "not" {
+		return true
+	}
+	return actionStart >= 2 && words[actionStart-2] == "not" && (previous == "to" || previous == "ever")
 }
 
 func containsPhrase(normalizedText, phrase string) bool {

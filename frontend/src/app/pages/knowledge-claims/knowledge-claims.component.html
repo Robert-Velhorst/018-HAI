@@ -4,7 +4,7 @@
       <h1>Truth review</h1>
       <p>Resolve unsupported, conflicting, or outdated claims before HAI treats them as operational context.</p>
     </div>
-    <button nz-button type="button" (click)="load()" [nzLoading]="loading">
+    <button nz-button type="button" (click)="load()" [nzLoading]="loading" [disabled]="saving">
       <i nz-icon nzType="reload" nzTheme="outline"></i>
       Refresh
     </button>
@@ -21,6 +21,13 @@
     <button nz-button type="button" (click)="load()">Try again</button>
   </section>
 
+  <section class="claim-error" *ngIf="!inspectorOpen && authorityError" role="alert">
+    <i nz-icon nzType="warning" nzTheme="outline"></i>
+    <div><strong>Approval access needs checking</strong><span>{{ authorityError }}</span></div>
+    <button nz-button type="button" (click)="load()" [disabled]="loading || saving">Refresh access</button>
+    <a routerLink="/login">Sign in</a>
+  </section>
+
   <ng-container *ngIf="!loading && !errorMessage && queue as currentQueue">
     <section class="attention-summary" [attr.data-state]="attentionItems.length ? 'attention' : 'clear'">
       <i nz-icon [nzType]="attentionItems.length ? 'warning' : 'check-circle'" nzTheme="outline"></i>
@@ -33,46 +40,16 @@
       <button *ngIf="attentionItems[0] as next" nz-button nzType="primary" type="button" (click)="openInspector(next)">
         Review next
       </button>
+      <button nz-button type="button" (click)="openClaimRegister()">Open claim register</button>
     </section>
 
-    <section class="claim-metrics" aria-label="Claim review summary">
-      <button type="button" (click)="filter = 'conflicting'">
-        <span>Conflicts</span><strong>{{ count('conflicting') }}</strong><small>different active values</small>
-      </button>
-      <button type="button" (click)="filter = 'needs_review'">
-        <span>Needs review</span><strong>{{ count('needs_review') }}</strong><small>not source-supported</small>
-      </button>
-      <button type="button" (click)="filter = 'supported'">
-        <span>Supported</span><strong>{{ count('supported') + count('corroborated') }}</strong><small>structured evidence</small>
-      </button>
-      <button type="button" (click)="filter = 'superseded'">
-        <span>Superseded</span><strong>{{ count('superseded') }}</strong><small>retained in history</small>
-      </button>
-    </section>
-
-    <section class="review-panel">
-      <div class="review-panel__heading">
-        <div>
-          <h2>{{ filter === 'attention' ? 'Review queue' : statusLabel(filter) }}</h2>
-          <p>Open a claim to inspect its evidence, temporal scope, and immutable lifecycle.</p>
-        </div>
-        <div class="claim-filter" role="group" aria-label="Filter claims">
-          <button
-            *ngFor="let option of filters"
-            type="button"
-            [class.claim-filter--active]="filter === option.value"
-            [attr.aria-pressed]="filter === option.value"
-            (click)="filter = option.value">
-            {{ option.label }}
-          </button>
-        </div>
-      </div>
-
-      <div class="review-list" *ngIf="visibleItems.length; else noVisibleClaims">
+    <section class="basic-attention-list" *ngIf="basicAttentionItems.length" aria-label="Claims needing attention">
+      <h2>Needs attention <span>{{ attentionItems.length }}</span></h2>
+      <div class="review-list">
         <button
           class="review-row"
           type="button"
-          *ngFor="let item of visibleItems | slice:0:12; trackBy: trackByClaim"
+          *ngFor="let item of basicAttentionItems; trackBy: trackByClaim"
           (click)="openInspector(item)">
           <span class="review-row__status" [attr.data-tone]="statusTone(item.assessment.status)">
             <i nz-icon [nzType]="item.assessment.status === 'conflicting' ? 'warning' : item.assessment.status === 'needs_review' ? 'question-circle' : 'check-circle'" nzTheme="outline"></i>
@@ -89,15 +66,6 @@
           <i nz-icon nzType="right" nzTheme="outline"></i>
         </button>
       </div>
-      <ng-template #noVisibleClaims>
-        <div class="claim-empty">
-          <i nz-icon nzType="inbox" nzTheme="outline"></i>
-          <div>
-            <strong>{{ currentQueue.items.length ? 'No claims match this filter' : 'No claim records yet' }}</strong>
-            <span>{{ currentQueue.items.length ? 'Choose another assessment state.' : 'Verified answers with exact source evidence will create semantic claims here.' }}</span>
-          </div>
-        </div>
-      </ng-template>
     </section>
 
     <div class="advanced-sections">
@@ -105,7 +73,8 @@
         moduleId="knowledge-claims"
         sectionId="workspace-boundary"
         title="Workspace and assessment boundary"
-        summary="Change the owner-scoped project key and inspect the point-in-time evaluation.">
+        summary="Change the owner-scoped project key and inspect the point-in-time evaluation."
+        [advancedOnly]="true">
         <div class="workspace-form">
           <label><span>Workspace</span><input nz-input [(ngModel)]="workspaceId" maxlength="160" /></label>
           <button nz-button type="button" (click)="applyWorkspace()">Load workspace</button>
@@ -119,10 +88,74 @@
       </hai-progressive-section>
 
       <hai-progressive-section
+        #claimRegisterSection
         moduleId="knowledge-claims"
         sectionId="claim-register"
         title="Claim register"
-        summary="Inspect exact verification state, sensitivity, source count, and immutable identifiers.">
+        summary="Filter the complete claim set and inspect exact verification state, sensitivity, source count, and immutable identifiers."
+        [advancedOnly]="true">
+        <section class="claim-metrics" aria-label="Claim review summary">
+          <button type="button" (click)="filter = 'conflicting'">
+            <span>Conflicts</span><strong>{{ count('conflicting') }}</strong><small>different active values</small>
+          </button>
+          <button type="button" (click)="filter = 'needs_review'">
+            <span>Needs review</span><strong>{{ count('needs_review') }}</strong><small>not source-supported</small>
+          </button>
+          <button type="button" (click)="filter = 'supported'">
+            <span>Supported</span><strong>{{ count('supported') + count('corroborated') }}</strong><small>structured evidence</small>
+          </button>
+          <button type="button" (click)="filter = 'superseded'">
+            <span>Superseded</span><strong>{{ count('superseded') }}</strong><small>retained in history</small>
+          </button>
+        </section>
+        <section class="review-panel">
+          <div class="review-panel__heading">
+            <div>
+              <h2>{{ filter === 'attention' ? 'Review queue' : statusLabel(filter) }}</h2>
+              <p>Open a claim to inspect its evidence, temporal scope, and immutable lifecycle.</p>
+            </div>
+            <div class="claim-filter" role="group" aria-label="Filter claims">
+              <button
+                *ngFor="let option of filters"
+                type="button"
+                [class.claim-filter--active]="filter === option.value"
+                [attr.aria-pressed]="filter === option.value"
+                (click)="filter = option.value">
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+          <div class="review-list" *ngIf="visibleItems.length; else noVisibleClaims">
+            <button
+              class="review-row"
+              type="button"
+              *ngFor="let item of visibleItems | slice:0:12; trackBy: trackByClaim"
+              (click)="openInspector(item)">
+              <span class="review-row__status" [attr.data-tone]="statusTone(item.assessment.status)">
+                <i nz-icon [nzType]="item.assessment.status === 'conflicting' ? 'warning' : item.assessment.status === 'needs_review' ? 'question-circle' : 'check-circle'" nzTheme="outline"></i>
+              </span>
+              <span class="review-row__claim">
+                <strong>{{ item.claim.subject }} <span>{{ item.claim.predicate }}</span></strong>
+                <span>{{ item.claim.object }}</span>
+                <small>{{ item.assessment.reasons[0] || 'No deterministic assessment reason was returned.' }}</small>
+              </span>
+              <span class="review-row__meta">
+                <strong [attr.data-tone]="statusTone(item.assessment.status)">{{ statusLabel(item.assessment.status) }}</strong>
+                <small>Observed {{ item.claim.observedAt | date:'mediumDate' }}</small>
+              </span>
+              <i nz-icon nzType="right" nzTheme="outline"></i>
+            </button>
+          </div>
+          <ng-template #noVisibleClaims>
+            <div class="claim-empty">
+              <i nz-icon nzType="inbox" nzTheme="outline"></i>
+              <div>
+                <strong>{{ currentQueue.items.length ? 'No claims match this filter' : 'No claim records yet' }}</strong>
+                <span>{{ currentQueue.items.length ? 'Choose another assessment state.' : 'Verified answers with exact source evidence will create semantic claims here.' }}</span>
+              </div>
+            </div>
+          </ng-template>
+        </section>
         <div class="claim-register" *ngIf="currentQueue.items.length">
           <button type="button" *ngFor="let item of currentQueue.items; trackBy: trackByClaim" (click)="openInspector(item)">
             <span><strong>{{ item.claim.subject }} / {{ item.claim.predicate }}</strong><small>{{ item.claim.object }}</small></span>
@@ -156,34 +189,47 @@
         <small *ngIf="item.assessment.truncated">The bounded scan was incomplete, so this claim remains review-only.</small>
       </section>
 
-      <dl class="claim-facts">
-        <div><dt>Verification</dt><dd>{{ statusLabel(item.claim.verificationStatus) }}</dd></div>
-        <div><dt>Effective from</dt><dd>{{ item.claim.effectiveFrom | date:'medium' }}</dd></div>
-        <div><dt>Observed</dt><dd>{{ item.claim.observedAt | date:'medium' }}</dd></div>
-        <div><dt>Sensitivity</dt><dd>{{ item.claim.sensitivity }}</dd></div>
-        <div><dt>Storage</dt><dd>{{ item.claim.localOnly ? 'Local only' : 'External storage permitted' }}</dd></div>
-        <div><dt>Claim ID</dt><dd><code>{{ item.claim.id }}</code></dd></div>
-      </dl>
-
-      <section class="inspector-section">
-        <h3>Source evidence</h3>
-        <article class="source-record" *ngFor="let source of item.claim.provenance">
-          <div><strong>{{ source.referenceId || source.sourceNodeId || 'Source reference' }}</strong><span>{{ source.capturedAt | date:'medium' }}</span></div>
-          <a *ngIf="source.uri && !source.uri.startsWith('local://')" [href]="source.uri" target="_blank" rel="noopener noreferrer">Open source</a>
-          <span *ngIf="!source.uri || source.uri.startsWith('local://')">Local evidence record</span>
-          <code>{{ source.contentDigest }}</code>
-        </article>
+      <section class="claim-error" *ngIf="lifecycleError" role="alert">
+        <i nz-icon nzType="warning" nzTheme="outline"></i>
+        <div><strong>Claim history unavailable</strong><span>{{ lifecycleError }}</span></div>
+        <button nz-button type="button" (click)="retryLifecycle()" [disabled]="detailLoading">Try again</button>
       </section>
 
-      <section class="inspector-section" *ngIf="lifecycle as history">
-        <h3>Lifecycle</h3>
-        <div class="lifecycle-grid">
-          <div><strong>{{ history.supersedes.length }}</strong><span>Supersedes</span></div>
-          <div><strong>{{ history.supersededBy.length }}</strong><span>Superseded by</span></div>
-          <div><strong>{{ history.conflicts.length }}</strong><span>Explicit conflicts</span></div>
-        </div>
-        <p *ngIf="history.truncated">Lifecycle scan reached its safe bound.</p>
-      </section>
+      <hai-progressive-section
+        moduleId="knowledge-claims"
+        sectionId="claim-evidence"
+        title="Evidence, facts, and lifecycle"
+        summary="Exact verification metadata, source references, digests, and immutable history."
+        [advancedOnly]="true">
+        <dl class="claim-facts">
+          <div><dt>Verification</dt><dd>{{ statusLabel(item.claim.verificationStatus) }}</dd></div>
+          <div><dt>Effective from</dt><dd>{{ item.claim.effectiveFrom | date:'medium' }}</dd></div>
+          <div><dt>Observed</dt><dd>{{ item.claim.observedAt | date:'medium' }}</dd></div>
+          <div><dt>Sensitivity</dt><dd>{{ item.claim.sensitivity }}</dd></div>
+          <div><dt>Storage</dt><dd>{{ item.claim.localOnly ? 'Local only' : 'External storage permitted' }}</dd></div>
+          <div><dt>Claim ID</dt><dd><code>{{ item.claim.id }}</code></dd></div>
+        </dl>
+
+        <section class="inspector-section">
+          <h3>Source evidence</h3>
+          <article class="source-record" *ngFor="let source of item.claim.provenance">
+            <div><strong>{{ source.referenceId || source.sourceNodeId || 'Source reference' }}</strong><span>{{ source.capturedAt | date:'medium' }}</span></div>
+            <a *ngIf="source.uri && !source.uri.startsWith('local://')" [href]="source.uri" target="_blank" rel="noopener noreferrer">Open source</a>
+            <span *ngIf="!source.uri || source.uri.startsWith('local://')">Local evidence record</span>
+            <code>{{ source.contentDigest }}</code>
+          </article>
+        </section>
+
+        <section class="inspector-section" *ngIf="lifecycle as history">
+          <h3>Lifecycle</h3>
+          <div class="lifecycle-grid">
+            <div><strong>{{ history.supersedes.length }}</strong><span>Supersedes</span></div>
+            <div><strong>{{ history.supersededBy.length }}</strong><span>Superseded by</span></div>
+            <div><strong>{{ history.conflicts.length }}</strong><span>Explicit conflicts</span></div>
+          </div>
+          <p *ngIf="history.truncated">Lifecycle scan reached its safe bound.</p>
+        </section>
+      </hai-progressive-section>
 
       <section class="correction-panel" *ngIf="!correctionOpen">
         <div>
@@ -194,6 +240,13 @@
           Correct claim
         </button>
         <small *ngIf="!canApprove">Owner approval permission is required.</small>
+      </section>
+
+      <section class="claim-error" *ngIf="authorityError" role="alert">
+        <i nz-icon nzType="warning" nzTheme="outline"></i>
+        <div><strong>Approval access needs checking</strong><span>{{ authorityError }}</span></div>
+        <button nz-button type="button" (click)="load()" [disabled]="loading || saving">Refresh access</button>
+        <a routerLink="/login">Sign in</a>
       </section>
 
       <form class="correction-form" *ngIf="correctionOpen" (ngSubmit)="submitCorrection()">

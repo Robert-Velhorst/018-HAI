@@ -79,6 +79,7 @@ func (a *recordingExecutionAuthorizer) AuthorizeAndConsume(
 type permissiveExecutionConstitution struct{}
 
 func (permissiveExecutionConstitution) EvaluateExecutionPolicy(
+	_ context.Context,
 	_ string,
 	_ []string,
 	_ int,
@@ -117,6 +118,41 @@ func (exactTestApprovalResolver) Resolve(
 		ApprovedAt:     now.Add(-time.Second),
 		ExpiresAt:      now.Add(5 * time.Minute),
 	}, nil
+}
+
+// inMemoryTestExecutionAuthorizer exercises the runtime proof chain with a
+// deterministic resolver. Production task-review approvals use the PostgreSQL
+// transaction path; this test adapter only covers the in-memory unit fixture.
+type inMemoryTestExecutionAuthorizer struct {
+	service    *executionauth.Service
+	repository *executionauth.MemoryRepository
+}
+
+func (a inMemoryTestExecutionAuthorizer) AuthorizeAndConsume(
+	ctx context.Context,
+	request executionauth.Request,
+	consumer string,
+	executionTarget string,
+) (executionauth.Receipt, error) {
+	if a.service == nil || a.repository == nil {
+		return executionauth.Receipt{}, executionauth.ErrPolicyUnavailable
+	}
+	receipt, err := a.service.Authorize(ctx, request)
+	if err != nil {
+		return receipt, err
+	}
+	if receipt.Outcome != executionauth.OutcomeAuthorized {
+		return receipt, executionauth.ErrNotAuthorized
+	}
+	err = a.repository.Consume(ctx, executionauth.Consumption{
+		ReceiptID:       receipt.ID,
+		OwnerIdentity:   receipt.OwnerIdentity,
+		Consumer:        consumer,
+		ExecutionTarget: executionTarget,
+		ReceiptDigest:   receipt.DecisionDigest,
+		ConsumedAt:      time.Now().UTC(),
+	})
+	return receipt, err
 }
 
 func newTestServiceWithAuthorizedRuntime(
@@ -159,7 +195,10 @@ func newTestServiceWithAuthorizedRuntime(
 		publisher,
 		registry,
 		newUnitTestApprovalProofService(),
-		authorizationService,
+		inMemoryTestExecutionAuthorizer{
+			service:    authorizationService,
+			repository: authorizationRepository,
+		},
 		finalEffects,
 	)
 }
@@ -225,18 +264,25 @@ func TestExternalLaunchFailsClosedWithoutUnifiedAuthorization(t *testing.T) {
 		LaunchType:   "api",
 		LaunchTarget: "GET " + server.URL,
 	})
-	service := NewService(repository, events.Publisher{})
+	service := NewServiceWithRuntimeRegistryApprovalProofsAndExecutionAuthorization(
+		repository,
+		events.Publisher{},
+		agentruntime.DefaultRegistry(),
+		newUnitTestApprovalProofService(),
+		nil,
+	)
 
+	request := approvedTaskLaunchRequest(t, service, repository.automation.ID, TaskLaunchRequest{OwnerIdentity: "alice"})
 	result, err := service.LaunchTask(
 		repository.automation.ID,
-		TaskLaunchRequest{OwnerIdentity: "alice"},
+		request,
 	)
 	if err != nil {
 		t.Fatalf("LaunchTask: %v", err)
 	}
 	if result.Status != "blocked" ||
-		!strings.Contains(result.Message, "authorization service is unavailable") {
-		t.Fatalf("result = %#v", result)
+		!strings.Contains(result.Message, "unified execution authorization service is unavailable") {
+		t.Fatalf("result = %#v; want the request to reach and fail closed at unified execution authorization", result)
 	}
 	if serverCalls != 0 {
 		t.Fatalf("network calls = %d, want 0", serverCalls)
@@ -345,14 +391,16 @@ func TestAPILaunchAuthorizesExactlyOnceBeforeNetworkEffect(t *testing.T) {
 		FrameworkConstitutionDigest:      strings.Repeat("d", 64),
 		FrameworkOperatingContractDigest: strings.Repeat("e", 64),
 	}
+	mandateID := "case-mandate-1"
+	automation := &models.Automation{
+		ID:                 uuid.New(),
+		LaunchType:         "api",
+		LaunchTarget:       "POST " + server.URL,
+		ExpectedHTTPStatus: http.StatusNoContent,
+	}
 	result := service.executeAPILaunch(
-		&models.Automation{
-			ID:                 uuid.New(),
-			LaunchType:         "api",
-			LaunchTarget:       "POST " + server.URL,
-			ExpectedHTTPStatus: http.StatusNoContent,
-		},
-		TaskLaunchRequest{OwnerIdentity: "alice", Governance: governance},
+		automation,
+		launchBindingDispatchFixture(automation, TaskLaunchRequest{OwnerIdentity: "alice", MandateID: mandateID, Governance: governance}),
 		uuid.New(),
 		time.Now().UTC(),
 		nil,
@@ -371,9 +419,12 @@ func TestAPILaunchAuthorizesExactlyOnceBeforeNetworkEffect(t *testing.T) {
 			governance.FrameworkOperatingContractDigest {
 		t.Fatalf("authorization governance = %#v", authorizer.request.Governance)
 	}
+	if authorizer.request.MandateID != mandateID {
+		t.Fatalf("authorization mandate = %q, want %q", authorizer.request.MandateID, mandateID)
+	}
 }
 
-func TestApprovedReadOnlyAPILaunchUsesCaseApprovedAutonomy(t *testing.T) {
+func TestApprovedGETAPILaunchUsesCaseApprovedAutonomy(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusNoContent)
 	}))
@@ -381,16 +432,17 @@ func TestApprovedReadOnlyAPILaunchUsesCaseApprovedAutonomy(t *testing.T) {
 
 	authorizer := &recordingExecutionAuthorizer{}
 	service := &service{executionAuth: authorizer}
-	digest := strings.Repeat("d", 64)
+	automation := &models.Automation{
+		ID: uuid.New(), LaunchType: "api", LaunchTarget: "GET " + server.URL,
+		ExpectedHTTPStatus: http.StatusNoContent,
+	}
+	request := launchBindingDispatchFixture(automation, TaskLaunchRequest{
+		OwnerIdentity: "alice", ApprovalSourceID: "workflow-decision:" + uuid.NewString(),
+	})
+	digest := request.ApprovalBindingDigest
 	result := service.executeAPILaunch(
-		&models.Automation{
-			ID: uuid.New(), LaunchType: "api", LaunchTarget: "GET " + server.URL,
-			ExpectedHTTPStatus: http.StatusNoContent,
-		},
-		TaskLaunchRequest{
-			OwnerIdentity: "alice", ApprovalSourceID: "workflow-decision:" + uuid.NewString(),
-			ApprovalBindingDigest: digest,
-		},
+		automation,
+		request,
 		uuid.New(), time.Now().UTC(), nil,
 	)
 	if result.Status != "completed" {

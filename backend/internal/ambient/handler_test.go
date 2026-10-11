@@ -1,6 +1,7 @@
 package ambient
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -146,6 +147,26 @@ func TestScanHandlerRequiresVerifiedOwner(t *testing.T) {
 	}
 }
 
+func TestOverviewHandlerDoesNotExposeUnexpectedServiceErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(&ambientResolutionService{overviewErr: errors.New(`database password=do-not-expose at C:\\private`)})
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	engine.GET("/ambient/overview", handler.Overview)
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ambient/overview", nil))
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusInternalServerError, recorder.Body.String())
+	}
+	if body := recorder.Body.String(); strings.Contains(body, "do-not-expose") || strings.Contains(body, `C:\\private`) || !strings.Contains(body, "ambient overview is unavailable") {
+		t.Fatalf("overview response exposed internal error: %s", body)
+	}
+}
+
 func TestUpdateNeedHandlerRequiresVerifiedOwner(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler(NewService(&ambientRepositoryStub{needs: defaultNeeds()}, nil, nil))
@@ -276,6 +297,7 @@ type ambientResolutionService struct {
 	dismissRequest ResolutionRequest
 	overviewCalls  int
 	overviewOwner  string
+	overviewErr    error
 }
 
 func (s *ambientResolutionService) Overview() (*Overview, error) {
@@ -285,6 +307,9 @@ func (s *ambientResolutionService) Overview() (*Overview, error) {
 func (s *ambientResolutionService) OverviewForOwner(ownerIdentity string) (*Overview, error) {
 	s.overviewCalls++
 	s.overviewOwner = ownerIdentity
+	if s.overviewErr != nil {
+		return nil, s.overviewErr
+	}
 	return &Overview{}, nil
 }
 

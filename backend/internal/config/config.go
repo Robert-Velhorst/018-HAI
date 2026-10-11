@@ -23,6 +23,7 @@ const (
 	imageSaveDir     string = "IMAGE_SAVE_DIR"
 	kafkaBrokers     string = "KAFKA_BROKERS"
 	kafkaTopic       string = "KAFKA_TOPIC"
+	eventBusEnabled  string = "HAI_EVENT_BUS_ENABLED"
 	backendAPIKey    string = "BACKEND_API_SHARED_KEY"
 	memoryEngineKey  string = "HAI_MEMORY_ENCRYPTION_KEY"
 	rateLimitPerMin  string = "RATE_LIMIT_PER_MINUTE"
@@ -69,6 +70,8 @@ type Configuration struct {
 var AppConfig Configuration
 
 func Init() {
+	mode := getEnvString(runMode, "production")
+	dbUserDefault, dbPasswordDefault := databaseCredentialDefaults(mode)
 	servNumPort := getEnvInt(serverPort, 80)
 	if err := validatePort(servNumPort); err != nil {
 		panic(err)
@@ -79,7 +82,12 @@ func Init() {
 	}
 	imageSizeInMb := getEnvInt64(imageMaxSizeInMb, 5) * 1024 * 1024
 	imageExtensionsList := getStringListFromEnv(imageExtensions, ".jpg,.jpeg,.png")
-	kafkaBrokersList := getStringListFromEnv(kafkaBrokers, "kafka1:9092,kafka2:9093,kafka3:9094")
+	kafkaBrokersList := []string(nil)
+	kafkaTopicValue := ""
+	if getEnvBool(eventBusEnabled, false) {
+		kafkaBrokersList = getStringListFromEnv(kafkaBrokers, "")
+		kafkaTopicValue = getEnvString(kafkaTopic, "automation-events")
+	}
 	AppConfig = Configuration{
 		ConfigDir:               getEnvString(configDir, "/app/sites-enabled"),
 		BaseUrl:                 getEnvString(baseUrl, "/api"),
@@ -88,13 +96,13 @@ func Init() {
 		DbHost:                  getEnvString(dbHost, "postgres-automation"),
 		DbPort:                  dbNumPort,
 		DbName:                  getEnvString(dbName, "automation"),
-		DbUser:                  getEnvString(dbUser, "postgres"),
-		DbPassword:              getEnvString(dbPassword, "postgres"),
+		DbUser:                  getEnvString(dbUser, dbUserDefault),
+		DbPassword:              getEnvString(dbPassword, dbPasswordDefault),
 		ImageMaxSize:            imageSizeInMb,
 		ImageExtensions:         imageExtensionsList,
 		ImageSaveDir:            getEnvString(imageSaveDir, "images"),
 		Brokers:                 kafkaBrokersList,
-		Topic:                   getEnvString(kafkaTopic, "automation-events"),
+		Topic:                   kafkaTopicValue,
 		RedisAddr:               getEnvString(redisAddr, ""),
 		GoogleOAuthClientID:     getEnvString(googleClientID, ""),
 		GoogleOAuthClientSecret: getEnvString(googleClientKey, ""),
@@ -105,10 +113,20 @@ func Init() {
 		BackendAPIKey:           getEnvString(backendAPIKey, ""),
 		MemoryEngineKey:         getEnvString(memoryEngineKey, ""),
 		RateLimitPerMinute:      getEnvInt(rateLimitPerMin, 0),
-		RunMode:                 getEnvString(runMode, "production"),
+		RunMode:                 mode,
 		JWTSecret:               getEnvString(jwtSecret, ""),
 	}
 	ensureImageDirExists()
+}
+
+func databaseCredentialDefaults(mode string) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "demo", "test":
+		return "postgres", "postgres"
+	default:
+		// Match demomode.Parse: unknown and empty modes fail safe as production.
+		return "", ""
+	}
 }
 
 func ensureImageDirExists() {
@@ -122,7 +140,13 @@ func ensureImageDirExists() {
 
 func getStringListFromEnv(envVarName, defaultValue string) []string {
 	value := getEnvString(envVarName, defaultValue)
-	return strings.Split(value, ",")
+	values := make([]string, 0)
+	for _, entry := range strings.Split(value, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			values = append(values, entry)
+		}
+	}
+	return values
 }
 
 func validatePort(port int) error {
@@ -159,5 +183,15 @@ func getEnvString(key string, defaultValue string) string {
 		return value
 	}
 	log.Printf("Using default value for %s: %s", key, defaultValue)
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value, exists := os.LookupEnv(key); exists {
+		parsed, err := strconv.ParseBool(value)
+		if err == nil {
+			return parsed
+		}
+	}
 	return defaultValue
 }

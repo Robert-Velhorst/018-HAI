@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,5 +120,33 @@ func TestCommandHandlerAllowsAuthenticatedPersonalCycleForOperator(t *testing.T)
 	}
 	if cycle.lastRequest.OwnerIdentity != "alice" {
 		t.Fatalf("personal cycle owner = %q, want alice", cycle.lastRequest.OwnerIdentity)
+	}
+}
+
+func TestCommandHandlerDoesNotExposeUnexpectedTaskEngineErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(NewService(&fakeTaskEngine{planErr: errors.New(`postgres password=not-for-http at C:\\private`)}, nil))
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	engine.POST("/assistant/command", handler.Command)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/assistant/command", strings.NewReader(`{"message":"Plan a safe next action"}`))
+	request.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusInternalServerError, recorder.Body.String())
+	}
+	for _, forbidden := range []string{"password", "not-for-http", "C:\\\\private", "result"} {
+		if strings.Contains(strings.ToLower(recorder.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("response leaked %q: %s", forbidden, recorder.Body.String())
+		}
+	}
+	if !strings.Contains(recorder.Body.String(), "assistant command could not be completed") {
+		t.Fatalf("response lacks stable error: %s", recorder.Body.String())
 	}
 }

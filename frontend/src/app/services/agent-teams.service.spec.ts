@@ -1,14 +1,15 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing'
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { AgentTeamContract } from '../models/agent-teams.model'
 import { AgentTeamsService } from './agent-teams.service'
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('AgentTeamsService', () => {
   let service: AgentTeamsService
   let http: HttpTestingController
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [HttpClientTestingModule] })
+    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] })
     service = TestBed.inject(AgentTeamsService)
     http = TestBed.inject(HttpTestingController)
   })
@@ -48,6 +49,19 @@ describe('AgentTeamsService', () => {
     const acknowledgment = http.expectOne('/api/v1/framework-registry/teams/team%2Fa/versions/1.0.0/messages/message%2Fa/acknowledgments/guided')
     expect(acknowledgment.request.method).toBe('POST')
     acknowledgment.flush({})
+  })
+
+  it('loads a combined decision overview without an unsafe attention contract', () => {
+    let result: any
+    service.decisionOverview('team/a', '1.0.0').subscribe((overview) => result = overview)
+    const request = http.expectOne('/api/v1/framework-registry/teams/team%2Fa/versions/1.0.0/decision-overview')
+    expect(request.request.method).toBe('GET')
+    request.flush({
+      generatedAt: '2026-08-11T00:00:00Z', messages: [{ id: 'message-1' }],
+      attention: [{ messageId: 'message-1', advisoryOnly: true, grantsExecutionAuthority: false, executionAuthorizationRequired: true }],
+    })
+    expect(result.messages.length).toBe(1)
+    expect(result.attention.length).toBe(1)
   })
 
   function team(): AgentTeamContract {

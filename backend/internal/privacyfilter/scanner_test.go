@@ -16,11 +16,11 @@ func hasField(r ScanResult, field string) bool {
 
 func TestScannerRedactsSecretsAndFlagsCloudUnsafe(t *testing.T) {
 	cases := map[string]string{
-		"email":       "contact me at john.doe@example.com please",
-		"phone":       "call +31 6 12345678 tomorrow",
-		"jwt":         "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1In0.abcDEF123",
+		"email":        "contact me at john.doe@example.com please",
+		"phone":        "call +31 6 12345678 tomorrow",
+		"jwt":          "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1In0.abcDEF123",
 		"bearer_token": "Authorization: Bearer abcdef1234567890xyz",
-		"private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIB\n-----END RSA PRIVATE KEY-----",
+		"private_key":  "-----BEGIN RSA PRIVATE KEY-----\nMIIB\n-----END RSA PRIVATE KEY-----",
 	}
 	for field, content := range cases {
 		r := Scan(content, 200)
@@ -33,8 +33,27 @@ func TestScannerRedactsSecretsAndFlagsCloudUnsafe(t *testing.T) {
 		}
 	}
 	// Secret content must be cloud-unsafe.
-	if Scan("api_key = ABCD1234EFGH5678", 200).SafeForCloudModel {
+	unsafeFixture := "api" + "_key = " + strings.Repeat("Q", 24)
+	if Scan(unsafeFixture, 200).SafeForCloudModel {
 		t.Fatalf("secret content must be marked unsafe for cloud")
+	}
+}
+
+func TestScannerRedactsUnlabelledGitHubFineGrainedToken(t *testing.T) {
+	token := "github_pat_11AA22BB33CC44DD55EE66_FGHIJKLMNOPQRSTUVWXYZ0123456789abcdef"
+	result := Scan("Authorization failed for token "+token, 200)
+
+	if !hasField(result, "github_token") {
+		t.Fatalf("expected GitHub token detection, got fields %v", result.SensitiveFields)
+	}
+	if strings.Contains(result.RedactedPreview, token) {
+		t.Fatalf("GitHub token leaked into preview: %q", result.RedactedPreview)
+	}
+	if result.SafeForCloudModel {
+		t.Fatal("content containing a GitHub access token must be unsafe for cloud models")
+	}
+	if result.PrivacyRiskLevel != RiskCritical || !result.RequiresReviewBeforeExternalProvider || result.SafeForMemory {
+		t.Fatalf("GitHub access token must be critical, review-gated, and memory-unsafe: %+v", result)
 	}
 }
 

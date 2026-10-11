@@ -130,3 +130,39 @@ func TestResourcePlanningUsesBoundedInternalScopeForPreview(t *testing.T) {
 		t.Fatalf("preview owner scope was not bound: %#v", decision)
 	}
 }
+
+func TestResourcePlanningKeepsAdmittedAutomaticRuntimeApprovalFree(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	risk := RiskAssessment{
+		Level:                     "low",
+		AllowedNow:                true,
+		FrameworkAutonomyCeiling:  8,
+		RequiredFrameworkAutonomy: 8,
+	}
+	decision, err := defaultResourcePlanner().PlanResources(ResourcePlanningRequest{
+		OwnerIdentity: "operator@example.test",
+		PlanID:        "automatic-readiness-runtime",
+		CreatedAt:     now,
+		Difficulty:    2,
+		Risk:          risk,
+		Steps: []TaskStep{
+			{ID: "execute", Name: "Execute read-only readiness probe", Allowed: true},
+			{ID: "verify", Name: "Verify readiness result", Allowed: true},
+		},
+		SelectedTools: []string{"tool-router"},
+		// The backend readiness probe consumes controlled runtime capacity, not
+		// Robert's time. An unavailable personal capacity observation must not
+		// turn this already-admitted automatic runtime into an approval gate.
+		Capacity: &frameworkregistry.CapacitySnapshot{Status: "unknown", NeedsReview: true},
+	})
+	if err != nil {
+		t.Fatalf("PlanResources: %v", err)
+	}
+	if len(decision.ApprovalFlags) != 0 || decision.Feasibility != resourceplanner.Feasible {
+		t.Fatalf("automatic runtime was turned into a resource approval gate: %#v", decision)
+	}
+	updated := applyResourcePlanningRisk(risk, decision)
+	if updated.ApprovalRequired || !updated.AllowedNow {
+		t.Fatalf("resource plan changed automatic runtime authority: %#v", updated)
+	}
+}

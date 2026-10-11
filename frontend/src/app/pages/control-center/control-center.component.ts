@@ -1,7 +1,7 @@
-import { Component, Inject, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, OnDestroy, OnInit, ViewChild, ViewEncapsulation } from '@angular/core'
 import { Router } from '@angular/router'
-import { forkJoin, of } from 'rxjs'
-import { catchError, timeout } from 'rxjs/operators'
+import { forkJoin, of, Subscription } from 'rxjs'
+import { catchError, finalize, timeout } from 'rxjs/operators'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { IAgentCycleRunResult } from '../../models/agent-cycle.model.interface'
 import {
@@ -12,6 +12,7 @@ import {
 import {
   IAutomationDiagnostics,
   IAutomationHealthSummary,
+  IAutomationLaunchEvent,
   IAutomationModel,
 } from '../../models/automation.model.interface'
 import {
@@ -32,8 +33,12 @@ import { AUTOMATIONS_SERVICE_TOKEN } from '../../services/automations/automation
 import { IAutomationsService } from '../../services/automations.service.interface'
 import { ContextMemoryService } from '../../services/context-memory/context-memory.service'
 import { PursuitService } from '../../services/pursuit.service'
-import { ThemeMode, ThemeService } from '../../services/theme.service'
 import { WorkflowService } from '../../services/workflow/workflow.service'
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
+import { HttpTimeoutPolicy } from '../../shared/http-timeout-policy'
+import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component'
+import { isConfirmedLaunchResult, launchRecoveryNotice } from '../../control-room/launch-recovery'
+import { safeWebSourceHref } from '../../control-room/source-navigation'
 
 interface ActivityEntry {
   title: string
@@ -58,6 +63,16 @@ interface CommandAction {
   execute?: () => void
 }
 
+interface NextActionSummary {
+  kind: 'approval' | 'blocked' | 'follow-up' | 'active' | 'pursuit' | 'loading' | 'brief' | 'queue-unavailable' | 'cycle-issue'
+  title: string
+  detail: string
+  source: string
+  actionLabel: string
+  workflowId?: string
+  pursuitId?: string
+}
+
 type ControlCenterSection =
   | 'overview'
   | 'attention'
@@ -67,20 +82,20 @@ type ControlCenterSection =
   | 'memory'
   | 'diagnostics'
 
-interface NavigationItem {
-  label: string
-  icon: string
-  route?: string
-  section?: ControlCenterSection
-}
-
 @Component({
-  standalone: false,
-  selector: 'app-control-center',
-  templateUrl: './control-center.component.html',
-  styleUrls: ['./control-center.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-control-center',
+    templateUrl: './control-center.component.html',
+    styleUrls: ['./control-center.component.scss'],
+    // The stylesheet contains generic layout class names used by other
+    // operational modules. Keep Angular's component boundary so visiting the
+    // Control Center cannot restyle a later route.
+    encapsulation: ViewEncapsulation.Emulated,
+    standalone: false
 })
-export class ControlCenterComponent implements OnInit {
+export class ControlCenterComponent implements OnInit, OnDestroy {
+  @ViewChild('diagnosticsSection') private diagnosticsSection?: HaiProgressiveSectionComponent
+  readonly moduleId = 'control-center'
   readonly currentHour = new Date().getHours()
   automations: IAutomationModel[] = []
   summary?: IAutomationHealthSummary
@@ -98,17 +113,28 @@ export class ControlCenterComponent implements OnInit {
   recentMemoriesView: IContextMemory[] = []
   commandActionsView: CommandAction[] = []
   lastAgentCycle?: IAgentCycleRunResult
+  lastAgentCycleIssue = ''
+  dashboardLoadErrors: string[] = []
+  dashboardAuthenticationRequired = false
+  dashboardCheckedAt: Date | null = null
+  diagnosticsLoadErrors: string[] = []
 
   loading = false
   scanning = false
   memoryLoading = false
   memoriesLoaded = false
+  memoryLoadError = false
   diagnosticsListLoading = false
   diagnosticsLoaded = false
   resolvingId = ''
-  archivingMemoryId = ''
+  resolvingAction: 'approve' | 'reject' | '' = ''
+  private archivingMemoryIds = new Set<string>()
   diagnosticsExpanded = false
-  mobileNavigationOpen = false
+  private readonly operationTimeoutMs = 30000
+  private dashboardRefreshSubscription?: Subscription
+  private diagnosticsRequestSubscription?: Subscription
+  private memoryRequestSubscription?: Subscription
+  private diagnosticsDataSubscription?: Subscription
   private checkingIds = new Set<string>()
   private launchingIds = new Set<string>()
 
@@ -118,46 +144,6 @@ export class ControlCenterComponent implements OnInit {
   diagnosticsName = ''
   selectedAction?: CommandAction
   activeSection: ControlCenterSection = 'overview'
-  themeMode: ThemeMode = 'light'
-
-  readonly navigationGroups: Array<{ label: string; items: NavigationItem[] }> = [
-    {
-      label: 'Work',
-      items: [
-        { label: 'Command Center', icon: 'appstore', section: 'overview' },
-        { label: 'Background Ops', icon: 'thunderbolt', route: '/background-operations' },
-        { label: 'Pursuits', icon: 'flag', route: '/pursuits' },
-        { label: 'Approvals', icon: 'check-square', section: 'attention' },
-        { label: 'Workflows', icon: 'unordered-list', route: '/workflow-engine' },
-        { label: 'Automations', icon: 'setting', route: '/home' },
-      ],
-    },
-    {
-      label: 'Intelligence',
-      items: [
-        { label: 'Priorities', icon: 'heart', section: 'priorities' },
-        { label: 'Sources', icon: 'cluster', route: '/connected-sources' },
-        { label: 'Account Bridges', icon: 'link', route: '/account-bridges' },
-        { label: 'Memory', icon: 'database', route: '/memory' },
-        { label: 'Task Planning', icon: 'partition', route: '/task-blueprint' },
-        { label: 'Frameworks', icon: 'apartment', route: '/framework-registry' },
-        { label: 'Verified Answers', icon: 'safety-certificate', route: '/grounded-answers' },
-        { label: 'Activity', icon: 'history', section: 'activity' },
-      ],
-    },
-    {
-      label: 'System',
-      items: [
-        { label: 'System Status', icon: 'heart', route: '/system-status' },
-        { label: 'Runtime Control', icon: 'poweroff', route: '/runtime-control' },
-        { label: 'Brain Settings', icon: 'safety-certificate', route: '/ambient-brain' },
-        { label: 'Models', icon: 'deployment-unit', route: '/llm-policy' },
-        { label: 'Model Intelligence', icon: 'experiment', route: '/model-intelligence' },
-        { label: 'Runtime Lab', icon: 'api', route: '/runtime-lab' },
-      ],
-    },
-  ]
-
   constructor(
     @Inject(AUTOMATIONS_SERVICE_TOKEN)
     private automationsService: IAutomationsService,
@@ -167,79 +153,137 @@ export class ControlCenterComponent implements OnInit {
     private agentRuntimeService: AgentRuntimeService,
     private ambientService: AmbientService,
     private memoryService: ContextMemoryService,
-    private themeService: ThemeService,
     private notification: NzNotificationService,
-    private router: Router
+    private router: Router,
+    private viewPreferences: ModuleViewPreferencesService,
+    private cdr: ChangeDetectorRef
   ) {}
 
+  get isAdvancedView(): boolean {
+    return this.viewPreferences.get(this.moduleId).mode === 'advanced'
+  }
+
   ngOnInit(): void {
-    this.themeMode = this.themeService.mode()
     this.refresh()
   }
 
-  toggleTheme(): void {
-    this.themeMode = this.themeService.toggle()
-  }
-
-  themeLabel(): string {
-    return this.themeService.label()
-  }
-
-  themeIcon(): string {
-    return this.themeService.icon()
+  ngOnDestroy(): void {
+    this.dashboardRefreshSubscription?.unsubscribe()
+    this.cancelDiagnosticsRequest()
+    this.memoryRequestSubscription?.unsubscribe()
+    this.diagnosticsDataSubscription?.unsubscribe()
   }
 
   refresh(): void {
+    this.dashboardRefreshSubscription?.unsubscribe()
     this.loading = true
-    let pending = 3
-    const done = () => {
-      pending -= 1
-      if (pending <= 0) {
+    this.dashboardLoadErrors = []
+    this.dashboardAuthenticationRequired = false
+    this.dashboardRefreshSubscription = forkJoin({
+      workflow: this.workflowService.dashboard().pipe(
+        timeout(HttpTimeoutPolicy.readMs),
+        catchError((error) => {
+          this.recordDashboardLoadFailure('Workflow status', error)
+          return of(undefined)
+        })
+      ),
+      ambient: this.ambientService.overview().pipe(
+        timeout(HttpTimeoutPolicy.readMs),
+        catchError((error) => {
+          this.recordDashboardLoadFailure('Ambient scan', error)
+          return of(undefined)
+        })
+      ),
+      pursuits: this.pursuitService.dashboard().pipe(
+        timeout(HttpTimeoutPolicy.readMs),
+        catchError((error) => {
+          this.recordDashboardLoadFailure('Pursuit status', error)
+          return of(undefined)
+        })
+      ),
+    }).subscribe({
+      next: ({ workflow, ambient, pursuits }) => {
+        this.workflowDashboard = workflow
+        this.ambientOverview = ambient
+        this.pursuitDashboard = pursuits
+        this.rebuildViewModel()
         this.loading = false
-      }
+        if (!this.dashboardLoadErrors.length && this.workflowDataAvailable() &&
+            this.hasCompleteQueueCounts() && this.ambientDataAvailable() && this.pursuitDataAvailable()) {
+          this.dashboardCheckedAt = new Date()
+        }
+        this.cdr.markForCheck()
+      },
+      error: () => {
+        this.loading = false
+        this.cdr.markForCheck()
+      },
+    })
+  }
+
+  hasDashboardLoadError(): boolean {
+    return this.dashboardLoadErrors.length > 0 ||
+      (this.workflowDashboard !== undefined && !this.hasCompleteQueueCounts()) ||
+      (this.ambientOverview !== undefined && !this.ambientDataAvailable()) ||
+      (this.pursuitDashboard !== undefined && !this.pursuitDataAvailable())
+  }
+
+  dashboardLoadErrorMessage(): string {
+    if (this.dashboardAuthenticationRequired) {
+      return 'Your session is not authorized to load current dashboard data. Sign in again; HAI will not treat the queues as clear until the data is available.'
     }
+    const errors = [...this.dashboardLoadErrors]
+    if (this.workflowDashboard !== undefined && !this.hasCompleteQueueCounts()) errors.push('Workflow queue counts')
+    if (this.ambientOverview !== undefined && !this.ambientDataAvailable()) errors.push('Ambient scan data')
+    if (this.pursuitDashboard !== undefined && !this.pursuitDataAvailable()) errors.push('Pursuit status data')
+    return `${errors.join(', ')} could not be loaded or validated. HAI cannot confirm that there is no work waiting.`
+  }
 
-    this.workflowService.dashboard().pipe(
-        timeout(2500),
-        catchError(() => of(undefined))
-      ).subscribe({
-        next: (workflow) => {
-          this.workflowDashboard = workflow
-          this.rebuildViewModel()
-          done()
-        },
-        error: () => {
-          done()
-        },
-      })
+  agentCycleIssueTitle(): string {
+    return this.lastAgentCycle?.status === 'partial_failure'
+      ? 'The operating brief completed only partially'
+      : 'The operating brief did not complete'
+  }
 
-    this.ambientService.overview().pipe(
-        timeout(2500),
-        catchError(() => of(undefined))
-      ).subscribe({
-        next: (ambient) => {
-          this.ambientOverview = ambient
-          this.rebuildViewModel()
-          done()
-        },
-        error: () => {
-          done()
-        },
-      })
+  workflowSummaryVisible(): boolean {
+    if (this.isAdvancedView) {
+      return this.workflowDataAvailable() || this.loading || this.hasDashboardLoadError()
+    }
+    return this.workflowDataAvailable() &&
+      (this.workflowSignalVisible('approvals') ||
+        this.workflowSignalVisible('blocked') ||
+        this.workflowSignalVisible('dueOpenLoops'))
+  }
 
-    this.pursuitService.dashboard().pipe(
-        timeout(1800),
-        catchError(() => of(undefined))
-      ).subscribe({
-        next: (pursuits) => {
-          this.pursuitDashboard = pursuits
-          this.rebuildViewModel()
-          done()
-        },
-        error: () => {
-          done()
-        },
-      })
+  workflowSignalVisible(key: 'approvals' | 'blocked' | 'dueOpenLoops'): boolean {
+    const count = this.workflowDashboard?.counts?.[key]
+    if (typeof count === 'number' && Number.isFinite(count) && count > 0) return true
+    if (key === 'approvals') return (this.workflowDashboard?.approvalItems?.length || 0) > 0
+    if (key === 'blocked') return (this.workflowDashboard?.blockedItems?.length || 0) > 0
+    return (this.workflowDashboard?.dueOpenLoops?.length || 0) > 0
+  }
+
+  private recordDashboardLoadFailure(label: string, error?: unknown): void {
+    if (!this.dashboardLoadErrors.includes(label)) {
+      this.dashboardLoadErrors = [...this.dashboardLoadErrors, label]
+    }
+    if (this.isUnauthorized(error)) this.dashboardAuthenticationRequired = true
+  }
+
+  private isUnauthorized(error: unknown): boolean {
+    return !!error && typeof error === 'object' && 'status' in error && error.status === 401
+  }
+
+  dashboardRecoveryActionLabel(): string {
+    return this.dashboardAuthenticationRequired ? 'Sign in' : 'Retry'
+  }
+
+  recoverDashboard(): void {
+    if (this.dashboardAuthenticationRequired) {
+      void this.router.navigate(['/login'], { queryParams: { returnUrl: '/control-center' } })
+      return
+    }
+    this.refresh()
   }
 
   loadMemories(force = false): void {
@@ -247,21 +291,20 @@ export class ControlCenterComponent implements OnInit {
       return
     }
     this.memoryLoading = true
-    this.memoryService.list(undefined, false).subscribe({
+    this.memoryLoadError = false
+    this.memoryRequestSubscription = this.memoryService.list(undefined, false, 20).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (memories) => {
         this.memories = memories
-          .sort(
-            (a, b) =>
-              new Date(b.updatedAt || b.createdAt || 0).getTime() -
-              new Date(a.updatedAt || a.createdAt || 0).getTime()
-          )
-          .slice(0, 20)
         this.memoriesLoaded = true
         this.memoryLoading = false
+        this.memoryLoadError = false
         this.rebuildViewModel()
+        this.cdr.markForCheck()
       },
       error: () => {
         this.memoryLoading = false
+        this.memoryLoadError = true
+        this.cdr.markForCheck()
         this.notification.error(
           'Memory unavailable',
           'Recent memory updates could not be loaded.'
@@ -275,16 +318,28 @@ export class ControlCenterComponent implements OnInit {
       return
     }
     this.diagnosticsListLoading = true
-    forkJoin({
+    this.diagnosticsLoadErrors = []
+    this.diagnosticsDataSubscription = forkJoin({
       automations: this.automationsService.getAutomations().pipe(
-        catchError(() => of([] as IAutomationModel[]))
+        timeout(this.operationTimeoutMs),
+        catchError(() => {
+          this.recordDiagnosticsLoadFailure('Automation registry')
+          return of([] as IAutomationModel[])
+        })
       ),
       summary: this.automationsService.getHealthSummary().pipe(
-        catchError(() => of(undefined))
+        timeout(this.operationTimeoutMs),
+        catchError(() => {
+          this.recordDiagnosticsLoadFailure('Automation health')
+          return of(undefined)
+        })
       ),
       runtimes: this.agentRuntimeService.overview().pipe(
         timeout(2500),
-        catchError(() => of({ runtimes: [] as IAgentRuntimeInfo[], health: [] as IAgentRuntimeHealth[] }))
+        catchError(() => {
+          this.recordDiagnosticsLoadFailure('Runtime overview')
+          return of({ runtimes: [] as IAgentRuntimeInfo[], health: [] as IAgentRuntimeHealth[] })
+        })
       ),
     }).subscribe({
       next: (result) => {
@@ -297,6 +352,7 @@ export class ControlCenterComponent implements OnInit {
         this.diagnosticsLoaded = true
         this.diagnosticsListLoading = false
         this.rebuildViewModel()
+        this.cdr.markForCheck()
       },
       error: () => {
         this.diagnosticsListLoading = false
@@ -309,10 +365,22 @@ export class ControlCenterComponent implements OnInit {
   }
 
   runScan(): void {
+    if (this.scanning) {
+      return
+    }
     this.scanning = true
-    this.agentCycleService.run({ trigger: 'command-center', limit: 5 }).subscribe({
+    this.agentCycleService.run({ trigger: 'command-center', limit: 5 }).pipe(
+      timeout(this.operationTimeoutMs),
+      finalize(() => (this.scanning = false))
+    ).subscribe({
       next: (result) => {
         this.lastAgentCycle = result
+        this.lastAgentCycleIssue = result.status === 'completed'
+          ? ''
+          : result.safetySummary?.trim() ||
+            (result.status === 'partial_failure'
+              ? 'One or more operating-brief steps did not complete.'
+              : 'The operating-brief result was not confirmed as complete.')
         if (result.dashboard) {
           this.workflowDashboard = result.dashboard
         }
@@ -322,7 +390,6 @@ export class ControlCenterComponent implements OnInit {
             scans: [result.ambientScan, ...(this.ambientOverview.scans || [])].slice(0, 10),
           }
         }
-        this.scanning = false
         this.rebuildViewModel()
         if (result.status === 'completed') {
           this.notification.success(result.executionScope === 'owner_scoped' ? 'Personal operating refresh completed' : 'Agent cycle completed', this.agentCycleSummary(result))
@@ -334,7 +401,7 @@ export class ControlCenterComponent implements OnInit {
         this.refresh()
       },
       error: (error) => {
-        this.scanning = false
+        this.lastAgentCycleIssue = 'The operating-brief request failed. HAI has not confirmed that the refresh completed.'
         this.notification.error(
           'Agent cycle failed',
           error?.error?.error || 'The operational cycle could not complete.'
@@ -344,7 +411,12 @@ export class ControlCenterComponent implements OnInit {
   }
 
   resolveApproval(item: IWorkflowItem, approved: boolean): void {
+    if (this.isApprovalActionDisabled(item)) {
+      return
+    }
+    const action = approved ? 'approve' : 'reject'
     this.resolvingId = item.id
+    this.resolvingAction = action
     this.workflowService
       .resolveApproval(item.id, {
         approved,
@@ -353,9 +425,10 @@ export class ControlCenterComponent implements OnInit {
           : 'Rejected from the household operations dashboard.',
         actor: 'operator',
       })
+      .pipe(timeout(this.operationTimeoutMs))
       .subscribe({
         next: () => {
-          this.resolvingId = ''
+          this.clearResolvingAction()
           this.notification.success(
             approved ? 'Approved' : 'Rejected',
             approved
@@ -365,49 +438,51 @@ export class ControlCenterComponent implements OnInit {
           this.refresh()
         },
         error: () => {
-          this.resolvingId = ''
-          this.notification.error(
-            'Decision not saved',
-            'The approval queue could not be updated.'
+          this.clearResolvingAction()
+          this.notification.warning(
+            'Decision outcome unconfirmed',
+            'HAI could not confirm whether the decision was saved. Refreshing the queue to reconcile its current state before another decision.'
           )
+          this.refresh()
         },
       })
   }
 
-  snooze(item: IWorkflowItem): void {
-    this.resolvingId = item.id
-    this.workflowService
-      .transition(item.id, {
-        targetState: 'waiting_external_input',
-        message: 'Snoozed from the household operations dashboard.',
-        actor: 'operator',
-      })
-      .subscribe({
-        next: () => {
-          this.resolvingId = ''
-          this.notification.success(
-            'Snoozed',
-            'The task is waiting and remains visible in the audit trail.'
-          )
-          this.refresh()
-        },
-        error: () => {
-          this.resolvingId = ''
-          this.notification.error(
-            'Could not snooze',
-            'Open task details to choose an allowed workflow state.'
-          )
-        },
-      })
+  isResolving(item: IWorkflowItem, action: 'approve' | 'reject'): boolean {
+    return this.resolvingId === item.id && this.resolvingAction === action
+  }
+
+  isApprovalActionDisabled(item?: IWorkflowItem): boolean {
+    if (
+      this.loading ||
+      !!this.resolvingId ||
+      this.dashboardAuthenticationRequired ||
+      this.dashboardLoadErrors.includes('Workflow status') ||
+      !this.workflowDataAvailable() ||
+      !this.hasCompleteQueueCounts()
+    ) {
+      return true
+    }
+
+    return item
+      ? !this.workflowDashboard?.approvalItems?.some((approval) => approval.id === item.id)
+      : false
+  }
+
+  private clearResolvingAction(): void {
+    this.resolvingId = ''
+    this.resolvingAction = ''
   }
 
   archiveMemory(memory: IContextMemory): void {
     if (!memory.id) return
-    this.archivingMemoryId = memory.id
-    this.memoryService.archive(memory.id).subscribe({
+    const memoryId = memory.id
+    if (this.archivingMemoryIds.has(memoryId)) return
+    this.archivingMemoryIds.add(memoryId)
+    this.memoryService.archive(memoryId).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: () => {
-        this.archivingMemoryId = ''
-        this.memories = this.memories.filter((item) => item.id !== memory.id)
+        this.archivingMemoryIds.delete(memoryId)
+        this.memories = this.memories.filter((item) => item.id !== memoryId)
         this.rebuildViewModel()
         this.notification.success(
           'Memory archived',
@@ -415,21 +490,29 @@ export class ControlCenterComponent implements OnInit {
         )
       },
       error: () => {
-        this.archivingMemoryId = ''
+        this.archivingMemoryIds.delete(memoryId)
         this.notification.error(
-          'Memory not archived',
-          'The memory update could not be changed.'
+          'Archive outcome unconfirmed',
+          'Reload memory updates to check whether the item was archived before trying again.'
         )
       },
     })
   }
 
+  isArchivingMemory(memory: IContextMemory): boolean {
+    return !!memory.id && this.archivingMemoryIds.has(memory.id)
+  }
+
   attentionItems(): IWorkflowItem[] {
-    return this.attentionItemsView
+    return this.isAdvancedView ? this.attentionItemsView : this.attentionItemsView.slice(0, 1)
   }
 
   activeItems(): IWorkflowItem[] {
     return this.activeItemsView
+  }
+
+  activeItemsForView(): IWorkflowItem[] {
+    return this.isAdvancedView ? this.activeItemsView : this.activeItemsView.slice(0, 2)
   }
 
   blockedItems(): IWorkflowItem[] {
@@ -452,6 +535,14 @@ export class ControlCenterComponent implements OnInit {
     return this.commandActionsView
   }
 
+  commandActionDescriptionId(action: CommandAction): string {
+    return `control-center-action-${action.id}-description`
+  }
+
+  commandActionDescription(action: CommandAction): string {
+    return `${action.detail} Current metric: ${action.primaryMetric}. Additional context: ${action.secondaryMetric}. ${action.context}`
+  }
+
   primaryCommandActions(): CommandAction[] {
     const primaryIds = ['scan', 'approvals', 'blocked']
     return primaryIds
@@ -465,7 +556,374 @@ export class ControlCenterComponent implements OnInit {
   }
 
   hasLiveWork(): boolean {
-    return this.loading || this.attentionItemsView.length > 0 || this.activeItemsView.length > 0
+    const counts = this.workflowDashboard?.counts
+    return this.loading || this.hasDashboardLoadError() || this.attentionItemsView.length > 0 ||
+      this.activeItemsView.length > 0 || this.blockedItemsView.length > 0 ||
+      (this.workflowDashboard?.dueOpenLoops?.length || 0) > 0 ||
+      Number(counts?.['approvals'] || 0) > 0 || Number(counts?.['ready'] || 0) > 0 ||
+      Number(counts?.['blocked'] || 0) > 0 || Number(counts?.['dueOpenLoops'] || 0) > 0
+  }
+
+  workflowDataAvailable(): boolean {
+    return !!this.workflowDashboard && !this.dashboardLoadErrors.includes('Workflow status')
+  }
+
+  workflowQueueHasNoApprovals(): boolean {
+    return this.workflowDataAvailable() && this.hasCompleteQueueCounts() &&
+      this.workflowDashboard?.counts?.['approvals'] === 0 &&
+      this.isKnownEmptyList(this.workflowDashboard?.approvalItems)
+  }
+
+  workflowQueueHasNoActiveItems(): boolean {
+    return this.workflowDataAvailable() && this.hasCompleteQueueCounts() &&
+      this.workflowDashboard?.counts?.['ready'] === 0 &&
+      this.isKnownEmptyList(this.workflowDashboard?.readyItems) &&
+      this.activeItemsView.length === 0
+  }
+
+  workflowQueueHasNoBlockers(): boolean {
+    return this.workflowDataAvailable() && this.hasCompleteQueueCounts() &&
+      this.workflowDashboard?.counts?.['blocked'] === 0 &&
+      this.workflowDashboard?.counts?.['dueOpenLoops'] === 0 &&
+      this.isKnownEmptyList(this.workflowDashboard?.blockedItems) &&
+      this.isKnownEmptyList(this.workflowDashboard?.dueOpenLoops)
+  }
+
+  ambientPrioritiesAvailable(): boolean {
+    return !!this.ambientOverview && !this.dashboardLoadErrors.includes('Ambient scan') &&
+      this.isKnownList(this.ambientOverview.needs)
+  }
+
+  activitySourcesAvailable(): boolean {
+    return this.workflowDataAvailable() && this.ambientOverview !== undefined &&
+      !this.dashboardLoadErrors.includes('Ambient scan') &&
+      [
+        this.workflowDashboard?.approvalItems,
+        this.workflowDashboard?.blockedItems,
+        this.workflowDashboard?.readyItems,
+        this.workflowDashboard?.highRiskItems,
+        this.workflowDashboard?.itemsWithoutNextAction,
+        this.ambientOverview.scans,
+      ].every((items) => this.isKnownList(items))
+  }
+
+  private isKnownList(value: unknown): boolean {
+    return Array.isArray(value) || value === null
+  }
+
+  private isKnownEmptyList(value: unknown): boolean {
+    return value === null || (Array.isArray(value) && value.length === 0)
+  }
+
+  dashboardSourceState(source: 'workflow' | 'ambient' | 'pursuits'): 'checking' | 'loaded' | 'unavailable' {
+    if (this.loading) return 'checking'
+
+    const sourceConfig = {
+      workflow: {
+        error: 'Workflow status',
+        loaded: this.workflowDataAvailable() && this.hasCompleteQueueCounts(),
+      },
+      ambient: {
+        error: 'Ambient scan',
+        loaded: this.ambientDataAvailable(),
+      },
+      pursuits: {
+        error: 'Pursuit status',
+        loaded: this.pursuitDataAvailable(),
+      },
+    }[source]
+
+    return this.dashboardLoadErrors.includes(sourceConfig.error) || !sourceConfig.loaded
+      ? 'unavailable'
+      : 'loaded'
+  }
+
+  workflowCount(key: 'approvals' | 'blocked' | 'dueOpenLoops'): string {
+    if (!this.workflowDataAvailable()) {
+      return this.loading && !this.workflowDashboard ? 'Checking' : 'Unavailable'
+    }
+    const value = this.workflowDashboard?.counts?.[key]
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ? value.toLocaleString()
+      : 'Unavailable'
+  }
+
+  private hasCompleteQueueCounts(): boolean {
+    const counts = this.workflowDashboard?.counts
+    return ['approvals', 'blocked', 'dueOpenLoops'].every((key) =>
+      typeof counts?.[key] === 'number' && Number.isFinite(counts[key]) && counts[key] >= 0
+    )
+  }
+
+  private ambientDataAvailable(): boolean {
+    const overview = this.ambientOverview
+    return !!overview && !!overview.policy &&
+      Array.isArray(overview.needs) && Array.isArray(overview.opportunities) &&
+      Array.isArray(overview.scans) && Array.isArray(overview.warnings)
+  }
+
+  private pursuitDataAvailable(): boolean {
+    const dashboard = this.pursuitDashboard
+    return !!dashboard && typeof dashboard.counts?.['active'] === 'number' &&
+      Number.isFinite(dashboard.counts['active']) && dashboard.counts['active'] >= 0 &&
+      Array.isArray(dashboard.decisionQueue) && Array.isArray(dashboard.needsRobert) &&
+      Array.isArray(dashboard.blocked) && Array.isArray(dashboard.reviewDue) &&
+      Array.isArray(dashboard.planningNeeded)
+  }
+
+  private nextPursuitAction(): NextActionSummary | undefined {
+    const dashboard = this.pursuitDashboard
+    if (!dashboard || !this.pursuitDataAvailable()) return undefined
+
+    const decision = dashboard.decisionQueue.find((item) => item?.pursuit?.id)
+    if (decision) {
+      return {
+        kind: 'pursuit',
+        title: decision.pursuit.title || 'Review a pursuit decision',
+        detail: decision.nextAction || decision.decision?.reason || 'A pursuit decision needs your review.',
+        source: 'Pursuit decision queue',
+        actionLabel: 'Open pursuit decision',
+        pursuitId: decision.pursuit.id,
+      }
+    }
+
+    const queues = [
+      { items: dashboard.needsRobert, title: 'Review a pursuit decision', fallback: 'A pursuit needs your decision.', label: 'Open pursuit decision' },
+      { items: dashboard.blocked, title: 'Unblock a pursuit', fallback: 'A pursuit is blocked and needs attention.', label: 'Inspect pursuit blocker' },
+      { items: dashboard.reviewDue, title: 'Review a pursuit', fallback: 'A pursuit review is due.', label: 'Open pursuit review' },
+      { items: dashboard.planningNeeded, title: 'Plan a pursuit', fallback: 'A pursuit needs a concrete next-step plan.', label: 'Open pursuit plan' },
+    ]
+    for (const queue of queues) {
+      const item = queue.items.find((candidate) => candidate?.pursuit?.id)
+      if (item) {
+        return {
+          kind: 'pursuit',
+          title: item.pursuit.title || queue.title,
+          detail: item.nextAction || item.whatChanged || queue.fallback,
+          source: queue.title,
+          actionLabel: queue.label,
+          pursuitId: item.pursuit.id,
+        }
+      }
+    }
+    return undefined
+  }
+
+  nextAction(): NextActionSummary | undefined {
+    if (this.loading) {
+      return {
+        kind: 'loading',
+        title: 'Checking the workflow queue',
+        detail: 'HAI is loading current work before recommending a next step.',
+        source: 'Workflow engine',
+        actionLabel: 'Checking',
+      }
+    }
+
+    if (this.dashboardAuthenticationRequired) {
+      return {
+        kind: 'queue-unavailable',
+        title: 'Sign-in required to verify current work',
+        detail: 'The dashboard API rejected the current session. Sign in again before treating any queue or status as current.',
+        source: 'Session authorization',
+        actionLabel: 'Sign in again',
+      }
+    }
+
+    if (this.workflowDataAvailable()) {
+      const approval = this.attentionItemsView[0]
+      if (approval) {
+        return {
+          kind: 'approval',
+          title: approval.title,
+          detail: this.itemReason(approval),
+          source: approval.sourceLabel || approval.sourceType || 'Workflow queue',
+          actionLabel: 'Open decision',
+          workflowId: approval.id,
+        }
+      }
+
+      if (!this.hasCompleteQueueCounts()) {
+        return {
+          kind: 'queue-unavailable',
+          title: 'HAI cannot confirm the queue state',
+          detail: 'Workflow data is missing required queue counts. Refresh the dashboard before treating the queue as clear.',
+          source: 'Workflow engine',
+          actionLabel: 'Refresh queue',
+        }
+      }
+
+      if ((this.workflowDashboard?.counts?.['approvals'] || 0) > 0) {
+        return {
+          kind: 'approval',
+          title: 'Review pending approvals',
+          detail: `${this.workflowCount('approvals')} workflow decision(s) are waiting in the approval queue.`,
+          source: 'Workflow engine',
+          actionLabel: 'Open decision queue',
+        }
+      }
+
+      const blocked = this.blockedItemsView[0]
+      if (blocked) {
+        return {
+          kind: 'blocked',
+          title: blocked.title,
+          detail: blocked.blockedReason || blocked.lastWorkerError || 'This workflow needs information before it can continue.',
+          source: blocked.sourceLabel || blocked.sourceType || 'Workflow queue',
+          actionLabel: 'Inspect blocker',
+          workflowId: blocked.id,
+        }
+      }
+      if ((this.workflowDashboard?.counts?.['blocked'] || 0) > 0) {
+        return {
+          kind: 'blocked',
+          title: 'Review blocked work',
+          detail: `${this.workflowCount('blocked')} workflow(s) need input before they can continue.`,
+          source: 'Workflow engine',
+          actionLabel: 'Open blocked work',
+        }
+      }
+
+      const loop = this.workflowDashboard?.dueOpenLoops?.[0]
+      if (loop) {
+        return {
+          kind: 'follow-up',
+          title: `Follow up: ${loop.waitingFor}`,
+          detail: loop.nextAction,
+          source: loop.responsibleParty || 'Follow-up owner not recorded',
+          actionLabel: 'Review follow-up',
+          workflowId: loop.workflowId,
+        }
+      }
+      if ((this.workflowDashboard?.counts?.['dueOpenLoops'] || 0) > 0) {
+        return {
+          kind: 'follow-up',
+          title: 'Review due follow-ups',
+          detail: `${this.workflowCount('dueOpenLoops')} follow-up(s) are due for review.`,
+          source: 'Workflow engine',
+          actionLabel: 'Open follow-up queue',
+        }
+      }
+
+      if (this.dashboardLoadErrors.includes('Pursuit status') ||
+        (this.pursuitDashboard && !this.pursuitDataAvailable())) {
+        return {
+          kind: 'queue-unavailable',
+          title: 'HAI cannot confirm pursuit status',
+          detail: 'Pursuit data is missing required queue fields. Refresh before treating the overall action queue as clear.',
+          source: 'Pursuit engine',
+          actionLabel: 'Retry queue check',
+        }
+      }
+
+      const pursuitAction = this.nextPursuitAction()
+      if (pursuitAction) return pursuitAction
+
+      const active = this.activeItemsView[0]
+      if (active) {
+        return {
+          kind: 'active',
+          title: active.title,
+          detail: active.nextAction || active.description || 'Review the current workflow state.',
+          source: active.sourceLabel || active.sourceType || 'Workflow queue',
+          actionLabel: 'View workflow',
+          workflowId: active.id,
+        }
+      }
+
+      if (this.dashboardLoadErrors.includes('Ambient scan') ||
+        (this.ambientOverview && !this.ambientDataAvailable())) {
+        return {
+          kind: 'queue-unavailable',
+          title: 'HAI cannot confirm proactive signals',
+          detail: 'Ambient data is missing required fields. Refresh before treating the current action brief as complete.',
+          source: 'Ambient engine',
+          actionLabel: 'Retry queue check',
+        }
+      }
+
+      if (this.lastAgentCycleIssue) {
+        return {
+          kind: 'cycle-issue',
+          title: 'Recheck your operating brief',
+          detail: this.lastAgentCycleIssue,
+          source: 'Agent cycle',
+          actionLabel: 'Retry operating brief',
+        }
+      }
+
+      return {
+        kind: 'brief',
+        title: 'Nothing is waiting on you',
+        detail: 'No pending approvals, blocked workflows, or due follow-ups were returned by the current workflow queue.',
+        source: 'Workflow engine',
+        actionLabel: 'Refresh operating brief',
+      }
+    }
+
+    return {
+      kind: 'queue-unavailable',
+      title: 'HAI cannot confirm the queue state',
+      detail: 'Workflow status is unavailable. Retry the dashboard check before starting work or treating the queue as clear.',
+      source: 'Workflow engine',
+      actionLabel: 'Retry queue check',
+    }
+  }
+
+  nextActionDetail(action: NextActionSummary): string {
+    if (this.isAdvancedView || action.detail.length <= 240) return action.detail
+    const firstCause = action.detail.split(/;|\r?\n/)[0].trim()
+    const summary = firstCause.length > 180 ? `${firstCause.slice(0, 177)}...` : firstCause
+    return `${summary}${/[.!?]$/.test(summary) ? '' : '.'} Open the workflow for the full context and recovery options.`
+  }
+
+  nextActionBusy(action: NextActionSummary): boolean {
+    return action.kind === 'loading'
+      || (action.kind === 'queue-unavailable' && this.loading)
+      || (['brief', 'cycle-issue'].includes(action.kind) && this.scanning)
+  }
+
+  runNextAction(): void {
+    const action = this.nextAction()
+    if (!action) return
+
+    switch (action.kind) {
+      case 'approval':
+      case 'blocked':
+      case 'follow-up':
+      case 'active':
+        if (action.workflowId) this.openWorkflowId(action.workflowId)
+        else this.openWorkflow()
+        return
+      case 'pursuit':
+        if (action.pursuitId) {
+          void this.router.navigate(['/pursuits'], { queryParams: { selected: action.pursuitId } })
+        } else {
+          void this.router.navigate(['/pursuits'])
+        }
+        return
+      case 'brief':
+        this.runScan()
+        return
+      case 'queue-unavailable':
+        this.recoverDashboard()
+        return
+      case 'cycle-issue':
+        this.runScan()
+        return
+      case 'loading':
+        return
+    }
+  }
+
+  hasDiagnosticsLoadError(): boolean {
+    return this.diagnosticsLoadErrors.length > 0
+  }
+
+  private recordDiagnosticsLoadFailure(label: string): void {
+    if (!this.diagnosticsLoadErrors.includes(label)) {
+      this.diagnosticsLoadErrors = [...this.diagnosticsLoadErrors, label]
+    }
   }
 
   private buildRecentActivity(): ActivityEntry[] {
@@ -567,8 +1025,16 @@ export class ControlCenterComponent implements OnInit {
         detail: 'Register a script, service, API, or workflow target.',
         icon: 'plus',
         tone: 'blue',
-        primaryMetric: `${this.automations.length} registered`,
-        secondaryMetric: 'Opens automation registry',
+        primaryMetric: this.hasDiagnosticsLoadError()
+          ? 'Unavailable'
+          : this.diagnosticsLoaded
+          ? `${this.automations.length} registered`
+          : 'Open registry',
+        secondaryMetric: this.hasDiagnosticsLoadError()
+          ? 'Reload technical checks'
+          : this.diagnosticsLoaded
+          ? 'Automation health loaded'
+          : 'Health detail loads on demand',
         context: 'Use this when HAI needs a new controlled runtime target, health check, launch path, dependency note, or automation entry.',
         route: '/home',
       },
@@ -596,8 +1062,8 @@ export class ControlCenterComponent implements OnInit {
       },
       {
         id: 'sources',
-        title: 'Sync sources',
-        detail: 'Refresh connected accounts and documents.',
+        title: 'Review sources',
+        detail: 'Inspect connected accounts and choose a source to refresh.',
         icon: 'cluster',
         tone: 'blue',
         primaryMetric: 'Local-first',
@@ -643,8 +1109,8 @@ export class ControlCenterComponent implements OnInit {
       },
       {
         id: 'health',
-        title: 'Run health checks',
-        detail: 'Probe automations and runtime readiness.',
+        title: 'Review health status',
+        detail: 'Load current automation and runtime health details.',
         icon: 'tool',
         tone: 'blue',
         primaryMetric: this.summary ? `${this.summary.healthy}/${this.summary.total} healthy` : 'On demand',
@@ -796,21 +1262,15 @@ export class ControlCenterComponent implements OnInit {
 
   openSource(uri?: string): void {
     if (!uri) return
-    try {
-      const parsed = new URL(uri)
-      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-        window.open(parsed.toString(), '_blank', 'noopener,noreferrer')
-      }
-    } catch {
-      this.notification.warning(
-        'Source unavailable',
-        'This source does not have a browser-safe link.'
-      )
+    const href = safeWebSourceHref(uri)
+    if (href) {
+      window.open(href, '_blank', 'noopener,noreferrer')
+      return
     }
+    this.notification.warning('Source unavailable', 'This source does not have a valid web link without embedded credentials.')
   }
 
   navigate(route: string): void {
-    this.mobileNavigationOpen = false
     if (route === '/control-center') {
       this.activeSection = 'overview'
       setTimeout(() => this.scrollToSection('overview'))
@@ -818,60 +1278,17 @@ export class ControlCenterComponent implements OnInit {
     this.router.navigate([route])
   }
 
-  activateNavigationItem(item: NavigationItem): void {
-    if (item.route) {
-      this.navigate(item.route)
-      return
-    }
-    if (item.section) {
-      this.navigateToSection(item.section)
-    }
-  }
-
-  isNavigationItemActive(item: NavigationItem): boolean {
-    if (item.section && !item.route) {
-      return this.activeSection === item.section
-    }
-    return !!item.route && this.router.url.split('?')[0] === item.route
-  }
-
-  navigationBadge(item: NavigationItem): string | undefined {
-    switch (item.label) {
-      case 'Approvals':
-        return this.attentionItems().length ? `${this.attentionItems().length}` : undefined
-      case 'Pursuits':
-        return this.pursuitAttentionCount() ? `${this.pursuitAttentionCount()}` : undefined
-      case 'Priorities':
-        return this.lifePriorities().length ? `${this.lifePriorities().length}` : undefined
-      case 'Activity':
-        return this.recentActivity().length ? `${this.recentActivity().length}` : undefined
-      default:
-        return undefined
-    }
-  }
-
-  menuKey(label: string): string {
-    return label
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '')
-  }
-
   navigateToSection(section: ControlCenterSection): void {
-    this.mobileNavigationOpen = false
     this.activeSection = section
     this.openContainingDisclosure(section)
-    if (section === 'diagnostics' && !this.diagnosticsExpanded) {
-      this.diagnosticsExpanded = true
-      this.loadDiagnosticsData()
-    }
+    if (section === 'diagnostics') this.diagnosticsSection?.setOpen(true)
     if (section === 'memory') {
       this.loadMemories()
     }
     setTimeout(() => this.scrollToSection(section))
   }
 
-  private scrollToSection(section: ControlCenterSection): void {
+  private scrollToSection(section: string): void {
     document.getElementById(section)?.scrollIntoView({
       // Action controls should make their destination visible immediately. A
       // long smooth scroll made valid clicks appear to do nothing, especially
@@ -882,11 +1299,18 @@ export class ControlCenterComponent implements OnInit {
   }
 
   private openContainingDisclosure(section: ControlCenterSection): void {
-    const target = document.getElementById(section)
-    const disclosure = target?.closest('details') as HTMLDetailsElement | null
-    if (disclosure) {
-      disclosure.open = true
+    const sectionId: Partial<Record<ControlCenterSection, string>> = {
+      blocked: 'operational-controls',
+      priorities: 'operational-controls',
+      activity: 'context-audit',
+      memory: 'context-audit',
+      diagnostics: 'diagnostics',
     }
+    const id = sectionId[section]
+    if (!id) return
+    const wrapper = document.getElementById(id)
+    const trigger = wrapper?.querySelector<HTMLButtonElement>('.hai-progressive-section__summary')
+    if (trigger?.getAttribute('aria-expanded') !== 'true') trigger?.click()
   }
 
   openAction(action: CommandAction): void {
@@ -904,7 +1328,10 @@ export class ControlCenterComponent implements OnInit {
     // NG-Zorro keeps the document scroll-locked until the inspector close
     // animation finishes. Deferring the target action lets section actions
     // land visibly instead of leaving users at the command cards.
-    window.setTimeout(() => this.continueSelectedAction(action), 360)
+    window.setTimeout(() => {
+      this.continueSelectedAction(action)
+      this.cdr.markForCheck()
+    }, 360)
   }
 
   private continueSelectedAction(action: CommandAction): void {
@@ -922,6 +1349,7 @@ export class ControlCenterComponent implements OnInit {
   }
 
   actionModeLabel(action: CommandAction): string {
+    if (action.id === 'health') return 'Loads current diagnostics';
     if (action.execute) return 'Runs an operation here'
     if (action.route) return `Opens ${action.route.replace('/', '')}`
     if (action.section) return `Focuses ${action.section.replace(/_/g, ' ')}`
@@ -1049,26 +1477,37 @@ export class ControlCenterComponent implements OnInit {
     })
   }
 
+  openWorkflowId(workflowId: string): void {
+    this.router.navigate(['/workflow-engine'], { queryParams: { workflowId } })
+  }
+
   openMemory(): void {
     this.router.navigate(['/memory'])
   }
 
   toggleDiagnostics(): void {
-    this.diagnosticsExpanded = !this.diagnosticsExpanded
-    if (this.diagnosticsExpanded) {
+    const shouldOpen = !this.diagnosticsExpanded
+    this.diagnosticsSection?.setOpen(shouldOpen)
+    if (shouldOpen) {
       this.activeSection = 'diagnostics'
       this.loadDiagnosticsData()
-      setTimeout(() => this.scrollToSection('diagnostics'))
+      setTimeout(() => this.scrollToSection('diagnostics-content'))
     } else if (this.activeSection === 'diagnostics') {
       this.activeSection = 'overview'
     }
   }
 
+  onDiagnosticsOpenChange(open: boolean): void {
+    this.diagnosticsExpanded = open
+    if (open) this.loadDiagnosticsData()
+  }
+
   runHealthCheck(automation: IAutomationModel): void {
     if (!automation.id) return
     const id = automation.id
+    if (this.checkingIds.has(id)) return
     this.checkingIds.add(id)
-    this.automationsService.runHealthCheck(id).subscribe({
+    this.automationsService.runHealthCheck(id).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (result) => {
         this.checkingIds.delete(id)
         automation.status = result.status
@@ -1082,10 +1521,14 @@ export class ControlCenterComponent implements OnInit {
           automation.lastFailureAt = result.checkedAt
           automation.lastFailureReason = result.failureReason
         }
-        this.notification.success(
-          'Check completed',
-          `${automation.name} is ${result.status}.`
-        )
+        if (result.status === 'healthy') {
+          this.notification.success('Check completed', `${automation.name} is healthy.`)
+        } else {
+          this.notification.warning(
+            'Check completed with an issue',
+            `${automation.name} is ${result.status}${result.failureReason ? `: ${result.failureReason}` : '.'}`
+          )
+        }
       },
       error: () => {
         this.checkingIds.delete(id)
@@ -1104,28 +1547,38 @@ export class ControlCenterComponent implements OnInit {
   launch(automation: IAutomationModel): void {
     if (!automation.id) return
     const id = automation.id
+    if (this.launchingIds.has(id)) return
     this.launchingIds.add(id)
-    this.automationsService.launchAutomation(id).subscribe({
+    this.automationsService.launchAutomation(id).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (result) => {
         this.launchingIds.delete(id)
-        automation.lastLaunchAt = result.launchedAt
-        if (result.status === 'completed' || result.status === 'ready') {
-          this.notification.success(
-            'Automation started',
-            result.message || automation.name
+        if (isConfirmedLaunchResult(result, id)) {
+          automation.lastLaunchAt = result.launchedAt
+          this.notification.success(result.status === 'ready' ? 'Automation is ready' : 'Launch completed', result.message || automation.name)
+        } else if (result?.status === 'indeterminate') {
+          this.notification.warning(
+            'Launch outcome is still being checked',
+            `${result.message || automation.name} Retrying reuses the same request; do not create a separate launch.`
           )
         } else {
           this.notification.warning(
-            'Automation did not start',
-            result.message || result.status
+            'Launch completion is not verified',
+            'The existing request key was retained. Open diagnostics before starting another attempt.'
           )
         }
       },
-      error: () => {
+      error: (error) => {
         this.launchingIds.delete(id)
+        const recoveryNotice = launchRecoveryNotice(error, id)
+        if (recoveryNotice) {
+          this.notification.warning('Launch requires reconciliation', recoveryNotice)
+          return
+        }
         this.notification.error(
-          'Launch failed',
-          `${automation.name} could not be started.`
+          error?.name === 'AutomationLaunchSafetyError' ? 'Launch was not sent' : 'Launch failed',
+          error?.name === 'AutomationLaunchSafetyError'
+            ? error.message
+            : `${automation.name} could not be started. If the result is uncertain, retrying reuses the same launch request.`
         )
       },
     })
@@ -1137,17 +1590,20 @@ export class ControlCenterComponent implements OnInit {
 
   openDiagnostics(automation: IAutomationModel): void {
     if (!automation.id) return
+    this.cancelDiagnosticsRequest()
     this.isDiagnosticsVisible = true
     this.diagnosticsLoading = true
     this.diagnostics = undefined
     this.diagnosticsName = automation.name
-    this.automationsService.getDiagnostics(automation.id).subscribe({
+    this.diagnosticsRequestSubscription = this.automationsService.getDiagnostics(automation.id).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (diagnostics) => {
         this.diagnostics = diagnostics
         this.diagnosticsLoading = false
+        this.cdr.markForCheck()
       },
       error: () => {
         this.diagnosticsLoading = false
+        this.cdr.markForCheck()
         this.notification.error(
           'Diagnostics unavailable',
           'The detailed automation record could not be loaded.'
@@ -1156,13 +1612,38 @@ export class ControlCenterComponent implements OnInit {
     })
   }
 
+  private cancelDiagnosticsRequest(): void {
+    this.diagnosticsRequestSubscription?.unsubscribe()
+    this.diagnosticsRequestSubscription = undefined
+  }
+
   closeDiagnostics(): void {
+    this.cancelDiagnosticsRequest()
     this.isDiagnosticsVisible = false
+    this.diagnosticsLoading = false
     this.diagnostics = undefined
   }
 
   diagnosticsCheckKeys(): string[] {
     return this.diagnostics ? Object.keys(this.diagnostics.checks || {}) : []
+  }
+
+  isHostRuntimeReviewEvent(event: IAutomationLaunchEvent): boolean {
+    return event.launchType === 'agent_runtime_host_review' &&
+      (event.status === 'expired' || event.status === 'needs_review')
+  }
+
+  launchEventLabel(event: IAutomationLaunchEvent): string {
+    return this.isHostRuntimeReviewEvent(event)
+      ? `Operator review required: ${event.status}`
+      : event.status
+  }
+
+  launchEventSummary(event: IAutomationLaunchEvent): string {
+    if (this.isHostRuntimeReviewEvent(event)) {
+      return event.message || 'The host execution outcome is unknown. Review before deciding what happens next.'
+    }
+    return event.message || event.output || 'No execution summary.'
   }
 
   trackById(_index: number, item: { id?: string }): string | undefined {

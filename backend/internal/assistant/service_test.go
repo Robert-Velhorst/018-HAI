@@ -399,17 +399,25 @@ type fakeTaskEngine struct {
 	planCalls   int
 	runCalls    int
 	lastRequest task.IntakeRequest
+	planErr     error
+	runErr      error
 }
 
 func (f *fakeTaskEngine) Plan(request task.IntakeRequest) (*task.CompletionPlan, error) {
 	f.planCalls++
 	f.lastRequest = request
+	if f.planErr != nil {
+		return nil, f.planErr
+	}
 	return fakePlan(request, "planned"), nil
 }
 
 func (f *fakeTaskEngine) Run(request task.IntakeRequest) (*task.CompletionPlan, error) {
 	f.runCalls++
 	f.lastRequest = request
+	if f.runErr != nil {
+		return nil, f.runErr
+	}
 	return fakePlan(request, "validated"), nil
 }
 

@@ -49,44 +49,16 @@ affecting code and 0 in imported packages. One advisory remains in a required
 module whose vulnerable symbol is not called. The scan is pinned and blocking
 in CI.
 
-## Frontend (`npm audit --audit-level=high`)
+## Frontend (`npm audit --omit=dev --audit-level=high`)
 
-The coordinated 2026-08-09 migration replaced Angular 16 and the legacy webpack
-builder with Angular 22.1.1, `@angular/build`/CLI 22.1.3, ng-zorro 22.0.1,
-TypeScript 6.0.3, Zone.js 0.16.2, and the supported esbuild/Vite application
-builder. The unused drag/drop package and duplicate pnpm lock/workspace files
-were removed; npm 10.9.8 and `package-lock.json` are now authoritative.
+The Angular 20/ng-zorro 20 production dependency graph reported **0
+vulnerabilities** when scanned on 2026-08-23. The prior Angular 16 advisory
+state is retained in the bug-hunt log as historical context, not as the current
+release posture.
 
-The migration reduced the audit from **91 findings (4 critical, 59 high, 19
-moderate, 9 low)** to **3 moderate, 0 high, and 0 critical**. The complete
-379-test frontend suite and production build pass. The initial production bundle
-is 836.15 kB, down from approximately 1.40 MB under the old builder.
-
-The three remaining records describe one development-tool chain:
-
-`@angular/cli@22.1.3` -> `@modelcontextprotocol/sdk@1.29.0` ->
-`@hono/node-server<2.0.5` ([GHSA-frvp-7c67-39w9](https://github.com/advisories/GHSA-frvp-7c67-39w9)).
-
-This code is used by the local Angular CLI and is not copied into the nginx
-runtime image. Angular CLI 22.1.3 pins MCP SDK 1.29.0; npm's proposed automatic
-fix is a breaking downgrade to Angular CLI 21.0.4. Forcing Hono 2.0.5 would also
-violate MCP SDK 1.29.0's declared dependency range, so neither workaround is an
-accepted production remediation without upstream compatibility evidence.
-
-The repository maintainer accepts this **moderate, development-only** exposure
-until the earlier of an upstream Angular CLI release that adopts MCP SDK 1.30+
-or **2026-09-09**, when it must be reviewed again. The CLI development server
-must remain loopback-only and must not be used as the deployed application
-server. The production nginx image does not contain Angular CLI, MCP SDK, or
-Hono.
-
-## Frontend CI gate
-
-The frontend audit is now a blocking high/critical gate. CI installs from the
-lockfile, builds, runs all headless-browser unit tests, and then executes `npm
-audit --audit-level=high` without `continue-on-error`. A high or critical
-finding fails the job. Moderate findings remain visible and are governed by the
-time-bounded exception above.
+The production-only audit is a blocking CI gate. A future high-severity runtime
+advisory therefore blocks release until it is remediated or accepted through a
+time-bounded security decision with an owner and scope.
 
 ## Current CI posture
 
@@ -95,5 +67,5 @@ time-bounded exception above.
 - IDP: vet, build, test, and pinned `govulncheck` are **hard gates**.
 - Nginx configuration manager: vet, build, test, and pinned `govulncheck` are
   **hard gates**; Docker-socket control is forbidden by an executable contract.
-- Frontend: lockfile install, production build, **unit tests (headless Chrome)**,
-  and `npm audit --audit-level=high` are hard gates.
+- Frontend: build + **unit tests (headless Chrome)** +
+  `npm audit --omit=dev --audit-level=high` are hard gates.

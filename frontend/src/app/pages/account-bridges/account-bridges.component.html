@@ -1,69 +1,315 @@
 <div class="ab">
   <header class="ab__header">
-    <div>
-      <button nz-button nzType="text" (click)="goBack()">
-        <span nz-icon nzType="arrow-left"></span>
+    <div class="ab__heading">
+      <button nz-button nzType="text" class="ab__back" (click)="goBack()" aria-label="Back to Command Center">
+        Back
       </button>
-      <h1>Account Bridges</h1>
-      <p class="ab__subtitle">
-        Read-only account bridges. The generic JSON feed is the production path; Gmail, GitHub, Trello, Drive and
-        Calendar are honest contracts — they show exact setup requirements and never fake OAuth or a connected status.
-      </p>
+      <div>
+        <p class="ab__eyebrow">Intelligence / Sources</p>
+        <h1>Account bridges</h1>
+        <p class="ab__subtitle">
+          Bounded imports from registered feeds. Provider consent and live account connections are managed in Connected Sources.
+        </p>
+      </div>
     </div>
-    <button nz-button nzType="primary" (click)="syncAll()">
-      <span nz-icon nzType="sync"></span> Sync all
-    </button>
+    <div class="ab__actions" role="group" aria-label="Account bridge actions">
+      <button nz-button (click)="openConnectedSources()">
+        Connected Sources
+      </button>
+      <button nz-button (click)="refresh()" [disabled]="loading" [attr.aria-busy]="loading">
+        {{ loading ? 'Refreshing' : 'Refresh' }}
+      </button>
+    </div>
   </header>
 
-  <nz-card nzTitle="Registered feeds" nzSize="small" class="ab__feeds">
-    <nz-table #feedTable [nzData]="feeds" [nzLoading]="loading" nzSize="small" [nzNoResult]="emptyTpl">
-      <thead>
-        <tr>
-          <th>Feed</th><th>Provider</th><th>Status</th><th>Last read</th><th>Enabled</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let f of feedTable.data">
-          <td>{{ f.feed.name }}<div class="ab__muted">{{ f.feed.accountLabel }}</div></td>
-          <td><code>{{ f.feed.provider }}</code></td>
-          <td><nz-tag [nzColor]="statusColor(f.connectionStatus)">{{ f.connectionStatus }}</nz-tag></td>
-          <td>{{ f.lastItemsRead }}</td>
-          <td><nz-tag [nzColor]="f.feed.enabled ? 'green' : 'default'">{{ f.feed.enabled ? 'on' : 'off' }}</nz-tag></td>
-          <td>
-            <button nz-button nzSize="small" [nzLoading]="syncing[f.feed.id]" (click)="sync(f)">Sync</button>
-          </td>
-        </tr>
-      </tbody>
-    </nz-table>
-    <ng-template #emptyTpl><nz-empty nzNotFoundContent="No feeds registered yet"></nz-empty></ng-template>
-  </nz-card>
-
-  <h2 class="ab__section">Provider bridge contracts</h2>
-  <div class="ab__grid">
-    <nz-card *ngFor="let b of bridges" class="ab__card" nzSize="small">
-      <div class="ab__card-head">
-        <div>
-          <div class="ab__name">{{ b.displayName }}</div>
-          <div class="ab__muted">{{ b.provider }}</div>
-        </div>
-        <nz-tag [nzColor]="statusColor(b.connectionStatus)">{{ b.connectionStatus }}</nz-tag>
-      </div>
-
-      <div class="ab__badges">
-        <nz-tag [nzColor]="b.readOnly ? 'green' : 'red'">{{ b.readOnly ? 'read-only' : 'write' }}</nz-tag>
-        <nz-tag *ngFor="let s of b.requiredScopes" nzColor="purple">{{ s }}</nz-tag>
-      </div>
-
-      <div class="ab__pref">
-        <span class="ab__muted">Connector preference:</span> {{ b.connectorPreference.join(' → ') }}
-      </div>
-
-      <div class="ab__setup" *ngIf="b.setupRequirements.length">
-        <div class="ab__muted">Setup required</div>
-        <ol>
-          <li *ngFor="let s of b.setupRequirements"><strong>{{ s.step }}</strong> — {{ s.detail }}</li>
-        </ol>
-      </div>
-    </nz-card>
+  <div *ngIf="loadError" class="ab__notice ab__notice--error" role="alert">
+    <span>{{ loadError }}</span>
+    <button nz-button nzSize="small" (click)="refresh()" [disabled]="loading">Try again</button>
   </div>
+
+  <div *ngIf="identityPreviewError" class="ab__notice ab__notice--error ab__identity-error" role="alert">
+    <span>{{ selectedFeed?.feed?.name }}: {{ identityPreviewError }}</span>
+    <button nz-button nzSize="small" (click)="inspectSourceIdentities()" [disabled]="loading || !!feedLoadError || identityPreviewLoading || !selectedFeed">Retry inspection</button>
+  </div>
+
+  <p *ngIf="identityPreviewLoading" class="ab__loading-state" role="status" aria-live="polite">
+    Inspecting the local source identity sample for {{ selectedFeed?.feed?.name }}...
+  </p>
+
+  <section class="ab__overview" aria-labelledby="ab-overview-title" aria-describedby="ab-overview-description">
+    <div class="ab__section-heading">
+      <div>
+        <p class="ab__eyebrow">Current state</p>
+        <h2 id="ab-overview-title">Feed health</h2>
+      </div>
+      <span class="ab__live-state" [class.ab__live-state--loading]="loading" role="status" aria-live="polite">
+        <span class="ab__state-dot" aria-hidden="true"></span>
+        {{ healthSummary }}
+      </span>
+    </div>
+    <p id="ab-overview-description" class="ab__overview-copy">
+      Connector availability is not proof of a successful read. Attempt times, completed read counts and successful imports are recorded separately.
+    </p>
+
+    <div class="ab__metrics" role="group" aria-label="Feed totals">
+      <div class="ab__metric">
+        <span>Registered feeds</span>
+        <strong>{{ feedCountsKnown ? feeds.length : (loading ? 'Checking' : 'Unavailable') }}</strong>
+      </div>
+      <div class="ab__metric">
+        <span>Available to sync</span>
+        <strong>{{ feedCountsKnown ? availableFeeds.length : (loading ? 'Checking' : 'Unavailable') }}</strong>
+      </div>
+      <div class="ab__metric">
+        <span>Needs setup or review</span>
+        <strong>{{ feedCountsKnown ? requiredOrUnverifiedCount : (loading ? 'Checking' : 'Unavailable') }}</strong>
+      </div>
+      <div class="ab__metric">
+        <span>Included in bulk import</span>
+        <strong>{{ feedCountsKnown ? enabledFeeds.length : (loading ? 'Checking' : 'Unavailable') }}</strong>
+      </div>
+    </div>
+
+    <p *ngIf="pendingClaimCount > 0" class="ab__resource-notice" role="status" aria-live="polite">
+      {{ pendingClaimCount }} import{{ pendingClaimCount === 1 ? '' : 's' }} running or interrupted. Refresh status; an interrupted run needs operator review before recovery.
+    </p>
+
+    <div class="ab__next-action">
+      <div class="ab__next-copy">
+        <p class="ab__eyebrow">Next safe action</p>
+        <h3>{{ feedLoadError ? 'Refresh feed status' : (nextActionFeed ? nextActionFeed.feed.name : 'Review source connections') }}</h3>
+        <p>{{ nextActionDetail }}</p>
+      </div>
+      <button
+        nz-button
+        nzType="primary"
+        (click)="runNextSafeAction()"
+        [disabled]="loading || syncingAll || (!!nextActionFeed && syncing[nextActionFeed.feed.id])"
+        [nzLoading]="!!nextActionFeed && syncing[nextActionFeed.feed.id]"
+        [attr.aria-busy]="nextActionFeed && syncing[nextActionFeed.feed.id] ? 'true' : null"
+        [attr.aria-label]="nextActionLabel + (nextActionFeed && !feedLoadError ? ': ' + nextActionFeed.feed.name : '')"
+      >
+        {{ nextActionLabel }}
+      </button>
+    </div>
+
+    <p *ngIf="feedback" class="ab__feedback" [class.ab__feedback--success]="feedback.kind === 'success'" [class.ab__feedback--warning]="feedback.kind === 'warning'" [class.ab__feedback--error]="feedback.kind === 'error'" [attr.role]="feedback.kind === 'error' ? 'alert' : 'status'" aria-live="polite">
+      {{ feedback.text }}
+    </p>
+  </section>
+
+  <hai-progressive-section
+    [moduleId]="moduleId"
+    sectionId="registered-feeds"
+    title="Registered feeds"
+    summary="Inspect connection state, last read counts, and run a bounded read-only sync."
+    [advancedOnly]="true"
+    (openChange)="feedInspectorVisibilityChanged($event)"
+  >
+  <section class="ab__advanced" aria-labelledby="ab-feeds-title">
+    <div class="ab__section-heading">
+      <div>
+        <p class="ab__eyebrow">Feed controls</p>
+        <h2 id="ab-feeds-title">Registered feeds</h2>
+      </div>
+      <button
+        nz-button
+        nzType="primary"
+        (click)="syncAll()"
+        [disabled]="syncAllDisabled"
+        [nzLoading]="syncingAll"
+        [attr.aria-busy]="syncingAll ? 'true' : null"
+        [attr.title]="syncAllDisabledReason()"
+      >
+        Sync all enabled
+      </button>
+    </div>
+    <p class="ab__section-copy">Manual sync runs a read-only import for one supported feed. Bulk sync is guarded when an enabled feed is unavailable or unverified.</p>
+    <p class="ab__sync-note" role="note">{{ syncAllDisabledReason() }}</p>
+
+    <p *ngIf="loading && feeds.length === 0" class="ab__loading-state" role="status" aria-live="polite">
+      Loading registered feed details…
+    </p>
+    <p *ngIf="feedLoadError" class="ab__resource-notice" role="status">
+      Feed details could not be refreshed. Any previously loaded feed details remain visible.
+    </p>
+
+    <div *ngIf="feeds.length === 0 && !loading && !feedLoadError" class="ab__empty" role="status">
+      <div>
+        <h3>No normalized feeds registered</h3>
+        <p>Review provider connections or the approved import setup. Account Bridges does not create a feed from a provider contract by itself.</p>
+      </div>
+      <button nz-button (click)="openConnectedSources()">Open Connected Sources</button>
+    </div>
+
+    <div *ngIf="feeds.length > 0" class="ab__feed-list" role="list" aria-label="Registered account feeds">
+      <article class="ab__feed" role="listitem" *ngFor="let f of feeds; trackBy: trackFeed">
+        <div class="ab__feed-main">
+          <div class="ab__feed-title">
+            <h3>{{ f.feed.name }}</h3>
+            <nz-tag [nzColor]="statusColor(f.connectionStatus)">{{ statusLabel(f.connectionStatus) }}</nz-tag>
+            <nz-tag [nzColor]="f.feed.enabled ? 'green' : 'default'">{{ f.feed.enabled ? 'Included in bulk import' : 'Excluded from bulk import' }}</nz-tag>
+            <nz-tag *ngIf="hasActiveClaim(f)" nzColor="gold">Running or interrupted</nz-tag>
+          </div>
+          <p class="ab__feed-subtitle">{{ f.feed.accountLabel || 'Account label unavailable' }} · {{ f.feed.provider }}</p>
+          <p class="ab__status-description">{{ feedSyncDescription(f) }}</p>
+        </div>
+        <dl class="ab__feed-facts">
+          <div><dt>Last attempt</dt><dd>
+            <time *ngIf="timestampInstant(f.lastAttemptAt ?? f.lastSyncedAt) as instant; else noAttempt" [attr.datetime]="instant">{{ lastAttemptAt(f) }}</time>
+            <ng-template #noAttempt>{{ lastAttemptAt(f) }}</ng-template>
+          </dd></div>
+          <div><dt>Last successful sync</dt><dd>
+            <time *ngIf="timestampInstant(f.lastSyncedAt) as instant; else noSuccess" [attr.datetime]="instant">{{ lastSuccessfulSyncAt(f) }}</time>
+            <ng-template #noSuccess>{{ lastSuccessfulSyncAt(f) }}</ng-template>
+          </dd></div>
+          <div><dt>Items read</dt><dd>{{ lastAttemptCount(f) }}</dd></div>
+          <div><dt>Feed type</dt><dd>{{ f.feed.sourceType || 'Unavailable' }}</dd></div>
+        </dl>
+        <div class="ab__feed-action">
+          <button
+            #inspectorTrigger
+            nz-button
+            nzSize="small"
+            (click)="selectFeed(f, $event)"
+            [attr.aria-label]="'Inspect feed: ' + f.feed.name"
+            [attr.aria-expanded]="selectedFeedId === f.feed.id"
+            [attr.aria-controls]="selectedFeedId === f.feed.id ? 'ab-feed-inspector' : null"
+          >
+            Inspect feed
+          </button>
+          <button
+            nz-button
+            nzSize="small"
+            (click)="sync(f)"
+            [disabled]="loading || !!feedLoadError || !isFeedSyncable(f) || !!syncing[f.feed.id] || syncingAll"
+            [nzLoading]="!!syncing[f.feed.id]"
+            [attr.aria-busy]="syncing[f.feed.id] ? 'true' : null"
+            [attr.aria-label]="'Sync now: ' + f.feed.name"
+            [attr.title]="syncing[f.feed.id] ? 'Feed sync in progress' : (isFeedSyncable(f) ? 'Read this normalized feed once' : feedSyncDescription(f))"
+          >
+            Sync now
+          </button>
+          <span *ngIf="!isFeedSyncable(f)" class="ab__action-hint">{{ feedSyncDescription(f) }}</span>
+          <span *ngIf="syncing[f.feed.id]" class="ab__action-hint" role="status">Feed sync in progress</span>
+        </div>
+      </article>
+    </div>
+    <p *ngIf="lastLoadedAt" class="ab__freshness">Feed details refreshed {{ lastLoadedAt | date:'medium' }}.</p>
+
+    <section *ngIf="selectedFeed as selected" id="ab-feed-inspector" class="ab__inspector" aria-labelledby="ab-inspector-title">
+      <div class="ab__section-heading">
+        <h3 id="ab-inspector-title">{{ selected.feed.name }}: source identities</h3>
+        <button nz-button nzSize="small" (click)="closeFeedInspector()" aria-label="Close feed inspector">Close</button>
+      </div>
+      <p class="ab__section-copy">{{ selected.feed.accountLabel || 'Account label unavailable' }} / {{ selected.feed.sourceType }}</p>
+      <p *ngIf="!isFeedSyncable(selected)" class="ab__resource-notice">{{ feedSyncDescription(selected) }}</p>
+      <p id="ab-identity-scope" class="ab__section-copy">
+        Read-only observation of the current approved local JSON feed and active HAI operations only, limited to 100 inspected items. No provider request, import, sync claim, audit write, migration, or send is performed.
+        This observed sample is not a full historical migration inventory and does not confirm reconciliation is complete.
+      </p>
+      <div class="ab__inspector-actions">
+        <button
+          nz-button
+          (click)="inspectSourceIdentities()"
+          [disabled]="loading || !!feedLoadError || identityPreviewLoading"
+          [nzLoading]="identityPreviewLoading"
+          [attr.aria-busy]="identityPreviewLoading"
+          [attr.aria-label]="'Inspect source identities: ' + selected.feed.name"
+          aria-describedby="ab-identity-scope"
+          aria-controls="ab-identity-preview"
+        >Inspect source identities</button>
+      </div>
+      <div id="ab-identity-preview" [attr.aria-busy]="identityPreviewLoading">
+        <div *ngIf="selectedIdentityPreview as preview" class="ab__identity-report">
+          <p class="ab__identity-summary" role="status" aria-live="polite">
+            Observed sample: {{ preview.itemsInspected }} inspected of {{ preview.itemsObserved }} observed items.
+            {{ preview.truncated ? 'Truncated: only part of the observed feed was inspected.' : 'The current observed sample was inspected; historical inventory remains incomplete.' }}
+          </p>
+          <p class="ab__identity-freshness">
+            Observed <time [attr.datetime]="preview.observedAt">{{ preview.observedAt | date:'medium':'UTC' }} UTC</time>.
+            Point-in-time observation, not live status or a transaction-wide snapshot. Inspect again to observe later changes.
+          </p>
+          <dl class="ab__identity-counts" aria-label="Identity states in the inspected sample">
+            <div><dt>Unseen</dt><dd>{{ preview.counts.unseen }}</dd></div>
+            <div><dt>Canonical</dt><dd>{{ preview.counts.canonical }}</dd></div>
+            <div><dt>Historical</dt><dd>{{ preview.counts.historical }}</dd></div>
+            <div><dt>Coexisting</dt><dd>{{ preview.counts.coexisting }}</dd></div>
+          </dl>
+          <p class="ab__section-copy">Unseen: neither identity observed. Canonical: current identity observed. Historical: older identity observed. Coexisting: both identities observed. These states do not confirm migration or reconciliation.</p>
+          <p *ngIf="preview.items.length === 0" class="ab__section-copy">No source identities were inspected in this sample. This does not prove historical identities are absent.</p>
+          <ul *ngIf="preview.items.length > 0" class="ab__identity-items" tabindex="0" aria-label="Inspected source identity sample">
+            <li *ngFor="let item of preview.items">
+              <div class="ab__identity-item-heading"><strong>{{ item.title }}</strong><nz-tag>{{ item.state }}</nz-tag></div>
+              <dl class="ab__identity-item-facts">
+                <div><dt>External ID</dt><dd><code>{{ item.externalId }}</code></dd></div>
+                <div *ngIf="item.canonicalOperationId"><dt>Canonical operation ID</dt><dd><code>{{ item.canonicalOperationId }}</code></dd></div>
+                <div *ngIf="item.historicalOperationId"><dt>Historical operation ID</dt><dd><code>{{ item.historicalOperationId }}</code></dd></div>
+              </dl>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  </hai-progressive-section>
+
+  <hai-progressive-section
+    [moduleId]="moduleId"
+    sectionId="bridge-contracts"
+    title="Bridge contracts and setup"
+    summary="Review supported import paths, permission scope requirements, and setup steps."
+    [advancedOnly]="true"
+  >
+  <section class="ab__advanced" aria-labelledby="ab-compatibility-title">
+    <div class="ab__section-heading">
+      <div>
+        <p class="ab__eyebrow">Compatibility and setup</p>
+        <h2 id="ab-compatibility-title">Bridge contracts</h2>
+      </div>
+      <span class="ab__count" role="status" aria-live="polite">{{ bridgeCountLabel }}</span>
+    </div>
+    <p class="ab__section-copy">These contracts describe supported import paths and required setup. They do not prove provider authorization or a successful live connection.</p>
+
+    <p *ngIf="loading && bridges.length === 0" class="ab__loading-state" role="status" aria-live="polite">
+      Loading bridge compatibility details…
+    </p>
+    <p *ngIf="bridgeLoadError" class="ab__resource-notice" role="status">
+      Bridge details could not be refreshed. HAI cannot conclude that no bridge contracts exist.
+    </p>
+
+    <div *ngIf="bridges.length === 0 && !loading && !bridgeLoadError" class="ab__empty ab__empty--compact" role="status">
+      <p>No bridge compatibility details are available.</p>
+    </div>
+
+    <div class="ab__bridge-list" role="list" aria-label="Bridge contracts">
+      <article class="ab__bridge" role="listitem" *ngFor="let b of bridges; trackBy: trackBridge">
+        <div class="ab__bridge-heading">
+          <div>
+            <h3>{{ b.displayName }}</h3>
+            <p>{{ b.provider }}</p>
+          </div>
+          <nz-tag [nzColor]="statusColor(b.connectionStatus)">{{ statusLabel(b.connectionStatus) }}</nz-tag>
+        </div>
+
+        <div class="ab__bridge-facts">
+          <p><span>Data access</span><strong>{{ b.readOnly ? 'Read-only' : 'Can write' }}</strong></p>
+          <p><span>Item types</span><strong>{{ bridgeItemTypes(b).length ? bridgeItemTypes(b).join(', ') : 'Not specified' }}</strong></p>
+          <p><span>Connector preference</span><strong>{{ bridgeConnectorPreference(b).length ? bridgeConnectorPreference(b).join(' → ') : 'Not specified' }}</strong></p>
+          <p *ngIf="bridgeRequiredScopes(b).length"><span>Required scopes</span><strong>{{ bridgeRequiredScopes(b).join(', ') }}</strong></p>
+          <p *ngIf="b.credentialEnv"><span>Credential setting name</span><code>{{ b.credentialEnv }}</code></p>
+        </div>
+
+        <div class="ab__setup" *ngIf="bridgeSetupRequirements(b).length">
+          <h4>Setup steps</h4>
+          <ol>
+            <li *ngFor="let setup of bridgeSetupRequirements(b)"><strong>{{ setup.step }}</strong><span>{{ setup.detail }}</span></li>
+          </ol>
+        </div>
+        <p *ngIf="!bridgeSetupRequirements(b).length" class="ab__status-description">No additional setup steps are listed.</p>
+      </article>
+    </div>
+  </section>
+  </hai-progressive-section>
 </div>

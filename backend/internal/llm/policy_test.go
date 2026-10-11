@@ -1,12 +1,18 @@
 package llm
 
 import (
+	"automation-hub-backend/internal/agentframework"
 	"automation-hub-backend/internal/models"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -131,6 +137,17 @@ func TestPaidProviderDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestDefaultPolicyDoesNotPresentCustomPaidProviderAsImplemented(t *testing.T) {
+	policy := defaultPolicy()
+	provider := policy.Providers[providerIndex(t, policy, "paid-provider")]
+	if provider.Enabled || provider.Configured {
+		t.Fatalf("custom paid provider must remain disabled and unconfigured by default: %#v", provider)
+	}
+	if strings.Contains(strings.ToLower(provider.Name), "placeholder") {
+		t.Fatalf("custom paid provider name must not imply a placeholder integration: %q", provider.Name)
+	}
+}
+
 func TestRouteSkipsProvidersWithoutConfiguredEndpoints(t *testing.T) {
 	service := &Service{policy: testPolicyWithoutEndpoints()}
 
@@ -225,6 +242,174 @@ func TestConfiguredOllamaModelsUseOneSafeDefault(t *testing.T) {
 	models := configuredOllamaModels()
 	if len(models) != 1 || models[0].ID != "phi3:mini" || !models[0].Enabled {
 		t.Fatalf("default Ollama models = %#v", models)
+	}
+}
+
+func TestOllamaCloudModelTagsAreUnknownAndPaidPolicyGated(t *testing.T) {
+	for _, modelID := range []string{
+		"qwen3-coder:480b-cloud",
+		"QWEN3-CODER:480B-CLOUD",
+		"qwen3-coder-480b-CLOUD",
+	} {
+		t.Run(modelID, func(t *testing.T) {
+			t.Setenv("OLLAMA_MODEL_IDS", modelID)
+			models := configuredOllamaModels()
+			if len(models) != 1 {
+				t.Fatalf("configured models = %#v, want one", models)
+			}
+			if models[0].Tier != TierUnknown || !models[0].RequiresApproval {
+				t.Fatalf("cloud model classification = %#v, want unknown tier and approval", models[0])
+			}
+
+			policy := Policy{
+				LocalModelsAllowed:    true,
+				FreeCloudQuotaAllowed: true,
+				LocalFirst:            true,
+				TierOrder:             []string{TierLocal, TierFree, TierExpensive, TierUnknown},
+				Providers: []Provider{{
+					ID: "ollama", Name: "Ollama", Enabled: true, Local: true,
+					EndpointURL: "http://127.0.0.1:11434", QuotaRemaining: -1,
+					Models: models,
+				}},
+			}
+			decision, err := (&Service{policy: policy}).Route(RouteRequest{Task: "draft a short note"})
+			if err != nil {
+				t.Fatalf("Route: %v", err)
+			}
+			if decision.SelectedModelID != "" {
+				t.Fatalf("cloud model was selected under local/free policy: %#v", decision)
+			}
+			foundPaidPolicySkip := false
+			for _, skipped := range decision.Skipped {
+				if skipped.ProviderID == "ollama" && skipped.ModelID == modelID && skipped.Reason == "paid usage disabled by policy" {
+					foundPaidPolicySkip = true
+					break
+				}
+			}
+			if !foundPaidPolicySkip {
+				t.Fatalf("cloud model was not rejected by paid policy: %#v", decision.Skipped)
+			}
+		})
+	}
+}
+
+func TestOllamaCloudModelCanRouteOnlyThroughPaidPolicyNotLocalPolicy(t *testing.T) {
+	t.Setenv("OLLAMA_MODEL_IDS", "qwen3-coder:480b-cloud")
+	models := configuredOllamaModels()
+	policy := Policy{
+		DailyPaidBudgetEUR:             1,
+		PaidCallsAllowed:               true,
+		LocalModelsAllowed:             false,
+		FreeCloudQuotaAllowed:          false,
+		RequireApprovalBeforePaidUsage: false,
+		LocalFirst:                     true,
+		TierOrder:                      []string{TierLocal, TierFree, TierExpensive, TierUnknown},
+		Providers: []Provider{{
+			ID: "ollama", Name: "Ollama", Enabled: true, Local: true,
+			EndpointURL: "http://127.0.0.1:11434", QuotaRemaining: -1,
+			Models: models,
+		}},
+	}
+
+	decision, err := (&Service{policy: policy}).Route(RouteRequest{Task: "draft a short note"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if decision.SelectedModelID != "qwen3-coder:480b-cloud" || decision.Tier != TierUnknown || !decision.RequiresApproval {
+		t.Fatalf("cloud model did not retain unknown paid classification: %#v", decision)
+	}
+}
+
+func TestOllamaCloudInferenceCannotUseApprovalToBypassPaidPolicy(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		paidCallsAllowed bool
+		dailyBudgetEUR   float64
+	}{
+		{name: "paid use disabled", paidCallsAllowed: false, dailyBudgetEUR: 1},
+		{name: "no paid budget", paidCallsAllowed: true, dailyBudgetEUR: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("OLLAMA_MODEL_IDS", "qwen3-coder:480b-cloud")
+			var called atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called.Add(1)
+				t.Errorf("provider endpoint must not be called when paid policy is blocked: %s", r.URL.Path)
+			}))
+			defer server.Close()
+
+			policy := defaultPolicy()
+			index := providerIndex(t, policy, "ollama")
+			provider := policy.Providers[index]
+			provider.EndpointURL = server.URL
+			provider.Models = configuredOllamaModels()
+			policy.Providers = []Provider{provider}
+			policy.PaidCallsAllowed = test.paidCallsAllowed
+			policy.DailyPaidBudgetEUR = test.dailyBudgetEUR
+			policy = annotatePolicyReadiness(policy)
+			service := withTrustedTestFinalEffects(t, &Service{policy: policy})
+
+			result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+				Task: "draft a short note",
+				// A stale caller-supplied local classification must not override model policy.
+				RouteDecision: &RouteDecision{
+					SelectedProviderID: "ollama", SelectedModelID: "qwen3-coder:480b-cloud",
+					SelectedModelName: "Cloud model", Tier: TierLocal,
+				},
+			}))
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+			if result.Status != "blocked" || !strings.Contains(result.Reason, "billing is unknown") {
+				t.Fatalf("cloud inference result = %#v, want paid-policy block", result)
+			}
+			if called.Load() != 0 {
+				t.Fatalf("provider endpoint received %d requests despite paid policy block", called.Load())
+			}
+		})
+	}
+}
+
+func TestTrueLocalOllamaModelRemainsLocalWithPaidUsageDisabled(t *testing.T) {
+	t.Setenv("OLLAMA_MODEL_IDS", "custom-qwen:7b,qwen3-coder:480b-cloud")
+	policy := defaultPolicy()
+	index := providerIndex(t, policy, "ollama")
+	provider := policy.Providers[index]
+	provider.EndpointURL = "http://127.0.0.1:11434"
+	provider.Models = configuredOllamaModels()
+	if len(provider.Models) != 2 {
+		t.Fatalf("mixed Ollama model list = %#v, want a local and cloud model", provider.Models)
+	}
+	provider, model := applyOllamaModelPolicy(provider, provider.Models[0])
+	if !provider.Local || provider.Paid || model.Tier != TierLocal || model.RequiresApproval {
+		t.Fatalf("true local model policy changed: provider=%#v model=%#v", provider, model)
+	}
+	cloudProvider, cloudModel := applyOllamaModelPolicy(provider, provider.Models[1])
+	if cloudProvider.Local || !cloudProvider.Paid || cloudModel.Tier != TierUnknown || !cloudModel.RequiresApproval {
+		t.Fatalf("cloud model did not receive separate paid policy: provider=%#v model=%#v", cloudProvider, cloudModel)
+	}
+
+	policy.Providers = []Provider{provider}
+	policy.LocalModelsAllowed = true
+	policy.PaidCallsAllowed = false
+	policy.DailyPaidBudgetEUR = 0
+	policy = annotatePolicyReadiness(policy)
+	decision, err := (&Service{policy: policy}).Route(RouteRequest{Task: "draft a short note"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if decision.SelectedModelID != "custom-qwen:7b" || decision.Tier != TierLocal {
+		t.Fatalf("true local model no longer routes under local policy: %#v", decision)
+	}
+	foundCloudPaidSkip := false
+	for _, skipped := range decision.Skipped {
+		if skipped.ModelID == "qwen3-coder:480b-cloud" && skipped.Reason == "paid usage disabled by policy" {
+			foundCloudPaidSkip = true
+			break
+		}
+	}
+	if !foundCloudPaidSkip {
+		t.Fatalf("mixed local/cloud allowlist did not keep cloud model behind paid policy: %#v", decision.Skipped)
 	}
 }
 
@@ -375,6 +560,58 @@ func TestRouteBlocksRemoteLiteLLMGatewayEndpoint(t *testing.T) {
 	t.Fatalf("expected LiteLLM local-only boundary, got %#v", decision.Skipped)
 }
 
+func TestLocalProviderFlagCannotAuthorizeRemoteEndpoint(t *testing.T) {
+	remote := providerRuntimeReadiness(Provider{
+		ID: "custom-openai-compatible", Enabled: true, Local: true,
+		EndpointURL: "https://models.example.test/v1",
+	})
+	if remote.configured || remote.status != "blocked_endpoint" {
+		t.Fatalf("remote endpoint marked local readiness = %#v, want blocked_endpoint", remote)
+	}
+
+	local := providerRuntimeReadiness(Provider{
+		ID: "custom-openai-compatible", Enabled: true, Local: true,
+		EndpointURL: "http://127.0.0.1:11434/v1",
+	})
+	if !local.configured {
+		t.Fatalf("loopback local endpoint readiness = %#v, want configured", local)
+	}
+}
+
+func TestProviderReadinessRequiresTLSForRemoteAndRejectsEmbeddedCredentials(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		endpoint   string
+		wantStatus string
+		wantReason string
+	}{
+		{
+			name: "remote HTTP is blocked", endpoint: "http://models.example.test/v1",
+			wantStatus: "blocked_endpoint", wantReason: "remote provider endpoints must use HTTPS",
+		},
+		{
+			name: "URL userinfo is rejected", endpoint: "https://user:secret@models.example.test/v1",
+			wantStatus: "invalid_endpoint", wantReason: "without embedded credentials",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			readiness := providerRuntimeReadiness(Provider{
+				ID: "custom-openai-compatible", Enabled: true, EndpointURL: test.endpoint,
+			})
+			if readiness.configured || readiness.status != test.wantStatus || !strings.Contains(readiness.reason, test.wantReason) {
+				t.Fatalf("provider readiness = %#v; want status %q and reason containing %q", readiness, test.wantStatus, test.wantReason)
+			}
+		})
+	}
+
+	localHTTP := providerRuntimeReadiness(Provider{
+		ID: "custom-openai-compatible", Enabled: true, EndpointURL: "http://127.0.0.1:11434/v1",
+	})
+	if !localHTTP.configured {
+		t.Fatalf("loopback HTTP provider readiness = %#v; local development endpoint should remain supported", localHTTP)
+	}
+}
+
 func TestLocalModelsAllowedPolicyIsEnforced(t *testing.T) {
 	policy := testPolicyWithLocalEndpoints()
 	policy.LocalModelsAllowed = false
@@ -394,6 +631,7 @@ func TestLocalModelsAllowedPolicyIsEnforced(t *testing.T) {
 }
 
 func TestGenerateCallsOllamaEndpoint(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/generate" {
 			t.Fatalf("path = %s, want /api/generate", r.URL.Path)
@@ -434,6 +672,7 @@ func TestGenerateCallsOllamaEndpoint(t *testing.T) {
 }
 
 func TestGenerateStrictLiveProbePolicyBlocksExplicitRouteDecision(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -468,6 +707,7 @@ func TestGenerateStrictLiveProbePolicyBlocksExplicitRouteDecision(t *testing.T) 
 }
 
 func TestGenerateDoesNotFollowProviderRedirect(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	redirectCalled := false
 	redirectTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		redirectCalled = true
@@ -509,6 +749,12 @@ func TestProviderHTTPClientDoesNotUseEnvironmentProxy(t *testing.T) {
 	if !ok || transport.Proxy != nil {
 		t.Fatal("provider HTTP client must not inherit environment proxy settings")
 	}
+	if client != noRedirectHTTPClient() {
+		t.Fatal("provider HTTP client must reuse a shared transport pool")
+	}
+	if transport.MaxConnsPerHost <= 0 || transport.MaxIdleConns <= 0 || transport.MaxIdleConnsPerHost <= 0 || transport.IdleConnTimeout <= 0 {
+		t.Fatal("provider HTTP transport must bound active and idle connections")
+	}
 	if err := client.CheckRedirect(nil, nil); err != http.ErrUseLastResponse {
 		t.Fatalf("redirect behavior = %v, want %v", err, http.ErrUseLastResponse)
 	}
@@ -535,6 +781,48 @@ func TestProbeProvidersChecksOllamaTags(t *testing.T) {
 	}
 	if results[0].ModelsSeen != 1 {
 		t.Fatalf("models seen = %d, want 1", results[0].ModelsSeen)
+	}
+}
+
+func TestProbeProvidersRejectsTruncatedResponseAsNotLive(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		body          string
+		contentLength string
+		wantReason    string
+	}{
+		{
+			name:          "transport read error",
+			body:          `{"models":[{"name":"phi3:mini"}]}`,
+			contentLength: "1024",
+			wantReason:    "could not be read",
+		},
+		{
+			name:       "clean but incomplete JSON",
+			body:       `{"models":[{"name":`,
+			wantReason: "invalid JSON",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if test.contentLength != "" {
+					w.Header().Set("Content-Length", test.contentLength)
+				}
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+
+			policy := testPolicyWithoutEndpoints()
+			policy.Providers[0].EndpointURL = server.URL
+			results := (&Service{policy: policy}).ProbeProviders()
+			if len(results) == 0 || results[0].Live || results[0].Status != "failed" {
+				t.Fatalf("truncated probe response = %#v, want failed and not live", results)
+			}
+			if !strings.Contains(results[0].Reason, test.wantReason) {
+				t.Fatalf("truncated probe reason = %q, want %q", results[0].Reason, test.wantReason)
+			}
+		})
 	}
 }
 
@@ -795,6 +1083,49 @@ func TestGenerateBlocksOllamaModelWhenAuthorizedRefreshCannotVerifyDigest(t *tes
 	}
 }
 
+func TestGenerateBlocksOllamaModelWhenPullOmitsSuccessStatus(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
+	pulls := 0
+	generations := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"models": []map[string]string{{"name": "phi3:mini", "digest": "sha256:unchanged"}}})
+		case "/api/pull":
+			pulls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`))
+		case "/api/generate":
+			generations++
+			_ = json.NewEncoder(w).Encode(map[string]string{"response": "must not execute"})
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.Providers[0].EndpointURL = server.URL
+	policy.Providers[0].Models = []Model{{ID: "phi3:mini", Name: "Phi", Tier: TierLocal, Capabilities: []string{"general", "extraction"}, MaxDifficulty: 5, MaxReasoning: "very_high", Enabled: true}}
+	history := &fakeModelMaintenanceRepository{}
+	service := withTrustedTestFinalEffects(t, &Service{policy: policy, maintenanceHistory: history, maintenanceRunning: map[string]*sync.Mutex{}})
+
+	decision, err := service.Route(RouteRequest{Task: "classify this"})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	result, err := service.Generate(withTrustedTestEffect(GenerateRequest{Task: "classify this", RouteDecision: &decision}))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Status != "skipped" || pulls != 1 || generations != 0 {
+		t.Fatalf("result=%#v pulls=%d generations=%d; missing provider success must block generation", result, pulls, generations)
+	}
+	if len(history.records) != 1 || history.records[0].Status != "failed" || !history.records[0].BlocksExecution || !strings.Contains(history.records[0].Reason, "did not confirm success") {
+		t.Fatalf("maintenance history = %#v; expected persisted fail-closed provider evidence", history.records)
+	}
+}
+
 func TestRouteDoesNotRunFailingMaintenanceOrPrematurelyFallback(t *testing.T) {
 	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
 	maintenanceRequests := 0
@@ -900,14 +1231,140 @@ func TestGenerateReroutesWhenSuppliedDecisionBecomesBlockedByMaintenance(t *test
 	}
 }
 
-func TestRouteIsReadOnlyAndMaintenanceVerifiesExactFreeCloudModel(t *testing.T) {
+func TestGenerateBlocksUnsupportedLocalRuntimeAfterOtherMaintenanceFailures(t *testing.T) {
 	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
-	probes := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			t.Fatalf("maintenance path = %s", r.URL.Path)
+	ollama := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_ = json.NewEncoder(w).Encode(map[string]any{"models": []map[string]string{{"name": "a-model", "digest": "sha256:old"}}})
+		case "/api/pull":
+			http.Error(w, "registry unavailable", http.StatusBadGateway)
+		default:
+			t.Errorf("unexpected Ollama path %q", r.URL.Path)
 		}
-		probes++
+	}))
+	defer ollama.Close()
+	staleModel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("unexpected second-model path %q", r.URL.Path)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"id": "different-model"}}})
+	}))
+	defer staleModel.Close()
+	var generationCalls atomic.Int32
+	availableModel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"id": "c-model"}}})
+		case "/v1/chat/completions":
+			generationCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"choices": []map[string]any{{"message": map[string]string{"content": "third model draft"}}},
+				"usage":   map[string]int{"prompt_tokens": 9, "completion_tokens": 4},
+			})
+		default:
+			t.Errorf("unexpected available-model path %q", r.URL.Path)
+		}
+	}))
+	defer availableModel.Close()
+
+	policy := Policy{
+		LocalModelsAllowed: true,
+		LocalFirst:         true,
+		TierOrder:          []string{TierLocal},
+		Providers: []Provider{
+			{ID: "ollama", Name: "First model", Enabled: true, Local: true, EndpointURL: ollama.URL,
+				Models: []Model{{ID: "a-model", Name: "First", Tier: TierLocal, Capabilities: []string{"general"}, MaxDifficulty: 5, MaxReasoning: "very_high", Enabled: true}}},
+			{ID: "lm-studio", Name: "Second model", Enabled: true, Local: true, EndpointURL: staleModel.URL,
+				Models: []Model{{ID: "b-model", Name: "Second", Tier: TierLocal, Capabilities: []string{"general"}, MaxDifficulty: 5, MaxReasoning: "very_high", Enabled: true}}},
+			{ID: "localai", Name: "Third model", Enabled: true, Local: true, EndpointURL: availableModel.URL,
+				Models: []Model{{ID: "c-model", Name: "Third", Tier: TierLocal, Capabilities: []string{"general"}, MaxDifficulty: 5, MaxReasoning: "very_high", Enabled: true}}},
+		},
+	}
+	history := &fakeModelMaintenanceRepository{}
+	service := withTrustedTestFinalEffects(t, &Service{policy: policy, maintenanceHistory: history, maintenanceRunning: map[string]*sync.Mutex{}})
+	result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+		Task: "draft a short update",
+		RouteDecision: &RouteDecision{
+			SelectedProviderID: "ollama",
+			SelectedModelID:    "a-model",
+			SelectedModelName:  "First",
+			Tier:               TierLocal,
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Status != "skipped" || generationCalls.Load() != 0 {
+		t.Fatalf("result = %#v, generation calls=%d; unsupported local model must remain unused", result, generationCalls.Load())
+	}
+	if len(history.records) != 3 {
+		t.Fatalf("maintenance records = %#v; want one result for each checked model", history.records)
+	}
+	if history.records[0].ProviderID != "ollama" || history.records[0].Status != "failed" || !history.records[0].BlocksExecution ||
+		history.records[1].ProviderID != "lm-studio" || history.records[1].Status != "failed" || !history.records[1].BlocksExecution ||
+		history.records[2].ProviderID != "localai" || history.records[2].Status != "operator_managed" || !history.records[2].BlocksExecution || !strings.Contains(history.records[2].Reason, "cannot verify its upstream version") {
+		t.Fatalf("maintenance history did not isolate each model's outcome: %#v", history.records)
+	}
+}
+
+func TestAgentFrameworkGateRejectsOperatorManagedLocalModel(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
+	var modelProbes, planningCalls atomic.Int32
+	modelRuntime := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("model runtime path = %q, want /v1/models", r.URL.Path)
+			return
+		}
+		modelProbes.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]string{{"id": "qwen-local"}}})
+	}))
+	defer modelRuntime.Close()
+	runner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/healthz":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "ok", "configured": true, "modelId": "qwen-local", "modelEndpoint": modelRuntime.URL + "/v1",
+			})
+		case "/v1/propose":
+			planningCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Errorf("unexpected Agent Framework path %q", r.URL.Path)
+		}
+	}))
+	defer runner.Close()
+
+	policy := Policy{LocalModelsAllowed: true, Providers: []Provider{{
+		ID: "localai", Name: "LocalAI", Enabled: true, Local: true, EndpointURL: modelRuntime.URL,
+		Models: []Model{{ID: "qwen-local", Name: "Qwen local", Enabled: true}},
+	}}}
+	history := &fakeModelMaintenanceRepository{}
+	canonical := &Service{policy: policy, maintenanceHistory: history, maintenanceRunning: map[string]*sync.Mutex{}}
+	planner := agentframework.WithModelMaintenance(agentframework.NewService(true, runner.URL, 0, nil), canonical)
+	result, err := planner.Propose(context.Background(), agentframework.Request{Request: "Prepare a bounded plan"})
+	if err == nil || result != nil {
+		t.Fatalf("proposal = %#v, error = %v; unsupported local model version must fail closed", result, err)
+	}
+	if modelProbes.Load() != 1 || planningCalls.Load() != 0 {
+		t.Fatalf("model probes=%d planning calls=%d; want one check and no proposal", modelProbes.Load(), planningCalls.Load())
+	}
+	if len(history.records) != 1 || history.records[0].Status != "operator_managed" || !history.records[0].BlocksExecution {
+		t.Fatalf("maintenance history = %#v; want one blocked operator-managed result", history.records)
+	}
+}
+
+func TestRouteAvoidsProviderProbeAndMaintenanceChecksCloudCatalogReadOnly(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
+	var probes atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" || r.ContentLength != 0 {
+			t.Errorf("provider request = %s %s content-length=%d; want bodyless GET /v1/models", r.Method, r.URL.Path, r.ContentLength)
+			http.Error(w, "unexpected request", http.StatusMethodNotAllowed)
+			return
+		}
+		probes.Add(1)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]string{{"id": "free-verified"}}})
 	}))
 	defer server.Close()
@@ -930,35 +1387,35 @@ func TestRouteIsReadOnlyAndMaintenanceVerifiesExactFreeCloudModel(t *testing.T) 
 		t.Fatalf("selected model = %q, skipped=%#v", decision.SelectedModelID, decision.Skipped)
 	}
 	history, err := service.ModelMaintenanceHistory(10)
-	if err != nil || len(history) != 0 || probes != 0 {
-		t.Fatalf("Route performed provider verification: history=%#v probes=%d err=%v", history, probes, err)
+	if err != nil || len(history) != 0 || probes.Load() != 0 {
+		t.Fatalf("Route performed provider verification: history=%#v probes=%d err=%v", history, probes.Load(), err)
 	}
 	run := service.RunDueModelMaintenance()
-	if run.Failed != 0 || run.Checked != 1 {
+	if run.Failed != 0 || run.Checked != 1 || run.ProviderManaged != 1 {
 		t.Fatalf("maintenance run=%#v", run)
 	}
 	history, err = service.ModelMaintenanceHistory(10)
 	if err != nil || len(history) != 1 || history[0].Status != "provider_managed" || history[0].BlocksExecution {
 		t.Fatalf("maintenance history = %#v, err=%v", history, err)
 	}
-	if probes != 1 {
-		t.Fatalf("probes = %d, want 1", probes)
+	if probes.Load() != 1 || history[0].UpdateAttempted || history[0].UpdateApplied {
+		t.Fatalf("cloud maintenance did not make exactly one read-only request or claimed an update: probes=%d result=%#v", probes.Load(), history[0])
 	}
 
 	_, err = service.Route(RouteRequest{Task: "plan this again"})
 	if err != nil {
 		t.Fatalf("second Route: %v", err)
 	}
-	if probes != 1 {
-		t.Fatalf("daily cloud record was not reused; probes=%d", probes)
+	if probes.Load() != 1 {
+		t.Fatalf("routing unexpectedly contacted the provider-managed model; probes=%d", probes.Load())
 	}
 	secondRun := service.RunDueModelMaintenance()
-	if secondRun.Reused != 1 || probes != 1 {
-		t.Fatalf("second maintenance run=%#v probes=%d", secondRun, probes)
+	if secondRun.Reused != 1 || secondRun.Checked != 0 || probes.Load() != 1 {
+		t.Fatalf("second maintenance run=%#v probes=%d", secondRun, probes.Load())
 	}
 }
 
-func TestMaintenanceFailureMakesLaterRoutesSkipUnverifiedIdentifier(t *testing.T) {
+func TestLocalMaintenanceFailureMakesLaterRoutesSkipUnverifiedIdentifier(t *testing.T) {
 	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
 	probes := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -968,11 +1425,11 @@ func TestMaintenanceFailureMakesLaterRoutesSkipUnverifiedIdentifier(t *testing.T
 	defer server.Close()
 
 	policy := Policy{
-		FreeCloudQuotaAllowed: true,
-		TierOrder:             []string{TierFree},
+		LocalModelsAllowed: true,
+		TierOrder:          []string{TierLocal},
 		Providers: []Provider{{
-			ID: "free-cloud", Name: "Free cloud", Enabled: true, EndpointURL: server.URL, QuotaRemaining: 5,
-			Models: []Model{{ID: "configured-model", Name: "Configured free model", Tier: TierFree, Capabilities: []string{"general"}, MaxDifficulty: 5, MaxReasoning: "very_high", Enabled: true}},
+			ID: "lm-studio", Name: "LM Studio", Enabled: true, Local: true, EndpointURL: server.URL,
+			Models: []Model{{ID: "configured-model", Name: "Configured local model", Tier: TierLocal, Capabilities: []string{"general"}, MaxDifficulty: 5, MaxReasoning: "very_high", Enabled: true}},
 		}},
 	}
 	service := withTrustedTestFinalEffects(t, &Service{policy: policy, maintenanceHistory: &fakeModelMaintenanceRepository{}, maintenanceRunning: map[string]*sync.Mutex{}})
@@ -1042,6 +1499,36 @@ func TestRunDueModelMaintenanceRefreshesEveryEnabledConfiguredLocalModel(t *test
 	second := service.RunDueModelMaintenance()
 	if second.Checked != 0 || second.Reused != 2 || pulls["phi3:mini"] != 1 || pulls["qwen2.5:7b"] != 1 {
 		t.Fatalf("daily cache was not reused: run=%#v pulls=%#v", second, pulls)
+	}
+}
+
+func TestModelMaintenanceSkipsExternalWorkWhenPersistentLeaseIsHeld(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "the competing process owns maintenance", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.Providers[0].EndpointURL = server.URL
+	policy.Providers[0].Models = []Model{{ID: "phi3:mini", Name: "Phi", Tier: TierLocal, Enabled: true}}
+	history := &leasedModelMaintenanceRepository{
+		fakeModelMaintenanceRepository: &fakeModelMaintenanceRepository{},
+		acquired:                       false,
+	}
+	service := &Service{policy: policy, maintenanceHistory: history, maintenanceRunning: map[string]*sync.Mutex{}}
+
+	result := service.ensureModelFresh(policy.Providers[0], policy.Providers[0].Models[0])
+	if result.Status != "in_progress" || !result.BlocksExecution {
+		t.Fatalf("maintenance result = %#v, want blocked in-progress result", result)
+	}
+	if calls != 0 {
+		t.Fatalf("maintenance contacted the provider %d time(s) while another process held its lease", calls)
+	}
+	if len(history.records) != 0 {
+		t.Fatalf("maintenance persisted %#v, want no misleading failure record", history.records)
 	}
 }
 
@@ -1125,6 +1612,50 @@ func TestProbeAndRecordProvidersPersistsRedactedLastSuccess(t *testing.T) {
 	}
 }
 
+func TestProbeAndRecordProvidersReportsCancellationInsteadOfPartialSuccess(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	repository := &cancellingContextProbeHistoryRepository{
+		fakeProbeHistoryRepository: &fakeProbeHistoryRepository{},
+		cancel:                     cancel,
+	}
+	service := &Service{
+		policy:       Policy{Providers: []Provider{{ID: "test-provider", Name: "Test provider"}}},
+		probeHistory: repository,
+	}
+
+	results, err := service.ProbeAndRecordProvidersWithContext(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("probe error = %v, want context cancellation", err)
+	}
+	if results != nil {
+		t.Fatalf("cancelled probe returned partial success %#v", results)
+	}
+	if repository.recordCalls != 1 {
+		t.Fatalf("context-aware history writes = %d, want 1", repository.recordCalls)
+	}
+}
+
+func TestProbeAndRecordProvidersRejectsAlreadyCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	repository := &cancellingContextProbeHistoryRepository{
+		fakeProbeHistoryRepository: &fakeProbeHistoryRepository{},
+		cancel:                     cancel,
+	}
+	service := &Service{
+		policy:       Policy{Providers: []Provider{{ID: "test-provider", Name: "Test provider"}}},
+		probeHistory: repository,
+	}
+
+	results, err := service.ProbeAndRecordProvidersWithContext(ctx)
+	if !errors.Is(err, context.Canceled) || results != nil {
+		t.Fatalf("results/error = %#v/%v, want nil/context cancellation", results, err)
+	}
+	if repository.recordCalls != 0 {
+		t.Fatalf("cancelled request reached history writer %d times", repository.recordCalls)
+	}
+}
+
 func TestRouteStrictLiveProbePolicyRequiresRecentLiveEvidence(t *testing.T) {
 	policy := testPolicyWithoutEndpoints()
 	policy.Providers[0].EndpointURL = "http://localhost:11434"
@@ -1170,6 +1701,24 @@ func TestRouteStrictLiveProbePolicyRequiresRecentLiveEvidence(t *testing.T) {
 	}
 	if decision.SelectedModelID != "" || !skippedReasonContains(decision.Skipped, "ollama", "readiness check is stale") {
 		t.Fatalf("stale live probe must block route: %#v", decision)
+	}
+
+	for _, test := range []struct {
+		checkedAt time.Time
+		reason    string
+	}{
+		{checkedAt: time.Time{}, reason: "timestamp"},
+		{checkedAt: now.Add(time.Minute), reason: "timestamp"},
+		{checkedAt: now.Add(-5 * time.Minute), reason: "stale"},
+	} {
+		repository.probes = []models.LLMProviderProbe{{ProviderID: "ollama", Live: true, CheckedAt: test.checkedAt}}
+		decision, err = service.Route(RouteRequest{Task: "Summarize this short note"})
+		if err != nil {
+			t.Fatalf("Route with provider-check timestamp %v: %v", test.checkedAt, err)
+		}
+		if decision.SelectedModelID != "" || !skippedReasonContains(decision.Skipped, "ollama", test.reason) {
+			t.Fatalf("provider check with timestamp %v must not authorize routing: %#v", test.checkedAt, decision)
+		}
 	}
 }
 
@@ -1269,6 +1818,7 @@ func providerIndex(t *testing.T, policy Policy, providerID string) int {
 }
 
 func TestGenerateCallsOpenAICompatibleEndpoint(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Fatalf("path = %s, want /v1/chat/completions", r.URL.Path)
@@ -1305,7 +1855,456 @@ func TestGenerateCallsOpenAICompatibleEndpoint(t *testing.T) {
 	}
 }
 
+func TestGenerateRequiresSuccessfulHTTPStatusAndDoesNotRetryProviderPosts(t *testing.T) {
+	disableModelMaintenanceForTest(t)
+
+	tests := []struct {
+		name       string
+		providerID string
+		modelID    string
+		status     int
+		body       string
+		wantPath   string
+		wantSecret bool
+	}{
+		{
+			name:       "Ollama redirect with success-shaped body",
+			providerID: "ollama",
+			modelID:    "phi3:mini",
+			status:     http.StatusFound,
+			body:       `{"response":"must not be accepted"}`,
+			wantPath:   "/api/generate",
+		},
+		{
+			name:       "OpenAI-compatible redirect with success-shaped body",
+			providerID: "lm-studio",
+			modelID:    "local-model",
+			status:     http.StatusFound,
+			body:       `{"choices":[{"message":{"content":"must not be accepted"}}]}`,
+			wantPath:   "/v1/chat/completions",
+		},
+		{
+			name:       "OpenAI-compatible transient failure is redacted and not retried",
+			providerID: "lm-studio",
+			modelID:    "local-model",
+			status:     http.StatusServiceUnavailable,
+			body:       `{"error":{"message":"authorization: Bearer super-secret-provider-token"}}`,
+			wantPath:   "/v1/chat/completions",
+			wantSecret: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var requests int
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.URL.Path != test.wantPath {
+					t.Errorf("request path = %q, want %q", r.URL.Path, test.wantPath)
+				}
+				w.Header().Set("Location", "https://provider-redirect.example.test/must-not-be-followed")
+				w.WriteHeader(test.status)
+				_, _ = io.WriteString(w, test.body)
+			}))
+			defer server.Close()
+
+			policy := testPolicyWithoutEndpoints()
+			index := providerIndex(t, policy, test.providerID)
+			policy.Providers[index].EndpointURL = server.URL
+			service := withTrustedTestFinalEffects(t, &Service{policy: policy})
+			result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+				Task: "Draft a short response",
+				RouteDecision: &RouteDecision{
+					SelectedProviderID: test.providerID,
+					SelectedModelID:    test.modelID,
+					Tier:               TierFree,
+				},
+			}))
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+			if result.Status != "failed" {
+				t.Fatalf("status = %q, want failed for HTTP %d; result=%#v", result.Status, test.status, result)
+			}
+			if result.Output != "" {
+				t.Fatalf("failed provider response exposed output %q", result.Output)
+			}
+			if !strings.Contains(result.Reason, fmt.Sprintf("HTTP %d", test.status)) {
+				t.Fatalf("failure reason %q does not report HTTP %d", result.Reason, test.status)
+			}
+			if test.wantSecret && strings.Contains(result.Reason, "super-secret-provider-token") {
+				t.Fatalf("provider error leaked a credential: %q", result.Reason)
+			}
+			if requests != 1 {
+				t.Fatalf("provider POST was attempted %d times; want one non-retried attempt", requests)
+			}
+		})
+	}
+}
+
+func TestGenerateCancelsAnInFlightProviderRequest(t *testing.T) {
+	disableModelMaintenanceForTest(t)
+	requestStarted := make(chan struct{}, 1)
+	requestRelease := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(requestRelease) }) }
+	defer release()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		requestStarted <- struct{}{}
+		<-requestRelease
+	}))
+	defer server.Close()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.Providers[1].EndpointURL = server.URL
+	policy.Providers[1].Models[0].InputCostPerMillionTokensEUR = 3
+	policy.Providers[1].Models[0].OutputCostPerMillionTokensEUR = 6
+	history := &fakeGenerationHistoryRepository{}
+	service := withTrustedTestFinalEffects(t, &Service{policy: policy, generationHistory: history})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultCh := make(chan *GenerationResult, 1)
+	errCh := make(chan error, 1)
+	go func() {
+		result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+			Task:                "draft a short note",
+			CancellationContext: ctx,
+			RouteDecision: &RouteDecision{
+				SelectedProviderID: "lm-studio",
+				SelectedModelID:    "local-model",
+				SelectedModelName:  "Configured LM Studio local model",
+				Tier:               TierFree,
+			},
+		}))
+		resultCh <- result
+		errCh <- err
+	}()
+
+	select {
+	case <-requestStarted:
+		cancel()
+	case <-time.After(3 * time.Second):
+		t.Fatal("provider generation request never started")
+	}
+	select {
+	case result := <-resultCh:
+		if err := <-errCh; err != nil {
+			t.Fatalf("Generate returned error: %v", err)
+		}
+		release()
+		if result == nil || result.Status != "cancelled" {
+			t.Fatalf("cancelled generation result = %#v", result)
+		}
+		if result.ProviderID != "lm-studio" || result.ModelID != "local-model" || result.ModelName != "Configured LM Studio local model" {
+			t.Fatalf("cancelled generation lost selected model identity: %#v", result)
+		}
+		if result.UsageSource != "estimated_uncertain" || result.InputTokens <= 0 || result.OutputTokens <= 0 || result.EstimatedCostEUR <= 0 {
+			t.Fatalf("cancelled dispatched call did not expose uncertain estimated usage: %#v", result)
+		}
+		usage := service.Policy().Providers[1]
+		if usage.InputTokensUsed != result.InputTokens || usage.OutputTokensUsed != result.OutputTokens || usage.BudgetUsedEUR != result.EstimatedCostEUR {
+			t.Fatalf("cancelled dispatched call was not reflected in usage accounting: provider=%#v result=%#v", usage, result)
+		}
+		if len(history.records) != 1 || history.records[0].Status != "cancelled" || history.records[0].ProviderID != "lm-studio" || history.records[0].ModelID != "local-model" || history.records[0].ModelName != "Configured LM Studio local model" || history.records[0].UsageSource != "estimated_uncertain" || history.records[0].InputTokens != result.InputTokens || history.records[0].OutputTokens != result.OutputTokens {
+			t.Fatalf("cancelled generation audit did not preserve selected model: %#v", history.records)
+		}
+	case <-time.After(3 * time.Second):
+		release()
+		t.Fatal("Generate did not stop after its request context was cancelled")
+	}
+}
+
+func TestGenerateRejectsTruncatedResponsesWithoutRecordingUsage(t *testing.T) {
+	disableModelMaintenanceForTest(t)
+	for _, test := range []struct {
+		name       string
+		providerID string
+		path       string
+		body       string
+	}{
+		{
+			name:       "ollama",
+			providerID: "ollama",
+			path:       "/api/generate",
+			body:       `{"response":"partial draft","prompt_eval_count":11,"eval_count":4}`,
+		},
+		{
+			name:       "openai-compatible",
+			providerID: "lm-studio",
+			path:       "/v1/chat/completions",
+			body:       `{"choices":[{"message":{"content":"partial draft"}}],"usage":{"prompt_tokens":11,"completion_tokens":4}}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != test.path {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Content-Length", "2048")
+				_, _ = w.Write([]byte(test.body))
+			}))
+			defer server.Close()
+
+			policy := testPolicyWithoutEndpoints()
+			providerIndex := providerIndex(t, policy, test.providerID)
+			policy.Providers[providerIndex].EndpointURL = server.URL
+			model := policy.Providers[providerIndex].Models[0]
+			service := withTrustedTestFinalEffects(t, &Service{policy: policy})
+			result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+				Task: "draft a short note",
+				RouteDecision: &RouteDecision{
+					SelectedProviderID: test.providerID,
+					SelectedModelID:    model.ID,
+					SelectedModelName:  model.Name,
+					Tier:               model.Tier,
+				},
+			}))
+			if err != nil {
+				t.Fatalf("Generate returned error: %v", err)
+			}
+			if result.Status != "failed" || !strings.Contains(result.Reason, "read ") {
+				t.Fatalf("truncated generation result = %#v, want failed body read", result)
+			}
+			usage := service.Policy().Providers[providerIndex]
+			if usage.InputTokensUsed != 0 || usage.OutputTokensUsed != 0 || usage.BudgetUsedEUR != 0 {
+				t.Fatalf("truncated response recorded usage: %#v", usage)
+			}
+		})
+	}
+}
+
+func TestAddUsageIfContextActiveDoesNotRecordAfterCancellation(t *testing.T) {
+	service := &Service{usage: map[string]UsageCounter{}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if service.addUsageIfContextActive(ctx, "lm-studio", "local-model", 0.5, 12, 3) {
+		t.Fatal("cancelled context was allowed to commit usage")
+	}
+	if got := service.usage["lm-studio"]; got != (UsageCounter{}) {
+		t.Fatalf("provider usage after cancellation = %#v, want zero", got)
+	}
+}
+
+type cancelWhenResponseBodyIsRead struct {
+	reader   *strings.Reader
+	cancel   context.CancelFunc
+	canceled bool
+}
+
+func (r *cancelWhenResponseBodyIsRead) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	if n > 0 && !r.canceled {
+		r.canceled = true
+		r.cancel()
+	}
+	return n, err
+}
+
+func (*cancelWhenResponseBodyIsRead) Close() error { return nil }
+
+type successfulProviderResponseCancellingTransport struct {
+	cancel context.CancelFunc
+}
+
+func (t successfulProviderResponseCancellingTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	var body io.ReadCloser
+	switch {
+	case strings.HasSuffix(request.URL.Path, "/models"):
+		body = io.NopCloser(strings.NewReader(`{"data":[{"id":"local-model"}]}`))
+	case strings.HasSuffix(request.URL.Path, "/chat/completions"):
+		body = &cancelWhenResponseBodyIsRead{reader: strings.NewReader(`{"choices":[{"message":{"content":"completed provider response"}}],"usage":{"prompt_tokens":11,"completion_tokens":4}}`), cancel: t.cancel}
+	default:
+		return nil, fmt.Errorf("unexpected provider endpoint %q", request.URL.Path)
+	}
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: body, Request: request, ContentLength: -1}, nil
+}
+
+func TestGenerateAccountsSuccessfulProviderResponseWhenCancellationRacesBodyRead(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "false")
+	policy := testPolicyWithoutEndpoints()
+	index := providerIndex(t, policy, "lm-studio")
+	policy.Providers[index].EndpointURL = "http://127.0.0.1:18080"
+	policy.Providers[index].Models[0].InputCostPerMillionTokensEUR = 3
+	policy.Providers[index].Models[0].OutputCostPerMillionTokensEUR = 6
+	wantCost := estimateModelUsageCostEUR(policy.Providers[index].Models[0], 11, 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	originalTestHook := providerHTTPClientTestHook
+	providerHTTPClientTestHook = func(Provider) *http.Client {
+		return &http.Client{Transport: successfulProviderResponseCancellingTransport{cancel: cancel}}
+	}
+	defer func() { providerHTTPClientTestHook = originalTestHook }()
+	history := &fakeGenerationHistoryRepository{}
+	telemetry := &fakeModelTelemetryRepository{}
+	service := withTrustedTestFinalEffects(t, (&Service{policy: policy, generationHistory: history}).WithModelTelemetryRepository(telemetry))
+
+	result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+		Task:                "Draft a short answer",
+		CancellationContext: ctx,
+		RouteDecision:       &RouteDecision{SelectedProviderID: "lm-studio", SelectedModelID: "local-model", Tier: TierFree},
+	}))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Status != "cancelled" {
+		t.Fatalf("generation result = %#v, want cancelled after successful response raced cancellation", result)
+	}
+	if result.InputTokens != 11 || result.OutputTokens != 4 || result.UsageSource != "provider_reported" || result.EstimatedCostEUR != wantCost {
+		t.Fatalf("cancelled response lost provider-reported usage: %#v", result)
+	}
+	if result.GenerationID == "" || result.AuditStatus != "recorded" {
+		t.Fatalf("response metadata does not identify the durable usage record: %#v", result)
+	}
+	encodedResult, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal response metadata: %v", err)
+	}
+	var responseMetadata GenerationResult
+	if err := json.Unmarshal(encodedResult, &responseMetadata); err != nil {
+		t.Fatalf("decode response metadata: %v", err)
+	}
+	if responseMetadata.Status != "cancelled" || responseMetadata.InputTokens != 11 || responseMetadata.OutputTokens != 4 || responseMetadata.EstimatedCostEUR != wantCost || responseMetadata.UsageSource != "provider_reported" || responseMetadata.GenerationID != result.GenerationID {
+		t.Fatalf("serialized response metadata lost actual provider usage: %#v", responseMetadata)
+	}
+	service.mu.Lock()
+	processUsage := service.usage["lm-studio"]
+	service.mu.Unlock()
+	if processUsage.InputTokensUsed != 11 || processUsage.OutputTokensUsed != 4 || processUsage.BudgetUsedEUR != wantCost {
+		t.Fatalf("successful provider response was counted more than once in process usage: %#v", processUsage)
+	}
+	usage := service.Policy().Providers[index]
+	if usage.InputTokensUsed != 11 || usage.OutputTokensUsed != 4 || usage.BudgetUsedEUR != wantCost {
+		t.Fatalf("durable daily usage does not contain exactly one successful provider response: %#v", usage)
+	}
+	if len(history.records) != 1 || history.records[0].Status != "cancelled" || history.records[0].InputTokens != 11 || history.records[0].OutputTokens != 4 || history.records[0].EstimatedCostEUR != wantCost || history.records[0].UsageSource != "provider_reported" {
+		t.Fatalf("durable generation record lost successful provider usage: %#v", history.records)
+	}
+	if len(telemetry.rows) != 1 || telemetry.rows[0].InputTokens != 11 || telemetry.rows[0].OutputTokens != 4 || telemetry.rows[0].EstimatedCostEUR != wantCost {
+		t.Fatalf("model telemetry lost successful provider usage: %#v", telemetry.rows)
+	}
+}
+
+func TestGenerateFallsBackFromNegativeProviderTokenCounts(t *testing.T) {
+	disableModelMaintenanceForTest(t)
+	for _, test := range []struct {
+		name       string
+		providerID string
+		path       string
+		body       string
+	}{
+		{
+			name:       "ollama",
+			providerID: "ollama",
+			path:       "/api/generate",
+			body:       `{"response":"ollama draft","prompt_eval_count":-12,"eval_count":-4}`,
+		},
+		{
+			name:       "openai-compatible",
+			providerID: "lm-studio",
+			path:       "/v1/chat/completions",
+			body:       `{"choices":[{"message":{"content":"openai compatible draft"}}],"usage":{"prompt_tokens":-12,"completion_tokens":-4}}`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != test.path {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, test.body)
+			}))
+			defer server.Close()
+
+			policy := testPolicyWithoutEndpoints()
+			index := providerIndex(t, policy, test.providerID)
+			policy.Providers[index].EndpointURL = server.URL
+			model := policy.Providers[index].Models[0]
+			service := withTrustedTestFinalEffects(t, &Service{policy: policy})
+			result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+				Task: "draft a short note",
+				RouteDecision: &RouteDecision{
+					SelectedProviderID: test.providerID,
+					SelectedModelID:    model.ID,
+					SelectedModelName:  model.Name,
+					Tier:               model.Tier,
+				},
+			}))
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+			if result.Status != "completed" || result.InputTokens <= 0 || result.OutputTokens <= 0 || result.UsageSource != "estimated" {
+				t.Fatalf("negative provider counts were not replaced by estimates: %#v", result)
+			}
+			usage := service.Policy().Providers[index]
+			if usage.InputTokensUsed < 0 || usage.OutputTokensUsed < 0 {
+				t.Fatalf("negative provider counts corrupted usage totals: %#v", usage)
+			}
+		})
+	}
+}
+
+func TestDailyUsageIsDurableAndScopedToUTCDate(t *testing.T) {
+	policy := testPolicyWithoutEndpoints()
+	history := &fakeGenerationHistoryRepository{records: []models.LLMGenerationRecord{
+		{ProviderID: "lm-studio", ModelID: "local-model", Status: "completed", EstimatedCostEUR: 0.2, InputTokens: 90, OutputTokens: 30, UsageSource: "provider_reported", LoggedAt: time.Date(2026, 9, 24, 23, 59, 59, 0, time.UTC)},
+		{ProviderID: "lm-studio", ModelID: "local-model", Status: "cancelled", EstimatedCostEUR: 0.5, InputTokens: 17, OutputTokens: 8, UsageSource: "estimated_uncertain", LoggedAt: time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)},
+		{ProviderID: "lm-studio", ModelID: "local-model", Status: "failed", EstimatedCostEUR: 9, InputTokens: 99, OutputTokens: 99, UsageSource: "", LoggedAt: time.Date(2026, 9, 25, 1, 0, 0, 0, time.UTC)},
+	}}
+	now := func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) }
+	service := &Service{policy: policy, usage: map[string]UsageCounter{}, generationHistory: history, now: now}
+	first := service.Policy()
+	providerIndex := providerIndex(t, first, "lm-studio")
+	provider := first.Providers[providerIndex]
+	if first.UsageAccountingStatus != "durable" || first.UsageTimezone != "UTC" || first.UsagePeriodStart != time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC) {
+		t.Fatalf("usage provenance = status %q timezone %q start %s", first.UsageAccountingStatus, first.UsageTimezone, first.UsagePeriodStart)
+	}
+	if provider.InputTokensUsed != 17 || provider.OutputTokensUsed != 8 || provider.BudgetUsedEUR != 0.5 {
+		t.Fatalf("daily usage = %#v, want only current UTC-day accepted and estimated usage", provider)
+	}
+
+	// A new API service with the same durable repository must see the same day totals.
+	restarted := &Service{policy: policy, usage: map[string]UsageCounter{}, generationHistory: history, now: now}
+	restartedPolicy := restarted.Policy()
+	if restartedPolicy.Providers[providerIndex].InputTokensUsed != 17 || restartedPolicy.Providers[providerIndex].OutputTokensUsed != 8 || restartedPolicy.DailyBudgetUsedEUR != 0.5 {
+		t.Fatalf("usage did not survive service reconstruction: %#v", restartedPolicy)
+	}
+
+	restarted.now = func() time.Time { return time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC) }
+	newDay := restarted.Policy()
+	if newDay.UsageAccountingStatus != "durable" || newDay.Providers[providerIndex].InputTokensUsed != 0 || newDay.Providers[providerIndex].OutputTokensUsed != 0 || newDay.DailyBudgetUsedEUR != 0 {
+		t.Fatalf("usage was not reset at the next UTC day: %#v", newDay)
+	}
+}
+
+func TestUsageAccountingLabelsProcessFallbackAndRepositoryFailure(t *testing.T) {
+	policy := testPolicyWithoutEndpoints()
+	service := &Service{policy: policy, usage: map[string]UsageCounter{}, now: func() time.Time { return time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC) }}
+	service.addUsage("lm-studio", "local-model", 0.25, 4, 2)
+	if got := service.Policy().UsageAccountingStatus; got != "process_only" {
+		t.Fatalf("usage status = %q, want process_only without durable history", got)
+	}
+
+	history := &fakeGenerationHistoryRepository{err: errors.New("database unavailable")}
+	service.generationHistory = history
+	loaded := service.Policy()
+	if loaded.UsageAccountingStatus != "unavailable" {
+		t.Fatalf("usage status = %q, want unavailable when durable aggregation fails", loaded.UsageAccountingStatus)
+	}
+	index := providerIndex(t, loaded, "lm-studio")
+	if loaded.Providers[index].InputTokensUsed != 4 || loaded.Providers[index].OutputTokensUsed != 2 {
+		t.Fatalf("unavailable durable query discarded process fallback without marking data: %#v", loaded.Providers[index])
+	}
+}
+
 func TestLlamaCPPProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
@@ -1360,6 +2359,7 @@ func TestLlamaCPPProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing
 }
 
 func TestLocalAIProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
@@ -1414,6 +2414,7 @@ func TestLocalAIProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing.
 }
 
 func TestVLLMProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
@@ -1467,12 +2468,14 @@ func TestVLLMProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing.T) 
 	}
 }
 
-func TestSGLangProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing.T) {
+func TestSGLangProviderProbeDoesNotAdmitUnverifiableModelVersion(t *testing.T) {
+	var generationCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]string{{"id": "qwen-sglang"}}})
 		case "/v1/chat/completions":
+			generationCalls.Add(1)
 			var request map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatalf("decode request: %v", err)
@@ -1516,16 +2519,17 @@ func TestSGLangProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing.T
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	if result.Status != "completed" || result.Output != "local SGLang draft" {
-		t.Fatalf("generation result = %#v", result)
+	if result.Status != "skipped" || generationCalls.Load() != 0 {
+		t.Fatalf("generation result = %#v, calls=%d; unsupported model version must not be used", result, generationCalls.Load())
 	}
 	history, err := service.ModelMaintenanceHistory(10)
-	if err != nil || len(history) != 1 || history[0].ProviderID != "sglang" || history[0].ModelID != "qwen-sglang" || history[0].Status != "current" || history[0].BlocksExecution {
+	if err != nil || len(history) != 1 || history[0].ProviderID != "sglang" || history[0].ModelID != "qwen-sglang" || history[0].Status != "operator_managed" || !history[0].BlocksExecution || !strings.Contains(history[0].Reason, "cannot verify its upstream version") {
 		t.Fatalf("SGLang daily maintenance history = %#v, err=%v", history, err)
 	}
 }
 
 func TestMistralRSProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
@@ -1580,6 +2584,7 @@ func TestMistralRSProviderProbesAndGeneratesThroughOpenAICompatibleAPI(t *testin
 }
 
 func TestLiteLLMGatewayUsesVirtualKeyAndRequiresGenerationApproval(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	t.Setenv("LITELLM_API_KEY", "gateway-secret")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer gateway-secret" {
@@ -1633,6 +2638,7 @@ func TestLiteLLMGatewayUsesVirtualKeyAndRequiresGenerationApproval(t *testing.T)
 }
 
 func TestLiteLLMGatewayGenerationRequiresLiveProbe(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	t.Setenv("LITELLM_API_KEY", "gateway-secret")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer gateway-secret" {
@@ -1747,7 +2753,48 @@ func TestProbeProvidersChecksOdysseusHealthWithOptionalToken(t *testing.T) {
 	}
 }
 
+func TestProviderProbeTimeoutIsBounded(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		value string
+		want  time.Duration
+	}{
+		{name: "default", value: "", want: 5 * time.Second},
+		{name: "minimum", value: "0", want: time.Second},
+		{name: "maximum", value: "31", want: 30 * time.Second},
+		{name: "malformed", value: "invalid", want: 5 * time.Second},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", test.value)
+			if got := providerProbeTimeout(); got != test.want {
+				t.Fatalf("provider probe timeout = %s; want %s", got, test.want)
+			}
+		})
+	}
+}
+
+func TestOdysseusProbeUsesOneTimeoutAcrossFallbackHealthPaths(t *testing.T) {
+	t.Setenv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", "1")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	result := probeProviderWithContext(context.Background(), Provider{
+		ID: "odysseus", Name: "Odysseus", Enabled: true, EndpointURL: server.URL,
+	}, Policy{})
+	if result.Status != "failed" || !strings.Contains(strings.ToLower(result.Reason), "timed out") {
+		t.Fatalf("Odysseus timeout result = %#v; want bounded timeout", result)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("Odysseus fallback made %d requests after the total timeout; want one", got)
+	}
+}
+
 func TestGenerateBlocksOdysseusExecutionEvenWhenInternallyApproved(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	called := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -1920,6 +2967,7 @@ func TestDefaultPolicyIncludesMixtureAndOpenAICodexCatalogs(t *testing.T) {
 }
 
 func TestGenerateTracksModelLevelUsageAndTokenPrice(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{
@@ -1972,6 +3020,7 @@ func TestGenerateTracksModelLevelUsageAndTokenPrice(t *testing.T) {
 }
 
 func TestGenerateUsesOllamaReportedTokenCounts(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/generate" {
 			t.Fatalf("path = %q, want /api/generate", r.URL.Path)
@@ -2005,6 +3054,7 @@ func TestGenerateUsesOllamaReportedTokenCounts(t *testing.T) {
 }
 
 func TestGeneratePersistsRedactedOperationalEvidence(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{"message": map[string]string{"content": "draft containing secret-value"}}},
@@ -2040,6 +3090,124 @@ func TestGeneratePersistsRedactedOperationalEvidence(t *testing.T) {
 	}
 }
 
+func TestPaidGenerationReservesDurableBudgetBeforeProviderDispatch(t *testing.T) {
+	disableModelMaintenanceForTest(t)
+	var providerCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": "paid draft"}}},
+			"usage":   map[string]int{"prompt_tokens": 30, "completion_tokens": 12},
+		})
+	}))
+	defer server.Close()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.PaidCallsAllowed = true
+	policy.DailyPaidBudgetEUR = 1
+	paidIndex := providerIndex(t, policy, "paid-provider")
+	policy.Providers[paidIndex].Enabled = true
+	policy.Providers[paidIndex].EndpointURL = server.URL
+	policy.Providers[paidIndex].Models = []Model{{
+		ID: "paid-budget-test", Name: "Paid budget test", Tier: TierCheap, Enabled: true,
+		RequiresApproval: true, EstimatedCostEUR: 0.60, MaxDifficulty: 5, MaxReasoning: "very_high",
+	}}
+	history := &fakeGenerationHistoryRepository{}
+	service := withTrustedTestFinalEffects(t, &Service{policy: policy, generationHistory: history})
+
+	generate := func() *GenerationResult {
+		result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+			Task: "Draft a short approved response", MaxTokens: 100,
+			RouteDecision: &RouteDecision{
+				SelectedProviderID: "paid-provider", SelectedModelID: "paid-budget-test",
+				SelectedModelName: "Paid budget test", Tier: TierCheap,
+			},
+		}))
+		if err != nil {
+			t.Fatalf("Generate: %v", err)
+		}
+		return result
+	}
+
+	first := generate()
+	if first.Status != "completed" || first.AuditStatus != "recorded" || first.GenerationID == "" {
+		t.Fatalf("first paid generation = %#v, want completed and durably recorded", first)
+	}
+	second := generate()
+	if second.Status != "blocked" || !strings.Contains(second.Reason, ErrPaidBudgetExceeded.Error()) {
+		t.Fatalf("second paid generation = %#v, want a daily budget block", second)
+	}
+	if got := providerCalls.Load(); got != 1 {
+		t.Fatalf("provider calls = %d after exhausting the budget, want 1", got)
+	}
+	if len(history.records) != 2 || history.records[0].Status != "completed" || history.records[0].ID.String() != first.GenerationID {
+		t.Fatalf("generation ledger = %#v; want one finalized reservation and one blocked audit row", history.records)
+	}
+}
+
+func TestPaidGenerationFailsClosedWithoutDurableReservationStore(t *testing.T) {
+	disableModelMaintenanceForTest(t)
+	var providerCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		providerCalls.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": "must not run"}}}})
+	}))
+	defer server.Close()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.PaidCallsAllowed = true
+	policy.DailyPaidBudgetEUR = 1
+	paidIndex := providerIndex(t, policy, "paid-provider")
+	policy.Providers[paidIndex].Enabled = true
+	policy.Providers[paidIndex].EndpointURL = server.URL
+	service := withTrustedTestFinalEffects(t, &Service{policy: policy})
+	result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+		Task: "Draft an approved response",
+		RouteDecision: &RouteDecision{
+			SelectedProviderID: "paid-provider", SelectedModelID: "paid-high-capability",
+			SelectedModelName: "Paid high capability model", Tier: TierExpensive,
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Status != "blocked" || !strings.Contains(result.Reason, ErrPaidBudgetUnavailable.Error()) {
+		t.Fatalf("paid generation = %#v, want durable-accounting block", result)
+	}
+	if got := providerCalls.Load(); got != 0 {
+		t.Fatalf("provider calls = %d without durable reservation storage, want 0", got)
+	}
+}
+
+func TestGenerateWithholdsOutputWhenAuditHistoryCannotBeWritten(t *testing.T) {
+	disableModelMaintenanceForTest(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{{"message": map[string]string{"content": "unrecorded draft"}}},
+			"usage":   map[string]int{"prompt_tokens": 9, "completion_tokens": 4},
+		})
+	}))
+	defer server.Close()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.Providers[1].EndpointURL = server.URL
+	history := &fakeGenerationHistoryRepository{err: errors.New("history store unavailable")}
+	service := withTrustedTestFinalEffects(t, &Service{policy: policy, generationHistory: history})
+	result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+		Task: "Draft a local-only answer",
+		RouteDecision: &RouteDecision{
+			SelectedProviderID: "lm-studio", SelectedModelID: "local-model",
+			SelectedModelName: "Configured LM Studio local model", Tier: TierLocal,
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Status != "failed" || result.Output != "" || result.AuditStatus != "record_failed" || !strings.Contains(result.Reason, "output was withheld") {
+		t.Fatalf("generation result = %#v; failed audit persistence must withhold the output", result)
+	}
+}
+
 func TestProviderUsageSourceLabelsPartialAndEstimatedCounts(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -2072,13 +3240,86 @@ type fakeProbeHistoryRepository struct {
 	probes []models.LLMProviderProbe
 }
 
+type cancellingContextProbeHistoryRepository struct {
+	*fakeProbeHistoryRepository
+	cancel      context.CancelFunc
+	recordCalls int
+}
+
+func (r *cancellingContextProbeHistoryRepository) RecordProviderProbeWithContext(ctx context.Context, _ *models.LLMProviderProbe) (*models.LLMProviderProbe, error) {
+	r.recordCalls++
+	r.cancel()
+	return nil, ctx.Err()
+}
+
+func (r *cancellingContextProbeHistoryRepository) FindRecentProviderProbesWithContext(ctx context.Context, limit int) ([]models.LLMProviderProbe, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.fakeProbeHistoryRepository.FindRecentProviderProbes(limit)
+}
+
+func (r *cancellingContextProbeHistoryRepository) FindLatestProviderProbeWithContext(ctx context.Context, providerID string) (*models.LLMProviderProbe, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.fakeProbeHistoryRepository.FindLatestProviderProbe(providerID)
+}
+
 type fakeModelMaintenanceRepository struct {
-	records []models.LLMModelMaintenance
+	records              []models.LLMModelMaintenance
+	mu                   sync.Mutex
+	admissionMu          sync.Mutex
+	admissionClaims      map[string]ModelMaintenanceAdmissionClaim
+	admissionWriteErr    error
+	admissionFinalizeErr error
+}
+
+type leasedModelMaintenanceRepository struct {
+	*fakeModelMaintenanceRepository
+	acquired bool
+	err      error
+	releases int
+}
+
+func (r *leasedModelMaintenanceRepository) AcquireModelMaintenanceLease(_ context.Context, _, _ string) (func(), bool, error) {
+	return func() { r.releases++ }, r.acquired, r.err
 }
 
 type fakeGenerationHistoryRepository struct {
 	records []models.LLMGenerationRecord
 	err     error
+}
+
+func (r *fakeGenerationHistoryRepository) UsageBetween(start, end time.Time) ([]GenerationUsageAggregate, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	byKey := map[string]GenerationUsageAggregate{}
+	for _, record := range r.records {
+		loggedAt := record.LoggedAt.UTC()
+		if loggedAt.Before(start.UTC()) || !loggedAt.Before(end.UTC()) {
+			continue
+		}
+		switch record.UsageSource {
+		case "provider_reported", "provider_reported_partial", "estimated", "estimated_uncertain":
+		default:
+			continue
+		}
+		key := usageKey(record.ProviderID, record.ModelID)
+		aggregate := byKey[key]
+		aggregate.ProviderID = record.ProviderID
+		aggregate.ModelID = record.ModelID
+		aggregate.BudgetUsedEUR += record.EstimatedCostEUR
+		aggregate.InputTokensUsed += record.InputTokens
+		aggregate.OutputTokensUsed += record.OutputTokens
+		byKey[key] = aggregate
+	}
+	result := make([]GenerationUsageAggregate, 0, len(byKey))
+	for _, aggregate := range byKey {
+		result = append(result, aggregate)
+	}
+	return result, nil
 }
 
 func (r *fakeGenerationHistoryRepository) RecordGeneration(record *models.LLMGenerationRecord) (*models.LLMGenerationRecord, error) {
@@ -2091,6 +3332,46 @@ func (r *fakeGenerationHistoryRepository) RecordGeneration(record *models.LLMGen
 	}
 	r.records = append(r.records, copy)
 	return &copy, nil
+}
+
+func (r *fakeGenerationHistoryRepository) ReservePaidGeneration(ctx context.Context, record *models.LLMGenerationRecord, dailyLimitEUR float64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r.err != nil {
+		return fmt.Errorf("reserve paid generation: %w", r.err)
+	}
+	start := utcDayStart(record.LoggedAt)
+	usage, err := r.UsageBetween(start, start.Add(24*time.Hour))
+	if err != nil {
+		return err
+	}
+	var usedEUR float64
+	for _, aggregate := range usage {
+		usedEUR += aggregate.BudgetUsedEUR
+	}
+	if usedEUR+record.EstimatedCostEUR > dailyLimitEUR {
+		return fmt.Errorf("%w: used %.6f EUR, requested %.6f EUR, limit %.6f EUR", ErrPaidBudgetExceeded, usedEUR, record.EstimatedCostEUR, dailyLimitEUR)
+	}
+	copy := *record
+	r.records = append(r.records, copy)
+	return nil
+}
+
+func (r *fakeGenerationHistoryRepository) FinalizePaidGeneration(record *models.LLMGenerationRecord) error {
+	if r.err != nil {
+		return r.err
+	}
+	for index := range r.records {
+		if r.records[index].ID != record.ID {
+			continue
+		}
+		loggedAt := r.records[index].LoggedAt
+		r.records[index] = *record
+		r.records[index].LoggedAt = loggedAt
+		return nil
+	}
+	return errors.New("paid generation reservation not found")
 }
 
 func (r *fakeGenerationHistoryRepository) FindRecentGenerations(limit int) ([]models.LLMGenerationRecord, error) {
@@ -2112,11 +3393,22 @@ func (r *fakeModelMaintenanceRepository) RecordModelMaintenance(record *models.L
 	if copy.CheckedAt.IsZero() {
 		copy.CheckedAt = time.Now().UTC()
 	}
+	r.mu.Lock()
 	r.records = append(r.records, copy)
+	r.mu.Unlock()
 	return &copy, nil
 }
 
+func (r *fakeModelMaintenanceRepository) RecordModelMaintenanceWithContext(ctx context.Context, record *models.LLMModelMaintenance) (*models.LLMModelMaintenance, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.RecordModelMaintenance(record)
+}
+
 func (r *fakeModelMaintenanceRepository) FindLatestModelMaintenance(providerID, modelID string) (*models.LLMModelMaintenance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	var latest *models.LLMModelMaintenance
 	for index := range r.records {
 		record := r.records[index]
@@ -2127,7 +3419,16 @@ func (r *fakeModelMaintenanceRepository) FindLatestModelMaintenance(providerID, 
 	return latest, nil
 }
 
+func (r *fakeModelMaintenanceRepository) FindLatestModelMaintenanceWithContext(ctx context.Context, providerID, modelID string) (*models.LLMModelMaintenance, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.FindLatestModelMaintenance(providerID, modelID)
+}
+
 func (r *fakeModelMaintenanceRepository) FindRecentModelMaintenance(limit int) ([]models.LLMModelMaintenance, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if limit <= 0 || limit > len(r.records) {
 		limit = len(r.records)
 	}
@@ -2136,6 +3437,13 @@ func (r *fakeModelMaintenanceRepository) FindRecentModelMaintenance(limit int) (
 		results = append(results, r.records[index])
 	}
 	return results, nil
+}
+
+func (r *fakeModelMaintenanceRepository) FindRecentModelMaintenanceWithContext(ctx context.Context, limit int) ([]models.LLMModelMaintenance, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r.FindRecentModelMaintenance(limit)
 }
 
 func (r *fakeProbeHistoryRepository) RecordProviderProbe(probe *models.LLMProviderProbe) (*models.LLMProviderProbe, error) {

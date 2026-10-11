@@ -12,11 +12,12 @@ in `docs/operator-runbook.md`.
 - Stack file: `docker-compose.local.yml` with `--env-file .env.local`
 - Go build/test run in `golang:1.23` container (no Go toolchain on host)
 
-> Note on which compose file is authoritative: `docker-compose.local.yml` builds
-> the backend, frontend and IDP **from source**. `docker-compose.yml` pulls
-> prebuilt upstream `jacksonbarreto/*` images and is not the HAI stack. Use the
-> local file. This corrects the earlier `ANALYSIS_REPORT.md`, which recommended
-> the opposite.
+> Historical note: at the time of this verification,
+> `docker-compose.local.yml` was the only source-built stack and
+> `docker-compose.yml` still pulled prebuilt upstream `jacksonbarreto/*` images.
+> The latter was subsequently replaced with a compatibility wrapper around the
+> maintained local stack. `docker compose up` and the explicit local-file form
+> now resolve to the same topology.
 
 ---
 
@@ -137,13 +138,17 @@ exit=22 out=curl: (22) The requested URL returned error: 503
 `.env.example` ships `RUN_MODE=production` with `change-this-*` placeholder
 secrets. The doctor report now flags these instead of passing them:
 
-- In production mode: `security.backendApiKey` / `jwtSecret` / `memoryEncryptionKey`
-  report **FAIL** when the value is a known placeholder, so `/readyz` is
-  `not_ready` until real secrets are set.
-- Outside production: the same values report **WARN** (visible, non-blocking).
+- In production mode: `database.password`, `security.backendApiKey`,
+  `jwtSecret`, and `memoryEncryptionKey` report **FAIL** when a value is a
+  known placeholder, so `/readyz` is `not_ready` until real credentials and
+  secrets are set.
+- Outside production: the same placeholder values report **WARN** (visible,
+  non-blocking). An empty database password is likewise permitted only for
+  explicitly local trust-authentication setups.
 
-`scripts/generate-secrets.sh` writes real `openssl rand -hex 32` values that can
-be appended to `.env.local`.
+`scripts/generate-secrets.sh` writes real `openssl rand -hex 32` values for the
+backend signing/encryption keys, database password, and first-run owner password
+that can be appended to `.env.local`.
 
 ## 7. Gateway routing drift
 
@@ -270,8 +275,11 @@ without the backend having counted it locally.
 
 Default is unchanged (`RATE_LIMIT_PER_MINUTE=0`, disabled): 12 rapid requests
 all return 200, so normal use is unaffected. Unit tests cover the limit
-boundary, per-key isolation, and fail-open/fail-closed behaviour when Redis is
-unavailable, using a deterministic fake so they need no running Redis.
+boundary, per-key isolation, and Redis-outage behavior using a deterministic
+fake so they need no running Redis. When Redis is unreachable after startup,
+the limiter now uses a bounded in-process fallback rather than silently
+allowing unlimited requests. That fallback is per-process and resets on restart,
+so Redis remains required for shared durable enforcement.
 
 ## 12. Honest connector status
 

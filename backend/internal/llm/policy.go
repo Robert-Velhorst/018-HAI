@@ -10,8 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"mime"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"sort"
@@ -30,6 +33,7 @@ const (
 	TierHigh       = "high"
 	TierPremium    = "premium"
 	TierExpensive  = "expensive"
+	TierUnknown    = "unknown"
 )
 
 var tierRank = map[string]int{
@@ -40,6 +44,7 @@ var tierRank = map[string]int{
 	TierHigh:       4,
 	TierPremium:    5,
 	TierExpensive:  6,
+	TierUnknown:    7,
 }
 
 var reasoningRank = map[string]int{
@@ -65,6 +70,9 @@ type Policy struct {
 	DailyBudgetUsedEUR               float64                 `json:"dailyBudgetUsedEur"`
 	InputTokensUsed                  int                     `json:"inputTokensUsed"`
 	OutputTokensUsed                 int                     `json:"outputTokensUsed"`
+	UsageAccountingStatus            string                  `json:"usageAccountingStatus"`
+	UsagePeriodStart                 time.Time               `json:"usagePeriodStart"`
+	UsageTimezone                    string                  `json:"usageTimezone"`
 	Providers                        []Provider              `json:"providers"`
 	InferenceInfrastructure          InferenceInfrastructure `json:"inferenceInfrastructure"`
 }
@@ -77,22 +85,23 @@ type InferenceInfrastructure struct {
 }
 
 type Provider struct {
-	ID               string  `json:"id"`
-	Name             string  `json:"name"`
-	Enabled          bool    `json:"enabled"`
-	Local            bool    `json:"local"`
-	Paid             bool    `json:"paid"`
-	EndpointURL      string  `json:"endpointUrl,omitempty"`
-	APIKeyEnv        string  `json:"apiKeyEnv,omitempty"`
-	Configured       bool    `json:"configured"`
-	ReadinessStatus  string  `json:"readinessStatus,omitempty"`
-	ReadinessReason  string  `json:"readinessReason,omitempty"`
-	QuotaRemaining   int     `json:"quotaRemaining"`
-	DailyBudgetEUR   float64 `json:"dailyBudgetEur"`
-	BudgetUsedEUR    float64 `json:"budgetUsedEur"`
-	InputTokensUsed  int     `json:"inputTokensUsed"`
-	OutputTokensUsed int     `json:"outputTokensUsed"`
-	Models           []Model `json:"models"`
+	ID                    string  `json:"id"`
+	Name                  string  `json:"name"`
+	Enabled               bool    `json:"enabled"`
+	Local                 bool    `json:"local"`
+	Paid                  bool    `json:"paid"`
+	EndpointURL           string  `json:"endpointUrl,omitempty"`
+	APIKeyEnv             string  `json:"apiKeyEnv,omitempty"`
+	Configured            bool    `json:"configured"`
+	ReadinessStatus       string  `json:"readinessStatus,omitempty"`
+	ReadinessReason       string  `json:"readinessReason,omitempty"`
+	QuotaRemaining        int     `json:"quotaRemaining"`
+	DailyBudgetEUR        float64 `json:"dailyBudgetEur"`
+	BudgetUsedEUR         float64 `json:"budgetUsedEur"`
+	InputTokensUsed       int     `json:"inputTokensUsed"`
+	OutputTokensUsed      int     `json:"outputTokensUsed"`
+	UsageAccountingStatus string  `json:"usageAccountingStatus"`
+	Models                []Model `json:"models"`
 }
 
 type Model struct {
@@ -112,15 +121,17 @@ type Model struct {
 	BudgetUsedEUR                 float64  `json:"budgetUsedEur"`
 	InputTokensUsed               int      `json:"inputTokensUsed"`
 	OutputTokensUsed              int      `json:"outputTokensUsed"`
+	UsageAccountingStatus         string   `json:"usageAccountingStatus"`
 }
 
 type RouteRequest struct {
-	Task              string `json:"task"`
-	TaskType          string `json:"taskType,omitempty"`
-	Difficulty        int    `json:"difficulty,omitempty"`
-	RequiredReasoning string `json:"requiredReasoning,omitempty"`
-	ValidationPassed  *bool  `json:"validationPassed,omitempty"`
-	PreviousModelID   string `json:"previousModelId,omitempty"`
+	Task                      string `json:"task"`
+	TaskType                  string `json:"taskType,omitempty"`
+	Difficulty                int    `json:"difficulty,omitempty"`
+	RequiredReasoning         string `json:"requiredReasoning,omitempty"`
+	ValidationPassed          *bool  `json:"validationPassed,omitempty"`
+	PreviousModelID           string `json:"previousModelId,omitempty"`
+	excludedMaintenanceModels map[string]struct{}
 }
 
 type TaskClassification struct {
@@ -179,30 +190,35 @@ type GenerateRequest struct {
 	// callers cannot bind them from JSON.
 	OperationID   string `json:"-"`
 	FallbackDepth int    `json:"-"`
+	// CancellationContext is supplied by trusted server composition and is not
+	// accepted from or serialized to public JSON. It bounds probes, maintenance,
+	// authorization, and provider calls to the lifetime of their caller.
+	CancellationContext context.Context `json:"-"`
 }
 
 type GenerationResult struct {
-	GenerationID     string    `json:"generationId,omitempty"`
-	TelemetryID      string    `json:"telemetryId,omitempty"`
-	ProviderID       string    `json:"providerId"`
-	ModelID          string    `json:"modelId"`
-	ModelName        string    `json:"modelName"`
-	Tier             string    `json:"tier"`
-	Output           string    `json:"output,omitempty"`
-	Status           string    `json:"status"`
-	Reason           string    `json:"reason"`
-	EstimatedCostEUR float64   `json:"estimatedCostEur"`
-	InputTokens      int       `json:"inputTokens"`
-	OutputTokens     int       `json:"outputTokens"`
-	UsageSource      string    `json:"usageSource"`
-	AuditStatus      string    `json:"auditStatus"`
-	DurationMs       int64     `json:"durationMs"`
-	FallbackPath     []string  `json:"fallbackPath"`
-	FallbackDepth    int       `json:"fallbackDepth"`
-	ValidationStatus string    `json:"validationStatus"`
-	ValidationMethod string    `json:"validationMethod,omitempty"`
-	CalibrationAudit string    `json:"calibrationAudit"`
-	LoggedAt         time.Time `json:"loggedAt"`
+	GenerationID          string    `json:"generationId,omitempty"`
+	TelemetryID           string    `json:"telemetryId,omitempty"`
+	ProviderID            string    `json:"providerId"`
+	ModelID               string    `json:"modelId"`
+	ModelName             string    `json:"modelName"`
+	Tier                  string    `json:"tier"`
+	Output                string    `json:"output,omitempty"`
+	Status                string    `json:"status"`
+	Reason                string    `json:"reason"`
+	EstimatedCostEUR      float64   `json:"estimatedCostEur"`
+	InputTokens           int       `json:"inputTokens"`
+	OutputTokens          int       `json:"outputTokens"`
+	UsageSource           string    `json:"usageSource"`
+	AuditStatus           string    `json:"auditStatus"`
+	DurationMs            int64     `json:"durationMs"`
+	FallbackPath          []string  `json:"fallbackPath"`
+	FallbackDepth         int       `json:"fallbackDepth"`
+	ValidationStatus      string    `json:"validationStatus"`
+	ValidationMethod      string    `json:"validationMethod,omitempty"`
+	CalibrationAudit      string    `json:"calibrationAudit"`
+	LoggedAt              time.Time `json:"loggedAt"`
+	paidBudgetReservation bool
 }
 
 // providerUsage is intentionally limited to aggregate counts. HAI does not
@@ -262,19 +278,25 @@ type SkippedModel struct {
 }
 
 type Service struct {
-	policy                   Policy
-	mu                       sync.Mutex
-	logs                     []RouteDecision
-	usage                    map[string]UsageCounter
-	probeHistory             ProbeHistoryRepository
-	maintenanceHistory       ModelMaintenanceRepository
-	generationHistory        GenerationHistoryRepository
-	modelTelemetry           modelintelligence.TelemetryRepository
-	finalEffectAuthorizer    FinalEffectAuthorizer
-	emergencyStop            EmergencyStopEvaluator
-	maintenanceEffectContext *EffectContext
-	maintenanceMu            sync.Mutex
-	maintenanceRunning       map[string]*sync.Mutex
+	policy                           Policy
+	mu                               sync.Mutex
+	logs                             []RouteDecision
+	usage                            map[string]UsageCounter
+	usagePeriodStart                 time.Time
+	now                              func() time.Time
+	probeHistory                     ProbeHistoryRepository
+	maintenanceHistory               ModelMaintenanceRepository
+	generationHistory                GenerationHistoryRepository
+	modelTelemetry                   modelintelligence.TelemetryRepository
+	finalEffectAuthorizer            FinalEffectAuthorizer
+	emergencyStop                    EmergencyStopEvaluator
+	maintenanceEffectContext         *EffectContext
+	maintenanceMu                    sync.Mutex
+	maintenanceRunning               map[string]*sync.Mutex
+	maintenanceCooldowns             map[modelMaintenanceCooldownKey]modelMaintenanceCooldown
+	maintenanceCooldownOverflowUntil time.Time
+	maintenanceWake                  chan struct{}
+	maintenanceAttemptSequence       uint64
 }
 
 // WithModelTelemetryRepository connects actual routed generations to the same
@@ -331,11 +353,13 @@ func newServiceFromEnv(probeHistory ProbeHistoryRepository, maintenanceHistory M
 	}
 
 	policy = annotateInfrastructure(annotatePolicyReadiness(normalizeProbePolicy(policy)))
+	now := time.Now
 	return &Service{
 		policy: policy, logs: []RouteDecision{}, usage: map[string]UsageCounter{},
+		usagePeriodStart: utcDayStart(now()), now: now,
 		probeHistory: probeHistory, maintenanceHistory: maintenanceHistory,
 		generationHistory: generationHistory, emergencyStop: processEmergencyStopEvaluator{},
-		maintenanceRunning: map[string]*sync.Mutex{},
+		maintenanceRunning: map[string]*sync.Mutex{}, maintenanceWake: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -452,30 +476,41 @@ func (s *Service) recordGeneration(result *GenerationResult, request GenerateReq
 	result.FallbackDepth = boundedFallbackDepth(request.FallbackDepth)
 	result.ValidationStatus = string(modelintelligence.ValidationUnvalidated)
 	result.CalibrationAudit = "not_configured"
-	if s.modelTelemetry != nil && strings.TrimSpace(result.ProviderID) != "" && strings.TrimSpace(result.ModelID) != "" {
-		classification := classifyTask(RouteRequest{Task: request.Task})
-		if request.RouteRequest != nil {
-			classification = classifyTask(*request.RouteRequest)
-		}
-		if request.RouteDecision != nil && request.RouteDecision.SelectedModelID != "" {
-			classification = request.RouteDecision.Classification
-		}
-		tokensPerSecond := 0.0
-		if result.DurationMs > 0 && result.OutputTokens > 0 {
-			tokensPerSecond = float64(result.OutputTokens) / (float64(result.DurationMs) / 1000)
-		}
-		if err := s.modelTelemetry.Save(modelintelligence.ModelRunTelemetry{
-			ID: result.TelemetryID, ProviderID: result.ProviderID, ModelID: result.ModelID,
-			Lane: routingLaneForClassification(classification), OperationID: strings.TrimSpace(request.OperationID),
-			InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
-			DurationMs: result.DurationMs, TokensPerSecond: tokensPerSecond,
-			OK: result.Status == "completed", ValidationStatus: modelintelligence.ValidationUnvalidated,
-			EstimatedCostEUR: result.EstimatedCostEUR, FallbackDepth: result.FallbackDepth,
-			CreatedAt: result.LoggedAt,
-		}); err != nil {
-			result.CalibrationAudit = "record_failed"
+	if s.modelTelemetry != nil {
+		if strings.TrimSpace(result.ProviderID) == "" || strings.TrimSpace(result.ModelID) == "" {
+			if result.Status == "completed" {
+				withholdUnrecordedModelOutput(result)
+				result.CalibrationAudit = "record_failed"
+			}
 		} else {
-			result.CalibrationAudit = "recorded"
+			classification := classifyTask(RouteRequest{Task: request.Task})
+			if request.RouteRequest != nil {
+				classification = classifyTask(*request.RouteRequest)
+			}
+			if request.RouteDecision != nil && request.RouteDecision.SelectedModelID != "" {
+				classification = request.RouteDecision.Classification
+			}
+			tokensPerSecond := 0.0
+			if result.UsageSource == "provider_reported" && result.DurationMs > 0 && result.OutputTokens > 0 {
+				tokensPerSecond = float64(result.OutputTokens) / (float64(result.DurationMs) / 1000)
+			}
+			if err := s.modelTelemetry.Save(modelintelligence.ModelRunTelemetry{
+				ID: result.TelemetryID, ProviderID: result.ProviderID, ModelID: result.ModelID,
+				Lane: routingLaneForClassification(classification), OperationID: strings.TrimSpace(request.OperationID),
+				InputTokens: result.InputTokens, OutputTokens: result.OutputTokens,
+				UsageSource: modelintelligence.TokenUsageSource(result.UsageSource),
+				DurationMs:  result.DurationMs, TokensPerSecond: tokensPerSecond,
+				OK: result.Status == "completed", ValidationStatus: modelintelligence.ValidationUnvalidated,
+				EstimatedCostEUR: result.EstimatedCostEUR, FallbackDepth: result.FallbackDepth,
+				CreatedAt: result.LoggedAt,
+			}); err != nil {
+				result.CalibrationAudit = "record_failed"
+				if result.Status == "completed" {
+					withholdUnrecordedModelOutput(result)
+				}
+			} else {
+				result.CalibrationAudit = "recorded"
+			}
 		}
 	}
 	if s.generationHistory == nil {
@@ -485,6 +520,9 @@ func (s *Service) recordGeneration(result *GenerationResult, request GenerateReq
 	fallbackPath, err := json.Marshal(result.FallbackPath)
 	if err != nil {
 		result.AuditStatus = "record_failed"
+		if result.Status == "completed" {
+			withholdUnrecordedModelOutput(result)
+		}
 		return
 	}
 	record := &models.LLMGenerationRecord{
@@ -503,11 +541,36 @@ func (s *Service) recordGeneration(result *GenerationResult, request GenerateReq
 		FallbackPathJSON: string(fallbackPath),
 		LoggedAt:         result.LoggedAt,
 	}
-	if _, err := s.generationHistory.RecordGeneration(record); err != nil {
+	if result.paidBudgetReservation {
+		repository, ok := s.generationHistory.(PaidGenerationBudgetRepository)
+		if !ok {
+			result.AuditStatus = "record_failed"
+			if result.Status == "completed" {
+				withholdUnrecordedModelOutput(result)
+			}
+			return
+		}
+		err = repository.FinalizePaidGeneration(record)
+	} else {
+		_, err = s.generationHistory.RecordGeneration(record)
+	}
+	if err != nil {
 		result.AuditStatus = "record_failed"
+		if result.Status == "completed" {
+			withholdUnrecordedModelOutput(result)
+		}
 		return
 	}
 	result.AuditStatus = "recorded"
+}
+
+func withholdUnrecordedModelOutput(result *GenerationResult) {
+	if result == nil {
+		return
+	}
+	result.Output = ""
+	result.Status = "failed"
+	result.Reason = "generation audit evidence could not be durably recorded; model output was withheld"
 }
 
 func generationTelemetryID(generationID string) string {
@@ -546,9 +609,31 @@ func (s *Service) RecordGenerationValidation(telemetryID, status, method string)
 }
 
 func (s *Service) ProbeProviders() []ProviderProbeResult {
+	return s.ProbeProvidersWithContext(context.Background())
+}
+
+func (s *Service) ProbeProvidersWithContext(ctx context.Context) []ProviderProbeResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	policy := s.Policy()
+	return s.probeProvidersWithPolicy(ctx, policy, policy.Providers)
+}
+
+func (s *Service) probeProvidersWithPolicy(ctx context.Context, policy Policy, providers []Provider) []ProviderProbeResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	results := []ProviderProbeResult{}
-	for _, provider := range s.Policy().Providers {
-		results = append(results, probeProvider(provider, s.policy))
+	for _, provider := range providers {
+		if ctx.Err() != nil {
+			break
+		}
+		result := probeProviderWithContext(ctx, provider, policy)
+		results = append(results, result)
+		if ctx.Err() != nil {
+			break
+		}
 	}
 	return results
 }
@@ -557,26 +642,66 @@ func (s *Service) ProbeProviders() []ProviderProbeResult {
 // ProbeProviders and persists only redacted readiness evidence when a history
 // repository is configured.
 func (s *Service) ProbeAndRecordProviders() ([]ProviderProbeResult, error) {
-	results := s.ProbeProviders()
+	return s.ProbeAndRecordProvidersWithContext(context.Background())
+}
+
+func (s *Service) ProbeAndRecordProvidersWithContext(ctx context.Context) ([]ProviderProbeResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	policy := s.Policy()
+	return s.probeAndRecordProvidersWithPolicy(ctx, policy, policy.Providers)
+}
+
+func (s *Service) probeAndRecordProvidersWithPolicy(ctx context.Context, policy Policy, providers []Provider) ([]ProviderProbeResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	results := s.probeProvidersWithPolicy(ctx, policy, providers)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.probeHistory == nil {
 		return results, nil
 	}
 	recorded := make([]ProviderProbeResult, 0, len(results))
 	for _, result := range results {
-		probe, err := s.probeHistory.RecordProviderProbe(providerProbeRecord(result))
+		probe, err := recordProviderProbeWithContext(ctx, s.probeHistory, providerProbeRecord(result))
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, fmt.Errorf("record provider probe for %s: %w", result.ProviderID, err)
 		}
 		recorded = append(recorded, providerProbeResult(*probe))
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return recorded, nil
 }
 
 func (s *Service) ProviderProbeHistory(limit int) ([]ProviderProbeResult, error) {
+	return s.ProviderProbeHistoryWithContext(context.Background(), limit)
+}
+
+func (s *Service) ProviderProbeHistoryWithContext(ctx context.Context, limit int) ([]ProviderProbeResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.probeHistory == nil {
 		return []ProviderProbeResult{}, nil
 	}
-	probes, err := s.probeHistory.FindRecentProviderProbes(limit)
+	probes, err := findRecentProviderProbesWithContext(ctx, s.probeHistory, limit)
 	if err != nil {
 		return nil, fmt.Errorf("load provider probe history: %w", err)
 	}
@@ -622,12 +747,28 @@ func providerProbeResult(probe models.LLMProviderProbe) ProviderProbeResult {
 }
 
 func (s *Service) Route(request RouteRequest) (RouteDecision, error) {
+	return s.RouteWithContext(context.Background(), request)
+}
+
+func (s *Service) RouteWithContext(ctx context.Context, request RouteRequest) (RouteDecision, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return RouteDecision{}, err
+	}
 	classification := classifyTask(request)
-	candidates, skipped := s.candidates(classification, request)
+	candidates, skipped := s.candidatesWithContext(ctx, classification, request)
+	if err := ctx.Err(); err != nil {
+		return RouteDecision{}, err
+	}
 	estimatedInputTokens := estimateTokens(request.Task)
 	estimatedOutputTokens := estimateRouteOutputTokens(classification)
 	for len(candidates) > 0 {
-		blockReason := s.modelMaintenanceRoutingBlockReason(candidates[0].provider, candidates[0].model)
+		blockReason, err := s.modelMaintenanceRoutingBlockReasonWithContext(ctx, candidates[0].provider, candidates[0].model)
+		if err != nil {
+			return RouteDecision{}, err
+		}
 		if blockReason == "" {
 			break
 		}
@@ -635,6 +776,9 @@ func (s *Service) Route(request RouteRequest) (RouteDecision, error) {
 		candidates = candidates[1:]
 	}
 	if len(candidates) == 0 {
+		if err := ctx.Err(); err != nil {
+			return RouteDecision{}, err
+		}
 		decision := RouteDecision{
 			Reason:                "No enabled model satisfies the task, budget, quota, approval, and daily maintenance policy.",
 			EstimatedInputTokens:  estimatedInputTokens,
@@ -677,6 +821,9 @@ func (s *Service) Route(request RouteRequest) (RouteDecision, error) {
 	} else {
 		decision.Reason += " No evaluated historical output exists for this model and lane; the result must remain unvalidated until checked."
 	}
+	if err := ctx.Err(); err != nil {
+		return RouteDecision{}, err
+	}
 
 	s.addLog(decision)
 
@@ -684,9 +831,34 @@ func (s *Service) Route(request RouteRequest) (RouteDecision, error) {
 }
 
 func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, err error) {
-	defer func() { s.recordGeneration(result, request) }()
 	started := time.Now().UTC()
-	stopState, stopErr := s.evaluateEmergencyStop(context.Background())
+	requestContext := request.CancellationContext
+	if requestContext == nil {
+		requestContext = context.Background()
+	}
+	var paidReservationID uuid.UUID
+	var reservedCostEUR float64
+	var reservedInputTokens, reservedOutputTokens int
+	defer func() {
+		if result != nil && paidReservationID != uuid.Nil {
+			result.GenerationID = paidReservationID.String()
+			result.paidBudgetReservation = true
+			if result.Status == "failed" && result.UsageSource == "" {
+				result.EstimatedCostEUR = reservedCostEUR
+				result.InputTokens = reservedInputTokens
+				result.OutputTokens = reservedOutputTokens
+				result.UsageSource = "estimated_uncertain"
+			}
+		}
+		s.recordGeneration(result, request)
+	}()
+	if err := requestContext.Err(); err != nil {
+		return cancelledGenerationResultForDecision(started, request.RouteDecision), nil
+	}
+	stopState, stopErr := s.evaluateEmergencyStop(requestContext)
+	if requestContext.Err() != nil {
+		return cancelledGenerationResultForDecision(started, request.RouteDecision), nil
+	}
 	if stopErr != nil {
 		return &GenerationResult{
 			Status:     "blocked",
@@ -712,8 +884,11 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 	}
 	decision := request.RouteDecision
 	if decision == nil || decision.SelectedModelID == "" {
-		routed, err := s.Route(routeRequest)
+		routed, err := s.RouteWithContext(requestContext, routeRequest)
 		if err != nil {
+			if requestContext.Err() != nil {
+				return cancelledGenerationResultForDecision(started, request.RouteDecision), nil
+			}
 			return nil, err
 		}
 		decision = &routed
@@ -731,6 +906,32 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 	provider, model, ok := s.findProviderModel(decision.SelectedProviderID, decision.SelectedModelID)
 	if !ok {
 		return nil, fmt.Errorf("selected provider/model not found: %s/%s", decision.SelectedProviderID, decision.SelectedModelID)
+	}
+	cancelledForSelection := func() *GenerationResult {
+		return cancelledGenerationResultForModel(started, provider, model, decision)
+	}
+	if provider.ID == "ollama" && isOllamaCloudModelID(model.ID) &&
+		(!s.policy.PaidCallsAllowed || s.policy.DailyPaidBudgetEUR <= 0) {
+		return &GenerationResult{
+			ProviderID:       provider.ID,
+			ModelID:          model.ID,
+			ModelName:        model.Name,
+			Tier:             model.Tier,
+			Status:           "blocked",
+			Reason:           "Ollama cloud model billing is unknown; paid usage and a positive daily budget must be enabled before inference",
+			EstimatedCostEUR: model.EstimatedCostEUR,
+			DurationMs:       time.Since(started).Milliseconds(),
+			FallbackPath:     fallbackLabels(decision.FallbackPath),
+			LoggedAt:         time.Now().UTC(),
+		}, nil
+	}
+	if provider.Paid && (!s.policy.PaidCallsAllowed || s.policy.DailyPaidBudgetEUR <= 0) {
+		return &GenerationResult{
+			ProviderID: provider.ID, ModelID: model.ID, ModelName: model.Name, Tier: model.Tier,
+			Status: "blocked", Reason: "paid inference is disabled because paid calls or a positive daily budget are not enabled",
+			EstimatedCostEUR: model.EstimatedCostEUR, DurationMs: time.Since(started).Milliseconds(),
+			FallbackPath: fallbackLabels(decision.FallbackPath), LoggedAt: time.Now().UTC(),
+		}, nil
 	}
 	if (provider.Paid || model.EstimatedCostEUR > 0 || model.Tier == TierExpensive || model.RequiresApproval) &&
 		(request.EffectContext == nil || strings.TrimSpace(request.EffectContext.ApprovalSourceID) == "") {
@@ -763,18 +964,52 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 			LoggedAt:         time.Now().UTC(),
 		}, nil
 	}
-	maintenance := s.ensureModelFresh(provider, model, request.EffectContext)
-	if maintenance.BlocksExecution {
-		// A supplied decision can be older than its per-model maintenance
-		// record. Re-run the full policy once so a failed refresh does not
-		// strand an otherwise eligible task when a safe fallback exists.
-		// Route remains read-only: the selected fallback must pass its own
-		// maintenance gate below before any provider effect is attempted.
-		rerouted, routeErr := s.Route(routeRequest)
-		if routeErr != nil {
-			return nil, routeErr
+	maintenance := s.ensureModelFreshWithContext(requestContext, provider, model, request.EffectContext)
+	if requestContext.Err() != nil {
+		return cancelledForSelection(), nil
+	}
+	maintenanceReason := maintenance.Reason
+	strictReason := ""
+	if !maintenance.BlocksExecution {
+		strictReason = s.strictProbeReasonWithContext(requestContext, provider, normalizeProbePolicy(s.policy), time.Now().UTC())
+		if requestContext.Err() != nil {
+			return cancelledForSelection(), nil
 		}
-		if rerouted.SelectedModelID != "" && (rerouted.SelectedProviderID != provider.ID || rerouted.SelectedModelID != model.ID) {
+		if strictReason != "" {
+			maintenanceReason = strictReason
+		}
+	}
+	if maintenance.BlocksExecution || strictReason != "" {
+		// Exclude only the exact provider/model pair that failed readiness. Retry
+		// routing until another candidate passes both maintenance and strict live
+		// readiness, or all policy-eligible candidates have been considered.
+		excluded := make(map[string]struct{})
+		excluded[maintenanceModelSelectionKey(provider.ID, model.ID)] = struct{}{}
+		for {
+			fallbackRequest := routeRequest
+			fallbackRequest.excludedMaintenanceModels = excluded
+			rerouted, routeErr := s.RouteWithContext(requestContext, fallbackRequest)
+			if routeErr != nil {
+				if requestContext.Err() != nil {
+					return cancelledForSelection(), nil
+				}
+				return nil, routeErr
+			}
+			if rerouted.SelectedModelID == "" {
+				return &GenerationResult{
+					ProviderID:       provider.ID,
+					ModelID:          model.ID,
+					ModelName:        model.Name,
+					Tier:             model.Tier,
+					Status:           "skipped",
+					Reason:           "daily model maintenance or strict readiness blocked all remaining eligible models: " + safety.RedactSecrets(maintenanceReason),
+					EstimatedCostEUR: model.EstimatedCostEUR,
+					DurationMs:       time.Since(started).Milliseconds(),
+					FallbackPath:     fallbackLabels(decision.FallbackPath),
+					LoggedAt:         time.Now().UTC(),
+				}, nil
+			}
+
 			decision = &rerouted
 			provider, model, ok = s.findProviderModel(decision.SelectedProviderID, decision.SelectedModelID)
 			if !ok {
@@ -811,49 +1046,27 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 					LoggedAt:         time.Now().UTC(),
 				}, nil
 			}
-			maintenance = s.ensureModelFresh(provider, model, request.EffectContext)
-			if maintenance.BlocksExecution {
-				return &GenerationResult{
-					ProviderID:       provider.ID,
-					ModelID:          model.ID,
-					ModelName:        model.Name,
-					Tier:             model.Tier,
-					Status:           "skipped",
-					Reason:           "daily model maintenance blocked the selected fallback: " + maintenance.Reason,
-					EstimatedCostEUR: model.EstimatedCostEUR,
-					DurationMs:       time.Since(started).Milliseconds(),
-					FallbackPath:     fallbackLabels(decision.FallbackPath),
-					LoggedAt:         time.Now().UTC(),
-				}, nil
+
+			maintenance = s.ensureModelFreshWithContext(requestContext, provider, model, request.EffectContext)
+			if requestContext.Err() != nil {
+				return cancelledForSelection(), nil
 			}
-		} else {
-			return &GenerationResult{
-				ProviderID:       provider.ID,
-				ModelID:          model.ID,
-				ModelName:        model.Name,
-				Tier:             model.Tier,
-				Status:           "skipped",
-				Reason:           "daily model maintenance blocked generation: " + maintenance.Reason,
-				EstimatedCostEUR: model.EstimatedCostEUR,
-				DurationMs:       time.Since(started).Milliseconds(),
-				FallbackPath:     fallbackLabels(decision.FallbackPath),
-				LoggedAt:         time.Now().UTC(),
-			}, nil
+			if maintenance.BlocksExecution {
+				maintenanceReason = maintenance.Reason
+				excluded[maintenanceModelSelectionKey(provider.ID, model.ID)] = struct{}{}
+				continue
+			}
+			strictReason = s.strictProbeReasonWithContext(requestContext, provider, normalizeProbePolicy(s.policy), time.Now().UTC())
+			if requestContext.Err() != nil {
+				return cancelledForSelection(), nil
+			}
+			if strictReason != "" {
+				maintenanceReason = strictReason
+				excluded[maintenanceModelSelectionKey(provider.ID, model.ID)] = struct{}{}
+				continue
+			}
+			break
 		}
-	}
-	if strictReason := s.strictProbeReason(provider, normalizeProbePolicy(s.policy), time.Now().UTC()); strictReason != "" {
-		return &GenerationResult{
-			ProviderID:       provider.ID,
-			ModelID:          model.ID,
-			ModelName:        model.Name,
-			Tier:             model.Tier,
-			Status:           "skipped",
-			Reason:           strictReason,
-			EstimatedCostEUR: model.EstimatedCostEUR,
-			DurationMs:       time.Since(started).Milliseconds(),
-			FallbackPath:     fallbackLabels(decision.FallbackPath),
-			LoggedAt:         time.Now().UTC(),
-		}, nil
 	}
 	if provider.ID == "odysseus" {
 		return &GenerationResult{
@@ -870,7 +1083,10 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 		}, nil
 	}
 	if provider.ID == "litellm" {
-		probe := probeProvider(provider, s.policy)
+		probe := probeProviderWithContext(requestContext, provider, s.policy)
+		if requestContext.Err() != nil {
+			return cancelledForSelection(), nil
+		}
 		if !probe.Live {
 			return &GenerationResult{
 				ProviderID:       provider.ID,
@@ -886,16 +1102,56 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 			}, nil
 		}
 	}
+	if provider.Paid {
+		var reserveErr error
+		paidReservationID, reservedCostEUR, reservedInputTokens, reservedOutputTokens, reserveErr = s.reservePaidInferenceBudget(
+			requestContext, provider, model, request, decision,
+		)
+		if requestContext.Err() != nil {
+			return cancelledForSelection(), nil
+		}
+		if reserveErr != nil {
+			return &GenerationResult{
+				ProviderID: provider.ID, ModelID: model.ID, ModelName: model.Name, Tier: model.Tier,
+				Status: "blocked", Reason: safety.RedactSecrets(reserveErr.Error()),
+				EstimatedCostEUR: model.EstimatedCostEUR, DurationMs: time.Since(started).Milliseconds(),
+				FallbackPath: fallbackLabels(decision.FallbackPath), LoggedAt: time.Now().UTC(),
+			}, nil
+		}
+	}
 
-	output, reportedUsage, err := s.callProvider(context.Background(), provider, model, endpoint, request)
+	output, reportedUsage, err := s.callProvider(requestContext, provider, model, endpoint, request)
 	if err != nil {
+		if requestContext.Err() != nil {
+			inputTokens := estimateTokens(buildPrompt(request))
+			classification := decision.Classification
+			if classification.TaskType == "" {
+				classification = classifyTask(routeRequest)
+			}
+			outputTokens := estimateRouteOutputTokens(classification)
+			if request.MaxTokens > 0 && request.MaxTokens < outputTokens {
+				outputTokens = request.MaxTokens
+			}
+			actualCostEUR := estimateModelUsageCostEUR(model, inputTokens, outputTokens)
+			if actualCostEUR == 0 {
+				actualCostEUR = model.EstimatedCostEUR
+			}
+			s.addUsage(provider.ID, model.ID, actualCostEUR, inputTokens, outputTokens)
+			cancelled := cancelledForSelection()
+			cancelled.Reason = "provider request was cancelled or timed out after dispatch; response and billed usage were not confirmed, so conservative usage estimates were recorded"
+			cancelled.EstimatedCostEUR = actualCostEUR
+			cancelled.InputTokens = inputTokens
+			cancelled.OutputTokens = outputTokens
+			cancelled.UsageSource = "estimated_uncertain"
+			return cancelled, nil
+		}
 		return &GenerationResult{
 			ProviderID:       provider.ID,
 			ModelID:          model.ID,
 			ModelName:        model.Name,
 			Tier:             model.Tier,
 			Status:           "failed",
-			Reason:           safety.RedactSecrets(err.Error()),
+			Reason:           redactProviderSecrets(provider, err.Error()),
 			EstimatedCostEUR: model.EstimatedCostEUR,
 			DurationMs:       time.Since(started).Milliseconds(),
 			FallbackPath:     fallbackLabels(decision.FallbackPath),
@@ -904,6 +1160,14 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 	}
 	inputTokens := estimateTokens(buildPrompt(request))
 	outputTokens := estimateTokens(output)
+	if reportedUsage.HasInput && reportedUsage.InputTokens < 0 {
+		reportedUsage.InputTokens = 0
+		reportedUsage.HasInput = false
+	}
+	if reportedUsage.HasOutput && reportedUsage.OutputTokens < 0 {
+		reportedUsage.OutputTokens = 0
+		reportedUsage.HasOutput = false
+	}
 	if reportedUsage.HasInput {
 		inputTokens = reportedUsage.InputTokens
 	}
@@ -914,13 +1178,24 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 	if actualCostEUR == 0 {
 		actualCostEUR = model.EstimatedCostEUR
 	}
+	// A successful provider response may race cancellation. It is still billable,
+	// so account for it before returning the cancelled operation state.
 	s.addUsage(provider.ID, model.ID, actualCostEUR, inputTokens, outputTokens)
+	if requestContext.Err() != nil {
+		cancelled := cancelledForSelection()
+		cancelled.Reason = "request was cancelled after the provider returned a successful response; usage was recorded"
+		cancelled.EstimatedCostEUR = actualCostEUR
+		cancelled.InputTokens = inputTokens
+		cancelled.OutputTokens = outputTokens
+		cancelled.UsageSource = reportedUsage.source()
+		return cancelled, nil
+	}
 	return &GenerationResult{
 		ProviderID:       provider.ID,
 		ModelID:          model.ID,
 		ModelName:        model.Name,
 		Tier:             model.Tier,
-		Output:           safety.RedactSecrets(strings.TrimSpace(output)),
+		Output:           redactProviderSecrets(provider, strings.TrimSpace(output)),
 		Status:           "completed",
 		Reason:           "model endpoint returned a draft; verification must still ground important claims",
 		EstimatedCostEUR: actualCostEUR,
@@ -933,6 +1208,42 @@ func (s *Service) Generate(request GenerateRequest) (result *GenerationResult, e
 	}, nil
 }
 
+func cancelledGenerationResult(started time.Time) *GenerationResult {
+	return &GenerationResult{
+		Status:     "cancelled",
+		Reason:     "model generation was cancelled before the provider result was accepted",
+		DurationMs: time.Since(started).Milliseconds(),
+		LoggedAt:   time.Now().UTC(),
+	}
+}
+
+func cancelledGenerationResultForDecision(started time.Time, decision *RouteDecision) *GenerationResult {
+	result := cancelledGenerationResult(started)
+	if decision == nil {
+		return result
+	}
+	result.ProviderID = decision.SelectedProviderID
+	result.ModelID = decision.SelectedModelID
+	result.ModelName = decision.SelectedModelName
+	result.Tier = decision.Tier
+	result.EstimatedCostEUR = decision.EstimatedCostEUR
+	result.FallbackPath = fallbackLabels(decision.FallbackPath)
+	return result
+}
+
+func cancelledGenerationResultForModel(started time.Time, provider Provider, model Model, decision *RouteDecision) *GenerationResult {
+	result := cancelledGenerationResult(started)
+	result.ProviderID = provider.ID
+	result.ModelID = model.ID
+	result.ModelName = model.Name
+	result.Tier = model.Tier
+	result.EstimatedCostEUR = model.EstimatedCostEUR
+	if decision != nil {
+		result.FallbackPath = fallbackLabels(decision.FallbackPath)
+	}
+	return result
+}
+
 func (s *Service) findProviderModel(providerID, modelID string) (Provider, Model, bool) {
 	for _, provider := range s.policy.Providers {
 		if provider.ID != providerID {
@@ -940,6 +1251,7 @@ func (s *Service) findProviderModel(providerID, modelID string) (Provider, Model
 		}
 		for _, model := range provider.Models {
 			if model.ID == modelID {
+				provider, model = applyOllamaModelPolicy(provider, model)
 				return provider, model, true
 			}
 		}
@@ -948,8 +1260,7 @@ func (s *Service) findProviderModel(providerID, modelID string) (Provider, Model
 }
 
 func (s *Service) callProvider(ctx context.Context, provider Provider, model Model, endpoint string, request GenerateRequest) (string, providerUsage, error) {
-	timeout := intEnv("LLM_GENERATION_TIMEOUT_SECONDS", 60)
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, generationTimeout())
 	defer cancel()
 	prompt := buildPrompt(request)
 	maxOutputTokens := request.MaxTokens
@@ -974,13 +1285,33 @@ func (s *Service) callProvider(ctx context.Context, provider Provider, model Mod
 	}
 }
 
+func generationTimeout() time.Duration {
+	seconds := boundedMaintenanceEnv("LLM_GENERATION_TIMEOUT_SECONDS", 60, 1, 300)
+	return time.Duration(seconds) * time.Second
+}
+
 func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
+	return probeProviderWithContext(context.Background(), provider, policy)
+}
+
+func providerProbeTimeout() time.Duration {
+	seconds := boundedMaintenanceEnv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", 5, 1, 30)
+	return time.Duration(seconds) * time.Second
+}
+
+func probeProviderWithContext(parent context.Context, provider Provider, policy Policy) ProviderProbeResult {
+	if parent == nil {
+		parent = context.Background()
+	}
 	started := time.Now().UTC()
 	result := ProviderProbeResult{
 		ProviderID:   provider.ID,
 		ProviderName: provider.Name,
 		EndpointURL:  safety.RedactURL(provider.EndpointURL),
 		CheckedAt:    started,
+	}
+	if parent.Err() != nil {
+		return cancelledProviderProbe(result, started)
 	}
 	readiness := providerRuntimeReadiness(provider)
 	if !readiness.configured {
@@ -995,8 +1326,14 @@ func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
 		result.RequiresReview = true
 		return result
 	}
+	if provider.Paid && !paidProviderProbeBudgetAvailable(policy) {
+		result.Status = "blocked"
+		result.Reason = "paid provider probe is blocked because the configured daily budget is unavailable or exhausted"
+		result.RequiresReview = true
+		return result
+	}
 	if provider.ID == "odysseus" {
-		return probeOdysseusProvider(provider, result, started)
+		return probeOdysseusProvider(parent, provider, result, started)
 	}
 
 	endpoint := strings.TrimRight(strings.TrimSpace(provider.EndpointURL), "/")
@@ -1004,12 +1341,12 @@ func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
 	if provider.ID == "ollama" {
 		probePath = "/api/tags"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(intEnv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", 5))*time.Second)
+	ctx, cancel := context.WithTimeout(parent, providerProbeTimeout())
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+probePath, nil)
 	if err != nil {
 		result.Status = "failed"
-		result.Reason = safety.RedactSecrets(err.Error())
+		result.Reason = redactProviderSecrets(provider, err.Error())
 		return result
 	}
 	req.Header.Set("User-Agent", "018-HAI-Provider-Probe/1.0")
@@ -1018,22 +1355,52 @@ func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
 	}
-	resp, err := noRedirectHTTPClient().Do(req)
+	resp, err := providerHTTPClientFor(provider).Do(req)
 	result.DurationMs = time.Since(started).Milliseconds()
 	if err != nil {
+		if parent.Err() != nil {
+			return cancelledProviderProbe(result, started)
+		}
 		result.Status = "failed"
-		result.Reason = safety.RedactSecrets(err.Error())
+		result.Reason = redactProviderSecrets(provider, err.Error())
 		return result
 	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	raw, readErr := readLimitedResponseBody(resp.Body, 256*1024)
+	probeErr := ctx.Err()
+	_ = resp.Body.Close()
+	if parent.Err() != nil {
+		return cancelledProviderProbe(result, started)
+	}
+	if probeErr != nil {
+		result.Status = "failed"
+		result.Reason = "provider probe timed out before readiness could be confirmed"
+		return result
+	}
+	if readErr != nil {
+		result.Status = "failed"
+		result.Reason = "provider response could not be read: " + redactProviderSecrets(provider, readErr.Error())
+		return result
+	}
 	result.HTTPStatus = resp.StatusCode
 	if resp.StatusCode >= 300 {
 		result.Status = "failed"
-		result.Reason = fmt.Sprintf("probe returned HTTP %d: %s", resp.StatusCode, safety.RedactSecrets(compactOutput(raw, 300)))
+		result.Reason = fmt.Sprintf("probe returned HTTP %d: %s", resp.StatusCode, compactOutput([]byte(redactProviderSecrets(provider, string(raw))), 300))
 		if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 			result.RequiresReview = true
 		}
+		return result
+	}
+	if !json.Valid(raw) {
+		result.Status = "failed"
+		result.Reason = "provider returned an invalid JSON model-list response"
+		return result
+	}
+	if parent.Err() != nil {
+		return cancelledProviderProbe(result, started)
+	}
+	if ctx.Err() != nil {
+		result.Status = "failed"
+		result.Reason = "provider probe timed out before readiness could be confirmed"
 		return result
 	}
 	result.ReportedModelIDs = probeModelIDs(provider, raw)
@@ -1048,18 +1415,41 @@ func probeProvider(provider Provider, policy Policy) ProviderProbeResult {
 	return result
 }
 
-func probeOdysseusProvider(provider Provider, result ProviderProbeResult, started time.Time) ProviderProbeResult {
+func paidProviderProbeBudgetAvailable(policy Policy) bool {
+	if math.IsNaN(policy.DailyPaidBudgetEUR) || math.IsInf(policy.DailyPaidBudgetEUR, 0) ||
+		math.IsNaN(policy.DailyBudgetUsedEUR) || math.IsInf(policy.DailyBudgetUsedEUR, 0) ||
+		policy.DailyPaidBudgetEUR <= 0 || policy.DailyBudgetUsedEUR < 0 ||
+		policy.DailyBudgetUsedEUR >= policy.DailyPaidBudgetEUR {
+		return false
+	}
+	// A process-local snapshot cannot account for calls made by other backend
+	// instances or survive a restart. Unknown/empty states are equally
+	// insufficient evidence for authorizing any paid-provider probe.
+	return policy.UsageAccountingStatus == "durable"
+}
+
+func cancelledProviderProbe(result ProviderProbeResult, started time.Time) ProviderProbeResult {
+	result.Live = false
+	result.Status = "cancelled"
+	result.Reason = "provider probe was cancelled before readiness could be confirmed"
+	result.DurationMs = time.Since(started).Milliseconds()
+	result.ReportedModelIDs = nil
+	result.ModelsSeen = 0
+	return result
+}
+
+func probeOdysseusProvider(parent context.Context, provider Provider, result ProviderProbeResult, started time.Time) ProviderProbeResult {
 	endpoint := strings.TrimRight(strings.TrimSpace(provider.EndpointURL), "/")
 	paths := []string{"/api/health", "/health", "/api/v1/health", "/"}
 	lastReason := ""
+	ctx, cancel := context.WithTimeout(parent, providerProbeTimeout())
+	defer cancel()
 
 	for _, path := range paths {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(intEnv("LLM_PROVIDER_PROBE_TIMEOUT_SECONDS", 5))*time.Second)
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+path, nil)
 		if err != nil {
-			cancel()
 			result.Status = "failed"
-			result.Reason = safety.RedactSecrets(err.Error())
+			result.Reason = redactProviderSecrets(provider, err.Error())
 			return result
 		}
 		req.Header.Set("User-Agent", "018-HAI-Odysseus-Probe/1.0")
@@ -1068,15 +1458,37 @@ func probeOdysseusProvider(provider Provider, result ProviderProbeResult, starte
 				req.Header.Set("Authorization", "Bearer "+key)
 			}
 		}
-		resp, err := noRedirectHTTPClient().Do(req)
+		resp, err := providerHTTPClientFor(provider).Do(req)
 		result.DurationMs = time.Since(started).Milliseconds()
-		cancel()
 		if err != nil {
-			lastReason = safety.RedactSecrets(err.Error())
+			if parent.Err() != nil {
+				return cancelledProviderProbe(result, started)
+			}
+			if ctx.Err() != nil {
+				result.Status = "failed"
+				result.Reason = "Odysseus provider probe timed out before readiness could be confirmed"
+				return result
+			}
+			lastReason = redactProviderSecrets(provider, err.Error())
 			continue
 		}
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+		raw, readErr := readLimitedResponseBody(resp.Body, 256*1024)
+		probeErr := ctx.Err()
 		_ = resp.Body.Close()
+		if parent.Err() != nil {
+			return cancelledProviderProbe(result, started)
+		}
+		if probeErr != nil {
+			result.Status = "failed"
+			result.Reason = "Odysseus provider probe timed out before readiness could be confirmed"
+			result.DurationMs = time.Since(started).Milliseconds()
+			return result
+		}
+		if readErr != nil {
+			result.Status = "failed"
+			result.Reason = "provider response could not be read: " + redactProviderSecrets(provider, readErr.Error())
+			return result
+		}
 		result.HTTPStatus = resp.StatusCode
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			result.Status = "auth_required"
@@ -1097,7 +1509,7 @@ func probeOdysseusProvider(provider Provider, result ProviderProbeResult, starte
 			result.Reason = fmt.Sprintf("Odysseus workspace is reachable via %s; workspace-agent execution remains approval-gated and disabled until a reviewed task adapter exists", path)
 			return result
 		}
-		lastReason = fmt.Sprintf("Odysseus probe at %s returned HTTP %d: %s", path, resp.StatusCode, safety.RedactSecrets(compactOutput(raw, 300)))
+		lastReason = fmt.Sprintf("Odysseus probe at %s returned HTTP %d: %s", path, resp.StatusCode, compactOutput([]byte(redactProviderSecrets(provider, string(raw))), 300))
 	}
 
 	result.Status = "failed"
@@ -1167,6 +1579,11 @@ func (s *Service) callOllama(
 		return "", providerUsage{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if provider.APIKeyEnv != "" {
+		if key := strings.TrimSpace(os.Getenv(provider.APIKeyEnv)); key != "" {
+			req.Header.Set("Authorization", "Bearer "+key)
+		}
+	}
 	authorization, err := buildFinalEffectAuthorizationRequest(
 		EffectOperationGenerate,
 		request.EffectContext,
@@ -1184,14 +1601,20 @@ func (s *Service) callOllama(
 	if err := s.authorizeFinalEffect(ctx, authorization); err != nil {
 		return "", providerUsage{}, err
 	}
-	resp, err := noRedirectHTTPClient().Do(req)
+	resp, err := providerHTTPClientFor(provider).Do(req)
 	if err != nil {
 		return "", providerUsage{}, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-	if resp.StatusCode >= 400 {
-		return "", providerUsage{}, fmt.Errorf("ollama returned HTTP %d: %s", resp.StatusCode, compactOutput(raw, 500))
+	if isEventStreamResponse(resp) {
+		return "", providerUsage{}, errors.New("Ollama returned a streaming response to a non-streaming generation request")
+	}
+	raw, err := readLimitedResponseBody(resp.Body, 1024*1024)
+	if err != nil {
+		return "", providerUsage{}, fmt.Errorf("read Ollama generation response: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", providerUsage{}, fmt.Errorf("ollama returned HTTP %d: %s", resp.StatusCode, compactOutput([]byte(redactProviderSecrets(provider, string(raw))), 500))
 	}
 	var decoded struct {
 		Response        string `json:"response"`
@@ -1203,7 +1626,10 @@ func (s *Service) callOllama(
 		return "", providerUsage{}, err
 	}
 	if decoded.Error != "" {
-		return "", providerUsage{}, fmt.Errorf("%s", decoded.Error)
+		return "", providerUsage{}, fmt.Errorf("%s", redactProviderSecrets(provider, decoded.Error))
+	}
+	if strings.TrimSpace(decoded.Response) == "" {
+		return "", providerUsage{}, errors.New("Ollama returned an empty generation response")
 	}
 	usage := providerUsage{}
 	if decoded.PromptEvalCount != nil {
@@ -1270,14 +1696,20 @@ func (s *Service) callOpenAICompatible(
 	if err := s.authorizeFinalEffect(ctx, authorization); err != nil {
 		return "", providerUsage{}, err
 	}
-	resp, err := noRedirectHTTPClient().Do(req)
+	resp, err := providerHTTPClientFor(provider).Do(req)
 	if err != nil {
 		return "", providerUsage{}, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
-	if resp.StatusCode >= 400 {
-		return "", providerUsage{}, fmt.Errorf("openai-compatible endpoint returned HTTP %d: %s", resp.StatusCode, compactOutput(raw, 500))
+	if isEventStreamResponse(resp) {
+		return "", providerUsage{}, errors.New("OpenAI-compatible endpoint returned a streaming response to a non-streaming generation request")
+	}
+	raw, err := readLimitedResponseBody(resp.Body, 1024*1024)
+	if err != nil {
+		return "", providerUsage{}, fmt.Errorf("read OpenAI-compatible generation response: %w", err)
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return "", providerUsage{}, fmt.Errorf("openai-compatible endpoint returned HTTP %d: %s", resp.StatusCode, compactOutput([]byte(redactProviderSecrets(provider, string(raw))), 500))
 	}
 	var decoded struct {
 		Choices []struct {
@@ -1297,10 +1729,13 @@ func (s *Service) callOpenAICompatible(
 		return "", providerUsage{}, err
 	}
 	if decoded.Error != nil {
-		return "", providerUsage{}, fmt.Errorf("endpoint returned error: %v", decoded.Error)
+		return "", providerUsage{}, fmt.Errorf("endpoint returned error: %s", redactProviderSecrets(provider, fmt.Sprint(decoded.Error)))
 	}
 	if len(decoded.Choices) == 0 {
 		return "", providerUsage{}, fmt.Errorf("endpoint returned no choices")
+	}
+	if strings.TrimSpace(decoded.Choices[0].Message.Content) == "" {
+		return "", providerUsage{}, errors.New("endpoint returned an empty message content")
 	}
 	usage := providerUsage{}
 	if decoded.Usage.PromptTokens != nil {
@@ -1333,6 +1768,30 @@ func (s *Service) addLog(decision RouteDecision) {
 func (s *Service) addUsage(providerID, modelID string, budgetEUR float64, inputTokens, outputTokens int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.addUsageLocked(providerID, modelID, budgetEUR, inputTokens, outputTokens)
+}
+
+func (s *Service) addUsageIfContextActive(ctx context.Context, providerID, modelID string, budgetEUR float64, inputTokens, outputTokens int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if ctx != nil && ctx.Err() != nil {
+		return false
+	}
+	s.addUsageLocked(providerID, modelID, budgetEUR, inputTokens, outputTokens)
+	return true
+}
+
+func (s *Service) addUsageLocked(providerID, modelID string, budgetEUR float64, inputTokens, outputTokens int) {
+	s.ensureUsagePeriodLocked(s.currentTime())
+	if budgetEUR < 0 {
+		budgetEUR = 0
+	}
+	if inputTokens < 0 {
+		inputTokens = 0
+	}
+	if outputTokens < 0 {
+		outputTokens = 0
+	}
 	if s.usage == nil {
 		s.usage = map[string]UsageCounter{}
 	}
@@ -1351,25 +1810,93 @@ func (s *Service) addUsage(providerID, modelID string, budgetEUR float64, inputT
 }
 
 func (s *Service) annotateUsage(policy Policy) Policy {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	periodStart := utcDayStart(s.currentTime())
+	periodEnd := periodStart.Add(24 * time.Hour)
+	usage, status := s.dailyUsage(periodStart, periodEnd)
+	policy.UsageAccountingStatus = status
+	policy.UsagePeriodStart = periodStart
+	policy.UsageTimezone = "UTC"
 	for index := range policy.Providers {
-		usage := s.usage[policy.Providers[index].ID]
-		policy.Providers[index].BudgetUsedEUR = usage.BudgetUsedEUR
-		policy.Providers[index].InputTokensUsed = usage.InputTokensUsed
-		policy.Providers[index].OutputTokensUsed = usage.OutputTokensUsed
-		policy.DailyBudgetUsedEUR += usage.BudgetUsedEUR
-		policy.InputTokensUsed += usage.InputTokensUsed
-		policy.OutputTokensUsed += usage.OutputTokensUsed
+		providerUsage := usage[policy.Providers[index].ID]
+		policy.Providers[index].BudgetUsedEUR = providerUsage.BudgetUsedEUR
+		policy.Providers[index].InputTokensUsed = providerUsage.InputTokensUsed
+		policy.Providers[index].OutputTokensUsed = providerUsage.OutputTokensUsed
+		policy.Providers[index].UsageAccountingStatus = status
+		policy.DailyBudgetUsedEUR += providerUsage.BudgetUsedEUR
+		policy.InputTokensUsed += providerUsage.InputTokensUsed
+		policy.OutputTokensUsed += providerUsage.OutputTokensUsed
 		for modelIndex := range policy.Providers[index].Models {
 			model := &policy.Providers[index].Models[modelIndex]
-			modelUsage := s.usage[usageKey(policy.Providers[index].ID, model.ID)]
+			modelUsage := usage[usageKey(policy.Providers[index].ID, model.ID)]
 			model.BudgetUsedEUR = modelUsage.BudgetUsedEUR
 			model.InputTokensUsed = modelUsage.InputTokensUsed
 			model.OutputTokensUsed = modelUsage.OutputTokensUsed
+			model.UsageAccountingStatus = status
 		}
 	}
 	return policy
+}
+
+func (s *Service) dailyUsage(periodStart, periodEnd time.Time) (map[string]UsageCounter, string) {
+	if repository, ok := s.generationHistory.(GenerationUsageHistoryRepository); ok {
+		aggregates, err := repository.UsageBetween(periodStart, periodEnd)
+		if err == nil {
+			usage := make(map[string]UsageCounter, len(aggregates)*2)
+			for _, aggregate := range aggregates {
+				counter := UsageCounter{
+					BudgetUsedEUR:    aggregate.BudgetUsedEUR,
+					InputTokensUsed:  aggregate.InputTokensUsed,
+					OutputTokensUsed: aggregate.OutputTokensUsed,
+				}
+				provider := usage[aggregate.ProviderID]
+				provider.BudgetUsedEUR += counter.BudgetUsedEUR
+				provider.InputTokensUsed += counter.InputTokensUsed
+				provider.OutputTokensUsed += counter.OutputTokensUsed
+				usage[aggregate.ProviderID] = provider
+				if strings.TrimSpace(aggregate.ModelID) != "" {
+					usage[usageKey(aggregate.ProviderID, aggregate.ModelID)] = counter
+				}
+			}
+			return usage, "durable"
+		}
+		return s.processUsageSnapshot(periodStart), "unavailable"
+	}
+	return s.processUsageSnapshot(periodStart), "process_only"
+}
+
+func (s *Service) processUsageSnapshot(periodStart time.Time) map[string]UsageCounter {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensureUsagePeriodLocked(periodStart)
+	copy := make(map[string]UsageCounter, len(s.usage))
+	for key, value := range s.usage {
+		copy[key] = value
+	}
+	return copy
+}
+
+func (s *Service) ensureUsagePeriodLocked(now time.Time) {
+	periodStart := utcDayStart(now)
+	if s.usagePeriodStart.IsZero() {
+		s.usagePeriodStart = periodStart
+		return
+	}
+	if !utcDayStart(s.usagePeriodStart).Equal(periodStart) {
+		s.usage = map[string]UsageCounter{}
+		s.usagePeriodStart = periodStart
+	}
+}
+
+func (s *Service) currentTime() time.Time {
+	if s.now != nil {
+		return s.now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+func utcDayStart(value time.Time) time.Time {
+	value = value.UTC()
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func usageKey(providerID, modelID string) string {
@@ -1437,6 +1964,10 @@ type candidate struct {
 }
 
 func (s *Service) candidates(classification TaskClassification, request RouteRequest) ([]candidate, []SkippedModel) {
+	return s.candidatesWithContext(context.Background(), classification, request)
+}
+
+func (s *Service) candidatesWithContext(ctx context.Context, classification TaskClassification, request RouteRequest) ([]candidate, []SkippedModel) {
 	candidates := []candidate{}
 	skipped := []SkippedModel{}
 	policy := normalizeProbePolicy(s.policy)
@@ -1448,50 +1979,55 @@ func (s *Service) candidates(classification TaskClassification, request RouteReq
 			}
 			continue
 		}
-		if provider.Local && !policy.LocalModelsAllowed {
-			for _, model := range provider.Models {
+		policyModels := make([]candidate, 0, len(provider.Models))
+		for _, model := range provider.Models {
+			modelProvider, policyModel := applyOllamaModelPolicy(provider, model)
+			if modelProvider.Local && !policy.LocalModelsAllowed {
 				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.ID, Reason: "local models disabled by policy"})
+				continue
 			}
-			continue
-		}
-		if provider.Paid && (!policy.PaidCallsAllowed || policy.DailyPaidBudgetEUR <= 0) {
-			for _, model := range provider.Models {
+			if modelProvider.Paid && (!policy.PaidCallsAllowed || policy.DailyPaidBudgetEUR <= 0) {
 				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.ID, Reason: "paid usage disabled by policy"})
+				continue
 			}
-			continue
-		}
-		if !provider.Local && !provider.Paid && provider.QuotaRemaining <= 0 && !policy.FreeCloudQuotaAllowed {
-			for _, model := range provider.Models {
+			if !modelProvider.Local && !modelProvider.Paid && modelProvider.QuotaRemaining <= 0 && !policy.FreeCloudQuotaAllowed {
 				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.ID, Reason: "free cloud quota unavailable"})
+				continue
 			}
-			continue
-		}
-		if !provider.Local && !provider.Paid && provider.QuotaRemaining == 0 {
-			for _, model := range provider.Models {
+			if !modelProvider.Local && !modelProvider.Paid && modelProvider.QuotaRemaining == 0 {
 				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.ID, Reason: "free cloud quota exhausted or unknown"})
+				continue
 			}
+			policyModels = append(policyModels, candidate{provider: modelProvider, model: policyModel})
+		}
+		if len(policyModels) == 0 {
 			continue
 		}
 		readiness := providerRuntimeReadiness(provider)
 		if !readiness.configured {
-			for _, model := range provider.Models {
-				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.ID, Reason: readiness.reason})
+			for _, model := range policyModels {
+				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.model.ID, Reason: readiness.reason})
 			}
 			continue
 		}
-		if strictReason := s.strictProbeReason(provider, policy, time.Now().UTC()); strictReason != "" {
-			for _, model := range provider.Models {
-				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.ID, Reason: strictReason})
+		if strictReason := s.strictProbeReasonWithContext(ctx, provider, policy, time.Now().UTC()); strictReason != "" {
+			for _, model := range policyModels {
+				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.model.ID, Reason: strictReason})
 			}
 			continue
 		}
-		for _, model := range provider.Models {
-			reason := unsuitableReason(provider, model, classification, policy, request)
+		for _, modelCandidate := range policyModels {
+			modelProvider, model := modelCandidate.provider, modelCandidate.model
+			if _, excluded := request.excludedMaintenanceModels[maintenanceModelSelectionKey(provider.ID, model.ID)]; excluded {
+				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.ID, Reason: "model was excluded after its maintenance or readiness check failed during this generation"})
+				continue
+			}
+			reason := unsuitableReason(modelProvider, model, classification, policy, request)
 			if reason != "" {
 				skipped = append(skipped, SkippedModel{ProviderID: provider.ID, ModelID: model.ID, Reason: reason})
 				continue
 			}
-			candidates = append(candidates, candidate{provider: provider, model: model})
+			candidates = append(candidates, candidate{provider: modelProvider, model: model})
 		}
 	}
 
@@ -1608,13 +2144,17 @@ func routingLaneForClassification(classification TaskClassification) modelintell
 // checks the latest result, not merely a historical success, because a later
 // failed probe is fresh evidence that the endpoint is unavailable.
 func (s *Service) strictProbeReason(provider Provider, policy Policy, now time.Time) string {
+	return s.strictProbeReasonWithContext(context.Background(), provider, policy, now)
+}
+
+func (s *Service) strictProbeReasonWithContext(ctx context.Context, provider Provider, policy Policy, now time.Time) string {
 	if !policy.RequireRecentLiveProviderProbe {
 		return ""
 	}
 	if s.probeHistory == nil {
 		return "strict live-probe policy cannot verify provider readiness"
 	}
-	probe, err := s.probeHistory.FindLatestProviderProbe(provider.ID)
+	probe, err := findLatestProviderProbeWithContext(ctx, s.probeHistory, provider.ID)
 	if err != nil {
 		return "strict live-probe policy could not read provider readiness history"
 	}
@@ -1624,10 +2164,19 @@ func (s *Service) strictProbeReason(provider Provider, policy Policy, now time.T
 	if !probe.Live {
 		return "provider latest readiness check is not live"
 	}
-	if now.Sub(probe.CheckedAt.UTC()) > time.Duration(policy.ProviderProbeMaxAgeSeconds)*time.Second {
+	checkedAt := probe.CheckedAt.UTC()
+	if checkedAt.IsZero() || checkedAt.After(now.UTC()) {
+		return "provider live readiness check has an invalid or future timestamp"
+	}
+	maxAge := time.Duration(policy.ProviderProbeMaxAgeSeconds) * time.Second
+	if maxAge <= 0 || now.Sub(checkedAt) >= maxAge {
 		return "provider live readiness check is stale"
 	}
 	return ""
+}
+
+func maintenanceModelSelectionKey(providerID, modelID string) string {
+	return strings.TrimSpace(providerID) + "\x00" + strings.TrimSpace(modelID)
 }
 
 func unsuitableReason(provider Provider, model Model, classification TaskClassification, policy Policy, request RouteRequest) string {
@@ -1781,15 +2330,24 @@ func providerRuntimeReadiness(provider Provider) providerReadiness {
 		return providerReadiness{configured: false, status: "not_configured", reason: "provider endpoint is not configured"}
 	}
 	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return providerReadiness{configured: false, status: "invalid_endpoint", reason: "provider endpoint must be an absolute http or https URL"}
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		return providerReadiness{configured: false, status: "invalid_endpoint", reason: "provider endpoint must be an absolute http or https URL without embedded credentials"}
 	}
 	host := parsed.Hostname()
 	if unsafeEndpointHost(host) && strings.ToLower(strings.TrimSpace(os.Getenv("LLM_ALLOW_LINK_LOCAL_ENDPOINTS"))) != "true" {
 		return providerReadiness{configured: false, status: "blocked_endpoint", reason: "provider endpoint uses link-local, metadata, or unspecified address space"}
 	}
+	if parsed.Scheme == "https" && !provider.Local && unsafeRemoteHTTPSAddress(host) {
+		return providerReadiness{configured: false, status: "blocked_endpoint", reason: "non-local HTTPS provider endpoints cannot target loopback or private IP addresses"}
+	}
+	if parsed.Scheme == "http" && !isLocalModelHost(host) {
+		return providerReadiness{configured: false, status: "blocked_endpoint", reason: "remote provider endpoints must use HTTPS"}
+	}
 	if isLoopbackOnlyProvider(provider.ID) && !isLocalModelHost(host) {
 		return providerReadiness{configured: false, status: "blocked_endpoint", reason: localProviderDisplayName(provider.ID) + " endpoint must use localhost, loopback, or host.docker.internal"}
+	}
+	if provider.Local && !isLocalModelHost(host) {
+		return providerReadiness{configured: false, status: "blocked_endpoint", reason: "provider marked local must use localhost, loopback, or host.docker.internal"}
 	}
 	if provider.APIKeyEnv != "" && strings.TrimSpace(os.Getenv(provider.APIKeyEnv)) == "" {
 		return providerReadiness{configured: false, status: "missing_api_key", reason: "required API key environment variable " + provider.APIKeyEnv + " is not set"}
@@ -1848,6 +2406,19 @@ func unsafeEndpointHost(host string) bool {
 	return ip.IsUnspecified() || ip.IsLinkLocalUnicast()
 }
 
+func unsafeRemoteHTTPSAddress(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	address, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	address = address.Unmap().WithZone("")
+	return address.IsLoopback() || address.IsPrivate() || address.IsLinkLocalUnicast() || address.IsUnspecified() || address.IsMulticast()
+}
+
 // isLocalModelHost allows a local server on the host OS when HAI itself runs
 // in Docker. It intentionally rejects LAN and public endpoints for llama.cpp:
 // this provider is the explicit local/offline route, not a cloud gateway.
@@ -1860,17 +2431,44 @@ func isLocalModelHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// Provider endpoints can receive prompts and source-backed context. Do not
+// inherit machine proxy settings; dial-time DNS validation pins connections to
+// the exact vetted IP while the request URL retains its TLS hostname.
+var providerHTTPClient = newProviderHTTPClient(false)
+
 func noRedirectHTTPClient() *http.Client {
-	return &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-		// Provider endpoints may receive prompts, source-backed context, or
-		// maintenance requests. Do not inherit machine proxy settings: local
-		// runtimes must stay local and configured cloud endpoints must be
-		// contacted directly rather than silently through an environment proxy.
-		Transport: &http.Transport{Proxy: nil},
+	return providerHTTPClient
+}
+
+func isEventStreamResponse(resp *http.Response) bool {
+	if resp == nil {
+		return false
 	}
+	mediaType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return err == nil && strings.EqualFold(mediaType, "text/event-stream")
+}
+
+func redactProviderSecrets(provider Provider, value string) string {
+	if provider.APIKeyEnv != "" {
+		if key := strings.TrimSpace(os.Getenv(provider.APIKeyEnv)); key != "" {
+			value = strings.ReplaceAll(value, key, "[REDACTED]")
+		}
+	}
+	return safety.RedactSecrets(value)
+}
+
+func readLimitedResponseBody(body io.Reader, limit int64) ([]byte, error) {
+	if limit < 0 {
+		return nil, fmt.Errorf("response body limit cannot be negative")
+	}
+	data, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("response body exceeds %d bytes", limit)
+	}
+	return data, nil
 }
 
 func buildPrompt(request GenerateRequest) string {
@@ -1958,10 +2556,39 @@ func configuredOllamaModels() []Model {
 		if !known {
 			model = Model{ID: id, Name: "Configured Ollama local model", Tier: TierLocal, Capabilities: []string{"general", "coding", "planning", "verification", "extraction"}, MaxDifficulty: 5, MaxReasoning: "very_high"}
 		}
+		if isOllamaCloudModelID(id) {
+			model.Name = "Configured Ollama cloud model (billing unknown)"
+			model.Tier = TierUnknown
+			model.RequiresApproval = true
+		}
 		model.Enabled = true
 		models = append(models, model)
 	}
 	return models
+}
+
+func isOllamaCloudModelID(modelID string) bool {
+	modelID = strings.ToLower(strings.TrimSpace(modelID))
+	return strings.HasSuffix(modelID, ":cloud") || strings.HasSuffix(modelID, "-cloud")
+}
+
+func applyOllamaModelPolicy(provider Provider, model Model) (Provider, Model) {
+	if provider.ID != "ollama" || !isOllamaCloudModelID(model.ID) {
+		return provider, model
+	}
+
+	// The local Ollama endpoint can proxy inference to Ollama Cloud. Treat the
+	// cloud tag as paid with unknown billing, independently of provider defaults
+	// or model metadata supplied by configuration.
+	provider.Local = false
+	provider.Paid = true
+	provider.QuotaRemaining = 0
+	model.Tier = TierUnknown
+	model.RequiresApproval = true
+	if model.Name == "" || model.Name == "Configured Ollama local model" {
+		model.Name = "Configured Ollama cloud model (billing unknown)"
+	}
+	return provider, model
 }
 
 func configuredLocalModelID(name, fallback string) string {
@@ -2263,7 +2890,7 @@ func defaultPolicy() Policy {
 			},
 			{
 				ID:             "paid-provider",
-				Name:           "Paid provider placeholder",
+				Name:           "Custom paid provider (disabled by policy)",
 				Enabled:        false,
 				Local:          false,
 				Paid:           true,

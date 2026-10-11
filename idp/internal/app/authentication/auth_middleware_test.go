@@ -25,15 +25,22 @@ func TestAuthMiddlewareRefreshesBeforeResolvingIdentity(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			gin.SetMode(gin.TestMode)
 			userID := uuid.New()
+			const sessionVersion int64 = 9
 			service := &middlewareAuthService{
 				refreshResult: &dto.TokenDetails{AccessToken: "refreshed-access", AtExpires: time.Now().Add(time.Hour).Unix()},
 				userID:        userID,
+				sessionResult: &dto.AuthSession{Authenticated: true, Subject: userID.String(), SessionVersion: sessionVersion},
 			}
 			handler := NewHandler(service)
 			router := gin.New()
 			router.GET("/protected", AuthMiddleware(handler), func(c *gin.Context) {
 				value, ok := c.Get("userID")
 				if !ok || value != userID {
+					c.Status(http.StatusInternalServerError)
+					return
+				}
+				session, ok := c.Get("authSession")
+				if !ok || session.(*dto.AuthSession).SessionVersion != sessionVersion {
 					c.Status(http.StatusInternalServerError)
 					return
 				}
@@ -54,8 +61,8 @@ func TestAuthMiddlewareRefreshesBeforeResolvingIdentity(t *testing.T) {
 			if service.refreshCalls != 1 {
 				t.Fatalf("refresh calls = %d, want 1", service.refreshCalls)
 			}
-			if service.lastIdentityToken != "refreshed-access" {
-				t.Fatalf("identity token = %q, want refreshed access token", service.lastIdentityToken)
+			if service.lastSessionToken != "refreshed-access" {
+				t.Fatalf("session token = %q, want refreshed access token", service.lastSessionToken)
 			}
 			if got := recorder.Header().Get("Set-Cookie"); got == "" {
 				t.Fatal("expected refreshed access-token cookie")
@@ -81,22 +88,31 @@ func TestIsLoopbackHost(t *testing.T) {
 }
 
 type middlewareAuthService struct {
-	valid             bool
-	refreshResult     *dto.TokenDetails
-	userID            uuid.UUID
-	refreshCalls      int
-	lastIdentityToken string
-	identityToken     string
-	sessionResult     *dto.AuthSession
-	lastSessionToken  string
-	logoutToken       string
-	logoutErr         error
-	googleAuthURL     string
-	googleTokens      *dto.TokenDetails
-	googleLoginCalls  int
+	capabilities         dto.AuthCapabilities
+	valid                bool
+	refreshResult        *dto.TokenDetails
+	userID               uuid.UUID
+	refreshCalls         int
+	lastIdentityToken    string
+	identityToken        string
+	sessionResult        *dto.AuthSession
+	lastSessionToken     string
+	logoutToken          string
+	logoutErr            error
+	googleAuthURL        string
+	googleTokens         *dto.TokenDetails
+	localPreviewResult   *dto.TokenDetails
+	localPreviewErr      error
+	localPreviewCalls    int
+	resetRequestCalls    int
+	requestedResetEmail  string
+	resetConfirmToken    string
+	resetConfirmPassword string
+	resetConfirmErr      error
+	googleLoginCalls     int
 }
 
-func (s *middlewareAuthService) Capabilities() dto.AuthCapabilities { return dto.AuthCapabilities{} }
+func (s *middlewareAuthService) Capabilities() dto.AuthCapabilities { return s.capabilities }
 
 func (s *middlewareAuthService) Register(dto.UserDTO) (*dto.UserResponse, error) {
 	return nil, errors.New("not implemented")
@@ -118,7 +134,14 @@ func (s *middlewareAuthService) LoginWithGoogle(context.Context, string, string)
 	return s.googleTokens, nil
 }
 func (s *middlewareAuthService) LocalPreviewLogin() (*dto.TokenDetails, error) {
-	return nil, errors.New("not implemented")
+	s.localPreviewCalls++
+	if s.localPreviewErr != nil {
+		return nil, s.localPreviewErr
+	}
+	if s.localPreviewResult == nil {
+		return nil, errors.New("not implemented")
+	}
+	return s.localPreviewResult, nil
 }
 func (s *middlewareAuthService) Logout(token string) error {
 	s.logoutToken = token
@@ -129,13 +152,20 @@ func (s *middlewareAuthService) RefreshToken(string) (*dto.TokenDetails, error) 
 	return s.refreshResult, nil
 }
 func (s *middlewareAuthService) IsUserAuthenticated(string) (bool, error) { return s.valid, nil }
-func (s *middlewareAuthService) RequestPasswordReset(string) (string, time.Time, error) {
+func (s *middlewareAuthService) RequestPasswordReset(email string) (string, time.Time, error) {
+	s.resetRequestCalls++
+	s.requestedResetEmail = email
 	return "", time.Time{}, errors.New("not implemented")
 }
-func (s *middlewareAuthService) ConfirmPasswordReset(string, string) error {
-	return errors.New("not implemented")
+func (s *middlewareAuthService) ConfirmPasswordReset(token, password string) error {
+	s.resetConfirmToken = token
+	s.resetConfirmPassword = password
+	if s.resetConfirmErr != nil {
+		return s.resetConfirmErr
+	}
+	return ErrInvalidPasswordReset
 }
-func (s *middlewareAuthService) ChangePassword(string, string) error {
+func (s *middlewareAuthService) ChangePassword(string, string, string) error {
 	return errors.New("not implemented")
 }
 func (s *middlewareAuthService) GetIdFromToken(token string) (uuid.UUID, error) {

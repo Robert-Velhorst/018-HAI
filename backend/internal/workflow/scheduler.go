@@ -8,6 +8,15 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"automation-hub-backend/internal/lifecycle"
+	"automation-hub-backend/internal/safety"
+)
+
+const (
+	defaultSchedulerInterval = 10 * time.Minute
+	minSchedulerInterval     = 15 * time.Second
+	maxSchedulerInterval     = 24 * time.Hour
 )
 
 type ScheduledWorkflowService interface {
@@ -17,20 +26,21 @@ type ScheduledWorkflowService interface {
 }
 
 type Scheduler struct {
-	service  ScheduledWorkflowService
-	interval time.Duration
-	limit    int
-	running  atomic.Bool
+	service           ScheduledWorkflowService
+	interval          time.Duration
+	limit             int
+	backgroundAllowed func() bool
+	running           atomic.Bool
 }
 
-func NewScheduler(service ScheduledWorkflowService, interval time.Duration, limit int) *Scheduler {
-	if interval < 15*time.Second {
-		interval = 10 * time.Minute
+func NewScheduler(service ScheduledWorkflowService, interval time.Duration, limit int, allowed ...func() bool) *Scheduler {
+	if interval < minSchedulerInterval || interval > maxSchedulerInterval {
+		interval = defaultSchedulerInterval
 	}
 	if limit <= 0 {
 		limit = 2
 	}
-	return &Scheduler{service: service, interval: interval, limit: limit}
+	return &Scheduler{service: service, interval: interval, limit: limit, backgroundAllowed: schedulerBackgroundGate(allowed)}
 }
 
 // StartScheduler starts the workflow sweep.
@@ -38,26 +48,36 @@ func NewScheduler(service ScheduledWorkflowService, interval time.Duration, limi
 // It prefers the durable path (persisted, retried, crash-recovered — see
 // durable_scheduler.go) and falls back to the legacy in-process ticker, saying
 // so, if the durable queue cannot be reached.
-func StartScheduler(ctx context.Context, service ScheduledWorkflowService) {
+func StartScheduler(ctx context.Context, service ScheduledWorkflowService, allowed ...func() bool) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	if !schedulerEnabled("WORKFLOW_SCHEDULER_ENABLED", true) {
 		return
 	}
 	interval := schedulerInterval("WORKFLOW_SCHEDULER_INTERVAL_SECONDS")
 	limit := schedulerLimit()
+	backgroundAllowed := schedulerBackgroundGate(allowed)
 	if durableSchedulerEnabled() {
-		if err := startDurableScheduler(ctx, service, interval, limit); err != nil {
-			log.Printf("workflow scheduler: durable queue unavailable (%v); falling back to the in-process ticker", err)
+		if err := startDurableScheduler(ctx, service, interval, limit, backgroundAllowed); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("workflow scheduler: durable queue unavailable (%s); falling back to the in-process ticker", safety.RedactSecrets(err.Error()))
 		} else {
 			return
 		}
 	}
-	scheduler := NewScheduler(service, interval, limit)
-	go scheduler.Start(ctx)
+	scheduler := NewScheduler(service, interval, limit, backgroundAllowed)
+	lifecycle.Go(ctx, "workflow-scheduler", func() { scheduler.Start(ctx) })
 }
 
 func (s *Scheduler) Start(ctx context.Context) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	if schedulerRunOnStartup() {
-		s.runOnce()
+		s.runOnce(ctx)
 	}
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
@@ -66,49 +86,30 @@ func (s *Scheduler) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.runOnce()
+			if ctx.Err() != nil {
+				return
+			}
+			s.runOnce(ctx)
 		}
 	}
 }
 
-func (s *Scheduler) runOnce() {
-	if s.service == nil || !s.running.CompareAndSwap(false, true) {
+func (s *Scheduler) runOnce(ctx context.Context) {
+	if ctx == nil || ctx.Err() != nil || s.service == nil || (s.backgroundAllowed != nil && !s.backgroundAllowed()) || !s.running.CompareAndSwap(false, true) {
 		return
 	}
 	defer s.running.Store(false)
 
-	request := RunDueRequest{Limit: s.limit}
-	recovery, err := s.service.RecoverStaleClaims(request)
-	if err != nil {
-		log.Printf("workflow claim recovery failed: %v", err)
-	} else if recovery != nil && (recovery.WorkflowsBlocked > 0 || recovery.OpenLoopsReopened > 0 || recovery.Skipped > 0) {
-		log.Printf("workflow claim recovery checked=%d workflows_blocked=%d open_loops_reopened=%d skipped=%d", recovery.Checked, recovery.WorkflowsBlocked, recovery.OpenLoopsReopened, recovery.Skipped)
+	if err := runWorkflowSweep(ctx, s.service, s.limit, s.backgroundAllowed); err != nil {
+		log.Printf("workflow scheduler: %s", safety.RedactSecrets(err.Error()))
 	}
-	if schedulerEnabled("WORKFLOW_OPEN_LOOP_SCHEDULER_ENABLED", true) {
-		openLoops, err := s.service.RunDueOpenLoops(request)
-		if err != nil {
-			log.Printf("workflow open-loop scheduler failed: %v", err)
-		} else if openLoops != nil && (openLoops.Triggered > 0 || openLoops.Resolved > 0 || openLoops.Skipped > 0) {
-			log.Printf("workflow open-loop scheduler checked=%d triggered=%d resolved=%d skipped=%d", openLoops.Checked, openLoops.Triggered, openLoops.Resolved, openLoops.Skipped)
-		}
-	}
-	if delivery, ok := s.service.(ReminderDeliveryService); ok && schedulerEnabled("WORKFLOW_REMINDER_DELIVERY_ENABLED", true) {
-		reminders, err := delivery.RunDueReminderDeliveries(request)
-		if err != nil {
-			log.Printf("workflow reminder delivery failed: %v", err)
-		} else if reminders != nil && (reminders.Delivered > 0 || reminders.Retried > 0 || reminders.Suppressed > 0 || reminders.DeadLettered > 0) {
-			log.Printf("workflow reminder delivery checked=%d delivered=%d retried=%d suppressed=%d dead_lettered=%d", reminders.Checked, reminders.Delivered, reminders.Retried, reminders.Suppressed, reminders.DeadLettered)
-		}
-	}
+}
 
-	result, err := s.service.RunDue(request)
-	if err != nil {
-		log.Printf("workflow scheduler failed: %v", err)
-		return
+func schedulerBackgroundGate(allowed []func() bool) func() bool {
+	if len(allowed) > 0 && allowed[0] != nil {
+		return allowed[0]
 	}
-	if result != nil && (result.Completed > 0 || result.Retried > 0 || result.Blocked > 0) {
-		log.Printf("workflow scheduler checked=%d completed=%d retried=%d blocked=%d skipped=%d", result.Checked, result.Completed, result.Retried, result.Blocked, result.Skipped)
-	}
+	return func() bool { return true }
 }
 
 func schedulerEnabled(name string, defaultEnabled bool) bool {
@@ -122,11 +123,11 @@ func schedulerEnabled(name string, defaultEnabled bool) bool {
 func schedulerInterval(name string) time.Duration {
 	value := strings.TrimSpace(os.Getenv(name))
 	if value == "" {
-		return 10 * time.Minute
+		return defaultSchedulerInterval
 	}
 	var seconds int64
-	if _, err := fmt.Sscanf(value, "%d", &seconds); err != nil || seconds < 15 {
-		return 10 * time.Minute
+	if _, err := fmt.Sscanf(value, "%d", &seconds); err != nil || seconds < int64(minSchedulerInterval/time.Second) || seconds > int64(maxSchedulerInterval/time.Second) {
+		return defaultSchedulerInterval
 	}
 	return time.Duration(seconds) * time.Second
 }

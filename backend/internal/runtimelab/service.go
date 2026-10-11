@@ -2,31 +2,43 @@ package runtimelab
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"automation-hub-backend/internal/agentruntime"
 	"automation-hub-backend/internal/background"
 	"automation-hub-backend/internal/executionbroker"
 	"automation-hub-backend/internal/idempotency"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/operations"
+	"automation-hub-backend/internal/safety"
+
+	"github.com/google/uuid"
 )
 
 // RuntimeAttempt is an auditable record of a runtime execution/self-test attempt
 // (§10.9). It is only ever created from a real attempt — a setup_required record
 // truthfully means nothing executed.
 type RuntimeAttempt struct {
-	ID                 string               `json:"id"`
-	RuntimeID          string               `json:"runtimeId"`
-	OperationID        string               `json:"operationId,omitempty"`
-	Status             RuntimeAttemptStatus `json:"status"`
-	IdempotencyKey     string               `json:"idempotencyKey,omitempty"`
-	Detail             string               `json:"detail"`
-	BoundedOutput      string               `json:"boundedOutput,omitempty"`
-	VerificationPassed bool                 `json:"verificationPassed"`
-	CreatedAt          time.Time            `json:"createdAt"`
+	ID                     string                           `json:"id"`
+	RuntimeID              string                           `json:"runtimeId"`
+	OperationID            string                           `json:"operationId,omitempty"`
+	Status                 RuntimeAttemptStatus             `json:"status"`
+	IdempotencyKey         string                           `json:"idempotencyKey,omitempty"`
+	Detail                 string                           `json:"detail"`
+	BoundedOutput          string                           `json:"boundedOutput,omitempty"`
+	VerificationPassed     bool                             `json:"verificationPassed"`
+	DiscoveryRecovered     bool                             `json:"discoveryRecovered"`
+	CreatedAt              time.Time                        `json:"createdAt"`
+	Receipt                *executionbroker.ExecutionResult `json:"receipt,omitempty"`
+	OperationStatus        string                           `json:"operationStatus,omitempty"`
+	Interrupted            bool                             `json:"interrupted"`
+	ReconciliationRequired bool                             `json:"reconciliationRequired"`
+	OutcomeRecorded        bool                             `json:"outcomeRecorded"` // repository transition, not durable-storage proof
 }
 
 // RuntimeSummary is a runtime's truthful status for the overview.
@@ -44,22 +56,42 @@ type RuntimeSummary struct {
 // the Operation Ledger for the local safe worker), and records attempts. It
 // never claims execution for a runtime that did not actually run.
 type Service struct {
-	reg    *Registry
-	broker *executionbroker.Broker
-	ops    *operations.Service // optional; enables ledger-backed self-test
-	owner  string
-	space  string
-	now    func() time.Time
+	reg                 *Registry
+	broker              *executionbroker.Broker
+	ops                 *operations.Service // optional; enables ledger-backed self-test
+	owner               string
+	space               string
+	now                 func() time.Time
+	safeExecutionPolicy func(title, description, operationType string) bool
 
 	mu       sync.Mutex
 	attempts []RuntimeAttempt
 	seq      int
 }
 
+// WithSafeExecutionPolicy attaches the live runtime-policy check required for
+// local safe-worker self-tests. Without a policy, self-tests fail closed.
+func (s *Service) WithSafeExecutionPolicy(policy func(title, description, operationType string) bool) *Service {
+	s.safeExecutionPolicy = policy
+	return s
+}
+
 // NewService builds a runtime lab service.
 func NewService(broker *executionbroker.Broker, ops *operations.Service, ownerUserID, workspaceID string) *Service {
+	return NewServiceWithAgentRuntimeRegistry(broker, ops, ownerUserID, workspaceID, nil)
+}
+
+// NewServiceWithAgentRuntimeRegistry builds Runtime Lab against the canonical
+// production agent-runtime registry. The registry is optional to preserve the
+// isolated Runtime Lab contract used by focused tests and local tooling.
+func NewServiceWithAgentRuntimeRegistry(
+	broker *executionbroker.Broker,
+	ops *operations.Service,
+	ownerUserID, workspaceID string,
+	agentRegistry *agentruntime.Registry,
+) *Service {
 	return &Service{
-		reg:    NewRegistry(broker),
+		reg:    NewRegistryWithAgentRuntimeRegistry(broker, agentRegistry),
 		broker: broker,
 		ops:    ops,
 		owner:  ownerUserID,
@@ -114,7 +146,8 @@ func (s *Service) Probe(ctx context.Context, runtimeID string) (ProbeResult, boo
 	if !ok {
 		return ProbeResult{}, false
 	}
-	return a.Probe(ctx, s.now().UTC()), true
+	result := a.Probe(ctx, s.now().UTC())
+	return s.persistOpenClawDiscovery(result), true
 }
 
 // SelfTest runs a safe self-test. For the local safe worker it executes a real
@@ -147,6 +180,9 @@ func (s *Service) SelfTest(ctx context.Context, runtimeID string) (RuntimeAttemp
 }
 
 func (s *Service) selfTestSafeWorker(ctx context.Context, a Adapter, now time.Time) RuntimeAttempt {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Create a real Operation for the self-test so it flows through the ledger.
 	s.mu.Lock()
 	s.seq++
@@ -164,38 +200,102 @@ func (s *Service) selfTestSafeWorker(ctx context.Context, a Adapter, now time.Ti
 	}
 	ingest, err := s.ops.Ingest(in)
 	if err != nil {
-		return s.record(RuntimeAttempt{RuntimeID: executionbroker.LocalSafeWorkerID, Status: AttemptFailed, Detail: "ingest: " + err.Error(), CreatedAt: now})
+		return s.record(RuntimeAttempt{RuntimeID: executionbroker.LocalSafeWorkerID, Status: AttemptFailed, Detail: "self-test operation could not be ingested", CreatedAt: now})
 	}
 	op := ingest.Operation
 	op.CurrentDecision = string(operations.DecisionRunSafeLocalWorker)
+	op.RiskLevel = string(operations.RiskLow)
+	op.AutonomyLevel = string(operations.AutonomyAuto)
+	op.OwnerType = string(operations.OwnerHAI)
+	op.RequiresApproval = false
 	classified, err := s.ops.Transition(op, operations.StatusClassified, "hai", "", "runtime self-test classified")
 	if err != nil {
-		return s.record(RuntimeAttempt{RuntimeID: executionbroker.LocalSafeWorkerID, OperationID: op.ID.String(), Status: AttemptFailed, Detail: "classify: " + err.Error(), CreatedAt: now})
+		return s.record(RuntimeAttempt{RuntimeID: executionbroker.LocalSafeWorkerID, OperationID: op.ID.String(), Status: AttemptFailed, Detail: "self-test operation could not be classified", CreatedAt: now})
 	}
 
-	outcome, err := background.ExecuteSafeOperation(ctx, s.ops, s.broker, *classified, now)
+	claimed, err := s.ops.ClaimOperation(
+		ctx, s.owner, s.space, classified.ID, uuid.New(), 5*time.Minute,
+	)
 	if err != nil {
-		return s.record(RuntimeAttempt{RuntimeID: executionbroker.LocalSafeWorkerID, OperationID: op.ID.String(), Status: AttemptFailed, Detail: err.Error(), CreatedAt: now})
+		detail := "self-test execution claim could not be acquired"
+		if errors.Is(err, operations.ErrOperationClaimed) {
+			detail = operations.ErrOperationClaimed.Error()
+		}
+		return s.record(RuntimeAttempt{RuntimeID: executionbroker.LocalSafeWorkerID, OperationID: op.ID.String(), Status: AttemptFailed, Detail: detail, CreatedAt: now})
 	}
+	if s.safeExecutionPolicy == nil || !s.safeExecutionPolicy(claimed.Operation.Title, claimed.Operation.Description, claimed.Operation.OperationType) {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		releaseErr := s.ops.ReleaseClaim(cleanupCtx, claimed.Claim)
+		cancel()
+		detail := "safe-worker execution blocked by current runtime policy"
+		if s.safeExecutionPolicy == nil {
+			detail = "safe-worker execution blocked because runtime policy is unavailable"
+		}
+		if releaseErr != nil && !errors.Is(releaseErr, operations.ErrClaimLost) {
+			detail = "safe-worker execution blocked and operation claim release failed"
+		}
+		return s.record(RuntimeAttempt{
+			RuntimeID:   executionbroker.LocalSafeWorkerID,
+			OperationID: op.ID.String(),
+			Status:      AttemptBlocked,
+			Detail:      detail,
+			CreatedAt:   now,
+		})
+	}
+	outcome, err := background.ExecuteSafeOperationClaimed(ctx, s.ops, s.broker, claimed.Operation, claimed.Claim, now,
+		func(op models.Operation) bool {
+			return s.safeExecutionPolicy != nil && s.safeExecutionPolicy(op.Title, op.Description, op.OperationType)
+		})
+	if err != nil {
+		if outcome.Receipt == nil && !outcome.Verified && !outcome.Interrupted && !errors.Is(err, background.ErrSafeOutcomeUncertain) {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			releaseErr := s.ops.ReleaseClaim(cleanupCtx, claimed.Claim)
+			cancel()
+			if releaseErr != nil && !errors.Is(releaseErr, operations.ErrClaimLost) {
+				err = errors.Join(err, releaseErr)
+			}
+		}
+	}
+	return s.record(runtimeAttemptFromSafeOutcome(op.ID.String(), outcome, err, now))
+}
 
+func runtimeAttemptFromSafeOutcome(operationID string, outcome background.SafeOutcome, err error, now time.Time) RuntimeAttempt {
 	attempt := RuntimeAttempt{
-		RuntimeID:          executionbroker.LocalSafeWorkerID,
-		OperationID:        op.ID.String(),
-		IdempotencyKey:     idempotency.RuntimeAttemptIdempotencyKey(op.ID.String(), "self-test", executionbroker.LocalSafeWorkerID, ""),
-		VerificationPassed: outcome.Verified,
-		CreatedAt:          now,
+		RuntimeID:       executionbroker.LocalSafeWorkerID,
+		OperationID:     operationID,
+		IdempotencyKey:  idempotency.RuntimeAttemptIdempotencyKey(operationID, "self-test", executionbroker.LocalSafeWorkerID, ""),
+		Interrupted:     outcome.Interrupted,
+		OutcomeRecorded: outcome.Interrupted || outcome.Failed,
+		CreatedAt:       now,
 	}
-	if outcome.Verified {
+	if outcome.Operation != nil {
+		attempt.OperationStatus = outcome.Operation.Status
+		attempt.BoundedOutput = safety.RedactSecrets(outcome.Operation.ResultSummary)
+	}
+	if outcome.Receipt != nil {
+		receipt := executionbroker.PublicExecutionResult(*outcome.Receipt)
+		attempt.Receipt = &receipt
+		attempt.BoundedOutput = receipt.Output.BoundedOutput
+	}
+	verified := err == nil && outcome.Verified && !outcome.Interrupted && !outcome.Failed &&
+		outcome.Operation != nil && outcome.Operation.Status == string(operations.StatusCompleted) &&
+		outcome.Operation.VerificationStatus == string(operations.VerificationPassed)
+	switch {
+	case verified:
 		attempt.Status = AttemptSucceeded
 		attempt.Detail = "safe worker executed and verified through the Operation Ledger"
-		if outcome.Operation != nil {
-			attempt.BoundedOutput = outcome.Operation.ResultSummary
-		}
-	} else {
+		attempt.VerificationPassed = true
+		attempt.OutcomeRecorded = true
+	case outcome.Interrupted || errors.Is(err, background.ErrSafeOutcomeUncertain) ||
+		((outcome.Receipt != nil || outcome.Verified) && err != nil) || (err == nil && !outcome.Failed):
+		attempt.Status = AttemptInconclusive
+		attempt.Detail = "safe worker outcome requires reconciliation; retained receipt does not confirm recorded completion"
+		attempt.ReconciliationRequired = true
+	default:
 		attempt.Status = AttemptFailed
-		attempt.Detail = "safe worker did not pass verification"
+		attempt.Detail = "safe worker execution did not complete"
 	}
-	return s.record(attempt)
+	return attempt
 }
 
 // Attempts returns the recorded attempts for a runtime (newest first).
@@ -205,7 +305,7 @@ func (s *Service) Attempts(runtimeID string) []RuntimeAttempt {
 	out := make([]RuntimeAttempt, 0, len(s.attempts))
 	for i := len(s.attempts) - 1; i >= 0; i-- {
 		if s.attempts[i].RuntimeID == runtimeID {
-			out = append(out, s.attempts[i])
+			out = append(out, publicRuntimeAttempt(s.attempts[i]))
 		}
 	}
 	s.mu.Unlock()
@@ -213,19 +313,48 @@ func (s *Service) Attempts(runtimeID string) []RuntimeAttempt {
 	if runtimeID == executionbroker.LocalSafeWorkerID {
 		out = mergeRuntimeAttempts(out, s.safeWorkerLedgerAttempts())
 	}
+	if runtimeID == "openclaw" {
+		out = mergeRuntimeAttempts(out, s.openClawLedgerAttempts())
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
 	return out
 }
 
+func (s *Service) openClawLedgerAttempts() []RuntimeAttempt {
+	discovery, found := s.durableOpenClawDiscovery()
+	if !found {
+		return nil
+	}
+	return []RuntimeAttempt{{
+		ID:                 "rta-openclaw-discovery-" + discovery.EvidenceSHA256,
+		RuntimeID:          "openclaw",
+		Status:             AttemptSucceeded,
+		Detail:             "durable, read-only OpenClaw discovery recovered from the Operation Ledger",
+		DiscoveryRecovered: true,
+		CreatedAt:          discovery.CheckedAt,
+	}}
+}
+
 func (s *Service) record(a RuntimeAttempt) RuntimeAttempt {
+	a = publicRuntimeAttempt(a)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.seq++
 	a.ID = "rta-" + itoa(s.seq)
 	s.attempts = append(s.attempts, a)
-	return a
+	return publicRuntimeAttempt(a)
+}
+
+func publicRuntimeAttempt(attempt RuntimeAttempt) RuntimeAttempt {
+	attempt.Detail = safety.RedactSecrets(attempt.Detail)
+	attempt.BoundedOutput = safety.RedactSecrets(attempt.BoundedOutput)
+	if attempt.Receipt != nil {
+		receipt := executionbroker.PublicExecutionResult(*attempt.Receipt)
+		attempt.Receipt = &receipt
+	}
+	return attempt
 }
 
 func (s *Service) lastAttempt(runtimeID string) *RuntimeAttempt {
@@ -280,22 +409,60 @@ func runtimeAttemptFromOperation(operation models.Operation) RuntimeAttempt {
 		status = AttemptBlocked
 	case operations.StatusRunning, operations.StatusVerifying:
 		status = AttemptRunning
+	case operations.StatusInterrupted:
+		status = AttemptInconclusive
 	}
-	detail := operation.LastError
-	if detail == "" {
-		detail = "safe worker execution recovered from the durable Operation Ledger"
+	attempt := RuntimeAttempt{
+		ID:                     "rta-operation-" + operation.ID.String(),
+		RuntimeID:              executionbroker.LocalSafeWorkerID,
+		OperationID:            operation.ID.String(),
+		Status:                 status,
+		IdempotencyKey:         operation.DedupeKey,
+		Detail:                 "safe worker execution recovered from the recorded Operation Ledger",
+		BoundedOutput:          safety.RedactSecrets(operation.ResultSummary),
+		VerificationPassed:     status == AttemptSucceeded,
+		OperationStatus:        operation.Status,
+		Interrupted:            operation.Status == string(operations.StatusInterrupted),
+		ReconciliationRequired: operation.Status == string(operations.StatusInterrupted),
+		OutcomeRecorded:        operation.Status == string(operations.StatusInterrupted) || operation.Status == string(operations.StatusFailed) || operation.Status == string(operations.StatusCompleted),
+		CreatedAt:              createdAt,
 	}
-	return RuntimeAttempt{
-		ID:                 "rta-operation-" + operation.ID.String(),
-		RuntimeID:          executionbroker.LocalSafeWorkerID,
-		OperationID:        operation.ID.String(),
-		Status:             status,
-		IdempotencyKey:     operation.DedupeKey,
-		Detail:             detail,
-		BoundedOutput:      operation.ResultSummary,
-		VerificationPassed: operations.VerificationStatus(operation.VerificationStatus) == operations.VerificationPassed,
-		CreatedAt:          createdAt,
+	if operation.LastError != "" {
+		attempt.Detail = "safe worker execution did not complete; inspect the recorded operation"
 	}
+	if strings.TrimSpace(operation.WorldModelStateJSON) != "" {
+		var state map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(operation.WorldModelStateJSON), &state); err != nil || state == nil {
+			attempt.ReconciliationRequired = true
+		} else if raw, exists := state["safeWorkerExecution"]; exists {
+			var execution struct {
+				Result           *executionbroker.ExecutionResult `json:"result"`
+				OutcomeUncertain *bool                            `json:"outcomeUncertain"`
+			}
+			if err := json.Unmarshal(raw, &execution); err != nil || execution.OutcomeUncertain == nil || execution.Result == nil {
+				attempt.ReconciliationRequired = true
+			} else {
+				result := execution.Result
+				complete := result.RuntimeID == executionbroker.LocalSafeWorkerID && result.OK && result.Verification.Passed &&
+					result.Verification.FileExists && result.Verification.InsideWorkspace && result.Verification.HashMatches &&
+					result.Verification.MarkerFound && result.Verification.OutputBounded && result.Output.MarkerFound &&
+					result.Output.ArtifactPath != "" && result.Output.ArtifactHash != ""
+				attempt.ReconciliationRequired = attempt.ReconciliationRequired || *execution.OutcomeUncertain ||
+					(status == AttemptSucceeded && !complete) || operation.Status == string(operations.StatusAwaitingApproval)
+			}
+			if execution.Result != nil {
+				receipt := executionbroker.PublicExecutionResult(*execution.Result)
+				attempt.Receipt = &receipt
+				attempt.BoundedOutput = receipt.Output.BoundedOutput
+			}
+		}
+	}
+	if attempt.ReconciliationRequired {
+		attempt.Status = AttemptInconclusive
+		attempt.VerificationPassed = false
+		attempt.Detail = "safe worker outcome requires reconciliation; recorded receipt does not confirm completion"
+	}
+	return attempt
 }
 
 func mergeRuntimeAttempts(primary, recovered []RuntimeAttempt) []RuntimeAttempt {

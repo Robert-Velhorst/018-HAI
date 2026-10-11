@@ -14,6 +14,10 @@ import (
 const (
 	ReminderProposalAuthority = "reminder_proposal_only"
 	ReminderProposalFreshness = "current_internal_reminder_snapshot"
+	// Delivery authorization covers the proposal horizon plus its post-due retry grace.
+	workflowReminderMaxHorizon = 30 * 24 * time.Hour
+	workflowReminderDeliveryGrace = 24 * time.Hour
+	workflowReminderMaxAuthorizationLifetime = workflowReminderMaxHorizon + workflowReminderDeliveryGrace
 )
 
 type WorkflowReminderCandidate struct {
@@ -75,7 +79,7 @@ func (s *service) ReminderProposalsForOwner(
 	if now.IsZero() {
 		return nil, fmt.Errorf("a current reminder check time is required")
 	}
-	if horizonHours < 1 || horizonHours > 720 {
+	if horizonHours < 1 || horizonHours > int(workflowReminderMaxHorizon/time.Hour) {
 		return nil, fmt.Errorf("horizonHours must be between 1 and 720")
 	}
 	if limit < 1 || limit > 200 {

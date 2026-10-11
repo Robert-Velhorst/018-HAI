@@ -85,11 +85,50 @@ func TestDeterministicReadOnlyRuntimeRejectsMutableOrUnevidencedExecution(t *tes
 	}
 }
 
+func TestValidatePlanDoesNotCascadeWhenFrameworkPreflightIsBlocked(t *testing.T) {
+	plan := validStructuredValidationPlan()
+	plan.Intake.NeedsTools = true
+	plan.ExecutionResult = nil
+	plan.ValidationPlan.FrameworkEvidenceRequirements = []string{"verified operator identity"}
+	plan.ValidationPlan.FrameworkEvidenceContracts = []FrameworkEvidenceContract{{
+		ID:          "owner-identity",
+		FrameworkID: "human-sovereignty",
+		Requirement: "verified operator identity",
+		Phase:       EvidencePhasePreAuthorization,
+		Validator:   "owner_identity",
+		Required:    true,
+	}}
+	plan.FrameworkEvidencePreflight = &FrameworkEvidencePreflightResult{
+		Passed:  false,
+		Status:  "blocked",
+		Missing: 1,
+		Failures: []string{
+			"missing verified owner identity",
+		},
+	}
+
+	result := validatePlan(plan, 1)
+	if !containsString(result.Failures, "framework evidence preconditions were not verified before execution") {
+		t.Fatalf("preflight failure was not reported: %#v", result.Failures)
+	}
+	for _, failure := range result.Failures {
+		if strings.Contains(failure, "required typed framework evidence is missing") {
+			t.Fatalf("preflight block cascaded into duplicate typed evidence failure: %#v", result.Failures)
+		}
+	}
+	criterion := validationCriterionByText(result.Criteria, "verified operator identity")
+	if criterion == nil || criterion.Status != validationCriterionNotRun {
+		t.Fatalf("preauthorization criterion = %#v, want not_run", criterion)
+	}
+}
+
 func deterministicReadOnlyToolExecution() *ToolExecutionResult {
 	return &ToolExecutionResult{
 		AutomationID:  uuid.NewString(),
 		LaunchEventID: uuid.NewString(),
 		LaunchType:    "api",
+		RuntimeType:   "api",
+		Target:        "GET http://backend/readyz",
 		Status:        "completed",
 		Message:       "GET http://backend/readyz returned HTTP 200",
 		ExitCode:      http.StatusOK,
@@ -385,6 +424,35 @@ func TestRequiredFrameworkAutonomyMatchesConstitutionAuthorityLadder(t *testing.
 		HumanApproved:  true,
 	}); got != 6 {
 		t.Fatalf("case-approved execution autonomy = %d, want level 6", got)
+	}
+}
+
+func TestModelRouteEvidenceIsInapplicableForEligibleDeterministicRuntime(t *testing.T) {
+	plan := &CompletionPlan{
+		Intake: IntakeAnalysis{
+			NeedsTools: true,
+		},
+		RiskAssessment: RiskAssessment{
+			Level:      "low",
+			AllowedNow: true,
+		},
+	}
+	for _, requirement := range []string{"provider health", "capability profile", "price and quota data"} {
+		applicable, reason := frameworkEvidenceRequirementApplies(plan, requirement)
+		if applicable || !strings.Contains(reason, "no model route is required") {
+			t.Fatalf("%s applicability = %t (%q), want not applicable for deterministic runtime", requirement, applicable, reason)
+		}
+	}
+
+	plan.RiskAssessment.ApprovalRequired = true
+	if applicable, _ := frameworkEvidenceRequirementApplies(plan, "provider health"); !applicable {
+		t.Fatal("approval-gated execution must still require model-route evidence when the model framework applies")
+	}
+
+	plan.RiskAssessment.ApprovalRequired = false
+	plan.ModelDecision.SelectedModelID = "local-model"
+	if applicable, _ := frameworkEvidenceRequirementApplies(plan, "capability profile"); !applicable {
+		t.Fatal("a selected model must retain its model-route evidence requirement")
 	}
 }
 

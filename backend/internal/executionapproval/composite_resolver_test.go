@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/executionauth"
+	"automation-hub-backend/internal/opscontrol"
 
 	"github.com/google/uuid"
 )
@@ -21,7 +22,10 @@ func TestCompositeResolverRoutesEachReferenceToExactlyOneResolver(t *testing.T) 
 	portfolioSpy := &approvalResolverSpy{result: executionauth.ResolvedApproval{
 		SourceID: portfolioDecisionPrefix + uuid.NewString(),
 	}}
-	composite, err := NewCompositeResolver(taskSpy, workflowSpy, portfolioSpy)
+	controlSpy := &approvalResolverSpy{result: executionauth.ResolvedApproval{
+		SourceID: opscontrol.OwnerControlApprovalPrefix + "valid",
+	}}
+	composite, err := NewCompositeResolver(taskSpy, workflowSpy, portfolioSpy, controlSpy)
 	if err != nil {
 		t.Fatalf("NewCompositeResolver: %v", err)
 	}
@@ -30,21 +34,26 @@ func TestCompositeResolverRoutesEachReferenceToExactlyOneResolver(t *testing.T) 
 	if err != nil || result.SourceID != taskApproval.SourceID {
 		t.Fatalf("task result = %#v, %v", result, err)
 	}
-	if taskSpy.calls != 1 || workflowSpy.calls != 0 || portfolioSpy.calls != 0 {
-		t.Fatalf("task calls=%d workflow calls=%d portfolio calls=%d", taskSpy.calls, workflowSpy.calls, portfolioSpy.calls)
+	if taskSpy.calls != 1 || workflowSpy.calls != 0 || portfolioSpy.calls != 0 || controlSpy.calls != 0 {
+		t.Fatalf("task calls=%d workflow calls=%d portfolio calls=%d control calls=%d", taskSpy.calls, workflowSpy.calls, portfolioSpy.calls, controlSpy.calls)
 	}
 
 	result, err = composite.Resolve(context.Background(), "alice", workflowApproval.SourceID, digest)
 	if err != nil || result.SourceID != workflowApproval.SourceID {
 		t.Fatalf("workflow result = %#v, %v", result, err)
 	}
-	if taskSpy.calls != 1 || workflowSpy.calls != 1 || portfolioSpy.calls != 0 {
-		t.Fatalf("task calls=%d workflow calls=%d portfolio calls=%d", taskSpy.calls, workflowSpy.calls, portfolioSpy.calls)
+	if taskSpy.calls != 1 || workflowSpy.calls != 1 || portfolioSpy.calls != 0 || controlSpy.calls != 0 {
+		t.Fatalf("task calls=%d workflow calls=%d portfolio calls=%d control calls=%d", taskSpy.calls, workflowSpy.calls, portfolioSpy.calls, controlSpy.calls)
 	}
 
 	result, err = composite.Resolve(context.Background(), "alice", portfolioSpy.result.SourceID, digest)
 	if err != nil || result.SourceID != portfolioSpy.result.SourceID || portfolioSpy.calls != 1 {
 		t.Fatalf("portfolio result = %#v, %v calls=%d", result, err, portfolioSpy.calls)
+	}
+
+	result, err = composite.Resolve(context.Background(), "alice", controlSpy.result.SourceID, digest)
+	if err != nil || result.SourceID != controlSpy.result.SourceID || controlSpy.calls != 1 {
+		t.Fatalf("control result = %#v, %v calls=%d", result, err, controlSpy.calls)
 	}
 }
 
@@ -55,7 +64,7 @@ func TestCompositeResolverNeverFallsBackAfterSelectedResolverRejects(t *testing.
 		SourceID: taskReviewPrefix + uuid.NewString(),
 	}}
 	portfolioSpy := &approvalResolverSpy{}
-	composite, err := NewCompositeResolver(taskSpy, workflowSpy, portfolioSpy)
+	composite, err := NewCompositeResolver(taskSpy, workflowSpy, portfolioSpy, &approvalResolverSpy{})
 	if err != nil {
 		t.Fatalf("NewCompositeResolver: %v", err)
 	}
@@ -98,7 +107,7 @@ func TestCompositeResolverPreservesTaskReviewResolverValidation(t *testing.T) {
 	taskResolver := testResolver(t, taskRepository, now)
 	workflowSpy := &approvalResolverSpy{}
 	portfolioSpy := &approvalResolverSpy{}
-	composite, err := NewCompositeResolver(taskResolver, workflowSpy, portfolioSpy)
+	composite, err := NewCompositeResolver(taskResolver, workflowSpy, portfolioSpy, &approvalResolverSpy{})
 	if err != nil {
 		t.Fatalf("NewCompositeResolver: %v", err)
 	}
@@ -141,7 +150,7 @@ func TestCompositeResolverPreservesWorkflowResolverValidation(t *testing.T) {
 	)
 	taskSpy := &approvalResolverSpy{}
 	portfolioSpy := &approvalResolverSpy{}
-	composite, err := NewCompositeResolver(taskSpy, workflowResolver, portfolioSpy)
+	composite, err := NewCompositeResolver(taskSpy, workflowResolver, portfolioSpy, &approvalResolverSpy{})
 	if err != nil {
 		t.Fatalf("NewCompositeResolver: %v", err)
 	}
@@ -177,7 +186,7 @@ func TestCompositeResolverRejectsUnsupportedReferenceWithoutDelegation(t *testin
 	taskSpy := &approvalResolverSpy{}
 	workflowSpy := &approvalResolverSpy{}
 	portfolioSpy := &approvalResolverSpy{}
-	composite, err := NewCompositeResolver(taskSpy, workflowSpy, portfolioSpy)
+	composite, err := NewCompositeResolver(taskSpy, workflowSpy, portfolioSpy, &approvalResolverSpy{})
 	if err != nil {
 		t.Fatalf("NewCompositeResolver: %v", err)
 	}
@@ -198,23 +207,29 @@ func TestCompositeResolverRejectsUnsupportedReferenceWithoutDelegation(t *testin
 func TestCompositeResolverValidatesConstructionAndState(t *testing.T) {
 	spy := &approvalResolverSpy{}
 	var typedNil *approvalResolverSpy
-	if _, err := NewCompositeResolver(nil, spy, spy); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := NewCompositeResolver(nil, spy, spy, spy); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("nil task resolver error = %v", err)
 	}
-	if _, err := NewCompositeResolver(typedNil, spy, spy); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := NewCompositeResolver(typedNil, spy, spy, spy); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("typed nil task resolver error = %v", err)
 	}
-	if _, err := NewCompositeResolver(spy, nil, spy); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := NewCompositeResolver(spy, nil, spy, spy); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("nil workflow resolver error = %v", err)
 	}
-	if _, err := NewCompositeResolver(spy, typedNil, spy); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := NewCompositeResolver(spy, typedNil, spy, spy); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("typed nil workflow resolver error = %v", err)
 	}
-	if _, err := NewCompositeResolver(spy, spy, nil); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := NewCompositeResolver(spy, spy, nil, spy); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("nil portfolio resolver error = %v", err)
 	}
-	if _, err := NewCompositeResolver(spy, spy, typedNil); !errors.Is(err, ErrInvalidRequest) {
+	if _, err := NewCompositeResolver(spy, spy, typedNil, spy); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("typed nil portfolio resolver error = %v", err)
+	}
+	if _, err := NewCompositeResolver(spy, spy, spy, nil); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("nil control resolver error = %v", err)
+	}
+	if _, err := NewCompositeResolver(spy, spy, spy, typedNil); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("typed nil control resolver error = %v", err)
 	}
 	var resolver *CompositeResolver
 	if _, err := resolver.Resolve(

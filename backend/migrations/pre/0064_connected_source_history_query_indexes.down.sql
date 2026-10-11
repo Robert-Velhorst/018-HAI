@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS public.idx_source_extractions_source_project_archive_updated;
+DROP INDEX IF EXISTS public.idx_source_extractions_source_archive_updated;
+DROP INDEX IF EXISTS public.idx_source_raw_items_source_updated;

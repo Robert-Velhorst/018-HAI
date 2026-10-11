@@ -71,6 +71,85 @@ func TestCalibrationSeparatesProviderSuccessFromValidation(t *testing.T) {
 	}
 }
 
+func TestCalibrationSeparatesUsageProvenanceAndCountsObservedSpeedSamples(t *testing.T) {
+	store := NewTelemetryStore()
+	now := time.Now().UTC()
+	records := []ModelRunTelemetry{
+		{
+			ProviderID: "local", ModelID: "model", Lane: LaneDrafting,
+			UsageSource: TokenUsageProviderReported, InputTokens: 20, OutputTokens: 10,
+			DurationMs: 2000, TokensPerSecond: 900, ValidationStatus: ValidationSchemaValidated,
+			CreatedAt: now,
+		},
+		{
+			ProviderID: "local", ModelID: "model", Lane: LaneDrafting,
+			UsageSource: TokenUsageProviderReported, InputTokens: 30, OutputTokens: 0,
+			DurationMs: 2000, TokensPerSecond: 700, ValidationStatus: ValidationSchemaValidated,
+			CreatedAt: now.Add(time.Second),
+		},
+		{
+			ProviderID: "local", ModelID: "model", Lane: LaneDrafting,
+			UsageSource: TokenUsageProviderReported, InputTokens: 40, OutputTokens: 20,
+			DurationMs: 0, TokensPerSecond: 600, ValidationStatus: ValidationSchemaValidated,
+			CreatedAt: now.Add(2 * time.Second),
+		},
+		{
+			ProviderID: "local", ModelID: "model", Lane: LaneDrafting,
+			UsageSource: TokenUsageProviderReportedPartial, InputTokens: 80, OutputTokens: 40,
+			DurationMs: 1000, TokensPerSecond: 300, ValidationStatus: ValidationSchemaValidated,
+			CreatedAt: now.Add(3 * time.Second),
+		},
+		{
+			ProviderID: "local", ModelID: "model", Lane: LaneDrafting,
+			UsageSource: TokenUsageEstimated, InputTokens: 1000, OutputTokens: 500,
+			DurationMs: 100, TokensPerSecond: 10000, ValidationStatus: ValidationSchemaValidated,
+			CreatedAt: now.Add(4 * time.Second),
+		},
+		{
+			ProviderID: "local", ModelID: "model", Lane: LaneDrafting,
+			UsageSource: TokenUsageEstimatedUncertain, InputTokens: 2000, OutputTokens: 1000,
+			DurationMs: 100, TokensPerSecond: 20000, ValidationStatus: ValidationSchemaValidated,
+			CreatedAt: now.Add(5 * time.Second),
+		},
+		{
+			ProviderID: "local", ModelID: "model", Lane: LaneDrafting,
+			UsageSource: TokenUsageProviderReportInvalid, InputTokens: 9000, OutputTokens: 9000,
+			DurationMs: 1, TokensPerSecond: 9000000, ValidationStatus: ValidationSchemaValidated,
+			CreatedAt: now.Add(6 * time.Second),
+		},
+	}
+	for _, record := range records {
+		store.Record(record)
+	}
+
+	summary := store.Calibration()
+	if len(summary.Models) != 1 {
+		t.Fatalf("models = %#v, want one model aggregate", summary.Models)
+	}
+	model := summary.Models[0]
+	if model.ProviderReportedUsageRuns != 3 || model.PartialUsageRuns != 1 || model.EstimatedUsageRuns != 2 || model.InvalidUsageRuns != 1 {
+		t.Fatalf("usage cohort counts = %#v", model)
+	}
+	if model.AverageProviderReportedInputTokens != 30 || model.AverageProviderReportedOutputTokens != 10 {
+		t.Fatalf("provider-reported averages = %.2f/%.2f, want 30/10", model.AverageProviderReportedInputTokens, model.AverageProviderReportedOutputTokens)
+	}
+	if model.AverageInputTokens != model.AverageProviderReportedInputTokens || model.AverageOutputTokens != model.AverageProviderReportedOutputTokens {
+		t.Fatalf("compatibility averages must remain provider-reported only: %#v", model)
+	}
+	if model.AveragePartialInputTokens != 80 || model.AveragePartialOutputTokens != 40 {
+		t.Fatalf("partial usage averages = %.2f/%.2f, want 80/40", model.AveragePartialInputTokens, model.AveragePartialOutputTokens)
+	}
+	if model.AverageEstimatedInputTokens != 1500 || model.AverageEstimatedOutputTokens != 750 {
+		t.Fatalf("estimated usage averages = %.2f/%.2f, want 1500/750", model.AverageEstimatedInputTokens, model.AverageEstimatedOutputTokens)
+	}
+	if model.ObservedSpeedSamples != 1 || model.AverageTokensPerSecond != 5 {
+		t.Fatalf("observed speed = %.2f tok/s across %d samples, want 5 across 1", model.AverageTokensPerSecond, model.ObservedSpeedSamples)
+	}
+	if len(summary.LaneLeaders) != 1 || summary.LaneLeaders[0].AverageTokens != 40 || summary.LaneLeaders[0].TokensPerSecond != 5 {
+		t.Fatalf("leader efficiency metrics = %#v, want fully reported counts and observed speed only", summary.LaneLeaders)
+	}
+}
+
 func TestParseTriageOutputFailsClosed(t *testing.T) {
 	if _, _, ok := parseTriageOutput("category=financial"); ok {
 		t.Fatal("triage without summary must fail schema validation")

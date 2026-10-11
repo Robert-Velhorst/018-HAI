@@ -5,7 +5,7 @@
 # Boots a throwaway PostgreSQL + the real backend and proves the account-bridge
 # layer is truthful: the generic JSON feed is a real production path (register ->
 # sync -> operations in the ledger, dedupe-idempotent), while Gmail/GitHub/Trello/
-# Drive/Calendar are read-only bridge contracts that are credentials_required and
+# Drive/Calendar are read-only bridge contracts that are contract_only and
 # NEVER report a fake connected status or fake OAuth. The permission registry is
 # read-only and grants nothing without a real credential.
 #
@@ -15,8 +15,8 @@ set -euo pipefail
 
 PG_PORT="${PG_PORT:-55436}"
 API_PORT="${API_PORT:-18084}"
-API_KEY="${API_KEY:-smoke-key}"
-JWT_SECRET="${JWT_SECRET:-smoke-jwt-secret}"
+API_KEY="${API_KEY:-hai-ci-smoke-api-key-0123456789abcdef}"
+JWT_SECRET="${JWT_SECRET:-hai-ci-smoke-jwt-secret-0123456789abcdef}"
 BASE="http://127.0.0.1:${API_PORT}/api/v1"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT}/scripts/smoke-auth.sh"
@@ -74,10 +74,10 @@ echo "==> Building and starting backend on :${API_PORT}"
 mkdir -p "${IMAGES}"
 ( cd "${ROOT}/backend" && go build -o "${BIN}" ./cmd )
 
-DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=postgres \
+DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=hai-ci-smoke-postgres-password-0123456789abcdef \
   DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
   BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
-  RUN_MODE=production KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
+  RUN_MODE=test KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
   HAI_PHASE2_FEEDS_DIR="${FEEDS}" HAI_PHASE2_WORKSPACE_DIR="${WORKSPACE}" \
   HAI_PHASE2_FEED_FILES="inbox.json" \
   "${BIN}" > "${WORKDIR}/backend.log" 2>&1 &
@@ -106,7 +106,7 @@ echo "==> Bridge contracts are truthful (no fake OAuth / no fake connected)"
 bridges="$(curl -sS "${hdr[@]}" "${BASE}/account-feeds/bridges")"
 check "gmail is a read-only bridge" 'true' \
   "$(echo "${bridges}" | jq -r '[.bridges[]|select(.provider=="gmail")][0].readOnly')"
-check "gmail is credentials_required (never connected from config)" 'credentials_required' \
+check "gmail is contract_only (never connected from config)" 'contract_only' \
   "$(echo "${bridges}" | jq -r '[.bridges[]|select(.provider=="gmail")][0].connectionStatus')"
 check "no bridge reports a connected status" 'true' \
   "$(echo "${bridges}" | jq -r '[.bridges[]|select(.connectionStatus=="connected")]|length==0')"
@@ -151,7 +151,7 @@ created="$(curl -sS "${hdr[@]}" -X POST "${BASE}/account-feeds" \
   -d '{"name":"gh","provider":"github","sourceType":"local_json_file","path":"inbox.json","accountLabel":"repo","enabled":true}')"
 gh_id="$(echo "${created}" | jq -r '.id')"
 check "github feed registers" 'true' "$([ -n "${gh_id}" ] && echo true)"
-check "github feed is credentials_required (no fake connect)" 'credentials_required' \
+check "github feed is contract_only (no fake connect)" 'contract_only' \
   "$(curl -sS "${hdr[@]}" "${BASE}/account-feeds" | jq -r '[.feeds[]|select(.feed.id=="'"${gh_id}"'")][0].connectionStatus')"
 
 echo ""

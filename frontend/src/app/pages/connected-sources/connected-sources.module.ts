@@ -10,8 +10,10 @@ import { NzFormModule } from 'ng-zorro-antd/form';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzLayoutModule } from 'ng-zorro-antd/layout';
+import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
+import { ControlRoomModule } from '../../control-room/control-room.module';
 import { ConnectedSourcesComponent } from './connected-sources.component';
 import { CONNECTED_SOURCE_SERVICE_TOKEN } from '../../services/connected-source/connected-source.service.token';
 import { ConnectedSourceService } from '../../services/connected-source/connected-source.service';
@@ -23,6 +25,7 @@ const routes: Routes = [{ path: '', component: ConnectedSourcesComponent }];
   imports: [
     CommonModule,
     RouterModule.forChild(routes),
+    ControlRoomModule,
     FormsModule,
     ReactiveFormsModule,
     NzButtonModule,
@@ -33,6 +36,7 @@ const routes: Routes = [{ path: '', component: ConnectedSourcesComponent }];
     NzIconModule,
     NzInputModule,
     NzLayoutModule,
+    NzModalModule,
     NzSelectModule,
     NzTableModule,
   ],

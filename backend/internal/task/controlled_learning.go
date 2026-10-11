@@ -44,7 +44,7 @@ func (s *service) recordVerifiedLearningOutcome(plan *CompletionPlan) {
 	if s == nil || s.controlledLearning == nil || plan == nil ||
 		strings.TrimSpace(plan.ID) == "" ||
 		strings.TrimSpace(plan.OwnerIdentity) == "" ||
-		plan.ExecutionResult == nil {
+		plan.ExecutionResult == nil || executionOutcomeUncertain(plan.ExecutionResult) {
 		return
 	}
 	verificationStatus, ok := controlledLearningVerification(

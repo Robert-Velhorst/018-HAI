@@ -171,6 +171,53 @@ func TestBuildSelectionRequiresExecutionAndUntrustedContentOverlays(t *testing.T
 	}
 }
 
+func TestBuildSelectionDoesNotTreatProhibitedExternalActionAsRequested(t *testing.T) {
+	decision, err := BuildSelection(
+		testCatalog(t),
+		testConstitution(),
+		SelectionRequest{
+			Request:          "Run the selected HAI backend readiness probe and record its read-only verification result. Do not send anything externally.",
+			TaskType:         "administrative",
+			RiskLevel:        "low",
+			NeedsTools:       true,
+			ExecuteRequested: true,
+		},
+		time.Date(2026, time.July, 30, 9, 32, 0, 0, time.UTC),
+	)
+	if err != nil {
+		t.Fatalf("BuildSelection returned error: %v", err)
+	}
+	if decision.RequiresApproval {
+		t.Fatalf("prohibited external action incorrectly required approval: %v", decision.ApprovalReasons)
+	}
+	if selectedID(decision, "approval-control") {
+		t.Fatalf("prohibited external action incorrectly selected approval control: %v", selectedIDs(decision))
+	}
+	if decision.MaximumAutonomyLevel != reversibleAutomaticExecutionAutonomyLevel {
+		t.Fatalf("MaximumAutonomyLevel = %d, want %d", decision.MaximumAutonomyLevel, reversibleAutomaticExecutionAutonomyLevel)
+	}
+}
+
+func TestContainsRequestedConsequentialActionHonorsDirectSafetyConstraints(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		text string
+		want bool
+	}{
+		{name: "requested", text: "Send the verified summary to the client.", want: true},
+		{name: "do not send", text: "Do not send anything externally.", want: false},
+		{name: "must not publish", text: "The system must not publish this draft.", want: false},
+		{name: "never delete", text: "Never delete source evidence.", want: false},
+		{name: "prohibition followed by a request", text: "Do not send the draft; publish the approved notice.", want: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := containsRequestedConsequentialAction(test.text, []string{"send", "publish", "delete"}); got != test.want {
+				t.Fatalf("containsRequestedConsequentialAction(%q) = %t, want %t", test.text, got, test.want)
+			}
+		})
+	}
+}
+
 func TestBuildSelectionOmitsOptionalFrameworkBelowTaskRisk(t *testing.T) {
 	catalog := testCatalog(t)
 	for index := range catalog {

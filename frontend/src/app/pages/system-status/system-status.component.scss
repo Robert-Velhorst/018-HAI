@@ -1,8 +1,19 @@
 :host {
+  box-sizing: border-box;
   display: block;
   padding: 24px;
   max-width: 1100px;
+  min-width: 0;
   margin: 0 auto;
+  width: 100%;
+}
+
+.system-status {
+  box-sizing: border-box;
+  container-name: system-status;
+  container-type: inline-size;
+  min-width: 0;
+  width: 100%;
 }
 
 .header {
@@ -20,7 +31,7 @@
 
   .subtitle {
     margin: 4px 0 0;
-    color: rgba(0, 0, 0, 0.55);
+    color: var(--hai-text-soft, #40506a);
     max-width: 640px;
   }
 }
@@ -28,12 +39,14 @@
 .load-error {
   padding: 16px;
   border-radius: 8px;
-  background: #fff1f0;
-  border: 1px solid #ffccc7;
-  color: #a8071a;
+  background: var(--hai-red-soft, #fff0f1);
+  border: 1px solid color-mix(in srgb, var(--hai-red, #d83d46) 55%, transparent);
+  color: var(--hai-text, #142033);
   display: flex;
   align-items: center;
   gap: 8px;
+
+  [nz-icon] { color: var(--hai-red, #d83d46); }
 }
 
 .status-banner {
@@ -69,24 +82,24 @@
   }
 
   &.status-ok {
-    background: #f6ffed;
-    border: 1px solid #b7eb8f;
-    color: #237804;
+    background: var(--hai-green-soft, #f6ffed);
+    border: 1px solid color-mix(in srgb, var(--hai-green, #119d68) 55%, transparent);
+    color: var(--hai-green, #237804);
   }
   &.status-warn {
-    background: #fffbe6;
-    border: 1px solid #ffe58f;
-    color: #ad6800;
+    background: var(--hai-gold-soft, #fff3df);
+    border: 1px solid color-mix(in srgb, var(--hai-gold, #d77916) 55%, transparent);
+    color: var(--hai-gold, #ad6800);
   }
   &.status-fail {
-    background: #fff1f0;
-    border: 1px solid #ffccc7;
-    color: #a8071a;
+    background: var(--hai-red-soft, #fff0f1);
+    border: 1px solid color-mix(in srgb, var(--hai-red, #d83d46) 55%, transparent);
+    color: var(--hai-red, #a8071a);
   }
   &.status-unknown {
-    background: #fafafa;
-    border: 1px solid #d9d9d9;
-    color: rgba(0, 0, 0, 0.65);
+    background: var(--hai-surface-muted, #f8fbff);
+    border: 1px solid var(--hai-border, #dfe7f1);
+    color: var(--hai-text-soft, #40506a);
   }
 }
 
@@ -114,25 +127,34 @@
   }
 
   &.status-warn {
-    background: #fffbe6;
-    border: 1px solid #ffe58f;
-    color: #613400;
+    background: var(--hai-gold-soft, #fff3df);
+    border: 1px solid color-mix(in srgb, var(--hai-gold, #d77916) 55%, transparent);
+    color: var(--hai-text, #613400);
   }
   &.status-fail {
-    background: #fff1f0;
-    border: 1px solid #ffccc7;
-    color: #5c0011;
+    background: var(--hai-red-soft, #fff0f1);
+    border: 1px solid color-mix(in srgb, var(--hai-red, #d83d46) 55%, transparent);
+    color: var(--hai-text, #5c0011);
   }
 }
 
 .groups {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+  min-width: 0;
+}
+
+@container system-status (min-width: 700px) {
+  .groups { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
 }
 
 .group-card {
+  box-sizing: border-box;
   border-radius: 10px;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
 
   &.border-sev-ok {
     border-left: 4px solid #52c41a;
@@ -165,13 +187,13 @@
 
   li {
     display: grid;
-    grid-template-columns: 20px 1fr;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
     grid-template-areas:
-      'icon name'
-      '. detail';
+      'icon name severity'
+      '. detail detail';
     gap: 2px 8px;
     padding: 8px 0;
-    border-top: 1px solid #f0f0f0;
+    border-top: 1px solid var(--hai-border, #dfe7f1);
 
     [nz-icon] {
       grid-area: icon;
@@ -184,22 +206,40 @@
     font-family: 'SFMono-Regular', Consolas, monospace;
     font-size: 13px;
     font-weight: 500;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .check-severity {
+    grid-area: severity;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
   }
 
   .check-detail {
     grid-area: detail;
     font-size: 12px;
-    color: rgba(0, 0, 0, 0.55);
+    color: var(--hai-text-soft, #40506a);
+    min-width: 0;
     word-break: break-word;
   }
 }
 
 .sev-ok {
-  color: #52c41a;
+  color: var(--hai-green, #119d68);
 }
 .sev-warn {
-  color: #faad14;
+  color: var(--hai-gold, #d77916);
 }
 .sev-fail {
-  color: #ff4d4f;
+  color: var(--hai-red, #d83d46);
+}
+
+@media (max-width: 520px) {
+  :host { padding: 14px 12px; }
+  .header { flex-wrap: wrap; }
+  .status-banner { align-items: flex-start; flex-wrap: wrap; padding: 14px; }
+  .status-banner .updated { flex-basis: 100%; margin-left: 42px; }
+  .groups { grid-template-columns: minmax(0, 1fr); }
 }

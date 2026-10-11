@@ -10,13 +10,15 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/agentruntime"
+	"automation-hub-backend/internal/safety"
 
 	"github.com/google/uuid"
 )
 
 const (
-	AgentRuntimeExecuteAction = "agent-runtime.execute-task"
-	AgentRuntimeResourceType  = "agent-runtime-task"
+	AgentRuntimeExecuteAction  = "agent-runtime.execute-task"
+	AgentRuntimeResourceType   = "agent-runtime-task"
+	finalEffectFreshnessWindow = 30 * time.Second
 )
 
 // FinalEffectBinding contains only durable receipt references. Automation
@@ -120,6 +122,9 @@ func (b *FinalEffectBridge) BindConsumedFinalEffect(
 	request agentruntime.FinalEffectAuthorizationRequest,
 	receiptID uuid.UUID,
 ) (FinalEffectBinding, error) {
+	if err := memoryContextError(ctx); err != nil {
+		return FinalEffectBinding{}, err
+	}
 	if b == nil || b.repository == nil {
 		return FinalEffectBinding{}, ErrPolicyUnavailable
 	}
@@ -137,6 +142,9 @@ func (b *FinalEffectBridge) BindConsumedFinalEffect(
 		receiptID,
 	)
 	if err != nil {
+		return FinalEffectBinding{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return FinalEffectBinding{}, err
 	}
 	exercise := finalEffectExercise(
@@ -169,6 +177,9 @@ func (b *FinalEffectBridge) VerifyFinalEffectProof(
 	request agentruntime.FinalEffectAuthorizationRequest,
 	proof agentruntime.FinalEffectAuthorizationProof,
 ) error {
+	if err := memoryContextError(ctx); err != nil {
+		return err
+	}
 	if b == nil || b.repository == nil {
 		return ErrPolicyUnavailable
 	}
@@ -227,6 +238,9 @@ func finalEffectExercise(
 func validateAgentRuntimeFinalRequest(
 	request agentruntime.FinalEffectAuthorizationRequest,
 ) error {
+	if err := safety.ValidateRuntimeModel(request.RuntimeID, request.RuntimeModel); err != nil {
+		return err
+	}
 	if request.Operation != AgentRuntimeExecuteAction {
 		return fmt.Errorf("agent runtime final effect operation is invalid")
 	}
@@ -332,4 +346,20 @@ func finalEffectMatches(
 		consumption.OwnerIdentity == exercise.OwnerIdentity &&
 		consumption.ReceiptDigest == exercise.DecisionDigest &&
 		consumption.ExecutionTarget == exercise.ConsumptionTarget
+}
+
+func finalEffectAuthorityFresh(receipt Receipt, consumption Consumption, exercisedAt time.Time) bool {
+	exercisedAt = exercisedAt.UTC()
+	consumedAt := consumption.ConsumedAt.UTC()
+	if exercisedAt.IsZero() || consumedAt.IsZero() ||
+		consumedAt.Before(receipt.EvaluatedAt) || exercisedAt.Before(consumedAt) ||
+		exercisedAt.Sub(consumedAt) > finalEffectFreshnessWindow {
+		return false
+	}
+	if receipt.ApprovalSourceID == "" {
+		return true
+	}
+	approval := receipt.Evidence.Approval
+	return approval.SourceID == receipt.ApprovalSourceID &&
+		!approval.ExpiresAt.IsZero() && exercisedAt.Before(approval.ExpiresAt)
 }

@@ -89,9 +89,14 @@ func (bridge *resourcePlanningBridge) PlanResources(request ResourcePlanningRequ
 
 	tasks := make([]resourceplanner.Task, 0, len(request.Steps))
 	previous := ""
+	automaticRuntime := admittedAutomaticRuntime(request.Risk)
 	for index, step := range request.Steps {
 		optimistic, expected, pessimistic := resourceDuration(request.Difficulty, step)
-		capacityNeedsReview := request.Capacity != nil && request.Capacity.NeedsReview
+		// Personal-capacity uncertainty applies when the plan depends on Robert's
+		// time. A bounded Level 8 deterministic runtime is independently
+		// authorized and must not be converted into a human approval gate merely
+		// because no personal capacity observation has been recorded yet.
+		capacityNeedsReview := request.Capacity != nil && request.Capacity.NeedsReview && !automaticRuntime
 		planned := resourceplanner.Task{
 			ID:       resourceStepID(index),
 			Duration: resourceplanner.DurationEstimate{OptimisticMinutes: optimistic, ExpectedMinutes: expected, PessimisticMinutes: pessimistic, Basis: "bounded task difficulty and step type estimate"},
@@ -157,6 +162,15 @@ func (bridge *resourcePlanningBridge) PlanResources(request ResourcePlanningRequ
 	if ownerIdentity == "" {
 		ownerIdentity = "system:unowned-planning"
 	}
+	uncertaintyThreshold := int64(5000)
+	if automaticRuntime {
+		// The planner's generic duration range is intentionally conservative. It
+		// must not convert that estimate alone into a human-approval requirement
+		// after the task and framework gates have already admitted a bounded,
+		// reversible Level 8 runtime. Capacity, budget, and explicit-risk flags
+		// still flow through unchanged.
+		uncertaintyThreshold = 0
+	}
 	decision, err := bridge.planner.Plan(resourceplanner.Request{
 		OwnerIdentity:  ownerIdentity,
 		WorkspaceID:    workspaceID,
@@ -168,7 +182,7 @@ func (bridge *resourcePlanningBridge) PlanResources(request ResourcePlanningRequ
 		Tasks:          tasks,
 		Availability:   availability,
 		Budget:         budget,
-		ApprovalPolicy: resourceplanner.ApprovalPolicy{SoftDeadlineMiss: true, UncertaintyThreshold: 5000},
+		ApprovalPolicy: resourceplanner.ApprovalPolicy{SoftDeadlineMiss: true, UncertaintyThreshold: uncertaintyThreshold},
 	})
 	if err != nil {
 		return nil, err
@@ -177,6 +191,15 @@ func (bridge *resourcePlanningBridge) PlanResources(request ResourcePlanningRequ
 		return nil, fmt.Errorf("resource planner violated the advisory-only authority boundary")
 	}
 	return &decision, nil
+}
+
+func admittedAutomaticRuntime(risk RiskAssessment) bool {
+	return strings.EqualFold(strings.TrimSpace(risk.Level), "low") &&
+		risk.AllowedNow &&
+		!risk.ApprovalRequired &&
+		!risk.ApprovalGranted &&
+		risk.RequiredFrameworkAutonomy >= 8 &&
+		risk.FrameworkAutonomyCeiling >= risk.RequiredFrameworkAutonomy
 }
 
 func ownerCapacityWindows(start, end time.Time, busy []source.CalendarBusyInterval) []resourceplanner.CapacityWindow {
@@ -307,23 +330,26 @@ func resourcePlanningSummary(decision *resourceplanner.Decision) string {
 }
 
 func (s *service) executeWithPursuitReservation(plan *CompletionPlan, request IntakeRequest, attempt int) *ExecutionResult {
+	if taskExecutionContext(request).Err() != nil {
+		return cancelledTaskExecution(plan.ExecutionResult, plan, request, time.Now().UTC())
+	}
 	if plan == nil || strings.TrimSpace(plan.PursuitID) == "" {
 		return s.executeAllowedSteps(plan, request)
 	}
 	started := time.Now().UTC()
 	pursuitID, err := uuid.Parse(strings.TrimSpace(plan.PursuitID))
 	if err != nil {
-		return blockExecution(newExecutionResult(plan, request, started), "pursuit resource reservation received an invalid pursuit id", plan, started)
+		return pursuitReservationBlockedExecution(plan, request, "pursuit resource reservation received an invalid pursuit id", started)
 	}
 	manager, ok := s.pursuitAttempts.(PursuitResourceReservationManager)
 	if !ok {
-		return blockExecution(newExecutionResult(plan, request, started), "pursuit resource reservation boundary is unavailable", plan, started)
+		return pursuitReservationBlockedExecution(plan, request, "pursuit resource reservation boundary is unavailable", started)
 	}
 	effortMinutes, costMicros := pursuitExecutionEstimate(plan)
 	operationRoot := firstNonEmpty(request.operationID, plan.OperationID, plan.ID)
 	operationID := operationRoot + ":attempt:" + strconv.Itoa(maxInt(attempt, 1))
 	if err := manager.ReservePursuitTaskResources(pursuitID, plan.OwnerIdentity, operationID, effortMinutes, costMicros); err != nil {
-		return blockExecution(newExecutionResult(plan, request, started), "pursuit resource reservation blocked execution: "+err.Error(), plan, started)
+		return pursuitReservationBlockedExecution(plan, request, "pursuit resource reservation blocked execution: "+err.Error(), started)
 	}
 	plan.Events = append(plan.Events, event("resources", fmt.Sprintf("reserved %d minutes and EUR %.6f for execution attempt %d", effortMinutes, float64(costMicros)/1_000_000, attempt)))
 
@@ -350,6 +376,20 @@ func (s *service) executeWithPursuitReservation(plan *CompletionPlan, request In
 		return result
 	}
 	plan.Events = append(plan.Events, event("resources", fmt.Sprintf("settled execution attempt %d with %d minutes and EUR %.6f actual usage", attempt, actualEffortMinutes, float64(actualCostMicros)/1_000_000)))
+	return result
+}
+
+func pursuitReservationBlockedExecution(plan *CompletionPlan, request IntakeRequest, reason string, started time.Time) *ExecutionResult {
+	result := blockExecution(newExecutionResult(plan, request, started), reason, plan, started)
+	// A denied new attempt does not establish that earlier execution had no effects.
+	if previous := plan.ExecutionResult; previous != nil {
+		result.OutcomeUncertain = executionOutcomeUncertain(previous)
+		result.ToolExecution = previous.ToolExecution
+		result.Actions = append(append([]ExecutedAction{}, previous.Actions...), result.Actions...)
+		if previous.ToolExecution != nil || len(previous.Actions) > 0 {
+			result.Output = "Further execution was blocked; prior execution evidence was retained for review. Reservation blocker: " + result.BlockedReason
+		}
+	}
 	return result
 }
 

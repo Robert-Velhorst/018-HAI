@@ -2,10 +2,13 @@ package braincatalog
 
 import (
 	"context"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"automation-hub-backend/internal/lifecycle"
 )
 
 const catalogRevalidationSchedulerIntervalEnv = "HAI_CATALOG_REVALIDATION_SCHEDULER_INTERVAL_MINUTES"
@@ -14,16 +17,22 @@ const catalogRevalidationSchedulerIntervalEnv = "HAI_CATALOG_REVALIDATION_SCHEDU
 // catalog metadata. It honours HAI's emergency stop and relies on durable
 // records to avoid duplicate checks between sweeps.
 func StartCatalogRevalidationScheduler(ctx context.Context, service *CatalogMaintenanceService, backgroundAllowed func() bool) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	if service == nil || !catalogRevalidationEnabled() || !catalogRevalidationSchedulerEnabled() {
 		return
 	}
 	run := func() {
+		if ctx.Err() != nil {
+			return
+		}
 		if backgroundAllowed != nil && !backgroundAllowed() {
 			return
 		}
-		service.RunDueRevalidations()
+		reportCatalogRevalidationRun(service.RunDueRevalidations())
 	}
-	go func() {
+	lifecycle.Go(ctx, "brain-catalog-maintenance", func() {
 		run()
 		ticker := time.NewTicker(catalogRevalidationSchedulerInterval())
 		defer ticker.Stop()
@@ -35,7 +44,31 @@ func StartCatalogRevalidationScheduler(ctx context.Context, service *CatalogMain
 				run()
 			}
 		}
-	}()
+	})
+}
+
+// reportCatalogRevalidationRun keeps unattended failures visible without
+// logging upstream responses, repository metadata, or any configured secrets.
+func reportCatalogRevalidationRun(run CatalogRevalidationRun) {
+	if !catalogMaintenanceNeedsReport(run) {
+		return
+	}
+	collectionFailed := run.CollectionReview != nil && run.CollectionReview.Failed
+	discoveryFailed := run.RepositoryDiscoveryReview != nil && run.RepositoryDiscoveryReview.Failed
+	log.Printf(
+		"brain catalog maintenance failed=%d checked=%d reused=%d collection_failed=%t discovery_failed=%t",
+		run.Failed,
+		run.Checked,
+		run.Reused,
+		collectionFailed,
+		discoveryFailed,
+	)
+}
+
+func catalogMaintenanceNeedsReport(run CatalogRevalidationRun) bool {
+	return run.Failed > 0 ||
+		(run.CollectionReview != nil && run.CollectionReview.Failed) ||
+		(run.RepositoryDiscoveryReview != nil && run.RepositoryDiscoveryReview.Failed)
 }
 
 func catalogRevalidationSchedulerEnabled() bool {

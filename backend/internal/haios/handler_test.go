@@ -1,6 +1,7 @@
 package haios
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -199,14 +200,28 @@ func TestPursuitOverviewUsesOwnerScopedDashboard(t *testing.T) {
 	}
 }
 
+func TestPursuitOverviewDoesNotExposeRepositoryFailure(t *testing.T) {
+	handler := NewHandler(nil, &ownerScopedPursuitDashboard{err: errors.New(`postgres password=not-for-dashboard at C:\\private`)})
+	overview := handler.pursuitOverview("alice")
+	if overview.Status != "degraded" {
+		t.Fatalf("status = %q, want degraded", overview.Status)
+	}
+	for _, forbidden := range []string{"password", "not-for-dashboard", "C:\\\\private"} {
+		if strings.Contains(strings.ToLower(overview.Summary), strings.ToLower(forbidden)) {
+			t.Fatalf("summary leaked %q: %s", forbidden, overview.Summary)
+		}
+	}
+}
+
 type ownerScopedPursuitDashboard struct {
 	ownerIdentity string
 	dashboard     *pursuit.Dashboard
+	err           error
 }
 
 func (s *ownerScopedPursuitDashboard) DashboardForOwner(ownerIdentity string) (*pursuit.Dashboard, error) {
 	s.ownerIdentity = ownerIdentity
-	return s.dashboard, nil
+	return s.dashboard, s.err
 }
 
 func TestPursuitOverviewEmptyStateStaysActionable(t *testing.T) {

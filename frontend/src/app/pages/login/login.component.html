@@ -1,191 +1,255 @@
-<section class="login-page">
-  <div class="login-copy">
-    <span class="login-mark">HAI</span>
-    <h1>HAI Automation Hub</h1>
-    <p>Sign in to your local-first personal operations command center.</p>
-    <div class="login-signal">
-      <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
+<main class="login-page">
+  <div class="login-layout">
+    <header class="login-brand" aria-labelledby="login-title">
+      <span class="login-mark" aria-hidden="true">HAI</span>
+      <div class="login-brand__copy">
+        <h1 id="login-title">HAI Automation Hub</h1>
+        <p>Sign in to your local-first personal operations command center.</p>
+      </div>
+    </header>
+
+    <div class="login-signal" role="note">
+      <i nz-icon nzType="safety-certificate" nzTheme="outline" aria-hidden="true"></i>
       <span>
         <strong>Safe mode by default</strong>
         <small>High-risk actions remain approval-gated.</small>
       </span>
     </div>
-  </div>
 
-  <form
-    nz-form
-    [formGroup]="validateForm"
-    (ngSubmit)="submitForm()"
-    class="login-box"
-  >
-    <div class="login-box__header">
-      <h2>{{ recoveryMode ? (recoveryStep === 'confirm' ? 'Set a new password' : 'Recover your account') : (registrationMode ? 'Create local account' : 'Log in') }}</h2>
-      <span>{{ recoveryMode ? (recoveryStep === 'confirm' ? 'Enter the one-time code from your configured recovery channel.' : 'Enter your account email to request a one-time reset code.') : (registrationMode ? 'New accounts are operator accounts. Owner access stays with the first-run admin.' : 'Use the local admin account from your environment file.') }}</span>
-    </div>
-
-    <nz-form-item>
-      <nz-form-control
-        [nzErrorTip]="emailErrorTip()"
-        nzHasFeedback
-        [nzValidateStatus]="validateForm.controls['userName']"
-      >
-        <nz-input-group nzPrefixIcon="mail">
-          <input
-            type="email"
-            nz-input
-            formControlName="userName"
-            placeholder="Email"
-            aria-label="Email"
-            data-testid="login-email"
-          />
-        </nz-input-group>
-      </nz-form-control>
-    </nz-form-item>
-
-    <nz-form-item *ngIf="recoveryMode && recoveryStep === 'confirm'">
-      <nz-form-control
-        nzErrorTip="Enter the one-time reset code."
-        nzHasFeedback
-        [nzValidateStatus]="validateForm.controls['resetToken']"
-      >
-        <nz-input-group nzPrefixIcon="key">
-          <input
-            type="text"
-            nz-input
-            formControlName="resetToken"
-            placeholder="One-time reset code"
-          />
-        </nz-input-group>
-      </nz-form-control>
-    </nz-form-item>
-
-    <ng-container *ngIf="!recoveryMode || recoveryStep === 'confirm'">
-    <nz-form-item>
-      <nz-form-control
-        [nzErrorTip]="passwordErrorTip()"
-        nzHasFeedback
-        [nzValidateStatus]="validateForm.controls['password']"
-      >
-        <nz-input-wrapper>
-          <ng-template nzInputPrefix><i nz-icon nzType="lock"></i></ng-template>
-          <input
-            type="password"
-            nz-input
-            formControlName="password"
-            placeholder="{{ recoveryMode ? 'New password' : 'Password' }}"
-            [type]="hidePassword ? 'password' : 'text'"
-            [attr.aria-label]="recoveryMode ? 'New password' : 'Password'"
-            data-testid="login-password"
-          />
-          <ng-template nzInputSuffix>
-            <i
-              nz-icon
-              [nzType]="hidePassword ? 'eye-invisible' : 'eye'"
-              (click)="hidePassword = !hidePassword"
-            ></i>
-          </ng-template>
-        </nz-input-wrapper>
-      </nz-form-control>
-    </nz-form-item>
-
-    <nz-form-item *ngIf="registrationMode || (recoveryMode && recoveryStep === 'confirm')">
-      <nz-form-control
-        [nzErrorTip]="confirmationErrorTip()"
-        nzHasFeedback
-        [nzValidateStatus]="validateForm.controls['confirmPassword']"
-      >
-        <nz-input-group nzPrefixIcon="lock">
-          <input
-            type="password"
-            nz-input
-            formControlName="confirmPassword"
-            placeholder="{{ recoveryMode ? 'Confirm new password' : 'Confirm password' }}"
-            [type]="hidePassword ? 'password' : 'text'"
-          />
-        </nz-input-group>
-      </nz-form-control>
-    </nz-form-item>
-    </ng-container>
-
-    <p class="login-form-hint" *ngIf="registrationMode || (recoveryMode && recoveryStep === 'confirm')">
-      Use a password with at least {{ minimumRegistrationPasswordLength }} characters, then enter it again exactly.
-    </p>
-
-    <p class="login-form-hint" *ngIf="recoveryMode && recoveryStep === 'request'">
-      {{ passwordRecoveryEmailEnabled ? 'HAI does not disclose whether an account exists. Reset codes are delivered only through the configured email recovery channel.' : 'Email recovery is not configured for this local installation.' }}
-    </p>
-
-    <nz-form-control>
-      <div class="login-options">
-      <label nz-checkbox formControlName="remember" *ngIf="!registrationMode && !recoveryMode">
-        <span>Remember me</span>
-      </label>
-      <button
-        type="button"
-        class="login-form-forgot"
-        data-testid="login-password-help"
-        (click)="showPasswordHelp()"
-        *ngIf="!registrationMode && !recoveryMode"
-      >
-        Forgot password?
-      </button>
-      <button type="button" class="login-form-forgot" (click)="toggleRegistration()" *ngIf="registrationMode">
-        Back to log in
-      </button>
-      <button type="button" class="login-form-forgot" (click)="backToLogin()" *ngIf="recoveryMode">
-        Back to log in
-      </button>
+    <form
+      nz-form
+      [formGroup]="validateForm"
+      (ngSubmit)="submitForm()"
+      class="login-box"
+      aria-labelledby="login-form-title"
+    >
+      <div class="login-box__header">
+        <h2 id="login-form-title">{{ recoveryMode ? (recoveryStep === 'confirm' ? 'Set a new password' : 'Recover your account') : (registrationMode ? 'Create local account' : 'Log in') }}</h2>
+        <p>{{ recoveryMode ? (recoveryStep === 'confirm' ? 'Enter the one-time code from your configured recovery channel.' : 'Enter your account email to request a one-time reset code.') : (registrationMode ? 'New accounts are operator accounts. Owner access stays with the first-run admin.' : 'Use the local admin account from your environment file.') }}</p>
       </div>
-      <button
-        type="submit"
-        nz-button
-        class="login-form-button"
-        [nzType]="'primary'"
-        data-testid="login-submit"
-        [nzLoading]="registering || recovering"
-        [disabled]="recoveryMode && recoveryStep === 'request' && authCapabilitiesLoaded && !passwordRecoveryEmailEnabled"
-      >
-        {{ recoveryMode ? (recoveryStep === 'confirm' ? 'Set new password' : (authCapabilitiesLoaded && !passwordRecoveryEmailEnabled ? 'Email recovery unavailable' : 'Request reset code')) : (registrationMode ? 'Create account' : 'Log in') }}
-      </button>
-      <button type="button" class="login-register-link" (click)="showResetConfirmation()" *ngIf="recoveryMode && recoveryStep === 'request'">
-        I already have a reset code
-      </button>
-      <button type="button" class="login-register-link" (click)="showPasswordHelp()" *ngIf="recoveryMode && recoveryStep === 'confirm'">
-        Request a new reset code
-      </button>
-      <button type="button" class="login-register-link" (click)="toggleRegistration()" *ngIf="!registrationMode && !recoveryMode">
-        Create a local operator account
-      </button>
-      <button
-        type="button"
-        nz-button
-        class="login-form-button login-local-preview"
-        [nzType]="'default'"
-        [nzLoading]="openingLocalPreview"
-        data-testid="login-local-preview"
-        (click)="openLocalPreview()"
-        *ngIf="!registrationMode && !recoveryMode && localPreviewEnabled"
-      >
-        Open local dashboard
-      </button>
 
-      <div class="login-divider" *ngIf="googleLoginEnabled"><span>or</span></div>
-
-      <button
-        type="button"
-        nz-button
-        class="login-form-button login-google"
-        [nzType]="'default'"
-        (click)="loginWithGoogle()"
-        data-testid="login-google"
-        *ngIf="googleLoginEnabled"
+      <div
+        class="login-capability-note"
+        role="status"
+        data-testid="login-capability-note"
+        *ngIf="authCapabilitiesLoaded && !registrationMode && !recoveryMode && (!googleLoginEnabled || !passwordRecoveryEmailEnabled)"
       >
-        <span nz-icon nzType="google" nzTheme="outline"></span>
-        Sign in with Google
-      </button>
-      <p class="login-form-hint" *ngIf="authCapabilitiesLoaded && !googleLoginEnabled">
-        Google sign-in is not configured for this local installation.
+        <p>Password sign-in remains available.</p>
+        <ul>
+          <li *ngIf="!googleLoginEnabled">Google sign-in is turned off for this HAI installation. Contact the HAI administrator if you need it.</li>
+          <li *ngIf="!passwordRecoveryEmailEnabled">Email password recovery is turned off. If you cannot sign in, contact the HAI administrator.</li>
+        </ul>
+      </div>
+
+      <p class="login-inline-error" role="alert" aria-live="assertive" *ngIf="signInErrorMessage">
+        {{ signInErrorMessage }}
       </p>
-    </nz-form-control>
-  </form>
-</section>
+
+      <div class="login-auth-unavailable" role="group" aria-label="Authentication service recovery" *ngIf="authenticationUnavailable">
+        <span>Retry the local authentication connection. Your requested page will be kept.</span>
+        <button type="button" (click)="retryAuthentication()" [disabled]="authenticationRetrying">
+          {{ authenticationRetrying ? 'Checking…' : 'Retry connection' }}
+        </button>
+      </div>
+
+      <div class="login-capabilities-unavailable" role="alert" *ngIf="authCapabilitiesUnavailable">
+        <span>{{ authCapabilitiesLoading ? 'Checking Google sign-in and email recovery. Password sign-in remains available.' : 'HAI could not check Google sign-in or email recovery. Retry the check; password sign-in remains available.' }}</span>
+        <button type="button" (click)="loadAuthCapabilities()" [disabled]="authCapabilitiesLoading">
+          {{ authCapabilitiesLoading ? 'Checking…' : 'Retry service check' }}
+        </button>
+      </div>
+
+      <nz-form-item>
+        <label class="login-field-label" for="login-email">Email address</label>
+        <nz-form-control
+          nzHasFeedback
+          [nzValidateStatus]="fieldStatus('userName')"
+        >
+          <nz-input-group nzPrefixIcon="mail">
+            <input
+              id="login-email"
+              type="email"
+              nz-input
+              required
+              formControlName="userName"
+              placeholder="name@example.com"
+              autocomplete="username"
+              data-testid="login-email"
+              [attr.aria-invalid]="isFieldInvalid('userName') ? 'true' : null"
+              [attr.aria-describedby]="isFieldInvalid('userName') ? 'login-email-error' : null"
+              (input)="onEmailInput()"
+            />
+          </nz-input-group>
+        </nz-form-control>
+        <span class="login-field-error" id="login-email-error" *ngIf="isFieldInvalid('userName')">{{ emailErrorTip() }}</span>
+      </nz-form-item>
+
+      <nz-form-item *ngIf="recoveryMode && recoveryStep === 'confirm'">
+        <label class="login-field-label" for="login-reset-code">One-time reset code</label>
+        <nz-form-control
+          nzHasFeedback
+          [nzValidateStatus]="fieldStatus('resetToken')"
+        >
+          <nz-input-group nzPrefixIcon="key">
+            <input
+              id="login-reset-code"
+              type="text"
+              nz-input
+              required
+              formControlName="resetToken"
+              placeholder="Enter your reset code"
+              autocomplete="one-time-code"
+              [attr.aria-invalid]="isFieldInvalid('resetToken') ? 'true' : null"
+              [attr.aria-describedby]="isFieldInvalid('resetToken') ? 'login-reset-code-error' : null"
+              (input)="onResetTokenInput()"
+            />
+          </nz-input-group>
+        </nz-form-control>
+        <span class="login-field-error" id="login-reset-code-error" *ngIf="isFieldInvalid('resetToken')">Enter the one-time reset code.</span>
+      </nz-form-item>
+
+      <ng-container *ngIf="!recoveryMode || recoveryStep === 'confirm'">
+        <nz-form-item>
+          <label class="login-field-label" for="login-password">{{ recoveryMode ? 'New password' : 'Password' }}</label>
+          <nz-form-control
+            nzHasFeedback
+            [nzValidateStatus]="fieldStatus('password')"
+          >
+            <nz-input-wrapper>
+              <ng-template nzInputPrefix><i nz-icon nzType="lock" aria-hidden="true"></i></ng-template>
+              <input
+                id="login-password"
+                type="password"
+                nz-input
+                required
+                formControlName="password"
+                [type]="hidePassword ? 'password' : 'text'"
+                [attr.autocomplete]="recoveryMode ? 'new-password' : 'current-password'"
+                data-testid="login-password"
+                [attr.aria-invalid]="isFieldInvalid('password') ? 'true' : null"
+                [attr.aria-describedby]="isFieldInvalid('password') ? 'login-password-error' : null"
+                (input)="onPasswordInput()"
+              />
+              <button
+                nzInputSuffix
+                type="button"
+                class="password-visibility-toggle"
+                [attr.aria-label]="hidePassword ? 'Show password' : 'Hide password'"
+                [attr.title]="hidePassword ? 'Show password' : 'Hide password'"
+                [attr.aria-pressed]="!hidePassword"
+                (click)="hidePassword = !hidePassword"
+              >
+                <i nz-icon [nzType]="hidePassword ? 'eye-invisible' : 'eye'" aria-hidden="true"></i>
+              </button>
+            </nz-input-wrapper>
+          </nz-form-control>
+          <span class="login-field-error" id="login-password-error" *ngIf="isFieldInvalid('password')">{{ passwordErrorTip() }}</span>
+        </nz-form-item>
+
+        <nz-form-item *ngIf="registrationMode || (recoveryMode && recoveryStep === 'confirm')">
+          <label class="login-field-label" for="login-confirm-password">{{ recoveryMode ? 'Confirm new password' : 'Confirm password' }}</label>
+          <nz-form-control
+            nzHasFeedback
+            [nzValidateStatus]="fieldStatus('confirmPassword')"
+          >
+            <nz-input-group nzPrefixIcon="lock">
+              <input
+                id="login-confirm-password"
+                type="password"
+                nz-input
+                required
+                formControlName="confirmPassword"
+                autocomplete="new-password"
+                [attr.aria-invalid]="isFieldInvalid('confirmPassword') ? 'true' : null"
+                [attr.aria-describedby]="isFieldInvalid('confirmPassword') ? 'login-confirm-password-error' : null"
+                (input)="onConfirmationInput()"
+              />
+            </nz-input-group>
+          </nz-form-control>
+          <span class="login-field-error" id="login-confirm-password-error" *ngIf="isFieldInvalid('confirmPassword')">{{ confirmationErrorTip() }}</span>
+        </nz-form-item>
+      </ng-container>
+
+      <p class="login-form-hint" *ngIf="registrationMode || (recoveryMode && recoveryStep === 'confirm')">
+        Use at least {{ minimumRegistrationPasswordLength }} characters and no more than {{ maximumRegistrationPasswordBytes }} UTF-8 bytes, then enter it again exactly.
+      </p>
+
+      <p class="login-form-hint" *ngIf="recoveryMode && recoveryStep === 'request'">
+        {{ authCapabilitiesUnavailable ? 'HAI could not check email recovery. Retry the service check before requesting a code. Password sign-in remains available.' : authCapabilitiesLoading ? 'Checking email recovery availability…' : passwordRecoveryEmailEnabled ? 'Email recovery is enabled for this installation, but this check cannot confirm whether a reset request will be delivered.' : 'Email password recovery is turned off for this HAI installation. No reset email can be requested here. Use your password to sign in or contact the HAI administrator.' }}
+      </p>
+
+      <nz-form-control>
+        <div class="login-options">
+          <label nz-checkbox formControlName="remember" *ngIf="!registrationMode && !recoveryMode">
+            <span>Remember me</span>
+          </label>
+          <button
+            type="button"
+            class="login-form-forgot"
+            data-testid="login-password-help"
+            (click)="showPasswordHelp()"
+            [disabled]="registering || recovering || signingIn || openingLocalPreview"
+            *ngIf="!registrationMode && !recoveryMode"
+          >
+            Forgot password?
+          </button>
+          <button type="button" class="login-form-forgot" (click)="toggleRegistration()" [disabled]="registering || recovering || signingIn || openingLocalPreview" *ngIf="registrationMode">
+            Back to log in
+          </button>
+          <button type="button" class="login-form-forgot" (click)="backToLogin()" [disabled]="registering || recovering || signingIn || openingLocalPreview" *ngIf="recoveryMode">
+            Back to log in
+          </button>
+        </div>
+        <button
+          type="submit"
+          nz-button
+          class="login-form-button"
+          [nzType]="'primary'"
+          data-testid="login-submit"
+          [nzLoading]="registering || recovering || signingIn"
+          [disabled]="registering || recovering || signingIn || (recoveryMode && recoveryStep === 'request' && (!authCapabilitiesLoaded || authCapabilitiesUnavailable || !passwordRecoveryEmailEnabled))"
+        >
+          {{ signingIn ? 'Signing in…' : (recoveryMode ? (recoveryStep === 'confirm' ? 'Set new password' : (authCapabilitiesLoading ? 'Checking recovery…' : (!authCapabilitiesLoaded || authCapabilitiesUnavailable ? 'Check recovery status' : (!passwordRecoveryEmailEnabled ? 'Email recovery unavailable' : 'Request reset code')))) : (registrationMode ? 'Create account' : 'Log in')) }}
+        </button>
+        <button type="button" class="login-register-link" (click)="showResetConfirmation()" [disabled]="recovering || signingIn" *ngIf="recoveryMode && recoveryStep === 'request'">
+          I already have a reset code
+        </button>
+        <button type="button" class="login-register-link" (click)="showPasswordHelp()" [disabled]="recovering || signingIn" *ngIf="recoveryMode && recoveryStep === 'confirm'">
+          Request a new reset code
+        </button>
+        <button type="button" class="login-register-link" (click)="toggleRegistration()" [disabled]="registering || recovering || signingIn || openingLocalPreview" *ngIf="!registrationMode && !recoveryMode">
+          Create a local operator account
+        </button>
+        <button
+          type="button"
+          nz-button
+          class="login-form-button login-local-preview"
+          [nzType]="'default'"
+          [nzLoading]="openingLocalPreview"
+          [disabled]="openingLocalPreview || registering || recovering || signingIn"
+          data-testid="login-local-preview"
+          (click)="openLocalPreview()"
+          *ngIf="!registrationMode && !recoveryMode && localPreviewEnabled"
+        >
+          Open local dashboard
+        </button>
+
+        <div class="login-divider" *ngIf="googleLoginEnabled"><span>or</span></div>
+
+        <button
+          type="button"
+          nz-button
+          class="login-form-button login-google"
+          [nzType]="'default'"
+          [disabled]="registering || recovering || signingIn || openingLocalPreview"
+          (click)="loginWithGoogle()"
+          data-testid="login-google"
+          *ngIf="googleLoginEnabled"
+        >
+          <span nz-icon nzType="google" nzTheme="outline" aria-hidden="true"></span>
+          Sign in with Google
+        </button>
+      </nz-form-control>
+    </form>
+  </div>
+</main>

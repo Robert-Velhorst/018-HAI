@@ -1,8 +1,11 @@
 package workflowtask
 
 import (
+	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,6 +14,8 @@ import (
 
 	"automation-hub-backend/internal/automation"
 	"automation-hub-backend/internal/models"
+	"automation-hub-backend/internal/resourceplanner"
+	"automation-hub-backend/internal/safety"
 	"automation-hub-backend/internal/task"
 	"automation-hub-backend/internal/workflow"
 
@@ -43,6 +48,9 @@ func (r *DeferredRunner) Set(delegate workflow.TaskRunner) {
 }
 
 func (r *DeferredRunner) RunWorkflowTask(request workflow.TaskRunRequest) (*workflow.TaskRunResult, error) {
+	if request.ExecutionContext != nil {
+		return r.RunWorkflowTaskContext(request.ExecutionContext, request)
+	}
 	r.mu.RLock()
 	delegate := r.delegate
 	r.mu.RUnlock()
@@ -50,6 +58,24 @@ func (r *DeferredRunner) RunWorkflowTask(request workflow.TaskRunRequest) (*work
 		return nil, fmt.Errorf("workflow task runner is not initialized")
 	}
 	return delegate.RunWorkflowTask(request)
+}
+
+func (r *DeferredRunner) RunWorkflowTaskContext(ctx context.Context, request workflow.TaskRunRequest) (*workflow.TaskRunResult, error) {
+	if ctx == nil {
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(workflow.ErrTaskExecutionContextUnavailable)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(err)
+	}
+	r.mu.RLock()
+	delegate := r.delegate
+	r.mu.RUnlock()
+	contextual, ok := delegate.(workflow.ContextualTaskRunner)
+	if !ok {
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(workflow.ErrTaskExecutionContextUnavailable)
+	}
+	request.ExecutionContext = ctx
+	return contextual.RunWorkflowTaskContext(ctx, request)
 }
 
 func (r *DeferredRunner) PrepareWorkflowApprovalBinding(request workflow.WorkflowApprovalBindingRequest) (string, error) {
@@ -316,17 +342,30 @@ func minInt(left, right int) int {
 	return right
 }
 
+func (r *Runner) RunWorkflowTaskContext(ctx context.Context, request workflow.TaskRunRequest) (*workflow.TaskRunResult, error) {
+	if ctx == nil {
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(workflow.ErrTaskExecutionContextUnavailable)
+	}
+	request.ExecutionContext = ctx
+	return r.RunWorkflowTask(request)
+}
+
 func (r *Runner) RunWorkflowTask(request workflow.TaskRunRequest) (*workflow.TaskRunResult, error) {
+	if request.ExecutionContext != nil && request.ExecutionContext.Err() != nil {
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(request.ExecutionContext.Err())
+	}
 	request, err := normalizeWorkflowTaskRequest(request)
 	if err != nil {
-		return nil, err
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(err)
 	}
 	intake := task.IntakeRequest{
+		ExecutionContext:      request.ExecutionContext,
 		OwnerIdentity:         request.OwnerIdentity,
 		IdempotencyKey:        workflowTaskOperationKey(request),
 		PursuitID:             request.PursuitID,
 		WorkflowID:            request.WorkflowID,
 		Request:               request.Request,
+		SuccessCriteria:       append([]string(nil), request.SuccessCriteria...),
 		ProjectKey:            request.ProjectKey,
 		AutomationID:          request.AutomationID,
 		MandateID:             request.MandateID,
@@ -342,10 +381,15 @@ func (r *Runner) RunWorkflowTask(request workflow.TaskRunRequest) (*workflow.Tas
 	}
 	previewer, ok := r.service.(task.PreviewService)
 	if !ok {
-		return nil, fmt.Errorf("workflow task execution requires a side-effect-free framework selection preview")
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(fmt.Errorf("workflow task execution requires a side-effect-free framework selection preview"))
 	}
 	previewRequest := intake
 	previewRequest.ExecutionRequested = true
+	// Keep the approval state in the selector input so the preview's framework
+	// authority contract is comparable to the eventual approved run. The
+	// preview still clears HumanApproved and every approval proof, so it cannot
+	// cross the execution boundary.
+	previewRequest.FrameworkSelectionHumanApproved = request.HumanApproved
 	previewRequest.ExecuteAllowed = false
 	previewRequest.HumanApproved = false
 	previewRequest.ApprovalNote = ""
@@ -355,72 +399,202 @@ func (r *Runner) RunWorkflowTask(request workflow.TaskRunRequest) (*workflow.Tas
 	previewRequest.ApprovalApprovedAt = nil
 	preview, err := previewer.Preview(previewRequest)
 	if err != nil {
-		return nil, fmt.Errorf("workflow task framework selection preflight: %w", err)
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(fmt.Errorf("workflow task framework selection preflight: %w", err))
 	}
 	preflightSelection, err := frameworkSelectionFromPlan(preview)
 	if err != nil {
-		return nil, fmt.Errorf("workflow task framework selection preflight: %w", err)
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(fmt.Errorf("workflow task framework selection preflight: %w", err))
 	}
 	if err := enforceFrameworkRiskFloor(preflightSelection, request.RiskLevel); err != nil {
-		return nil, fmt.Errorf("workflow task framework selection preflight: %w", err)
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(fmt.Errorf("workflow task framework selection preflight: %w", err))
+	}
+	if request.ExecutionContext != nil && request.ExecutionContext.Err() != nil {
+		return nil, workflow.MarkTaskFailureSafeNoSideEffect(request.ExecutionContext.Err())
 	}
 
-	plan, err := r.service.Run(intake)
-	if err != nil {
-		return nil, err
+	plan, runErr := r.service.Run(intake)
+	if request.ExecutionContext != nil && request.ExecutionContext.Err() != nil {
+		runErr = errors.Join(runErr, request.ExecutionContext.Err())
 	}
-	frameworkSelection, err := frameworkSelectionFromPlan(plan)
-	if err != nil {
-		return nil, fmt.Errorf("workflow task framework selection: %w", err)
+	if plan == nil {
+		if runErr != nil {
+			return nil, runErr
+		}
+		return nil, fmt.Errorf("workflow task engine returned no completion plan")
 	}
-	if err := enforceFrameworkRiskFloor(frameworkSelection, request.RiskLevel); err != nil {
-		return nil, fmt.Errorf("workflow task framework selection: %w", err)
-	}
-	if err := compareFrameworkRiskContracts(preflightSelection, frameworkSelection); err != nil {
-		return nil, fmt.Errorf("workflow task framework selection changed after preflight: %w", err)
-	}
+	completionStatus := strings.ToLower(strings.TrimSpace(plan.CompletionStatus))
 	result := &workflow.TaskRunResult{
-		PlanID:             plan.ID,
-		CompletionStatus:   plan.CompletionStatus,
-		Passed:             plan.ValidationResult.Passed,
-		ReviewRequired:     plan.CompletionStatus == "review_required",
-		FailureReason:      strings.Join(plan.ValidationResult.Failures, "; "),
-		FrameworkSelection: frameworkSelection,
+		PlanID:           plan.ID,
+		CompletionStatus: plan.CompletionStatus,
+		Passed:           completionStatus == "validated" && plan.ValidationResult.Passed,
+		ReviewRequired:   completionStatus == "review_required",
+		FailureReason:    workflowTaskFailureReason(plan.ValidationResult.Failures...),
 	}
+	if result.ReviewRequired && plan.ReviewQueueItem != nil {
+		result.FailureReason = workflowTaskFailureReason(append(
+			[]string{plan.ReviewQueueItem.Reason}, plan.ValidationResult.Failures...,
+		)...)
+	}
+	// Risk gates can stop a task before a runtime result exists. Carry that
+	// approval request forward without relabelling missing prerequisites or
+	// potentially executed work as a safe pre-execution approval.
+	if taskPlanAwaitingApproval(plan) {
+		result.ApprovalRequired = true
+		reason := "approval required before task execution"
+		if plan.ReviewQueueItem != nil {
+			reason = firstNonEmpty(plan.ReviewQueueItem.Reason, reason)
+		}
+		result.FailureReason = workflowTaskFailureReason(reason)
+	}
+	var resultErr error
 	if plan.ExecutionResult != nil {
 		result.VerificationStatus = plan.ExecutionResult.VerificationStatus
 		result.Output = plan.ExecutionResult.Output
+		result.ExecutionOutcomeUncertain = task.ExecutionOutcomeUncertain(plan.ExecutionResult)
 		if plan.ExecutionResult.ToolExecution != nil {
 			tool := plan.ExecutionResult.ToolExecution
 			launchEventID := strings.TrimSpace(tool.LaunchEventID)
-			if strings.EqualFold(strings.TrimSpace(tool.Status), "completed") && launchEventID == "" {
-				return nil, fmt.Errorf("completed workflow external action has no immutable launch-event evidence")
-			}
+			result.ExternalActionExecuted = strings.EqualFold(strings.TrimSpace(tool.Status), "completed")
+			result.RuntimeRouteTrace = tool.RuntimeRouteTrace
+			result.RuntimeEvidenceLabel = firstNonEmpty(
+				tool.RuntimeType,
+				tool.LaunchType,
+				tool.Target,
+				"controlled runtime launch",
+			)
 			if launchEventID != "" {
 				eventID, parseErr := uuid.Parse(launchEventID)
 				if parseErr != nil || eventID == uuid.Nil {
-					return nil, fmt.Errorf("workflow external action has an invalid launch-event evidence ID")
+					resultErr = fmt.Errorf("workflow external action has an invalid launch-event evidence ID")
+				} else {
+					result.RuntimeEvidenceURI = "automation-launch://" + eventID.String()
 				}
-				result.RuntimeEvidenceURI = "automation-launch://" + eventID.String()
-				result.RuntimeEvidenceLabel = firstNonEmpty(
-					tool.RuntimeType,
-					tool.LaunchType,
-					tool.Target,
-					"controlled runtime launch",
-				)
-				result.RuntimeRouteTrace = tool.RuntimeRouteTrace
 			}
-			result.ExternalActionExecuted = strings.EqualFold(strings.TrimSpace(tool.Status), "completed")
+			if result.ExternalActionExecuted && launchEventID == "" {
+				resultErr = fmt.Errorf("completed workflow external action has no immutable launch-event evidence")
+			}
 		}
-		result.ApprovalRequired = plan.ExecutionResult.ToolExecution != nil && plan.ExecutionResult.ToolExecution.RequiresApproval
+		result.ApprovalRequired = result.ApprovalRequired ||
+			(plan.ExecutionResult.ToolExecution != nil && plan.ExecutionResult.ToolExecution.RequiresApproval)
 		if plan.ExecutionResult.BlockedReason != "" {
-			result.FailureReason = plan.ExecutionResult.BlockedReason
+			result.FailureReason = workflowTaskFailureReason(plan.ExecutionResult.BlockedReason)
+		}
+	}
+	frameworkSelection, selectionErr := frameworkSelectionFromPlan(plan)
+	if selectionErr == nil {
+		result.FrameworkSelection = frameworkSelection
+	} else {
+		resultErr = firstWorkflowTaskError(resultErr, fmt.Errorf("workflow task framework selection: %w", selectionErr))
+	}
+	if selectionErr == nil {
+		if err := enforceFrameworkRiskFloor(frameworkSelection, request.RiskLevel); err != nil {
+			resultErr = firstWorkflowTaskError(resultErr, fmt.Errorf("workflow task framework selection: %w", err))
+		} else if err := compareFrameworkRiskContracts(preflightSelection, frameworkSelection); err != nil {
+			resultErr = firstWorkflowTaskError(resultErr, fmt.Errorf("workflow task framework selection changed after preflight: %w", err))
 		}
 	}
 	if result.VerificationStatus == "" {
 		result.VerificationStatus = plan.ValidationResult.Status
 	}
+	// Unknown effects require reconciliation, never approval-only routing or
+	// optimistic validation, even if the receipt reports completed execution.
+	if result.ExecutionOutcomeUncertain {
+		result.Passed = false
+		result.ReviewRequired = true
+		result.ApprovalRequired = false
+		result.CompletionStatus = "review_required"
+		result.VerificationStatus = "uncertain"
+		result.FailureReason = workflowTaskFailureReason(
+			"controlled runtime outcome is uncertain; reconcile possible side effects before authorizing a separate attempt",
+			result.FailureReason,
+		)
+	}
+	if request.ExecutionContext != nil && request.ExecutionContext.Err() != nil {
+		result.Passed = false
+		result.ReviewRequired = true
+		result.ApprovalRequired = false
+		result.CompletionStatus = "review_required"
+		result.VerificationStatus = "needs_review"
+	}
+	if runErr != nil && resultErr != nil {
+		return result, errors.Join(runErr, resultErr)
+	}
+	if runErr != nil {
+		return result, runErr
+	}
+	if resultErr != nil {
+		return result, resultErr
+	}
 	return result, nil
+}
+
+const workflowTaskFailureReasonLimit = 2048
+
+func workflowTaskFailureReason(values ...string) string {
+	seen := make(map[string]struct{})
+	result := ""
+	for _, value := range values {
+		value = strings.Join(strings.Fields(safety.RedactSecrets(value)), " ")
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		if result != "" {
+			result += "; "
+		}
+		result += value
+		if runes := []rune(result); len(runes) > workflowTaskFailureReasonLimit {
+			return string(runes[:workflowTaskFailureReasonLimit-3]) + "..."
+		}
+	}
+	return result
+}
+
+func taskPlanAwaitingApproval(plan *task.CompletionPlan) bool {
+	if plan == nil || !strings.EqualFold(strings.TrimSpace(plan.CompletionStatus), "review_required") ||
+		plan.ExecutionResult != nil || strings.TrimSpace(plan.ModelDecision.SelectedModelID) == "" {
+		return false
+	}
+	resource := plan.ResourceDecision
+	if resource == nil || resource.Authority != "advisory_only" || resource.CanExecute || resource.GrantsAuthority ||
+		(resource.Feasibility != resourceplanner.Feasible && resource.Feasibility != resourceplanner.FeasibleWithApprovals) {
+		return false
+	}
+	digest := strings.TrimSpace(resource.DecisionDigest)
+	if len(digest) != sha256.Size*2 {
+		return false
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return false
+	}
+	if domain := plan.DomainPackDecision; domain != nil && (!domain.AdvisoryOnly || domain.ExecutionAuthorityGranted) {
+		return false
+	}
+	if selection := plan.FrameworkDecision; selection != nil {
+		if selection.Capacity.Status == "unavailable" || selection.Capacity.Status == "overloaded" {
+			return false
+		}
+		for _, action := range selection.ActionAutonomy {
+			if action.Action == "execute_case_approved_action" && !action.Allowed {
+				return false
+			}
+		}
+	}
+	risk := plan.RiskAssessment
+	return risk.ApprovalRequired && !risk.ApprovalGranted && !risk.AllowedNow &&
+		len(risk.MissingParameters) == 0 && len(risk.MissingRequiredAgents) == 0 &&
+		(risk.ActionResolution == "" || risk.ActionResolution == "proceed") &&
+		risk.FrameworkAutonomyCeiling >= risk.RequiredFrameworkAutonomy
+}
+
+func firstWorkflowTaskError(existing, next error) error {
+	if existing != nil {
+		return existing
+	}
+	return next
 }
 
 func workflowTaskOperationKey(request workflow.TaskRunRequest) string {
@@ -632,8 +806,13 @@ func workflowFrameworkRiskRank(value string) (string, int, error) {
 		return normalized, 2, nil
 	case "high":
 		return normalized, 3, nil
+	case "critical":
+		// The framework catalog currently has three selectable risk bands. This
+		// adapter only compares that catalog contract; workflow and task state
+		// retain the original critical classification and its approval gates.
+		return "high", 3, nil
 	default:
-		return "", 0, fmt.Errorf("must be one of low, medium, or high")
+		return "", 0, fmt.Errorf("must be one of low, medium, high, or critical")
 	}
 }
 

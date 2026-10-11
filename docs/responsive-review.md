@@ -18,7 +18,7 @@ components.
 
 ## Browser compatibility
 
-- Built with Angular 22 + ng-zorro 22, targeting evergreen browsers (Chrome, Edge,
+- Built with Angular 20 + ng-zorro 20, targeting evergreen browsers (Chrome, Edge,
   Firefox, Safari) per the project's `browserslist`.
 - No use of non-standard CSS; layout relies on flexbox/media queries supported
   across evergreen browsers.

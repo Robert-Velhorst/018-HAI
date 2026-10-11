@@ -8,8 +8,9 @@ type AuthSessionPermissions struct {
 }
 
 type AuthSession struct {
-	Authenticated bool                   `json:"authenticated"`
-	Subject       string                 `json:"subject"`
-	Role          string                 `json:"role"`
-	Permissions   AuthSessionPermissions `json:"permissions"`
+	Authenticated  bool                   `json:"authenticated"`
+	Subject        string                 `json:"subject"`
+	Role           string                 `json:"role"`
+	Permissions    AuthSessionPermissions `json:"permissions"`
+	SessionVersion int64                  `json:"-"`
 }

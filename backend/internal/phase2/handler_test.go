@@ -1,19 +1,75 @@
 package phase2
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"automation-hub-backend/internal/autonomypolicy"
+	"automation-hub-backend/internal/background"
+	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/operations"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
+
+func TestPhase2TestDiagnosticsRequireExplicitTestOnlyOptIn(t *testing.T) {
+	tests := []struct {
+		name, runMode, flag string
+		want                bool
+	}{
+		{name: "disabled by default", runMode: "test", flag: "", want: false},
+		{name: "enabled in test mode", runMode: "test", flag: "1", want: true},
+		{name: "not enabled in production", runMode: "production", flag: "1", want: false},
+		{name: "not enabled for other flags", runMode: "test", flag: "true", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := phase2TestDiagnosticsEnabled(test.runMode, test.flag); got != test.want {
+				t.Fatalf("phase2TestDiagnosticsEnabled(%q, %q) = %v; want %v", test.runMode, test.flag, got, test.want)
+			}
+		})
+	}
+}
+
+func TestBackgroundRunHTTPStatusIsActionable(t *testing.T) {
+	if got := backgroundRunHTTPStatus(background.ErrBusy); got != http.StatusConflict {
+		t.Fatalf("busy status = %d, want %d", got, http.StatusConflict)
+	}
+	if got := backgroundRunHTTPStatus(context.Canceled); got != http.StatusServiceUnavailable {
+		t.Fatalf("cancelled status = %d, want %d", got, http.StatusServiceUnavailable)
+	}
+	if got := backgroundRunHTTPStatus(errors.New("storage unavailable")); got != http.StatusInternalServerError {
+		t.Fatalf("unexpected failure status = %d, want %d", got, http.StatusInternalServerError)
+	}
+}
+
+func TestOperationLookupErrorDoesNotExposeUnexpectedStorageFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	writeOperationLookupError(context, errors.New(`database password=not-for-http at C:\\private`))
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, body=%s", recorder.Code, recorder.Body.String())
+	}
+	for _, forbidden := range []string{"password", "not-for-http", "C:\\\\private"} {
+		if strings.Contains(strings.ToLower(recorder.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("response leaked %q: %s", forbidden, recorder.Body.String())
+		}
+	}
+	if !strings.Contains(recorder.Body.String(), "operation details are unavailable") {
+		t.Fatalf("response = %s", recorder.Body.String())
+	}
+}
 
 const feedJSON = `[
   {"externalId":"a1","title":"Organize workspace notes","body":"Consolidate personal notes into a local file"},
@@ -60,10 +116,12 @@ func newTestRouter(m *Module, subject string, setSubject bool) *gin.Engine {
 	h := m.Handler()
 	ops := r.Group("/operations")
 	ops.GET("", h.ListOperations)
+	ops.GET("/overview", h.Overview)
 	ops.GET("/dashboard", h.Dashboard)
 	ops.GET("/:id", h.GetOperation)
 	ops.GET("/:id/events", h.OperationEvents)
 	ops.GET("/:id/approvals", h.Approvals)
+	ops.GET("/:id/approval-preview", h.ApprovalPreview)
 	ops.POST("/:id/approve", h.Approve)
 	ops.POST("/:id/reject", h.Reject)
 	ops.POST("/:id/later", h.Later)
@@ -84,7 +142,242 @@ func do(t *testing.T, r *gin.Engine, method, path string) *httptest.ResponseReco
 	return w
 }
 
-func TestBackgroundRunAndDashboardOverHTTP(t *testing.T) {
+func createSafeExecutableOperation(t *testing.T, svc *operations.Service) models.Operation {
+	t.Helper()
+	created, err := svc.Ingest(operations.NewOperationInput{
+		OwnerUserID:   "local-operator",
+		WorkspaceID:   "local",
+		Title:         "Run a bounded safe worker task",
+		OperationType: "safe_worker_test",
+		SourceType:    "test",
+		DedupeKey:     "safe-worker-" + uuid.NewString(),
+	})
+	if err != nil {
+		t.Fatalf("ingest safe operation: %v", err)
+	}
+	op := created.Operation
+	op.CurrentDecision = string(operations.DecisionRunSafeLocalWorker)
+	op.RiskLevel = string(operations.RiskLow)
+	op.AutonomyLevel = string(operations.AutonomyAuto)
+	op.OwnerType = string(operations.OwnerHAI)
+	op.RequiresApproval = false
+	classified, err := svc.Transition(op, operations.StatusClassified, "hai", "", "safe execution classified")
+	if err != nil {
+		t.Fatalf("classify safe operation: %v", err)
+	}
+	return *classified
+}
+
+func TestRunOperationUsesExactDurableClaimAndVerifiesSuccess(t *testing.T) {
+	r, module := newTestServer(t)
+	op := createSafeExecutableOperation(t, module.svc)
+
+	w := do(t, r, http.MethodPost, "/operations/"+op.ID.String()+"/run")
+	if w.Code != http.StatusOK {
+		t.Fatalf("run operation: status %d body %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Operation struct {
+			Status string `json:"status"`
+		} `json:"operation"`
+		Verified bool `json:"verified"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode run response: %v", err)
+	}
+	if !response.Verified || response.Operation.Status != string(operations.StatusCompleted) {
+		t.Fatalf("run response = %#v, want verified completed operation", response)
+	}
+	artifacts, err := os.ReadDir(module.cfg.WorkspaceDir)
+	if err != nil {
+		t.Fatalf("read safe-worker workspace: %v", err)
+	}
+	if len(artifacts) != 1 {
+		t.Fatalf("safe worker artifacts = %d, want exactly one", len(artifacts))
+	}
+}
+
+type phase2TestControl struct {
+	mode          autonomypolicy.Mode
+	emergencyStop bool
+}
+
+func (c phase2TestControl) Mode() autonomypolicy.Mode { return c.mode }
+func (c phase2TestControl) EmergencyStop() bool       { return c.emergencyStop }
+
+func TestRunOperationRechecksCurrentRuntimePolicy(t *testing.T) {
+	tests := []struct {
+		name       string
+		control    phase2TestControl
+		blockRules bool
+	}{
+		{name: "read only mode", control: phase2TestControl{mode: autonomypolicy.ModeReadOnly}},
+		{name: "paused mode", control: phase2TestControl{mode: autonomypolicy.ModePaused}},
+		{name: "draft only mode", control: phase2TestControl{mode: autonomypolicy.ModeDraftOnly}},
+		{name: "emergency stop", control: phase2TestControl{mode: autonomypolicy.ModeAutonomousSafe, emergencyStop: true}},
+		{name: "operator block rule", control: phase2TestControl{mode: autonomypolicy.ModeAutonomousSafe}, blockRules: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r, module := newTestServer(t)
+			module.control = test.control
+			if test.blockRules {
+				module.blockRules.Add(BlockRule{
+					OperationType: "safe_worker_test",
+					Reason:        "operator paused similar work",
+				})
+			}
+			op := createSafeExecutableOperation(t, module.svc)
+
+			response := do(t, r, http.MethodPost, "/operations/"+op.ID.String()+"/run")
+			if response.Code != http.StatusConflict {
+				t.Fatalf("run under current policy: status %d body %s", response.Code, response.Body.String())
+			}
+			if !strings.Contains(response.Body.String(), "current runtime policy") {
+				t.Fatalf("policy rejection is not actionable: %s", response.Body.String())
+			}
+			stored, err := module.svc.Get("local-operator", "local", op.ID)
+			if err != nil || stored.Status != string(operations.StatusClassified) {
+				t.Fatalf("operation after denied execution = %#v, %v; want unchanged classified status", stored, err)
+			}
+			artifacts, err := os.ReadDir(module.cfg.WorkspaceDir)
+			if err != nil {
+				t.Fatalf("read workspace after denied execution: %v", err)
+			}
+			if len(artifacts) != 0 {
+				t.Fatalf("denied execution created %d workspace artifacts", len(artifacts))
+			}
+			claim, err := module.svc.ClaimOperation(
+				context.Background(), "local-operator", "local", op.ID, uuid.New(), time.Minute,
+			)
+			if err != nil {
+				t.Fatalf("policy denial left the operation claim locked: %v", err)
+			}
+			if err := module.svc.ReleaseClaim(context.Background(), claim.Claim); err != nil {
+				t.Fatalf("release test claim: %v", err)
+			}
+		})
+	}
+}
+
+func TestRunOperationClaimFailureHasNoFilesystemEffect(t *testing.T) {
+	r, module := newTestServer(t)
+	op := createSafeExecutableOperation(t, module.svc)
+	claimed, err := module.svc.ClaimOperation(
+		context.Background(), "local-operator", "local", op.ID, uuid.New(), time.Minute,
+	)
+	if err != nil || claimed == nil {
+		t.Fatalf("hold competing operation claim: claim=%#v err=%v", claimed, err)
+	}
+
+	w := do(t, r, http.MethodPost, "/operations/"+op.ID.String()+"/run")
+	if w.Code != http.StatusConflict {
+		t.Fatalf("run with competing claim: status %d body %s, want conflict", w.Code, w.Body.String())
+	}
+	artifacts, err := os.ReadDir(module.cfg.WorkspaceDir)
+	if err != nil {
+		t.Fatalf("read safe-worker workspace: %v", err)
+	}
+	if len(artifacts) != 0 {
+		t.Fatalf("claim failure produced %d filesystem artifacts", len(artifacts))
+	}
+	stored, err := module.svc.Get("local-operator", "local", op.ID)
+	if err != nil || stored.Status != string(operations.StatusClassified) {
+		t.Fatalf("operation after rejected claim = %#v, %v; want unchanged classified state", stored, err)
+	}
+}
+
+func TestExactOperationClaimsAreRaceSafe(t *testing.T) {
+	_, module := newTestServer(t)
+	op := createSafeExecutableOperation(t, module.svc)
+	start := make(chan struct{})
+	results := make(chan struct {
+		claim *operations.ClaimedOperation
+		err   error
+	}, 2)
+	for range 2 {
+		go func(workerID uuid.UUID) {
+			<-start
+			claim, err := module.svc.ClaimOperation(
+				context.Background(), "local-operator", "local", op.ID, workerID, time.Minute,
+			)
+			results <- struct {
+				claim *operations.ClaimedOperation
+				err   error
+			}{claim: claim, err: err}
+		}(uuid.New())
+	}
+	close(start)
+
+	var winner *operations.ClaimedOperation
+	claims := 0
+	for range 2 {
+		result := <-results
+		if result.err == nil && result.claim != nil {
+			claims++
+			winner = result.claim
+			continue
+		}
+		if !errors.Is(result.err, operations.ErrOperationClaimed) {
+			t.Fatalf("competing target claim error = %v, want ErrOperationClaimed", result.err)
+		}
+	}
+	if claims != 1 || winner == nil || winner.Operation.ID != op.ID {
+		t.Fatalf("exact operation claim winners = %d, winner=%#v", claims, winner)
+	}
+	if err := module.svc.ReleaseClaim(context.Background(), winner.Claim); err != nil {
+		t.Fatalf("release winning test claim: %v", err)
+	}
+}
+
+func TestStaleExactClaimCannotProduceEffect(t *testing.T) {
+	_, module := newTestServer(t)
+	op := createSafeExecutableOperation(t, module.svc)
+	stale, err := module.svc.ClaimOperation(
+		context.Background(), "local-operator", "local", op.ID, uuid.New(), time.Minute,
+	)
+	if err != nil || stale == nil {
+		t.Fatalf("create first claim: claim=%#v err=%v", stale, err)
+	}
+	if err := module.svc.ReleaseClaim(context.Background(), stale.Claim); err != nil {
+		t.Fatalf("release first claim: %v", err)
+	}
+	current, err := module.svc.ClaimOperation(
+		context.Background(), "local-operator", "local", op.ID, uuid.New(), time.Minute,
+	)
+	if err != nil || current == nil {
+		t.Fatalf("create replacement claim: claim=%#v err=%v", current, err)
+	}
+	if current.Claim.Generation <= stale.Claim.Generation {
+		t.Fatalf("claim generation did not advance: stale=%d current=%d", stale.Claim.Generation, current.Claim.Generation)
+	}
+	if _, err := background.ExecuteSafeOperationClaimed(
+		context.Background(), module.svc, module.broker, stale.Operation, stale.Claim, time.Now().UTC(),
+		func(op models.Operation) bool {
+			return module.SafeExecutionPolicyAllows(op.Title, op.Description, op.OperationType)
+		},
+	); !errors.Is(err, operations.ErrClaimLost) {
+		t.Fatalf("execute with stale claim error = %v, want ErrClaimLost", err)
+	}
+	artifacts, err := os.ReadDir(module.cfg.WorkspaceDir)
+	if err != nil {
+		t.Fatalf("read safe-worker workspace after stale claim: %v", err)
+	}
+	if len(artifacts) != 0 {
+		t.Fatalf("stale claim produced %d filesystem artifacts", len(artifacts))
+	}
+	outcome, err := background.ExecuteSafeOperationClaimed(
+		context.Background(), module.svc, module.broker, current.Operation, current.Claim, time.Now().UTC(),
+		func(op models.Operation) bool {
+			return module.SafeExecutionPolicyAllows(op.Title, op.Description, op.OperationType)
+		},
+	)
+	if err != nil || !outcome.Verified {
+		t.Fatalf("execute with current claim = %#v, %v; want verified success", outcome, err)
+	}
+}
+
+func TestBackgroundRunAndDashboardKeepSourceWorkApprovalGated(t *testing.T) {
 	r, _ := newTestServer(t)
 
 	// Trigger a background pass.
@@ -100,7 +393,7 @@ func TestBackgroundRunAndDashboardOverHTTP(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
 		t.Fatal(err)
 	}
-	if rep.OperationsCreated != 2 || rep.Verified != 1 || rep.AwaitingApproval != 1 {
+	if rep.OperationsCreated != 2 || rep.Verified != 0 || rep.AwaitingApproval != 2 {
 		t.Fatalf("unexpected report: %+v", rep)
 	}
 
@@ -113,11 +406,12 @@ func TestBackgroundRunAndDashboardOverHTTP(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &dash); err != nil {
 		t.Fatal(err)
 	}
-	if dash.DoneWhileAway != 1 || dash.NeedsRobert != 1 {
+	if dash.DoneWhileAway != 0 || dash.NeedsRobert != 2 {
 		t.Fatalf("dashboard counts wrong: %+v", dash)
 	}
 
-	// The completed operation is listed and carries an audit trail.
+	// Source-fed work remains visible for owner review; a background pass cannot
+	// create a completed operation or host effect without an exact owner receipt.
 	w = do(t, r, http.MethodGet, "/operations?status=completed")
 	var listed struct {
 		Operations []struct {
@@ -128,16 +422,37 @@ func TestBackgroundRunAndDashboardOverHTTP(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &listed); err != nil {
 		t.Fatal(err)
 	}
-	if len(listed.Operations) != 1 {
-		t.Fatalf("want 1 completed operation, got %d", len(listed.Operations))
+	if len(listed.Operations) != 0 {
+		t.Fatalf("unapproved source operations completed during background pass: %+v", listed.Operations)
 	}
-	if listed.Operations[0].VerificationStatus != string(operations.VerificationPassed) {
-		t.Fatalf("completed op must be verification-passed")
+	awaiting := do(t, r, http.MethodGet, "/operations?status=awaiting_approval")
+	if awaiting.Code != http.StatusOK || !strings.Contains(awaiting.Body.String(), "awaiting_approval") {
+		t.Fatalf("owner review queue missing source work: status %d body %s", awaiting.Code, awaiting.Body.String())
 	}
+}
 
-	w = do(t, r, http.MethodGet, "/operations/"+listed.Operations[0].ID+"/events")
+func TestOverviewReturnsDashboardAndFilteredOperationsInOneResponse(t *testing.T) {
+	r, m := newTestServer(t)
+	createCompletedSourceOperation(t, r, m)
+
+	w := do(t, r, http.MethodGet, "/operations/overview?status=completed")
 	if w.Code != http.StatusOK {
-		t.Fatalf("events: status %d", w.Code)
+		t.Fatalf("overview: status %d body %s", w.Code, w.Body.String())
+	}
+	var overview struct {
+		Dashboard  operations.Dashboard `json:"dashboard"`
+		Operations []struct {
+			Status string `json:"status"`
+		} `json:"operations"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	if overview.Dashboard.DoneWhileAway != 1 || overview.Dashboard.NeedsRobert != 1 {
+		t.Fatalf("unexpected dashboard: %+v", overview.Dashboard)
+	}
+	if len(overview.Operations) != 1 || overview.Operations[0].Status != string(operations.StatusCompleted) {
+		t.Fatalf("unexpected filtered operations: %+v", overview.Operations)
 	}
 }
 
@@ -202,20 +517,17 @@ func TestBackgroundRunScopesFeedsAndProcessingToAuthenticatedOwner(t *testing.T)
 	if err != nil {
 		t.Fatalf("list caller execution receipts: %v", err)
 	}
-	if len(configuredReceipts) != 1 || len(callerReceipts) != 1 {
+	if len(configuredReceipts) != 0 || len(callerReceipts) != 0 {
 		t.Fatalf(
-			"execution receipts configured=%d caller=%d, want one owner-scoped receipt each",
+			"source-derived work executed before owner approval: execution receipts configured=%d caller=%d",
 			len(configuredReceipts),
 			len(callerReceipts),
 		)
 	}
-	if configuredReceipts[0].OwnerIdentity != "local-operator" ||
-		callerReceipts[0].OwnerIdentity != "caller-owner" {
-		t.Fatalf(
-			"execution receipt owners configured=%q caller=%q",
-			configuredReceipts[0].OwnerIdentity,
-			callerReceipts[0].OwnerIdentity,
-		)
+	for _, op := range append(configuredBefore, callerOps...) {
+		if op.Status != string(operations.StatusAwaitingApproval) {
+			t.Fatalf("source-derived operation %s for owner %q has status %q before approval", op.ID, op.OwnerUserID, op.Status)
+		}
 	}
 	before := make(map[string]operationsSnapshot, len(configuredBefore))
 	for _, op := range configuredBefore {
@@ -304,11 +616,28 @@ func TestRunRefusesNonSafeOperation(t *testing.T) {
 		} `json:"operations"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &listed)
-	if len(listed.Operations) != 1 {
-		t.Fatalf("want the high-risk op awaiting approval, got %d", len(listed.Operations))
+	var highRiskID string
+	for _, candidate := range listed.Operations {
+		var detail struct {
+			RiskLevel string `json:"riskLevel"`
+		}
+		response := do(t, r, http.MethodGet, "/operations/"+candidate.ID)
+		if response.Code != http.StatusOK {
+			t.Fatalf("load awaiting operation: status %d body %s", response.Code, response.Body.String())
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
+			t.Fatalf("decode awaiting operation: %v", err)
+		}
+		if detail.RiskLevel == string(operations.RiskHigh) {
+			highRiskID = candidate.ID
+			break
+		}
+	}
+	if highRiskID == "" {
+		t.Fatalf("expected a high-risk operation awaiting approval, got %d operations", len(listed.Operations))
 	}
 	// Attempting to run it must be refused (no real runtime in 2A).
-	w = do(t, r, http.MethodPost, "/operations/"+listed.Operations[0].ID+"/run")
+	w = do(t, r, http.MethodPost, "/operations/"+highRiskID+"/run")
 	if w.Code != http.StatusConflict {
 		t.Fatalf("running a non-safe operation must be refused with 409, got %d", w.Code)
 	}

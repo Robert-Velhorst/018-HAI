@@ -15,6 +15,11 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${ROOT}"
 
+if ! command -v git >/dev/null 2>&1; then
+  echo "ERROR: git is required for the tracked-file and history checks; refusing to report an incomplete audit as passing." >&2
+  exit 2
+fi
+
 pass=0
 fail=0
 ok()   { echo "  PASS: $1"; pass=$((pass + 1)); }
@@ -23,7 +28,9 @@ bad()  { echo "  FAIL: $1"; fail=$((fail + 1)); }
 PHASE2_PKGS="backend/internal/operations backend/internal/background backend/internal/executionbroker backend/internal/accountfeed backend/internal/modelintelligence backend/internal/hardwareprofile backend/internal/runtimelab backend/internal/opscontrol backend/internal/autonomypolicy backend/internal/privacyfilter backend/internal/phase2"
 
 echo "==> 1. No fake/stub/TODO markers in Phase 2 source (excluding tests)"
-markers="$(grep -rniE 'TODO|FIXME|XXX|not implemented|not yet implemented|hardcoded|placeholder|dummy' ${PHASE2_PKGS} 2>/dev/null | grep -v '_test.go' || true)"
+# The feature-parity catalog is evidence data: its explicit `not_implemented`
+# statuses are the truthfulness mechanism, not unfinished code markers.
+markers="$(grep -rniE 'TODO|FIXME|XXX|not implemented|not yet implemented|hardcoded|placeholder|dummy' ${PHASE2_PKGS} 2>/dev/null | grep -vE '_test.go|feature_parity_catalog\.go' || true)"
 if [ -z "${markers}" ]; then
   ok "no unfinished/hardcoded/placeholder markers"
 else
@@ -41,10 +48,12 @@ grep -q 'Never fabricate output' backend/internal/modelintelligence/dspark.go 2>
   && ok "DSpark never fabricates output" \
   || bad "DSpark fabrication guard missing"
 
-# Runtime lab external runtimes must refuse execution.
-grep -q 'Never fake execution' backend/internal/runtimelab/remote_runtime.go 2>/dev/null \
-  && ok "external runtimes never fake execution" \
-  || bad "external runtime no-fake-execution guard missing"
+# Runtime lab external runtimes must reject execution requests. Check the
+# returned error, rather than an incidental comment, so this remains robust to
+# documentation changes.
+grep -q 'execution is not enabled: discovery is not execution authority' backend/internal/runtimelab/remote_runtime.go 2>/dev/null \
+  && ok "external runtimes reject ungoverned execution" \
+  || bad "external runtime execution-rejection guard missing"
 
 # Account bridges must never report a connected status from config alone.
 grep -q 'never fakes OAuth or connected status' backend/internal/accountfeed/bridge.go 2>/dev/null \
@@ -70,12 +79,12 @@ echo "==> 3. No secrets / databases / runtime state / model weights added by Pha
 
 tracked="$(git ls-files)"
 
-# Pre-existing repo-baseline infra env files (dev defaults, e.g. DB_PASSWORD=postgres).
-# They are NOT introduced by Phase 2; documented here for honesty.
-BASELINE_ENV_RE='^(\.env|\.env-backend|\.env-gateway|\.env-idp|\.env\.example)$'
+# Only the documented environment template may remain tracked; operator
+# configuration is local and ignored.
+BASELINE_ENV_RE='^(\.env|\.env\.example)$'
 baseline="$(echo "${tracked}" | grep -E "${BASELINE_ENV_RE}" || true)"
 if [ -n "${baseline}" ]; then
-  echo "  NOTE: pre-existing repo-baseline env files (dev defaults, not Phase 2):"
+  echo "  NOTE: environment templates only (never local operator configuration):"
   echo "${baseline}" | sed 's/^/        /'
 fi
 

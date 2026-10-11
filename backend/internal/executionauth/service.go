@@ -112,6 +112,9 @@ func (s *Service) WithEmergencyStopEvaluator(
 }
 
 func (s *Service) Authorize(ctx context.Context, input Request) (Receipt, error) {
+	if err := memoryContextError(ctx); err != nil {
+		return Receipt{}, err
+	}
 	request, err := normalizeRequest(input)
 	if err != nil {
 		return Receipt{}, err
@@ -166,7 +169,7 @@ func (s *Service) Authorize(ctx context.Context, input Request) (Receipt, error)
 	stop := s.stop()
 	stop.Reason = safety.RedactSecrets(stop.Reason)
 	receipt.Evidence.EmergencyStop = stop
-	if stop.Active {
+	if stop.Active && !isExactEmergencyStopReleaseRequest(request) {
 		return s.persistDecision(
 			ctx,
 			receipt,
@@ -191,12 +194,20 @@ func (s *Service) Authorize(ctx context.Context, input Request) (Receipt, error)
 	}
 
 	if err := s.verifyFrameworkSelection(ctx, request, &receipt); err != nil {
+		reasonCode := "framework.selection_unverified"
+		reason := "framework selection could not be independently verified"
+		if request.Governance != nil &&
+			request.Governance.FrameworkSelectionID != "" &&
+			request.Governance.FrameworkSelectorAlgorithmVersion != frameworkSelectorV5 {
+			reasonCode = "framework.selection_legacy_execution_denied"
+			reason = "legacy framework selections are read-only; fresh selector-v5 planning is required before execution"
+		}
 		return s.persistDecision(
 			ctx,
 			receipt,
 			OutcomeDenied,
-			"framework selection could not be independently verified",
-			"framework.selection_unverified",
+			reason,
+			reasonCode,
 		)
 	}
 	if err := s.verifyFrameworkEvidencePreflight(ctx, request, &receipt); err != nil {
@@ -220,6 +231,7 @@ func (s *Service) Authorize(ctx context.Context, input Request) (Receipt, error)
 
 	capabilities := deriveCapabilities(request)
 	constitution, err := s.constitution.EvaluateExecutionPolicy(
+		ctx,
 		request.OwnerIdentity,
 		capabilities,
 		request.RequiredAuthority,
@@ -390,6 +402,21 @@ func (s *Service) AuthorizeAndConsume(
 	consumer string,
 	executionTarget string,
 ) (Receipt, error) {
+	if err := memoryContextError(ctx); err != nil {
+		return Receipt{}, err
+	}
+	if isTaskReviewApprovalSource(request.ApprovalSourceID) {
+		return s.authorizeTaskReviewAndConsume(ctx, request, consumer, executionTarget)
+	}
+	return s.authorizeAndConsumeCore(ctx, request, consumer, executionTarget)
+}
+
+func (s *Service) authorizeAndConsumeCore(
+	ctx context.Context,
+	request Request,
+	consumer string,
+	executionTarget string,
+) (Receipt, error) {
 	receipt, err := s.Authorize(ctx, request)
 	if err != nil {
 		return Receipt{}, err
@@ -538,7 +565,7 @@ func (s *Service) resolveApproval(
 		value.ApprovedBy == "" ||
 		value.ApprovedAt.IsZero() ||
 		value.ExpiresAt.IsZero() ||
-		value.ApprovedAt.After(now.Add(5*time.Second)) ||
+		value.ApprovedAt.After(now.Add(TaskReviewApprovalFutureSkew)) ||
 		!now.Before(value.ExpiresAt) {
 		return ResolvedApproval{}, true, fmt.Errorf("resolved approval is invalid or expired")
 	}
@@ -630,7 +657,7 @@ func trustedMandateFacts(request Request) map[string]string {
 }
 
 func (s *Service) recheck(ctx context.Context, request Request, receipt Receipt) error {
-	if stop := s.stop(); stop.Active {
+	if stop := s.stop(); stop.Active && !isExactEmergencyStopReleaseRequest(request) {
 		return fmt.Errorf("%w: emergency stop became active", ErrAuthorizationChanged)
 	}
 	if request.ActorKind == ActorSystem {
@@ -646,6 +673,7 @@ func (s *Service) recheck(ctx context.Context, request Request, receipt Receipt)
 		return fmt.Errorf("%w: framework selection changed", ErrAuthorizationChanged)
 	}
 	constitution, err := s.constitution.EvaluateExecutionPolicy(
+		ctx,
 		request.OwnerIdentity,
 		receipt.Evidence.Constitution.RequestedCapabilities,
 		request.RequiredAuthority,
@@ -701,7 +729,8 @@ func (s *Service) recheck(ctx context.Context, request Request, receipt Receipt)
 		}
 	}
 	if request.ApprovalSourceID != "" {
-		if _, _, err := s.resolveApproval(ctx, request, monotonicNow(s.now)); err != nil {
+		approval, provided, err := s.resolveApproval(ctx, request, monotonicNow(s.now))
+		if err != nil || !provided || !approvalMatchesEvidence(approval, receipt.Evidence.Approval) {
 			return fmt.Errorf("%w: approval changed", ErrAuthorizationChanged)
 		}
 	}
@@ -723,6 +752,34 @@ func (s *Service) recheck(ctx context.Context, request Request, receipt Receipt)
 		)
 	}
 	return nil
+}
+
+func approvalMatchesEvidence(approval ResolvedApproval, evidence ApprovalEvidence) bool {
+	return approval.SourceID == evidence.SourceID &&
+		approval.DecisionID == evidence.DecisionID &&
+		approval.DecisionDigest == evidence.DecisionDigest &&
+		approval.ApprovedBy == evidence.ApprovedBy &&
+		approval.ApprovedAt.Equal(evidence.ApprovedAt) &&
+		approval.ExpiresAt.Equal(evidence.ExpiresAt)
+}
+
+// isExactEmergencyStopReleaseRequest identifies the one operation which must
+// remain possible while an emergency stop is active: clearing that persisted
+// stop. It is intentionally structural rather than a broad domain bypass.
+// The caller must still present a separately verified, exact-bound approval
+// before Authorize can return an authorized receipt.
+func isExactEmergencyStopReleaseRequest(request Request) bool {
+	return request.Action == "opscontrol.emergency-stop.clear" &&
+		request.Stage == StagePrivilegeEscalation &&
+		request.Domain == "safety-control" &&
+		request.ResourceType == "opscontrol-emergency-stop" &&
+		request.RequiredAuthority == 10 &&
+		request.RequestedAutonomy == 6 &&
+		request.Risk == RiskCritical &&
+		!request.Reversible &&
+		request.ApprovalSourceID != "" &&
+		request.ApprovalBindingDigest != "" &&
+		request.EffectDigest == request.ApprovalBindingDigest
 }
 
 func (s *Service) persist(

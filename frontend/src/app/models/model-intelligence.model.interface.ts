@@ -4,7 +4,16 @@ export interface IProviderSummary {
   status: string
   claimLevel: string
   local: boolean
+  endpointLocal: boolean
+  localInferenceOperatorAttested: boolean
+  billingStatus: string
+  deterministic: boolean
   models: number
+}
+
+export interface ITelemetryPersistenceStatus {
+  state: 'durable' | 'memory_only' | 'degraded' | string
+  message: string
 }
 
 export interface ILaneWinner {
@@ -12,6 +21,7 @@ export interface ILaneWinner {
   providerId: string
   modelId: string
   tokensPerSecond: number
+  observedSpeedSamples?: number
   runs: number
   evaluatedRuns: number
   acceptedOutputs: number
@@ -34,7 +44,10 @@ export interface IModelIntelligenceOverview {
   unvalidatedRuns: number
   cacheHits: number
   cacheMisses: number
+  deterministicProfiles: number
   laneWinners: ILaneWinner[]
+  calibration: ICalibrationSummary
+  telemetryPersistence: ITelemetryPersistenceStatus
 }
 
 export interface IModelProfile {
@@ -45,7 +58,11 @@ export interface IModelProfile {
   lanes: string[]
   contextWindow: number
   local: boolean
-  paid: boolean
+  endpointLocal: boolean
+  localInferenceOperatorAttested: boolean
+  deterministic: boolean
+  paid: boolean | null
+  billingStatus: string
   status: string
   claimLevel: string
   observedTokensPerSecond: number
@@ -58,7 +75,9 @@ export interface IBenchmarkResult {
   providerId: string
   modelId: string
   ok: boolean
+  inputTokens: number
   outputTokens: number
+  usageSource: string
   durationMs: number
   tokensPerSecond: number
   claimLevel: string
@@ -73,6 +92,7 @@ export interface IModelTelemetry {
   operationId?: string
   inputTokens: number
   outputTokens: number
+  usageSource: string
   durationMs: number
   tokensPerSecond: number
   ok: boolean
@@ -98,6 +118,17 @@ export interface IModelCalibration {
   unvalidatedRuns: number
   acceptanceRate: number
   wilsonLowerBound: number
+  providerReportedUsageRuns: number
+  partialUsageRuns: number
+  estimatedUsageRuns: number
+  invalidUsageRuns: number
+  averageProviderReportedInputTokens: number
+  averageProviderReportedOutputTokens: number
+  averagePartialInputTokens: number
+  averagePartialOutputTokens: number
+  averageEstimatedInputTokens: number
+  averageEstimatedOutputTokens: number
+  observedSpeedSamples: number
   averageInputTokens: number
   averageOutputTokens: number
   averageDurationMs: number

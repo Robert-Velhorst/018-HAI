@@ -14,6 +14,8 @@ import (
 	"automation-hub-backend/internal/frameworkregistry"
 	"automation-hub-backend/internal/operations"
 	"automation-hub-backend/internal/safety"
+
+	"github.com/google/uuid"
 )
 
 func newTestService(t *testing.T) *Service {
@@ -131,6 +133,41 @@ func TestEmergencyStopEngageDisengageAndControl(t *testing.T) {
 	}
 	if s.Control().EmergencyStop() {
 		t.Fatalf("disengage must clear the stop")
+	}
+}
+
+func TestEmergencyStopPersistenceWaitsForFinalEffectCommitFence(t *testing.T) {
+	controller := NewController(t.TempDir())
+	if err := controller.SeedInitialState(autonomypolicy.ModeAutonomousSafe, false, "test", time.Now().UTC()); err != nil {
+		t.Fatalf("seed controller: %v", err)
+	}
+
+	releaseCommit := safety.AcquireExecutionCommitFence()
+	started := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		close(started)
+		_, err := controller.Engage("operator stop", "operator", time.Now().UTC())
+		done <- err
+	}()
+	<-started
+	select {
+	case err := <-done:
+		releaseCommit()
+		t.Fatalf("emergency stop crossed the active commit fence: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	releaseCommit()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("engage emergency stop after commit fence: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("emergency stop persistence did not continue after the commit fence")
+	}
+	if !controller.EmergencyStop() {
+		t.Fatal("emergency stop was not persisted after the final-effect commit fence released")
 	}
 }
 
@@ -257,17 +294,93 @@ func TestRecoveryReconcilesStuckOperations(t *testing.T) {
 	op := ing.Operation
 	op.CurrentDecision = string(operations.DecisionRunSafeLocalWorker)
 	cl, _ := ops.Transition(op, operations.StatusClassified, "hai", "", "")
-	rdy, _ := ops.Transition(*cl, operations.StatusReady, "hai", "", "")
-	run, _ := ops.Transition(*rdy, operations.StatusRunning, "hai", "", "")
-	_ = run
+	if _, err := ops.Transition(*cl, operations.StatusReady, "hai", "", ""); err != nil {
+		t.Fatalf("transition to ready: %v", err)
+	}
+	claimed, err := ops.ClaimNext(context.Background(), "u", "local", uuid.New(), 5*time.Millisecond)
+	if err != nil || claimed == nil {
+		t.Fatalf("claim stuck operation: claim=%#v err=%v", claimed, err)
+	}
+	if _, err := ops.TransitionClaimed(context.Background(), claimed.Claim, claimed.Operation, operations.StatusRunning, "hai", "", ""); err != nil {
+		t.Fatalf("mark operation running: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
 
-	rep := s.Recover(context.Background())
+	rep, err := s.Recover(context.Background())
+	if err != nil {
+		t.Fatalf("recovery: %v", err)
+	}
 	if rep.ScannedRunning != 1 || rep.Recovered != 1 {
 		t.Fatalf("recovery must move the stuck running op to interrupted, got %+v", rep)
 	}
 	interrupted, _ := ops.List(operations.Filter{OwnerUserID: "u", WorkspaceID: "local", Status: operations.StatusInterrupted})
 	if len(interrupted) != 1 {
 		t.Fatalf("stuck op must be recovered to interrupted")
+	}
+}
+
+func TestRecoveryLeavesLiveClaimAloneAndReportsUnleasedExecution(t *testing.T) {
+	ops := operations.NewService(operations.NewMemoryRepository())
+	s := NewService(t.TempDir(), executionbroker.NewBroker(t.TempDir()), ops, "u", "local")
+	makeRunning := func(key string, lease time.Duration) *operations.ClaimedOperation {
+		ingested, err := ops.Ingest(operations.NewOperationInput{OwnerUserID: "u", WorkspaceID: "local", Title: key, OperationType: "t", SourceType: "manual", DedupeKey: key})
+		if err != nil {
+			t.Fatalf("ingest %s: %v", key, err)
+		}
+		ingested.Operation.CurrentDecision = string(operations.DecisionRunSafeLocalWorker)
+		classified, err := ops.Transition(ingested.Operation, operations.StatusClassified, "hai", "", "")
+		if err != nil {
+			t.Fatalf("classify %s: %v", key, err)
+		}
+		ready, err := ops.Transition(*classified, operations.StatusReady, "hai", "", "")
+		if err != nil {
+			t.Fatalf("ready %s: %v", key, err)
+		}
+		claimed, err := ops.ClaimNext(context.Background(), "u", "local", uuid.New(), lease)
+		if err != nil || claimed == nil || claimed.Operation.ID != ready.ID {
+			t.Fatalf("claim %s: claim=%#v err=%v", key, claimed, err)
+		}
+		if _, err := ops.TransitionClaimed(context.Background(), claimed.Claim, claimed.Operation, operations.StatusRunning, "hai", "", ""); err != nil {
+			t.Fatalf("start %s: %v", key, err)
+		}
+		return claimed
+	}
+
+	live := makeRunning("live", time.Minute)
+	report, err := s.Recover(context.Background())
+	if err != nil {
+		t.Fatalf("recover live claim: %v", err)
+	}
+	if report.Recovered != 0 || report.LiveRunning != 1 {
+		t.Fatalf("live claim recovery report = %+v, want one preserved live running operation", report)
+	}
+	stored, err := ops.Get("u", "local", live.Operation.ID)
+	if err != nil || stored.Status != string(operations.StatusRunning) {
+		t.Fatalf("live operation after recovery = %#v, %v", stored, err)
+	}
+
+	unleased, err := ops.Ingest(operations.NewOperationInput{OwnerUserID: "u", WorkspaceID: "local", Title: "legacy", OperationType: "t", SourceType: "manual", DedupeKey: "legacy"})
+	if err != nil {
+		t.Fatalf("ingest unleased operation: %v", err)
+	}
+	unleased.Operation.CurrentDecision = string(operations.DecisionRunSafeLocalWorker)
+	classified, err := ops.Transition(unleased.Operation, operations.StatusClassified, "hai", "", "")
+	if err != nil {
+		t.Fatalf("classify unleased operation: %v", err)
+	}
+	ready, err := ops.Transition(*classified, operations.StatusReady, "hai", "", "")
+	if err != nil {
+		t.Fatalf("ready unleased operation: %v", err)
+	}
+	if _, err := ops.Transition(*ready, operations.StatusRunning, "hai", "", "legacy running state"); err != nil {
+		t.Fatalf("create unleased running state: %v", err)
+	}
+	report, err = s.Recover(context.Background())
+	if err != nil {
+		t.Fatalf("recover unleased state: %v", err)
+	}
+	if report.UnleasedRunning != 1 || report.Recovered != 0 {
+		t.Fatalf("unleased recovery report = %+v, want one visible unleased operation and no recovery", report)
 	}
 }
 

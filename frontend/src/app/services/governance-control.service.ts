@@ -7,7 +7,7 @@ import {
   AgentList,
   AgentLifecycleState,
   AgentRecord,
-  AgentTeamList,
+  AgentTeamMessageAttentionIndex,
   AgentTeamMessageAttentionPage,
   AgentTransitionList,
   CreateOutcomeEvaluationRequest,
@@ -250,12 +250,6 @@ export class GovernanceControlService {
     )
   }
 
-  listAgentTeams(): Observable<AgentTeamList> {
-    return this.http.get<AgentTeamList>(this.teamUrl).pipe(
-      map((response) => ({ teams: response?.teams || [] }))
-    )
-  }
-
   agentTeamMessageAttention(teamId: string, version: string): Observable<AgentTeamMessageAttentionPage> {
     return this.http.get<AgentTeamMessageAttentionPage>(
       `${this.teamUrl}/${encodeURIComponent(teamId)}/versions/${encodeURIComponent(version)}/message-attention`
@@ -263,6 +257,16 @@ export class GovernanceControlService {
       generatedAt: response.generatedAt,
       messages: response?.messages || [],
     })))
+  }
+
+  agentTeamMessageAttentionIndex(): Observable<AgentTeamMessageAttentionIndex> {
+    return this.http.get<AgentTeamMessageAttentionIndex>(`${this.teamUrl}/message-attention`).pipe(
+      map((response) => ({
+        generatedAt: response?.generatedAt || '',
+        contracts: response?.contracts || [],
+        teams: response?.teams || [],
+      }))
+    )
   }
 
   listLifeEntities(

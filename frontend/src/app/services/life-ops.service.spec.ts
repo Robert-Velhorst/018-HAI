@@ -1,14 +1,15 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing'
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { CapacitySnapshot, LifeDomain, RecordNeedRequest } from '../models/life-ops.model'
 import { LifeOpsService } from './life-ops.service'
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('LifeOpsService', () => {
   let service: LifeOpsService
   let http: HttpTestingController
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [HttpClientTestingModule] })
+    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] })
     service = TestBed.inject(LifeOpsService)
     http = TestBed.inject(HttpTestingController)
   })
@@ -23,20 +24,10 @@ describe('LifeOpsService', () => {
       needClass: 'physiological',
       sensitive: true,
     }
-    service.domains().subscribe((result) => expect(result).toEqual([domain]))
-    http.expectOne('/api/v1/life/domains').flush({ domains: [domain] })
-
-    service.needs(undefined, 40).subscribe()
-    const needs = http.expectOne(
-      (request) =>
-        request.url === '/api/v1/life/needs' &&
-        request.params.get('limit') === '40'
-    )
-    expect(needs.request.method).toBe('GET')
-    needs.flush({ observations: [] })
-
-    service.goalForest().subscribe()
-    http.expectOne('/api/v1/life/goals/forest').flush({ forest: [] })
+    service.overview().subscribe((overview) => expect(overview.domains).toEqual([domain]))
+    const request = http.expectOne('/api/v1/life/overview')
+    expect(request.request.method).toBe('GET')
+    request.flush({ domains: [domain], needs: [], capacity: null, goals: [], forest: [] })
   })
 
   it('treats a missing latest capacity snapshot as an explicit empty state', () => {

@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS public.uq_operations_owner_workspace_dedupe_active;

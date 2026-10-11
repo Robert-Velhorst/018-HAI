@@ -109,6 +109,18 @@ func runtimeCapabilityTemplates() []capabilityTemplate {
 	}
 	return []capabilityTemplate{
 		{card: discoveryCard("openclaw.gateway.discovery", "openclaw", "Inspect OpenClaw Gateway readiness", readOnlyInput, readOnlyOutput, "openclaw-gateway", "openclaw-security")},
+		{card: discoveryCard("openclaw.tasks.discovery", "openclaw", "Inspect OpenClaw task-state availability", readOnlyInput, map[string]any{
+			"type": "object", "required": []string{"sampledTasks", "statusCounts", "truncated"}, "properties": map[string]any{"sampledTasks": map[string]any{"type": "integer"}, "statusCounts": map[string]any{"type": "object"}, "truncated": map[string]any{"type": "boolean"}},
+		}, "openclaw-gateway", "openclaw-resilience", "openclaw-security")},
+		{card: discoveryCard("openclaw.capabilities.discovery", "openclaw", "Inspect OpenClaw skill and tool availability", readOnlyInput, map[string]any{
+			"type": "object", "required": []string{"sampledSkills", "eligibleSkills", "sampledCommands", "toolCountsBySource"}, "properties": map[string]any{"sampledSkills": map[string]any{"type": "integer"}, "eligibleSkills": map[string]any{"type": "integer"}, "sampledCommands": map[string]any{"type": "integer"}, "toolCountsBySource": map[string]any{"type": "object"}},
+		}, "openclaw-capabilities", "openclaw-security")},
+		{card: discoveryCard("openclaw.models.discovery", "openclaw", "Inspect prepared OpenClaw model availability", readOnlyInput, map[string]any{
+			"type": "object", "required": []string{"sampledModels", "availableModels", "unavailableModels", "unknownAvailabilityModels"}, "properties": map[string]any{"sampledModels": map[string]any{"type": "integer"}, "availableModels": map[string]any{"type": "integer"}, "unavailableModels": map[string]any{"type": "integer"}, "unknownAvailabilityModels": map[string]any{"type": "integer"}},
+		}, "openclaw-models", "openclaw-security")},
+		{card: discoveryCard("openclaw.agents.discovery", "openclaw", "Inspect OpenClaw agent roster availability", readOnlyInput, map[string]any{
+			"type": "object", "required": []string{"sampledAgents", "agentCount", "systemCount", "unknownKindCount"}, "properties": map[string]any{"sampledAgents": map[string]any{"type": "integer"}, "agentCount": map[string]any{"type": "integer"}, "systemCount": map[string]any{"type": "integer"}, "unknownKindCount": map[string]any{"type": "integer"}},
+		}, "openclaw-gateway", "openclaw-multi-agent", "openclaw-security")},
 		{card: delegationCard("openclaw.agent.delegate", "openclaw", "Delegate one bounded task to OpenClaw", delegatedInput, delegatedOutput, "openclaw-gateway", "openclaw-multi-agent", "openclaw-resilience")},
 		{card: discoveryCard("hermes.gateway.discovery", "hermes", "Inspect Hermes gateway readiness", readOnlyInput, readOnlyOutput, "hermes-protocol", "hermes-security")},
 		{card: delegationCard("hermes.agent.delegate", "hermes", "Delegate one bounded task to Hermes", delegatedInput, delegatedOutput, "hermes-protocol", "hermes-multi-agent", "hermes-resilience")},
@@ -125,7 +137,8 @@ func discoveryCard(id, runtimeID, name string, input, output map[string]any, sou
 		ID: id, RuntimeID: runtimeID, Name: name,
 		Purpose:     "Read non-secret runtime version, protocol, and declared capability metadata without invoking a tool.",
 		InputSchema: input, OutputSchema: output, RuntimeLocation: "operator_managed_local_service",
-		RequiredAuthority: []string{"authenticated_owner", "runtime.read"}, RiskLevel: "low",
+		// Probe is an audited POST, so its HAI route requires write permission even though the upstream read has no execution effect.
+		RequiredAuthority: []string{"authenticated_owner", "write", "runtime.read"}, RiskLevel: "low",
 		ExpectedCostEURMax: 0, CostPolicy: "No model or paid provider call is allowed.", ContextCost: "none",
 		TimeoutSeconds: 5, RetryBehaviour: "One manual retry; redirects and non-allowlisted hosts fail closed.",
 		Reversibility: "read_only", ApprovalRequirements: []string{"No execution approval; endpoint configuration remains owner-managed."},
@@ -188,13 +201,29 @@ func (s *Service) CapabilityCards(ctx context.Context) (RuntimeCapabilityOvervie
 			card.ReadinessLevel = ReadinessConfigured
 			card.ReadinessReason = "Endpoint is configured, but capability identity and protocol have not been verified."
 		}
-		if reader, ok := adapter.(interface {
+		if discovery, found := s.durableDiscovery(card.RuntimeID); found {
+			copyDiscovery := discovery
+			card.LatestDiscovery = &copyDiscovery
+			if discovery.ProtocolValid && s.discoveryIsCurrent(card.RuntimeID, discovery) && cardDiscoveryAvailable(card.ID, discovery) {
+				card.ReadinessLevel = discovery.ReadinessLevel
+				card.ReadinessReason = discovery.Detail
+				card.CanInvoke = true
+				readOnlyDiscoveryAvailable = true
+				if discovery.Authenticated {
+					card.AuthenticationState = "authenticated_read_only_discovery"
+				} else if discovery.IdentityVerified {
+					card.AuthenticationState = "identity_verified_liveness_only"
+				} else {
+					card.AuthenticationState = "protocol_validated_identity_unverified"
+				}
+			}
+		} else if reader, ok := adapter.(interface {
 			LastDiscovery() (ProbeResult, bool)
 		}); ok {
 			if discovery, found := reader.LastDiscovery(); found {
 				copyDiscovery := discovery
 				card.LatestDiscovery = &copyDiscovery
-				if discovery.ProtocolValid && isRuntimeDiscoveryCard(card.ID) {
+				if discovery.ProtocolValid && s.discoveryIsCurrent(card.RuntimeID, discovery) && cardDiscoveryAvailable(card.ID, discovery) {
 					card.ReadinessLevel = discovery.ReadinessLevel
 					card.ReadinessReason = discovery.Detail
 					card.CanInvoke = true
@@ -226,11 +255,42 @@ func (s *Service) CapabilityCards(ctx context.Context) (RuntimeCapabilityOvervie
 	}, nil
 }
 
-func isRuntimeDiscoveryCard(cardID string) bool {
+func (s *Service) discoveryIsCurrent(runtimeID string, discovery ProbeResult) bool {
+	now := s.now().UTC()
+	if discovery.CheckedAt.IsZero() || discovery.CheckedAt.After(now) {
+		return false
+	}
+	if normalizeRuntimeID(runtimeID) != "openclaw" {
+		age := now.Sub(discovery.CheckedAt.UTC())
+		return age >= 0 && age < runtimeDiscoveryFreshnessTTL
+	}
+	return discovery.EvidenceExpiresAt != nil && discovery.EvidenceExpiresAt.After(now)
+}
+
+func (s *Service) durableDiscovery(runtimeID string) (ProbeResult, bool) {
+	if normalizeRuntimeID(runtimeID) != "openclaw" {
+		return ProbeResult{}, false
+	}
+	return s.durableOpenClawDiscovery()
+}
+
+func cardDiscoveryAvailable(cardID string, discovery ProbeResult) bool {
 	switch cardID {
 	case "openclaw.gateway.discovery", "hermes.gateway.discovery", "odysseus.service.discovery":
 		return true
+	case "openclaw.capabilities.discovery":
+		return openClawAuthenticatedRead(discovery) && discovery.GatewayCapabilityCatalog != nil && validGatewayCapabilityCatalogSummary(discovery.GatewayCapabilityCatalog)
+	case "openclaw.models.discovery":
+		return openClawAuthenticatedRead(discovery) && discovery.GatewayPreparedModelCatalog != nil && validGatewayPreparedModelCatalogSummary(discovery.GatewayPreparedModelCatalog)
+	case "openclaw.tasks.discovery":
+		return openClawAuthenticatedRead(discovery) && discovery.GatewayTaskLedger != nil && validGatewayTaskLedgerSummary(discovery.GatewayTaskLedger)
+	case "openclaw.agents.discovery":
+		return openClawAuthenticatedRead(discovery) && discovery.GatewayAgentRoster != nil && validGatewayAgentRosterSummary(discovery.GatewayAgentRoster)
 	default:
 		return false
 	}
+}
+
+func openClawAuthenticatedRead(discovery ProbeResult) bool {
+	return discovery.Authenticated && strings.TrimSpace(discovery.GatewayScope) == "operator.read"
 }

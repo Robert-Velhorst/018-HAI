@@ -19,7 +19,7 @@ terminals, or JSON.
 | 4. Find something later | Search box that filters | Memory search (filter/sort/paginate) works via API; **needs UI wiring**. |
 | 5. Approve an action | Clear "Approve/Reject" with context | Approval gates present; labels available in EN/NL. |
 | 6. Trust the output | Know how reliable an answer is | Quality/confidence band available; grounded answers link evidence. |
-| 7. Feel safe | Obvious "stop" control | Emergency stop halts execution; visible in HAI OS overview. |
+| 7. Feel safe | Obvious "stop" control | Emergency stop blocks new execution and visibly reports whether an in-flight runtime supports cancellation; it is visible in the HAI OS overview. |
 | 8. Know it's working | A simple "all good" signal | `/readyz` gives ready/not-ready; needs a friendly UI surface. |
 
 ## Friction found (feeds roadmap)

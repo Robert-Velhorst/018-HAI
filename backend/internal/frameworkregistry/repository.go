@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 
 	"github.com/google/uuid"
@@ -115,6 +116,126 @@ func (r *GormRepository) UpsertPreference(owner string, preference Preference) (
 	return &result, nil
 }
 
+func (r *GormRepository) UpsertPreferenceWithEvent(owner, actor, reason string, preference Preference) (*Preference, error) {
+	row, err := preferenceToModel(owner, preference)
+	if err != nil {
+		return nil, err
+	}
+	actor, err = normalizeOwner(actor)
+	if err != nil {
+		return nil, fmt.Errorf("preference change actor: %w", err)
+	}
+	reason = compactRedactedText(reason, 1024)
+	if reason == "" {
+		return nil, fmt.Errorf("preference change reason is required")
+	}
+	row.UpdatedAt = time.Now().UTC()
+	if row.CreatedAt.IsZero() {
+		row.CreatedAt = row.UpdatedAt
+	}
+
+	var result Preference
+	err = r.DB.Transaction(func(tx *gorm.DB) error {
+		lockKey := row.OwnerIdentity + "\x00" + row.FrameworkID
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
+			return err
+		}
+
+		var before *Preference
+		var current models.FrameworkPreference
+		lookupErr := tx.Where("owner_identity = ? AND framework_id = ?", row.OwnerIdentity, row.FrameworkID).First(&current).Error
+		if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+			return lookupErr
+		}
+		if lookupErr == nil {
+			value, err := preferenceFromModel(current)
+			if err != nil {
+				return err
+			}
+			before = &value
+		}
+
+		if err := tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "owner_identity"}, {Name: "framework_id"}},
+			DoUpdates: clause.Assignments(map[string]interface{}{
+				"state": row.State, "pinned": row.Pinned,
+				"maximum_autonomy_level": row.MaximumAutonomyLevel,
+				"adaptations_json":       row.AdaptationsJSON, "updated_at": row.UpdatedAt,
+			}),
+		}).Create(&row).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("owner_identity = ? AND framework_id = ?", row.OwnerIdentity, row.FrameworkID).First(&current).Error; err != nil {
+			return err
+		}
+		result, err = preferenceFromModel(current)
+		if err != nil {
+			return err
+		}
+
+		var previous models.FrameworkPreferenceChange
+		var sequence uint64 = 1
+		var previousDigest string
+		lookupErr = tx.Where("owner_identity = ? AND framework_id = ?", row.OwnerIdentity, row.FrameworkID).
+			Order("sequence DESC").First(&previous).Error
+		if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+			return lookupErr
+		}
+		if lookupErr == nil {
+			sequence = previous.Sequence + 1
+			previousDigest = strings.TrimSpace(previous.EventDigest)
+		}
+		event, err := sealPreferenceChange(PreferenceChangeEvent{
+			Sequence: sequence, ID: uuid.NewString(), FrameworkID: row.FrameworkID,
+			Actor: actor, Reason: reason, Before: before, After: result,
+			OccurredAt: row.UpdatedAt, PreviousEventDigest: previousDigest,
+		})
+		if err != nil {
+			return err
+		}
+		storedEvent, err := preferenceChangeToModel(row.OwnerIdentity, event)
+		if err != nil {
+			return err
+		}
+		return tx.Create(&storedEvent).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+func (r *GormRepository) ListPreferenceHistory(owner, frameworkID string, limit int) ([]PreferenceChangeEvent, error) {
+	owner, err := normalizeOwner(owner)
+	if err != nil {
+		return nil, err
+	}
+	frameworkID = strings.TrimSpace(frameworkID)
+	if frameworkID == "" {
+		return nil, fmt.Errorf("framework id is required")
+	}
+	if limit <= 0 || limit > maxHistoryLimit {
+		return nil, fmt.Errorf("preference history limit must be between 1 and %d", maxHistoryLimit)
+	}
+	var rows []models.FrameworkPreferenceChange
+	if err := r.DB.Where("owner_identity = ? AND framework_id = ?", owner, frameworkID).
+		Order("sequence DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]PreferenceChangeEvent, 0, len(rows))
+	for _, row := range rows {
+		event, err := preferenceChangeFromModel(row)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, event)
+	}
+	if err := validatePreferenceChangeHistory(result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (r *GormRepository) CreateSelection(
 	owner string,
 	decision SelectionDecision,
@@ -141,9 +262,14 @@ func (r *GormRepository) GetSelection(
 	if err != nil {
 		return nil, fmt.Errorf("framework selection id must be a UUID")
 	}
+	db, cleanup, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	var row models.FrameworkSelectionRecord
-	if err := r.DB.WithContext(ctx).
+	if err := db.
 		Where("owner_identity = ? AND id = ?", owner, selectionID).
 		First(&row).Error; err != nil {
 		return nil, err
@@ -186,6 +312,16 @@ func (r *GormRepository) ListSelections(owner string, limit int) ([]SelectionDec
 }
 
 func (r *GormRepository) ListConstitutions(owner string) ([]Constitution, error) {
+	return r.ListConstitutionsContext(context.Background(), owner)
+}
+
+func (r *GormRepository) ListConstitutionsContext(ctx context.Context, owner string) ([]Constitution, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("Constitution lookup context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(owner) == "" {
 		return []Constitution{}, nil
 	}
@@ -193,9 +329,14 @@ func (r *GormRepository) ListConstitutions(owner string) ([]Constitution, error)
 	if err != nil {
 		return nil, err
 	}
+	db, cleanup, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
 
 	var rows []models.RobertConstitutionVersion
-	if err := r.DB.
+	if err := db.
 		Where("owner_identity = ?", owner).
 		Order("version DESC, created_at DESC").
 		Find(&rows).Error; err != nil {
@@ -387,19 +528,21 @@ func (r *GormRepository) ActivateConstitution(
 // MemoryRepository mirrors the Postgres repository contract for deterministic
 // service tests. Rows are owner-scoped and copied on read.
 type MemoryRepository struct {
-	mu            sync.RWMutex
-	preferences   map[string]models.FrameworkPreference
-	selections    map[string][]models.FrameworkSelectionRecord
-	selectionIDs  map[uuid.UUID]struct{}
-	constitutions map[string][]models.RobertConstitutionVersion
+	mu                sync.RWMutex
+	preferences       map[string]models.FrameworkPreference
+	preferenceHistory map[string][]PreferenceChangeEvent
+	selections        map[string][]models.FrameworkSelectionRecord
+	selectionIDs      map[uuid.UUID]struct{}
+	constitutions     map[string][]models.RobertConstitutionVersion
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
-		preferences:   map[string]models.FrameworkPreference{},
-		selections:    map[string][]models.FrameworkSelectionRecord{},
-		selectionIDs:  map[uuid.UUID]struct{}{},
-		constitutions: map[string][]models.RobertConstitutionVersion{},
+		preferences:       map[string]models.FrameworkPreference{},
+		preferenceHistory: map[string][]PreferenceChangeEvent{},
+		selections:        map[string][]models.FrameworkSelectionRecord{},
+		selectionIDs:      map[uuid.UUID]struct{}{},
+		constitutions:     map[string][]models.RobertConstitutionVersion{},
 	}
 }
 
@@ -461,6 +604,94 @@ func (r *MemoryRepository) UpsertPreference(owner string, preference Preference)
 		return nil, err
 	}
 	return &result, nil
+}
+
+func (r *MemoryRepository) UpsertPreferenceWithEvent(owner, actor, reason string, preference Preference) (*Preference, error) {
+	row, err := preferenceToModel(owner, preference)
+	if err != nil {
+		return nil, err
+	}
+	actor, err = normalizeOwner(actor)
+	if err != nil {
+		return nil, fmt.Errorf("preference change actor: %w", err)
+	}
+	reason = compactRedactedText(reason, 1024)
+	if reason == "" {
+		return nil, fmt.Errorf("preference change reason is required")
+	}
+	now := time.Now().UTC()
+	row.UpdatedAt = now
+	if row.CreatedAt.IsZero() {
+		row.CreatedAt = now
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ensureInitialized()
+	key := preferenceKey(row.OwnerIdentity, row.FrameworkID)
+	var before *Preference
+	if existing, ok := r.preferences[key]; ok {
+		row.ID = existing.ID
+		row.CreatedAt = existing.CreatedAt
+		value, err := preferenceFromModel(existing)
+		if err != nil {
+			return nil, err
+		}
+		before = &value
+	} else {
+		row.ID = uuid.New()
+	}
+	stored, err := preferenceFromModel(row)
+	if err != nil {
+		return nil, err
+	}
+	events := r.preferenceHistory[key]
+	var sequence uint64 = 1
+	var previousDigest string
+	if len(events) > 0 {
+		sequence = events[len(events)-1].Sequence + 1
+		previousDigest = events[len(events)-1].EventDigest
+	}
+	event, err := sealPreferenceChange(PreferenceChangeEvent{
+		Sequence: sequence, ID: uuid.NewString(), FrameworkID: row.FrameworkID,
+		Actor: actor, Reason: reason, Before: before, After: stored,
+		OccurredAt: now, PreviousEventDigest: previousDigest,
+	})
+	if err != nil {
+		return nil, err
+	}
+	r.preferences[key] = row
+	r.preferenceHistory[key] = append(events, clonePreferenceChangeEvent(event))
+	return &stored, nil
+}
+
+func (r *MemoryRepository) ListPreferenceHistory(owner, frameworkID string, limit int) ([]PreferenceChangeEvent, error) {
+	owner, err := normalizeOwner(owner)
+	if err != nil {
+		return nil, err
+	}
+	frameworkID = strings.TrimSpace(frameworkID)
+	if frameworkID == "" {
+		return nil, fmt.Errorf("framework id is required")
+	}
+	if limit <= 0 || limit > maxHistoryLimit {
+		return nil, fmt.Errorf("preference history limit must be between 1 and %d", maxHistoryLimit)
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	events := r.preferenceHistory[preferenceKey(owner, frameworkID)]
+	start := len(events) - limit
+	if start < 0 {
+		start = 0
+	}
+	result := make([]PreferenceChangeEvent, 0, len(events)-start)
+	for index := len(events) - 1; index >= start; index-- {
+		result = append(result, clonePreferenceChangeEvent(events[index]))
+	}
+	if err := validatePreferenceChangeHistory(result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (r *MemoryRepository) CreateSelection(
@@ -550,6 +781,16 @@ func (r *MemoryRepository) ListSelections(owner string, limit int) ([]SelectionD
 }
 
 func (r *MemoryRepository) ListConstitutions(owner string) ([]Constitution, error) {
+	return r.ListConstitutionsContext(context.Background(), owner)
+}
+
+func (r *MemoryRepository) ListConstitutionsContext(ctx context.Context, owner string) ([]Constitution, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("Constitution lookup context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(owner) == "" {
 		return []Constitution{}, nil
 	}
@@ -558,9 +799,20 @@ func (r *MemoryRepository) ListConstitutions(owner string) ([]Constitution, erro
 		return nil, err
 	}
 
-	r.mu.RLock()
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for !r.mu.TryRLock() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 	rows := append([]models.RobertConstitutionVersion(nil), r.constitutions[owner]...)
 	r.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].Version != rows[j].Version {
 			return rows[i].Version > rows[j].Version
@@ -754,6 +1006,9 @@ func (r *MemoryRepository) ensureInitialized() {
 	if r.preferences == nil {
 		r.preferences = map[string]models.FrameworkPreference{}
 	}
+	if r.preferenceHistory == nil {
+		r.preferenceHistory = map[string][]PreferenceChangeEvent{}
+	}
 	if r.selections == nil {
 		r.selections = map[string][]models.FrameworkSelectionRecord{}
 	}
@@ -827,6 +1082,135 @@ func preferenceFromModel(row models.FrameworkPreference) (Preference, error) {
 		Adaptations:          adaptations,
 		UpdatedAt:            row.UpdatedAt,
 	}, nil
+}
+
+func sealPreferenceChange(event PreferenceChangeEvent) (PreferenceChangeEvent, error) {
+	event.ID = strings.TrimSpace(event.ID)
+	if _, err := uuid.Parse(event.ID); err != nil {
+		return PreferenceChangeEvent{}, fmt.Errorf("preference event id must be a UUID")
+	}
+	if event.Sequence == 0 || strings.TrimSpace(event.FrameworkID) == "" || strings.TrimSpace(event.Actor) == "" || strings.TrimSpace(event.Reason) == "" {
+		return PreferenceChangeEvent{}, fmt.Errorf("preference event sequence, framework, actor, and reason are required")
+	}
+	event.Actor = strings.TrimSpace(event.Actor)
+	event.Reason = compactRedactedText(event.Reason, 1024)
+	event.After.Adaptations = append([]string(nil), event.After.Adaptations...)
+	event.After.MaximumAutonomyLevel = cloneIntPointer(event.After.MaximumAutonomyLevel)
+	if event.Before != nil {
+		before := *event.Before
+		before.Adaptations = append([]string(nil), before.Adaptations...)
+		before.MaximumAutonomyLevel = cloneIntPointer(before.MaximumAutonomyLevel)
+		event.Before = &before
+	}
+	if event.OccurredAt.IsZero() {
+		return PreferenceChangeEvent{}, fmt.Errorf("preference event timestamp is required")
+	}
+	encoded, err := json.Marshal(struct {
+		Sequence            uint64      `json:"sequence"`
+		ID                  string      `json:"id"`
+		FrameworkID         string      `json:"frameworkId"`
+		Actor               string      `json:"actor"`
+		Reason              string      `json:"reason"`
+		Before              *Preference `json:"before,omitempty"`
+		After               Preference  `json:"after"`
+		OccurredAt          time.Time   `json:"occurredAt"`
+		PreviousEventDigest string      `json:"previousEventDigest,omitempty"`
+	}{event.Sequence, event.ID, event.FrameworkID, event.Actor, event.Reason, event.Before, event.After, event.OccurredAt.UTC(), event.PreviousEventDigest})
+	if err != nil {
+		return PreferenceChangeEvent{}, err
+	}
+	digest := sha256.Sum256(encoded)
+	event.EventDigest = hex.EncodeToString(digest[:])
+	return event, nil
+}
+
+func preferenceChangeToModel(owner string, event PreferenceChangeEvent) (models.FrameworkPreferenceChange, error) {
+	owner, err := normalizeOwner(owner)
+	if err != nil {
+		return models.FrameworkPreferenceChange{}, err
+	}
+	sealed, err := sealPreferenceChange(event)
+	if err != nil {
+		return models.FrameworkPreferenceChange{}, err
+	}
+	id, _ := uuid.Parse(sealed.ID)
+	afterJSON, err := json.Marshal(sealed.After)
+	if err != nil {
+		return models.FrameworkPreferenceChange{}, err
+	}
+	var beforeJSON *string
+	if sealed.Before != nil {
+		encoded, err := json.Marshal(sealed.Before)
+		if err != nil {
+			return models.FrameworkPreferenceChange{}, err
+		}
+		value := string(encoded)
+		beforeJSON = &value
+	}
+	return models.FrameworkPreferenceChange{
+		ID: id, OwnerIdentity: owner, FrameworkID: sealed.FrameworkID,
+		Sequence: sealed.Sequence, Actor: sealed.Actor, Reason: sealed.Reason,
+		BeforeJSON: beforeJSON, AfterJSON: string(afterJSON), OccurredAt: sealed.OccurredAt.UTC(),
+		PreviousEventDigest: sealed.PreviousEventDigest, EventDigest: sealed.EventDigest,
+	}, nil
+}
+
+func preferenceChangeFromModel(row models.FrameworkPreferenceChange) (PreferenceChangeEvent, error) {
+	var after Preference
+	if err := json.Unmarshal([]byte(row.AfterJSON), &after); err != nil {
+		return PreferenceChangeEvent{}, fmt.Errorf("decode preference change after snapshot: %w", err)
+	}
+	var before *Preference
+	if row.BeforeJSON != nil {
+		value := Preference{}
+		if err := json.Unmarshal([]byte(*row.BeforeJSON), &value); err != nil {
+			return PreferenceChangeEvent{}, fmt.Errorf("decode preference change before snapshot: %w", err)
+		}
+		before = &value
+	}
+	event := PreferenceChangeEvent{
+		Sequence: row.Sequence, ID: row.ID.String(), FrameworkID: row.FrameworkID,
+		Actor: row.Actor, Reason: row.Reason, Before: before, After: after,
+		OccurredAt: row.OccurredAt, PreviousEventDigest: strings.TrimSpace(row.PreviousEventDigest),
+		EventDigest: strings.TrimSpace(row.EventDigest),
+	}
+	if err := validatePreferenceChangeDigest(event); err != nil {
+		return PreferenceChangeEvent{}, err
+	}
+	return event, nil
+}
+
+func validatePreferenceChangeHistory(events []PreferenceChangeEvent) error {
+	for index, event := range events {
+		if err := validatePreferenceChangeDigest(event); err != nil {
+			return err
+		}
+		if index+1 < len(events) {
+			previous := events[index+1]
+			if event.Sequence != previous.Sequence+1 || event.PreviousEventDigest != previous.EventDigest {
+				return fmt.Errorf("framework preference history chain is inconsistent at sequence %d", event.Sequence)
+			}
+		}
+	}
+	return nil
+}
+
+func validatePreferenceChangeDigest(event PreferenceChangeEvent) error {
+	storedDigest := strings.TrimSpace(event.EventDigest)
+	sealed, err := sealPreferenceChange(event)
+	if err != nil {
+		return fmt.Errorf("validate framework preference history event %d: %w", event.Sequence, err)
+	}
+	if storedDigest == "" || storedDigest != sealed.EventDigest {
+		return fmt.Errorf("framework preference history digest mismatch at sequence %d", event.Sequence)
+	}
+	return nil
+}
+
+func clonePreferenceChangeEvent(event PreferenceChangeEvent) PreferenceChangeEvent {
+	copy, _ := sealPreferenceChange(event)
+	copy.EventDigest = event.EventDigest
+	return copy
 }
 
 func selectionToModel(

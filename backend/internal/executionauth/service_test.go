@@ -25,6 +25,7 @@ type fakeConstitutionEvaluator struct {
 }
 
 func (f *fakeConstitutionEvaluator) EvaluateExecutionPolicy(
+	_ context.Context,
 	_ string,
 	_ []string,
 	_ int,
@@ -41,6 +42,27 @@ func (f *fakeConstitutionEvaluator) EvaluateExecutionPolicy(
 
 type fakeApprovalResolver struct {
 	values map[string]ResolvedApproval
+}
+
+type rotatingApprovalResolver struct {
+	values []ResolvedApproval
+	calls  int
+}
+
+func (r *rotatingApprovalResolver) Resolve(
+	_ context.Context,
+	_, _ string,
+	_ string,
+) (ResolvedApproval, error) {
+	if len(r.values) == 0 {
+		return ResolvedApproval{}, ErrNotFound
+	}
+	index := r.calls
+	r.calls++
+	if index >= len(r.values) {
+		index = len(r.values) - 1
+	}
+	return r.values[index], nil
 }
 
 func (f fakeApprovalResolver) Resolve(
@@ -467,6 +489,65 @@ func TestAuthorizePersistsEmergencyStopDenial(t *testing.T) {
 	}
 }
 
+func TestEmergencyStopPermitsOnlyExactApprovedClearance(t *testing.T) {
+	binding := strings.Repeat("a", 64)
+	approval := ResolvedApproval{
+		SourceID:       "opscontrol-owner:test-approval",
+		DecisionID:     "owner-confirmed-clearance",
+		DecisionDigest: strings.Repeat("b", 64),
+		BindingDigest:  binding,
+		ApprovedBy:     "alice",
+		ApproverRoles:  []string{"owner"},
+		ApprovedAt:     fixedNow().Add(-time.Minute),
+		ExpiresAt:      fixedNow().Add(time.Minute),
+	}
+	service := newTestService(
+		t,
+		NewMemoryRepository(),
+		permissiveConstitution(),
+		fakeApprovalResolver{values: map[string]ResolvedApproval{
+			"alice\x00" + approval.SourceID: approval,
+		}},
+		nil,
+	)
+	service.WithEmergencyStopEvaluator(func() EmergencyStopEvidence {
+		return EmergencyStopEvidence{Active: true, Source: "persisted-emergency-stop", Reason: "operator stop"}
+	})
+
+	clearance := baseRequest("emergency-stop-clear")
+	clearance.Action = "opscontrol.emergency-stop.clear"
+	clearance.Stage = StagePrivilegeEscalation
+	clearance.Domain = "safety-control"
+	clearance.ResourceType = "opscontrol-emergency-stop"
+	clearance.ResourceID = "emergency-stop:revision-1"
+	clearance.RequiredAuthority = 10
+	clearance.RequestedAutonomy = 6
+	clearance.Risk = RiskCritical
+	clearance.Reversible = false
+	clearance.ApprovalSourceID = approval.SourceID
+	clearance.ApprovalBindingDigest = binding
+	clearance.EffectDigest = binding
+
+	receipt, err := service.AuthorizeAndConsume(context.Background(), clearance, "opscontrol", clearance.Action+":"+clearance.ResourceID)
+	if err != nil {
+		t.Fatalf("AuthorizeAndConsume exact emergency-stop clearance: %v", err)
+	}
+	if receipt.Outcome != OutcomeAuthorized || !receipt.Evidence.EmergencyStop.Active || receipt.Evidence.Approval.SourceID != approval.SourceID {
+		t.Fatalf("clearance receipt = %#v", receipt)
+	}
+
+	denied := clearance
+	denied.IdempotencyKey = "emergency-stop-clear-not-exact"
+	denied.ResourceType = "workspace-file"
+	deniedReceipt, err := service.Authorize(context.Background(), denied)
+	if err != nil {
+		t.Fatalf("Authorize non-clearance request: %v", err)
+	}
+	if deniedReceipt.Outcome != OutcomeDenied || !containsFold(deniedReceipt.Evidence.ReasonCodes, "emergency_stop.active") {
+		t.Fatalf("non-clearance receipt = %#v", deniedReceipt)
+	}
+}
+
 func TestAuthorizeAndConsumeIsSingleUseUnderConcurrency(t *testing.T) {
 	repository := NewMemoryRepository()
 	service := newTestService(
@@ -713,6 +794,107 @@ func TestAuthorizeRequiresServerResolvedExactCaseApproval(t *testing.T) {
 	if receipt.Outcome != OutcomeAuthorized ||
 		receipt.Evidence.Approval.SourceID != sourceID {
 		t.Fatalf("approved outcome = %#v", receipt)
+	}
+}
+
+func TestAuthorizeAndConsumeRejectsApprovalDecisionRotation(t *testing.T) {
+	now := fixedNow()
+	sourceID := "opscontrol-owner:approval-nonce"
+	binding := strings.Repeat("a", 64)
+	first := ResolvedApproval{
+		SourceID: sourceID, DecisionID: "decision-one",
+		DecisionDigest: strings.Repeat("b", 64), BindingDigest: binding,
+		ApprovedBy: "alice", ApprovedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Minute),
+	}
+	rotated := first
+	rotated.DecisionID = "decision-two"
+	rotated.DecisionDigest = strings.Repeat("c", 64)
+	approvals := &rotatingApprovalResolver{values: []ResolvedApproval{first, rotated}}
+	repository := NewMemoryRepository()
+	service := newTestService(t, repository, permissiveConstitution(), approvals, nil)
+	request := baseRequest("approval-rotation")
+	request.ApprovalSourceID = sourceID
+	request.ApprovalBindingDigest = binding
+	target := "workspace:" + request.ResourceID
+
+	receipt, err := service.AuthorizeAndConsume(context.Background(), request, "workspace-worker", target)
+	if !errors.Is(err, ErrAuthorizationChanged) {
+		t.Fatalf("AuthorizeAndConsume error = %v, want ErrAuthorizationChanged", err)
+	}
+	if receipt.Outcome != OutcomeAuthorized {
+		t.Fatalf("initial authorization outcome = %q, want authorized receipt before recheck", receipt.Outcome)
+	}
+	if _, err := repository.GetConsumption(context.Background(), request.OwnerIdentity, receipt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("rotated approval created consumption: %v", err)
+	}
+}
+
+func TestMemoryRepositoryClaimsTaskReviewDecisionAcrossReceiptsAtomically(t *testing.T) {
+	now := fixedNow()
+	sourceID := "task-review:216967e4-d62e-4a73-ae3f-c62efcbf78f5"
+	binding := strings.Repeat("a", 64)
+	decisionID := "a981bcb2-c57d-4f08-9504-91be0f20d287"
+	repository := NewMemoryRepository()
+	service := newTestService(
+		t,
+		repository,
+		permissiveConstitution(),
+		fakeApprovalResolver{values: map[string]ResolvedApproval{
+			"alice\x00" + sourceID: {
+				SourceID: sourceID, DecisionID: decisionID,
+				DecisionDigest: strings.Repeat("d", 64), BindingDigest: binding,
+				ApprovedBy: "alice", ApprovedAt: now.Add(-time.Minute), ExpiresAt: now.Add(10 * time.Minute),
+			},
+		}},
+		nil,
+	)
+
+	request := baseRequest("task-review-claim-first")
+	request.ApprovalSourceID = sourceID
+	request.ApprovalBindingDigest = binding
+	first, err := service.Authorize(context.Background(), request)
+	if err != nil || first.Outcome != OutcomeAuthorized {
+		t.Fatalf("first authorization = (%#v, %v), want authorized", first, err)
+	}
+	request.IdempotencyKey = "task-review-claim-second"
+	second, err := service.Authorize(context.Background(), request)
+	if err != nil || second.Outcome != OutcomeAuthorized {
+		t.Fatalf("second authorization = (%#v, %v), want authorized before claim", second, err)
+	}
+
+	consumption := func(receipt Receipt, consumer string) Consumption {
+		return Consumption{
+			ReceiptID: receipt.ID, OwnerIdentity: receipt.OwnerIdentity,
+			Consumer: consumer, ExecutionTarget: "workspace:" + receipt.ResourceID,
+			ReceiptDigest: receipt.DecisionDigest, ConsumedAt: now.Add(time.Second),
+		}
+	}
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	go func() {
+		<-start
+		results <- repository.Consume(context.Background(), consumption(first, "worker-one"))
+	}()
+	go func() {
+		<-start
+		results <- repository.Consume(context.Background(), consumption(second, "worker-two"))
+	}()
+	close(start)
+
+	successes, claimed := 0, 0
+	for range 2 {
+		err := <-results
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrApprovalAlreadyClaimed):
+			claimed++
+		default:
+			t.Fatalf("unexpected concurrent consume result: %v", err)
+		}
+	}
+	if successes != 1 || claimed != 1 {
+		t.Fatalf("consumption successes=%d approval-claimed=%d, want 1 and 1", successes, claimed)
 	}
 }
 

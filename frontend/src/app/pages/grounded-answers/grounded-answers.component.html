@@ -1,22 +1,29 @@
 <section class="grounded-page">
-  <nz-layout>
-    <nz-header class="header-container">
-      <div class="header-content">
-        <h1 class="header-content__title">Grounded Answers</h1>
-        <div class="header-content__actions">
-          <button nz-button nzType="default" (click)="loadRuns()">
-            <i nz-icon nzType="reload" nzTheme="outline"></i>
-            Refresh
-          </button>
-          <button nz-button nzType="default" (click)="goHome()">
-            <i nz-icon nzType="appstore" nzTheme="outline"></i>
-            Automations
-          </button>
-        </div>
-      </div>
-    </nz-header>
+  <header class="grounded-page__header">
+    <div class="grounded-page__copy">
+      <p class="grounded-page__eyebrow">Intelligence / Verification</p>
+      <h1>Verified answers</h1>
+      <p>Check a response against available sources. Results do not authorize external actions.</p>
+    </div>
+    <div class="grounded-page__actions">
+      <button *ngIf="isAdvancedView" nz-button nzType="default" (click)="loadRuns()" [nzLoading]="runsLoading" [disabled]="runsLoading">
+        <i nz-icon nzType="reload" nzTheme="outline"></i>
+        Refresh
+      </button>
+    </div>
+  </header>
 
-    <nz-content class="content-container">
+    <div class="grounded-page__content">
+      <section *ngIf="answerError" class="answer-error" role="alert" aria-live="assertive">
+        <strong>Verification failed</strong>
+        <span>{{ answerError }}</span>
+        <button type="button" nz-button nzType="default" (click)="answerError = ''">Dismiss</button>
+      </section>
+      <section *ngIf="loading" class="verification-progress" role="status" aria-live="polite">
+        <i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i>
+        <span>Checking the answer against available sources. This does not approve or execute an external action.</span>
+      </section>
+
       <nz-card nzSize="small" nzTitle="Source-Grounded Answer">
         <form nz-form [formGroup]="answerForm">
           <nz-form-item>
@@ -32,6 +39,22 @@
                 <input nz-input formControlName="projectKey" />
               </nz-form-control>
             </nz-form-item>
+          </div>
+          <div class="linked-pursuit" *ngIf="answerForm.value.pursuitId as pursuitId">
+            <span title="This verification run will be linked to the selected pursuit as evidence. It does not mark the pursuit complete or approve any external action.">
+              Linked pursuit evidence
+            </span>
+            <button type="button" nz-button nzType="link" (click)="openPursuit(pursuitId)">Open pursuit</button>
+            <button type="button" nz-button nzType="link" (click)="clearPursuitLink()">Clear</button>
+          </div>
+          <hai-progressive-section
+            *ngIf="isAdvancedView"
+            [moduleId]="moduleId"
+            sectionId="verification-controls"
+            title="Verification controls and attached evidence"
+            summary="Mode, sensitive-data scope, candidate providers, and any manually supplied source payload."
+          >
+          <div class="form-row">
             <nz-form-item>
               <nz-form-label>Mode</nz-form-label>
               <nz-form-control>
@@ -43,13 +66,6 @@
                 </nz-select>
               </nz-form-control>
             </nz-form-item>
-          </div>
-          <div class="linked-pursuit" *ngIf="answerForm.value.pursuitId as pursuitId">
-            <span title="This verification run will be linked to the selected pursuit as evidence. It does not mark the pursuit complete or approve any external action.">
-              Linked pursuit evidence
-            </span>
-            <button type="button" nz-button nzType="link" (click)="openPursuit(pursuitId)">Open pursuit</button>
-            <button type="button" nz-button nzType="link" (click)="clearPursuitLink()">Clear</button>
           </div>
           <div class="form-row">
             <label nz-checkbox formControlName="includeSensitive">Include sensitive</label>
@@ -68,28 +84,40 @@
               Offer public-source candidates
             </label>
             <label nz-checkbox formControlName="allowMemoryUpdate">Allow memory update</label>
-            <span class="approval-notice" title="Only a server-recorded approval can authorize a high-risk action. Browser form values are never treated as approval.">Action-mode approval comes from the workflow queue.</span>
           </div>
           <div class="form-row">
-            <input nz-input formControlName="evidenceLabel" />
-            <input nz-input formControlName="evidenceUri" />
+            <label><span>Source label</span><input nz-input formControlName="evidenceLabel" /></label>
+            <label><span>Source URI</span><input nz-input formControlName="evidenceUri" /></label>
           </div>
-          <textarea nz-input rows="3" formControlName="evidenceSnippet"></textarea>
+          <label><span>Source excerpt</span><textarea nz-input rows="3" formControlName="evidenceSnippet"></textarea></label>
           <div class="form-row">
             <label nz-checkbox formControlName="official">Official source</label>
             <label nz-checkbox formControlName="primary">Primary document</label>
           </div>
-          <button nz-button nzType="primary" (click)="answer()" [nzLoading]="loading">
+          </hai-progressive-section>
+          <div class="answer-submit-row">
+          <span class="approval-notice" title="Only a server-recorded approval can authorize a high-risk action. Browser form values are never treated as approval.">Action-mode approval comes from the workflow queue. This verification step cannot authorize sending or publishing.</span>
+          <button type="button" nz-button nzType="primary" (click)="answer()" [nzLoading]="loading" [disabled]="loading || answerForm.invalid">
             Verify Answer
           </button>
+          </div>
         </form>
       </nz-card>
 
+      <hai-progressive-section
+        *ngIf="isAdvancedView"
+        [moduleId]="moduleId"
+        sectionId="source-discovery"
+        title="Local source discovery tools"
+        summary="Provider configuration, health probes, and detailed candidate payloads."
+        (openChange)="onSourceDiscoveryOpen($event)"
+      >
       <nz-card nzSize="small" nzTitle="Local source discovery" class="section-card">
         <p class="research-scope" *ngIf="researchStatus as status">
           {{ status.configured ? 'Ready: ' + status.provider : 'Not configured' }}. {{ status.scope }}
         </p>
-        <p class="research-scope" *ngIf="!researchStatus">Research status could not be loaded.</p>
+        <p class="research-scope" *ngIf="researchStatusLoading">Loading local research configuration…</p>
+        <p class="research-scope" *ngIf="!researchStatus && !researchStatusLoading">Research status could not be loaded. Reopen this section to retry.</p>
         <p class="research-scope" *ngIf="researchProbe as probe">Last endpoint check: {{ probe.reachable ? 'reachable' : 'unavailable' }}. {{ probe.scope }}</p>
         <button nz-button nzType="default" (click)="probeResearch()" [nzLoading]="researchProbeLoading" [disabled]="!researchStatus?.configured" title="Checks only the configured local SearXNG health endpoint. It does not search the web or verify sources.">
           <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
@@ -116,7 +144,8 @@
         <p class="research-scope" *ngIf="ragflowStatus as status">
           {{ status.configured ? 'Ready: ' + status.provider + ' (' + status.datasetCount + ' approved datasets)' : 'Not configured' }}. {{ status.scope }}
         </p>
-        <p class="research-scope" *ngIf="!ragflowStatus">RAGFlow status could not be loaded.</p>
+        <p class="research-scope" *ngIf="ragflowStatusLoading">Loading RAGFlow configuration…</p>
+        <p class="research-scope" *ngIf="!ragflowStatus && !ragflowStatusLoading">RAGFlow status could not be loaded. Reopen this section to retry.</p>
         <p class="research-scope" *ngIf="ragflowProbe as probe">Last endpoint check: {{ probe.reachable ? 'reachable' : 'unavailable' }}. {{ probe.scope }}</p>
         <button nz-button nzType="default" (click)="probeRAGFlow()" [nzLoading]="ragflowProbeLoading" [disabled]="!ragflowStatus?.configured" title="Checks only the configured local RAGFlow health endpoint. It does not query datasets or retrieve evidence.">
           <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
@@ -143,7 +172,8 @@
         <p class="research-scope" *ngIf="anythingLLMStatus as status">
           {{ status.configured ? 'Ready: ' + status.provider + ' (' + status.workspaceCount + ' approved workspaces)' : 'Not configured' }}. {{ status.scope }}
         </p>
-        <p class="research-scope" *ngIf="!anythingLLMStatus">AnythingLLM status could not be loaded.</p>
+        <p class="research-scope" *ngIf="anythingLLMStatusLoading">Loading AnythingLLM configuration…</p>
+        <p class="research-scope" *ngIf="!anythingLLMStatus && !anythingLLMStatusLoading">AnythingLLM status could not be loaded. Reopen this section to retry.</p>
         <div class="research-actions" *ngIf="anythingLLMStatus?.configured">
           <select #anythingLLMWorkspace aria-label="Approved AnythingLLM workspace">
             <option value="" selected>Select an approved workspace</option>
@@ -166,13 +196,22 @@
           </article>
         </div>
       </nz-card>
+      </hai-progressive-section>
 
       <div class="answer-grid" *ngIf="result as r">
         <nz-card nzSize="small" nzTitle="Answer">
           <p><strong>Status:</strong> {{ r.run.status }}</p>
           <p *ngIf="r.pursuitId"><strong>Pursuit:</strong> {{ r.pursuitLinked ? 'linked as evidence' : 'link requires attention' }}</p>
+          <div *ngIf="r.auditWarnings?.length" class="audit-warning" role="alert" aria-live="polite">
+            <strong>Audit trail incomplete</strong>
+            <p>Some follow-up actions may have completed, but their audit records were not saved. Treat this history as incomplete.</p>
+          </div>
           <p>{{ r.run.answer }}</p>
           <p *ngIf="r.run.missingSources"><strong>Missing:</strong> {{ r.run.missingSources }}</p>
+          <p *ngIf="r.unsupportedClaims.length || (r.conflicts || []).length" class="answer-review-summary">
+            <strong>Needs review:</strong> {{ r.unsupportedClaims.length }} unsupported claim(s), {{ (r.conflicts || []).length }} source conflict(s).
+            <button type="button" nz-button nzType="link" (click)="openAdvancedSection('verification-details')">Inspect details</button>
+          </p>
         </nz-card>
 
         <nz-card nzSize="small" nzTitle="Research Questions">
@@ -181,8 +220,27 @@
           </ul>
           <p *ngIf="!r.researchQuestions.length">{{ r.run.researchQuestions || '-' }}</p>
         </nz-card>
+
+        <nz-card nzSize="small" nzTitle="Source summary" data-testid="grounded-source-summary">
+          <strong>{{ r.evidence.length }} source(s) considered</strong>
+          <p>{{ usedEvidenceCount(r) }} used · {{ rejectedEvidenceCount(r) }} rejected or not used</p>
+          <ul *ngIf="r.evidence.length">
+            <li *ngFor="let source of r.evidence">
+              {{ source.sourceLabel || source.sourceType }} · {{ source.used ? 'used' : source.rejectReason ? 'rejected' : 'not used' }}
+            </li>
+          </ul>
+          <p *ngIf="!r.evidence.length">No evidence was attached to this answer.</p>
+          <button type="button" nz-button nzType="link" (click)="openAdvancedSection('verification-details')" *ngIf="r.evidence.length">Inspect source records</button>
+        </nz-card>
       </div>
 
+      <hai-progressive-section
+        *ngIf="isAdvancedView && result"
+        [moduleId]="moduleId"
+        sectionId="verification-details"
+        title="Claims, evidence, and review details"
+        summary="Full source payloads, claim explanations, conflicts, and provider candidates."
+      >
       <nz-card nzTitle="Claim Verification" *ngIf="result as r" class="section-card">
         <nz-table [nzData]="r.claims" nzSize="small" [nzPageSize]="8">
           <thead>
@@ -320,8 +378,22 @@
           </li>
         </ul>
       </nz-card>
+      </hai-progressive-section>
 
+      <hai-progressive-section
+        *ngIf="isAdvancedView"
+        [moduleId]="moduleId"
+        sectionId="verification-history"
+        title="Verification history"
+        summary="Browse prior runs and open complete stored evidence records."
+        (openChange)="onVerificationHistoryOpen($event)"
+      >
       <nz-card nzTitle="Verification Runs" class="section-card">
+        <p *ngIf="runsLoading" role="status" aria-live="polite">Loading verification history…</p>
+        <div *ngIf="runsUnavailable" class="history-unavailable" role="status" aria-live="polite">
+          <span>Verification history is unavailable. Showing the last confirmed records, if any.</span>
+          <button nz-button nzSize="small" nzType="default" (click)="loadRuns()" [disabled]="runsLoading">Retry</button>
+        </div>
         <nz-table [nzData]="runs" nzSize="small" [nzPageSize]="8">
           <thead>
             <tr>
@@ -345,6 +417,6 @@
           </tbody>
         </nz-table>
       </nz-card>
-    </nz-content>
-  </nz-layout>
+      </hai-progressive-section>
+    </div>
 </section>

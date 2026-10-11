@@ -48,7 +48,7 @@ func (s *capturingFrameworkSelector) PlanSelection(request frameworkregistry.Sel
 	}, nil
 }
 
-func TestRegistryAgentContextProviderMapsFreshOwnerScopedEvidence(t *testing.T) {
+func TestRegistryAgentContextProviderMapsFreshOwnerScopedDeclarationsWithoutVerification(t *testing.T) {
 	repository := agentregistry.NewMemoryRepository()
 	agent := validRegistryAgent("alice", agentContextTestNow)
 	if _, err := repository.Create(context.Background(), agent); err != nil {
@@ -70,8 +70,8 @@ func TestRegistryAgentContextProviderMapsFreshOwnerScopedEvidence(t *testing.T) 
 	if card.ID != agent.ID || card.Owner != "alice" || card.Role != "researcher" {
 		t.Fatalf("identity mapping = %#v", card)
 	}
-	if !card.Verified || card.Status != "available" || card.HealthStatus != "available" {
-		t.Fatalf("fresh health mapping = verified %t, status %q, health %q", card.Verified, card.Status, card.HealthStatus)
+	if card.Verified || card.Status != "configured_unverified" || card.HealthStatus != "declared_healthy" {
+		t.Fatalf("declared health mapping = verified %t, status %q, health %q", card.Verified, card.Status, card.HealthStatus)
 	}
 	if card.AuthorityCeiling != 4 {
 		t.Fatalf("authority ceiling = %d, want least of authority/autonomy (4)", card.AuthorityCeiling)
@@ -88,12 +88,18 @@ func TestRegistryAgentContextProviderMapsFreshOwnerScopedEvidence(t *testing.T) 
 		card.EvaluationScoreSource != "agent registry success/failure beta prior" {
 		t.Fatalf("reliability mapping = %f from %q", card.EvaluationScore, card.EvaluationScoreSource)
 	}
-	if card.LastVerifiedAt == nil || !card.LastVerifiedAt.Equal(agent.Health.CheckedAt) {
-		t.Fatalf("last verified = %#v", card.LastVerifiedAt)
+	if card.LastVerifiedAt != nil {
+		t.Fatalf("declaration became a verification timestamp: %#v", card.LastVerifiedAt)
 	}
 	if !strings.Contains(card.Version, "revision-7") ||
-		!strings.Contains(card.Provenance, "revision=7") {
+		!strings.HasPrefix(card.Provenance, "agent_registry_declaration:") ||
+		!strings.Contains(card.Provenance, "revision=7") ||
+		!strings.Contains(card.Provenance, "declared_health_checked_at="+agent.Health.CheckedAt.UTC().Format(time.RFC3339Nano)) {
 		t.Fatalf("revision provenance = %q / %q", card.Version, card.Provenance)
+	}
+	if !strings.Contains(card.Availability, "declaration_ready=true") ||
+		!agentCardContainsString(card.ExpectedEvidence, "trusted server capability probe") {
+		t.Fatalf("declaration readiness/probe requirement = %q / %#v", card.Availability, card.ExpectedEvidence)
 	}
 
 	otherCards, err := provider.LatestAgents("bob", agentContextTestNow)
@@ -102,6 +108,74 @@ func TestRegistryAgentContextProviderMapsFreshOwnerScopedEvidence(t *testing.T) 
 	}
 	if len(otherCards) != 0 {
 		t.Fatalf("cross-owner cards leaked: %#v", otherCards)
+	}
+}
+
+func TestRegistryAgentContextProviderDeclarationReadinessRespectsCapacityLifecycleAndHealth(t *testing.T) {
+	for _, name := range []string{
+		"free capacity", "last free slot", "full capacity", "over capacity", "zero capacity", "negative assignments",
+		"registered", "draining", "disabled", "quarantined", "unavailable", "not ready", "unknown health", "degraded", "unhealthy",
+		"stale health", "future health", "no health timestamp", "no freshness window",
+	} {
+		t.Run(name, func(t *testing.T) {
+			agent := validRegistryAgent("alice", agentContextTestNow)
+			switch name {
+			case "last free slot":
+				agent.Availability.ActiveAssignments = agent.Availability.MaxConcurrent - 1
+			case "full capacity":
+				agent.Availability.ActiveAssignments = agent.Availability.MaxConcurrent
+			case "over capacity":
+				agent.Availability.ActiveAssignments = agent.Availability.MaxConcurrent + 1
+			case "zero capacity":
+				agent.Availability.MaxConcurrent = 0
+			case "negative assignments":
+				agent.Availability.ActiveAssignments = -1
+			case "registered":
+				agent.State = agentregistry.StateRegistered
+			case "draining":
+				agent.State = agentregistry.StateDraining
+			case "disabled":
+				agent.State = agentregistry.StateDisabled
+			case "quarantined":
+				agent.State = agentregistry.StateQuarantined
+			case "unavailable":
+				agent.Availability.Available = false
+			case "not ready":
+				agent.Health.Ready = false
+			case "unknown health":
+				agent.Health.Status = agentregistry.HealthUnknown
+			case "degraded":
+				agent.Health.Status = agentregistry.HealthDegraded
+			case "unhealthy":
+				agent.Health.Status = agentregistry.HealthUnhealthy
+			case "stale health":
+				agent.Health.CheckedAt = agentContextTestNow.Add(-2 * time.Hour)
+			case "future health":
+				agent.Health.CheckedAt = agentContextTestNow.Add(2 * time.Minute)
+			case "no health timestamp":
+				agent.Health.CheckedAt = time.Time{}
+			case "no freshness window":
+				agent.Health.FreshFor = 0
+			}
+			card := mapRegistryAgentCard(agent, agentContextTestNow)
+			wantReady := name == "free capacity" || name == "last free slot"
+			wantStatus := "configured_unavailable"
+			wantReadiness := "declaration_ready=false"
+			if wantReady {
+				wantStatus = "configured_unverified"
+				wantReadiness = "declaration_ready=true"
+			}
+			if card.Status != wantStatus || card.Verified || card.LastVerifiedAt != nil {
+				t.Fatalf("declaration readiness or verification = %#v, want status %s without verification", card, wantStatus)
+			}
+			if !strings.Contains(card.Availability, wantReadiness) || card.HealthStatus != "declared_"+string(agent.Health.Status) {
+				t.Fatalf("declaration labels lost readiness or health configuration: %#v", card)
+			}
+			wantRevoked := name == "disabled" || name == "quarantined"
+			if card.Revoked != wantRevoked || (wantRevoked && card.RevocationReason == "") {
+				t.Fatalf("lifecycle revocation = %#v, want revoked %t", card, wantRevoked)
+			}
+		})
 	}
 }
 
@@ -199,6 +273,10 @@ func TestTaskFrameworkSelectionLoadsRegistryAgentsOnlyWhenAbsent(t *testing.T) {
 	if len(selector.request.AvailableAgents) != 1 ||
 		selector.request.AvailableAgents[0].ID != agent.ID {
 		t.Fatalf("selector agents = %#v", selector.request.AvailableAgents)
+	}
+	if card := selector.request.AvailableAgents[0]; card.Verified || card.LastVerifiedAt != nil ||
+		card.Status != "configured_unverified" || card.HealthStatus != "declared_healthy" {
+		t.Fatalf("task selection elevated registry configuration into verified capability: %#v", card)
 	}
 
 	explicit := frameworkregistry.AgentCard{ID: "explicit-agent"}

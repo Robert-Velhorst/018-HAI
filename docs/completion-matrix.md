@@ -14,6 +14,15 @@ Honest status of the review items. Columns are deliberately separated so
 
 Legend: ✅ done · 🟡 partial · ⬜ not yet · — n/a
 
+**Freshness boundary:** the dated Trello and Gmail runs below are historical
+evidence reported for 2026-07-23. They do not establish acceptance for the
+current checkout, a newly connected account, or a release candidate. The
+2026-10-01 production integration ledger records no live Trello or Gmail
+acceptance in that phase; the current provider status is in
+[`external-provider-reality-review.md`](external-provider-reality-review.md).
+Treat the historical results as scenario evidence only, not as a closed
+current-release gate.
+
 ## 1. Live connectors
 
 | Item | Implemented | Unit-tested | Sandbox-tested | Live-tested | Notes / Deferred |
@@ -34,8 +43,8 @@ The authenticated `/agent-teams` workspace now exposes the local governed
 Agent Teams chain end to end: server-expanded advisory charter creation,
 bounded membership and lifecycle, canonical evidence-backed votes, exact
 message acknowledgments, deterministic consensus, attention state, and the
-hash-linked audit ledger. The full backend suite, 379 frontend tests, direct
-TypeScript compilation, cold Node 22.22.3 and Go production-image builds, and the
+hash-linked audit ledger. The full backend suite, 378 frontend tests, direct
+TypeScript compilation, cold Node 20 and Go production-image builds, and the
 deployed authenticated route pass. Browser acceptance covered the persisted
 team, post-consensus next-action state, console errors, and horizontal overflow
 at desktop and the browser's narrow mobile floor. The frontend rejects any
@@ -94,14 +103,14 @@ execution, or establish live external multi-agent delivery.
 | Single-use portfolio workflow creation | Yes | Yes | Yes | No | Owner-only `POST /api/v1/pursuits/portfolio-execution-proposal-items/:itemId/execute-workflow` requires an authorized receipt, exact item/decision digests, and `CREATE APPROVED PORTFOLIO WORKFLOW`. First use revalidates the current approval and atomically consumes the exact receipt authority for one consumer/target. Migrations `0042` and `0043` plus idempotent workflow intake ensure one active receipt-bound workflow and one keyed effect event. Exact retries load the linked workflow directly; interrupted retries can recover a missing link or audit event without repeated intake, receipt consumption, links, or effect activities. Historical audit rows are preserved. The workflow starts `needs_approval`, remains local and reversible, and is linked and audited. Full Go, 287 Angular tests, production build, and local API/browser replay acceptance pass. The response is `workflow_effect_executed`, `canExecute:false`; it does not run the workflow, invoke providers, settle reservations, or claim completion. |
 | Governed portfolio dispatch coordination | Yes | Yes | Yes | No | Owner-only single and batch coordination previews operate on immutable execution proposals; the batch accepts 1-20 unique proposal IDs, preserves request order, uses fixed aggregate reads, caps combined items at 500, and fails the whole request when any proposal is unavailable to the owner. The route rejects a 21-ID request before storage access and has authenticated read-permission coverage. Robert must select 1-20 eligible items and enter `DISPATCH APPROVED PORTFOLIO WORKFLOWS`; nothing is preselected. Migration `0045` stores append-only run and item-attempt records, validates exact proposal/item/decision/receipt/workflow provenance in PostgreSQL, and refuses update/delete/truncate. Each selected item independently revalidates its current unexpired approval and policy before creating at most one receipt-bound `needs_approval` local workflow. Exact retries replay completed items and can resume partial runs; malformed owner, actor, digest, duplicate or incomplete selection, counters, or workflow evidence fails closed. The full Go suite, 314 Angular tests, production build, isolated PostgreSQL aggregate-query test, deployed browser recovery, retained-volume migration, and live append-only plus invalid-provenance trigger probes pass. This coordinator does not create approvals, run workflows, settle capacity, or call external providers, so real-world execution acceptance is intentionally not claimed. |
 | Exact reviewed workflow run command | Yes | Yes | Yes | No | Owner-only `POST /api/v1/workflow/:id/run` atomically claims only the named ready and approved workflow, reuses the existing task/runtime authorization and verification worker, and returns the real terminal, retry, blocked, review, or skipped outcome. Duplicate invocation cannot run a completed item, foreign owners receive no access, emergency stop remains effective, and the Workflow Engine requires deliberate confirmation. Focused service/handler/router tests, all 289 Angular tests, and the local login/source/sync/workflow/approval/exact-run Playwright chain pass. External mutable-provider acceptance is not claimed. |
-| Owner-scoped internal reminder proposals | Yes | Yes | Yes | No | `GET /api/v1/workflow/reminder-proposals` projects open checklist `ReminderAt` records for only the authenticated owner across a bounded 1-720 hour horizon and 1-200 item limit. Completed, archived, closed-checklist, ownerless, and foreign-owner records are excluded. Every item and snapshot is `reminder_proposal_only`, `canExecute:false`, current but revalidation-required, and counter/identity validated by the Workflow Engine. Focused service/handler/router tests, a real PostgreSQL owner-isolation query test, 324 Angular tests, and the production build pass. This read model does not persist approval, activate a reminder, schedule a notification, send a message, run a follow-up, or write Calendar data. |
+| Owner-scoped internal reminder proposals | Yes | Yes | Yes | No | `GET /api/v1/workflow/reminder-proposals` projects open checklist `ReminderAt` records for only the authenticated owner across a bounded 1-720 hour horizon and 1-200 item limit. Completed, archived, closed-checklist, ownerless, and foreign-owner records are excluded. Every item and snapshot is `reminder_proposal_only`, `canExecute:false`, current but revalidation-required, and counter/identity validated by the Workflow Engine. Focused service/handler/router tests, a real PostgreSQL owner-isolation query test, 447 Angular tests, and the production build pass. This read model does not persist approval, activate a reminder, schedule a notification, send a message, run a follow-up, or write Calendar data. |
 | Append-only reminder activation request/decision ledger | Yes | Yes | Yes | Local stack | Migrations `0046` and `0047` plus owner-scoped workflow APIs append immutable `internal_notification` preparation requests and chained `approved`, `rejected`, `needs_clarification`, or `revoked` decisions. Requests bind the current workflow/checklist reminder digest, actor/owner, idempotency key, exact confirmation, and expiry; decisions bind the immutable request digest, reason, previous chain tip, exact decision confirmation, and any approval expiry. `0047` rejects a decision timestamp that does not strictly advance beyond the current chain tip. Database constraints and triggers reject foreign/stale sources and update/delete/truncate. Preparation and approval still cannot deliver a reminder or grant effect authority; delivery requires the separate exact authorization below. |
-| Internal reminder delivery worker and receipt ledger | Yes | Yes | Yes | Local stack | Owner-only authorization binds the exact current preparation, approval decision, reminder digest, `in_app` channel, idempotency key, and `AUTHORIZE ONE INTERNAL HAI REMINDER`. Migrations `0055` through `0057` preserve append-only authorization/attempt evidence, database-level source and decision provenance, exactly one authorization per approved decision/channel, at most three attempts, terminal suppression, and explicit `dead_lettered` receipts. The workflow sweep revalidates revocation and source drift before every attempt and hands successful delivery only to the local owner-scoped proactivity inbox. Replay uses stable evidence rather than generated IDs/timestamps. Workflow Engine exposes the explicit single authorization, bounded owner-scoped due pass, compact status, and Advanced receipt provenance. Focused service/route/migration tests, live PostgreSQL replay, all 367 Angular tests, and production build pass. This path cannot send email/messages, write Calendar data, invoke webhooks/desktop push/providers, run workflows, or perform external follow-up effects. No external notification acceptance is claimed. |
+| Internal reminder delivery worker and receipt ledger | Yes | Yes | Yes | Local stack | Owner-only authorization binds the exact current preparation, approval decision, reminder digest, `in_app` channel, idempotency key, and `AUTHORIZE ONE INTERNAL HAI REMINDER`. Migrations `0055` through `0057` preserve append-only authorization/attempt evidence, database-level source and decision provenance, exactly one authorization per approved decision/channel, at most three attempts, terminal suppression, and explicit `dead_lettered` receipts. The workflow sweep revalidates revocation and source drift before every attempt and hands successful delivery only to the local owner-scoped proactivity inbox. Replay uses stable evidence rather than generated IDs/timestamps. Workflow Engine exposes the explicit single authorization, bounded owner-scoped due pass, compact status, and Advanced receipt provenance. Focused service/route/migration tests, live PostgreSQL replay, all 447 Angular tests, and production build pass. This path cannot send email/messages, write Calendar data, invoke webhooks/desktop push/providers, run workflows, or perform external follow-up effects. No external notification acceptance is claimed. |
 | Immutable proactive-attention feedback | Yes | Yes | Yes | No | Migration `0048`, owner-scoped GET/POST APIs, the evaluator, and Governance Control support accept, exact-revision dismiss, bounded snooze, indefinite suppression, and resume. Records are append-only, chained, idempotent, source-decision-bound, secret-rejecting, and always `attention_feedback_only` with delivery/execution authority false. Unit, router, Angular, migration-contract, and isolated PostgreSQL lifecycle tests cover replay after a successor, owner isolation, source binding, and update/delete/truncate rejection. This controls dashboard attention only; it does not send notifications or execute work. |
 | Verified portfolio reservation settlement | Yes | Yes | Yes | No | Owner-only `POST /api/v1/pursuits/portfolio-execution-proposal-items/:itemId/settle-workflow` requires the exact item digest, linked workflow ID, measured effort/cost, and `SETTLE VERIFIED PORTFOLIO WORK`. Migration `0044` makes the normal worker append an immutable completion attestation only for `verified` or `test_passed` outcomes. Settlement locks and revalidates the proposal item, original approved decision, reservation, authorization receipt and exact consumption, single receipt-bound pursuit link, completed workflow projection, and attestation before atomically appending the ledger settlement, portfolio proof, effort/cost events, and activity. It then records one idempotent controlled-learning outcome from the proof, attestation, receipt, and estimated-versus-actual usage. Three comparable owner/project-scoped outcomes may create a deterministic median/MAD calibration proposal with bounded factors, confidence, observation window, and exact evidence digest. Approved, rejected, and rolled-back reviews anchor the evidence window, so a subsequent proposal requires three fresh comparable outcomes. An unresolved proposal remains the single scope review item; later evidence is counted and checked for material drift without creating competing approvals. The proposal remains inert until explicit owner approval through Governance Control; rollback removes it from planning eligibility. A learning outage cannot invalidate accounting, and replay retries evidence without repeating settlement or execution. Exact replay remains valid after workflow archival; changed usage, weak verification labels, forged mutable completion, missing attestation, or duplicate receipt links fail closed. This is explicit verified accounting and governed learning, not automatic self-modification, external-provider acceptance, or new execution authority. |
 | Server-owned system workload classification | Yes | Yes | Yes | No | The local safe worker, task-runtime launcher, and local model-maintenance worker have exact operation, stage, resource, tool/runtime, authority, autonomy, risk, reversibility, and zero-cost contracts. Unknown system actors or caller-declared downgrades are denied before later policy layers. The policy is rechecked before receipt consumption and exposed through redacted inspection evidence. This does not validate an external runtime or provider. |
 | Selector-v5 execution contract binding | Yes | Yes | No | No | Task-plan digests, workflow provenance, side-effect-free preview comparison, and unified authorization receipts retain the selected framework risk ceiling, maximum autonomy level, and exact-approval requirement. Over-ceiling execution and missing framework-required case approval fail closed. This proves internal enforcement, not an external provider effect. |
-| Exact owner-scoped immutable selector-v5 resolution | Yes | Yes | No | No | Execution authorization resolves the selection by authenticated owner and exact UUID, independently compares IDs, versions, risk, autonomy, approval, and all governance digests, and denies with `framework.selection_unverified` before ordinary policy evaluation on absence or mismatch. `AuthorizeAndConsume` repeats the comparison before the single consumption reservation. This proves repository and authorization behavior, not a configured external runtime. |
+| Exact owner-scoped immutable selector-v5 resolution | Yes | Yes | No | No | Execution authorization resolves a selector-v5 selection by authenticated owner and exact UUID, independently compares IDs, versions, risk, autonomy, approval, and all governance digests, and denies with `framework.selection_unverified` before ordinary policy evaluation on absence or mismatch. Historical selector-v4 records remain readable but a new side effect is denied with `framework.selection_legacy_execution_denied` until fresh selector-v5 planning completes. `AuthorizeAndConsume` repeats the selector-v5 comparison before the single consumption reservation. This proves repository and authorization behavior, not a configured external runtime. |
 | Main router and Phase2 resolver composition | Yes | Yes | No | No | Both `router/routes.go` and `phase2/module.go` install the immutable Framework Registry adapter and durable framework-evidence preflight adapter on the execution-authorization service; the task engine shares that preflight repository. A selector-v5 path therefore fails closed if either exact resolver cannot be constructed. This has focused package coverage; no external provider or account is exercised. |
 | Typed three-phase framework evidence contract | Yes | Yes | No | No | Planning preserves each source framework and compiles a deterministic requirement ID, required flag, validator, freshness limit, and `pre_authorization`, `execution`, or `postcondition` phase. Applicable pre-authorization requirements are evaluated before any allowed step; missing evidence blocks with `needs_review` and records zero external effects. Typed execution/postcondition requirements use exact phase-specific evaluators and fail closed when unsupported; the fuzzy matcher remains only for historical string-only plans. Provider-specific live assertion producers remain untested. |
 | Framework preflight provenance binding and independent resolution | Yes | Yes | Yes | No | A canonical digest binds owner, task plan, framework selection, evaluation time, assertions, evidence, and failures. Before controlled tool/local execution, the passing tuple is stored in the append-only owner-scoped 0030 ledger. Selector-v5 authorization resolves it exactly and repeats the check before receipt consumption; persistence failure records zero executor calls. Live PostgreSQL migration, immutability, constraint, replay, and owner-isolation checks pass. No external provider effect is claimed. |
@@ -122,26 +131,13 @@ execution, or establish live external multi-agent delivery.
 | Governance Control and guarded routes | Yes | Required acceptance | Required acceptance | No | Governance Control can configure a fixed collector, select a target, pause/resume it, run a bounded due pass, and inspect observations/runs. API routes require authenticated owner scope, a recognized role, and read/write/admin permissions as appropriate. Signed-in browser acceptance remains required. |
 | No-authority boundary | Yes | Required acceptance | Required acceptance | No | Targets, observations, runs, composition deliveries, and attempt receipts remain `advisory_monitor_only`; all execution, delivery, notification, external-effect, and learning-mutation capability flags are false. Required acceptance must prove no task/runtime execution, notification, message delivery, Calendar write, workflow mutation, mandate authorization, external provider call, or learning mutation occurs during configuration, scheduled/manual runs, composition retries, dead-lettering, or recovery. |
 
-### Governed ngrok HTTPS profile
-
-The disabled-by-default `cloud-tunnel` profile is implemented and
-contract-tested. It uses a digest-pinned ngrok agent and exposes only nginx on
-the private Docker network. Container and Windows preflight gates reject local
-login bypass, insecure cookies, non-production mode, non-loopback gateway
-binding, missing tokens, and invalid public origins; the Windows gate also
-rejects placeholder HAI secrets and mismatched Google callbacks. Compose and
-ngrok v3 configuration validation, shell syntax, positive and negative gate
-cases, and Windows CI contracts pass. A real ACL-restricted token/domain and a
-retained external login acceptance run remain required before this path is
-live-proven.
-
 ## 3. Production engineering
 
 | Item | Implemented | Unit-tested | Sandbox-tested | Live-tested | Notes / Deferred |
 | --- | :--: | :--: | :--: | :--: | --- |
 | Versioned DB migrations (`backend/migrations/`, `internal/infra/migrate.go`) | ✅ | ✅ | ✅ | ✅ | Runner + `schema_migrations` + two-phase (pre/post) + `migrate status\|up\|down` CLI. **Verified against real Postgres 17**: full schema apply, idempotency, rollback+re-apply. Destructive lifecycle tests now create one temporary database per test and load only the ordered migration chain through the target, so they cannot modify the configured HAI database or collide with later migrations. |
 | Replace production reliance on AutoMigrate | ✅ | ✅ | ✅ | ✅ | **Done.** Generated baseline (`pre/0002_baseline`, 53 tables / 301 indexes / 56 guarded constraints) and `DB_AUTOMIGRATE` now defaults to **false**. Proven 3 ways on real Postgres 17: fresh DB builds all 54 tables from migrations alone; re-run idempotent; baseline safe over an existing AutoMigrate-built DB. Regenerate via `scripts/generate-migration-baseline.sh`. |
-| Durable worker (scheduling/retry) | ✅ | ✅ | ✅ | ⬜ | **Built** (`internal/durablejob`): persisted jobs, `RunAt` scheduling, bounded retry with backoff, dead-lettering, lease-based crash recovery, panic containment. 8 tests pass incl. **real Postgres**: survives process restart, 25 jobs × 2 concurrent workers each executed exactly once (`FOR UPDATE SKIP LOCKED`), orphaned leases reclaimed. **All three schedulers now run on it** — source (`source.scan` → one retryable `source.sync` per due source), workflow (`workflow.sweep`), and ambient (`ambient.scan`), via a shared `RegisterRecurring` helper that keeps each a self-rescheduling singleton. Each falls back to its legacy in-process ticker (with a log line) if the queue is unreachable. Recurring jobs reschedule on success **or** final attempt, so a burst of failures cannot silently kill a schedule. |
+| Durable worker (scheduling/retry) | ✅ | ✅ | ✅ | ⬜ | **Built** (`internal/durablejob`): persisted jobs, `RunAt` scheduling, bounded retry with backoff, dead-lettering, lease-based crash recovery, panic containment. Focused tests include real Postgres coverage for restart survival, concurrent `FOR UPDATE SKIP LOCKED` claims, and orphaned-lease recovery. **All three schedulers now run on it** — source (`source.scan` → one retryable `source.sync` per due source), workflow (`workflow.sweep`), and ambient (`ambient.scan`) — via a shared `RegisterRecurring` helper that keeps each a self-rescheduling singleton. A recurring occurrence's terminal update and replacement occurrence are committed atomically under a queue/kind advisory lock, so a terminal-write failure cannot leave a duplicate schedule. Each falls back to its legacy in-process ticker (with a log line) if the queue is unreachable. Recurring jobs reschedule on success **or** final attempt, so a burst of failures cannot silently kill a schedule. |
 | Two-account isolation | ✅ | ✅ | ✅ | ✅ | **Live-proven against a running stack (2026-07-23), 9/9 assertions pass.** Two authenticated owners over real HTTP + real Postgres: source listing, extracted content, grounded search, and sync history are all owner-scoped, and the second owner cannot pause/sync/revoke the first owner's source by id — each returns **404, not 403**, so the refusal does not confirm the resource exists. Repeatable: `scripts/two-account-isolation-test.sh` (exits non-zero on first failure). Complements the unit-level test. |
 | Risky runtimes disabled until gated | ✅ | ✅ | — | ⬜ | Agent runtimes, browser automation, paid providers, and external side effects are disabled by default behind approval boundaries. Per-runtime **live** integration tests remain deferred gates. |
 
@@ -156,13 +152,13 @@ live-proven.
 
 ## Remaining external gates (need resources outside this environment)
 
-> ✅ **Trello live run closed 2026-07-23** — see §1.
+> ℹ️ **Historical Trello run reported 2026-07-23** — not current-revision or current-account acceptance; see the freshness boundary above.
 > ✅ **Two-account isolation closed 2026-07-23** — see §3.
-> ✅ **Gmail sandbox acceptance closed 2026-07-23** — see §1 (two defects found and fixed).
+> ℹ️ **Historical Gmail sandbox run reported 2026-07-23** — not current-revision or current-account acceptance; see the freshness boundary above.
 > ✅ **Owner-scoped outcome local-stack acceptance closed 2026-08-03** — see §2.
 > ✅ **Local browser operator chain closed 2026-08-04** — see §2.
 
-1. **Windows 11 fresh-clone run** — `docker compose up --build` + the full operator flow on a clean Windows host.
+1. **Windows 11 fresh-clone run** — `docker compose --env-file .env.local -f docker-compose.local.yml up --build -d` plus the full operator flow on a clean Windows host.
 2. **Per-runtime live tests** — one controlled integration test + approval boundary each for agent runtimes, browser automation, and any paid provider before enabling.
 3. **External commitment/cost reconciliation** — verify sourced obligations and financial events against explicitly authorized provider accounts before treating the local ledger as reconciled operational truth.
 4. **Standing-mandate runtime acceptance** — prove that a configured runtime honors exact scope, expiry, approval, risk, stop-condition, and revocation decisions end to end; the advisory life-graph node is not evidence of enforcement by an external runtime.
@@ -176,23 +172,38 @@ live-proven.
 
 ## Reproduce the automated evidence
 
-If the matching local toolchain is unavailable, use the pinned backend
-container (Go 1.25.12):
+For current evidence and limitations, use the dated
+[production integration ledger](../output/production-integration-20261001.md).
+Local test results do not establish live Trello account acceptance.
+
+If the matching local toolchain is unavailable, use the cached backend
+container (Go 1.27.2):
 
 ```bash
 # Unit tests (no external services)
-docker run --rm -v "$PWD/backend":/app -w /app golang:1.25.12 go test ./...
+docker run --rm -v "$PWD/backend":/app -w /app golang:1.27.2 go test ./...
 
 # Trello connector tests
-docker run --rm -v "$PWD/backend":/app -w /app golang:1.25.12 \
+docker run --rm -v "$PWD/backend":/app -w /app golang:1.27.2 \
   go test ./internal/source/ -run Trello -v
-
-# Migration runner vs REAL Postgres 17 (data dir on tmpfs so it needs no disk)
-docker network create hai-net
-docker run -d --name hai-pg --network hai-net --tmpfs /var/lib/postgresql/data \
-  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=automation_hub postgres:17-alpine
-docker run --rm --network hai-net \
-  -e HAI_TEST_DATABASE_DSN="host=hai-pg user=postgres password=postgres dbname=automation_hub port=5432 sslmode=disable TimeZone=UTC" \
-  -v "$PWD/backend":/app -w /app golang:1.25.12 \
-  go test -tags integration -run 'Migrat|Rollback' ./internal/infra/ -v
 ```
+
+These unit commands skip optional database suites when no test configuration is
+provided. To exercise Trello persistence, first provision an owned disposable
+PostgreSQL instance and apply all backend migrations. Its database must be named
+exactly `hai_migration_runner_test`, accessible through a literal loopback IP
+(not a hostname or another `_test` database). Set `HAI_TEST_DATABASE_DSN` to that
+test connection and `HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS=true`, then run from
+`backend`:
+
+```bash
+go test -count=1 -race -run '^TestTrelloPostgres' ./internal/source/ -v
+```
+
+All four repository tests must report PASS; missing schema, unavailable opted-in
+connections or unsafe destinations are failures, not acceptance skips. The
+additional guard test performs no network access. The dated Windows parent
+runner `output/production-postgres-rehearsal-20261001.ps1 -IncludeTrello` creates
+its own no-host-port tmpfs fixture and performs verified owner-only cleanup.
+Neither method should target the personal HAI database. The previous hostname/
+`automation_hub` recipe does not satisfy the current destructive-test guard.

@@ -1,13 +1,22 @@
 package modelintelligence
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+	"strings"
+)
 
-// ModelMaintenanceGate is implemented by HAI's canonical LLM policy service.
-// Model Intelligence is an auxiliary local lane, so it never owns a parallel
-// model update policy or lets a benchmark bypass the routing service's daily
-// freshness decision.
+// ModelMaintenanceGate is the legacy-compatible surface implemented by HAI's
+// canonical LLM policy service. Local inference additionally requires the
+// context-aware extension below so request cancellation can stop maintenance.
 type ModelMaintenanceGate interface {
 	EnsureConfiguredLocalModel(endpointURL, modelID string) error
+}
+
+// ContextModelMaintenanceGate is implemented by the canonical LLM service so
+// request cancellation also stops waiting for or performing a local refresh.
+type ContextModelMaintenanceGate interface {
+	EnsureConfiguredLocalModelWithContext(ctx context.Context, endpointURL, modelID string) error
 }
 
 // MaintainedProvider identifies a real local model runtime that must pass the
@@ -16,6 +25,17 @@ type ModelMaintenanceGate interface {
 // there is no downloaded model artifact to update or verify.
 type MaintainedProvider interface {
 	ModelMaintenanceIdentity() (endpointURL, modelID string, ok bool)
+}
+
+// deterministicLocalInference is intentionally package-private so only the
+// built-in deterministic providers can opt out of model-artifact maintenance.
+type deterministicLocalInference interface {
+	isDeterministicLocalInference()
+}
+
+func isDeterministicProvider(provider Provider) bool {
+	_, ok := provider.(deterministicLocalInference)
+	return ok
 }
 
 // MaintainedLocalProvider preserves the original public interface name for
@@ -34,23 +54,51 @@ func (s *Service) WithModelMaintenance(gate ModelMaintenanceGate) *Service {
 	return s
 }
 
-func (s *Service) ensureModelMaintenance(provider Provider) error {
-	maintained, ok := provider.(MaintainedProvider)
-	if !ok {
+func (s *Service) ensureModelMaintenance(ctx context.Context, provider Provider, selected ModelProfile) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if nilModelDependency(provider) || strings.TrimSpace(provider.ID()) == "" || strings.TrimSpace(selected.ProviderID) != strings.TrimSpace(provider.ID()) || strings.TrimSpace(selected.ModelID) == "" {
+		return fmt.Errorf("selected model maintenance metadata is unavailable")
+	}
+	// Provider-hosted models are checked and maintained by their provider. They
+	// must never be sent to HAI's local artifact updater.
+	if !selected.Local {
 		return nil
 	}
-	endpointURL, modelID, applicable := maintained.ModelMaintenanceIdentity()
-	if !applicable {
+	if _, ok := provider.(deterministicLocalInference); ok {
 		return nil
+	}
+	maintained, ok := provider.(MaintainedProvider)
+	if !ok {
+		return fmt.Errorf("daily model maintenance identity is unavailable for this local model runtime")
+	}
+	endpointURL, modelID, applicable := maintained.ModelMaintenanceIdentity()
+	if !applicable || strings.TrimSpace(endpointURL) == "" || strings.TrimSpace(modelID) == "" {
+		return fmt.Errorf("daily model maintenance identity is unavailable for this local model runtime")
+	}
+	if strings.TrimSpace(modelID) != strings.TrimSpace(selected.ModelID) {
+		return fmt.Errorf("daily model maintenance identity does not match selected model %q", strings.TrimSpace(selected.ModelID))
 	}
 	s.mu.Lock()
 	gate := s.maintenanceGate
 	s.mu.Unlock()
-	if gate == nil {
+	if nilModelDependency(gate) {
 		return fmt.Errorf("daily model maintenance gate is unavailable for this local model runtime")
 	}
-	if err := gate.EnsureConfiguredLocalModel(endpointURL, modelID); err != nil {
-		return fmt.Errorf("daily model maintenance blocked local model execution: %w", err)
+	contextual, ok := gate.(ContextModelMaintenanceGate)
+	if !ok {
+		return fmt.Errorf("daily model maintenance gate does not support request cancellation")
+	}
+	err := contextual.EnsureConfiguredLocalModelWithContext(ctx, endpointURL, modelID)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		return fmt.Errorf("daily model maintenance blocked local model execution: %w", redactModelError(err))
 	}
 	return nil
 }

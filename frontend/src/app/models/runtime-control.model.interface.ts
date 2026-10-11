@@ -16,6 +16,7 @@ export interface IDockerStatus {
 export interface IBackgroundStatus {
   mode: string
   storedMode: string
+  modeStateError?: string
   emergencyStop: IEmergencyStopState
   backgroundProcessingActive: boolean
   docker: IDockerStatus

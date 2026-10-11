@@ -24,7 +24,7 @@ and are the humans-in-the-loop placed where they matter?"
 | --- | --- |
 | Safe defaults | Strong — fail toward review/block, production-strict. |
 | Human decision minimization | Good — `autonomygate` auto-approves only safe, reversible, high-confidence cases. |
-| Escape hatch | Strong — emergency stop halts execution instantly. |
+| Escape hatch | Strong — emergency stop blocks new execution immediately. HAI cancels an in-flight run only where the adapter retains a supported cancellation handle; otherwise the run remains bounded by its configured timeout and is recorded for review. |
 | Transparency | Good — grounded answers, quality bands, audit trail. |
 
 ## Gaps

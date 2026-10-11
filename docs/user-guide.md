@@ -37,7 +37,7 @@ and approve or reject; nothing with real side effects runs without your approval
 
 ## Safety controls
 
-- **Emergency stop** halts execution immediately while keeping planning visible.
+- **Emergency stop** blocks new execution immediately while keeping planning visible. It cancels an in-flight run only when that runtime supports a retained cancellation handle; otherwise the run remains bounded by its configured timeout and is flagged for review.
 - **Readiness** (`/readyz`) tells you if the system is correctly configured.
 
 ## Getting help

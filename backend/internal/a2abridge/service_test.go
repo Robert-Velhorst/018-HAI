@@ -131,3 +131,37 @@ func TestHandlerRejectsOldShapesAndUnsupportedA2AVersion(t *testing.T) {
 		t.Fatalf("version response = %d %s", response.Code, response.Body.String())
 	}
 }
+
+func TestHandlerRejectsAmbiguousJSONRPCRequestsBeforePlanning(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	planner := &previewStub{}
+	handler := NewHandler(configuredService(planner))
+	router := gin.New()
+	router.POST("/api/v1/a2a", handler.Send)
+
+	validMessage := `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"message-1","role":"ROLE_USER","parts":[{"text":"Plan safely"}]}}}`
+	for name, body := range map[string]string{
+		"trailing payload":  validMessage + ` {"unexpected":"second request"}`,
+		"array request id":  strings.Replace(validMessage, `"id":1`, `"id":[]`, 1),
+		"object request id": strings.Replace(validMessage, `"id":1`, `"id":{}`, 1),
+		"null request id":   strings.Replace(validMessage, `"id":1`, `"id": null`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/a2a", strings.NewReader(body))
+			request.Header.Set("Authorization", "Bearer "+testBridgeToken)
+			request.Header.Set("A2A-Version", "1.0")
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":-32600`) {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			if name != "trailing payload" && !strings.Contains(response.Body.String(), `"id":null`) {
+				t.Fatalf("invalid request id must be normalized to null: %s", response.Body.String())
+			}
+		})
+	}
+	if len(planner.requests) != 0 {
+		t.Fatalf("ambiguous JSON-RPC input reached the planning service: %#v", planner.requests)
+	}
+}

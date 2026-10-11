@@ -2,6 +2,10 @@
 .env
 .env.local
 .env.*.local
+.env.browser-acceptance
+.env-backend
+.env-gateway
+.env-idp
 
 # Local runtime state.
 db_data_automation/
@@ -12,6 +16,7 @@ images/
 frontend/node_modules/
 frontend/.npm-cache/
 frontend/dist/
+.angular/
 backend/images/
 backend/.gocache-*/
 **/__pycache__/
@@ -46,10 +51,15 @@ security-snapshots/
 support-bundle-*.zip
 support-bundle-*.tar.gz
 
+# Generated Windows installer payloads and executables.
+/installer/release/
+
 # Local tooling and agent runtime state (not part of the delivered product).
 .claude/
 /agent-workspaces/*
 !/agent-workspaces/.gitkeep
+/phase2-feeds/*
+!/phase2-feeds/.gitkeep
 mini-swe-workspaces/
 hai-repo-link/
 

@@ -2,9 +2,11 @@ package infra
 
 import (
 	"automation-hub-idp/internal/app/config"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/IBM/sarama"
 )
@@ -43,12 +45,23 @@ func newKafkaProducer(brokers []string, client string, factory kafkaProducerFact
 		return nil, fmt.Errorf("Kafka client ID is required")
 	}
 	if !validKafkaClientID.MatchString(client) {
-		return nil, fmt.Errorf("Kafka client ID %q contains invalid characters; use only letters, numbers, dot, underscore, or hyphen", client)
+		return nil, fmt.Errorf("Kafka client ID contains invalid characters; use only letters, numbers, dot, underscore, or hyphen")
 	}
 
 	producerConfig := sarama.NewConfig()
 	producerConfig.ClientID = client
 	producerConfig.Net.MaxOpenRequests = 1
+	producerConfig.Net.DialTimeout = 3 * time.Second
+	producerConfig.Net.ReadTimeout = 10 * time.Second
+	producerConfig.Net.WriteTimeout = 10 * time.Second
+	producerConfig.Metadata.Timeout = 10 * time.Second
+	producerConfig.Metadata.Retry.Max = 1
+	producerConfig.Metadata.Retry.Backoff = 100 * time.Millisecond
+	producerConfig.ChannelBufferSize = 16
+	producerConfig.Producer.MaxMessageBytes = 128 * 1024
+	producerConfig.Producer.Timeout = 5 * time.Second
+	producerConfig.Producer.Retry.Max = 1
+	producerConfig.Producer.Retry.Backoff = 100 * time.Millisecond
 	producerConfig.Producer.Idempotent = true
 	producerConfig.Producer.RequiredAcks = sarama.WaitForAll
 	producerConfig.Producer.Return.Successes = true
@@ -59,6 +72,9 @@ func newKafkaProducer(brokers []string, client string, factory kafkaProducerFact
 
 	producer, err := factory(cleanBrokers, producerConfig)
 	if err != nil {
+		if producer != nil {
+			err = errors.Join(err, producer.Close())
+		}
 		return nil, fmt.Errorf("failed to create Kafka producer: %w", err)
 	}
 	if producer == nil {

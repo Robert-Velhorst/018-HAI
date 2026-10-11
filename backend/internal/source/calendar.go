@@ -69,7 +69,11 @@ func (s *service) fetchCalendarSource(ctx context.Context, source *models.Connec
 	if err != nil {
 		return nil, "", err
 	}
-	return fetchCalendarSourceWithClient(ctx, googleoauth.CalendarClient{AccessToken: access}, source, time.Now().UTC())
+	client := googleoauth.CalendarClient{
+		AccessToken: access,
+		HTTPClient:  s.googleOAuthReadHTTPClient(source.ID, calendarConnectorKey, access),
+	}
+	return fetchCalendarSourceWithClient(ctx, client, source, time.Now().UTC())
 }
 
 func fetchCalendarSourceWithClient(
@@ -78,6 +82,19 @@ func fetchCalendarSourceWithClient(
 	source *models.ConnectedSource,
 	now time.Time,
 ) ([]ImportItem, string, error) {
+	return fetchCalendarSourceWithClientRecovery(ctx, client, source, now, true)
+}
+
+func fetchCalendarSourceWithClientRecovery(
+	ctx context.Context,
+	client googleoauth.CalendarClient,
+	source *models.ConnectedSource,
+	now time.Time,
+	allowExpiredTokenRecovery bool,
+) ([]ImportItem, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 	cursor, err := decodeCalendarCursor(source.Cursor)
 	if err != nil {
 		return nil, "", err
@@ -93,20 +110,34 @@ func fetchCalendarSourceWithClient(
 	}
 	page, err := client.ListPrimaryEventsPage(ctx, cursor.PageToken, syncToken, timeMin, calendarFetchLimit)
 	if errors.Is(err, googleoauth.ErrCalendarSyncTokenExpired) {
+		if !allowExpiredTokenRecovery {
+			return nil, "", err
+		}
 		reset := *source
 		reset.Cursor = ""
-		return fetchCalendarSourceWithClient(ctx, client, &reset, now)
+		return fetchCalendarSourceWithClientRecovery(ctx, client, &reset, now, false)
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, "", googleProviderSyncError("Google Calendar", err)
+	}
+	if page.NextPageToken != "" && page.NextPageToken == cursor.PageToken {
+		return nil, "", fmt.Errorf("Google Calendar page did not advance its provider cursor")
 	}
 	projectKey := firstNonEmpty(source.DefaultProjectKey, "Robert-life-os")
 	items := make([]ImportItem, 0, len(page.Events))
 	for _, event := range page.Events {
-		if strings.TrimSpace(event.ID) == "" {
-			continue
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
 		}
+		eventID := strings.TrimSpace(event.ID)
+		if eventID == "" {
+			return nil, "", fmt.Errorf("Google Calendar event is missing its event ID")
+		}
+		event.ID = eventID
 		items = append(items, calendarEventToImportItem(event, projectKey))
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
 	}
 	if page.NextPageToken != "" {
 		cursor.PageToken = page.NextPageToken
@@ -257,7 +288,7 @@ func (s *service) CalendarBusyIntervalsForOwner(ownerIdentity string, start, end
 		return nil, fmt.Errorf("calendar source repository is unavailable")
 	}
 
-	sources, err := s.repo.FindSources(true)
+	sources, err := s.repo.FindSourcesVisibleToOwner(ownerIdentity, true)
 	if err != nil {
 		return nil, fmt.Errorf("find calendar sources: %w", err)
 	}
@@ -291,7 +322,7 @@ func (s *service) CalendarBusyIntervalsForOwner(ownerIdentity string, start, end
 			if itemEnd.After(end) {
 				itemEnd = end
 			}
-			key := item.ExternalID + "|" + itemStart.Format(time.RFC3339Nano) + "|" + itemEnd.Format(time.RFC3339Nano)
+			key := connected.ID.String() + "|" + item.ExternalID + "|" + itemStart.Format(time.RFC3339Nano) + "|" + itemEnd.Format(time.RFC3339Nano)
 			if seen[key] {
 				continue
 			}

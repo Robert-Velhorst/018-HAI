@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const testJWTSecret = "0123456789abcdef0123456789abcdef"
+var testJWTSecret = strings.Repeat("s", 32)
 
 func TestAuthenticationConfigNormalizesAndValidatesSettings(t *testing.T) {
 	setValidAuthenticationEnv(t)

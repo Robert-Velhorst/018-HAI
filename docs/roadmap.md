@@ -6,16 +6,15 @@ source of truth for current state.
 ## Near-term hardening
 
 - **Fresh-clone Windows acceptance (phase 032, TD-8):** the maintained Windows
-  Compose installation now builds and runs with healthy Postgres, Redis, Kafka,
-  nginx, IDP, backend, and frontend services. Repeat the same acceptance from a
-  clean clone and empty volumes before calling installation reproducibility
-  complete.
+  Compose installation runs the core Postgres, Redis, nginx, IDP, backend, and
+  frontend services by default. Kafka-compatible delivery is an explicit
+  `event-bus` profile. Repeat the same acceptance from a clean clone and empty
+  volumes before calling installation reproducibility complete.
 - **RBAC — done on the backend (phase 008/TD-9):** IDP-JWT identity→role is wired + runtime-proven. Remaining: IDP emits a `role` claim; broaden `requirePermission` onto more routes.
-- **Frontend dependency hardening (TD-6/BH-7) completed:** Angular 22.1.1,
-  ng-zorro 22.0.1, TypeScript 6.0.3, and the supported esbuild/Vite builder are
-  in place; the 379-test suite and production build pass; high/critical audit
-  findings are zero and blocking. Recheck the documented moderate CLI-only
-  exception by 2026-09-09 or when Angular CLI adopts MCP SDK 1.30+.
+- **Frontend dependency posture (TD-6/BH-7):** the checked-in dependency manifest
+  now pins Angular 22.1.1 and ng-zorro 22.0.1. Production dependency auditing is
+  blocking in CI; rerun the advisory check for each release rather than treating
+  a previous clean report as a current security guarantee.
 - Adopt the `apierror` envelope across handlers in step with the frontend (TD-1).
 - **Advisory outcome monitor release acceptance:** retain a disposable-PostgreSQL
   and signed-browser run for all three fixed collectors, exact replay after a
@@ -25,9 +24,12 @@ source of truth for current state.
   proactivity decisions, and inbox records, with zero execution, delivery,
   Calendar, workflow, mandate, provider, or learning effects.
 
-## Frontend follow-up
+## Frontend-dependent (need Angular work)
 
-- Wire the memory search UI and feature-flag/i18n surfaces into the dashboard (TD-7).
+- Memory search is wired to `/memory/query` with kind/tag filters, sort and
+  paging; focused UI/service tests and the integrated suite cover its local
+  contracts. Populated-data browser acceptance, feature-flag/i18n surfaces,
+  and large-data user-experience validation remain required (TD-7).
 - Deeper accessibility + cross-browser visual passes on the existing pages.
 
 ## Larger initiatives
@@ -44,12 +46,11 @@ source of truth for current state.
 
 | Item | Blocker | Next action |
 | --- | --- | --- |
+| DeepSeek Harness native execution | The production bridge entry points remain hard-disabled. The reviewed process-supervision tests do not establish a secure server-to-Windows start protocol, authenticated peer pinning, or an OS-enforced least-privilege sandbox. | Keep execution blocked. Implement and independently review each boundary, then run native Windows integration and operator acceptance before enabling any bridge path. |
 | Fresh-clone Windows 11 acceptance | The maintained local stack is proven, but it contains retained volumes and configured local state | Clone into a clean directory, create a new `.env.local`, build empty volumes, and run the documented operator chain |
 | Google Drive/Contacts/Calendar live acceptance | Live sandbox credentials and retained evidence; adapters remain unconfigured by default | Run bounded consent, backfill, incremental-change, revoke, and source-link acceptance for each account |
 | Paid LLM routing / grounded LLM verification | Paid-budget approval (currently €0); no LLM provider configured | Approve budget / configure a local LLM provider |
 
-Blocked items are blocked by external credentials/approvals or an unavailable
-Docker daemon — not by engineering difficulty — and are documented rather than faked.
-
-Blocked items are blocked by external credentials/approvals, not by engineering
-difficulty, and are documented rather than faked.
+Some remaining items need engineering before acceptance can begin; others need
+external credentials, operator approval, or a clean environment. Those blocker
+types are kept explicit rather than treated as interchangeable or faked.

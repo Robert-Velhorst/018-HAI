@@ -22,6 +22,24 @@ type FrameworkPreference struct {
 
 func (FrameworkPreference) TableName() string { return "framework_preferences" }
 
+// FrameworkPreferenceChange is an immutable audit event for an owner-scoped
+// framework preference mutation. Database triggers prevent edits and removal.
+type FrameworkPreferenceChange struct {
+	ID                  uuid.UUID `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()" json:"id"`
+	OwnerIdentity       string    `gorm:"type:varchar(255);not null;uniqueIndex:uq_framework_preference_changes_owner_framework_sequence,priority:1;index:idx_framework_preference_changes_owner_created,priority:1" json:"-"`
+	FrameworkID         string    `gorm:"type:varchar(160);not null;uniqueIndex:uq_framework_preference_changes_owner_framework_sequence,priority:2" json:"frameworkId"`
+	Sequence            uint64    `gorm:"not null;uniqueIndex:uq_framework_preference_changes_owner_framework_sequence,priority:3" json:"sequence"`
+	Actor               string    `gorm:"type:varchar(255);not null" json:"actor"`
+	Reason              string    `gorm:"type:varchar(1024);not null" json:"reason"`
+	BeforeJSON          *string   `gorm:"type:jsonb" json:"-"`
+	AfterJSON           string    `gorm:"type:jsonb;not null" json:"-"`
+	OccurredAt          time.Time `gorm:"not null;index:idx_framework_preference_changes_owner_created,priority:2" json:"occurredAt"`
+	PreviousEventDigest string    `gorm:"type:char(64)" json:"previousEventDigest,omitempty"`
+	EventDigest         string    `gorm:"type:char(64);not null" json:"eventDigest"`
+}
+
+func (FrameworkPreferenceChange) TableName() string { return "framework_preference_changes" }
+
 // FrameworkSelectionRecord is an append-only chief-of-staff selection audit.
 // It deliberately stores a compact redacted summary and request hash, never the
 // raw request or credentials. PostgreSQL prevents updates and deletes.

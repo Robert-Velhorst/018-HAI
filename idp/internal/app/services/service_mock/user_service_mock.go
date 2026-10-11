@@ -5,6 +5,7 @@ import (
 	"automation-hub-idp/internal/app/utils"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
+	"time"
 )
 
 type MockUserService struct {
@@ -31,6 +32,18 @@ func (m *MockUserService) GetUserByResetToken(token string) (*models.User, error
 	return args.Get(0).(*models.User), args.Error(1)
 }
 
+func (m *MockUserService) StorePasswordResetToken(id uuid.UUID, expectedSessionVersion int64, tokenDigest string, expiresAt time.Time) error {
+	return m.Called(id, expectedSessionVersion, tokenDigest, expiresAt).Error(0)
+}
+
+func (m *MockUserService) CompleteSuccessfulLogin(expected models.User) (*models.User, error) {
+	args := m.Called(expected)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.User), args.Error(1)
+}
+
 func (m *MockUserService) UpdateUser(user models.User) (*models.User, error) {
 	args := m.Called(user)
 	return args.Get(0).(*models.User), args.Error(1)
@@ -51,8 +64,18 @@ func (m *MockUserService) ResetPassword(email string, opts ...utils.PasswordRese
 	return args.Error(0)
 }
 
-func (m *MockUserService) UpdatePassword(id uuid.UUID, newPassword string) error {
-	args := m.Called(id, newPassword)
+func (m *MockUserService) UpdatePassword(id uuid.UUID, expectedSessionVersion int64, newPassword string) error {
+	args := m.Called(id, expectedSessionVersion, newPassword)
+	return args.Error(0)
+}
+
+func (m *MockUserService) ConsumePasswordResetToken(id uuid.UUID, token, newPassword string) error {
+	args := m.Called(id, token, newPassword)
+	return args.Error(0)
+}
+
+func (m *MockUserService) ClearPasswordResetToken(id uuid.UUID, token string) error {
+	args := m.Called(id, token)
 	return args.Error(0)
 }
 

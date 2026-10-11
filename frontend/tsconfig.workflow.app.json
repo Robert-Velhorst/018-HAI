@@ -1,0 +1,4 @@
+{
+  "extends": "./tsconfig.app.json",
+  "files": ["src/app/pages/workflow-engine/workflow-engine.module.ts"]
+}

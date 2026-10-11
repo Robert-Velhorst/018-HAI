@@ -256,6 +256,145 @@ func TestAgentTeamMessageAcknowledgmentsAreDurableAdvisoryAttentionState(t *test
 	}
 }
 
+func TestAgentTeamDecisionOverviewReadsMessagesOnceAndKeepsAttentionAdvisory(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 11, 10, 0, 0, 0, time.UTC)
+	base := NewMemoryAgentTeamRepository()
+	repo := &batchAttentionRepository{AgentTeamRepository: base}
+	service := newAgentTeamService(repo, func() time.Time { return now }, deterministicTeamIDs("decision-overview"))
+	team := createActiveTestTeam(t, service, "robert", now)
+	message := decisionMessage(t, team, now, deterministicUUID("decision-overview-correlation"), team.Members[0], team.Members[1], TeamVoteSupport, "Review the bounded plan.", "decision-overview-message")
+	message.RequiresAck = true
+	var err error
+	message.PayloadDigest, err = agentcoordination.ComputeMessageDigest(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := service.StoreCoordinationMessage("robert", team.ID, team.Version, message); err != nil || !created {
+		t.Fatalf("store message: created=%v err=%v", created, err)
+	}
+
+	overview, err := service.DecisionOverview("robert", team.ID, team.Version)
+	if err != nil {
+		t.Fatalf("DecisionOverview: %v", err)
+	}
+	if len(overview.Messages) != 1 || overview.Messages[0].ID != message.ID || len(overview.Attention) != 1 || overview.Attention[0].MessageID != message.ID {
+		t.Fatalf("decision overview = %#v", overview)
+	}
+	if !overview.Attention[0].AdvisoryOnly || overview.Attention[0].GrantsExecutionAuthority || !overview.Attention[0].ExecutionAuthorizationRequired {
+		t.Fatalf("decision overview crossed authority boundary: %#v", overview.Attention[0])
+	}
+	if repo.individualMessageCalls != 1 || repo.batchCalls != 1 || repo.individualCalls != 0 {
+		t.Fatalf("decision overview reads = messages:%d acknowledgment batch:%d individual acknowledgments:%d", repo.individualMessageCalls, repo.batchCalls, repo.individualCalls)
+	}
+}
+
+func TestAgentTeamMessageAttentionBatchesAcknowledgmentReadsWhenSupported(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 10, 9, 0, 0, 0, time.UTC)
+	base := NewMemoryAgentTeamRepository()
+	repo := &batchAttentionRepository{AgentTeamRepository: base}
+	service := newAgentTeamService(repo, func() time.Time { return now }, deterministicTeamIDs("batch-attention"))
+	team := createActiveTestTeam(t, service, "robert", now)
+	for index := 0; index < 2; index++ {
+		message := decisionMessage(
+			t,
+			team,
+			now.Add(time.Duration(index)*time.Minute),
+			deterministicUUID(fmt.Sprintf("batch-attention-correlation-%d", index)),
+			team.Members[index],
+			team.Members[1-index],
+			TeamVoteSupport,
+			"Review the bounded plan.",
+			fmt.Sprintf("batch-attention-message-%d", index),
+		)
+		if _, created, err := service.StoreCoordinationMessage("robert", team.ID, team.Version, message); err != nil || !created {
+			t.Fatalf("store message %d: created=%t err=%v", index, created, err)
+		}
+	}
+
+	attention, err := service.MessageAttention("robert", team.ID, team.Version)
+	if err != nil {
+		t.Fatalf("MessageAttention: %v", err)
+	}
+	if len(attention.Messages) != 2 {
+		t.Fatalf("attention messages = %#v", attention.Messages)
+	}
+	if repo.batchCalls != 1 || repo.individualCalls != 0 {
+		t.Fatalf("attention reads must use one batch call: batch=%d individual=%d", repo.batchCalls, repo.individualCalls)
+	}
+}
+
+func TestAgentTeamMessageAttentionIndexIsOwnerScopedAndUsesOneOverviewRead(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, time.August, 9, 10, 0, 0, 0, time.UTC)
+	base := NewMemoryAgentTeamRepository()
+	repo := &batchAttentionRepository{AgentTeamRepository: base}
+	service := newAgentTeamService(repo, func() time.Time { return now }, deterministicTeamIDs("attention-index"))
+	team := createActiveTestTeam(t, service, "robert", now)
+	message := decisionMessage(t, team, now, deterministicUUID("attention-index-correlation"), team.Members[0], team.Members[1], TeamVoteSupport, "Keep the bounded plan.", "attention-index-message")
+	if _, created, err := service.StoreCoordinationMessage("robert", team.ID, team.Version, message); err != nil || !created {
+		t.Fatalf("StoreCoordinationMessage = created %v, err %v", created, err)
+	}
+
+	index, err := service.MessageAttentionIndex("robert")
+	if err != nil {
+		t.Fatalf("MessageAttentionIndex: %v", err)
+	}
+	if len(index.Contracts) != 1 || index.Contracts[0].ID != team.ID || len(index.Teams) != 1 || index.Teams[0].TeamID != team.ID || index.Teams[0].TeamVersion != team.Version || len(index.Teams[0].Messages) != 1 {
+		t.Fatalf("unexpected owner-scoped attention index: %#v", index)
+	}
+	if repo.teamMessageBatchCalls != 1 || repo.individualMessageCalls != 0 {
+		t.Fatalf("attention index must batch team message reads: batch=%d individual=%d", repo.teamMessageBatchCalls, repo.individualMessageCalls)
+	}
+	other, err := service.MessageAttentionIndex("someone-else")
+	if err != nil {
+		t.Fatalf("MessageAttentionIndex(other owner): %v", err)
+	}
+	if len(other.Contracts) != 0 || len(other.Teams) != 0 {
+		t.Fatalf("owner-scoped attention leaked teams: %#v", other)
+	}
+}
+
+type batchAttentionRepository struct {
+	AgentTeamRepository
+	batchCalls             int
+	individualCalls        int
+	teamMessageBatchCalls  int
+	individualMessageCalls int
+}
+
+func (r *batchAttentionRepository) ListMessageAcknowledgments(owner, teamID, version, messageID string) ([]agentcoordination.Acknowledgment, error) {
+	r.individualCalls++
+	return nil, errors.New("per-message acknowledgment reads are not allowed in this attention test")
+}
+
+func (r *batchAttentionRepository) ListMessageAcknowledgmentsForMessages(owner, teamID, version string, messageIDs []string) (map[string][]agentcoordination.Acknowledgment, error) {
+	r.batchCalls++
+	result := make(map[string][]agentcoordination.Acknowledgment, len(messageIDs))
+	for _, messageID := range messageIDs {
+		acknowledgments, err := r.AgentTeamRepository.ListMessageAcknowledgments(owner, teamID, version, messageID)
+		if err != nil {
+			return nil, err
+		}
+		result[messageID] = acknowledgments
+	}
+	return result, nil
+}
+
+func (r *batchAttentionRepository) ListCoordinationMessages(owner, teamID, version, correlationID string) ([]agentcoordination.Message, error) {
+	r.individualMessageCalls++
+	return r.AgentTeamRepository.ListCoordinationMessages(owner, teamID, version, correlationID)
+}
+
+func (r *batchAttentionRepository) ListCoordinationMessagesForTeams(owner string, teams []AgentTeamContract) (map[string][]agentcoordination.Message, error) {
+	r.teamMessageBatchCalls++
+	return r.AgentTeamRepository.(*MemoryAgentTeamRepository).ListCoordinationMessagesForTeams(owner, teams)
+}
+
 func TestAgentTeamDeterministicValidationAndVersionProvenance(t *testing.T) {
 	t.Parallel()
 

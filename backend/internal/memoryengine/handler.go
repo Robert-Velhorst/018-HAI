@@ -1,6 +1,7 @@
 package memoryengine
 
 import (
+	"automation-hub-backend/internal/apierror"
 	"automation-hub-backend/internal/identity"
 	"errors"
 	"net/http"
@@ -23,13 +24,13 @@ func NewHandler(service Service) *Handler {
 func (h *Handler) Import(c *gin.Context) {
 	var request ImportRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid memory import request"})
 		return
 	}
 	request.OwnerIdentity = verifiedOwner(c)
 	result, err := h.service.Import(request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "memory import could not be completed")})
 		return
 	}
 	status := http.StatusCreated
@@ -43,7 +44,7 @@ func (h *Handler) Conversations(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	result, err := h.service.ConversationsForOwner(verifiedOwner(c), limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "memory conversations are unavailable"})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -56,7 +57,7 @@ func (h *Handler) Conversation(c *gin.Context) {
 	}
 	result, err := h.service.ConversationForOwner(verifiedOwner(c), id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": apierror.PublicMessage(err, "conversation not found")})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -72,7 +73,7 @@ func (h *Handler) DeleteConversation(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "conversation could not be deleted"})
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -91,7 +92,7 @@ func (h *Handler) Insights(c *gin.Context) {
 	}
 	result, err := h.service.InsightsForOwner(verifiedOwner(c), c.Query("kind"), c.Query("projectKey"), needsReview, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "memory insights are unavailable"})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -100,7 +101,7 @@ func (h *Handler) Insights(c *gin.Context) {
 func (h *Handler) Dashboard(c *gin.Context) {
 	result, err := h.service.DashboardForOwner(verifiedOwner(c))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "memory dashboard is unavailable"})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -113,12 +114,12 @@ func (h *Handler) Search(c *gin.Context) {
 		Limit      int    `json:"limit,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid memory search request"})
 		return
 	}
 	result, err := h.service.SearchForOwner(verifiedOwner(c), request.Query, request.ProjectKey, request.Limit)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "memory search could not be completed")})
 		return
 	}
 	c.JSON(http.StatusOK, result)

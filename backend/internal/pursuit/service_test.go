@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -762,7 +763,7 @@ func TestPursuitRationaleFlowsIntoOperationalContext(t *testing.T) {
 	if created.RiskLevel != "high" || created.AutonomyLevel != "approve_before_execute" {
 		t.Fatalf("rationale did not raise the safety floor: %q/%q", created.RiskLevel, created.AutonomyLevel)
 	}
-	if created.Domain != "stability" {
+	if created.Domain != "legal_government" {
 		t.Fatalf("rationale did not classify the pursuit domain: %q", created.Domain)
 	}
 
@@ -1253,6 +1254,33 @@ func TestAutoLinkMemoryRefreshDoesNotPersistOtherOwnerWorkflowState(t *testing.T
 	}
 }
 
+func TestIntakeRejectsMissingWorkflowReference(t *testing.T) {
+	for _, zeroID := range []bool{false, true} {
+		t.Run(fmt.Sprintf("zeroID=%t", zeroID), func(t *testing.T) {
+			repo := newFakeRepo()
+			workflowService := &fakeWorkflowIntake{repo: repo, missingRecord: !zeroID, zeroID: zeroID}
+			service := NewService(repo, workflowService)
+			created, err := service.Create(CreateRequest{Title: "Evidence response", OwnerIdentity: "alice", ProjectKey: "evidence"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			detail, err := service.IntakeForOwner("alice", created.ID, IntakeRequest{Input: "Prepare evidence response"})
+			if err == nil || detail != nil {
+				t.Fatalf("missing workflow reference returned success: detail=%#v err=%v", detail, err)
+			}
+			links, err := repo.FindLinks(created.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, link := range links {
+				if link.LinkType == LinkWorkflow {
+					t.Fatalf("missing workflow reference was linked: %#v", link)
+				}
+			}
+		})
+	}
+}
+
 func TestIntakeCreatesWorkflowAndLinksOperationalWork(t *testing.T) {
 	repo := newFakeRepo()
 	workflowService := &fakeWorkflowIntake{repo: repo}
@@ -1281,6 +1309,9 @@ func TestIntakeCreatesWorkflowAndLinksOperationalWork(t *testing.T) {
 	}
 	if len(detail.Workflows) != 1 || len(detail.ApprovalItems) != 1 {
 		t.Fatalf("detail workflows/approvals = %#v / %#v", detail.Workflows, detail.ApprovalItems)
+	}
+	if detail.IntakeWorkflowID == nil || *detail.IntakeWorkflowID == uuid.Nil || workflowService.records[*detail.IntakeWorkflowID] == nil {
+		t.Fatalf("intake reference does not identify the workflow returned by intake: %#v", detail.IntakeWorkflowID)
 	}
 	if len(detail.NextActions) == 0 || detail.NextActions[0].Owner != "Robert" {
 		t.Fatalf("next actions = %#v", detail.NextActions)
@@ -1567,6 +1598,9 @@ func TestRouteIntakeMatchesExistingPursuitAndCreatesGovernedWorkflow(t *testing.
 	}
 	if result.Mode != "matched_existing" || result.Score < defaultAutoLinkMinimumScore {
 		t.Fatalf("route mode/score = %s/%.2f", result.Mode, result.Score)
+	}
+	if result.WorkflowID == nil || result.Detail.IntakeWorkflowID == nil || *result.WorkflowID != *result.Detail.IntakeWorkflowID || workflowService.records[*result.WorkflowID] == nil {
+		t.Fatalf("routed intake lost its exact workflow reference: %#v", result)
 	}
 	if workflowService.received.ProjectKey != "vivare" || workflowService.received.SourceURI != "local://email/vivare-77" {
 		t.Fatalf("workflow intake provenance = %#v", workflowService.received)
@@ -1892,6 +1926,110 @@ func TestRouteWorkflowIntakeDefersUnmatchedCandidateBeforeWorkflowCreation(t *te
 	}
 }
 
+func TestRouteWorkflowIntakeKeepsProjectHintUnverifiedOnCandidate(t *testing.T) {
+	repo := newFakeRepo()
+	workflowService := &fakeWorkflowIntake{repo: repo}
+	service := NewService(repo, workflowService)
+
+	confirmed, err := service.Create(CreateRequest{
+		OwnerIdentity: "alice",
+		Title:         "Existing unrelated workspace goal",
+		ProjectKey:    "trello-board-project",
+	})
+	if err != nil {
+		t.Fatalf("create existing pursuit: %v", err)
+	}
+
+	request := workflow.IntakeRequest{
+		OwnerIdentity:  "alice",
+		Input:          "Prepare a tax receipt bundle for review.",
+		ProjectKeyHint: "trello-board-project",
+		SourceType:     "trello",
+		SourceID:       "card-unverified-project-hint",
+		SourceURI:      "trello://card/card-unverified-project-hint",
+		SourceLabel:    "Tax receipt card",
+	}
+
+	record, err := service.RouteWorkflowIntake(request)
+	routed, pending := IsCandidatePending(err)
+	if !pending {
+		t.Fatalf("RouteWorkflowIntake error = %v, want candidate pending", err)
+	}
+	if record != nil || routed == nil || !routed.CreatedCandidate || routed.Matched {
+		t.Fatalf("hint was treated as a confirmed match: record=%#v routed=%#v", record, routed)
+	}
+	if routed.PursuitID == uuid.Nil || workflowService.calls != 0 {
+		t.Fatalf("candidate routing failed or created workflow work: result=%#v workflow calls=%d", routed, workflowService.calls)
+	}
+	candidate := repo.pursuits[routed.PursuitID]
+	if candidate.ID == uuid.Nil {
+		t.Fatalf("candidate %s was not persisted", routed.PursuitID)
+	}
+	if candidate.ProjectKey != "" {
+		t.Fatalf("unverified hint was promoted to confirmed project key %q", candidate.ProjectKey)
+	}
+	if !strings.Contains(candidate.Description, "Unverified project hint from the source: trello-board-project") ||
+		!strings.Contains(candidate.Description, "has not been confirmed") {
+		t.Fatalf("candidate description did not preserve the hint as unverified: %q", candidate.Description)
+	}
+	activities, err := repo.FindActivities(routed.PursuitID, 20)
+	if err != nil {
+		t.Fatalf("load candidate activity: %v", err)
+	}
+	activityHasHint := false
+	for _, activity := range activities {
+		if activity.EventType == "pursuit.candidate_created" && strings.Contains(activity.Message, "Preserved source project hint as unverified context only: trello-board-project") {
+			activityHasHint = true
+			break
+		}
+	}
+	if !activityHasHint {
+		t.Fatalf("candidate creation audit did not retain the unverified hint: %#v", activities)
+	}
+	if repo.pursuits[confirmed.ID].ProjectKey != "trello-board-project" {
+		t.Fatal("routing changed the existing confirmed pursuit")
+	}
+}
+
+func TestRouteWorkflowIntakeStillRoutesByConfirmedProjectKey(t *testing.T) {
+	repo := newFakeRepo()
+	workflowService := &fakeWorkflowIntake{repo: repo}
+	service := NewService(repo, workflowService)
+	confirmed, err := service.Create(CreateRequest{
+		OwnerIdentity: "alice",
+		Title:         "Existing unrelated workspace goal",
+		ProjectKey:    "confirmed-project",
+	})
+	if err != nil {
+		t.Fatalf("create confirmed pursuit: %v", err)
+	}
+
+	record, err := service.RouteWorkflowIntake(workflow.IntakeRequest{
+		OwnerIdentity:   "alice",
+		Input:           "Prepare a tax receipt bundle for review.",
+		SuccessCriteria: []string{"Include every linked receipt", "Do not submit externally"},
+		ProjectKey:      "confirmed-project",
+		SourceType:      "manual",
+		SourceID:        "confirmed-project-intake",
+		SourceURI:       "manual://intake/confirmed-project-intake",
+	})
+	if err != nil {
+		t.Fatalf("RouteWorkflowIntake returned error: %v", err)
+	}
+	if record == nil || workflowService.calls != 1 {
+		t.Fatalf("confirmed project key did not route into workflow intake: record=%#v calls=%d", record, workflowService.calls)
+	}
+	if workflowService.received.ProjectKey != "confirmed-project" || record.Item.ProjectKey != "confirmed-project" {
+		t.Fatalf("confirmed project key changed during routing: request=%q record=%q", workflowService.received.ProjectKey, record.Item.ProjectKey)
+	}
+	if !reflect.DeepEqual(workflowService.received.SuccessCriteria, []string{"Include every linked receipt", "Do not submit externally"}) {
+		t.Fatalf("workflow success criteria were not preserved during pursuit routing: %#v", workflowService.received.SuccessCriteria)
+	}
+	if record.Item.ID == uuid.Nil || len(repo.pursuits) != 1 || repo.pursuits[confirmed.ID].ProjectKey != "confirmed-project" {
+		t.Fatalf("confirmed routing unexpectedly changed pursuits: workflows=%#v pursuits=%#v", repo.workflows, repo.pursuits)
+	}
+}
+
 func TestRouteIntakeReusesPursuitLinkedByAssistantCommandIdentity(t *testing.T) {
 	repo := newFakeRepo()
 	workflowService := &fakeWorkflowIntake{repo: repo}
@@ -2091,10 +2229,11 @@ func TestDetailSurfacesBlockersAndCompletionCandidate(t *testing.T) {
 		RiskLevel:     "medium",
 	}
 	repo.workflows[completedID] = models.WorkflowItem{
-		ID:           completedID,
-		Title:        "Create dashboard shell",
-		ProjectKey:   "018-HAI",
-		CurrentState: workflow.StateCompleted,
+		ID:                 completedID,
+		Title:              "Create dashboard shell",
+		ProjectKey:         "018-HAI",
+		CurrentState:       workflow.StateCompleted,
+		VerificationStatus: "verified",
 	}
 	_, _ = service.Link(created.ID, LinkRequest{LinkType: LinkWorkflow, LinkID: blockedID.String()})
 	_, _ = service.Link(created.ID, LinkRequest{LinkType: LinkWorkflow, LinkID: completedID.String()})
@@ -2985,9 +3124,11 @@ func TestUpdateAllowsVerifiedCompletionWithLinkedVerification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
+	runID := uuid.New()
+	repo.verificationRuns[runID] = models.VerificationRun{ID: runID, Status: "verified"}
 	_, _ = service.Link(created.ID, LinkRequest{
 		LinkType:     LinkVerification,
-		LinkID:       uuid.New().String(),
+		LinkID:       runID.String(),
 		Relationship: "completion_evidence",
 		SourceURI:    "local://verification/runtime-audit",
 		SourceLabel:  "Runtime audit verification",
@@ -5128,6 +5269,16 @@ func newFakeRepo() *fakeRepo {
 	}
 }
 
+func (r *fakeRepo) FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error) {
+	var result []models.PursuitTaskAttempt
+	for _, attempt := range r.taskAttempts {
+		if attempt.PursuitID == pursuitID && pursuitTaskAttemptNeedsReview(attempt) {
+			result = append(result, attempt)
+		}
+	}
+	return result, nil
+}
+
 func (r *fakeRepo) Create(pursuit *models.Pursuit) (*models.Pursuit, error) {
 	if pursuit.ID == uuid.Nil {
 		pursuit.ID = uuid.New()
@@ -5883,6 +6034,9 @@ func (r *fakeRepo) FindLinkedAutomations(ids []uuid.UUID) ([]models.Automation, 
 }
 
 func (r *fakeRepo) FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launchIDs []uuid.UUID, limit int) ([]models.AutomationLaunchEvent, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
 	automationSet := map[uuid.UUID]bool{}
 	for _, id := range automationIDs {
 		automationSet[id] = true
@@ -5897,6 +6051,7 @@ func (r *fakeRepo) FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launc
 			result = append(result, event)
 		}
 	}
+	sort.SliceStable(result, func(i, j int) bool { return result[i].StartedAt.After(result[j].StartedAt) })
 	if limit > 0 && len(result) > limit {
 		result = result[:limit]
 	}
@@ -5904,12 +6059,14 @@ func (r *fakeRepo) FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launc
 }
 
 type fakeWorkflowIntake struct {
-	received     workflow.IntakeRequest
-	calls        int
-	lastGetOwner string
-	records      map[uuid.UUID]*workflow.WorkflowRecord
-	repo         *fakeRepo
-	err          error
+	missingRecord bool
+	zeroID        bool
+	received      workflow.IntakeRequest
+	calls         int
+	lastGetOwner  string
+	records       map[uuid.UUID]*workflow.WorkflowRecord
+	repo          *fakeRepo
+	err           error
 }
 
 func (f *fakeWorkflowIntake) Intake(request workflow.IntakeRequest) (*workflow.WorkflowRecord, error) {
@@ -5917,6 +6074,12 @@ func (f *fakeWorkflowIntake) Intake(request workflow.IntakeRequest) (*workflow.W
 	f.received = request
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.missingRecord {
+		return nil, nil
+	}
+	if f.zeroID {
+		return &workflow.WorkflowRecord{}, nil
 	}
 	id := uuid.New()
 	record := &workflow.WorkflowRecord{

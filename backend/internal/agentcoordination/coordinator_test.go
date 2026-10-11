@@ -2,6 +2,7 @@ package agentcoordination
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -11,6 +12,17 @@ type fakeTransport struct {
 	calls   int
 	receipt DeliveryReceipt
 	err     error
+}
+
+type cancelingTransport struct {
+	cancel context.CancelFunc
+	calls  int
+}
+
+func (transport *cancelingTransport) Deliver(ctx context.Context, _ Message) (DeliveryReceipt, error) {
+	transport.calls++
+	transport.cancel()
+	return DeliveryReceipt{}, ctx.Err()
 }
 
 func (transport *fakeTransport) Deliver(
@@ -41,6 +53,30 @@ type memoryDispatchRecord struct {
 
 type memoryDispatchStore struct {
 	records map[string]memoryDispatchRecord
+}
+
+type cleanupContextDispatchStore struct {
+	*memoryDispatchStore
+	abandonContextErr error
+	abandonCalls      int
+	onBegin           func()
+}
+
+func (store *cleanupContextDispatchStore) Begin(ctx context.Context, key, digest string, expiresAt time.Time) (DispatchClaim, error) {
+	claim, err := store.memoryDispatchStore.Begin(ctx, key, digest, expiresAt)
+	if store.onBegin != nil {
+		store.onBegin()
+	}
+	return claim, err
+}
+
+func (store *cleanupContextDispatchStore) Abandon(ctx context.Context, key, digest string) error {
+	store.abandonCalls++
+	store.abandonContextErr = ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return store.memoryDispatchStore.Abandon(ctx, key, digest)
 }
 
 func newMemoryDispatchStore() *memoryDispatchStore {
@@ -134,7 +170,7 @@ func TestCoordinatorReleasesClaimAfterTransportFailure(t *testing.T) {
 	t.Parallel()
 
 	now := fixedNow()
-	transport := &fakeTransport{err: fmt.Errorf("offline")}
+	transport := &fakeTransport{err: fmt.Errorf("offline: %w", ErrDeliveryNotAccepted)}
 	store := newMemoryDispatchStore()
 	coordinator, err := NewCoordinator(
 		DefaultValidationPolicy(),
@@ -155,6 +191,131 @@ func TestCoordinatorReleasesClaimAfterTransportFailure(t *testing.T) {
 	}
 	if transport.calls != 2 {
 		t.Fatalf("transport calls = %d, want 2", transport.calls)
+	}
+}
+
+func TestCoordinatorRetainsClaimAfterCanceledDelivery(t *testing.T) {
+	t.Parallel()
+
+	now := fixedNow()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &cleanupContextDispatchStore{memoryDispatchStore: newMemoryDispatchStore()}
+	transport := &cancelingTransport{cancel: cancel}
+	coordinator, err := NewCoordinator(
+		DefaultValidationPolicy(),
+		transport,
+		store,
+		func() time.Time { return now },
+	)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+	message := validMessage(t, now)
+	if _, err := coordinator.Dispatch(ctx, message); !errors.Is(err, ErrDeliveryOutcomeUnknown) {
+		t.Fatal("canceled delivery was not returned as an error")
+	}
+	if store.abandonCalls != 0 {
+		t.Fatalf("ambiguous delivery released its claim %d times", store.abandonCalls)
+	}
+	if _, exists := store.records[message.IdempotencyKey]; !exists {
+		t.Fatal("ambiguous delivery released its idempotency claim")
+	}
+	if _, err := coordinator.Dispatch(context.Background(), message); !errors.Is(err, ErrDuplicateDispatch) {
+		t.Fatalf("retry after ambiguous delivery = %v, want duplicate claim refusal", err)
+	}
+	if transport.calls != 1 {
+		t.Fatalf("ambiguous delivery was attempted %d times, want exactly once", transport.calls)
+	}
+}
+
+func TestCoordinatorKeepsClaimWhenTransportReceiptIsInvalid(t *testing.T) {
+	t.Parallel()
+
+	now := fixedNow()
+	message := validMessage(t, now)
+	store := &cleanupContextDispatchStore{memoryDispatchStore: newMemoryDispatchStore()}
+	transport := &fakeTransport{receipt: DeliveryReceipt{
+		MessageID: "unexpected-message", CorrelationID: message.CorrelationID,
+		TransportID: "transport-1", AcceptedAt: now.Add(time.Second),
+	}}
+	coordinator, err := NewCoordinator(DefaultValidationPolicy(), transport, store, func() time.Time { return now })
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+	if _, err := coordinator.Dispatch(context.Background(), message); !errors.Is(err, ErrDeliveryOutcomeUnknown) {
+		t.Fatalf("invalid receipt error = %v, want unknown delivery outcome", err)
+	}
+	if store.abandonCalls != 0 {
+		t.Fatalf("invalid receipt released its claim %d times", store.abandonCalls)
+	}
+	if _, err := coordinator.Dispatch(context.Background(), message); !errors.Is(err, ErrDuplicateDispatch) {
+		t.Fatalf("retry after invalid receipt = %v, want duplicate claim refusal", err)
+	}
+	if transport.calls != 1 {
+		t.Fatalf("invalid receipt led to %d transport calls, want 1", transport.calls)
+	}
+}
+
+func TestCoordinatorDoesNotDeliverAfterClaimAcquisitionCancellation(t *testing.T) {
+	t.Parallel()
+
+	now := fixedNow()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	memoryStore := newMemoryDispatchStore()
+	store := &cleanupContextDispatchStore{memoryDispatchStore: memoryStore, onBegin: cancel}
+	coordinator, err := NewCoordinator(
+		DefaultValidationPolicy(),
+		&fakeTransport{},
+		store,
+		func() time.Time { return now },
+	)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+	message := validMessage(t, now)
+	transport := coordinator.transport.(*fakeTransport)
+	if _, err := coordinator.Dispatch(ctx, message); err == nil {
+		t.Fatal("canceled claim acquisition was not returned as an error")
+	}
+	if transport.calls != 0 {
+		t.Fatalf("transport called %d times after cancellation, want 0", transport.calls)
+	}
+	if store.abandonContextErr != nil {
+		t.Fatalf("claim cleanup inherited caller cancellation: %v", store.abandonContextErr)
+	}
+	if _, exists := memoryStore.records[message.IdempotencyKey]; exists {
+		t.Fatal("canceled claim remained acquired")
+	}
+}
+
+func TestCoordinatorDoesNotDeliverAfterMessageExpiresDuringClaimAcquisition(t *testing.T) {
+	t.Parallel()
+
+	now := fixedNow()
+	memoryStore := newMemoryDispatchStore()
+	store := &cleanupContextDispatchStore{memoryDispatchStore: memoryStore}
+	coordinator, err := NewCoordinator(
+		DefaultValidationPolicy(),
+		&fakeTransport{},
+		store,
+		func() time.Time { return now },
+	)
+	if err != nil {
+		t.Fatalf("NewCoordinator: %v", err)
+	}
+	message := validMessage(t, now)
+	store.onBegin = func() { now = message.ExpiresAt.Add(time.Nanosecond) }
+	transport := coordinator.transport.(*fakeTransport)
+	if _, err := coordinator.Dispatch(context.Background(), message); err == nil {
+		t.Fatal("expired message was not rejected after claim acquisition")
+	}
+	if transport.calls != 0 {
+		t.Fatalf("transport called %d times after message expiry, want 0", transport.calls)
+	}
+	if _, exists := memoryStore.records[message.IdempotencyKey]; exists {
+		t.Fatal("expired message left its idempotency claim acquired")
 	}
 }
 

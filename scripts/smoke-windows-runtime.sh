@@ -15,8 +15,8 @@ set -euo pipefail
 
 PG_PORT="${PG_PORT:-55437}"
 API_PORT="${API_PORT:-18085}"
-API_KEY="${API_KEY:-smoke-key}"
-JWT_SECRET="${JWT_SECRET:-smoke-jwt-secret}"
+API_KEY="${API_KEY:-hai-ci-smoke-api-key-0123456789abcdef}"
+JWT_SECRET="${JWT_SECRET:-hai-ci-smoke-jwt-secret-0123456789abcdef}"
 BASE="http://127.0.0.1:${API_PORT}/api/v1"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT}/scripts/smoke-auth.sh"
@@ -53,8 +53,8 @@ echo "==> Preparing a feed (so there is real work to halt)"
 mkdir -p "${FEEDS}" "${WORKSPACE}" "${STATE}"
 cat > "${FEEDS}/inbox.json" <<'JSON'
 [
-  {"externalId":"n1","title":"Organize notes","body":"Consolidate personal notes into a local file"},
-  {"externalId":"n2","title":"Tidy workspace","body":"Reorganize the local scratch files"}
+  {"externalId":"n1","title":"Organize notes","content":"Consolidate personal notes into a local file","itemType":"email","provider":"generic_json_feed"},
+  {"externalId":"n2","title":"Tidy workspace","content":"Reorganize the local scratch files","itemType":"email","provider":"generic_json_feed"}
 ]
 JSON
 
@@ -72,10 +72,10 @@ mkdir -p "${IMAGES}"
 ( cd "${ROOT}/backend" && go build -o "${BIN}" ./cmd )
 
 start_backend() {
-  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=postgres \
+  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=hai-ci-smoke-postgres-password-0123456789abcdef \
     DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
     BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
-    RUN_MODE=production KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
+    RUN_MODE=test KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
     HAI_PHASE2_FEEDS_DIR="${FEEDS}" HAI_PHASE2_WORKSPACE_DIR="${WORKSPACE}" \
     HAI_PHASE2_STATE_DIR="${STATE}" HAI_PHASE2_FEED_FILES="inbox.json" \
     "${BIN}" > "${WORKDIR}/backend.log" 2>&1 &
@@ -102,6 +102,13 @@ owner_jwt="$(hai_smoke_mint_jwt owner "${JWT_SECRET}")"
 key_hdr=(-H "X-HAI-Backend-Key: ${API_KEY}" -H "Content-Type: application/json")
 hdr=("${key_hdr[@]}" -H "Authorization: Bearer ${owner_jwt}")
 
+echo "==> Owner activates the bounded smoke execution policy"
+hai_smoke_activate_execution_policy "${BASE}" "${hdr[@]}"
+kill "${BACKEND_PID}" 2>/dev/null; wait "${BACKEND_PID}" 2>/dev/null || true
+BACKEND_PID=""
+start_backend
+wait_live
+
 echo "==> Authentication boundary"
 check "API key alone is rejected" '401' \
   "$(curl -sS -o /dev/null -w '%{http_code}' "${key_hdr[@]}" "${BASE}/windows-runtime/readiness")"
@@ -120,6 +127,9 @@ check "no-external-sends-without-approval gate passes" 'pass' \
 
 echo "==> Emergency stop self-verification (proves it halts processing)"
 ver="$(curl -sS "${hdr[@]}" -X POST "${BASE}/windows-runtime/emergency-stop/verify")"
+if ! echo "${ver}" | jq -e 'has("halted")' >/dev/null; then
+  echo "emergency-stop verification response: $(echo "${ver}" | jq -c '{error, reasonCode, code}')" >&2
+fi
 check "emergency stop halts background processing" 'true' \
   "$(echo "${ver}" | jq -r '.halted==true')"
 check "zero operations processed while stopped" 'true' \
@@ -142,7 +152,28 @@ check "emergency stop still engaged after restart" 'true' \
   "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.emergencyStop.engaged==true')"
 
 echo "==> Resume re-enables processing"
-curl -sS "${hdr[@]}" -X POST "${BASE}/background/resume" >/dev/null
+resume_authorization="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/resume/approval")"
+check "resume approval is effect-bound" 'true' \
+  "$(echo "${resume_authorization}" | jq -r '(.idempotencyKey != "") and (.taskId != "") and (.approvalSourceId | startswith("opscontrol-owner:")) and (.approvalBindingDigest | length == 64)')"
+resume_response="$(curl -sS -w $'\n%{http_code}' "${hdr[@]}" -X POST "${BASE}/background/resume" -d "${resume_authorization}")"
+resume_status="${resume_response##*$'\n'}"
+resume_body="${resume_response%$'\n'*}"
+if [ "${resume_status}" != "200" ]; then
+  echo "resume failed with HTTP ${resume_status}: ${resume_body}" >&2
+  echo "resume failure reason code: $(echo "${resume_body}" | jq -r '.reasonCode // "unavailable"')" >&2
+  # The public control endpoint deliberately keeps authorization failures
+  # generic. Its owner-scoped inspection ledger exposes the policy reason
+  # codes without printing the approval capability or other secret material.
+  curl -sS "${hdr[@]}" "${BASE}/execution-authorizations?limit=3" \
+    | jq -c '{receipts: [.receipts[] | select(.action == "opscontrol.emergency-stop.clear") | {outcome, reason, evidence: {reasonCodes: .evidence.reasonCodes, constitution: {requestedCapabilities: .evidence.constitution.requestedCapabilities, deniedCapabilities: .evidence.constitution.deniedCapabilities, authorityCeiling: .evidence.constitution.authorityCeiling}}}]}' >&2 \
+    || true
+  grep 'opscontrol safety authorization rejected:' "${WORKDIR}/backend.log" \
+    | sed -E 's/ detail=.*/ detail=[REDACTED]/' >&2 || true
+  # Do not emit the raw process log here. ORM driver errors can include signed
+  # approval provenance, while the receipt inspection above is intentionally
+  # limited to safe, owner-scoped diagnostic fields.
+  exit 1
+fi
 check "processing active after resume" 'true' \
   "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.backgroundProcessingActive==true')"
 run_resumed="$(curl -sS "${hdr[@]}" -X POST "${BASE}/background/run")"

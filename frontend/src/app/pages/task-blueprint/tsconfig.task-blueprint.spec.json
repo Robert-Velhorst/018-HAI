@@ -1,0 +1,10 @@
+{
+  "extends": "../../../../tsconfig.spec.json",
+  "compilerOptions": {
+    "outDir": "../../../../out-tsc/task-blueprint-spec"
+  },
+  "include": [
+    "./task-blueprint.component.spec.ts",
+    "./task-blueprint.accessibility.spec.ts"
+  ]
+}

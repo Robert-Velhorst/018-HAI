@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { map, Observable } from 'rxjs';
+import { map, Observable, switchMap, take } from 'rxjs';
 import {
   IPursuit,
   IPursuitActivity,
@@ -15,8 +15,10 @@ import {
   IPursuitDecisionResolutionRequest,
   IPursuitDetail,
   IPursuitEvidenceResolution,
+  IProjectDossier,
   IPursuitIntakeRequest,
   IPursuitLink,
+	IPursuitLifeDomainReconciliationResult,
   IPursuitLinkRequest,
   IPursuitMatchCandidate,
   IPursuitMatchRequest,
@@ -61,8 +63,15 @@ export class PursuitService {
     }).pipe(map((records) => (records || []).map((record) => this.normalizePursuit(record))));
   }
 
-  dashboard(): Observable<IPursuitDashboard> {
-    return this.http.get<IPursuitDashboard>(`${this.apiUrl}/dashboard`).pipe(
+  reconcileLifeDomains(): Observable<IPursuitLifeDomainReconciliationResult> {
+    return this.http.post<IPursuitLifeDomainReconciliationResult>(`${this.apiUrl}/reconcile-life-domains`, {});
+  }
+
+  dashboard(includePursuits: boolean = false): Observable<IPursuitDashboard> {
+    const options = includePursuits
+      ? { params: new HttpParams().set('includePursuits', 'true') }
+      : undefined;
+    return this.http.get<IPursuitDashboard>(`${this.apiUrl}/dashboard`, options).pipe(
       map((dashboard) => this.normalizeDashboard(dashboard)),
     );
   }
@@ -181,12 +190,20 @@ export class PursuitService {
     return this.http.get<IPursuitBrief>(`${this.apiUrl}/brief`);
   }
 
+  projectDossier(projectKey: string): Observable<IProjectDossier> {
+    return this.http.get<IProjectDossier>('/api/v1/workflow/project-dossier', {
+      params: new HttpParams().set('projectKey', projectKey),
+    });
+  }
+
   decisions(): Observable<IPursuitDashboardDecision[]> {
     return this.http.get<IPursuitDashboardDecision[]>(`${this.apiUrl}/decisions`);
   }
 
   create(request: IPursuitCreateRequest): Observable<IPursuit> {
-    return this.http.post<IPursuit>(`${this.apiUrl}/`, request);
+    return this.http.post<IPursuit>(`${this.apiUrl}/`, request).pipe(
+      map((pursuit) => this.normalizePursuit(pursuit)),
+    );
   }
 
   get(id: string): Observable<IPursuitDetail> {
@@ -201,7 +218,10 @@ export class PursuitService {
     const boundedLimit = Math.max(1, Math.min(500, Math.trunc(limit || 100)));
     return this.http.get<{ events?: IPursuitResourceEvent[] }>(`${this.apiUrl}/${id}/resource-events`, {
       params: new HttpParams().set('limit', boundedLimit),
-    }).pipe(map((response) => response?.events || []));
+    }).pipe(map((response) => {
+      if (!Array.isArray(response?.events)) throw new Error('Resource ledger response is unavailable.');
+      return response.events;
+    }));
   }
 
   appendResourceEvent(id: string, request: IPursuitResourceEventRequest): Observable<IPursuitResourceEvent> {
@@ -263,19 +283,34 @@ export class PursuitService {
   }
 
   acceptCandidate(id: string, request: IPursuitPlanRequest = {}): Observable<IPursuitDetail> {
-    return this.http.post<IPursuitDetail>(`${this.apiUrl}/${id}/candidate/accept`, request).pipe(map((detail) => this.normalizeDetail(detail)));
+    return this.http.post<IPursuitDetail>(`${this.apiUrl}/${id}/candidate/accept`, request).pipe(map((detail) => this.normalizeDecisionResponse(detail, id)));
   }
 
   resolveDecision(id: string, request: IPursuitDecisionResolutionRequest): Observable<IPursuitDetail> {
-    return this.http.post<IPursuitDetail>(`${this.apiUrl}/${id}/decisions/resolve`, request).pipe(map((detail) => this.normalizeDetail(detail)));
+    return this.http.post<IPursuitDetail>(`${this.apiUrl}/${id}/decisions/resolve`, request).pipe(map((detail) => this.normalizeDecisionResponse(detail, id)));
   }
 
   link(id: string, request: IPursuitLinkRequest): Observable<IPursuitLink> {
     return this.http.post<IPursuitLink>(`${this.apiUrl}/${id}/links`, request);
   }
 
-  deleteLink(id: string, linkId: string): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/${id}/links/${linkId}`);
+  deleteLink(id: string, linkId: string): Observable<boolean> {
+    return this.http.delete<void>(`${this.apiUrl}/${id}/links/${linkId}`, { observe: 'response' }).pipe(
+      take(1),
+      switchMap((response) => {
+        if (response.status !== 204) throw new Error('Link detachment acknowledgement unavailable');
+        return this.http.get<IPursuitDetail>(`${this.apiUrl}/${id}`).pipe(take(1));
+      }),
+      map((detail) => {
+        // Validate raw records before presentation normalization can invent an empty list.
+        if (detail?.pursuit?.id !== id || !Array.isArray(detail.links) ||
+            detail.links.some(link => !link || typeof link.id !== 'string' || !link.id.trim() || link.pursuitId !== id) ||
+            new Set(detail.links.map(link => link.id)).size !== detail.links.length) {
+          throw new Error('Scoped link readback unavailable');
+        }
+        return !detail.links.some(link => link.id === linkId);
+      }),
+    );
   }
 
   match(request: IPursuitMatchRequest): Observable<IPursuitMatchCandidate[]> {
@@ -304,9 +339,19 @@ export class PursuitService {
 
   private normalizeDashboard(dashboard: IPursuitDashboard | null | undefined): IPursuitDashboard {
     const source = dashboard || ({} as IPursuitDashboard);
+    const requiredLists: (keyof IPursuitDashboard)[] = [
+      'decisionQueue', 'needsRobert', 'vaReady', 'systemReady', 'blocked', 'stale',
+      'reviewDue', 'planningNeeded', 'recentlyChanged', 'highRisk', 'completionCandidates',
+    ];
+    if (!source.counts || typeof source.counts['active'] !== 'number' ||
+      !Number.isFinite(source.counts['active']) || source.counts['active'] < 0 ||
+      requiredLists.some((key) => !Array.isArray(source[key]))) {
+      throw new Error('The pursuit dashboard response is incomplete; refresh before treating its queue as clear.');
+    }
     return {
       ...source,
       counts: source.counts || {},
+      pursuits: (source.pursuits || []).map((pursuit) => this.normalizePursuit(pursuit)),
       decisionQueue: source.decisionQueue || [],
       needsRobert: source.needsRobert || [],
       vaReady: source.vaReady || [],
@@ -319,6 +364,16 @@ export class PursuitService {
       highRisk: source.highRisk || [],
       completionCandidates: source.completionCandidates || [],
     };
+  }
+
+  private normalizeDecisionResponse(detail: IPursuitDetail | null | undefined, pursuitId: string): IPursuitDetail {
+    // Validate mutation evidence before read-view defaults can hide missing fields.
+    if (!pursuitId || detail?.pursuit?.id !== pursuitId || !Array.isArray(detail.decisionQueue) ||
+      detail.decisionQueue.some((decision) => !decision || typeof decision.id !== 'string' ||
+        !decision.id.trim() || typeof decision.status !== 'string' || !decision.status.trim())) {
+      throw new Error('The pursuit decision response is incomplete or does not match the requested pursuit.');
+    }
+    return this.normalizeDetail(detail);
   }
 
   private normalizeDetail(detail: IPursuitDetail | null | undefined): IPursuitDetail {

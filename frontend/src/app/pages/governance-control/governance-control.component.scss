@@ -4,6 +4,140 @@
   color: var(--hai-text);
 }
 
+.inspector-detail {
+  display: grid;
+  gap: 16px;
+  color: var(--hai-text);
+}
+
+.detail-hero {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--hai-border);
+}
+
+.detail-hero h2 {
+  margin: 10px 0 5px;
+  color: var(--hai-text);
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.detail-hero p {
+  margin: 0;
+  color: var(--hai-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  background: var(--hai-border);
+  border: 1px solid var(--hai-border);
+  border-radius: 8px;
+}
+
+.detail-grid > div {
+  min-width: 0;
+  padding: 11px 12px;
+  background: var(--hai-surface-muted);
+}
+
+.detail-grid dt {
+  color: var(--hai-muted);
+  font-size: 10px;
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.detail-grid dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--hai-text-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.evidence-block,
+.consumption-block,
+.review-form,
+.danger-zone {
+  padding: 14px;
+  background: var(--hai-surface-muted);
+  border: 1px solid var(--hai-border);
+  border-radius: 8px;
+}
+
+.evidence-block h3,
+.consumption-block h3 {
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.evidence-block p,
+.consumption-block p {
+  margin: 0;
+  color: var(--hai-text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.evidence-block small,
+.consumption-block small {
+  display: block;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  color: var(--hai-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.evidence-block article,
+.evidence-row {
+  display: grid;
+  gap: 4px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--hai-border);
+}
+
+.evidence-block article:last-child,
+.evidence-row:last-child {
+  border-bottom: 0;
+}
+
+.evidence-block article strong,
+.evidence-row strong {
+  color: var(--hai-text);
+  font-size: 11px;
+}
+
+.evidence-block article span,
+.evidence-row span {
+  overflow-wrap: anywhere;
+  color: var(--hai-text-soft);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.evidence-block ul {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--hai-text-soft);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.danger-zone {
+  border-color: color-mix(in srgb, var(--hai-red) 34%, var(--hai-border));
+}
+
+.danger-zone button {
+  justify-self: start;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -225,6 +359,10 @@ textarea:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr);
   gap: 16px;
+}
+
+.governance-primary-grid--decision {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .governance-panel {

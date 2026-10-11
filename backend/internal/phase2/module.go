@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"automation-hub-backend/internal/accountfeed"
 	"automation-hub-backend/internal/autonomypolicy"
@@ -22,8 +23,10 @@ import (
 	"automation-hub-backend/internal/frameworkevidence"
 	"automation-hub-backend/internal/frameworkregistry"
 	"automation-hub-backend/internal/modelintelligence"
+	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/operations"
 	"automation-hub-backend/internal/opscontrol"
+	"automation-hub-backend/internal/privacyfilter"
 	"automation-hub-backend/internal/sourceevidence"
 
 	"github.com/google/uuid"
@@ -60,18 +63,19 @@ func ConfigFromEnv() Config {
 
 // Module is the composition of the Phase 2 services.
 type Module struct {
-	cfg         Config
-	svc         *operations.Service
-	broker      *executionbroker.Broker
-	worker      *background.Worker
-	readers     []accountfeed.Reader
-	blockRules  *BlockRuleStore
-	modelInt    *modelintelligence.Service
-	evidence    EvidencePackRepository
-	evidenceErr error
-	control     background.Control
-	runMu       sync.Mutex
-	execAuth    *executionauth.Service
+	cfg          Config
+	svc          *operations.Service
+	broker       *executionbroker.Broker
+	worker       *background.Worker
+	readers      []accountfeed.Reader
+	feedRegistry *accountfeed.Registry
+	blockRules   *BlockRuleStore
+	modelInt     *modelintelligence.Service
+	evidence     EvidencePackRepository
+	evidenceErr  error
+	control      background.Control
+	runMu        sync.Mutex
+	execAuth     *executionauth.Service
 }
 
 // NewModule wires a fail-closed module. Execution remains unavailable until a
@@ -195,8 +199,91 @@ func (m *Module) FeedsDir() string { return m.cfg.FeedsDir }
 // FeedFiles returns the configured local feed filenames.
 func (m *Module) FeedFiles() []string { return m.cfg.FeedFiles }
 
+func (m *Module) WithFeedRegistry(registry *accountfeed.Registry) *Module {
+	m.runMu.Lock()
+	defer m.runMu.Unlock()
+	m.feedRegistry = registry
+	m.worker.WithFeedRegistry(registry)
+	return m
+}
+
 // Worker exposes the background worker.
 func (m *Module) Worker() *background.Worker { return m.worker }
+
+// safeExecutionPolicyAllows rechecks live runtime controls immediately before
+// a manually requested operation is handed to the local worker.
+func (m *Module) SafeExecutionPolicyAllows(title, description, operationType string) bool {
+	mode := m.cfg.Mode
+	emergencyStop := m.cfg.EmergencyStop
+	if m.control != nil {
+		mode = m.control.Mode()
+		emergencyStop = m.control.EmergencyStop()
+	}
+	decision := autonomypolicy.Decide(autonomypolicy.Input{
+		Title:         title,
+		Content:       description,
+		OperationType: operationType,
+		Privacy:       privacyfilter.Scan(title+"\n"+description, 280),
+		Mode:          mode,
+		Reversible:    true,
+		EmergencyStop: emergencyStop,
+	}, time.Now().UTC())
+	if decision.Decision != operations.DecisionRunSafeLocalWorker {
+		return false
+	}
+	if m.blockRules != nil {
+		blocked, _ := m.blockRules.ShouldBlock(operationType, title)
+		if blocked {
+			return false
+		}
+	}
+	return true
+}
+
+// SafeOperationExecutionAllowed keeps source-derived work behind its durable,
+// exact-revision owner approval while still allowing the approved local worker
+// path to complete. Unapproved source content never inherits the generic safe
+// action decision.
+func (m *Module) SafeOperationExecutionAllowed(op models.Operation) bool {
+	if !operations.IsSourceDerived(op) {
+		return m.SafeExecutionPolicyAllows(op.Title, op.Description, op.OperationType)
+	}
+	var approvalValid bool
+	switch operations.OperationStatus(op.Status) {
+	case operations.StatusApproved:
+		_, err := m.svc.SourceApprovalForExecution(op)
+		approvalValid = err == nil
+	case operations.StatusRunning:
+		approvalValid = m.svc.ValidateConsumedSourceApproval(op) == nil
+	}
+	return approvalValid && m.SafeOperationEffectPolicyAllows(op)
+}
+
+// SafeOperationEffectPolicyAllows is the repository-independent part of the
+// final safe-effect gate. Source approval has already been validated and
+// consumed before the effect boundary; keeping this check free of repository
+// reads avoids re-entering a locked repository from its authorization callback.
+func (m *Module) SafeOperationEffectPolicyAllows(op models.Operation) bool {
+	if !operations.IsSourceDerived(op) {
+		return m.SafeExecutionPolicyAllows(op.Title, op.Description, op.OperationType)
+	}
+	mode := m.cfg.Mode
+	emergencyStop := m.cfg.EmergencyStop
+	if m.control != nil {
+		mode = m.control.Mode()
+		emergencyStop = m.control.EmergencyStop()
+	}
+	if mode != autonomypolicy.ModeAutonomousSafe || emergencyStop {
+		return false
+	}
+	if m.blockRules != nil {
+		blocked, _ := m.blockRules.ShouldBlock(op.OperationType, op.Title)
+		if blocked {
+			return false
+		}
+	}
+	return true
+}
 
 func (m *Module) evidencePackRepository() (EvidencePackRepository, error) {
 	if m == nil || m.evidence == nil {
@@ -216,6 +303,11 @@ func (m *Module) evidencePackRepository() (EvidencePackRepository, error) {
 // registers the background runner used by emergency-stop verification.
 func (m *Module) OpsControl() *opscontrol.Service {
 	svc := opscontrol.NewService(m.cfg.StateDir, m.broker, m.svc, m.cfg.OwnerUserID, m.cfg.WorkspaceID)
+	// Environment values establish only the first persistent state. If seeding
+	// fails, Controller and EmergencyStopStore remain fail-closed and surface
+	// the persistence fault through readiness/status rather than weakening a
+	// prior operator decision.
+	_ = svc.SeedInitialState(m.cfg.Mode, m.cfg.EmergencyStop, m.cfg.OwnerUserID)
 	m.control = svc.Control()
 	m.worker.WithControl(m.control)
 	svc.SetBackgroundRunner(func(ctx context.Context) (int, error) {
@@ -237,7 +329,9 @@ func (m *Module) RunBackgroundForOwner(ctx context.Context, ownerIdentity string
 		return background.Report{}, fmt.Errorf("phase2: authenticated owner identity required")
 	}
 
-	m.runMu.Lock()
+	if !m.runMu.TryLock() {
+		return background.Report{}, background.ErrBusy
+	}
 	defer m.runMu.Unlock()
 
 	worker := m.newOwnerWorker(ownerIdentity)
@@ -247,7 +341,9 @@ func (m *Module) RunBackgroundForOwner(ctx context.Context, ownerIdentity string
 // RunConfiguredBackground is the distinct internal scheduler path. It is not
 // called by the HTTP handler and always uses the explicitly configured owner.
 func (m *Module) RunConfiguredBackground(ctx context.Context) (background.Report, error) {
-	m.runMu.Lock()
+	if !m.runMu.TryLock() {
+		return background.Report{}, background.ErrBusy
+	}
 	defer m.runMu.Unlock()
 	return m.worker.RunOnce(ctx)
 }
@@ -265,6 +361,7 @@ func (m *Module) newOwnerWorker(ownerIdentity string) *background.Worker {
 		EmergencyStop: m.cfg.EmergencyStop,
 	})
 	worker.WithBlockRules(m.blockRules)
+	worker.WithFeedRegistry(m.feedRegistry)
 	if m.modelInt != nil {
 		worker.WithModelIntelligence(m.modelInt)
 	}

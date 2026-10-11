@@ -43,6 +43,46 @@ func TestVerifiedActorDoesNotUseClientSuppliedActor(t *testing.T) {
 	}
 }
 
+func TestIntakeHandlerReturnsExactWorkflowReference(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	workflowService := &fakeWorkflowIntake{repo: repo}
+	service := NewService(repo, workflowService)
+	pursuit, err := service.Create(CreateRequest{
+		Title:         "Intake response regression",
+		OwnerIdentity: "alice",
+		ProjectKey:    "intake-response",
+	})
+	if err != nil {
+		t.Fatalf("Create pursuit: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.POST("/pursuits/:id/intake", NewHandler(service).Intake)
+
+	request := httptest.NewRequest(http.MethodPost, "/pursuits/"+pursuit.ID.String()+"/intake", strings.NewReader(`{"input":"Prepare a reviewable workflow"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("Intake status = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+
+	var detail PursuitDetail
+	if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("decode intake response: %v", err)
+	}
+	if detail.IntakeWorkflowID == nil || *detail.IntakeWorkflowID == uuid.Nil {
+		t.Fatalf("intake response lost the exact workflow reference: %#v", detail.IntakeWorkflowID)
+	}
+	if _, ok := workflowService.records[*detail.IntakeWorkflowID]; !ok {
+		t.Fatalf("intake response references a workflow not returned by intake: %s", detail.IntakeWorkflowID)
+	}
+}
+
 func TestSettlePortfolioWorkflowHandlerUsesVerifiedOwnerAndReturnsCreated(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, _, item, execution := completedPortfolioWorkflowFixture(t, "verified")
@@ -122,6 +162,43 @@ func TestPursuitRoutesRequireAnAuthenticatedOwner(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].OwnerIdentity != "alice" {
 		t.Fatalf("authenticated pursuit records = %#v", records)
+	}
+}
+
+func TestReconcileLifeDomainsUsesAuthenticatedOwner(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	linker := &fakeLifeDomainLinker{}
+	service := WithLifeDomainLinker(NewService(repo, nil), linker)
+	if _, err := service.Create(CreateRequest{OwnerIdentity: "alice", Title: "Alice legal case", Domain: "legal_government"}); err != nil {
+		t.Fatalf("Create Alice pursuit: %v", err)
+	}
+	if _, err := service.Create(CreateRequest{OwnerIdentity: "bob", Title: "Bob financial review", Domain: "financial"}); err != nil {
+		t.Fatalf("Create Bob pursuit: %v", err)
+	}
+	linker.requests = nil
+
+	handler := NewHandler(service)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	routes := router.Group("/pursuits")
+	routes.Use(RequireAuthenticatedOwner())
+	routes.POST("/reconcile-life-domains", handler.ReconcileLifeDomains)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/pursuits/reconcile-life-domains", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("reconcile response=%d body=%s", response.Code, response.Body.String())
+	}
+	var result LifeDomainReconciliationResult
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode reconciliation response: %v", err)
+	}
+	if result.Projected != 1 || len(linker.requests) != 1 || linker.requests[0].OwnerIdentity != "alice" {
+		t.Fatalf("unexpected owner-scoped reconciliation: result=%#v requests=%#v", result, linker.requests)
 	}
 }
 
@@ -215,6 +292,52 @@ func TestPursuitEndpointsScopeRecordsToAuthenticatedOwner(t *testing.T) {
 	router.ServeHTTP(denied, httptest.NewRequest(http.MethodGet, "/pursuits/"+bob.ID.String()+"/activity", nil))
 	if denied.Code != http.StatusNotFound {
 		t.Fatalf("cross-owner activity status = %d, want %d; body=%s", denied.Code, http.StatusNotFound, denied.Body.String())
+	}
+}
+
+func TestDashboardCanIncludeAlreadyLoadedOwnerPursuits(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	service := NewService(repo, nil)
+	alice, err := service.Create(CreateRequest{Title: "Alice dashboard pursuit", OwnerIdentity: "alice"})
+	if err != nil {
+		t.Fatalf("Create Alice pursuit: %v", err)
+	}
+	if _, err := service.Create(CreateRequest{Title: "Bob dashboard pursuit", OwnerIdentity: "bob"}); err != nil {
+		t.Fatalf("Create Bob pursuit: %v", err)
+	}
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/pursuits/dashboard", NewHandler(service).Dashboard)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/pursuits/dashboard?includePursuits=true", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("dashboard status=%d body=%s", response.Code, response.Body.String())
+	}
+	var dashboard Dashboard
+	if err := json.Unmarshal(response.Body.Bytes(), &dashboard); err != nil {
+		t.Fatalf("decode dashboard: %v", err)
+	}
+	if len(dashboard.Pursuits) != 1 || dashboard.Pursuits[0].ID != alice.ID {
+		t.Fatalf("included dashboard pursuits = %#v", dashboard.Pursuits)
+	}
+
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/pursuits/dashboard", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("default dashboard status=%d body=%s", response.Code, response.Body.String())
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(response.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode default dashboard: %v", err)
+	}
+	if _, present := raw["pursuits"]; present {
+		t.Fatalf("default dashboard unexpectedly included raw pursuits")
 	}
 }
 

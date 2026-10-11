@@ -1,7 +1,8 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing'
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { IPlanGraph } from '../models/plan-graph.model.interface'
 import { PlanGraphService } from './plan-graph.service'
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('PlanGraphService', () => {
   let service: PlanGraphService
@@ -33,7 +34,7 @@ describe('PlanGraphService', () => {
   })
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [HttpClientTestingModule] })
+    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] })
     service = TestBed.inject(PlanGraphService)
     http = TestBed.inject(HttpTestingController)
   })

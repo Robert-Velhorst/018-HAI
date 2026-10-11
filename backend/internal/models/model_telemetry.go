@@ -12,6 +12,7 @@ type ModelRunTelemetry struct {
 	OperationID      string    `gorm:"type:text;index" json:"operationId,omitempty"`
 	InputTokens      int       `gorm:"not null;default:0" json:"inputTokens"`
 	OutputTokens     int       `gorm:"not null;default:0" json:"outputTokens"`
+	UsageSource      string    `gorm:"type:varchar(32);not null;default:'estimated'" json:"usageSource"`
 	DurationMs       int64     `gorm:"not null;default:0" json:"durationMs"`
 	TokensPerSecond  float64   `gorm:"not null;default:0" json:"tokensPerSecond"`
 	OK               bool      `gorm:"not null;default:false" json:"ok"`

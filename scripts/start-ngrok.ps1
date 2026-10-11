@@ -2,168 +2,134 @@
 param(
     [Parameter(ParameterSetName = 'Start')]
     [switch]$ValidateOnly,
-
     [Parameter(ParameterSetName = 'Stop', Mandatory = $true)]
     [switch]$Stop,
-
     [string]$EnvFile = '.env.local',
     [string]$ComposeFile = 'docker-compose.local.yml'
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$repoRoot = Split-Path -Parent $PSScriptRoot
 
-function Resolve-RepoFile([string]$PathValue) {
-    $candidate = if ([IO.Path]::IsPathRooted($PathValue)) {
-        $PathValue
-    } else {
-        Join-Path $repoRoot $PathValue
-    }
-    $resolved = [IO.Path]::GetFullPath($candidate)
-    if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
-        throw "Required file not found: $resolved"
-    }
-    return $resolved
+function Resolve-RepoFile([string]$Path) {
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    return Join-Path $repoRoot $Path
 }
 
-function Read-DotEnv([string]$PathValue) {
+function Read-DotEnv([string]$Path) {
     $values = @{}
-    foreach ($line in Get-Content -LiteralPath $PathValue) {
-        if ($line -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
-            continue
-        }
-        $name = $Matches[1]
-        $value = $Matches[2].Trim()
-        if (($value.StartsWith('"') -and $value.EndsWith('"')) -or
-            ($value.StartsWith("'") -and $value.EndsWith("'"))) {
-            $value = $value.Substring(1, $value.Length - 2)
-        }
-        $values[$name] = $value
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (!$trimmed -or $trimmed.StartsWith('#') -or !$trimmed.Contains('=')) { continue }
+        $key, $value = $trimmed.Split('=', 2)
+        $values[$key.Trim()] = $value.Trim().Trim('"').Trim("'")
     }
     return $values
 }
 
-function Get-Setting([hashtable]$Values, [string]$Name, [string]$Default = '') {
-    if ($Values.ContainsKey($Name)) {
-        return [string]$Values[$Name]
+function Require-Setting($Values, [string]$Name, [int]$MinimumLength = 1) {
+    $value = [string]$Values[$Name]
+    if ($value.Length -lt $MinimumLength -or $value -match '(?i)change-this|changeme|example|placeholder') {
+        throw "$Name must be configured with a non-placeholder value."
     }
-    return $Default
+    return $value
 }
 
-function Require-Secret([hashtable]$Values, [string]$Name, [int]$MinimumLength) {
-    $value = Get-Setting $Values $Name
-    if ($value.Length -lt $MinimumLength -or $value -match '(?i)change[-_ ]?this|changeme|example|placeholder') {
-        throw "$Name must be a non-placeholder secret of at least $MinimumLength characters before public access."
+function Require-Value($Values, [string]$Name, [string]$Expected) {
+    if ([string]$Values[$Name] -ne $Expected) { throw "$Name must be '$Expected' before public access can start." }
+}
+
+function Require-PositiveInteger($Values, [string]$Name) {
+    $raw = ([string]$Values[$Name]).Trim()
+    $parsed = 0
+    if (![int]::TryParse($raw, [ref]$parsed) -or $parsed -lt 1) {
+        throw "$Name must be a positive integer before public access can start."
+    }
+    return $parsed
+}
+
+function Assert-HaiComposeOwnership([string]$ProjectName) {
+    if ($ProjectName -notmatch '^[a-z0-9][a-z0-9_-]*$') {
+        throw 'COMPOSE_PROJECT_NAME must contain only lowercase letters, numbers, hyphens, or underscores before public access can start.'
+    }
+
+    $ids = @(docker ps -aq --filter "label=com.docker.compose.project=$ProjectName")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect existing Docker Compose containers for '$ProjectName'. Refusing to manage cloud access until ownership can be verified."
+    }
+    if (!$ids.Count) { return }
+    # Query labels only. Passing a template with nested quoted keys breaks in
+    # Windows PowerShell's legacy native-command argument mode, and full
+    # container inspection could expose environment values unnecessarily.
+    $inspection = @(docker inspect @ids --format '{{json .Config.Labels}}' 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect existing Docker Compose container ownership for '$ProjectName'. Refusing to manage cloud access until ownership can be verified."
+    }
+    $workingDirs = @()
+    foreach ($labelJson in $inspection) {
+        try {
+            $labels = $labelJson | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            throw "Unable to parse existing Docker Compose ownership labels for '$ProjectName'. Refusing to manage cloud access until ownership can be verified."
+        }
+        $workingDirectory = [string]$labels.'com.docker.compose.project.working_dir'
+        if (![string]::IsNullOrWhiteSpace($workingDirectory)) {
+            $workingDirs += $workingDirectory
+        }
+    }
+    $workingDirs = @($workingDirs | Select-Object -Unique)
+    foreach ($workingDir in $workingDirs) {
+        if (([System.IO.Path]::GetFullPath($workingDir)).TrimEnd('\\') -ne $repoRoot.TrimEnd('\\')) {
+            throw "Refusing to manage Docker project '$ProjectName' owned by $workingDir. Use that checkout instead."
+        }
     }
 }
 
 $envPath = Resolve-RepoFile $EnvFile
 $composePath = Resolve-RepoFile $ComposeFile
-
-if ($Stop) {
-    & docker compose --env-file $envPath --profile cloud-tunnel -f $composePath stop ngrok
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Failed to stop the ngrok service.'
-    }
-    return
-}
+if (!(Test-Path -LiteralPath $envPath)) { throw "Environment file not found: $envPath" }
+if (!(Test-Path -LiteralPath $composePath)) { throw "Compose file not found: $composePath" }
 
 $settings = Read-DotEnv $envPath
-if ((Get-Setting $settings 'RUN_MODE' 'production').ToLowerInvariant() -ne 'production') {
-    throw 'RUN_MODE must be production before public access is enabled.'
-}
-if ((Get-Setting $settings 'LOCAL_LOGIN_BYPASS_ENABLED' 'false').ToLowerInvariant() -ne 'false') {
-    throw 'LOCAL_LOGIN_BYPASS_ENABLED must be false before public access is enabled.'
-}
-if ((Get-Setting $settings 'IDP_COOKIE_SECURE' 'false').ToLowerInvariant() -ne 'true') {
-    throw 'IDP_COOKIE_SECURE must be true before public access is enabled.'
-}
-if ((Get-Setting $settings 'GATEWAY_HOST_BIND' '127.0.0.1') -ne '127.0.0.1') {
-    throw 'GATEWAY_HOST_BIND must remain 127.0.0.1; ngrok reaches nginx on the private Docker network.'
+$composeProjectName = ([string]$settings['COMPOSE_PROJECT_NAME']).Trim()
+Assert-HaiComposeOwnership -ProjectName $composeProjectName
+if ($Stop) {
+    docker compose --env-file $envPath --profile cloud-tunnel -f $composePath stop ngrok
+    exit $LASTEXITCODE
 }
 
-Require-Secret $settings 'NGROK_AUTHTOKEN' 20
-Require-Secret $settings 'JWT_SECRET' 32
-Require-Secret $settings 'BACKEND_API_SHARED_KEY' 32
-Require-Secret $settings 'HAI_MEMORY_ENCRYPTION_KEY' 32
-Require-Secret $settings 'HAI_APPROVAL_PROOF_SIGNING_KEY' 32
-
-$publicUrlText = (Get-Setting $settings 'HAI_NGROK_URL').TrimEnd('/')
-$publicUri = $null
-if (-not [Uri]::TryCreate($publicUrlText, [UriKind]::Absolute, [ref]$publicUri) -or
-    $publicUri.Scheme -ne 'https' -or
-    -not [string]::IsNullOrEmpty($publicUri.UserInfo) -or
-    $publicUri.AbsolutePath -ne '/' -or
-    -not [string]::IsNullOrEmpty($publicUri.Query) -or
-    -not [string]::IsNullOrEmpty($publicUri.Fragment) -or
-    $publicUri.Host -eq 'your-reserved-domain.ngrok.app') {
-    throw 'HAI_NGROK_URL must be a fixed HTTPS origin without credentials, path, query, or fragment.'
+Require-Value $settings 'RUN_MODE' 'production'
+Require-Value $settings 'LOCAL_LOGIN_BYPASS_ENABLED' 'false'
+Require-Value $settings 'IDP_COOKIE_SECURE' 'true'
+Require-Value $settings 'GATEWAY_HOST_BIND' '127.0.0.1'
+Require-Value $settings 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED' 'false'
+Require-PositiveInteger $settings 'RATE_LIMIT_PER_MINUTE' | Out-Null
+$ngrokUrl = Require-Setting $settings 'HAI_NGROK_URL'
+Require-Setting $settings 'NGROK_AUTHTOKEN' 20 | Out-Null
+foreach ($secret in 'JWT_SECRET', 'BACKEND_API_SHARED_KEY', 'HAI_MEMORY_ENCRYPTION_KEY', 'HAI_APPROVAL_PROOF_SIGNING_KEY', 'DB_PASSWORD') {
+    Require-Setting $settings $secret 32 | Out-Null
+}
+Require-Setting $settings 'FIRST_RUN_ADMIN_PASSWORD' 12 | Out-Null
+if ($ngrokUrl -notmatch '^https://[^/@?#]+\.(ngrok\.app|ngrok\.dev|ngrok-free\.app|ngrok-free\.dev)$') {
+    throw 'HAI_NGROK_URL must be a reserved HTTPS ngrok origin without path, query, fragment, or credentials.'
 }
 
-$callbackPaths = @{
-    GOOGLE_LOGIN_REDIRECT_URL = '/api/v1/auth/google/callback'
-    GOOGLE_OAUTH_REDIRECT_URL = '/api/v1/sources/oauth/google/callback'
-}
-foreach ($entry in $callbackPaths.GetEnumerator()) {
-    $configured = Get-Setting $settings $entry.Key
-    if ($configured -and $configured -ne ($publicUrlText + $entry.Value)) {
-        throw "$($entry.Key) must equal $publicUrlText$($entry.Value) when configured."
+# Google sends the browser to its registered callback after consent. A localhost
+# callback would strand a remote user behind this public tunnel, so reject a
+# stale local callback instead of starting a partly functional cloud session.
+$expectedGoogleLoginRedirect = "$ngrokUrl/api/v1/auth/google/callback"
+$expectedGoogleSourceRedirect = "$ngrokUrl/api/v1/sources/oauth/google/callback"
+foreach ($redirect in @(
+    @{ Name = 'GOOGLE_LOGIN_REDIRECT_URL'; Expected = $expectedGoogleLoginRedirect },
+    @{ Name = 'GOOGLE_OAUTH_REDIRECT_URL'; Expected = $expectedGoogleSourceRedirect }
+)) {
+    $configured = ([string]$settings[$redirect.Name]).Trim()
+    if ($configured -and $configured -ne $redirect.Expected) {
+        throw "$($redirect.Name) must be '$($redirect.Expected)' while public ngrok access is enabled, or be empty to disable that optional Google flow."
     }
 }
 
-& docker compose --env-file $envPath --profile cloud-tunnel -f $composePath config --quiet
-if ($LASTEXITCODE -ne 0) {
-    throw 'Docker Compose validation failed.'
-}
-
-Write-Host "Cloud-tunnel preflight passed for $publicUrlText"
-if ($ValidateOnly) {
-    return
-}
-
-function Wait-ForHealthyContainer([string]$ContainerName, [int]$Attempts = 45) {
-    for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
-        $state = & docker inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' $ContainerName 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            $parts = $state -split '\|', 2
-            if ($parts[0] -eq 'running' -and $parts[1] -eq 'healthy') {
-                return
-            }
-            if ($parts[0] -eq 'exited' -or $parts[1] -eq 'unhealthy') {
-                & docker logs --tail 40 $ContainerName
-                throw "$ContainerName entered state $state."
-            }
-        }
-        Start-Sleep -Seconds 2
-    }
-    & docker logs --tail 40 $ContainerName
-    throw "$ContainerName did not become healthy within $($Attempts * 2) seconds."
-}
-
-# Reconcile the security-sensitive base services before creating any public
-# endpoint. This applies secure-cookie and OAuth callback changes to the actual
-# running IDP rather than trusting only the env file.
-& docker compose --env-file $envPath --profile cloud-tunnel -f $composePath up -d --no-build idp backend frontend nginx
-if ($LASTEXITCODE -ne 0) {
-    throw 'Failed to reconcile the secured HAI gateway services. Build the base stack first.'
-}
-foreach ($container in @('018-hai-idp', '018-hai-backend', '018-hai-frontend', 'gateway')) {
-    Wait-ForHealthyContainer $container
-}
-
-$gatewayPort = Get-Setting $settings 'GATEWAY_HOST_PORT' '8088'
-try {
-    $ready = Invoke-WebRequest -Uri "http://127.0.0.1:$gatewayPort/readyz" -UseBasicParsing -TimeoutSec 5
-    if ($ready.StatusCode -ne 200) {
-        throw "unexpected HTTP $($ready.StatusCode)"
-    }
-} catch {
-    throw "The reconciled local HAI gateway is not ready on port $gatewayPort. $($_.Exception.Message)"
-}
-
-& docker compose --env-file $envPath --profile cloud-tunnel -f $composePath up -d --no-build ngrok
-if ($LASTEXITCODE -ne 0) {
-    throw 'Failed to start the ngrok service.'
-}
-Wait-ForHealthyContainer '018-hai-ngrok' 30
-Write-Host "HAI is available through $publicUrlText"
+docker compose --env-file $envPath --profile cloud-tunnel -f $composePath config --quiet
+if ($LASTEXITCODE -ne 0 -or $ValidateOnly) { exit $LASTEXITCODE }
+docker compose --env-file $envPath --profile cloud-tunnel -f $composePath up -d ngrok
+exit $LASTEXITCODE

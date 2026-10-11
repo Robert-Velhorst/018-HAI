@@ -9,6 +9,18 @@ import {
   IRecoveryReport,
 } from '../models/runtime-control.model.interface'
 
+export interface IControlAuthorization {
+  idempotencyKey: string
+  taskId: string
+  approvalSourceId: string
+  approvalBindingDigest: string
+}
+
+interface IModeApprovalPreparation {
+  authorizationRequired: boolean
+  authorization?: IControlAuthorization
+}
+
 @Injectable({ providedIn: 'root' })
 export class RuntimeControlService {
   private readonly apiUrl = '/api/v1'
@@ -27,12 +39,20 @@ export class RuntimeControlService {
     return this.http.post<{ emergencyStop: IEmergencyStopState }>(`${this.apiUrl}/background/pause`, { reason })
   }
 
-  resume(): Observable<{ emergencyStop: IEmergencyStopState }> {
-    return this.http.post<{ emergencyStop: IEmergencyStopState }>(`${this.apiUrl}/background/resume`, {})
+  prepareResume(): Observable<IControlAuthorization> {
+    return this.http.post<IControlAuthorization>(`${this.apiUrl}/background/resume/approval`, {})
   }
 
-  setMode(mode: string): Observable<{ mode: string }> {
-    return this.http.patch<{ mode: string }>(`${this.apiUrl}/background/mode`, { mode })
+  resume(authorization: IControlAuthorization): Observable<{ emergencyStop: IEmergencyStopState }> {
+    return this.http.post<{ emergencyStop: IEmergencyStopState }>(`${this.apiUrl}/background/resume`, authorization)
+  }
+
+  prepareModeChange(mode: string): Observable<IModeApprovalPreparation> {
+    return this.http.post<IModeApprovalPreparation>(`${this.apiUrl}/background/mode/approval`, { mode })
+  }
+
+  setMode(mode: string, authorization?: IControlAuthorization): Observable<{ mode: string }> {
+    return this.http.patch<{ mode: string }>(`${this.apiUrl}/background/mode`, { mode, ...authorization })
   }
 
   verifyEmergencyStop(): Observable<IEmergencyStopVerification> {

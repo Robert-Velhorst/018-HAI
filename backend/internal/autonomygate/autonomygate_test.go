@@ -1,6 +1,9 @@
 package autonomygate
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestApprovalAlwaysAuto(t *testing.T) {
 	if Decide(Signals{Risk: "high", Reversible: false, Approved: true}) != Auto {
@@ -32,5 +35,44 @@ func TestOnlyLowRiskHighConfidenceCasesAuto(t *testing.T) {
 	}
 	if Decide(Signals{Confidence: 0.9, Risk: "medium", Reversible: false}) != Review {
 		t.Fatalf("medium risk irreversible should review")
+	}
+}
+
+func TestUnrecognizedRiskRequiresReview(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		risk string
+	}{
+		{name: "empty", risk: ""},
+		{name: "unknown", risk: "unknown"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := Decide(Signals{Confidence: 0.9, Risk: test.risk, Reversible: true}); got != Review {
+				t.Fatalf("unrecognized risk %q: got %q, want %q", test.risk, got, Review)
+			}
+		})
+	}
+}
+
+func TestInvalidConfidenceRequiresReview(t *testing.T) {
+	for _, confidence := range []struct {
+		name  string
+		value float64
+	}{
+		{name: "NaN", value: math.NaN()},
+		{name: "above range", value: 1.01},
+		{name: "positive infinity", value: math.Inf(1)},
+	} {
+		t.Run(confidence.name, func(t *testing.T) {
+			if got := Decide(Signals{Confidence: confidence.value, Risk: "low", Reversible: true}); got != Review {
+				t.Fatalf("invalid confidence %v: got %q, want %q", confidence.value, got, Review)
+			}
+		})
+	}
+}
+
+func TestIrreversibleLowRiskRequiresReview(t *testing.T) {
+	if got := Decide(Signals{Confidence: 0.9, Risk: "low", Reversible: false}); got != Review {
+		t.Fatalf("irreversible low-risk action: got %q, want %q", got, Review)
 	}
 }

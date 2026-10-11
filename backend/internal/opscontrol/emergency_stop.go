@@ -12,8 +12,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"automation-hub-backend/internal/safety"
 )
 
 var ErrEmergencyStopStateChanged = errors.New("emergency-stop state changed concurrently")
@@ -119,8 +122,54 @@ func (s *EmergencyStopStore) Engaged() bool {
 	return err != nil || state.Engaged
 }
 
+// SeedIfAbsent writes an initial state exactly once. Recording the false state
+// matters too: otherwise a later configuration change could turn an already
+// running installation into an emergency-stopped one on restart.
+func (s *EmergencyStopStore) SeedIfAbsent(
+	engaged bool,
+	actor string,
+	now time.Time,
+) error {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.err != nil {
+		return s.err
+	}
+	if _, err := os.Stat(s.path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		s.err = fmt.Errorf("inspect persisted emergency-stop state: %w", err)
+		return s.err
+	}
+	if strings.TrimSpace(actor) == "" {
+		actor = "system"
+	}
+	state := EmergencyStopState{
+		Engaged:   engaged,
+		Actor:     actor,
+		UpdatedAt: now.UTC(),
+		Revision:  1,
+	}
+	if engaged {
+		state.Reason = "configured first-run emergency stop"
+		engagedAt := state.UpdatedAt
+		state.EngagedAt = &engagedAt
+	}
+	if err := s.persist(state); err != nil {
+		s.err = err
+		return err
+	}
+	s.state = state
+	return nil
+}
+
 // Engage activates the emergency stop and persists it.
 func (s *EmergencyStopStore) Engage(reason, actor string, now time.Time) (EmergencyStopState, error) {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t := now.UTC()
@@ -156,6 +205,8 @@ func (s *EmergencyStopStore) DisengageIfRevision(
 	actor string,
 	now time.Time,
 ) (EmergencyStopState, error) {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state.Revision != expectedRevision {
@@ -183,6 +234,8 @@ func (s *EmergencyStopStore) RestoreIfRevision(
 	previous EmergencyStopState,
 	now time.Time,
 ) (EmergencyStopState, error) {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state.Revision != expectedRevision {

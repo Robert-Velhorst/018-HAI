@@ -32,4 +32,5 @@ data locally, not a cloud service that phones home.
 
 The critical path (dashboard → source → task → routing → approval → execution →
 verification → audit) works end to end with real, non-faked behavior, and the
-user can always see status, stop execution, and export/delete their data.
+user can always see status, activate an emergency stop that blocks new execution,
+request supported cancellation for an in-flight runtime, and export/delete their data.

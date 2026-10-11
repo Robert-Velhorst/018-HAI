@@ -3,11 +3,14 @@
 package frameworkregistry
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"automation-hub-backend/internal/infra"
@@ -60,6 +63,32 @@ func executeEmbeddedMigration(t *testing.T, db *gorm.DB, path string) {
 	if err := db.Exec(string(sql)).Error; err != nil {
 		t.Fatalf("execute migration %s: %v", path, err)
 	}
+}
+
+func migrationFilesThrough(t *testing.T, lastVersion string) fs.FS {
+	t.Helper()
+	files := fstest.MapFS{}
+	entries, err := fs.ReadDir(migrations.Files, "pre")
+	if err != nil {
+		t.Fatalf("read pre-migration directory: %v", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		base := strings.TrimSuffix(strings.TrimSuffix(name, ".up.sql"), ".down.sql")
+		if entry.IsDir() || (!strings.HasSuffix(name, ".up.sql") && !strings.HasSuffix(name, ".down.sql")) || strings.Compare(base, lastVersion) > 0 {
+			continue
+		}
+		content, err := migrations.Files.ReadFile("pre/" + name)
+		if err != nil {
+			t.Fatalf("read migration fixture %s: %v", name, err)
+		}
+		files["pre/"+name] = &fstest.MapFile{Data: content}
+	}
+	// RollbackMigration validates later phases before touching pre-phase state.
+	// Keep an empty post directory in this test filesystem so the test exercises
+	// ordering behavior instead of failing because its fixture omitted a phase.
+	files["post/.keep"] = &fstest.MapFile{Data: []byte("test fixture")}
+	return files
 }
 
 func relationExists(t *testing.T, db *gorm.DB, relation string) bool {
@@ -127,15 +156,16 @@ func TestFrameworkRegistryPostgresIntegrationRequiredEnvironment(t *testing.T) {
 
 func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	db := openFrameworkRegistryPostgresTestDB(t)
+	migrationFiles := migrationFilesThrough(t, "0003_framework_registry")
 
-	applied, err := infra.ApplyMigrations(db, migrations.Files, "pre")
+	applied, err := infra.ApplyMigrations(db, migrationFiles, "pre")
 	if err != nil {
 		t.Fatalf("apply pre migrations: %v", err)
 	}
 	if applied < 3 {
 		t.Fatalf("applied %d pre migrations, want at least 3", applied)
 	}
-	if rerun, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil || rerun != 0 {
+	if rerun, err := infra.ApplyMigrations(db, migrationFiles, "pre"); err != nil || rerun != 0 {
 		t.Fatalf("migration runner rerun = %d, %v; want 0, nil", rerun, err)
 	}
 
@@ -177,9 +207,9 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 
 	if err := infra.RollbackMigration(
 		db,
-		migrations.Files,
+		migrationFiles,
 		"pre",
-		frameworkRegistryMigrationVersion,
+		"pre/0002_baseline",
 	); err == nil || !strings.Contains(err.Error(), "rollback later migrations first") {
 		t.Fatalf("out-of-order rollback error = %v, want later-migration rejection", err)
 	}
@@ -187,24 +217,17 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 		t.Fatal("rejected out-of-order rollback changed the registry schema")
 	}
 
-	for _, version := range []string{
-		"pre/0006_durable_job_fencing",
-		"pre/0005_framework_operating_contract",
-		"pre/0004_task_state_storage",
+	if err := infra.RollbackMigration(
+		db,
+		migrationFiles,
+		"pre",
 		frameworkRegistryMigrationVersion,
-	} {
-		if err := infra.RollbackMigration(
-			db,
-			migrations.Files,
-			"pre",
-			version,
-		); err != nil {
-			t.Fatalf("rollback %s: %v", version, err)
-		}
+	); err != nil {
+		t.Fatalf("rollback framework registry migration: %v", err)
 	}
 	if err := infra.RollbackMigration(
 		db,
-		migrations.Files,
+		migrationFiles,
 		"pre",
 		frameworkRegistryMigrationVersion,
 	); err == nil || !strings.Contains(err.Error(), "is not applied") {
@@ -236,23 +259,43 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	// The down SQL is intentionally safe to run again after all objects are
 	// gone. This protects manual recovery and repeated local test teardown.
 	executeEmbeddedMigration(t, db, "pre/0003_framework_registry.down.sql")
-	reapplied, err := infra.ApplyMigrations(db, migrations.Files, "pre")
+	reapplied, err := infra.ApplyMigrations(db, migrationFiles, "pre")
 	if err != nil {
 		t.Fatalf("reapply framework registry migration: %v", err)
 	}
-	if reapplied != 4 {
-		t.Fatalf("reapplied %d migrations, want 4", reapplied)
+	if reapplied != 1 {
+		t.Fatalf("reapplied %d migrations, want 1", reapplied)
 	}
 	if !relationExists(t, db, "framework_selection_records") {
 		t.Fatal("framework registry schema was not restored")
 	}
 }
 
+func TestHostRuntimeStartIntentMigrationRollbackIsRefused(t *testing.T) {
+	db := openFrameworkRegistryPostgresTestDB(t)
+	migrationFiles := migrationFilesThrough(t, "0108_host_runtime_start_intent")
+	if _, err := infra.ApplyMigrations(db, migrationFiles, "pre"); err != nil {
+		t.Fatalf("apply pre migrations: %v", err)
+	}
+	const version = "pre/0108_host_runtime_start_intent"
+	err := infra.RollbackMigration(db, migrationFiles, "pre", version)
+	if err == nil || !strings.Contains(err.Error(), "rollback refused: removing host-runtime start intents") {
+		t.Fatalf("rollback error = %v, want host-runtime start-intent safety rejection", err)
+	}
+	var stillApplied bool
+	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)", version).Scan(&stillApplied).Error; err != nil {
+		t.Fatalf("check protected migration ledger row: %v", err)
+	}
+	if !stillApplied {
+		t.Fatal("refused rollback removed the protected migration ledger row")
+	}
+}
+
 func TestFrameworkRegistryPostgresOwnerScopeConstraintsAndHistory(t *testing.T) {
 	db := openFrameworkRegistryPostgresTestDB(t)
-	executeEmbeddedMigration(t, db, "pre/0001_extensions.up.sql")
-	executeEmbeddedMigration(t, db, "pre/0003_framework_registry.up.sql")
-	executeEmbeddedMigration(t, db, "pre/0005_framework_operating_contract.up.sql")
+	if _, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil {
+		t.Fatalf("apply pre migrations: %v", err)
+	}
 	repo := NewGormRepository(db)
 
 	t.Run("preferences are owner scoped and unique per owner and framework", func(t *testing.T) {

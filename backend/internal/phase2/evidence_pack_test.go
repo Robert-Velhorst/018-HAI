@@ -11,25 +11,13 @@ import (
 	"automation-hub-backend/internal/operations"
 	"automation-hub-backend/internal/privacyfilter"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
 func TestEvidencePackGenerationAndRetrieval(t *testing.T) {
-	r, _ := newTestServer(t)
-	// Run a pass so there is a completed operation with full provenance.
-	do(t, r, http.MethodPost, "/background/run")
-	w := do(t, r, http.MethodGet, "/operations?status=completed")
-	var listed struct {
-		Operations []struct {
-			ID string `json:"id"`
-		} `json:"operations"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &listed)
-	if len(listed.Operations) == 0 {
-		t.Fatalf("need a completed operation to build an evidence pack")
-	}
-	id := listed.Operations[0].ID
+	r, m := newTestServer(t)
+	// Complete one source-fed operation only after the exact owner review flow.
+	id := createCompletedSourceOperation(t, r, m)
 
 	gen := do(t, r, http.MethodPost, "/operations/"+id+"/evidence-pack")
 	if gen.Code != http.StatusCreated {
@@ -125,8 +113,7 @@ func operationsFilterAll() operations.Filter {
 func TestEvidencePackRetrievalRequiresAuthenticatedMatchingOwner(t *testing.T) {
 	m := newTestModule(t)
 	ownerRouter := newTestRouter(m, "local-operator", true)
-	do(t, ownerRouter, http.MethodPost, "/background/run")
-	operationID := completedOperationID(t, ownerRouter)
+	operationID := createCompletedSourceOperation(t, ownerRouter, m)
 
 	generated := do(t, ownerRouter, http.MethodPost, "/operations/"+operationID+"/evidence-pack")
 	if generated.Code != http.StatusCreated {
@@ -173,8 +160,7 @@ func TestEvidencePackStorageFailuresFailClosed(t *testing.T) {
 		m.evidence = repository
 		m.evidenceErr = nil
 		r := newTestRouter(m, "local-operator", true)
-		do(t, r, http.MethodPost, "/background/run")
-		operationID := completedOperationID(t, r)
+		operationID := createCompletedSourceOperation(t, r, m)
 
 		got := do(t, r, http.MethodPost, "/operations/"+operationID+"/evidence-pack")
 		if got.Code != http.StatusInternalServerError {
@@ -271,21 +257,4 @@ func TestEvidencePackRepositoryErrorsAreClassifiable(t *testing.T) {
 		!errors.Is(ErrEvidencePackRepositoryUnavailable, ErrEvidencePackRepositoryUnavailable) {
 		t.Fatal("repository sentinel errors must remain classifiable")
 	}
-}
-
-func completedOperationID(t *testing.T, r *gin.Engine) string {
-	t.Helper()
-	w := do(t, r, http.MethodGet, "/operations?status=completed")
-	var listed struct {
-		Operations []struct {
-			ID string `json:"id"`
-		} `json:"operations"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &listed); err != nil {
-		t.Fatalf("decode operations: %v", err)
-	}
-	if len(listed.Operations) == 0 {
-		t.Fatal("need a completed operation to build an evidence pack")
-	}
-	return listed.Operations[0].ID
 }

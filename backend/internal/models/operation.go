@@ -16,11 +16,17 @@ type Operation struct {
 	Title       string `gorm:"type:text;not null" json:"title"`
 	Description string `gorm:"type:text" json:"description,omitempty"`
 
-	SourceType         string     `gorm:"type:text;not null;index:idx_operations_source" json:"sourceType"`
-	SourceID           *uuid.UUID `gorm:"type:uuid;index:idx_operations_source" json:"sourceId,omitempty"`
-	SourceURI          string     `gorm:"type:text" json:"sourceUri,omitempty"`
-	SourceReceivedAt   *time.Time `json:"sourceReceivedAt,omitempty"`
-	SourceRevisionHash string     `gorm:"type:text" json:"sourceRevisionHash,omitempty"`
+	SourceType                  string     `gorm:"type:text;not null;index:idx_operations_source" json:"sourceType"`
+	SourceID                    *uuid.UUID `gorm:"type:uuid;index:idx_operations_source" json:"sourceId,omitempty"`
+	SourceURI                   string     `gorm:"type:text" json:"sourceUri,omitempty"`
+	SourceReceivedAt            *time.Time `json:"sourceReceivedAt,omitempty"`
+	SourceRevisionHash          string     `gorm:"type:text" json:"sourceRevisionHash,omitempty"`
+	SourceProvider              string     `gorm:"type:text;not null;default:''" json:"sourceProvider,omitempty"`
+	SourceAccount               string     `gorm:"type:text;not null;default:''" json:"sourceAccount,omitempty"`
+	SourceExternalID            string     `gorm:"type:text;not null;default:''" json:"sourceExternalId,omitempty"`
+	SourceIdentityHash          string     `gorm:"type:text;not null;default:''" json:"sourceIdentityHash,omitempty"`
+	SourceObservationID         *uuid.UUID `gorm:"type:uuid" json:"sourceObservationId,omitempty"`
+	SourceObservationGeneration int64      `gorm:"not null;default:0" json:"sourceObservationGeneration,omitempty"`
 
 	ProjectKey    string     `gorm:"type:text;index" json:"projectKey,omitempty"`
 	PursuitID     *uuid.UUID `gorm:"type:uuid;index" json:"pursuitId,omitempty"`
@@ -37,7 +43,8 @@ type Operation struct {
 	ApprovalID        *uuid.UUID `gorm:"type:uuid" json:"approvalId,omitempty"`
 	RecommendedAction string     `gorm:"type:text" json:"recommendedAction,omitempty"`
 
-	EvidenceJSON        string `gorm:"type:jsonb;not null;default:'{}'" json:"evidence"`
+	EvidenceJSON           string `gorm:"type:jsonb;not null;default:'{}'" json:"evidence"`
+	SourceEvidenceRawSHA256 string `gorm:"type:text;not null;default:''" json:"-"`
 	WorldModelStateJSON string `gorm:"type:jsonb;not null;default:'{}'" json:"worldModelState"`
 
 	RuntimeID          string `gorm:"type:text" json:"runtimeId,omitempty"`

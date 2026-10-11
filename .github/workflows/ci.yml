@@ -5,7 +5,303 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  python-runners:
+    name: Python runner contracts (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - name: agent-framework-runner
+            python-version: "3.12"
+            requirements-lock: services/agent-framework-runner/requirements.lock
+          - name: crewai-runner
+            python-version: "3.12"
+            requirements-lock: services/crewai-runner/requirements.lock
+          - name: deepeval-runner
+            python-version: "3.12"
+            requirements-lock: services/deepeval-runner/requirements.lock
+          - name: deepteam-runner
+            python-version: "3.12"
+            requirements-lock: services/deepteam-runner/requirements.lock
+          - name: docling-runner
+            python-version: "3.12"
+            requirements-lock: services/docling-runner/requirements.lock
+          - name: evidently-runner
+            python-version: "3.12"
+            requirements-lock: services/evidently-runner/requirements.lock
+          - name: fastmcp-bridge
+            python-version: "3.13"
+            requirements-lock: services/fastmcp-bridge/requirements.lock
+          - name: garak-runner
+            python-version: "3.12"
+            requirements-lock: services/garak-runner/requirements.lock
+          - name: gitleaks-runner
+            python-version: "3.13"
+            requirements-lock: ""
+          - name: gosec-runner
+            python-version: "3.13"
+            requirements-lock: ""
+          - name: grype-runner
+            python-version: "3.13"
+            requirements-lock: ""
+          - name: guardrails-runner
+            python-version: "3.12"
+            requirements-lock: services/guardrails-runner/requirements.lock
+          - name: lm-eval-runner
+            python-version: "3.12"
+            requirements-lock: services/lm-eval-runner/requirements.lock
+          - name: miniswe-runner
+            python-version: "3.12"
+            requirements-lock: services/miniswe-runner/requirements.lock
+          - name: ortools-solver
+            python-version: "3.12"
+            requirements-lock: services/ortools-solver/requirements.lock
+          - name: pydantic-ai-runner
+            python-version: "3.12"
+            requirements-lock: services/pydantic-ai-runner/requirements.lock
+          - name: syft-runner
+            python-version: "3.13"
+            requirements-lock: ""
+          - name: trivy-runner
+            python-version: "3.13"
+            requirements-lock: ""
+          - name: wasi-runner
+            python-version: "3.12"
+            requirements-lock: ""
+          - name: whispercpp-runner
+            python-version: "3.13"
+            requirements-lock: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            services/*/requirements.lock
+            services/*/requirements.txt
+            services/*/requirements.in
+      - name: Install hash-locked runner dependencies
+        if: matrix.requirements-lock != ''
+        run: python -m pip install --disable-pip-version-check --require-hashes -r "${{ matrix.requirements-lock }}"
+      - name: Compile runner and run isolated contract tests
+        working-directory: services/${{ matrix.name }}
+        run: |
+          python -m compileall -q .
+          python -m unittest discover -v -s . -p 'test*.py'
+      - name: Build runner container image
+        working-directory: services/${{ matrix.name }}
+        run: docker build --file Dockerfile --tag "hai-${{ matrix.name }}:ci" .
+      - name: Start and health-check isolated runner container
+        timeout-minutes: 2
+        working-directory: services/${{ matrix.name }}
+        run: python ../../scripts/python_runner_container_smoke.py --runner "${{ matrix.name }}" --image "hai-${{ matrix.name }}:ci"
+
+  secret-scan:
+    name: Repository secret scan (redacted output)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GITLEAKS_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+      - name: Scan repository history with redacted output
+        run: python3 scripts/run-secret-scan.py
+
+  cleanup-readiness-contracts:
+    name: HAI cleanup readiness safety contracts
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify detached-volume archive and read-only contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/test-hai-detached-volume-archive-contract.ps1
+          ./scripts/test-hai-transcript-cleanup-readiness.ps1
+          ./scripts/test-hai-transcript-cleanup-gate-contract.ps1
+          ./scripts/test-hai-transcript-removal-contract.ps1
+          ./scripts/test-hai-local-cleanup-readiness.ps1
+          ./scripts/test-hai-temp-fixture-cleanup-contract.ps1
+          ./scripts/test-hai-volume-cleanup-readiness-contract.ps1
+          ./scripts/test-hai-detached-volume-removal-contract.ps1
+          ./scripts/test-hai-pr-diagnostic-removal-contract.ps1
+          ./scripts/test-hai-image-removal-contract.ps1
+          ./scripts/test-hai-duplicate-recovery-bundle-removal-contract.ps1
+
+  windows-installer:
+    name: Windows installer preview and signing guards
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache-dependency-path: backend/go.sum
+      - name: Windows process containment tests
+        shell: pwsh
+        working-directory: backend
+        run: |
+          $ErrorActionPreference = "Stop"
+          $testSuites = @(
+            @{
+              Package = "./cmd/hai-dsh-bridge"
+              Names = @(
+                "TestWindowsProcessTreeFixture",
+                "TestWindowsExitCode259Fixture",
+                "TestWindowsTerminateRejectsMissingJobHandleAsUnverified",
+                "TestWindowsCancellationTerminatesDescendantHoldingOutputHandles",
+                "TestWindowsPreservesApplicationExitCode259"
+              )
+            },
+            @{
+              Package = "./internal/openclawmaintenance"
+              Names = @(
+                "TestContainedProcessHelper",
+                "TestWindowsJobContainsDescendantsAndWaitsForEmpty",
+                "TestWindowsJobProcessCreationAndCleanExitAreContained",
+                "TestUnverifiedWindowsTerminationIsReportedUnknown"
+              )
+            }
+          )
+          foreach ($suite in $testSuites) {
+            $pattern = "^(" + ($suite.Names -join "|") + ")$"
+            $output = & go test -count=1 -v -run $pattern $suite.Package 2>&1
+            $exitCode = $LASTEXITCODE
+            $output | ForEach-Object { Write-Output $_ }
+            if ($exitCode -ne 0) {
+              throw "Windows process-containment tests failed for $($suite.Package) with exit code $exitCode"
+            }
+            foreach ($testName in $suite.Names) {
+              $passPattern = "^--- PASS: $([regex]::Escape($testName))(?:$|\s)"
+              if (-not ($output | Select-String -Pattern $passPattern -Quiet)) {
+                throw "Expected Windows test $testName did not report PASS"
+              }
+            }
+          }
+      - name: Installer payload and safety contract
+        shell: pwsh
+        run: ./scripts/test-windows-installer-contract.ps1
+      - name: Existing HAI data recovery guard
+        shell: pwsh
+        run: ./scripts/test-windows-existing-data-env-guard.ps1
+      - name: Protected Windows recovery contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/test-windows-recovery-contract.ps1
+          ./scripts/test-windows-environment-only-recovery.ps1
+          ./scripts/test-hai-detached-volume-archive-contract.ps1
+          ./scripts/test-hai-transcript-cleanup-gate-contract.ps1
+          ./scripts/test-hai-transcript-removal-contract.ps1
+          ./scripts/test-hai-temp-fixture-cleanup-contract.ps1
+          ./scripts/test-hai-volume-cleanup-readiness-contract.ps1
+          ./scripts/test-hai-detached-volume-removal-contract.ps1
+          ./scripts/test-hai-pr-diagnostic-removal-contract.ps1
+          ./scripts/test-hai-image-removal-contract.ps1
+      - name: Required environment startup guard
+        shell: pwsh
+        run: ./scripts/test-windows-start-env-validation.ps1
+      - name: Required environment startup guard on Windows PowerShell
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-windows-start-env-validation.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell startup guard failed" }
+      - name: Production signing guards on both PowerShell engines
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/test-windows-installer-signing.ps1
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/test-windows-installer-signing.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell signing guards failed" }
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Build unsigned Windows preview
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $status = @(& git status --porcelain=v1 --untracked-files=all)
+          if ($LASTEXITCODE -ne 0 -or $status.Count -ne 0) {
+            throw "Refusing to build an installer preview from a dirty or unverifiable checkout."
+          }
+          ./scripts/build-windows-installer.ps1 -Version "ci-$($env:GITHUB_SHA.Substring(0, 7))"
+      - name: Install smoke test on disposable hosted runner
+        shell: pwsh
+        run: ./scripts/test-windows-installer-install.ps1 -InstallerPath "./installer/release/HAI-Setup-ci-$($env:GITHUB_SHA.Substring(0, 7)).exe" -ExpectedVersion "ci-$($env:GITHUB_SHA.Substring(0, 7))" -AllowUnavailableDockerOnHostedRunner
+      - name: Upload unsigned Windows preview
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hai-windows-installer-preview
+          path: installer/release/HAI-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-native-runtime:
+    name: Guarded native Windows runtime regressions
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
+          cache-dependency-path: backend/go.sum
+      - name: Fetch locked build dependencies
+        shell: pwsh
+        working-directory: backend
+        run: go mod download
+      - name: Validate native Go discovery and resource configuration
+        shell: pwsh
+        run: ./scripts/test-native-go-discovery.ps1
+      - name: Validate native compiler deadline handling
+        shell: pwsh
+        run: ./scripts/test-native-compile-deadline.ps1
+      - name: Run synthetic native acceptance
+        shell: pwsh
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+        run: ./scripts/test-windows-native-runtime.ps1
+      - name: Retain native acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hai-native-runtime-evidence
+          path: |
+            ${{ runner.temp }}/hai-windows-native-acceptance-*/acceptance-evidence.json
+            ${{ runner.temp }}/hai-windows-native-acceptance-*/native-tests.log
+          if-no-files-found: warn
+          retention-days: 14
+
   backend:
     name: Backend build and tests
     runs-on: ubuntu-latest
@@ -14,15 +310,21 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: "1.25.12"
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
           cache-dependency-path: backend/go.sum
       - run: go vet ./...
       - run: go test ./...
       - name: Execution-boundary race tests
-        run: go test -count=1 -race ./internal/automation ./internal/task
+        # Keep concurrency coverage limited to stateful boundary packages. This
+        # catches duplicate lease, approval, model-refresh, source-sync, and
+        # runtime-registration races without making every CI package pay the
+        # race-detector cost.
+        run: go test -count=1 -race ./internal/automation ./internal/task ./internal/source ./internal/llm ./internal/agentruntime ./internal/durablejob ./internal/background ./internal/lifecycle ./internal/temporalbridge
       - run: go build ./...
       - name: Vulnerability scan
         run: |
@@ -33,15 +335,115 @@ jobs:
     name: IDP build and tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      # Synthetic public credentials, only for this disposable hosted-runner service.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hai_idp_auth_test
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d hai_idp_auth_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     defaults:
       run:
         working-directory: idp
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: "1.25.12"
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
           cache-dependency-path: idp/go.sum
+      - name: Redis session rotation and revocation races
+        env:
+          HAI_TEST_REDIS_ADDR: 127.0.0.1:6379
+          HAI_TEST_REDIS_INSTANCE: hai-idp-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          docker exec "${{ job.services.redis.id }}" redis-cli SET hai-disposable-test-instance "$HAI_TEST_REDIS_INSTANCE"
+          rotation_log="$RUNNER_TEMP/idp-refresh-rotation.log"
+          go test -count=3 -race -run '^TestRedis' ./internal/app/authentication ./internal/app/services -v | tee "$rotation_log"
+          for test_name in \
+            TestRedisSessionRefreshConcurrentCookiesAndLogout \
+            TestRedisHTTPSessionCookieChain \
+            TestRedisHTTPSessionAuthorityLoss \
+            TestRedisHTTPSessionStoreUnavailable \
+            TestRedisSessionReplayRevokesChildAndAccess \
+            TestRedisSessionLogoutRacesRotation \
+            TestRedisRefreshRotationIsAtomicReplayableAndFamilyRevocable \
+            TestRedisRefreshReplayAfterGraceRevokesDescendants \
+            TestRedisRevocationNeverShortensExistingLifetime \
+            TestRedisExplicitTokenRevocationInvalidatesCachedReplay \
+            TestRedisRotationStoreErrorsDoNotIssueReplacement \
+            TestRedisSessionAuthorityLossDeniesAuthorizationAndRotation \
+            TestRedisLosingNegativeRecordsDoesNotRestoreConsumedAuthority \
+            TestRedisRefreshRegistrationCollisionDoesNotExtendAuthority \
+            TestRedisRotationCannotExtendFamilyLifetime \
+            TestRedisRotationCannotExtendShorterParentAuthority \
+            TestRedisReplacementCollisionDoesNotConsumeParent \
+            TestRedisMalformedSessionAuthorityFailsClosed \
+            TestRedisRefreshRegistrationRejectsExistingRevocationsAndWrongTypes \
+            TestRedisSessionAuthorityValidationAndOutage \
+            TestRedisSessionScriptPartialWriteFailureFailsClosed \
+            TestRedisSessionScriptLaterWriteFailureFailsClosed \
+            TestRedisSessionStoreLossDoesNotReviveLoggedOutJWTs \
+            TestRedisSessionStoreLossDoesNotReviveRotatedJWTs \
+            TestRedisSessionStoreLossOfPositiveAuthorityDeniesCurrentAndCachedJWTs \
+            TestRedisSessionStoreLossFreshPasswordLoginRestoresOnlyNewFamily \
+            TestRedisSessionStoreLossMalformedAuthorityDoesNotIssueJWTs \
+            TestRedisSessionStoreLossClosedClientDeniesJWTsAndNewLogin
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$rotation_log"
+          done
+      - name: Durable session PostgreSQL and Redis real-store regressions
+        shell: bash
+        env:
+          HAI_IDP_TEST_DATABASE_URL: "postgres://postgres:postgres@127.0.0.1:5432/hai_idp_auth_test?sslmode=disable"
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+          HAI_TEST_REDIS_ADDR: 127.0.0.1:6379
+          HAI_TEST_REDIS_INSTANCE: hai-idp-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          docker exec "${{ job.services.redis.id }}" redis-cli SET hai-disposable-test-instance "$HAI_TEST_REDIS_INSTANCE"
+          durable_log="$(mktemp "$RUNNER_TEMP/idp-durable-session.XXXXXX.log")"
+          go test -count=1 -race -p=1 -parallel=1 -timeout=300s -run '^TestDurableSession' ./internal/app/authentication -v 2>&1 | tee "$durable_log"
+          if grep -Eq -- '^[[:space:]]*--- (SKIP|FAIL):|^FAIL([[:space:]]|$)' "$durable_log"; then
+            echo "Durable session regressions reported SKIP or FAIL" >&2
+            exit 1
+          fi
+          for test_name in \
+            TestDurableSessionOldSnapshotCannotUndoLogout \
+            TestDurableSessionOldSnapshotCannotBranchConsumedRefresh \
+            TestDurableSessionRestoredGraceCannotUndoReplayRevocation \
+            TestDurableSessionLoginRegistrationFaultCannotBeRestored \
+            TestDurableSessionCommittedRefreshRecoversOnlyCanonicalPair \
+            TestDurableSessionPostgresWriteFaultDoesNotConsumeOrCallRedis \
+            TestDurableSessionConcurrentStoresReturnOneCommittedPair \
+            TestDurableSessionLogoutAndResetAfterRedisRotationDenyResult \
+            TestDurableSessionLegacyRedisFamilyCannotBackfillPostgres \
+            TestDurableSessionMigrationPreservesRevocationsAndReceipts \
+            TestDurableSessionSchemaFaultNeverRelaxesAuthority \
+            TestDurableSessionClosedPostgresPoolDeniesBothTokenTypes \
+            TestDurableSessionUserLockPrecedesFamilyAndSeesReset
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$durable_log"
+          done
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./...
@@ -58,10 +460,12 @@ jobs:
       run:
         working-directory: nginx-config-manager
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: "1.25.12"
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
           cache-dependency-path: nginx-config-manager/go.sum
       - run: go vet ./...
       - run: go test ./...
@@ -79,34 +483,210 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: "22.22.3"
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci --no-audit --no-fund
+      - run: npm install --global npm@10.9.8 --no-audit --no-fund
+      - run: test "$(npm --version)" = "10.9.8"
+      - run: npm ci
+      - name: Build resource configuration regressions
+        run: node --test --test-concurrency=1 ../scripts/test-frontend-build-resource-limit.cjs scripts/build-with-limits.test.mjs scripts/release-cache.test.mjs scripts/control-room-logic.test.mjs scripts/hai-os-observation.test.mjs scripts/module-view-preferences.test.mjs scripts/deep-link-focus.test.mjs scripts/framework-secret-boundary.test.mjs
+      - name: Strict control-room compiler checks (no emit)
+        run: npm run check:control-room
       - run: npm run build
-      # Angular's built-in Karma configuration provides the sandbox-free
-      # launcher used by CI and the documented local container workflow.
+      # Unit tests run in headless Chrome (preinstalled on ubuntu-latest) via the
+      # sandbox-free launcher in karma.conf.js.
       - name: Unit tests (headless Chrome)
         run: npx ng test --watch=false --browsers=ChromeHeadlessNoSandbox
-      # High and critical advisories are release blockers. The accepted
-      # Angular CLI-only moderate advisory is documented separately.
-      - name: Dependency audit (blocking high/critical)
-        run: npm audit --audit-level=high
+      # A valid production audit remains a hard gate for high/critical
+      # findings. The helper retries bounded transport failures and records an
+      # explicit warning when npm's advisory API fails to return any trustworthy
+      # report, rather than misclassifying an external outage as a code failure.
+      - name: Production dependency audit
+        run: bash ../scripts/audit-frontend-production-dependencies.sh
+
+  browser-acceptance:
+    name: Browser acceptance (owned disposable stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/e2e/package-lock.json
+      - run: npm install --global npm@10.9.8 --no-audit --no-fund
+      - run: test "$(npm --version)" = "10.9.8"
+      - name: Install application dependencies for source typechecking
+        working-directory: frontend
+        run: npm ci
+      - name: Install browser acceptance dependencies
+        working-directory: frontend/e2e
+        run: |
+          npm ci
+          npm run typecheck
+          npx playwright install --with-deps chromium
+      - name: Prepare owned browser acceptance stack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = & ./scripts/isolated-acceptance-stack.ps1 -Action Prepare -ExecutionMode manual-local
+          $prepared = @($output | Select-String -Pattern '^Prepared: (.+)$')
+          if ($prepared.Count -ne 1) { throw 'Prepare did not return exactly one evidence directory.' }
+          $evidence = (Resolve-Path -LiteralPath $prepared[0].Matches[0].Groups[1].Value).Path
+          $temp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar)
+          if ([IO.Path]::GetDirectoryName($evidence) -cne $temp -or
+              [IO.Path]::GetFileName($evidence) -cnotmatch '^hai-acceptance-[0-9a-f]{32}$') {
+            throw 'Prepare returned an unexpected evidence directory.'
+          }
+          "HAI_ACCEPTANCE_EVIDENCE=$evidence" >> $env:GITHUB_ENV
+      - name: Start owned stack and run browser acceptance
+        working-directory: frontend/e2e
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const os = require('node:os');
+          const { spawnSync } = require('node:child_process');
+          const evidence = fs.realpathSync(process.env.HAI_ACCEPTANCE_EVIDENCE);
+          const manifest = JSON.parse(fs.readFileSync(path.join(evidence, 'manifest.json'), 'utf8'));
+          if (manifest.version !== 1 || !/^[0-9a-f]{32}$/.test(manifest.owner) ||
+              path.dirname(evidence) !== fs.realpathSync(os.tmpdir()) ||
+              path.basename(evidence) !== `hai-acceptance-${manifest.owner}` ||
+              manifest.project !== `hai-acceptance-${manifest.owner.slice(0, 12)}` ||
+              manifest.executionMode !== 'manual-local' || manifest.email !== 'e2e-owner@example.test' ||
+              !Number.isInteger(manifest.port) || manifest.port < 1025 || manifest.port > 65535 ||
+              typeof manifest.password !== 'string' || !manifest.password.startsWith('E2eOnly-')) {
+            throw new Error('Invalid owned browser acceptance manifest.');
+          }
+          const config = JSON.parse(fs.readFileSync(path.join(evidence, 'compose.json'), 'utf8'));
+          const secrets = new Set([manifest.password]);
+          for (const service of Object.values(config.services)) {
+            for (const [key, value] of Object.entries(service.environment || {})) {
+              if (/password|secret|key|token/i.test(key) && value) secrets.add(String(value));
+            }
+          }
+          for (const secret of secrets) {
+            console.log(`::add-mask::${secret.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
+          }
+          const redact = text => [...secrets].reduce((value, secret) => value.replaceAll(secret, '[REDACTED]'), String(text));
+          const launcher = path.join(process.env.GITHUB_WORKSPACE, 'scripts/isolated-acceptance-stack.ps1');
+          const run = (command, args, options = {}) => {
+            const result = spawnSync(command, args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, ...options });
+            if (options.stdio !== 'inherit') {
+              console.log(redact(result.stdout || ''));
+              console.error(redact(result.stderr || ''));
+            }
+            if (result.error || result.status !== 0) throw new Error(`${command} failed (exit ${result.status}).`);
+          };
+          Object.assign(process.env, {
+            E2E_BASE_URL: `http://127.0.0.1:${manifest.port}`,
+            E2E_OPERATOR_EMAIL: manifest.email, E2E_OPERATOR_PASSWORD: manifest.password,
+            E2E_ALLOW_MUTATION: 'true', E2E_ISOLATED_STACK: 'true',
+            PLAYWRIGHT_HTML_OUTPUT_DIR: path.join(evidence, 'browser-report'),
+          });
+          const docker = args => {
+            const result = spawnSync('docker', args, { encoding: 'utf8' });
+            if (result.error || result.status !== 0) throw new Error('Owned Docker diagnostics failed.');
+            return result.stdout;
+          };
+          try {
+            run('pwsh', ['-NoProfile', '-File', launcher, '-Action', 'Start', '-EvidenceDirectory', evidence]);
+            run('python3', ['-c', [
+              'import json, sys, time, urllib.request',
+              'for attempt in range(60):',
+              '    try:',
+              '        with urllib.request.urlopen(sys.argv[1], timeout=5) as response:',
+              '            status = json.load(response).get("status")',
+              '        assert status in {"ready", "degraded"}, "unexpected readiness status"',
+              '        sys.exit(0)',
+              '    except (OSError, ValueError):',
+              '        time.sleep(2)',
+              'sys.exit("HAI did not become ready")',
+            ].join('\n'), `${process.env.E2E_BASE_URL}/readyz`]);
+            // Traces retain login request bodies; keep HTML, screenshots and failure videos instead.
+            run('npm', ['test', '--', '--output', path.join(evidence, 'browser-results'), '--trace', 'off']);
+          } finally {
+            // Validate every selected container before reading any logs; never use installation Compose diagnostics.
+            const ids = docker(['ps', '-aq', '--filter', `label=hai.acceptance.owner=${manifest.owner}`]).trim().split(/\s+/).filter(Boolean);
+            const containers = ids.map(id => {
+              if (!/^[0-9a-f]{12,64}$/.test(id)) throw new Error('Invalid owned container ID.');
+              const [container] = JSON.parse(docker(['inspect', id]));
+              const labels = container.Config.Labels;
+              const name = container.Name.slice(1);
+              if (labels['hai.acceptance.owner'] !== manifest.owner ||
+                  labels['com.docker.compose.project'] !== manifest.project ||
+                  !container.Name.startsWith(`/${manifest.project}-`) ||
+                  !/^hai-acceptance-[0-9a-f]{12}-[a-z0-9-]+$/.test(name)) throw new Error('Container log ownership mismatch.');
+              for (const mount of container.Mounts || []) {
+                const relative = path.relative(evidence, mount.Source || '');
+                if (mount.Type !== 'tmpfs' && (mount.Type !== 'bind' || mount.RW ||
+                    relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative))) {
+                  throw new Error('Unsafe container mount; refusing logs.');
+                }
+              }
+              return { id, name };
+            });
+            fs.mkdirSync(path.join(evidence, 'owner-logs'), { recursive: true });
+            for (const { id, name } of containers) {
+              const result = spawnSync('docker', ['logs', '--timestamps', id], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+              if (result.error || result.status !== 0) throw new Error('Owned container logs failed.');
+              fs.writeFileSync(path.join(evidence, 'owner-logs', `${name}.log`), redact((result.stdout || '') + (result.stderr || '')));
+            }
+          }
+          NODE
+      - name: Stop exact owned browser acceptance stack
+        if: ${{ always() && env.HAI_ACCEPTANCE_EVIDENCE != '' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/isolated-acceptance-stack.ps1 -Action Stop -EvidenceDirectory $env:HAI_ACCEPTANCE_EVIDENCE
+      - name: Retain browser acceptance reports and guarded logs
+        if: ${{ always() && env.HAI_ACCEPTANCE_EVIDENCE != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hai-browser-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.HAI_ACCEPTANCE_EVIDENCE }}/browser-report/
+            ${{ env.HAI_ACCEPTANCE_EVIDENCE }}/browser-results/
+            ${{ env.HAI_ACCEPTANCE_EVIDENCE }}/owner-logs/*.log
+          if-no-files-found: warn
+          retention-days: 14
 
   compose:
     name: Gateway and local Compose validation
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: CI workflow contract
         run: python3 scripts/test_ci_contract.py
+      - name: No-fake claims and tracked-artifact audit
+        run: bash scripts/no-fake-claims-audit.sh
       - name: Gateway authentication contract
         run: python3 nginx-config/test_gateway_contract.py
+      - name: Disposable acceptance isolation and cleanup contracts
+        shell: pwsh
+        run: ./scripts/test-isolated-acceptance-stack.ps1
+      - name: Offline acceptance resource limits
+        shell: pwsh
+        run: ./scripts/test-acceptance-resource-limits.ps1
+      - name: Offline acceptance startup guard
+        shell: pwsh
+        run: ./scripts/test-acceptance-start-guard.ps1
       - run: docker compose --env-file .env.example -f docker-compose.local.yml config
+      - name: Provider fixture Compose contract
+        run: docker compose --env-file .env.example --profile provider-fixture -f docker-compose.local.yml config --quiet
       - name: Nginx syntax
         run: |
           python3 - "$RUNNER_TEMP/hai-nginx.conf" <<'PY'
@@ -114,7 +694,8 @@ jobs:
           import sys
           source = Path("nginx-config/nginx.conf.template").read_text(encoding="utf-8")
           Path(sys.argv[1]).write_text(
-              source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key"),
+              source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key")
+                    .replace("${LOCAL_PREVIEW_GATEWAY_SECRET}", "ci-preview-key"),
               encoding="utf-8",
           )
           PY
@@ -123,15 +704,50 @@ jobs:
             -v "$PWD/nginx-config/sites-enabled:/etc/nginx/sites-enabled:ro" \
             nginx:alpine nginx -t
 
+  provider-fixture:
+    name: Local provider fixture HTTP contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and exercise isolated fixture
+        run: bash scripts/smoke-provider-fixture.sh
+
+  promptfoo-runner:
+    name: Promptfoo safety runner image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: services/promptfoo-runner/package-lock.json
+      - run: npm install --global npm@10.9.8 --no-audit --no-fund
+      - run: test "$(npm --version)" = "10.9.8"
+      - name: Audit production dependencies
+        working-directory: services/promptfoo-runner
+        run: bash ../../scripts/audit-npm-production-dependencies.sh "Promptfoo runner" omit-optional
+      - name: Build runner and execute isolated contract tests
+        working-directory: services/promptfoo-runner
+        run: docker build --file Dockerfile --tag hai-promptfoo-runner:ci .
+
   authenticated-smoke:
     name: Authenticated control-plane smoke
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: "1.25.12"
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
           cache-dependency-path: backend/go.sum
       - name: Smoke authentication contract
         run: python3 scripts/test_smoke_auth_contract.py
@@ -185,10 +801,12 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: "1.25.12"
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
           cache-dependency-path: backend/go.sum
       - name: Create isolated integration databases
         env:
@@ -199,15 +817,79 @@ jobs:
           sudo apt-get install -y postgresql-client
           for database in \
             hai_migration_runner_test \
+            hai_account_feed_registry_test \
             hai_framework_registry_test \
             hai_task_state_test \
-            hai_agent_registry_test
+            hai_agentregistry_test \
+            hai_resilience_test \
+            hai_brain_skill_selection_test \
+            hai_evaluation_test \
+            hai_outcome_evaluation_test \
+            hai_durablejob_test \
+            hai_workflow_lease_expiry_test \
+            hai_workflow_followup_test
           do
             createdb \
               --host=127.0.0.1 \
               --port=5432 \
               --username=postgres \
               "${database}"
+          done
+      - name: Immutable historical outcome evaluation PostgreSQL regressions
+        env:
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+          HAI_OUTCOME_EVALUATION_TEST_DATABASE_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_outcome_evaluation_test port=5432 sslmode=disable TimeZone=UTC"
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          psql --host=127.0.0.1 --port=5432 --username=postgres --dbname=hai_outcome_evaluation_test \
+            --set=ON_ERROR_STOP=1 --file=migrations/pre/0023_outcome_resilience_ledgers.up.sql
+          outcome_log="$RUNNER_TEMP/outcome-historical-postgres.log"
+          go test -count=3 -race -run '^TestPostgres' ./internal/outcomeevaluation/ -v | tee "$outcome_log"
+          for test_name in \
+            TestPostgres0023SchemaContractDocumentsScopeAndAtomicity \
+            TestPostgresPinnedHistoricalEvaluationReplay \
+            TestPostgresRepositoryFailsClosedWithoutDatabase \
+            TestPostgresRepositoryLifecycle \
+            TestPostgresRowDecodersRevalidateScopeMetadataAndAuditDigests
+          do
+            test "$(grep -c -- "^--- PASS: ${test_name} (" "$outcome_log")" -eq 3
+          done
+          ! grep -q -- '^--- SKIP:' "$outcome_log"
+      - name: Workflow claim lease-expiry PostgreSQL regression
+        env:
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+          HAI_WORKFLOW_LEASE_EXPIRY_TEST_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_workflow_lease_expiry_test port=5432 sslmode=disable TimeZone=UTC"
+        run: |
+          set -euo pipefail
+          lease_expiry_log="$RUNNER_TEMP/workflow-claim-lease-expiry-postgres.log"
+          go test -count=1 -run '^TestPostgresClaimLeaseExpiryRenewal$' \
+            ./internal/workflow/ -v | tee "$lease_expiry_log"
+          grep -q -- '^--- PASS: TestPostgresClaimLeaseExpiryRenewal (' "$lease_expiry_log"
+      - name: Atomic follow-up projection PostgreSQL regressions
+        env:
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+          HAI_WORKFLOW_FOLLOWUP_TEST_DATABASE_OWNED: "true"
+          HAI_WORKFLOW_FOLLOWUP_TEST_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_workflow_followup_test port=5432 sslmode=disable TimeZone=UTC"
+        run: |
+          set -euo pipefail
+          followup_log="$RUNNER_TEMP/workflow-followup-atomic-postgres.log"
+          go test -count=1 -race -run '^TestPostgresFollowUpProjection' \
+            ./internal/workflow/ -v | tee "$followup_log"
+          for test_name in \
+            TestPostgresFollowUpProjectionRollbackAtEveryWriteAndReplay \
+            TestPostgresFollowUpProjectionConcurrentWorkersAndClaimRecovery \
+            TestPostgresFollowUpProjectionConcurrentSchedulerClaims \
+            TestPostgresFollowUpProjectionLeaseExpiryAfterLockWait \
+            TestPostgresFollowUpProjectionExpiryDuringWritesRollsBack \
+            TestPostgresFollowUpProjectionSerializesWithRetractionAndApproval \
+            TestPostgresFollowUpProjectionRejectsAmbiguousLegacyAdoption \
+            TestPostgresFollowUpProjectionPreservesAdoptedLegacyArtifactsForLaterLoop \
+            TestPostgresFollowUpProjectionDistinctLoopsWithIdenticalText \
+            TestPostgresFollowUpProjectionEmergencyStopAfterClaim \
+            TestPostgresFollowUpProjectionRejectsNestedTransaction
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$followup_log"
           done
       - name: Migration, Framework Registry, and task-state persistence tests
         env:
@@ -219,17 +901,57 @@ jobs:
           registry_log="$RUNNER_TEMP/framework-registry-postgres.log"
           task_log="$RUNNER_TEMP/task-state-postgres.log"
           agent_registry_log="$RUNNER_TEMP/agent-registry-postgres.log"
-          migration_dsn="host=localhost user=postgres password=postgres dbname=hai_migration_runner_test port=5432 sslmode=disable TimeZone=UTC"
-          registry_dsn="host=localhost user=postgres password=postgres dbname=hai_framework_registry_test port=5432 sslmode=disable TimeZone=UTC"
-          task_dsn="host=localhost user=postgres password=postgres dbname=hai_task_state_test port=5432 sslmode=disable TimeZone=UTC"
-          agent_registry_dsn="host=localhost user=postgres password=postgres dbname=hai_agent_registry_test port=5432 sslmode=disable TimeZone=UTC"
+          execution_auth_log="$RUNNER_TEMP/execution-authorization-postgres.log"
+          migration_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_migration_runner_test port=5432 sslmode=disable TimeZone=UTC"
+          account_feed_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_account_feed_registry_test port=5432 sslmode=disable TimeZone=UTC"
+          registry_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_framework_registry_test port=5432 sslmode=disable TimeZone=UTC"
+          task_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_task_state_test port=5432 sslmode=disable TimeZone=UTC"
+          agent_registry_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_agentregistry_test port=5432 sslmode=disable TimeZone=UTC"
+          resilience_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_resilience_test port=5432 sslmode=disable TimeZone=UTC"
+          brain_skill_selection_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_brain_skill_selection_test port=5432 sslmode=disable TimeZone=UTC"
+          evaluation_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_evaluation_test port=5432 sslmode=disable TimeZone=UTC"
+          durablejob_dsn="host=127.0.0.1 user=postgres password=postgres dbname=hai_durablejob_test port=5432 sslmode=disable TimeZone=UTC"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -tags integration \
-            -run '^(TestConcurrentMigrationRunnersSerializeAndRecheck|TestLegacyBaselineRejectsDifferentExistingPrimaryKey|TestRunMigrationsAppliesAndIsIdempotent|TestRollbackMigrationReversesPostMigration)$' \
+            -run '^(TestIsLoopbackIntegrationHost|TestIsLoopbackIntegrationConfig|TestConcurrentMigrationRunnersSerializeAndRecheck|TestLegacyBaselineRejectsDifferentExistingPrimaryKey|TestMigrationStatusAndRollbackDoNotCreateLedgerOnFreshDatabase|TestRunMigrationsAppliesAndIsIdempotent|TestRollbackMigrationReversesPostMigration)$' \
             ./internal/infra/ -v | tee "$infra_log"
+          grep -q -- '^--- PASS: TestIsLoopbackIntegrationHost' "$infra_log"
+          grep -q -- '^--- PASS: TestIsLoopbackIntegrationConfig' "$infra_log"
           grep -q -- '^--- PASS: TestConcurrentMigrationRunnersSerializeAndRecheck' "$infra_log"
           grep -q -- '^--- PASS: TestLegacyBaselineRejectsDifferentExistingPrimaryKey' "$infra_log"
+          grep -q -- '^--- PASS: TestMigrationStatusAndRollbackDoNotCreateLedgerOnFreshDatabase' "$infra_log"
           grep -q -- '^--- PASS: TestRunMigrationsAppliesAndIsIdempotent' "$infra_log"
           grep -q -- '^--- PASS: TestRollbackMigrationReversesPostMigration' "$infra_log"
+          RUN_MODE=test DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres \
+            DB_NAME=hai_migration_runner_test DB_AUTOMIGRATE=false \
+            HAI_SEMANTIC_RETRIEVAL_ENABLED=false \
+            go run ./cmd/main.go migrate up
+          trello_repository_log="$RUNNER_TEMP/trello-repository-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race \
+            -run '^TestTrelloPostgres' \
+            ./internal/source/ -v | tee "$trello_repository_log"
+          for test_name in \
+            TestTrelloPostgresFindStaleCardsAfterOrdersPaginatesAndFilters \
+            TestTrelloPostgresOwnerManualRequestResumesCancelledCheckpoint \
+            TestTrelloPostgresInventoryCheckpointUpdatesFetchedAtAndCursorAtomically \
+            TestTrelloPostgresRejectsSourcePausedBeforeDurableOperations
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$trello_repository_log"
+          done
+          reminder_revocation_log="$RUNNER_TEMP/workflow-reminder-revocation-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
+            -run '^TestPostgresReminderRevocationAfterPreparationExpiryAndSourceClosure$' \
+            ./internal/workflow/ -v | tee "$reminder_revocation_log"
+          grep -q -- '^--- PASS: TestPostgresReminderRevocationAfterPreparationExpiryAndSourceClosure (' "$reminder_revocation_log"
+          reminder_atomic_log="$RUNNER_TEMP/workflow-reminder-atomic-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race \
+            -run '^TestPostgresReminderDeliveryAtomicReplay$' \
+            ./internal/workflow/ -v | tee "$reminder_atomic_log"
+          grep -q -- '^--- PASS: TestPostgresReminderDeliveryAtomicReplay (' "$reminder_atomic_log"
+          claim_recovery_log="$RUNNER_TEMP/workflow-claim-recovery-atomic-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
+            -run '^TestPostgresClaimRecoveryStateAndHistoryAtomic$' \
+            ./internal/workflow/ -v | tee "$claim_recovery_log"
+          grep -q -- '^--- PASS: TestPostgresClaimRecoveryStateAndHistoryAtomic (' "$claim_recovery_log"
           HAI_TEST_DATABASE_DSN="$registry_dsn" go test -count=1 -tags integration \
             ./internal/frameworkregistry/ -v | tee "$registry_log"
           grep -q -- '^--- PASS: TestFrameworkRegistryPostgresIntegrationRequiredEnvironment' "$registry_log"
@@ -239,11 +961,131 @@ jobs:
             -run '^TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability$' \
             ./internal/task/ -v | tee "$task_log"
           grep -q -- '^--- PASS: TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability' "$task_log"
-          HAI_TEST_DATABASE_DSN="$agent_registry_dsn" go test -count=1 \
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
+            -run '^(TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals|TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts)$' \
+            ./internal/executionauth/ -v | tee "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts' "$execution_auth_log"
+          HAI_AGENTREGISTRY_TEST_DATABASE_DSN="$agent_registry_dsn" go test -count=1 \
             -run '^(TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers|TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema)$' \
             ./internal/agentregistry/ -v | tee "$agent_registry_log"
           grep -q -- '^--- PASS: TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers' "$agent_registry_log"
           grep -q -- '^--- PASS: TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema' "$agent_registry_log"
+          resilience_log="$RUNNER_TEMP/resilience-postgres.log"
+          HAI_RESILIENCE_TEST_DATABASE_DSN="$resilience_dsn" go test -count=1 \
+            ./internal/resilience/ -v | tee "$resilience_log"
+          for test_name in \
+            TestPostgresRepositoryLifecycle \
+            TestPostgresRepositoryAtomicIdempotency \
+            TestPostgresRepositoryConcurrentFencingAndEventChain \
+            TestPostgresRepositoryRejectsCorruptStoredPayload
+          do
+            grep -q -- "^--- PASS: ${test_name}" "$resilience_log"
+          done
+          brain_skill_selection_log="$RUNNER_TEMP/brain-skill-selection-postgres.log"
+          RUN_MODE=test DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres \
+            DB_NAME=hai_brain_skill_selection_test DB_AUTOMIGRATE=false \
+            HAI_SEMANTIC_RETRIEVAL_ENABLED=false \
+            go run ./cmd/main.go migrate up
+          HAI_BRAIN_SKILL_SELECTION_TEST_DATABASE_DSN="$brain_skill_selection_dsn" go test -count=1 -tags integration \
+            ./internal/brain_skill_selection/ -v | tee "$brain_skill_selection_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryAndSelectionServiceIntegration' "$brain_skill_selection_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryConcurrentOpposingSelectionWrites' "$brain_skill_selection_log"
+          evaluation_log="$RUNNER_TEMP/evaluation-postgres.log"
+          HAI_EVALUATION_TEST_DATABASE_DSN="$evaluation_dsn" go test -count=1 -tags integration \
+            ./internal/evaluation/ -v | tee "$evaluation_log"
+          grep -q -- '^--- PASS: TestGormRepositoryOwnerIsolationRoundTripAndImmutableReceipts' "$evaluation_log"
+          grep -q -- '^--- PASS: TestGormRepositoryFailsClosedOnStoredDigestMismatch' "$evaluation_log"
+          durablejob_log="$RUNNER_TEMP/durablejob-postgres.log"
+          HAI_DURABLEJOB_TEST_DATABASE_DSN="$durablejob_dsn" go test -count=1 -tags integration \
+            ./internal/durablejob/ -v | tee "$durablejob_log"
+          for test_name in \
+            TestRecurringReaperCreatesOneSuccessorAndRollsBackAtomically \
+            TestExpiredLeaseOnFinalDeliveryDeadLettersWithoutReexecution \
+            TestReclaimedLeaseFencesStaleWorkerCompletion \
+            TestSingletonSchedulingIsAtomicPerQueueAndKind
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$durablejob_log"
+          done
+          openclaw_migrations_log="$RUNNER_TEMP/openclaw-migrations-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
+            -run '^(TestOpenClawArtifactAlignmentPostgres|TestOpenClawArtifactRecoveryPostgres|TestOpenClawArtifactRetentionKeyGuardAndLegacyReadPostgres|TestOpenClawArtifactRetentionPostgres|TestOpenClawReceiptAlignmentPostgres|TestOpenClawUsageRecoveryPostgres)$' \
+            ./migrations/ -v | tee "$openclaw_migrations_log"
+          for test_name in \
+            TestOpenClawArtifactAlignmentPostgres \
+            TestOpenClawArtifactRecoveryPostgres \
+            TestOpenClawArtifactRetentionKeyGuardAndLegacyReadPostgres \
+            TestOpenClawArtifactRetentionPostgres \
+            TestOpenClawReceiptAlignmentPostgres \
+            TestOpenClawUsageRecoveryPostgres
+          do
+            grep -q -- "^--- PASS: ${test_name}" "$openclaw_migrations_log"
+          done
+          account_feed_rollback_log="$RUNNER_TEMP/account-feed-registry-rollback-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -tags integration \
+            -run '^TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema$' \
+            ./migrations/ -v | tee "$account_feed_rollback_log"
+          grep -q -- '^--- PASS: TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema' "$account_feed_rollback_log"
+          for test_case in feed_configuration audit_history empty_schema_rolls_back; do
+            grep -q -- "^[[:space:]]*--- PASS: TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema/${test_case} (" "$account_feed_rollback_log"
+          done
+          trello_reconciliation_log="$RUNNER_TEMP/trello-reconciliation-0109-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -tags integration \
+            -run '^(TestTrelloWebhookReconciliationGenerationMigrationBackfillAndRollback|TestTrelloWebhookReconciliationGenerationMigrationLocksOutConcurrentPendingReceipt)$' \
+            ./migrations/ -v | tee "$trello_reconciliation_log"
+          grep -q -- '^--- PASS: TestTrelloWebhookReconciliationGenerationMigrationBackfillAndRollback (' "$trello_reconciliation_log"
+          grep -q -- '^--- PASS: TestTrelloWebhookReconciliationGenerationMigrationLocksOutConcurrentPendingReceipt (' "$trello_reconciliation_log"
+          source_authority_log="$RUNNER_TEMP/source-authority-0111-0113-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -p 1 -parallel 1 -timeout 5m \
+            -run '^(TestOperationSourceIdentityPostgres|TestSourceObservationPostgres|TestSourceHeadPostgres)' \
+            ./migrations/ -v | tee "$source_authority_log"
+          for test_name in \
+            TestOperationSourceIdentityPostgresUpgradeImmutabilityAndRollback \
+            TestSourceObservationPostgresUpgradeMintConstraintsAndRollback \
+            TestSourceHeadPostgresPublicationEpochSupersessionAndRollback
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$source_authority_log"
+          done
+          source_configuration_log="$RUNNER_TEMP/source-configuration-0114-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -p 1 -parallel 1 -timeout 5m \
+            -run '^TestSourceConfigurationPostgres' \
+            ./migrations/ -v | tee "$source_configuration_log"
+          for test_name in \
+            TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal \
+            TestSourceConfigurationPostgresEnrollmentConcurrency \
+            TestSourceConfigurationPostgresEnrollmentFiringModes
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$source_configuration_log"
+          done
+          for isolation in read_committed repeatable_read; do
+            for enrollment in insert update_unmanaged; do
+              for schedule in mutation_first enrollment_first; do
+                for mutation in rename disable delete; do
+                  case_name="TestSourceConfigurationPostgresEnrollmentConcurrency/${isolation}/${enrollment}/${schedule}/${mutation}"
+                  grep -q -- "^[[:space:]]*--- PASS: ${case_name} (" "$source_configuration_log"
+                done
+              done
+            done
+          done
+          for truncate_case in standalone_feed feed_and_audits; do
+            case_name="TestSourceConfigurationPostgresEnrollmentConcurrency/repeatable_read_truncate/${truncate_case}"
+            grep -q -- "^[[:space:]]*--- PASS: ${case_name} (" "$source_configuration_log"
+          done
+          for isolation in read_committed repeatable_read; do
+            for enrollment in insert update_unmanaged; do
+              for firing in commit immediate_dml; do
+                for mutation in rename disable delete; do
+                  case_name="TestSourceConfigurationPostgresEnrollmentFiringModes/${isolation}/${enrollment}/${firing}/${mutation}"
+                  grep -q -- "^[[:space:]]*--- PASS: ${case_name} (" "$source_configuration_log"
+                done
+              done
+            done
+          done
+          account_feed_log="$RUNNER_TEMP/account-feed-registry-postgres.log"
+          HAI_ACCOUNT_FEED_TEST_DSN="$account_feed_dsn" go test -count=1 -p 1 -parallel 1 -timeout 5m -tags integration \
+            -run '^TestPostgresRegistryCommittedReconstructionAndAtomicFailure$' \
+            ./internal/accountfeed/ -v | tee "$account_feed_log"
+          grep -q -- '^--- PASS: TestPostgresRegistryCommittedReconstructionAndAtomicFailure (' "$account_feed_log"
 
   # Boots the real backend against a real Postgres + Redis and runs the
   # two-account isolation acceptance test over HTTP: two authenticated owners
@@ -258,7 +1100,7 @@ jobs:
         image: postgres:17-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: hai-ci-two-account-db-password-0123456789abcdef
           POSTGRES_DB: automation_hub
         ports:
           - 5432:5432
@@ -277,10 +1119,12 @@ jobs:
           --health-timeout 5s
           --health-retries 12
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          go-version: "1.25.12"
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.2"
           cache-dependency-path: backend/go.sum
       - name: Build backend
         working-directory: backend
@@ -291,11 +1135,21 @@ jobs:
           DB_HOST: localhost
           DB_PORT: "5432"
           DB_USER: postgres
-          DB_PASSWORD: postgres
+          DB_PASSWORD: hai-ci-two-account-db-password-0123456789abcdef
           DB_NAME: automation_hub
-          # Empty CI database: let the schema materialise on boot.
-          DB_AUTOMIGRATE: "true"
-          JWT_SECRET: devsecret
+          # This is synthetic acceptance data on local service containers;
+          # production TLS requirements are exercised by config/doctor tests.
+          RUN_MODE: test
+          # The explicit versioned migration runner owns the CI schema too.
+          # AutoMigrate is deliberately limited to local, pre-migration model
+          # scaffolding and must not alter an already-migrated database.
+          DB_AUTOMIGRATE: "false"
+          JWT_SECRET: hai-ci-two-account-jwt-secret-0123456789abcdef
+          BACKEND_API_SHARED_KEY: ci-backend-api-shared-key-0123456789
+          HAI_MEMORY_ENCRYPTION_KEY: ci-memory-encryption-key-0123456789
+          # Production-mode startup requires a non-placeholder approval proof
+          # key. This is a test-only value; production uses a generated secret.
+          HAI_APPROVAL_PROOF_SIGNING_KEY: ${{ format('ci-approval-proof-signing-{0}-{1}', github.run_id, github.run_attempt) }}
           SERVER_PORT: "8080"
           REDIS_ADDR: localhost:6379
           # Keep the acceptance run deterministic: no background schedulers.
@@ -342,7 +1196,8 @@ jobs:
       - name: Two-account isolation acceptance test
         env:
           HAI_BASE_URL: http://localhost:8080
-          HAI_JWT_SECRET: devsecret
+          HAI_JWT_SECRET: hai-ci-two-account-jwt-secret-0123456789abcdef
+          HAI_BACKEND_API_SHARED_KEY: ci-backend-api-shared-key-0123456789
         run: bash scripts/two-account-isolation-test.sh
       - name: Backend log (on failure)
         if: failure()
@@ -353,29 +1208,27 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Python CI and authentication contracts
         shell: pwsh
         run: |
           python scripts/test_ci_contract.py
+          if ($LASTEXITCODE -ne 0) { throw "CI workflow contract failed with exit code $LASTEXITCODE" }
+          python scripts/test_python_runner_ci.py
+          if ($LASTEXITCODE -ne 0) { throw "Python runner CI policy failed with exit code $LASTEXITCODE" }
+          python scripts/test_python_runner_container_smoke.py
+          if ($LASTEXITCODE -ne 0) { throw "Python runner container smoke contract failed with exit code $LASTEXITCODE" }
+          python scripts/test_secret_scan_output.py
+          if ($LASTEXITCODE -ne 0) { throw "Secret scan output safety failed with exit code $LASTEXITCODE" }
           python scripts/test_smoke_auth_contract.py
+          if ($LASTEXITCODE -ne 0) { throw "Smoke authentication contract failed with exit code $LASTEXITCODE" }
           python nginx-config/test_gateway_contract.py
-      - name: Cloud tunnel PowerShell fail-closed contract
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $null = [ScriptBlock]::Create((Get-Content scripts/start-ngrok.ps1 -Raw))
-          try {
-            & .\scripts\start-ngrok.ps1 -ValidateOnly -EnvFile .env.example
-            throw "Insecure example environment unexpectedly passed ngrok preflight"
-          } catch {
-            if ($_.Exception.Message -notmatch "IDP_COOKIE_SECURE") {
-              throw
-            }
-          }
+          if ($LASTEXITCODE -ne 0) { throw "Gateway contract failed with exit code $LASTEXITCODE" }
       - name: Git Bash syntax and space-containing path
         shell: pwsh
         run: |

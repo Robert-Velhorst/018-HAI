@@ -1,13 +1,14 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing'
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
 import { AmbientMonitorService } from './ambient-monitor.service'
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('AmbientMonitorService', () => {
   let service: AmbientMonitorService
   let http: HttpTestingController
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [HttpClientTestingModule] })
+    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] })
     service = TestBed.inject(AmbientMonitorService)
     http = TestBed.inject(HttpTestingController)
   })

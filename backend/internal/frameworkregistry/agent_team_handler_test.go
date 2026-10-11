@@ -47,10 +47,12 @@ func TestAgentTeamHTTPRoutesAreOwnerScopedAndPermissionGated(t *testing.T) {
 	}
 	for _, expected := range []string{
 		"GET /api/v1/framework-registry/teams",
+		"GET /api/v1/framework-registry/teams/message-attention",
 		"POST /api/v1/framework-registry/teams",
 		"POST /api/v1/framework-registry/teams/guided",
 		"POST /api/v1/framework-registry/teams/:id/versions/:version/messages",
 		"POST /api/v1/framework-registry/teams/:id/versions/:version/decision-messages",
+		"GET /api/v1/framework-registry/teams/:id/versions/:version/decision-overview",
 		"GET /api/v1/framework-registry/teams/:id/versions/:version/message-attention",
 		"GET /api/v1/framework-registry/teams/:id/versions/:version/messages/:messageId/acknowledgments",
 		"POST /api/v1/framework-registry/teams/:id/versions/:version/messages/:messageId/acknowledgments",
@@ -78,6 +80,19 @@ func TestAgentTeamHTTPRoutesAreOwnerScopedAndPermissionGated(t *testing.T) {
 	}
 	if team.ID == "" || !team.AdvisoryOnly || team.GrantsExecutionAuthority || !team.ExecutionAuthorizationRequired {
 		t.Fatalf("unsafe or invalid HTTP team response: %#v", team)
+	}
+	decisionOverview := performAgentTeamRequest(engine, http.MethodGet, "/api/v1/framework-registry/teams/"+team.ID+"/versions/"+team.Version+"/decision-overview", nil, "robert", "viewer")
+	if decisionOverview.Code != http.StatusOK || !bytes.Contains(decisionOverview.Body.Bytes(), []byte(`"messages":[]`)) || !bytes.Contains(decisionOverview.Body.Bytes(), []byte(`"attention":[]`)) {
+		t.Fatalf("viewer decision overview status = %d: %s", decisionOverview.Code, decisionOverview.Body.String())
+	}
+
+	attentionIndex := performAgentTeamRequest(engine, http.MethodGet, "/api/v1/framework-registry/teams/message-attention", nil, "robert", "viewer")
+	if attentionIndex.Code != http.StatusOK || !bytes.Contains(attentionIndex.Body.Bytes(), []byte(`"teamId":"`+team.ID+`"`)) {
+		t.Fatalf("viewer attention index status = %d: %s", attentionIndex.Code, attentionIndex.Body.String())
+	}
+	otherAttentionIndex := performAgentTeamRequest(engine, http.MethodGet, "/api/v1/framework-registry/teams/message-attention", nil, "alice", "viewer")
+	if otherAttentionIndex.Code != http.StatusOK || bytes.Contains(otherAttentionIndex.Body.Bytes(), []byte(team.ID)) {
+		t.Fatalf("cross-owner attention index status = %d: %s", otherAttentionIndex.Code, otherAttentionIndex.Body.String())
 	}
 
 	viewerList := performAgentTeamRequest(engine, http.MethodGet, "/api/v1/framework-registry/teams", nil, "robert", "viewer")

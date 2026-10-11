@@ -1,5 +1,6 @@
-import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 import { Subscription, interval } from 'rxjs';
 import {
   ISystemCheck,
@@ -28,11 +29,14 @@ const GROUP_TITLES: Record<string, string> = {
   runtime: 'Runtime mode',
 };
 
+const MODULE_ID = 'system-status';
+
 @Component({
-  standalone: false,
-  selector: 'app-system-status',
-  templateUrl: './system-status.component.html',
-  styleUrls: ['./system-status.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-system-status',
+    templateUrl: './system-status.component.html',
+    styleUrls: ['./system-status.component.scss'],
+    standalone: false
 })
 export class SystemStatusComponent implements OnInit, OnDestroy {
   readiness?: ISystemReadiness;
@@ -43,28 +47,51 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   lastUpdated?: Date;
 
   private pollSub?: Subscription;
+  private refreshInFlight = false;
+  private readonly onVisibilityChange = (): void => {
+    // A hidden dashboard cannot be acted on. Avoid probing dependencies while
+    // it is in the background, then immediately catch up when it is visible.
+    if (!document.hidden) {
+      this.refresh(true);
+    }
+  };
 
   constructor(
     @Inject(SYSTEM_STATUS_SERVICE_TOKEN)
     private systemStatusService: ISystemStatusService,
-    private notification: NzNotificationService
+    private notification: NzNotificationService,
+    private viewPreferences: ModuleViewPreferencesService
   ) {}
+
+  get isAdvanced(): boolean {
+    return this.viewPreferences.get(MODULE_ID).mode === 'advanced';
+  }
 
   ngOnInit(): void {
     this.refresh();
     // Readiness is a live signal; poll it so the page reflects a dependency
     // going down without the operator reloading.
-    this.pollSub = interval(15000).subscribe(() => this.refresh(true));
+    this.pollSub = interval(15000).subscribe(() => {
+      if (!document.hidden) {
+        this.refresh(true);
+      }
+    });
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
   }
 
   ngOnDestroy(): void {
     this.pollSub?.unsubscribe();
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
   }
 
   refresh(silent = false): void {
+    if (silent && this.refreshInFlight) {
+      return;
+    }
     if (!silent) {
       this.loading = true;
     }
+    this.refreshInFlight = true;
     this.systemStatusService.readiness().subscribe({
       next: (readiness) => {
         this.readiness = readiness;
@@ -73,10 +100,12 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         this.lastUpdated = new Date();
         this.loading = false;
         this.loadError = false;
+        this.refreshInFlight = false;
       },
       error: () => {
         this.loading = false;
         this.loadError = true;
+        this.refreshInFlight = false;
         if (!silent) {
           this.notification.error(
             'System status unavailable',
@@ -110,6 +139,25 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         return 'status-fail';
       default:
         return 'status-unknown';
+    }
+  }
+
+  refreshErrorMessage(): string {
+    if (!this.readiness) {
+      return 'Could not reach the readiness probe. If you were redirected to sign in, your session may have expired.'
+    }
+    const updated = this.lastUpdated ? ` Last successful status: ${this.lastUpdated.toLocaleTimeString()}.` : ''
+    return `The latest refresh failed. The displayed status may be out of date.${updated} Refresh to retry.`
+  }
+
+  severityLabel(severity: SystemCheckSeverity): string {
+    switch (severity) {
+      case 'ok':
+        return 'OK'
+      case 'warn':
+        return 'Warning'
+      case 'fail':
+        return 'Fail'
     }
   }
 

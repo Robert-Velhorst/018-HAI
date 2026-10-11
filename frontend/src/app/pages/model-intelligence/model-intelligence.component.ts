@@ -1,7 +1,9 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
+import { Router } from '@angular/router'
 import { forkJoin } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import {
   IHardwareResponse,
   ICalibrationSummary,
@@ -9,16 +11,21 @@ import {
   IModelProfile,
   IOperationBudget,
   IPowerPolicy,
+  IProviderSummary,
 } from '../../models/model-intelligence.model.interface'
 import { ModelIntelligenceService } from '../../services/model-intelligence.service'
 
 @Component({
-  standalone: false,
-  selector: 'app-model-intelligence',
-  templateUrl: './model-intelligence.component.html',
-  styleUrls: ['./model-intelligence.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-model-intelligence',
+    templateUrl: './model-intelligence.component.html',
+    styleUrls: ['./model-intelligence.component.scss'],
+    standalone: false
 })
 export class ModelIntelligenceComponent implements OnInit {
+  private readonly moduleId = 'model-intelligence'
+  private readonly calibrationSectionId = 'model-calibration'
+
   overview?: IModelIntelligenceOverview
   calibration?: ICalibrationSummary
   profiles: IModelProfile[] = []
@@ -30,13 +37,20 @@ export class ModelIntelligenceComponent implements OnInit {
   errorMessage = ''
   profilesLoading = false
   profilesLoaded = false
+  profilesError = ''
   runtimeLoading = false
   runtimeLoaded = false
+  runtimeError = ''
+  detectionLoading = false
+  detectionError = ''
   benchmarking: Record<string, boolean> = {}
+  benchmarkErrors: Record<string, string> = {}
 
   constructor(
     private service: ModelIntelligenceService,
-    private notification: NzNotificationService
+    private notification: NzNotificationService,
+    private router: Router,
+    private viewPreferences: ModuleViewPreferencesService
   ) {}
 
   ngOnInit(): void {
@@ -44,18 +58,16 @@ export class ModelIntelligenceComponent implements OnInit {
   }
 
   refresh(): void {
+    if (this.loading) return
     this.loading = true
     this.errorMessage = ''
-    forkJoin({
-      overview: this.service.overview(),
-      calibration: this.service.calibration(),
-    }).subscribe({
-      next: ({ overview, calibration }) => {
+    this.service.overview().subscribe({
+      next: (overview) => {
         this.overview = overview
-        this.calibration = calibration
+        this.calibration = overview.calibration
         this.loading = false
-        if (this.profilesLoaded) this.loadProfiles()
-        if (this.runtimeLoaded) this.loadRuntimeDetails()
+        if (this.profilesLoaded) this.loadProfiles(true)
+        if (this.runtimeLoaded) this.loadRuntimeDetails(true)
       },
       error: (error: HttpErrorResponse) => {
         this.loading = false
@@ -72,8 +84,45 @@ export class ModelIntelligenceComponent implements OnInit {
     if (open && !this.runtimeLoaded) this.loadRuntimeDetails()
   }
 
-  private loadProfiles(): void {
+  openOutcomeRegister(): void {
+    this.openAdvancedSection(this.calibrationSectionId)
+  }
+
+  openAdvancedSection(sectionId: 'model-profiles' | 'model-calibration' | 'runtime-budget'): void {
+    this.viewPreferences.setMode(this.moduleId, 'advanced')
+    this.viewPreferences.setSection(this.moduleId, sectionId, true)
+    document.body.classList.add('hai-view-advanced')
+
+    void this.router.navigate(['/model-intelligence'], {
+      queryParams: { mode: 'advanced' },
+      fragment: sectionId,
+    }).then(() => {
+      window.setTimeout(() => {
+        document.getElementById(sectionId)?.scrollIntoView({ block: 'start' })
+      })
+    })
+  }
+
+  hasAdvancedErrors(): boolean {
+    return !!(this.profilesError || this.runtimeError || this.detectionError || this.hasBenchmarkErrors())
+  }
+
+  hasBenchmarkErrors(): boolean {
+    return Object.values(this.benchmarkErrors).some(Boolean)
+  }
+
+  retryProfiles(): void {
+    this.loadProfiles(true)
+  }
+
+  retryRuntime(): void {
+    this.loadRuntimeDetails(true)
+  }
+
+  private loadProfiles(force = false): void {
+    if (this.profilesLoading || (this.profilesLoaded && !force)) return
     this.profilesLoading = true
+    this.profilesError = ''
     this.service.profiles().subscribe({
       next: ({ profiles }) => {
         this.profiles = profiles ?? []
@@ -82,13 +131,15 @@ export class ModelIntelligenceComponent implements OnInit {
       },
       error: (error: HttpErrorResponse) => {
         this.profilesLoading = false
-        this.notification.error('Profiles unavailable', this.errorDetail(error, 'Model profiles could not be loaded.'))
+        this.profilesError = this.errorDetail(error, 'Model profiles could not be loaded.')
       },
     })
   }
 
-  private loadRuntimeDetails(): void {
+  private loadRuntimeDetails(force = false): void {
+    if (this.runtimeLoading || (this.runtimeLoaded && !force)) return
     this.runtimeLoading = true
+    this.runtimeError = ''
     forkJoin({
       budgets: this.service.tokenBudgets(),
       hardware: this.service.hardware(),
@@ -103,38 +154,50 @@ export class ModelIntelligenceComponent implements OnInit {
       },
       error: (error: HttpErrorResponse) => {
         this.runtimeLoading = false
-        this.notification.error('Runtime details unavailable', this.errorDetail(error, 'Runtime diagnostics could not be loaded.'))
+        this.runtimeError = this.errorDetail(error, 'Runtime diagnostics could not be loaded.')
       },
     })
   }
 
   benchmark(p: IModelProfile): void {
     const key = p.providerId + '/' + p.modelId
+    if (this.benchmarking[key]) return
     this.benchmarking[key] = true
+    this.benchmarkErrors[key] = ''
     this.service.benchmark(p.providerId, p.modelId).subscribe({
       next: (res) => {
         this.benchmarking[key] = false
         if (res.ok) {
-          this.notification.success('Benchmarked', `${key}: ${res.tokensPerSecond.toFixed(0)} tok/s`)
+          const source = this.usageSourceLabel(res.usageSource)
+          this.notification.success('Benchmarked', `${key}: ${res.inputTokens} in / ${res.outputTokens} out, ${res.tokensPerSecond.toFixed(0)} tok/s (${source})`)
         } else {
           this.notification.warning('Not benchmarked', res.detail ?? `${key} is not usable`)
         }
         this.refresh()
       },
-      error: () => {
+      error: (error: HttpErrorResponse) => {
         this.benchmarking[key] = false
-        this.notification.error('Error', 'Benchmark failed.')
+        this.benchmarkErrors[key] = this.errorDetail(error, 'Benchmark failed.')
+        this.notification.error('Benchmark failed', this.benchmarkErrors[key])
       },
     })
   }
 
   detectHardware(): void {
+    if (this.detectionLoading) return
+    this.detectionLoading = true
+    this.detectionError = ''
     this.service.detectHardware().subscribe({
       next: (hw) => {
+        this.detectionLoading = false
         this.hardware = hw
         this.notification.success('Detected', `Serving stack: ${hw.selectedServingStack}`)
       },
-      error: () => this.notification.error('Error', 'Hardware detect failed.'),
+      error: (error: HttpErrorResponse) => {
+        this.detectionLoading = false
+        this.detectionError = this.errorDetail(error, 'Hardware detection failed.')
+        this.notification.error('Hardware detection failed', this.detectionError)
+      },
     })
   }
 
@@ -152,6 +215,55 @@ export class ModelIntelligenceComponent implements OnInit {
         return 'red'
       default:
         return 'default'
+    }
+  }
+
+  providerExecutionLabel(provider: IProviderSummary): string {
+    if (provider.deterministic) return 'Built-in deterministic rules; no model call'
+    if (provider.localInferenceOperatorAttested) return 'Local inference (operator attested)'
+    if (provider.endpointLocal) return 'Local endpoint; inference not attested'
+    return 'Non-local endpoint; inference location not verified'
+  }
+
+  profileExecutionLabel(profile: IModelProfile): string {
+    if (profile.deterministic) return 'Built-in deterministic rules; no model call'
+    if (profile.localInferenceOperatorAttested) return 'Local inference (operator attested)'
+    if (profile.endpointLocal) return 'Local endpoint; inference not attested'
+    return 'Non-local endpoint; inference location not verified'
+  }
+
+  profileBillingLabel(profile: IModelProfile): string {
+    if (profile.deterministic) return 'Model billing: not applicable'
+    return this.billingStatusLabel(profile.billingStatus)
+  }
+
+  providerBillingLabel(provider: IProviderSummary): string {
+    if (provider.deterministic) return 'Model billing: not applicable'
+    return this.billingStatusLabel(provider.billingStatus)
+  }
+
+  private billingStatusLabel(status: string): string {
+    switch (status) {
+      case 'paid': return 'Billing: paid'
+      case 'unmetered': return 'Billing: unmetered'
+      default: return 'Billing: not verified'
+    }
+  }
+
+  observedSpeedLabel(profile: IModelProfile): string {
+    if (profile.deterministic) return 'Not applicable (no model inference)'
+    if (profile.observedTokensPerSecond <= 0) return 'Not measured'
+    return `${Math.round(profile.observedTokensPerSecond)} tok/s observed`
+  }
+
+  usageSourceLabel(source: string): string {
+    switch (source) {
+      case 'provider_reported': return 'provider-reported token counts'
+      case 'provider_reported_partial': return 'partly estimated token counts'
+      case 'estimated': return 'estimated token counts'
+      case 'estimated_uncertain': return 'estimated token counts; uncertain'
+      case 'provider_report_invalid': return 'provider usage report invalid; counts may be unreliable'
+      default: return 'usage source unavailable'
     }
   }
 

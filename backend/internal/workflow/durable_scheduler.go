@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/durablejob"
+	"automation-hub-backend/internal/lifecycle"
+	"automation-hub-backend/internal/safety"
 )
 
 // Durable workflow scheduling.
@@ -20,17 +23,52 @@ import (
 const (
 	JobKindSweep      = "workflow.sweep"
 	sweepMaxAttempts  = 3
-	defaultPollSecond = 15 * time.Second
+	defaultPollSecond = 5 * time.Minute
+	minPollInterval   = 15 * time.Second
+	maxPollInterval   = time.Hour
 )
+
+type workflowSweepError struct{ cause error }
+
+func (e *workflowSweepError) Error() string {
+	return "workflow sweep: " + safety.RedactSecrets(e.cause.Error())
+}
+
+func (e *workflowSweepError) Unwrap() error { return e.cause }
+
+func workflowSweepMustStop(err error) bool {
+	var deferred *durablejob.DeferredError
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, ErrClaimRecoveryContextUnavailable) || errors.Is(err, ErrClaimRecoveryOutcomeUnconfirmed) ||
+		errors.Is(err, ErrTaskExecutionContextUnavailable) ||
+		errors.Is(err, ErrFollowUpContextUnavailable) || errors.Is(err, ErrReminderDeliveryContextUnavailable) || errors.As(err, &deferred)
+}
 
 // RegisterDurableScheduling registers the workflow sweep as a durable recurring
 // job. Safe to call on every startup: the job is a singleton.
-func RegisterDurableScheduling(runner *durablejob.Runner, service ScheduledWorkflowService, interval time.Duration, limit int) error {
+func RegisterDurableScheduling(runner *durablejob.Runner, service ScheduledWorkflowService, interval time.Duration, limit int, allowed ...func() bool) error {
 	if runner == nil || service == nil {
 		return fmt.Errorf("durable workflow scheduling needs both a runner and a service")
 	}
+	if _, ok := service.(ContextualClaimRecoveryBatchService); !ok {
+		return ErrClaimRecoveryContextUnavailable
+	}
+	if schedulerEnabled("WORKFLOW_OPEN_LOOP_SCHEDULER_ENABLED", true) {
+		if _, ok := service.(ContextualFollowUpBatchService); !ok {
+			return ErrFollowUpContextUnavailable
+		}
+	}
+	if _, legacy := service.(ReminderDeliveryService); legacy && schedulerEnabled("WORKFLOW_REMINDER_DELIVERY_ENABLED", true) {
+		if _, ok := service.(ContextualReminderDeliveryBatchService); !ok {
+			return ErrReminderDeliveryContextUnavailable
+		}
+	}
+	backgroundAllowed := schedulerBackgroundGate(allowed)
+	if _, ok := service.(ContextualWorkflowExecutionBatchService); !ok {
+		return ErrTaskExecutionContextUnavailable
+	}
 	if err := runner.RegisterRecurring(JobKindSweep, interval, sweepMaxAttempts, func(ctx context.Context) error {
-		return runWorkflowSweep(service, limit)
+		return runWorkflowSweep(ctx, service, limit, backgroundAllowed)
 	}); err != nil {
 		return err
 	}
@@ -40,67 +78,137 @@ func RegisterDurableScheduling(runner *durablejob.Runner, service ScheduledWorkf
 
 // runWorkflowSweep performs one sweep: recover stale claims, advance due open
 // loops, then run due workflows. Errors are aggregated so one failing stage
-// still lets the others run, while the job as a whole reports failure and
-// retries on backoff.
-func runWorkflowSweep(service ScheduledWorkflowService, limit int) error {
+// still lets the others run, unless cancellation or safety policy stops the
+// sweep. Entered task calls forward cancellation into the model/runtime path;
+// recovery, follow-up and reminder delivery use owned context transactions.
+func runWorkflowSweep(ctx context.Context, service ScheduledWorkflowService, limit int, allowed ...func() bool) error {
+	if ctx == nil || service == nil {
+		return ErrFollowUpContextUnavailable
+	}
+	gate := schedulerBackgroundGate(allowed)
+	checkpoint := func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !gate() {
+			return durablejob.Defer("background processing is paused by safety policy")
+		}
+		return nil
+	}
+	if err := checkpoint(); err != nil {
+		return err
+	}
+	recoveryService, contextualRecovery := service.(ContextualClaimRecoveryBatchService)
+	if !contextualRecovery {
+		return ErrClaimRecoveryContextUnavailable
+	}
+	followups, contextual := service.(ContextualFollowUpBatchService)
+	openLoopEnabled := schedulerEnabled("WORKFLOW_OPEN_LOOP_SCHEDULER_ENABLED", true)
+	if openLoopEnabled && !contextual {
+		return ErrFollowUpContextUnavailable
+	}
+	reminders, contextualReminders := service.(ContextualReminderDeliveryBatchService)
+	reminderEnabled := schedulerEnabled("WORKFLOW_REMINDER_DELIVERY_ENABLED", true)
+	if _, legacy := service.(ReminderDeliveryService); legacy && reminderEnabled && !contextualReminders {
+		return ErrReminderDeliveryContextUnavailable
+	}
+	tasks, contextualTasks := service.(ContextualWorkflowExecutionBatchService)
+	if !contextualTasks {
+		return ErrTaskExecutionContextUnavailable
+	}
 	if limit <= 0 {
 		limit = 2
 	}
 	request := RunDueRequest{Limit: limit}
-	problems := []string{}
+	problems := []error{}
 
-	recovery, err := service.RecoverStaleClaims(request)
+	recovery, err := recoveryService.RecoverStaleClaimsContext(ctx, request)
+	if err == nil && recovery == nil {
+		return &workflowSweepError{cause: ErrClaimRecoveryOutcomeUnconfirmed}
+	}
 	if err != nil {
-		problems = append(problems, "claim recovery: "+err.Error())
+		if workflowSweepMustStop(err) {
+			return &workflowSweepError{cause: err}
+		}
+		problems = append(problems, fmt.Errorf("claim recovery: %w", err))
 	} else if recovery != nil && (recovery.WorkflowsBlocked > 0 || recovery.OpenLoopsReopened > 0 || recovery.Skipped > 0) {
 		log.Printf("workflow claim recovery checked=%d workflows_blocked=%d open_loops_reopened=%d skipped=%d",
 			recovery.Checked, recovery.WorkflowsBlocked, recovery.OpenLoopsReopened, recovery.Skipped)
 	}
 
-	if schedulerEnabled("WORKFLOW_OPEN_LOOP_SCHEDULER_ENABLED", true) {
-		openLoops, err := service.RunDueOpenLoops(request)
+	if err := checkpoint(); err != nil {
+		return err
+	}
+	if openLoopEnabled {
+		openLoops, err := followups.RunDueOpenLoopsContext(ctx, request)
 		if err != nil {
-			problems = append(problems, "open loops: "+err.Error())
+			if workflowSweepMustStop(err) {
+				return &workflowSweepError{cause: err}
+			}
+			problems = append(problems, fmt.Errorf("open loops: %w", err))
 		} else if openLoops != nil && (openLoops.Triggered > 0 || openLoops.Resolved > 0 || openLoops.Skipped > 0) {
 			log.Printf("workflow open-loop scheduler checked=%d triggered=%d resolved=%d skipped=%d",
 				openLoops.Checked, openLoops.Triggered, openLoops.Resolved, openLoops.Skipped)
 		}
 	}
-	if delivery, ok := service.(ReminderDeliveryService); ok && schedulerEnabled("WORKFLOW_REMINDER_DELIVERY_ENABLED", true) {
-		reminders, reminderErr := delivery.RunDueReminderDeliveries(request)
+	if err := checkpoint(); err != nil {
+		return err
+	}
+	if contextualReminders && reminderEnabled {
+		reminders, reminderErr := reminders.RunDueReminderDeliveriesContext(ctx, request)
+		if reminderErr == nil && reminders == nil {
+			return &workflowSweepError{cause: ErrReminderDeliveryContextUnavailable}
+		}
 		if reminderErr != nil {
-			problems = append(problems, "reminder deliveries: "+reminderErr.Error())
+			if workflowSweepMustStop(reminderErr) {
+				return &workflowSweepError{cause: reminderErr}
+			}
+			problems = append(problems, fmt.Errorf("reminder deliveries: %w", reminderErr))
 		} else if reminders != nil && (reminders.Delivered > 0 || reminders.Retried > 0 || reminders.Suppressed > 0 || reminders.DeadLettered > 0) {
 			log.Printf("workflow reminder delivery checked=%d delivered=%d retried=%d suppressed=%d dead_lettered=%d", reminders.Checked, reminders.Delivered, reminders.Retried, reminders.Suppressed, reminders.DeadLettered)
 		}
 	}
 
-	result, err := service.RunDue(request)
+	if err := checkpoint(); err != nil {
+		return err
+	}
+	result, err := tasks.RunDueContext(ctx, request)
+	if err == nil && result == nil {
+		return &workflowSweepError{cause: ErrTaskExecutionContextUnavailable}
+	}
 	if err != nil {
-		problems = append(problems, "run due: "+err.Error())
+		if workflowSweepMustStop(err) {
+			return &workflowSweepError{cause: err}
+		}
+		problems = append(problems, fmt.Errorf("run due: %w", err))
 	} else if result != nil && (result.Completed > 0 || result.Retried > 0 || result.Blocked > 0) {
 		log.Printf("workflow scheduler checked=%d completed=%d retried=%d blocked=%d skipped=%d",
 			result.Checked, result.Completed, result.Retried, result.Blocked, result.Skipped)
 	}
 
+	if err := checkpoint(); err != nil {
+		return err
+	}
 	if len(problems) > 0 {
-		return fmt.Errorf("workflow sweep: %s", strings.Join(problems, "; "))
+		return &workflowSweepError{cause: errors.Join(problems...)}
 	}
 	return nil
 }
 
 // startDurableScheduler builds the runner over the default queue and starts it.
 // Any failure is returned so the caller can fall back to the legacy ticker.
-func startDurableScheduler(ctx context.Context, service ScheduledWorkflowService, interval time.Duration, limit int) error {
+func startDurableScheduler(ctx context.Context, service ScheduledWorkflowService, interval time.Duration, limit int, allowed ...func() bool) error {
 	repo, err := durablejob.DefaultRepository()
 	if err != nil {
 		return err
 	}
 	runner := durablejob.NewRunner(repo, durablejob.Options{Queue: "workflow"})
-	if err := RegisterDurableScheduling(runner, service, interval, limit); err != nil {
+	if err := RegisterDurableScheduling(runner, service, interval, limit, allowed...); err != nil {
 		return err
 	}
-	go runner.Start(ctx, workflowPollInterval())
+	if !lifecycle.Go(ctx, "workflow-durable-worker", func() { runner.Start(ctx, workflowPollInterval()) }) {
+		return context.Canceled
+	}
 	return nil
 }
 
@@ -110,7 +218,7 @@ func workflowPollInterval() time.Duration {
 		return defaultPollSecond
 	}
 	var seconds int64
-	if _, err := fmt.Sscanf(value, "%d", &seconds); err != nil || seconds < 1 {
+	if _, err := fmt.Sscanf(value, "%d", &seconds); err != nil || seconds < int64(minPollInterval/time.Second) || seconds > int64(maxPollInterval/time.Second) {
 		return defaultPollSecond
 	}
 	return time.Duration(seconds) * time.Second

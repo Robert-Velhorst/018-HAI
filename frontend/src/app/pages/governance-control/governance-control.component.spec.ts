@@ -1,3 +1,5 @@
+import { ComponentFixture, TestBed } from '@angular/core/testing'
+import { NoopAnimationsModule } from '@angular/platform-browser/animations'
 import { NzModalService } from 'ng-zorro-antd/modal'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { of, Subject, throwError } from 'rxjs'
@@ -30,6 +32,7 @@ import { AmbientMonitorService } from '../../services/ambient-monitor.service'
 import { GovernanceControlService } from '../../services/governance-control.service'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import { GovernanceControlComponent } from './governance-control.component'
+import { GovernanceControlModule } from './governance-control.module'
 
 function proactivityDecisionRecord(): ProactivityDecisionRecord {
   return {
@@ -117,7 +120,7 @@ describe('GovernanceControlComponent', () => {
     outcomeRevision: 17,
     outcomeAuditDigest: 'd'.repeat(64),
     contextCutoff: '2026-08-05T09:59:59Z',
-    policyIdempotencyKey: 'policy-evaluation-2026-08-05',
+    policyIdempotencyKey: 'policy-run-test-1',
     policyDigest: 'e'.repeat(64),
     policyRecordedAt: '2026-08-05T09:59:58Z',
     signalWatermark: {
@@ -195,11 +198,25 @@ describe('GovernanceControlComponent', () => {
 
   const proposal = {
     id: 'proposal-1',
+    protocolVersion: '1',
+    ownerIdentity: 'session-owner',
+    idempotencyKey: 'proposal-1-create',
+    revision: 3,
     title: 'Improve evidence ranking',
     hypothesis: 'The new ranker improves source recall.',
     status: 'review_required',
+    method: 'evidence_review',
+    target: 'routing_policy',
     protectedTarget: false,
-    revision: 3,
+    proposedChange: 'Improve source ordering.',
+    currentVersion: '1.0.0',
+    proposedVersion: '1.1.0',
+    rollbackPlan: 'Restore version 1.0.0.',
+    evaluationPlan: 'Compare verified source recall.',
+    evidenceIds: [],
+    proposalDigest: 'proposal-digest',
+    createdAt: '2026-08-01T10:00:00Z',
+    updatedAt: '2026-08-01T10:00:00Z',
   } as LearningProposal
 
   const learningApplication = {
@@ -222,14 +239,29 @@ describe('GovernanceControlComponent', () => {
   } as LearningApplicationSummary
 
   const agent = {
+    contractVersion: 1,
     id: 'agent-1',
+    ownerIdentity: 'session-owner',
     name: 'Evidence reviewer',
+    type: 'reviewer',
+    runtime: { id: 'local-runtime', type: 'local', protocolVersion: '1' },
+    capabilities: [],
+    authorityCeiling: 1,
+    autonomyCeiling: 1,
     state: 'quarantined',
     health: {
       status: 'unhealthy',
       ready: false,
       reason: 'Runtime evidence expired.',
+      checkedAt: '2026-08-01T10:00:00Z',
+      freshFor: 60,
     },
+    availability: { available: false, activeAssignments: 0, maxConcurrent: 1 },
+    performance: { estimatedCostEur: 0, p95LatencyMs: 0, locality: 'local' },
+    reliability: { successes: 0, failures: 0, consecutiveFailures: 0, meanLatencyMs: 0 },
+    revision: 1,
+    createdAt: '2026-08-01T10:00:00Z',
+    updatedAt: '2026-08-01T10:00:00Z',
   } as AgentRecord
 
   const domain = {
@@ -272,9 +304,11 @@ describe('GovernanceControlComponent', () => {
         'listMandateDecisions',
         'effectiveDomainPack',
         'classifyDomain',
+        'learningProposal',
+        'learningDecisions',
         'decideLearningProposal',
-        'listAgentTeams',
         'agentTeamMessageAttention',
+        'agentTeamMessageAttentionIndex',
         'listLifeEntities',
         'listLifeRelations',
         'listLifeMergeProposals',
@@ -333,8 +367,8 @@ describe('GovernanceControlComponent', () => {
     )
     service.listMandateDecisions.and.returnValue(of({ decisions: [] }))
     service.effectiveDomainPack.and.returnValue(of(domain))
-    service.listAgentTeams.and.returnValue(of({ teams: [] }))
     service.agentTeamMessageAttention.and.returnValue(of({ generatedAt: '2026-08-08T10:00:00Z', messages: [] }))
+    service.agentTeamMessageAttentionIndex.and.returnValue(of({ generatedAt: '2026-08-08T10:00:00Z', contracts: [], teams: [] }))
     service.listLifeEntities.and.returnValue(of({ entities: [] }))
     service.listLifeRelations.and.returnValue(of({ relations: [] }))
     service.listLifeMergeProposals.and.returnValue(of({ proposals: [] }))
@@ -705,7 +739,7 @@ describe('GovernanceControlComponent', () => {
   it('loads source-backed advisory engines while leaving scoped engines unconfigured', () => {
     component.ngOnInit()
 
-    expect(service.listAgentTeams).toHaveBeenCalled()
+    expect(service.agentTeamMessageAttentionIndex).toHaveBeenCalled()
     expect(service.listLifeEntities).toHaveBeenCalledWith(50, false)
     expect(service.listLifeRelations).toHaveBeenCalledWith(50, false)
     expect(service.listLifeMergeProposals).toHaveBeenCalledWith(50)
@@ -1136,7 +1170,7 @@ describe('GovernanceControlComponent', () => {
     expect(details.find((detail) => detail.field === 'outcomeAuditDigest')?.value).toBe('d'.repeat(12))
     expect(details.find((detail) => detail.field === 'policyDigest')?.value).toBe('e'.repeat(12))
     expect(details.find((detail) => detail.field === 'snapshotDigest')?.value).toBe('f'.repeat(12))
-    expect(details.find((detail) => detail.field === 'policyIdempotencyKey')?.value).toBe('policy-evaluation-2026-08-05')
+    expect(details.find((detail) => detail.field === 'policyIdempotencyKey')?.value).toBe('policy-run-test-1')
     expect(details.find((detail) => detail.field === 'contextCutoff')?.value).toBe('2026-08-05T09:59:59Z')
     expect(details.find((detail) => detail.field === 'signalWatermarkCount')?.value).toBe('42')
     expect(details.find((detail) => detail.field === 'signalWatermarkWindowDigest')?.value).toBe('g'.repeat(12))
@@ -1533,16 +1567,16 @@ describe('GovernanceControlComponent', () => {
   })
 
   it('marks retained advisory data stale when a refresh fails', () => {
-    service.listAgentTeams.and.returnValue(of({ teams: [{
+    service.agentTeamMessageAttentionIndex.and.returnValue(of({ generatedAt: '2026-08-08T10:00:00Z', contracts: [{
       id: 'team-1', key: 'review', version: '1.0.0', revision: 1, status: 'active',
       name: 'Review team', purpose: 'Review evidence', authorityCeiling: 0,
       riskCeiling: 'low', advisoryOnly: true, grantsExecutionAuthority: false,
       executionAuthorizationRequired: true, members: [], evidenceRefs: [],
       contractDigest: 'digest', createdAt: '2026-08-01T00:00:00Z',
       updatedAt: '2026-08-01T00:00:00Z',
-    }] }))
+    }], teams: [] }))
     component.loadAgentTeams(true, true)
-    service.listAgentTeams.and.returnValue(throwError(() => ({
+    service.agentTeamMessageAttentionIndex.and.returnValue(throwError(() => ({
       status: 503,
       error: { error: 'agent team service unavailable' },
     })))
@@ -1563,23 +1597,128 @@ describe('GovernanceControlComponent', () => {
       contractDigest: 'digest', createdAt: '2026-08-01T00:00:00Z',
       updatedAt: '2026-08-01T00:00:00Z',
     }
-    service.listAgentTeams.and.returnValue(of({ teams: [team] }))
-    service.agentTeamMessageAttention.and.returnValue(of({
+    service.agentTeamMessageAttentionIndex.and.returnValue(of({
       generatedAt: '2026-08-08T10:00:00Z',
-      messages: [{
+      contracts: [team],
+      teams: [{ teamId: 'team-1', teamVersion: '1.0.0', messages: [{
         messageId: 'message-1', correlationId: 'correlation-1', recipientId: 'reviewer',
         subject: 'Review evidence', requiresAcknowledgment: true, state: 'overdue',
         reason: 'acknowledgment remained overdue after reminders',
         dueAt: '2026-08-08T09:00:00Z', expiresAt: '2026-08-08T11:00:00Z',
         humanReviewRequired: true, advisoryOnly: true, grantsExecutionAuthority: false,
         executionAuthorizationRequired: true,
-      }],
+      }] }],
     }))
 
     component.loadAgentTeams(true, true)
 
-    expect(service.agentTeamMessageAttention).toHaveBeenCalledWith('team-1', '1.0.0')
+    expect(service.agentTeamMessageAttentionIndex).toHaveBeenCalled()
+    expect(service.agentTeamMessageAttention).not.toHaveBeenCalled()
     expect(component.agentTeamReviewCount).toBe(1)
     expect(component.agentTeamReviewItems(team).map((item) => item.state)).toEqual(['overdue'])
+  })
+
+  describe('progressive UI contract', () => {
+    let fixture: ComponentFixture<GovernanceControlComponent>
+
+    beforeEach(() => {
+      TestBed.configureTestingModule({
+        imports: [GovernanceControlModule, NoopAnimationsModule],
+        providers: [
+          { provide: GovernanceControlService, useValue: service },
+          { provide: AmbientMonitorService, useValue: ambientMonitor },
+          { provide: NzNotificationService, useValue: notification },
+          { provide: NzModalService, useValue: modal },
+          { provide: ModuleViewPreferencesService, useValue: preferences },
+        ],
+      })
+      fixture = TestBed.createComponent(GovernanceControlComponent)
+      document.body.classList.remove('hai-view-advanced')
+    })
+
+    afterEach(() => {
+      fixture.destroy()
+      document.body.classList.remove('hai-view-advanced')
+      preferences.reset('memory')
+    })
+
+    it('keeps the decision queue in Basic and opens a source-backed proposal from its real row action', () => {
+      service.learningProposal.and.returnValue(of(proposal))
+      service.learningDecisions.and.returnValue(of({ decisions: [] }))
+      fixture.detectChanges()
+
+      const view = fixture.componentInstance
+      const root = fixture.nativeElement as HTMLElement
+      expect(root.querySelector('.attention-row')?.textContent).toContain(proposal.title)
+      expect(root.querySelector('#governance-classifier')).toBeNull()
+      expect(root.querySelector('#advisory-engines')).toBeNull()
+      expect(root.querySelector('#advisory-engines .advisory-stack')).toBeNull()
+      expect(root.querySelector('#execution-receipts .hai-progressive-section__content')).toBeNull()
+
+      ;(root.querySelector('.attention-row') as HTMLButtonElement).click()
+      fixture.detectChanges()
+
+      expect(view.inspectorVisible).toBeTrue()
+      expect(view.inspectorKind).toBe('proposal')
+      expect(service.learningProposal).toHaveBeenCalledWith(proposal.id)
+      expect(service.learningDecisions).toHaveBeenCalledWith(proposal.id, 100)
+      expect(view.selectedProposal).toEqual(proposal)
+    })
+
+    it('persists advanced disclosure per module and preserves the backend classifier action', () => {
+      const classification = {
+        matches: [{
+          packId: 'legal',
+          score: 82,
+          explicit: false,
+          sensitive: true,
+          reasons: ['Contract signal'],
+          signals: [],
+        }],
+        suppressed: [],
+      }
+      service.classifyDomain.and.returnValue(of(classification))
+      preferences.setSection('memory', 'advisory-engines', false)
+      preferences.setMode('governance-control', 'advanced')
+      document.body.classList.add('hai-view-advanced')
+      fixture.detectChanges()
+
+      const view = fixture.componentInstance
+      const root = fixture.nativeElement as HTMLElement
+      const advisoryTrigger = root.querySelector<HTMLButtonElement>(
+        '#advisory-engines .hai-progressive-section__summary'
+      )
+      expect(advisoryTrigger).not.toBeNull()
+      advisoryTrigger!.click()
+      fixture.detectChanges()
+
+      expect(preferences.get('governance-control').openSections['advisory-engines']).toBeTrue()
+      expect(preferences.get('memory').openSections['advisory-engines']).toBeFalse()
+      expect(root.querySelector('#advisory-engines .advisory-stack')).not.toBeNull()
+
+      const catalogTrigger = root.querySelector<HTMLButtonElement>(
+        '#domain-pack-catalog .hai-progressive-section__summary'
+      )
+      expect(catalogTrigger).not.toBeNull()
+      catalogTrigger!.click()
+      fixture.detectChanges()
+      expect(root.querySelector('#governance-classifier')).not.toBeNull()
+
+      view.classifierText = 'Review a contract deadline.'
+      fixture.detectChanges()
+      const classifyButton = Array.from(root.querySelectorAll<HTMLButtonElement>('.classifier-body button'))
+        .find((button) => button.textContent?.includes('Classify'))
+      expect(classifyButton).toBeDefined()
+      classifyButton!.click()
+      fixture.detectChanges()
+
+      expect(service.classifyDomain).toHaveBeenCalledWith('Review a contract deadline.')
+      expect(view.classification).toEqual(classification)
+      expect(root.querySelector('.classification-result button')?.textContent).toContain('Contract signal')
+      ;(root.querySelector('.classification-result button') as HTMLButtonElement).click()
+      fixture.detectChanges()
+      expect(service.effectiveDomainPack).toHaveBeenCalledWith('legal')
+      expect(view.inspectorKind).toBe('domain')
+    })
   })
 })

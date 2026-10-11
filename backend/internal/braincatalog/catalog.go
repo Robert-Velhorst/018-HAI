@@ -483,8 +483,8 @@ var entries = []Entry{
 		Status: StatusIntegrated, Category: "local model inference", IntegrationMode: "operator-configured loopback Ollama provider",
 		Capabilities: []string{"local model discovery", "local generation", "model tags probe", "local-first routing"}, RecommendedFor: []string{"local reasoning", "classification", "extraction", "drafting"},
 		RequiresApproval: true, LocalFirstCompatible: true,
-		Activation: "Set a loopback-only OLLAMA_BASE_URL and run HAI's persisted provider probe. HAI selects only a live local model under the EUR 0 policy and still requires the task's existing approval gate before consequential generation or execution.",
-		Rationale:  "HAI already has a real local Ollama provider, tag probe, readiness persistence, and local-first route selection. The catalog makes that implemented boundary visible without installing Ollama or selecting a model automatically.",
+		Activation: "Set a loopback-only OLLAMA_BASE_URL, configure the exact OLLAMA_MODEL_IDS tag, and run HAI's persisted provider probe. Inference remains blocked unless HAI_MODEL_INTELLIGENCE_LOCAL_INFERENCE_ATTESTATIONS contains the exact ollama/model-id and the operator has verified both local inference and unmetered billing. A loopback URL and model-list response do not prove either fact.",
+		Rationale:  "HAI probes Ollama endpoint reachability and configured model presence, but cannot independently establish where inference runs or whether the model tag proxies a cloud service. The exact operator attestation is a declared trust boundary, not automatic verification; installing Ollama or selecting a model remains explicit.",
 		VerifiedAt: verifiedAt, VerificationNote: "OSS Insight LLM Inference Engines repository list and HAI's existing local-provider implementation checked on 2026-07-19.",
 	},
 	{
@@ -633,7 +633,7 @@ var entries = []Entry{
 		RequiresApproval: true, LocalFirstCompatible: true,
 		Activation: "Enable only the contained `safety-evaluation` profile after reviewing one local OpenAI-compatible endpoint and its model provenance. HAI invokes a fixed six-case synthetic suite; it accepts no caller-provided provider, model, endpoint, prompt, command, source, or data. Review aggregate evidence before any separate routing or policy decision.",
 		Rationale:  "HAI implements a bounded Promptfoo bridge for repeatable local prompt-injection and high-risk-action regression evidence without turning Promptfoo into an agent, data store, policy engine, or production red-team service.",
-		VerifiedAt: "2026-07-20", VerificationNote: "Official repository and documentation reviewed on 2026-07-20: MIT, active main branch, v0.121.19, local CLI/library evaluation with explicit OpenAI-compatible chat endpoints and declarative assertions. HAI pins that version in an opt-in internal runner and returns aggregate metadata only; no Promptfoo runtime, provider, real prompt, source record, telemetry export, or safety claim is configured by default.",
+		VerifiedAt: "2026-09-27", VerificationNote: "Official release and package metadata reviewed on 2026-09-27: MIT, signed v0.123.1 release, Node.js >=22.22.0, local CLI/library evaluation with explicit OpenAI-compatible chat endpoints and declarative assertions. HAI pins that version in an opt-in internal runner and returns aggregate metadata only; no Promptfoo runtime, provider, real prompt, source record, telemetry export, or safety claim is configured by default.",
 		ControlMappings: []ControlMapping{
 			{SourcePattern: "prompt or red-team test", HAIControl: "fixed synthetic regression suite", Boundary: "callers cannot choose prompts, datasets, providers, commands, or real account context"},
 			{SourcePattern: "evaluation pass or failure", HAIControl: "model review and audit evidence", Boundary: "a score cannot change routing, policy, verification, approval, memory, workflow, or execution"},

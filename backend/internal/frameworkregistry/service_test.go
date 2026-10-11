@@ -32,6 +32,7 @@ func TestPreferencesAreOwnerScopedAndCanOnlyLowerAuthority(t *testing.T) {
 
 	lowered := 1
 	updated, err := service.UpdatePreference("alice", aliceInitial.ID, PreferencePatch{
+		Reason:               "Enable bounded sandbox experiments",
 		State:                PreferenceEnabled,
 		MaximumAutonomyLevel: &lowered,
 		Adaptations:          []string{"Use only after a local sandbox capability test."},
@@ -42,12 +43,54 @@ func TestPreferencesAreOwnerScopedAndCanOnlyLowerAuthority(t *testing.T) {
 	if !updated.Enabled || updated.EffectiveAutonomyLevel != lowered {
 		t.Fatalf("updated preference = %#v", updated)
 	}
+	history, err := service.PreferenceHistory("alice", aliceInitial.ID, 10)
+	if err != nil {
+		t.Fatalf("PreferenceHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].Actor != "alice" || history[0].Reason != "Enable bounded sandbox experiments" || history[0].Before != nil || history[0].After.State != PreferenceEnabled || len(history[0].EventDigest) != 64 {
+		t.Fatalf("unexpected preference audit history: %#v", history)
+	}
+	pinned := true
+	if _, err := service.UpdatePreference("alice", aliceInitial.ID, PreferencePatch{Reason: "Keep a redacted token: secret=abc", Pinned: &pinned}); err != nil {
+		t.Fatalf("second UpdatePreference: %v", err)
+	}
+	history, err = service.PreferenceHistory("alice", aliceInitial.ID, 10)
+	if err != nil {
+		t.Fatalf("PreferenceHistory after second update: %v", err)
+	}
+	if len(history) != 2 || history[0].Sequence != 2 || history[1].Sequence != 1 || history[0].PreviousEventDigest != history[1].EventDigest || strings.Contains(history[0].Reason, "secret=abc") {
+		t.Fatalf("preference audit chain or redaction invalid: %#v", history)
+	}
 	bob, err := service.Get("bob", aliceInitial.ID)
 	if err != nil {
 		t.Fatalf("Get bob: %v", err)
 	}
 	if bob.Enabled || bob.EffectiveAutonomyLevel == lowered {
 		t.Fatalf("Alice preference leaked to Bob: %#v", bob)
+	}
+	bobHistory, err := service.PreferenceHistory("bob", aliceInitial.ID, 10)
+	if err != nil || len(bobHistory) != 0 {
+		t.Fatalf("preference history leaked across owners: %#v, %v", bobHistory, err)
+	}
+}
+
+func TestPreferenceHistoryRejectsAlteredEventDigest(t *testing.T) {
+	event, err := sealPreferenceChange(PreferenceChangeEvent{
+		Sequence: 1, ID: uuid.NewString(), FrameworkID: "agent-development-adapters",
+		Actor: "alice", Reason: "operator changed preference",
+		After:      Preference{FrameworkID: "agent-development-adapters", State: PreferenceEnabled, Adaptations: []string{}},
+		OccurredAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("sealPreferenceChange: %v", err)
+	}
+	row, err := preferenceChangeToModel("alice", event)
+	if err != nil {
+		t.Fatalf("preferenceChangeToModel: %v", err)
+	}
+	row.Reason = "tampered after persistence"
+	if _, err := preferenceChangeFromModel(row); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("tampered event error = %v, want digest mismatch", err)
 	}
 }
 

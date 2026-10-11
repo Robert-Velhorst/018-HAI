@@ -1,12 +1,14 @@
 package ambient
 
 import (
+	"automation-hub-backend/internal/durablejob"
 	"automation-hub-backend/internal/memory"
 	"automation-hub-backend/internal/memoryengine"
 	"automation-hub-backend/internal/models"
 	pursuitpkg "automation-hub-backend/internal/pursuit"
 	"automation-hub-backend/internal/safety"
 	"automation-hub-backend/internal/workflow"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -171,27 +173,43 @@ func (s *service) Scan(trigger string) (*models.AmbientScan, error) {
 		return nil, ErrScanInProgress
 	}
 	defer s.scanning.Store(false)
+	return s.scan(context.Background(), trigger, func() bool { return true })
+}
+
+func (s *service) scan(ctx context.Context, trigger string, allowed func() bool) (*models.AmbientScan, error) {
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return nil, err
+	}
+	if s.workflows == nil || s.memoryEngine == nil {
+		return nil, ErrScanContextUnavailable
+	}
+	policy := policyFromEnv()
+	followups, contextual := s.workflows.(workflow.ContextualFollowUpBatchService)
+	if policy.ExecutionEnabled && !policy.SuggestionOnly && !contextual {
+		return nil, workflow.ErrFollowUpContextUnavailable
+	}
 	if err := s.ensureNeeds(); err != nil {
 		return nil, err
 	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return nil, err
+	}
 	started := time.Now().UTC()
-	scan, err := s.repo.CreateScan(&models.AmbientScan{
+	scan, err := s.startScan(&models.AmbientScan{
 		Trigger:   firstNonEmpty(strings.TrimSpace(trigger), "manual"),
 		Status:    "running",
 		StartedAt: started,
 	})
 	if err != nil {
-		return nil, err
+		return scan, err
 	}
 	fail := func(scanErr error) (*models.AmbientScan, error) {
-		completed := time.Now().UTC()
-		scan.Status = "failed"
-		scan.CompletedAt = &completed
-		scan.ErrorMessage = scanErr.Error()
-		_, _ = s.repo.UpdateScan(scan)
-		return scan, scanErr
+		return s.failScan(ctx, scan, scanErr)
 	}
 
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return fail(err)
+	}
 	needs, err := s.repo.Needs()
 	if err != nil {
 		return fail(err)
@@ -200,8 +218,17 @@ func (s *service) Scan(trigger string) (*models.AmbientScan, error) {
 	for _, need := range needs {
 		needMap[need.Key] = need
 	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return fail(err)
+	}
 	dashboard, err := s.workflows.Dashboard()
 	if err != nil {
+		return fail(err)
+	}
+	if dashboard == nil {
+		return fail(ErrScanOutcomeUnconfirmed)
+	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
 		return fail(err)
 	}
 	items, err := s.workflows.Items(false)
@@ -212,8 +239,17 @@ func (s *service) Scan(trigger string) (*models.AmbientScan, error) {
 	for _, item := range items {
 		workflowStates[item.ID] = item.CurrentState
 	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return fail(err)
+	}
 	memoryDashboard, err := s.memoryEngine.Dashboard()
 	if err != nil {
+		return fail(err)
+	}
+	if memoryDashboard == nil {
+		return fail(ErrScanOutcomeUnconfirmed)
+	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
 		return fail(err)
 	}
 	var pursuitDashboard *pursuitpkg.Dashboard
@@ -223,18 +259,26 @@ func (s *service) Scan(trigger string) (*models.AmbientScan, error) {
 		if err != nil {
 			return fail(err)
 		}
+		if err := scanCheckpoint(ctx, allowed); err != nil {
+			return fail(err)
+		}
 		pursuits, err = s.pursuits.List(true)
 		if err != nil {
 			return fail(err)
 		}
 	}
 
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return fail(err)
+	}
 	candidates := buildCandidates(dashboard, items, memoryDashboard, pursuitDashboard, needMap)
 	scan.ItemsExamined = len(items) + len(memoryDashboard.DelegateToVA) + len(memoryDashboard.Contradictions) + len(dashboard.DueOpenLoops) + pursuitSignalCount(pursuitDashboard)
 	scan.OpportunitiesFound = len(candidates)
-	policy := policyFromEnv()
 	now := time.Now().UTC()
 	for _, candidate := range candidates {
+		if err := scanCheckpoint(ctx, allowed); err != nil {
+			return fail(err)
+		}
 		if candidate.PriorityScore < policy.MinimumScore || candidate.Confidence < policy.MinimumConfidence {
 			scan.Filtered++
 			continue
@@ -243,7 +287,13 @@ func (s *service) Scan(trigger string) (*models.AmbientScan, error) {
 		if findErr != nil {
 			return fail(findErr)
 		}
+		if err := scanCheckpoint(ctx, allowed); err != nil {
+			return fail(err)
+		}
 		if existing != nil {
+			if strings.TrimSpace(existing.OwnerIdentity) != strings.TrimSpace(candidate.OwnerIdentity) {
+				return fail(errors.New("ambient opportunity fingerprint owner mismatch"))
+			}
 			existing.Title = candidate.Title
 			existing.Rationale = candidate.Rationale
 			existing.NextAction = candidate.NextAction
@@ -275,11 +325,17 @@ func (s *service) Scan(trigger string) (*models.AmbientScan, error) {
 		}
 		scan.ManifestBytes += int64(len(candidate.EvidenceManifest))
 	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return fail(err)
+	}
 	storedOpportunities, listErr := s.repo.Opportunities("", 200)
 	if listErr != nil {
 		return fail(listErr)
 	}
 	for index := range storedOpportunities {
+		if err := scanCheckpoint(ctx, allowed); err != nil {
+			return fail(err)
+		}
 		item := &storedOpportunities[index]
 		if item.WorkflowID == nil || item.Status == StatusCompleted || item.Status == StatusDismissed {
 			continue
@@ -296,34 +352,72 @@ func (s *service) Scan(trigger string) (*models.AmbientScan, error) {
 		scan.Updated++
 	}
 	for _, item := range closedPursuitOpportunityUpdates(storedOpportunities, pursuits, now) {
+		if err := scanCheckpoint(ctx, allowed); err != nil {
+			return fail(err)
+		}
 		if _, saveErr := s.repo.SaveOpportunity(&item); saveErr != nil {
 			return fail(saveErr)
 		}
 		scan.Updated++
 	}
 
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return fail(err)
+	}
+	policy = policyFromEnv()
 	if policy.ExecutionEnabled && !policy.SuggestionOnly && !safety.EmergencyStopActive() {
-		openLoops, runErr := s.workflows.RunDueOpenLoops(workflow.RunDueRequest{Limit: policy.ExecutionLimit})
+		if !contextual {
+			return fail(workflow.ErrFollowUpContextUnavailable)
+		}
+		openLoops, runErr := followups.RunDueOpenLoopsContext(ctx, workflow.RunDueRequest{Limit: policy.ExecutionLimit})
+		if openLoops != nil {
+			scan.Advanced, scan.Skipped = openLoops.Triggered+openLoops.Resolved, openLoops.Skipped
+		}
 		if runErr != nil {
 			return fail(runErr)
+		}
+		if openLoops == nil {
+			return fail(ErrScanOutcomeUnconfirmed)
+		}
+		if err := scanCheckpoint(ctx, allowed); err != nil {
+			return fail(err)
+		}
+		current := policyFromEnv()
+		if !current.ExecutionEnabled || current.SuggestionOnly || safety.EmergencyStopActive() {
+			return fail(durablejob.Defer("ambient execution paused by current safety policy"))
 		}
 		runs, runErr := s.workflows.RunDue(workflow.RunDueRequest{Limit: policy.ExecutionLimit})
+		if runs != nil {
+			scan.Advanced += runs.Completed
+			scan.Skipped += runs.Skipped
+			scan.Blocked += runs.Blocked
+		}
 		if runErr != nil {
 			return fail(runErr)
 		}
-		scan.Advanced = openLoops.Triggered + openLoops.Resolved + runs.Completed
-		scan.Skipped = openLoops.Skipped + runs.Skipped
-		scan.Blocked += runs.Blocked
+		if runs == nil {
+			return fail(ErrScanOutcomeUnconfirmed)
+		}
+	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return fail(err)
 	}
 	completed := time.Now().UTC()
 	scan.Status = "completed"
 	scan.CompletedAt = &completed
-	updated, err := s.repo.UpdateScan(scan)
-	if err != nil {
-		return nil, err
+	expected := snapshotScan(scan)
+	request := snapshotScan(scan)
+	updated, err := s.repo.UpdateScan(&request)
+	if err != nil || !scanOutcomeMatches(expected, updated) {
+		// The completion write may already have committed. Do not overwrite or
+		// turn an ambiguous completion into a claimed failure acknowledgement.
+		return unconfirmedScan(&expected, err)
+	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return updated, err
 	}
 	if err := s.repo.PruneScans(policy.ScanRetention); err != nil {
-		log.Printf("ambient scan retention cleanup failed: %v", err)
+		log.Printf("ambient scan retention cleanup failed: %s", safety.RedactSecrets(err.Error()))
 	}
 	return updated, nil
 }
@@ -348,22 +442,17 @@ func (s *service) ScanForOwner(ownerIdentity, trigger string) (*models.AmbientSc
 		return nil, err
 	}
 	started := time.Now().UTC()
-	scan, err := s.repo.CreateScan(&models.AmbientScan{
+	scan, err := s.startScan(&models.AmbientScan{
 		OwnerIdentity: ownerIdentity,
 		Trigger:       firstNonEmpty(strings.TrimSpace(trigger), "manual"),
 		Status:        "running",
 		StartedAt:     started,
 	})
 	if err != nil {
-		return nil, err
+		return scan, err
 	}
 	fail := func(scanErr error) (*models.AmbientScan, error) {
-		completed := time.Now().UTC()
-		scan.Status = "failed"
-		scan.CompletedAt = &completed
-		scan.ErrorMessage = scanErr.Error()
-		_, _ = s.repo.UpdateScan(scan)
-		return scan, scanErr
+		return s.failScan(context.Background(), scan, scanErr)
 	}
 	needs, err := s.needsForOwner(ownerIdentity)
 	if err != nil {
@@ -402,12 +491,16 @@ func (s *service) ScanForOwner(ownerIdentity, trigger string) (*models.AmbientSc
 	completed := time.Now().UTC()
 	scan.Status = "completed"
 	scan.CompletedAt = &completed
-	updated, err := s.repo.UpdateScan(scan)
-	if err != nil {
-		return nil, err
+	expected := snapshotScan(scan)
+	request := snapshotScan(scan)
+	updated, err := s.repo.UpdateScan(&request)
+	if err != nil || !scanOutcomeMatches(expected, updated) {
+		return unconfirmedScan(&expected, err)
 	}
-	if err := s.repo.PruneScans(policy.ScanRetention); err != nil {
-		log.Printf("ambient scan retention cleanup failed: %v", err)
+	if retention, ok := s.repo.(ownerScanRetentionRepository); ok {
+		if err := retention.PruneScansForOwner(ownerIdentity, policy.ScanRetention); err != nil {
+			log.Printf("ambient scan retention cleanup failed: %s", safety.RedactSecrets(err.Error()))
+		}
 	}
 	return updated, nil
 }

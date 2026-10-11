@@ -2,13 +2,18 @@ package workflow
 
 import (
 	"crypto/sha256"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"automation-hub-backend/internal/identity"
+	"automation-hub-backend/internal/safety"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -24,11 +29,36 @@ const (
 	workflowRemindersUnavailableMessage           = "workflow reminder proposals are unavailable"
 	workflowReminderActivationsUnavailableMessage = "workflow reminder activation history is unavailable"
 	workflowReminderDeliveriesUnavailableMessage  = "workflow reminder deliveries are unavailable"
+	workflowAuditPersistenceFailedMessage         = "workflow audit history could not be saved; inspect the workflow before retrying"
+	workflowPersistenceFailedMessage              = "workflow state could not be saved safely; inspect the workflow before retrying"
 )
+
+func respondWorkflowMutationError(c *gin.Context, err error) {
+	var auditErr *WorkflowAuditPersistenceError
+	if errors.As(err, &auditErr) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowAuditPersistenceFailedMessage})
+		return
+	}
+	var persistenceErr *WorkflowPersistenceError
+	if errors.As(err, &persistenceErr) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowPersistenceFailedMessage})
+		return
+	}
+	if errors.Is(err, ErrWorkflowIntakeIncomplete) {
+		c.JSON(http.StatusConflict, gin.H{"error": ErrWorkflowIntakeIncomplete.Error()})
+		return
+	}
+	if errors.Is(err, ErrWorkflowIntakeConcurrentChange) {
+		c.JSON(http.StatusConflict, gin.H{"error": ErrWorkflowIntakeConcurrentChange.Error()})
+		return
+	}
+	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+}
 
 type Handler struct {
 	service             Service
 	pursuitIntakeRouter PursuitIntakeRouter
+	projectDossier      ProjectDossierService
 }
 
 // PursuitIntakeRouter keeps the legacy workflow endpoint compatible while
@@ -57,6 +87,10 @@ func NewHandler(service Service) *Handler {
 
 func NewHandlerWithPursuitIntakeRouter(service Service, pursuitIntakeRouter PursuitIntakeRouter) *Handler {
 	return &Handler{service: service, pursuitIntakeRouter: pursuitIntakeRouter}
+}
+
+func NewHandlerWithPursuitIntakeRouterAndProjectDossierService(service Service, pursuitIntakeRouter PursuitIntakeRouter, dossierService ProjectDossierService) *Handler {
+	return &Handler{service: service, pursuitIntakeRouter: pursuitIntakeRouter, projectDossier: dossierService}
 }
 
 // RequireAuthenticatedOwner protects workflow data and controls at the HTTP
@@ -98,7 +132,7 @@ func (h *Handler) Intake(c *gin.Context) {
 			})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWorkflowMutationError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, record)
@@ -327,24 +361,47 @@ func (h *Handler) ReminderDeliveryHistory(c *gin.Context) {
 }
 
 func (h *Handler) RunDueReminderDeliveries(c *gin.Context) {
-	var request RunDueRequest
-	if c.Request.ContentLength > 0 {
-		if err := c.ShouldBindJSON(&request); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
+	owner := verifiedWorkflowOwner(c)
+	if owner == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for workflow access"})
+		return
 	}
-	service, ok := h.service.(ReminderDeliveryService)
-	if !ok || service == nil {
+	var request *RunDueRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4096))
+	if err := decoder.Decode(&request); err != nil || request == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid reminder delivery request is required"})
+		return
+	}
+	// Reject additional payloads and oversized whitespace before admitting work.
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF || request.Limit < 0 || request.Limit > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid reminder delivery request is required"})
+		return
+	}
+	if h == nil || h.service == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": workflowReminderDeliveriesUnavailableMessage})
 		return
 	}
-	result, err := service.RunDueReminderDeliveriesForOwner(verifiedWorkflowOwner(c), request)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	service, ok := h.service.(ContextualReminderDeliveryService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": workflowReminderDeliveriesUnavailableMessage})
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	result, err := service.RunDueReminderDeliveriesForOwnerContext(c.Request.Context(), owner, *request)
+	if err != nil || result == nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, ErrReminderDeliveryContextUnavailable) {
+			status = http.StatusServiceUnavailable
+		}
+		c.JSON(status, gin.H{"error": workflowReminderDeliveriesUnavailableMessage})
+		return
+	}
+	public := *result
+	public.Results = slices.Clone(result.Results)
+	for i := range public.Results {
+		public.Results[i].Reason = safety.RedactSecrets(public.Results[i].Reason)
+	}
+	c.JSON(http.StatusOK, public)
 }
 
 func boundedWorkflowQueryInt(c *gin.Context, name string, fallback, minimum, maximum int) (int, error) {
@@ -387,7 +444,7 @@ func (h *Handler) Transition(c *gin.Context) {
 	request.Actor = verifiedWorkflowActor(c, "operator")
 	_, err := h.service.Transition(id, request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWorkflowMutationError(c, err)
 		return
 	}
 	h.respondScopedWorkflow(c, id, http.StatusOK)
@@ -409,7 +466,7 @@ func (h *Handler) ResolveApproval(c *gin.Context) {
 	request.Actor = verifiedWorkflowActor(c, "operator")
 	_, err := h.service.ResolveApproval(id, request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWorkflowMutationError(c, err)
 		return
 	}
 	h.respondScopedWorkflow(c, id, http.StatusOK)
@@ -431,7 +488,7 @@ func (h *Handler) ResolveInterruptedExecution(c *gin.Context) {
 	request.Actor = verifiedWorkflowActor(c, "operator")
 	_, err := h.service.ResolveInterruptedExecution(id, request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWorkflowMutationError(c, err)
 		return
 	}
 	h.respondScopedWorkflow(c, id, http.StatusOK)
@@ -458,7 +515,7 @@ func (h *Handler) ResolveProposal(c *gin.Context) {
 	request.Actor = verifiedWorkflowActor(c, "operator")
 	_, err = h.service.ResolveProposal(id, proposalID, request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		respondWorkflowMutationError(c, err)
 		return
 	}
 	h.respondScopedWorkflow(c, id, http.StatusOK)
@@ -518,7 +575,7 @@ func verifiedWorkflowOwner(c *gin.Context) string {
 // mutate them without a separate audited migration assigning an owner.
 func (h *Handler) ensureWorkflowMutable(c *gin.Context, id uuid.UUID) bool {
 	record, err := h.service.GetForOwner(verifiedWorkflowOwner(c), id)
-	if err != nil || strings.TrimSpace(record.Item.OwnerIdentity) != verifiedWorkflowOwner(c) {
+	if err != nil || record == nil || record.Item.ID != id || strings.TrimSpace(record.Item.OwnerIdentity) != verifiedWorkflowOwner(c) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
 		return false
 	}
@@ -527,7 +584,7 @@ func (h *Handler) ensureWorkflowMutable(c *gin.Context, id uuid.UUID) bool {
 
 func (h *Handler) respondScopedWorkflow(c *gin.Context, id uuid.UUID, status int) {
 	record, err := h.service.GetForOwner(verifiedWorkflowOwner(c), id)
-	if err != nil {
+	if err != nil || record == nil || record.Item.ID != id || strings.TrimSpace(record.Item.OwnerIdentity) != verifiedWorkflowOwner(c) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "workflow not found"})
 		return
 	}
@@ -535,17 +592,46 @@ func (h *Handler) respondScopedWorkflow(c *gin.Context, id uuid.UUID, status int
 }
 
 func (h *Handler) RunDue(c *gin.Context) {
-	var request RunDueRequest
-	_ = c.ShouldBindJSON(&request)
-	result, err := h.service.RunDueForOwner(verifiedWorkflowOwner(c), request)
-	if err != nil {
+	owner := verifiedWorkflowOwner(c)
+	if owner == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for workflow access"})
+		return
+	}
+	var request *RunDueRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4096))
+	if err := decoder.Decode(&request); err != nil || request == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid workflow execution request with limit 0 to 50 is required"})
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF || request.Limit < 0 || request.Limit > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid workflow execution request with limit 0 to 50 is required"})
+		return
+	}
+	executor, ok := h.service.(ContextualWorkflowExecutionService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cancellation-aware workflow execution is unavailable"})
+		return
+	}
+	result, err := executor.RunDueForOwnerContext(c.Request.Context(), owner, *request)
+	if err != nil || result == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowRunFailedMessage})
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	public := *result
+	public.Results = slices.Clone(result.Results)
+	for i := range public.Results {
+		public.Results[i].Message = safety.RedactSecrets(public.Results[i].Message)
+	}
+	c.JSON(http.StatusOK, public)
 }
 
 func (h *Handler) RunOne(c *gin.Context) {
+	owner := verifiedWorkflowOwner(c)
+	if owner == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for workflow access"})
+		return
+	}
 	id, ok := parseWorkflowID(c)
 	if !ok {
 		return
@@ -553,34 +639,141 @@ func (h *Handler) RunOne(c *gin.Context) {
 	if !h.ensureWorkflowMutable(c, id) {
 		return
 	}
-	result, err := h.service.RunOneForOwner(verifiedWorkflowOwner(c), id)
-	if err != nil {
+	executor, ok := h.service.(ContextualWorkflowExecutionService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cancellation-aware workflow execution is unavailable"})
+		return
+	}
+	result, err := executor.RunOneForOwnerContext(c.Request.Context(), owner, id)
+	if err != nil || result == nil || result.WorkflowID != id {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowRunFailedMessage})
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	public := *result
+	public.Message = safety.RedactSecrets(public.Message)
+	c.JSON(http.StatusOK, public)
 }
 
 func (h *Handler) RecoverStaleClaims(c *gin.Context) {
-	var request RunDueRequest
-	_ = c.ShouldBindJSON(&request)
-	result, err := h.service.RecoverStaleClaimsForOwner(verifiedWorkflowOwner(c), request)
-	if err != nil {
+	owner := verifiedWorkflowOwner(c)
+	if owner == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for workflow access"})
+		return
+	}
+	var request *RunDueRequest
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4096))
+	if err := decoder.Decode(&request); err != nil || request == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid claim recovery request is required"})
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF || request.Limit < 0 || request.Limit > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid claim recovery request is required"})
+		return
+	}
+	if h == nil || h.service == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": workflowRecoveryFailedMessage})
+		return
+	}
+	recovery, ok := h.service.(ContextualClaimRecoveryService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": workflowRecoveryFailedMessage})
+		return
+	}
+	result, err := recovery.RecoverStaleClaimsForOwnerContext(c.Request.Context(), owner, *request)
+	if err != nil || result == nil {
+		if errors.Is(err, ErrClaimRecoveryContextUnavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": workflowRecoveryFailedMessage})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowRecoveryFailedMessage})
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	public := *result
+	public.Results = slices.Clone(result.Results)
+	for i := range public.Results {
+		public.Results[i].Message = safety.RedactSecrets(public.Results[i].Message)
+	}
+	c.JSON(http.StatusOK, public)
 }
 
 func (h *Handler) RunDueOpenLoops(c *gin.Context) {
-	var request RunDueRequest
-	_ = c.ShouldBindJSON(&request)
-	result, err := h.service.RunDueOpenLoopsForOwner(verifiedWorkflowOwner(c), request)
-	if err != nil {
+	owner := verifiedWorkflowOwner(c)
+	if owner == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for workflow access"})
+		return
+	}
+	var request *RunDueRequest
+	// Decode an optional object directly: the installed Gin validator panics
+	// when asked to validate a pointer made nil by a JSON null body.
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4096))
+	if err := decoder.Decode(&request); err != nil || request == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid follow-up request is required"})
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF || request.Limit < 0 || request.Limit > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid follow-up request with limit 0 to 50 is required"})
+		return
+	}
+	if h == nil || h.service == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": ErrFollowUpContextUnavailable.Error()})
+		return
+	}
+	workflows, ok := h.service.(ContextualFollowUpService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": ErrFollowUpContextUnavailable.Error()})
+		return
+	}
+	result, err := workflows.RunDueOpenLoopsForOwnerContext(c.Request.Context(), owner, *request)
+	if err != nil || result == nil {
+		if errors.Is(err, ErrFollowUpContextUnavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": ErrFollowUpContextUnavailable.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowOpenLoopRunFailedMessage})
 		return
 	}
-	c.JSON(http.StatusOK, result)
+	public := *result
+	public.Results = slices.Clone(result.Results)
+	for i := range public.Results {
+		public.Results[i].Message = safety.RedactSecrets(public.Results[i].Message)
+	}
+	c.JSON(http.StatusOK, public)
+}
+
+func (h *Handler) ProjectDossier(c *gin.Context) {
+	ownerIdentity := verifiedWorkflowOwner(c)
+	if ownerIdentity == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for workflow access"})
+		return
+	}
+	projectKey, ok := c.GetQuery("projectKey")
+	if !ok || strings.TrimSpace(projectKey) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrProjectDossierProjectKeyRequired.Error()})
+		return
+	}
+	if h == nil || h.projectDossier == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "project dossier is temporarily unavailable"})
+		return
+	}
+	dossier, err := h.projectDossier.ProjectDossierForOwner(ownerIdentity, projectKey)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrProjectDossierOwnerRequired):
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for workflow access"})
+		case errors.Is(err, ErrProjectDossierProjectKeyRequired):
+			c.JSON(http.StatusBadRequest, gin.H{"error": ErrProjectDossierProjectKeyRequired.Error()})
+		default:
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "project dossier is temporarily unavailable"})
+		}
+		return
+	}
+	if dossier == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "project dossier is temporarily unavailable"})
+		return
+	}
+	c.JSON(http.StatusOK, dossier)
 }
 
 func (h *Handler) Overview(c *gin.Context) {

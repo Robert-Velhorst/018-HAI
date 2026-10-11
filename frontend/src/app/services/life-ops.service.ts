@@ -9,6 +9,7 @@ import {
   GoalTreeNode,
   LifeDomain,
   LifeDomainId,
+  LifeOpsOverview,
   LinkEntityRequest,
   NeedObservation,
   PriorityAssessment,
@@ -27,6 +28,10 @@ export class LifeOpsService {
   domains(): Observable<LifeDomain[]> {
     return this.http.get<{ domains: LifeDomain[] }>(`${this.apiUrl}/domains`)
       .pipe(map((response) => response.domains ?? []))
+  }
+
+  overview(): Observable<LifeOpsOverview> {
+    return this.http.get<LifeOpsOverview>(`${this.apiUrl}/overview`)
   }
 
   linkEntity(request: LinkEntityRequest): Observable<EntityDomainLink> {

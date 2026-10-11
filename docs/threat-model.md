@@ -20,7 +20,7 @@ verification → audit).
 
 | STRIDE | Threat | Mitigation |
 | --- | --- | --- |
-| Spoofing | Unauthenticated caller | `X-HAI-Backend-Key` (constant-time); rate limiting; `doctor`/`readyz` warn when unset |
+| Spoofing | Unauthenticated caller | `X-HAI-Backend-Key` (constant-time); signed JWT identity; rate limiting; production `doctor`/`readyz` fail and protected routes return 503 when either credential is unset or an example value |
 | Tampering | Path traversal, bad input | `pathsafety`, `upload` validation, invariants, adversarial tests |
 | Repudiation | No trail of actions | `auditevent` (redaction-aware) + immutable approval/audit records |
 | Information disclosure | Secrets in logs | redaction helpers; support bundle excludes secret values |

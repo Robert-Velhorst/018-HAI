@@ -276,6 +276,22 @@ func TestReviewItemAcceptsOnlyExactLegacyDigestWithoutNewProvenance(t *testing.T
 	if err := json.Unmarshal([]byte(row.RequestJSON), &payload); err != nil {
 		t.Fatalf("decode review request: %v", err)
 	}
+	deadline := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
+	withUnboundDeadline := make(map[string]interface{}, len(payload)+1)
+	for key, value := range payload {
+		withUnboundDeadline[key] = value
+	}
+	withUnboundDeadline["deadline"] = deadline.Format(time.RFC3339Nano)
+	mutatedDeadline, err := json.Marshal(withUnboundDeadline)
+	if err != nil {
+		t.Fatalf("encode deadline-mutated legacy review request: %v", err)
+	}
+	rowWithUnboundDeadline := row
+	rowWithUnboundDeadline.RequestJSON = string(mutatedDeadline)
+	if _, err := reviewItemFromModel(rowWithUnboundDeadline, nil); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("legacy digest accepted an unbound deadline: %v", err)
+	}
+
 	payload["mandateId"] = "new-action-provenance"
 	mutated, err := json.Marshal(payload)
 	if err != nil {
@@ -284,6 +300,28 @@ func TestReviewItemAcceptsOnlyExactLegacyDigestWithoutNewProvenance(t *testing.T
 	row.RequestJSON = string(mutated)
 	if _, err := reviewItemFromModel(row, nil); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
 		t.Fatalf("legacy digest accepted new provenance: %v", err)
+	}
+}
+
+func TestMemoryTaskStateRepositoryPersistsReviewedDeadline(t *testing.T) {
+	repo := NewMemoryTaskStateRepository()
+	createdAt := time.Date(2026, 8, 4, 10, 0, 0, 0, time.UTC)
+	deadline := time.Date(2026, 8, 8, 13, 30, 45, 123456789, time.FixedZone("CEST", 2*60*60))
+	item := taskStateTestReviewItem("alice", "deadline-plan", createdAt)
+	item.Request.Deadline = &deadline
+	created, err := repo.CreateReviewItem("alice", item)
+	if err != nil {
+		t.Fatalf("create deadline-bound review item: %v", err)
+	}
+	if created.Request.Deadline == nil || !created.Request.Deadline.Equal(deadline) {
+		t.Fatalf("created review deadline = %v, want %v", created.Request.Deadline, deadline)
+	}
+	stored, err := repo.FindReviewItem("alice", item.ID)
+	if err != nil {
+		t.Fatalf("reload deadline-bound review item: %v", err)
+	}
+	if stored.Request.Deadline == nil || !stored.Request.Deadline.Equal(deadline) {
+		t.Fatalf("reloaded review deadline = %v, want %v", stored.Request.Deadline, deadline)
 	}
 }
 

@@ -41,15 +41,118 @@ The phases run in this order:
 Migration versions are ordered within their phase. Do not edit a migration
 after it has shipped; add a new numbered pair.
 
+## OpenClaw Artifact Alignment
+
+`pre/0078_openclaw_artifact_alignment` aligns the artifact ORM model with
+`openclaw_gateway_artifact_receipts`. It retains the legacy `open_claw_` table,
+copies nonconflicting records transactionally and refuses conflicting histories.
+New unknown artifact sizes are nullable; historical numeric values are preserved
+and must not be retrospectively treated as verified source measurements.
+Stop old workers before applying this migration. Its down migration deliberately
+refuses automatic rollback; reconcile both histories before reverting model code.
+
 ## Runner
+
+`pre/0079_openclaw_artifact_recovery` adds durable collection leases, retry counts,
+next-attempt times and capture counts for completed OpenClaw runs. Apply it before
+starting the updated reconciliation worker. The rollback refuses to discard a
+nonempty collection ledger, including failed or exhausted attempts.
+
+`pre/0080_openclaw_artifact_retention` adds encrypted artifact content with foreign
+keys to the source event and artifact receipt, length/hash-format constraints and
+an owner index. Apply before enabling `OPENCLAW_ARTIFACT_RETENTION_KEY`. New
+retention requires a dedicated key plus
+`OPENCLAW_ARTIFACT_RETENTION_KEY_CONFIRMED=true`; the operator must verify that
+the key came from a cryptographically secure random source. HAI rejects obvious
+low-diversity placeholders but cannot prove key entropy. The separate confirmation
+does not alter key derivation. Existing `random-v1:`-prefixed configurations
+remain readable through a compatibility fallback.
+Retention is explicit and owner-scoped; the service commits audit and content
+atomically and serializes quota checks. Back up the encryption key separately
+with the database backup. Automatic down migration is refused to preserve
+retained files.
+
+`pre/0081_openclaw_gateway_admission_intents` adds durable `admitting` and
+`not_admitted` receipt states plus an unresolved-receipt index. The runtime writes
+the owner/task/reference binding before calling `sessions.create`; admitted and
+`needs_review` rows continue to block maintenance until exact-run terminal
+verification. Rollback refuses while either new state remains in the receipt
+ledger.
+
+`pre/0082_openclaw_gateway_cancellation_intents` records a stable cancellation
+intent before requesting cancellation, tracks bounded retries, and preserves
+ambiguous outcomes for review. Cancellation remains limited to the exact
+owner-bound execution receipt; rollback refuses after cancellation evidence is
+recorded.
 
 `internal/infra/migrate.go` loads the embedded files, applies each pending
 migration in its own transaction, and records it. `RunMigrations`, called by
-startup and `GetDefaultDB`, executes:
+startup and `GetDefaultDB`, executes the sequence shown below:
+
+### Immutable migration checksums
+
+Each applied `schema_migrations` row stores a SHA-256 checksum over the exact
+version, `.up.sql`, and `.down.sql` bytes (separated with NUL bytes). Changing
+the version or either script changes the digest. Before applying either phase,
+the runner checks every known applied pre/post migration; status and rollback
+check the applicable phase(s). A missing digest or mismatch stops the operation.
+Do not edit shipped SQL to resolve a mismatch: restore the reviewed source or
+add a new numbered migration.
+
+The runner adds the nullable `checksum` column to an existing ledger under the
+migration advisory lock. Existing rows receive `NULL`; this is intentional and
+does not assert that the live schema matches the current migration files. The
+next apply/status/rollback therefore fails closed. Apply adds the column and
+then identifies the first legacy version needing review; read-only status and
+rollback explain that the legacy ledger needs the controlled procedure. Startup
+never adopts legacy rows automatically.
+
+For an existing database, take and verify a backup, stop application writers,
+and independently confirm that the live schema is the result of the exact
+reviewed migration history (including any manually applied changes). Then use
+the explicit `infra.AdoptLegacyMigrationChecksums` maintenance API with the
+current `MigrationChecksum` for **every** legacy row in that phase. Adoption is
+transactional, serialized with migration operations, rejects missing/extra
+approvals and non-matching source digests, and updates only rows whose checksum
+is still `NULL`. It does not inspect or prove schema equivalence; that remains
+an operator precondition. If equivalence cannot be established, do not adopt:
+restore a known-good backup or reconcile the schema through a separately
+reviewed migration plan. A checksum mismatch is never an invitation to overwrite
+the stored value or regenerate a baseline from an unverified database.
+
+Newly applied migrations record their checksum atomically with their SQL. The
+checksums cover rollback SQL as well, so a changed down script also blocks
+status and rollback until source history is restored. The explicit adoption API
+is intended only for a controlled maintenance tool or audited one-off operator
+procedure; normal startup and `migrate up` never enable adoption.
 
 ```text
 pre -> optional development AutoMigrate -> post
 ```
+
+## Runtime Database Least Privilege
+
+The default local install runs the API with a DML-only account. Compose starts
+the one-shot `backend-migrate` job with the database owner account, then the
+one-shot `backend-runtime-role` job creates or rotates the API account and
+grants DML and sequence permissions before allowing `backend` to start. The
+running API cannot create, alter, or drop schema objects.
+
+1. Set a strong, distinct `BACKEND_DB_PASSWORD` and a simple identifier in
+   `BACKEND_DB_USER` in the ignored environment file.
+2. Start the Compose stack normally. It will fail closed if the migration or
+   runtime-role job fails; the API will not start with stale schema or broad
+   credentials.
+3. Use `scripts/provision-runtime-db-role.ps1 -EnvFile .env.local` only to
+   rotate or repair the runtime role outside normal Compose startup. It grants
+   DML and sequence permissions plus default grants for future owner-created
+   tables.
+
+The explicit `backend migrate up` command always runs migrations even when
+`DB_MIGRATIONS_ENABLED=false`; it must be invoked with the owner credentials.
+An invalid startup setting fails closed and suppresses automatic migrations.
+Do not grant the runtime role `CREATEDB`, `CREATEROLE`, superuser, schema
+ownership, or external database access.
 
 ### CLI
 
@@ -401,8 +504,9 @@ This schema stores preparation and decision evidence only. Neither the
 migration nor an `approved` row creates a Calendar event, schedules or sends a
 notification, email, or other message, invokes a provider/runtime, executes an
 open-loop follow-up, mutates workflow/checklist state, or grants effect
-authority. No reminder worker is active, and the existing workflow/open-loop
-scheduler does not consume these tables.
+authority. The separate `0055` through `0057` delivery ledger, not these
+preparation/decision tables directly, lets an owner-authorized workflow worker
+record one internal proactivity signal and immutable receipt.
 
 The reminder mutation routes also bypass the legacy process-local
 `Idempotency-Key` rejection cache. This is intentional: authoritative exact
@@ -421,12 +525,11 @@ backend migrate down pre/0047_workflow_reminder_activation_decision_order
 backend migrate down pre/0046_workflow_reminder_activation_ledger
 ```
 
-The migration-chain contract through `0047`, isolated PostgreSQL `0046`+`0047`
-ledger test, and live workflow-repository PostgreSQL test pass. The full Go
-suite, 324 Angular tests, production build, and signed-in browser
-prepare/approve/persist/cleanup acceptance also pass. These checks validate the
-non-executing ledger and its operator flow; they do not prove or activate
-Calendar, message, provider, notification, or follow-up effects.
+The migration-chain contract covers `0082`. CI runs isolated PostgreSQL
+acceptance for migration ordering, OpenClaw receipt/artifact retention and
+recovery, workflow reminder persistence, and related owner-scoped ledgers.
+These checks validate schema and persistence behavior; they do not prove or
+activate Calendar, message, provider, notification, or follow-up effects.
 
 ## Proactive Attention Feedback
 
@@ -542,6 +645,35 @@ Applying this migration creates no task, workflow, approval, runtime call, or
 external effect. Accepted plan revisions remain coordination evidence only and
 retain `canExecute: false` at the API boundary.
 
+## Ollama Model-Maintenance Admission
+
+Pre-migration `0101_llm_model_maintenance_admission_claims` adds an owner-free
+durable claim keyed by provider, model, and configuration fingerprint. The
+Ollama adapter must persist the atomic claim before local tags/pull network
+I/O. Successful verification is held for the configured daily interval;
+failures and history-write errors leave a bounded retry window. A canceled
+attempt best-effort finalizes retry state. If finalization fails or the process
+stops, the claim remains `in_progress` until its bounded lease expires (up to
+3 hours 35 seconds at maximum configured timeouts). A changed fingerprint is
+a separate key. The rollback refuses active claims and all unexpired claim
+windows, including daily success-reuse windows.
+
+## Model Telemetry Token-Usage Provenance
+
+Pre-migration `0102_model_telemetry_usage_source` adds `usage_source` to
+`model_run_telemetries`. New rows distinguish complete provider-reported
+counts, partial provider usage, estimates, uncertain estimates, and invalid
+provider counters. Historical rows default to `estimated` because their exact
+count provenance was not stored. The rollback locks the telemetry table and
+refuses to remove the column once any non-default provenance has been recorded.
+No prompts, completions, or credentials are added to telemetry.
+
+To run the focused PostgreSQL cross-instance test, use
+`go test -tags integration -count=1 -run '^TestOllamaAdmissionPostgresCrossInstanceAndRecovery$' ./internal/llm`
+from `backend/`. It requires a loopback `HAI_TEST_DATABASE_DSN` and
+`HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS=true`; the test creates and drops only
+its own uniquely named database.
+
 ## Rules
 
 1. **Additive first.** Add columns, tables, and indexes before code depends on
@@ -579,6 +711,10 @@ retain `canExecute: false` at the API boundary.
   tests.
 - Migration parsing, ordering, statement splitting, and embedded-file loading:
   covered by focused unit tests.
+- Applied migration checksum enforcement and explicit legacy adoption are
+  implemented with unit and isolated-PostgreSQL fixture coverage. This checkout
+  did not have the Go toolchain available to execute the new tests; do not treat
+  this change as verified until those tests run in CI or a Go-enabled checkout.
 - Framework Registry migration and rollback behavior: covered in its own
   isolated Postgres database.
 - Task-state persistence, owner scope, redaction, provenance, and immutability:

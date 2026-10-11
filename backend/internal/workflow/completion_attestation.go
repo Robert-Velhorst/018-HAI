@@ -23,8 +23,13 @@ func newWorkflowCompletionAttestation(
 		strings.TrimSpace(result.PlanID) == "" || strings.TrimSpace(result.VerificationStatus) == "" {
 		return nil, fmt.Errorf("complete workflow result evidence is required")
 	}
+	if !result.Passed || result.ReviewRequired || result.ApprovalRequired ||
+		(item.RequiresApproval && item.ApprovalStatus != "approved") || strings.TrimSpace(result.FailureReason) != "" ||
+		!acceptsWorkflowCompletionStatus(result.CompletionStatus) {
+		return nil, fmt.Errorf("workflow completion requires a passed, validated result with no review or approval requirement")
+	}
 	verificationStatus := strings.ToLower(strings.TrimSpace(result.VerificationStatus))
-	if verificationStatus != "verified" && verificationStatus != "test_passed" {
+	if !acceptsWorkflowCompletionVerification(verificationStatus) {
 		return nil, fmt.Errorf("workflow completion requires verified or test-passed evidence")
 	}
 	resultDigest := sha256.Sum256([]byte(strings.Join([]string{
@@ -34,8 +39,12 @@ func newWorkflowCompletionAttestation(
 		result.FailureReason,
 	}, "\n")))
 	runtimeURI := strings.TrimSpace(result.RuntimeEvidenceURI)
-	if runtimeURI == "" {
-		runtimeURI = "hai://task-plans/" + result.PlanID + "/results/" + hex.EncodeToString(resultDigest[:])
+	if result.ExternalActionExecuted {
+		if !isWorkflowLaunchEvidenceURI(runtimeURI) {
+			return nil, fmt.Errorf("workflow external action completion requires immutable runtime launch evidence")
+		}
+	} else if runtimeURI != "" {
+		return nil, fmt.Errorf("workflow runtime evidence cannot be attached when no external action was executed")
 	}
 	if len(runtimeURI) > 2048 || safety.RedactSecrets(runtimeURI) != runtimeURI {
 		return nil, fmt.Errorf("workflow runtime evidence URI is invalid")
@@ -67,20 +76,42 @@ func newWorkflowCompletionAttestation(
 	return attestation, nil
 }
 
+func acceptsWorkflowCompletionVerification(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "verified", "test_passed":
+		return true
+	default:
+		return false
+	}
+}
+
+func acceptsWorkflowCompletionStatus(status string) bool {
+	return strings.EqualFold(strings.TrimSpace(status), "validated")
+}
+
+func isWorkflowLaunchEvidenceURI(value string) bool {
+	const prefix = "automation-launch://"
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	launchID, err := uuid.Parse(strings.TrimPrefix(value, prefix))
+	return err == nil && launchID != uuid.Nil
+}
+
 func workflowCompletionAttestationDigest(value *models.WorkflowCompletionAttestation) (string, error) {
 	if value == nil {
 		return "", fmt.Errorf("workflow completion attestation is required")
 	}
 	payload := struct {
-		WorkflowID, OwnerIdentity, TaskPlanID, CompletionStatus, VerificationStatus string
-		RuntimeID, RuntimeEvidenceURI, RuntimeEvidenceDigest, ResultDigest          string
-		CompletedAt                                                                 string
+		AttestationID, WorkflowID, OwnerIdentity, TaskPlanID, CompletionStatus, VerificationStatus string
+		RuntimeID, RuntimeEvidenceURI, RuntimeEvidenceDigest, ResultDigest                       string
+		CompletedAt, CreatedAt                                                                  string
 	}{
-		value.WorkflowID.String(), strings.TrimSpace(value.OwnerIdentity),
+		value.ID.String(), value.WorkflowID.String(), strings.TrimSpace(value.OwnerIdentity),
 		strings.TrimSpace(value.TaskPlanID), strings.TrimSpace(value.CompletionStatus),
 		strings.TrimSpace(value.VerificationStatus), strings.TrimSpace(value.RuntimeID), strings.TrimSpace(value.RuntimeEvidenceURI),
 		strings.TrimSpace(value.RuntimeEvidenceDigest), strings.TrimSpace(value.ResultDigest),
-		value.CompletedAt.UTC().Format(time.RFC3339Nano),
+		value.CompletedAt.UTC().Format(time.RFC3339Nano), value.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -88,4 +119,40 @@ func workflowCompletionAttestationDigest(value *models.WorkflowCompletionAttesta
 	}
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func validateWorkflowCompletionAttestation(item models.WorkflowItem, value *models.WorkflowCompletionAttestation) error {
+	if value == nil || item.ID == uuid.Nil || item.CompletedAt == nil || value.ID == uuid.Nil ||
+		value.WorkflowID != item.ID || !value.CompletedAt.UTC().Equal(item.CompletedAt.UTC()) {
+		return fmt.Errorf("workflow completion attestation does not match the completed item")
+	}
+	wantOwner := firstNonEmpty(strings.TrimSpace(item.OwnerIdentity), "system")
+	if strings.TrimSpace(value.OwnerIdentity) != wantOwner || strings.TrimSpace(value.TaskPlanID) == "" ||
+		!strings.EqualFold(strings.TrimSpace(value.CompletionStatus), "completed") ||
+		!acceptsWorkflowCompletionVerification(value.VerificationStatus) || strings.TrimSpace(value.RuntimeID) == "" ||
+		value.CreatedAt.IsZero() || !isWorkflowCompletionDigest(value.RuntimeEvidenceDigest) ||
+		!isWorkflowCompletionDigest(value.ResultDigest) || !isWorkflowCompletionDigest(value.RecordDigest) {
+		return fmt.Errorf("workflow completion attestation fields are incomplete or inconsistent")
+	}
+	runtimeURI := strings.TrimSpace(value.RuntimeEvidenceURI)
+	if len(runtimeURI) > 2048 || safety.RedactSecrets(runtimeURI) != runtimeURI ||
+		(runtimeURI != "" && !isWorkflowLaunchEvidenceURI(runtimeURI)) {
+		return fmt.Errorf("workflow completion runtime evidence is invalid")
+	}
+	digest, err := workflowCompletionAttestationDigest(value)
+	if err != nil {
+		return err
+	}
+	if digest != value.RecordDigest {
+		return fmt.Errorf("workflow completion attestation digest does not match its record")
+	}
+	return nil
+}
+
+func isWorkflowCompletionDigest(value string) bool {
+	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
 }

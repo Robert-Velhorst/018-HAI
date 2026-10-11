@@ -1,8 +1,10 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 import { ThemeService } from '../../services/theme.service';
+import { Subscription } from 'rxjs';
 import {
   ILLMFallbackOption,
   ILLMModel,
@@ -42,18 +44,24 @@ interface PolicyActionCard {
   action: 'route' | 'probe' | 'logs' | 'providers' | 'catalog' | 'automations';
 }
 
+const MODULE_ID = 'llm-policy';
+
 @Component({
-  standalone: false,
-  selector: 'app-llm-policy',
-  templateUrl: './llm-policy.component.html',
-  styleUrls: ['./llm-policy.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-llm-policy',
+    templateUrl: './llm-policy.component.html',
+    styleUrls: ['./llm-policy.component.scss'],
+    standalone: false
 })
-export class LLMPolicyComponent implements OnInit {
+export class LLMPolicyComponent implements OnInit, OnDestroy {
   policy?: ILLMPolicy;
   probes: ILLMProviderProbe[] = [];
   maintenance: ILLMModelMaintenanceResult[] = [];
   logs: ILLMRouteDecision[] = [];
   generations: ILLMGenerationResult[] = [];
+  maintenanceUnavailable = false;
+  logsUnavailable = false;
+  generationsUnavailable = false;
   decision?: ILLMRouteDecision;
   policyActions: PolicyActionCard[] = [];
   catalogGroups: TierCatalogGroup[] = [];
@@ -67,6 +75,7 @@ export class LLMPolicyComponent implements OnInit {
   private providerTierGroups = new Map<string, TierModelGroup[]>();
   private providerPreviews = new Map<string, ILLMModel[]>();
   private providerHiddenCounts = new Map<string, number>();
+  private themeSubscription?: Subscription;
   routeForm: FormGroup = this.fb.group({
     task: [
       'Fix a Go API bug and explain why the previous model failed validation.',
@@ -82,11 +91,71 @@ export class LLMPolicyComponent implements OnInit {
     private llmPolicyService: ILLMPolicyService,
     private notification: NzNotificationService,
     private router: Router,
-    private themeService: ThemeService
+    private themeService: ThemeService,
+    private viewPreferences: ModuleViewPreferencesService
   ) {}
 
   ngOnInit(): void {
+    this.themeSubscription = this.themeService.changes$?.subscribe((mode) => this.themeMode = mode);
     this.refresh();
+  }
+
+  ngOnDestroy(): void {
+    this.themeSubscription?.unsubscribe();
+  }
+
+  get isAdvanced(): boolean {
+    return this.viewPreferences.get(MODULE_ID).mode === 'advanced';
+  }
+
+  get providersNeedingAttention(): ILLMProvider[] {
+    return (this.policy?.providers ?? []).filter((provider) => this.providerAttentionReason(provider) !== '');
+  }
+
+  get maintenanceBlockers(): ILLMModelMaintenanceResult[] {
+    return this.maintenance.filter((record) =>
+      record.blocksExecution || record.status === 'failed'
+    );
+  }
+
+  providerHealthSummary(policy: ILLMPolicy): string {
+    const enabled = policy.providers.filter((provider) => provider.enabled);
+    const configured = enabled.filter((provider) => provider.configured).length;
+    const live = enabled.filter((provider) => this.latestProbe(provider.id)?.live).length;
+    return `${enabled.length} enabled · ${configured} configured · ${live} live probes`;
+  }
+
+  providerProbeStatus(providerId: string): string {
+    const probe = this.latestProbe(providerId);
+    return probe ? (probe.live ? 'live' : probe.status) : 'not checked';
+  }
+
+  providerAttentionReason(provider: ILLMProvider): string {
+    if (!provider.enabled) return '';
+    if (!provider.configured) return provider.readinessReason || 'Endpoint is not configured.';
+    const probe = this.latestProbe(provider.id);
+    if (probe && !probe.live) return probe.reason || `Latest probe status: ${probe.status}.`;
+    return this.strictProviderReadinessReason(provider);
+  }
+
+  resetView(): void {
+    this.viewPreferences.reset(MODULE_ID);
+    document.body.classList.remove('hai-view-advanced');
+    void this.router.navigate(['/llm-policy'], {
+      queryParams: { mode: 'basic' },
+      replaceUrl: true,
+    });
+  }
+
+  openAdvancedSection(sectionId: string): void {
+    this.viewPreferences.setMode(MODULE_ID, 'advanced');
+    this.viewPreferences.setSection(MODULE_ID, sectionId, true);
+    document.body.classList.add('hai-view-advanced');
+    window.setTimeout(() => this.scrollToSection(sectionId));
+  }
+
+  private latestProbe(providerId: string): ILLMProviderProbe | undefined {
+    return this.probes.find((probe) => probe.providerId === providerId);
   }
 
   refresh(): void {
@@ -148,10 +217,13 @@ export class LLMPolicyComponent implements OnInit {
     });
   }
 
-  private loadModelMaintenanceHistory(): void {
+  loadModelMaintenanceHistory(): void {
     this.llmPolicyService.getModelMaintenanceHistory().subscribe({
-      next: (records) => (this.maintenance = records || []),
-      error: () => (this.maintenance = []),
+      next: (records) => {
+        this.maintenance = records || [];
+        this.maintenanceUnavailable = false;
+      },
+      error: () => (this.maintenanceUnavailable = true),
     });
   }
 
@@ -166,9 +238,16 @@ export class LLMPolicyComponent implements OnInit {
         this.maintenance = run.results || this.maintenance;
         this.loadModelMaintenanceHistory();
         const summary =
-          `${run.checked}/${run.eligible} due checks, ${run.reused} still current, ` +
-          `${run.updated} updated, ${run.failed} failed`;
-        if (run.failed > 0) {
+          `${run.checked} checked from ${run.eligible} eligible models; ` +
+          `cloud catalog: ${run.providerManaged}; health-only runtime checks: ${run.healthOnly ?? 0}; ` +
+          `${run.reused} cached checks reused, ` +
+          `${run.updated} updated, ${run.inProgress} already in progress, ${run.failed} failed`;
+        if (run.cancelled) {
+          this.notification.warning(
+            'Model maintenance stopped',
+            `${summary}. Any interrupted update remains blocked until a successful verification.`
+          );
+        } else if (run.failed > 0 || run.inProgress > 0) {
           this.notification.warning('Model maintenance needs review', summary);
         } else {
           this.notification.success('Daily model checks complete', summary);
@@ -230,10 +309,11 @@ export class LLMPolicyComponent implements OnInit {
     this.llmPolicyService.getLogs().subscribe({
       next: (logs) => {
         this.logs = logs;
+        this.logsUnavailable = false;
         this.rebuildActionCards();
       },
       error: () => {
-        this.logs = [];
+        this.logsUnavailable = true;
         this.rebuildActionCards();
       },
     });
@@ -243,10 +323,11 @@ export class LLMPolicyComponent implements OnInit {
     this.llmPolicyService.getGenerationHistory().subscribe({
       next: (records) => {
         this.generations = records || [];
+        this.generationsUnavailable = false;
         this.rebuildActionCards();
       },
       error: () => {
-        this.generations = [];
+        this.generationsUnavailable = true;
         this.rebuildActionCards();
       },
     });
@@ -287,7 +368,11 @@ export class LLMPolicyComponent implements OnInit {
         ? this.tierLabel(this.decision.tier)
         : 'No capable model under policy'
       : 'No route selected yet';
-    const latestLogMetric = this.generations[0]
+    const latestLogMetric = this.generationsUnavailable
+      ? 'Generation history unavailable'
+      : this.logsUnavailable
+        ? 'Routing history unavailable'
+        : this.generations[0]
       ? `${this.validationLabel(this.generations[0].validationStatus)} / ${this.generations[0].modelName || this.generations[0].modelId}`
       : this.logs[0]?.selectedModelName || (this.logs.length ? 'Blocked route recorded' : 'No recent decisions');
     this.policyActions = [
@@ -339,7 +424,7 @@ export class LLMPolicyComponent implements OnInit {
         title: 'Review routing log',
         detail: 'Inspect recent choices and fallback paths.',
         icon: 'history',
-        metric: `${this.generations.length} outcomes`,
+        metric: this.generationsUnavailable ? 'Unavailable' : `${this.generations.length} outcomes`,
         secondaryMetric: latestLogMetric,
         context:
           'Opens the trace of selected models, skipped options, estimated cost, validation pressure, and fallback history.',
@@ -366,18 +451,17 @@ export class LLMPolicyComponent implements OnInit {
         break;
       case 'probe':
         this.probeProviders();
-        this.scrollToSection('routing-audit');
         break;
       case 'logs':
         this.loadLogs();
         this.loadGenerationHistory();
-        this.scrollToSection('routing-audit');
+        this.openAdvancedSection('routing-audit');
         break;
       case 'providers':
-        this.scrollToSection('provider-inventory');
+        this.openAdvancedSection('provider-inventory');
         break;
       case 'catalog':
-        this.scrollToSection('model-catalog');
+        this.openAdvancedSection('model-catalog');
         break;
       case 'automations':
         this.goHome();
@@ -473,6 +557,9 @@ export class LLMPolicyComponent implements OnInit {
     if (record.status === 'current' || record.status === 'provider_managed') {
       return 'blue';
     }
+    if (record.status === 'operator_managed') {
+      return 'orange';
+    }
     if (record.status === 'not_enforced') {
       return 'default';
     }
@@ -481,12 +568,16 @@ export class LLMPolicyComponent implements OnInit {
 
   maintenanceScheduleText(record: ILLMModelMaintenanceResult): string {
     if (!record.nextCheckDueAt) {
-      return 'Next check is scheduled within 24 hours of this result.';
+      return 'Next check time was not provided by the maintenance service.';
     }
     const due = new Date(record.nextCheckDueAt);
-    return Number.isNaN(due.getTime())
-      ? 'Next check time is unavailable.'
-      : `Next check due ${due.toLocaleString()}.`;
+    if (Number.isNaN(due.getTime())) {
+      return 'Next check time was not provided in a valid format.';
+    }
+    const dueText = due.toLocaleString();
+    return due.getTime() <= Date.now()
+      ? `Next check is overdue (due ${dueText}).`
+      : `Next check due ${dueText}.`;
   }
 
   tierColor(tier?: string): string {
@@ -573,13 +664,13 @@ export class LLMPolicyComponent implements OnInit {
       this.activeTier = firstModel.tier;
     }
     this.catalogFilter = provider.name;
-    this.scrollToSection('model-catalog');
+    this.openAdvancedSection('model-catalog');
   }
 
   showModel(model: ILLMModel): void {
     this.activeTier = model.tier;
     this.catalogFilter = model.name;
-    this.scrollToSection('model-catalog');
+    this.openAdvancedSection('model-catalog');
   }
 
   tierModelCount(tier: string): number {
@@ -754,6 +845,7 @@ export class LLMPolicyComponent implements OnInit {
     return [
       `Budget used: EUR ${this.formatMoney(provider.budgetUsedEur)}`,
       `Daily max: EUR ${this.formatMoney(provider.dailyBudgetEur)}`,
+      `Accounting: ${this.usageAccountingLabel(provider.usageAccountingStatus)}`,
       `Input tokens: ${this.formatNumber(provider.inputTokensUsed)}`,
       `Output tokens: ${this.formatNumber(provider.outputTokensUsed)}`,
       `Total tokens: ${this.formatNumber(this.totalTokens(provider))}`,
@@ -761,6 +853,9 @@ export class LLMPolicyComponent implements OnInit {
   }
 
   policyBudgetText(policy: ILLMPolicy): string {
+    if (policy.usageAccountingStatus === 'unavailable') {
+      return `Usage unavailable / max EUR ${this.formatMoney(policy.dailyPaidBudgetEur)}`;
+    }
     return `EUR ${this.formatMoney(policy.dailyBudgetUsedEur)} / ${this.formatMoney(
       policy.dailyPaidBudgetEur
     )}`;
@@ -770,6 +865,8 @@ export class LLMPolicyComponent implements OnInit {
     return [
       `Daily budget used: EUR ${this.formatMoney(policy.dailyBudgetUsedEur)}`,
       `Daily budget max: EUR ${this.formatMoney(policy.dailyPaidBudgetEur)}`,
+      `Accounting: ${this.usageAccountingLabel(policy.usageAccountingStatus)}`,
+      ...(policy.usagePeriodStart ? [`Period starts: ${policy.usagePeriodStart} (${policy.usageTimezone || 'UTC'})`] : []),
       `Input tokens: ${this.formatNumber(policy.inputTokensUsed)}`,
       `Output tokens: ${this.formatNumber(policy.outputTokensUsed)}`,
       `Total tokens: ${this.formatNumber(policy.inputTokensUsed + policy.outputTokensUsed)}`,
@@ -784,6 +881,19 @@ export class LLMPolicyComponent implements OnInit {
 
   formatNumber(value?: number): string {
     return `${value || 0}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+
+  usageAccountingLabel(status?: string): string {
+    switch (status) {
+      case 'durable':
+        return 'Stored generation history';
+      case 'process_only':
+        return 'Current process only; resets daily';
+      case 'unavailable':
+        return 'Stored totals could not be read';
+      default:
+        return 'Source not reported';
+    }
   }
 
   totalTokens(provider: ILLMProvider): number {
@@ -978,6 +1088,17 @@ export class LLMPolicyComponent implements OnInit {
     const element = document.getElementById(id);
     if (!element) {
       return;
+    }
+    const progressive = element.matches('hai-progressive-section')
+      ? element
+      : element.closest('hai-progressive-section');
+    if (progressive?.classList.contains('hai-progressive-section--advanced')) {
+      this.viewPreferences.setMode(MODULE_ID, 'advanced');
+      document.body.classList.add('hai-view-advanced');
+      const trigger = progressive.querySelector<HTMLButtonElement>(
+        '.hai-progressive-section__summary'
+      );
+      if (trigger?.getAttribute('aria-expanded') !== 'true') trigger?.click();
     }
     const parentDetails = element.closest('details') as HTMLDetailsElement | null;
     if (parentDetails) {

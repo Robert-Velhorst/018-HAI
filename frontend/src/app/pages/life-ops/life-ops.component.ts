@@ -1,20 +1,25 @@
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { HttpErrorResponse } from '@angular/common/http'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
-import { forkJoin } from 'rxjs'
 import {
   CapacitySignals,
   CapacitySnapshot,
   CapacityStatus,
+  CreateGoalRequest,
   EntityDomainLink,
   GoalLevel,
   GoalNode,
   GoalTreeNode,
   LifeDomain,
+  LifeOpsOverview,
+  LinkEntityRequest,
   NeedObservation,
   PriorityAssessment,
   PriorityFactorKey,
   PriorityFactors,
+  RecordCapacityRequest,
+  RecordNeedRequest,
+  UpdateGoalRequest,
 } from '../../models/life-ops.model'
 import { LifeOpsService } from '../../services/life-ops.service'
 
@@ -48,11 +53,84 @@ interface PriorityField {
   cost?: boolean
 }
 
+type CapacityFormSignals = Omit<CapacitySignals, NumericCapacityKey> &
+  Record<NumericCapacityKey, number | null>
+
+interface NeedForm {
+  domainId: string
+  needLevel: string
+  state: string
+  currentLevel: number | null
+  targetLevel: number | null
+  priority: number | null
+  confidence: number | null
+  evidence: string
+  sourceLabel: string
+  sourceUri: string
+  observedAt: string
+  expiresAt: string
+  needsReview: boolean
+}
+
+interface CapacityForm {
+  status: CapacityStatus
+  signals: CapacityFormSignals
+  timeAvailableMinutes: number | null
+  concurrentWorkLimit: number | null
+  currentLoad: number | null
+  planningStepLimit: number | null
+  constraints: string
+  sourceLabel: string
+  sourceUri: string
+  capturedAt: string
+  confidence: number | null
+  needsReview: boolean
+  availableTools: string
+  availableHelpers: string
+}
+
+interface LinkForm {
+  entityType: string
+  entityId: string
+  domainId: string
+  primary: boolean
+  confidence: number | null
+  sourceLabel: string
+  sourceUri: string
+  evidence: string
+  verificationStatus: string
+}
+
+interface GoalForm {
+  parentId: string
+  level: GoalLevel | ''
+  domainIds: string[]
+  title: string
+  description: string
+  successCriteria: string
+  stopConditions: string
+  status: string
+  confidence: number | null
+  sourceLabel: string
+  sourceUri: string
+  targetAt: string
+}
+
+interface PriorityForm {
+  entityType: string
+  entityId: string
+  title: string
+  deadline: string
+  useCapacity: boolean
+  factors: Record<PriorityFactorKey, number | null>
+}
+
 @Component({
-  standalone: false,
-  selector: 'app-life-ops',
-  templateUrl: './life-ops.component.html',
-  styleUrls: ['./life-ops.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-life-ops',
+    templateUrl: './life-ops.component.html',
+    styleUrls: ['./life-ops.component.scss'],
+    standalone: false
 })
 export class LifeOpsComponent implements OnInit {
   readonly moduleId = 'life-ops'
@@ -63,6 +141,25 @@ export class LifeOpsComponent implements OnInit {
     'overloaded',
     'unavailable',
     'unknown',
+  ]
+  readonly needStates = [
+    'unknown',
+    'stable',
+    'active',
+    'attention_required',
+    'critical',
+    'improving',
+    'declining',
+    'met',
+  ]
+  readonly goalStatuses = [
+    'proposed',
+    'active',
+    'waiting',
+    'blocked',
+    'completed',
+    'abandoned',
+    'archived',
   ]
   readonly goalLevels: GoalLevel[] = [
     'values_principles',
@@ -123,7 +220,8 @@ export class LifeOpsComponent implements OnInit {
     { key: 'delegability', label: 'Delegability' },
   ]
 
-  loading = true
+  loading = false
+  hasOverview = false
   saving = false
   errorMessage = ''
   domains: LifeDomain[] = []
@@ -132,16 +230,19 @@ export class LifeOpsComponent implements OnInit {
   goals: GoalNode[] = []
   goalForest: GoalTreeNode[] = []
   entityLinks: EntityDomainLink[] = []
-  entityLinksLoaded = false
+  entityLinksState: 'idle' | 'loading' | 'loaded' | 'error' = 'idle'
+  entityLinksError = ''
+  editingLinkId = ''
+  reviewingNeedId = ''
   priorityAssessment?: PriorityAssessment
   editor?: LifeOpsEditor
   editingGoalId = ''
 
-  needForm = this.newNeedForm()
-  capacityForm = this.newCapacityForm()
-  linkForm = this.newLinkForm()
-  goalForm = this.newGoalForm()
-  priorityForm = this.newPriorityForm()
+  needForm: NeedForm = this.newNeedForm()
+  capacityForm: CapacityForm = this.newCapacityForm()
+  linkForm: LinkForm = this.newLinkForm()
+  goalForm: GoalForm = this.newGoalForm()
+  priorityForm: PriorityForm = this.newPriorityForm()
 
   constructor(
     private service: LifeOpsService,
@@ -153,22 +254,23 @@ export class LifeOpsComponent implements OnInit {
   }
 
   refresh(): void {
-    if (this.loading && this.domains.length) return
+    if (this.loading) return
     this.loading = true
     this.errorMessage = ''
-    forkJoin({
-      domains: this.service.domains(),
-      needs: this.service.needs(undefined, 100),
-      capacity: this.service.latestCapacity(),
-      goals: this.service.goals(),
-      forest: this.service.goalForest(),
-    }).subscribe({
-      next: ({ domains, needs, capacity, goals, forest }) => {
+    this.service.overview().subscribe({
+      next: (overview) => {
+        if (!this.isOverview(overview)) {
+          this.loading = false
+          this.errorMessage = 'The server returned incomplete owner context. Previously loaded records were kept.'
+          return
+        }
+        const { domains, needs, capacity, goals, forest } = overview
         this.domains = domains
         this.needs = needs
         this.capacity = capacity
         this.goals = goals
         this.goalForest = forest
+        this.hasOverview = true
         this.applyDomainDefaults()
         this.loading = false
       },
@@ -181,11 +283,13 @@ export class LifeOpsComponent implements OnInit {
 
   get currentNeeds(): NeedObservation[] {
     const seen = new Set<string>()
-    return this.needs.filter((need) => {
-      if (seen.has(need.domainId)) return false
-      seen.add(need.domainId)
-      return true
-    })
+    return [...this.needs]
+      .sort((left, right) => this.observationTime(right) - this.observationTime(left))
+      .filter((need) => {
+        if (seen.has(need.domainId)) return false
+        seen.add(need.domainId)
+        return true
+      })
   }
 
   get reviewNeeds(): NeedObservation[] {
@@ -197,7 +301,7 @@ export class LifeOpsComponent implements OnInit {
   }
 
   get activeGoals(): GoalNode[] {
-    return this.goals.filter((goal) => !['completed', 'archived', 'cancelled'].includes(goal.status))
+    return this.goals.filter((goal) => !['completed', 'archived', 'abandoned'].includes(goal.status))
   }
 
   get dueGoals(): GoalNode[] {
@@ -207,8 +311,9 @@ export class LifeOpsComponent implements OnInit {
       .sort((left, right) => Date.parse(left.targetAt!) - Date.parse(right.targetAt!))
   }
 
-  get capacityState(): 'missing' | 'review' | 'constrained' | 'available' {
+  get capacityState(): 'missing' | 'unknown' | 'review' | 'constrained' | 'available' {
     if (!this.capacity) return 'missing'
+    if (this.capacity.status === 'unknown') return 'unknown'
     if (!this.capacity.fresh || this.capacity.needsReview) return 'review'
     if (['constrained', 'overloaded', 'unavailable', 'recovering'].includes(this.capacity.status)) {
       return 'constrained'
@@ -216,9 +321,44 @@ export class LifeOpsComponent implements OnInit {
     return 'available'
   }
 
+  get attentionState(): 'review' | 'capacity' | 'unknown' | 'recorded' {
+    if (this.reviewNeeds.length || this.capacityState === 'review') return 'review'
+    if (this.capacityState === 'constrained') return 'capacity'
+    if (this.capacityState === 'missing' || this.capacityState === 'unknown' || !this.currentNeeds.length) return 'unknown'
+    return 'recorded'
+  }
+
+  get canApplyCapacityToPriority(): boolean {
+    return Boolean(
+      this.capacity &&
+      this.capacity.fresh &&
+      !this.capacity.needsReview &&
+      this.capacity.status !== 'unknown'
+    )
+  }
+
+  get goalRequiresExecutionDetails(): boolean {
+    const levelIndex = this.goalLevels.findIndex((level) => level === this.goalForm.level)
+    return levelIndex >= 4 && levelIndex <= 9
+  }
+
+  get goalExecutionDetailsValid(): boolean {
+    if (!this.goalRequiresExecutionDetails) return true
+    return this.lines(this.goalForm.successCriteria).length > 0 &&
+      this.lines(this.goalForm.stopConditions).length > 0
+  }
+
+  get canSaveNeed(): boolean { return this.needRequestPayload() !== null }
+  get canSaveCapacity(): boolean { return this.capacityRequestPayload() !== null }
+  get canSaveLink(): boolean { return this.linkRequestPayload() !== null }
+  get canSaveGoal(): boolean { return this.goalRequestData() !== null }
+  get canAssessPriority(): boolean { return this.priorityAssessmentRequestReady() }
+
   get capacityAge(): string {
     if (!this.capacity) return 'No snapshot'
-    const elapsed = Math.max(0, Date.now() - Date.parse(this.capacity.capturedAt))
+    const capturedAt = Date.parse(this.capacity.capturedAt)
+    if (!Number.isFinite(capturedAt)) return 'Capture time unavailable'
+    const elapsed = Math.max(0, Date.now() - capturedAt)
     const minutes = Math.floor(elapsed / 60000)
     if (minutes < 60) return `${minutes} min ago`
     const hours = Math.floor(minutes / 60)
@@ -232,34 +372,69 @@ export class LifeOpsComponent implements OnInit {
   }
 
   closeEditor(): void {
+    if (this.saving) return
     this.editor = undefined
     this.editingGoalId = ''
+    this.editingLinkId = ''
+    this.reviewingNeedId = ''
+  }
+
+  reviewNeed(need: NeedObservation): void {
+    this.reviewingNeedId = need.id
+    this.needForm = {
+      domainId: need.domainId,
+      needLevel: need.needLevel,
+      state: need.state,
+      currentLevel: need.currentLevel,
+      targetLevel: need.targetLevel,
+      priority: need.priority,
+      confidence: need.confidence,
+      evidence: need.evidence.join('\n'),
+      sourceLabel: need.sourceLabel,
+      sourceUri: need.sourceUri ?? '',
+      observedAt: this.localDateTime(),
+      expiresAt: '',
+      needsReview: false,
+    }
+    this.openEditor('need')
+  }
+
+  prepareCapacityRecord(): void {
+    this.capacityForm = this.capacity
+      ? {
+          status: this.capacity.status,
+          signals: { ...this.capacity.signals },
+          timeAvailableMinutes: this.capacity.timeAvailableMinutes,
+          concurrentWorkLimit: this.capacity.concurrentWorkLimit,
+          currentLoad: this.capacity.currentLoad,
+          planningStepLimit: this.capacity.planningStepLimit,
+          constraints: this.capacity.constraints.join('\n'),
+          sourceLabel: this.capacity.sourceLabel,
+          sourceUri: this.capacity.sourceUri ?? '',
+          capturedAt: this.localDateTime(),
+          confidence: this.capacity.confidence,
+          needsReview: true,
+          availableTools: (this.capacity.signals.availableTools ?? []).join('\n'),
+          availableHelpers: (this.capacity.signals.availableHelpers ?? []).join('\n'),
+        }
+      : this.newCapacityForm()
+    this.openEditor('capacity')
   }
 
   saveNeed(): void {
     if (this.saving) return
+    const request = this.needRequestPayload()
+    if (!request) {
+      this.notification.error('Need observation not saved', 'Enter each requested value, a source label, and valid observation dates. Scores must be whole numbers from 0 to 100.')
+      return
+    }
     this.saving = true
-    this.service.recordNeed({
-      domainId: this.needForm.domainId,
-      needLevel: this.needForm.needLevel,
-      state: this.needForm.state,
-      currentLevel: this.needForm.currentLevel,
-      targetLevel: this.needForm.targetLevel,
-      priority: this.needForm.priority,
-      confidence: this.needForm.confidence,
-      evidence: this.lines(this.needForm.evidence),
-      sourceLabel: this.needForm.sourceLabel,
-      ...(this.needForm.sourceUri ? { sourceUri: this.needForm.sourceUri } : {}),
-      observedAt: this.toISOString(this.needForm.observedAt),
-      ...(this.needForm.expiresAt
-        ? { expiresAt: this.toISOString(this.needForm.expiresAt) }
-        : {}),
-      needsReview: this.needForm.needsReview,
-    }).subscribe({
+    this.service.recordNeed(request).subscribe({
       next: (need) => {
         this.saving = false
         this.needs = [need, ...this.needs]
         this.needForm = this.newNeedForm()
+        this.reviewingNeedId = ''
         this.applyDomainDefaults()
         this.closeEditor()
         this.notification.success('Need state recorded', 'HAI will use this sourced observation when planning owner work.')
@@ -270,28 +445,13 @@ export class LifeOpsComponent implements OnInit {
 
   saveCapacity(): void {
     if (this.saving) return
-    this.saving = true
-    const signals: CapacitySignals = {
-      ...this.capacityForm.signals,
-      availableTools: this.lines(this.capacityForm.availableTools),
-      availableHelpers: this.lines(this.capacityForm.availableHelpers),
+    const request = this.capacityRequestPayload()
+    if (!request) {
+      this.notification.error('Capacity snapshot not saved', 'Enter an explicit value for every capacity field, source label, and capture time. No blank value is converted to zero.')
+      return
     }
-    this.service.recordCapacity({
-      status: this.capacityForm.status,
-      signals,
-      timeAvailableMinutes: this.capacityForm.timeAvailableMinutes,
-      concurrentWorkLimit: this.capacityForm.concurrentWorkLimit,
-      currentLoad: this.capacityForm.currentLoad,
-      ...(this.capacityForm.planningStepLimit
-        ? { planningStepLimit: this.capacityForm.planningStepLimit }
-        : {}),
-      constraints: this.lines(this.capacityForm.constraints),
-      sourceLabel: this.capacityForm.sourceLabel,
-      ...(this.capacityForm.sourceUri ? { sourceUri: this.capacityForm.sourceUri } : {}),
-      capturedAt: this.toISOString(this.capacityForm.capturedAt),
-      confidence: this.capacityForm.confidence,
-      needsReview: this.capacityForm.needsReview,
-    }).subscribe({
+    this.saving = true
+    this.service.recordCapacity(request).subscribe({
       next: (capacity) => {
         this.saving = false
         this.capacity = capacity
@@ -305,20 +465,16 @@ export class LifeOpsComponent implements OnInit {
 
   saveLink(): void {
     if (this.saving) return
+    const request = this.linkRequestPayload()
+    if (!request) {
+      this.notification.error('Domain link not saved', 'Enter the entity, domain, source, and a confidence value from 0 to 1.')
+      return
+    }
     this.saving = true
-    this.service.linkEntity({
-      entityType: this.linkForm.entityType,
-      entityId: this.linkForm.entityId,
-      domainId: this.linkForm.domainId,
-      primary: this.linkForm.primary,
-      confidence: this.linkForm.confidence,
-      sourceLabel: this.linkForm.sourceLabel,
-      ...(this.linkForm.sourceUri ? { sourceUri: this.linkForm.sourceUri } : {}),
-      evidence: this.lines(this.linkForm.evidence),
-      verificationStatus: this.linkForm.verificationStatus,
-    }).subscribe({
+    this.service.linkEntity(request).subscribe({
       next: () => {
         this.saving = false
+        this.editingLinkId = ''
         this.loadEntityLinks()
         this.notification.success('Domain link saved', 'The entity now has an owner-scoped life-domain relationship.')
       },
@@ -328,17 +484,35 @@ export class LifeOpsComponent implements OnInit {
 
   loadEntityLinks(): void {
     if (!this.linkForm.entityType.trim() || !this.linkForm.entityId.trim()) return
+    this.entityLinksState = 'loading'
+    this.entityLinksError = ''
+    this.entityLinks = []
     this.service.entityDomains(this.linkForm.entityType, this.linkForm.entityId).subscribe({
       next: (links) => {
         this.entityLinks = links
-        this.entityLinksLoaded = true
+        this.entityLinksState = 'loaded'
       },
       error: (error) => {
-        this.entityLinksLoaded = true
-        this.entityLinks = []
-        this.notification.error('Domain links unavailable', this.describeError(error, 'HAI could not load this entity.'))
+        this.entityLinksState = 'error'
+        this.entityLinksError = this.describeError(error, 'HAI could not load this entity.')
       },
     })
+  }
+
+  editLink(link: EntityDomainLink): void {
+    this.editingLinkId = link.id
+    this.linkForm = {
+      entityType: link.entityType,
+      entityId: link.entityId,
+      domainId: link.domainId,
+      primary: link.primary,
+      confidence: link.confidence,
+      sourceLabel: link.sourceLabel,
+      sourceUri: link.sourceUri ?? '',
+      evidence: link.evidence.join('\n'),
+      verificationStatus: link.verificationStatus,
+    }
+    this.openEditor('link')
   }
 
   beginEditGoal(goal: GoalNode): void {
@@ -355,7 +529,7 @@ export class LifeOpsComponent implements OnInit {
       confidence: goal.confidence,
       sourceLabel: goal.sourceLabel,
       sourceUri: goal.sourceUri ?? '',
-      targetAt: this.localDateTime(goal.targetAt),
+      targetAt: goal.targetAt ? this.localDateTime(goal.targetAt) : '',
     }
     this.openEditor('goal')
   }
@@ -368,38 +542,29 @@ export class LifeOpsComponent implements OnInit {
 
   saveGoal(): void {
     if (this.saving) return
-    this.saving = true
-    const common = {
-      level: this.goalForm.level,
-      domainIds: this.goalForm.domainIds,
-      title: this.goalForm.title,
-      description: this.goalForm.description,
-      successCriteria: this.lines(this.goalForm.successCriteria),
-      stopConditions: this.lines(this.goalForm.stopConditions),
-      status: this.goalForm.status,
-      confidence: this.goalForm.confidence,
-      sourceLabel: this.goalForm.sourceLabel,
-      sourceUri: this.goalForm.sourceUri,
-      ...(this.goalForm.targetAt
-        ? { targetAt: this.toISOString(this.goalForm.targetAt) }
-        : {}),
+    const data = this.goalRequestData()
+    if (!data) {
+      this.notification.error('Goal not saved', 'Enter a title, life domain, source label, confidence value, and any success/stop conditions required for this goal level.')
+      return
     }
+    this.saving = true
     const request = this.editingGoalId
       ? this.service.updateGoal(this.editingGoalId, {
-          ...common,
+          ...data,
           ...(this.goalForm.parentId
             ? { parentId: this.goalForm.parentId }
             : { clearParent: true }),
           ...(!this.goalForm.targetAt ? { clearTarget: true } : {}),
         })
       : this.service.createGoal({
-          ...common,
+          ...data,
           ...(this.goalForm.parentId ? { parentId: this.goalForm.parentId } : {}),
         })
     request.subscribe({
       next: () => {
         this.saving = false
         this.goalForm = this.newGoalForm()
+        this.editingGoalId = ''
         this.closeEditor()
         this.notification.success('Goal saved', 'The hierarchy will be refreshed from the owner record.')
         this.refresh()
@@ -410,6 +575,11 @@ export class LifeOpsComponent implements OnInit {
 
   assessPriority(): void {
     if (this.saving) return
+    const factors = this.priorityFactorsPayload()
+    if (!factors || !this.validPriorityForm()) {
+      this.notification.error('Priority not assessed', 'Enter a title, entity type and ID, plus an explicit 0-100 estimate for every decision factor.')
+      return
+    }
     this.saving = true
     this.service.assessPriority({
       entityType: this.priorityForm.entityType,
@@ -418,8 +588,8 @@ export class LifeOpsComponent implements OnInit {
       ...(this.priorityForm.deadline
         ? { deadline: this.toISOString(this.priorityForm.deadline) }
         : {}),
-      factors: { ...this.priorityForm.factors },
-      ...(this.priorityForm.useCapacity && this.capacity
+      factors,
+      ...(this.priorityForm.useCapacity && this.canApplyCapacityToPriority && this.capacity
         ? { capacity: this.capacity }
         : {}),
     }).subscribe({
@@ -465,6 +635,201 @@ export class LifeOpsComponent implements OnInit {
     if (!this.goalForm.domainIds.length && first) this.goalForm.domainIds = [first]
   }
 
+  private isOverview(value: unknown): value is LifeOpsOverview {
+    if (!value || typeof value !== 'object') return false
+    const overview = value as Partial<LifeOpsOverview>
+    return Array.isArray(overview.domains) &&
+      Array.isArray(overview.needs) &&
+      Array.isArray(overview.goals) &&
+      Array.isArray(overview.forest) &&
+      (overview.capacity === null || Boolean(overview.capacity && typeof overview.capacity === 'object'))
+  }
+
+  private observationTime(need: NeedObservation): number {
+    const observedAt = Date.parse(need.observedAt)
+    if (Number.isFinite(observedAt)) return observedAt
+    const createdAt = Date.parse(need.createdAt)
+    return Number.isFinite(createdAt) ? createdAt : Number.NEGATIVE_INFINITY
+  }
+
+  private needRequestPayload(): RecordNeedRequest | null {
+    const form = this.needForm
+    const { currentLevel, targetLevel, priority, confidence } = form
+    if (
+      !this.domains.some((domain) => domain.id === form.domainId) ||
+      !form.needLevel.trim() ||
+      !this.needStates.includes(form.state) ||
+      !this.isWholeNumber(currentLevel, 0, 100) ||
+      !this.isWholeNumber(targetLevel, 0, 100) ||
+      !this.isWholeNumber(priority, 0, 100) ||
+      !this.isNumber(confidence, 0, 1) ||
+      !form.sourceLabel.trim() ||
+      !this.isValidDate(form.observedAt) ||
+      (form.expiresAt && (!this.isValidDate(form.expiresAt) || Date.parse(form.expiresAt) <= Date.parse(form.observedAt)))
+    ) return null
+
+    return {
+      domainId: form.domainId,
+      needLevel: form.needLevel.trim(),
+      state: form.state,
+      currentLevel,
+      targetLevel,
+      priority,
+      confidence,
+      evidence: this.lines(form.evidence),
+      sourceLabel: form.sourceLabel.trim(),
+      ...(form.sourceUri.trim() ? { sourceUri: form.sourceUri.trim() } : {}),
+      observedAt: this.toISOString(form.observedAt),
+      ...(form.expiresAt ? { expiresAt: this.toISOString(form.expiresAt) } : {}),
+      needsReview: form.needsReview,
+    }
+  }
+
+  private capacityRequestPayload(): RecordCapacityRequest | null {
+    const form = this.capacityForm
+    const { timeAvailableMinutes, concurrentWorkLimit, currentLoad, planningStepLimit, confidence } = form
+    const signals = this.capacitySignalsPayload()
+    if (
+      !signals ||
+      !this.capacityStatuses.includes(form.status) ||
+      !this.isWholeNumber(timeAvailableMinutes, 0, 10080) ||
+      !this.isWholeNumber(concurrentWorkLimit, 0, 50) ||
+      !this.isWholeNumber(currentLoad, 0, 100) ||
+      (planningStepLimit !== null && !this.isWholeNumber(planningStepLimit, 0, 20)) ||
+      !this.isNumber(confidence, 0, 1) ||
+      !form.sourceLabel.trim() ||
+      !this.isValidDate(form.capturedAt)
+    ) return null
+
+    return {
+      status: form.status,
+      signals,
+      timeAvailableMinutes,
+      concurrentWorkLimit,
+      currentLoad,
+      ...(planningStepLimit !== null && planningStepLimit > 0 ? { planningStepLimit } : {}),
+      constraints: this.lines(form.constraints),
+      sourceLabel: form.sourceLabel.trim(),
+      ...(form.sourceUri.trim() ? { sourceUri: form.sourceUri.trim() } : {}),
+      capturedAt: this.toISOString(form.capturedAt),
+      confidence,
+      needsReview: form.needsReview,
+    }
+  }
+
+  private capacitySignalsPayload(): CapacitySignals | null {
+    const signals = this.capacityForm.signals
+    if (!this.hasCompleteCapacitySignals(signals)) return null
+    return {
+      ...signals,
+      availableTools: this.lines(this.capacityForm.availableTools),
+      availableHelpers: this.lines(this.capacityForm.availableHelpers),
+    }
+  }
+
+  private hasCompleteCapacitySignals(signals: CapacityFormSignals): signals is CapacitySignals {
+    return this.capacityNumericFields.every((field) =>
+      this.isWholeNumber(signals[field.key], 0, 100)
+    )
+  }
+
+  private linkRequestPayload(): LinkEntityRequest | null {
+    const form = this.linkForm
+    const { confidence } = form
+    if (
+      !form.entityType.trim() ||
+      !form.entityId.trim() ||
+      !this.domains.some((domain) => domain.id === form.domainId) ||
+      !this.isNumber(confidence, 0, 1) ||
+      !form.sourceLabel.trim() ||
+      !['verified', 'source_supported', 'human_confirmed', 'uncertain', 'unsupported', 'needs_review'].includes(form.verificationStatus)
+    ) return null
+
+    return {
+      entityType: form.entityType.trim(),
+      entityId: form.entityId.trim(),
+      domainId: form.domainId,
+      primary: form.primary,
+      confidence,
+      sourceLabel: form.sourceLabel.trim(),
+      ...(form.sourceUri.trim() ? { sourceUri: form.sourceUri.trim() } : {}),
+      evidence: this.lines(form.evidence),
+      verificationStatus: form.verificationStatus,
+    }
+  }
+
+  private goalRequestData(): Omit<CreateGoalRequest, 'parentId'> | null {
+    const form = this.goalForm
+    const level = this.asGoalLevel(form.level)
+    const { confidence } = form
+    if (
+      !level ||
+      !form.domainIds.length ||
+      form.domainIds.some((id) => !this.domains.some((domain) => domain.id === id)) ||
+      !form.title.trim() ||
+      !this.goalStatuses.includes(form.status) ||
+      !this.isNumber(confidence, 0, 1) ||
+      !form.sourceLabel.trim() ||
+      !this.goalExecutionDetailsValid ||
+      (form.targetAt && !this.isValidDate(form.targetAt))
+    ) return null
+
+    return {
+      level,
+      domainIds: [...form.domainIds],
+      title: form.title.trim(),
+      ...(form.description.trim() ? { description: form.description.trim() } : {}),
+      successCriteria: this.lines(form.successCriteria),
+      stopConditions: this.lines(form.stopConditions),
+      status: form.status,
+      confidence,
+      sourceLabel: form.sourceLabel.trim(),
+      ...(form.sourceUri.trim() ? { sourceUri: form.sourceUri.trim() } : {}),
+      ...(form.targetAt ? { targetAt: this.toISOString(form.targetAt) } : {}),
+    }
+  }
+
+  private asGoalLevel(value: string): GoalLevel | null {
+    return this.goalLevels.find((level) => level === value) ?? null
+  }
+
+  private priorityAssessmentRequestReady(): boolean {
+    return this.validPriorityForm() && this.priorityFactorsPayload() !== null
+  }
+
+  private validPriorityForm(): boolean {
+    const form = this.priorityForm
+    return Boolean(
+      form.title.trim() &&
+      form.entityType.trim() &&
+      form.entityId.trim() &&
+      (!form.deadline || this.isValidDate(form.deadline))
+    )
+  }
+
+  private priorityFactorsPayload(): PriorityFactors | null {
+    const factors = this.priorityForm.factors
+    return this.hasCompletePriorityFactors(factors) ? factors : null
+  }
+
+  private hasCompletePriorityFactors(
+    factors: Record<PriorityFactorKey, number | null>
+  ): factors is PriorityFactors {
+    return this.priorityFields.every((field) => this.isWholeNumber(factors[field.key], 0, 100))
+  }
+
+  private isNumber(value: number | null, min: number, max: number): value is number {
+    return value !== null && Number.isFinite(value) && value >= min && value <= max
+  }
+
+  private isWholeNumber(value: number | null, min: number, max: number): value is number {
+    return this.isNumber(value, min, max) && Number.isInteger(value)
+  }
+
+  private isValidDate(value: string): boolean {
+    return Boolean(value) && Number.isFinite(Date.parse(value))
+  }
+
   private mutationFailed(error: unknown, fallback: string): void {
     this.saving = false
     this.notification.error('Life Ops update failed', this.describeError(error, fallback))
@@ -493,105 +858,131 @@ export class LifeOpsComponent implements OnInit {
     return new Date(date.getTime() - offset).toISOString().slice(0, 16)
   }
 
-  private newNeedForm() {
+  private newNeedForm(): NeedForm {
     return {
       domainId: '',
-      needLevel: 'safety',
-      state: 'attention_required',
-      currentLevel: 50,
-      targetLevel: 75,
-      priority: 60,
-      confidence: 0.8,
+      needLevel: '',
+      state: 'unknown',
+      currentLevel: null,
+      targetLevel: null,
+      priority: null,
+      confidence: null,
       evidence: '',
-      sourceLabel: 'operator_report',
+      sourceLabel: '',
       sourceUri: '',
       observedAt: this.localDateTime(),
       expiresAt: '',
-      needsReview: false,
+      needsReview: true,
     }
   }
 
-  private newCapacityForm() {
-    const signals: CapacitySignals = {
-      energy: 50,
-      attentionQuality: 50,
-      painIllnessLoad: 0,
-      sleepQuality: 50,
-      stressLoad: 0,
-      mobility: 50,
-      financialLiquidity: 50,
-      deadlinePressure: 0,
-      interruptionSensitivity: 50,
-      recoveryRequirement: 0,
-      taskSwitchingCost: 50,
-      sensoryLoad: 0,
-      decisionFatigue: 0,
-      riskTolerance: 50,
-      confidenceReadiness: 50,
+  private newCapacityForm(): CapacityForm {
+    const signals: CapacityFormSignals = {
+      energy: null,
+      attentionQuality: null,
+      painIllnessLoad: null,
+      sleepQuality: null,
+      stressLoad: null,
+      mobility: null,
+      financialLiquidity: null,
+      deadlinePressure: null,
+      interruptionSensitivity: null,
+      recoveryRequirement: null,
+      taskSwitchingCost: null,
+      sensoryLoad: null,
+      decisionFatigue: null,
+      riskTolerance: null,
+      confidenceReadiness: null,
       location: '',
+      availableTools: [],
+      availableHelpers: [],
       weatherConditions: '',
       environmentalConditions: '',
       socialAppropriateness: '',
     }
     return {
-      status: 'available' as CapacityStatus,
+      status: 'unknown',
       signals,
-      timeAvailableMinutes: 120,
-      concurrentWorkLimit: 2,
-      currentLoad: 30,
-      planningStepLimit: 0,
+      timeAvailableMinutes: null,
+      concurrentWorkLimit: null,
+      currentLoad: null,
+      planningStepLimit: null,
       constraints: '',
-      sourceLabel: 'operator_report',
+      sourceLabel: '',
       sourceUri: '',
       capturedAt: this.localDateTime(),
-      confidence: 0.8,
-      needsReview: false,
+      confidence: null,
+      needsReview: true,
       availableTools: '',
       availableHelpers: '',
     }
   }
 
-  private newLinkForm() {
+  private newLinkForm(): LinkForm {
     return {
-      entityType: 'pursuit',
+      entityType: '',
       entityId: '',
       domainId: '',
       primary: true,
-      confidence: 0.8,
-      sourceLabel: 'operator_classification',
+      confidence: null,
+      sourceLabel: '',
       sourceUri: '',
       evidence: '',
-      verificationStatus: 'operator_confirmed',
+      verificationStatus: 'needs_review',
     }
   }
 
-  private newGoalForm() {
+  private newGoalForm(): GoalForm {
     return {
       parentId: '',
-      level: 'pursuit' as GoalLevel,
-      domainIds: [] as string[],
+      level: '',
+      domainIds: [],
       title: '',
       description: '',
       successCriteria: '',
       stopConditions: '',
-      status: 'active',
-      confidence: 0.8,
-      sourceLabel: 'operator_goal',
+      status: 'proposed',
+      confidence: null,
+      sourceLabel: '',
       sourceUri: '',
       targetAt: '',
     }
   }
 
-  private newPriorityForm() {
-    const factors = {} as PriorityFactors
-    this.priorityFields.forEach((field) => (factors[field.key] = 50))
+  private newPriorityForm(): PriorityForm {
     return {
-      entityType: 'goal',
+      entityType: '',
       entityId: '',
       title: '',
       deadline: '',
-      useCapacity: true,
-      factors,
+      useCapacity: false,
+      factors: {
+        importance: null,
+        urgency: null,
+        humanNeedAffected: null,
+        deadlinePressure: null,
+        costOfDelay: null,
+        expectedValue: null,
+        harmAvoided: null,
+        probabilityOfSuccess: null,
+        effort: null,
+        duration: null,
+        dependencies: null,
+        reversibility: null,
+        risk: null,
+        legalObligation: null,
+        relationshipConsequences: null,
+        availableCapacity: null,
+        energyFit: null,
+        opportunityCost: null,
+        strategicAlignment: null,
+        learningValue: null,
+        compoundingValue: null,
+        staleness: null,
+        commitmentAge: null,
+        peopleBlocked: null,
+        delegability: null,
+      },
     }
   }
 }

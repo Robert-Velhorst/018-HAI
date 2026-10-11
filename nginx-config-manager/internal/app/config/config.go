@@ -34,7 +34,13 @@ func Init() {
 
 func getStringListFromEnv(envVarName, defaultValue string) []string {
 	value := getEnvString(envVarName, defaultValue)
-	return strings.Split(value, ",")
+	values := make([]string, 0)
+	for _, entry := range strings.Split(value, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			values = append(values, entry)
+		}
+	}
+	return values
 }
 
 func getEnvString(key string, defaultValue string) string {

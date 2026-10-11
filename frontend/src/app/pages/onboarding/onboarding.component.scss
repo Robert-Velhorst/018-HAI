@@ -1,63 +1,272 @@
+:host {
+  display: block;
+  min-height: 100vh;
+  color: var(--hai-text);
+  background: var(--hai-page-bg);
+}
+
 .onboarding {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 24px 16px;
-  min-height: 100%;
+  display: grid;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: 32px 16px;
+  place-items: center;
+  color: var(--hai-text);
+  background: var(--hai-page-bg);
+
+  &__layout {
+    display: grid;
+    gap: 16px;
+    width: min(100%, 720px);
+    margin: auto;
+  }
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 42px;
+  }
+
+  &__mark {
+    display: grid;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    place-items: center;
+    color: var(--hai-blue);
+    font-size: 12px;
+    font-weight: 800;
+    border: 1px solid var(--hai-blue);
+    border-radius: 8px;
+    background: var(--hai-blue-soft);
+  }
+
+  &__brand-name {
+    color: var(--hai-text-soft);
+    font-size: 14px;
+    font-weight: 650;
+  }
 
   &__card {
     width: 100%;
-    max-width: 640px;
+    color: var(--hai-text);
+    background: var(--hai-surface);
+    border: 1px solid var(--hai-border);
+    border-radius: 8px;
+    box-shadow: var(--hai-shadow);
+  }
+
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
   }
 
   &__title {
-    margin: 0 0 24px;
-    font-size: 22px;
-    font-weight: 600;
+    margin: 0;
+    color: var(--hai-text);
+    font-size: 24px;
+    font-weight: 740;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  &__intro {
+    margin: 6px 0 0;
+    color: var(--hai-muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  &__step-count {
+    flex: 0 0 auto;
+    padding-top: 5px;
+    color: var(--hai-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
   }
 
   &__body {
-    margin: 24px 0;
-    min-height: 96px;
+    min-height: 128px;
+    margin: 26px 0 24px;
+    padding: 22px 0 0;
+    border-top: 1px solid var(--hai-border);
   }
 
   &__step-title {
-    font-size: 18px;
     margin: 0 0 8px;
+    color: var(--hai-text);
+    font-size: 18px;
+    font-weight: 680;
+    line-height: 1.35;
   }
 
   &__step-desc {
-    color: rgba(0, 0, 0, 0.65);
-    line-height: 1.6;
+    max-width: 58ch;
+    margin: 0;
+    color: var(--hai-text-soft);
+    font-size: 14px;
+    line-height: 1.65;
   }
 
-  &__actions {
+  &__actions,
+  &__actions-primary {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
   }
 
-  &__spacer {
-    flex: 1 1 auto;
+  &__actions {
+    justify-content: space-between;
+    padding-top: 16px;
+    border-top: 1px solid var(--hai-border);
+  }
+
+  &__actions-primary {
+    justify-content: flex-end;
   }
 }
 
-// Responsive: stack the action bar on narrow screens.
-@media (max-width: 480px) {
+:host ::ng-deep .onboarding__card.ant-card {
+  color: var(--hai-text);
+  background: var(--hai-surface);
+  border-color: var(--hai-border);
+  border-radius: 8px;
+  box-shadow: var(--hai-shadow);
+}
+
+:host ::ng-deep .onboarding__card .ant-card-body {
+  padding: 26px;
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-title {
+  color: var(--hai-text-soft);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-process .ant-steps-item-title,
+:host ::ng-deep .onboarding .ant-steps-item-finish .ant-steps-item-title {
+  color: var(--hai-text);
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-icon {
+  background: var(--hai-surface-muted);
+  border-color: var(--hai-border);
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-icon .ant-steps-icon {
+  color: var(--hai-muted);
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-process .ant-steps-item-icon {
+  background: var(--hai-blue);
+  border-color: var(--hai-blue);
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-process .ant-steps-icon {
+  color: var(--hai-page-bg);
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-finish .ant-steps-item-icon {
+  background: var(--hai-green-soft);
+  border-color: var(--hai-green);
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-finish .ant-steps-icon {
+  color: var(--hai-green);
+}
+
+:host ::ng-deep .onboarding .ant-steps-item-tail::after {
+  background: var(--hai-border);
+}
+
+:host ::ng-deep .onboarding .ant-btn {
+  min-height: 40px;
+  border-radius: 8px;
+}
+
+:host ::ng-deep .onboarding .ant-btn-default {
+  color: var(--hai-text);
+  background: var(--hai-surface-muted);
+  border-color: var(--hai-border);
+}
+
+:host ::ng-deep .onboarding .ant-btn-default:hover:not(:disabled) {
+  color: var(--hai-blue);
+  border-color: var(--hai-blue);
+}
+
+:host ::ng-deep .onboarding .ant-btn:focus-visible {
+  outline: 2px solid var(--hai-blue);
+  outline-offset: 3px;
+}
+
+@media (max-width: 560px) {
   .onboarding {
-    padding: 12px 8px;
+    padding: 20px 12px;
 
-    &__actions {
-      justify-content: stretch;
-
-      button {
-        flex: 1 1 auto;
-      }
+    &__layout {
+      gap: 12px;
     }
 
-    &__spacer {
-      display: none;
+    &__header {
+      display: block;
+      margin-bottom: 20px;
     }
+
+    &__step-count {
+      display: inline-block;
+      margin-top: 8px;
+    }
+
+    &__title {
+      font-size: 21px;
+    }
+
+    &__body {
+      min-height: 144px;
+      margin: 22px 0 20px;
+      padding-top: 18px;
+    }
+  }
+
+  :host ::ng-deep .onboarding__card .ant-card-body {
+    padding: 20px 16px;
+  }
+
+  :host ::ng-deep .onboarding .ant-steps-item-title {
+    max-width: 64px;
+    white-space: normal;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 360px) {
+  .onboarding__actions {
+    align-items: flex-start;
+  }
+
+  .onboarding__actions,
+  .onboarding__actions-primary {
+    gap: 6px;
+  }
+
+  :host ::ng-deep .onboarding .ant-btn {
+    padding-inline: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host ::ng-deep *,
+  :host ::ng-deep *::before,
+  :host ::ng-deep *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

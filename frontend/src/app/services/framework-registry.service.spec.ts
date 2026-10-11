@@ -1,14 +1,17 @@
-import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import {
   IConstitution,
   IConstitutionHistoryPage,
   IFrameworkRegistryOverview,
+  IFrameworkFamilyTaxonomy,
+  IFrameworkPreferenceChange,
   IFrameworkSelectionDecision,
   IFrameworkSelectionRequest,
   IFrameworkView,
 } from '../models/framework-registry.model.interface';
 import { FrameworkRegistryService } from './framework-registry.service';
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('FrameworkRegistryService', () => {
   let service: FrameworkRegistryService;
@@ -114,8 +117,39 @@ describe('FrameworkRegistryService', () => {
     selectionContract: ['classify the task'],
   };
 
+  const taxonomy: IFrameworkFamilyTaxonomy = {
+    version: '1.1.0',
+    digest: 'd'.repeat(64),
+    families: Array.from({ length: 55 }, (_, index) => ({
+      section: index + 1,
+      id: `${framework.id}-${index + 1}`,
+      version: framework.version,
+      name: `${framework.name} ${index + 1}`,
+      family: framework.family,
+      purpose: framework.purpose,
+      suitableProblemTypes: framework.suitableProblemTypes,
+      triggerConditions: framework.triggerConditions,
+      requiredInputs: framework.requiredInputs,
+      producedOutputs: framework.producedOutputs,
+      requiredAgents: framework.requiredAgents,
+      workflowTemplate: framework.workflowTemplate,
+      decisionRules: framework.decisionRules,
+      safetyInvariants: framework.safetyInvariants,
+      authorityRequirement: framework.authorityRequirement,
+      maximumAutonomyLevel: framework.maximumAutonomyLevel,
+      riskCeiling: framework.riskCeiling,
+      evidenceRequirements: framework.evidenceRequirements,
+      evaluationMethod: framework.evaluationMethod,
+      conflictsWith: framework.conflictsWith,
+      userSpecificAdaptations: framework.userSpecificAdaptations,
+      source: framework.source,
+      provenance: framework.provenance,
+      status: framework.status,
+    })),
+  };
+
   beforeEach(() => {
-    TestBed.configureTestingModule({ imports: [HttpClientTestingModule] });
+    TestBed.configureTestingModule({ imports: [], providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()] });
     service = TestBed.inject(FrameworkRegistryService);
     http = TestBed.inject(HttpTestingController);
   });
@@ -196,12 +230,44 @@ describe('FrameworkRegistryService', () => {
     request.flush({ framework });
   });
 
+  it('loads and validates owner-scoped append-only preference history', () => {
+    const history: IFrameworkPreferenceChange[] = [{
+      id: 'change-1',
+      sequence: 1,
+      frameworkId: 'truth-evidence',
+      actor: 'owner-1',
+      reason: 'Enable with a bounded autonomy ceiling',
+      after: {
+        frameworkId: 'truth-evidence', state: 'enabled', pinned: true,
+        maximumAutonomyLevel: 2, adaptations: [], updatedAt: '2026-10-10T10:00:00Z',
+      },
+      occurredAt: '2026-10-10T10:00:00Z',
+      eventDigest: 'a'.repeat(64),
+    }];
+    service.preferenceHistory('truth-evidence').subscribe(result => expect(result).toEqual(history));
+
+    const request = http.expectOne(candidate =>
+      candidate.url === '/api/v1/framework-registry/frameworks/truth-evidence/preference-history' &&
+      candidate.params.get('limit') === '50'
+    );
+    expect(request.request.method).toBe('GET');
+    request.flush({ changes: history });
+  });
+
   it('normalizes selection history', () => {
     service.selections().subscribe((result) => expect(result).toEqual([selection]));
 
     const request = http.expectOne('/api/v1/framework-registry/selections');
     expect(request.request.method).toBe('GET');
     request.flush({ selections: [selection] });
+  });
+
+  it('loads and validates the immutable family taxonomy', () => {
+    service.familyTaxonomy().subscribe((result) => expect(result).toEqual(taxonomy));
+
+    const request = http.expectOne('/api/v1/framework-registry/family-taxonomy');
+    expect(request.request.method).toBe('GET');
+    request.flush(taxonomy);
   });
 
   it('accepts legacy selection history without a recorded risk ceiling', () => {
@@ -519,6 +585,23 @@ describe('FrameworkRegistryService', () => {
     expect(JSON.stringify(result)).not.toContain('plain-secret-without-a-label');
     expect(JSON.stringify(result)).not.toContain('raw-generic-token');
     expect(JSON.stringify(result)).not.toContain('sk-super-secret-credential');
+  });
+
+  it('redacts complete cookies and truncated private keys before inspector records are returned', () => {
+    let result: IFrameworkView | undefined;
+    const record: IFrameworkView = {
+      ...framework,
+      provenance: 'Set-Cookie: session=synthetic-cookie; csrf=synthetic-csrf',
+      source: ['-----BEGIN OPENSSH ', 'PRIVATE KEY-----\nsynthetic-private-body'].join(''),
+    };
+    service.framework('truth-evidence').subscribe(response => result = response);
+    http.expectOne('/api/v1/framework-registry/frameworks/truth-evidence').flush({ framework: record });
+    expect(result?.provenance).toBe('Set-Cookie: [redacted]');
+    expect(result?.source).toBe('[redacted]');
+    expect(result?.enabled).toBeTrue();
+    expect(result?.effectiveAutonomyLevel).toBe(framework.effectiveAutonomyLevel);
+    expect(JSON.stringify(result)).not.toContain('synthetic-');
+    expect(record.provenance).toContain('synthetic-cookie');
   });
 
   it('rejects malformed list envelopes instead of presenting them as empty data', () => {

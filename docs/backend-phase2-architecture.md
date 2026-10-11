@@ -28,7 +28,8 @@ flowchart TD
 | Autonomy policy engine | `internal/autonomypolicy` |
 | Privacy / PII filter | `internal/privacyfilter` |
 | Execution broker + local safe worker | `internal/executionbroker` |
-| Runtime Lab (Hermes/OpenClaw/Odysseus/contracts) | `internal/runtimelab` |
+| Runtime Lab (Hermes/Odysseus/contracts; read-only canonical OpenClaw projection) | `internal/runtimelab` |
+| Governed agent-runtime registry and approved execution | `internal/agentruntime` |
 | Architecture-aware model intelligence | `internal/modelintelligence` |
 | Windows/local hardware profile | `internal/hardwareprofile` |
 | Account feed bridges + registry | `internal/accountfeed` |

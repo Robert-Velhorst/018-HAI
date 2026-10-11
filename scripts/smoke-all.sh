@@ -34,6 +34,11 @@ for s in "${SUITES[@]}"; do
     line="${valid_line}"
     summary+=("PASS  ${s}  (${line#*==> })")
   else
+    # Keep the aggregate concise on success, but preserve the child output on
+    # failure. Otherwise CI reports only "Result: missing" and hides the
+    # startup, migration, or authentication failure that needs recovery.
+    echo "==> ${s} failure detail"
+    printf '%s\n' "${out}"
     line="${reported_line:-==> Result: missing or invalid}"
     summary+=("FAIL  ${s}  (${line#*==> })")
     overall=1

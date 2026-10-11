@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"automation-hub-backend/internal/safety"
 )
 
 // BlockRule is an operator "block similar" rule (§10.19). Future operations that
@@ -28,6 +30,8 @@ func NewBlockRuleStore() *BlockRuleStore { return &BlockRuleStore{} }
 
 // Add registers a new block rule.
 func (s *BlockRuleStore) Add(r BlockRule) {
+	release := safety.AcquireEmergencyStopMutationFence()
+	defer release()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rules = append(s.rules, r)

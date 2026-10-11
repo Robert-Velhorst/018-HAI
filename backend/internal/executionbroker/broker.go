@@ -3,6 +3,9 @@ package executionbroker
 import (
 	"context"
 	"fmt"
+
+	"automation-hub-backend/internal/operations"
+	"automation-hub-backend/internal/safety"
 )
 
 // Broker selects an executor, validates runtime health, runs the action, bounds
@@ -41,7 +44,8 @@ func NewAuthorizedBroker(
 // SafeWorker exposes the underlying safe worker (e.g. for health reporting).
 func (b *Broker) SafeWorker() *LocalSafeWorker { return b.safeWorker }
 
-// ExecutionResult is the bounded, verified outcome of a safe execution.
+// ExecutionResult retains the observed output and verification of an attempt.
+// A returned result alongside an error is partial evidence, not completion.
 type ExecutionResult struct {
 	RuntimeID    string                 `json:"runtimeId"`
 	OK           bool                   `json:"ok"`
@@ -49,10 +53,29 @@ type ExecutionResult struct {
 	Verification SafeWorkerVerification `json:"verification"`
 }
 
+// PublicExecutionResult returns a redacted display snapshot without mutating
+// the receipt used for reconciliation. It grants no execution/retry authority
+// and makes no statement about Operation Ledger persistence.
+func PublicExecutionResult(receipt ExecutionResult) ExecutionResult {
+	receipt.RuntimeID = safety.RedactSecrets(receipt.RuntimeID)
+	receipt.Output.ArtifactPath = safety.RedactSecrets(receipt.Output.ArtifactPath)
+	receipt.Output.ArtifactHash = safety.RedactSecrets(receipt.Output.ArtifactHash)
+	receipt.Output.BoundedOutput = boundOutput(safety.RedactSecrets(receipt.Output.BoundedOutput), maxSafeOutput)
+	switch receipt.Output.Progress.Authorization {
+	case "", "unknown", "consumed":
+	default:
+		receipt.Output.Progress.Authorization = "unknown"
+	}
+	return receipt
+}
+
 // ExecuteLocalSafeWorker runs the safe worker for a bounded workspace task and
 // verifies its postconditions. It refuses to execute when the runtime is not
 // ready.
 func (b *Broker) ExecuteLocalSafeWorker(ctx context.Context, in SafeWorkerInput) (ExecutionResult, error) {
+	if err := operations.ValidateExecutionContext(ctx); err != nil {
+		return ExecutionResult{RuntimeID: LocalSafeWorkerID}, err
+	}
 	if b == nil || b.safeWorker == nil || b.safeWorker.verifier == nil {
 		return ExecutionResult{RuntimeID: LocalSafeWorkerID}, ErrAuthorizationRequired
 	}
@@ -68,8 +91,12 @@ func (b *Broker) ExecuteLocalSafeWorker(ctx context.Context, in SafeWorkerInput)
 		}
 	}
 	out, err := b.safeWorker.Run(ctx, in)
+	return b.finishSafeWorkerExecution(in, out, err)
+}
+
+func (b *Broker) finishSafeWorkerExecution(in SafeWorkerInput, out SafeWorkerOutput, err error) (ExecutionResult, error) {
 	if err != nil {
-		return ExecutionResult{RuntimeID: LocalSafeWorkerID}, err
+		return ExecutionResult{RuntimeID: LocalSafeWorkerID, Output: out}, err
 	}
 	v := b.safeWorker.Verify(in, out)
 	return ExecutionResult{

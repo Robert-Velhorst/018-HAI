@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/infra"
+	"automation-hub-backend/internal/models"
 	"automation-hub-backend/migrations"
 
 	"github.com/google/uuid"
@@ -45,6 +46,7 @@ func TestSnapshotDigestDeterministicAndSensitive(t *testing.T) {
 		{name: "sensitive flag", mutate: func(snapshot *Snapshot) { snapshot.Sensitive = !snapshot.Sensitive }},
 		{name: "local only flag", mutate: func(snapshot *Snapshot) { snapshot.LocalOnly = !snapshot.LocalOnly }},
 		{name: "connector", mutate: func(snapshot *Snapshot) { snapshot.ConnectorKey = "drive" }},
+		{name: "raw payload digest", mutate: func(snapshot *Snapshot) { snapshot.RawItemPayloadDigest = strings.Repeat("e", 64) }},
 		{name: "payload digest", mutate: func(snapshot *Snapshot) { snapshot.ExtractionPayloadDigest = strings.Repeat("d", 64) }},
 	}
 
@@ -66,6 +68,80 @@ func TestSnapshotDigestDeterministicAndSensitive(t *testing.T) {
 	normalized.ExtractionAt = base.ExtractionAt.In(time.FixedZone("test", -5*60*60))
 	if got := SnapshotDigest(normalized); got != want {
 		t.Fatalf("SnapshotDigest changed for normalized-equivalent input: got %q want %q", got, want)
+	}
+}
+
+func TestRawItemPayloadDigestBindsRawRecord(t *testing.T) {
+	base := models.SourceRawItem{
+		ID:         uuid.MustParse("33333333-3333-4333-8333-333333333333"),
+		SourceID:   uuid.MustParse("22222222-2222-4222-8222-222222222222"),
+		ExternalID: "provider-item-1", ProjectKey: "project-hai", ItemType: "document",
+		Title: "Source title", SourceURI: "local://source/item-1", Content: "original source body",
+		Metadata: `{"revision":1}`, ContentHash: "0123456789abcdef",
+		FetchedAt: time.Date(2026, time.August, 4, 11, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, time.August, 4, 11, 1, 0, 0, time.UTC),
+	}
+	want := rawItemPayloadDigest(base)
+	if !lowerSHA256.MatchString(want) {
+		t.Fatalf("rawItemPayloadDigest = %q, want SHA-256", want)
+	}
+	if got := rawItemPayloadDigest(base); got != want {
+		t.Fatalf("rawItemPayloadDigest is not deterministic: got %q want %q", got, want)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*models.SourceRawItem)
+	}{
+		{name: "source id", mutate: func(item *models.SourceRawItem) { item.SourceID = uuid.New() }},
+		{name: "external id", mutate: func(item *models.SourceRawItem) { item.ExternalID = "provider-item-2" }},
+		{name: "project", mutate: func(item *models.SourceRawItem) { item.ProjectKey = "other-project" }},
+		{name: "item type", mutate: func(item *models.SourceRawItem) { item.ItemType = "email" }},
+		{name: "title", mutate: func(item *models.SourceRawItem) { item.Title = "changed title" }},
+		{name: "source URI", mutate: func(item *models.SourceRawItem) { item.SourceURI = "local://source/changed" }},
+		{name: "content", mutate: func(item *models.SourceRawItem) { item.Content = "changed source body" }},
+		{name: "metadata", mutate: func(item *models.SourceRawItem) { item.Metadata = `{"revision":2}` }},
+		{name: "stored hash", mutate: func(item *models.SourceRawItem) { item.ContentHash = "fedcba9876543210" }},
+		{name: "fetch time", mutate: func(item *models.SourceRawItem) { item.FetchedAt = item.FetchedAt.Add(time.Second) }},
+		{name: "record update time", mutate: func(item *models.SourceRawItem) { item.UpdatedAt = item.UpdatedAt.Add(time.Second) }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			changed := base
+			test.mutate(&changed)
+			if got := rawItemPayloadDigest(changed); got == want {
+				t.Fatalf("raw payload digest did not change after mutating %s", test.name)
+			}
+		})
+	}
+}
+
+func TestVerifyClaimAcceptsConnectorFingerprintFormat(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	snapshot := validSnapshot()
+	snapshot.ExtractionHash = "0123456789abcdef"
+	snapshot.RawItemHash = snapshot.ExtractionHash
+	snapshot.RawItemPayloadDigest = strings.Repeat("e", 64)
+	snapshot.SnapshotDigest = SnapshotDigest(snapshot)
+	claim := validClaim(snapshot)
+
+	if err := VerifyClaim(snapshot, claim, snapshot.OwnerIdentity, now); err != nil {
+		t.Fatalf("VerifyClaim rejected the connector's 64-bit hexadecimal fingerprint: %v", err)
+	}
+}
+
+func TestVerifyClaimRejectsChangedRawPayloadDigest(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	previous := validSnapshot()
+	previous.RawItemPayloadDigest = strings.Repeat("a", 64)
+	previous.SnapshotDigest = SnapshotDigest(previous)
+	claim := validClaim(previous)
+
+	current := previous
+	current.RawItemPayloadDigest = strings.Repeat("b", 64)
+	current.SnapshotDigest = SnapshotDigest(current)
+	if err := VerifyClaim(current, claim, current.OwnerIdentity, now); !errors.Is(err, ErrSnapshotMismatch) {
+		t.Fatalf("VerifyClaim accepted a claim after the raw-item payload digest changed: %v", err)
 	}
 }
 
@@ -135,6 +211,7 @@ func TestVerifyClaimFreshnessBoundariesAndNonFreshValidators(t *testing.T) {
 	}{
 		{name: "fresh exactly at max age", validator: ValidatorFreshSource, fetchedAt: now.Add(-time.Hour), maxAge: 3600},
 		{name: "future within clock skew", validator: ValidatorFreshSource, fetchedAt: now.Add(5 * time.Minute), maxAge: 3600},
+		{name: "max int64 age does not overflow duration", validator: ValidatorFreshSource, fetchedAt: now.Add(-30 * time.Minute), maxAge: int64(^uint64(0) >> 1)},
 		{name: "primary source ignores max age", validator: ValidatorPrimarySource, fetchedAt: now.Add(-365 * 24 * time.Hour)},
 		{name: "source context ignores max age", validator: ValidatorSourceContext, fetchedAt: now.Add(-365 * 24 * time.Hour)},
 	}
@@ -151,6 +228,32 @@ func TestVerifyClaimFreshnessBoundariesAndNonFreshValidators(t *testing.T) {
 				t.Fatalf("VerifyClaim boundary rejected: %v", err)
 			}
 		})
+	}
+}
+
+func TestVerifyClaimFreshnessLargeAgeStillRejectsOlderSource(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	snapshot := validSnapshot()
+	snapshot.FetchedAt = time.Date(1526, time.August, 4, 12, 0, 0, 0, time.UTC)
+	snapshot.SnapshotDigest = SnapshotDigest(snapshot)
+	claim := validClaim(snapshot)
+	claim.MaxAgeSeconds = 300 * 365 * 24 * 60 * 60
+
+	if err := VerifyClaim(snapshot, claim, snapshot.OwnerIdentity, now); !errors.Is(err, ErrSnapshotMismatch) {
+		t.Fatalf("VerifyClaim accepted a 500-year-old source with a 300-year maximum age: %v", err)
+	}
+}
+
+func TestVerifyClaimFreshnessRejectsNanosecondPastLimit(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	snapshot := validSnapshot()
+	snapshot.FetchedAt = now.Add(-time.Second - time.Nanosecond)
+	snapshot.SnapshotDigest = SnapshotDigest(snapshot)
+	claim := validClaim(snapshot)
+	claim.MaxAgeSeconds = 1
+
+	if err := VerifyClaim(snapshot, claim, snapshot.OwnerIdentity, now); !errors.Is(err, ErrSnapshotMismatch) {
+		t.Fatalf("VerifyClaim accepted a source one nanosecond beyond its maximum age: %v", err)
 	}
 }
 
@@ -211,6 +314,9 @@ func TestGormRepositoryPostgresResolve(t *testing.T) {
 	claim.MaxAgeSeconds = 7200
 	if err := VerifyClaim(snapshot, claim, owner, now); err != nil {
 		t.Fatalf("VerifyClaim resolved fixture: %v", err)
+	}
+	if !lowerSHA256.MatchString(snapshot.RawItemPayloadDigest) {
+		t.Fatalf("Resolve raw payload digest = %q, want SHA-256", snapshot.RawItemPayloadDigest)
 	}
 	if _, err := repository.Resolve(t.Context(), "foreign-owner", extractionID.String()); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cross-owner Resolve error = %v, want ErrNotFound", err)
@@ -277,6 +383,24 @@ func TestGormRepositoryPostgresResolve(t *testing.T) {
 		})
 	}
 
+	if err := tx.Exec("UPDATE public.source_raw_items SET content = ? WHERE id = ?", "changed source text", rawItemID).Error; err != nil {
+		t.Fatalf("mutate raw source without updating the legacy fingerprint: %v", err)
+	}
+	changedRawSnapshot, err := repository.Resolve(t.Context(), owner, extractionID.String())
+	if err != nil {
+		t.Fatalf("Resolve source after raw content change: %v", err)
+	}
+	if changedRawSnapshot.RawItemPayloadDigest == snapshot.RawItemPayloadDigest ||
+		changedRawSnapshot.SnapshotDigest == snapshot.SnapshotDigest {
+		t.Fatal("raw source content change did not invalidate its evidence snapshot")
+	}
+	if err := VerifyClaim(changedRawSnapshot, claim, owner, now); !errors.Is(err, ErrSnapshotMismatch) {
+		t.Fatalf("VerifyClaim accepted the old claim after raw content changed: %v", err)
+	}
+	if err := tx.Exec("UPDATE public.source_raw_items SET content = ? WHERE id = ?", "source text", rawItemID).Error; err != nil {
+		t.Fatalf("restore raw source content: %v", err)
+	}
+
 	if err := tx.Exec(
 		"UPDATE public.connected_sources SET last_synced_at = ? WHERE id = ?",
 		now.Add(24*time.Hour), sourceID,
@@ -307,6 +431,7 @@ func validSnapshot() Snapshot {
 		RawItemURI:              "local://source/evidence",
 		ExtractionHash:          strings.Repeat("a", 64),
 		RawItemHash:             strings.Repeat("a", 64),
+		RawItemPayloadDigest:    strings.Repeat("b", 64),
 		ExtractionPayloadDigest: strings.Repeat("c", 64),
 		FetchedAt:               fetchedAt,
 		ExtractionAt:            fetchedAt.Add(10 * time.Minute),

@@ -13,6 +13,7 @@ type WorkflowItem struct {
 	OwnerIdentity             string     `gorm:"type:varchar(255);index" json:"-"`
 	Title                     string     `gorm:"type:varchar(512);index;not null" json:"title"`
 	Description               string     `gorm:"type:text" json:"description,omitempty"`
+	SuccessCriteria           []string   `gorm:"type:jsonb;serializer:json;not null;default:'[]'" json:"successCriteria,omitempty"`
 	ProjectKey                string     `gorm:"type:varchar(255);index" json:"projectKey,omitempty"`
 	AutomationID              string     `gorm:"type:varchar(64);index" json:"automationId,omitempty"`
 	MandateID                 *uuid.UUID `gorm:"type:uuid;index" json:"mandateId,omitempty"`

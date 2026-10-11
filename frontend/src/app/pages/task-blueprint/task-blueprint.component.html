@@ -1,5 +1,5 @@
-<section class="hai-chat-shell" [class.hai-dark]="themeMode === 'dark'">
-  <header class="hai-chat-topbar">
+<section class="hai-chat-shell">
+  <header class="hai-chat-topbar" [class.is-advanced]="isAdvancedView">
     <button
       type="button"
       class="brand-button"
@@ -14,7 +14,7 @@
       </span>
     </button>
 
-    <div class="topbar-signals">
+    <div class="topbar-signals" *ngIf="isAdvancedView" aria-label="Current task status">
       <div class="signal signal--safe signal--status" title="Safe mode: high-risk work requires approval">
         <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
         <span>
@@ -26,8 +26,8 @@
       <div class="signal signal--review signal--status" title="Review queue: decisions waiting for you">
         <i nz-icon nzType="audit" nzTheme="outline"></i>
         <span>
-          <strong>{{ reviewQueueOpenCount() }} approvals waiting</strong>
-          <small>{{ reviewQueue.length }} total review items</small>
+          <strong>{{ reviewQueueUnavailable ? 'Approvals unavailable' : reviewQueueOpenCount() + ' approvals waiting' }}</strong>
+          <small>{{ reviewQueueUnavailable ? 'Last confirmed count may be stale' : reviewQueue.length + ' total review items' }}</small>
         </span>
         <b>?</b>
       </div>
@@ -46,19 +46,9 @@
         type="button"
         nz-button
         nzType="default"
-        [title]="'Switch to ' + themeLabel() + ' theme'"
-        data-testid="task-chat-theme"
-        (click)="toggleTheme()"
-      >
-        <i nz-icon [nzType]="themeIcon()" nzTheme="outline"></i>
-        {{ themeLabel() }}
-      </button>
-      <button
-        type="button"
-        nz-button
-        nzType="default"
         title="Clear this chat and start a new task"
         data-testid="task-chat-clear"
+        [disabled]="commandInFlight"
         (click)="clearChat()"
       >
         <i nz-icon nzType="delete" nzTheme="outline"></i>
@@ -71,6 +61,7 @@
         title="Open legacy automation overview"
         data-testid="task-chat-automations"
         (click)="goHome()"
+        *ngIf="isAdvancedView"
       >
         <i nz-icon nzType="appstore" nzTheme="outline"></i>
         Automations
@@ -78,8 +69,8 @@
     </div>
   </header>
 
-  <form class="hai-chat-layout" [formGroup]="planForm">
-    <aside class="context-rail" aria-label="Live context">
+  <form class="hai-chat-layout" [class.is-advanced]="isAdvancedView" [formGroup]="planForm" (ngSubmit)="preventComposerSubmit($event)">
+    <aside class="context-rail" aria-label="Advanced live context" *ngIf="isAdvancedView">
       <div class="rail-section">
         <div class="rail-heading">
           <h2>Live Context</h2>
@@ -88,7 +79,7 @@
           </button>
         </div>
 
-        <button type="button" class="context-card" title="Current project key used for planning" (click)="contextExpanded = !contextExpanded">
+        <button type="button" class="context-card" title="Current project key used for planning" (click)="toggleTaskContext()">
           <i nz-icon nzType="folder" nzTheme="outline"></i>
           <span>
             <strong>Project</strong>
@@ -106,7 +97,7 @@
           <em>{{ hasPursuitContext() ? 'Linked' : 'Optional' }}</em>
         </button>
 
-        <button type="button" class="context-card" title="Safety mode and approval policy" (click)="inspectorMode = 'overview'">
+        <button type="button" class="context-card" title="Safety mode and approval policy" (click)="showInspector('overview')">
           <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
           <span>
             <strong>Mode</strong>
@@ -115,16 +106,16 @@
           <em>On</em>
         </button>
 
-        <button type="button" class="context-card context-card--warning" title="Human decisions waiting for approval" (click)="inspectorMode = 'logs'">
+        <button type="button" class="context-card context-card--warning" title="Human decisions waiting for approval" (click)="showInspector('logs')">
           <i nz-icon nzType="check-square" nzTheme="outline"></i>
           <span>
             <strong>Approvals</strong>
-            <small>{{ reviewQueueOpenCount() }} waiting</small>
+            <small>{{ reviewQueueUnavailable ? 'Status unavailable' : reviewQueueOpenCount() + ' waiting' }}</small>
           </span>
           <em>Review</em>
         </button>
 
-        <button type="button" class="context-card" title="Relevant memory and connected-source context used by the latest run" (click)="inspectorMode = 'evidence'">
+        <button type="button" class="context-card" title="Relevant memory and connected-source context used by the latest run" (click)="showInspector('evidence')">
           <i nz-icon nzType="database" nzTheme="outline"></i>
           <span>
             <strong>Context</strong>
@@ -133,20 +124,20 @@
           <em>Trace</em>
         </button>
 
-        <button type="button" class="context-card" title="Latest model routing result" (click)="inspectorMode = 'overview'">
+        <button type="button" class="context-card" title="Latest model routing result" (click)="showInspector('overview')">
           <i nz-icon nzType="branches" nzTheme="outline"></i>
           <span>
             <strong>AI Models</strong>
-            <small>{{ plan?.modelDecision?.selectedModelName || 'Smart routing' }}</small>
+            <small>{{ modelSelectionLabel() }}</small>
           </span>
-          <em>{{ plan?.modelDecision?.tier || 'Auto' }}</em>
+          <em>{{ plan?.modelDecision?.tier || 'Not recorded' }}</em>
         </button>
 
-        <button type="button" class="context-card" title="Most recent completion plan" (click)="latestLog() && copyPlanToComposer(latestLog()!)">
+        <button type="button" class="context-card" title="Load the latest plan, or open history when none exists" (click)="openLastActivity()">
           <i nz-icon nzType="clock-circle" nzTheme="outline"></i>
           <span>
             <strong>Last Activity</strong>
-            <small>{{ latestLog()?.request || 'No plans yet' }}</small>
+            <small>{{ latestLog()?.request || (logsUnavailable ? 'History unavailable' : 'No plans yet') }}</small>
           </span>
           <em *ngIf="latestLog()">{{ latestLog()?.createdAt | date: 'shortTime' }}</em>
         </button>
@@ -165,30 +156,192 @@
       </div>
     </aside>
 
-    <main class="chat-main" aria-label="Talk to HAI">
+    <section class="chat-main" aria-label="Task conversation">
       <section class="chat-header">
         <div>
-          <h1>Talk to HAI</h1>
-          <p>Give HAI a goal. It will plan, act within safety limits, and keep you in the loop.</p>
+          <p class="page-eyebrow">Task planning</p>
+          <h1>What would you like HAI to move forward?</h1>
+          <p>Describe the outcome. Review HAI's plan before choosing an action.</p>
         </div>
-        <button type="button" nz-button nzType="default" title="Open full command center" (click)="openFullWorkspace()">
-          Open workspace
+        <div class="view-mode-switch" role="group" aria-label="Task Blueprint view detail">
+          <button
+            type="button"
+            [attr.aria-pressed]="!isAdvancedView"
+            (click)="setViewMode('basic')"
+          >Basic</button>
+          <button
+            type="button"
+            [attr.aria-pressed]="isAdvancedView"
+            (click)="setViewMode('advanced')"
+          >Advanced</button>
+        </div>
+      </section>
+
+      <p class="safety-note" role="note">
+        High-impact actions such as legal, financial, public, destructive, account, or external-message work remain approval-gated.
+      </p>
+
+      <section class="uncertain-outcome" *ngIf="executionSafetyPlan() as receiptPlan" data-testid="task-execution-safety" aria-labelledby="task-execution-safety-title" role="alert">
+        <div>
+          <h2 id="task-execution-safety-title">{{ hasUncertainExecution(receiptPlan) ? 'Execution outcome uncertain' : 'Another attempt is paused' }}</h2>
+          <p>{{ executionSafetyNotice() }}</p>
+          <p><strong>Inspected task:</strong> {{ receiptPlan.request || receiptPlan.id || 'No task reference returned' }}</p>
+          <p><strong>Recorded execution mode:</strong> {{ receiptPlan.executionResult?.mode || 'No execution mode returned' }}</p>
+          <ng-container *ngIf="receiptPlan.executionResult?.toolExecution as receiptTool">
+            <p><strong>Recorded tool status:</strong> {{ toolExecutionStatusLabel(receiptTool, receiptPlan) }}</p>
+            <p><strong>Launch receipt:</strong> {{ toolRuntimeEvidenceLabel(receiptTool) }}</p>
+            <p *ngIf="receiptTool.runtimeTaskId"><strong>Runtime task:</strong> {{ receiptTool.runtimeTaskId }}</p>
+            <p *ngIf="receiptTool.executionReference"><strong>Execution reference:</strong> {{ receiptTool.executionReference }}</p>
+            <p *ngIf="receiptTool.message"><strong>Recorded runtime message:</strong> {{ receiptTool.message }}</p>
+          </ng-container>
+          <p *ngIf="!receiptPlan.executionResult?.toolExecution">No tool receipt returned. Inspect task history and the destination.</p>
+        </div>
+        <div class="uncertain-outcome__actions">
+          <button type="button" nz-button (click)="showInspector('evidence')">Inspect execution evidence</button>
+          <button type="button" nz-button (click)="showInspector('logs')">Open task history</button>
+        </div>
+      </section>
+
+      <section class="next-decision" *ngIf="plan || lastCommand" aria-labelledby="next-decision-title">
+        <div class="next-decision__state">
+          <span>Plan state</span>
+          <strong>{{ currentPlanState() }}</strong>
+        </div>
+        <div class="next-decision__action">
+          <span id="next-decision-title">Next decision or action</span>
+          <p>{{ nextDecisionLabel() }}</p>
+        </div>
+        <p class="next-decision__gate" *ngIf="needsOperatorDecision()" role="status">
+          HAI is waiting for your decision or clarification. No approval-gated action will run without it.
+        </p>
+      </section>
+
+      <section class="basic-plan-summary" *ngIf="plan as currentPlan" aria-labelledby="basic-plan-title">
+        <header class="basic-plan-summary__header">
+          <div>
+            <h2 id="basic-plan-title">Current plan</h2>
+            <p>{{ currentPlan.realGoal || currentPlan.request }}</p>
+          </div>
+          <span class="plan-state">{{ currentPlanState(currentPlan) }}</span>
+        </header>
+        <ol class="basic-plan-summary__steps" *ngIf="planPreviewSteps().length">
+          <li *ngFor="let step of planPreviewSteps()">
+            <strong>{{ step.name }}</strong>
+            <span>{{ step.purpose }}</span>
+            <small>{{ step.status }}<ng-container *ngIf="step.requiresApproval"> · approval required</ng-container></small>
+          </li>
+        </ol>
+        <p class="basic-plan-summary__empty" *ngIf="!planPreviewSteps().length">The service returned no plan steps. Open the plan details to inspect the response.</p>
+        <p class="composer-hint" data-testid="task-preflight-hint" *ngFor="let hint of planPreflightHints()">{{ hint }}</p>
+        <div class="basic-plan-summary__footer">
+          <span>{{ planSourceCount() }} source records · {{ planMemoryCount() }} memory records</span>
+          <button type="button" nz-button nzSize="small" (click)="showInspector('plan')">Review plan</button>
+          <button type="button" nz-button nzSize="small" (click)="showInspector('evidence')">Review sources</button>
+        </div>
+        <ul class="basic-plan-summary__sources" *ngIf="planSourceCount()">
+          <li *ngFor="let source of planPreviewSources()">
+            <strong>{{ planSourceTitle(source) }}</strong>
+            <span>{{ planSourceReference(source) }}</span>
+          </li>
+        </ul>
+      </section>
+
+      <section class="uncertain-outcome" *ngIf="uncertainCommand as uncertain" aria-labelledby="uncertain-outcome-title" role="alert">
+        <div>
+          <h2 id="uncertain-outcome-title">The {{ uncertain.intent === 'cycle' ? 'cycle' : 'run' }} outcome is unknown</h2>
+          <p>HAI did not receive a confirmed response. A step may still have completed, so another run is paused to prevent accidental duplicates.</p>
+          <p><strong>Request retained:</strong> {{ uncertain.request.message }}</p>
+        </div>
+        <div class="uncertain-outcome__actions">
+          <button type="button" nz-button nzType="primary" [nzLoading]="retryCheckLoading" [disabled]="commandInFlight || retryConfirmationOpen || !canRetryUncertainCommand()" (click)="refreshHistoryBeforeUncertainRetry()">Review history before another attempt</button>
+          <button type="button" nz-button nzType="default" (click)="showInspector('logs')">Open task history</button>
+        </div>
+      </section>
+      <span class="visually-hidden" aria-live="polite">{{ statusAnnouncement }}</span>
+
+      <section
+        class="basic-approvals"
+        *ngIf="reviewQueueLoading || reviewQueueUnavailable || reviewQueueOpenCount() > 0 || needsOperatorDecision()"
+        aria-labelledby="basic-approvals-title"
+        aria-live="polite"
+      >
+        <header class="basic-approvals__header">
+          <div>
+            <h2 id="basic-approvals-title">{{ reviewQueueUnavailable ? 'Approval status needs checking' : reviewQueueLoading ? 'Checking approval status' : 'Needs your decision' }}</h2>
+            <p *ngIf="reviewQueueLoading && !reviewQueueUnavailable" role="status">Checking the latest decisions. HAI will not assume the queue is empty while it loads.</p>
+            <p *ngIf="reviewQueueUnavailable" role="alert">HAI could not confirm the approval queue. Do not assume there are no pending decisions.</p>
+            <p *ngIf="!reviewQueueUnavailable && reviewQueueOpenCount() > 0">
+              {{ reviewQueueOpenCount() }} item{{ reviewQueueOpenCount() === 1 ? '' : 's' }} await review. Approving starts a governed run immediately; the execution policy still blocks disallowed steps.
+            </p>
+            <p *ngIf="!reviewQueueUnavailable && needsOperatorDecision() && !reviewQueueOpenCount()">
+              The latest result requires approval or clarification. Review the plan details before continuing.
+            </p>
+          </div>
+          <button type="button" nz-button nzType="default" [nzLoading]="reviewQueueLoading" (click)="loadReviewQueue()">
+            <i nz-icon nzType="reload" nzTheme="outline" aria-hidden="true"></i>
+            Refresh decisions
+          </button>
+        </header>
+        <div id="basic-approval-queue">
+          <article class="basic-approval-item" *ngFor="let item of basicApprovalItems(); trackBy: trackById">
+            <div class="basic-approval-item__copy">
+              <strong>{{ item.reason }}</strong>
+              <small>{{ item.priority }} priority · {{ item.status }}</small>
+              <p *ngIf="item.request.request">{{ item.request.request }}</p>
+            </div>
+            <div class="basic-approval-item__actions">
+              <button
+                type="button"
+                nz-button
+                nzType="primary"
+                nzSize="small"
+                [disabled]="!canApproveReview(item)"
+                [nzLoading]="resolvingReviewId === item.id"
+                [title]="isOperationReview(item) ? 'After checking the audit trail, authorize a separate attempt. The earlier attempt is never resumed.' : 'Approve this reviewed task; execution remains subject to policy.'"
+                (click)="resolveReviewItem(item, true)"
+              >{{ reviewApproveLabel(item) }}</button>
+              <button
+                type="button"
+                nz-button
+                nzSize="small"
+                [disabled]="!canResolveReview(item)"
+                [nzLoading]="resolvingReviewId === item.id"
+                (click)="resolveReviewItem(item, false)"
+              >{{ reviewRejectLabel(item) }}</button>
+            </div>
+          </article>
+        </div>
+        <button
+          *ngIf="pendingReviewItems().length > 3"
+          type="button"
+          class="basic-approvals__toggle"
+          [attr.aria-expanded]="showAllBasicApprovals"
+          aria-controls="basic-approval-queue"
+          (click)="toggleBasicApprovals()"
+        >{{ showAllBasicApprovals ? 'Show fewer decisions' : 'Show all ' + pendingReviewItems().length + ' decisions' }}</button>
+      </section>
+
+      <section class="prompt-suggestions" *ngIf="chatMessages.length === 1 && chatMessages[0].id === 'welcome'" aria-label="Suggested starting points">
+        <span>Try asking</span>
+        <button type="button" *ngFor="let suggestion of suggestions | slice:0:3" (click)="useSuggestion(suggestion)">
+          {{ suggestion.label }}
         </button>
       </section>
 
-      <section class="conversation" data-testid="task-chat-conversation">
+      <section class="conversation" data-testid="task-chat-conversation" role="log" aria-live="polite" aria-relevant="additions text" aria-label="Task conversation">
         <article
           class="message"
           *ngFor="let message of chatMessages; trackBy: trackById"
           [class.message--user]="message.role === 'user'"
           [class.message--working]="message.status === 'working'"
           [class.message--blocked]="message.status === 'blocked'"
+          [class.message--warning]="message.status === 'warning'"
           [class.message--success]="message.status === 'success'"
         >
-          <div class="avatar">{{ message.role === 'user' ? 'You' : 'HAI' }}</div>
+          <div class="avatar" aria-hidden="true">{{ message.role === 'user' ? 'You' : message.role === 'system' ? 'Info' : 'HAI' }}</div>
           <div class="bubble">
             <header>
-              <strong>{{ message.title || (message.role === 'user' ? 'You' : 'HAI') }}</strong>
+              <strong>{{ message.title || (message.role === 'user' ? 'You' : message.role === 'system' ? 'Update' : 'HAI') }}</strong>
               <time>{{ message.at | date: 'shortTime' }}</time>
             </header>
             <p>{{ message.body }}</p>
@@ -200,21 +353,27 @@
       </section>
 
       <section class="composer" aria-label="HAI command composer">
+        <label for="task-chat-input" class="composer-label">Your request</label>
         <textarea
           nz-input
-          rows="4"
+          id="task-chat-input"
+          rows="2"
           formControlName="request"
           data-testid="task-chat-input"
           [placeholder]="composerPlaceholder()"
-          title="Tell HAI what outcome you want. It will translate this into task, context, model, tool, risk, validation, and memory steps."
+          aria-describedby="task-chat-hint"
+          [readonly]="commandInFlight"
+          (keydown)="onComposerKeydown($event)"
         ></textarea>
+        <small id="task-chat-hint" class="composer-hint">{{ runActionHint() }}</small>
 
         <div class="composer-controls">
-          <button type="button" class="chip-button" title="Advanced project, automation and success criteria controls" (click)="contextExpanded = !contextExpanded">
+          <div class="advanced-composer-tools" *ngIf="isAdvancedView">
+          <button type="button" class="chip-button" title="Project, automation, mandate and success criteria" (click)="toggleTaskContext()">
             <i nz-icon nzType="setting" nzTheme="outline"></i>
             Context
           </button>
-          <button type="button" class="chip-button" title="Connected-source context is retrieved only when relevant" (click)="inspectorMode = 'evidence'">
+          <button type="button" class="chip-button" title="Connected-source context is retrieved only when relevant" (click)="showInspector('evidence')">
             <i nz-icon nzType="database" nzTheme="outline"></i>
             Sources
           </button>
@@ -236,6 +395,7 @@
             <i nz-icon nzType="deployment-unit" nzTheme="outline"></i>
             Runtime
           </span>
+          </div>
           <span class="composer-spacer"></span>
           <button
             type="button"
@@ -244,6 +404,7 @@
             data-testid="task-chat-plan"
             title="Plan only: classify, retrieve context, choose model/tools, define success criteria and validation"
             [nzLoading]="loading"
+            [disabled]="commandInFlight"
             (click)="createPlan()"
           >
             Plan first
@@ -255,7 +416,9 @@
             data-testid="task-chat-cycle"
             title="Run the autonomous maintenance cycle: sync due sources, recover stale workflow claims, run follow-ups, run safe workflows, scan ambient opportunities, and refresh dashboard state"
             [nzLoading]="cycling"
+            [disabled]="commandInFlight || uncertainCommand || retryCheckLoading || executionSafetyPlan()"
             (click)="runAgentCycle()"
+            *ngIf="isAdvancedView"
           >
             <i nz-icon nzType="deployment-unit" nzTheme="outline"></i>
             Run cycle
@@ -265,17 +428,27 @@
             nz-button
             nzType="primary"
             data-testid="task-chat-run"
-            title="Run success engine: execute only approved and low-risk allowed steps"
+            [title]="runActionHint()"
             [nzLoading]="running"
+            [disabled]="!canRunSafeSteps()"
             (click)="runSuccessEngine()"
+            aria-describedby="task-chat-hint"
           >
             <i nz-icon nzType="rocket" nzTheme="outline"></i>
-            Run safe steps
+            Run permitted steps
           </button>
         </div>
       </section>
 
-      <section class="advanced-context" *ngIf="contextExpanded">
+      <hai-progressive-section
+        [moduleId]="moduleId"
+        sectionId="task-context"
+        title="Task context and success criteria"
+        summary="Optional project, pursuit, mandate, and validation settings."
+        [advancedOnly]="true"
+        (openChange)="contextExpanded = $event"
+      >
+      <section class="advanced-context" aria-label="Advanced task context">
         <label>
           <span>Project</span>
           <input nz-input formControlName="projectKey" title="Project key used for memory, source, and workflow matching" />
@@ -307,13 +480,19 @@
           </span>
         </label>
       </section>
+      </hai-progressive-section>
 
-      <p class="safety-note">
-        HAI can make mistakes. Legal, financial, public, destructive, account, and external-message actions stay approval-gated.
-      </p>
-    </main>
+    </section>
 
-    <aside class="inspector" aria-label="Outcome inspector">
+    <hai-progressive-section
+      class="inspector-disclosure"
+      [moduleId]="moduleId"
+      sectionId="task-inspector"
+      title="Outcome inspector"
+      summary="Review the plan, evidence, model routing, and operation history."
+      [advancedOnly]="true"
+    >
+    <aside class="inspector" aria-label="Advanced outcome inspector">
       <header class="inspector-header">
         <div>
           <h2>Outcome Inspector</h2>
@@ -322,20 +501,20 @@
         <span class="inspector-info" title="General information: HAI converts chat into structured planning, routing, verification, and safe execution.">?</span>
       </header>
 
-      <nav class="inspector-tabs" aria-label="Inspector sections">
-        <button type="button" [class.active]="inspectorMode === 'overview'" (click)="inspectorMode = 'overview'">Overview</button>
-        <button type="button" [class.active]="inspectorMode === 'plan'" (click)="inspectorMode = 'plan'">Plan</button>
-        <button type="button" [class.active]="inspectorMode === 'evidence'" (click)="inspectorMode = 'evidence'">Evidence</button>
-        <button type="button" *ngIf="typedProposal" [class.active]="inspectorMode === 'typed-proposal'" (click)="inspectorMode = 'typed-proposal'">Typed draft</button>
-        <button type="button" *ngIf="crewProposal" [class.active]="inspectorMode === 'crew-proposal'" (click)="inspectorMode = 'crew-proposal'">Review draft</button>
-        <button type="button" [class.active]="inspectorMode === 'logs'" (click)="inspectorMode = 'logs'">Logs</button>
-      </nav>
+      <div class="inspector-tabs" role="group" aria-label="Inspector views">
+        <button type="button" [class.active]="inspectorMode === 'overview'" [attr.aria-pressed]="inspectorMode === 'overview'" (click)="showInspector('overview')">Overview</button>
+        <button type="button" [class.active]="inspectorMode === 'plan'" [attr.aria-pressed]="inspectorMode === 'plan'" (click)="showInspector('plan')">Plan</button>
+        <button type="button" [class.active]="inspectorMode === 'evidence'" [attr.aria-pressed]="inspectorMode === 'evidence'" (click)="showInspector('evidence')">Evidence</button>
+        <button type="button" *ngIf="typedProposal" [class.active]="inspectorMode === 'typed-proposal'" [attr.aria-pressed]="inspectorMode === 'typed-proposal'" (click)="showInspector('typed-proposal')">Typed draft</button>
+        <button type="button" *ngIf="crewProposal" [class.active]="inspectorMode === 'crew-proposal'" [attr.aria-pressed]="inspectorMode === 'crew-proposal'" (click)="showInspector('crew-proposal')">Review draft</button>
+        <button type="button" [class.active]="inspectorMode === 'logs'" [attr.aria-pressed]="inspectorMode === 'logs'" (click)="showInspector('logs')">Logs</button>
+      </div>
 
       <section class="inspector-body" *ngIf="inspectorMode === 'overview'">
         <article class="inspector-card">
           <h3>Plan Summary <span title="The actual goal HAI inferred">?</span></h3>
           <p>{{ plan?.realGoal || 'No current plan. Start by asking HAI for an outcome.' }}</p>
-          <nz-tag *ngIf="plan" [nzColor]="statusTone(plan.completionStatus)">{{ plan.completionStatus }}</nz-tag>
+          <nz-tag *ngIf="plan" [nzColor]="statusTone(currentPlanState())">{{ currentPlanState() }}</nz-tag>
         </article>
 
         <article class="inspector-card" *ngIf="plan?.coordinationDraft as draft">
@@ -377,7 +556,7 @@
             </div>
             <div>
               <dt>Next action</dt>
-              <dd>{{ lastCommand?.nextAction || plan?.validationResult?.nextAction || '-' }}</dd>
+              <dd>{{ nextDecisionLabel() }}</dd>
             </div>
           </dl>
           <p>{{ lastCommand?.summary || 'The next command will be routed through the assistant bridge.' }}</p>
@@ -413,7 +592,7 @@
             <p class="engine-summary">{{ pursuitStateMetrics(pursuitState) }}</p>
           </ng-container>
           <div class="step-row" *ngFor="let step of cycle.steps">
-            <span [class.done]="step.status === 'completed' || step.status === 'skipped'"></span>
+            <span [class.done]="!hasUncertainExecution() && (step.status === 'completed' || step.status === 'skipped')"></span>
             <div>
               <strong>{{ step.name }}</strong>
               <small>{{ step.summary }}</small>
@@ -424,13 +603,16 @@
 
         <article class="inspector-card" *ngIf="plan as currentPlan">
           <h3>Risk Gate <span title="Determines whether HAI may act or must ask you first">?</span></h3>
-          <div class="risk-box" [class.risk-box--blocked]="currentPlan.riskAssessment.approvalRequired">
+          <div class="risk-box" [class.risk-box--blocked]="hasUncertainExecution(currentPlan) || currentPlan.executionResult?.mode === 'blocked' || currentPlan.riskAssessment.approvalRequired || currentPlan.riskAssessment.actionResolution === 'block' || currentPlan.riskAssessment.actionResolution === 'clarify' || currentPlan.riskAssessment.missingRequiredAgents?.length">
             <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
             <div>
-              <strong>{{ currentPlan.riskAssessment.level || 'Safe mode active' }}</strong>
-              <span>{{ currentPlan.riskAssessment.approvalRequired ? 'Approval required before risky execution' : currentPlan.riskAssessment.actionResolution === 'clarify' ? 'More execution detail is needed' : 'No high-risk action detected yet' }}</span>
+              <strong>{{ currentPlan.riskAssessment.level || 'Risk level not recorded' }}</strong>
+              <span>{{ riskGateHint() }}</span>
               <small *ngIf="(currentPlan.riskAssessment.missingParameters || []).length">
                 Needs: {{ (currentPlan.riskAssessment.missingParameters || []).join(', ') }}
+              </small>
+              <small *ngIf="(currentPlan.riskAssessment.missingRequiredAgents || []).length" role="status">
+                Required participants need verification: {{ (currentPlan.riskAssessment.missingRequiredAgents || []).join(', ') }}
               </small>
             </div>
           </div>
@@ -454,7 +636,7 @@
           <dl>
             <div>
               <dt>Model</dt>
-              <dd>{{ plan?.modelDecision?.selectedModelName || 'Not selected yet' }}</dd>
+              <dd>{{ modelSelectionLabel() }}</dd>
             </div>
             <div>
               <dt>Tier</dt>
@@ -571,12 +753,13 @@
 
           <p class="validation-summary__next" *ngIf="plan">
             <strong>Next:</strong>
-            {{ plan.validationResult.nextAction || plan.validationPlan.completionGate }}
+            {{ executionSafetyPlan() ? executionSafetyNotice() : (plan.validationResult.nextAction || plan.validationPlan.completionGate) }}
           </p>
         </article>
 
         <article class="inspector-card">
           <h3>Approval Queue <span title="Human decisions that block execution">?</span></h3>
+          <p class="data-unavailable" *ngIf="reviewQueueUnavailable">Approval status is unavailable. Showing last confirmed decisions, if any.</p>
           <div class="review-row" *ngFor="let item of reviewQueue; trackBy: trackById">
             <div>
               <strong>{{ item.reason }}</strong>
@@ -587,7 +770,7 @@
               nz-button
               nzSize="small"
               nzType="primary"
-								[disabled]="!canResolveReview(item)"
+								[disabled]="!canApproveReview(item)"
               [nzLoading]="resolvingReviewId === item.id"
 							[title]="isOperationReview(item) ? 'Inspect the audit trail, then create a separate durable attempt. The prior attempt is never resumed.' : 'Approve this reviewed task.'"
               (click)="resolveReviewItem(item, true)"
@@ -606,33 +789,9 @@
 				{{ reviewRejectLabel(item) }}
             </button>
           </div>
-          <nz-empty *ngIf="!reviewQueue.length" nzNotFoundContent="No tasks waiting for review."></nz-empty>
+          <nz-empty *ngIf="!reviewQueueUnavailable && !reviewQueue.length" nzNotFoundContent="No tasks waiting for review."></nz-empty>
 
-						<div class="reconciliation-control" *ngIf="approvedReviewCount() || reconciliation">
-							<strong>Interrupted approved work</strong>
-							<p>{{ approvedReviewCount() }} approved items may need outcome recovery. HAI inspects durable evidence and never repeats the action.</p>
-							<div class="reconciliation-actions">
-								<button type="button" nz-button nzSize="small" [nzLoading]="reconcilingReviews" (click)="previewApprovedReviewRecovery()">
-									Preview recovery
-								</button>
-								<button
-									type="button"
-									nz-button
-									nzSize="small"
-									nzType="primary"
-									[disabled]="!reconciliation?.dryRun || !reconciliation.eligible"
-									[nzLoading]="reconcilingReviews"
-									title="Apply the preview. Verified evidence may close an item; every uncertain outcome returns to review. No action is retried."
-									(click)="applyApprovedReviewRecovery()"
-								>
-									Apply preview
-								</button>
-							</div>
-							<p *ngIf="reconciliation">
-								{{ reconciliation.eligible }} eligible · {{ reconciliation.completed }} verified complete ·
-								{{ reconciliation.returnedToReview }} need review · {{ reconciliation.conflicts }} changed
-							</p>
-						</div>
+          <ng-container *ngTemplateOutlet="approvedWorkRecovery"></ng-container>
         </article>
       </section>
 
@@ -995,11 +1154,11 @@
 
         <article class="inspector-card" *ngIf="plan?.executionResult as result">
           <h3>Execution Output</h3>
-          <p>{{ result.output }}</p>
+          <p>{{ hasUncertainExecution() ? executionSafetyNotice() : result.output }}</p>
           <dl>
             <div>
               <dt>Verification</dt>
-              <dd>{{ result.verificationStatus }}</dd>
+              <dd>{{ hasUncertainExecution() ? 'Outcome uncertain; completion not confirmed' : result.verificationStatus }}</dd>
             </div>
             <div>
               <dt>Evidence</dt>
@@ -1018,7 +1177,7 @@
             <div class="runtime-evidence-row">
               <span>
                 <strong>{{ tool.runtimeType || tool.launchType || 'controlled runtime' }}</strong>
-                <small>{{ tool.status }} · {{ tool.durationMs || 0 }} ms</small>
+                <small data-testid="task-tool-status">{{ toolExecutionStatusLabel(tool) }} · {{ tool.durationMs || 0 }} ms</small>
               </span>
               <code>{{ toolRuntimeEvidenceLabel(tool) }}</code>
               <button
@@ -1036,6 +1195,8 @@
             <small class="runtime-evidence-meta">
               {{ tool.message || tool.target || tool.automationId }}
             </small>
+            <p *ngIf="tool.runtimeTaskId"><strong>Runtime task:</strong> {{ tool.runtimeTaskId }}</p>
+            <p *ngIf="tool.executionReference"><strong>Execution reference:</strong> {{ tool.executionReference }}</p>
             <div class="runtime-route-line" *ngIf="tool.runtimeRouteTrace as trace" [title]="toolRuntimeRouteSummary(tool)">
               <span *ngIf="trace.runtimeId">{{ trace.runtimeId }}</span>
               <span *ngIf="trace.intent">{{ trace.intent }}</span>
@@ -1044,7 +1205,7 @@
               <span *ngIf="trace.recommendedSkills?.length">{{ compactTraceList('skills', trace.recommendedSkills, 3) }}</span>
               <span *ngIf="trace.blockedSurfaces?.length">{{ compactTraceList('blocked', trace.blockedSurfaces, 2) }}</span>
             </div>
-            <ol class="runtime-audit-list" *ngIf="tool.auditEvents.length">
+            <ol class="runtime-audit-list" *ngIf="tool.auditEvents?.length">
               <li *ngFor="let auditEvent of tool.auditEvents">{{ auditEvent }}</li>
             </ol>
           </div>
@@ -1053,7 +1214,11 @@
 
       <section class="inspector-body" *ngIf="inspectorMode === 'logs'">
         <article class="inspector-card">
+          <ng-container *ngTemplateOutlet="approvedWorkRecovery"></ng-container>
+        </article>
+        <article class="inspector-card">
           <h3>Recent Plans</h3>
+          <p class="data-unavailable" *ngIf="logsUnavailable">Plan history is unavailable. Showing last confirmed records, if any.</p>
           <button
             type="button"
             class="log-row"
@@ -1062,9 +1227,9 @@
             (click)="copyPlanToComposer(log)"
           >
             <strong>{{ log.request }}</strong>
-            <span>{{ log.intake.taskType }} · {{ log.completionStatus }} · {{ log.createdAt | date: 'short' }}</span>
+            <span>{{ log.intake.taskType }} · {{ currentPlanState(log) }} · {{ log.createdAt | date: 'short' }}</span>
           </button>
-          <nz-empty *ngIf="!logs.length" nzNotFoundContent="No task plans yet."></nz-empty>
+          <nz-empty *ngIf="!logsUnavailable && !logs.length" nzNotFoundContent="No task plans yet."></nz-empty>
         </article>
 
         <article class="inspector-card">
@@ -1076,6 +1241,35 @@
           <nz-empty *ngIf="!plan?.events?.length" nzNotFoundContent="No engine events for current plan."></nz-empty>
         </article>
       </section>
+      <ng-template #approvedWorkRecovery>
+        <div class="reconciliation-control">
+          <strong>Recover interrupted approved work</strong>
+          <p>The pending queue contains unresolved decisions only. This separate check scans older approved tasks for durable outcome evidence; it never repeats the action.</p>
+          <div class="reconciliation-actions">
+            <button type="button" nz-button nzSize="small" [nzLoading]="reconcilingReviews" (click)="previewApprovedReviewRecovery()">
+              Preview recovery
+            </button>
+            <button
+              type="button"
+              nz-button
+              nzSize="small"
+              nzType="primary"
+              [disabled]="!canApplyApprovedReviewRecovery()"
+              [nzLoading]="reconcilingReviews"
+              title="Apply the preview. Verified evidence may close an item; every uncertain outcome returns to review. No action is retried."
+              (click)="applyApprovedReviewRecovery()"
+            >
+              Apply preview
+            </button>
+          </div>
+          <p *ngIf="reconciliation">
+            {{ reconciliation.dryRun ? 'Preview only · ' : 'Applied · ' }}
+            {{ reconciliation.eligible }} eligible · {{ reconciliation.completed }} verified complete ·
+            {{ reconciliation.returnedToReview }} need review · {{ reconciliation.conflicts }} changed
+          </p>
+        </div>
+      </ng-template>
     </aside>
+    </hai-progressive-section>
   </form>
 </section>

@@ -9,13 +9,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -45,13 +45,20 @@ type ModelMaintenanceResult struct {
 // configured, enabled model that current routing policy can use and carries no
 // prompt, token, or source content.
 type ModelMaintenanceRun struct {
-	Eligible int                      `json:"eligible"`
-	Checked  int                      `json:"checked"`
-	Reused   int                      `json:"reused"`
-	Updated  int                      `json:"updated"`
-	Failed   int                      `json:"failed"`
-	Results  []ModelMaintenanceResult `json:"results"`
-	RunAt    time.Time                `json:"runAt"`
+	Eligible int `json:"eligible"`
+	// Checked counts local runtime checks and read-only provider catalog probes.
+	Checked int `json:"checked"`
+	// ProviderManaged counts cloud models checked through the provider's read-only catalog.
+	ProviderManaged int `json:"providerManaged"`
+	// HealthOnly counts runtimes whose probe confirms health but not model availability.
+	HealthOnly int                      `json:"healthOnly"`
+	Reused     int                      `json:"reused"`
+	Updated    int                      `json:"updated"`
+	InProgress int                      `json:"inProgress"`
+	Failed     int                      `json:"failed"`
+	Cancelled  bool                     `json:"cancelled"`
+	Results    []ModelMaintenanceResult `json:"results"`
+	RunAt      time.Time                `json:"runAt"`
 }
 
 type ollamaTagsResponse struct {
@@ -76,6 +83,7 @@ const (
 	defaultModelMaintenanceFailureRetryMinutes = 5
 	minimumModelMaintenanceFailureRetryMinutes = 1
 	maximumModelMaintenanceFailureRetryMinutes = 60
+	failedRefreshDigestInspectionTimeout       = 5 * time.Second
 	miniSWEOllamaProviderID                    = "miniswe-ollama"
 	miniSWEOllamaEndpoint                      = "http://ollama-miniswe:11434"
 )
@@ -102,12 +110,32 @@ type IsolatedOllamaMaintenanceGate interface {
 	EnsureMiniSWEOllamaModel(endpointURL, modelID string) error
 }
 
+// modelMaintenanceLeaseRepository is optional so policy-only and focused-test
+// services remain dependency-light. The production GORM history repository
+// supplies a PostgreSQL-backed lease for each provider/model pair.
+type modelMaintenanceLeaseRepository interface {
+	AcquireModelMaintenanceLease(ctx context.Context, providerID, modelID string) (release func(), acquired bool, err error)
+}
+
 // EnsureConfiguredLocalModel verifies that an optional local planning runner
 // is using an enabled local provider/model pair from the canonical LLM policy
 // and applies the same durable daily maintenance gate used by normal routing.
 // The endpoint comparison is deliberately exact after harmless trailing /v1
 // normalization; it never aliases hosts, credentials, or arbitrary paths.
 func (s *Service) EnsureConfiguredLocalModel(endpointURL, modelID string) error {
+	return s.EnsureConfiguredLocalModelWithContext(context.Background(), endpointURL, modelID)
+}
+
+// EnsureConfiguredLocalModelWithContext lets auxiliary local inference paths
+// share the canonical maintenance gate without detaching refresh work from the
+// request that will consume the model.
+func (s *Service) EnsureConfiguredLocalModelWithContext(ctx context.Context, endpointURL, modelID string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	endpointKey, err := localMaintenanceEndpointKey(endpointURL)
 	if err != nil {
 		return fmt.Errorf("configured planning model endpoint is invalid")
@@ -128,8 +156,11 @@ func (s *Service) EnsureConfiguredLocalModel(endpointURL, modelID string) error 
 			if !model.Enabled || strings.TrimSpace(model.ID) != modelID {
 				continue
 			}
-			result := s.ensureModelFresh(provider, model, s.maintenanceEffectContext)
-			if result.BlocksExecution || strings.EqualFold(result.Status, "failed") {
+			result := s.ensureModelFreshWithContext(ctx, provider, model, s.maintenanceEffectContext)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if result.BlocksExecution || maintenanceStatusBlocksExecution(result.Status) {
 				return fmt.Errorf("configured planning model is blocked by daily maintenance: %s", result.Reason)
 			}
 			return nil
@@ -153,7 +184,7 @@ func (s *Service) EnsureMiniSWEOllamaModel(endpointURL, modelID string) error {
 	result := s.ensureModelFresh(Provider{
 		ID: miniSWEOllamaProviderID, Name: "mini-SWE isolated Ollama", EndpointURL: miniSWEOllamaEndpoint, Enabled: true, Local: true,
 	}, Model{ID: modelID, Name: modelID, Enabled: true}, s.maintenanceEffectContext)
-	if result.BlocksExecution || strings.EqualFold(result.Status, "failed") {
+	if result.BlocksExecution || maintenanceStatusBlocksExecution(result.Status) {
 		return fmt.Errorf("mini-SWE model is blocked by daily maintenance: %s", result.Reason)
 	}
 	return nil
@@ -203,10 +234,20 @@ func maintenanceEndpointKey(raw string) (string, error) {
 }
 
 func (s *Service) ModelMaintenanceHistory(limit int) ([]ModelMaintenanceResult, error) {
+	return s.ModelMaintenanceHistoryWithContext(context.Background(), limit)
+}
+
+func (s *Service) ModelMaintenanceHistoryWithContext(ctx context.Context, limit int) ([]ModelMaintenanceResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.maintenanceHistory == nil {
 		return []ModelMaintenanceResult{}, nil
 	}
-	records, err := s.maintenanceHistory.FindRecentModelMaintenance(limit)
+	records, err := findRecentModelMaintenance(ctx, s.maintenanceHistory, limit)
 	if err != nil {
 		return nil, fmt.Errorf("load model maintenance history: %w", err)
 	}
@@ -219,35 +260,84 @@ func (s *Service) ModelMaintenanceHistory(limit int) ([]ModelMaintenanceResult, 
 
 // RunDueModelMaintenance runs the same daily gate used by routing for every
 // enabled configured model that policy can use. Local Ollama tags may be
-// refreshed; other runtimes and cloud providers are verified read-only. The
-// durable history means a scheduler can call it frequently without repeating
-// provider I/O before the configured maintenance interval expires.
+// refreshed; other local runtimes are checked read-only. Cloud providers get a
+// read-only catalog availability probe, but their hosted artifact versions are
+// not exposed or changed by HAI. Durable history prevents repeated provider I/O
+// before the maintenance interval.
 func (s *Service) RunDueModelMaintenance() ModelMaintenanceRun {
+	return s.RunDueModelMaintenanceWithContext(context.Background())
+}
+
+// RunDueModelMaintenanceWithContext stops between models and cancels local
+// requests when the scheduler/request is shutting down. A provider may continue
+// a pull it accepted before cancellation; that result remains unverified and
+// blocks the model until a later successful check.
+func (s *Service) RunDueModelMaintenanceWithContext(ctx context.Context) ModelMaintenanceRun {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	run := ModelMaintenanceRun{Results: []ModelMaintenanceResult{}, RunAt: time.Now().UTC()}
+	if ctx.Err() != nil {
+		run.Cancelled = true
+		return run
+	}
 	if !modelMaintenanceEnabled() || s.maintenanceHistory == nil {
 		return run
 	}
-	for _, provider := range s.Policy().Providers {
-		if !s.maintenanceEligibleProvider(provider) {
-			continue
+	for _, configuredProvider := range s.Policy().Providers {
+		if ctx.Err() != nil {
+			run.Cancelled = true
+			return run
 		}
-		for _, model := range provider.Models {
-			if !model.Enabled {
+		for _, configuredModel := range configuredProvider.Models {
+			if ctx.Err() != nil {
+				run.Cancelled = true
+				return run
+			}
+			if !configuredModel.Enabled {
+				continue
+			}
+			// mini-SWE's isolated runtime is local-only, not an Ollama Cloud
+			// gateway. Reject a misconfigured cloud tag before it can create a
+			// local maintenance failure and retry cooldown.
+			if configuredProvider.ID == miniSWEOllamaProviderID && isOllamaCloudModelID(configuredModel.ID) {
+				continue
+			}
+			provider, model := applyOllamaModelPolicy(configuredProvider, configuredModel)
+			if !s.maintenanceEligibleProvider(provider) {
 				continue
 			}
 			run.Eligible++
-			result := s.ensureModelFresh(provider, model, s.maintenanceEffectContext)
+			result := s.ensureModelFreshWithContext(ctx, provider, model, s.maintenanceEffectContext)
+			if result.Status == "cancelled" {
+				run.Cancelled = true
+				return run
+			}
 			run.Results = append(run.Results, result)
 			if result.Reused {
 				run.Reused++
-			} else if result.Status != "not_enforced" {
+			}
+			if strings.EqualFold(result.Status, "provider_managed") {
+				if strings.EqualFold(provider.ID, "odysseus") {
+					run.HealthOnly++
+				} else {
+					run.ProviderManaged++
+				}
+			}
+			if !result.Reused && result.Status != "not_enforced" && result.Status != "approval_required" {
 				run.Checked++
 			}
 			if result.UpdateApplied {
 				run.Updated++
 			}
-			if result.BlocksExecution || result.Status == "failed" {
+			if result.Status == "in_progress" {
+				run.InProgress++
+			} else if result.BlocksExecution || result.Status == "failed" {
 				run.Failed++
+			}
+			if ctx.Err() != nil {
+				run.Cancelled = true
+				return run
 			}
 		}
 	}
@@ -276,25 +366,66 @@ func (s *Service) ensureModelFresh(
 	model Model,
 	effectContexts ...*EffectContext,
 ) ModelMaintenanceResult {
-	fingerprint := modelMaintenanceFingerprint(provider, model)
-	if !modelMaintenanceEnabled() || s.maintenanceHistory == nil {
+	return s.ensureModelFreshWithContext(context.Background(), provider, model, effectContexts...)
+}
+
+func (s *Service) ensureModelFreshWithContext(
+	ctx context.Context,
+	provider Provider,
+	model Model,
+	effectContexts ...*EffectContext,
+) ModelMaintenanceResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return cancelledMaintenanceResult(provider, model)
+	}
+	ownerIdentity := modelMaintenanceOwnerIdentity(effectContexts, s.maintenanceEffectContext)
+	ctx = withModelMaintenanceScope(ctx, ownerIdentity, provider.Local)
+	fingerprint := modelMaintenanceFingerprint(provider, model, s.policy)
+	if !modelMaintenanceEnabled() {
 		return ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "not_enforced", Reason: "daily model maintenance is not configured for this runtime", CheckedAt: time.Now().UTC()}
 	}
-	if readiness := providerRuntimeReadiness(provider); !readiness.configured {
-		return s.recordMaintenance(ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "daily model maintenance rejected this runtime endpoint: " + readiness.reason, ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: time.Now().UTC()})
+	if s.maintenanceHistory == nil {
+		checkedAt := time.Now().UTC()
+		retryAt := checkedAt.Add(modelMaintenanceFailureRetryInterval())
+		return ModelMaintenanceResult{
+			ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name,
+			Status: "failed", Reason: "daily model freshness cannot be verified because durable maintenance history is unavailable",
+			ConfigurationFingerprint: fingerprint, BlocksExecution: true,
+			CheckedAt: checkedAt, NextCheckDueAt: &retryAt,
+		}
 	}
-
+	s.clearLocalModelMaintenanceCooldown(ctx, provider.ID, model.ID, fingerprint)
 	interval := modelMaintenanceInterval()
 	now := time.Now().UTC()
 	configurationChanged := false
-	if latest, err := s.maintenanceHistory.FindLatestModelMaintenance(provider.ID, model.ID); err == nil && latest != nil && latest.ConfigurationFingerprint == fingerprint && maintenanceRecordReusable(*latest, now, interval) {
+	latest, err := findLatestModelMaintenance(ctx, s.maintenanceHistory, provider.ID, model.ID)
+	if ctx.Err() != nil {
+		return cancelledMaintenanceResult(provider, model)
+	}
+	if blocked, stop := s.blockOnDurableOllamaAdmission(ctx, provider, model, fingerprint); stop {
+		return blocked
+	}
+	if err == nil && latest != nil && latest.ConfigurationFingerprint == fingerprint && maintenanceRecordReusableForProvider(provider, *latest, now, interval) {
 		result := modelMaintenanceResult(*latest)
 		result.Reused = true
+		if isVerifiedLocalMaintenanceResult(provider, result) {
+			s.clearVerifiedLocalModelMaintenanceCooldown(ctx, provider.ID, model.ID, fingerprint)
+		}
 		return result
 	} else if latest != nil && latest.ConfigurationFingerprint != fingerprint {
 		configurationChanged = true
 	} else if err != nil {
-		return s.recordMaintenance(ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "could not read daily model maintenance history", ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: time.Now().UTC()})
+		return s.recordMaintenanceWithContext(ctx, ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "could not read daily model maintenance history", ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: time.Now().UTC()})
+	}
+	s.clearLocalModelMaintenanceCooldown(ctx, provider.ID, model.ID, fingerprint)
+	if cooldown := s.localModelMaintenanceCooldown(ctx, provider, model, fingerprint, time.Now().UTC()); cooldown != nil {
+		return *cooldown
+	}
+	if readiness := providerRuntimeReadiness(provider); !readiness.configured {
+		return s.recordMaintenanceWithContext(ctx, ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "daily model maintenance rejected this runtime endpoint: " + readiness.reason, ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: time.Now().UTC()})
 	}
 
 	key := provider.ID + "/" + model.ID
@@ -308,20 +439,91 @@ func (s *Service) ensureModelFresh(
 		s.maintenanceRunning[key] = lock
 	}
 	s.maintenanceMu.Unlock()
-	lock.Lock()
+	if !lockModelMaintenance(ctx, lock) {
+		return cancelledMaintenanceResult(provider, model)
+	}
 	defer lock.Unlock()
+	if ctx.Err() != nil {
+		return cancelledMaintenanceResult(provider, model)
+	}
 
 	// Another request may have completed the daily operation while this request
 	// waited for the per-model lock.
 	now = time.Now().UTC()
-	if latest, err := s.maintenanceHistory.FindLatestModelMaintenance(provider.ID, model.ID); err == nil && latest != nil && latest.ConfigurationFingerprint == fingerprint && maintenanceRecordReusable(*latest, now, interval) {
+	latest, err = findLatestModelMaintenance(ctx, s.maintenanceHistory, provider.ID, model.ID)
+	if ctx.Err() != nil {
+		return cancelledMaintenanceResult(provider, model)
+	}
+	if blocked, stop := s.blockOnDurableOllamaAdmission(ctx, provider, model, fingerprint); stop {
+		return blocked
+	}
+	if err == nil && latest != nil && latest.ConfigurationFingerprint == fingerprint && maintenanceRecordReusableForProvider(provider, *latest, now, interval) {
 		result := modelMaintenanceResult(*latest)
 		result.Reused = true
+		if isVerifiedLocalMaintenanceResult(provider, result) {
+			s.clearVerifiedLocalModelMaintenanceCooldown(ctx, provider.ID, model.ID, fingerprint)
+		}
 		return result
 	} else if latest != nil && latest.ConfigurationFingerprint != fingerprint {
 		configurationChanged = true
 	} else if err != nil {
-		return s.recordMaintenance(ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "could not re-read daily model maintenance history after waiting for the model refresh lock", ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: now})
+		return s.recordMaintenanceWithContext(ctx, ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "could not re-read daily model maintenance history after waiting for the model refresh lock", ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: now})
+	}
+	s.clearLocalModelMaintenanceCooldown(ctx, provider.ID, model.ID, fingerprint)
+	if cooldown := s.localModelMaintenanceCooldown(ctx, provider, model, fingerprint, now); cooldown != nil {
+		return *cooldown
+	}
+	if leaseRepository, ok := s.maintenanceHistory.(modelMaintenanceLeaseRepository); ok {
+		leaseCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		release, acquired, err := leaseRepository.AcquireModelMaintenanceLease(leaseCtx, provider.ID, model.ID)
+		if acquired && release != nil {
+			defer release()
+		}
+		cancel()
+		if ctx.Err() != nil {
+			return cancelledMaintenanceResult(provider, model)
+		}
+		if err != nil {
+			return s.recordMaintenanceWithContext(ctx, ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "could not acquire the daily model maintenance lease", ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: time.Now().UTC()})
+		}
+		if !acquired {
+			checkedAt := time.Now().UTC()
+			nextCheck := checkedAt.Add(modelMaintenanceFailureRetryInterval())
+			return ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "in_progress", Reason: "daily model maintenance is already running on another backend process", ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: checkedAt, NextCheckDueAt: &nextCheck}
+		}
+		if release == nil {
+			return s.recordMaintenanceWithContext(ctx, ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "daily model maintenance lease was acquired without a release function", ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: time.Now().UTC()})
+		}
+		// A different process may have completed maintenance between the local
+		// re-check and our successful lease acquisition. Reuse its durable record
+		// instead of probing or pulling a model a second time.
+		now = time.Now().UTC()
+		latest, err := findLatestModelMaintenance(ctx, s.maintenanceHistory, provider.ID, model.ID)
+		if ctx.Err() != nil {
+			return cancelledMaintenanceResult(provider, model)
+		}
+		if err != nil {
+			return s.recordMaintenanceWithContext(ctx, ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, Status: "failed", Reason: "could not read daily model maintenance history after acquiring the model lease", ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: now})
+		}
+		if latest != nil && latest.ConfigurationFingerprint == fingerprint && maintenanceRecordReusableForProvider(provider, *latest, now, interval) {
+			result := modelMaintenanceResult(*latest)
+			result.Reused = true
+			if isVerifiedLocalMaintenanceResult(provider, result) {
+				s.clearVerifiedLocalModelMaintenanceCooldown(ctx, provider.ID, model.ID, fingerprint)
+			}
+			return result
+		}
+		if latest != nil && latest.ConfigurationFingerprint != fingerprint {
+			configurationChanged = true
+		}
+		s.clearLocalModelMaintenanceCooldown(ctx, provider.ID, model.ID, fingerprint)
+		if cooldown := s.localModelMaintenanceCooldown(ctx, provider, model, fingerprint, now); cooldown != nil {
+			return *cooldown
+		}
+	}
+
+	if !provider.Local {
+		return s.recordProviderManagedModel(ctx, provider, model, fingerprint, configurationChanged)
 	}
 
 	var effectContext *EffectContext
@@ -329,9 +531,142 @@ func (s *Service) ensureModelFresh(
 		effectContext = effectContexts[0]
 	}
 	if provider.ID == "ollama" || provider.ID == miniSWEOllamaProviderID {
-		return s.refreshOllamaModel(provider, model, fingerprint, configurationChanged, effectContext)
+		return s.refreshOllamaModelWithAdmission(ctx, provider, model, fingerprint, configurationChanged, effectContext)
 	}
-	return s.verifyManagedModel(provider, model, fingerprint, configurationChanged)
+	return s.verifyManagedModel(ctx, provider, model, fingerprint, configurationChanged)
+}
+
+func (s *Service) blockOnDurableOllamaAdmission(
+	ctx context.Context,
+	provider Provider,
+	model Model,
+	fingerprint string,
+) (ModelMaintenanceResult, bool) {
+	if provider.ID != "ollama" && provider.ID != miniSWEOllamaProviderID {
+		return ModelMaintenanceResult{}, false
+	}
+	base := ModelMaintenanceResult{
+		ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name,
+		ConfigurationFingerprint: fingerprint, BlocksExecution: true, CheckedAt: time.Now().UTC(),
+	}
+	repository, ok := s.maintenanceHistory.(ModelMaintenanceAdmissionRepository)
+	if !ok {
+		base.Status = "failed"
+		base.Reason = "durable Ollama maintenance admission storage is unavailable; cached results were not reused"
+		return base, true
+	}
+	checkContext, cancel := context.WithTimeout(ctx, 5*time.Second)
+	claim, found, err := repository.GetModelMaintenanceAdmission(checkContext, provider.ID, model.ID, fingerprint)
+	cancel()
+	if ctx.Err() != nil {
+		return cancelledMaintenanceResult(provider, model), true
+	}
+	if err != nil {
+		base.Status = "failed"
+		base.Reason = "durable Ollama admission state could not be verified; cached results were not reused"
+		return base, true
+	}
+	if !found || !claim.RetryAt.After(time.Now().UTC()) {
+		return ModelMaintenanceResult{}, false
+	}
+	if claim.State != modelMaintenanceAdmissionInProgress && claim.State != modelMaintenanceAdmissionRetryWait {
+		return ModelMaintenanceResult{}, false
+	}
+	return modelMaintenanceAdmissionBlockedResult(provider, model, fingerprint, claim), true
+}
+
+func (s *Service) refreshOllamaModelWithAdmission(
+	ctx context.Context,
+	provider Provider,
+	model Model,
+	fingerprint string,
+	configurationChanged bool,
+	effectContext *EffectContext,
+) ModelMaintenanceResult {
+	base := ModelMaintenanceResult{
+		ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name,
+		ConfigurationFingerprint: fingerprint, ConfigurationChanged: configurationChanged,
+		BlocksExecution: true, CheckedAt: time.Now().UTC(),
+	}
+	repository, ok := s.maintenanceHistory.(ModelMaintenanceAdmissionRepository)
+	if !ok {
+		base.Status = "failed"
+		base.Reason = "durable Ollama maintenance admission storage is unavailable; provider access was blocked"
+		return s.recordMaintenanceWithContext(ctx, base)
+	}
+	claimContext, cancelClaim := context.WithTimeout(ctx, 5*time.Second)
+	claim, acquired, err := repository.AcquireModelMaintenanceAdmission(
+		claimContext, provider.ID, model.ID, fingerprint, modelMaintenanceAdmissionLeaseDuration(),
+	)
+	cancelClaim()
+	if ctx.Err() != nil {
+		if acquired {
+			finalizeContext, cancelFinalize := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_ = repository.FinalizeModelMaintenanceAdmission(finalizeContext, claim, modelMaintenanceAdmissionRetry, modelMaintenanceFailureRetryInterval())
+			cancelFinalize()
+		}
+		return cancelledMaintenanceResult(provider, model)
+	}
+	if err != nil {
+		base.Status = "failed"
+		base.Reason = "durable Ollama maintenance admission could not be persisted; provider access was blocked"
+		return s.recordMaintenanceWithContext(ctx, base)
+	}
+	if !acquired {
+		return modelMaintenanceAdmissionBlockedResult(provider, model, fingerprint, claim)
+	}
+
+	result := s.refreshOllamaModel(ctx, provider, model, fingerprint, configurationChanged, effectContext)
+	outcome := modelMaintenanceAdmissionRetry
+	retryAfter := modelMaintenanceFailureRetryInterval()
+	if isVerifiedLocalMaintenanceResult(provider, result) {
+		outcome = modelMaintenanceAdmissionVerified
+		retryAfter = modelMaintenanceInterval()
+	}
+	finalizeContext, cancelFinalize := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	finalizeErr := repository.FinalizeModelMaintenanceAdmission(finalizeContext, claim, outcome, retryAfter)
+	cancelFinalize()
+	if finalizeErr != nil {
+		result.Status = "failed"
+		result.Reason = "Ollama maintenance outcome could not be finalized durably; provider use remains blocked until the admission lease expires"
+		result.BlocksExecution = true
+		retryAt := claim.RetryAt.UTC()
+		result.NextCheckDueAt = &retryAt
+		return result
+	}
+	if outcome == modelMaintenanceAdmissionRetry && result.NextCheckDueAt == nil {
+		retryAt := time.Now().UTC().Add(retryAfter)
+		result.NextCheckDueAt = &retryAt
+	}
+	return result
+}
+
+func cancelledMaintenanceResult(provider Provider, model Model) ModelMaintenanceResult {
+	return ModelMaintenanceResult{
+		ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name,
+		Status: "cancelled", Reason: "maintenance was cancelled before the model was verified", BlocksExecution: true,
+		CheckedAt: time.Now().UTC(),
+	}
+}
+
+func lockModelMaintenance(ctx context.Context, lock *sync.Mutex) bool {
+	for {
+		if lock.TryLock() {
+			return true
+		}
+		timer := time.NewTimer(25 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			return false
+		case <-timer.C:
+		}
+	}
 }
 
 // modelMaintenanceRoutingBlockReason is intentionally read-only. Routing and
@@ -339,23 +674,34 @@ func (s *Service) ensureModelFresh(
 // install or update a model merely to decide which model would be suitable.
 // A due or absent record is enforced later at Generate with trusted context.
 func (s *Service) modelMaintenanceRoutingBlockReason(provider Provider, model Model) string {
+	reason, _ := s.modelMaintenanceRoutingBlockReasonWithContext(context.Background(), provider, model)
+	return reason
+}
+
+func (s *Service) modelMaintenanceRoutingBlockReasonWithContext(ctx context.Context, provider Provider, model Model) (string, error) {
 	if !modelMaintenanceEnabled() || s.maintenanceHistory == nil {
-		return ""
+		return "", nil
 	}
-	latest, err := s.maintenanceHistory.FindLatestModelMaintenance(provider.ID, model.ID)
+	latest, err := findLatestModelMaintenance(ctx, s.maintenanceHistory, provider.ID, model.ID)
 	if err != nil {
-		return "could not read daily model maintenance history"
+		if ctx != nil && ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		return "could not read daily model maintenance history", nil
 	}
-	if latest == nil || latest.ConfigurationFingerprint != modelMaintenanceFingerprint(provider, model) {
-		return ""
+	if latest == nil || latest.ConfigurationFingerprint != modelMaintenanceFingerprint(provider, model, s.policy) {
+		return "", nil
 	}
-	if !maintenanceRecordReusable(*latest, time.Now().UTC(), modelMaintenanceInterval()) {
-		return ""
+	if hasUnsupportedLocalVersionClaim(provider, *latest) {
+		return "stored maintenance status lacks verifiable upstream version evidence for this local runtime", nil
 	}
-	if latest.BlocksExecution || strings.EqualFold(latest.Status, "failed") {
-		return latest.Reason
+	if !maintenanceRecordReusableForProvider(provider, *latest, time.Now().UTC(), modelMaintenanceInterval()) {
+		return "", nil
 	}
-	return ""
+	if maintenanceStatusBlocksExecution(latest.Status) || latest.BlocksExecution {
+		return latest.Reason, nil
+	}
+	return "", nil
 }
 
 func maintenanceStillFresh(checkedAt, now time.Time, interval time.Duration) bool {
@@ -366,47 +712,141 @@ func maintenanceStillFresh(checkedAt, now time.Time, interval time.Duration) boo
 	return now.Sub(checkedAt) < interval
 }
 
-// maintenanceRecordReusable treats a successful daily check as valid for the
-// configured interval. A failed check is deliberately retried sooner: keeping
-// a model blocked for a whole day after a temporary local download, network,
-// or provider outage would be neither safe nor operationally useful.
+// maintenanceRecordReusable treats verified local checks and provider catalog
+// probes as valid for the configured interval. A failed check is deliberately
+// retried sooner: keeping a model blocked for a whole day after a temporary
+// download, network, or runtime outage would be neither safe nor useful.
 func maintenanceRecordReusable(record models.LLMModelMaintenance, now time.Time, interval time.Duration) bool {
 	if !maintenanceStillFresh(record.CheckedAt, now, interval) {
 		return false
 	}
-	if !record.BlocksExecution && !strings.EqualFold(record.Status, "failed") {
+	status := strings.ToLower(strings.TrimSpace(record.Status))
+	if status == "operator_managed" {
+		// The runtime can confirm that a configured name is present, but HAI
+		// cannot verify that its artifact is current or refresh it. Keep that
+		// unsupported decision for one daily cycle while it remains blocked.
 		return true
 	}
-	return now.Sub(record.CheckedAt.UTC()) < modelMaintenanceFailureRetryInterval()
+	if status == "approval_required" {
+		// Policy fingerprints include paid-use and approval settings, so an
+		// approval change invalidates this result immediately without polling a
+		// provider every few minutes while approval is still absent.
+		return true
+	}
+	if record.BlocksExecution || maintenanceStatusBlocksExecution(status) {
+		return now.Sub(record.CheckedAt.UTC()) < modelMaintenanceFailureRetryInterval()
+	}
+	switch status {
+	case "current", "updated", "installed", "provider_managed":
+		return true
+	default:
+		// In particular, not_enforced is not evidence that a configured model
+		// passed a daily check. Unknown statuses must never authorize cache reuse.
+		return false
+	}
 }
 
-// verifyManagedModel confirms that a non-Ollama runtime reports the exact
-// configured model. HAI intentionally never guesses a download, image pull,
-// GGUF replacement, or cloud model-name upgrade. Cloud provider versions are
-// managed by the provider; a changed model ID is an explicit operator decision.
-func (s *Service) verifyManagedModel(provider Provider, model Model, fingerprint string, configurationChanged bool) ModelMaintenanceResult {
+// maintenanceRecordReusableForProvider prevents historical positive statuses
+// from authorizing non-Ollama local runtimes. The only local runtime with an
+// adapter that verifies artifact identity after an update is Ollama; an
+// OpenAI-compatible /models response proves reachability and a configured
+// name, not the model artifact's upstream version.
+func maintenanceRecordReusableForProvider(provider Provider, record models.LLMModelMaintenance, now time.Time, interval time.Duration) bool {
+	if hasUnsupportedLocalVersionClaim(provider, record) {
+		return false
+	}
+	return maintenanceRecordReusable(record, now, interval)
+}
+
+func hasUnsupportedLocalVersionClaim(provider Provider, record models.LLMModelMaintenance) bool {
+	if !provider.Local || provider.ID == "ollama" || provider.ID == miniSWEOllamaProviderID {
+		return false
+	}
+	status := strings.TrimSpace(record.Status)
+	return isVerifiedMaintenanceStatus(status) || strings.EqualFold(status, "provider_managed")
+}
+
+// verifyManagedModel checks non-pullable local runtimes and provider-managed
+// cloud models through their bounded, read-only provider probe.
+func (s *Service) verifyManagedModel(ctx context.Context, provider Provider, model Model, fingerprint string, configurationChanged bool) ModelMaintenanceResult {
 	result := ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, ConfigurationFingerprint: fingerprint, ConfigurationChanged: configurationChanged, CheckedAt: time.Now().UTC()}
-	probe := probeProvider(provider, s.policy)
+	probe := probeProviderWithContext(ctx, provider, s.policy)
+	if ctx.Err() != nil {
+		return cancelledMaintenanceResult(provider, model)
+	}
 	if !probe.Live {
+		if provider.Paid && probe.Status == "blocked" {
+			result.Status, result.Reason = paidMaintenanceProbeBlock(s.policy)
+			result.BlocksExecution = true
+			return s.recordMaintenanceWithContext(ctx, result)
+		}
 		result.Status = "failed"
 		result.Reason = "runtime availability check failed: " + probe.Reason
 		result.BlocksExecution = true
-		return s.recordMaintenance(result)
+		return s.recordMaintenanceWithContext(ctx, result)
 	}
 	if !containsReportedModel(probe.ReportedModelIDs, model.ID) {
 		result.Status = "failed"
 		result.Reason = "runtime did not report the exact configured model identifier during its daily check"
 		result.BlocksExecution = true
-		return s.recordMaintenance(result)
+		return s.recordMaintenanceWithContext(ctx, result)
 	}
-	if provider.Local {
-		result.Status = "current"
-		result.Reason = "runtime reported the exact configured model identifier; HAI did not alter the operator-managed installation"
+	result.Status = "operator_managed"
+	result.Reason = "local runtime reported the exact configured model identifier, but HAI cannot verify its upstream version or update this operator-managed installation; model use remains blocked"
+	result.BlocksExecution = true
+	return s.recordMaintenanceWithContext(ctx, result)
+}
+
+func (s *Service) recordProviderManagedModel(ctx context.Context, provider Provider, model Model, fingerprint string, configurationChanged bool) ModelMaintenanceResult {
+	result := ModelMaintenanceResult{
+		ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name,
+		ConfigurationFingerprint: fingerprint, ConfigurationChanged: configurationChanged, CheckedAt: time.Now().UTC(),
+	}
+	probe := probeProviderWithContext(ctx, provider, s.policy)
+	if ctx.Err() != nil {
+		return cancelledMaintenanceResult(provider, model)
+	}
+	if !probe.Live {
+		if provider.Paid && probe.Status == "blocked" {
+			result.Status, result.Reason = paidMaintenanceProbeBlock(s.policy)
+		} else {
+			result.Status = "failed"
+			result.Reason = "cloud provider availability check failed: " + probe.Reason
+		}
+		result.BlocksExecution = true
+		return s.recordMaintenanceWithContext(ctx, result)
+	}
+
+	result.Status = "provider_managed"
+	if provider.ID == "odysseus" {
+		result.Reason = "Odysseus health endpoint responded to a read-only check; this confirms workspace health only, not model availability or hosted model version"
 	} else {
-		result.Status = "provider_managed"
-		result.Reason = "provider reported the exact configured model identifier; provider-managed model versions are not silently replaced by HAI"
+		result.Reason = "cloud provider endpoint responded to a read-only model catalog check; HAI cannot verify or update the hosted model version"
+		if containsReportedModel(probe.ReportedModelIDs, model.ID) {
+			result.Reason = "cloud provider catalog reports the configured model ID; HAI cannot verify or update the hosted model version"
+		} else if len(probe.ReportedModelIDs) > 0 {
+			result.Reason += "; the returned catalog did not expose this ID, so HAI does not infer that it is unavailable"
+		} else {
+			result.Reason += "; the endpoint did not expose machine-readable model IDs"
+		}
 	}
-	return s.recordMaintenance(result)
+	return s.recordMaintenanceWithContext(ctx, result)
+}
+
+// paidMaintenanceProbeBlock keeps policy approval separate from temporary
+// budget/accounting blocks. Approval state is part of the maintenance
+// fingerprint and can remain actionable for a daily cycle; budget state can
+// change at the next UTC day boundary or when usage accounting recovers, so it
+// must use the short bounded failure retry instead of caching approval_required
+// for 24 hours.
+func paidMaintenanceProbeBlock(policy Policy) (status, reason string) {
+	if !policy.PaidCallsAllowed || policy.RequireApprovalBeforePaidUsage {
+		return "approval_required", "paid provider availability check is waiting for the configured approval gate"
+	}
+	if !paidProviderProbeBudgetAvailable(policy) {
+		return "failed", "paid provider availability check is blocked because the daily budget is unavailable or exhausted"
+	}
+	return "failed", "paid provider availability check was blocked by provider policy"
 }
 
 func containsReportedModel(reported []string, modelID string) bool {
@@ -474,6 +914,7 @@ func boundedMaintenanceEnv(name string, fallback, minimum, maximum int) int {
 }
 
 func (s *Service) refreshOllamaModel(
+	ctx context.Context,
 	provider Provider,
 	model Model,
 	fingerprint string,
@@ -482,7 +923,10 @@ func (s *Service) refreshOllamaModel(
 ) ModelMaintenanceResult {
 	result := ModelMaintenanceResult{ProviderID: provider.ID, ProviderName: provider.Name, ModelID: model.ID, ModelName: model.Name, ConfigurationFingerprint: fingerprint, ConfigurationChanged: configurationChanged, CheckedAt: time.Now().UTC()}
 	endpoint := strings.TrimRight(strings.TrimSpace(provider.EndpointURL), "/")
-	previousDigest, err := ollamaModelDigest(endpoint, model.ID)
+	previousDigest, err := ollamaModelDigest(ctx, endpoint, model.ID)
+	if ctx.Err() != nil {
+		return cancelledMaintenanceResult(provider, model)
+	}
 	missingBeforePull := errors.Is(err, errConfiguredOllamaModelNotInstalled)
 	digestUnavailableBeforePull := errors.Is(
 		err,
@@ -492,20 +936,31 @@ func (s *Service) refreshOllamaModel(
 		result.Status = "failed"
 		result.Reason = "could not inspect installed Ollama model before refresh: " + safety.RedactSecrets(err.Error())
 		result.BlocksExecution = true
-		return s.recordMaintenance(result)
+		return s.recordMaintenanceWithContext(ctx, result)
 	}
 	result.PreviousDigest = previousDigest
 	if !validMaintenanceModelID(model.ID) {
 		result.Status = "failed"
 		result.Reason = "configured Ollama model identifier is invalid for maintenance"
 		result.BlocksExecution = true
-		return s.recordMaintenance(result)
+		return s.recordMaintenanceWithContext(ctx, result)
 	}
 
 	payload, _ := json.Marshal(map[string]any{"name": model.ID, "stream": false})
+	// A model pull is a final effect. Scheduled maintenance therefore gets a
+	// fresh, server-derived task identity for each actual pull attempt instead
+	// of reusing the long-lived scheduler identity whose authority was already
+	// consumed by a prior successful run.
+	attemptContext := modelMaintenanceAttemptEffectContext(
+		effectContext,
+		provider.ID,
+		model.ID,
+		result.CheckedAt,
+		atomic.AddUint64(&s.maintenanceAttemptSequence, 1),
+	)
 	authorization, err := buildFinalEffectAuthorizationRequest(
 		EffectOperationModelPull,
-		effectContext,
+		attemptContext,
 		provider,
 		model,
 		endpoint,
@@ -518,22 +973,39 @@ func (s *Service) refreshOllamaModel(
 		result.Status = "failed"
 		result.Reason = "Ollama refresh authorization context is invalid: " + safety.RedactSecrets(err.Error())
 		result.BlocksExecution = true
-		return s.recordMaintenance(result)
+		return s.recordMaintenanceWithContext(ctx, result)
 	}
 
-	result.UpdateAttempted = true
-	if err := s.pullOllamaModel(endpoint, model.ID, payload, authorization); err != nil {
+	updateAttempted, err := s.pullOllamaModel(ctx, endpoint, model.ID, payload, authorization)
+	result.UpdateAttempted = updateAttempted
+	if err != nil {
+		if ctx.Err() != nil && !updateAttempted {
+			return cancelledMaintenanceResult(provider, model)
+		}
 		result.Status = "failed"
 		result.Reason = "Ollama daily refresh failed; this model will not be used until the next successful check: " + safety.RedactSecrets(err.Error())
 		result.BlocksExecution = true
-		return s.recordMaintenance(result)
+		if updateAttempted {
+			// A failed or cancelled pull can still have changed the local runtime.
+			// Inspect it with a short independent read so the audit records the
+			// observed artifact without treating it as verified or executable.
+			inspectionContext, cancel := context.WithTimeout(context.Background(), failedRefreshDigestInspectionTimeout)
+			currentDigest, inspectionErr := ollamaModelDigest(inspectionContext, endpoint, model.ID)
+			cancel()
+			if inspectionErr != nil {
+				result.Reason += "; post-failure installed-model inspection failed: " + safety.RedactSecrets(inspectionErr.Error())
+			} else {
+				result.CurrentDigest = currentDigest
+			}
+		}
+		return s.recordMaintenanceWithContext(ctx, result)
 	}
-	currentDigest, err := ollamaModelDigest(endpoint, model.ID)
+	currentDigest, err := ollamaModelDigest(ctx, endpoint, model.ID)
 	if err != nil {
 		result.Status = "failed"
 		result.Reason = "Ollama refresh completed but the installed model could not be verified: " + safety.RedactSecrets(err.Error())
 		result.BlocksExecution = true
-		return s.recordMaintenance(result)
+		return s.recordMaintenanceWithContext(ctx, result)
 	}
 	result.CurrentDigest = currentDigest
 	result.Status = "current"
@@ -547,15 +1019,77 @@ func (s *Service) refreshOllamaModel(
 		result.UpdateApplied = true
 		result.Reason = "Ollama refreshed the configured model tag before this model was used"
 	}
-	return s.recordMaintenance(result)
+	return s.recordMaintenanceWithContext(ctx, result)
+}
+
+func modelMaintenanceAttemptEffectContext(
+	base *EffectContext,
+	providerID string,
+	modelID string,
+	checkedAt time.Time,
+	sequence uint64,
+) *EffectContext {
+	if base == nil {
+		return nil
+	}
+	attempt := normalizeEffectContext(*base)
+	identityDigest := sha256.Sum256([]byte(strings.TrimSpace(providerID) + "\x00" + strings.TrimSpace(modelID)))
+	attempt.TaskID = "system:model-maintenance:" + checkedAt.UTC().Format("20060102T150405.000000000Z") + ":" + fmt.Sprintf("%x", identityDigest[:8]) + ":" + strconv.FormatUint(sequence, 10)
+	return &attempt
 }
 
 func (s *Service) recordMaintenance(result ModelMaintenanceResult) ModelMaintenanceResult {
+	return s.recordMaintenanceWithContext(context.Background(), result)
+}
+
+func (s *Service) recordMaintenanceWithContext(ctx context.Context, result ModelMaintenanceResult) ModelMaintenanceResult {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	persistenceContext := ctx
+	if ctx.Err() != nil && result.UpdateAttempted && strings.EqualFold(result.Status, "failed") {
+		// Persist an uncertain external update outcome with a short independent
+		// deadline: cancellation stops provider I/O, but must not erase the audit
+		// record needed to keep an unverified model blocked.
+		var cancel context.CancelFunc
+		persistenceContext, cancel = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+	}
+	if err := persistenceContext.Err(); err != nil {
+		result.Status = "cancelled"
+		result.Reason = "maintenance result was not persisted because the operation was cancelled"
+		result.BlocksExecution = true
+		return result
+	}
 	result.Reason = safety.RedactSecrets(result.Reason)
+	if maintenanceStatusBlocksExecution(result.Status) {
+		result.BlocksExecution = true
+	}
+	if isSuccessfulModelMaintenanceCheck(result) {
+		// CheckedAt represents completion of the provider/runtime check, not the
+		// time the attempt started. Set it immediately before persistence so a
+		// slow probe cannot make a fresh result look older than it is.
+		result.CheckedAt = time.Now().UTC()
+	}
 	if s.maintenanceHistory == nil {
 		return result
 	}
-	record, err := s.maintenanceHistory.RecordModelMaintenance(&models.LLMModelMaintenance{
+	if strings.EqualFold(result.Status, "failed") || result.BlocksExecution {
+		// Start the durable retry cooldown when the failed attempt is ready to be
+		// persisted, not when its provider I/O began.
+		result.CheckedAt = time.Now().UTC()
+	}
+	writer, ok := s.maintenanceHistory.(ContextModelMaintenanceWriter)
+	if !ok {
+		result.Status = "failed"
+		result.Reason = "model maintenance repository does not support cancellable writes"
+		result.BlocksExecution = true
+		nextCheck := time.Now().UTC().Add(modelMaintenanceFailureRetryInterval())
+		result.NextCheckDueAt = &nextCheck
+		s.rememberLocalModelMaintenanceFailure(persistenceContext, result.ProviderID, result.ModelID, result.ConfigurationFingerprint, nextCheck)
+		return result
+	}
+	record, err := writer.RecordModelMaintenanceWithContext(persistenceContext, &models.LLMModelMaintenance{
 		ProviderID: result.ProviderID, ProviderName: result.ProviderName, ModelID: result.ModelID, ModelName: result.ModelName,
 		Status: result.Status, Reason: result.Reason, PreviousDigest: result.PreviousDigest, CurrentDigest: result.CurrentDigest,
 		ConfigurationFingerprint: result.ConfigurationFingerprint, ConfigurationChanged: result.ConfigurationChanged,
@@ -565,16 +1099,40 @@ func (s *Service) recordMaintenance(result ModelMaintenanceResult) ModelMaintena
 		result.Status = "failed"
 		result.Reason = "could not persist daily model maintenance result"
 		result.BlocksExecution = true
+		nextCheck := time.Now().UTC().Add(modelMaintenanceFailureRetryInterval())
+		result.NextCheckDueAt = &nextCheck
+		s.rememberLocalModelMaintenanceFailure(persistenceContext, result.ProviderID, result.ModelID, result.ConfigurationFingerprint, nextCheck)
 		return result
 	}
-	return modelMaintenanceResult(*record)
+	result = modelMaintenanceResult(*record)
+	if isVerifiedMaintenanceStatus(result.Status) && !result.BlocksExecution {
+		s.clearVerifiedLocalModelMaintenanceCooldown(persistenceContext, result.ProviderID, result.ModelID, result.ConfigurationFingerprint)
+	}
+	if !isModelMaintenanceSchedulerRun(ctx) {
+		s.signalModelMaintenanceScheduler()
+	}
+	return result
+}
+
+func isSuccessfulModelMaintenanceCheck(result ModelMaintenanceResult) bool {
+	if result.BlocksExecution {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(result.Status)) {
+	case "current", "updated", "installed", "provider_managed":
+		return true
+	default:
+		return false
+	}
 }
 
 func modelMaintenanceResult(record models.LLMModelMaintenance) ModelMaintenanceResult {
-	result := ModelMaintenanceResult{ProviderID: record.ProviderID, ProviderName: record.ProviderName, ModelID: record.ModelID, ModelName: record.ModelName, Status: record.Status, Reason: record.Reason, PreviousDigest: record.PreviousDigest, CurrentDigest: record.CurrentDigest, ConfigurationFingerprint: record.ConfigurationFingerprint, ConfigurationChanged: record.ConfigurationChanged, UpdateAttempted: record.UpdateAttempted, UpdateApplied: record.UpdateApplied, BlocksExecution: record.BlocksExecution, CheckedAt: record.CheckedAt}
+	result := ModelMaintenanceResult{ProviderID: record.ProviderID, ProviderName: record.ProviderName, ModelID: record.ModelID, ModelName: record.ModelName, Status: record.Status, Reason: record.Reason, PreviousDigest: record.PreviousDigest, CurrentDigest: record.CurrentDigest, ConfigurationFingerprint: record.ConfigurationFingerprint, ConfigurationChanged: record.ConfigurationChanged, UpdateAttempted: record.UpdateAttempted, UpdateApplied: record.UpdateApplied, BlocksExecution: record.BlocksExecution || maintenanceStatusBlocksExecution(record.Status), CheckedAt: record.CheckedAt}
 	if !record.CheckedAt.IsZero() {
 		interval := modelMaintenanceInterval()
-		if record.BlocksExecution || strings.EqualFold(record.Status, "failed") {
+		if (record.BlocksExecution || strings.EqualFold(record.Status, "failed")) &&
+			!strings.EqualFold(record.Status, "operator_managed") &&
+			!strings.EqualFold(record.Status, "approval_required") {
 			interval = modelMaintenanceFailureRetryInterval()
 		}
 		next := record.CheckedAt.UTC().Add(interval)
@@ -583,12 +1141,13 @@ func modelMaintenanceResult(record models.LLMModelMaintenance) ModelMaintenanceR
 	return result
 }
 
-// modelMaintenanceFingerprint deliberately binds a result to the configuration
-// that was checked without persisting an endpoint or a secret. The normalized
-// endpoint strips harmless OpenAI compatibility suffixes while rejecting URLs
-// with credentials, paths, queries, or fragments. A changed endpoint, runtime
-// locality, payment mode, or model ID must force a new check immediately.
-func modelMaintenanceFingerprint(provider Provider, model Model) string {
+// modelMaintenanceFingerprint binds a result to its provider/model identity
+// without persisting an endpoint or a secret. The normalized endpoint strips
+// harmless OpenAI compatibility suffixes while rejecting URLs with credentials,
+// paths, queries, or fragments. Every provider probe binds to an opaque
+// credential digest and relevant readiness/payment gates so credential or
+// policy changes trigger an immediate recheck.
+func modelMaintenanceFingerprint(provider Provider, model Model, policy Policy) string {
 	endpoint, err := maintenanceEndpointKey(provider.EndpointURL)
 	if err != nil {
 		endpoint = "invalid-endpoint"
@@ -596,38 +1155,65 @@ func modelMaintenanceFingerprint(provider Provider, model Model) string {
 	adapter := "verify-only"
 	if provider.ID == "ollama" || provider.ID == miniSWEOllamaProviderID {
 		adapter = "ollama-pull"
+	} else if !provider.Local {
+		adapter = "provider-catalog-probe"
+	}
+	credentialDigest := sha256.Sum256([]byte(strings.TrimSpace(provider.APIKeyEnv) + "\x00" + strings.TrimSpace(os.Getenv(provider.APIKeyEnv))))
+	maintenanceConfiguration := []string{
+		"credential=" + fmt.Sprintf("%x", credentialDigest[:]),
+		"readiness=" + providerRuntimeReadiness(provider).status,
+		fmt.Sprintf("paid=%t", provider.Paid),
+		fmt.Sprintf("paid-calls-allowed=%t", policy.PaidCallsAllowed),
+		fmt.Sprintf("paid-budget-enabled=%t", policy.DailyPaidBudgetEUR > 0),
+		fmt.Sprintf("paid-approval-required=%t", policy.RequireApprovalBeforePaidUsage),
 	}
 	value := strings.Join([]string{
-		"v1",
+		"v5",
 		strings.TrimSpace(provider.ID),
 		strings.TrimSpace(model.ID),
 		endpoint,
 		adapter,
 		fmt.Sprintf("local=%t", provider.Local),
-		fmt.Sprintf("paid=%t", provider.Paid),
+		strings.Join(maintenanceConfiguration, "|"),
 	}, "|")
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(value)))
 }
 
-func ollamaModelDigest(endpoint, modelID string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), modelMaintenanceTimeout())
+func ollamaModelDigest(parent context.Context, endpoint, modelID string) (string, error) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, modelMaintenanceTimeout())
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/tags", nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("User-Agent", "018-HAI-Model-Maintenance/1.0")
-	response, err := noRedirectHTTPClient().Do(req)
+	response, err := localProviderHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer response.Body.Close()
 	if response.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(response.Body, 64*1024))
+		body, readErr := readLimitedResponseBody(response.Body, 64*1024)
+		if readErr != nil {
+			return "", fmt.Errorf("read Ollama tags response: %w", readErr)
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", fmt.Errorf("Ollama tags returned HTTP %d: %s", response.StatusCode, compactOutput(body, 180))
 	}
+	body, err := readLimitedResponseBody(response.Body, 256*1024)
+	if err != nil {
+		return "", fmt.Errorf("read Ollama tags response: %w", err)
+	}
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
 	var tags ollamaTagsResponse
-	if err := json.NewDecoder(io.LimitReader(response.Body, 256*1024)).Decode(&tags); err != nil {
+	if err := json.Unmarshal(body, &tags); err != nil {
 		return "", err
 	}
 	for _, installed := range tags.Models {
@@ -651,42 +1237,58 @@ func ollamaModelDigest(endpoint, modelID string) (string, error) {
 }
 
 func (s *Service) pullOllamaModel(
+	parent context.Context,
 	endpoint,
 	modelID string,
 	payload []byte,
 	authorization FinalEffectAuthorizationRequest,
-) error {
-	ctx, cancel := context.WithTimeout(context.Background(), modelMaintenanceTimeout())
+) (bool, error) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, modelMaintenanceTimeout())
 	defer cancel()
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/api/pull", bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "018-HAI-Model-Maintenance/1.0")
 	if err := s.authorizeFinalEffect(ctx, authorization); err != nil {
-		return err
+		return false, err
 	}
-	response, err := noRedirectHTTPClient().Do(req)
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	response, err := localProviderHTTPClient.Do(req)
 	if err != nil {
-		return err
+		return true, err
 	}
 	defer response.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(response.Body, 128*1024))
+	body, err := readLimitedResponseBody(response.Body, 128*1024)
+	if err != nil {
+		return true, fmt.Errorf("read Ollama pull response: %w", err)
+	}
+	if ctx.Err() != nil {
+		return true, ctx.Err()
+	}
 	if response.StatusCode >= 300 {
-		return fmt.Errorf("Ollama pull returned HTTP %d: %s", response.StatusCode, compactOutput(body, 240))
+		return true, fmt.Errorf("Ollama pull returned HTTP %d: %s", response.StatusCode, compactOutput(body, 240))
 	}
 	var pull ollamaPullResponse
 	if err := json.Unmarshal(body, &pull); err != nil {
-		return fmt.Errorf("decode Ollama pull response: %w", err)
+		return true, fmt.Errorf("decode Ollama pull response: %w", err)
 	}
 	if strings.TrimSpace(pull.Error) != "" {
-		return fmt.Errorf("Ollama pull failed: %s", safety.RedactSecrets(pull.Error))
+		return true, fmt.Errorf("Ollama pull failed: %s", safety.RedactSecrets(pull.Error))
 	}
-	if strings.TrimSpace(pull.Status) != "" && !strings.EqualFold(strings.TrimSpace(pull.Status), "success") {
-		return fmt.Errorf("Ollama pull finished with status %q", strings.TrimSpace(pull.Status))
+	if !strings.EqualFold(strings.TrimSpace(pull.Status), "success") {
+		return true, fmt.Errorf("Ollama pull did not confirm success (status %q)", strings.TrimSpace(pull.Status))
 	}
-	return nil
+	return true, nil
 }
 
 func validMaintenanceModelID(value string) bool {

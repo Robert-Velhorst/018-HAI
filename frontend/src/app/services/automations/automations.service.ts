@@ -8,14 +8,23 @@ import {
   IAutomationModel,
 } from "../../models/automation.model.interface";
 import { IAgentRuntimeStopResult } from "../../models/agent-runtime.model.interface";
-import {Observable} from "rxjs";
-import {HttpClient} from "@angular/common/http";
+import {defer, Observable, tap} from "rxjs";
+import { HttpClient } from "@angular/common/http";
+import { isConfirmedLaunchResult } from '../../control-room/launch-recovery';
+
+export class AutomationLaunchSafetyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AutomationLaunchSafetyError';
+  }
+}
 
 @Injectable({
   providedIn: 'root'
 })
 export class AutomationsService implements IAutomationsService {
   private apiUrl = '/api/v1/automation';
+  private readonly launchKeyPrefix = 'hai.automation-launch.idempotency.v1.';
 
   constructor(private http: HttpClient) {
   }
@@ -35,6 +44,7 @@ export class AutomationsService implements IAutomationsService {
     this.appendIfSet(formData, 'launchType', automation.launchType);
     this.appendIfSet(formData, 'launchTarget', automation.launchTarget);
     this.appendIfSet(formData, 'runtimeType', automation.runtimeType);
+    this.appendIfSet(formData, 'runtimeModel', automation.runtimeModel);
     this.appendIfSet(formData, 'serviceName', automation.serviceName);
     this.appendIfSet(formData, 'routePath', automation.routePath);
     this.appendIfSet(formData, 'publicUrl', automation.publicUrl);
@@ -78,7 +88,18 @@ export class AutomationsService implements IAutomationsService {
   }
 
   launchAutomation(id: string): Observable<IAutomationLaunchResult> {
-    return this.http.post<IAutomationLaunchResult>(`${this.apiUrl}/${id}/launch`, {});
+    return defer(() => {
+      const idempotencyKey = this.getOrCreateLaunchKey(id);
+      return this.http.post<IAutomationLaunchResult>(
+        `${this.apiUrl}/${id}/launch`,
+        {},
+        { headers: { 'Idempotency-Key': idempotencyKey } }
+      ).pipe(tap(result => {
+        if (isConfirmedLaunchResult(result, id)) {
+          this.clearLaunchKey(id, idempotencyKey);
+        }
+      }));
+    });
   }
 
   stopRuntimeTask(id: string): Observable<IAgentRuntimeStopResult> {
@@ -97,6 +118,60 @@ export class AutomationsService implements IAutomationsService {
     if (value !== undefined && value !== null && value !== '') {
       formData.append(key, String(value));
     }
+  }
+
+  private getOrCreateLaunchKey(automationId: string): string {
+    const storageKey = this.launchStorageKey(automationId);
+    try {
+      const existing = window.localStorage.getItem(storageKey);
+      if (existing) {
+        if (!this.isUuid(existing)) {
+          throw new AutomationLaunchSafetyError(
+            'A saved launch request key is invalid. HAI did not send another start request.'
+          );
+        }
+        return existing;
+      }
+
+      const generated = globalThis.crypto?.randomUUID?.();
+      if (!generated || !this.isUuid(generated)) {
+        throw new AutomationLaunchSafetyError(
+          'This browser cannot create a secure launch request key. HAI did not send the start request.'
+        );
+      }
+
+      window.localStorage.setItem(storageKey, generated);
+      if (window.localStorage.getItem(storageKey) !== generated) {
+        throw new AutomationLaunchSafetyError(
+          'This browser could not persist a launch request key. HAI did not send the start request.'
+        );
+      }
+      return generated;
+    } catch (error) {
+      if (error instanceof AutomationLaunchSafetyError) throw error;
+      throw new AutomationLaunchSafetyError(
+        'This browser could not safely save a launch request key. HAI did not send the start request.'
+      );
+    }
+  }
+
+  private clearLaunchKey(automationId: string, expectedKey: string): void {
+    try {
+      const storageKey = this.launchStorageKey(automationId);
+      if (window.localStorage.getItem(storageKey) === expectedKey) {
+        window.localStorage.removeItem(storageKey);
+      }
+    } catch {
+      // Keeping a completed key is safe: a later start will replay its result.
+    }
+  }
+
+  private launchStorageKey(automationId: string): string {
+    return `${this.launchKeyPrefix}${encodeURIComponent(automationId)}`;
+  }
+
+  private isUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
   }
 
 }

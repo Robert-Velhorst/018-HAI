@@ -71,7 +71,7 @@
     </button>
   </section>
 
-  <section class="governance-primary-grid">
+  <section class="governance-primary-grid governance-primary-grid--decision">
     <article class="governance-panel attention-panel">
       <header class="panel-heading">
         <div>
@@ -121,55 +121,23 @@
       </ng-template>
     </article>
 
-    <article class="governance-panel classifier-panel">
-      <header class="panel-heading">
-        <div>
-          <h2>Classify work before planning</h2>
-          <p>The backend selects effective owner packs; classification never grants execution authority.</p>
-        </div>
-        <span class="status-pill" *ngIf="catalogVersion">Catalog {{ catalogVersion }}</span>
-      </header>
-
-      <div class="classifier-body">
-        <label for="governance-classifier">Task or situation</label>
-        <textarea
-          id="governance-classifier"
-          nz-input
-          rows="4"
-          [(ngModel)]="classifierText"
-          placeholder="Example: Review a contract deadline and prepare an evidence-backed reply."
-        ></textarea>
-        <button nz-button nzType="primary" type="button" [nzLoading]="classifying" [disabled]="classifying" (click)="classify()">
-          <i nz-icon nzType="branches" nzTheme="outline"></i>
-          Classify
-        </button>
-      </div>
-
-      <div class="classification-result" *ngIf="classification">
-        <button
-          type="button"
-          *ngFor="let match of classification.matches.slice(0, 3)"
-          (click)="openMatchedDomain(match.packId)"
-          [disabled]="!domainById(match.packId)"
-        >
-          <span>
-            <strong>{{ label(match.packId) }}</strong>
-            <small>{{ match.reasons[0] || 'Matched by configured domain signals.' }}</small>
-          </span>
-          <span>{{ match.score }}</span>
-        </button>
-        <p *ngIf="!(classification.matches || []).length">No enabled pack matched this text. Suppressed matches remain available in Advanced view.</p>
-      </div>
-    </article>
   </section>
 
-  <section class="advisory-stack" aria-labelledby="advisory-engines-title">
-    <header class="advisory-heading">
-      <div>
-        <h2 id="advisory-engines-title">Advisory engines</h2>
-        <p>Source-backed guidance only. These surfaces cannot execute, send, apply, approve, or grant authority.</p>
-      </div>
-    </header>
+  <div class="advanced-stack">
+    <hai-progressive-section
+      [moduleId]="moduleId"
+      sectionId="advisory-engines"
+      title="Advisory engines and life context"
+      summary="Source-backed context, proactivity, outcomes, resilience, and team evidence. Advisory only."
+      [advancedOnly]="true"
+    >
+      <section class="advisory-stack" aria-labelledby="advisory-engines-title">
+        <header class="advisory-heading">
+          <div>
+            <h2 id="advisory-engines-title">Advisory engines</h2>
+            <p>Source-backed guidance only. These surfaces cannot execute, send, apply, approve, or grant authority.</p>
+          </div>
+        </header>
 
     <hai-progressive-section
       [moduleId]="moduleId"
@@ -905,9 +873,9 @@
         <div><strong>Resilience scope not configured</strong><span>Enter a real workspace ID to inspect its worker, lease, retry, circuit, and recovery counts.</span></div>
       </div>
     </hai-progressive-section>
-  </section>
+      </section>
+    </hai-progressive-section>
 
-  <div class="advanced-stack">
     <hai-progressive-section
       [moduleId]="moduleId"
       sectionId="execution-receipts"
@@ -1192,6 +1160,44 @@
       title="Domain-pack methods and preferences"
       summary="Effective safeguards, playbooks, provenance, and owner-specific additive settings."
     >
+      <section class="classifier-panel" aria-labelledby="governance-classifier-heading">
+        <header class="panel-heading">
+          <div>
+            <h2 id="governance-classifier-heading">Classify work before planning</h2>
+            <p>The backend selects effective owner packs; classification never grants execution authority.</p>
+          </div>
+          <span class="status-pill" *ngIf="catalogVersion">Catalog {{ catalogVersion }}</span>
+        </header>
+        <div class="classifier-body">
+          <label for="governance-classifier">Task or situation</label>
+          <textarea
+            id="governance-classifier"
+            nz-input
+            rows="4"
+            [(ngModel)]="classifierText"
+            placeholder="Example: Review a contract deadline and prepare an evidence-backed reply."
+          ></textarea>
+          <button nz-button nzType="primary" type="button" [nzLoading]="classifying" [disabled]="classifying" (click)="classify()">
+            <i nz-icon nzType="branches" nzTheme="outline"></i>
+            Classify
+          </button>
+        </div>
+        <div class="classification-result" *ngIf="classification">
+          <button
+            type="button"
+            *ngFor="let match of classification.matches.slice(0, 3)"
+            (click)="openMatchedDomain(match.packId)"
+            [disabled]="!domainById(match.packId)"
+          >
+            <span>
+              <strong>{{ label(match.packId) }}</strong>
+              <small>{{ match.reasons[0] || 'Matched by configured domain signals.' }}</small>
+            </span>
+            <span>{{ match.score }}</span>
+          </button>
+          <p *ngIf="!(classification.matches || []).length">No enabled pack matched this text. Suppressed matches remain available in Advanced view.</p>
+        </div>
+      </section>
       <div class="section-error" *ngIf="state.domains.error">{{ state.domains.error }}</div>
       <div class="section-loading" *ngIf="state.domains.loading" role="status"><i nz-icon nzType="loading"></i> Loading domain-pack catalog</div>
       <div class="catalog-meta" *ngIf="catalogVersion">

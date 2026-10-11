@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -37,7 +39,10 @@ func Setup() error {
 	if err != nil {
 		return err
 	}
-	MailConfig = newMailConfig()
+	MailConfig, err = newMailConfig()
+	if err != nil {
+		return err
+	}
 	LocalPreviewConfig, err = newLocalPreviewConfig()
 	if err != nil {
 		return err
@@ -63,12 +68,13 @@ func getEnvString(key string, defaultValue string) string {
 	return defaultValue
 }
 
-func getEnvBool(key string, defaultValue bool) bool {
+func getEnvBool(key string, defaultValue bool) (bool, error) {
 	if value, exists := os.LookupEnv(key); exists {
-		parsed, err := strconv.ParseBool(value)
-		if err == nil {
-			return parsed
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err != nil {
+			return false, fmt.Errorf("%s must be a valid boolean", key)
 		}
+		return parsed, nil
 	}
-	return defaultValue
+	return defaultValue, nil
 }

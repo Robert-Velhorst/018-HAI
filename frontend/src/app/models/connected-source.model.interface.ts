@@ -86,8 +86,16 @@ export interface ISourceSyncJob {
   itemsUpdated: number;
   itemsFailed: number;
   message?: string;
-  startedAt: string;
+  createdAt?: string;
+  startedAt?: string;
   completedAt?: string;
+}
+
+export interface ISourceManualSyncJob extends ISourceSyncJob {
+  createdAt: string;
+  attempt: number;
+  maxAttempts: number;
+  nextAttemptAt?: string;
 }
 
 export interface ISourceExtraction {
@@ -109,6 +117,55 @@ export interface ISourceExtraction {
   uncertain: boolean;
   archived: boolean;
   updatedAt: string;
+}
+
+export interface ISourceExtractionCorrectionPatch {
+  uncertain: false;
+}
+
+export interface ISourceExtractionCorrectionView {
+  id: string;
+  extractionId: string;
+  status: string;
+  phase: string;
+  intentPersisted: boolean;
+  patchSaved: boolean;
+  recoveryPending: boolean;
+  needsReview: boolean;
+  expectedRevision: string;
+  appliedRevision?: string | null;
+  attempts: number;
+  maxAttempts: number;
+  errorCode?: string;
+  message?: string;
+}
+
+export type SourceExtractionCorrectionUiState =
+  | 'submitting'
+  | 'queued'
+  | 'running'
+  | 'applied'
+  | 'conflict'
+  | 'failed_may_have_saved'
+  | 'failed_not_saved';
+
+export interface ISourceExtractionCorrectionRecovery {
+  version: 1;
+  extractionId: string;
+  correctionId?: string;
+  idempotencyKey: string;
+  ifMatchRevision: string;
+  state: SourceExtractionCorrectionUiState;
+  status?: string;
+  statusChecks: number;
+  pollFailures: number;
+  updatedAt: string;
+}
+
+export interface ISourceExtractionPage {
+  items: ISourceExtraction[];
+  totalCount: number;
+  limit: number;
 }
 
 export interface ISourceSyncResult {

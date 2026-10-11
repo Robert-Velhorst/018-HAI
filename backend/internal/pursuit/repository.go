@@ -29,6 +29,7 @@ type Repository interface {
 	FindActivityByIdentity(pursuitID uuid.UUID, eventType, sourceType, sourceID, sourceURI string) (*models.PursuitActivity, bool, error)
 	UpsertTaskAttempt(attempt *models.PursuitTaskAttempt) (*models.PursuitTaskAttempt, error)
 	FindTaskAttempts(pursuitID uuid.UUID, limit int) ([]models.PursuitTaskAttempt, error)
+	FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error)
 	FindLinkedWorkflows(ids []uuid.UUID) ([]models.WorkflowItem, error)
 	FindLinkedChecklistItems(workflowIDs []uuid.UUID) ([]models.WorkflowChecklistItem, error)
 	FindLinkedOpenLoops(workflowIDs []uuid.UUID) ([]models.WorkflowOpenLoop, error)
@@ -411,6 +412,17 @@ func (r *GormRepository) FindTaskAttempts(pursuitID uuid.UUID, limit int) ([]mod
 		return nil, err
 	}
 	return attempts, nil
+}
+
+// Completion authority must not depend on the recent-record display limit.
+func (r *GormRepository) FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error) {
+	var attempts []models.PursuitTaskAttempt
+	err := r.DB.Where("pursuit_id = ?", pursuitID).
+		Where("(LOWER(BTRIM(COALESCE(status, ''), ?)) LIKE ? OR LOWER(BTRIM(COALESCE(status, ''), ?)) IN ? OR LOWER(BTRIM(COALESCE(verification_status, ''), ?)) IN ? OR BTRIM(COALESCE(blocked_reason, ''), ?) <> '' OR (LOWER(BTRIM(COALESCE(mode, ''), ?)) = 'run' AND LOWER(BTRIM(COALESCE(status, ''), ?)) IN ? AND LOWER(BTRIM(COALESCE(verification_status, ''), ?)) NOT IN ?))",
+			taskAttemptWhitespace, "%review%", taskAttemptWhitespace, []string{"blocked", "uncertain", "indeterminate", "failed"}, taskAttemptWhitespace, taskAttemptReviewVerificationStatuses,
+			taskAttemptWhitespace, taskAttemptWhitespace, taskAttemptWhitespace, []string{"validated", "completed"}, taskAttemptWhitespace, taskAttemptAcceptedVerificationStatuses).
+		Order("updated_at DESC, task_plan_id ASC").Find(&attempts).Error
+	return attempts, err
 }
 
 func (r *GormRepository) FindLinkedWorkflows(ids []uuid.UUID) ([]models.WorkflowItem, error) {

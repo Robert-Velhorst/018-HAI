@@ -102,6 +102,15 @@ func TestBrokerBoundsOutput(t *testing.T) {
 	}
 }
 
+func TestLocalSafeWorkerRejectsOversizedMarker(t *testing.T) {
+	ws := t.TempDir()
+	w := NewAuthorizedLocalSafeWorker(ws, newTestAuthorizationVerifier())
+	oversized := strings.Repeat("A", maxSafeArtifactBytes+1)
+	if _, err := w.Run(context.Background(), authorizedInput(t, ws, "oversized.txt", oversized)); err == nil {
+		t.Fatal("safe worker must reject an artifact marker above its byte limit")
+	}
+}
+
 func TestLocalSafeWorkerRejectsOverwriteAndPreservesExistingFile(t *testing.T) {
 	ws := t.TempDir()
 	target := filepath.Join(ws, "existing.txt")

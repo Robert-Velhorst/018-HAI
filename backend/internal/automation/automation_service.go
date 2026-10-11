@@ -13,6 +13,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"os/exec"
@@ -36,6 +37,17 @@ import (
 
 const (
 	defaultAPILaunchAllowedHosts = "localhost,127.0.0.1,::1,backend,frontend,gateway,generic-auto,idp"
+	maxScriptBytes               = 16 << 20
+	maxScriptTimeoutSeconds      = 3600
+	scriptWaitDelay              = 250 * time.Millisecond
+	maxAutomationOutputCapture   = 1 << 20
+	omittedAutomationOutput      = "[output omitted: capture limit exceeded before safe redaction]"
+)
+
+var (
+	ErrLaunchIdempotencyKeyRequired = errors.New("an idempotency key is required for effectful automation launches")
+	ErrLaunchIdempotencyKeyInvalid  = errors.New("automation launch idempotency key must be 1 to 256 visible ASCII characters")
+	ErrLaunchIdempotencyConflict    = errors.New("automation launch idempotency key was already used for a different action")
 )
 
 type HealthResult struct {
@@ -58,21 +70,22 @@ type HealthSummary struct {
 }
 
 type LaunchResult struct {
-	AutomationID      uuid.UUID                           `json:"automationId"`
-	LaunchEventID     uuid.UUID                           `json:"launchEventId,omitempty"`
-	RuntimeTaskID     string                              `json:"runtimeTaskId,omitempty"`
-	RuntimeType       string                              `json:"runtimeType,omitempty"`
-	LaunchType        string                              `json:"launchType"`
-	Target            string                              `json:"target"`
-	Status            string                              `json:"status"`
-	Message           string                              `json:"message,omitempty"`
-	Output            string                              `json:"output,omitempty"`
-	RuntimeRouteTrace *models.AutomationRuntimeRouteTrace `json:"runtimeRouteTrace,omitempty"`
-	ExitCode          int                                 `json:"exitCode"`
-	DurationMs        int64                               `json:"durationMs"`
-	RequiresApproval  bool                                `json:"requiresApproval"`
-	AuditEvents       []string                            `json:"auditEvents"`
-	LaunchedAt        time.Time                           `json:"launchedAt"`
+	AutomationID       uuid.UUID                           `json:"automationId"`
+	LaunchEventID      uuid.UUID                           `json:"launchEventId,omitempty"`
+	RuntimeTaskID      string                              `json:"runtimeTaskId,omitempty"`
+	ExecutionReference string                              `json:"executionReference,omitempty"`
+	RuntimeType        string                              `json:"runtimeType,omitempty"`
+	LaunchType         string                              `json:"launchType"`
+	Target             string                              `json:"target"`
+	Status             string                              `json:"status"`
+	Message            string                              `json:"message,omitempty"`
+	Output             string                              `json:"output,omitempty"`
+	RuntimeRouteTrace  *models.AutomationRuntimeRouteTrace `json:"runtimeRouteTrace,omitempty"`
+	ExitCode           int                                 `json:"exitCode"`
+	DurationMs         int64                               `json:"durationMs"`
+	RequiresApproval   bool                                `json:"requiresApproval"`
+	AuditEvents        []string                            `json:"auditEvents"`
+	LaunchedAt         time.Time                           `json:"launchedAt"`
 }
 
 type DiagnosticResult struct {
@@ -94,24 +107,26 @@ type DiagnosticResult struct {
 }
 
 type launchExecution struct {
-	Status            string
-	Message           string
-	Output            string
-	RuntimeRouteTrace *models.AutomationRuntimeRouteTrace
-	ExitCode          int
-	DurationMs        int64
-	RequiresApproval  bool
-	RuntimeTaskID     string
-	AuditEvents       []string
+	Status             string
+	Message            string
+	Output             string
+	RuntimeRouteTrace  *models.AutomationRuntimeRouteTrace
+	ExitCode           int
+	DurationMs         int64
+	RequiresApproval   bool
+	RuntimeTaskID      string
+	ExecutionReference string
+	AuditEvents        []string
 }
 
 type TaskLaunchRequest struct {
-	OwnerIdentity string                  `json:"-"`
-	ActorIdentity string                  `json:"-"`
-	ActorKind     executionauth.ActorKind `json:"-"`
-	TaskID        string                  `json:"-"`
-	Task          string                  `json:"task,omitempty"`
-	ProjectKey    string                  `json:"projectKey,omitempty"`
+	IdempotencyKey string                  `json:"idempotencyKey,omitempty"`
+	OwnerIdentity  string                  `json:"-"`
+	ActorIdentity  string                  `json:"-"`
+	ActorKind      executionauth.ActorKind `json:"-"`
+	TaskID         string                  `json:"-"`
+	Task           string                  `json:"task,omitempty"`
+	ProjectKey     string                  `json:"projectKey,omitempty"`
 	// MandateID is a reference only. The execution-authorization service
 	// resolves it by verified owner and evaluates its exact bounded scope.
 	MandateID             string                           `json:"mandateId,omitempty"`
@@ -120,6 +135,7 @@ type TaskLaunchRequest struct {
 	Governance            executionauth.GovernanceEvidence `json:"-"`
 	ExecutionContext      context.Context                  `json:"-"`
 	ApprovalProof         *ApprovalProof                   `json:"-"`
+	launchActionDigest    string
 }
 
 type ExecutionAuthorizer interface {
@@ -145,7 +161,9 @@ type Service interface {
 	PrepareWorkflowApprovalBinding(id uuid.UUID, request TaskLaunchRequest) (string, error)
 	StopRuntimeTask(id uuid.UUID) (*agentruntime.StopResult, error)
 	StopRuntimeTaskForOwner(id uuid.UUID, ownerIdentity string) (*agentruntime.StopResult, error)
+	StopRuntimeTaskForOwnerContext(context.Context, uuid.UUID, string) (*agentruntime.StopResult, error)
 	Diagnostics(id uuid.UUID) (*DiagnosticResult, error)
+	DiagnosticsForOwner(id uuid.UUID, ownerIdentity string) (*DiagnosticResult, error)
 }
 
 type service struct {
@@ -277,6 +295,9 @@ func (s *service) FindByID(id uuid.UUID) (*models.Automation, error) {
 }
 
 func (s *service) Create(automation *models.Automation) (*models.Automation, error) {
+	if err := rejectMaskedAutomationConfiguration(automation); err != nil {
+		return nil, err
+	}
 	automation.ID = uuid.UUID{} // reset ID
 
 	if automation.ImageFile != nil {
@@ -324,6 +345,12 @@ func (s *service) Update(automation *models.Automation) (*models.Automation, err
 	if err != nil {
 		return nil, err
 	}
+	if currentAutomation == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+	if err := preserveAutomationCredentials(automation, currentAutomation); err != nil {
+		return nil, err
+	}
 
 	automation.Position = currentAutomation.Position
 	automation.LastCheckedAt = currentAutomation.LastCheckedAt
@@ -369,6 +396,9 @@ func (s *service) Update(automation *models.Automation) (*models.Automation, err
 	}
 
 	automationUpdated, err := s.repo.Update(automation)
+	if err != nil {
+		return nil, err
+	}
 	automationUpdated.OldUrlPath = oldUrlPath
 
 	event := &events.AutomationEvent{
@@ -469,13 +499,23 @@ func (s *service) RunHealthCheck(id uuid.UUID) (*HealthResult, error) {
 	checkType := strings.ToLower(automation.HealthCheckType)
 	switch checkType {
 	case "tcp":
-		target = fmt.Sprintf("%s:%d", automation.Host, automation.Port)
-		if reason := networkTargetBlockedReason(automation.Host, "AUTOMATION_HEALTH_ALLOWED_HOSTS", defaultAPILaunchAllowedHosts, "AUTOMATION_HEALTH_ALLOW_LINK_LOCAL"); reason != "" {
+		host := strings.Trim(automation.Host, "[]")
+		target = automationHostPort(host, automation.Port)
+		if reason := networkTargetBlockedReason(host, "AUTOMATION_HEALTH_ALLOWED_HOSTS", defaultAPILaunchAllowedHosts, "AUTOMATION_HEALTH_ALLOW_LINK_LOCAL"); reason != "" {
 			status = classifyFailure(automation.ConsecutiveFailures + 1)
 			failureReason = reason
 			break
 		}
-		conn, errDial := net.DialTimeout("tcp", target, 5*time.Second)
+		checkContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		addresses, errResolve := resolveAutomationTargetAddresses(checkContext, host, envEnabled("AUTOMATION_HEALTH_ALLOW_LINK_LOCAL"), net.DefaultResolver.LookupIP)
+		if errResolve != nil {
+			cancel()
+			status = classifyFailure(automation.ConsecutiveFailures + 1)
+			failureReason = "health-check destination could not be safely resolved"
+			break
+		}
+		conn, errDial := dialAutomationTarget(checkContext, "tcp", target, host, addresses)
+		cancel()
 		if errDial != nil {
 			status = classifyFailure(automation.ConsecutiveFailures + 1)
 			failureReason = errDial.Error()
@@ -488,7 +528,7 @@ func (s *service) RunHealthCheck(id uuid.UUID) (*HealthResult, error) {
 	default:
 		target = automation.HealthCheckURL
 		if target == "" {
-			target = fmt.Sprintf("http://%s:%d", automation.Host, automation.Port)
+			target = "http://" + automationHostPort(strings.Trim(automation.Host, "[]"), automation.Port)
 		}
 		parsed, errParse := url.Parse(target)
 		if errParse != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
@@ -501,11 +541,27 @@ func (s *service) RunHealthCheck(id uuid.UUID) (*HealthResult, error) {
 			failureReason = reason
 			break
 		}
-		client := noRedirectHTTPClient(10 * time.Second)
-		resp, errGet := client.Get(target)
+		checkContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		addresses, errResolve := resolveAutomationTargetAddresses(checkContext, parsed.Hostname(), envEnabled("AUTOMATION_HEALTH_ALLOW_LINK_LOCAL"), net.DefaultResolver.LookupIP)
+		if errResolve != nil {
+			cancel()
+			status = classifyFailure(automation.ConsecutiveFailures + 1)
+			failureReason = "health-check destination could not be safely resolved"
+			break
+		}
+		client := noRedirectHTTPClientForTarget(10*time.Second, parsed.Hostname(), addresses)
+		req, errRequest := http.NewRequestWithContext(checkContext, http.MethodGet, target, nil)
+		if errRequest != nil {
+			cancel()
+			status = classifyFailure(automation.ConsecutiveFailures + 1)
+			failureReason = "health-check request could not be created"
+			break
+		}
+		resp, errGet := client.Do(req)
+		cancel()
 		if errGet != nil {
 			status = classifyFailure(automation.ConsecutiveFailures + 1)
-			failureReason = errGet.Error()
+			failureReason = redactAutomationRequestError(errGet)
 		} else {
 			defer resp.Body.Close()
 			expected := automation.ExpectedHTTPStatus
@@ -519,6 +575,7 @@ func (s *service) RunHealthCheck(id uuid.UUID) (*HealthResult, error) {
 		}
 	}
 
+	failureReason = safety.RedactSecrets(failureReason)
 	latency := time.Since(started).Milliseconds()
 	checkedAt := time.Now().UTC()
 	automation.LastCheckedAt = &checkedAt
@@ -546,7 +603,7 @@ func (s *service) RunHealthCheck(id uuid.UUID) (*HealthResult, error) {
 		AutomationID:        automation.ID,
 		Status:              status,
 		CheckType:           checkType,
-		Target:              target,
+		Target:              safety.RedactURL(target),
 		LatencyMs:           latency,
 		FailureReason:       failureReason,
 		ConsecutiveFailures: automation.ConsecutiveFailures,
@@ -632,16 +689,29 @@ func (s *service) ActionApprovalRequired(id uuid.UUID) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	s.applyAutomationDefaults(automation)
-	scope, required := approvalScopeForAutomation(automation)
-	if scope == "" {
-		return false, fmt.Errorf("automation action does not have a supported approval scope")
+	return s.actionApprovalRequiredForConfiguration(id, automation)
+}
+
+func (s *service) InspectReviewConfiguration(id uuid.UUID) (*ReviewConfigurationSnapshot, error) {
+	if s.repo == nil {
+		return nil, fmt.Errorf("automation repository is unavailable")
 	}
-	return required, nil
+	stored, err := s.repo.FindByID(id)
+	if err != nil {
+		return nil, err
+	}
+	return s.reviewConfigurationSnapshot(id, stored)
 }
 
 func (s *service) RecordApprovalDecision(id uuid.UUID, request TaskApprovalDecisionRequest) error {
-	if s.repo == nil {
+	return s.recordApprovalDecisionWithRepository(context.Background(), s.repo, id, request)
+}
+
+func (s *service) recordApprovalDecisionWithRepository(ctx context.Context, repo Repository, id uuid.UUID, request TaskApprovalDecisionRequest) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if repo == nil {
 		return fmt.Errorf("automation repository is unavailable")
 	}
 	kind, _, err := approvalSourceKind(request.ApprovalSourceID)
@@ -651,16 +721,39 @@ func (s *service) RecordApprovalDecision(id uuid.UUID, request TaskApprovalDecis
 	if kind != "task-review" {
 		return fmt.Errorf("only a verified task-review decision can be registered")
 	}
-	automation, err := s.repo.FindByID(id)
+	if err := ValidateTaskApprovalDecisionRequest(request, time.Now().UTC()); err != nil {
+		return err
+	}
+	if strings.TrimSpace(request.ApprovalBindingDigest) == "" {
+		return fmt.Errorf("task review request binding digest is required")
+	}
+	if err := ValidateReviewConfigurationSnapshot(request.ReviewConfiguration, id); err != nil {
+		return err
+	}
+	reviewed := *request.ReviewConfiguration
+	stored, err := repo.FindByID(id)
+	if ctx.Err() != nil {
+		return errors.Join(err, ctx.Err())
+	}
 	if err != nil {
 		return err
 	}
+	if stored == nil || stored.ID != id {
+		return fmt.Errorf("automation configuration target does not match")
+	}
+	configuration := *stored
+	automation := &configuration
 	s.applyAutomationDefaults(automation)
 	scope, required := approvalScopeForAutomation(automation)
 	if !required {
 		return fmt.Errorf("automation action does not have a supported approval scope")
 	}
-	approvedAt := request.ApprovedAt.UTC()
+	// Derive the comparison and registered action from the same policy read.
+	policySnapshot := approvalPolicySnapshot()
+	if reviewed.Scope != scope || reviewed.ConfigurationDigest != automationActionDigestWithPolicy(automation, TaskLaunchRequest{}, policySnapshot) {
+		return fmt.Errorf("automation configuration or execution policy changed since task review; create a new review")
+	}
+	approvedAt := request.ApprovedAt.UTC().Truncate(time.Microsecond)
 	if request.ApprovedAt.IsZero() {
 		return fmt.Errorf("approval decision time is required")
 	}
@@ -676,24 +769,55 @@ func (s *service) RecordApprovalDecision(id uuid.UUID, request TaskApprovalDecis
 		DecisionType:  kind,
 		OwnerIdentity: launchRequest.OwnerIdentity,
 		AutomationID:  automation.ID,
-		ActionDigest:  automationActionDigest(automation, launchRequest),
+		ActionDigest:  automationActionDigestWithPolicy(automation, launchRequest, policySnapshot),
 		Scope:         scope,
 		ApprovedAt:    approvedAt,
 	}
 	if err := validateApprovalDecisionFreshness(record, time.Now().UTC()); err != nil {
 		return err
 	}
-	return s.repo.SaveApprovalDecision(record)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := repo.SaveApprovalDecision(record); err != nil {
+		return errors.Join(ErrApprovalRegistrationUnconfirmed, err, ctx.Err())
+	}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(ErrApprovalRegistrationUnconfirmed, err)
+	}
+	acknowledged, err := repo.FindApprovalDecision(record.SourceID)
+	if err := errors.Join(err, ctx.Err()); err != nil {
+		return errors.Join(ErrApprovalRegistrationUnconfirmed, err)
+	}
+	if !sameApprovalDecision(acknowledged, record) {
+		return errors.Join(ErrApprovalRegistrationUnconfirmed, ErrApprovalDecisionMissing)
+	}
+	return nil
 }
 
 func (s *service) IssueApprovalProof(id uuid.UUID, request TaskApprovalProofRequest) (*ApprovalProof, error) {
-	if s.repo == nil {
+	return s.issueApprovalProofWithRepository(context.Background(), s.repo, id, request, false)
+}
+
+func (s *service) issueApprovalProofWithRepository(ctx context.Context, repo Repository, id uuid.UUID, request TaskApprovalProofRequest, owned bool) (*ApprovalProof, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if repo == nil {
 		return nil, fmt.Errorf("automation repository is unavailable")
 	}
-	automation, err := s.repo.FindByID(id)
+	automation, err := repo.FindByID(id)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, errors.Join(err, contextErr)
+	}
 	if err != nil {
 		return nil, err
 	}
+	if automation == nil || id == uuid.Nil || automation.ID != id {
+		return nil, fmt.Errorf("automation proof configuration target does not match")
+	}
+	configuration := *automation
+	automation = &configuration
 	s.applyAutomationDefaults(automation)
 	scope, required := approvalScopeForAutomation(automation)
 	if !required {
@@ -710,7 +834,13 @@ func (s *service) IssueApprovalProof(id uuid.UUID, request TaskApprovalProofRequ
 	if err != nil {
 		return nil, err
 	}
-	record, err := s.repo.FindApprovalDecision(launchRequest.ApprovalSourceID)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	record, err := repo.FindApprovalDecision(launchRequest.ApprovalSourceID)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, errors.Join(err, contextErr)
+	}
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrApprovalDecisionMissing
@@ -752,14 +882,34 @@ func (s *service) IssueApprovalProof(id uuid.UUID, request TaskApprovalProofRequ
 	if proofTTL > remainingDecisionLifetime {
 		proofTTL = remainingDecisionLifetime
 	}
-	return s.approvalProofs.Issue(ApprovalProofIssueRequest{
+	issueRequest := ApprovalProofIssueRequest{
 		OwnerIdentity:    launchRequest.OwnerIdentity,
 		AutomationID:     automation.ID,
 		ActionDigest:     expectedDigest,
 		Scope:            scope,
 		ApprovalSourceID: launchRequest.ApprovalSourceID,
 		TTL:              proofTTL,
-	})
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if s.approvalProofs == nil {
+		return nil, fmt.Errorf("approval proof signer is unavailable")
+	}
+	var proof *ApprovalProof
+	if owned {
+		signer, ok := s.approvalProofs.(ContextualApprovalProofSigner)
+		if !ok {
+			return nil, ErrApprovalIssuanceContextUnavailable
+		}
+		proof, err = signer.IssueContext(ctx, issueRequest)
+	} else {
+		proof, err = s.approvalProofs.Issue(issueRequest)
+	}
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, errors.Join(err, contextErr)
+	}
+	return proof, err
 }
 
 func (s *service) StopRuntimeTask(id uuid.UUID) (*agentruntime.StopResult, error) {
@@ -771,15 +921,53 @@ func (s *service) StopRuntimeTaskForOwner(id uuid.UUID, ownerIdentity string) (*
 }
 
 func (s *service) stopRuntimeTask(id uuid.UUID, ownerIdentity string) (*agentruntime.StopResult, error) {
-	automation, err := s.repo.FindByID(id)
+	return s.stopRuntimeTaskContext(context.Background(), id, ownerIdentity, false)
+}
+
+func (s *service) StopRuntimeTaskForOwnerContext(ctx context.Context, id uuid.UUID, ownerIdentity string) (*agentruntime.StopResult, error) {
+	if ctx == nil || strings.TrimSpace(ownerIdentity) == "" {
+		return nil, ErrLaunchConfigurationContextUnavailable
+	}
+	return s.stopRuntimeTaskContext(ctx, id, ownerIdentity, true)
+}
+
+func (s *service) stopRuntimeTaskContext(ctx context.Context, id uuid.UUID, ownerIdentity string, owned bool) (*agentruntime.StopResult, error) {
+	automation, err := s.launchConfiguration(ctx, id, owned)
 	if err != nil {
 		return nil, err
 	}
+	configuration := *automation
+	automation = &configuration
 	s.applyAutomationDefaults(automation)
 	started := time.Now().UTC()
+	repo, admissionCtx, cancelAdmission, err := s.launchAdmissionRepository(ctx, owned)
+	if err != nil {
+		return nil, err
+	}
+	defer cancelAdmission()
+	if err := admissionCtx.Err(); err != nil {
+		return nil, err
+	}
 	runtimeID := strings.ToLower(strings.TrimSpace(automation.RuntimeType))
-	taskID := automation.ID.String()
-	if automation.LaunchType != "agent_runtime" || (runtimeID != "hermes" && runtimeID != "odysseus" && runtimeID != "openclaw") {
+	taskID := ""
+	persist := func(result *agentruntime.StopResult, intentIDs ...uuid.UUID) (uuid.UUID, error) {
+		outcomeRepo, outcomeCtx, cancel, err := s.launchOutcomeRepository(ctx, owned)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		defer cancel()
+		if err := outcomeCtx.Err(); err != nil {
+			return uuid.Nil, err
+		}
+		id, err := s.persistRuntimeStopEventUsing(outcomeRepo, automation, result, started, ownerIdentity, intentIDs...)
+		return id, errors.Join(err, outcomeCtx.Err())
+	}
+	replay := func(intent *models.AutomationLaunchEvent) (*agentruntime.StopResult, error) {
+		result, err := s.replayRuntimeStopIntentUsing(repo, automation, strings.TrimSpace(ownerIdentity), runtimeID, taskID, intent)
+		return result, errors.Join(err, admissionCtx.Err())
+	}
+	executionReference := ""
+	if automation.LaunchType != "agent_runtime" || !isSupportedAgentRuntime(runtimeID) {
 		result := &agentruntime.StopResult{
 			RuntimeID: runtimeID,
 			TaskID:    taskID,
@@ -790,8 +978,89 @@ func (s *service) stopRuntimeTask(id uuid.UUID, ownerIdentity string) (*agentrun
 				"launch type is not agent_runtime or runtime type is unsupported",
 			},
 		}
-		_, _ = s.persistRuntimeStopEvent(automation, result, started, ownerIdentity)
+		_, _ = persist(result)
 		return result, nil
+	}
+	owner := strings.TrimSpace(ownerIdentity)
+	if owner == "" {
+		result := &agentruntime.StopResult{RuntimeID: runtimeID, Status: "blocked", Message: "authenticated owner identity is required to resolve a runtime task", AuditEvents: []string{"ownerless stop rejected before launch lookup"}}
+		_, _ = persist(result)
+		return result, nil
+	}
+	launch, lookupErr := repo.FindOwnerActiveRuntimeLaunch(automation.ID, runtimeID, owner)
+	if err := admissionCtx.Err(); err != nil {
+		return nil, errors.Join(err, lookupErr)
+	}
+	outcomeLookupFailed := lookupErr != nil
+	pendingBinding := lookupErr != nil || launch == nil
+	if lookupErr != nil {
+		// A pending intent is independently usable only when it supplies the
+		// exact owner/task binding and has no matching task outcome.
+		launch, lookupErr = repo.FindPendingRuntimeLaunchIntent(automation.ID, owner)
+	} else if launch == nil {
+		launch, lookupErr = repo.FindPendingRuntimeLaunchIntent(automation.ID, owner)
+	}
+	if err := admissionCtx.Err(); err != nil {
+		return nil, errors.Join(err, lookupErr)
+	}
+	if lookupErr != nil {
+		result := &agentruntime.StopResult{RuntimeID: runtimeID, Status: "indeterminate", Message: "owner-bound pending launch lookup failed; no task identity was substituted and no cancellation was attempted", AuditEvents: []string{"pending launch intent lookup failed; this is not evidence that no task is running"}}
+		_, _ = persist(result)
+		return result, nil
+	}
+	if launch == nil {
+		if outcomeLookupFailed {
+			result := &agentruntime.StopResult{RuntimeID: runtimeID, Status: "indeterminate", Message: "owner-bound runtime launch lookup failed; no task identity was substituted and absence of a task was not inferred", AuditEvents: []string{"runtime outcome lookup failed; pending-intent lookup found no exact binding, so cancellation was not attempted"}}
+			_, _ = persist(result)
+			return result, nil
+		}
+		result := &agentruntime.StopResult{RuntimeID: runtimeID, Status: "blocked", Message: "no owner-bound active launch or pending intent was found; no runtime task identity was substituted", AuditEvents: []string{"owner-bound launch and intent lookups completed without a cancellable task"}}
+		_, _ = persist(result)
+		return result, nil
+	}
+	if launch.AutomationID != automation.ID || strings.TrimSpace(launch.OwnerIdentity) != owner || strings.ToLower(strings.TrimSpace(launch.RuntimeType)) != runtimeID || strings.TrimSpace(launch.RuntimeTaskID) == "" {
+		result := &agentruntime.StopResult{RuntimeID: runtimeID, Status: "indeterminate", Message: "stored runtime launch identity did not match the authenticated owner; no cancellation was attempted", AuditEvents: []string{"runtime task owner, automation, runtime, or task binding mismatch"}}
+		_, _ = persist(result)
+		return result, nil
+	}
+	expectedKind := "agent_runtime"
+	if pendingBinding {
+		expectedKind = "agent_runtime_intent"
+	}
+	if launch.ID == uuid.Nil || launch.LaunchType != expectedKind || (pendingBinding && launch.Status != "pending") {
+		result := &agentruntime.StopResult{RuntimeID: runtimeID, Status: "indeterminate", Message: "stored runtime record kind or identity did not match the lookup; no cancellation was attempted", AuditEvents: []string{"runtime stop rejected an invalid record identity, kind, or pending state"}}
+		_, _ = persist(result)
+		return result, nil
+	}
+	if launch.LaunchType == "agent_runtime" && !activeRuntimeLaunchStatus(launch.Status, runtimeID) {
+		result := &agentruntime.StopResult{RuntimeID: runtimeID, Status: "blocked", Message: "the owner-bound runtime launch is not in a cancellable state", AuditEvents: []string{"terminal runtime launch was not cancelled"}}
+		_, _ = persist(result)
+		return result, nil
+	}
+	taskID = strings.TrimSpace(launch.RuntimeTaskID)
+	executionReference = strings.TrimSpace(launch.ExecutionReference)
+	stopRequestKey := runtimeStopRequestEventKey(automation.ID, owner, taskID)
+	existingStopIntent, lookupErr := repo.FindLaunchIntentByEventKey(stopRequestKey)
+	if err := admissionCtx.Err(); err != nil {
+		return nil, errors.Join(err, lookupErr)
+	}
+	if lookupErr != nil {
+		return nil, fmt.Errorf("resolve runtime stop idempotency key: %w", lookupErr)
+	}
+	if existingStopIntent != nil {
+		return replay(existingStopIntent)
+	}
+	// Older releases did not assign a stable request key to stop intents. Never
+	// dispatch again while one of those historical attempts is unresolved.
+	unresolvedStopIntent, lookupErr := repo.FindUnresolvedRuntimeStopIntent(automation.ID, owner, taskID)
+	if err := admissionCtx.Err(); err != nil {
+		return nil, errors.Join(err, lookupErr)
+	}
+	if lookupErr != nil {
+		return nil, fmt.Errorf("resolve unresolved runtime stop intent: %w", lookupErr)
+	}
+	if unresolvedStopIntent != nil {
+		return replay(unresolvedStopIntent)
 	}
 	if s.runtimeRegistry == nil {
 		result := &agentruntime.StopResult{
@@ -801,30 +1070,60 @@ func (s *service) stopRuntimeTask(id uuid.UUID, ownerIdentity string) (*agentrun
 			Message:     "agent runtime registry is not configured",
 			AuditEvents: []string{"agent runtime registry unavailable"},
 		}
-		_, _ = s.persistRuntimeStopEvent(automation, result, started, ownerIdentity)
+		_, _ = persist(result)
 		return result, nil
 	}
+	if runtimeID == "openclaw" && !s.runtimeRegistry.OpenClawGatewayDelegationReady() {
+		// Older CLI intents could be stamped with an ocgw reference even though
+		// no Gateway run existed. CLI cancellation is bound to the persisted task
+		// ID and local registry context; never route that legacy value to Gateway.
+		executionReference = ""
+	}
 	intent := &models.AutomationLaunchEvent{
-		ID:            uuid.New(),
-		AutomationID:  automation.ID,
-		OwnerIdentity: strings.TrimSpace(ownerIdentity),
-		RuntimeType:   runtimeID,
-		LaunchType:    "agent_runtime_stop_intent",
-		RuntimeTaskID: taskID,
-		Target:        redactLaunchTarget(automation.LaunchTarget),
-		Status:        "pending",
-		Message:       "immutable runtime stop intent recorded",
+		ID:                 uuid.New(),
+		AutomationID:       automation.ID,
+		OwnerIdentity:      strings.TrimSpace(ownerIdentity),
+		RuntimeType:        runtimeID,
+		LaunchType:         "agent_runtime_stop_intent",
+		EventKey:           stopRequestKey,
+		RuntimeTaskID:      taskID,
+		ExecutionReference: executionReference,
+		Target:             redactLaunchTarget(automation.LaunchTarget),
+		Status:             "pending",
+		Message:            "immutable runtime stop intent recorded",
 		AuditEvents: []string{
 			"owner-bound runtime stop intent persisted before cancellation",
 		},
 		StartedAt:   started,
 		CompletedAt: started,
 	}
-	if errIntent := s.repo.SaveLaunchIntent(intent); errIntent != nil {
+	errIntent := repo.SaveLaunchIntent(intent)
+	if contextErr := admissionCtx.Err(); contextErr != nil {
+		return &agentruntime.StopResult{RuntimeID: runtimeID, TaskID: taskID, ExecutionReference: executionReference, Status: "indeterminate", EvidenceURI: "automation-launch://" + intent.ID.String(), Message: "stop intent storage acknowledgement is uncertain; no cancellation was dispatched; inspect this candidate before retrying"}, errors.Join(contextErr, errIntent)
+	}
+	if errIntent != nil {
+		existing, lookupErr := repo.FindLaunchIntentByEventKey(stopRequestKey)
+		if err := admissionCtx.Err(); err != nil {
+			return nil, errors.Join(err, lookupErr, errIntent)
+		}
+		if lookupErr == nil && existing != nil {
+			return replay(existing)
+		}
+		if lookupErr != nil {
+			return nil, fmt.Errorf("persist runtime stop intent: %w; idempotency lookup failed: %v", errIntent, lookupErr)
+		}
 		return nil, fmt.Errorf("persist runtime stop intent: %w", errIntent)
 	}
-	result := s.runtimeRegistry.StopTask(context.Background(), runtimeID, taskID, ownerIdentity)
-	if _, errEvent := s.persistRuntimeStopEvent(automation, &result, started, ownerIdentity); errEvent != nil {
+	if owned {
+		cancelAdmission()
+	}
+	result := s.runtimeRegistry.StopTaskWithReference(ctx, runtimeID, taskID, ownerIdentity, executionReference)
+	result.Message = safety.RedactSecrets(result.Message)
+	result.AuditEvents = redactAuditEvents(result.AuditEvents)
+	if outcomeLookupFailed {
+		result.AuditEvents = append(result.AuditEvents, "active outcome lookup failed; cancellation used only the separately verified pending owner/task intent")
+	}
+	if _, errEvent := persist(&result, intent.ID); errEvent != nil {
 		result.Status = "indeterminate"
 		result.Message = "runtime stop outcome audit could not be persisted; inspect the immutable stop intent before retrying"
 		result.EvidenceURI = "automation-launch://" + intent.ID.String()
@@ -837,7 +1136,76 @@ func (s *service) stopRuntimeTask(id uuid.UUID, ownerIdentity string) (*agentrun
 	return &result, nil
 }
 
-func (s *service) persistRuntimeStopEvent(automation *models.Automation, result *agentruntime.StopResult, started time.Time, ownerIdentity string) (uuid.UUID, error) {
+func (s *service) replayRuntimeStopIntent(automation *models.Automation, owner, runtimeID, taskID string, intent *models.AutomationLaunchEvent) (*agentruntime.StopResult, error) {
+	return s.replayRuntimeStopIntentUsing(s.repo, automation, owner, runtimeID, taskID, intent)
+}
+
+func (s *service) replayRuntimeStopIntentUsing(repo Repository, automation *models.Automation, owner, runtimeID, taskID string, intent *models.AutomationLaunchEvent) (*agentruntime.StopResult, error) {
+	if automation == nil || intent == nil || intent.ID == uuid.Nil ||
+		intent.AutomationID != automation.ID ||
+		strings.TrimSpace(intent.OwnerIdentity) != strings.TrimSpace(owner) ||
+		strings.ToLower(strings.TrimSpace(intent.RuntimeType)) != strings.ToLower(strings.TrimSpace(runtimeID)) ||
+		strings.TrimSpace(intent.LaunchType) != "agent_runtime_stop_intent" ||
+		strings.TrimSpace(intent.RuntimeTaskID) != strings.TrimSpace(taskID) {
+		return nil, fmt.Errorf("persisted runtime stop intent identity mismatch")
+	}
+	outcome, err := repo.FindLaunchOutcomeByIntentID(intent.ID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve persisted runtime stop outcome: %w", err)
+	}
+	if outcome == nil {
+		return &agentruntime.StopResult{
+			RuntimeID: runtimeID, TaskID: taskID, ExecutionReference: strings.TrimSpace(intent.ExecutionReference),
+			Status: "indeterminate", Message: "a prior stop intent has no durable outcome; no cancellation was repeated and the attempt requires reconciliation",
+			EvidenceURI: "automation-launch://" + intent.ID.String(),
+			AuditEvents: []string{"matching persisted runtime stop intent found without a durable outcome", "retry stopped before dispatch to prevent duplicate cancellation"},
+		}, nil
+	}
+	if outcome.ID == uuid.Nil || outcome.AutomationID != automation.ID ||
+		strings.TrimSpace(outcome.OwnerIdentity) != strings.TrimSpace(owner) ||
+		strings.ToLower(strings.TrimSpace(outcome.RuntimeType)) != strings.ToLower(strings.TrimSpace(runtimeID)) ||
+		strings.TrimSpace(outcome.LaunchType) != "agent_runtime_stop" ||
+		strings.TrimSpace(outcome.RuntimeTaskID) != strings.TrimSpace(taskID) ||
+		strings.TrimSpace(outcome.ExecutionReference) != strings.TrimSpace(intent.ExecutionReference) ||
+		strings.TrimSpace(outcome.EventKey) != runtimeStopOutcomeEventKey(intent.ID) {
+		return nil, fmt.Errorf("persisted runtime stop outcome identity mismatch")
+	}
+	return &agentruntime.StopResult{
+		RuntimeID: outcome.RuntimeType, TaskID: outcome.RuntimeTaskID, ExecutionReference: outcome.ExecutionReference,
+		Status: outcome.Status, Message: safety.RedactSecrets(outcome.Message),
+		EvidenceURI: "automation-launch://" + outcome.ID.String(), AuditEvents: redactAuditEvents(outcome.AuditEvents),
+	}, nil
+}
+
+func activeRuntimeLaunchStatus(status, runtimeID string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "queued", "running":
+		return true
+	case "indeterminate", "needs_review":
+		return strings.EqualFold(strings.TrimSpace(runtimeID), "openclaw")
+	default:
+		return false
+	}
+}
+
+func activeRuntimeLaunchEventStatus(event *models.AutomationLaunchEvent, runtimeID string) bool {
+	if event == nil || !activeRuntimeLaunchStatus(event.Status, runtimeID) {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(runtimeID), "openclaw") {
+		switch strings.ToLower(strings.TrimSpace(event.Status)) {
+		case "indeterminate", "needs_review":
+			return strings.TrimSpace(event.ExecutionReference) != ""
+		}
+	}
+	return true
+}
+
+func (s *service) persistRuntimeStopEvent(automation *models.Automation, result *agentruntime.StopResult, started time.Time, ownerIdentity string, stopIntentIDs ...uuid.UUID) (uuid.UUID, error) {
+	return s.persistRuntimeStopEventUsing(s.repo, automation, result, started, ownerIdentity, stopIntentIDs...)
+}
+
+func (s *service) persistRuntimeStopEventUsing(repo Repository, automation *models.Automation, result *agentruntime.StopResult, started time.Time, ownerIdentity string, stopIntentIDs ...uuid.UUID) (uuid.UUID, error) {
 	if automation == nil || result == nil {
 		return uuid.Nil, fmt.Errorf("runtime stop audit requires automation and result")
 	}
@@ -845,28 +1213,32 @@ func (s *service) persistRuntimeStopEvent(automation *models.Automation, result 
 	exitCode := 0
 	if result.Status == "blocked" || result.Status == "failed" {
 		exitCode = -1
-		automation.LastFailureReason = safety.RedactSecrets(result.Message)
-		if _, errUpdate := s.repo.Update(automation); errUpdate != nil {
-			log.Printf("Failed to update automation %s after runtime stop: %v", automation.ID, errUpdate)
+		if errUpdate := repo.UpdateRuntimeStopFailure(automation.ID, started, safety.RedactSecrets(result.Message)); errUpdate != nil {
+			log.Printf("Runtime stop failure summary update was not confirmed for automation %s", automation.ID)
+			audit = append(audit, "runtime stop failure summary update was not confirmed; use the persisted stop event")
 		}
 	}
 	event := &models.AutomationLaunchEvent{
-		ID:            uuid.New(),
-		AutomationID:  automation.ID,
-		OwnerIdentity: strings.TrimSpace(ownerIdentity),
-		RuntimeType:   automation.RuntimeType,
-		LaunchType:    "agent_runtime_stop",
-		RuntimeTaskID: result.TaskID,
-		Target:        redactLaunchTarget(automation.LaunchTarget),
-		Status:        result.Status,
-		Message:       safety.RedactSecrets(result.Message),
-		AuditEvents:   redactAuditEvents(audit),
-		ExitCode:      exitCode,
-		DurationMs:    time.Since(started).Milliseconds(),
-		StartedAt:     started,
-		CompletedAt:   time.Now().UTC(),
+		ID:                 uuid.New(),
+		AutomationID:       automation.ID,
+		OwnerIdentity:      strings.TrimSpace(ownerIdentity),
+		RuntimeType:        automation.RuntimeType,
+		LaunchType:         "agent_runtime_stop",
+		RuntimeTaskID:      result.TaskID,
+		ExecutionReference: result.ExecutionReference,
+		Target:             redactLaunchTarget(automation.LaunchTarget),
+		Status:             result.Status,
+		Message:            safety.RedactSecrets(result.Message),
+		AuditEvents:        redactAuditEvents(audit),
+		ExitCode:           exitCode,
+		DurationMs:         time.Since(started).Milliseconds(),
+		StartedAt:          started,
+		CompletedAt:        time.Now().UTC(),
 	}
-	if errEvent := s.repo.SaveLaunchEvent(event); errEvent != nil {
+	if len(stopIntentIDs) > 0 && stopIntentIDs[0] != uuid.Nil {
+		event.EventKey = runtimeStopOutcomeEventKey(stopIntentIDs[0])
+	}
+	if errEvent := repo.SaveLaunchEvent(event); errEvent != nil {
 		log.Printf("Failed to persist runtime stop event for automation %s: %v", automation.ID, errEvent)
 		return uuid.Nil, errEvent
 	}
@@ -875,103 +1247,408 @@ func (s *service) persistRuntimeStopEvent(automation *models.Automation, result 
 }
 
 func (s *service) launch(id uuid.UUID, request TaskLaunchRequest) (*LaunchResult, error) {
-	automation, err := s.repo.FindByID(id)
+	owned := request.ExecutionContext != nil
+	emergencyStopCtx, cancelEmergencyStop := safety.WithEmergencyStop(request.ExecutionContext)
+	defer cancelEmergencyStop()
+	request.ExecutionContext = emergencyStopCtx
+
+	automation, err := s.launchConfiguration(request.ExecutionContext, id, owned)
 	if err != nil {
 		return nil, err
 	}
+	if automation == nil {
+		return nil, fmt.Errorf("automation configuration is unavailable")
+	}
+	configuration := *automation
+	automation = &configuration
 	s.applyAutomationDefaults(automation)
+	request = captureLaunchActionBinding(automation, request)
+	admissionRepo, admissionCtx, cancelAdmission, err := s.launchAdmissionRepository(request.ExecutionContext, owned)
+	if err != nil {
+		return nil, err
+	}
+	defer cancelAdmission()
+	idempotencyEventKey := ""
+	if automationLaunchRequiresIdempotency(automation) {
+		request.IdempotencyKey, err = normalizeLaunchIdempotencyKey(request.IdempotencyKey)
+		if err != nil {
+			return nil, err
+		}
+		idempotencyEventKey = automationLaunchRequestEventKey(automation.ID, request.OwnerIdentity, request.IdempotencyKey)
+		if owned {
+			if err := request.ExecutionContext.Err(); err != nil {
+				return nil, err
+			}
+		}
+		existing, lookupErr := admissionRepo.FindLaunchIntentByEventKey(idempotencyEventKey)
+		if owned {
+			if contextErr := admissionCtx.Err(); contextErr != nil {
+				return nil, errors.Join(lookupErr, contextErr)
+			}
+		}
+		if lookupErr != nil {
+			return nil, fmt.Errorf("resolve automation launch idempotency key: %w", lookupErr)
+		}
+		if existing != nil {
+			return s.replayLaunchIntentWithRepository(admissionCtx, admissionRepo, automation, request, existing)
+		}
+	}
 	launchedAt := time.Now().UTC()
+	intentID := uuid.New()
+	launchType := strings.ToLower(strings.TrimSpace(automation.LaunchType))
+	runtimeTaskID := ""
+	if launchType == "agent_runtime" {
+		runtimeTaskID = automationLaunchRuntimeTaskID(automation, intentID)
+	}
+	executionReference := openClawGatewayExecutionReference(s.runtimeRegistry, automation, intentID)
 	intent := &models.AutomationLaunchEvent{
-		ID:            uuid.New(),
-		AutomationID:  automation.ID,
-		OwnerIdentity: strings.TrimSpace(request.OwnerIdentity),
-		RuntimeType:   automation.RuntimeType,
-		LaunchType:    strings.ToLower(strings.TrimSpace(automation.LaunchType)) + "_intent",
-		RuntimeTaskID: automationRuntimeTaskID(automation),
-		Target:        redactLaunchTarget(automation.LaunchTarget),
-		Status:        "pending",
-		Message:       "immutable pre-execution intent recorded",
+		ID:                 intentID,
+		AutomationID:       automation.ID,
+		OwnerIdentity:      strings.TrimSpace(request.OwnerIdentity),
+		RuntimeType:        automation.RuntimeType,
+		LaunchType:         strings.ToLower(strings.TrimSpace(automation.LaunchType)) + "_intent",
+		EventKey:           idempotencyEventKey,
+		RuntimeTaskID:      runtimeTaskID,
+		ExecutionReference: executionReference,
+		Target:             redactLaunchTarget(automation.LaunchTarget),
+		Status:             "pending",
+		Message:            "immutable pre-execution intent recorded",
 		AuditEvents: redactAuditEvents([]string{
 			"controlled launch intent persisted before approval consumption or external access",
-			"exact action digest " + automationActionDigest(automation, request),
+			"exact action digest " + request.launchActionDigest,
 		}),
 		StartedAt:   launchedAt,
 		CompletedAt: launchedAt,
 	}
-	if errIntent := s.repo.SaveLaunchIntent(intent); errIntent != nil {
+	if owned {
+		if err := admissionCtx.Err(); err != nil {
+			return nil, err
+		}
+	}
+	if errIntent := admissionRepo.SaveLaunchIntent(intent); errIntent != nil {
+		if owned {
+			return unconfirmedLaunchIntent(automation, intent), errors.Join(ErrLaunchIntentStorageUnconfirmed, errIntent, admissionCtx.Err())
+		}
+		if idempotencyEventKey != "" {
+			existing, lookupErr := s.repo.FindLaunchIntentByEventKey(idempotencyEventKey)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("persist pre-execution launch intent: %w; idempotency lookup failed: %v", errIntent, lookupErr)
+			}
+			if existing != nil {
+				return s.replayLaunchIntent(automation, request, existing)
+			}
+		}
 		return nil, fmt.Errorf("persist pre-execution launch intent: %w", errIntent)
 	}
+	if owned {
+		if err := admissionCtx.Err(); err != nil {
+			return unconfirmedLaunchIntent(automation, intent), errors.Join(ErrLaunchIntentStorageUnconfirmed, err)
+		}
+	}
+	cancelAdmission()
 	execution := s.executeLaunch(automation, request, launchedAt, intent.ID)
 	execution.AuditEvents = append(
 		[]string{"immutable pre-execution intent " + intent.ID.String() + " persisted"},
 		execution.AuditEvents...,
 	)
-	automation.LastLaunchAt = &launchedAt
-	if execution.Status == "failed" || execution.Status == "blocked" {
-		automation.LastFailureReason = safety.RedactSecrets(execution.Message)
-	}
 	event := &models.AutomationLaunchEvent{
-		ID:            uuid.New(),
-		AutomationID:  automation.ID,
-		OwnerIdentity: strings.TrimSpace(request.OwnerIdentity),
-		RuntimeType:   automation.RuntimeType,
-		LaunchType:    automation.LaunchType,
-		RuntimeTaskID: execution.RuntimeTaskID,
-		Target:        redactLaunchTarget(automation.LaunchTarget),
-		Status:        execution.Status,
-		Message:       safety.RedactSecrets(execution.Message),
-		Output:        safety.RedactSecrets(execution.Output),
-		AuditEvents:   redactAuditEvents(execution.AuditEvents),
+		ID:                 uuid.New(),
+		AutomationID:       automation.ID,
+		OwnerIdentity:      strings.TrimSpace(request.OwnerIdentity),
+		RuntimeType:        automation.RuntimeType,
+		LaunchType:         automation.LaunchType,
+		EventKey:           automationLaunchOutcomeEventKey(intent.ID),
+		RuntimeTaskID:      execution.RuntimeTaskID,
+		ExecutionReference: execution.ExecutionReference,
+		Target:             redactLaunchTarget(automation.LaunchTarget),
+		Status:             execution.Status,
+		Message:            safety.RedactSecrets(execution.Message),
+		Output:             safety.RedactSecrets(execution.Output),
+		AuditEvents:        redactAuditEvents(execution.AuditEvents),
 		RuntimeRouteTrace: redactRuntimeRouteTrace(
 			execution.RuntimeRouteTrace,
 		),
-		ExitCode:    execution.ExitCode,
-		DurationMs:  execution.DurationMs,
-		StartedAt:   launchedAt,
-		CompletedAt: time.Now().UTC(),
+		ExitCode:         execution.ExitCode,
+		DurationMs:       execution.DurationMs,
+		RequiresApproval: execution.RequiresApproval,
+		StartedAt:        launchedAt,
+		CompletedAt:      time.Now().UTC(),
 	}
-	if errEvent := s.repo.SaveLaunchEvent(event); errEvent != nil {
-		log.Printf("Failed to persist launch event for automation %s: %v", automation.ID, errEvent)
-		return &LaunchResult{
-			AutomationID:     automation.ID,
-			LaunchEventID:    intent.ID,
-			RuntimeTaskID:    execution.RuntimeTaskID,
-			RuntimeType:      automation.RuntimeType,
-			LaunchType:       automation.LaunchType,
-			Target:           redactLaunchTarget(automation.LaunchTarget),
-			Status:           "indeterminate",
-			Message:          "execution outcome audit could not be persisted; inspect the immutable pre-execution intent before retrying",
-			ExitCode:         -1,
-			DurationMs:       execution.DurationMs,
-			RequiresApproval: execution.RequiresApproval,
+	outcomeRepo, outcomeCtx, cancelOutcome, errEvent := s.launchOutcomeRepository(request.ExecutionContext, owned)
+	defer cancelOutcome()
+	if errEvent == nil && owned {
+		errEvent = outcomeCtx.Err()
+	}
+	if errEvent == nil {
+		errEvent = outcomeRepo.SaveLaunchEvent(event)
+		if owned && outcomeCtx.Err() != nil {
+			errEvent = errors.Join(errEvent, outcomeCtx.Err())
+		}
+	}
+	if errEvent != nil {
+		log.Printf("Launch outcome storage requires reconciliation for automation %s", automation.ID)
+		partial := &LaunchResult{
+			AutomationID:       automation.ID,
+			LaunchEventID:      intent.ID,
+			RuntimeTaskID:      execution.RuntimeTaskID,
+			ExecutionReference: execution.ExecutionReference,
+			RuntimeType:        automation.RuntimeType,
+			LaunchType:         automation.LaunchType,
+			Target:             redactLaunchTarget(automation.LaunchTarget),
+			Status:             "indeterminate",
+			Message:            "execution outcome audit storage was not confirmed; reconcile the immutable pre-execution intent before another attempt",
+			Output:             safety.RedactSecrets(execution.Output),
+			RuntimeRouteTrace:  redactRuntimeRouteTrace(execution.RuntimeRouteTrace),
+			ExitCode:           -1,
+			DurationMs:         execution.DurationMs,
+			RequiresApproval:   execution.RequiresApproval,
 			AuditEvents: redactAuditEvents(append(
 				execution.AuditEvents,
-				"execution outcome audit persistence failed",
+				"execution outcome audit storage acknowledgement unconfirmed",
 				"completion was not claimed",
 			)),
 			LaunchedAt: launchedAt,
+		}
+		if owned {
+			return partial, errors.Join(ErrLaunchOutcomeStorageUnconfirmed, errEvent)
+		}
+		return partial, nil
+	}
+	result := &LaunchResult{
+		AutomationID:       automation.ID,
+		LaunchEventID:      event.ID,
+		RuntimeTaskID:      execution.RuntimeTaskID,
+		ExecutionReference: execution.ExecutionReference,
+		RuntimeType:        automation.RuntimeType,
+		LaunchType:         automation.LaunchType,
+		Target:             redactLaunchTarget(automation.LaunchTarget),
+		Status:             execution.Status,
+		Message:            safety.RedactSecrets(execution.Message),
+		Output:             safety.RedactSecrets(execution.Output),
+		RuntimeRouteTrace:  redactRuntimeRouteTrace(execution.RuntimeRouteTrace),
+		ExitCode:           execution.ExitCode,
+		DurationMs:         execution.DurationMs,
+		RequiresApproval:   execution.RequiresApproval,
+		AuditEvents:        redactAuditEvents(execution.AuditEvents),
+		LaunchedAt:         launchedAt,
+	}
+	if owned && outcomeCtx.Err() != nil {
+		return result, outcomeCtx.Err()
+	}
+	if errUpdate := outcomeRepo.UpdateLaunchState(automation.ID, launchedAt, launchFailureReason(execution.Status, execution.Message)); errUpdate != nil {
+		updateErr := fmt.Errorf("update automation launch summary after persisted outcome: %w", errUpdate)
+		if owned && outcomeCtx.Err() != nil {
+			return result, errors.Join(updateErr, outcomeCtx.Err())
+		}
+		return result, updateErr
+	}
+	if owned && outcomeCtx.Err() != nil {
+		return result, outcomeCtx.Err()
+	}
+	return result, nil
+}
+
+func automationLaunchRequiresIdempotency(automation *models.Automation) bool {
+	if automation == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(automation.LaunchType)) {
+	case "script", "docker_service", "agent_runtime":
+		return true
+	case "api":
+		// HTTP verbs do not reliably describe endpoint semantics; a configured
+		// GET or HEAD target can still mutate remote state.
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeLaunchIdempotencyKey(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", ErrLaunchIdempotencyKeyRequired
+	}
+	if len(value) > 256 {
+		return "", ErrLaunchIdempotencyKeyInvalid
+	}
+	for _, character := range value {
+		if character < 0x21 || character > 0x7e {
+			return "", ErrLaunchIdempotencyKeyInvalid
+		}
+	}
+	return value, nil
+}
+
+func automationLaunchRequestEventKey(automationID uuid.UUID, owner, idempotencyKey string) string {
+	identity := automationID.String() + "\x00" + strings.TrimSpace(owner) + "\x00" + idempotencyKey
+	digest := sha256.Sum256([]byte(identity))
+	return "automation-launch-request:v1:" + hex.EncodeToString(digest[:])
+}
+
+func automationLaunchOutcomeEventKey(intentID uuid.UUID) string {
+	if intentID == uuid.Nil {
+		return ""
+	}
+	return "automation-launch-outcome:v1:" + intentID.String()
+}
+
+func (s *service) replayLaunchIntent(automation *models.Automation, request TaskLaunchRequest, intent *models.AutomationLaunchEvent) (*LaunchResult, error) {
+	return s.replayLaunchIntentWithRepository(context.Background(), s.repo, automation, request, intent)
+}
+
+func (s *service) replayLaunchIntentWithRepository(ctx context.Context, repo Repository, automation *models.Automation, request TaskLaunchRequest, intent *models.AutomationLaunchEvent) (*LaunchResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	launchType := strings.ToLower(strings.TrimSpace(automation.LaunchType))
+	if intent == nil || intent.ID == uuid.Nil || intent.AutomationID != automation.ID ||
+		strings.TrimSpace(intent.OwnerIdentity) != strings.TrimSpace(request.OwnerIdentity) ||
+		strings.ToLower(strings.TrimSpace(intent.LaunchType)) != launchType+"_intent" ||
+		launchIntentActionDigest(intent) != automationActionDigest(automation, request) {
+		return nil, ErrLaunchIdempotencyConflict
+	}
+
+	outcome, err := repo.FindLaunchOutcomeByIntentID(intent.ID)
+	contextErr := ctx.Err()
+	if err != nil {
+		readErr := fmt.Errorf("resolve persisted automation launch outcome: %w", err)
+		if contextErr != nil {
+			return nil, errors.Join(readErr, contextErr)
+		}
+		return nil, readErr
+	}
+	if outcome == nil {
+		if contextErr != nil {
+			return nil, contextErr
+		}
+		return &LaunchResult{
+			AutomationID:       automation.ID,
+			LaunchEventID:      intent.ID,
+			RuntimeTaskID:      intent.RuntimeTaskID,
+			ExecutionReference: intent.ExecutionReference,
+			RuntimeType:        automation.RuntimeType,
+			LaunchType:         automation.LaunchType,
+			Target:             redactLaunchTarget(automation.LaunchTarget),
+			Status:             "indeterminate",
+			Message:            "a prior launch intent has no durable outcome; no external action was replayed, and the existing attempt requires reconciliation",
+			ExitCode:           -1,
+			RequiresApproval:   false,
+			AuditEvents:        []string{"matching persisted launch intent found without a durable outcome", "retry stopped before dispatch to prevent duplicate external effects"},
+			LaunchedAt:         intent.StartedAt,
 		}, nil
 	}
-	if _, errUpdate := s.repo.Update(automation); errUpdate != nil {
-		return nil, errUpdate
+	if outcome.AutomationID != automation.ID ||
+		strings.TrimSpace(outcome.OwnerIdentity) != strings.TrimSpace(request.OwnerIdentity) ||
+		!launchOutcomeMatchesIntent(automation, intent, outcome, launchType) {
+		if contextErr != nil {
+			return nil, errors.Join(ErrLaunchIdempotencyConflict, contextErr)
+		}
+		return nil, ErrLaunchIdempotencyConflict
 	}
-	return &LaunchResult{
-		AutomationID:      automation.ID,
-		LaunchEventID:     event.ID,
-		RuntimeTaskID:     execution.RuntimeTaskID,
-		RuntimeType:       automation.RuntimeType,
-		LaunchType:        automation.LaunchType,
-		Target:            redactLaunchTarget(automation.LaunchTarget),
-		Status:            execution.Status,
-		Message:           safety.RedactSecrets(execution.Message),
-		Output:            safety.RedactSecrets(execution.Output),
-		RuntimeRouteTrace: redactRuntimeRouteTrace(execution.RuntimeRouteTrace),
-		ExitCode:          execution.ExitCode,
-		DurationMs:        execution.DurationMs,
-		RequiresApproval:  execution.RequiresApproval,
-		AuditEvents:       redactAuditEvents(execution.AuditEvents),
-		LaunchedAt:        launchedAt,
-	}, nil
+	result := &LaunchResult{
+		AutomationID:       outcome.AutomationID,
+		LaunchEventID:      outcome.ID,
+		RuntimeTaskID:      outcome.RuntimeTaskID,
+		ExecutionReference: outcome.ExecutionReference,
+		RuntimeType:        outcome.RuntimeType,
+		LaunchType:         automation.LaunchType,
+		Target:             redactLaunchTarget(automation.LaunchTarget),
+		Status:             outcome.Status,
+		Message:            safety.RedactSecrets(outcome.Message),
+		Output:             safety.RedactSecrets(outcome.Output),
+		RuntimeRouteTrace:  redactRuntimeRouteTrace(outcome.RuntimeRouteTrace),
+		ExitCode:           outcome.ExitCode,
+		DurationMs:         outcome.DurationMs,
+		RequiresApproval:   outcome.RequiresApproval,
+		AuditEvents:        redactAuditEvents(outcome.AuditEvents),
+		LaunchedAt:         outcome.StartedAt,
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	if updateAutomationLaunchProjection(automation, outcome) {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		if err := repo.UpdateLaunchState(automation.ID, outcome.StartedAt, launchFailureReason(outcome.Status, outcome.Message)); err != nil {
+			return result, fmt.Errorf("repair automation launch summary from persisted outcome: %w", err)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func updateAutomationLaunchProjection(automation *models.Automation, outcome *models.AutomationLaunchEvent) bool {
+	if automation == nil || outcome == nil || outcome.StartedAt.IsZero() {
+		return false
+	}
+	if automation.LastLaunchAt != nil && outcome.StartedAt.Before(*automation.LastLaunchAt) {
+		return false
+	}
+	changed := automation.LastLaunchAt == nil || !automation.LastLaunchAt.Equal(outcome.StartedAt)
+	startedAt := outcome.StartedAt
+	automation.LastLaunchAt = &startedAt
+	if outcome.Status == "failed" || outcome.Status == "blocked" {
+		failureReason := safety.RedactSecrets(outcome.Message)
+		if automation.LastFailureReason != failureReason {
+			changed = true
+			automation.LastFailureReason = failureReason
+		}
+	}
+	return changed
+}
+
+func launchFailureReason(status, message string) *string {
+	if status != "failed" && status != "blocked" {
+		return nil
+	}
+	reason := safety.RedactSecrets(message)
+	return &reason
+}
+
+func launchOutcomeMatchesIntent(automation *models.Automation, intent, outcome *models.AutomationLaunchEvent, expectedLaunchType string) bool {
+	if automation == nil || intent == nil || outcome == nil {
+		return false
+	}
+	outcomeType := strings.ToLower(strings.TrimSpace(outcome.LaunchType))
+	if outcomeType == strings.ToLower(strings.TrimSpace(expectedLaunchType)) {
+		if outcome.EventKey != automationLaunchOutcomeEventKey(intent.ID) || outcome.Target != intent.Target {
+			return false
+		}
+		if outcomeType == "agent_runtime" {
+			return strings.TrimSpace(intent.RuntimeTaskID) != "" &&
+				strings.TrimSpace(outcome.RuntimeTaskID) == strings.TrimSpace(intent.RuntimeTaskID) &&
+				strings.EqualFold(strings.TrimSpace(outcome.RuntimeType), strings.TrimSpace(automation.RuntimeType))
+		}
+		return true
+	}
+	if strings.ToLower(strings.TrimSpace(expectedLaunchType)) != "agent_runtime" {
+		return false
+	}
+	switch outcomeType {
+	case "agent_runtime_openclaw_terminal", "agent_runtime_host_completion":
+		return strings.TrimSpace(intent.RuntimeTaskID) != "" &&
+			strings.TrimSpace(outcome.RuntimeTaskID) == strings.TrimSpace(intent.RuntimeTaskID) &&
+			strings.EqualFold(strings.TrimSpace(outcome.RuntimeType), strings.TrimSpace(automation.RuntimeType))
+	default:
+		return false
+	}
+}
+
+func launchIntentActionDigest(intent *models.AutomationLaunchEvent) string {
+	if intent == nil {
+		return ""
+	}
+	const prefix = "exact action digest "
+	for _, event := range intent.AuditEvents {
+		if strings.HasPrefix(event, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(event, prefix))
+		}
+	}
+	return ""
 }
 
 func automationRuntimeTaskID(automation *models.Automation) string {
@@ -982,11 +1659,65 @@ func automationRuntimeTaskID(automation *models.Automation) string {
 	return automation.ID.String()
 }
 
+// automationLaunchRuntimeTaskID gives every immutable launch intent its own
+// runtime identity. Host-runtime jobs use a unique task ID so a completed run
+// cannot prevent the next deliberately approved launch of the same automation.
+func automationLaunchRuntimeTaskID(automation *models.Automation, intentID uuid.UUID) string {
+	if automation == nil || automation.ID == uuid.Nil || intentID == uuid.Nil {
+		return ""
+	}
+	return "automation:" + automation.ID.String() + ":intent:" + intentID.String()
+}
+
+func openClawGatewayExecutionReference(registry *agentruntime.Registry, automation *models.Automation, intentID uuid.UUID) string {
+	if registry == nil || automation == nil || automation.ID == uuid.Nil || intentID == uuid.Nil ||
+		strings.ToLower(strings.TrimSpace(automation.LaunchType)) != "agent_runtime" ||
+		!strings.EqualFold(strings.TrimSpace(automation.RuntimeType), "openclaw") ||
+		!registry.OpenClawGatewayDelegationReady() {
+		return ""
+	}
+	return "ocgw:v2:" + intentID.String()
+}
+
+func runtimeStopOutcomeEventKey(intentID uuid.UUID) string {
+	if intentID == uuid.Nil {
+		return ""
+	}
+	return "runtime-stop-outcome:" + intentID.String()
+}
+
+func runtimeStopRequestEventKey(automationID uuid.UUID, owner, taskID string) string {
+	if automationID == uuid.Nil || strings.TrimSpace(owner) == "" || strings.TrimSpace(taskID) == "" {
+		return ""
+	}
+	identity := automationID.String() + "\x00" + strings.TrimSpace(owner) + "\x00" + strings.TrimSpace(taskID)
+	digest := sha256.Sum256([]byte(identity))
+	return "runtime-stop-request:v1:" + hex.EncodeToString(digest[:])
+}
+
 func (s *service) Diagnostics(id uuid.UUID) (*DiagnosticResult, error) {
+	return s.diagnostics(id, "")
+}
+
+func (s *service) DiagnosticsForOwner(id uuid.UUID, ownerIdentity string) (*DiagnosticResult, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, fmt.Errorf("authenticated owner identity is required for launch diagnostics")
+	}
+	return s.diagnostics(id, ownerIdentity)
+}
+
+func (s *service) diagnostics(id uuid.UUID, ownerIdentity string) (*DiagnosticResult, error) {
 	automation, err := s.repo.FindByID(id)
 	if err != nil {
 		return nil, err
 	}
+	if automation == nil {
+		return nil, gorm.ErrRecordNotFound
+	}
+	// Defaults belong to this diagnostic copy, never the repository record.
+	copyAutomation := *automation
+	automation = &copyAutomation
 	s.applyAutomationDefaults(automation)
 	checks := map[string]string{
 		"launchTargetConfigured": boolStatus(automation.LaunchTarget != ""),
@@ -1001,13 +1732,15 @@ func (s *service) Diagnostics(id uuid.UUID) (*DiagnosticResult, error) {
 		log.Printf("Failed to load health history for automation %s: %v", automation.ID, errEvents)
 		recentEvents = []models.AutomationHealthEvent{}
 	}
-	recentLaunches, errLaunches := s.repo.FindLaunchEvents(automation.ID, 10)
-	if errLaunches != nil {
-		log.Printf("Failed to load launch history for automation %s: %v", automation.ID, errLaunches)
-		recentLaunches = []models.AutomationLaunchEvent{}
+	recentLaunches := []models.AutomationLaunchEvent{}
+	if ownerIdentity != "" {
+		recentLaunches, err = s.repo.FindOwnerLaunchEvents(automation.ID, ownerIdentity, 10)
+		if err != nil {
+			return nil, fmt.Errorf("load owner-scoped launch history: %w", err)
+		}
 	}
 
-	return &DiagnosticResult{
+	return publicDiagnostics(&DiagnosticResult{
 		AutomationID:      automation.ID,
 		Name:              automation.Name,
 		Status:            automation.Status,
@@ -1023,7 +1756,7 @@ func (s *service) Diagnostics(id uuid.UUID) (*DiagnosticResult, error) {
 		Checks:            checks,
 		RecentEvents:      recentEvents,
 		RecentLaunches:    recentLaunches,
-	}, nil
+	}), nil
 }
 
 func redactAuditEvents(events []string) []string {
@@ -1136,8 +1869,8 @@ func (s *service) executeLaunch(
 		"automation configuration loaded",
 		"runtime safety policy evaluated",
 	}
-	if safety.EmergencyStopActive() {
-		return blockedLaunch(safety.EmergencyStopReason(), started, append(audit, "emergency stop blocked runtime launch"))
+	if decision := safety.EvaluateEmergencyStopForExecution(); decision.Active {
+		return blockedLaunch(decision.Reason, started, append(audit, "emergency stop blocked runtime launch"))
 	}
 	switch launchType {
 	case "browser_url":
@@ -1148,18 +1881,15 @@ func (s *service) executeLaunch(
 			AuditEvents: append(audit, "no server-side device action was performed"),
 		}
 	case "api":
-		method, _ := parseLaunchMethodTarget(automation.LaunchTarget, http.MethodPost)
-		if method != http.MethodGet && method != http.MethodHead {
-			verifiedAudit, err := s.verifyAndConsumeApproval(automation, request)
-			if err != nil {
-				return blockedLaunch(
-					"action-bound human approval is required at the launcher boundary for mutating API requests: "+err.Error(),
-					started,
-					append(audit, "action-bound approval proof rejected before network access"),
-				)
-			}
-			audit = append(audit, verifiedAudit...)
+		verifiedAudit, err := s.verifyAndConsumeApproval(automation, request)
+		if err != nil {
+			return blockedLaunch(
+				"action-bound owner approval is required at the launcher boundary for API requests: "+err.Error(),
+				started,
+				append(audit, "action-bound approval proof rejected before network access"),
+			)
 		}
+		audit = append(audit, verifiedAudit...)
 		return s.executeAPILaunch(automation, request, intentID, started, audit)
 	case "script":
 		verifiedAudit, err := s.verifyAndConsumeApproval(automation, request)
@@ -1287,7 +2017,7 @@ func (s *service) authorizeExternalLaunch(
 			Reversible:            reversible,
 			ApprovalSourceID:      strings.TrimSpace(request.ApprovalSourceID),
 			ApprovalBindingDigest: strings.ToLower(strings.TrimSpace(request.ApprovalBindingDigest)),
-			EffectDigest:          automationActionDigest(automation, request),
+			EffectDigest:          request.launchActionDigest,
 			Governance:            &request.Governance,
 			SourceReferences:      sourceReferences,
 		},
@@ -1338,7 +2068,8 @@ func (s *service) authorizeAgentRuntimeLaunch(
 		return agentruntime.Task{}, nil, fmt.Errorf("verified owner identity is required")
 	}
 	runtimeTask := agentruntime.Task{
-		ID:               automationRuntimeTaskID(automation),
+		RuntimeModel:     automation.RuntimeModel,
+		ID:               automationLaunchRuntimeTaskID(automation, intentID),
 		Prompt:           strings.TrimSpace(request.Task),
 		ProjectKey:       strings.TrimSpace(request.ProjectKey),
 		OwnerIdentity:    owner,
@@ -1346,6 +2077,7 @@ func (s *service) authorizeAgentRuntimeLaunch(
 		// The action-bound proof remains an independent defense-in-depth gate.
 		HumanApproved: true,
 	}
+	runtimeTask.ExecutionReference = openClawGatewayExecutionReference(s.runtimeRegistry, automation, intentID)
 	finalRequest, err := executionauth.BuildAgentRuntimeFinalEffectRequest(
 		runtimeID,
 		runtimeTask.ID,
@@ -1358,6 +2090,7 @@ func (s *service) authorizeAgentRuntimeLaunch(
 	if err != nil {
 		return agentruntime.Task{}, nil, err
 	}
+	finalRequest.RuntimeModel = runtimeTask.RuntimeModel
 	effectDigest, err := executionauth.FinalEffectDigest(finalRequest)
 	if err != nil {
 		return agentruntime.Task{}, nil, err
@@ -1487,6 +2220,10 @@ func executionAuthorizationProfile(
 	case "api":
 		method := strings.ToUpper(strings.TrimSpace(apiMethod))
 		if method == http.MethodGet || method == http.MethodHead {
+			// Preserve the established execution-auth policy identity, but do not
+			// treat this classification as evidence that the endpoint is read-only.
+			// executeLaunch requires and consumes the exact owner proof before this
+			// network-authorization boundary is reachable.
 			return "automation.api.read",
 				executionauth.StageDataAccess,
 				executionauth.RiskLow,
@@ -1551,8 +2288,8 @@ func (s *service) executeAgentRuntime(
 	audit []string,
 ) launchExecution {
 	runtimeID := strings.ToLower(strings.TrimSpace(automation.RuntimeType))
-	if runtimeID != "hermes" && runtimeID != "odysseus" && runtimeID != "openclaw" {
-		return blockedLaunch("agent_runtime launch type requires runtimeType hermes, odysseus, or openclaw", started, append(audit, "agent runtime type rejected"))
+	if !isSupportedAgentRuntime(runtimeID) {
+		return blockedLaunch("agent_runtime launch type requires runtimeType deepseek-harness, hermes, odysseus, or openclaw", started, append(audit, "agent runtime type rejected"))
 	}
 	if s.runtimeRegistry == nil {
 		return blockedLaunch("agent runtime registry is not configured", started, append(audit, "agent runtime registry unavailable"))
@@ -1561,21 +2298,65 @@ func (s *service) executeAgentRuntime(
 	if executionContext == nil {
 		executionContext = context.Background()
 	}
+	if err := validateLaunchActionBinding(automation, request); err != nil {
+		return blockedLaunch(err.Error(), started, append(audit, "launch action binding rejected before agent runtime dispatch"))
+	}
 	result := s.runtimeRegistry.Execute(executionContext, runtimeID, runtimeTask)
+	executionReference := strings.TrimSpace(result.ExecutionReference)
+	if runtimeID == "openclaw" {
+		executionReference = ""
+		if s.runtimeRegistry.OpenClawGatewayDelegationReady() {
+			executionReference = strings.TrimSpace(runtimeTask.ExecutionReference)
+			if executionReference == "" {
+				return blockedLaunch("OpenClaw Gateway execution has no persisted intent-bound reference", started, append(audit, "Gateway task rejected before accepting an unbound execution identity"))
+			}
+			if adapterReference := strings.TrimSpace(result.ExecutionReference); adapterReference != "" && adapterReference != executionReference {
+				return launchExecution{
+					Status:             "indeterminate",
+					Message:            "OpenClaw Gateway returned a reference that does not match the immutable task intent; the run requires review",
+					RuntimeTaskID:      runtimeTask.ID,
+					ExecutionReference: executionReference,
+					ExitCode:           -1,
+					DurationMs:         result.DurationMs,
+					RequiresApproval:   true,
+					AuditEvents:        append(audit, "Gateway execution reference mismatch; no outcome was correlated to the foreign reference"),
+				}
+			}
+		}
+	}
 	return launchExecution{
-		Status:            result.Status,
-		Message:           result.Message,
-		Output:            result.Output,
-		RuntimeRouteTrace: automationRuntimeRouteTrace(result.RouteTrace),
-		ExitCode:          result.ExitCode,
-		DurationMs:        result.DurationMs,
-		RequiresApproval:  result.Status == "blocked",
-		RuntimeTaskID:     runtimeTask.ID,
-		AuditEvents:       append(audit, result.AuditEvents...),
+		Status:             result.Status,
+		Message:            result.Message,
+		Output:             result.Output,
+		RuntimeRouteTrace:  automationRuntimeRouteTrace(result.RouteTrace),
+		ExitCode:           result.ExitCode,
+		DurationMs:         result.DurationMs,
+		RequiresApproval:   result.Status == "blocked",
+		RuntimeTaskID:      runtimeTask.ID,
+		ExecutionReference: executionReference,
+		AuditEvents:        append(audit, result.AuditEvents...),
+	}
+}
+
+func isSupportedAgentRuntime(runtimeID string) bool {
+	switch strings.ToLower(strings.TrimSpace(runtimeID)) {
+	case "deepseek-harness", "hermes", "odysseus", "openclaw":
+		return true
+	default:
+		return false
 	}
 }
 
 func (s *service) verifyAndConsumeApproval(automation *models.Automation, request TaskLaunchRequest) ([]string, error) {
+	executionContext := request.ExecutionContext
+	if executionContext == nil {
+		executionContext = context.Background()
+	}
+	executionContext, cancel := context.WithTimeout(executionContext, approvalProofConsumptionTimeout)
+	defer cancel()
+	if err := executionContext.Err(); err != nil {
+		return nil, err
+	}
 	if s.approvalProofs == nil {
 		return nil, fmt.Errorf("approval proof service is unavailable")
 	}
@@ -1583,19 +2364,24 @@ func (s *service) verifyAndConsumeApproval(automation *models.Automation, reques
 	if !required {
 		return nil, fmt.Errorf("automation action has no supported approval scope")
 	}
-	executionContext := request.ExecutionContext
-	if executionContext == nil {
-		executionContext = context.Background()
+	if err := validateLaunchActionBinding(automation, request); err != nil {
+		return nil, err
 	}
 	err := s.approvalProofs.VerifyAndConsume(executionContext, request.ApprovalProof, ApprovalProofExpectation{
 		OwnerIdentity:    strings.TrimSpace(request.OwnerIdentity),
 		AutomationID:     automation.ID,
-		ActionDigest:     automationActionDigest(automation, request),
+		ActionDigest:     request.launchActionDigest,
 		Scope:            scope,
 		ApprovalSourceID: strings.TrimSpace(request.ApprovalSourceID),
 	})
+	if contextErr := executionContext.Err(); contextErr != nil {
+		return nil, errors.Join(ErrApprovalProofConsumptionUnconfirmed, err, contextErr)
+	}
 	if err != nil {
 		return nil, err
+	}
+	if err := validateLaunchActionBinding(automation, request); err != nil {
+		return nil, errors.Join(ErrApprovalProofConsumptionUnconfirmed, err)
 	}
 	return []string{
 		"action-bound approval proof verified and consumed",
@@ -1627,10 +2413,13 @@ func (s *service) executeAPILaunch(
 	if method != http.MethodGet && method != http.MethodHead && method != http.MethodPost {
 		return blockedLaunch("API launch supports only GET, HEAD, or POST without a request body", started, append(audit, "api method rejected"))
 	}
-	client := noRedirectHTTPClient(10 * time.Second)
-	req, err := http.NewRequest(method, target, nil)
+	executionContext := request.ExecutionContext
+	if executionContext == nil {
+		executionContext = context.Background()
+	}
+	req, err := http.NewRequestWithContext(executionContext, method, target, nil)
 	if err != nil {
-		return failedLaunch(err.Error(), started, append(audit, "api request creation failed"))
+		return failedLaunch(redactAutomationRequestError(err), started, append(audit, "api request creation failed"))
 	}
 	req.Header.Set("User-Agent", "018-HAI-Controlled-Launcher/1.0")
 	_, authorizationAudit, err := s.authorizeExternalLaunch(
@@ -1647,15 +2436,44 @@ func (s *service) executeAPILaunch(
 		)
 	}
 	audit = append(audit, authorizationAudit...)
-	if safety.EmergencyStopActive() {
-		return blockedLaunch(safety.EmergencyStopReason(), started, append(audit, "emergency stop rechecked before API network access"))
-	}
-	resp, err := client.Do(req)
+	addresses, err := resolveAutomationTargetAddresses(executionContext, host, envEnabled("AUTOMATION_API_ALLOW_LINK_LOCAL"), net.DefaultResolver.LookupIP)
 	if err != nil {
-		return failedLaunch(err.Error(), started, append(audit, "api request failed"))
+		return blockedLaunch("API launch destination could not be safely resolved", started, append(audit, "api destination resolution failed closed"))
+	}
+	client := noRedirectHTTPClientForTarget(10*time.Second, host, addresses)
+	var resp *http.Response
+	var requestErr error
+	var bindingErr error
+	decision, admissionErr := withAutomationEffectAdmission(executionContext, func(release func()) {
+		if bindingErr = validateLaunchActionBinding(automation, request); bindingErr != nil {
+			return
+		}
+		trace := &httptrace.ClientTrace{
+			WroteRequest: func(httptrace.WroteRequestInfo) { release() },
+		}
+		dispatchRequest := req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+		resp, requestErr = client.Do(dispatchRequest)
+		// Cover failures before the transport reports WroteRequest.
+		release()
+	})
+	if admissionErr != nil {
+		return interruptedLaunch(executionContext, "API request", "", started, append(audit, "API request was not admitted"))
+	}
+	if decision.Active {
+		return blockedLaunch(decision.Reason, started, append(audit, "emergency stop rechecked before API network access"))
+	}
+	if bindingErr != nil {
+		return blockedLaunch(bindingErr.Error(), started, append(audit, "launch action binding rejected before API network access"))
+	}
+	err = requestErr
+	if err != nil {
+		if executionContext.Err() != nil {
+			return interruptedLaunch(executionContext, "API request", "", started, append(audit, "API request ended without a verified remote outcome"))
+		}
+		return failedLaunch(redactAutomationRequestError(err), started, append(audit, "api request failed"))
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	output := readAutomationOutput(resp.Body, 4096)
 	status := "completed"
 	message := fmt.Sprintf("%s %s returned HTTP %d", method, safety.RedactURL(target), resp.StatusCode)
 	expected := automation.ExpectedHTTPStatus
@@ -1670,7 +2488,7 @@ func (s *service) executeAPILaunch(
 	return launchExecution{
 		Status:      status,
 		Message:     message,
-		Output:      trimOutput(body, 4096),
+		Output:      output,
 		ExitCode:    resp.StatusCode,
 		DurationMs:  time.Since(started).Milliseconds(),
 		AuditEvents: append(audit, "api request executed", "response captured with bounded output"),
@@ -1687,6 +2505,20 @@ func (s *service) executeScriptLaunch(
 	if !envEnabled("AUTOMATION_SCRIPT_EXECUTION_ENABLED") {
 		return blockedLaunch("Script execution is disabled; set AUTOMATION_SCRIPT_EXECUTION_ENABLED=true only after reviewing the allowlisted script folder", started, append(audit, "script execution blocked by policy"))
 	}
+	timeoutSeconds := intEnv("AUTOMATION_SCRIPT_TIMEOUT_SECONDS", 30)
+	if timeoutSeconds > maxScriptTimeoutSeconds {
+		timeoutSeconds = maxScriptTimeoutSeconds
+	}
+	parent := request.ExecutionContext
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+	request.ExecutionContext = ctx
+	if ctx.Err() != nil {
+		return interruptedLaunch(ctx, "script preprocessing", "", started, append(audit, "script process was not started"))
+	}
 	root := firstNonEmpty(os.Getenv("AUTOMATION_SCRIPT_DIR"), "/root/automation-scripts")
 	scriptPath, err := resolveAllowedScriptPath(root, automation.LaunchTarget)
 	if err != nil {
@@ -1702,21 +2534,21 @@ func (s *service) executeScriptLaunch(
 	if !info.Mode().IsRegular() {
 		return blockedLaunch("script target must be a regular file", started, append(audit, "script target rejected"))
 	}
-	if err := verifyPinnedScript(scriptPath); err != nil {
+	if err := verifyPinnedScript(ctx, scriptPath); err != nil {
+		if ctx.Err() != nil {
+			return interruptedLaunch(ctx, "script preprocessing", "", started, append(audit, "script process was not started"))
+		}
 		return blockedLaunch(err.Error(), started, append(audit, "script hash pin rejected"))
 	}
-	timeoutSeconds := intEnv("AUTOMATION_SCRIPT_TIMEOUT_SECONDS", 30)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, scriptPath)
-	cmd.Dir = filepath.Dir(scriptPath)
-	cmd.Env = safeScriptEnvironment(automation)
 	_, authorizationAudit, err := s.authorizeExternalLaunch(
 		automation,
 		request,
 		intentID,
 		"",
 	)
+	if ctx.Err() != nil {
+		return interruptedLaunch(ctx, "script authorization", "", started, append(audit, authorizationAudit...))
+	}
 	if err != nil {
 		return blockedLaunch(
 			"unified execution authorization blocked local script execution: "+err.Error(),
@@ -1725,9 +2557,26 @@ func (s *service) executeScriptLaunch(
 		)
 	}
 	audit = append(audit, authorizationAudit...)
-	if safety.EmergencyStopActive() {
-		return blockedLaunch(safety.EmergencyStopReason(), started, append(audit, "emergency stop rechecked before script process start"))
+	// Copy the verified bytes to a private temporary directory after approval.
+	// Executing the mutable allowlist path directly leaves a final path-open race
+	// after the hash check, even when the source is rechecked after authorization.
+	stagedScript, cleanupStagedScript, err := stagePinnedScript(ctx, scriptPath)
+	if err != nil {
+		if ctx.Err() != nil {
+			return interruptedLaunch(ctx, "script preprocessing", "", started, append(audit, "script process was not started"))
+		}
+		return blockedLaunch(
+			err.Error(),
+			started,
+			append(audit, "script hash pin rejected after execution authorization"),
+		)
 	}
+	defer cleanupStagedScript()
+	cmd := exec.CommandContext(ctx, stagedScript)
+	prepareScriptProcess(cmd)
+	cmd.WaitDelay = scriptWaitDelay
+	cmd.Dir = filepath.Dir(scriptPath)
+	cmd.Env = safeScriptEnvironment(automation)
 	outputLimit := intEnv("AUTOMATION_SCRIPT_OUTPUT_LIMIT_BYTES", 4096)
 	if outputLimit < 1024 {
 		outputLimit = 1024
@@ -1735,22 +2584,55 @@ func (s *service) executeScriptLaunch(
 	if outputLimit > 65536 {
 		outputLimit = 65536
 	}
-	output := newBoundedOutput(outputLimit)
+	output := newBoundedOutput(maxAutomationOutputCapture)
 	cmd.Stdout = output
 	cmd.Stderr = output
-	err = cmd.Run()
+	var bindingErr error
+	decision, admissionErr, startErr := startScriptWithEmergencyStopAdmission(ctx, func() error {
+		bindingErr = validateLaunchActionBinding(automation, request)
+		if bindingErr != nil {
+			return bindingErr
+		}
+		return cmd.Start()
+	})
+	if admissionErr != nil {
+		return interruptedLaunch(ctx, "script execution", "", started, append(audit, "script process was not admitted"))
+	}
+	if decision.Active {
+		return blockedLaunch(decision.Reason, started, append(audit, "emergency stop rechecked before script process start"))
+	}
+	if bindingErr != nil {
+		return blockedLaunch(bindingErr.Error(), started, append(audit, "launch action binding rejected before script process start"))
+	}
+	if startErr != nil {
+		err = startErr
+	} else {
+		err = cmd.Wait()
+	}
 	outputText := trimOutput(output.Bytes(), int64(outputLimit))
 	if output.Truncated() {
-		audit = append(audit, fmt.Sprintf("script output truncated at %d bytes", outputLimit))
+		outputText = omittedAutomationOutput
+		audit = append(audit, fmt.Sprintf("script output omitted after capture exceeded %d bytes", maxAutomationOutputCapture))
+	} else if len(output.Bytes()) > outputLimit {
+		audit = append(audit, fmt.Sprintf("redacted script output limited to %d bytes", outputLimit))
 	}
-	if ctx.Err() == context.DeadlineExceeded {
+	if ctx.Err() != nil {
+		audit = append(audit, "script process cancellation requested")
+		if verifyScriptProcessTreeStopped(cmd) {
+			audit = append(audit, "script process group termination verified")
+		} else {
+			audit = append(audit, "script process group termination not verified")
+		}
+		return interruptedLaunch(ctx, "script execution", outputText, started, append(audit, "subprocess and external-effect completion not verified"))
+	}
+	if errors.Is(err, exec.ErrWaitDelay) {
 		return launchExecution{
-			Status:      "failed",
-			Message:     fmt.Sprintf("script exceeded %d second timeout", timeoutSeconds),
+			Status:      "indeterminate",
+			Message:     "script output pipes did not close within the drain deadline; subprocess and external-effect completion not verified",
 			Output:      outputText,
 			ExitCode:    -1,
 			DurationMs:  time.Since(started).Milliseconds(),
-			AuditEvents: append(audit, "script executed without shell", "script timed out"),
+			AuditEvents: append(audit, "script output drain deadline elapsed", "subprocess and external-effect completion not verified"),
 		}
 	}
 	if err != nil {
@@ -1760,7 +2642,7 @@ func (s *service) executeScriptLaunch(
 		}
 		return launchExecution{
 			Status:      "failed",
-			Message:     err.Error(),
+			Message:     safety.RedactSecrets(err.Error()),
 			Output:      outputText,
 			ExitCode:    exitCode,
 			DurationMs:  time.Since(started).Milliseconds(),
@@ -1777,18 +2659,21 @@ func (s *service) executeScriptLaunch(
 	}
 }
 
-func verifyPinnedScript(scriptPath string) error {
+func verifyPinnedScript(ctx context.Context, scriptPath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	expected, err := configuredScriptHash(filepath.Base(scriptPath))
 	if err != nil {
 		return err
 	}
-	file, err := os.Open(scriptPath)
+	file, err := openRegularScript(ctx, scriptPath)
 	if err != nil {
 		return fmt.Errorf("could not read script for SHA-256 verification: %w", err)
 	}
 	defer file.Close()
 	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if _, err := copyScriptBytes(ctx, hash, file); err != nil {
 		return fmt.Errorf("could not hash script for SHA-256 verification: %w", err)
 	}
 	actual := hash.Sum(nil)
@@ -1797,6 +2682,108 @@ func verifyPinnedScript(scriptPath string) error {
 		return fmt.Errorf("script SHA-256 does not match the configured pin for %s", filepath.Base(scriptPath))
 	}
 	return nil
+}
+
+func stagePinnedScript(ctx context.Context, scriptPath string) (string, func(), error) {
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
+	expected, err := configuredScriptHash(filepath.Base(scriptPath))
+	if err != nil {
+		return "", nil, err
+	}
+	source, err := openRegularScript(ctx, scriptPath)
+	if err != nil {
+		return "", nil, fmt.Errorf("could not read script for SHA-256 verification: %w", err)
+	}
+	defer source.Close()
+
+	directory, err := os.MkdirTemp("", "hai-automation-script-")
+	if err != nil {
+		return "", nil, fmt.Errorf("could not create private script staging directory: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(directory) }
+	stagedPath := filepath.Join(directory, filepath.Base(scriptPath))
+	staged, err := os.OpenFile(stagedPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("could not stage verified script: %w", err)
+	}
+	hash := sha256.New()
+	_, copyErr := copyScriptBytes(ctx, io.MultiWriter(staged, hash), source)
+	closeErr := staged.Close()
+	if copyErr != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("could not stage verified script: %w", copyErr)
+	}
+	if closeErr != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("could not finish staging verified script: %w", closeErr)
+	}
+	want, _ := hex.DecodeString(expected)
+	if subtle.ConstantTimeCompare(hash.Sum(nil), want) != 1 {
+		cleanup()
+		return "", nil, fmt.Errorf("script SHA-256 does not match the configured pin for %s", filepath.Base(scriptPath))
+	}
+	if err := ctx.Err(); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := os.Chmod(stagedPath, 0700); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("could not restrict staged script permissions: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return stagedPath, cleanup, nil
+}
+
+// Regular-file I/O is checked between chunks; this is not a sandbox or a
+// guarantee that cancellation can interrupt a stalled kernel/filesystem call.
+func copyScriptBytes(ctx context.Context, dst io.Writer, source io.Reader) (int64, error) {
+	buffer := make([]byte, 32*1024)
+	var copied int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return copied, err
+		}
+		remaining := int64(maxScriptBytes) - copied
+		readSize := len(buffer)
+		if remaining < int64(readSize) {
+			readSize = int(remaining) + 1
+		}
+		n, readErr := source.Read(buffer[:readSize])
+		if err := ctx.Err(); err != nil {
+			return copied, err
+		}
+		if int64(n) > remaining {
+			return copied, fmt.Errorf("script exceeds maximum size of %d bytes", maxScriptBytes)
+		}
+		if n > 0 {
+			written, writeErr := dst.Write(buffer[:n])
+			copied += int64(written)
+			if writeErr != nil {
+				return copied, writeErr
+			}
+			if written != n {
+				return copied, io.ErrShortWrite
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return copied, err
+		}
+		if readErr == io.EOF {
+			return copied, nil
+		}
+		if readErr != nil {
+			return copied, readErr
+		}
+		if n == 0 {
+			return copied, io.ErrNoProgress
+		}
+	}
 }
 
 func configuredScriptHash(name string) (string, error) {
@@ -1856,7 +2843,11 @@ func (s *service) executeDockerLaunch(
 	}
 	client := &http.Client{Transport: transport, Timeout: 10 * time.Second}
 	endpoint := "http://docker/containers/" + url.PathEscape(containerName) + "/start"
-	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
+	executionContext := request.ExecutionContext
+	if executionContext == nil {
+		executionContext = context.Background()
+	}
+	req, err := http.NewRequestWithContext(executionContext, http.MethodPost, endpoint, nil)
 	if err != nil {
 		return failedLaunch(err.Error(), started, append(audit, "docker request creation failed"))
 	}
@@ -1874,20 +2865,44 @@ func (s *service) executeDockerLaunch(
 		)
 	}
 	audit = append(audit, authorizationAudit...)
-	if safety.EmergencyStopActive() {
-		return blockedLaunch(safety.EmergencyStopReason(), started, append(audit, "emergency stop rechecked before Docker socket access"))
+	var resp *http.Response
+	var requestErr error
+	var bindingErr error
+	decision, admissionErr := withAutomationEffectAdmission(executionContext, func(release func()) {
+		if bindingErr = validateLaunchActionBinding(automation, request); bindingErr != nil {
+			return
+		}
+		trace := &httptrace.ClientTrace{
+			WroteRequest: func(httptrace.WroteRequestInfo) { release() },
+		}
+		dispatchRequest := req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+		resp, requestErr = client.Do(dispatchRequest)
+		// Cover failures before the transport reports WroteRequest.
+		release()
+	})
+	if admissionErr != nil {
+		return interruptedLaunch(executionContext, "Docker start request", "", started, append(audit, "Docker request was not admitted"))
 	}
-	resp, err := client.Do(req)
+	if decision.Active {
+		return blockedLaunch(decision.Reason, started, append(audit, "emergency stop rechecked before Docker socket access"))
+	}
+	if bindingErr != nil {
+		return blockedLaunch(bindingErr.Error(), started, append(audit, "launch action binding rejected before Docker socket access"))
+	}
+	err = requestErr
 	if err != nil {
+		if executionContext.Err() != nil {
+			return interruptedLaunch(executionContext, "Docker start request", "", started, append(audit, "Docker API outcome was not verified"))
+		}
 		return failedLaunch(err.Error(), started, append(audit, "docker socket request failed"))
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	output := readAutomationOutput(resp.Body, 4096)
 	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified {
 		return launchExecution{
 			Status:      "completed",
 			Message:     fmt.Sprintf("Docker container %s start request accepted", containerName),
-			Output:      strings.TrimSpace(string(body)),
+			Output:      output,
 			ExitCode:    resp.StatusCode,
 			DurationMs:  time.Since(started).Milliseconds(),
 			AuditEvents: append(audit, "docker start request executed through Docker API"),
@@ -1896,11 +2911,58 @@ func (s *service) executeDockerLaunch(
 	return launchExecution{
 		Status:      "failed",
 		Message:     fmt.Sprintf("Docker API returned HTTP %d for container %s", resp.StatusCode, containerName),
-		Output:      strings.TrimSpace(string(body)),
+		Output:      output,
 		ExitCode:    resp.StatusCode,
 		DurationMs:  time.Since(started).Milliseconds(),
 		AuditEvents: append(audit, "docker start request failed"),
 	}
+}
+
+func startScriptWithEmergencyStopAdmission(
+	ctx context.Context,
+	start func() error,
+) (safety.EmergencyStopDecision, error, error) {
+	if start == nil {
+		return safety.EmergencyStopDecision{}, errors.New("script process start is unavailable"), nil
+	}
+	var startErr error
+	decision, admissionErr := withAutomationEffectAdmission(ctx, func(release func()) {
+		startErr = start()
+		release()
+	})
+	return decision, admissionErr, startErr
+}
+
+func withAutomationEffectAdmission(
+	ctx context.Context,
+	admit func(release func()),
+) (safety.EmergencyStopDecision, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if admit == nil {
+		return safety.EmergencyStopDecision{}, errors.New("effect admission is unavailable")
+	}
+	releaseFence, err := safety.AcquireExecutionCommitFenceContext(ctx)
+	if err != nil {
+		return safety.EmergencyStopDecision{}, err
+	}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(releaseFence) }
+	defer release()
+
+	if err := ctx.Err(); err != nil {
+		return safety.EmergencyStopDecision{}, err
+	}
+	decision := safety.EvaluateEmergencyStopForExecution()
+	if decision.Active {
+		return decision, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return safety.EmergencyStopDecision{}, err
+	}
+	admit(release)
+	return safety.EmergencyStopDecision{}, nil
 }
 
 func (s *service) processImageFile(file *multipart.FileHeader) (string, error) {
@@ -2080,7 +3142,7 @@ func (s *service) applyAutomationDefaults(automation *models.Automation) {
 		}
 	}
 	if automation.HealthCheckURL == "" && automation.Host != "" && automation.Port > 0 {
-		automation.HealthCheckURL = fmt.Sprintf("http://%s:%d", automation.Host, automation.Port)
+		automation.HealthCheckURL = "http://" + automationHostPort(strings.Trim(automation.Host, "[]"), automation.Port)
 	}
 }
 
@@ -2218,11 +3280,57 @@ func failedLaunch(message string, started time.Time, audit []string) launchExecu
 	}
 }
 
-func trimOutput(output []byte, limit int64) string {
-	if int64(len(output)) > limit {
-		output = output[:limit]
+func interruptedLaunch(ctx context.Context, operation string, output string, started time.Time, audit []string) launchExecution {
+	message := operation + " was interrupted; downstream effects require verification"
+	if errors.Is(context.Cause(ctx), safety.ErrEmergencyStopActivated) {
+		message = "emergency stop interrupted " + operation + "; downstream effects require verification"
+		audit = append(audit, "emergency stop observed during "+operation)
+	} else if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		message = operation + " exceeded its deadline; downstream effects require verification"
+		audit = append(audit, operation+" deadline elapsed")
+	} else {
+		audit = append(audit, operation+" context cancellation observed")
 	}
-	return strings.TrimSpace(safety.RedactSecrets(string(output)))
+	return launchExecution{
+		Status:      "indeterminate",
+		Message:     safety.RedactSecrets(message),
+		Output:      safety.RedactSecrets(output),
+		ExitCode:    -1,
+		DurationMs:  time.Since(started).Milliseconds(),
+		AuditEvents: audit,
+	}
+}
+
+func trimOutput(output []byte, limit int64) string {
+	redacted := safety.RedactSecrets(string(output))
+	if limit <= 0 {
+		return ""
+	}
+	if int64(len(redacted)) > limit {
+		redacted = redacted[:limit]
+	}
+	return strings.TrimSpace(redacted)
+}
+
+// Read a complete bounded response before redacting nested/escaped JSON.
+// Never return a raw prefix when transport or capture limits break the JSON.
+func readAutomationOutput(reader io.Reader, displayLimit int64) string {
+	body, err := io.ReadAll(io.LimitReader(reader, maxAutomationOutputCapture+1))
+	if err != nil {
+		return "[output omitted: response capture incomplete]"
+	}
+	if len(body) > maxAutomationOutputCapture {
+		return omittedAutomationOutput
+	}
+	return trimOutput(body, displayLimit)
+}
+
+func redactAutomationRequestError(err error) string {
+	var requestError *url.Error
+	if errors.As(err, &requestError) {
+		return fmt.Sprintf("%s %s: %s", requestError.Op, safety.RedactURL(requestError.URL), safety.RedactSecrets(requestError.Err.Error()))
+	}
+	return safety.RedactSecrets(err.Error())
 }
 
 type boundedOutput struct {

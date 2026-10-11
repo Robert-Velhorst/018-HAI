@@ -1,9 +1,10 @@
 package config
 
 import (
-	"errors"
 	"fmt"
+	"path"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -17,26 +18,26 @@ type serverConfig struct {
 }
 
 func newServerConfig() (*serverConfig, error) {
-	port := getEnvString(webServerPort, "8080")
-	// validate port (if port is just numbers and is between 0 and 65535)
-	if len(port) < 1 {
-		return nil, errors.New("error: Port is not set, please check the environment variable: " + webServerPort)
-	}
-	var numPort int
-	var err error
-	if numPort, err = strconv.Atoi(port); err != nil {
-		errorMessage := fmt.Sprintf("error: Port %s is not a valid number port, please check the environment variable: %s", port, webServerPort)
-		return nil, errors.New(errorMessage)
-	}
-	if numPort < 0 || numPort > 65535 {
-		errorMessage := fmt.Sprintf("error: Port %d is not valid, please check the environment variable: %s", numPort, webServerPort)
-		return nil, errors.New(errorMessage)
+	port := strings.TrimSpace(getEnvString(webServerPort, "8080"))
+	numPort, err := strconv.Atoi(port)
+	if err != nil || numPort < 1 || numPort > 65535 {
+		return nil, fmt.Errorf("%s must be a port between 1 and 65535", webServerPort)
 	}
 
-	baseURL := getEnvString(baseURL, "/api")
+	prefix := strings.TrimSpace(getEnvString(baseURL, "/api"))
+	// A static Gin group must not contain URL syntax or dynamic route parameters.
+	if prefix != "" && (!strings.HasPrefix(prefix, "/") || strings.ContainsAny(prefix, "?#%\\:*") || strings.ContainsFunc(prefix, func(r rune) bool { return r <= ' ' || r == 127 })) {
+		return nil, fmt.Errorf("%s must be a static absolute route prefix", baseURL)
+	}
+	if prefix != "" {
+		if path.Clean(prefix) != strings.TrimSuffix(prefix, "/") && prefix != "/" {
+			return nil, fmt.Errorf("%s must not contain ambiguous path segments", baseURL)
+		}
+		prefix = strings.TrimSuffix(prefix, "/")
+	}
 
 	return &serverConfig{
-		Port:    port,
-		BaseURL: baseURL,
+		Port:    strconv.Itoa(numPort),
+		BaseURL: prefix,
 	}, nil
 }

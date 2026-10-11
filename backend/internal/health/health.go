@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -59,7 +60,7 @@ func PostgresProbe(cfg config.Configuration) doctor.Probe {
 		Name:     "database.connection",
 		Critical: true,
 		Run: func(ctx context.Context) error {
-			gormDB, err := infra.NewPostgresDatabase(cfg.DbUser, cfg.DbPassword, cfg.DbName, cfg.DbHost, cfg.DbPort)
+			gormDB, err := infra.NewPostgresDatabaseContext(ctx, cfg.DbUser, cfg.DbPassword, cfg.DbName, cfg.DbHost, cfg.DbPort)
 			if err != nil {
 				return fmt.Errorf("connect %s:%d/%s as %s: %w", cfg.DbHost, cfg.DbPort, cfg.DbName, cfg.DbUser, err)
 			}
@@ -78,11 +79,11 @@ func PostgresProbe(cfg config.Configuration) doctor.Probe {
 
 // RedisProbe checks the Redis declared in the compose stack.
 //
-// The backend does not currently connect to Redis: rate-limit and quota state
-// lives in an in-process map and is lost on restart. The probe still reports
-// Redis honestly, because an operator looking at readiness needs to see the
-// difference between "this dependency is healthy" and "this dependency is
-// running but nothing uses it".
+// Redis backs the optional shared rate limiter. When it is absent or
+// unavailable, the limiter uses bounded in-process counters. Redis is therefore
+// a degradation rather than a hard availability requirement. The probe still
+// reports it honestly, because an operator needs to distinguish durable shared
+// limits from per-process limits that reset on restart.
 func RedisProbe(cfg config.Configuration) doctor.Probe {
 	addr := strings.TrimSpace(cfg.RedisAddr)
 	return doctor.Probe{
@@ -159,34 +160,9 @@ func LLMProviderProbe() doctor.Probe {
 		Name:     "llm.provider",
 		Critical: false,
 		Run: func(ctx context.Context) error {
-			endpoint := strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL"))
-			label := "OLLAMA_BASE_URL"
+			endpoint, label := configuredLLMProviderEndpoint()
 			if endpoint == "" {
-				endpoint = strings.TrimSpace(os.Getenv("LLAMA_CPP_BASE_URL"))
-				label = "LLAMA_CPP_BASE_URL"
-			}
-			if endpoint == "" {
-				endpoint = strings.TrimSpace(os.Getenv("LOCALAI_BASE_URL"))
-				label = "LOCALAI_BASE_URL"
-			}
-			if endpoint == "" {
-				endpoint = strings.TrimSpace(os.Getenv("VLLM_BASE_URL"))
-				label = "VLLM_BASE_URL"
-			}
-			if endpoint == "" {
-				endpoint = strings.TrimSpace(os.Getenv("MISTRAL_RS_BASE_URL"))
-				label = "MISTRAL_RS_BASE_URL"
-			}
-			if endpoint == "" && strings.EqualFold(strings.TrimSpace(os.Getenv("LITELLM_ENABLED")), "true") {
-				endpoint = strings.TrimSpace(os.Getenv("LITELLM_BASE_URL"))
-				label = "LITELLM_BASE_URL"
-			}
-			if endpoint == "" {
-				endpoint = strings.TrimSpace(os.Getenv("FREE_CLOUD_OPENAI_BASE_URL"))
-				label = "FREE_CLOUD_OPENAI_BASE_URL"
-			}
-			if endpoint == "" {
-				return fmt.Errorf("no provider configured (OLLAMA_BASE_URL / LLAMA_CPP_BASE_URL / LOCALAI_BASE_URL / VLLM_BASE_URL / MISTRAL_RS_BASE_URL / enabled LITELLM_BASE_URL / FREE_CLOUD_OPENAI_BASE_URL unset); generation is unavailable")
+				return fmt.Errorf("no provider configured (OLLAMA_BASE_URL / LLAMA_CPP_BASE_URL / LM_STUDIO_BASE_URL / LOCALAI_BASE_URL / VLLM_BASE_URL / SGLANG_BASE_URL / DSPARK_BASE_URL / MISTRAL_RS_BASE_URL / enabled LITELLM_BASE_URL / FREE_CLOUD_OPENAI_BASE_URL unset); generation is unavailable")
 			}
 
 			request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(endpoint, "/"), nil)
@@ -207,6 +183,60 @@ func LLMProviderProbe() doctor.Probe {
 			return nil
 		},
 	}
+}
+
+// configuredLLMProviderEndpoint must track the local and free-provider
+// endpoints accepted by llm.DefaultPolicyFromEnv. Readiness should describe the
+// usable routing surface, not a smaller, stale subset of it.
+func configuredLLMProviderEndpoint() (endpoint, label string) {
+	for _, candidate := range []struct {
+		env     string
+		enabled bool
+	}{
+		{env: "OLLAMA_BASE_URL", enabled: true},
+		{env: "LLAMA_CPP_BASE_URL", enabled: true},
+		{env: "LM_STUDIO_BASE_URL", enabled: true},
+		{env: "LOCALAI_BASE_URL", enabled: true},
+		{env: "VLLM_BASE_URL", enabled: true},
+		{env: "SGLANG_BASE_URL", enabled: true},
+		{env: "DSPARK_BASE_URL", enabled: dsparkProviderEnabled()},
+		{env: "MISTRAL_RS_BASE_URL", enabled: true},
+		{env: "LITELLM_BASE_URL", enabled: strings.EqualFold(strings.TrimSpace(os.Getenv("LITELLM_ENABLED")), "true")},
+		{env: "FREE_CLOUD_OPENAI_BASE_URL", enabled: true},
+	} {
+		if candidate.enabled {
+			if value := strings.TrimSpace(os.Getenv(candidate.env)); value != "" {
+				return value, candidate.env
+			}
+		}
+	}
+	return "", ""
+}
+
+// dsparkProviderEnabled mirrors the router's local-only DSpark policy. An
+// endpoint string alone is not enough: treating a disabled or non-local DSpark
+// endpoint as ready would make the health report contradict the route policy.
+func dsparkProviderEnabled() bool {
+	endpoint := strings.TrimSpace(os.Getenv("DSPARK_BASE_URL"))
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Hostname() == "" || !envEnabled("DSPARK_ENABLED") {
+		return false
+	}
+	return isLocalModelHost(parsed.Hostname())
+}
+
+func envEnabled(name string) bool {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv(name)))
+	return value == "1" || value == "true" || value == "yes"
+}
+
+func isLocalModelHost(host string) bool {
+	host = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(host)), ".")
+	if host == "localhost" || host == "host.docker.internal" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func nonEmpty(values []string) []string {

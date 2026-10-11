@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"fmt"
 	"testing"
 
 	"automation-hub-backend/internal/models"
@@ -55,6 +56,55 @@ func TestAnswerLinksExplicitPursuitEvidence(t *testing.T) {
 	if linker.ownerIdentity != "alice" || linker.pursuitID != pursuitID || linker.verificationID != result.Run.ID {
 		t.Fatalf("linker received pursuit=%s verification=%s; want pursuit=%s verification=%s", linker.pursuitID, linker.verificationID, pursuitID, result.Run.ID)
 	}
+	if !hasVerificationAudit(repo.audits, "verification.completed") || !hasVerificationAudit(repo.audits, "verification.pursuit_linked") {
+		t.Fatalf("successful verification and pursuit link were not both audited: %#v", repo.audits)
+	}
+}
+
+func TestAnswerReturnsPursuitLinkAuditFailures(t *testing.T) {
+	linkFailure := fmt.Errorf("pursuit storage unavailable")
+	tests := []struct {
+		name        string
+		linkErr     error
+		linked      bool
+		auditAction string
+	}{
+		{name: "successful link", linked: true, auditAction: "verification.pursuit_linked"},
+		{name: "failed link", linkErr: linkFailure, auditAction: "verification.pursuit_link_failed"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &failingVerificationRepository{
+				fakeVerificationRepository: &fakeVerificationRepository{},
+				auditActionErrors: map[string]error{
+					test.auditAction: fmt.Errorf("audit storage unavailable"),
+				},
+			}
+			service := NewService(repository, nil, nil, &capturingPursuitLinker{linkErr: test.linkErr})
+			result, err := service.Answer(AnswerRequest{
+				OwnerIdentity: "alice",
+				Question:      "What does the supplied record establish?",
+				PursuitID:     uuid.NewString(),
+				ExternalEvidence: []EvidenceInput{{
+					SourceType: "project_record",
+					Snippet:    "The supplied record establishes the result.",
+				}},
+			})
+			if err != nil {
+				t.Fatalf("Answer returned error: %v", err)
+			}
+			if result.PursuitLinked != test.linked {
+				t.Fatalf("PursuitLinked = %t, want %t", result.PursuitLinked, test.linked)
+			}
+			if (result.PursuitLinkError != "") != (test.linkErr != nil) {
+				t.Fatalf("PursuitLinkError = %q, link error = %v", result.PursuitLinkError, test.linkErr)
+			}
+			if len(result.AuditWarnings) != 1 || result.AuditWarnings[0] != test.auditAction {
+				t.Fatalf("AuditWarnings = %#v, want [%q]", result.AuditWarnings, test.auditAction)
+			}
+		})
+	}
 }
 
 func TestVerificationRunsAndDetailsAreScopedToOwner(t *testing.T) {
@@ -97,23 +147,88 @@ func TestVerificationRunsAndDetailsAreScopedToOwner(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedVerificationReadsRejectMissingAndLegacyOwners(t *testing.T) {
+	legacy := models.VerificationRun{ID: uuid.New(), Question: "Private legacy question", Status: StatusUncertain}
+	repository := &fakeVerificationRepository{runs: []models.VerificationRun{legacy}}
+	service := NewService(repository, nil, nil)
+
+	if _, err := service.RunsForOwner("  "); err == nil {
+		t.Fatal("owner-scoped run listing accepted a missing identity")
+	}
+	if _, err := service.RunDetailsForOwner("", legacy.ID); err == nil {
+		t.Fatal("owner-scoped run details accepted a missing identity")
+	}
+	if runs, err := service.RunsForOwner("alice"); err != nil || len(runs) != 0 {
+		t.Fatalf("authenticated owner saw an ownerless legacy run: runs=%#v err=%v", runs, err)
+	}
+	if _, err := service.RunDetailsForOwner("alice", legacy.ID); err == nil {
+		t.Fatal("authenticated owner loaded an ownerless legacy run")
+	}
+}
+
+func TestVerificationDetailsUseDirectOwnerScopedRepositoryLookupWhenAvailable(t *testing.T) {
+	repo := &ownerScopedVerificationRepository{fakeVerificationRepository: &fakeVerificationRepository{}}
+	service := NewService(repo, nil, nil)
+	result, err := service.Answer(AnswerRequest{
+		OwnerIdentity: "alice", Question: "What does the record establish?",
+		ExternalEvidence: []EvidenceInput{{SourceType: "document", Snippet: "The record supports the request."}},
+	})
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if _, err := service.RunDetailsForOwner("alice", result.Run.ID); err != nil {
+		t.Fatalf("RunDetailsForOwner: %v", err)
+	}
+	if repo.directLookups != 1 || repo.ownerListCalls != 0 {
+		t.Fatalf("detail lookup used history scan: direct=%d list=%d", repo.directLookups, repo.ownerListCalls)
+	}
+}
+
 type capturingPursuitLinker struct {
 	ownerIdentity  string
 	pursuitID      uuid.UUID
 	verificationID uuid.UUID
+	linkErr        error
 }
 
 func (l *capturingPursuitLinker) LinkVerificationForOwner(ownerIdentity string, pursuitID, verificationID uuid.UUID) error {
 	l.ownerIdentity = ownerIdentity
 	l.pursuitID = pursuitID
 	l.verificationID = verificationID
-	return nil
+	return l.linkErr
 }
 
 type fakeVerificationRepository struct {
 	runs     []models.VerificationRun
 	claims   []models.VerificationClaim
 	evidence []models.VerificationEvidence
+	audits   []models.VerificationAuditLog
+}
+
+type ownerScopedVerificationRepository struct {
+	*fakeVerificationRepository
+	directLookups  int
+	ownerListCalls int
+}
+
+func (r *ownerScopedVerificationRepository) FindRunsForOwner(ownerIdentity string) ([]models.VerificationRun, error) {
+	r.ownerListCalls++
+	return r.fakeVerificationRepository.FindRunsForOwner(ownerIdentity)
+}
+
+func (r *ownerScopedVerificationRepository) FindRunForOwner(ownerIdentity string, id uuid.UUID) (*models.VerificationRun, error) {
+	r.directLookups++
+	runs, err := r.fakeVerificationRepository.FindRunsForOwner(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	for index := range runs {
+		if runs[index].ID == id {
+			copy := runs[index]
+			return &copy, nil
+		}
+	}
+	return nil, fmt.Errorf("verification run not found")
 }
 
 func (r *fakeVerificationRepository) CreateRun(run *models.VerificationRun) (*models.VerificationRun, error) {
@@ -149,8 +264,12 @@ func (r *fakeVerificationRepository) CreateClaim(claim *models.VerificationClaim
 	return claim, nil
 }
 
-func (r *fakeVerificationRepository) CreateAuditLog(*models.VerificationAuditLog) (*models.VerificationAuditLog, error) {
-	return nil, nil
+func (r *fakeVerificationRepository) CreateAuditLog(log *models.VerificationAuditLog) (*models.VerificationAuditLog, error) {
+	if log.ID == uuid.Nil {
+		log.ID = uuid.New()
+	}
+	r.audits = append(r.audits, *log)
+	return log, nil
 }
 
 func (r *fakeVerificationRepository) FindRuns() ([]models.VerificationRun, error) {
@@ -160,7 +279,7 @@ func (r *fakeVerificationRepository) FindRuns() ([]models.VerificationRun, error
 func (r *fakeVerificationRepository) FindRunsForOwner(ownerIdentity string) ([]models.VerificationRun, error) {
 	result := []models.VerificationRun{}
 	for _, run := range r.runs {
-		if ownerIdentity == "" || run.OwnerIdentity == "" || run.OwnerIdentity == ownerIdentity {
+		if ownerIdentity != "" && run.OwnerIdentity == ownerIdentity {
 			result = append(result, run)
 		}
 	}

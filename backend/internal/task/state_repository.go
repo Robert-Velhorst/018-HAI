@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"automation-hub-backend/internal/automation"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/plangraph"
 	"automation-hub-backend/internal/safety"
@@ -128,18 +129,20 @@ type PersistedReviewResolution struct {
 // contract, but remains part of the reviewed action identity so workflow-owned
 // attempts cannot be reclassified as direct pursuit attempts after a restart.
 type storedReviewRequest struct {
-	PursuitID        string                              `json:"pursuitId,omitempty"`
-	WorkflowID       string                              `json:"workflowId,omitempty"`
-	Request          string                              `json:"request"`
-	ProjectKey       string                              `json:"projectKey,omitempty"`
-	AutomationID     string                              `json:"automationId,omitempty"`
-	MandateID        string                              `json:"mandateId,omitempty"`
-	SuccessCriteria  []string                            `json:"successCriteria,omitempty"`
-	ExecuteAllowed   bool                                `json:"executeAllowed,omitempty"`
-	HumanApproved    bool                                `json:"humanApproved,omitempty"`
-	ApprovalNote     string                              `json:"approvalNote,omitempty"`
-	ApprovalSource   string                              `json:"approvalSourceId,omitempty"`
-	CoordinationPlan plangraph.AcceptedRevisionReference `json:"coordinationPlan,omitempty"`
+	AutomationReviewSnapshot *automation.ReviewConfigurationSnapshot `json:"automationReviewSnapshot,omitempty"`
+	PursuitID                string                                  `json:"pursuitId,omitempty"`
+	WorkflowID               string                                  `json:"workflowId,omitempty"`
+	Request                  string                                  `json:"request"`
+	ProjectKey               string                                  `json:"projectKey,omitempty"`
+	AutomationID             string                                  `json:"automationId,omitempty"`
+	MandateID                string                                  `json:"mandateId,omitempty"`
+	SuccessCriteria          []string                                `json:"successCriteria,omitempty"`
+	Deadline                 *time.Time                              `json:"deadline,omitempty"`
+	ExecuteAllowed           bool                                    `json:"executeAllowed,omitempty"`
+	HumanApproved            bool                                    `json:"humanApproved,omitempty"`
+	ApprovalNote             string                                  `json:"approvalNote,omitempty"`
+	ApprovalSource           string                                  `json:"approvalSourceId,omitempty"`
+	CoordinationPlan         plangraph.AcceptedRevisionReference     `json:"coordinationPlan,omitempty"`
 }
 
 // ReviewRequestDigest hashes the redacted, action-defining request projection.
@@ -159,25 +162,29 @@ func ReviewRequestDigest(ownerIdentity string, request IntakeRequest) (string, e
 		return "", fmt.Errorf("review request is required")
 	}
 	projection := struct {
-		OwnerIdentity    string                              `json:"ownerIdentity"`
-		PursuitID        string                              `json:"pursuitId,omitempty"`
-		WorkflowID       string                              `json:"workflowId,omitempty"`
-		Request          string                              `json:"request"`
-		ProjectKey       string                              `json:"projectKey,omitempty"`
-		AutomationID     string                              `json:"automationId,omitempty"`
-		MandateID        string                              `json:"mandateId,omitempty"`
-		SuccessCriteria  []string                            `json:"successCriteria,omitempty"`
-		CoordinationPlan plangraph.AcceptedRevisionReference `json:"coordinationPlan,omitempty"`
+		AutomationReviewSnapshot *automation.ReviewConfigurationSnapshot `json:"automationReviewSnapshot,omitempty"`
+		OwnerIdentity            string                                  `json:"ownerIdentity"`
+		PursuitID                string                                  `json:"pursuitId,omitempty"`
+		WorkflowID               string                                  `json:"workflowId,omitempty"`
+		Request                  string                                  `json:"request"`
+		ProjectKey               string                                  `json:"projectKey,omitempty"`
+		AutomationID             string                                  `json:"automationId,omitempty"`
+		MandateID                string                                  `json:"mandateId,omitempty"`
+		SuccessCriteria          []string                                `json:"successCriteria,omitempty"`
+		Deadline                 *time.Time                              `json:"deadline,omitempty"`
+		CoordinationPlan         plangraph.AcceptedRevisionReference     `json:"coordinationPlan,omitempty"`
 	}{
-		OwnerIdentity:    ownerIdentity,
-		PursuitID:        strings.TrimSpace(request.PursuitID),
-		WorkflowID:       strings.TrimSpace(request.WorkflowID),
-		Request:          requestText,
-		ProjectKey:       strings.TrimSpace(request.ProjectKey),
-		AutomationID:     strings.TrimSpace(request.AutomationID),
-		MandateID:        strings.TrimSpace(request.MandateID),
-		SuccessCriteria:  append([]string(nil), request.SuccessCriteria...),
-		CoordinationPlan: request.CoordinationPlan,
+		AutomationReviewSnapshot: request.automationReviewSnapshot,
+		OwnerIdentity:            ownerIdentity,
+		PursuitID:                strings.TrimSpace(request.PursuitID),
+		WorkflowID:               strings.TrimSpace(request.WorkflowID),
+		Request:                  requestText,
+		ProjectKey:               strings.TrimSpace(request.ProjectKey),
+		AutomationID:             strings.TrimSpace(request.AutomationID),
+		MandateID:                strings.TrimSpace(request.MandateID),
+		SuccessCriteria:          append([]string(nil), request.SuccessCriteria...),
+		Deadline:                 canonicalTaskDeadline(request.Deadline),
+		CoordinationPlan:         request.CoordinationPlan,
 	}
 	payload, _, err := marshalSanitizedJSONObject(projection)
 	if err != nil {
@@ -187,13 +194,14 @@ func ReviewRequestDigest(ownerIdentity string, request IntakeRequest) (string, e
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// reviewRequestDigestV1 verifies records written before mandate and accepted
-// plan-revision provenance became part of the reviewed action identity. It may
-// only be used when those newer fields are absent, otherwise accepting the old
-// digest would leave action-defining data outside the integrity boundary.
+// reviewRequestDigestV1 verifies records written before configuration snapshots,
+// deadline, mandate, and accepted plan-revision provenance became part of the
+// reviewed action identity.
+// It may only be used when those newer fields are absent, otherwise accepting
+// the old digest would leave action-defining data outside the integrity boundary.
 func reviewRequestDigestV1(ownerIdentity string, request IntakeRequest) (string, error) {
-	if strings.TrimSpace(request.MandateID) != "" || !request.CoordinationPlan.IsZero() {
-		return "", fmt.Errorf("legacy review digest cannot cover mandate or coordination provenance")
+	if request.automationReviewSnapshot != nil || request.Deadline != nil || strings.TrimSpace(request.MandateID) != "" || !request.CoordinationPlan.IsZero() {
+		return "", fmt.Errorf("legacy review digest cannot cover configuration, deadline, mandate, or coordination provenance")
 	}
 	ownerIdentity, err := normalizeTaskStateOwner(ownerIdentity)
 	if err != nil {
@@ -417,6 +425,10 @@ func reviewItemFromModel(row models.TaskReviewItemRecord, latest *models.TaskRev
 		Status:     row.Status,
 		CreatedAt:  row.CreatedAt.UTC(),
 		ResolvedAt: cloneTaskStateTime(row.ResolvedAt),
+	}
+	if request.automationReviewSnapshot != nil {
+		copy := *request.automationReviewSnapshot
+		item.AutomationConfiguration = &copy
 	}
 	if latest != nil {
 		if _, err := reviewDecisionFromModel(*latest); err != nil {
@@ -884,6 +896,15 @@ func validateReviewItemRow(row models.TaskReviewItemRecord) error {
 }
 
 func validateStoredReviewRequest(request IntakeRequest) error {
+	if request.automationReviewSnapshot != nil {
+		id, err := uuid.Parse(strings.TrimSpace(request.AutomationID))
+		if err != nil {
+			return fmt.Errorf("stored review automation target is invalid")
+		}
+		if err := automation.ValidateReviewConfigurationSnapshot(request.automationReviewSnapshot, id); err != nil {
+			return err
+		}
+	}
 	if request.ExecuteAllowed ||
 		request.HumanApproved ||
 		strings.TrimSpace(request.ApprovalNote) != "" ||
@@ -896,18 +917,20 @@ func validateStoredReviewRequest(request IntakeRequest) error {
 
 func encodeStoredReviewRequest(request IntakeRequest) (string, error) {
 	payload, _, err := marshalSanitizedJSONObject(storedReviewRequest{
-		PursuitID:        request.PursuitID,
-		WorkflowID:       request.WorkflowID,
-		Request:          request.Request,
-		ProjectKey:       request.ProjectKey,
-		AutomationID:     request.AutomationID,
-		MandateID:        request.MandateID,
-		SuccessCriteria:  append([]string(nil), request.SuccessCriteria...),
-		ExecuteAllowed:   request.ExecuteAllowed,
-		HumanApproved:    request.HumanApproved,
-		ApprovalNote:     request.ApprovalNote,
-		ApprovalSource:   request.ApprovalSourceID,
-		CoordinationPlan: request.CoordinationPlan,
+		AutomationReviewSnapshot: request.automationReviewSnapshot,
+		PursuitID:                request.PursuitID,
+		WorkflowID:               request.WorkflowID,
+		Request:                  request.Request,
+		ProjectKey:               request.ProjectKey,
+		AutomationID:             request.AutomationID,
+		MandateID:                request.MandateID,
+		SuccessCriteria:          append([]string(nil), request.SuccessCriteria...),
+		Deadline:                 canonicalTaskDeadline(request.Deadline),
+		ExecuteAllowed:           request.ExecuteAllowed,
+		HumanApproved:            request.HumanApproved,
+		ApprovalNote:             request.ApprovalNote,
+		ApprovalSource:           request.ApprovalSourceID,
+		CoordinationPlan:         request.CoordinationPlan,
 	})
 	if err != nil {
 		return "", err
@@ -921,19 +944,29 @@ func decodeStoredReviewRequest(payload string) (IntakeRequest, error) {
 		return IntakeRequest{}, err
 	}
 	return IntakeRequest{
-		PursuitID:        stored.PursuitID,
-		WorkflowID:       stored.WorkflowID,
-		Request:          stored.Request,
-		ProjectKey:       stored.ProjectKey,
-		AutomationID:     stored.AutomationID,
-		MandateID:        stored.MandateID,
-		SuccessCriteria:  append([]string(nil), stored.SuccessCriteria...),
-		ExecuteAllowed:   stored.ExecuteAllowed,
-		HumanApproved:    stored.HumanApproved,
-		ApprovalNote:     stored.ApprovalNote,
-		ApprovalSourceID: stored.ApprovalSource,
-		CoordinationPlan: stored.CoordinationPlan,
+		automationReviewSnapshot: stored.AutomationReviewSnapshot,
+		PursuitID:                stored.PursuitID,
+		WorkflowID:               stored.WorkflowID,
+		Request:                  stored.Request,
+		ProjectKey:               stored.ProjectKey,
+		AutomationID:             stored.AutomationID,
+		MandateID:                stored.MandateID,
+		SuccessCriteria:          append([]string(nil), stored.SuccessCriteria...),
+		Deadline:                 canonicalTaskDeadline(stored.Deadline),
+		ExecuteAllowed:           stored.ExecuteAllowed,
+		HumanApproved:            stored.HumanApproved,
+		ApprovalNote:             stored.ApprovalNote,
+		ApprovalSourceID:         stored.ApprovalSource,
+		CoordinationPlan:         stored.CoordinationPlan,
 	}, nil
+}
+
+func canonicalTaskDeadline(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	canonical := value.UTC()
+	return &canonical
 }
 
 func validateReviewDecisionBinding(

@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"automation-hub-backend/internal/operations"
+
 	"github.com/google/uuid"
 )
 
@@ -22,7 +24,8 @@ const (
 	// the production adapter. The receipt ResourceID must equal EffectDigest.
 	LocalSafeWorkerResourceType = "executionbroker.final-effect"
 
-	authorizationContractVersion = 1
+	authorizationContractVersion          = 1
+	operationAuthorizationContractVersion = 2
 )
 
 var (
@@ -36,28 +39,30 @@ var (
 // it from durable, owner-scoped state, recheck mutable policy (including the
 // emergency stop), and atomically consume it.
 type AuthorizationBinding struct {
-	OwnerIdentity string `json:"ownerIdentity"`
-	TaskID        string `json:"taskId"`
-	Action        string `json:"action"`
-	ReceiptID     string `json:"receiptId"`
-	ReceiptDigest string `json:"receiptDigest"`
-	EffectDigest  string `json:"effectDigest"`
+	OwnerIdentity  string                      `json:"ownerIdentity"`
+	TaskID         string                      `json:"taskId"`
+	Action         string                      `json:"action"`
+	ReceiptID      string                      `json:"receiptId"`
+	ReceiptDigest  string                      `json:"receiptDigest"`
+	EffectDigest   string                      `json:"effectDigest"`
+	OperationScope *operations.SafeEffectScope `json:"operationScope,omitempty"`
 }
 
 // FinalEffect is the canonical, non-secret description of the filesystem
 // effect. PayloadDigest is a SHA-256 digest; the marker itself is not exposed
 // to the verifier or authorization logs.
 type FinalEffect struct {
-	ContractVersion int    `json:"contractVersion"`
-	RuntimeID       string `json:"runtimeId"`
-	Action          string `json:"action"`
-	ResourceType    string `json:"resourceType"`
-	OwnerIdentity   string `json:"ownerIdentity"`
-	TaskID          string `json:"taskId"`
-	WorkspaceRoot   string `json:"workspaceRoot"`
-	ArtifactName    string `json:"artifactName"`
-	PayloadDigest   string `json:"payloadDigest"`
-	EffectDigest    string `json:"effectDigest"`
+	ContractVersion int                         `json:"contractVersion"`
+	RuntimeID       string                      `json:"runtimeId"`
+	Action          string                      `json:"action"`
+	ResourceType    string                      `json:"resourceType"`
+	OwnerIdentity   string                      `json:"ownerIdentity"`
+	TaskID          string                      `json:"taskId"`
+	WorkspaceRoot   string                      `json:"workspaceRoot"`
+	ArtifactName    string                      `json:"artifactName"`
+	PayloadDigest   string                      `json:"payloadDigest"`
+	EffectDigest    string                      `json:"effectDigest"`
+	OperationScope  *operations.SafeEffectScope `json:"operationScope,omitempty"`
 }
 
 // AuthorizationVerification is the final-boundary request. Consumer and
@@ -115,7 +120,7 @@ func buildFinalEffect(workspaceRoot string, in SafeWorkerInput) (FinalEffect, er
 	root = filepath.Clean(root)
 	payloadHash := sha256.Sum256([]byte(in.Marker))
 	effect := FinalEffect{
-		ContractVersion: authorizationContractVersion,
+		ContractVersion: effectContractVersion(binding.OperationScope),
 		RuntimeID:       LocalSafeWorkerID,
 		Action:          LocalSafeWorkerAction,
 		ResourceType:    LocalSafeWorkerResourceType,
@@ -124,6 +129,7 @@ func buildFinalEffect(workspaceRoot string, in SafeWorkerInput) (FinalEffect, er
 		WorkspaceRoot:   root,
 		ArtifactName:    in.ArtifactName,
 		PayloadDigest:   hex.EncodeToString(payloadHash[:]),
+		OperationScope:  binding.OperationScope,
 	}
 	digest, err := digestFinalEffect(effect)
 	if err != nil {
@@ -160,7 +166,7 @@ func BindLocalSafeWorkerEffect(workspaceRoot string, in SafeWorkerInput) (string
 	}
 	payloadHash := sha256.Sum256([]byte(in.Marker))
 	effect := FinalEffect{
-		ContractVersion: authorizationContractVersion,
+		ContractVersion: effectContractVersion(binding.OperationScope),
 		RuntimeID:       LocalSafeWorkerID,
 		Action:          LocalSafeWorkerAction,
 		ResourceType:    LocalSafeWorkerResourceType,
@@ -169,6 +175,7 @@ func BindLocalSafeWorkerEffect(workspaceRoot string, in SafeWorkerInput) (string
 		WorkspaceRoot:   filepath.Clean(root),
 		ArtifactName:    in.ArtifactName,
 		PayloadDigest:   hex.EncodeToString(payloadHash[:]),
+		OperationScope:  binding.OperationScope,
 	}
 	return digestFinalEffect(effect)
 }
@@ -205,6 +212,13 @@ func digestFinalEffect(effect FinalEffect) (string, error) {
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+func effectContractVersion(scope *operations.SafeEffectScope) int {
+	if scope != nil {
+		return operationAuthorizationContractVersion
+	}
+	return authorizationContractVersion
 }
 
 func verifyGrant(binding AuthorizationBinding, effect FinalEffect, grant VerifiedAuthorization) error {

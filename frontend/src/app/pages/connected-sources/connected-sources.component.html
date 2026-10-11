@@ -6,15 +6,11 @@
       <span>Connect accounts, files, exports, and project records as source-linked context.</span>
     </div>
     <div class="header-actions">
-      <button type="button" nz-button nzType="default" (click)="toggleTheme()" [title]="themeLabel()">
-        <i nz-icon [nzType]="themeIcon()" nzTheme="outline"></i>
-        {{ themeLabel() }}
-      </button>
-      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" title="Reload connectors, sources, jobs, extractions, and audit logs">
+      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" title="Reload connector catalog, source state, health, and recent sync jobs">
         <i nz-icon nzType="reload" nzTheme="outline"></i>
         Refresh
       </button>
-      <button type="button" nz-button nzType="primary" (click)="runDueScheduledSyncs()" [nzLoading]="syncing" title="Refresh due scheduled source sync jobs that belong to your signed-in account">
+      <button *ngIf="isAdvancedView" type="button" nz-button nzType="primary" (click)="runDueScheduledSyncs()" [nzLoading]="syncing" [disabled]="syncing" title="Refresh due scheduled source sync jobs that belong to your signed-in account">
         <i nz-icon nzType="sync" nzTheme="outline"></i>
         Sync due
       </button>
@@ -25,26 +21,184 @@
     </div>
   </header>
 
-  <main class="sources-content">
-    <section class="status-strip" aria-label="Source status">
+  <div class="sources-content" [attr.aria-busy]="loading">
+    <section *ngIf="operationError" class="load-warning load-warning--error" role="alert" aria-live="assertive">
+      <i nz-icon nzType="close-circle" nzTheme="outline" aria-hidden="true"></i>
+      <div><strong>Source action failed</strong><span>{{ operationError }}</span></div>
+      <button type="button" nz-button nzType="default" (click)="operationError = ''">Dismiss</button>
+    </section>
+
+    <section *ngIf="connecting || syncing" class="load-warning" role="status" aria-live="polite">
+      <i nz-icon [nzType]="connecting ? 'link' : 'sync'" nzTheme="outline" aria-hidden="true"></i>
+      <div><strong>{{ connecting ? 'Connecting source' : 'Synchronizing source' }}</strong><span>{{ connecting ? 'Waiting for the connector response; no additional connection will be started.' : 'The current source operation is running. HAI will refresh source status when it finishes.' }}</span></div>
+    </section>
+
+    <section *ngIf="loading && !connecting && !syncing && (isAdvancedView || sources.length > 0)" class="load-warning load-warning--progress" role="status" aria-live="polite" aria-atomic="true" data-testid="source-load-progress">
+      <i nz-icon nzType="loading" nzTheme="outline" aria-hidden="true"></i>
+      <div>
+        <strong>{{ sources.length ? 'Refreshing source data' : 'Loading source data' }}</strong>
+        <span>{{ sources.length ? 'The previous source list remains visible while HAI checks for updated connector, access, and sync status.' : 'HAI is checking connector availability, registered sources, and recent sync jobs.' }}</span>
+      </div>
+    </section>
+
+    <section class="load-warning" *ngIf="hasLoadWarnings()" role="status" aria-live="polite">
+      <i nz-icon nzType="warning" nzTheme="outline"></i>
+      <div>
+        <strong>Some source data is unavailable</strong>
+        <span>{{ loadWarnings.join(', ') }} could not be loaded. Counts and source status may be incomplete.</span>
+      </div>
+      <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" title="Retry unavailable source data">Retry</button>
+    </section>
+
+    <section *ngIf="!isAdvancedView" class="basic-view" aria-labelledby="source-health-title" data-testid="sources-basic-view">
+      <ul class="basic-metrics" aria-label="Current source status">
+        <li>
+          <span>Connected</span>
+          <strong>{{ connectedSourceMetric() }}</strong>
+        </li>
+        <li>
+          <span>Configured</span>
+          <strong>{{ configuredSourceMetric() }}</strong>
+        </li>
+        <li>
+          <span>Syncing</span>
+          <strong>{{ syncingSourceMetric() }}</strong>
+        </li>
+        <li>
+          <span>Needs attention</span>
+          <strong>{{ attentionSourceCountMetric() }}</strong>
+        </li>
+      </ul>
+
+      <section class="panel basic-health" aria-labelledby="source-health-title">
+        <div class="panel-heading">
+          <div>
+            <h2 id="source-health-title">Source health</h2>
+            <p>Current access and sync state. Unknown or unavailable data is never treated as connected.</p>
+          </div>
+          <div class="header-actions">
+            <button type="button" nz-button nzType="primary" data-testid="configure-source-basic" (click)="openAdvancedAction('connect', 'source-operations')" title="Add another governed source">
+              <i nz-icon nzType="plus" nzTheme="outline" aria-hidden="true"></i>
+              Add source
+            </button>
+            <button *ngIf="scheduledSourceCount() > 0" type="button" nz-button nzType="primary" (click)="runDueScheduledSyncs()" [nzLoading]="syncing" [disabled]="syncing" title="Run only source syncs that are due for your signed-in account">
+              <i nz-icon nzType="sync" nzTheme="outline"></i>
+              Sync due
+            </button>
+            <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" [disabled]="loading">
+              <i nz-icon nzType="reload" nzTheme="outline"></i>
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div *ngIf="loading && !sources.length" class="basic-empty" role="status">Checking connected sources…</div>
+        <div *ngIf="!loading && !sources.length && sourceListUnavailable()" class="basic-empty basic-empty--warning" role="status">
+          <strong>Source list unavailable</strong>
+          <span>HAI could not confirm whether any sources are connected. Retry before making access changes.</span>
+          <button type="button" nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">Retry</button>
+        </div>
+        <div *ngIf="!loading && !sources.length && !sourceListUnavailable()" class="basic-empty">
+          <strong>No connected sources</strong>
+          <span>Connect a provider or local source to begin. HAI will show its setup and permission state before any sync runs.</span>
+        </div>
+
+        <div class="basic-source-list" *ngIf="sources.length" data-testid="sources-basic-health-list">
+          <article *ngFor="let source of sources" class="basic-source" [attr.data-status]="sourceHealthTone(source)">
+            <div class="basic-source__identity">
+              <span class="status-dot" [attr.data-status]="sourceHealthTone(source)" aria-hidden="true"></span>
+              <div>
+                <strong>{{ source.name }}</strong>
+                <span>{{ connectorFor(source)?.name || source.connectorKey }} · {{ sourceEnabledLabel(source) }}</span>
+              </div>
+            </div>
+            <div class="basic-source__state">
+              <span class="status-pill" [attr.data-status]="sourceHealthTone(source)">{{ statusText(sourceDisplayStatus(source)) }}</span>
+              <p>{{ sourceHealthSummary(source) }}</p>
+              <small>{{ source.lastSyncedAt ? ('Last sync ' + (source.lastSyncedAt | date: 'short')) : 'No completed sync recorded' }}</small>
+              <p *ngIf="isTrelloSource(source)" class="read-only-note">Read-only Trello access. HAI does not write to cards or boards; any project key is an unverified hint.</p>
+              <p *ngIf="isTrelloSource(source)" class="read-only-note">Comment creation, edits, and deletions require an operator-registered Trello webhook. HAI does not verify webhook registration or delivery.</p>
+            </div>
+            <div *ngIf="manualSyncStatus(source) as syncJob" class="manual-sync-status" [attr.data-status]="syncJob.status" role="status" aria-live="polite">
+              <div>
+                <strong>Background sync {{ statusText(syncJob.status) }}</strong>
+                <span>{{ safeOperationalText(syncJob.message) || 'HAI is tracking this sync in job history.' }}</span>
+                <small *ngIf="syncJob.status === 'running' && syncJob.maxAttempts">Attempt {{ syncJob.attempt + 1 }} of {{ syncJob.maxAttempts }}</small>
+              </div>
+              <button *ngIf="manualSyncStatusUnavailable[source.id]" type="button" nz-button nzType="default" (click)="checkManualSyncStatus(source)">Check status</button>
+            </div>
+            <div *ngIf="manualSyncRecoveryMessages[source.id] as recoveryMessage" class="manual-sync-recovery" role="alert">
+              <span>{{ recoveryMessage }}</span>
+              <button type="button" nz-button nzType="default" (click)="recoverManualSyncRequest(source)" [disabled]="manualSyncRecoveryActions[source.id] === 'retry' && !sourceSyncCanRun(source)" [title]="sourceSyncUnavailableReason(source)">
+                {{ manualSyncRecoveryActions[source.id] === 'retry' ? 'Retry safely' : (manualSyncRecoveryActions[source.id] === 'refresh' ? 'Refresh job status' : 'Review source details') }}
+              </button>
+            </div>
+            <div class="basic-source__actions">
+              <button
+                *ngIf="googleAuthorizationRequired(source)"
+                type="button"
+                nz-button
+                nzType="primary"
+                (click)="authorizeGoogleSource(source)"
+                [disabled]="!canAuthorizeGoogleSource(source) || connecting || authorizing"
+                [nzLoading]="authorizing"
+                [title]="canAuthorizeGoogleSource(source) ? 'Continue to Google to grant read-only access.' : 'Google authorization is unavailable until connector setup and source health can be confirmed.'"
+              >{{ sourceHealth(source)?.requiresReconnect ? 'Reconnect' : 'Authorize' }} Google</button>
+              <button
+                *ngIf="!sourceHealth(source) || sourceHealthUnavailable(source)"
+                type="button"
+                nz-button
+                nzType="default"
+                (click)="refreshSourceHealth(source)"
+                [disabled]="sourceHealthChecking(source)"
+                [nzLoading]="sourceHealthChecking(source)"
+                [title]="sourceHealthUnavailable(source) ? 'Retry the failed source access check.' : 'Check current source access before authorizing or syncing.'"
+              >{{ sourceHealthChecking(source) ? 'Checking access' : (sourceHealthUnavailable(source) ? 'Retry access check' : 'Check access') }}</button>
+              <button
+                *ngIf="syncButtonVisible(source)"
+                type="button"
+                nz-button
+                nzType="default"
+                (click)="syncSource(source)"
+                [disabled]="!sourceSyncCanRun(source)"
+                [nzLoading]="manualSyncSubmittingSourceId === source.id"
+                [title]="sourceSyncUnavailableReason(source) || sourceActionTitle(source)"
+              >{{ sourceActionLabel(source) }}</button>
+              <button *ngIf="source.enabled && !sourceIsRevoked(source)" type="button" nz-button nzType="default" (click)="pause(source)" [disabled]="sourceMutationInProgress(source)" [nzLoading]="sourceMutationInProgress(source, 'pause')" title="Pause future syncs; a current job may still finish">Pause</button>
+              <button *ngIf="!source.enabled && !sourceIsRevoked(source)" type="button" nz-button nzType="default" (click)="resume(source)" [disabled]="sourceMutationInProgress(source)" [nzLoading]="sourceMutationInProgress(source, 'resume')">Resume</button>
+              <button type="button" nz-button nzType="default" (click)="openAdvancedAction('connect', 'source-inspector', source.id)" [attr.aria-label]="'Open details for ' + source.name">Details</button>
+              <small *ngIf="sourceSyncUnavailableReason(source) && manualSyncStatus(source)?.status !== 'queued' && manualSyncStatus(source)?.status !== 'running' && manualSyncStatus(source)?.status !== 'pending'" class="source-sync-unavailable" role="note">{{ sourceSyncUnavailableReason(source) }}</small>
+            </div>
+          </article>
+        </div>
+
+        <p *ngIf="hasTrelloSources()" class="trello-safety-note" role="note">
+          Trello remains read-only in HAI. Imported board content can inform context, but HAI will not change Trello cards or boards.
+        </p>
+      </section>
+
+    </section>
+
+    <ng-container *ngIf="isAdvancedView">
+    <section class="status-strip" aria-label="Detailed source metrics">
       <div title="Enabled sources that can currently be used by HAI">
-        <strong>{{ enabledSources().length }}</strong>
+        <strong>{{ sourceCountMetric() }}</strong>
         <span>active sources</span>
       </div>
       <div title="Live connectors fetch directly from their provider. Gmail, Google Drive, Google Contacts, and Google Calendar use separate read-only OAuth grants and provider-native incremental cursors.">
-        <strong>{{ operationalConnectorCount() }} live · {{ localOnlyConnectorCount() }} local · {{ modeledConnectorCount() }} modeled</strong>
-        <span>of {{ connectors.length }} connectors</span>
+        <strong>{{ connectorCountMetric() }}</strong>
+        <span>{{ connectorCatalogLoaded && !connectorCatalogUnavailable ? 'of ' + connectors.length + ' connectors' : 'connector catalog unavailable' }}</span>
       </div>
-      <div title="Extracted records available for source-grounded memory and task context">
-        <strong>{{ extractions.length }}</strong>
-        <span>extracted records</span>
+      <div title="Exact total from the API. Only the 100 most recent records are loaded here for responsive review.">
+        <strong>{{ extractionCountMetric() }}</strong>
+        <span>extracted records<span *ngIf="extractionsLoaded && extractionPageIsTruncated()"> · recent {{ extractions.length }} loaded</span></span>
       </div>
       <div title="Records that must stay review-gated or sensitive">
-        <strong>{{ sensitiveExtractionCount() }}</strong>
+        <strong>{{ sensitiveExtractionMetric() }}</strong>
         <span>sensitive records</span>
       </div>
       <div [class.attention]="failedJobCount() > 0" title="Sync jobs that failed and need attention">
-        <strong>{{ failedJobCount() }}</strong>
+        <strong>{{ failedJobMetric() }}</strong>
         <span>failed jobs</span>
       </div>
     </section>
@@ -78,60 +232,88 @@
           <label nz-checkbox [(ngModel)]="includeDisabled" (ngModelChange)="refresh()" title="Show paused or disabled records as well as active sources">Show disabled</label>
         </div>
 
-        <nz-empty *ngIf="!sources.length && !loading" nzNotFoundContent="No connected sources yet."></nz-empty>
+        <div class="advanced-filter-row" aria-label="Source registry filters">
+          <label>
+            <span>Find source</span>
+            <input nz-input type="search" [(ngModel)]="sourceFilterQuery" placeholder="Name, connector, target, project" />
+          </label>
+          <label>
+            <span>State</span>
+            <select [(ngModel)]="sourceEnabledFilter" aria-label="Filter sources by enabled state">
+              <option value="all">All sources</option>
+              <option value="enabled">Enabled</option>
+              <option value="paused">Paused</option>
+            </select>
+          </label>
+        </div>
 
-        <div class="source-list">
+        <nz-empty *ngIf="!filteredSources().length && !loading" [nzNotFoundContent]="sourceRegistryEmptyText()"></nz-empty>
+
+        <div class="source-list" data-testid="source-list" [attr.data-source-count]="filteredSources().length">
           <article
-            *ngFor="let source of sources"
+            *ngFor="let source of filteredSources()"
             class="source-row"
             data-testid="source-row"
             [class.source-row--selected]="selectedSource()?.id === source.id"
-            (click)="selectSource(source)"
-            [title]="source.name + ': open details and controls'"
           >
-            <div class="source-row__icon" [attr.data-status]="statusTone(source.status)">
-              <i nz-icon nzType="cluster" nzTheme="outline"></i>
-            </div>
-            <div class="source-row__main">
-              <div>
-                <strong>{{ source.name }}</strong>
-                <span>{{ source.connectorKey }} · {{ source.category || 'source' }}</span>
-              </div>
-              <small>
-                {{ source.lastSyncedAt ? ('Last sync ' + (source.lastSyncedAt | date: 'short')) : 'Not synced yet' }}
-              </small>
-            </div>
-            <div class="source-row__badges">
-              <span class="status-pill" [attr.data-status]="statusTone(source.status)">{{ statusText(source.status) }}</span>
-              <span *ngIf="source.localOnly" class="status-pill local">local</span>
-              <span class="status-pill">{{ sourceExtractionCount(source) }} records</span>
-            </div>
+            <button
+              type="button"
+              class="source-row__select"
+              (click)="selectSource(source)"
+              [title]="source.name"
+              [attr.aria-label]="'Select ' + source.name + ', ' + (connectorFor(source)?.name || source.connectorKey) + ', ' + statusText(sourceDisplayStatus(source)) + ', ' + sourceEnabledLabel(source)"
+              [attr.aria-pressed]="selectedSource()?.id === source.id"
+            >
+              <span class="source-row__icon" [attr.data-status]="sourceHealthTone(source)" aria-hidden="true">
+                <i nz-icon nzType="cluster" nzTheme="outline"></i>
+              </span>
+              <span class="source-row__main">
+                <span>
+                  <strong>{{ source.name }}</strong>
+                  <span>{{ source.connectorKey }} · {{ source.category || 'source' }}</span>
+                </span>
+                <small>
+                  {{ source.lastSyncedAt ? ('Last sync ' + (source.lastSyncedAt | date: 'short')) : 'Not synced yet' }}
+                </small>
+              </span>
+              <span class="source-row__badges" aria-hidden="true">
+                <span class="status-pill" [attr.data-status]="sourceHealthTone(source)">{{ statusText(sourceDisplayStatus(source)) }}</span>
+                <span *ngIf="source.localOnly" class="status-pill local">local</span>
+                <span class="status-pill">{{ sourceExtractionCount(source) }} records</span>
+              </span>
+            </button>
             <div class="source-row__actions">
               <button
                 type="button"
                 *ngIf="syncButtonVisible(source)"
                 class="icon-button"
                 data-testid="source-sync"
-                (click)="$event.stopPropagation(); syncSource(source)"
-                [disabled]="syncing"
-                title="Run an incremental sync for this source"
+                (click)="syncSource(source)"
+                [disabled]="!sourceSyncCanRun(source)"
+                [attr.aria-label]="sourceActionLabel(source) + ': ' + source.name"
+                [title]="sourceSyncUnavailableReason(source) || sourceActionTitle(source)"
               >
-                <i nz-icon nzType="sync" nzTheme="outline"></i>
+                <i nz-icon nzType="sync" nzTheme="outline" aria-hidden="true"></i>
               </button>
               <button
                 type="button"
                 class="icon-button"
-                (click)="$event.stopPropagation(); reindex(source)"
-                title="Re-index extracted context for this source"
+                (click)="reindex(source)"
+                [disabled]="sourceMutationInProgress(source)"
+                [attr.aria-label]="(sourceMutationInProgress(source, 'reindex') ? 'Re-indexing ' : 'Re-index ') + source.name"
+                [title]="sourceMutationInProgress(source, 'reindex') ? 'Re-indexing source context…' : 'Re-index extracted context for this source'"
               >
-                <i nz-icon nzType="database" nzTheme="outline"></i>
+                <i nz-icon [nzType]="sourceMutationInProgress(source, 'reindex') ? 'loading' : 'database'" nzTheme="outline" aria-hidden="true"></i>
               </button>
+              <small *ngIf="syncButtonVisible(source) && !sourceSyncCanRun(source)" class="source-sync-unavailable" role="note">
+                {{ sourceSyncUnavailableReason(source) }}
+              </small>
             </div>
           </article>
         </div>
       </aside>
 
-      <section class="panel action-panel">
+      <section id="source-operations" class="panel action-panel">
         <ng-container [ngSwitch]="selectedAction">
           <div *ngSwitchCase="'connect'" class="operation">
             <div class="panel-heading compact">
@@ -141,17 +323,17 @@
               </div>
             </div>
             <form nz-form [formGroup]="sourceForm" class="operation-form" data-testid="source-connect-form">
-              <label>
-                <span>Connector</span>
-                <nz-select formControlName="connectorKey" (ngModelChange)="connectorChanged($event)" data-testid="source-connector">
+              <label for="source-connector-control">Connector</label>
+              <nz-select formControlName="connectorKey" nzId="source-connector-control" aria-label="Connector" data-testid="source-connector">
                   <nz-option
                     *ngFor="let connector of connectors"
                     [nzValue]="connector.connectorKey"
                     [nzLabel]="connectorLabel(connector)"
-                    [nzDisabled]="!connector.enabled"
                   ></nz-option>
-                </nz-select>
-              </label>
+              </nz-select>
+              <p *ngIf="selectedConnectorReadinessMessage()" class="connector-readiness-note" role="status" aria-live="polite">
+                {{ selectedConnectorReadinessMessage() }}
+              </p>
               <label>
                 <span>Name</span>
                 <input nz-input formControlName="name" data-testid="source-name" />
@@ -159,13 +341,17 @@
               <div class="field-grid">
                 <label>
                   <span>Sync frequency</span>
-                  <input nz-input formControlName="syncFrequency" />
+                  <input nz-input formControlName="syncFrequency" [readonly]="!selectedConnectorSupportsScheduledSync()" [title]="selectedConnectorSupportsScheduledSync() ? 'Manual, hourly, daily, weekly, or a duration of at least one minute.' : 'This connector is operator-triggered and must remain manual.'" />
+                  <small class="field-error" *ngIf="sourceForm.get('syncFrequency')?.invalid && sourceForm.get('syncFrequency')?.touched">Use manual, hourly, daily, weekly, or a duration of at least one minute.</small>
+                  <small class="field-hint" *ngIf="!selectedConnectorSupportsScheduledSync()">This connector is operator-triggered and must remain manual.</small>
                 </label>
                 <label>
-                  <span>Project key</span>
+                  <span>{{ sourceForm.value.connectorKey === 'trello' ? 'Project key hint (unverified)' : 'Project key' }}</span>
                   <input nz-input formControlName="defaultProjectKey" />
+                  <small class="field-hint" *ngIf="sourceForm.value.connectorKey === 'trello'">Optional. Trello keys are not treated as confirmed project matches; leave blank unless you want to retain a hint for review.</small>
                 </label>
               </div>
+              <p *ngIf="sourceForm.value.connectorKey === 'trello'" class="read-only-note">Trello is configured for read-only intake. HAI will not write to cards or boards, and the optional project key remains an unverified hint.</p>
               <label>
                 <span>Sync target</span>
                 <input nz-input formControlName="syncTarget" [placeholder]="syncTargetPlaceholder()" data-testid="source-target" />
@@ -183,7 +369,7 @@
                   data-testid="source-connect"
                   (click)="connectSource()"
                   [nzLoading]="connecting"
-                  [disabled]="sourceForm.invalid || connecting"
+				  [disabled]="!sourceCanConnect() || connecting"
                 >
                   Connect source
                 </button>
@@ -231,7 +417,7 @@
               </div>
               <div class="form-footer">
                 <span>Local files stay source-linked and reviewable.</span>
-                <button type="button" nz-button nzType="primary" (click)="syncFolder()" [nzLoading]="syncing">Scan folder</button>
+                <button type="button" nz-button nzType="primary" (click)="syncFolder()" [nzLoading]="syncing" [disabled]="folderForm.invalid || syncing">Scan folder</button>
               </div>
             </form>
           </div>
@@ -253,19 +439,19 @@
                 before either connector can be authorized.
               </p>
               <div class="form-footer">
-                <button type="button" nz-button nzType="primary" (click)="connectGmail()">
+                <button type="button" nz-button nzType="primary" (click)="connectGmail()" [nzLoading]="connecting" [disabled]="connecting || !googleConnectorCanConnect('gmail')" title="Configure valid Google OAuth and HAI encryption keys before connecting Gmail.">
                   <span nz-icon nzType="google"></span>
                   Connect Gmail
                 </button>
-                <button type="button" nz-button nzType="default" (click)="connectGoogleDrive()">
+                <button type="button" nz-button nzType="default" (click)="connectGoogleDrive()" [disabled]="connecting || !googleConnectorCanConnect('google-drive')" title="Configure valid Google OAuth and HAI encryption keys before connecting Drive.">
                   <span nz-icon nzType="folder-open"></span>
                   Connect Drive
                 </button>
-                <button type="button" nz-button nzType="default" (click)="connectGoogleContacts()">
+                <button type="button" nz-button nzType="default" (click)="connectGoogleContacts()" [disabled]="connecting || !googleConnectorCanConnect('google-contacts')" title="Configure valid Google OAuth and HAI encryption keys before connecting Contacts.">
                   <span nz-icon nzType="contacts"></span>
                   Connect Contacts
                 </button>
-                <button type="button" nz-button nzType="default" (click)="connectGoogleCalendar()">
+                <button type="button" nz-button nzType="default" (click)="connectGoogleCalendar()" [disabled]="connecting || !googleConnectorCanConnect('google-calendar')" title="Configure valid Google OAuth and HAI encryption keys before connecting Calendar.">
                   <span nz-icon nzType="calendar"></span>
                   Connect Calendar
                 </button>
@@ -322,9 +508,9 @@
                 <textarea nz-input rows="8" formControlName="pastedExport"></textarea>
               </label>
               <div class="form-footer">
-                <button type="button" nz-button nzType="default" (click)="connectWhatsAppSource()">Connect source</button>
-                <button type="button" nz-button nzType="default" (click)="syncWhatsAppFolder()" [nzLoading]="syncing">Scan folder</button>
-                <button type="button" nz-button nzType="primary" (click)="importWhatsAppPaste()" [nzLoading]="syncing">Import paste</button>
+				<button type="button" nz-button nzType="default" (click)="connectWhatsAppSource()" [nzLoading]="connecting" [disabled]="connecting || !connectorCanConnect(connectorsForAction('whatsapp-export'))" [title]="connectorActionUnavailableReason('whatsapp-export')">Connect source</button>
+                <button type="button" nz-button nzType="default" (click)="syncWhatsAppFolder()" [nzLoading]="syncing" [disabled]="syncing">Scan folder</button>
+                <button type="button" nz-button nzType="primary" (click)="importWhatsAppPaste()" [nzLoading]="syncing" [disabled]="whatsappForm.invalid || syncing">Import paste</button>
               </div>
             </form>
           </div>
@@ -365,16 +551,17 @@
                 <label>
                   <span>Sync frequency</span>
                   <input nz-input formControlName="syncFrequency" />
+                  <small class="field-error" *ngIf="odooForm.get('syncFrequency')?.invalid && odooForm.get('syncFrequency')?.touched">Use manual, hourly, daily, weekly, or a duration of at least one minute.</small>
                 </label>
-                <label class="checkbox-field">
+                <div class="checkbox-field">
                   <span>Safety</span>
                   <label nz-checkbox formControlName="localOnly">Local-first source records</label>
-                </label>
+                </div>
               </div>
               <div class="form-footer">
                 <span>Write-back stays disabled; risky Odoo actions are approval-gated.</span>
-                <button type="button" nz-button nzType="default" (click)="connectOdooSource()">Connect source</button>
-                <button type="button" nz-button nzType="primary" (click)="syncOdooApps()" [nzLoading]="syncing">Model apps</button>
+				<button type="button" nz-button nzType="default" (click)="connectOdooSource()" [nzLoading]="connecting" [disabled]="connecting || odooForm.invalid || !connectorCanConnect(connectorsForAction('odoo-herp'))" [title]="connectorActionUnavailableReason('odoo-herp')">Connect source</button>
+                <button type="button" nz-button nzType="primary" (click)="syncOdooApps()" [nzLoading]="syncing" [disabled]="syncing">Model apps</button>
               </div>
             </form>
           </div>
@@ -423,7 +610,7 @@
               </label>
               <div class="form-footer">
                 <span>Manual imports are logged with provenance.</span>
-                <button type="button" nz-button nzType="primary" (click)="sync()" [nzLoading]="syncing">Sync and extract</button>
+                <button type="button" nz-button nzType="primary" (click)="sync()" [nzLoading]="syncing" [disabled]="importForm.invalid || syncing">Sync and extract</button>
               </div>
             </form>
           </div>
@@ -452,12 +639,15 @@
               </div>
               <div class="form-footer">
                 <label nz-checkbox formControlName="includeSensitive">Include sensitive</label>
-                <button type="button" nz-button nzType="primary" (click)="search()">Search context</button>
+                <button type="button" nz-button nzType="primary" (click)="search()" [nzLoading]="searchLoading" [disabled]="searchForm.invalid || searchLoading">Search context</button>
               </div>
             </form>
+            <p *ngIf="searchLoading" class="source-detail-state" role="status" aria-live="polite">Searching current source records…</p>
+            <p *ngIf="searchError" class="source-detail-state source-detail-state--error" role="alert">{{ searchError }}</p>
+            <p *ngIf="!searchLoading && !searchError && !searchResult" class="source-detail-state">Run a search to inspect matching source-backed context.</p>
             <div *ngIf="searchResult" class="search-results">
               <p>{{ searchResult.explanation }}</p>
-              <article *ngFor="let item of searchResult.usedContext" title="Click the source record in HAI for full provenance">
+              <article *ngFor="let item of searchResult.usedContext">
                 <strong>{{ item.extraction.summary || item.extraction.text }}</strong>
                 <span>{{ item.explanation }} · score {{ item.score }}</span>
                 <small>{{ item.extraction.sourceLabel || item.extraction.sourceUri || 'source linked' }}</small>
@@ -491,11 +681,15 @@
               <label nz-checkbox [(ngModel)]="graphIncludeSensitive" (ngModelChange)="loadKnowledgeGraph()">
                 Include sensitive sources
               </label>
-              <span>{{ knowledgeGraph?.extractionCount || 0 }} source records inspected</span>
+              <span *ngIf="graphLoading" role="status" aria-live="polite">Checking source records…</span>
+              <span *ngIf="!graphLoading && graphError">Source record count unavailable</span>
+              <span *ngIf="!graphLoading && !graphError && knowledgeGraph">{{ knowledgeGraph.extractionCount }} source records inspected</span>
+              <span *ngIf="!graphLoading && !graphError && !knowledgeGraph">Not loaded</span>
             </div>
+            <p *ngIf="graphError" class="source-detail-state source-detail-state--error" role="alert">{{ graphError }}</p>
             <div *ngIf="knowledgeGraph as graph" class="search-results">
               <article *ngFor="let warning of graph.warnings" class="status-note">
-                <span>{{ warning }}</span>
+        <span>{{ safeOperationalText(warning) }}</span>
               </article>
               <article
                 *ngFor="let entity of graph.entities | slice: 0 : 8"
@@ -512,8 +706,13 @@
                 *ngIf="!graph.entities.length"
                 nzNotFoundContent="No entity candidates in the current source scope."
               ></nz-empty>
-              <details class="advanced-section" *ngIf="graph.timeline.length || graph.relationships.length">
-                <summary>Timeline and co-occurrence details</summary>
+              <hai-progressive-section
+                *ngIf="isAdvancedView && (graph.timeline.length || graph.relationships.length)"
+                [moduleId]="moduleId"
+                sectionId="source-timeline-cooccurrence"
+                title="Timeline and co-occurrence"
+                summary="Candidate dates and relationships from source records; not verified facts."
+              >
                 <p *ngFor="let event of graph.timeline | slice: 0 : 8">
                   <strong>{{ event.parsedAt ? (event.parsedAt | date: 'mediumDate') : event.dateHint }}</strong>
                   - candidate date from {{ knowledgeGraphSourceLabel(event.sourceRefs) }}
@@ -522,17 +721,17 @@
                   {{ link.relationship.replace('_', ' ') }} -
                   {{ link.supportCount }} source record{{ link.supportCount === 1 ? '' : 's' }}
                 </p>
-              </details>
+              </hai-progressive-section>
             </div>
             <nz-empty
-              *ngIf="!knowledgeGraph && !graphLoading"
+              *ngIf="!knowledgeGraph && !graphLoading && !graphError"
               nzNotFoundContent="Open the candidate view to inspect source-linked entities and dates."
             ></nz-empty>
           </div>
         </ng-container>
       </section>
 
-      <aside class="panel inspector">
+      <aside id="source-inspector" class="panel inspector">
         <div class="panel-heading compact">
           <div>
             <h2>Selected source</h2>
@@ -542,7 +741,7 @@
         <ng-container *ngIf="selectedSource() as source; else noSource">
           <div class="source-detail">
             <div class="source-detail__hero">
-              <div class="source-row__icon" [attr.data-status]="statusTone(source.status)">
+              <div class="source-row__icon" [attr.data-status]="sourceHealthTone(source)">
                 <i nz-icon nzType="cluster" nzTheme="outline"></i>
               </div>
               <div>
@@ -553,23 +752,35 @@
             <dl>
               <div>
                 <dt>Status</dt>
-                <dd>{{ statusText(source.status) }} · {{ source.enabled ? 'enabled' : 'paused' }}</dd>
+                <dd>{{ statusText(sourceDisplayStatus(source)) }} · {{ sourceEnabledLabel(source) }}</dd>
               </div>
               <div>
                 <dt>Sync</dt>
-                <dd>{{ source.syncFrequency || 'manual' }} · {{ source.syncTarget || 'no target configured' }}</dd>
+                <dd>{{ source.syncFrequency || 'manual' }} · {{ source.syncTarget ? 'target configured' : 'no target configured' }}</dd>
               </div>
               <div>
-                <dt>Project</dt>
+                <dt>{{ source.connectorKey === 'trello' ? 'Project hint (unverified)' : 'Project' }}</dt>
                 <dd>{{ source.defaultProjectKey || 'not scoped' }}</dd>
               </div>
               <div>
                 <dt>Latest job</dt>
-                <dd>{{ latestJobFor(source)?.status || 'no job yet' }}</dd>
+                <dd>{{ latestJobFor(source) ? statusText(latestJobFor(source)?.status) : 'no job yet' }}</dd>
               </div>
               <div *ngIf="sourceHealth(source) as health">
                 <dt>Connection</dt>
-                <dd>{{ statusText(health.status) }} - {{ health.reason }}</dd>
+                <dd>{{ statusText(health.status) }}<span *ngIf="health.reason"> - {{ safeOperationalText(health.reason) }}</span></dd>
+              </div>
+              <div *ngIf="sourceHealthUnavailable(source)">
+                <dt>Connection</dt>
+                <dd>Health check unavailable - refresh before changing authorization.</dd>
+              </div>
+              <div *ngIf="sourceHealthChecking(source)">
+                <dt>Connection</dt>
+                <dd>Checking current connection state…</dd>
+              </div>
+              <div *ngIf="!sourceHealth(source) && !sourceHealthUnavailable(source) && !sourceHealthChecking(source)">
+                <dt>Connection</dt>
+                <dd>Not verified. No provider access status is assumed.</dd>
               </div>
               <div *ngIf="sourceHealth(source)?.cursorPhase">
                 <dt>Incremental cursor</dt>
@@ -582,35 +793,67 @@
                 nz-button
                 nzType="default"
                 (click)="syncSource(source)"
-                [disabled]="!syncButtonVisible(source)"
-                [nzLoading]="syncing"
-                [title]="sourceActionTitle(source)"
+                [disabled]="!sourceSyncCanRun(source)"
+                [nzLoading]="manualSyncSubmittingSourceId === source.id"
+                [title]="sourceSyncUnavailableReason(source) || sourceActionTitle(source)"
               >
                 {{ sourceActionLabel(source) }}
               </button>
-              <button type="button" nz-button nzType="default" (click)="reindex(source)">Re-index</button>
+              <p *ngIf="sourceSyncUnavailableReason(source)" class="source-sync-unavailable" role="note">{{ sourceSyncUnavailableReason(source) }}</p>
+              <button type="button" nz-button nzType="default" (click)="reindex(source)" [disabled]="sourceMutationInProgress(source)" [nzLoading]="sourceMutationInProgress(source, 'reindex')">Re-index</button>
               <button
                 type="button"
-                *ngIf="isGoogleSource(source) && (!sourceHealth(source)?.authorized || sourceHealth(source)?.requiresReconnect)"
+                *ngIf="canAuthorizeGoogleSource(source)"
                 nz-button
                 nzType="primary"
                 (click)="authorizeGoogleSource(source)"
+                [disabled]="authorizing || connecting"
+                [nzLoading]="authorizing"
               >
                 {{ sourceHealth(source)?.requiresReconnect ? 'Reconnect Google' : 'Authorize Google' }}
               </button>
-              <button type="button" *ngIf="source.enabled" nz-button nzType="default" (click)="pause(source)">Pause</button>
-              <button type="button" *ngIf="!source.enabled && source.status !== 'revoked'" nz-button nzType="default" (click)="resume(source)">Resume</button>
+              <button
+                type="button"
+                *ngIf="!sourceHealth(source) || sourceHealthUnavailable(source)"
+                nz-button
+                nzType="default"
+                (click)="refreshSourceHealth(source)"
+                [disabled]="sourceHealthChecking(source)"
+                [nzLoading]="sourceHealthChecking(source)"
+                [title]="sourceHealthUnavailable(source) ? 'Retry the failed source access check.' : 'Check current source access before authorizing or syncing.'"
+              >{{ sourceHealthChecking(source) ? 'Checking access' : (sourceHealthUnavailable(source) ? 'Retry access check' : 'Check access') }}</button>
+              <button type="button" *ngIf="source.enabled && !sourceIsRevoked(source)" nz-button nzType="default" (click)="pause(source)" [disabled]="sourceMutationInProgress(source)" [nzLoading]="sourceMutationInProgress(source, 'pause')">Pause</button>
+              <button type="button" *ngIf="!source.enabled && !sourceIsRevoked(source)" nz-button nzType="default" (click)="resume(source)" [disabled]="sourceMutationInProgress(source)" [nzLoading]="sourceMutationInProgress(source, 'resume')">Resume</button>
             </div>
-            <details class="advanced-section">
-              <summary>Permissions and filters</summary>
+            <p *ngIf="!source.enabled" class="source-sync-unavailable" role="note">Future syncs are paused. A previously running job may still finish; pausing is not job cancellation.</p>
+            <div *ngIf="manualSyncStatus(source) as syncJob" class="manual-sync-status" role="status" aria-live="polite">
+              <div><strong>Background sync {{ statusText(syncJob.status) }}</strong><span>{{ safeOperationalText(syncJob.message) }}</span></div>
+              <button *ngIf="manualSyncStatusUnavailable[source.id]" type="button" nz-button (click)="checkManualSyncStatus(source)">Check status</button>
+            </div>
+            <div *ngIf="manualSyncRecoveryMessages[source.id] as recoveryMessage" class="manual-sync-recovery" role="alert">
+              <span>{{ recoveryMessage }}</span>
+              <button type="button" nz-button (click)="recoverManualSyncRequest(source)" [disabled]="manualSyncRecoveryActions[source.id] === 'retry' && !sourceSyncCanRun(source)" [title]="sourceSyncUnavailableReason(source)">{{ manualSyncRecoveryActions[source.id] === 'retry' ? 'Retry safely' : (manualSyncRecoveryActions[source.id] === 'refresh' ? 'Refresh job status' : 'Review source details') }}</button>
+            </div>
+            <hai-progressive-section
+              *ngIf="isAdvancedView"
+              [moduleId]="moduleId"
+              sectionId="source-permissions-filters"
+              title="Permissions and filters"
+              summary="Granted connector access and excluded source patterns."
+            >
               <p><strong>Permissions:</strong> {{ sourcePermissions(source).join(', ') || 'not specified' }}</p>
               <p><strong>Excluded:</strong> {{ sourceExcludePatterns(source).join(', ') || 'none' }}</p>
-            </details>
-            <details class="advanced-section danger-zone">
-              <summary>Danger zone</summary>
-              <p>Revoking stops future sync and keeps the action in the audit log.</p>
-              <button type="button" nz-button nzDanger nzType="default" (click)="revoke(source)">Revoke source</button>
-            </details>
+            </hai-progressive-section>
+            <hai-progressive-section
+              *ngIf="isAdvancedView"
+              [moduleId]="moduleId"
+              sectionId="source-danger-zone"
+              title="Danger zone"
+              summary="Revoke this source to stop future sync; the action remains in the audit log."
+            >
+              <p>Revocation requires an existing server-approved reference for this exact source. A current sync is not cancelled by this action.</p>
+              <button type="button" *ngIf="!sourceIsRevoked(source)" nz-button nzDanger nzType="default" (click)="revoke(source)" [disabled]="sourceMutationInProgress(source)">Review revocation</button>
+            </hai-progressive-section>
           </div>
         </ng-container>
         <ng-template #noSource>
@@ -632,13 +875,13 @@
         *ngFor="let outcome of pursuitRoutingOutcomes()"
         class="routing-outcome"
         [attr.data-status]="outcome.status === 'candidate_pending' ? 'watch' : outcome.status === 'routing_deferred' ? 'bad' : 'good'"
-        [title]="outcome.message"
+        [title]="safeOperationalText(outcome.message)"
         (click)="openPursuitOutcome(outcome)"
       >
         <i nz-icon [nzType]="outcome.status === 'candidate_pending' ? 'check-square' : outcome.status === 'routing_deferred' ? 'warning' : 'compass'" nzTheme="outline"></i>
         <span>
           <strong>{{ pursuitRoutingLabel(outcome) }}</strong>
-          <small>{{ outcome.message }}</small>
+          <small>{{ safeOperationalText(outcome.message) }}</small>
         </span>
         <em>{{ outcome.pursuitId ? 'Open pursuit' : 'Open inbox' }}</em>
       </button>
@@ -677,16 +920,35 @@
     </section>
 
     <section class="lower-grid">
+      <hai-progressive-section
+        *ngIf="isAdvancedView"
+        [moduleId]="moduleId"
+        sectionId="source-records"
+        title="Extracted source records"
+        summary="Review source-linked context, full payloads, and record-level actions."
+        (openChange)="onExtractionsSectionOpen($event)"
+      >
       <section class="panel">
         <div class="panel-heading">
           <div>
             <h2>Extracted context</h2>
-            <p>Facts, tasks, dates, and follow-ups stay editable and source-linked.</p>
+            <p>{{ extractionScopeSummary() }}</p>
           </div>
-          <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="refresh()" title="Include archived extraction records">Show archived</label>
+          <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="refreshExtractions()" [nzDisabled]="extractionsLoading" title="Include archived extraction records">Show archived</label>
+        </div>
+        <p *ngIf="extractionsLoading" role="status" aria-live="polite" class="source-detail-state">Loading extracted source records…</p>
+        <p *ngIf="!extractionsLoading && !extractionsLoaded && loadWarnings.includes('Extracted records')" role="alert" class="source-detail-state source-detail-state--error">
+          Extracted records could not be loaded. Existing records are preserved. <button type="button" nz-button nzSize="small" (click)="refreshExtractions()">Retry</button>
+        </p>
+        <div class="advanced-filter-row">
+          <label>
+            <span>Find extracted record</span>
+            <input nz-input type="search" [(ngModel)]="extractionFilterQuery" placeholder="Text, source, project, task, or date" />
+          </label>
+          <span class="filter-count">{{ extractionCountSummary() }}</span>
         </div>
         <div class="record-list">
-          <article *ngFor="let extraction of recentExtractions()">
+          <article *ngFor="let extraction of filteredExtractions()">
             <div>
               <strong>{{ extraction.summary || extraction.text }}</strong>
               <span>{{ extraction.contentType }} · {{ extraction.sourceLabel || extraction.sourceUri || 'source linked' }}</span>
@@ -698,49 +960,156 @@
               <span *ngIf="extraction.sensitive" class="status-pill local">sensitive</span>
               <span *ngIf="extraction.uncertain" class="status-pill" data-status="watch">uncertain</span>
             </div>
+            <div
+              *ngIf="extractionCorrectionRecord(extraction.id) as correction"
+              class="extraction-correction-state"
+              [attr.data-status]="extractionCorrectionTone(extraction.id)"
+              role="status"
+              aria-live="polite"
+            >
+              <div>
+                <strong>{{ extractionCorrectionLabel(extraction.id) }}</strong>
+                <p>{{ extractionCorrectionMessage(extraction.id) }}</p>
+                <small *ngIf="correction.status">Server status: {{ correction.status }}<span *ngIf="correction.correctionId"> · correction {{ correction.correctionId }}</span></small>
+              </div>
+              <button
+                *ngIf="extractionCorrectionCanCheck(extraction.id)"
+                type="button"
+                nz-button
+                nzSize="small"
+                (click)="checkExtractionCorrection(extraction.id)"
+                [disabled]="extractionCorrectionCheckInProgress(extraction.id)"
+              >
+                {{ extractionCorrectionCheckInProgress(extraction.id) ? 'Checking…' : 'Check status' }}
+              </button>
+              <button
+                *ngIf="correction.state === 'failed_may_have_saved' && !correction.correctionId"
+                type="button"
+                nz-button
+                nzSize="small"
+                (click)="checkExtractionCorrection(extraction.id)"
+                [disabled]="extractionsLoading"
+              >
+                Refresh record
+              </button>
+            </div>
             <div class="record-actions">
-              <button type="button" class="icon-button" (click)="markCorrected(extraction)" title="Mark corrected">
+              <button type="button" class="icon-button" (click)="markCorrected(extraction)" title="Mark corrected" [attr.aria-label]="'Mark record corrected: ' + (extraction.summary || extraction.id)" [disabled]="correctionSubmissionBlocked(extraction)">
                 <i nz-icon nzType="check" nzTheme="outline"></i>
               </button>
-              <button type="button" class="icon-button" (click)="archive(extraction)" title="Archive">
+              <button type="button" class="icon-button" (click)="archive(extraction)" title="Archive" [attr.aria-label]="'Archive record: ' + (extraction.summary || extraction.id)">
                 <i nz-icon nzType="inbox" nzTheme="outline"></i>
               </button>
-              <button type="button" class="icon-button icon-button--danger" (click)="delete(extraction)" title="Delete">
+              <button type="button" class="icon-button icon-button--danger" (click)="delete(extraction)" title="Delete" [attr.aria-label]="'Delete record: ' + (extraction.summary || extraction.id)">
                 <i nz-icon nzType="delete" nzTheme="outline"></i>
               </button>
             </div>
+            <details class="record-details">
+              <summary>Exact source record</summary>
+              <dl class="record-provenance">
+                <div><dt>Record</dt><dd>{{ extraction.id }}</dd></div>
+                <div><dt>Source</dt><dd>{{ extraction.sourceId }} · {{ extraction.sourceLabel || extraction.sourceUri || 'label unavailable' }}</dd></div>
+                <div><dt>Raw item</dt><dd>{{ extraction.rawItemId }}</dd></div>
+                <div><dt>Project</dt><dd>{{ extraction.projectKey || 'not recorded' }}</dd></div>
+                <div><dt>Updated</dt><dd>{{ extraction.updatedAt | date: 'medium' }}</dd></div>
+                <div><dt>Full extracted text</dt><dd class="record-provenance__text">{{ extraction.text || 'No extracted text recorded.' }}</dd></div>
+                <div *ngIf="extraction.entities"><dt>Entities</dt><dd>{{ extraction.entities }}</dd></div>
+                <div *ngIf="extraction.dates"><dt>Dates</dt><dd>{{ extraction.dates }}</dd></div>
+                <div *ngIf="extraction.tasks"><dt>Tasks</dt><dd>{{ extraction.tasks }}</dd></div>
+                <div *ngIf="extraction.decisions"><dt>Decisions</dt><dd>{{ extraction.decisions }}</dd></div>
+                <div *ngIf="extraction.followUps"><dt>Follow-ups</dt><dd>{{ extraction.followUps }}</dd></div>
+                <div><dt>Review flags</dt><dd>{{ extraction.sensitive ? 'sensitive' : 'not marked sensitive' }} · {{ extraction.uncertain ? 'uncertain' : 'not marked uncertain' }} · {{ extraction.archived ? 'archived' : 'active' }}</dd></div>
+              </dl>
+            </details>
           </article>
-          <nz-empty *ngIf="!recentExtractions().length" nzNotFoundContent="No extracted records yet."></nz-empty>
+          <nz-empty *ngIf="!extractionsLoading && extractionsLoaded && !filteredExtractions().length" [nzNotFoundContent]="extractionsEmptyText()"></nz-empty>
         </div>
       </section>
 
+      </hai-progressive-section>
+
+      <hai-progressive-section
+        *ngIf="isAdvancedView"
+        [moduleId]="moduleId"
+        sectionId="source-activity"
+        title="Sync jobs and audit history"
+        summary="Inspect raw sync events, outcomes, and audit records."
+        (openChange)="onActivitySectionOpen($event)"
+      >
       <section class="panel">
         <div class="panel-heading">
           <div>
             <h2>Sync jobs and audit</h2>
-            <p>Every source action is traceable.</p>
+            <p>Recent loaded job and audit records. Filter to find exact IDs, source, status, or message.</p>
           </div>
         </div>
+        <p *ngIf="auditLogsLoading" role="status" aria-live="polite" class="source-detail-state">Loading source audit history…</p>
+        <p *ngIf="!auditLogsLoading && !auditLogsLoaded && loadWarnings.includes('Audit history')" role="alert" class="source-detail-state source-detail-state--error">
+          Audit history could not be loaded. <button type="button" nz-button nzSize="small" (click)="onActivitySectionOpen(true)">Retry</button>
+        </p>
+        <div class="advanced-filter-row activity-filters">
+          <label>
+            <span>Find activity</span>
+            <input nz-input type="search" [(ngModel)]="activityFilterQuery" placeholder="ID, source, action, status, message" />
+          </label>
+          <label>
+            <span>Record type</span>
+            <select [(ngModel)]="activityTypeFilter" aria-label="Filter source activity by record type">
+              <option value="all">Sync and audit</option>
+              <option value="sync">Sync jobs</option>
+              <option value="audit">Audit events</option>
+              <option value="failed">Failed syncs</option>
+            </select>
+          </label>
+          <span class="filter-count">{{ sourceActivityCountSummary() }}</span>
+        </div>
         <div class="timeline">
-          <article *ngFor="let job of recentSyncJobs()" [attr.data-status]="statusTone(job.status)">
+          <article *ngFor="let job of filteredSyncJobs()" [attr.data-status]="statusTone(job.status)">
             <i nz-icon nzType="sync" nzTheme="outline"></i>
             <div>
               <strong>{{ statusText(job.status) }} · {{ job.mode }}</strong>
-              <span>{{ job.itemsSeen }} seen, {{ job.itemsAdded }} added, {{ job.itemsFailed }} failed</span>
-              <small>{{ job.startedAt | date: 'short' }} · {{ job.message || 'no message' }}</small>
+              <span>Job {{ job.id }} · source {{ job.sourceId }}</span>
+              <span>{{ job.itemsSeen }} seen, {{ job.itemsAdded }} added, {{ job.itemsUpdated }} updated, {{ job.itemsFailed }} failed</span>
+              <small>Started {{ job.startedAt | date: 'short' }}{{ job.completedAt ? ' · completed ' + (job.completedAt | date: 'short') : '' }} · {{ safeOperationalText(job.message) || 'no message' }}</small>
             </div>
           </article>
-          <article *ngFor="let log of recentAuditLogs()" data-status="neutral">
+          <article *ngFor="let log of filteredAuditLogs()" data-status="neutral">
             <i nz-icon nzType="history" nzTheme="outline"></i>
             <div>
               <strong>{{ log.action }}</strong>
-              <span>{{ log.message }}</span>
+              <span>Audit {{ log.id }} · {{ log.sourceId || 'source not recorded' }}</span>
+              <span>{{ safeOperationalText(log.message) }}</span>
               <small>{{ log.createdAt | date: 'short' }}</small>
             </div>
           </article>
-          <nz-empty *ngIf="!recentSyncJobs().length && !recentAuditLogs().length" nzNotFoundContent="No source activity yet."></nz-empty>
+          <nz-empty
+            *ngIf="!loading && !auditLogsLoading && (syncJobsLoaded || syncJobsUnavailable) && (auditLogsLoaded || loadWarnings.includes('Audit history')) && !hasFilteredActivity()"
+            [nzNotFoundContent]="sourceActivityEmptyText()"
+          ></nz-empty>
         </div>
       </section>
+      </hai-progressive-section>
     </section>
-  </main>
+    </ng-container>
+  </div>
 </section>
+
+<nz-modal [nzVisible]="!!destructiveTarget" [nzTitle]="destructiveTarget?.action === 'revoke' ? 'Review source revocation' : 'Review record deletion'" [nzFooter]="null" [nzClosable]="!destructiveSubmitting" [nzMaskClosable]="false" [nzKeyboard]="!destructiveSubmitting" (nzOnCancel)="closeDestructiveApproval()">
+  <ng-container *nzModalContent>
+    <p><strong>{{ destructiveTarget?.label }}</strong></p>
+    <p>Existing approval only. The server verifies the owner, action, resource, revision, and emergency stop before any change.</p>
+    <form [formGroup]="destructiveApprovalForm" class="source-approval-form" (ngSubmit)="submitDestructiveApproval()">
+      <label><span>Approved task ID</span><input nz-input formControlName="taskId" [readonly]="destructiveSubmitting" autocomplete="off" /></label>
+      <label><span>Approval source ID</span><input nz-input formControlName="approvalSourceId" [readonly]="destructiveSubmitting" autocomplete="off" /></label>
+      <label><span>Approval binding digest</span><input nz-input formControlName="approvalBindingDigest" [readonly]="destructiveSubmitting" autocomplete="off" spellcheck="false" /></label>
+      <label><span>Request idempotency key</span><input nz-input formControlName="idempotencyKey" [readonly]="destructiveSubmitting" autocomplete="off" spellcheck="false" /></label>
+      <p *ngIf="destructiveError" role="alert">{{ destructiveError }}</p>
+      <div class="form-footer">
+        <button type="button" nz-button [disabled]="destructiveSubmitting" (click)="closeDestructiveApproval()">Cancel</button>
+        <button type="button" nz-button [disabled]="destructiveSubmitting" (click)="refresh()">Refresh status</button>
+        <button type="button" nz-button [disabled]="destructiveSubmitting" (click)="reviewDestructiveActivity()">Review activity</button>
+        <button type="submit" nz-button nzDanger [disabled]="!destructiveCanSubmit()" [nzLoading]="destructiveSubmitting">{{ destructiveTarget?.action === 'revoke' ? 'Submit revocation' : 'Submit deletion' }}</button>
+      </div>
+    </form>
+  </ng-container>
+</nz-modal>

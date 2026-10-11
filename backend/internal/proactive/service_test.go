@@ -351,7 +351,7 @@ func testSignal(owner string, signalType SignalType, now time.Time) Signal {
 	return Signal{
 		ContractVersion: ContractVersion,
 		ID:              "signal-1",
-		IdempotencyKey:  "idempotency-1",
+		IdempotencyKey:  "idem-test-1",
 		OwnerIdentity:   owner,
 		Type:            signalType,
 		OpenLoopKey:     "open-loop-1",

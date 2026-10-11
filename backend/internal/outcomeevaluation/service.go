@@ -213,6 +213,11 @@ func (s *Service) CreateEvaluation(ctx context.Context, ownerID, workspaceID, ou
 	if err := verifyEvaluationRecordScope(stored, ownerID, workspaceID, outcomeID); err != nil {
 		return EvaluationRecord{}, false, err
 	}
+	if request.OutcomeAuditDigest != "" {
+		if err := verifyPinnedEvaluationResult(stored, record); err != nil {
+			return EvaluationRecord{}, false, err
+		}
+	}
 	s.projectEvaluationRecord(ctx, current, &stored)
 	return stored, created, nil
 }
@@ -379,6 +384,20 @@ func verifyEvaluationRecordScope(record EvaluationRecord, ownerID, workspaceID, 
 		return ErrScopeViolation
 	}
 	return VerifyEvaluationRecordDigest(record)
+}
+
+// A valid historical receipt is not necessarily compatible with the pinned
+// request or current evaluator. Never silently treat it as an exact replay.
+func verifyPinnedEvaluationResult(stored, expected EvaluationRecord) error {
+	if err := VerifyEvaluationRecordDigest(stored); err != nil {
+		return err
+	}
+	if stored.OutcomeRevision != expected.OutcomeRevision ||
+		stored.Evaluation.ID != expected.Evaluation.ID ||
+		!equalSHA256(stored.Evaluation.AuditDigest, expected.Evaluation.AuditDigest) {
+		return ErrIntegrityViolation
+	}
+	return nil
 }
 
 func verifyCorrectionRecordScope(record CorrectionRecord, ownerID, workspaceID, outcomeID string) error {

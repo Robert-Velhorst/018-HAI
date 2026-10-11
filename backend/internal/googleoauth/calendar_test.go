@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -50,5 +51,30 @@ func TestCalendarClientReturnsTypedExpiredSyncToken(t *testing.T) {
 	_, err := (CalendarClient{AccessToken: "token", BaseURL: server.URL}).ListPrimaryEventsPage(context.Background(), "", "expired", "", 200)
 	if !errors.Is(err, ErrCalendarSyncTokenExpired) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCalendarProviderAPIErrorPreservesSafeRetryMetadata(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusBadRequest, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusGone} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Retry-After", "17")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"error":"private response content"}`))
+			}))
+			defer server.Close()
+
+			_, err := (CalendarClient{AccessToken: "token", BaseURL: server.URL}).ListPrimaryEventsPage(context.Background(), "", "sync-token", "", 100)
+			var apiErr *ProviderAPIError
+			if !errors.As(err, &apiErr) || apiErr.StatusCode != status || apiErr.RetryAfterHeader != "17" {
+				t.Fatalf("error = %#v; want typed status %d and Retry-After metadata", err, status)
+			}
+			if strings.Contains(err.Error(), "private response content") {
+				t.Fatalf("provider body leaked through error: %v", err)
+			}
+			if status == http.StatusGone && !errors.Is(err, ErrCalendarSyncTokenExpired) {
+				t.Fatalf("410 error = %v; want ErrCalendarSyncTokenExpired preserved", err)
+			}
+		})
 	}
 }

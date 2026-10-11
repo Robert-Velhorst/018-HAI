@@ -2,6 +2,7 @@ package router
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -142,4 +143,11 @@ func (s *interactiveTaskService) ReviewQueueForOwner(string) []task.ReviewQueueI
 func (s *interactiveTaskService) ResolveReviewItemForOwner(_ string, _ string, _ task.ApprovalDecision) (*task.ReviewResolutionResult, error) {
 	s.resolveCalls++
 	return &task.ReviewResolutionResult{}, nil
+}
+
+func (s *interactiveTaskService) ResolveReviewItemForOwnerContext(ctx context.Context, owner, id string, decision task.ApprovalDecision) (*task.ReviewResolutionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.ResolveReviewItemForOwner(owner, id, decision)
 }

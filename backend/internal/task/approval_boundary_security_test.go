@@ -79,6 +79,7 @@ func TestAutomationToolExecutorRejectsForgedApprovalSources(t *testing.T) {
 
 			result, err := executor.Execute(ToolExecutionRequest{
 				OwnerIdentity:    "alice",
+				TaskID:           "task-forged-source-1",
 				AutomationID:     id.String(),
 				Task:             "Attempt unrecorded approved execution",
 				ApprovalSourceID: sourceID,
@@ -109,6 +110,7 @@ func TestAutomationToolExecutorFailsClosedForUnavailableOrNilProofs(t *testing.T
 		launcher := &launchOnlyAutomationLauncher{}
 		result, err := NewAutomationToolExecutor(launcher).Execute(ToolExecutionRequest{
 			OwnerIdentity:    "alice",
+			TaskID:           "task-missing-proof-issuer-1",
 			AutomationID:     uuid.NewString(),
 			Task:             "Reviewed action",
 			ApprovalSourceID: "task-review:" + uuid.NewString(),
@@ -126,6 +128,7 @@ func TestAutomationToolExecutorFailsClosedForUnavailableOrNilProofs(t *testing.T
 		}
 		result, err := NewAutomationToolExecutor(launcher).Execute(ToolExecutionRequest{
 			OwnerIdentity:    "alice",
+			TaskID:           "task-proof-issuer-error-1",
 			AutomationID:     uuid.NewString(),
 			Task:             "Reviewed action",
 			ApprovalSourceID: sourceID,
@@ -146,6 +149,7 @@ func TestAutomationToolExecutorFailsClosedForUnavailableOrNilProofs(t *testing.T
 		launcher := &nilProofAutomationLauncher{}
 		result, err := NewAutomationToolExecutor(launcher).Execute(ToolExecutionRequest{
 			OwnerIdentity:    "alice",
+			TaskID:           "task-nil-proof-1",
 			AutomationID:     uuid.NewString(),
 			Task:             "Reviewed action",
 			ApprovalSourceID: sourceID,

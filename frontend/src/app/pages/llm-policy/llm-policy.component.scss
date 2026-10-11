@@ -22,6 +22,7 @@
 
 .llm-content {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -92,8 +93,14 @@
   cursor: help;
 }
 
+.provider-stats > [tabindex="0"]:focus-visible {
+  border-color: var(--blue);
+  outline: 2px solid color-mix(in srgb, var(--blue) 35%, transparent);
+  outline-offset: 2px;
+}
+
 .llm-status-strip {
-  grid-template-columns: minmax(260px, 1.35fr) repeat(6, minmax(160px, 1fr)) !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)) !important;
 }
 
 .status-tile {
@@ -477,6 +484,25 @@ dd {
   padding: 14px;
 }
 
+.data-unavailable {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin: 0 14px 12px;
+  padding: 9px 10px;
+  color: var(--muted);
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.data-unavailable span {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .tier-selector button {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -766,7 +792,6 @@ dd {
 }
 
 @media (max-width: 1320px) {
-  .llm-status-strip,
   .llm-workspace,
   .catalog-workbench,
   .diagnostics-grid {
@@ -814,7 +839,10 @@ dd {
 }
 
 @media (max-width: 640px) {
-  .llm-status-strip,
+  .llm-status-strip {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
   .tier-overview,
   .provider-stats,
   .model-table dl,
@@ -826,4 +854,10 @@ dd {
   .policy-action-rail {
     grid-template-columns: 1fr !important;
   }
+}
+
+.tier-overview button:focus-visible,
+.tier-selector button:focus-visible {
+  outline: 2px solid var(--hai-blue, #1677ff);
+  outline-offset: 2px;
 }

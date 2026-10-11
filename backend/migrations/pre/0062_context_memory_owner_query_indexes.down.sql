@@ -1,0 +1,2 @@
+DROP INDEX IF EXISTS public.idx_context_memories_owner_archive_updated;
+DROP INDEX IF EXISTS public.idx_context_memories_owner_project_archive_updated;

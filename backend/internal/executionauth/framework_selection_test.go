@@ -183,7 +183,7 @@ func TestSelectorV5SelectionIsRecheckedBeforeConsumption(t *testing.T) {
 	}
 }
 
-func TestLegacyFrameworkGovernanceDoesNotRequireSelectionResolver(t *testing.T) {
+func TestLegacyFrameworkGovernanceCannotAuthorizeNewExecution(t *testing.T) {
 	service := newTestService(t, NewMemoryRepository(), permissiveConstitution(), nil, nil)
 	request := baseRequest("legacy-selection-compatibility")
 	digest := strings.Repeat("b", 64)
@@ -202,7 +202,8 @@ func TestLegacyFrameworkGovernanceDoesNotRequireSelectionResolver(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Authorize: %v", err)
 	}
-	if receipt.Outcome != OutcomeAuthorized || receipt.Evidence.FrameworkSelection.Verified {
+	if receipt.Outcome != OutcomeDenied || receipt.Evidence.FrameworkSelection.Verified ||
+		!containsFold(receipt.Evidence.ReasonCodes, "framework.selection_legacy_execution_denied") {
 		t.Fatalf("legacy receipt = %#v", receipt)
 	}
 }

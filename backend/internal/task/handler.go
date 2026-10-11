@@ -2,6 +2,7 @@ package task
 
 import (
 	"automation-hub-backend/internal/identity"
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -42,6 +43,11 @@ func (h *Handler) Plan(c *gin.Context) {
 	}
 	request.ExecuteAllowed = false
 	request.OwnerIdentity = ownerIdentity
+	request.ExecutionContext = c.Request.Context()
+	if err := request.ExecutionContext.Err(); err != nil {
+		writeTaskOperationError(c, err, "task plan was cancelled")
+		return
+	}
 	if !bindTaskIdempotencyKey(c, &request) {
 		return
 	}
@@ -72,6 +78,11 @@ func (h *Handler) Run(c *gin.Context) {
 	}
 	request.ExecuteAllowed = true
 	request.OwnerIdentity = ownerIdentity
+	request.ExecutionContext = c.Request.Context()
+	if err := request.ExecutionContext.Err(); err != nil {
+		writeTaskOperationError(c, err, "task run was cancelled")
+		return
+	}
 	if !bindTaskIdempotencyKey(c, &request) {
 		return
 	}
@@ -118,6 +129,12 @@ func writeTaskOperationError(c *gin.Context, err error, fallback string) {
 		c.JSON(http.StatusConflict, gin.H{"error": "task operation is already in progress"})
 	case errors.Is(err, ErrTaskOperationNeedsReview):
 		c.JSON(http.StatusConflict, gin.H{"error": "task operation outcome requires review before retry"})
+	case errors.Is(err, context.Canceled):
+		c.JSON(http.StatusRequestTimeout, gin.H{"error": "task request was cancelled"})
+	case errors.Is(err, context.DeadlineExceeded):
+		c.JSON(http.StatusGatewayTimeout, gin.H{"error": "task request deadline was exceeded"})
+	case errors.Is(err, ErrTaskStorageContextUnavailable):
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "owned task storage is unavailable; no execution was admitted"})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": fallback})
 	}
@@ -204,14 +221,21 @@ func (h *Handler) ResolveReviewItem(c *gin.Context) {
 	if !ok {
 		return
 	}
-	scoped, ok := h.service.(OwnerScopedService)
-	if !ok {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "owner-scoped task review is unavailable"})
+	ctx := c.Request.Context()
+	if err := ctx.Err(); err != nil {
+		writeTaskOperationError(c, err, "task review request was cancelled")
 		return
 	}
-	result, err := scoped.ResolveReviewItemForOwner(ownerIdentity, id, decision)
+	scoped, ok := h.service.(ContextualReviewService)
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "cancellation-aware task review is unavailable"})
+		return
+	}
+	result, err := scoped.ResolveReviewItemForOwnerContext(ctx, ownerIdentity, id, decision)
 	if err != nil {
 		switch {
+		case errors.Is(err, ErrTaskOperationNeedsReview), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded), errors.Is(err, ErrTaskStorageContextUnavailable):
+			writeTaskOperationError(c, err, "task review execution could not be completed")
 		case errors.Is(err, ErrTaskStateNotFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "review item not found"})
 		case errors.Is(err, ErrTaskOperationRetryConfirmation):
@@ -219,6 +243,10 @@ func (h *Handler) ResolveReviewItem(c *gin.Context) {
 				"error":        "uncertain operation retry requires explicit confirmation",
 				"confirmation": TaskOperationRetryConfirmation,
 			})
+		case errors.Is(err, ErrTaskOutcomeReconciliationRequired):
+			c.JSON(http.StatusConflict, gin.H{"error": "The previous runtime outcome is uncertain. Reconcile its audit and possible effects before a separately authorized attempt. Workflow-owned tasks must use workflow recovery.", "code": "outcome_reconciliation_required"})
+		case errors.Is(err, ErrTaskReviewConfigurationUnavailable):
+			c.JSON(http.StatusConflict, gin.H{"error": "This review has no valid historical automation configuration. Repair the configuration and create a new review; this review cannot authorize execution.", "code": "review_configuration_unavailable"})
 		case errors.Is(err, ErrTaskReviewAlreadyResolved),
 			errors.Is(err, ErrTaskStateConflict),
 			errors.Is(err, ErrTaskReviewInvalidTransition):
@@ -226,6 +254,10 @@ func (h *Handler) ResolveReviewItem(c *gin.Context) {
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "review decision could not be completed"})
 		}
+		return
+	}
+	if result == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "task review decision was not acknowledged"})
 		return
 	}
 	c.JSON(http.StatusOK, result)

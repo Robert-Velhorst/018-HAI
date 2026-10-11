@@ -378,6 +378,13 @@ func (s *Service) GoalForest(ownerIdentity string) ([]GoalTreeNode, error) {
 	if err != nil {
 		return nil, err
 	}
+	return GoalForestFromGoals(goals), nil
+}
+
+// GoalForestFromGoals builds the hierarchy from an already owner-scoped goal
+// list. Overview callers reuse their loaded list instead of issuing a second
+// repository read solely to render the same tree.
+func GoalForestFromGoals(goals []GoalNode) []GoalTreeNode {
 	byParent := make(map[uuid.UUID][]GoalNode)
 	roots := make([]GoalNode, 0)
 	for _, goal := range goals {
@@ -399,7 +406,7 @@ func (s *Service) GoalForest(ownerIdentity string) ([]GoalTreeNode, error) {
 	for _, root := range roots {
 		result = append(result, build(root))
 	}
-	return result, nil
+	return result
 }
 
 func (s *Service) AssessPriority(request PriorityAssessmentRequest) (*PriorityAssessment, error) {

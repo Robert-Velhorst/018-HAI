@@ -56,6 +56,19 @@ export interface IFrameworkPreference {
   updatedAt: string;
 }
 
+export interface IFrameworkPreferenceChange {
+  id: string;
+  sequence: number;
+  frameworkId: string;
+  actor: string;
+  reason: string;
+  before?: IFrameworkPreference | null;
+  after: IFrameworkPreference;
+  occurredAt: string;
+  previousEventDigest?: string;
+  eventDigest: string;
+}
+
 export interface IFrameworkView extends IFramework {
   effectiveStatus: string;
   enabled: boolean;
@@ -63,6 +76,16 @@ export interface IFrameworkView extends IFramework {
   effectiveAutonomyLevel: number;
   adaptations: string[];
   preferenceUpdatedAt?: string;
+}
+
+export interface IFrameworkFamilyRecord extends IFramework {
+  section: number;
+}
+
+export interface IFrameworkFamilyTaxonomy {
+  version: string;
+  digest: string;
+  families: IFrameworkFamilyRecord[];
 }
 
 export interface IFrameworkPreferencePatch {

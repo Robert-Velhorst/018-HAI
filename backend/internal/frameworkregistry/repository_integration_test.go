@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/migrations"
 
@@ -45,18 +46,8 @@ func frameworkRegistryIntegrationRepository(t *testing.T) (*GormRepository, *gor
 	if err := db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;").Error; err != nil {
 		t.Fatalf("reset schema: %v", err)
 	}
-	for _, path := range []string{
-		"pre/0001_extensions.up.sql",
-		"pre/0003_framework_registry.up.sql",
-		"pre/0005_framework_operating_contract.up.sql",
-	} {
-		sql, err := migrations.Files.ReadFile(path)
-		if err != nil {
-			t.Fatalf("read migration %s: %v", path, err)
-		}
-		if err := db.Exec(string(sql)).Error; err != nil {
-			t.Fatalf("apply migration %s: %v", path, err)
-		}
+	if _, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil {
+		t.Fatalf("apply pre migrations: %v", err)
 	}
 	return NewGormRepository(db), db
 }

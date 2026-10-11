@@ -17,6 +17,7 @@ import (
 	"automation-hub-backend/internal/autonomypolicy"
 	"automation-hub-backend/internal/executionbroker"
 	"automation-hub-backend/internal/idempotency"
+	"automation-hub-backend/internal/lifecycle"
 	"automation-hub-backend/internal/modelintelligence"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/operations"
@@ -27,6 +28,13 @@ import (
 
 // ErrBusy is returned when a RunOnce is already in progress.
 var ErrBusy = errors.New("background: run already in progress")
+
+// ErrReportedFailures indicates that a RunOnce pass completed with failures
+// retained in Report.Errors. Callers can use this to avoid recording partial
+// feed or ledger failures as a successful scheduled pass.
+var ErrReportedFailures = errors.New("background: run recorded failures")
+
+var errExecutionDeferredByPolicy = errors.New("background: safe execution deferred because the current policy no longer permits it")
 
 // Options configures a background worker.
 type Options struct {
@@ -39,16 +47,21 @@ type Options struct {
 
 // Worker orchestrates one background pass over feeds and the Operation Ledger.
 type Worker struct {
-	svc        *operations.Service
-	broker     *executionbroker.Broker
-	readers    []accountfeed.Reader
-	modelInt   *modelintelligence.Service // optional; drives the fast-triage lane
-	control    Control                    // optional; live mode + emergency stop
-	blockRules BlockRules                 // optional; operator "block similar" rules
-	opts       Options
-	now        func() time.Time
-	lease      *lease
+	svc          *operations.Service
+	broker       *executionbroker.Broker
+	readers      []accountfeed.Reader
+	feedRegistry *accountfeed.Registry
+	modelInt     *modelintelligence.Service // optional; drives the fast-triage lane
+	control      Control                    // optional; live mode + emergency stop
+	blockRules   BlockRules                 // optional; operator "block similar" rules
+	opts         Options
+	now          func() time.Time
+	leaseKey     leaseKey
+	claimOwner   uuid.UUID
+	claimLease   time.Duration
 }
+
+const operationClaimLease = 2 * time.Minute
 
 // New builds a worker. If opts.MaxOps <= 0 a default of 50 is used.
 func New(svc *operations.Service, broker *executionbroker.Broker, readers []accountfeed.Reader, opts Options) *Worker {
@@ -57,11 +70,22 @@ func New(svc *operations.Service, broker *executionbroker.Broker, readers []acco
 	}
 	if opts.MaxOps <= 0 {
 		opts.MaxOps = 50
+	} else if opts.MaxOps > 200 {
+		opts.MaxOps = 200
 	}
 	if opts.Mode == "" {
 		opts.Mode = autonomypolicy.ModeAutonomousSafe
 	}
-	return &Worker{svc: svc, broker: broker, readers: readers, opts: opts, now: time.Now, lease: newLease()}
+	return &Worker{
+		svc:        svc,
+		broker:     broker,
+		readers:    readers,
+		opts:       opts,
+		now:        time.Now,
+		leaseKey:   leaseKey{service: svc, ownerUserID: opts.OwnerUserID, workspaceID: opts.WorkspaceID},
+		claimOwner: uuid.New(),
+		claimLease: operationClaimLease,
+	}
 }
 
 // WithModelIntelligence attaches a model-intelligence service so the fast-triage
@@ -69,6 +93,13 @@ func New(svc *operations.Service, broker *executionbroker.Broker, readers []acco
 // telemetry. Returns the worker for chaining.
 func (w *Worker) WithModelIntelligence(mi *modelintelligence.Service) *Worker {
 	w.modelInt = mi
+	return w
+}
+
+// Attach before serving requests. Registry failure never falls back to cached
+// readers; both the scheduled and interactive pass use canonical configurations.
+func (w *Worker) WithFeedRegistry(registry *accountfeed.Registry) *Worker {
+	w.feedRegistry = registry
 	return w
 }
 
@@ -114,95 +145,330 @@ func (w *Worker) effectiveEmergencyStop() bool {
 
 // Report summarizes a RunOnce pass.
 type Report struct {
-	FeedsRead         int      `json:"feedsRead"`
-	ItemsIngested     int      `json:"itemsIngested"`
-	OperationsCreated int      `json:"operationsCreated"`
-	Classified        int      `json:"classified"`
-	Triaged           int      `json:"triaged"`
-	AutoExecuted      int      `json:"autoExecuted"`
-	Verified          int      `json:"verified"`
-	Failed            int      `json:"failed"`
-	AwaitingApproval  int      `json:"awaitingApproval"`
-	Blocked           int      `json:"blocked"`
-	Drafted           int      `json:"drafted"`
-	Observed          int      `json:"observed"`
-	Errors            []string `json:"errors,omitempty"`
+	FeedsRead                       int      `json:"feedsRead"`
+	ItemsIngested                   int      `json:"itemsIngested"`
+	OperationsCreated               int      `json:"operationsCreated"`
+	RecoveredOperations             int      `json:"recoveredOperations"`
+	UnleasedExecutingOperations     int      `json:"unleasedExecutingOperations"`
+	ExpiredOperationClaimsRemaining int      `json:"expiredOperationClaimsRemaining"`
+	Classified                      int      `json:"classified"`
+	Triaged                         int      `json:"triaged"`
+	AutoExecuted                    int      `json:"autoExecuted"`
+	Verified                        int      `json:"verified"`
+	Failed                          int      `json:"failed"`
+	AwaitingApproval                int      `json:"awaitingApproval"`
+	Blocked                         int      `json:"blocked"`
+	Drafted                         int      `json:"drafted"`
+	Observed                        int      `json:"observed"`
+	Interrupted                     int      `json:"interrupted"`
+	DeferredByPolicy                int      `json:"deferredByPolicy"`
+	Errors                          []string `json:"errors,omitempty"`
 }
 
-// RunOnce performs a single background pass. It acquires the lease first; if a
-// pass is already running it returns ErrBusy.
+// RunOnce performs a single background pass. It acquires a process-local pass
+// lease and then uses durable per-operation claims across backend replicas.
 func (w *Worker) RunOnce(ctx context.Context) (Report, error) {
-	if !w.lease.acquire() {
+	ctx, finish, err := operations.BindExecutionContext(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	defer finish()
+	leaseRef, leaseOwner, ok := acquireRunLease(w.leaseKey)
+	if !ok {
 		return Report{}, ErrBusy
 	}
-	defer w.lease.release()
+	defer releaseRunLease(w.leaseKey, leaseRef, leaseOwner)
 
 	var rep Report
-	w.ingest(ctx, &rep)
+	recovery, err := w.svc.RecoverExpiredClaims(ctx, w.opts.OwnerUserID, w.opts.WorkspaceID, 200)
+	if err != nil {
+		rep.Errors = append(rep.Errors, fmt.Sprintf("recover expired operation claims: %v", err))
+	} else {
+		rep.RecoveredOperations = recovery.Recovered
+		rep.UnleasedExecutingOperations = recovery.UnleasedRunning + recovery.UnleasedVerifying
+		rep.ExpiredOperationClaimsRemaining = recovery.ExpiredClaimsRemain
+	}
+	if err := ctx.Err(); err != nil {
+		return rep, err
+	}
+	if err := w.ingest(ctx, &rep); err != nil {
+		return rep, err
+	}
+	if err := ctx.Err(); err != nil {
+		return rep, err
+	}
+	mode := w.effectiveMode()
+	if mode == autonomypolicy.ModePaused {
+		// Paused mode leaves new work untouched, but safely defers work that
+		// was already approved for local execution before the pause.
+		if err := w.deferPausedSafeOperations(ctx, &rep); err != nil {
+			return rep, err
+		}
+		return rep, reportFailures(rep)
+	}
+	if !mode.AllowsBackgroundProcessing() {
+		// Emergency-stopped mode still ingests for the record but processes nothing.
+		return rep, reportFailures(rep)
+	}
 	if w.effectiveEmergencyStop() {
 		// Emergency stop still ingests for the record but processes nothing.
-		return rep, nil
+		return rep, reportFailures(rep)
 	}
-	w.process(ctx, &rep)
-	return rep, nil
+	if err := w.process(ctx, &rep); err != nil {
+		return rep, err
+	}
+	if err := ctx.Err(); err != nil {
+		return rep, err
+	}
+	return rep, reportFailures(rep)
+}
+
+func (w *Worker) deferPausedSafeOperations(ctx context.Context, rep *Report) error {
+	processed := 0
+	for _, status := range []operations.OperationStatus{operations.StatusReady, operations.StatusClassified} {
+		operationsDue, err := w.svc.List(operations.Filter{
+			OwnerUserID: w.opts.OwnerUserID,
+			WorkspaceID: w.opts.WorkspaceID,
+			Status:      status,
+			Limit:       w.opts.MaxOps,
+		})
+		if err != nil {
+			return fmt.Errorf("list %s operations while paused: %w", status, err)
+		}
+		for _, op := range operationsDue {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if processed >= w.opts.MaxOps {
+				return nil
+			}
+			if operations.CurrentDecision(op.CurrentDecision) != operations.DecisionRunSafeLocalWorker {
+				continue
+			}
+			claimed, err := w.svc.ClaimOperation(ctx, w.opts.OwnerUserID, w.opts.WorkspaceID, op.ID, w.claimOwner, w.claimLease)
+			if errors.Is(err, operations.ErrOperationNotClaimable) || errors.Is(err, operations.ErrOperationClaimed) || errors.Is(err, operations.ErrNotFound) {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("claim safe operation while paused: %w", err)
+			}
+			if claimed == nil {
+				continue
+			}
+			processed++
+			if err := w.processClaimed(ctx, *claimed, rep); err != nil && !errors.Is(err, errExecutionDeferredByPolicy) {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				rep.Errors = append(rep.Errors, fmt.Sprintf("operation %s: %v", claimed.Operation.ID, err))
+				return errors.Join(ErrReportedFailures, fmt.Errorf("defer safe operation while paused: %w", err))
+			}
+		}
+	}
+	return nil
 }
 
 // ingest reads every feed and creates/refreshes Operations for its items.
-func (w *Worker) ingest(ctx context.Context, rep *Report) {
+func (w *Worker) ingest(ctx context.Context, rep *Report) error {
+	if w.feedRegistry != nil {
+		reports, err := w.feedRegistry.SyncDueContext(ctx, accountfeed.FeedScope{OwnerUserID: w.opts.OwnerUserID, WorkspaceID: w.opts.WorkspaceID})
+		for _, result := range reports {
+			if result.ReadCompleted {
+				rep.FeedsRead++
+			}
+			rep.ItemsIngested += result.OperationsCreated + result.OperationsRefresh
+			rep.OperationsCreated += result.OperationsCreated
+			rep.Errors = append(rep.Errors, result.Errors...)
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			rep.Errors = append(rep.Errors, "configured feed storage could not be verified; inspect local operator diagnostics")
+			return reportFailures(*rep)
+		}
+		return nil
+	}
 	for _, r := range w.readers {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		feed := r.Feed()
 		if !feed.Enabled {
 			continue
 		}
-		rep.FeedsRead++
-		items, err := r.Read(ctx)
+		start := feed.SourceObservationStart()
+		// Explicit static-reader composition remains a trusted non-registry
+		// class. Once an origin is registry-managed this cannot change its config.
+		start.RegistryManaged = false
+		err := w.svc.WithSourceObservation(ctx, start, func(observed context.Context) error {
+			return w.ingestObservedFeed(observed, r, feed, rep)
+		})
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			rep.Errors = append(rep.Errors, fmt.Sprintf("feed %s: %v", feed.Name, err))
+		}
+	}
+	return nil
+}
+
+func (w *Worker) ingestObservedFeed(ctx context.Context, r accountfeed.Reader, feed accountfeed.Feed, rep *Report) error {
+	rep.FeedsRead++
+	items, err := r.Read(ctx)
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		rep.ItemsIngested++
+		in, err := feed.ToOperationInput(it)
+		if err != nil {
+			rep.Errors = append(rep.Errors, fmt.Sprintf("feed %s item %s: %v", feed.Name, it.ExternalID, err))
 			continue
 		}
-		for _, it := range items {
-			rep.ItemsIngested++
-			in, err := feed.ToOperationInput(it)
-			if err != nil {
-				rep.Errors = append(rep.Errors, fmt.Sprintf("feed %s item %s: %v", feed.Name, it.ExternalID, err))
-				continue
+		res, err := w.svc.IngestContext(ctx, in)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
 			}
-			res, err := w.svc.Ingest(in)
-			if err != nil {
-				rep.Errors = append(rep.Errors, fmt.Sprintf("ingest %s: %v", it.ExternalID, err))
-				continue
-			}
-			if res.Created {
-				rep.OperationsCreated++
-			}
+			rep.Errors = append(rep.Errors, fmt.Sprintf("ingest %s: %v", it.ExternalID, err))
+			continue
+		}
+		if res.Created {
+			rep.OperationsCreated++
 		}
 	}
+	return nil
 }
 
-// process classifies and routes every actionable Operation currently in `new`.
-func (w *Worker) process(ctx context.Context, rep *Report) {
-	due, err := w.svc.ListDue(w.opts.OwnerUserID, w.opts.WorkspaceID, w.opts.MaxOps)
-	if err != nil {
-		rep.Errors = append(rep.Errors, fmt.Sprintf("list due: %v", err))
-		return
-	}
-	for _, op := range due {
-		if op.Status != string(operations.StatusNew) {
-			continue // Phase 2A processes freshly-ingested operations.
+// process claims one operation at a time. A batch of claims would let later
+// items expire while waiting behind a slow model or execution call.
+func (w *Worker) process(ctx context.Context, rep *Report) error {
+	for processed := 0; processed < w.opts.MaxOps; processed++ {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		if err := w.processOne(ctx, op, rep); err != nil {
-			rep.Errors = append(rep.Errors, fmt.Sprintf("operation %s: %v", op.ID, err))
+		claimed, err := w.svc.ClaimNext(ctx, w.opts.OwnerUserID, w.opts.WorkspaceID, w.claimOwner, w.claimLease)
+		if err != nil {
+			rep.Errors = append(rep.Errors, fmt.Sprintf("claim next operation: %v", err))
+			return fmt.Errorf("claim next operation: %w", err)
+		}
+		if claimed == nil {
+			return ctx.Err()
+		}
+		if err := w.validateClaimedOperation(claimed.Operation); err != nil {
+			if releaseErr := w.svc.ReleaseClaim(ctx, claimed.Claim); releaseErr != nil {
+				err = errors.Join(err, fmt.Errorf("release invalid operation claim: %w", releaseErr))
+			}
+			rep.Errors = append(rep.Errors, err.Error())
+			return errors.Join(ErrReportedFailures, fmt.Errorf("validate claimed operation: %w", err))
+		}
+		if err := w.processClaimed(ctx, *claimed, rep); err != nil {
+			if err == errExecutionDeferredByPolicy {
+				continue
+			}
+			rep.Errors = append(rep.Errors, fmt.Sprintf("operation %s: %v", claimed.Operation.ID, err))
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return errors.Join(ErrReportedFailures, fmt.Errorf("operation %s: %w", claimed.Operation.ID, err))
 		}
 	}
+	return ctx.Err()
 }
 
-func (w *Worker) processOne(ctx context.Context, op models.Operation, rep *Report) error {
+func (w *Worker) validateClaimedOperation(op models.Operation) error {
+	status := operations.OperationStatus(op.Status)
+	if status == operations.StatusDrafting && operations.CurrentDecision(op.CurrentDecision) != operations.DecisionCreateDraft {
+		return fmt.Errorf("operation %s: drafting status has non-draft decision %q", op.ID, op.CurrentDecision)
+	}
+	if status == operations.StatusApproved {
+		if !operations.IsSourceDerived(op) {
+			return nil
+		}
+		_, err := w.svc.SourceApprovalForExecution(op)
+		return err
+	}
+	if status == operations.StatusReady || (status == operations.StatusClassified && operations.CurrentDecision(op.CurrentDecision) == operations.DecisionRunSafeLocalWorker) {
+		return safeExecutionPolicyError(op)
+	}
+	return nil
+}
+
+func (w *Worker) processClaimed(ctx context.Context, claimed operations.ClaimedOperation, rep *Report) error {
+	claimCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	heartbeatDone := make(chan error, 1)
+	heartbeatStopped := make(chan struct{})
+	if !lifecycle.Go(claimCtx, "background-claim-heartbeat", func() {
+		defer close(heartbeatStopped)
+		ticker := time.NewTicker(w.claimLease / 3)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-claimCtx.Done():
+				heartbeatDone <- nil
+				return
+			case <-ticker.C:
+				if err := w.svc.RenewClaim(claimCtx, claimed.Claim, w.claimLease); err != nil {
+					heartbeatDone <- fmt.Errorf("renew claim generation %d: %w", claimed.Claim.Generation, err)
+					cancel()
+					return
+				}
+			}
+		}
+	}) {
+		return context.Canceled
+	}
+	defer func() { cancel(); <-heartbeatStopped }()
+	processErr := w.processOne(claimCtx, claimed.Operation, claimed.Claim, rep)
+	cancel()
+	heartbeatErr := <-heartbeatDone
+	if processErr != nil && heartbeatErr != nil {
+		return errors.Join(processErr, heartbeatErr)
+	}
+	return processErr
+}
+
+func (w *Worker) transition(ctx context.Context, claim operations.ExecutionClaim, op models.Operation, to operations.OperationStatus, message string) (*models.Operation, error) {
+	return w.svc.TransitionClaimed(ctx, claim, op, to, "hai", "", message)
+}
+
+func reportFailures(rep Report) error {
+	if len(rep.Errors) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %d error(s) retained in report", ErrReportedFailures, len(rep.Errors))
+}
+
+func (w *Worker) processOne(ctx context.Context, op models.Operation, claim operations.ExecutionClaim, rep *Report) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	status := operations.OperationStatus(op.Status)
+	if status == operations.StatusDrafting {
+		return w.finishDraft(ctx, op, claim, rep)
+	}
+	if status == operations.StatusApproved {
+		if !operations.IsSourceDerived(op) {
+			return w.svc.ReleaseClaim(ctx, claim)
+		}
+		return w.runSafe(ctx, op, claim, rep)
+	}
+	if status == operations.StatusClassified || status == operations.StatusReady {
+		return w.resumeClassified(ctx, op, claim, rep)
+	}
 	now := w.now().UTC()
 	scan := privacyfilter.Scan(op.Title+"\n"+op.Description, 280)
 	decision := autonomypolicy.Decide(autonomypolicy.Input{
 		Title:         op.Title,
 		Content:       op.Description,
 		OperationType: op.OperationType,
+		SourceDerived: op.SourceIdentityHash != "" || op.SourceID != nil || op.AccountFeedID != nil,
 		Privacy:       scan,
 		Mode:          w.effectiveMode(),
 		Reversible:    true, // feed items default reversible; risk classifier bumps dangerous ones to approval
@@ -217,16 +483,12 @@ func (w *Worker) processOne(ctx context.Context, op models.Operation, rep *Repor
 			op.RiskLevel = string(operations.RiskHigh)
 			op.CurrentDecision = string(operations.DecisionBlock)
 			op.RecommendedAction = "blocked by operator rule"
-			classified, err := w.svc.Transition(op, operations.StatusClassified, "hai", "", "classified (block rule): "+reason)
+			classified, err := w.transition(ctx, claim, op, operations.StatusClassified, "classified (block rule): "+reason)
 			if err != nil {
 				return err
 			}
 			rep.Classified++
-			if _, err := w.svc.Transition(*classified, operations.StatusBlocked, "hai", "", "blocked by operator rule: "+reason); err != nil {
-				return err
-			}
-			rep.Blocked++
-			return nil
+			return w.routeClassified(ctx, *classified, claim, "blocked by operator rule: "+reason, rep)
 		}
 	}
 
@@ -246,47 +508,99 @@ func (w *Worker) processOne(ctx context.Context, op models.Operation, rep *Repor
 			rep.Triaged++
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
-	classified, err := w.svc.Transition(op, operations.StatusClassified, "hai", "", classifyMsg)
+	classified, err := w.transition(ctx, claim, op, operations.StatusClassified, classifyMsg)
 	if err != nil {
 		return err
 	}
 	rep.Classified++
 	op = *classified
+	return w.routeClassified(ctx, op, claim, decision.Reason, rep)
+}
 
-	switch decision.Decision {
+func (w *Worker) resumeClassified(ctx context.Context, op models.Operation, claim operations.ExecutionClaim, rep *Report) error {
+	if operations.OperationStatus(op.Status) == operations.StatusReady {
+		if operations.CurrentDecision(op.CurrentDecision) != operations.DecisionRunSafeLocalWorker {
+			return fmt.Errorf("ready operation %s has non-executable decision %q", op.ID, op.CurrentDecision)
+		}
+		return w.runSafe(ctx, op, claim, rep)
+	}
+	return w.routeClassified(ctx, op, claim, "", rep)
+}
+
+func (w *Worker) routeClassified(ctx context.Context, op models.Operation, claim operations.ExecutionClaim, reason string, rep *Report) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if reason == "" {
+		reason = op.RecommendedAction
+	}
+	if reason == "" {
+		reason = "previously classified operation"
+	}
+	switch operations.CurrentDecision(op.CurrentDecision) {
 	case operations.DecisionRunSafeLocalWorker:
-		return w.runSafe(ctx, op, rep)
+		return w.runSafe(ctx, op, claim, rep)
 	case operations.DecisionBlock:
-		_, err := w.svc.Transition(op, operations.StatusBlocked, "hai", "", "blocked: "+decision.Reason)
+		_, err := w.transition(ctx, claim, op, operations.StatusBlocked, "blocked: "+reason)
 		if err == nil {
 			rep.Blocked++
 		}
 		return err
 	case operations.DecisionCreateDraft:
-		return w.runDraft(op, rep, decision)
+		return w.runDraft(ctx, op, claim, rep, autonomypolicy.Decision{RecommendedAction: op.RecommendedAction})
 	case operations.DecisionObserveOnly:
 		rep.Observed++
-		return nil
+		return w.svc.ReleaseClaim(ctx, claim)
 	default:
 		// ask_robert and any approval-gated decision.
-		if decision.RequiresApproval {
-			_, err := w.svc.Transition(op, operations.StatusAwaitingApproval, "hai", "", "awaiting approval: "+decision.Reason)
+		if op.RequiresApproval {
+			_, err := w.transition(ctx, claim, op, operations.StatusAwaitingApproval, "awaiting approval: "+reason)
 			if err == nil {
 				rep.AwaitingApproval++
 			}
 			return err
 		}
 		rep.Observed++
-		return nil
+		return w.svc.ReleaseClaim(ctx, claim)
 	}
 }
 
 // runSafe executes the local safe worker for a low-risk reversible operation and
 // gates completion on passing verification (§8/§10.15).
-func (w *Worker) runSafe(ctx context.Context, op models.Operation, rep *Report) error {
+func (w *Worker) runSafe(ctx context.Context, op models.Operation, claim operations.ExecutionClaim, rep *Report) error {
+	sourceApproved := operations.IsSourceDerived(op)
+	if sourceApproved {
+		if _, err := w.svc.SourceApprovalForExecution(op); err != nil {
+			return err
+		}
+	}
+	if err := safeExecutionPolicyErrorWithSourceApproval(op, sourceApproved); err != nil {
+		return err
+	}
+	policyAllowsExecution := w.safeExecutionPolicyAllows(op)
+	if !policyAllowsExecution {
+		if err := w.svc.ReleaseClaim(ctx, claim); err != nil {
+			return fmt.Errorf("release claim after policy change: %w", err)
+		}
+		// Save uses the operation version and rejects concurrent claims/writes;
+		// it cannot overwrite a replacement worker's state after release.
+		nextReview := w.now().UTC().Add(time.Minute)
+		op.NextReviewAt = &nextReview
+		if _, err := w.svc.Save(op, "execution_deferred", "hai", "execution deferred by current policy"); err != nil {
+			return fmt.Errorf("persist policy deferral: %w", err)
+		}
+		rep.DeferredByPolicy++
+		return errExecutionDeferredByPolicy
+	}
 	rep.AutoExecuted++
-	outcome, err := ExecuteSafeOperation(ctx, w.svc, w.broker, op, w.now().UTC())
+	outcome, err := ExecuteSafeOperationClaimed(ctx, w.svc, w.broker, op, claim, w.now().UTC(), w.finalSafeExecutionPolicyAllows)
+	if outcome.Interrupted {
+		rep.Interrupted++
+	}
 	if err != nil {
 		return err
 	}
@@ -299,15 +613,97 @@ func (w *Worker) runSafe(ctx context.Context, op models.Operation, rep *Report) 
 	return nil
 }
 
+func (w *Worker) safeExecutionPolicyAllows(op models.Operation) bool {
+	if operations.IsSourceDerived(op) {
+		approved := false
+		switch operations.OperationStatus(op.Status) {
+		case operations.StatusApproved:
+			_, err := w.svc.SourceApprovalForExecution(op)
+			approved = err == nil
+		case operations.StatusRunning:
+			approved = w.svc.ValidateConsumedSourceApproval(op) == nil
+		}
+		if !approved || w.effectiveMode() != autonomypolicy.ModeAutonomousSafe || w.effectiveEmergencyStop() {
+			return false
+		}
+		if w.blockRules != nil {
+			blocked, _ := w.blockRules.ShouldBlock(op.OperationType, op.Title)
+			if blocked {
+				return false
+			}
+		}
+		return true
+	}
+	decision := autonomypolicy.Decide(autonomypolicy.Input{
+		Title:         op.Title,
+		Content:       op.Description,
+		OperationType: op.OperationType,
+		SourceDerived: op.SourceIdentityHash != "" || op.SourceID != nil || op.AccountFeedID != nil,
+		Privacy:       privacyfilter.Scan(op.Title+"\n"+op.Description, 280),
+		Mode:          w.effectiveMode(),
+		Reversible:    true,
+		EmergencyStop: w.effectiveEmergencyStop(),
+	}, w.now().UTC())
+	policyAllowsExecution := decision.Decision == operations.DecisionRunSafeLocalWorker
+	if policyAllowsExecution && w.blockRules != nil {
+		blocked, _ := w.blockRules.ShouldBlock(op.OperationType, op.Title)
+		policyAllowsExecution = !blocked
+	}
+	return policyAllowsExecution
+}
+
+// finalSafeExecutionPolicyAllows runs inside the repository's locked effect
+// callback. Receipt integrity was checked after the claimed running transition;
+// do not re-enter repository storage here because the memory implementation
+// holds its mutex across the callback. Snapshot integrity is rechecked there.
+func (w *Worker) finalSafeExecutionPolicyAllows(op models.Operation) bool {
+	if !operations.IsSourceDerived(op) {
+		return w.safeExecutionPolicyAllows(op)
+	}
+	if op.Status != string(operations.StatusRunning) || op.RuntimeID != executionbroker.LocalSafeWorkerID ||
+		op.VerificationStatus != string(operations.VerificationPending) || !op.RequiresApproval ||
+		op.CurrentDecision != string(operations.DecisionAskRobert) ||
+		op.AutonomyLevel != string(operations.AutonomyApproval) || op.OwnerType != string(operations.OwnerRobert) ||
+		w.effectiveMode() != autonomypolicy.ModeAutonomousSafe || w.effectiveEmergencyStop() {
+		return false
+	}
+	if w.blockRules != nil {
+		blocked, _ := w.blockRules.ShouldBlock(op.OperationType, op.Title)
+		if blocked {
+			return false
+		}
+	}
+	return operations.Validate(op) == nil
+}
+
 // runDraft records an internal draft for a draft-mode operation.
-func (w *Worker) runDraft(op models.Operation, rep *Report, decision autonomypolicy.Decision) error {
-	drafting, err := w.svc.Transition(op, operations.StatusDrafting, "hai", "", "preparing internal draft")
+func (w *Worker) runDraft(ctx context.Context, op models.Operation, claim operations.ExecutionClaim, rep *Report, decision autonomypolicy.Decision) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	drafting, err := w.transition(ctx, claim, op, operations.StatusDrafting, "preparing internal draft")
 	if err != nil {
 		return err
 	}
 	op = *drafting
 	op.ResultSummary = decision.RecommendedAction
-	if _, err := w.svc.Transition(op, operations.StatusDraftReady, "hai", "", "internal draft ready for review"); err != nil {
+	return w.finishDraft(ctx, op, claim, rep)
+}
+
+func (w *Worker) finishDraft(ctx context.Context, op models.Operation, claim operations.ExecutionClaim, rep *Report) error {
+	if op.ResultSummary == "" {
+		op.ResultSummary = op.RecommendedAction
+	}
+	finalizeCtx := ctx
+	if ctx.Err() != nil {
+		var cancel context.CancelFunc
+		finalizeCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+	}
+	if _, err := w.transition(finalizeCtx, claim, op, operations.StatusDraftReady, "internal draft ready for review"); err != nil {
+		if releaseErr := w.svc.ReleaseClaim(finalizeCtx, claim); releaseErr != nil {
+			return errors.Join(err, fmt.Errorf("release claim after draft persistence failure: %w", releaseErr))
+		}
 		return err
 	}
 	rep.Drafted++
@@ -342,15 +738,7 @@ func applyDecision(op *models.Operation, d autonomypolicy.Decision, scan privacy
 // operation. artifactName is a basename only; the marker binds the artifact to
 // the operation identity + source revision.
 func safePayload(op models.Operation) executionbroker.SafeWorkerInput {
-	name := "operation-" + shortID(op.ID) + ".txt"
+	name := "operation-" + op.ID.String() + ".txt"
 	marker := "HAI-OP " + op.ID.String() + " rev " + op.SourceRevisionHash
 	return executionbroker.SafeWorkerInput{ArtifactName: name, Marker: marker}
-}
-
-func shortID(id uuid.UUID) string {
-	s := id.String()
-	if len(s) >= 8 {
-		return s[:8]
-	}
-	return s
 }

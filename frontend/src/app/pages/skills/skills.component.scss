@@ -1,0 +1,43 @@
+:host { display: block; min-width: 0; }
+.skills-page { color: var(--hai-text); margin: 0 auto; max-width: 1050px; padding: 28px; }
+.skills-page__header { align-items: center; display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; margin-bottom: 20px; }
+.skills-page__header h1, .skills-page__header p { margin: 0; }
+.skills-page__header h1 { font-size: 24px; line-height: 1.25; }
+.skills-page__eyebrow { color: var(--hai-text-muted); font-size: 12px; margin-bottom: 3px !important; }
+.skills-page__message { color: var(--hai-text-muted); margin: 0; padding: 14px 0; }
+.skills-page__access { background: var(--hai-surface-muted); border-left: 3px solid var(--hai-border); color: var(--hai-text-muted); line-height: 1.5; margin: 0 0 16px; padding: 10px 12px; }
+.skills-page__message--error { align-items: center; color: var(--hai-text); display: flex; flex-wrap: wrap; gap: 12px; }
+.skills-page__policy { background: var(--hai-surface-muted); border-left: 3px solid var(--hai-action); color: var(--hai-text-muted); line-height: 1.5; margin: 0 0 16px; padding: 10px 12px; }
+.skills-page__summary { border-bottom: 1px solid var(--hai-border); display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 0 0 14px; }
+.skills-page__summary span { color: var(--hai-text-muted); }
+.skills-page__list, .skills-page__records { list-style: none; margin: 0; padding: 0; }
+.skills-page__list li { align-items: baseline; border-bottom: 1px solid var(--hai-border); display: flex; flex-wrap: wrap; gap: 12px 24px; justify-content: space-between; padding: 16px 0; }
+.skills-page__list li > div { display: grid; gap: 3px; min-width: 0; }
+.skills-page__source { color: var(--hai-text-muted); display: block; font-size: 12px; line-height: 1.45; margin: 0; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+.skills-page__list li .skills-page__source { white-space: normal; }
+.skills-page__source a { color: var(--hai-action); overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 2px; }
+.skills-page__source a:focus-visible { outline: 2px solid var(--hai-action); outline-offset: 2px; }
+.skills-page__list li > span, .skills-page__list li small { color: var(--hai-text-muted); font-size: 13px; line-height: 1.5; }
+.skills-page__list li small { white-space: nowrap; }
+.skills-page__selection { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 8px 12px; min-width: 0; }
+.skills-page__list li .skills-page__selection small { color: var(--hai-text-muted); flex-basis: 100%; line-height: 1.4; max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+.skills-page__selection .skills-page__guidance-loading { color: var(--hai-text-muted); flex-basis: 100%; line-height: 1.45; white-space: normal; }
+.skills-page__notice { border-left: 2px solid var(--hai-action); color: var(--hai-text) !important; margin: 0 0 16px; padding: 6px 9px; }
+.skills-page__guidance-preview { background: var(--hai-surface-muted); border: 1px solid var(--hai-border); border-left: 3px solid var(--hai-action); border-radius: 4px; flex-basis: 100%; line-height: 1.5; min-width: 0; padding: 12px; }
+.skills-page__guidance-preview p { margin: 7px 0 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.skills-page__guidance-preview code { font-size: 12px; }
+.skills-page__state--enabled { color: var(--hai-success) !important; }
+.skills-page__state--review { color: var(--hai-warning) !important; font-weight: 700; }
+.skills-page hai-progressive-section { display: block; margin-top: 20px; }
+.skills-page__provenance { border-bottom: 1px solid var(--hai-border); display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0 0 10px; padding: 0 0 14px; }
+.skills-page__provenance dt, .skills-page__records dt { color: var(--hai-text-muted); font-size: 12px; }
+.skills-page__provenance dd, .skills-page__records dd { margin: 3px 0 0; overflow-wrap: anywhere; }
+.skills-page__records li { border-bottom: 1px solid var(--hai-border); padding: 14px 0; }
+.skills-page__records li:last-child { border-bottom: 0; padding-bottom: 0; }
+.skills-page__record-heading { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; }
+.skills-page__record-heading span, .skills-page__records p { color: var(--hai-text-muted); font-size: 13px; }
+.skills-page__records p { margin: 5px 0 10px; }
+.skills-page__records dl { display: grid; gap: 8px 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
+.skills-page code { overflow-wrap: anywhere; }
+@media (max-width: 700px) { .skills-page { padding: 18px; } .skills-page__provenance, .skills-page__records dl { grid-template-columns: 1fr; } .skills-page__list li small { white-space: normal; } }
+:host-context(body.hai-view-advanced) .skills-page__list { display: none; }
