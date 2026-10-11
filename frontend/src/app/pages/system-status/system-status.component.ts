@@ -1,4 +1,3 @@
-import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
@@ -89,13 +88,6 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
     if (silent && this.refreshInFlight) {
       return;
     }
-    if (!silent) {
-      this.loadEventDelivery();
-    }
-    if (this.readinessInFlight) {
-      return;
-    }
-    this.readinessInFlight = true;
     if (!silent) {
       this.loading = true;
     }

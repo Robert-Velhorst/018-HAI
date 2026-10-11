@@ -15,6 +15,7 @@ const STATIC_PROGRESSIVE_SECTION_IDS_BY_ROUTE: Readonly<Record<string, readonly 
   '/control-center': ['action-catalog', 'more-controls', 'operational-controls', 'context-audit', 'diagnostics'],
   '/home': ['automation-management'],
   '/background-operations': ['operation-ledger'],
+  '/operational-brain': ['layers', 'agent-context', 'quality'],
   '/pursuits': ['pursuit-health', 'life-domain-index', 'portfolio-planning', 'route-input', 'new-pursuit-contract', 'pursuit-summary-metrics', 'resource-ledger', 'generated-actions', 'operational-timeline', 'pursuit-intake', 'linked-record-counts', 'manage-pursuit-links', 'record-audit-trails', 'workflow-approval-trail', 'workflow-quality-gates', 'decision-audit-history', 'workflow-transition-source-audit', 'task-execution-trail', 'automation-runtime-trail', 'verification-runs-claims', 'evidence-memory-source-context', 'proactive-opportunities', 'pursuit-activity-log'],
   '/plans': ['dependency-plan', 'governance-bindings', 'revision-history', 'schedule-resources', 'create-preview'],
   '/workflow-engine': ['queue-filters', 'intake-provenance', 'inbox-search', 'last-operation-details', 'framework-provenance', 'workflow-controls', 'checklist', 'evidence-proposals', 'timeline-audit', 'technical-status', 'workflow-header-controls', 'reminder-evidence', 'intake-outcome-criteria'],

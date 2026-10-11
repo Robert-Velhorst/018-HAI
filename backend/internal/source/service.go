@@ -257,6 +257,7 @@ type Service interface {
 	CreateSource(request CreateSourceRequest) (*models.ConnectedSource, error)
 	UpdateSource(id uuid.UUID, request UpdateSourceRequest) (*models.ConnectedSource, error)
 	Sources(includeDisabled bool) ([]models.ConnectedSource, error)
+	SourcesForOwner(ownerIdentity string, includeDisabled bool) ([]models.ConnectedSource, error)
 	SyncJobs(sourceID *uuid.UUID) ([]models.SourceSyncJob, error)
 	Sync(sourceID uuid.UUID, request ImportRequest) (*SyncResult, error)
 	// DueSources lists enabled sources whose schedule is due at now. The durable

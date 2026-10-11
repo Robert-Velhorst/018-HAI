@@ -8,27 +8,17 @@ import {registerLocaleData} from '@angular/common';
 import en from '@angular/common/locales/en';
 import {HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi} from '@angular/common/http';
 import {provideAnimationsAsync} from '@angular/platform-browser/animations/async';
-import {BulbOutline, CalendarOutline, ContactsOutline, DisconnectOutline, HeartOutline, NodeIndexOutline, ReloadOutline, StarOutline, WarningFill, WarningOutline} from '@ant-design/icons-angular/icons';
 import {NZ_ICONS} from 'ng-zorro-antd/icon';
 import {AUTH_SERVICE_TOKEN} from './services/auth/auth.service.token';
 import {AuthService} from './services/auth/auth.service';
 import {ChunkLoadRecoveryHandler} from './services/chunk-load-recovery.handler';
 import {RequestTimeoutInterceptor} from './interceptors/request-timeout.interceptor';
+import {ControlRoomModule} from './control-room/control-room.module';
+import {HAI_ICONS} from './hai-icons';
 
 registerLocaleData(en);
 
-export const HAI_ICONS = [
-    BulbOutline,
-    CalendarOutline,
-    ContactsOutline,
-    DisconnectOutline,
-    HeartOutline,
-    NodeIndexOutline,
-    ReloadOutline,
-    StarOutline,
-    WarningFill,
-    WarningOutline,
-];
+export {HAI_ICONS} from './hai-icons';
 
 @NgModule({
     declarations: [
@@ -37,6 +27,7 @@ export const HAI_ICONS = [
     imports: [
         BrowserModule,
         AppRoutingModule,
+        ControlRoomModule,
     ],
     providers: [
         {provide: NZ_I18N, useValue: en_US},
