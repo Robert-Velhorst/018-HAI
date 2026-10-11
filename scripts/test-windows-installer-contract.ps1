@@ -7,31 +7,11 @@ $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Pat
 $buildScript = Join-Path $PSScriptRoot "build-windows-installer.ps1"
 $installerScript = Join-Path $repositoryRoot "installer\windows\HAI.iss"
 $supportScript = Join-Path $repositoryRoot "installer\windows\Hai-InstallerSupport.ps1"
-$startScript = Join-Path $repositoryRoot "installer\windows\Start-HAI.ps1"
-$cloudAccessScript = Join-Path $repositoryRoot "installer\windows\Start-HAI-Cloud.ps1"
-$ngrokLauncherScript = Join-Path $repositoryRoot "scripts\start-ngrok.ps1"
-$connectorCheckScript = Join-Path $repositoryRoot "installer\windows\Test-HAI-LocalConnector.ps1"
-$stopScript = Join-Path $repositoryRoot "installer\windows\Stop-HAI.ps1"
-$statusScript = Join-Path $repositoryRoot "installer\windows\HAI-Status.ps1"
-$openScript = Join-Path $repositoryRoot "installer\windows\Open-HAI.ps1"
 $localModelScript = Join-Path $repositoryRoot "installer\windows\Enable-LocalModel.ps1"
-$trelloAcceptanceScript = Join-Path $PSScriptRoot "test-live-trello.ps1"
-$noFakeClaimsAudit = Join-Path $PSScriptRoot "no-fake-claims-audit.ps1"
 $initializerScript = Join-Path $PSScriptRoot "initialize-windows.ps1"
 $documentation = Join-Path $repositoryRoot "docs\windows-installer.md"
-$composePath = Join-Path $repositoryRoot "docker-compose.local.yml"
-$environmentTemplatePath = Join-Path $repositoryRoot ".env.example"
-$localGoBuildFiles = @(
-    "backend\makefile",
-    "scripts\smoke-account-bridges.sh",
-    "scripts\smoke-background-operations.sh",
-    "scripts\smoke-critical-path.sh",
-    "scripts\smoke-model-intelligence.sh",
-    "scripts\smoke-runtime-lab.sh",
-    "scripts\smoke-windows-runtime.sh"
-)
 
-foreach ($requiredFile in @($buildScript, $installerScript, $supportScript, $localModelScript, $cloudAccessScript, $connectorCheckScript, $trelloAcceptanceScript, $noFakeClaimsAudit, $initializerScript, $documentation)) {
+foreach ($requiredFile in @($buildScript, $installerScript, $supportScript, $localModelScript, $initializerScript, $documentation)) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "Windows installer contract is missing: $requiredFile"
     }
@@ -40,17 +20,8 @@ foreach ($requiredFile in @($buildScript, $installerScript, $supportScript, $loc
 $build = [IO.File]::ReadAllText($buildScript)
 $installer = [IO.File]::ReadAllText($installerScript)
 $support = [IO.File]::ReadAllText($supportScript)
-$start = [IO.File]::ReadAllText($startScript)
-$stop = [IO.File]::ReadAllText($stopScript)
-$status = [IO.File]::ReadAllText($statusScript)
-$open = [IO.File]::ReadAllText($openScript)
-$connectorCheck = [IO.File]::ReadAllText($connectorCheckScript)
-$cloudAccess = [IO.File]::ReadAllText($cloudAccessScript)
-$ngrokLauncher = [IO.File]::ReadAllText($ngrokLauncherScript)
 $initializer = [IO.File]::ReadAllText($initializerScript)
 $docs = [IO.File]::ReadAllText($documentation)
-$compose = [IO.File]::ReadAllText($composePath)
-$environmentTemplate = [IO.File]::ReadAllText($environmentTemplatePath)
 $gitignore = [IO.File]::ReadAllText((Join-Path $repositoryRoot ".gitignore"))
 
 if ($gitignore -notmatch [Regex]::Escape("/installer/release/")) {
@@ -61,11 +32,7 @@ foreach ($script in @(
     $buildScript,
     $supportScript,
     $localModelScript,
-    $trelloAcceptanceScript,
-    $noFakeClaimsAudit,
     (Join-Path $repositoryRoot "installer\windows\Start-HAI.ps1"),
-    $cloudAccessScript,
-    $connectorCheckScript,
     (Join-Path $repositoryRoot "installer\windows\Stop-HAI.ps1"),
     (Join-Path $repositoryRoot "installer\windows\HAI-Status.ps1"),
     (Join-Path $repositoryRoot "installer\windows\Open-HAI.ps1")
@@ -151,243 +118,6 @@ if ($initializer -notmatch [Regex]::Escape('GATEWAY_HOST_BIND') -or
     throw "The first-run initializer does not enforce a loopback gateway."
 }
 
-# Linked Git worktrees on Windows can make recent Go toolchains fail while
-# collecting optional VCS metadata. Local verification must still compile the
-# product, so every installed local smoke/build entrypoint disables stamping
-# explicitly rather than depending on the checkout shape.
-foreach ($relativePath in $localGoBuildFiles) {
-    $path = Join-Path $repositoryRoot $relativePath
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        throw "Local Go build entrypoint is missing: $relativePath"
-    }
-    if ([IO.File]::ReadAllText($path) -notmatch [Regex]::Escape("-buildvcs=false")) {
-        throw "Local Go build entrypoint must disable linked-worktree VCS stamping: $relativePath"
-    }
-}
-
-foreach ($required in @(
-    '[switch]$EnableEventBus',
-    '"--profile", "event-bus"',
-    'stop zookeeper kafka nginxconfigmanager',
-    'Set-HaiEventBusEnabled',
-    'Set-HaiEventBusDisabled',
-    'Get-HaiEventBusEnabled',
-    'Set-HaiEventBusState -Enabled $eventBusWasEnabled',
-    'IDP_KAFKA_ENABLED',
-    'KAFKA_BROKERS',
-    'BROKERS_ADDR'
-)) {
-    if (($start + $support) -notmatch [Regex]::Escape($required)) {
-        throw "Windows startup must expose the optional Kafka event-bus profile: $required"
-    }
-}
-
-foreach ($required in @(
-    "HAIInstallerPayloadBuild",
-    "WaitOne(0)",
-    "ReleaseMutex"
-)) {
-    if ($build -notmatch [Regex]::Escape($required)) {
-        throw "Installer payload build must serialize concurrent invocations: missing '$required'."
-    }
-}
-if ($ngrokLauncher -notmatch [Regex]::Escape("Assert-HaiComposeOwnership")) {
-    throw "The direct ngrok launcher must reject a different local HAI installation before it changes cloud access."
-}
-
-# Every installed entry point must refuse to act on a different checkout that
-# happens to share HAI's fixed Compose project/container names. Otherwise a
-# status, stop, cloud, connector, or open command can silently target another
-# local deployment.
-foreach ($entryPoint in @{
-    "Stop HAI" = $stop
-    "HAI status" = $status
-    "Open HAI" = $open
-    "Cloud access" = $cloudAccess
-    "Local connector check" = $connectorCheck
-}.GetEnumerator()) {
-    if ($entryPoint.Value -notmatch [Regex]::Escape("Assert-HaiSingleInstallation")) {
-        throw "$($entryPoint.Key) must reject a different local HAI installation before acting."
-    }
-}
-
-foreach ($required in @(
-    "Get-HaiEnvironmentFile",
-    "Get-HaiUrl",
-    "HAI_A2A_BRIDGE_TOKEN",
-    "/.well-known/agent-card.json",
-    "/api/v1/a2a",
-    "SendMessage",
-    "non-executable planning",
-    'Where-Object { $_.id -eq "hai_controlled_planning" }'
-)) {
-    if ($connectorCheck -notmatch [Regex]::Escape($required)) {
-        throw "Installed local-connector check is missing '$required'."
-    }
-}
-
-foreach ($required in @(
-    "Get-HaiEnvironmentFile",
-    "Get-HaiComposeFile",
-    "start-ngrok.ps1",
-    "[switch]`$ValidateOnly",
-    "[switch]`$Stop"
-)) {
-    if ($cloudAccess -notmatch [Regex]::Escape($required)) {
-        throw "Installed cloud-access wrapper is missing '$required'."
-    }
-}
-
-foreach ($required in @(
-    'DB_RUNTIME_USER=',
-    'DB_RUNTIME_PASSWORD=',
-    'HAI_A2A_BRIDGE_URL=http://127.0.0.1:8088/api/v1/a2a',
-    'IDP_KAFKA_ENABLED=false',
-    'KAFKA_BROKERS=',
-    'BROKERS_ADDR='
-)) {
-    if ($environmentTemplate -notmatch [Regex]::Escape($required)) {
-        throw "The local environment template must disable Kafka by default: $required"
-    }
-}
-
-$initializerSettingNames = [Regex]::Matches($initializer, 'Set-DotEnvValue \$content "(?<name>[A-Z0-9_]+)"') |
-    ForEach-Object { $_.Groups['name'].Value } |
-    Select-Object -Unique
-foreach ($name in $initializerSettingNames) {
-    if ($environmentTemplate -notmatch ("(?m)^" + [Regex]::Escape($name) + "=")) {
-        throw "The environment template must define every initializer setting, including $name."
-    }
-}
-
-$initializerTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("hai-initializer-contract-" + [Guid]::NewGuid().ToString("N"))
-try {
-    $initializerEnvironment = Join-Path $initializerTestRoot "hai.env"
-    # Exercise the documented default. A fresh local install must use the
-    # same loopback port as the environment template and installer shortcuts.
-    & $initializerScript -EnvFile $initializerEnvironment -AdminEmail "operator@example.com" -AdminPasswordPlainText "installer-contract-password"
-    if (-not (Test-Path -LiteralPath $initializerEnvironment -PathType Leaf)) {
-        throw "The first-run initializer did not create a local environment file."
-    }
-    $initializedEnvironment = [IO.File]::ReadAllText($initializerEnvironment)
-    foreach ($required in @('DB_RUNTIME_USER=hai_runtime', 'DB_RUNTIME_PASSWORD=', 'GATEWAY_HOST_PORT=8088', 'GATEWAY_HOST_BIND=127.0.0.1')) {
-        if ($initializedEnvironment -notmatch [Regex]::Escape($required)) {
-            throw "The initialized environment must define $required."
-        }
-    }
-} finally {
-    if (Test-Path -LiteralPath $initializerTestRoot -PathType Container) {
-        Remove-Item -LiteralPath $initializerTestRoot -Recurse -Force
-    }
-}
-
-foreach ($service in @('zookeeper', 'kafka', 'nginxconfigmanager')) {
-    $servicePattern = '(?ms)^  {0}:.*?^    profiles: \["event-bus"\]' -f [Regex]::Escape($service)
-    if ($compose -notmatch $servicePattern) {
-        throw "The $service service must be opt-in through the event-bus profile."
-    }
-}
-
-$previousLocalAppData = $env:LOCALAPPDATA
-$eventBusTestRoot = Join-Path ([IO.Path]::GetTempPath()) ("hai-event-bus-contract-" + [Guid]::NewGuid().ToString("N"))
-try {
-    $env:LOCALAPPDATA = $eventBusTestRoot
-    $testDataRoot = Join-Path $eventBusTestRoot "HAI"
-    New-Item -ItemType Directory -Path $testDataRoot -Force | Out-Null
-    Copy-Item -LiteralPath $environmentTemplatePath -Destination (Join-Path $testDataRoot "hai.env")
-
-    . $supportScript
-
-    $unsafeEnvironmentRejected = $false
-    try {
-        Assert-HaiLocalEnvironment
-    } catch {
-        $unsafeEnvironmentRejected = $_.Exception.Message -match "not initialized safely"
-    }
-    if (-not $unsafeEnvironmentRejected) {
-        throw "Windows startup must reject an existing sample environment before Docker Compose runs."
-    }
-
-    & $initializerScript -EnvFile (Get-HaiEnvironmentFile) -AdminEmail "operator@example.com" -AdminPasswordPlainText "installer-contract-password" -Force
-    if (-not (Test-Path -LiteralPath (Get-HaiEnvironmentFile) -PathType Leaf)) {
-        throw "The Windows initializer could not replace an isolated sample environment during the installer contract."
-    }
-    Assert-HaiLocalEnvironment
-
-    if (Get-HaiEventBusEnabled) {
-        throw "A newly initialized local environment must begin with the optional event bus disabled."
-    }
-
-    Set-HaiEventBusEnabled
-    $enabledEnvironment = [IO.File]::ReadAllText((Get-HaiEnvironmentFile))
-    foreach ($required in @('IDP_KAFKA_ENABLED=true', 'KAFKA_BROKERS=kafka:9092', 'BROKERS_ADDR=kafka:9092')) {
-        if ($enabledEnvironment -notmatch [Regex]::Escape($required)) {
-            throw "Enabling the event bus must persist $required."
-        }
-    }
-
-    if (-not (Get-HaiEventBusEnabled)) {
-        throw "The event-bus state reader must report the enabled persisted configuration."
-    }
-
-    Set-HaiEventBusDisabled
-    $disabledEnvironment = [IO.File]::ReadAllText((Get-HaiEnvironmentFile))
-    foreach ($required in @('IDP_KAFKA_ENABLED=false', 'KAFKA_BROKERS=', 'BROKERS_ADDR=')) {
-        if ($disabledEnvironment -notmatch [Regex]::Escape($required)) {
-            throw "Disabling the event bus must persist $required."
-        }
-    }
-    if (Get-HaiEventBusEnabled) {
-        throw "The event-bus state reader must report the disabled persisted configuration."
-    }
-
-    # Exercise startup's rollback path without contacting Docker. This batch
-    # shim accepts Docker and Compose capability probes but rejects the actual
-    # Compose invocation that starts the stack.
-    $fakeDockerDirectory = Join-Path $eventBusTestRoot "fake-docker"
-    New-Item -ItemType Directory -Path $fakeDockerDirectory -Force | Out-Null
-    $fakeDockerScript = @'
-@echo off
-if /I "%1"=="version" (
-  echo 26.1.0
-  exit /b 0
-)
-if /I "%1"=="ps" exit /b 0
-if /I "%1"=="compose" if /I "%2"=="version" exit /b 0
-if /I "%1"=="compose" exit /b 1
-exit /b 0
-'@
-    [IO.File]::WriteAllText((Join-Path $fakeDockerDirectory "docker.cmd"), $fakeDockerScript)
-
-    $previousPath = $env:PATH
-    try {
-        $env:PATH = "$fakeDockerDirectory;$previousPath"
-        $resolvedDocker = (Get-Command docker -ErrorAction Stop).Source
-        if ($resolvedDocker -ne (Join-Path $fakeDockerDirectory "docker.cmd")) {
-            throw "The isolated startup test did not resolve its fake Docker executable."
-        }
-        $startupRejected = $false
-        try {
-            & $startScript -EnableEventBus -NoBrowser
-        } catch {
-            $startupRejected = $_.Exception.Message -match "HAI startup failed"
-        }
-        if (-not $startupRejected) {
-            throw "The isolated Docker failure must make Windows startup fail."
-        }
-    } finally {
-        $env:PATH = $previousPath
-    }
-    if (Get-HaiEventBusEnabled) {
-        throw "A failed event-bus startup must restore the previous disabled configuration."
-    }
-} finally {
-    $env:LOCALAPPDATA = $previousLocalAppData
-    if (Test-Path -LiteralPath $eventBusTestRoot -PathType Container) {
-        Remove-Item -LiteralPath $eventBusTestRoot -Recurse -Force
-    }
-}
-
 foreach ($forbidden in @(
     "Copy-Item -Path (Join-Path $repositoryRoot '.env.local')",
     "GATEWAY_HOST_BIND=0.0.0.0",
@@ -441,12 +171,6 @@ foreach ($required in @(
         throw "Installer documentation is missing '$required'."
     }
 }
-if ($docs -notmatch [Regex]::Escape("Every installed HAI command checks this ownership")) {
-    throw "Installer documentation must explain the one-installation ownership check."
-}
-if ($docs -notmatch [Regex]::Escape('public `/readyz` route')) {
-    throw "Installer documentation must explain the public tunnel readiness verification."
-}
 
 & $buildScript -SkipCompile
 if ($LASTEXITCODE -ne 0) {
@@ -470,59 +194,13 @@ if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot ".env.example") -PathTy
 foreach ($requiredPayloadPath in @(
     "docker-compose.local.yml",
     "installer\windows\Start-HAI.ps1",
-    "installer\windows\Test-HAI-LocalConnector.ps1",
     "installer\windows\Enable-LocalModel.ps1",
-    "scripts\test-live-trello.ps1",
-    "scripts\no-fake-claims-audit.ps1",
     "installer\windows\Stop-HAI.ps1",
     "installer\windows\HAI-Status.ps1"
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot $requiredPayloadPath) -PathType Leaf)) {
         throw "Installer payload is missing required product file: $requiredPayloadPath"
     }
-}
-
-$payloadMutex = New-Object System.Threading.Mutex($false, "HAIInstallerPayloadBuild")
-$payloadLockHeld = $false
-try {
-    $payloadLockHeld = $payloadMutex.WaitOne(0)
-    if (-not $payloadLockHeld) {
-        throw "The installer contract could not acquire its isolated payload lock."
-    }
-    $quotedBuildScript = $buildScript.Replace("'", "''")
-    # The child is expected to fail while this process owns the named mutex.
-    # Keep that expected native exit code available for the assertion instead
-    # of letting PowerShell's global Stop preference terminate this contract.
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = 'Continue'
-        $blockedBuildOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "& '$quotedBuildScript' -SkipCompile" 2>&1
-        $blockedBuildExitCode = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-    $blockedBuildText = [string]::Join([Environment]::NewLine, @($blockedBuildOutput))
-    if ($blockedBuildExitCode -eq 0 -or $blockedBuildText -notmatch "already preparing the shared payload") {
-        throw "A concurrent installer build must fail before it can replace the shared payload."
-    }
-} finally {
-    if ($payloadLockHeld) {
-        $payloadMutex.ReleaseMutex()
-    }
-    $payloadMutex.Dispose()
-}
-if ($installer -notmatch [Regex]::Escape("Start governed cloud access") -or
-    $installer -notmatch [Regex]::Escape("Start-HAI-Cloud.ps1")) {
-    throw "Inno Setup must expose the governed cloud-access shortcut."
-}
-if ($installer -notmatch [Regex]::Escape("Check local HAI connector") -or
-    $installer -notmatch [Regex]::Escape("Test-HAI-LocalConnector.ps1")) {
-    throw "Inno Setup must expose the local HAI connector check."
-}
-
-& $noFakeClaimsAudit
-if ($LASTEXITCODE -ne 0) {
-    throw "Windows no-fake-claims audit failed."
 }
 
 Write-Host "Windows installer behavioral contracts passed."

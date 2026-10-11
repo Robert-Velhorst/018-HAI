@@ -1,10 +1,13 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
-import { timeout } from 'rxjs/operators';
+import { of, Subject } from 'rxjs';
+import { catchError, switchMap, takeUntil, timeout } from 'rxjs/operators';
 import {
   IContextMemory,
+  IMemoryPageResult,
+  IMemoryQueryParams,
   IMemoryRetrieveResult,
   ISemanticMemoryReindexResult,
 } from '../../models/context-memory.model.interface';
@@ -27,12 +30,13 @@ interface MemoryActionCard {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-memory',
   templateUrl: './memory.component.html',
   styleUrls: ['./memory.component.scss'],
 })
-export class MemoryComponent implements OnInit {
+export class MemoryComponent implements OnInit, OnDestroy {
   memories: IContextMemory[] = [];
   retrieveResult?: IMemoryRetrieveResult;
   loading = false;
@@ -47,9 +51,30 @@ export class MemoryComponent implements OnInit {
   importResult?: IAIConversationImportResult;
   semanticReindexResult?: ISemanticMemoryReindexResult;
   selectedMemoryId?: string;
+  memoryPage: IMemoryPageResult = {
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 12,
+    totalPages: 0,
+    sort: 'updatedAt',
+    order: 'desc',
+  };
   themeMode: ThemeMode = 'light';
   private readonly loadTimeoutMs = 6000;
   private readonly operationTimeoutMs = 15000;
+  private readonly queryRequests = new Subject<IMemoryQueryParams>();
+  private readonly destroy$ = new Subject<void>();
+
+  libraryForm: FormGroup = this.fb.group({
+    projectKey: ['018-HAI'],
+    q: [''],
+    kind: [''],
+    tag: [''],
+    sort: ['updatedAt'],
+    order: ['desc'],
+    pageSize: [12],
+  });
 
   memoryForm: FormGroup = this.fb.group({
     projectKey: ['018-HAI'],
@@ -91,29 +116,61 @@ export class MemoryComponent implements OnInit {
   ngOnInit(): void {
     this.themeMode = this.themeService.mode();
     this.updateMemoryActions();
+    this.queryRequests.pipe(
+      switchMap((params) => this.memoryService.query(params).pipe(
+        timeout(this.loadTimeoutMs),
+        catchError(() => {
+          this.notification.error('Memory unavailable', 'HAI could not load this memory page. Retry or adjust the filters.');
+          return of(undefined);
+        })
+      )),
+      takeUntil(this.destroy$)
+    ).subscribe((result) => {
+      this.loading = false;
+      if (!result) {
+        this.updateMemoryActions();
+        return;
+      }
+      this.memoryPage = result;
+      this.memories = result.items || [];
+      if (!this.memories.some((memory) => memory.id === this.selectedMemoryId)) {
+        this.selectedMemoryId = this.memories[0]?.id;
+      }
+      this.updateMemoryActions();
+    });
     this.refresh();
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+    this.queryRequests.complete();
   }
 
   refresh(): void {
     this.loading = true;
-    this.memoryService
-      .list(this.memoryForm.value.projectKey, this.includeArchived)
-      .pipe(timeout(this.loadTimeoutMs))
-      .subscribe({
-        next: (memories) => {
-          this.memories = memories;
-          if (!this.selectedMemoryId && memories.length) {
-            this.selectedMemoryId = memories[0].id;
-          }
-          this.updateMemoryActions();
-          this.loading = false;
-        },
-        error: () => {
-          this.loading = false;
-          this.updateMemoryActions();
-          this.notification.error('Error', 'Failed to load memories.');
-        },
-      });
+    this.queryRequests.next(this.libraryQuery(this.memoryPage.page));
+  }
+
+  applyLibraryFilters(): void {
+    this.loading = true;
+    this.queryRequests.next(this.libraryQuery(1));
+  }
+
+  clearLibraryFilters(): void {
+    this.libraryForm.patchValue({
+      q: '',
+      kind: '',
+      tag: '',
+      sort: 'updatedAt',
+      order: 'desc',
+    });
+    this.applyLibraryFilters();
+  }
+
+  changeLibraryPage(page: number): void {
+    this.loading = true;
+    this.queryRequests.next(this.libraryQuery(page));
   }
 
   save(): void {
@@ -134,6 +191,7 @@ export class MemoryComponent implements OnInit {
     save$.pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: () => {
         this.saving = false;
+        this.libraryForm.patchValue({ projectKey: request.projectKey || '' });
         this.clearForm();
         this.refresh();
         this.notification.success('Memory saved', 'Context memory was stored locally.');
@@ -270,7 +328,7 @@ export class MemoryComponent implements OnInit {
   }
 
   exportMemories(): void {
-    this.memoryService.exportMemories(this.memoryForm.value.projectKey).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    this.memoryService.exportMemories(this.libraryForm.value.projectKey).pipe(timeout(this.operationTimeoutMs)).subscribe({
       next: (data) => {
         const blob = new Blob([JSON.stringify(data, null, 2)], {
           type: 'application/json',
@@ -320,7 +378,7 @@ export class MemoryComponent implements OnInit {
         title: this.editingId ? 'Correct memory' : 'Store memory',
         detail: 'Add verified context with source notes.',
         icon: 'plus-circle',
-        metric: this.editingId ? 'editing' : `${this.memories.length} stored`,
+        metric: this.editingId ? 'editing' : `${this.memoryPage.total} matching`,
         tone: 'blue',
       },
       {
@@ -360,7 +418,7 @@ export class MemoryComponent implements OnInit {
         title: 'Cleanup',
         detail: 'Show archived and stale records.',
         icon: 'clear',
-        metric: `${this.archivedCount()} archived`,
+        metric: `${this.archivedCount()} on page`,
         tone: this.archivedCount() ? 'gold' : 'blue',
       },
       {
@@ -426,7 +484,21 @@ export class MemoryComponent implements OnInit {
   }
 
   recentMemories(): IContextMemory[] {
-    return this.memories.slice(0, 12);
+    return this.memories;
+  }
+
+  pageRangeStart(): number {
+    if (!this.memoryPage.total || !this.memories.length) {
+      return 0;
+    }
+    return (this.memoryPage.page - 1) * this.memoryPage.pageSize + 1;
+  }
+
+  pageRangeEnd(): number {
+    if (!this.memoryPage.total || !this.memories.length) {
+      return 0;
+    }
+    return this.pageRangeStart() + this.memories.length - 1;
   }
 
   sourceCorrectionMemories(): IContextMemory[] {
@@ -532,6 +604,21 @@ export class MemoryComponent implements OnInit {
         .split(',')
         .map((tag) => tag.trim())
         .filter(Boolean),
+    };
+  }
+
+  private libraryQuery(page: number): IMemoryQueryParams {
+    const values = this.libraryForm.value;
+    return {
+      projectKey: String(values.projectKey || '').trim() || undefined,
+      includeArchived: this.includeArchived,
+      q: String(values.q || '').trim() || undefined,
+      kind: String(values.kind || '').trim() || undefined,
+      tag: String(values.tag || '').trim() || undefined,
+      sort: values.sort || 'updatedAt',
+      order: values.order || 'desc',
+      page: Math.max(1, Math.trunc(Number(page) || 1)),
+      pageSize: Math.min(100, Math.max(1, Math.trunc(Number(values.pageSize) || 12))),
     };
   }
 }

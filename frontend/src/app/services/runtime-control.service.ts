@@ -2,9 +2,14 @@ import { HttpClient } from '@angular/common/http'
 import { Injectable } from '@angular/core'
 import { Observable } from 'rxjs'
 import {
+  ControlApprovalAction,
+  ControlApprovalDecision,
   IBackgroundStatus,
+  IControlAuthorization,
+  IDecidedControlApproval,
   IEmergencyStopState,
   IEmergencyStopVerification,
+  IPreparedControlApproval,
   IReadiness,
   IRecoveryReport,
   IResumeApprovalRequest,
@@ -28,23 +33,44 @@ export class RuntimeControlService {
     return this.http.post<{ emergencyStop: IEmergencyStopState }>(`${this.apiUrl}/background/pause`, { reason })
   }
 
-  resume(): Observable<{ emergencyStop: IEmergencyStopState }> {
-    return this.http.post<{ emergencyStop: IEmergencyStopState }>(`${this.apiUrl}/background/resume`, {})
-  }
-
-  requestResumeApproval(): Observable<IResumeApprovalRequest> {
-    return this.http.post<IResumeApprovalRequest>(`${this.apiUrl}/background/resume-approval`, {})
-  }
-
-  approveAndResume(reviewItemId: string): Observable<{ emergencyStop: IEmergencyStopState }> {
-    return this.http.post<{ emergencyStop: IEmergencyStopState }>(
-      `${this.apiUrl}/background/resume-approval/${encodeURIComponent(reviewItemId)}/approve-and-resume`,
-      { confirmation: 'RESUME BACKGROUND PROCESSING' }
+  prepareControlApproval(
+    action: ControlApprovalAction,
+    targetMode?: string
+  ): Observable<IPreparedControlApproval> {
+    return this.http.post<IPreparedControlApproval>(
+      `${this.apiUrl}/background/control-approvals`,
+      targetMode ? { action, targetMode } : { action }
     )
   }
 
-  setMode(mode: string): Observable<{ mode: string }> {
-    return this.http.patch<{ mode: string }>(`${this.apiUrl}/background/mode`, { mode })
+  decideControlApproval(
+    requestId: string,
+    decision: ControlApprovalDecision,
+    reason: string
+  ): Observable<IDecidedControlApproval> {
+    return this.http.post<IDecidedControlApproval>(
+      `${this.apiUrl}/background/control-approvals/${encodeURIComponent(requestId)}/decision`,
+      { decision, reason }
+    )
+  }
+
+  resume(
+    authorization: IControlAuthorization
+  ): Observable<{ emergencyStop: IEmergencyStopState }> {
+    return this.http.post<{ emergencyStop: IEmergencyStopState }>(
+      `${this.apiUrl}/background/resume`,
+      authorization
+    )
+  }
+
+  setMode(
+    mode: string,
+    authorization?: IControlAuthorization
+  ): Observable<{ mode: string }> {
+    return this.http.patch<{ mode: string }>(
+      `${this.apiUrl}/background/mode`,
+      { mode, ...(authorization ?? {}) }
+    )
   }
 
   verifyEmergencyStop(): Observable<IEmergencyStopVerification> {

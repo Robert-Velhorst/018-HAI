@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { HttpErrorResponse } from '@angular/common/http'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { forkJoin } from 'rxjs'
@@ -49,6 +49,7 @@ interface PriorityField {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-life-ops',
   templateUrl: './life-ops.component.html',

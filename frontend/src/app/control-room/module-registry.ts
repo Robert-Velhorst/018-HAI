@@ -47,6 +47,16 @@ export const HAI_MODULES: HaiModuleDefinition[] = [
   { id: 'account-bridges', route: '/account-bridges', group: 'intelligence', title: 'Account bridges', description: 'Connection and permission health.', icon: 'link' },
   { id: 'memory', route: '/memory', group: 'intelligence', title: 'Memory', description: 'Review useful, source-linked context.', icon: 'database' },
   {
+    id: 'operational-brain',
+    route: '/operational-brain',
+    group: 'intelligence',
+    title: 'Operational Brain',
+    description: 'See how work, knowledge, sources, memory, and agents connect.',
+    icon: 'node-index',
+    primaryAction: { label: 'Inspect attention map', capability: 'operational-graph:read' },
+    advancedSectionIds: ['layers', 'agent-context', 'quality'],
+  },
+  {
     id: 'knowledge-claims',
     route: '/knowledge-claims',
     group: 'intelligence',
@@ -143,4 +153,8 @@ export const HAI_MODULE_GROUPS: Array<{ id: HaiModuleGroup; label: string }> = [
 export function moduleForUrl(url: string): HaiModuleDefinition {
   const path = url.split('?')[0].split('#')[0]
   return HAI_MODULES.find((module) => path === module.route || path.startsWith(`${module.route}/`)) || HAI_MODULES[0]
+}
+
+export function moduleDocumentTitle(module: HaiModuleDefinition): string {
+  return `${module.title} | HAI Automation Hub`
 }

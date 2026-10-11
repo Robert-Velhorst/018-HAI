@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"automation-hub-backend/internal/infra"
@@ -24,16 +25,40 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+func taskStateLifecycleMigrations(t *testing.T) fstest.MapFS {
+	t.Helper()
+	files := fstest.MapFS{}
+	for _, version := range []string{
+		"0001_extensions",
+		"0002_baseline",
+		"0003_framework_registry",
+		"0004_task_state_storage",
+		"0005_framework_operating_contract",
+		"0006_durable_job_fencing",
+	} {
+		for _, suffix := range []string{"up.sql", "down.sql"} {
+			path := "pre/" + version + "." + suffix
+			data, err := migrations.Files.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read lifecycle migration %s: %v", path, err)
+			}
+			files[path] = &fstest.MapFile{Data: data}
+		}
+	}
+	return files
+}
+
 func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testing.T) {
 	db := openTaskStatePostgresTestDB(t)
-	applied, err := infra.ApplyMigrations(db, migrations.Files, "pre")
+	files := taskStateLifecycleMigrations(t)
+	applied, err := infra.ApplyMigrations(db, files, "pre")
 	if err != nil {
 		t.Fatalf("apply pre migrations: %v", err)
 	}
 	if applied < 4 {
 		t.Fatalf("applied %d pre migrations, want at least 4", applied)
 	}
-	if rerun, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil || rerun != 0 {
+	if rerun, err := infra.ApplyMigrations(db, files, "pre"); err != nil || rerun != 0 {
 		t.Fatalf("migration rerun = %d, %v; want 0, nil", rerun, err)
 	}
 	executeTaskStateMigration(t, db, "pre/0004_task_state_storage.up.sql")
@@ -258,19 +283,17 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 
 	testPostgresTaskStateConcurrentTransitions(t, db, repo, owner)
 
-	// Later migrations may depend on task-state tables. Roll them back in
-	// reverse order before testing the older migration's rollback contract.
-	for _, version := range taskStatePreMigrationVersionsAfter(t, "pre/0006_durable_job_fencing") {
-		if err := infra.RollbackMigration(db, migrations.Files, "pre", version); err != nil {
-			t.Fatalf("rollback later migration %s before task state: %v", version, err)
-		}
-	}
-	if err := infra.RollbackMigration(db, migrations.Files, "pre", "pre/0006_durable_job_fencing"); err != nil {
+	if err := infra.RollbackMigration(
+		db,
+		files,
+		"pre",
+		"pre/0006_durable_job_fencing",
+	); err != nil {
 		t.Fatalf("rollback durable-job fencing migration before task state: %v", err)
 	}
 	if err := infra.RollbackMigration(
 		db,
-		migrations.Files,
+		files,
 		"pre",
 		"pre/0005_framework_operating_contract",
 	); err != nil {
@@ -278,7 +301,7 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 	}
 	if err := infra.RollbackMigration(
 		db,
-		migrations.Files,
+		files,
 		"pre",
 		"pre/0004_task_state_storage",
 	); err != nil {
@@ -310,7 +333,7 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 		t.Fatal("task-state rollback removed the prior Framework Registry schema")
 	}
 	executeTaskStateMigration(t, db, "pre/0004_task_state_storage.down.sql")
-	reapplied, err := infra.ApplyMigrations(db, migrations.Files, "pre")
+	reapplied, err := infra.ApplyMigrations(db, files, "pre")
 	if err != nil {
 		t.Fatalf("reapply task-state migration: %v", err)
 	}

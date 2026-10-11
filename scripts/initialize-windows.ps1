@@ -4,9 +4,7 @@ param(
     [string]$AdminEmail = "",
     [string]$AdminPasswordPlainText = "",
     [ValidateRange(1, 65535)]
-    # Match the environment template, installer shortcuts, and documentation.
-    # Port 8088 avoids colliding with another local web server on Windows.
-    [int]$GatewayPort = 8088,
+    [int]$GatewayPort = 80,
     [switch]$Force
 )
 

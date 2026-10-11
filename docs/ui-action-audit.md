@@ -28,9 +28,9 @@ backend endpoint (no dead buttons). Based on `frontend/src/app/pages` +
 - **Not yet surfaced in the UI (backend exists, UI wiring pending):**
   the new `/memory/query` search parameters, `/flags`, `/system/info` readiness,
   and i18n EN/NL strings. Tracked in `docs/technical-debt.md` (TD-7).
-- **Recommendation:** add a small "system status" widget consuming
-  `/system/info` + `/readyz` so users get a friendly readiness signal (feeds the
-  non-technical-user simulation findings).
+- **Implemented:** the authenticated System Status page consumes
+  `/api/v1/system/readiness`; the public `/readyz` endpoint remains limited to
+  aggregate orchestrator status.
 
 ## Method note
 

@@ -16,6 +16,12 @@ import (
 
 const maxFeedBytes = 5 << 20 // 5 MiB bound on a fetched feed
 
+const feedHTTPTimeout = 10 * time.Second
+
+type feedLookupIPAddr func(context.Context, string) ([]net.IPAddr, error)
+
+var sharedFeedHTTPClient = newFeedHTTPClient(net.DefaultResolver.LookupIPAddr)
+
 // FetchOptions configure feed fetching.
 type FetchOptions struct {
 	FeedsRoot string // allowlisted root for local file feeds
@@ -46,22 +52,25 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 		if err != nil {
 			return nil, err
 		}
-		client := &http.Client{
-			Timeout:   10 * time.Second,
-			Transport: accountFeedHTTPTransport(),
-			// Each redirect is a new destination that has not passed the feed URL
-			// validation and network boundary checks. Return it to the caller instead.
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-		}
-		resp, err := client.Do(req)
+		resp, err := sharedFeedHTTPClient.Do(req)
 		if err != nil {
+			if contextErr := ctx.Err(); contextErr != nil {
+				return nil, contextErr
+			}
 			return nil, fmt.Errorf("accountfeed: feed fetch failed: %w", err)
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("accountfeed: feed HTTP %d", resp.StatusCode)
 		}
-		return readBoundedFeedBytes(ctx, resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxFeedBytes+1))
+		if err != nil {
+			return nil, fmt.Errorf("accountfeed: read feed: %w", err)
+		}
+		if len(body) > maxFeedBytes {
+			return nil, fmt.Errorf("accountfeed: feed exceeds %d bytes", maxFeedBytes)
+		}
+		return body, nil
 	default:
 		return nil, fmt.Errorf("accountfeed: unsupported sourceType %q", feed.SourceType)
 	}
@@ -111,6 +120,9 @@ func validateFeedURL(raw string) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("accountfeed: feed URL scheme must be http/https")
 	}
+	if u.User != nil {
+		return fmt.Errorf("accountfeed: feed URL must not contain credentials")
+	}
 	host := u.Hostname()
 	if host == "" {
 		return fmt.Errorf("accountfeed: feed URL host is empty")
@@ -124,32 +136,25 @@ func validateFeedURL(raw string) error {
 	if strings.EqualFold(host, "localhost") {
 		return nil
 	}
-	if ip := net.ParseIP(host); ip != nil && accountFeedAddressBlocked(ip) {
-		return fmt.Errorf("accountfeed: private or unsafe host not allowed")
+	if ip := net.ParseIP(host); ip != nil && feedIPAddressBlocked(ip) {
+		return fmt.Errorf("accountfeed: blocked host address")
 	}
 	return nil
 }
 
-type accountFeedLookupIP func(context.Context, string) ([]net.IPAddr, error)
-type accountFeedDial func(context.Context, string, string) (net.Conn, error)
-
-func accountFeedHTTPTransport() *http.Transport {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	return newAccountFeedHTTPTransport(
-		net.DefaultResolver.LookupIPAddr,
-		dialer.DialContext,
-	)
-}
-
-func newAccountFeedHTTPTransport(lookup accountFeedLookupIP, dial accountFeedDial) *http.Transport {
-	return &http.Transport{
-		// Environment-configured proxies could connect to an unvalidated internal
-		// destination, so feeds always use a direct connection.
-		Proxy: nil,
+func newFeedHTTPClient(lookup feedLookupIPAddr) *http.Client {
+	dialer := &net.Dialer{Timeout: feedHTTPTimeout}
+	transport := &http.Transport{
+		Proxy:                 nil,
+		MaxIdleConns:          16,
+		MaxIdleConnsPerHost:   2,
+		IdleConnTimeout:       30 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 5 * time.Second,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(address)
 			if err != nil {
-				return nil, fmt.Errorf("accountfeed: invalid feed network address: %w", err)
+				return nil, fmt.Errorf("accountfeed: invalid network address: %w", err)
 			}
 			resolved, err := lookup(ctx, host)
 			if err != nil {
@@ -159,32 +164,26 @@ func newAccountFeedHTTPTransport(lookup accountFeedLookupIP, dial accountFeedDia
 				return nil, fmt.Errorf("accountfeed: feed host resolved to no addresses")
 			}
 			for _, candidate := range resolved {
-				if accountFeedAddressBlocked(candidate.IP) {
+				if feedIPAddressBlocked(candidate.IP) {
 					return nil, fmt.Errorf("accountfeed: feed host resolved to blocked address space")
 				}
 			}
-			return dial(ctx, network, net.JoinHostPort(resolved[0].IP.String(), port))
+			return dialer.DialContext(ctx, network, net.JoinHostPort(resolved[0].IP.String(), port))
 		},
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
-		IdleConnTimeout:       30 * time.Second,
+	}
+	return &http.Client{
+		Timeout:   feedHTTPTimeout,
+		Transport: transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 }
 
-func accountFeedAddressBlocked(ip net.IP) bool {
+func feedIPAddressBlocked(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	if ipv4 := ip.To4(); ipv4 != nil {
-		ip = ipv4
-	}
-	if ip.IsLoopback() {
-		return false
-	}
-	return ip.IsUnspecified() ||
-		ip.IsMulticast() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsPrivate() ||
-		ip.String() == "169.254.169.254"
+	return ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.String() == "169.254.169.254"
 }

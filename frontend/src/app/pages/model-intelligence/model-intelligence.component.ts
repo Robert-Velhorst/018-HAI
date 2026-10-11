@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { forkJoin } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
@@ -13,6 +13,7 @@ import {
 import { ModelIntelligenceService } from '../../services/model-intelligence.service'
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-model-intelligence',
   templateUrl: './model-intelligence.component.html',

@@ -1,6 +1,6 @@
-// Mirrors the backend /readyz payload. The three-way status is meaningful and
-// must be preserved end to end: "degraded" is a serving-but-incomplete state
-// that a two-way up/down view would erase.
+// Mirrors the authenticated backend system readiness payload. The three-way
+// status is meaningful and must be preserved end to end: "degraded" is a
+// serving-but-incomplete state that a two-way up/down view would erase.
 export type SystemCheckSeverity = 'ok' | 'warn' | 'fail';
 
 export type SystemReadinessStatus = 'ready' | 'degraded' | 'not_ready';
@@ -24,22 +24,41 @@ export interface ISystemReadiness {
   checks: ISystemCheck[];
 }
 
-export interface ISystemBuildInfo {
-  version: string;
-  commit: string;
-  buildTime: string;
-  goVersion: string;
+export type EventDeliveryStatus = 'pending' | 'published' | 'dead_lettered';
+
+export interface IEventDeliveryFailure {
+  id: string;
+  aggregateId: string;
+  eventType: 'create' | 'update' | 'delete';
+  status: EventDeliveryStatus;
+  attemptCount: number;
+  maxAttempts: number;
+  lastError: string;
+  updatedAt: string;
 }
 
-export interface ISystemInfo {
-  build: ISystemBuildInfo;
-  runMode: string;
-  allowsRealSideEffects: boolean;
-  languages: string[];
-  readiness: {
-    ready: boolean;
-    ok: number;
-    warn: number;
-    fail: number;
-  };
+export interface IEventDeliveryStats {
+  pending: number;
+  deadLettered: number;
+  published: number;
+  oldestPendingAt?: string;
+  recentFailures: IEventDeliveryFailure[];
+  checkedAt: string;
+}
+
+export interface IEventDeliveryRetryResult {
+  status: 'queued';
+  eventId: string;
+}
+
+export interface IA2ABridgeStatus {
+  enabled: boolean;
+  configured: boolean;
+  provider: string;
+  endpoint?: string;
+  configError?: string;
+  capabilities: string[];
+  restrictions: string[];
+  scope: string;
+  transport: 'local' | 'fixed_ngrok_https';
 }

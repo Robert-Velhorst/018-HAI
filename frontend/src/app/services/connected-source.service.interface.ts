@@ -6,6 +6,7 @@ import {
   ISourceAuditLog,
   ISourceConnector,
   ISourceConnectionHealth,
+  ISourceOverview,
   ISourceExtraction,
 	ISourceHistoryPage,
   ISourceSearchRequest,
@@ -19,10 +20,9 @@ import {
 export interface IConnectedSourceService {
   connectors(): Observable<ISourceConnector[]>;
   sources(includeDisabled: boolean): Observable<IConnectedSource[]>;
+  overview(projectKey: string, includeArchived: boolean): Observable<ISourceOverview>;
   connectionHealth(sourceId: string): Observable<ISourceConnectionHealth>;
-  connectionHealthSummary(): Observable<ISourceConnectionHealth[]>;
-  syncJobs(sourceId?: string): Observable<ISourceSyncJob[]>;
-	pageSyncJobs(limit: number, offset: number, sourceId?: string): Observable<ISourceHistoryPage<ISourceSyncJob>>;
+  syncJobs(sourceId?: string, limit?: number): Observable<ISourceSyncJob[]>;
   createSource(request: ICreateSourceRequest): Observable<IConnectedSource>;
   startGoogleOAuth(sourceId: string): Observable<{ authorizeUrl: string }>;
   sync(sourceId: string, request: IImportRequest): Observable<ISourceSyncResult>;
@@ -35,11 +35,9 @@ export interface IConnectedSourceService {
   revoke(sourceId: string): Observable<IConnectedSource>;
   search(request: ISourceSearchRequest): Observable<ISourceSearchResult>;
   knowledgeGraph(projectKey: string, includeArchived: boolean, includeSensitive: boolean): Observable<IKnowledgeGraphResult>;
-  extractions(projectKey: string, includeArchived: boolean): Observable<ISourceExtraction[]>;
-	pageExtractions(projectKey: string, includeArchived: boolean, limit: number, offset: number): Observable<ISourceHistoryPage<ISourceExtraction>>;
+  extractions(projectKey: string, includeArchived: boolean, limit?: number): Observable<ISourceExtraction[]>;
   updateExtraction(id: string, extraction: Partial<ISourceExtraction>): Observable<ISourceExtraction>;
   archiveExtraction(id: string): Observable<ISourceExtraction>;
   deleteExtraction(id: string): Observable<void>;
-  auditLogs(sourceId?: string): Observable<ISourceAuditLog[]>;
-	pageAuditLogs(limit: number, offset: number, sourceId?: string): Observable<ISourceHistoryPage<ISourceAuditLog>>;
+  auditLogs(sourceId?: string, limit?: number): Observable<ISourceAuditLog[]>;
 }

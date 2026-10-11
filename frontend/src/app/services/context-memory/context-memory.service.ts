@@ -6,6 +6,8 @@ import {
   IContextMemory,
   IContextMemoryRequest,
   IMemoryExport,
+  IMemoryPageResult,
+  IMemoryQueryParams,
   IMemoryRetrieveRequest,
   IMemoryRetrieveResult,
   ISemanticMemoryReindexResult,
@@ -25,6 +27,30 @@ export class ContextMemoryService implements IContextMemoryService {
       params = params.set('projectKey', projectKey);
     }
     return this.http.get<IContextMemory[]>(`${this.apiUrl}/`, { params });
+  }
+
+  query(query: IMemoryQueryParams): Observable<IMemoryPageResult> {
+    let params = new HttpParams()
+      .set('includeArchived', String(Boolean(query.includeArchived)))
+      .set('page', String(Math.max(1, Math.trunc(query.page || 1))))
+      .set('pageSize', String(Math.min(100, Math.max(1, Math.trunc(query.pageSize || 20)))));
+
+    const optionalParams: Array<[string, string | undefined]> = [
+      ['projectKey', query.projectKey],
+      ['q', query.q],
+      ['kind', query.kind],
+      ['tag', query.tag],
+      ['sort', query.sort],
+      ['order', query.order],
+    ];
+    optionalParams.forEach(([key, value]) => {
+      const normalized = String(value || '').trim();
+      if (normalized) {
+        params = params.set(key, normalized);
+      }
+    });
+
+    return this.http.get<IMemoryPageResult>(`${this.apiUrl}/query`, { params });
   }
 
   create(request: IContextMemoryRequest): Observable<IContextMemory> {

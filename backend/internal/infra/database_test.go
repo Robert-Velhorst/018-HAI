@@ -3,38 +3,38 @@ package infra
 import "testing"
 
 func TestMigrationsEnabledDefaultsToTrueAndCanBeDisabled(t *testing.T) {
-	t.Setenv("DB_MIGRATIONS_ENABLED", "")
-	if !migrationsEnabled() {
-		t.Fatal("migrationsEnabled() = false, want legacy-compatible default true")
+	t.Setenv("DB_RUN_MIGRATIONS", "")
+	if !databaseMigrationsEnabled() {
+		t.Fatal("databaseMigrationsEnabled() = false, want legacy-compatible default true")
 	}
 
-	t.Setenv("DB_MIGRATIONS_ENABLED", "false")
-	if migrationsEnabled() {
-		t.Fatal("migrationsEnabled() = true, want false when explicitly disabled")
+	t.Setenv("DB_RUN_MIGRATIONS", "false")
+	if databaseMigrationsEnabled() {
+		t.Fatal("databaseMigrationsEnabled() = true, want false when explicitly disabled")
 	}
 }
 
-func TestRuntimeRoleConfigurationRequiresBothValuesAndSafeIdentifier(t *testing.T) {
+func TestConfiguredRuntimeRoleRequiresBothValuesAndStrongSecret(t *testing.T) {
 	t.Setenv("DB_RUNTIME_USER", "")
 	t.Setenv("DB_RUNTIME_PASSWORD", "")
-	if _, _, err := runtimeRoleConfiguration(); err != nil {
+	if err := ProvisionConfiguredRuntimeRole(nil, "hai"); err != nil {
 		t.Fatalf("empty runtime role configuration error = %v", err)
 	}
 
 	t.Setenv("DB_RUNTIME_USER", "hai_runtime")
 	t.Setenv("DB_RUNTIME_PASSWORD", "")
-	if _, _, err := runtimeRoleConfiguration(); err == nil {
+	if err := ProvisionConfiguredRuntimeRole(nil, "hai"); err == nil {
 		t.Fatal("runtime role configuration without password unexpectedly succeeded")
 	}
 
-	t.Setenv("DB_RUNTIME_USER", "unsafe-role")
-	t.Setenv("DB_RUNTIME_PASSWORD", "safe-password")
-	if _, _, err := runtimeRoleConfiguration(); err == nil {
-		t.Fatal("runtime role configuration with unsafe identifier unexpectedly succeeded")
+	t.Setenv("DB_RUNTIME_USER", "hai_runtime")
+	t.Setenv("DB_RUNTIME_PASSWORD", "short")
+	if err := ProvisionConfiguredRuntimeRole(nil, "hai"); err == nil {
+		t.Fatal("runtime role configuration with a weak password unexpectedly succeeded")
 	}
 
-	t.Setenv("DB_RUNTIME_USER", "hai_runtime")
-	if user, password, err := runtimeRoleConfiguration(); err != nil || user != "hai_runtime" || password != "safe-password" {
-		t.Fatalf("runtime role configuration = (%q, %q, %v), want configured values", user, password, err)
+	t.Setenv("DB_RUNTIME_PASSWORD", "safe-password-safe-password-safe")
+	if err := ProvisionConfiguredRuntimeRole(nil, "hai"); err == nil {
+		t.Fatal("runtime role configuration without a provisioning database unexpectedly succeeded")
 	}
 }

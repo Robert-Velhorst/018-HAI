@@ -7,24 +7,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$payloadMutex = New-Object System.Threading.Mutex($false, "HAIInstallerPayloadBuild")
-$payloadLockHeld = $false
-
-try {
-    try {
-        $payloadLockHeld = $payloadMutex.WaitOne(0)
-    } catch [System.Threading.AbandonedMutexException] {
-        $payloadLockHeld = $true
-    }
-    if (-not $payloadLockHeld) {
-        throw "Another HAI installer build is already preparing the shared payload. Wait for it to finish, then retry."
-    }
-
-    $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-    $installerRoot = Join-Path $repositoryRoot "installer"
-    $releaseRoot = Join-Path $installerRoot "release"
-    $payloadRoot = Join-Path $releaseRoot "payload"
-    $installerScript = Join-Path $installerRoot "windows\HAI.iss"
+$repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
+$installerRoot = Join-Path $repositoryRoot "installer"
+$releaseRoot = Join-Path $installerRoot "release"
+$payloadRoot = Join-Path $releaseRoot "payload"
+$installerScript = Join-Path $installerRoot "windows\HAI.iss"
 
 if (-not (Test-Path -LiteralPath (Join-Path $repositoryRoot ".git") -PathType Any)) {
     throw "The Windows installer must be built from a Git checkout so it cannot accidentally package local data."
@@ -64,7 +51,6 @@ $trackedFiles = @(& git -C $repositoryRoot ls-files --cached)
 $installerSourceFiles = @(& git -C $repositoryRoot ls-files --others --exclude-standard -- `
     installer/windows `
     scripts/build-windows-installer.ps1 `
-    scripts/test-live-trello.ps1 `
     docs/windows-installer.md)
 $sourceFiles = @($trackedFiles + $installerSourceFiles | Select-Object -Unique)
 if ($LASTEXITCODE -ne 0 -or $sourceFiles.Count -eq 0) {
@@ -131,9 +117,3 @@ if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
     throw "Inno Setup did not produce the expected installer: $installerPath"
 }
 Write-Host "Created Windows installer: $installerPath" -ForegroundColor Green
-} finally {
-    if ($payloadLockHeld) {
-        $payloadMutex.ReleaseMutex()
-    }
-    $payloadMutex.Dispose()
-}

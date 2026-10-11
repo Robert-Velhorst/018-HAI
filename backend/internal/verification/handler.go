@@ -2,6 +2,8 @@ package verification
 
 import (
 	"automation-hub-backend/internal/identity"
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -43,8 +45,11 @@ func (h *Handler) Answer(c *gin.Context) {
 		request.ExternalEvidence[index].Primary = false
 	}
 	request.OwnerIdentity = verifiedOwner(c)
-	result, err := h.service.Answer(request)
+	result, err := AnswerWithContext(h.service, c.Request.Context(), request)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

@@ -25,14 +25,14 @@ verification → audit).
 | Repudiation | No trail of actions | `auditevent` (redaction-aware) + immutable approval/audit records |
 | Information disclosure | Secrets in logs | redaction helpers; support bundle excludes secret values |
 | DoS | Request flooding, runaway jobs | per-IP rate limiter; retry budget + dead-letter; emergency stop |
-| Elevation | Acting without authorization | approval gates, pre-action safety, RBAC model (enforcement follow-up) |
+| Elevation | Acting without authorization | approval gates, pre-action safety, signed IDP roles, verified-claim identity middleware, and route-specific RBAC guards |
 
 ## Highest residual risks
 
 1. **Unauthenticated API when the key is unset** — operational; surfaced by
    readiness tooling. Mitigate by never exposing the host without the key.
-2. **RBAC not yet enforced in middleware** — safe single-operator default; wire
-   `rbac.Can` before multi-user use.
+2. **Permission-regression drift** — new routes must declare their read, write,
+   approve, execute, or admin requirement and add a role-boundary test.
 3. **Path-safety not yet adopted at every call site** — utility exists and is
    tested; adoption tracked in the tech-debt register.
 

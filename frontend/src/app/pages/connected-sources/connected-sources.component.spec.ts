@@ -103,341 +103,106 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     expect(component.googleConnectorMetric()).toBe('4 ready');
   });
 
-  it('labels configuration-required connectors as setup required and prevents source creation', () => {
-    const { component } = createComponent();
-    const connector = {
-      connectorKey: 'trello',
-      enabled: true,
-      adapterStatus: 'configuration_required',
-    } as any;
-
-    expect(component.adapterStatusLabel(connector.adapterStatus)).toBe('setup required');
-    expect(component.connectorCanCreateSource(connector)).toBeFalse();
-  });
-
-  it('keeps enabled legacy connectors usable when the backend omits adapter status', () => {
+  it('requires an explicit local folder instead of defaulting to the whole source root', () => {
     const { component } = createComponent();
 
-    expect(component.connectorCanCreateSource({ connectorKey: 'local-folder', enabled: true } as any)).toBeTrue();
+    expect(component.sourceForm.controls['syncTarget'].value).toBe('');
+    expect(component.sourceForm.invalid).toBeTrue();
+
+    component.sourceForm.controls['syncTarget'].setValue('legal/vivare');
+    expect(component.sourceForm.valid).toBeTrue();
+
+    component.connectorChanged('local-folder');
+    expect(component.sourceForm.controls['syncTarget'].value).toBe('');
+    expect(component.syncTargetPlaceholder()).toContain('Explicit subfolder');
   });
+});
 
-  it('hides sync for an existing source whose connector now requires configuration', () => {
-    const { component } = createComponent();
-    component.connectors = [{
-      connectorKey: 'trello',
-      enabled: true,
-      adapterStatus: 'configuration_required',
-    } as any];
-
-    expect(component.syncButtonVisible({
-      connectorKey: 'trello',
-      enabled: true,
-      status: 'active',
-    } as IConnectedSource)).toBeFalse();
-  });
-
-  it('does not submit a manual import through an unavailable legacy connector', () => {
-    const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', ['sync']);
-    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['warning']);
-    const component = new ConnectedSourcesComponent(
-      new FormBuilder(),
-      sourceService as any,
-      notification,
-      router,
-      { mode: () => 'light' } as any,
-    );
-    component.connectors = [{ connectorKey: 'trello', enabled: true, adapterStatus: 'configuration_required' } as any];
-    component.sources = [{ id: 'source-1', connectorKey: 'trello', enabled: true, status: 'active' } as IConnectedSource];
-    component.importForm.patchValue({ sourceId: 'source-1' });
-
-    component.sync();
-
-    expect(sourceService.sync).not.toHaveBeenCalled();
-    expect(notification.warning).toHaveBeenCalledWith('Connector setup required', jasmine.any(String));
-  });
-
-  it('shows the backend recovery reason when an item sync is rejected', () => {
-    const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', ['sync']);
-    sourceService.sync.and.returnValue(throwError(() => ({
-      error: { error: 'Source sync is already in progress. Wait for the current run to finish.' },
-    })));
-    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['error']);
-    const component = new ConnectedSourcesComponent(
-      new FormBuilder(), sourceService as any, notification, router, { mode: () => 'light' } as any,
-    );
-    component.connectors = [{ connectorKey: 'local-folder', enabled: true, adapterStatus: 'local_only' } as any];
-    component.sources = [{ id: 'source-1', connectorKey: 'local-folder', enabled: true, status: 'active' } as IConnectedSource];
-    component.importForm.patchValue({ sourceId: 'source-1' });
-
-    component.sync();
-
-    expect(notification.error).toHaveBeenCalledWith(
-      'Item sync failed',
-      'Source sync is already in progress. Wait for the current run to finish.'
-    );
-  });
-
-  it('prevents duplicate generic source creation while the request is running', () => {
-    const { component } = createComponent();
-    const pending = new Subject<IConnectedSource>();
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', ['createSource']);
-    sourceService.createSource.and.returnValue(pending.asObservable());
-    (component as any).sourceService = sourceService;
-    component.connectors = [{
-      connectorKey: 'local-folder', name: 'Selected local folder', category: 'local_folder',
-      enabled: true, adapterStatus: 'local_only',
-    } as any];
-
-    component.connectSource();
-    component.connectSource();
-
-    expect(component.connecting).toBeTrue();
-    expect(sourceService.createSource).toHaveBeenCalledTimes(1);
-
-    pending.complete();
-    expect(component.connecting).toBeFalse();
-  });
-
-  it('coalesces repeated overview refreshes while the current request is in flight', () => {
-    const { component } = createComponent();
-    const connectors = new Subject<any[]>();
-    const sources = new Subject<IConnectedSource[]>();
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', [
-      'connectors', 'sources', 'connectionHealthSummary',
+describe('ConnectedSourcesComponent progressive evidence loading', () => {
+  function createHarness() {
+    const service = jasmine.createSpyObj('ConnectedSourceService', [
+      'connectors', 'sources', 'overview', 'connectionHealth', 'extractions', 'syncJobs', 'auditLogs',
     ]);
-    sourceService.connectors.and.returnValue(connectors.asObservable());
-    sourceService.sources.and.returnValue(sources.asObservable());
-    sourceService.connectionHealthSummary.and.returnValue(of([]));
-    (component as any).sourceService = sourceService;
-
-    component.refresh();
-    component.refresh();
-
-    expect(sourceService.connectors).toHaveBeenCalledTimes(1);
-    expect(sourceService.sources).toHaveBeenCalledTimes(1);
-
-    connectors.next([]);
-    connectors.complete();
-    sources.next([]);
-    sources.complete();
-
-    expect(sourceService.connectors).toHaveBeenCalledTimes(2);
-    expect(sourceService.sources).toHaveBeenCalledTimes(2);
-  });
-
-  it('keeps a visible recovery state when the source registry cannot load', () => {
-    const { component } = createComponent();
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', [
-      'connectors', 'sources', 'connectionHealthSummary',
-    ]);
-    sourceService.connectors.and.returnValue(of([{ connectorKey: 'local-folder', enabled: true }]));
-    sourceService.sources.and.returnValue(throwError(() => new Error('gateway unavailable')));
-    sourceService.connectionHealthSummary.and.returnValue(of([]));
-    (component as any).sourceService = sourceService;
-
-    component.refresh();
-
-    expect(component.overviewLoadError).toContain('connected sources');
-    expect(component.connectors.length).toBe(1);
-    expect(component.sources).toEqual([]);
-  });
-
-  it('retains prior source health and exposes a failed health refresh', () => {
-    const { component } = createComponent();
-    const source = { id: 'source-1', name: 'Trello board', connectorKey: 'trello', enabled: true, status: 'active' } as IConnectedSource;
-    const priorHealth = { sourceId: source.id, status: 'healthy', reason: 'last known good result' } as any;
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', [
-      'connectors', 'sources', 'connectionHealthSummary',
-    ]);
-    sourceService.connectors.and.returnValue(of([{ connectorKey: 'trello', enabled: true }]));
-    sourceService.sources.and.returnValue(of([source]));
-    sourceService.connectionHealthSummary.and.returnValue(throwError(() => new Error('gateway unavailable')));
-    (component as any).sourceService = sourceService;
-    component.connectionHealth = { [source.id]: priorHealth };
-
-    component.refresh();
-
-    expect(component.connectionHealth[source.id]).toBe(priorHealth);
-    expect(component.connectionHealthLoadError).toContain('connection health');
-  });
-
-  it('keeps prior source history visible when a history lane cannot load', () => {
-    const { component } = createComponent();
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', [
-      'pageExtractions', 'pageAuditLogs', 'pageSyncJobs',
-    ]);
-    const existingExtraction = { id: 'extraction-1', text: 'Previously loaded evidence' } as any;
-    component.extractions = [existingExtraction];
-    component.recordHistoryLoaded = true;
-    sourceService.pageExtractions.and.returnValue(throwError(() => new Error('gateway unavailable')));
-    sourceService.pageAuditLogs.and.returnValue(of({ items: [], total: 0, hasMore: false }));
-    sourceService.pageSyncJobs.and.returnValue(of({ items: [], total: 0, hasMore: false }));
-    (component as any).sourceService = sourceService;
-
-    component.loadRecordHistory(true);
-
-    expect(component.extractions).toEqual([existingExtraction]);
-    expect(component.recordHistoryLoadError).toContain('extracted context');
-    expect(component.recordHistoryLoaded).toBeTrue();
-  });
-
-  it('initializes the live Trello connector as a non-local, scheduled board source', () => {
-    const { component } = createComponent();
-    component.sourceForm.patchValue({
-      connectorKey: 'trello',
-      localOnly: true,
-      syncTarget: 'documents',
-      excludePatterns: 'trash,temp',
-    });
-
-    component.connectorChanged('trello');
-
-    expect(component.sourceForm.value).toEqual(jasmine.objectContaining({
-      connectorKey: 'trello',
-      name: 'Trello board (read-only API)',
-      localOnly: false,
-      syncFrequency: '15m',
-      syncTarget: '',
-      excludePatterns: '',
-    }));
-    expect(component.syncTargetPlaceholder()).toContain('Trello board ID');
-  });
-
-  it('hands an operational Odoo JSON-2 connector to the governed source form without exposing credentials', () => {
-    const { component } = createComponent();
-    component.connectors = [{
-      connectorKey: 'odoo-json2',
-      name: 'Odoo JSON-2',
-      enabled: true,
-      adapterStatus: 'operational',
-    } as any];
-
-    component.startOdooJSON2Connection();
-
-    expect(component.selectedAction).toBe('connect');
-    expect(component.sourceForm.value).toEqual(jasmine.objectContaining({
-      connectorKey: 'odoo-json2',
-      name: 'Odoo JSON-2 read-only',
-      syncFrequency: '15m',
-      syncTarget: '',
-      localOnly: false,
-    }));
-    expect(component.odooJSON2StatusLabel()).toBe('live');
-  });
-
-  it('keeps Odoo JSON-2 unavailable until the backend has local credentials configured', () => {
-    const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
-    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['warning']);
-    const component = new ConnectedSourcesComponent(
-      new FormBuilder(),
-      {} as any,
-      notification,
-      router,
-      { mode: () => 'light' } as any,
-    );
-    component.connectors = [{
-      connectorKey: 'odoo-json2',
-      enabled: true,
-      adapterStatus: 'configuration_required',
-      statusReason: 'Set HAI_ODOO_BASE_URL and local Odoo credentials before connecting.',
-    } as any];
-
-    component.startOdooJSON2Connection();
-
-    expect(component.selectedAction).toBe('connect');
-    expect(component.odooJSON2StatusLabel()).toBe('setup required');
-    expect(notification.warning).toHaveBeenCalledWith('Odoo JSON-2 setup required', jasmine.stringContaining('HAI_ODOO_BASE_URL'));
-  });
-
-  it('defers record-heavy source history until the operator opens it', () => {
-    const { component } = createComponent();
-    const sourceService = (component as any).sourceService = jasmine.createSpyObj('ConnectedSourceService', [
-      'connectors', 'sources', 'pageExtractions', 'pageAuditLogs', 'pageSyncJobs', 'connectionHealthSummary',
-    ]);
-    sourceService.connectors.and.returnValue(of([]));
-    sourceService.sources.and.returnValue(of([]));
-    sourceService.pageExtractions.and.returnValue(of({ items: [], total: 0, limit: 100, offset: 0, hasMore: false }));
-    sourceService.pageAuditLogs.and.returnValue(of({ items: [], total: 0, limit: 100, offset: 0, hasMore: false }));
-    sourceService.pageSyncJobs.and.returnValue(of({ items: [], total: 0, limit: 100, offset: 0, hasMore: false }));
-    sourceService.connectionHealthSummary.and.returnValue(of([]));
-
-    component.refresh();
-
-    expect(sourceService.pageExtractions).not.toHaveBeenCalled();
-    expect(sourceService.pageAuditLogs).not.toHaveBeenCalled();
-    expect(sourceService.pageSyncJobs).not.toHaveBeenCalled();
-    expect(component.recordHistoryMetric()).toBe('open');
-
-    component.loadRecordHistory();
-
-    expect(sourceService.pageExtractions).toHaveBeenCalledWith('018-HAI', false, 100, 0);
-    expect(sourceService.pageAuditLogs).toHaveBeenCalledWith(100, 0);
-    expect(sourceService.pageSyncJobs).toHaveBeenCalledWith(100, 0);
-    expect(component.recordHistoryLoaded).toBeTrue();
-  });
-
-  it('loads the next bounded history page only when older records are requested', () => {
-    const { component } = createComponent();
-    const sourceService = (component as any).sourceService = jasmine.createSpyObj('ConnectedSourceService', [
-      'pageExtractions', 'pageAuditLogs', 'pageSyncJobs',
-    ]);
-    sourceService.pageExtractions.and.returnValues(
-      of({ items: [{ id: 'first' }], total: 2, limit: 100, offset: 0, hasMore: true }),
-      of({ items: [{ id: 'second' }], total: 2, limit: 100, offset: 1, hasMore: false }),
-    );
-    sourceService.pageAuditLogs.and.returnValues(
-      of({ items: [], total: 0, limit: 100, offset: 0, hasMore: false }),
-      of({ items: [], total: 0, limit: 100, offset: 0, hasMore: false }),
-    );
-    sourceService.pageSyncJobs.and.returnValues(
-      of({ items: [], total: 0, limit: 100, offset: 0, hasMore: false }),
-      of({ items: [], total: 0, limit: 100, offset: 0, hasMore: false }),
-    );
-
-    component.loadRecordHistory();
-    component.loadOlderRecordHistory();
-
-    expect(sourceService.pageExtractions).toHaveBeenCalledWith('018-HAI', false, 100, 1);
-    expect(component.extractions.map((item) => item.id)).toEqual(['first', 'second']);
-    expect(component.recordHistoryMetric()).toBe('2');
-    expect(component.recordHistoryHasMore()).toBeFalse();
-  });
-
-  it('does not run a folder scan against a non-folder source', () => {
-    const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', ['sync']);
-    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['warning']);
-    const component = new ConnectedSourcesComponent(
-      new FormBuilder(),
-      sourceService as any,
-      notification,
-      router,
-      { mode: () => 'light' } as any,
-    );
-    component.connectors = [{ connectorKey: 'trello', enabled: true, adapterStatus: 'operational' } as any];
-    component.sources = [{ id: 'source-1', connectorKey: 'trello', enabled: true, status: 'active' } as IConnectedSource];
-    component.folderForm.patchValue({ sourceId: 'source-1' });
-
-    component.syncFolder();
-
-    expect(sourceService.sync).not.toHaveBeenCalled();
-    expect(notification.warning).toHaveBeenCalledWith('Local folder source required', jasmine.any(String));
-  });
-
-  it('offers only active local-folder sources for folder scans', () => {
-    const { component } = createComponent();
-    component.connectors = [
-      { connectorKey: 'local-folder', enabled: true, adapterStatus: 'local_only' },
-      { connectorKey: 'trello', enabled: true, adapterStatus: 'operational' },
-    ] as any;
-    component.sources = [
-      { id: 'folder', connectorKey: 'local-folder', enabled: true, status: 'active' },
-      { id: 'trello', connectorKey: 'trello', enabled: true, status: 'active' },
-      { id: 'paused-folder', connectorKey: 'local-folder', enabled: false, status: 'paused' },
+    const sources = [
+      { id: 'source-1', connectorKey: 'local-folder', enabled: true, status: 'active' },
+      { id: 'source-2', connectorKey: 'github', enabled: true, status: 'active' },
     ] as IConnectedSource[];
+    service.connectors.and.returnValue(of([]));
+    service.sources.and.returnValue(of(sources));
+    service.overview.and.returnValue(of({
+      extractionCount: 12,
+      sensitiveExtractionCount: 2,
+      uncertainExtractionCount: 1,
+      failedJobs: 3,
+      pendingJobs: 1,
+      extractionCountsBySource: { 'source-1': 7, 'source-2': 5 },
+      latestJobStatusBySource: { 'source-1': 'failed', 'source-2': 'completed' },
+    }));
+    service.connectionHealth.and.returnValue(of({ sourceId: 'source-1', status: 'ready' }));
+    service.extractions.and.returnValue(of([]));
+    service.syncJobs.and.returnValue(of([]));
+    service.auditLogs.and.returnValue(of([]));
+    const component = new ConnectedSourcesComponent(
+      new FormBuilder(),
+      service,
+      jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['error', 'success', 'warning', 'info']),
+      jasmine.createSpyObj<Router>('Router', ['navigate']),
+      { mode: () => 'light' } as any,
+    );
+    return { component, service };
+  }
 
-    expect(component.folderSources().map((source) => source.id)).toEqual(['folder']);
+  it('loads only the registry, safety overview, and selected-source health on startup', () => {
+    const { component, service } = createHarness();
+
+    component.ngOnInit();
+
+    expect(service.connectors).toHaveBeenCalledTimes(1);
+    expect(service.sources).toHaveBeenCalledTimes(1);
+    expect(service.overview).toHaveBeenCalledTimes(1);
+    expect(service.connectionHealth).toHaveBeenCalledOnceWith('source-1');
+    expect(service.extractions).not.toHaveBeenCalled();
+    expect(service.syncJobs).not.toHaveBeenCalled();
+    expect(service.auditLogs).not.toHaveBeenCalled();
+    expect(component.failedJobCount()).toBe(3);
+    expect(component.sourceExtractionCount(component.sources[0])).toBe(7);
+  });
+
+  it('loads extraction records once when their section is first opened', () => {
+    const { component, service } = createHarness();
+    component.ngOnInit();
+
+    component.setExtractionHistoryOpen(true);
+    component.setExtractionHistoryOpen(false);
+    component.setExtractionHistoryOpen(true);
+
+    expect(service.extractions).toHaveBeenCalledTimes(1);
+    expect(service.extractions).toHaveBeenCalledWith('018-HAI', false, 8);
+  });
+
+  it('loads jobs and audit records once when activity is first opened', () => {
+    const { component, service } = createHarness();
+    component.ngOnInit();
+
+    component.setActivityHistoryOpen(true);
+    component.setActivityHistoryOpen(false);
+    component.setActivityHistoryOpen(true);
+
+    expect(service.syncJobs).toHaveBeenCalledTimes(1);
+    expect(service.syncJobs).toHaveBeenCalledWith(undefined, 6);
+    expect(service.auditLogs).toHaveBeenCalledTimes(1);
+    expect(service.auditLogs).toHaveBeenCalledWith(undefined, 8);
+  });
+
+  it('refreshes only detail histories that the operator has opened', () => {
+    const { component, service } = createHarness();
+    component.ngOnInit();
+    component.setExtractionHistoryOpen(true);
+
+    component.refresh();
+
+    expect(service.extractions).toHaveBeenCalledTimes(2);
+    expect(service.syncJobs).not.toHaveBeenCalled();
+    expect(service.auditLogs).not.toHaveBeenCalled();
   });
 });

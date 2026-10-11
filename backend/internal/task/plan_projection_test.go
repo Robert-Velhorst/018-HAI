@@ -17,6 +17,12 @@ type recordingCoordinationProjector struct {
 	err     error
 }
 
+type cancellationAwareCoordinationProjector struct{}
+
+func (cancellationAwareCoordinationProjector) Preview(ctx context.Context, _ string, _ plangraph.PreviewRequest) (*plangraph.Plan, error) {
+	return nil, ctx.Err()
+}
+
 func (projector *recordingCoordinationProjector) Preview(ctx context.Context, owner string, request plangraph.PreviewRequest) (*plangraph.Plan, error) {
 	projector.calls++
 	projector.owner = owner
@@ -158,5 +164,21 @@ func TestCoordinationProjectionFailureFailsDurablePlanClosed(t *testing.T) {
 	}
 	if projector.calls != 1 || len(configured.Logs()) != 0 {
 		t.Fatalf("failed projection must not become a successful task log: calls=%d logs=%d", projector.calls, len(configured.Logs()))
+	}
+}
+
+func TestCoordinationProjectionPropagatesTaskCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	service := NewService(nil, nil).(*service)
+	service.coordinationProjector = cancellationAwareCoordinationProjector{}
+
+	err := service.projectCoordinationDraft(&CompletionPlan{RealGoal: "Prepare evidence"}, IntakeRequest{
+		OwnerIdentity:    "owner-a",
+		operationID:      "operation-a",
+		executionContext: ctx,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("project coordination draft error = %v, want context canceled", err)
 	}
 }

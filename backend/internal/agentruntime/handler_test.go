@@ -196,6 +196,25 @@ func TestOpenClawEcosystemHandlers(t *testing.T) {
 	}
 }
 
+func TestOpenClawUploadRejectsOversizedMultipartBeforeParsing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(NewRegistry(testOpenClawAdapter(t.TempDir(), "")))
+	router := mutationTestRouter(handler)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/agent-runtimes/openclaw/ecosystem/upload",
+		bytes.NewBufferString("oversized"),
+	)
+	request.Header.Set("Content-Type", "multipart/form-data; boundary=hai")
+	request.ContentLength = maxOpenClawZipUploadBytes + openClawMultipartOverhead + 1
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized ecosystem upload status = %d, want %d: %s", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
+	}
+}
+
 func TestAgentRuntimeSkillsAndStopHandlers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

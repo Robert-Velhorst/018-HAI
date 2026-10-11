@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 	"strings"
+	"time"
 )
 
 type Logger interface {
@@ -120,12 +121,17 @@ func (r *GormUserRepository) FindByResetToken(token string) (*models.User, error
 	return &user, nil
 }
 
-// resetTokenDigest stores one-time password-reset codes as SHA-256 values.
-// The user receives the original code over the configured private recovery
-// channel, while a database-only disclosure cannot redeem it directly.
 func resetTokenDigest(token string) string {
 	digest := sha256.Sum256([]byte(strings.TrimSpace(token)))
 	return hex.EncodeToString(digest[:])
+}
+
+func isResetTokenDigest(value string) bool {
+	if len(value) != sha256.Size*2 || value != strings.ToLower(value) {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
 
 func normalizeResetTokenForPersistence(token string) string {
@@ -136,9 +142,6 @@ func normalizeResetTokenForPersistence(token string) string {
 	return resetTokenDigest(token)
 }
 
-// resetTokenLookupCandidates keeps an in-flight code issued before this
-// upgrade usable until it expires. New and subsequently saved values are
-// digests, so the plaintext fallback disappears naturally after one cycle.
 func resetTokenLookupCandidates(token string) []string {
 	token = strings.TrimSpace(token)
 	if token == "" {
@@ -150,10 +153,70 @@ func resetTokenLookupCandidates(token string) []string {
 	return []string{resetTokenDigest(token), token}
 }
 
-func isResetTokenDigest(value string) bool {
-	if len(value) != sha256.Size*2 {
-		return false
+func (r *GormUserRepository) StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error {
+	storedToken := normalizeResetTokenForPersistence(token)
+	result := r.DB.Model(&models.User{}).
+		Where("id = ? AND is_active = ?", id, true).
+		Updates(map[string]interface{}{
+			"reset_password_token": storedToken,
+			"reset_token_expires":  expiresAt,
+		})
+	if result.Error != nil {
+		r.logger.Error("Failed to store password reset: %s", result.Error)
+		return fmt.Errorf("store password reset: %w", result.Error)
 	}
-	_, err := hex.DecodeString(value)
-	return err == nil && value == strings.ToLower(value)
+	if result.RowsAffected != 1 {
+		return irepository.ErrUserNotFound
+	}
+	return nil
+}
+
+// ClearPasswordResetIfToken rolls back only the token issued by the failed
+// delivery attempt. A newer concurrent request remains intact.
+func (r *GormUserRepository) ClearPasswordResetIfToken(id uuid.UUID, token string) error {
+	candidates := resetTokenLookupCandidates(token)
+	if len(candidates) == 0 {
+		return nil
+	}
+	result := r.DB.Model(&models.User{}).
+		Where("id = ? AND reset_password_token IN ? AND is_active = ?", id, candidates, true).
+		Updates(map[string]interface{}{
+			"reset_password_token": "",
+			"reset_token_expires":  nil,
+		})
+	if result.Error != nil {
+		r.logger.Error("Failed to clear undelivered password reset: %s", result.Error)
+		return fmt.Errorf("clear password reset: %w", result.Error)
+	}
+	return nil
+}
+
+// ConsumePasswordReset changes the password and invalidates the reset token in
+// one conditional statement. Concurrent or replayed requests cannot both
+// consume the same token, and expired tokens never mutate the user record.
+func (r *GormUserRepository) ConsumePasswordReset(token, passwordHash string) error {
+	candidates := resetTokenLookupCandidates(token)
+	if len(candidates) == 0 {
+		return irepository.ErrInvalidResetToken
+	}
+	result := r.DB.Model(&models.User{}).
+		Where(
+			"reset_password_token IN ? AND reset_token_expires IS NOT NULL AND reset_token_expires > CURRENT_TIMESTAMP AND is_active = ?",
+			candidates,
+			true,
+		).
+		Updates(map[string]interface{}{
+			"password":             passwordHash,
+			"first_access":         false,
+			"reset_password_token": "",
+			"reset_token_expires":  nil,
+		})
+	if result.Error != nil {
+		r.logger.Error("Failed to consume password reset: %s", result.Error)
+		return fmt.Errorf("consume password reset: %w", result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return irepository.ErrInvalidResetToken
+	}
+	return nil
 }

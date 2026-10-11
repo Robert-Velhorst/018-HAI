@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { IWorkflowItem } from '../../models/workflow.model.interface';
 import { WorkflowService } from '../../services/workflow/workflow.service';
@@ -12,6 +12,7 @@ const ATTENTION_STATES = [
 ];
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-exceptions',
   templateUrl: './exceptions.component.html',

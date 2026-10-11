@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import {
@@ -11,6 +11,7 @@ import { AmbientService } from '../../services/ambient.service';
 import { AutonomyService } from '../../services/autonomy.service';
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-ambient-brain',
   templateUrl: './ambient-brain.component.html',

@@ -708,6 +708,33 @@ func TestRunDueScheduledSyncsForOwnerDoesNotTouchAnotherOwnersSources(t *testing
 	if bob.LastSyncedAt != nil {
 		t.Fatal("Alice task refreshed Bob's source")
 	}
+	if repo.globalSourceReads != 0 || repo.ownerSourceReads != 1 || repo.lastSourceOwner != "alice" {
+		t.Fatalf("owner sync source queries = global %d / owner %d (%q), want one database-scoped Alice query", repo.globalSourceReads, repo.ownerSourceReads, repo.lastSourceOwner)
+	}
+	if _, err := service.RunDueScheduledSyncsForOwner(time.Now().UTC(), " "); err == nil {
+		t.Fatal("owner-scoped scheduled sync accepted an empty owner")
+	}
+}
+
+func TestRunDueScheduledSyncsForOwnerContextStopsBeforeRepositoryWorkWhenCanceled(t *testing.T) {
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: uuid.New(), OwnerIdentity: "alice", ConnectorKey: "local-folder", Name: "Alice folder",
+		Enabled: true, LocalOnly: true, Status: "active", SyncFrequency: "1m", SyncTarget: ".",
+	})
+	service := NewService(repo, &fakeSourceMemoryService{})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	run, err := RunDueScheduledSyncsForOwnerWithContext(service, ctx, time.Now().UTC(), "alice")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunDueScheduledSyncsForOwnerContext error = %v, want context canceled", err)
+	}
+	if run != nil {
+		t.Fatalf("run = %#v, want no batch after pre-cancellation", run)
+	}
+	if repo.ownerSourceReads != 0 || len(repo.jobs) != 0 {
+		t.Fatalf("pre-canceled batch performed repository work: owner reads=%d jobs=%d", repo.ownerSourceReads, len(repo.jobs))
+	}
 }
 
 func TestRunDueScheduledSyncsSkipsManualAndNotDueSources(t *testing.T) {
@@ -801,11 +828,11 @@ func TestRunDueScheduledSyncsDoesNotPersistConnectorFailureSecrets(t *testing.T)
 	if run.Failed != 1 || len(run.Messages) != 1 {
 		t.Fatalf("run = %#v, want one failed sync", run)
 	}
-	jobs, err := repo.FindSyncJobs(&sourceID)
+	jobs, err := repo.FindSyncJobs(&sourceID, 0)
 	if err != nil || len(jobs) != 1 {
 		t.Fatalf("sync jobs = %#v, err=%v", jobs, err)
 	}
-	audits, err := repo.FindAuditLogs(&sourceID)
+	audits, err := repo.FindAuditLogs(&sourceID, 0)
 	if err != nil || len(audits) == 0 {
 		t.Fatalf("audit logs = %#v, err=%v", audits, err)
 	}
@@ -1091,6 +1118,54 @@ func TestSyncJSONFeedImportsItemsAndAdvancesCursor(t *testing.T) {
 	}
 }
 
+func TestSyncContextCancelsRemoteFeedAndRetainsCursor(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, ConnectorKey: "json-feed", Name: "Cancelable local bridge",
+		Category: "generic_feed", Enabled: true, LocalOnly: true, Status: "active",
+		SyncTarget: server.URL, Cursor: "cursor-before",
+	})
+	service := NewService(repo, &fakeSourceMemoryService{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.SyncContext(ctx, sourceID, ImportRequest{Mode: ModeIncrementalSync})
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("source sync did not reach the remote feed")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("SyncContext error = %v, want context canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("source sync ignored caller cancellation")
+	}
+	if len(repo.jobs) != 1 || repo.jobs[0].Status != "failed" || repo.jobs[0].CursorAfter != "cursor-before" {
+		t.Fatalf("canceled sync job = %#v", repo.jobs)
+	}
+	stored, err := repo.FindSource(sourceID)
+	if err != nil {
+		t.Fatalf("FindSource: %v", err)
+	}
+	if stored.Cursor != "cursor-before" {
+		t.Fatalf("source cursor = %q, want retained cursor", stored.Cursor)
+	}
+}
+
 func TestSyncJSONFeedRejectsUnallowlistedHost(t *testing.T) {
 	sourceID := uuid.New()
 	repo := newFakeSourceRepo(&models.ConnectedSource{
@@ -1322,21 +1397,42 @@ func TestSearchExcludesOtherOwnersSourceExtractions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if len(result.UsedContext) != 2 {
-		t.Fatalf("visible search results = %#v, want Alice and legacy only", result.UsedContext)
+	if len(result.UsedContext) != 1 {
+		t.Fatalf("visible search results = %#v, want Alice only", result.UsedContext)
 	}
 	for _, ranked := range result.UsedContext {
-		if ranked.Extraction.SourceID == bobID {
-			t.Fatalf("search returned Bob's private source extraction")
+		if ranked.Extraction.SourceID == bobID || ranked.Extraction.SourceID == legacyID {
+			t.Fatalf("search returned data outside Alice's exact owner scope")
 		}
 	}
-	if len(repo.lastExtractionSourceIDs) != 2 {
-		t.Fatalf("search loaded source ids %#v, want only Alice and legacy sources", repo.lastExtractionSourceIDs)
+	if len(repo.lastExtractionSourceIDs) != 1 {
+		t.Fatalf("search loaded source ids %#v, want only Alice's source", repo.lastExtractionSourceIDs)
 	}
 	for _, sourceID := range repo.lastExtractionSourceIDs {
-		if sourceID == bobID {
-			t.Fatalf("search repository query included Bob's private source")
+		if sourceID == bobID || sourceID == legacyID {
+			t.Fatalf("search repository query included a source outside Alice's exact owner scope")
 		}
+	}
+}
+
+func TestSearchAllowsOwnerlessSourcesOnlyForConfiguredLegacyOwner(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "alice")
+	aliceID := uuid.New()
+	legacyID := uuid.New()
+	repo := newFakeSourceRepo(
+		&models.ConnectedSource{ID: aliceID, OwnerIdentity: "alice", Name: "Alice source", Enabled: true, Status: "active"},
+		&models.ConnectedSource{ID: legacyID, Name: "Legacy source", Enabled: true, Status: "active"},
+	)
+	for _, sourceID := range []uuid.UUID{aliceID, legacyID} {
+		_, _ = repo.SaveExtraction(&models.SourceExtraction{ID: uuid.New(), SourceID: sourceID, Text: "migration evidence", Summary: "migration evidence"})
+	}
+
+	result, err := NewService(repo, nil).Search(SearchRequest{OwnerIdentity: "alice", Query: "migration evidence", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(result.UsedContext) != 2 {
+		t.Fatalf("configured migration owner results = %#v, want owned and ownerless", result.UsedContext)
 	}
 }
 
@@ -1375,6 +1471,60 @@ func TestSearchExcludesRevokedSourceExtractions(t *testing.T) {
 	}
 	if len(extractions) != 1 || extractions[0].SourceID != activeID {
 		t.Fatalf("visible extractions = %#v, want active source only", extractions)
+	}
+}
+
+func TestRevokedSourceCannotBeReactivatedOrProcessed(t *testing.T) {
+	sourceID := uuid.New()
+	revokedAt := time.Now().UTC().Add(-time.Minute)
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, OwnerIdentity: "alice", ConnectorKey: "local-folder", Name: "Revoked files",
+		Enabled: false, Status: "revoked", RevokedAt: &revokedAt, SyncTarget: "notes",
+	})
+	service := NewService(repo, nil)
+	enabled := true
+
+	operations := []struct {
+		name string
+		run  func() error
+	}{
+		{name: "update", run: func() error {
+			_, err := service.UpdateSource(sourceID, UpdateSourceRequest{Enabled: &enabled})
+			return err
+		}},
+		{name: "sync", run: func() error {
+			_, err := service.Sync(sourceID, ImportRequest{Mode: ModeManualImport, Items: []ImportItem{{ExternalID: "new", Content: "must not import"}}})
+			return err
+		}},
+		{name: "reindex", run: func() error {
+			_, err := service.Reindex(sourceID)
+			return err
+		}},
+		{name: "pause", run: func() error {
+			_, err := service.Pause(sourceID, true)
+			return err
+		}},
+		{name: "resume", run: func() error {
+			_, err := service.Pause(sourceID, false)
+			return err
+		}},
+	}
+	for _, operation := range operations {
+		t.Run(operation.name, func(t *testing.T) {
+			if err := operation.run(); !errors.Is(err, ErrSourceRevoked) {
+				t.Fatalf("error = %v, want ErrSourceRevoked", err)
+			}
+		})
+	}
+	stored, err := repo.FindSource(sourceID)
+	if err != nil {
+		t.Fatalf("FindSource: %v", err)
+	}
+	if stored.Enabled || stored.Status != "revoked" || stored.RevokedAt == nil {
+		t.Fatalf("revoked source changed: %#v", stored)
+	}
+	if len(repo.rawItems) != 0 || len(repo.extractions) != 0 {
+		t.Fatalf("revoked source produced data: raw=%#v extractions=%#v", repo.rawItems, repo.extractions)
 	}
 }
 
@@ -1665,7 +1815,7 @@ func TestSyncJobsReturnsPersistentHistory(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	jobs, err := service.SyncJobs(&sourceID)
+	jobs, err := service.SyncJobs(&sourceID, sourceHistoryDefaultLimit)
 	if err != nil {
 		t.Fatalf("SyncJobs: %v", err)
 	}
@@ -2331,12 +2481,17 @@ type fakeSourceRepo struct {
 	findSourcesErr          error
 	findSourceCalls         int
 	oauthTokens             map[uuid.UUID]*models.SourceOAuthToken
+	oauthStates             map[uuid.UUID]*models.SourceOAuthState
+	globalSourceReads       int
+	ownerSourceReads        int
+	lastSourceOwner         string
 }
 
 type fakeSemanticService struct {
 	matches []semantic.Match
 	err     error
 	request semantic.SearchRequest
+	search  func(context.Context, semantic.SearchRequest) ([]semantic.Match, error)
 }
 
 func (s *fakeSemanticService) Enabled() bool  { return true }
@@ -2344,8 +2499,11 @@ func (s *fakeSemanticService) Reason() string { return "test semantic service" }
 func (s *fakeSemanticService) Index(context.Context, *models.SourceExtraction) error {
 	return nil
 }
-func (s *fakeSemanticService) Search(_ context.Context, request semantic.SearchRequest) ([]semantic.Match, error) {
+func (s *fakeSemanticService) Search(ctx context.Context, request semantic.SearchRequest) ([]semantic.Match, error) {
 	s.request = request
+	if s.search != nil {
+		return s.search(ctx, request)
+	}
 	return s.matches, s.err
 }
 func (s *fakeSemanticService) IndexMemory(context.Context, *models.ContextMemory) error { return nil }
@@ -2361,6 +2519,7 @@ func newFakeSourceRepo(sources ...*models.ConnectedSource) *fakeSourceRepo {
 		rawItems:    map[uuid.UUID]*models.SourceRawItem{},
 		extractions: map[uuid.UUID]*models.SourceExtraction{},
 		oauthTokens: map[uuid.UUID]*models.SourceOAuthToken{},
+		oauthStates: map[uuid.UUID]*models.SourceOAuthState{},
 	}
 	for _, source := range sources {
 		repo.sources[source.ID] = source
@@ -2368,7 +2527,63 @@ func newFakeSourceRepo(sources ...*models.ConnectedSource) *fakeSourceRepo {
 	return repo
 }
 
+func (r *fakeSourceRepo) SaveOAuthState(state *models.SourceOAuthState) error {
+	if state == nil {
+		return gorm.ErrRecordNotFound
+	}
+	if !validOAuthStateDigest(strings.TrimSpace(state.StateDigest)) || !state.ExpiresAt.After(time.Now().UTC()) {
+		return ErrOAuthStateInvalid
+	}
+	source, ok := r.sources[state.SourceID]
+	if !ok {
+		return gorm.ErrRecordNotFound
+	}
+	if err := rejectRevokedSource(source); err != nil {
+		return err
+	}
+	if strings.TrimSpace(source.OwnerIdentity) != strings.TrimSpace(state.OwnerIdentity) {
+		return gorm.ErrRecordNotFound
+	}
+	stored := *state
+	if stored.ID == uuid.Nil {
+		stored.ID = uuid.New()
+	}
+	if stored.CreatedAt.IsZero() {
+		stored.CreatedAt = time.Now().UTC()
+	}
+	r.oauthStates[state.SourceID] = &stored
+	return nil
+}
+
+func (r *fakeSourceRepo) ConsumeOAuthState(
+	sourceID uuid.UUID,
+	ownerIdentity, stateDigest string,
+	consumedAt time.Time,
+) error {
+	source, ok := r.sources[sourceID]
+	if !ok || rejectRevokedSource(source) != nil ||
+		strings.TrimSpace(source.OwnerIdentity) != strings.TrimSpace(ownerIdentity) {
+		return ErrOAuthStateInvalid
+	}
+	state, ok := r.oauthStates[sourceID]
+	if !ok || state.ConsumedAt != nil ||
+		state.StateDigest != strings.TrimSpace(stateDigest) ||
+		state.ExpiresAt.Before(consumedAt) {
+		return ErrOAuthStateInvalid
+	}
+	consumedAt = consumedAt.UTC()
+	state.ConsumedAt = &consumedAt
+	return nil
+}
+
 func (r *fakeSourceRepo) SaveOAuthToken(token *models.SourceOAuthToken) error {
+	source, ok := r.sources[token.SourceID]
+	if !ok {
+		return gorm.ErrRecordNotFound
+	}
+	if err := rejectRevokedSource(source); err != nil {
+		return err
+	}
 	if r.oauthTokens == nil {
 		r.oauthTokens = map[uuid.UUID]*models.SourceOAuthToken{}
 	}
@@ -2427,6 +2642,20 @@ func (r *fakeSourceRepo) CreateSource(source *models.ConnectedSource) (*models.C
 }
 
 func (r *fakeSourceRepo) UpdateSource(source *models.ConnectedSource) (*models.ConnectedSource, error) {
+	current, ok := r.sources[source.ID]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	if err := rejectRevokedSource(current); err != nil {
+		return nil, err
+	}
+	if !current.UpdatedAt.Equal(source.UpdatedAt) {
+		return nil, ErrSourceChanged
+	}
+	source.OwnerIdentity = current.OwnerIdentity
+	source.ConnectorKey = current.ConnectorKey
+	source.CreatedAt = current.CreatedAt
+	source.RevokedAt = current.RevokedAt
 	source.UpdatedAt = time.Now().UTC()
 	r.sources[source.ID] = source
 	return source, nil
@@ -2453,16 +2682,35 @@ func (r *fakeSourceRepo) RevokeSource(
 	source.RevokedAt = &revokedAt
 	source.UpdatedAt = time.Now().UTC()
 	delete(r.oauthTokens, expected.ID)
+	delete(r.oauthStates, expected.ID)
 	copied := *source
 	return &copied, nil
 }
 
 func (r *fakeSourceRepo) FindSources(includeDisabled bool) ([]models.ConnectedSource, error) {
-	if r.findSourcesErr != nil {
-		return nil, r.findSourcesErr
+	r.globalSourceReads++
+	result := []models.ConnectedSource{}
+	for _, source := range r.sources {
+		if includeDisabled || (source.Enabled && source.Status != "revoked") {
+			result = append(result, *source)
+		}
+	}
+	return result, nil
+}
+
+func (r *fakeSourceRepo) FindSourcesForOwner(ownerIdentity string, includeDisabled, includeLegacyOwnerless bool) ([]models.ConnectedSource, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	r.ownerSourceReads++
+	r.lastSourceOwner = ownerIdentity
+	if ownerIdentity == "" {
+		return []models.ConnectedSource{}, nil
 	}
 	result := []models.ConnectedSource{}
 	for _, source := range r.sources {
+		sourceOwner := strings.TrimSpace(source.OwnerIdentity)
+		if sourceOwner != ownerIdentity && !(includeLegacyOwnerless && sourceOwner == "") {
+			continue
+		}
 		if includeDisabled || (source.Enabled && source.Status != "revoked") {
 			result = append(result, *source)
 		}
@@ -2503,18 +2751,41 @@ func (r *fakeSourceRepo) UpdateSyncJob(job *models.SourceSyncJob) (*models.Sourc
 	return job, nil
 }
 
-func (r *fakeSourceRepo) FindSyncJobs(sourceID *uuid.UUID) ([]models.SourceSyncJob, error) {
+func (r *fakeSourceRepo) FindSyncJobs(sourceID *uuid.UUID, limit int) ([]models.SourceSyncJob, error) {
 	result := []models.SourceSyncJob{}
 	for _, job := range r.jobs {
 		if sourceID == nil || job.SourceID == *sourceID {
 			result = append(result, job)
+			if limit > 0 && len(result) == limit {
+				break
+			}
 		}
 	}
 	return result, nil
 }
 
-func (r *fakeSourceRepo) FindSyncJobsForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceSyncJob, int, error) {
-	allowed := sourceIDSet(sourceIDs)
+func (r *fakeSourceRepo) FindSyncJobsForSources(sourceIDs []uuid.UUID, limit int) ([]models.SourceSyncJob, error) {
+	allowed := make(map[uuid.UUID]bool, len(sourceIDs))
+	for _, id := range sourceIDs {
+		allowed[id] = true
+	}
+	result := []models.SourceSyncJob{}
+	for _, job := range r.jobs {
+		if allowed[job.SourceID] {
+			result = append(result, job)
+			if limit > 0 && len(result) == limit {
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
+func (r *fakeSourceRepo) FindSyncJobsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceSyncJob, int, error) {
+	allowed := make(map[uuid.UUID]bool, len(sourceIDs))
+	for _, id := range sourceIDs {
+		allowed[id] = true
+	}
 	result := []models.SourceSyncJob{}
 	for _, job := range r.jobs {
 		if allowed[job.SourceID] {
@@ -2522,7 +2793,14 @@ func (r *fakeSourceRepo) FindSyncJobsForSources(sourceIDs []uuid.UUID, limit, of
 		}
 	}
 	total := len(result)
-	return sourceSyncJobWindow(result, limit, offset), total, nil
+	if offset > total {
+		offset = total
+	}
+	result = result[offset:]
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, total, nil
 }
 
 func (r *fakeSourceRepo) FindRawItem(sourceID uuid.UUID, externalID string) (*models.SourceRawItem, error) {
@@ -2582,7 +2860,7 @@ func (r *fakeSourceRepo) SaveExtraction(extraction *models.SourceExtraction) (*m
 }
 
 func (r *fakeSourceRepo) FindExtractions(projectKey string, includeArchived bool) ([]models.SourceExtraction, error) {
-	return r.findExtractions(nil, projectKey, includeArchived)
+	return r.findExtractions(nil, projectKey, includeArchived, 0)
 }
 
 func (r *fakeSourceRepo) FindExtractionsForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool) ([]models.SourceExtraction, error) {
@@ -2594,19 +2872,43 @@ func (r *fakeSourceRepo) FindExtractionsForSources(sourceIDs []uuid.UUID, projec
 	for _, id := range sourceIDs {
 		allowed[id] = true
 	}
-	return r.findExtractions(allowed, projectKey, includeArchived)
+	return r.findExtractions(allowed, projectKey, includeArchived, 0)
 }
 
 func (r *fakeSourceRepo) FindExtractionsPageForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool, limit, offset int) ([]models.SourceExtraction, int, error) {
-	items, err := r.FindExtractionsForSources(sourceIDs, projectKey, includeArchived)
+	r.lastExtractionSourceIDs = append([]uuid.UUID{}, sourceIDs...)
+	allowed := make(map[uuid.UUID]bool, len(sourceIDs))
+	for _, id := range sourceIDs {
+		allowed[id] = true
+	}
+	items, err := r.findExtractions(allowed, projectKey, includeArchived, 0)
 	if err != nil {
 		return nil, 0, err
 	}
 	total := len(items)
-	return sourceExtractionWindow(items, limit, offset), total, nil
+	if offset > total {
+		offset = total
+	}
+	items = items[offset:]
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return items, total, nil
 }
 
-func (r *fakeSourceRepo) findExtractions(sourceIDs map[uuid.UUID]bool, projectKey string, includeArchived bool) ([]models.SourceExtraction, error) {
+func (r *fakeSourceRepo) FindRecentExtractionsForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool, limit int) ([]models.SourceExtraction, error) {
+	r.lastExtractionSourceIDs = append([]uuid.UUID{}, sourceIDs...)
+	if len(sourceIDs) == 0 {
+		return []models.SourceExtraction{}, nil
+	}
+	allowed := make(map[uuid.UUID]bool, len(sourceIDs))
+	for _, id := range sourceIDs {
+		allowed[id] = true
+	}
+	return r.findExtractions(allowed, projectKey, includeArchived, limit)
+}
+
+func (r *fakeSourceRepo) findExtractions(sourceIDs map[uuid.UUID]bool, projectKey string, includeArchived bool, limit int) ([]models.SourceExtraction, error) {
 	result := []models.SourceExtraction{}
 	for _, extraction := range r.extractions {
 		if sourceIDs != nil && !sourceIDs[extraction.SourceID] {
@@ -2619,6 +2921,9 @@ func (r *fakeSourceRepo) findExtractions(sourceIDs map[uuid.UUID]bool, projectKe
 			continue
 		}
 		result = append(result, *extraction)
+		if limit > 0 && len(result) >= limit {
+			break
+		}
 	}
 	return result, nil
 }
@@ -2630,6 +2935,18 @@ func (r *fakeSourceRepo) FindExtraction(id uuid.UUID) (*models.SourceExtraction,
 	}
 	copied := *extraction
 	return &copied, nil
+}
+
+func (r *fakeSourceRepo) FindExtractionForOwner(id uuid.UUID, ownerIdentity string) (*models.SourceExtraction, error) {
+	extraction, err := r.FindExtraction(id)
+	if err != nil {
+		return nil, err
+	}
+	source, err := r.FindSource(extraction.SourceID)
+	if err != nil || strings.TrimSpace(source.OwnerIdentity) != strings.TrimSpace(ownerIdentity) || strings.TrimSpace(ownerIdentity) == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return extraction, nil
 }
 
 func (r *fakeSourceRepo) DeleteExtractionForOwner(
@@ -2713,18 +3030,41 @@ func (r *fakeSourceRepo) SaveAuditLog(log *models.SourceAuditLog) (*models.Sourc
 	return log, nil
 }
 
-func (r *fakeSourceRepo) FindAuditLogs(sourceID *uuid.UUID) ([]models.SourceAuditLog, error) {
+func (r *fakeSourceRepo) FindAuditLogs(sourceID *uuid.UUID, limit int) ([]models.SourceAuditLog, error) {
 	result := []models.SourceAuditLog{}
 	for _, log := range r.auditLogs {
 		if sourceID == nil || log.SourceID == *sourceID {
 			result = append(result, log)
+			if limit > 0 && len(result) == limit {
+				break
+			}
 		}
 	}
 	return result, nil
 }
 
-func (r *fakeSourceRepo) FindAuditLogsForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceAuditLog, int, error) {
-	allowed := sourceIDSet(sourceIDs)
+func (r *fakeSourceRepo) FindAuditLogsForSources(sourceIDs []uuid.UUID, limit int) ([]models.SourceAuditLog, error) {
+	allowed := make(map[uuid.UUID]bool, len(sourceIDs))
+	for _, id := range sourceIDs {
+		allowed[id] = true
+	}
+	result := []models.SourceAuditLog{}
+	for _, log := range r.auditLogs {
+		if allowed[log.SourceID] {
+			result = append(result, log)
+			if limit > 0 && len(result) == limit {
+				break
+			}
+		}
+	}
+	return result, nil
+}
+
+func (r *fakeSourceRepo) FindAuditLogsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceAuditLog, int, error) {
+	allowed := make(map[uuid.UUID]bool, len(sourceIDs))
+	for _, id := range sourceIDs {
+		allowed[id] = true
+	}
 	result := []models.SourceAuditLog{}
 	for _, log := range r.auditLogs {
 		if allowed[log.SourceID] {
@@ -2732,48 +3072,52 @@ func (r *fakeSourceRepo) FindAuditLogsForSources(sourceIDs []uuid.UUID, limit, o
 		}
 	}
 	total := len(result)
-	return sourceAuditLogWindow(result, limit, offset), total, nil
+	if offset > total {
+		offset = total
+	}
+	result = result[offset:]
+	if limit > 0 && len(result) > limit {
+		result = result[:limit]
+	}
+	return result, total, nil
 }
 
-func sourceIDSet(sourceIDs []uuid.UUID) map[uuid.UUID]bool {
+func (r *fakeSourceRepo) FindOverviewForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool) (*SourceOverview, error) {
+	overview := emptySourceOverview()
 	allowed := make(map[uuid.UUID]bool, len(sourceIDs))
-	for _, sourceID := range sourceIDs {
-		allowed[sourceID] = true
+	for _, id := range sourceIDs {
+		allowed[id] = true
 	}
-	return allowed
-}
-
-func sourceSyncJobWindow(items []models.SourceSyncJob, limit, offset int) []models.SourceSyncJob {
-	if offset >= len(items) {
-		return []models.SourceSyncJob{}
+	for _, extraction := range r.extractions {
+		if !allowed[extraction.SourceID] || (projectKey != "" && extraction.ProjectKey != projectKey) || (!includeArchived && extraction.Archived) {
+			continue
+		}
+		overview.ExtractionCount++
+		overview.ExtractionCountsBySource[extraction.SourceID.String()]++
+		if extraction.Sensitive {
+			overview.SensitiveExtractionCount++
+		}
+		if extraction.Uncertain {
+			overview.UncertainExtractionCount++
+		}
 	}
-	end := offset + limit
-	if end > len(items) {
-		end = len(items)
+	latestCreatedAt := map[uuid.UUID]time.Time{}
+	for _, job := range r.jobs {
+		if !allowed[job.SourceID] {
+			continue
+		}
+		switch job.Status {
+		case "failed", "partial_failure":
+			overview.FailedJobs++
+		case "pending", "running":
+			overview.PendingJobs++
+		}
+		if current, exists := latestCreatedAt[job.SourceID]; !exists || job.CreatedAt.After(current) {
+			latestCreatedAt[job.SourceID] = job.CreatedAt
+			overview.LatestJobStatusBySource[job.SourceID.String()] = job.Status
+		}
 	}
-	return items[offset:end]
-}
-
-func sourceExtractionWindow(items []models.SourceExtraction, limit, offset int) []models.SourceExtraction {
-	if offset >= len(items) {
-		return []models.SourceExtraction{}
-	}
-	end := offset + limit
-	if end > len(items) {
-		end = len(items)
-	}
-	return items[offset:end]
-}
-
-func sourceAuditLogWindow(items []models.SourceAuditLog, limit, offset int) []models.SourceAuditLog {
-	if offset >= len(items) {
-		return []models.SourceAuditLog{}
-	}
-	end := offset + limit
-	if end > len(items) {
-		end = len(items)
-	}
-	return items[offset:end]
+	return overview, nil
 }
 
 func (r *fakeSourceRepo) hasAudit(action string) bool {

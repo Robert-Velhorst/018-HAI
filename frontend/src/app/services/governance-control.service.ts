@@ -18,6 +18,7 @@ import {
   DecideLearningProposalRequest,
   DomainClassificationResult,
   DomainPackCatalog,
+  DomainPackSummaryView,
   DomainPackView,
   ExecutionAuthorizationConsumption,
   ExecutionAuthorizationList,
@@ -77,9 +78,12 @@ export class GovernanceControlService {
 
   constructor(private http: HttpClient) {}
 
-  listExecutionReceipts(limit = 50): Observable<ExecutionAuthorizationList> {
+  listExecutionReceipts(
+    limit = 50,
+    view: 'summary' | 'full' = 'summary'
+  ): Observable<ExecutionAuthorizationList> {
     return this.http.get<ExecutionAuthorizationList>(this.executionUrl, {
-      params: new HttpParams().set('limit', limit),
+      params: new HttpParams().set('limit', limit).set('view', view),
     })
   }
 
@@ -217,12 +221,14 @@ export class GovernanceControlService {
   }
 
   domainCatalog(): Observable<DomainPackCatalog> {
-    return this.http.get<DomainPackCatalog>(this.domainUrl).pipe(
+    return this.http.get<DomainPackCatalog>(this.domainUrl, {
+      params: new HttpParams().set('view', 'summary'),
+    }).pipe(
       map((catalog) => ({
         ...catalog,
         packs: (catalog.packs || [])
           .filter((view) => !!view?.pack?.id)
-          .map((view) => this.normalizeDomainPack(view)),
+          .map((view) => this.normalizeDomainPackSummary(view)),
       }))
     )
   }
@@ -459,6 +465,21 @@ export class GovernanceControlService {
           digest: pack.playbook?.digest || '',
           methods: pack.playbook?.methods || [],
         },
+      },
+    }
+  }
+
+  private normalizeDomainPackSummary(view: DomainPackSummaryView): DomainPackSummaryView {
+    if (!view?.pack?.id) {
+      throw new Error('The domain-pack API returned a summary without an identity.')
+    }
+    return {
+      ...view,
+      pack: {
+        ...view.pack,
+        methodCount: Number.isInteger(view.pack.methodCount) && (view.pack.methodCount ?? -1) >= 0
+          ? view.pack.methodCount
+          : 0,
       },
     }
   }

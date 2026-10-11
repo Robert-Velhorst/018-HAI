@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit, ViewChild } from '@angular/core'
+import { ChangeDetectionStrategy, Component, Inject, OnInit, ViewChild } from '@angular/core'
 import { CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop'
 import { FormGroup, FormControl, Validators, FormBuilder } from '@angular/forms'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
@@ -29,6 +29,7 @@ interface NavigationGroup {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-home',
   templateUrl: './home.component.html',

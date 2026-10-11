@@ -147,6 +147,11 @@ func (s *Service) QueryEntities(ctx context.Context, owner string, query EntityQ
 			return nil, err
 		}
 	}
+	query.ExternalKeys = externalKeys
+	query.Limit = limit
+	if bounded, ok := s.repo.(BoundedQueryRepository); ok {
+		return bounded.QueryEntities(ctx, owner, query)
+	}
 	entities, err := s.repo.ListEntities(ctx, owner)
 	if err != nil {
 		return nil, err
@@ -221,6 +226,10 @@ func (s *Service) QueryRelations(ctx context.Context, owner string, query Relati
 	if query.ToEntityID != "" && !validEntityID(query.ToEntityID) {
 		return nil, fmt.Errorf("invalid to entity id")
 	}
+	query.Limit = limit
+	if bounded, ok := s.repo.(BoundedQueryRepository); ok {
+		return bounded.QueryRelations(ctx, owner, query)
+	}
 	relations, err := s.repo.ListRelations(ctx, owner)
 	if err != nil {
 		return nil, err
@@ -267,6 +276,9 @@ func (s *Service) ListMergeProposals(ctx context.Context, owner string, limit in
 	limit, err := normalizedLimit(limit)
 	if err != nil {
 		return nil, err
+	}
+	if bounded, ok := s.repo.(BoundedQueryRepository); ok {
+		return bounded.ListMergeProposalsWithLimit(ctx, owner, limit)
 	}
 	proposals, err := s.repo.ListMergeProposals(ctx, owner)
 	if err != nil {

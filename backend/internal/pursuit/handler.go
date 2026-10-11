@@ -60,20 +60,40 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 func (h *Handler) List(c *gin.Context) {
+	viewMode := strings.ToLower(strings.TrimSpace(c.Query("view")))
+	if viewMode != "" && viewMode != "full" && viewMode != "summary" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pursuit list view must be full or summary"})
+		return
+	}
 	includeArchived, _ := strconv.ParseBool(c.Query("includeArchived"))
 	records, err := h.service.ListForOwner(pursuitOwner(c), includeArchived)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	if viewMode == "summary" {
+		for index := range records {
+			records[index] = dashboardPursuitSummary(records[index])
+		}
+	}
 	c.JSON(http.StatusOK, records)
 }
 
 func (h *Handler) Dashboard(c *gin.Context) {
+	viewMode := strings.TrimSpace(c.Query("view"))
+	if viewMode != "" && viewMode != "full" && viewMode != "summary" && viewMode != "counts" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pursuit dashboard view must be full, summary, or counts"})
+		return
+	}
 	record, err := h.service.DashboardForOwner(pursuitOwner(c))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	if viewMode == "summary" {
+		record = dashboardSummary(record)
+	} else if viewMode == "counts" {
+		record = dashboardCounts(record)
 	}
 	c.JSON(http.StatusOK, record)
 }
@@ -807,8 +827,11 @@ func (h *Handler) Reopen(c *gin.Context) {
 	var request struct {
 		Note string `json:"note,omitempty"`
 	}
-	if !bindOptionalPursuitJSON(c, &request) {
-		return
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pursuit reopen request"})
+			return
+		}
 	}
 	record, err := h.service.ReopenForOwner(pursuitOwner(c), id, verifiedActor(c, "operator"), request.Note)
 	if err != nil {
@@ -1021,8 +1044,11 @@ func (h *Handler) RefreshSummary(c *gin.Context) {
 	var request struct {
 		Actor string `json:"actor,omitempty"`
 	}
-	if !bindOptionalPursuitJSON(c, &request) {
-		return
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pursuit summary request"})
+			return
+		}
 	}
 	request.Actor = verifiedActor(c, "system")
 	_, err := h.service.RefreshSummaryForOwner(pursuitOwner(c), id, request.Actor)

@@ -36,6 +36,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
 	err := router.InitializeContext(ctx)
 	if err != nil {
 		panic(err)
@@ -81,7 +82,16 @@ func runMigrate(args []string) int {
 	}
 	switch action {
 	case "up":
-		if _, err := infra.GetDefaultDB(); err != nil {
+		db, err := infra.OpenDefaultDB()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "migrate up failed:", err)
+			return 1
+		}
+		if err := infra.RunMigrations(db); err != nil {
+			fmt.Fprintln(os.Stderr, "migrate up failed:", err)
+			return 1
+		}
+		if err := infra.ProvisionConfiguredRuntimeRole(db, config.AppConfig.DbName); err != nil {
 			fmt.Fprintln(os.Stderr, "migrate up failed:", err)
 			return 1
 		}

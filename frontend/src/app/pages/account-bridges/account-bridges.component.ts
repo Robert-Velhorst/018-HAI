@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
 import { forkJoin } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
@@ -9,6 +9,7 @@ import {
 import { AccountBridgesService } from '../../services/account-bridges.service'
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-account-bridges',
   templateUrl: './account-bridges.component.html',

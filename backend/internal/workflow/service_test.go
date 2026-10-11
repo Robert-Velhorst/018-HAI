@@ -3,6 +3,7 @@ package workflow
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -1377,6 +1378,105 @@ func TestRunDueConsumesApprovedWorkflowWithTaskRunner(t *testing.T) {
 	}
 }
 
+func TestRunDueForOwnerContextStopsBeforeClaimingAnotherWorkflow(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &fakeTaskRunner{
+		result: &TaskRunResult{
+			PlanID:             "cancel-between-workflows",
+			CompletionStatus:   "validated",
+			VerificationStatus: "verified",
+			Output:             "completed",
+			Passed:             true,
+		},
+		onRun: func(TaskRunRequest) { cancel() },
+	}
+	service := NewServiceWithTaskRunner(repo, runner)
+	for i := 0; i < 2; i++ {
+		record, err := service.Intake(IntakeRequest{
+			OwnerIdentity: "alice",
+			Input:         fmt.Sprintf("Create low risk Trello checklist %d", i),
+		})
+		if err != nil {
+			t.Fatalf("Intake %d: %v", i, err)
+		}
+		if record.Item.CurrentState != StateReady {
+			t.Fatalf("workflow %d state = %q, want ready", i, record.Item.CurrentState)
+		}
+	}
+
+	summary, err := RunDueForOwnerWithContext(service, ctx, "alice", RunDueRequest{Limit: 5})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunDueForOwnerWithContext error = %v, want context canceled", err)
+	}
+	if summary == nil || summary.Completed != 1 || len(summary.Results) != 1 {
+		t.Fatalf("partial summary = %#v, want exactly one settled workflow", summary)
+	}
+	if len(runner.requests) != 1 {
+		t.Fatalf("runner requests = %d, want 1", len(runner.requests))
+	}
+	ready := 0
+	completed := 0
+	for _, item := range repo.items {
+		switch item.CurrentState {
+		case StateReady:
+			ready++
+		case StateCompleted:
+			completed++
+		}
+	}
+	if ready != 1 || completed != 1 {
+		t.Fatalf("workflow states: ready=%d completed=%d, want one of each", ready, completed)
+	}
+}
+
+func TestOwnerBatchContextHelpersRejectPreCancelledWork(t *testing.T) {
+	service := NewService(newFakeWorkflowRepo())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "recovery",
+			run: func() error {
+				_, err := RecoverStaleClaimsForOwnerWithContext(service, ctx, "alice", RunDueRequest{Limit: 5})
+				return err
+			},
+		},
+		{
+			name: "workflows",
+			run: func() error {
+				_, err := RunDueForOwnerWithContext(service, ctx, "alice", RunDueRequest{Limit: 5})
+				return err
+			},
+		},
+		{
+			name: "open loops",
+			run: func() error {
+				_, err := RunDueOpenLoopsForOwnerWithContext(service, ctx, "alice", RunDueRequest{Limit: 5})
+				return err
+			},
+		},
+		{
+			name: "single workflow",
+			run: func() error {
+				_, err := RunOneForOwnerWithContext(service, ctx, "alice", uuid.New())
+				return err
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.run(); !errors.Is(err, context.Canceled) {
+				t.Fatalf("error = %v, want context canceled", err)
+			}
+		})
+	}
+}
+
 func TestFrameworkSelectionProvenanceSurvivesRepositoryRoundTrip(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	engine := NewService(repo)
@@ -2592,23 +2692,24 @@ func TestRunDueDoesNotRepeatCompletedExternalActionAfterQualityGateFailure(t *te
 	}
 }
 
-func TestDefaultRulesPreserveCreatedAtAcrossUpserts(t *testing.T) {
-	service := NewService(newFakeWorkflowRepo())
-	first := service.Overview()
-	firstRule, ok := findRule(first.Rules, "approval.legal_external")
-	if !ok {
-		t.Fatalf("expected default rule")
+func TestDefaultRuleFallbackIsReadOnlyAcrossOverviewDashboardAndIntake(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	service := NewService(repo)
+
+	for pass := 0; pass < 2; pass++ {
+		overview := service.Overview()
+		if _, ok := findRule(overview.Rules, "approval.legal_external"); !ok {
+			t.Fatal("expected read-only default rule fallback")
+		}
+		if _, err := service.Dashboard(); err != nil {
+			t.Fatalf("Dashboard: %v", err)
+		}
 	}
-	second := service.Overview()
-	secondRule, ok := findRule(second.Rules, "approval.legal_external")
-	if !ok {
-		t.Fatalf("expected default rule on second overview")
+	if _, err := service.Intake(IntakeRequest{Input: "Create a low-risk administrative checklist"}); err != nil {
+		t.Fatalf("Intake: %v", err)
 	}
-	if !firstRule.CreatedAt.Equal(secondRule.CreatedAt) {
-		t.Fatalf("created at changed from %s to %s", firstRule.CreatedAt, secondRule.CreatedAt)
-	}
-	if firstRule.ID != secondRule.ID {
-		t.Fatalf("rule ID changed from %s to %s", firstRule.ID, secondRule.ID)
+	if repo.saveRuleCalls != 0 || len(repo.rules) != 0 {
+		t.Fatalf("runtime path persisted default rules: calls=%d rules=%d", repo.saveRuleCalls, len(repo.rules))
 	}
 }
 
@@ -3128,6 +3229,7 @@ type fakeWorkflowRepo struct {
 	proposals            map[uuid.UUID][]models.WorkflowProposal
 	qualityGate          map[uuid.UUID][]models.WorkflowQualityGate
 	rules                map[string]models.WorkflowRule
+	saveRuleCalls        int
 	transitions          map[uuid.UUID][]models.WorkflowTransition
 	sourceLinks          map[uuid.UUID][]models.WorkflowSourceLink
 	decisions            map[uuid.UUID][]models.WorkflowDecision
@@ -3792,6 +3894,7 @@ func (r *fakeWorkflowRepo) FindQualityGates(workflowID uuid.UUID) ([]models.Work
 }
 
 func (r *fakeWorkflowRepo) SaveRule(rule *models.WorkflowRule) (*models.WorkflowRule, error) {
+	r.saveRuleCalls++
 	existing, exists := r.rules[rule.RuleKey]
 	if rule.ID == uuid.Nil {
 		if exists {

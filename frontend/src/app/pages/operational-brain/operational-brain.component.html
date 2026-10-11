@@ -1,0 +1,107 @@
+<section class="brain-page">
+  <header class="page-heading">
+    <div>
+      <span class="eyebrow">System map</span>
+      <h1>Operational Brain</h1>
+      <p>See how HAI's goals, work, sources, memory, knowledge, and agents connect without granting execution authority.</p>
+    </div>
+    <button nz-button type="button" (click)="load()" [nzLoading]="loading">
+      <i nz-icon nzType="reload" nzTheme="outline"></i> Refresh
+    </button>
+  </header>
+
+  <div class="loading-state" *ngIf="loading" role="status"><nz-spin nzSimple></nz-spin><span>Building the owner-scoped system map...</span></div>
+  <section class="error-state" *ngIf="!loading && errorMessage" role="alert">
+    <i nz-icon nzType="warning" nzTheme="outline"></i>
+    <div><strong>Operational Brain is unavailable</strong><span>{{ errorMessage }}</span></div>
+    <button nz-button type="button" (click)="load()">Try again</button>
+  </section>
+
+  <ng-container *ngIf="!loading && !errorMessage && snapshot as graphState">
+    <section class="authority-boundary">
+      <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
+      <div><strong>Read-only operational context</strong><span>{{ graphState.scope }}</span></div>
+      <span class="freshness">Updated {{ graphState.generatedAt | date:'shortTime' }}</span>
+    </section>
+
+    <section class="metric-strip" aria-label="Operational graph quality">
+      <button type="button" (click)="setFilter('attention')" [class.active]="filter === 'attention'">
+        <span>Needs attention</span><strong>{{ attentionNodes.length }}</strong><small>blocked, waiting, or unverified</small>
+      </button>
+      <button type="button" (click)="setFilter('all')" [class.active]="filter === 'all'">
+        <span>Connected records</span><strong>{{ graphState.nodes.length - 1 }}</strong><small>{{ graphState.links.length }} relationships</small>
+      </button>
+      <button type="button" (click)="setFilter('sources')" [class.active]="filter === 'sources'">
+        <span>Source-backed</span><strong>{{ graphState.quality.sourceBackedNodes }}</strong><small>records with provenance</small>
+      </button>
+      <button type="button" (click)="setFilter('agents')" [class.active]="filter === 'agents'">
+        <span>Agents and teams</span><strong>{{ graphState.layerCounts['agents'] || 0 }}</strong><small>governed capability holders</small>
+      </button>
+    </section>
+
+    <section class="primary-workspace">
+      <header class="workspace-heading">
+        <div><h2>{{ filter === 'attention' ? 'Review next' : label(filter) }}</h2><p>Open a record for relationships, provenance, constraints, and exact identifiers.</p></div>
+        <label class="search-box"><i nz-icon nzType="search" nzTheme="outline"></i><input [(ngModel)]="searchQuery" placeholder="Search this view" aria-label="Search operational graph" /></label>
+      </header>
+      <div class="node-list" *ngIf="visibleNodes.length; else calmEmpty">
+        <button type="button" *ngFor="let node of visibleNodes | slice:0:12; trackBy: trackByNode" (click)="openInspector(node)">
+          <span class="node-icon" [attr.data-tone]="statusTone(node)"><i nz-icon [nzType]="node.kind === 'agent' ? 'robot' : node.kind === 'source' ? 'cluster' : node.kind === 'memory' ? 'database' : node.kind === 'workflow' ? 'unordered-list' : 'node-index'" nzTheme="outline"></i></span>
+          <span class="node-copy"><strong>{{ node.label }}</strong><span>{{ node.summary || label(node.kind) }}</span><small>{{ label(node.layer) }} <span aria-hidden="true">&middot;</span> {{ label(displayStatus(node)) }}</small></span>
+          <span class="node-meta"><strong>{{ node.sourceCount }}</strong><small>sources</small></span>
+          <i nz-icon nzType="right" nzTheme="outline"></i>
+        </button>
+      </div>
+      <ng-template #calmEmpty>
+        <div class="calm-empty"><i nz-icon [nzType]="emptyStateIcon" nzTheme="outline"></i><div><strong>{{ emptyStateTitle }}</strong><span>{{ emptyStateSummary }}</span></div></div>
+      </ng-template>
+    </section>
+
+    <hai-progressive-section moduleId="operational-brain" sectionId="layers" title="System layers" summary="Inspect how much governed context each HAI subsystem contributes.">
+      <div class="layer-grid">
+        <button type="button" *ngFor="let layer of layers; trackBy: trackByLayer" (click)="setFilter(layer.id)">
+          <span>{{ label(layer.id) }}</span><strong>{{ layer.count }}</strong><small>Open records</small>
+        </button>
+      </div>
+    </hai-progressive-section>
+
+    <hai-progressive-section moduleId="operational-brain" sectionId="agent-context" title="Agent boot context" summary="Inspect the bounded capabilities and inherited prohibitions an agent receives before planning.">
+      <div class="agent-grid" *ngIf="agentNodes.length; else noAgents">
+        <button type="button" *ngFor="let agent of agentNodes; trackBy: trackByNode" (click)="openInspector(agent)">
+          <i nz-icon nzType="robot" nzTheme="outline"></i><span><strong>{{ agent.label }}</strong><small>{{ agent.summary }}</small></span><i nz-icon nzType="right" nzTheme="outline"></i>
+        </button>
+      </div>
+      <ng-template #noAgents><div class="calm-empty"><i nz-icon nzType="robot" nzTheme="outline"></i><div><strong>No registered agents</strong><span>Register and health-check an agent before it can receive a bounded planning context.</span></div></div></ng-template>
+    </hai-progressive-section>
+
+    <hai-progressive-section moduleId="operational-brain" sectionId="quality" title="Projection quality" summary="Review truncation, disconnected records, provenance, and subsystem availability.">
+      <dl class="quality-grid">
+        <div><dt>Orphan records</dt><dd>{{ graphState.quality.orphanNodes }}</dd></div>
+        <div><dt>Needs review</dt><dd>{{ graphState.quality.needsReviewNodes }}</dd></div>
+        <div><dt>Local only</dt><dd>{{ graphState.quality.localOnlyNodes }}</dd></div>
+        <div><dt>Blocked</dt><dd>{{ graphState.quality.blockedNodes }}</dd></div>
+        <div><dt>Bounded</dt><dd>{{ graphState.truncated ? 'Truncated' : 'Complete within limit' }}</dd></div>
+      </dl>
+      <div class="warning-list" *ngIf="graphState.warnings?.length"><article *ngFor="let warning of graphState.warnings"><i nz-icon nzType="warning" nzTheme="outline"></i><span>{{ warning }}</span></article></div>
+    </hai-progressive-section>
+  </ng-container>
+</section>
+
+<nz-drawer [nzVisible]="inspectorOpen" nzPlacement="right" [nzWidth]="560" [nzTitle]="'Operational record'" (nzOnClose)="closeInspector()">
+  <ng-container *nzDrawerContent>
+    <div class="drawer-loading" *ngIf="detailLoading"><nz-spin nzSimple></nz-spin><span>Loading bounded relationships...</span></div>
+    <article class="inspector" *ngIf="selected as node">
+      <header><span class="status-chip" [attr.data-tone]="statusTone(node)">{{ label(displayStatus(node)) }}</span><h2>{{ node.label }}</h2><p>{{ node.summary || 'No additional summary is stored.' }}</p></header>
+      <section class="inspector-boundary"><i nz-icon nzType="safety-certificate" nzTheme="outline"></i><div><strong>No execution authority</strong><span>Inspection never starts tools, workflows, or external effects.</span></div></section>
+      <dl class="detail-grid">
+        <div><dt>Type</dt><dd>{{ label(node.kind) }}</dd></div><div><dt>Layer</dt><dd>{{ label(node.layer) }}</dd></div>
+        <div><dt>Verification</dt><dd>{{ label(node.verificationStatus || 'not stated') }}</dd></div><div><dt>Sensitivity</dt><dd>{{ label(node.sensitivity || 'not stated') }}</dd></div>
+        <div><dt>Storage</dt><dd>{{ node.localOnly ? 'Local only' : 'External storage permitted' }}</dd></div><div><dt>Sources</dt><dd>{{ node.sourceCount }}</dd></div>
+      </dl>
+      <section class="inspector-section" *ngIf="node.details | keyvalue as details"><h3>Operational detail</h3><dl class="detail-list"><div *ngFor="let detail of details"><dt>{{ label(detail.key) }}</dt><dd>{{ detail.value }}</dd></div></dl></section>
+      <section class="inspector-section" *ngIf="selectedLinks.length"><h3>Relationships</h3><div class="relationship-list"><article *ngFor="let link of selectedLinks"><span>{{ label(link.type) }}</span><strong>{{ relatedLabel(linkOtherEnd(link.sourceId, link.targetId)) }}</strong></article></div></section>
+      <section class="inspector-section" *ngIf="node.kind === 'agent'"><h3>Agent boot context</h3><div class="drawer-loading" *ngIf="bootLoading"><nz-spin nzSimple></nz-spin><span>Resolving strictest constraints...</span></div><ng-container *ngIf="agentBoot as boot"><dl class="detail-grid"><div><dt>Authority ceiling</dt><dd>{{ boot.authorityCeiling }}</dd></div><div><dt>Autonomy ceiling</dt><dd>{{ boot.autonomyCeiling }}</dd></div><div><dt>Risk ceiling</dt><dd>{{ label(boot.riskCeiling) }}</dd></div><div><dt>Teams</dt><dd>{{ boot.teams.length }}</dd></div></dl><div class="constraint-block"><strong>Prohibited actions</strong><span>{{ boot.prohibitedActions.length ? boot.prohibitedActions.join(', ') : 'No team-specific prohibitions; global policies still apply.' }}</span></div><div class="constraint-block"><strong>Evidence required</strong><span>{{ boot.evidenceRequirements.length ? boot.evidenceRequirements.join(', ') : 'Global verification policy applies.' }}</span></div><p class="boot-note">{{ boot.explanation }}</p></ng-container></section>
+      <code class="record-id">{{ node.id }}</code>
+    </article>
+  </ng-container>
+</nz-drawer>

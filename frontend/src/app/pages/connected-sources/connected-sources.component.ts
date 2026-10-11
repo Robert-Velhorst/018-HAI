@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -9,6 +9,7 @@ import {
   ISourceAuditLog,
   ISourceConnector,
   ISourceConnectionHealth,
+  ISourceOverview,
   ISourceExtraction,
   IKnowledgeGraphResult,
   IKnowledgeGraphSourceRef,
@@ -42,6 +43,7 @@ interface SourceActionCard {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-connected-sources',
   templateUrl: './connected-sources.component.html',
@@ -63,16 +65,23 @@ export class ConnectedSourcesComponent implements OnInit {
 	private syncJobHistoryHasMore = false;
   connectionHealth: Record<string, ISourceConnectionHealth> = {};
   connectionHealthLoadError = '';
+  overview?: ISourceOverview;
+  overviewLoadError = '';
   searchResult?: ISourceSearchResult;
   knowledgeGraph?: IKnowledgeGraphResult;
   graphLoading = false;
   graphIncludeSensitive = false;
   lastSyncResult?: ISourceSyncResult;
-  includeDisabled = true;
+  includeDisabled = false;
   includeArchived = false;
   loading = false;
-  overviewLoadError = '';
   private refreshQueued = false;
+  extractionHistoryOpen = false;
+  activityHistoryOpen = false;
+  extractionHistoryLoading = false;
+  activityHistoryLoading = false;
+  extractionHistoryError = '';
+  activityHistoryError = '';
   connecting = false;
   syncing = false;
   selectedAction: SourceAction = 'connect';
@@ -81,13 +90,15 @@ export class ConnectedSourcesComponent implements OnInit {
   themeMode: ThemeMode = 'light';
   private readonly loadTimeoutMs = 6000;
   private readonly operationTimeoutMs = 15000;
+  private extractionHistoryLoaded = false;
+  private activityHistoryLoaded = false;
 
   sourceForm: FormGroup = this.fb.group({
     connectorKey: ['local-folder', [Validators.required]],
     name: ['Selected local folder', [Validators.required]],
     localOnly: [true],
     syncFrequency: ['manual'],
-    syncTarget: ['.'],
+    syncTarget: ['', [Validators.required]],
     defaultProjectKey: ['018-HAI'],
     excludePatterns: ['spam,trash'],
   });
@@ -163,6 +174,7 @@ export class ConnectedSourcesComponent implements OnInit {
     }
     this.loading = true;
     this.overviewLoadError = '';
+    this.connectionHealthLoadError = '';
     const failedLoads: string[] = [];
     forkJoin({
       connectors: this.sourceService.connectors().pipe(
@@ -181,6 +193,14 @@ export class ConnectedSourcesComponent implements OnInit {
           return of([] as IConnectedSource[]);
         })
       ),
+      overview: this.sourceService.overview(this.searchForm.value.projectKey, this.includeArchived).pipe(
+        timeout(this.loadTimeoutMs),
+        catchError(() => {
+          failedLoads.push('source overview');
+          this.notification.error('Source overview unavailable', 'Safety and activity totals could not be refreshed.');
+          return of(undefined);
+        })
+      ),
     })
       .pipe(finalize(() => {
         this.loading = false;
@@ -189,99 +209,26 @@ export class ConnectedSourcesComponent implements OnInit {
           this.refresh();
         }
       }))
-      .subscribe(({ connectors, sources }) => {
-        if (failedLoads.length) {
-          this.overviewLoadError = `Could not load ${failedLoads.join(' or ')}. Existing results may be incomplete.`;
-        }
+      .subscribe(({ connectors, sources, overview }) => {
         this.connectors = connectors;
         this.sources = sources;
+        this.overview = overview;
+        this.overviewLoadError = failedLoads.length
+          ? `Could not refresh ${failedLoads.join(', ')}. Existing results may be incomplete.`
+          : '';
         this.applySourceDefaults(sources);
-        this.loadConnectionHealth(sources);
-        if (this.recordHistoryLoaded) {
-          this.loadRecordHistory(true);
+        const selected = this.selectedSource();
+        if (selected) {
+          this.refreshConnectionHealth(selected);
+        } else {
+          this.connectionHealth = {};
         }
-        this.updateSourceActions();
-      });
-  }
-
-  // The operational overview must remain quick even after years of source
-  // history. Extraction text, audit trails, and job ledgers are only needed
-  // once the operator opens the record layer.
-  loadRecordHistory(force = false): void {
-    if (this.recordHistoryLoading || (this.recordHistoryLoaded && !force)) {
-      return;
-    }
-    this.loadRecordHistoryPage(false);
-  }
-
-  loadOlderRecordHistory(): void {
-    if (this.recordHistoryLoading || !this.recordHistoryHasMore()) {
-      return;
-    }
-    this.loadRecordHistoryPage(true);
-  }
-
-  recordHistoryHasMore(): boolean {
-    return this.extractionHistoryHasMore || this.auditHistoryHasMore || this.syncJobHistoryHasMore;
-  }
-
-  private loadRecordHistoryPage(append: boolean): void {
-    this.recordHistoryLoading = true;
-    this.recordHistoryLoadError = '';
-    const failedLoads: string[] = [];
-    forkJoin({
-      extractions: this.sourceService.pageExtractions(
-        this.searchForm.value.projectKey,
-        this.includeArchived,
-        this.sourceHistoryPageSize,
-        append ? this.extractions.length : 0
-      ).pipe(
-        timeout(this.loadTimeoutMs),
-        catchError(() => {
-          failedLoads.push('extracted context');
-          return of(undefined);
-        })
-      ),
-      auditLogs: this.sourceService.pageAuditLogs(
-        this.sourceHistoryPageSize,
-        append ? this.auditLogs.length : 0
-      ).pipe(
-        timeout(this.loadTimeoutMs),
-        catchError(() => {
-          failedLoads.push('audit history');
-          return of(undefined);
-        })
-      ),
-      syncJobs: this.sourceService.pageSyncJobs(
-        this.sourceHistoryPageSize,
-        append ? this.syncJobs.length : 0
-      ).pipe(
-        timeout(this.loadTimeoutMs),
-        catchError(() => {
-          failedLoads.push('sync jobs');
-          return of(undefined);
-        })
-      ),
-    })
-      .pipe(finalize(() => (this.recordHistoryLoading = false)))
-      .subscribe(({ extractions, auditLogs, syncJobs }) => {
-        if (extractions) {
-          this.extractions = append ? [...this.extractions, ...extractions.items] : extractions.items;
-		  this.extractionHistoryTotal = extractions.total;
-		  this.extractionHistoryHasMore = extractions.hasMore;
+        if (this.extractionHistoryOpen) {
+          this.loadExtractions(true);
         }
-        if (auditLogs) {
-          this.auditLogs = append ? [...this.auditLogs, ...auditLogs.items] : auditLogs.items;
-		  this.auditHistoryHasMore = auditLogs.hasMore;
+        if (this.activityHistoryOpen) {
+          this.loadActivityHistory(true);
         }
-        if (syncJobs) {
-          this.syncJobs = append ? [...this.syncJobs, ...syncJobs.items] : syncJobs.items;
-		  this.syncJobHistoryHasMore = syncJobs.hasMore;
-        }
-        if (failedLoads.length) {
-          this.recordHistoryLoadError = `Could not load ${failedLoads.join(' or ')}. Existing history is retained and may be incomplete.`;
-        }
-        this.recordHistoryLoaded = this.recordHistoryLoaded || !!extractions || !!auditLogs || !!syncJobs;
         this.updateSourceActions();
       });
   }
@@ -382,6 +329,20 @@ export class ConnectedSourcesComponent implements OnInit {
     }
   }
 
+  setExtractionHistoryOpen(open: boolean): void {
+    this.extractionHistoryOpen = open;
+    if (open && !this.extractionHistoryLoaded) {
+      this.loadExtractions(false);
+    }
+  }
+
+  setActivityHistoryOpen(open: boolean): void {
+    this.activityHistoryOpen = open;
+    if (open && !this.activityHistoryLoaded) {
+      this.loadActivityHistory(false);
+    }
+  }
+
   private updateSourceActions(): void {
     this.sourceActions = [
       {
@@ -429,7 +390,7 @@ export class ConnectedSourcesComponent implements OnInit {
         title: 'Import item',
         detail: 'Add one source-backed record.',
         icon: 'file-add',
-        metric: this.recordHistoryLoaded ? `${this.extractions.length} records` : 'on demand',
+        metric: this.overview ? `${this.overview.extractionCount} records` : 'not loaded',
         tone: 'blue',
       },
       {
@@ -536,7 +497,7 @@ export class ConnectedSourcesComponent implements OnInit {
   }
 
   failedJobCount(): number {
-    return this.syncJobs.filter((job) => job.status === 'failed').length;
+    return this.overview?.failedJobs || 0;
   }
 
   recordHistoryMetric(): string {
@@ -544,23 +505,15 @@ export class ConnectedSourcesComponent implements OnInit {
   }
 
   pendingJobCount(): number {
-    return this.syncJobs.filter((job) => job.status === 'pending' || job.status === 'running').length;
+    return this.overview?.pendingJobs || 0;
   }
 
   uncertainExtractionCount(): number {
-    return this.extractions.filter((extraction) => extraction.uncertain).length;
+    return this.overview?.uncertainExtractionCount || 0;
   }
 
-  sensitiveExtractionMetric(): string {
-    if (!this.recordHistoryLoaded) {
-      return 'not loaded';
-    }
-
-    return String(this.extractions.filter((extraction) => extraction.sensitive).length);
-  }
-
-  failedJobMetric(): string {
-    return this.recordHistoryLoaded ? String(this.failedJobCount()) : 'not loaded';
+  sensitiveExtractionCount(): number {
+    return this.overview?.sensitiveExtractionCount || 0;
   }
 
   recentExtractions(): ISourceExtraction[] {
@@ -600,8 +553,10 @@ export class ConnectedSourcesComponent implements OnInit {
     });
   }
 
-  latestJobFor(source: IConnectedSource): ISourceSyncJob | undefined {
-    return this.syncJobs.find((job) => job.sourceId === source.id);
+  latestJobStatusFor(source: IConnectedSource): string {
+    return this.syncJobs.find((job) => job.sourceId === source.id)?.status
+      || this.overview?.latestJobStatusBySource[source.id]
+      || 'no job yet';
   }
 
   statusText(status?: string): string {
@@ -626,6 +581,7 @@ export class ConnectedSourcesComponent implements OnInit {
       case 'not_implemented':
         return 'bad';
       case 'failed':
+      case 'partial_failure':
       case 'revoked':
       case 'error':
         return 'bad';
@@ -642,8 +598,8 @@ export class ConnectedSourcesComponent implements OnInit {
     return this.sources.filter((source) => source.connectorKey === 'local-folder' && this.syncButtonVisible(source));
   }
 
-  sourceExtractionCount(source: IConnectedSource): number {
-    return this.extractions.filter((extraction) => extraction.sourceId === source.id).length;
+  sourceExtractionCount(source: IConnectedSource): number | string {
+    return this.overview?.extractionCountsBySource[source.id] ?? (this.overview ? 0 : '—');
   }
 
   sourceExtractionCountLabel(source: IConnectedSource): string {
@@ -746,7 +702,7 @@ export class ConnectedSourcesComponent implements OnInit {
       this.sourceForm.patchValue({
         name: 'Selected local folder',
         syncFrequency: 'manual',
-        syncTarget: '.',
+        syncTarget: '',
         localOnly: true,
       });
       return;
@@ -902,10 +858,7 @@ export class ConnectedSourcesComponent implements OnInit {
     if (this.sourceForm.value.connectorKey === 'odoo-herp') {
       return 'Odoo URL or app list, e.g. https://.../odoo?apps=CRM,Sales';
     }
-    if (this.sourceForm.value.connectorKey === 'odoo-json2') {
-      return 'Configured in the local environment; do not enter credentials here';
-    }
-    return 'Folder target, e.g. .';
+    return 'Explicit subfolder under the connected-source root, e.g. legal/vivare';
   }
 
   syncSource(source: IConnectedSource): void {
@@ -1462,47 +1415,70 @@ export class ConnectedSourcesComponent implements OnInit {
     return ref?.sourceLabel || ref?.sourceUri || 'source linked';
   }
 
-  private describeSourceError(error: unknown, fallback: string): string {
-    const response = error as { error?: unknown } | undefined;
-    const payload = response?.error;
-    const detail = typeof payload === 'string'
-      ? payload
-      : payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
-        ? (payload as { error: string }).error
-        : '';
-    const message = detail.trim();
-    return message && message.length <= 500 ? message : fallback;
-  }
-
-  private loadExtractions(): void {
-    this.loadRecordHistory(true);
-  }
-
-  private loadConnectionHealth(sources: IConnectedSource[]): void {
-    if (!sources.length) {
-      this.connectionHealth = {};
-      this.connectionHealthLoadError = '';
+  private loadExtractions(force = true): void {
+    if (this.extractionHistoryLoading || (this.extractionHistoryLoaded && !force)) {
       return;
     }
-    this.connectionHealthLoadError = '';
-    this.sourceService.connectionHealthSummary().pipe(
-      timeout(this.loadTimeoutMs),
-      catchError(() => {
-        this.connectionHealthLoadError = 'Could not load source connection health. Existing health results are retained and may be stale.';
-        return of(undefined);
-      })
-    ).subscribe((results) => {
-      if (!results) return;
-      this.connectionHealth = results.reduce<Record<string, ISourceConnectionHealth>>((health, item) => {
-        if (item) {
-          health[item.sourceId] = item;
-        }
-        return health;
-      }, {});
-    });
+    this.extractionHistoryLoading = true;
+    this.extractionHistoryError = '';
+    this.sourceService
+      .extractions(this.searchForm.value.projectKey, this.includeArchived, 8)
+      .pipe(
+        timeout(this.loadTimeoutMs),
+        finalize(() => (this.extractionHistoryLoading = false))
+      )
+      .subscribe({
+        next: (items) => {
+          this.extractions = items;
+          this.extractionHistoryLoaded = true;
+          this.updateSourceActions();
+        },
+        error: () => {
+          this.extractions = [];
+          this.extractionHistoryLoaded = false;
+          this.extractionHistoryError = 'Extracted records could not be loaded. Retry when the source service is available.';
+          this.updateSourceActions();
+        },
+      });
+  }
+
+  private loadActivityHistory(force = true): void {
+    if (this.activityHistoryLoading || (this.activityHistoryLoaded && !force)) {
+      return;
+    }
+    this.activityHistoryLoading = true;
+    this.activityHistoryError = '';
+    let failed = false;
+    forkJoin({
+      jobs: this.sourceService.syncJobs(undefined, 6).pipe(
+        timeout(this.loadTimeoutMs),
+        catchError(() => {
+          failed = true;
+          return of([] as ISourceSyncJob[]);
+        })
+      ),
+      logs: this.sourceService.auditLogs(undefined, 8).pipe(
+        timeout(this.loadTimeoutMs),
+        catchError(() => {
+          failed = true;
+          return of([] as ISourceAuditLog[]);
+        })
+      ),
+    })
+      .pipe(finalize(() => (this.activityHistoryLoading = false)))
+      .subscribe(({ jobs, logs }) => {
+        this.syncJobs = jobs || [];
+        this.auditLogs = logs || [];
+        this.activityHistoryLoaded = !failed;
+        this.activityHistoryError = failed
+          ? 'Source activity could not be loaded completely. Retry when the source service is available.'
+          : '';
+        this.updateSourceActions();
+      });
   }
 
   private refreshConnectionHealth(source: IConnectedSource): void {
+    this.connectionHealthLoadError = '';
     this.sourceService.connectionHealth(source.id).pipe(
       timeout(this.loadTimeoutMs),
       catchError(() => {
@@ -1514,6 +1490,11 @@ export class ConnectedSourcesComponent implements OnInit {
         this.connectionHealth = { ...this.connectionHealth, [source.id]: health };
       }
     });
+  }
+
+  private describeSourceError(error: any, fallback: string): string {
+    const message = error?.error?.error || error?.error?.message || error?.message;
+    return typeof message === 'string' && message.trim() ? message.trim() : fallback;
   }
 
   private applySourceDefaults(sources: IConnectedSource[]): void {

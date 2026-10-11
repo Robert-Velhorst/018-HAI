@@ -1,12 +1,18 @@
-import { APP_ROUTES } from './app-routing.module'
-import { AppShellComponent } from './control-room/app-shell.component'
-import { authGuard } from './services/auth/guards/auth.guard'
+import { authGuard } from './services/auth/guards/auth.guard';
+import { APP_ROUTES, AUTHENTICATED_ROUTES } from './app-routing.module';
 
-describe('application routing', () => {
-  it('protects every route rendered inside the operational shell', () => {
-    const shellRoute = APP_ROUTES.find((route) => route.component === AppShellComponent)
+describe('AppRoutingModule', () => {
+  it('guards the authenticated shell once instead of every child navigation', () => {
+    const shell = APP_ROUTES.find((route) => route.path === '');
 
-    expect(shellRoute).toBeDefined()
-    expect(shellRoute?.canActivateChild).toContain(authGuard)
-  })
-})
+    expect(shell?.canActivate).toEqual([authGuard]);
+    expect(shell?.children).toContain(AUTHENTICATED_ROUTES[0]);
+    expect(AUTHENTICATED_ROUTES.every((route) => !route.canActivate)).toBeTrue();
+  });
+
+  it('keeps onboarding independently protected', () => {
+    const onboarding = APP_ROUTES.find((route) => route.path === 'onboarding');
+
+    expect(onboarding?.canActivate).toEqual([authGuard]);
+  });
+});

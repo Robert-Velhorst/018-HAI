@@ -49,8 +49,6 @@ func frameworkRegistryIntegrationRepository(t *testing.T) (*GormRepository, *gor
 		"pre/0001_extensions.up.sql",
 		"pre/0003_framework_registry.up.sql",
 		"pre/0005_framework_operating_contract.up.sql",
-		// The repository writes selector-v5 risk fields, so this focused schema
-		// setup must include their migration as well.
 		"pre/0029_framework_selector_v5_digest.up.sql",
 	} {
 		sql, err := migrations.Files.ReadFile(path)

@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { ITaskPlanService } from '../task-plan.service.interface';
 import {
@@ -7,6 +7,7 @@ import {
 	IApprovedReviewReconciliationRequest,
 	IApprovedReviewReconciliationResult,
   ICompletionPlan,
+  ITaskPlanHistoryItem,
   IReviewQueueItem,
   IReviewResolutionResult,
   ITaskPlanRequest,
@@ -35,8 +36,11 @@ export class TaskPlanService implements ITaskPlanService {
 		return { ...request, idempotencyKey: crypto.randomUUID() };
 	}
 
-  logs(): Observable<ICompletionPlan[]> {
-    return this.http.get<ICompletionPlan[]>(`${this.apiUrl}/logs`);
+  logs(limit = 10): Observable<ITaskPlanHistoryItem[]> {
+    const boundedLimit = Number.isInteger(limit) && limit > 0 && limit <= 50 ? limit : 10;
+    return this.http.get<ITaskPlanHistoryItem[]>(`${this.apiUrl}/logs`, {
+      params: new HttpParams().set('limit', boundedLimit),
+    });
   }
 
   reviewQueue(): Observable<IReviewQueueItem[]> {

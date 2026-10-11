@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import { AuthActorRole } from '../../models/auth-session.model.interface';
 import {
   FrameworkPreferenceState,
@@ -14,6 +14,7 @@ export interface IFrameworkPreferenceEditor {
 }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.Eager,
   standalone: false,
   selector: 'app-framework-registry-inspector',
   templateUrl: './framework-registry-inspector.component.html',

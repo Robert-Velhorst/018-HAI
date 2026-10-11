@@ -27,15 +27,11 @@ const (
 	// Ecosystem archives are inspected, not extracted, but their metadata still
 	// determines what HAI indexes. Bound it so an uploaded archive cannot create
 	// ambiguous paths or consume unbounded parsing resources.
-	maxOpenClawZipEntries                  = 100_000
-	maxOpenClawZipUncompressedBytes        = uint64(1 << 30)
-	maxOpenClawZipCompressionRatio         = uint64(200)
-	maxOpenClawEcosystemArchiveBytes int64 = 750 << 20
-	// Leave a small fixed allowance for multipart field and boundary metadata.
-	// The gateway matches this 752 MiB request cap, so oversized uploads are
-	// rejected before Gin spools them to temporary disk.
-	maxOpenClawEcosystemRequestBytes int64 = maxOpenClawEcosystemArchiveBytes + 2<<20
-	openClawEcosystemMultipartMemory int64 = 8 << 20
+	maxOpenClawZipEntries           = 100_000
+	maxOpenClawZipUncompressedBytes = uint64(1 << 30)
+	maxOpenClawZipCompressionRatio  = uint64(200)
+	maxOpenClawZipUploadBytes       = int64(750 * 1024 * 1024)
+	openClawMultipartOverhead       = int64(1 << 20)
 )
 
 type Handler struct {
@@ -201,28 +197,22 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if rejectCancelledEcosystemUpload(c) {
+	if c.Request.ContentLength > maxOpenClawZipUploadBytes+openClawMultipartOverhead {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "openclaw ecosystem zip is too large"})
 		return
 	}
-	if c.Request.ContentLength > maxOpenClawEcosystemRequestBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "openclaw ecosystem upload is too large"})
-		return
-	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxOpenClawEcosystemRequestBytes)
-	if err := c.Request.ParseMultipartForm(openClawEcosystemMultipartMemory); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "openclaw ecosystem upload is too large"})
-			return
-		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid openclaw ecosystem upload"})
-		return
-	}
-	if rejectCancelledEcosystemUpload(c) {
-		return
-	}
+	c.Request.Body = http.MaxBytesReader(
+		c.Writer,
+		c.Request.Body,
+		maxOpenClawZipUploadBytes+openClawMultipartOverhead,
+	)
 	file, err := c.FormFile("ecosystem")
 	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "openclaw ecosystem zip is too large"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing ecosystem zip upload field 'ecosystem'"})
 		return
 	}
@@ -240,7 +230,7 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "openclaw ecosystem upload is empty"})
 		return
 	}
-	if file.Size > maxOpenClawEcosystemArchiveBytes {
+	if file.Size > maxOpenClawZipUploadBytes {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "openclaw ecosystem zip is too large"})
 		return
 	}
@@ -260,8 +250,8 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 		return
 	}
 	contentHash := sha256.New()
-	inspected, err := io.Copy(contentHash, io.LimitReader(source, maxOpenClawEcosystemArchiveBytes+1))
-	if err != nil || inspected != file.Size || inspected > maxOpenClawEcosystemArchiveBytes {
+	inspected, err := io.Copy(contentHash, io.LimitReader(source, maxOpenClawZipUploadBytes+1))
+	if err != nil || inspected != file.Size || inspected > maxOpenClawZipUploadBytes {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to inspect uploaded ecosystem file"})
 		return
 	}

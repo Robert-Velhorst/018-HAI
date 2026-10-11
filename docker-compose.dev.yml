@@ -1,14 +1,13 @@
-# Development-safe override for the canonical source-built stack.
+# Optional behavior-only development override.
 #
-# Use with:
-#   docker compose --env-file .env.local -f docker-compose.local.yml -f docker-compose.dev.yml up --build
+# Use after generating .env.local:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 #
-# HAI keeps its normal loopback-only gateway and does not publish databases,
-# Redis, or an unauthenticated database browser for development convenience.
-# The backend Docker image is still the build authority; source mounts are not
-# used because they can replace the compiled production binary with host files.
+# Ports, databases, networks, and source builds remain owned by the canonical
+# topology. This override does not add duplicate infrastructure or mount source
+# over the static runtime binary.
 services:
   backend:
     environment:
       GIN_MODE: debug
-
+      RUN_MODE: development

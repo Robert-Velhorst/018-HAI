@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,5 +120,32 @@ func TestCommandHandlerAllowsAuthenticatedPersonalCycleForOperator(t *testing.T)
 	}
 	if cycle.lastRequest.OwnerIdentity != "alice" {
 		t.Fatalf("personal cycle owner = %q, want alice", cycle.lastRequest.OwnerIdentity)
+	}
+}
+
+func TestCommandHandlerStopsCanceledRequestWithoutStartingAssistantWork(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tasks := &contextAwareTaskEngine{}
+	cycle := &contextAwareAgentCycleRunner{}
+	handler := NewHandler(NewService(tasks, cycle))
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	engine.POST("/assistant/command", handler.Command)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/assistant/command", strings.NewReader(`{"message":"Refresh my operating brief","runCycle":true}`)).WithContext(ctx)
+	request.Header.Set("Content-Type", "application/json")
+	engine.ServeHTTP(recorder, request)
+
+	if recorder.Body.Len() != 0 {
+		t.Fatalf("canceled command wrote a response body: %s", recorder.Body.String())
+	}
+	if tasks.planCalls != 0 || tasks.runCalls != 0 || cycle.calls != 0 {
+		t.Fatalf("canceled HTTP command started work: plan=%d run=%d cycle=%d", tasks.planCalls, tasks.runCalls, cycle.calls)
 	}
 }

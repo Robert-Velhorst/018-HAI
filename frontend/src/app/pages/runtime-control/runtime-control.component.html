@@ -86,16 +86,6 @@
         </button>
         <button
           nz-button
-          nzType="primary"
-          *ngIf="s.emergencyStop.engaged && resumeApproval"
-          [disabled]="!canAdministerRuntime"
-          [nzLoading]="busy"
-          (click)="approveAndResume()"
-        >
-          Confirm and resume
-        </button>
-        <button
-          nz-button
           [disabled]="!canApproveRuntimeActions"
           [attr.aria-describedby]="!canApproveRuntimeActions ? 'runtime-authority-summary' : null"
           [nzLoading]="busy"

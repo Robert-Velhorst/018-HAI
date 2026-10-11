@@ -4,14 +4,13 @@ import (
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type Repository interface {
-	EnsureNeeds(needs []models.AmbientNeed) error
 	Needs() ([]models.AmbientNeed, error)
 	NeedOverridesForOwner(ownerIdentity string) ([]models.AmbientNeedOverride, error)
 	FindNeedOverride(ownerIdentity, needKey string) (*models.AmbientNeedOverride, error)
@@ -28,6 +27,10 @@ type Repository interface {
 	PruneScans(keep int) error
 }
 
+type opportunityBatchReader interface {
+	FindOpportunitiesByFingerprints(fingerprints []string) ([]models.AmbientOpportunity, error)
+}
+
 type GormRepository struct {
 	db *gorm.DB
 }
@@ -42,18 +45,6 @@ func DefaultRepository() Repository {
 		panic(err)
 	}
 	return NewGormRepository(db)
-}
-
-func (r *GormRepository) EnsureNeeds(needs []models.AmbientNeed) error {
-	for index := range needs {
-		if err := r.db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "key"}},
-			DoNothing: true,
-		}).Create(&needs[index]).Error; err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (r *GormRepository) Needs() ([]models.AmbientNeed, error) {
@@ -105,6 +96,30 @@ func (r *GormRepository) FindOpportunityByFingerprint(fingerprint string) (*mode
 		return nil, err
 	}
 	return &item, nil
+}
+
+func (r *GormRepository) FindOpportunitiesByFingerprints(fingerprints []string) ([]models.AmbientOpportunity, error) {
+	unique := make([]string, 0, len(fingerprints))
+	seen := make(map[string]struct{}, len(fingerprints))
+	for _, fingerprint := range fingerprints {
+		fingerprint = strings.TrimSpace(fingerprint)
+		if fingerprint == "" {
+			continue
+		}
+		if _, exists := seen[fingerprint]; exists {
+			continue
+		}
+		seen[fingerprint] = struct{}{}
+		unique = append(unique, fingerprint)
+	}
+	if len(unique) == 0 {
+		return []models.AmbientOpportunity{}, nil
+	}
+	var items []models.AmbientOpportunity
+	if err := r.db.Where("fingerprint IN ?", unique).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (r *GormRepository) SaveOpportunity(item *models.AmbientOpportunity) (*models.AmbientOpportunity, error) {

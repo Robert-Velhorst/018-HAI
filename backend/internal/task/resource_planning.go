@@ -41,6 +41,10 @@ type ResourcePlanningRequest struct {
 	PaidAllowed    bool
 	PaidBudgetEUR  float64
 	PaidBudgetUsed float64
+	// AutomatedExecution marks a low-risk controlled automation that consumes
+	// system resources but does not create a new commitment for the owner.
+	// Runtime authorization and postcondition verification remain independent.
+	AutomatedExecution bool
 }
 
 type resourcePlanningBridge struct {
@@ -91,7 +95,7 @@ func (bridge *resourcePlanningBridge) PlanResources(request ResourcePlanningRequ
 	previous := ""
 	for index, step := range request.Steps {
 		optimistic, expected, pessimistic := resourceDuration(request.Difficulty, step)
-		capacityNeedsReview := request.Capacity != nil && request.Capacity.NeedsReview
+		capacityNeedsReview := !request.AutomatedExecution && request.Capacity != nil && request.Capacity.NeedsReview
 		planned := resourceplanner.Task{
 			ID:       resourceStepID(index),
 			Duration: resourceplanner.DurationEstimate{OptimisticMinutes: optimistic, ExpectedMinutes: expected, PessimisticMinutes: pessimistic, Basis: "bounded task difficulty and step type estimate"},
@@ -112,7 +116,7 @@ func (bridge *resourcePlanningBridge) PlanResources(request ResourcePlanningRequ
 				ToolCalls:    int64(len(request.SelectedTools)),
 			}
 		}
-		if request.Capacity != nil && !request.Capacity.NeedsReview {
+		if !request.AutomatedExecution && request.Capacity != nil && !request.Capacity.NeedsReview {
 			planned.Resources = []resourceplanner.ResourceRequirement{{ResourceID: "owner-capacity", CapacityUnits: 1}}
 		}
 		if index == len(request.Steps)-1 && request.Deadline != nil {
@@ -141,7 +145,7 @@ func (bridge *resourcePlanningBridge) PlanResources(request ResourcePlanningRequ
 	budget.MaxToolCalls = &toolLimit
 
 	availability := []resourceplanner.CapacityWindow{}
-	if request.Capacity != nil && request.Capacity.TimeAvailableMinutes > 0 {
+	if !request.AutomatedExecution && request.Capacity != nil && request.Capacity.TimeAvailableMinutes > 0 {
 		availableEnd := start.Add(time.Duration(request.Capacity.TimeAvailableMinutes) * time.Minute)
 		if availableEnd.After(horizonEnd) {
 			availableEnd = horizonEnd

@@ -24,6 +24,7 @@ import (
 
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/doctor"
+	"automation-hub-backend/internal/events"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/schedulerstatus"
 
@@ -39,14 +40,16 @@ const DefaultTimeout = 3 * time.Second
 //
 // Criticality reflects what the process can actually serve without:
 //   - Postgres is critical: every domain route reads or writes it.
-//   - Kafka is not: the publisher degrades to a no-op when brokers are absent.
-//   - Redis is not: it backs shared rate limiting when that optional control is enabled.
+//   - Kafka is not: committed events remain queued in the transactional outbox
+//     until a configured broker becomes available.
+//   - Redis is not: the backend does not connect to it yet (see RedisProbe).
 //   - An LLM provider is not: generation is one capability, not the service.
 func Probes(cfg config.Configuration) []doctor.Probe {
 	return []doctor.Probe{
 		PostgresProbe(cfg),
 		RedisProbe(cfg),
 		KafkaProbe(cfg),
+		EventOutboxProbe(),
 		LLMProviderProbe(),
 		schedulerstatus.Probe("source"),
 		schedulerstatus.Probe("workflow"),
@@ -54,25 +57,34 @@ func Probes(cfg config.Configuration) []doctor.Probe {
 	}
 }
 
-// PostgresProbe opens a real, authenticated connection and pings it. A plain TCP
-// dial would prove only that something is listening on the port; it would still
-// pass with wrong credentials or a missing database, which are exactly the
-// failures an operator needs readiness to surface.
+type postgresPinger interface {
+	PingContext(context.Context) error
+}
+
+// PostgresProbe pings the authenticated pool used by domain routes. A plain TCP
+// dial would prove only that something is listening on the port, while opening
+// a separate pool on every readiness request creates avoidable connection churn
+// and can disagree with the pool that is actually serving requests.
 func PostgresProbe(cfg config.Configuration) doctor.Probe {
+	return postgresProbe(cfg, func() (postgresPinger, error) {
+		gormDB, err := infra.GetDefaultDB()
+		if err != nil {
+			return nil, err
+		}
+		return gormDB.DB()
+	})
+}
+
+func postgresProbe(cfg config.Configuration, acquire func() (postgresPinger, error)) doctor.Probe {
 	return doctor.Probe{
 		Name:     "database.connection",
 		Critical: true,
 		Run: func(ctx context.Context) error {
-			gormDB, err := infra.NewPostgresDatabase(cfg.DbUser, cfg.DbPassword, cfg.DbName, cfg.DbHost, cfg.DbPort)
+			pinger, err := acquire()
 			if err != nil {
 				return fmt.Errorf("connect %s:%d/%s as %s: %w", cfg.DbHost, cfg.DbPort, cfg.DbName, cfg.DbUser, err)
 			}
-			sqlDB, err := gormDB.DB()
-			if err != nil {
-				return fmt.Errorf("acquire pool: %w", err)
-			}
-			defer sqlDB.Close()
-			if err := sqlDB.PingContext(ctx); err != nil {
+			if err := pinger.PingContext(ctx); err != nil {
 				return fmt.Errorf("ping %s:%d/%s: %w", cfg.DbHost, cfg.DbPort, cfg.DbName, err)
 			}
 			return nil
@@ -82,10 +94,10 @@ func PostgresProbe(cfg config.Configuration) doctor.Probe {
 
 // RedisProbe checks the Redis declared in the compose stack.
 //
-// Redis backs the optional shared rate limiter. Without it, an enabled rate
-// limit falls back to a per-process counter and is reset on restart. The probe
-// makes that operational difference visible without making Redis a critical
-// dependency for the local-first single-instance deployment.
+// Redis backs the shared rate limiter when configured. It remains a
+// non-critical readiness dependency because router startup and runtime
+// deliberately fall back to a bounded in-process limiter when Redis is
+// unavailable.
 func RedisProbe(cfg config.Configuration) doctor.Probe {
 	addr := strings.TrimSpace(cfg.RedisAddr)
 	return doctor.Probe{
@@ -93,10 +105,7 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 		Critical: false,
 		Run: func(ctx context.Context) error {
 			if addr == "" {
-				if cfg.RateLimitPerMinute > 0 {
-					return fmt.Errorf("REDIS_ADDR is not set; enabled rate limiting falls back to a per-process in-memory counter and resets on restart")
-				}
-				return fmt.Errorf("REDIS_ADDR is not set; shared rate limiting is disabled")
+				return fmt.Errorf("REDIS_ADDR is not set; rate-limit state uses a per-process in-memory fallback and resets on restart")
 			}
 			var dialer net.Dialer
 			conn, err := dialer.DialContext(ctx, "tcp", addr)
@@ -108,8 +117,8 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 			if deadline, ok := ctx.Deadline(); ok {
 				_ = conn.SetDeadline(deadline)
 			}
-			// Inline RESP keeps this probe independent from the production rate
-			// limiter client while still verifying Redis protocol readiness.
+			// Inline RESP keeps the readiness probe independent from the
+			// rate-limiter client's lifecycle.
 			if _, err := conn.Write([]byte("*1\r\n$4\r\nPING\r\n")); err != nil {
 				return fmt.Errorf("write PING to %s: %w", addr, err)
 			}
@@ -126,8 +135,8 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 }
 
 // KafkaProbe connects to the configured brokers. Kafka being down is a
-// degradation rather than an outage: the event publisher falls back to a no-op,
-// so this is reported as a warning and does not make the service unready.
+// degradation rather than an API outage: committed automation events remain in
+// the Postgres outbox and are retried after the broker recovers.
 func KafkaProbe(cfg config.Configuration) doctor.Probe {
 	brokers := nonEmpty(cfg.Brokers)
 	return doctor.Probe{
@@ -135,7 +144,7 @@ func KafkaProbe(cfg config.Configuration) doctor.Probe {
 		Critical: false,
 		Run: func(ctx context.Context) error {
 			if len(brokers) == 0 {
-				return fmt.Errorf("KAFKA_BROKERS is empty; event publishing is disabled and events are dropped")
+				return fmt.Errorf("KAFKA_BROKERS is empty; committed events remain queued until a broker is configured")
 			}
 			saramaCfg := sarama.NewConfig()
 			saramaCfg.Net.DialTimeout = DefaultTimeout
@@ -151,6 +160,33 @@ func KafkaProbe(cfg config.Configuration) doctor.Probe {
 
 			if len(client.Brokers()) == 0 {
 				return fmt.Errorf("no reachable brokers among %s", strings.Join(brokers, ","))
+			}
+			return nil
+		},
+	}
+}
+
+// EventOutboxProbe exposes delivery failures separately from broker
+// connectivity. A brief pending row is normal; dead letters or a queue that has
+// made no progress for two minutes require operator attention.
+func EventOutboxProbe() doctor.Probe {
+	return doctor.Probe{
+		Name:     "events.outbox",
+		Critical: false,
+		Run: func(ctx context.Context) error {
+			db, err := infra.GetDefaultDB()
+			if err != nil {
+				return err
+			}
+			stats, err := events.NewOutboxStore(db).Stats(ctx)
+			if err != nil {
+				return err
+			}
+			if stats.DeadLettered > 0 {
+				return fmt.Errorf("%d event deliveries are dead-lettered", stats.DeadLettered)
+			}
+			if stats.Pending > 0 && stats.OldestPendingAt != nil && time.Since(*stats.OldestPendingAt) > 2*time.Minute {
+				return fmt.Errorf("%d event deliveries are pending; oldest is %s old", stats.Pending, time.Since(*stats.OldestPendingAt).Round(time.Second))
 			}
 			return nil
 		},

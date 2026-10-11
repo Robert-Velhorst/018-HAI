@@ -16,8 +16,8 @@ scaffold — and where the seams are.
 
 | Area | Reality |
 | --- | --- |
-| New utility packages | Real and tested. The task engine now enforces `autonomygate` for execution approval and `actionresolver` for missing execution prerequisites; several other utilities (`rbac`, `upload`, `apierror`) still need broader live-path adoption. |
-| Full-stack boot | A scripted critical-path smoke (`scripts/smoke-critical-path.sh`) boots a real local Postgres + backend and asserts health/readiness + the critical path (**ran 7/7**). The full **Docker Compose** multi-service boot (Redis/Kafka/nginx together) is still **not run here** (Docker unavailable). |
+| Shared safety utilities | Real and tested. The task engine enforces `autonomygate` and `actionresolver`; RBAC and upload/path safety are enforced on live routes. Shared error-envelope and filesystem-helper adoption remains incremental where recorded in `docs/technical-debt.md`. |
+| Full-stack boot | The critical-path smoke and the canonical Docker Compose topology have both run on this Windows host. A separate clean checkout generated fresh secrets, built empty volumes, reached healthy state, signed in, and completed a bounded governed workflow. Each distinct release target still needs the same retained acceptance run. |
 | Real external providers | Intentionally disabled pending OAuth/scope review — assisted, not automated. |
 | Frontend polish | Accessibility, responsive matrix, onboarding wizard not done. |
 
@@ -30,6 +30,6 @@ gaps are **documented as gaps**, not disguised as done.
 
 ## Biggest lever
 
-Wire the tested decision/safety utilities into the execution path and automate a
-full-stack smoke — that converts "tested capability" into "demonstrably working
-product" for the phases currently held at Partial.
+Keep the current full-stack and permission gates green, then close the remaining
+provider-specific and mutable-runtime acceptance boundaries with scoped consent,
+idempotency, postcondition evidence, and retained audit records.

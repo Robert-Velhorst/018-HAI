@@ -104,6 +104,11 @@ func TestWorkflowReminderActivationLedgerIsImmutableOwnerScopedAndLinearInPostgr
 	}
 
 	if err := infra.RollbackMigration(
+		db, files, "pre", "pre/0047_workflow_reminder_activation_decision_order",
+	); err != nil {
+		t.Fatalf("rollback decision-order migration before ledger guard: %v", err)
+	}
+	if err := infra.RollbackMigration(
 		db, files, "pre", "pre/0046_workflow_reminder_activation_ledger",
 	); err == nil || !strings.Contains(err.Error(), "refusing to remove non-empty workflow reminder activation ledgers") {
 		t.Fatalf("non-empty rollback error = %v, want immutable-ledger refusal", err)

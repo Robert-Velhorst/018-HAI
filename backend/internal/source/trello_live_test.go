@@ -11,6 +11,7 @@
 package source
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -125,7 +126,7 @@ func TestLiveTrelloTokenIsReadOnly(t *testing.T) {
 		} `json:"permissions"`
 		DateExpires string `json:"dateExpires"`
 	}
-	if err := trelloGetJSON(base, key, token, "/1/tokens/"+token, nil, &info); err != nil {
+	if err := trelloGetJSON(context.Background(), base, key, token, "/1/tokens/"+token, nil, &info); err != nil {
 		t.Fatalf("inspect token: %v", err)
 	}
 	if len(info.Permissions) == 0 {

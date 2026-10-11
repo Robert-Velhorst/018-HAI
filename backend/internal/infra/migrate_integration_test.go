@@ -182,12 +182,27 @@ func TestRollbackMigrationReversesPostMigration(t *testing.T) {
 	if err := RunMigrations(db); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
-	for _, version := range []string{
-		"post/0004_durable_jobs_queue_lease_index",
+	postMigrations, err := loadMigrations(migrations.Files, "post")
+	if err != nil {
+		t.Fatalf("load post migrations: %v", err)
+	}
+	if len(postMigrations) < 4 {
+		t.Fatalf("loaded %d post migrations, want at least 4", len(postMigrations))
+	}
+
+	// The rollback API must continue to reject a stale caller that attempts to
+	// remove an earlier migration while a newer dependency remains applied.
+	if err := RollbackMigration(
+		db,
+		migrations.Files,
+		"post",
 		"post/0003_durable_jobs_queue_index",
-		"post/0002_durable_jobs_indexes",
-		"post/0001_conversation_owner_identity",
-	} {
+	); err == nil || !strings.Contains(err.Error(), "later migration") {
+		t.Fatalf("out-of-order rollback error = %v, want later-migration refusal", err)
+	}
+
+	for i := len(postMigrations) - 1; i >= 0; i-- {
+		version := postMigrations[i].Version
 		if err := RollbackMigration(db, migrations.Files, "post", version); err != nil {
 			t.Fatalf("RollbackMigration(%s): %v", version, err)
 		}
@@ -208,7 +223,7 @@ func TestRollbackMigrationReversesPostMigration(t *testing.T) {
 	if applied["post/0003_durable_jobs_queue_index"] {
 		t.Fatal("queue-index migration should not remain recorded")
 	}
-	if applied["post/0004_durable_jobs_queue_lease_index"] {
+	if applied["post/0005_durable_jobs_queue_lease_index"] {
 		t.Fatal("queue-lease-index migration should not remain recorded")
 	}
 	// Re-apply cleanly.
@@ -216,8 +231,8 @@ func TestRollbackMigrationReversesPostMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-apply post: %v", err)
 	}
-	if count != 4 {
-		t.Fatalf("re-applied %d post migrations, want 4", count)
+	if count != len(postMigrations) {
+		t.Fatalf("re-applied %d post migrations, want %d", count, len(postMigrations))
 	}
 	if !indexExists(t, db, "idx_ai_conversation_owner_identity") {
 		t.Fatal("index should be restored after re-apply")

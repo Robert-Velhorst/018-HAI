@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -24,6 +25,10 @@ type TaskEngine interface {
 
 type AgentCycleRunner interface {
 	Run(request agentcycle.RunRequest) *agentcycle.RunResult
+}
+
+type AgentCycleContextRunner interface {
+	RunContext(context.Context, agentcycle.RunRequest) (*agentcycle.RunResult, error)
 }
 
 // PursuitCommandRouter is deliberately narrow: the assistant can inspect a
@@ -103,6 +108,19 @@ func NewService(tasks TaskEngine, cycle AgentCycleRunner, pursuitRouters ...Purs
 }
 
 func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
+	return s.CommandContext(context.Background(), request)
+}
+
+// CommandContext binds interactive assistant work to the caller lifecycle.
+// Durable in-process callers retain Command, while HTTP requests can cancel
+// planning and autonomous cycles when the client disconnects or times out.
+func (s *Service) CommandContext(ctx context.Context, request CommandRequest) (*CommandResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := validateStandingMandateID(request.MandateID); err != nil {
 		return nil, err
 	}
@@ -133,7 +151,7 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 	}
 
 	if s.pursuits != nil && shouldTrackCommand(message, request, intent) {
-		pursuitContext, err := s.routePursuit(message, request)
+		pursuitContext, err := s.routePursuit(ctx, message, request)
 		if err != nil {
 			result.record("pursuit intake", err, "could not persist the command in the governed workflow path")
 			return result, err
@@ -169,13 +187,24 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 		// evidence on the workflow ledger and avoids a duplicate direct plan.
 		result.record("pursuit workflow", nil, "created or reused governed workflow work; the workflow worker owns planning, execution, retries, and verification")
 	} else if request.ExecuteAllowed {
-		plan, err = s.tasks.Run(taskRequest)
+		if contextual, ok := s.tasks.(task.ContextService); ok {
+			plan, err = contextual.RunContext(ctx, taskRequest)
+		} else if err = ctx.Err(); err == nil {
+			plan, err = s.tasks.Run(taskRequest)
+		}
 		result.record("task success engine", err, "ran safe allowed task steps")
 	} else {
-		plan, err = s.tasks.Plan(taskRequest)
+		if contextual, ok := s.tasks.(task.PlanningContextService); ok {
+			plan, err = contextual.PlanContext(ctx, taskRequest)
+		} else if err = ctx.Err(); err == nil {
+			plan, err = s.tasks.Plan(taskRequest)
+		}
 		result.record("task planner", err, "created completion-first plan")
 	}
 	if err != nil {
+		return result, err
+	}
+	if err := ctx.Err(); err != nil {
 		return result, err
 	}
 	if plan != nil {
@@ -186,15 +215,24 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 		if s.cycle == nil {
 			result.record("agent cycle", fmt.Errorf("agent cycle service is not configured"), "agent cycle unavailable")
 		} else {
-			cycle := s.cycle.Run(agentcycle.RunRequest{
+			cycleRequest := agentcycle.RunRequest{
 				OwnerIdentity:  request.OwnerIdentity,
 				Trigger:        "assistant." + intent,
 				Limit:          8,
 				SkipSourceSync: request.SkipSourceSync,
 				SkipAmbient:    request.SkipAmbient,
-			})
+			}
+			var cycle *agentcycle.RunResult
+			if contextual, ok := s.cycle.(AgentCycleContextRunner); ok {
+				cycle, err = contextual.RunContext(ctx, cycleRequest)
+			} else if err = ctx.Err(); err == nil {
+				cycle = s.cycle.Run(cycleRequest)
+			}
 			result.AgentCycle = cycle
-			result.record("agent cycle", nil, cycleSummary(cycle))
+			result.record("agent cycle", err, cycleSummary(cycle))
+			if err != nil {
+				return result, err
+			}
 		}
 	}
 
@@ -221,7 +259,10 @@ func validateStandingMandateID(raw string) error {
 	return nil
 }
 
-func (s *Service) routePursuit(message string, request CommandRequest) (*CommandPursuitContext, error) {
+func (s *Service) routePursuit(ctx context.Context, message string, request CommandRequest) (*CommandPursuitContext, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	input := pursuit.IntakeRequest{
 		OwnerIdentity:  request.OwnerIdentity,
 		Input:          message,
@@ -247,6 +288,9 @@ func (s *Service) routePursuit(message string, request CommandRequest) (*Command
 		if err != nil {
 			return nil, err
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if detail == nil {
 			return nil, fmt.Errorf("selected pursuit was not found")
 		}
@@ -260,6 +304,9 @@ func (s *Service) routePursuit(message string, request CommandRequest) (*Command
 		}
 		detail, err = s.pursuits.Intake(id, input)
 		if err != nil {
+			return nil, err
+		}
+		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		return pursuitContextFromDetail(detail, "selected", true), nil
@@ -278,6 +325,9 @@ func (s *Service) routePursuit(message string, request CommandRequest) (*Command
 		if err != nil {
 			return nil, err
 		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return &CommandPursuitContext{
 			Mode:    "suggested",
 			Matches: matches,
@@ -287,6 +337,9 @@ func (s *Service) routePursuit(message string, request CommandRequest) (*Command
 
 	routed, err := s.pursuits.RouteIntake(input)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	candidatePending := routed.CreatedCandidate || strings.EqualFold(strings.TrimSpace(routed.Mode), "matched_candidate")

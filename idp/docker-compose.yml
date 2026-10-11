@@ -1,5 +1,7 @@
-# Compatibility entry point. The local HAI stack is source-built at the repository root.
-# Use `docker compose --env-file .env.local -f docker-compose.local.yml up --build`
-# for the documented command; this file keeps older IDP-local invocations safe.
+# Compatibility entrypoint for operators who run Compose from idp/.
+# The identity provider is part of the one canonical HAI topology.
+name: 018-hai
+
 include:
   - path: ../docker-compose.local.yml
+    env_file: ${HAI_ENV_FILE:-../.env.local}

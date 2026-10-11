@@ -44,6 +44,27 @@ func TestHAIOSRouteRequiresVerifiedOwner(t *testing.T) {
 	}
 }
 
+func TestHAIOSOverviewFailsClosedWhenMetricsAreUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(nil, nil)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/os/overview", handler.Overview)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/os/overview", nil))
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("overview status = %d, want %d; body=%s", recorder.Code, http.StatusServiceUnavailable, recorder.Body.String())
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, "HAI OS metrics are unavailable") || strings.Contains(body, "database is unavailable") {
+		t.Fatalf("overview body should be sanitized, got %s", body)
+	}
+}
+
 func TestLiveProviderConfiguredIgnoresApprovalGatedRuntimeOnlyProvider(t *testing.T) {
 	policy := llm.Policy{
 		LocalModelsAllowed: true,

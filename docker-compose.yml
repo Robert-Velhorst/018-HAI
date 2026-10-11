@@ -1,11 +1,11 @@
-# Canonical Compose entry point.
+# Canonical convenience entrypoint.
 #
-# This keeps `docker compose up --build` on the source-built, local-first HAI
-# stack. The retired stack in this path previously pulled unrelated upstream
-# images and started an unsafe multi-broker topology.
-#
-# Docker Compose `include` requires Compose 2.20 or later. The Windows
-# installer already requires current Docker Desktop; operators on older Compose
-# releases can invoke `-f docker-compose.local.yml` directly.
+# `docker compose up --build` now resolves to the same source-built,
+# loopback-bound stack as docker-compose.local.yml. The Windows initializer
+# creates .env.local; CI can point this wrapper at .env.example by setting
+# HAI_ENV_FILE=.env.example.
+name: 018-hai
+
 include:
   - path: ./docker-compose.local.yml
+    env_file: ${HAI_ENV_FILE:-.env.local}

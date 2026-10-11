@@ -146,6 +146,35 @@ describe('PursuitsComponent action lanes', () => {
     expect(router.navigate).toHaveBeenCalledWith(['/pursuits'], { queryParams: { selected: 'pursuit-2' } });
   });
 
+  it('cancels a pending pursuit detail read before it can restore a stale route', () => {
+    const detail = new Subject<IPursuitDetail>();
+    const pursuitService = (component as any).pursuitsService;
+    const router = (component as any).router;
+    pursuitService.get = jasmine.createSpy('get').and.returnValue(detail);
+    router.navigate = jasmine.createSpy('navigate');
+    const pursuit = { id: 'pursuit-1', title: 'Pending detail' } as any;
+
+    component.selectPursuit(pursuit);
+    component.ngOnDestroy();
+    detail.next({ pursuit } as IPursuitDetail);
+
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(component.selected).toBeUndefined();
+  });
+
+  it('keeps the basic pursuit list compact until the user selects a pursuit', () => {
+    const pursuit = { id: 'pursuit-1', title: 'Inspect only on demand' } as any;
+    const pursuitService = (component as any).pursuitsService;
+    pursuitService.list = jasmine.createSpy('list').and.returnValue(of([pursuit]));
+    spyOn(component, 'selectPursuit');
+
+    component.loadPursuits();
+
+    expect(component.pursuits).toEqual([pursuit]);
+    expect(component.selectPursuit).not.toHaveBeenCalled();
+    expect(component.selected).toBeUndefined();
+  });
+
   it('creates a structured outcome contract from the basic pursuit form', () => {
     const pursuitService = (component as any).pursuitsService;
     const created = { id: 'pursuit-1', title: 'Operational outcome' } as any;

@@ -103,7 +103,7 @@ describe('WorkflowEngineComponent', () => {
     };
   }
 
-  function createComponent(): {
+  function createComponent(queryParams: Record<string, string> = {}): {
     component: WorkflowEngineComponent;
     workflowService: jasmine.SpyObj<any>;
     pursuitService: jasmine.SpyObj<any>;
@@ -139,7 +139,7 @@ describe('WorkflowEngineComponent', () => {
     const pursuitService = jasmine.createSpyObj('pursuitService', ['intake', 'routeIntake', 'match']);
     const notification = jasmine.createSpyObj('notification', ['success', 'info', 'warning', 'error']);
     const modal = jasmine.createSpyObj('modal', ['confirm']);
-    const route = { snapshot: { queryParamMap: convertToParamMap({}) } } as any;
+    const route = { snapshot: { queryParamMap: convertToParamMap(queryParams) } } as any;
     const router = jasmine.createSpyObj('router', ['navigate']);
     const component = new WorkflowEngineComponent(new FormBuilder(), workflowService, pursuitService, notification, modal, route, router);
     spyOn(component, 'refresh');
@@ -162,6 +162,23 @@ describe('WorkflowEngineComponent', () => {
       trigger: 'manual_intake',
     });
     expect(component.intakeForm.invalid).toBeTrue();
+  });
+
+  it('opens a validated deep-linked workflow queue', () => {
+    const { component } = createComponent({ queue: 'approval' });
+
+    component.ngOnInit();
+
+    expect(component.activeQueue).toBe('approval');
+    expect(component.refresh).toHaveBeenCalled();
+  });
+
+  it('ignores an invalid deep-linked workflow queue', () => {
+    const { component } = createComponent({ queue: 'execute_everything' });
+
+    component.ngOnInit();
+
+    expect(component.activeQueue).toBe('all');
   });
 
   it('accepts only current non-executing reminder snapshots with exact unique items', () => {

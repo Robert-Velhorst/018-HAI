@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 
-#!/usr/bin/env bash
-
-# Every smoke suite starts the backend in production mode. This deterministic
-# ephemeral key satisfies the production proof-key guard without granting any
-# authority outside the throwaway smoke database and process.
-: "${HAI_APPROVAL_PROOF_SIGNING_KEY:=smoke-approval-proof-signing-key-0123456789}"
+# The backend intentionally fails closed when controlled-automation approval
+# capabilities cannot be signed. Smoke suites run in production mode, so give
+# every suite a dedicated test-only key without weakening that startup gate.
+: "${HAI_APPROVAL_PROOF_SIGNING_KEY:=ci-smoke-approval-proof-signing-key-v1-0123456789}"
 export HAI_APPROVAL_PROOF_SIGNING_KEY
 
 hai_smoke_mint_jwt() { # role, secret, optional subject

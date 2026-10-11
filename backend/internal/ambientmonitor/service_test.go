@@ -17,12 +17,16 @@ type deterministicCollector struct {
 	value CollectedObservation
 	err   error
 	calls int
+	after func()
 }
 
 func (c *deterministicCollector) Collect(_ context.Context, _ MonitorTarget) (CollectedObservation, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls++
+	if c.after != nil {
+		c.after()
+	}
 	return c.value, c.err
 }
 
@@ -230,12 +234,17 @@ func TestProcessDueCompletesEveryClaimedTarget(t *testing.T) {
 		Scope: scope, WorkerID: "worker-batch", Now: now,
 		LeaseDuration: time.Minute, Limit: 10,
 	})
-	if err != nil || result.Claimed != 2 || len(result.Completions) != 2 || len(result.Failures) != 0 {
+	if err != nil || result.Claimed != 2 || len(result.Completions) != 2 || len(result.Failures) != 0 || result.Compositions.Succeeded != 2 {
 		t.Fatalf("ProcessDue() = (%+v, %v)", result, err)
 	}
 	assertAdvisoryControl(t, result.Authority)
 	if collector.calls != 2 {
 		t.Fatalf("collector calls = %d, want 2", collector.calls)
+	}
+	for _, completion := range result.Completions {
+		if !completion.Run.FinishedAt.After(completion.Run.StartedAt) {
+			t.Fatalf("completion did not advance beyond claim: started=%s finished=%s", completion.Run.StartedAt, completion.Run.FinishedAt)
+		}
 	}
 }
 
@@ -264,6 +273,39 @@ func TestProcessDueRecordsAfterACollectorObservationCreatedMillisecondsLater(t *
 	}
 	if !completion.Run.FinishedAt.Equal(completion.Observation.RecordedAt) {
 		t.Fatalf("run finished_at %s != observation recorded_at %s", completion.Run.FinishedAt, completion.Observation.RecordedAt)
+	}
+}
+
+func TestProcessDueComposesNewDeliveryWhenCollectionAdvancesClock(t *testing.T) {
+	t.Parallel()
+	startedAt := time.Date(2026, time.August, 14, 12, 0, 0, 0, time.UTC)
+	current := startedAt
+	sink := &recordingSink{}
+	collector := &deterministicCollector{value: CollectedObservation{
+		Value: 1, ObservedAt: startedAt.Add(250 * time.Millisecond), SourceDigest: strings.Repeat("9", 64),
+	}}
+	collector.after = func() { current = collector.value.ObservedAt }
+	service := newService(NewMemoryRepository(), collector, sink, func() time.Time { return current })
+	scope := Scope{OwnerID: "owner-clock-advance", WorkspaceID: "workspace-clock-advance"}
+	if _, _, err := service.RegisterTarget(t.Context(), testRegisterRequest(scope, startedAt)); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.ProcessDue(t.Context(), ProcessDueRequest{
+		Scope: scope, WorkerID: "worker-clock-advance", Now: startedAt,
+		LeaseDuration: time.Minute, Limit: 1,
+	})
+	if err != nil {
+		t.Fatalf("ProcessDue() error = %v", err)
+	}
+	if result.Claimed != 1 || len(result.Completions) != 1 || result.Compositions.Succeeded != 1 {
+		t.Fatalf("ProcessDue() = %+v, want collection and composition in one pass", result)
+	}
+	if !result.Completions[0].Composed || result.Completions[0].Composition.Status != CompositionSucceeded {
+		t.Fatalf("completion handoff = %+v, want succeeded", result.Completions[0].Composition)
+	}
+	if collector.calls != 1 || len(sink.signals) != 1 {
+		t.Fatalf("collector calls = %d sink signals = %d, want one of each", collector.calls, len(sink.signals))
 	}
 }
 

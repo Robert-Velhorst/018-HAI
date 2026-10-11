@@ -1,10 +1,13 @@
 package source
 
 import (
+	"automation-hub-backend/internal/models"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestLAROSyncUsesBearerCredentialAndIncrementalCursor(t *testing.T) {
@@ -94,5 +97,45 @@ func TestLAROConfigurationFailsClosed(t *testing.T) {
 	t.Setenv("HAI_LARO_CONNECTOR_TOKEN", "")
 	if _, err := laroConfigFromEnv(); err == nil || !strings.Contains(err.Error(), "missing or invalid") {
 		t.Fatalf("config error = %v, want token rejection", err)
+	}
+}
+
+func TestLAROSyncRecoversRejectedLegacyCursorAndClearsIt(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.URL.Query().Get("cursor") != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"Cursor is invalid"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[],"nextCursor":""}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("HAI_LARO_ENABLED", "true")
+	t.Setenv("HAI_LARO_BASE_URL", server.URL)
+	t.Setenv("HAI_LARO_CONNECTOR_TOKEN", "laro_hai_test-credential")
+
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, OwnerIdentity: "owner@example.test", ConnectorKey: laroConnectorKey,
+		Name: "LARO cases", Category: "legal_case", Enabled: true, Status: "active",
+		SyncFrequency: "15m", Cursor: "2026-08-09T02:22:10Z:0",
+	})
+	result, err := NewService(repo, &fakeSourceMemoryService{}).Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if requests != 2 || result.Job.Status != "completed" || result.Job.CursorAfter != "" {
+		t.Fatalf("requests=%d result=%#v, want one cursor retry and a cleared cursor", requests, result.Job)
+	}
+	stored, err := repo.FindSource(sourceID)
+	if err != nil || stored.Cursor != "" || stored.LastSyncedAt == nil {
+		t.Fatalf("stored source=%#v err=%v, want successful cursor reset", stored, err)
+	}
+	if !repo.hasAudit("source.laro_cursor_reset") {
+		t.Fatal("expected an auditable LARO cursor reset")
 	}
 }

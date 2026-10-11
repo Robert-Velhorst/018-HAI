@@ -10,6 +10,7 @@ import { NzFormModule } from 'ng-zorro-antd/form';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
 import { NzLayoutModule } from 'ng-zorro-antd/layout';
+import { NzPaginationModule } from 'ng-zorro-antd/pagination';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
@@ -36,6 +37,7 @@ const routes: Routes = [{ path: '', component: MemoryComponent }];
     NzIconModule,
     NzInputModule,
     NzLayoutModule,
+    NzPaginationModule,
     NzSelectModule,
     NzTableModule,
     NzTagModule,

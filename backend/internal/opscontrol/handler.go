@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // Handler serves the always-on runtime control API (§30/§31): background status,
@@ -96,41 +97,110 @@ func (h *Handler) Resume(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"emergencyStop": state})
 }
 
-// RequestResumeApproval creates the exact owner review required to clear the
-// current emergency-stop revision. It does not resume anything by itself.
-func (h *Handler) RequestResumeApproval(c *gin.Context) {
-	actor, _ := h.actor(c)
-	approval, err := h.svc.RequestResumeApproval(c.Request.Context(), actor)
+type prepareControlApprovalRequest struct {
+	Action     string `json:"action"`
+	TargetMode string `json:"targetMode,omitempty"`
+}
+
+// PrepareControlApproval creates a short-lived, exact-bound request from
+// current server state. It does not approve or execute anything.
+func (h *Handler) PrepareControlApproval(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthenticated.Error()})
+		return
+	}
+	var req prepareControlApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval request is required"})
+		return
+	}
+	prepared, err := h.svc.PrepareControlApproval(
+		c.Request.Context(),
+		actor,
+		req.Action,
+		req.TargetMode,
+	)
 	if err != nil {
 		c.JSON(controlErrorStatus(err), gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, approval)
+	c.JSON(http.StatusCreated, prepared)
 }
 
-type approveResumeRequest struct {
-	Confirmation string `json:"confirmation"`
-	Note         string `json:"note"`
+type decideControlApprovalRequest struct {
+	Decision string `json:"decision"`
+	Reason   string `json:"reason,omitempty"`
 }
 
-const resumeApprovalConfirmation = "RESUME BACKGROUND PROCESSING"
-
-// ApproveAndResume records the owner's explicit confirmation and consumes the
-// resulting fresh, exact-bound approval in one API action.
-func (h *Handler) ApproveAndResume(c *gin.Context) {
-	var req approveResumeRequest
+// DecideControlApproval appends the owner's decision. An approved response
+// contains references for the separate execution call, never a client-minted
+// approval assertion.
+func (h *Handler) DecideControlApproval(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthenticated.Error()})
+		return
+	}
+	requestID, err := uuid.Parse(c.Param("id"))
+	if err != nil || requestID == uuid.Nil || c.Param("id") != requestID.String() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval request id is invalid"})
+		return
+	}
+	var req decideControlApprovalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "approval confirmation is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval decision is required"})
 		return
 	}
-	if req.Confirmation != resumeApprovalConfirmation {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "exact confirmation is required", "confirmation": resumeApprovalConfirmation})
-		return
-	}
-	actor, _ := h.actor(c)
-	state, err := h.svc.ApproveAndResume(c.Request.Context(), actor, c.Param("id"), req.Note)
+	decision, err := h.svc.DecideControlApproval(
+		c.Request.Context(),
+		actor,
+		requestID,
+		req.Decision,
+		req.Reason,
+	)
 	if err != nil {
-		c.JSON(controlErrorStatus(err), gin.H{"error": err.Error(), "emergencyStop": h.svc.Control().EmergencyState()})
+		c.JSON(controlErrorStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, decision)
+}
+
+// RequestResumeApproval retains the owner-scoped legacy review endpoint while
+// the control-approval API is the current route for new clients.
+func (h *Handler) RequestResumeApproval(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthenticated.Error()})
+		return
+	}
+	prepared, err := h.svc.RequestResumeApproval(c.Request.Context(), actor)
+	if err != nil {
+		c.JSON(controlErrorStatus(err), gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, prepared)
+}
+
+// ApproveAndResume consumes only the exact, previously reviewed stop revision.
+func (h *Handler) ApproveAndResume(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthenticated.Error()})
+		return
+	}
+	var req struct {
+		Note string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "approval note must be valid JSON"})
+		return
+	}
+	state, err := h.svc.ApproveAndResume(
+		c.Request.Context(), actor, c.Param("id"), req.Note,
+	)
+	if err != nil {
+		c.JSON(controlErrorStatus(err), gin.H{"error": err.Error(), "emergencyStop": state})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"emergencyStop": state})
@@ -169,10 +239,19 @@ func controlErrorStatus(err error) int {
 		return http.StatusForbidden
 	case errors.Is(err, ErrAuthorizationUnavailable):
 		return http.StatusServiceUnavailable
+	case errors.Is(err, ErrControlApprovalUnavailable):
+		return http.StatusServiceUnavailable
+	case errors.Is(err, ErrControlApprovalNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, ErrControlPersistence):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, ErrEmergencyStopStateChanged),
-		errors.Is(err, ErrAutonomyModeStateChanged):
+		errors.Is(err, ErrAutonomyModeStateChanged),
+		errors.Is(err, ErrControlApprovalExpired),
+		errors.Is(err, ErrControlApprovalDecided),
+		errors.Is(err, ErrControlApprovalStale),
+		errors.Is(err, ErrControlChangeNotRequired),
+		errors.Is(err, ErrControlApprovalNotRequired):
 		return http.StatusConflict
 	default:
 		return http.StatusBadRequest

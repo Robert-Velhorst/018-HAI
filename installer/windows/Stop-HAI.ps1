@@ -5,7 +5,6 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "Hai-InstallerSupport.ps1")
 
 Assert-HaiDockerReady
-Assert-HaiSingleInstallation
 $environmentFile = Get-HaiEnvironmentFile
 if (-not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
     Write-Host "HAI has not been started from this installation yet."

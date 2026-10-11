@@ -1,17 +1,31 @@
 package events
 
-import "testing"
+import (
+	"errors"
+	"testing"
 
-// When Kafka is disabled/unavailable, DefaultPublisher returns a Publisher with
-// a nil producer; publishing and closing it must be safe no-ops so the rest of
-// the app runs normally without Kafka.
-func TestNoopPublisherDoesNotPanicOrError(t *testing.T) {
-	p := &Publisher{producer: nil, topic: "automation-events"}
-	if err := p.Publish(&AutomationEvent{}); err != nil {
-		t.Fatalf("no-op publish should not error: %v", err)
+	"automation-hub-backend/internal/models"
+	"github.com/google/uuid"
+)
+
+func TestUnconfiguredPublisherFailsClosed(t *testing.T) {
+	p := &Publisher{topic: "automation-events"}
+	err := p.Publish(&AutomationEvent{
+		Type:       CreateEvent,
+		Automation: &models.Automation{ID: uuid.New()},
+	})
+	if err == nil || !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("unconfigured publisher error = %v, want ErrUnavailable", err)
 	}
 	if err := p.Close(); err != nil {
-		t.Fatalf("no-op close should not error: %v", err)
+		t.Fatalf("unconfigured publisher close should not error: %v", err)
+	}
+}
+
+func TestPublisherRejectsMalformedEventEvenWhenKafkaIsDisabled(t *testing.T) {
+	p := &Publisher{topic: "automation-events"}
+	if err := p.Publish(&AutomationEvent{}); err == nil {
+		t.Fatal("malformed event was accepted")
 	}
 }
 

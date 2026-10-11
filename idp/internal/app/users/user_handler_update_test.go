@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"automation-hub-idp/internal/app/models"
 	"automation-hub-idp/internal/app/utils"
@@ -121,3 +122,6 @@ func (s *recordingUserService) UpdatePassword(_ uuid.UUID, password string) erro
 	s.password = password
 	return nil
 }
+func (s *recordingUserService) StorePasswordReset(uuid.UUID, string, time.Time) error { return nil }
+func (s *recordingUserService) ClearPasswordResetIfToken(uuid.UUID, string) error     { return nil }
+func (s *recordingUserService) CompletePasswordReset(string, string) error            { return nil }

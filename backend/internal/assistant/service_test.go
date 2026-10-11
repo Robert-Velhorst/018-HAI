@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -514,5 +515,88 @@ func TestCommandPassesAuthenticatedOwnerIntoAgentCycle(t *testing.T) {
 	}
 	if tasks.lastRequest.OwnerIdentity != "alice" {
 		t.Fatalf("task owner = %q, want alice", tasks.lastRequest.OwnerIdentity)
+	}
+}
+
+type assistantContextKey string
+
+type contextAwareTaskEngine struct {
+	fakeTaskEngine
+	planContext context.Context
+	runContext  context.Context
+}
+
+func (f *contextAwareTaskEngine) PlanContext(ctx context.Context, request task.IntakeRequest) (*task.CompletionPlan, error) {
+	f.planContext = ctx
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.fakeTaskEngine.Plan(request)
+}
+
+func (f *contextAwareTaskEngine) RunContext(ctx context.Context, request task.IntakeRequest) (*task.CompletionPlan, error) {
+	f.runContext = ctx
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.fakeTaskEngine.Run(request)
+}
+
+type contextAwareAgentCycleRunner struct {
+	fakeAgentCycleRunner
+	runContext context.Context
+}
+
+func (f *contextAwareAgentCycleRunner) RunContext(ctx context.Context, request agentcycle.RunRequest) (*agentcycle.RunResult, error) {
+	f.runContext = ctx
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return f.fakeAgentCycleRunner.Run(request), nil
+}
+
+func TestCommandContextPropagatesCallerIntoPlanningAndAgentCycle(t *testing.T) {
+	tasks := &contextAwareTaskEngine{}
+	cycle := &contextAwareAgentCycleRunner{}
+	service := NewService(tasks, cycle)
+	ctx := context.WithValue(context.Background(), assistantContextKey("request"), "interactive")
+
+	result, err := service.CommandContext(ctx, CommandRequest{
+		Message:  "Refresh my operating brief.",
+		RunCycle: true,
+	})
+	if err != nil {
+		t.Fatalf("CommandContext: %v", err)
+	}
+	if result == nil || result.AgentCycle == nil || result.Plan == nil {
+		t.Fatalf("contextual command result = %#v", result)
+	}
+	if tasks.planContext != ctx {
+		t.Fatalf("task context = %#v, want caller context", tasks.planContext)
+	}
+	if cycle.runContext != ctx {
+		t.Fatalf("cycle context = %#v, want caller context", cycle.runContext)
+	}
+}
+
+func TestCommandContextRejectsCanceledCallerBeforeStartingWork(t *testing.T) {
+	tasks := &contextAwareTaskEngine{}
+	cycle := &contextAwareAgentCycleRunner{}
+	service := NewService(tasks, cycle)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, err := service.CommandContext(ctx, CommandRequest{
+		Message:  "Refresh my operating brief.",
+		RunCycle: true,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("CommandContext error = %v, want context canceled", err)
+	}
+	if result != nil {
+		t.Fatalf("canceled command returned result: %#v", result)
+	}
+	if tasks.planCalls != 0 || tasks.runCalls != 0 || cycle.calls != 0 {
+		t.Fatalf("canceled command started work: plan=%d run=%d cycle=%d", tasks.planCalls, tasks.runCalls, cycle.calls)
 	}
 }

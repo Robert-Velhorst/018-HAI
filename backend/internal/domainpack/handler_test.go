@@ -1,6 +1,7 @@
 package domainpack
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,50 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func TestCatalogSummaryExcludesFullPackRulesAndMethods(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := mustDomainPackHandler(t)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/catalog", handler.Catalog)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/catalog?view=summary", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("summary status = %d: %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Packs []PackSummaryView `json:"packs"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	hasMethods := false
+	for _, pack := range payload.Packs {
+		if pack.Pack.MethodCount > 0 {
+			hasMethods = true
+			break
+		}
+	}
+	if len(payload.Packs) == 0 || !hasMethods {
+		t.Fatalf("summary did not preserve pack method count: %#v", payload.Packs)
+	}
+	for _, forbidden := range []string{"classificationSignals", "approvalRules", "methods", "preference"} {
+		if strings.Contains(response.Body.String(), `"`+forbidden+`"`) {
+			t.Fatalf("summary exposed full pack field %q", forbidden)
+		}
+	}
+
+	invalid := httptest.NewRecorder()
+	router.ServeHTTP(invalid, httptest.NewRequest(http.MethodGet, "/catalog?view=unknown", nil))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid view status = %d, want 400", invalid.Code)
+	}
+}
 
 func TestHandlerRequiresOwnerAndRejectsClientIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)

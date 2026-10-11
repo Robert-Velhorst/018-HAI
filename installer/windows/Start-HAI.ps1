@@ -4,7 +4,6 @@ param(
     [int]$GatewayPort = 8088,
     [ValidateRange(30, 900)]
     [int]$HealthTimeoutSeconds = 600,
-    [switch]$EnableEventBus,
     [switch]$NoBrowser
 )
 
@@ -14,40 +13,12 @@ $ErrorActionPreference = "Stop"
 Assert-HaiDockerReady
 Assert-HaiSingleInstallation
 Initialize-HaiLocalEnvironment -GatewayPort $GatewayPort
-Assert-HaiLocalEnvironment
-$eventBusWasEnabled = Get-HaiEventBusEnabled
-if ($EnableEventBus) {
-    Set-HaiEventBusEnabled
-} else {
-    Set-HaiEventBusDisabled
-}
 
 $composeArguments = Get-HaiComposeArguments
-$profileArguments = @()
-if ($EnableEventBus) {
-    $profileArguments = @("--profile", "event-bus")
-} else {
-    # A prior event-bus start leaves the optional containers present. Stop them
-    # explicitly so normal startup returns the machine to the low-resource mode.
-    & docker @composeArguments --profile event-bus stop zookeeper kafka nginxconfigmanager
-    if ($LASTEXITCODE -ne 0) {
-        throw "HAI could not stop the optional Kafka event-bus services. Open Docker Desktop and inspect the 018-hai Kafka containers."
-    }
-}
 Write-Host "Starting the local HAI stack. The first run downloads and builds its containers." -ForegroundColor Cyan
-try {
-    & docker @composeArguments @profileArguments up -d --build
-    if ($LASTEXITCODE -ne 0) {
-        throw "HAI startup failed. Open Docker Desktop and inspect the 018-hai container logs."
-    }
-} catch {
-    $startupFailure = $_
-    try {
-        Set-HaiEventBusState -Enabled $eventBusWasEnabled
-    } catch {
-        throw "$($startupFailure.Exception.Message) HAI could not restore the previous optional event-bus setting: $($_.Exception.Message)"
-    }
-    throw $startupFailure
+& docker @composeArguments up -d --build
+if ($LASTEXITCODE -ne 0) {
+    throw "HAI startup failed. Open Docker Desktop and inspect the 018-hai container logs."
 }
 
 Wait-HaiReady -TimeoutSeconds $HealthTimeoutSeconds

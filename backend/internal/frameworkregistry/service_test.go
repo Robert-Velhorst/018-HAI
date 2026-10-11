@@ -10,6 +10,38 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestFrameworkViewsUseStableEmptyCollections(t *testing.T) {
+	service, err := NewService(nil)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	views, err := service.List("alice")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(views) == 0 {
+		t.Fatal("expected built-in framework views")
+	}
+	for _, view := range views {
+		if view.ConflictsWith == nil {
+			t.Fatalf("framework %q has a nil conflicts collection", view.ID)
+		}
+		if view.Adaptations == nil {
+			t.Fatalf("framework %q has a nil adaptations collection", view.ID)
+		}
+	}
+
+	encoded, err := json.Marshal(views)
+	if err != nil {
+		t.Fatalf("marshal framework views: %v", err)
+	}
+	for _, invalid := range []string{`"conflictsWith":null`, `"adaptations":null`} {
+		if strings.Contains(string(encoded), invalid) {
+			t.Fatalf("framework API contract contains %s", invalid)
+		}
+	}
+}
+
 func TestPreferencesAreOwnerScopedAndCanOnlyLowerAuthority(t *testing.T) {
 	service, err := NewService(nil)
 	if err != nil {

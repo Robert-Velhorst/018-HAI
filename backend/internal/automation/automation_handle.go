@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const (
@@ -33,6 +34,8 @@ func maxAutomationCreateBodyBytes() int64 {
 type Handler struct {
 	service Service
 }
+
+const automationMultipartOverhead int64 = 1 << 20
 
 func NewHandler(service Service) *Handler {
 	return &Handler{
@@ -106,19 +109,19 @@ func (h *Handler) ImageHandler(c *gin.Context) {
 // @Router /automations [post]
 func (h *Handler) Create(c *gin.Context) {
 	var automation models.Automation
-	maxBodyBytes := maxAutomationCreateBodyBytes()
+	maxBodyBytes := config.AppConfig.ImageMaxSize + automationMultipartOverhead
 	if c.Request.ContentLength > maxBodyBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "automation create body exceeds the configured image and metadata limit"})
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "automation upload exceeds the allowed size"})
 		return
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodyBytes)
-	if err := c.Request.ParseMultipartForm(maxBodyBytes); err != nil {
-		var maxBytesError *http.MaxBytesError
-		if errors.As(err, &maxBytesError) {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "automation create body exceeds the configured image and metadata limit"})
+	if err := c.Request.ParseMultipartForm(automationMultipartOverhead); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "automation upload exceeds the allowed size"})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid automation form data"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid automation form"})
 		return
 	}
 
@@ -197,6 +200,10 @@ func (h *Handler) GetByID(c *gin.Context) {
 
 	automation, err := h.service.FindByID(id)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Automation not found"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

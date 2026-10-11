@@ -34,6 +34,88 @@ func TestCreateDeduplicatesExactMemory(t *testing.T) {
 	}
 }
 
+func TestCreateExactDuplicateAvoidsRedundantWriteAndSemanticReindex(t *testing.T) {
+	repo := newFakeRepository()
+	semanticSpy := &semanticMemoryStub{}
+	service := NewServiceWithSemantic(repo, semanticSpy)
+	request := CreateRequest{
+		ProjectKey:  "018-hai",
+		Kind:        "procedural",
+		Content:     "Inspect approval gates before retrying blocked workflows.",
+		Summary:     "Inspect approval gates before workflow retries.",
+		Tags:        []string{"agent-cycle", "workflow-retry"},
+		Confidence:  0.74,
+		SourceURI:   "agent-cycle://command-center",
+		SourceLabel: "Owner-scoped agent cycle operational learning",
+	}
+
+	first, err := service.Create(request)
+	if err != nil {
+		t.Fatalf("Create first memory: %v", err)
+	}
+	if repo.updateCalls != 0 || len(semanticSpy.indexedMemoryIDs) != 1 {
+		t.Fatalf("first create writes/indexes = %d/%d, want 0/1", repo.updateCalls, len(semanticSpy.indexedMemoryIDs))
+	}
+
+	second, err := service.Create(request)
+	if err != nil {
+		t.Fatalf("Create exact duplicate: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("exact duplicate created a new memory: first=%s second=%s", first.ID, second.ID)
+	}
+	if repo.updateCalls != 0 {
+		t.Fatalf("exact duplicate caused %d database update(s), want 0", repo.updateCalls)
+	}
+	if len(semanticSpy.indexedMemoryIDs) != 1 {
+		t.Fatalf("exact duplicate caused %d semantic index writes, want only the initial write", len(semanticSpy.indexedMemoryIDs))
+	}
+}
+
+func TestCreatePreservesDistinctSourceProvenanceAndReplacesSameSourceRevision(t *testing.T) {
+	repo := newFakeRepository()
+	service := NewService(repo)
+
+	first, err := service.Create(CreateRequest{
+		Kind:      "project",
+		Content:   "The project deadline is Friday and Robert must review the filing.",
+		SourceURI: "mail://message-1",
+	})
+	if err != nil {
+		t.Fatalf("Create first source memory: %v", err)
+	}
+	second, err := service.Create(CreateRequest{
+		Kind:      "project",
+		Content:   "The project deadline is Friday and Robert must review the filing.",
+		SourceURI: "document://letter-2",
+	})
+	if err != nil {
+		t.Fatalf("Create second source memory: %v", err)
+	}
+	if first.ID == second.ID || len(repo.memories) != 2 {
+		t.Fatalf("distinct source records were merged: first=%s second=%s records=%d", first.ID, second.ID, len(repo.memories))
+	}
+
+	revised, err := service.Create(CreateRequest{
+		Kind:      "project",
+		Content:   "The project deadline is Monday and Robert must review the corrected filing.",
+		Summary:   "Corrected filing deadline is Monday.",
+		SourceURI: "mail://message-1",
+	})
+	if err != nil {
+		t.Fatalf("Create same-source revision: %v", err)
+	}
+	if revised.ID != first.ID || len(repo.memories) != 2 {
+		t.Fatalf("same-source revision did not update in place: first=%s revised=%s records=%d", first.ID, revised.ID, len(repo.memories))
+	}
+	if revised.Content != "The project deadline is Monday and Robert must review the corrected filing." {
+		t.Fatalf("same-source revision appended stale content: %q", revised.Content)
+	}
+	if revised.Summary != "Corrected filing deadline is Monday." {
+		t.Fatalf("same-source revision summary = %q", revised.Summary)
+	}
+}
+
 func TestRetrieveRanksRelevantProjectMemory(t *testing.T) {
 	repo := newFakeRepository()
 	service := NewService(repo)
@@ -52,6 +134,38 @@ func TestRetrieveRanksRelevantProjectMemory(t *testing.T) {
 	}
 	if result.UsedContext[0].Memory.LastUsedAt == nil {
 		t.Fatalf("expected LastUsedAt to be updated")
+	}
+}
+
+func TestRetrieveThrottlesLastUsedWriteAmplification(t *testing.T) {
+	repo := newFakeRepository()
+	service := NewService(repo)
+	_, err := service.Create(CreateRequest{
+		ProjectKey: "018-hai",
+		Kind:       "project",
+		Content:    "The Angular dashboard uses the Go backend.",
+		Confidence: 0.9,
+	})
+	if err != nil {
+		t.Fatalf("Create memory: %v", err)
+	}
+
+	request := RetrieveRequest{ProjectKey: "018-hai", Query: "Angular Go backend dashboard", Limit: 3}
+	first, err := service.Retrieve(request)
+	if err != nil || len(first.UsedContext) != 1 || first.UsedContext[0].Memory.LastUsedAt == nil {
+		t.Fatalf("first retrieve = %#v, err=%v", first, err)
+	}
+	updatesAfterFirstUse := repo.updateCalls
+	if updatesAfterFirstUse != 1 {
+		t.Fatalf("first retrieve caused %d updates, want 1", updatesAfterFirstUse)
+	}
+
+	second, err := service.Retrieve(request)
+	if err != nil || len(second.UsedContext) != 1 {
+		t.Fatalf("second retrieve = %#v, err=%v", second, err)
+	}
+	if repo.updateCalls != updatesAfterFirstUse {
+		t.Fatalf("repeat retrieve caused %d additional last-used updates", repo.updateCalls-updatesAfterFirstUse)
 	}
 }
 
@@ -214,6 +328,8 @@ type semanticMemoryStub struct {
 	requests         []semantic.MemorySearchRequest
 	indexedMemoryIDs []uuid.UUID
 	searchErr        error
+	searchMemory     func(context.Context, semantic.MemorySearchRequest) ([]semantic.MemoryMatch, error)
+	indexMemory      func(context.Context, *models.ContextMemory) error
 }
 
 var _ semantic.Service = (*semanticMemoryStub)(nil)
@@ -224,22 +340,83 @@ func (s *semanticMemoryStub) Index(context.Context, *models.SourceExtraction) er
 func (s *semanticMemoryStub) Search(context.Context, semantic.SearchRequest) ([]semantic.Match, error) {
 	return nil, nil
 }
-func (s *semanticMemoryStub) IndexMemory(_ context.Context, memory *models.ContextMemory) error {
+func (s *semanticMemoryStub) IndexMemory(ctx context.Context, memory *models.ContextMemory) error {
+	if s.indexMemory != nil {
+		return s.indexMemory(ctx, memory)
+	}
 	if memory != nil {
 		s.indexedMemoryIDs = append(s.indexedMemoryIDs, memory.ID)
 	}
 	return nil
 }
 func (s *semanticMemoryStub) DeleteMemory(context.Context, uuid.UUID) error { return nil }
-func (s *semanticMemoryStub) SearchMemory(_ context.Context, request semantic.MemorySearchRequest) ([]semantic.MemoryMatch, error) {
+func (s *semanticMemoryStub) SearchMemory(ctx context.Context, request semantic.MemorySearchRequest) ([]semantic.MemoryMatch, error) {
 	s.requests = append(s.requests, request)
+	if s.searchMemory != nil {
+		return s.searchMemory(ctx, request)
+	}
 	if s.searchErr != nil {
 		return nil, s.searchErr
 	}
 	return s.matches, nil
 }
 
+func TestRetrieveContextCancelsSemanticMemorySearch(t *testing.T) {
+	repo := newFakeRepository()
+	started := make(chan struct{})
+	semanticSpy := &semanticMemoryStub{searchMemory: func(ctx context.Context, _ semantic.MemorySearchRequest) ([]semantic.MemoryMatch, error) {
+		close(started)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}}
+	service := NewServiceWithSemantic(repo, semanticSpy)
+	_, err := service.Create(CreateRequest{ProjectKey: "018-hai", Kind: "project", Content: "Cancelable local memory search."})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := RetrieveForOwnerContext(service, ctx, "alice", RetrieveRequest{Query: "local memory", ProjectKey: "018-hai"})
+		done <- err
+	}()
+	<-started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("RetrieveForOwnerContext error = %v, want context.Canceled", err)
+	}
+}
+
+func TestReindexContextStopsBetweenSemanticWrites(t *testing.T) {
+	repo := newFakeRepository()
+	semanticSpy := &semanticMemoryStub{}
+	service := NewServiceWithSemantic(repo, semanticSpy)
+	scoped := service.(OwnerScopedService)
+	_, _ = scoped.CreateForOwner("alice", CreateRequest{Kind: "project", Content: "First memory"})
+	_, _ = scoped.CreateForOwner("alice", CreateRequest{Kind: "project", Content: "Second memory"})
+	started := make(chan struct{})
+	semanticSpy.indexMemory = func(ctx context.Context, _ *models.ContextMemory) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.(SemanticReindexContextService).ReindexSemanticForOwnerContext(ctx, "alice", 10)
+		done <- err
+	}()
+	<-started
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("ReindexSemanticForOwnerContext error = %v, want context.Canceled", err)
+	}
+}
+
 func TestOwnerScopedMemoryQuarantinesOwnerlessRecords(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "migration-owner")
 	repo := newFakeRepository()
 	service := NewService(repo)
 	scoped := service.(OwnerScopedService)
@@ -298,8 +475,45 @@ func TestOwnerScopedMemoryQuarantinesOwnerlessRecords(t *testing.T) {
 	}
 }
 
+func TestConfiguredLegacyOwnerCanReadButNotMutateOwnerlessMemory(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "alice")
+	repo := newFakeRepository()
+	service := NewService(repo)
+	scoped := service.(OwnerScopedService)
+
+	legacy, err := service.Create(CreateRequest{ProjectKey: "legal-case", Kind: "preference", Content: "Legacy owner preference."})
+	if err != nil {
+		t.Fatalf("create ownerless memory: %v", err)
+	}
+	owned, err := scoped.CreateForOwner("alice", CreateRequest{ProjectKey: "legal-case", Kind: "preference", Content: "Alice preference."})
+	if err != nil {
+		t.Fatalf("create owned memory: %v", err)
+	}
+
+	memories, err := scoped.FindAllForOwner("alice", "legal-case", false)
+	if err != nil || len(memories) != 2 {
+		t.Fatalf("migration-owner list = %#v, err=%v", memories, err)
+	}
+	if found, err := scoped.FindByIDForOwner("alice", legacy.ID); err != nil || found.ID != legacy.ID {
+		t.Fatalf("migration owner could not read legacy memory: found=%#v err=%v", found, err)
+	}
+	if _, err := scoped.UpdateForOwner("alice", legacy.ID, UpdateRequest{Summary: "claimed"}); err == nil {
+		t.Fatal("migration owner mutated ownerless memory")
+	}
+	if err := scoped.DeleteForOwner("alice", legacy.ID); err == nil {
+		t.Fatal("migration owner deleted ownerless memory")
+	}
+	if _, err := scoped.FindByIDForOwner("bob", legacy.ID); err == nil {
+		t.Fatal("non-migration owner read ownerless memory")
+	}
+	if found, err := scoped.FindByIDForOwner("alice", owned.ID); err != nil || found.ID != owned.ID {
+		t.Fatalf("owned memory became unreadable: found=%#v err=%v", found, err)
+	}
+}
+
 type fakeRepository struct {
-	memories map[uuid.UUID]models.ContextMemory
+	memories    map[uuid.UUID]models.ContextMemory
+	updateCalls int
 }
 
 func newFakeRepository() *fakeRepository {
@@ -318,6 +532,7 @@ func (r *fakeRepository) Create(memory *models.ContextMemory) (*models.ContextMe
 }
 
 func (r *fakeRepository) Update(memory *models.ContextMemory) (*models.ContextMemory, error) {
+	r.updateCalls++
 	memory.UpdatedAt = time.Now().UTC()
 	r.memories[memory.ID] = *memory
 	return memory, nil

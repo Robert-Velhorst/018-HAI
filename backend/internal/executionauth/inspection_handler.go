@@ -76,12 +76,31 @@ func (h *InspectionHandler) List(c *gin.Context) {
 	if !ok {
 		return
 	}
+	view, ok := inspectionListView(c)
+	if !ok {
+		return
+	}
 	receipts, err := h.reader.List(c.Request.Context(), owner, limit)
 	if err != nil {
 		writeInspectionError(c, http.StatusServiceUnavailable, "inspection_unavailable",
 			"execution authorization inspection is unavailable")
 		return
 	}
+	if view == "summary" {
+		views := make([]inspectionReceiptSummary, 0, len(receipts))
+		for _, receipt := range receipts {
+			if len(views) >= limit {
+				break
+			}
+			if strings.TrimSpace(receipt.OwnerIdentity) != owner {
+				continue
+			}
+			views = append(views, publicReceiptSummary(receipt))
+		}
+		c.JSON(http.StatusOK, gin.H{"receipts": views, "count": len(views), "limit": limit})
+		return
+	}
+
 	views := make([]inspectionReceipt, 0, len(receipts))
 	for _, receipt := range receipts {
 		if len(views) >= limit {
@@ -94,11 +113,7 @@ func (h *InspectionHandler) List(c *gin.Context) {
 		}
 		views = append(views, publicReceipt(receipt))
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"receipts": views,
-		"count":    len(views),
-		"limit":    limit,
-	})
+	c.JSON(http.StatusOK, gin.H{"receipts": views, "count": len(views), "limit": limit})
 }
 
 func (h *InspectionHandler) Get(c *gin.Context) {
@@ -208,6 +223,19 @@ func inspectionLimit(c *gin.Context) (int, bool) {
 	return value, true
 }
 
+func inspectionListView(c *gin.Context) (string, bool) {
+	view := strings.ToLower(strings.TrimSpace(c.Query("view")))
+	if view == "" || view == "full" {
+		return "full", true
+	}
+	if view == "summary" {
+		return view, true
+	}
+	writeInspectionError(c, http.StatusBadRequest, "invalid_view",
+		"view must be full or summary")
+	return "", false
+}
+
 type inspectionErrorEnvelope struct {
 	Error inspectionError `json:"error"`
 }
@@ -249,6 +277,20 @@ type inspectionReceipt struct {
 	Evidence                   inspectionEvidence             `json:"evidence"`
 	LifeGraphProjection        *inspectionLifeGraphProjection `json:"lifeGraphProjection,omitempty"`
 	LifeGraphProjectionWarning string                         `json:"lifeGraphProjectionWarning,omitempty"`
+}
+
+type inspectionReceiptSummary struct {
+	ID              uuid.UUID `json:"id"`
+	ContractVersion int       `json:"contractVersion"`
+	Action          string    `json:"action"`
+	Stage           Stage     `json:"stage"`
+	ResourceType    string    `json:"resourceType"`
+	ResourceID      string    `json:"resourceId,omitempty"`
+	Domain          string    `json:"domain,omitempty"`
+	Outcome         Outcome   `json:"outcome"`
+	Reason          string    `json:"reason"`
+	Risk            RiskLevel `json:"risk"`
+	EvaluatedAt     time.Time `json:"evaluatedAt"`
 }
 
 type inspectionLifeGraphProjection struct {
@@ -374,6 +416,22 @@ func publicReceipt(receipt Receipt) inspectionReceipt {
 		Evidence:                   publicEvidence(receipt.Evidence),
 		LifeGraphProjection:        publicLifeGraphProjection(receipt),
 		LifeGraphProjectionWarning: inspectionPublicText(receipt.LifeGraphProjectionWarning),
+	}
+}
+
+func publicReceiptSummary(receipt Receipt) inspectionReceiptSummary {
+	return inspectionReceiptSummary{
+		ID:              receipt.ID,
+		ContractVersion: receipt.ContractVersion,
+		Action:          inspectionPublicText(receipt.Action),
+		Stage:           receipt.Stage,
+		ResourceType:    inspectionPublicText(receipt.ResourceType),
+		ResourceID:      inspectionPublicText(receipt.ResourceID),
+		Domain:          inspectionPublicText(receipt.Domain),
+		Outcome:         receipt.Outcome,
+		Reason:          inspectionPublicText(receipt.Reason),
+		Risk:            receipt.Risk,
+		EvaluatedAt:     receipt.EvaluatedAt,
 	}
 }
 

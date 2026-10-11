@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -155,6 +156,31 @@ func TestQueryNormalizesBounds(t *testing.T) {
 	zero := Query(sampleMemories(), QueryParams{PageSize: 0, Page: 0})
 	if zero.PageSize != defaultPageSize || zero.Page != 1 {
 		t.Fatalf("defaults = size %d page %d, want %d/1", zero.PageSize, zero.Page, defaultPageSize)
+	}
+}
+
+func TestQueryBoundsTextAndTokenWork(t *testing.T) {
+	search := strings.Repeat("token ", 200) + "unreachable-tail"
+	result := Query(sampleMemories(), QueryParams{
+		Search: search,
+		Kind:   strings.Repeat("k", maxKindLength+20),
+		Tag:    strings.Repeat("t", maxTagLength+20),
+	})
+	if len([]rune(result.Search)) > maxSearchLength || len([]rune(result.Kind)) > maxKindLength || len([]rune(result.Tag)) > maxTagLength {
+		t.Fatalf("normalized query exceeded bounds: search=%d kind=%d tag=%d", len([]rune(result.Search)), len([]rune(result.Kind)), len([]rune(result.Tag)))
+	}
+	if len(searchTokensOf(strings.Join([]string{
+		"one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+		"ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen",
+	}, " "))) != maxSearchTokens {
+		t.Fatal("search token work was not bounded")
+	}
+}
+
+func TestQueryHandlesPlatformMaximumPageWithoutOverflow(t *testing.T) {
+	result := Query(sampleMemories(), QueryParams{Page: int(^uint(0) >> 1), PageSize: maxPageSize})
+	if len(result.Items) != 0 || result.Page != int(^uint(0)>>1) {
+		t.Fatalf("maximum page result = %#v", result)
 	}
 }
 

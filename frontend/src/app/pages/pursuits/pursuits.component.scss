@@ -1200,3 +1200,112 @@ button.next-action:focus-visible {
   }
 
 }
+
+/* Pursuits uses the same calm, progressive-disclosure pattern as the command center. */
+.pursuit-health,
+.route-intake-panel,
+.dashboard-decision-band,
+.pursuits-empty {
+  background: var(--hai-surface);
+  border: 1px solid var(--hai-border);
+  border-radius: 8px;
+}
+
+.pursuit-health,
+.route-intake-panel {
+  overflow: hidden;
+}
+
+.pursuit-health summary,
+.route-intake-panel summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  list-style: none;
+  min-height: 56px;
+  padding: 15px 18px;
+}
+
+.pursuit-health summary::-webkit-details-marker,
+.route-intake-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.pursuit-health summary span,
+.route-intake-panel summary span {
+  color: var(--hai-text);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.pursuit-health summary small,
+.route-intake-panel summary small {
+  color: var(--hai-muted);
+  font-size: 12px;
+}
+
+.pursuit-health[open] summary,
+.route-intake-panel[open] summary {
+  border-bottom: 1px solid var(--hai-border);
+}
+
+.pursuits-empty {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  min-height: 132px;
+  padding: 22px;
+}
+
+.pursuits-empty__icon {
+  align-items: center;
+  background: var(--hai-blue-soft);
+  border-radius: 8px;
+  color: var(--hai-blue);
+  display: flex;
+  font-size: 22px;
+  height: 46px;
+  justify-content: center;
+  width: 46px;
+}
+
+.pursuits-empty h2,
+.pursuits-empty p {
+  margin: 0;
+}
+
+.pursuits-empty h2 {
+  color: var(--hai-text);
+  font-size: 18px;
+}
+
+.page-header h1 {
+  color: var(--hai-text);
+}
+
+.pursuits-empty p {
+  color: var(--hai-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 5px;
+  max-width: 680px;
+}
+
+@media (max-width: 700px) {
+  .pursuits-empty {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .pursuits-empty button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .pursuit-health summary small,
+  .route-intake-panel summary small {
+    display: none;
+  }
+}

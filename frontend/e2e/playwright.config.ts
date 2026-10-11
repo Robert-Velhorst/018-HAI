@@ -1,7 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Base URL of a running HAI stack (docker compose up). Override with E2E_BASE_URL.
-const baseURL = process.env.E2E_BASE_URL || 'http://localhost';
+// The acceptance suite mutates a running HAI stack temporarily. It must never
+// silently target a default environment; the operator supplies the exact URL.
+const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:0';
 
 export default defineConfig({
   testDir: './tests',

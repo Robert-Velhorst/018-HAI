@@ -9,6 +9,7 @@ import {
   ISourceAuditLog,
   ISourceConnector,
   ISourceConnectionHealth,
+  ISourceOverview,
   ISourceExtraction,
 	ISourceHistoryPage,
   ISourceSearchRequest,
@@ -41,14 +42,13 @@ export class ConnectedSourceService implements IConnectedSourceService {
     return this.http.get<ISourceConnectionHealth>(`${this.apiUrl}/${sourceId}/health`);
   }
 
-  connectionHealthSummary(): Observable<ISourceConnectionHealth[]> {
-    return this.http.get<ISourceConnectionHealth[]>(`${this.apiUrl}/health`);
-  }
-
-  syncJobs(sourceId?: string): Observable<ISourceSyncJob[]> {
+  syncJobs(sourceId?: string, limit?: number): Observable<ISourceSyncJob[]> {
     let params = new HttpParams();
     if (sourceId) {
       params = params.set('sourceId', sourceId);
+    }
+    if (limit) {
+      params = params.set('limit', limit);
     }
     return this.http.get<ISourceSyncJob[]>(`${this.apiUrl}/sync-jobs`, { params });
   }
@@ -123,12 +123,14 @@ export class ConnectedSourceService implements IConnectedSourceService {
     });
   }
 
-  extractions(projectKey: string, includeArchived: boolean): Observable<ISourceExtraction[]> {
-    return this.http.get<ISourceExtraction[]>(`${this.apiUrl}/extractions`, {
-      params: new HttpParams()
-        .set('projectKey', projectKey || '')
-        .set('includeArchived', includeArchived),
-    });
+  extractions(projectKey: string, includeArchived: boolean, limit?: number): Observable<ISourceExtraction[]> {
+    let params = new HttpParams()
+      .set('projectKey', projectKey || '')
+      .set('includeArchived', includeArchived);
+    if (limit) {
+      params = params.set('limit', limit);
+    }
+    return this.http.get<ISourceExtraction[]>(`${this.apiUrl}/extractions`, { params });
   }
 
   pageExtractions(
@@ -158,19 +160,22 @@ export class ConnectedSourceService implements IConnectedSourceService {
     return this.http.delete<void>(`${this.apiUrl}/extractions/${id}`);
   }
 
-  auditLogs(sourceId?: string): Observable<ISourceAuditLog[]> {
+  auditLogs(sourceId?: string, limit?: number): Observable<ISourceAuditLog[]> {
     let params = new HttpParams();
     if (sourceId) {
       params = params.set('sourceId', sourceId);
     }
+    if (limit) {
+      params = params.set('limit', limit);
+    }
     return this.http.get<ISourceAuditLog[]>(`${this.apiUrl}/audit-logs`, { params });
   }
 
-  pageAuditLogs(limit: number, offset: number, sourceId?: string): Observable<ISourceHistoryPage<ISourceAuditLog>> {
-    let params = new HttpParams().set('limit', limit).set('offset', offset);
-    if (sourceId) {
-      params = params.set('sourceId', sourceId);
-    }
-    return this.http.get<ISourceHistoryPage<ISourceAuditLog>>(`${this.apiUrl}/audit-logs`, { params });
+  overview(projectKey: string, includeArchived: boolean): Observable<ISourceOverview> {
+    return this.http.get<ISourceOverview>(`${this.apiUrl}/overview`, {
+      params: new HttpParams()
+        .set('projectKey', projectKey || '')
+        .set('includeArchived', includeArchived),
+    });
   }
 }

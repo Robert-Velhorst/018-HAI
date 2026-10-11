@@ -146,20 +146,44 @@ start_backend; wait_live
 check "emergency stop still engaged after restart" 'true' \
   "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.emergencyStop.engaged==true')"
 
-echo "==> Resume remains approval-gated"
-check "resume without exact approval is refused" '403' \
+echo "==> Resume requires and consumes one exact owner approval"
+check "empty resume authorization is rejected" '403' \
   "$(curl -sS -o /dev/null -w '%{http_code}' "${hdr[@]}" -X POST "${BASE}/background/resume" -d '{}')"
-check "processing remains inactive without approval" 'true' \
-  "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.backgroundProcessingActive==false')"
-run_blocked="$(curl -sS "${hdr[@]}" -X POST "${BASE}/background/run")"
-check "background run remains halted without approval" 'true' \
-  "$(echo "${run_blocked}" | jq -r '(.classified==0) and (.autoExecuted==0)')"
+check "failed resume leaves emergency stop engaged" 'true' \
+  "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.emergencyStop.engaged==true')"
+resume_request="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/control-approvals" -d '{"action":"resume"}')"
+check "resume approval binds the current stop revision" 'true' \
+  "$(echo "${resume_request}" | jq -r '(.action=="opscontrol.emergency-stop.clear") and (.resourceId|startswith("emergency-stop:revision-")) and (.bindingDigest|length==64)')"
+resume_request_id="$(echo "${resume_request}" | jq -r '.requestId')"
+resume_decision="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/control-approvals/${resume_request_id}/decision" -d '{"decision":"approved","reason":"Smoke owner approved this exact recovery."}')"
+check "approved recovery returns server-issued references" 'true' \
+  "$(echo "${resume_decision}" | jq -r '(.decision=="approved") and (.approvalSourceId|startswith("control-decision:")) and (.approvalBindingDigest|length==64)')"
+resume_authorization="$(echo "${resume_decision}" | jq -c '{idempotencyKey,taskId,approvalSourceId,approvalBindingDigest}')"
+curl -fsS "${hdr[@]}" -X POST "${BASE}/background/resume" -d "${resume_authorization}" >/dev/null
+check "processing active after resume" 'true' \
+  "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.backgroundProcessingActive==true')"
+run_resumed="$(curl -sS "${hdr[@]}" -X POST "${BASE}/background/run")"
+check "background run processes work after resume" 'true' \
+  "$(echo "${run_resumed}" | jq -r '.classified>=1')"
 
 echo "==> Mode change is validated + effective"
 check "invalid mode rejected" '400' \
   "$(curl -sS -o /dev/null -w '%{http_code}' "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d '{"mode":"nope"}')"
 curl -sS "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d '{"mode":"read_only"}' >/dev/null
 check "mode set to read_only" 'read_only' \
+  "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.storedMode')"
+
+mode_request="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/control-approvals" -d '{"action":"set_mode","targetMode":"approval_required"}')"
+mode_request_id="$(echo "${mode_request}" | jq -r '.requestId')"
+mode_decision="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/control-approvals/${mode_request_id}/decision" -d '{"decision":"approved","reason":"Smoke owner approved this exact mode increase."}')"
+mode_payload="$(echo "${mode_decision}" | jq -c '{mode:"approval_required",idempotencyKey,taskId,approvalSourceId,approvalBindingDigest}')"
+curl -fsS "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d "${mode_payload}" >/dev/null
+check "approved autonomy increase is applied" 'approval_required' \
+  "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.storedMode')"
+curl -fsS "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d '{"mode":"read_only"}' >/dev/null
+check "consumed mode approval cannot be replayed" '403' \
+  "$(curl -sS -o /dev/null -w '%{http_code}' "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d "${mode_payload}")"
+check "replayed approval leaves restrictive mode in place" 'read_only' \
   "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.storedMode')"
 
 echo "==> Crash/reboot recovery reconciles stuck operations"
