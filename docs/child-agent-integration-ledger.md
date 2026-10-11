@@ -2371,3 +2371,13 @@ SCSS budget warnings. These are recorded, not suppressed. The new exact-head
 GitHub Actions run is required for remote acceptance. PR #34 remains open and
 its broader divergent-file review remains incomplete; no source worktree or
 branch was removed.
+
+### October 11, 2026: background-operation refresh failure parity
+
+Compared PR #34 commit `4d810722` (`fix: surface background dashboard load
+failures`) with #36. The current #36 implementation already provides a stronger
+equivalent: a persistent, accessible refresh-failure panel; a contextual
+recovery step; retry; preservation of previously loaded results; and a guard
+that disables a new background pass until the feed/operation state is current.
+The older toast-plus-alert patch was therefore not copied. This is a verified
+duplicate/superseded disposition, not an unreviewed candidate.
