@@ -1710,6 +1710,25 @@ are not equivalent to simply having the named test functions. They remain
 retained as verification evidence until the exact runner behavior and reports
 are reconciled; no runner was executed, copied, or deleted in this review.
 
+### October 11, 2026: installer branch safety comparison
+
+Compared the `codex/windows-installer` branch tree with the current PR on the
+Windows backup and installer-support paths. The branch version of
+`scripts/backup-windows.ps1` is 10 lines versus the PR's 656-line implementation;
+it removes protected environment backup/restore, DPAPI user binding, ACL and
+reparse-point checks, and recovery validation. Its
+`installer/windows/Hai-InstallerSupport.ps1` is 12 lines versus the PR's
+259-line implementation and drops environment ACL handling and maintenance
+worker lifecycle safeguards. These are behavioral/security regressions, not
+safe deduplications; neither file was copied from the branch.
+
+The `codex/ambient-composition-control` branch contains the same shortened
+backup/build scripts in its branch-only delta. It is not an acceptable source
+for replacing the current installer or recovery implementation. The local
+`codex/windows-installer` checkout also has a modified IDP test and two
+untracked executable files; they remain untouched and are not cleanup
+candidates. The rest of both branches is still under review.
+
 ### October 11, 2026: integration snapshot comparison and exact-head CI
 
 The `codex/hai-integration-snapshot` checkout is at commit
