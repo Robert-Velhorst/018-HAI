@@ -1090,3 +1090,58 @@ truncated, compressed, or archived as part of this comparison. Cleanup remains
 unauthorized until the source and evidence reconciliation is complete and each
 specific deletion has a verified retained counterpart or is proven reproducible
 and non-unique.
+
+### Path-aware checkout comparison refresh (2026-10-11)
+
+A follow-up comparison used `git hash-object --stdin-paths` so the checkout's
+normal Git clean filters, including Windows line-ending normalization, were
+applied before comparing blobs. The primary checkout currently reports 692
+tracked modifications and 2,475 untracked paths. Of 1,593 source/config/test/doc
+candidate files (still excluding `output/`, `.claude-flow/`, and `.swarm/`),
+1,459 match the PR tree, 122 differ, and 12 local test-evidence/log files are
+absent from that tree. This corrects the earlier count of 1,449 identical files:
+ten additional exact matches are present in the refreshed candidate inventory;
+the 122 distinct paths and 12 absent evidence files are unchanged. The
+`output/` inventory was also rechecked: 1,576 files, 126,970,802 bytes.
+
+The following additional exact diffs were inspected from the primary checkout
+against the PR worktree. The local variants are not suitable imports:
+
+| Paths / area | Local difference | Disposition |
+| --- | --- | --- |
+| `backend/internal/executionauth/repository_postgres.go`, `repository_postgres_test.go` | Replaces the hex-encoded advisory-lock identity with NUL-delimited text, removes the text-safe identity regression, and scans `pg_advisory_xact_lock(...) IS NULL` into a boolean. | Reject; preserve the PR's PostgreSQL text-safe lock argument and regression. |
+| `backend/internal/operations/domain.go`, `service.go` | Removes the raw evidence SHA-256 field, calculation, and change-detection path. | Reject; loses source-integrity provenance. |
+| `backend/internal/workflow/service.go`, `backend/internal/pursuit/service.go`, `backend/internal/workflowtask/runner.go`, `frontend/src/app/pages/workflow-engine/workflow-engine.component.ts` | Removes `successCriteria` from intake, persistence, launch, and UI; treats review-required results as generic uncertainty rather than pausing and refreshing persisted review state. | Reject; loses workflow intent and obscures the operator's approval state. |
+| `backend/internal/background/worker.go` | Removes paused-mode deferral for already approved safe work and the emergency-stop processing gate. | Reject; weakens autonomy and emergency-stop policy. |
+| `backend/internal/router/routes.go` | Initializes browser verification without the workflow linker and removes the framework preference-history route. | Reject; drops integration and audit history. |
+| `frontend/src/app/control-room/module-registry.ts`, `module-registry.spec.ts`, framework registry page/service/tests | Removes the newly registered success-criteria and framework-preference-history sections and their UI/service/tests. | Reject; feature and test coverage regress. |
+| `.github/workflows/ci.yml`, backend/IDP Dockerfiles, `README.md` | Downgrades the Go toolchain from 1.27.2 to 1.25.13; removes the cleanup-readiness safety-contract job, secret-scan base-SHA wiring, and other cleanup gates. | Reject; do not reduce the pinned toolchain or hosted safety coverage. |
+| `docker-compose.local.yml` | Removes the isolated optional SearXNG profile and changes the state-permission helper from the backend image's `chown` to a PostgreSQL shell command with additional capability. | Reject pending separate isolation and permissions evidence; preserve the verified PR setup. |
+| `scripts/run-secret-scan.py` | Removes redacted finding summaries and requires neither a valid base revision nor CI-provided comparison SHA. | Reject; loses actionable safe reporting and weakens scan scope. |
+| `frontend/src/app/services/auth/auth.service.ts` | Drops the explicit `Observable<void>` login response contract. | Reject; no corresponding API contract change supports the weaker typing. |
+
+These targeted reviews do not adjudicate the remaining differing paths or the
+unmapped local review artifacts. No source, test, configuration, evidence, or
+diagnostic file was deleted or copied during this refresh. The PR and its checks
+remain governed by the separate exact-head status recorded at the time of each
+verification; passing local comparison/contract checks do not substitute for
+hosted CI completion.
+
+### Framework preference lock correction (2026-10-11)
+
+The canonical PR source review found a separate PostgreSQL text-parameter defect
+in `backend/internal/frameworkregistry/repository.go`: preference updates built
+the advisory-lock key as `owner + NUL + frameworkID` and passed it as a text
+parameter. PostgreSQL documents that code-zero/NUL cannot be stored in its
+character types ([PostgreSQL character types](https://www.postgresql.org/docs/17/datatype-character.html)).
+The PR source now uses the existing `encoding/hex` import to hex-encode each
+component and join them with a delimiter that cannot occur in hexadecimal
+output. `repository_test.go` adds a regression proving the generated key
+contains no NUL and distinguishes inputs that collide under NUL-delimited
+concatenation.
+
+This is a source fix and authored unit test only. The Go toolchain is not
+available in the current local environment, so the focused Go test and a live
+PostgreSQL reproduction have not been run here. The exact PR-head CI result must
+verify the test before this fix is considered validated; no production or live
+database acceptance is claimed.

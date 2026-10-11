@@ -11,6 +11,18 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestFrameworkPreferenceLockIdentityIsTextSafeAndUnambiguous(t *testing.T) {
+	first := frameworkPreferenceLockIdentity("a", "b\x00c")
+	second := frameworkPreferenceLockIdentity("a\x00b", "c")
+
+	if strings.ContainsRune(first, '\x00') || strings.ContainsRune(second, '\x00') {
+		t.Fatal("PostgreSQL advisory-lock identity contains a NUL byte")
+	}
+	if first == second {
+		t.Fatal("distinct framework preferences produced the same advisory-lock identity")
+	}
+}
+
 func TestMemoryRepositoryPreferencesAreOwnerScopedAndDefensivelyCopied(t *testing.T) {
 	repo := NewMemoryRepository()
 	level := 3

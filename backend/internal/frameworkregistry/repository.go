@@ -136,7 +136,7 @@ func (r *GormRepository) UpsertPreferenceWithEvent(owner, actor, reason string, 
 
 	var result Preference
 	err = r.DB.Transaction(func(tx *gorm.DB) error {
-		lockKey := row.OwnerIdentity + "\x00" + row.FrameworkID
+		lockKey := frameworkPreferenceLockIdentity(row.OwnerIdentity, row.FrameworkID)
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockKey).Error; err != nil {
 			return err
 		}
@@ -203,6 +203,10 @@ func (r *GormRepository) UpsertPreferenceWithEvent(owner, actor, reason string, 
 		return nil, err
 	}
 	return &result, nil
+}
+
+func frameworkPreferenceLockIdentity(owner, frameworkID string) string {
+	return hex.EncodeToString([]byte(owner)) + ":" + hex.EncodeToString([]byte(frameworkID))
 }
 
 func (r *GormRepository) ListPreferenceHistory(owner, frameworkID string, limit int) ([]PreferenceChangeEvent, error) {
