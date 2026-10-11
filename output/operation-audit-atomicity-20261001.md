@@ -8,7 +8,7 @@ deployments, or provider writes were performed by this agent. Local source reads
 and scoped patches only. Existing processes, including Joyce/ShareT, were not
 started, stopped, or modified. No descendants were created.
 
-Workspace: `C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`.
+Workspace: `%HAI_WORKSPACE%`.
 Branch/dirty state were supplied by the parent; no Git checks were run here.
 
 ## Contract

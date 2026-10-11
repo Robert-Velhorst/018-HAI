@@ -26,7 +26,14 @@ func taskExecutionContext(request IntakeRequest) context.Context {
 	if request.ExecutionContext != nil {
 		return request.ExecutionContext
 	}
+	if request.executionContext != nil {
+		return request.executionContext
+	}
 	return context.Background()
+}
+
+func hasTaskExecutionContext(request IntakeRequest) bool {
+	return request.ExecutionContext != nil || request.executionContext != nil
 }
 
 func cancelledTaskExecution(result *ExecutionResult, plan *CompletionPlan, request IntakeRequest, started time.Time) *ExecutionResult {

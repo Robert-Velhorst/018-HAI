@@ -239,7 +239,7 @@ Non-secret image identities are retained in the private test directory's
 - IDP: `c68d7113cf45d30ce8b62505c7a6cbd61222ecefd3c344893f6c374f1a9b2dbf`
 
 The retained evidence root is
-`C:\Users\NO\AppData\Local\Temp\hai-acceptance-8b65752c7f0845779ca3c4c77614af25`.
+`%TEMP%\hai-acceptance-8b65752c7f0845779ca3c4c77614af25`.
 Browser traces were disabled and process-only synthetic credentials restored
 after each command. Do not publish the manifest, environment or configuration.
 This verifies selected Basic/loading/recovery behavior, not every populated

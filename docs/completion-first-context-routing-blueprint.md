@@ -62,7 +62,7 @@ the task.
 ## API Surface
 
 - `POST /api/v1/task/plan`: build a completion-first task plan
-- `GET /api/v1/task/logs`: read recent planning decisions
+- `GET /api/v1/task/logs?limit=10`: read bounded compact planning decisions
 - `POST /api/v1/memory/retrieve`: retrieve relevant context only
 - `POST /api/v1/llm/route`: choose and explain model selection
 

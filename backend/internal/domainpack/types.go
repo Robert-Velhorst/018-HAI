@@ -247,6 +247,25 @@ type PackView struct {
 	LocalOnly  bool            `json:"localOnly"`
 }
 
+// PackSummaryView is the bounded catalog contract used before an operator
+// opens one pack. Full safeguards, rules, and playbook methods remain on the
+// exact detail/effective routes.
+type PackSummaryView struct {
+	Pack      PackSummary `json:"pack"`
+	Enabled   bool        `json:"enabled"`
+	LocalOnly bool        `json:"localOnly"`
+}
+
+type PackSummary struct {
+	ID             PackID `json:"id"`
+	Version        string `json:"version"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	Sensitive      bool   `json:"sensitive"`
+	DefaultEnabled bool   `json:"defaultEnabled"`
+	MethodCount    int    `json:"methodCount"`
+}
+
 type ClassificationRequest struct {
 	Text            string              `json:"text"`
 	ExplicitPackIDs []PackID            `json:"explicitPackIds,omitempty"`

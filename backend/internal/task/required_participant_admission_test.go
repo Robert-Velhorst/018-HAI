@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"automation-hub-backend/internal/frameworkregistry"
 
@@ -73,8 +74,13 @@ func TestApprovedReadinessProbeDoesNotFabricateSpecialistEvidence(t *testing.T) 
 }
 
 func TestReadyRequiredParticipantsRemainEligible(t *testing.T) {
+	verifiedAt := time.Now().UTC()
 	decision := frameworkregistry.SelectionDecision{
 		MaximumAutonomyLevel: 8, RequiredAgents: []string{"evidence_reviewer"},
+		AgentCards: []frameworkregistry.AgentCard{{
+			ID: "evidence-reviewer-1", Role: "evidence_reviewer", Verified: true,
+			HealthStatus: "healthy", Provenance: "trusted_runtime_probe", LastVerifiedAt: &verifiedAt,
+		}},
 		Delegations: []frameworkregistry.DelegationContract{{Delegatee: "evidence_reviewer", State: "ready"}},
 	}
 	risk := applyFrameworkRisk(RiskAssessment{Level: "low", AllowedNow: true}, &decision,

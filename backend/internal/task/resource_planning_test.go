@@ -58,6 +58,24 @@ func TestResourcePlanningRequiresReviewForUnknownCapacity(t *testing.T) {
 	}
 }
 
+func TestResourcePlanningDoesNotSpendOwnerCapacityForAutomatedExecution(t *testing.T) {
+	now := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
+	decision, err := defaultResourcePlanner().PlanResources(ResourcePlanningRequest{
+		OwnerIdentity: "alice@example.test", PlanID: "automated-readiness", CreatedAt: now, Difficulty: 1,
+		Steps:              []TaskStep{{ID: "execute", Name: "Execute read-only readiness probe", Allowed: true}},
+		Capacity:           &frameworkregistry.CapacitySnapshot{Status: "unknown", NeedsReview: true},
+		SelectedTools:      []string{"automation.launch"},
+		AutomatedExecution: true,
+		Risk:               RiskAssessment{Level: "low", AllowedNow: true, RequiredFrameworkAutonomy: 8, FrameworkAutonomyCeiling: 8},
+	})
+	if err != nil {
+		t.Fatalf("PlanResources: %v", err)
+	}
+	if decision.Feasibility != resourceplanner.Feasible || len(decision.ApprovalFlags) != 0 {
+		t.Fatalf("automated execution incorrectly consumed uncertain owner capacity: %#v", decision)
+	}
+}
+
 func TestResourcePlanningBlocksPaidRouteUnderZeroBudget(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	decision, err := defaultResourcePlanner().PlanResources(ResourcePlanningRequest{
@@ -140,11 +158,12 @@ func TestResourcePlanningKeepsAdmittedAutomaticRuntimeApprovalFree(t *testing.T)
 		RequiredFrameworkAutonomy: 8,
 	}
 	decision, err := defaultResourcePlanner().PlanResources(ResourcePlanningRequest{
-		OwnerIdentity: "operator@example.test",
-		PlanID:        "automatic-readiness-runtime",
-		CreatedAt:     now,
-		Difficulty:    2,
-		Risk:          risk,
+		OwnerIdentity:      "operator@example.test",
+		PlanID:             "automatic-readiness-runtime",
+		CreatedAt:          now,
+		Difficulty:         2,
+		Risk:               risk,
+		AutomatedExecution: true,
 		Steps: []TaskStep{
 			{ID: "execute", Name: "Execute read-only readiness probe", Allowed: true},
 			{ID: "verify", Name: "Verify readiness result", Allowed: true},

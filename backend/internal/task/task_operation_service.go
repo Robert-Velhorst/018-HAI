@@ -39,11 +39,11 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 		return nil, err
 	}
 	leaseOwner := "task-worker:" + uuid.NewString()
-	admissionRepo, cancelAdmission, err := s.taskOperationStorage(ctx, request.ExecutionContext != nil)
+	admissionRepo, cancelAdmission, err := s.taskOperationStorage(ctx, hasTaskExecutionContext(request))
 	if err != nil {
 		return nil, err
 	}
-	claim, err := admissionRepo.ClaimTaskOperation(
+	claim, err := claimTaskOperationContext(ctx, admissionRepo,
 		ownerIdentity,
 		request.IdempotencyKey,
 		digest,
@@ -61,7 +61,7 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 		if strings.TrimSpace(claim.Operation.TaskPlanID) == "" {
 			return nil, ErrTaskOperationNeedsReview
 		}
-		replayRepo, cancelReplay, scopeErr := s.taskOperationStorage(ctx, request.ExecutionContext != nil)
+		replayRepo, cancelReplay, scopeErr := s.taskOperationStorage(ctx, hasTaskExecutionContext(request))
 		if scopeErr != nil {
 			return nil, scopeErr
 		}
@@ -81,6 +81,8 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 			return nil, fmt.Errorf("surface uncertain task operation for review: %w", err)
 		}
 		return nil, ErrTaskOperationNeedsReview
+	case TaskOperationCanceled:
+		return nil, ErrTaskOperationCanceled
 	case TaskOperationAcquired:
 		// Continue below with the fenced claim.
 	default:
@@ -92,7 +94,9 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 	defer stopHeartbeat()
 	var plan *CompletionPlan
 	executeErr := ctx.Err()
+	executionStarted := false
 	if executeErr == nil {
+		executionStarted = true
 		plan, executeErr = execute(request)
 	}
 	leaseLost := stopHeartbeat()
@@ -101,12 +105,24 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 		// Reconciliation outlives the caller, but never has an unlimited SQL wait.
 		terminalContext = context.WithoutCancel(ctx)
 	}
-	terminalRepo, cancelTerminal, scopeErr := s.taskOperationStorage(terminalContext, request.ExecutionContext != nil)
+	terminalRepo, cancelTerminal, scopeErr := s.taskOperationStorage(terminalContext, hasTaskExecutionContext(request))
 	if scopeErr != nil {
 		markTaskPlanUnconfirmed(plan)
 		return plan, errors.Join(ErrTaskOperationNeedsReview, executeErr, ctx.Err(), scopeErr)
 	}
 	defer cancelTerminal()
+	if cancelErr := ctx.Err(); cancelErr != nil && !executionStarted {
+		canceled, persistErr := cancelTaskOperationContext(
+			terminalContext, terminalRepo, ownerIdentity, claim.Operation.ID, leaseOwner,
+			claim.Operation.LeaseGeneration, "caller canceled before task execution started", time.Now().UTC(),
+		)
+		if persistErr != nil {
+			return nil, errors.Join(cancelErr, fmt.Errorf("persist pre-execution cancellation: %w", persistErr))
+		}
+		if canceled {
+			return nil, cancelErr
+		}
+	}
 	if cancelErr := ctx.Err(); cancelErr != nil {
 		executeErr = errors.Join(ErrTaskOperationNeedsReview, executeErr, cancelErr)
 		if plan != nil {
@@ -213,7 +229,7 @@ func markTaskPlanUnconfirmed(plan *CompletionPlan) {
 }
 
 func (s *service) ensureTaskOperationReview(request IntakeRequest, operation models.TaskOperationRecord, reason string) error {
-	repo, cancel, err := s.taskOperationStorage(context.WithoutCancel(taskExecutionContext(request)), request.ExecutionContext != nil)
+	repo, cancel, err := s.taskOperationStorage(context.WithoutCancel(taskExecutionContext(request)), hasTaskExecutionContext(request))
 	if err != nil {
 		return err
 	}
@@ -235,6 +251,7 @@ func (s *service) ensureTaskOperationReviewWithRepository(repo TaskStateReposito
 	request.operationID = ""
 	request.reviewItemID = ""
 	request.ExecutionContext = nil
+	request.executionContext = nil
 
 	reviewID := uuid.NewSHA1(uuid.NameSpaceOID, []byte("hai-task-operation-review:"+operation.ID.String())).String()
 	// Recovery surfaces an immutable pending request, not a refreshed approval.

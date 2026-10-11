@@ -180,7 +180,7 @@ func TestRefreshTokenUsesRefreshTokenExpiration(t *testing.T) {
 	refreshToken, refreshUUID, refreshExp, err := svc.generateRefreshToken(userID)
 	require.NoError(t, err)
 
-	tokenDetails, err := svc.RefreshToken(refreshToken)
+	tokenDetails, err := svc.RefreshToken(context.Background(), refreshToken)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenDetails.AccessToken)
 	require.NotEqual(t, refreshToken, tokenDetails.RefreshToken)
@@ -217,7 +217,7 @@ func TestConcurrentRefreshReusesOneRotatedTokenPair(t *testing.T) {
 		wait.Add(1)
 		go func(index int) {
 			defer wait.Done()
-			results[index], errorsByCall[index] = svc.RefreshToken(originalRefresh)
+			results[index], errorsByCall[index] = svc.RefreshToken(context.Background(), originalRefresh)
 		}(i)
 	}
 	wait.Wait()
@@ -234,7 +234,7 @@ func TestConcurrentRefreshReusesOneRotatedTokenPair(t *testing.T) {
 	familyUUID, ok := refreshFamilyFromClaims(rotatedClaims)
 	require.True(t, ok)
 	require.NoError(t, blocklist.RevokeRefreshFamily(familyUUID, time.Hour))
-	_, err = svc.RefreshToken(results[0].RefreshToken)
+	_, err = svc.RefreshToken(context.Background(), results[0].RefreshToken)
 	require.ErrorIs(t, err, ErrRevokedSession, "logout/family revocation must prevent child refresh")
 }
 
@@ -305,7 +305,7 @@ func TestAccessTokenRejectsExpiredOrMalformedRefreshExpiration(t *testing.T) {
 			tokenString, err := token.SignedString([]byte(testSigningSecret))
 			require.NoError(t, err)
 
-			authenticated, err := svc.IsUserAuthenticated(tokenString)
+			authenticated, err := svc.IsUserAuthenticated(context.Background(), tokenString)
 			require.False(t, authenticated)
 			require.ErrorIs(t, err, ErrRevokedSession)
 		})
@@ -331,7 +331,7 @@ func TestRefreshTokenRejectsExpiredJWT(t *testing.T) {
 	refreshToken, err := token.SignedString([]byte(testSigningSecret))
 	require.NoError(t, err)
 
-	_, err = svc.RefreshToken(refreshToken)
+	_, err = svc.RefreshToken(context.Background(), refreshToken)
 	require.EqualError(t, err, "invalid refresh token")
 }
 
@@ -422,7 +422,7 @@ func TestLogoutRejectsTokenWithoutUserID(t *testing.T) {
 		jwtSecret:        "test-secret",
 	}
 
-	err = svc.Logout(tokenString)
+	err = svc.Logout(context.Background(), tokenString)
 	require.EqualError(t, err, "user ID not found in the token")
 }
 
@@ -444,7 +444,7 @@ func TestRefreshTokenRejectsAccessToken(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, err = svc.RefreshToken(accessToken)
+	_, err = svc.RefreshToken(context.Background(), accessToken)
 	require.EqualError(t, err, "invalid refresh token")
 }
 
@@ -461,7 +461,7 @@ func TestAccessTokenConsumersRejectRefreshToken(t *testing.T) {
 	refreshToken, _, _, err := svc.generateRefreshToken(userID)
 	require.NoError(t, err)
 
-	authenticated, err := svc.IsUserAuthenticated(refreshToken)
+	authenticated, err := svc.IsUserAuthenticated(context.Background(), refreshToken)
 	require.False(t, authenticated)
 	require.EqualError(t, err, "invalid accessToken")
 	_, err = svc.GetIdFromToken(refreshToken)
@@ -494,7 +494,7 @@ func TestAccessTokenConsumersRejectIndividuallyRevokedAccessToken(t *testing.T) 
 	}
 
 	t.Run("authentication check", func(t *testing.T) {
-		ok, err := svc.IsUserAuthenticated(tokenString)
+		ok, err := svc.IsUserAuthenticated(context.Background(), tokenString)
 		require.False(t, ok)
 		require.ErrorIs(t, err, ErrRevokedSession)
 	})
@@ -543,7 +543,7 @@ func TestSessionOperationsFailClosedWithoutRevocationStore(t *testing.T) {
 				t.Errorf("IsUserAuthenticated panicked without a revocation store: %v", recovered)
 			}
 		}()
-		ok, err := svc.IsUserAuthenticated(accessToken)
+		ok, err := svc.IsUserAuthenticated(context.Background(), accessToken)
 		require.False(t, ok)
 		require.Error(t, err)
 	})
@@ -553,7 +553,7 @@ func TestSessionOperationsFailClosedWithoutRevocationStore(t *testing.T) {
 				t.Errorf("RefreshToken panicked without a revocation store: %v", recovered)
 			}
 		}()
-		_, err := svc.RefreshToken(refreshToken)
+		_, err := svc.RefreshToken(context.Background(), refreshToken)
 		require.Error(t, err)
 	})
 	t.Run("logout", func(t *testing.T) {
@@ -562,7 +562,7 @@ func TestSessionOperationsFailClosedWithoutRevocationStore(t *testing.T) {
 				t.Errorf("Logout panicked without a revocation store: %v", recovered)
 			}
 		}()
-		require.Error(t, svc.Logout(accessToken))
+		require.Error(t, svc.Logout(context.Background(), accessToken))
 	})
 }
 
@@ -627,7 +627,7 @@ func TestRefreshTokenRejectsInactiveOrBlockedUsers(t *testing.T) {
 		refreshToken, err := svc.generateRefreshTokenWithIdentity(userID, uuid.NewString(), uuid.NewString(), time.Now().Add(time.Hour).Unix(), 0)
 		require.NoError(t, err)
 
-		_, err = svc.RefreshToken(refreshToken)
+		_, err = svc.RefreshToken(context.Background(), refreshToken)
 		require.EqualError(t, err, "user is unavailable")
 	}
 }
@@ -651,7 +651,7 @@ func TestAccessAndSessionChecksRejectUnavailableUsers(t *testing.T) {
 		token, _, err := svc.generateAccessToken(userID, "owner", uuid.NewString(), time.Now().Add(time.Hour).Unix())
 		require.NoError(t, err)
 
-		authenticated, err := svc.IsUserAuthenticated(token)
+		authenticated, err := svc.IsUserAuthenticated(context.Background(), token)
 		require.False(t, authenticated)
 		require.EqualError(t, err, "user is unavailable")
 		_, err = svc.GetSessionFromToken(token)
@@ -675,7 +675,7 @@ func TestSessionRejectsStalePrivilegedTokenRole(t *testing.T) {
 	session, err := svc.GetSessionFromToken(token)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.Nil(t, session)
-	authenticated, err := svc.IsUserAuthenticated(token)
+	authenticated, err := svc.IsUserAuthenticated(context.Background(), token)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.False(t, authenticated)
 }
@@ -741,7 +741,7 @@ func TestLogoutAttemptsBothRevocations(t *testing.T) {
 	require.NoError(t, err)
 	seedTestAccessAuthority(t, svc, token)
 
-	err = svc.Logout(token)
+	err = svc.Logout(context.Background(), token)
 	require.ErrorContains(t, err, "revoke refresh token")
 	require.Len(t, blockList.added, 2)
 	require.Equal(t, []string{refreshID}, blockList.families)
@@ -767,12 +767,12 @@ func TestLogoutRevokesEveryAccessTokenInRefreshSession(t *testing.T) {
 	secondAccess, _, err := svc.generateAccessTokenWithVersion(userID, "owner", refreshUUID, refreshExpires, 4)
 	require.NoError(t, err)
 
-	require.NoError(t, svc.Logout(firstAccess))
+	require.NoError(t, svc.Logout(context.Background(), firstAccess))
 
-	authenticated, err := svc.IsUserAuthenticated(secondAccess)
+	authenticated, err := svc.IsUserAuthenticated(context.Background(), secondAccess)
 	require.False(t, authenticated, "logging out must revoke sibling access tokens minted from the same refresh session")
 	require.ErrorIs(t, err, ErrRevokedSession)
-	_, err = svc.RefreshToken(refreshToken)
+	_, err = svc.RefreshToken(context.Background(), refreshToken)
 	require.Error(t, err, "logging out must also prevent the refresh token from minting further access tokens")
 }
 
@@ -792,19 +792,19 @@ func TestLogoutDuringRefreshInvalidatesAlreadyRotatedChildSession(t *testing.T) 
 	accessToken, _, err := svc.generateAccessToken(userID, "owner", refreshUUID, refreshExpires)
 	require.NoError(t, err)
 
-	rotated, err := svc.RefreshToken(refreshToken)
+	rotated, err := svc.RefreshToken(context.Background(), refreshToken)
 	require.NoError(t, err)
-	authenticated, err := svc.IsUserAuthenticated(rotated.AccessToken)
+	authenticated, err := svc.IsUserAuthenticated(context.Background(), rotated.AccessToken)
 	require.NoError(t, err)
 	require.True(t, authenticated)
 
 	// A logout request that began before the parallel refresh must still revoke
 	// the whole family, including the already-minted child token pair.
-	require.NoError(t, svc.Logout(accessToken))
-	authenticated, err = svc.IsUserAuthenticated(rotated.AccessToken)
+	require.NoError(t, svc.Logout(context.Background(), accessToken))
+	authenticated, err = svc.IsUserAuthenticated(context.Background(), rotated.AccessToken)
 	require.False(t, authenticated)
 	require.ErrorIs(t, err, ErrRevokedSession)
-	_, err = svc.RefreshToken(rotated.RefreshToken)
+	_, err = svc.RefreshToken(context.Background(), rotated.RefreshToken)
 	require.ErrorIs(t, err, ErrRevokedSession)
 }
 
@@ -1012,10 +1012,10 @@ func TestSuccessfulPasswordResetRevokesExistingAccessAndRefreshTokens(t *testing
 	require.NoError(t, svc.ConfirmPasswordReset("reset-token", "new-strong-password"))
 	require.Equal(t, int64(8), userService.userByID.SessionVersion)
 
-	authenticated, err := svc.IsUserAuthenticated(accessToken)
+	authenticated, err := svc.IsUserAuthenticated(context.Background(), accessToken)
 	require.False(t, authenticated)
 	require.ErrorIs(t, err, ErrRevokedSession)
-	_, err = svc.RefreshToken(refreshToken)
+	_, err = svc.RefreshToken(context.Background(), refreshToken)
 	require.ErrorIs(t, err, ErrRevokedSession)
 }
 
@@ -1033,7 +1033,7 @@ func TestRequestPasswordResetPersistsDigestAndDeliversBearerToken(t *testing.T) 
 		logger: logger,
 	}
 
-	token, _, err := svc.RequestPasswordReset("operator@example.com")
+	token, _, err := svc.RequestPasswordReset(context.Background(), "operator@example.com")
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 	require.Equal(t, token, sentToken)
@@ -1061,7 +1061,7 @@ func TestRequestPasswordResetDoesNotSendTokenForStaleAccountVersion(t *testing.T
 		logger: noopLogger{},
 	}
 
-	_, _, err := svc.RequestPasswordReset("operator@example.com")
+	_, _, err := svc.RequestPasswordReset(context.Background(), "operator@example.com")
 
 	require.EqualError(t, err, "failed to update user")
 	require.Equal(t, int64(3), userService.storedResetSessionVersion)
@@ -1078,7 +1078,7 @@ func TestRequestPasswordResetDoesNotPersistTokenWhenEmailDeliveryIsUnavailable(t
 		logger:           noopLogger{},
 	}
 
-	_, _, err := svc.RequestPasswordReset("operator@example.com")
+	_, _, err := svc.RequestPasswordReset(context.Background(), "operator@example.com")
 	require.EqualError(t, err, "password reset email delivery is not configured")
 	require.Nil(t, userService.updatedUser)
 }
@@ -1093,7 +1093,7 @@ func TestRequestPasswordResetClearsTokenWhenEmailDeliveryFails(t *testing.T) {
 		logger:           logger,
 	}
 
-	_, _, err := svc.RequestPasswordReset("operator@example.com")
+	_, _, err := svc.RequestPasswordReset(context.Background(), "operator@example.com")
 	require.EqualError(t, err, "failed to send password reset email")
 	require.NotNil(t, userService.updatedUser)
 	require.Empty(t, userService.updatedUser.ResetPasswordToken)
@@ -1118,7 +1118,7 @@ func TestRequestPasswordResetLogsOnlyRedactedSMTPStage(t *testing.T) {
 		logger: logger,
 	}
 
-	_, _, err := svc.RequestPasswordReset("operator@example.com")
+	_, _, err := svc.RequestPasswordReset(context.Background(), "operator@example.com")
 	require.EqualError(t, err, "failed to send password reset email")
 	logOutput := strings.Join(logger.messages, "\n")
 	require.Contains(t, logOutput, "Password reset email delivery failed during SMTP stage authentication")
@@ -1257,10 +1257,13 @@ func TestLocalPreviewLoginRejectsInvalidConfiguredBind(t *testing.T) {
 
 func setupAuthConfig(t *testing.T) {
 	t.Helper()
+	t.Setenv("RUN_MODE", "test")
 	t.Setenv("LOGGER_TOPIC", "logs")
 	t.Setenv("MAIL_TOPIC", "mail")
 	t.Setenv("BROKERS_ADDR", "localhost:9092")
 	t.Setenv("DB_PORT", "5432")
+	t.Setenv("DB_USER", "idp-test")
+	t.Setenv("DB_PASSWORD", "idp-test-password")
 	t.Setenv("DB_HOST", "localhost")
 	t.Setenv("DB_NAME", "automation_hub")
 	t.Setenv("PASSWORD_RESET_TOPIC", "password-reset")
@@ -1272,6 +1275,25 @@ func setupAuthConfig(t *testing.T) {
 	t.Setenv("LOCAL_LOGIN_BYPASS_ENABLED", "false")
 	t.Setenv("GATEWAY_HOST_BIND", "127.0.0.1")
 	require.NoError(t, config.Setup())
+}
+
+func TestContextAwareAuthOperationsStopWhenCallerIsCanceled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc := &service{}
+
+	if err := svc.Logout(ctx, "token"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Logout() error = %v, want context cancellation", err)
+	}
+	if _, err := svc.RefreshToken(ctx, "token"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("RefreshToken() error = %v, want context cancellation", err)
+	}
+	if authenticated, err := svc.IsUserAuthenticated(ctx, "token"); authenticated || !errors.Is(err, context.Canceled) {
+		t.Fatalf("IsUserAuthenticated() = %v, %v; want false and context cancellation", authenticated, err)
+	}
+	if _, _, err := svc.RequestPasswordReset(ctx, "person@example.test"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("RequestPasswordReset() error = %v, want context cancellation", err)
+	}
 }
 
 func signedAccessToken(t *testing.T, userID uuid.UUID, secret string) string {
@@ -1713,7 +1735,7 @@ func (m mockGoogleOAuthProvider) Exchange(_ context.Context, code, state string)
 }
 
 func (f fakePasswordResetSender) Configured() bool { return f.configured }
-func (f fakePasswordResetSender) SendPasswordReset(email, token string, expiresAt time.Time) error {
+func (f fakePasswordResetSender) SendPasswordReset(_ context.Context, email, token string, expiresAt time.Time) error {
 	if f.onSend != nil {
 		f.onSend(email, token, expiresAt)
 	}

@@ -41,7 +41,7 @@ func TestDashboardSummaryBoundsQueuesAndPreservesActionContext(t *testing.T) {
 		ID: uuid.New(), Title: "Review source evidence", OwnerIdentity: "alice",
 		Description: "Detail-only private context", CompletionDefinition: "Evidence is verified.",
 		SuccessCriteria: []models.PursuitSuccessCriterion{{ID: "criterion-1", Description: "Verify source"}},
-		ResourceLimits: models.PursuitResourceLimits{MaxEffortHours: 4},
+		ResourceLimits:  models.PursuitResourceLimits{MaxEffortHours: 4},
 	}
 	dashboard := &Dashboard{
 		Counts: map[string]int64{"active": 2},
@@ -5180,6 +5180,7 @@ func timelineSourceContains(items []PursuitTimelineItem, kind, sourcePart string
 }
 
 func TestOwnerScopedMutationsDoNotAdoptOwnerlessLegacyPursuits(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "alice")
 	repo := newFakeRepo()
 	workflowService := &fakeWorkflowIntake{repo: repo}
 	service := NewService(repo, workflowService)
@@ -6078,8 +6079,11 @@ func (r *fakeRepo) FindLinkedAutomations(ids []uuid.UUID) ([]models.Automation, 
 }
 
 func (r *fakeRepo) FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launchIDs []uuid.UUID, limit int) ([]models.AutomationLaunchEvent, error) {
-	if limit <= 0 || limit > 50 {
+	if limit <= 0 {
 		limit = 20
+	}
+	if limit > 500 {
+		limit = 500
 	}
 	automationSet := map[uuid.UUID]bool{}
 	for _, id := range automationIDs {

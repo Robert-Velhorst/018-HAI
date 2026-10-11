@@ -13,13 +13,11 @@ import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { IAuthSession } from '../../models/auth-session.model.interface'
 import {
   IBackgroundStatus,
+  IControlAuthorization,
   IReadiness,
 } from '../../models/runtime-control.model.interface'
 import { AuthSessionService } from '../../services/auth-session.service'
-import {
-  IControlAuthorization,
-  RuntimeControlService,
-} from '../../services/runtime-control.service'
+import { RuntimeControlService } from '../../services/runtime-control.service'
 import { RuntimeControlComponent } from './runtime-control.component'
 import { RuntimeControlModule } from './runtime-control.module'
 

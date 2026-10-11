@@ -110,6 +110,7 @@ func TestProjectionFailureDoesNotLosePursuit(t *testing.T) {
 }
 
 func TestReconcileLifeDomainsForOwnerRepairsCanonicalPursuits(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "alice")
 	repo := newFakeRepo()
 	linker := &fakeLifeDomainLinker{}
 	pursuitService := WithLifeDomainLinker(NewService(repo, nil), linker)

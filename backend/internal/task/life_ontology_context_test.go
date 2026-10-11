@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,12 @@ type capturingLifeOntologyProvider struct {
 	request lifeontology.ContextSuggestionRequest
 	result  lifeontology.ContextSuggestionResult
 	err     error
+}
+
+type cancellationAwareLifeOntologyProvider struct{}
+
+func (cancellationAwareLifeOntologyProvider) SuggestNextContext(ctx context.Context, _ lifeontology.ContextSuggestionRequest) (lifeontology.ContextSuggestionResult, error) {
+	return lifeontology.ContextSuggestionResult{}, ctx.Err()
 }
 
 func (p *capturingLifeOntologyProvider) SuggestNextContext(
@@ -135,6 +142,21 @@ func TestWithLifeOntologyContextRequiresBuiltInService(t *testing.T) {
 	}
 	if _, err := WithLifeOntologyContext(&service{}, nil); err == nil {
 		t.Fatal("expected provider requirement")
+	}
+}
+
+func TestLifeOntologyContextPropagatesTaskCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc := &service{lifeOntology: cancellationAwareLifeOntologyProvider{}}
+
+	_, _, err := svc.retrieveLifeOntologyContext(
+		IntakeRequest{OwnerIdentity: "owner-1", executionContext: ctx},
+		&frameworkregistry.SelectionDecision{LifeDomains: []frameworkregistry.LifeDomainAssignment{{ID: "financial"}}},
+		llm.RouteDecision{Tier: llm.TierLocal},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("retrieve life ontology context error = %v, want context canceled", err)
 	}
 }
 

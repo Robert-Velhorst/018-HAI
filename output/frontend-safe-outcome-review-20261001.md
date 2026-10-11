@@ -1,6 +1,6 @@
 # Frontend Safe Outcome Integration Review
 
-Date: 2026-10-01. Shared checkout: `C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`.
+Date: 2026-10-01. Shared checkout: `%HAI_WORKSPACE%`.
 
 ## Outcome And Authority
 

@@ -18,15 +18,13 @@ import {
 } from '../../models/auth-session.model.interface'
 import {
   IBackgroundStatus,
+  IControlAuthorization,
   IEmergencyStopState,
   IRecoveryReport,
   IReadiness,
 } from '../../models/runtime-control.model.interface'
 import { AuthSessionService } from '../../services/auth-session.service'
-import {
-  IControlAuthorization,
-  RuntimeControlService,
-} from '../../services/runtime-control.service'
+import { RuntimeControlService } from '../../services/runtime-control.service'
 
 const MODULE_ID = 'runtime-control'
 

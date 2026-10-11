@@ -31,6 +31,10 @@ type Repository interface {
 	PruneScans(keep int) error
 }
 
+type opportunityBatchReader interface {
+	FindOpportunitiesByFingerprints(fingerprints []string) ([]models.AmbientOpportunity, error)
+}
+
 type GormRepository struct {
 	db *gorm.DB
 }
@@ -108,6 +112,15 @@ func (r *GormRepository) FindOpportunityByFingerprint(fingerprint string) (*mode
 		return nil, err
 	}
 	return &item, nil
+}
+
+func (r *GormRepository) FindOpportunitiesByFingerprints(fingerprints []string) ([]models.AmbientOpportunity, error) {
+	if len(fingerprints) == 0 {
+		return []models.AmbientOpportunity{}, nil
+	}
+	var items []models.AmbientOpportunity
+	err := r.db.Where("fingerprint IN ?", fingerprints).Find(&items).Error
+	return items, err
 }
 
 func (r *GormRepository) SaveOpportunity(item *models.AmbientOpportunity) (*models.AmbientOpportunity, error) {

@@ -9,6 +9,7 @@ import {
   MonitorTargetWriteResponse,
   ObservationRecordListResponse,
   ProcessDueResult,
+  RecoverAmbientMonitorsResponse,
   RegisterMonitorTargetRequest,
   RunDueMonitorsRequest,
   SetMonitorEnabledRequest,
@@ -113,8 +114,8 @@ export class AmbientMonitorService {
     )
   }
 
-  recover(workspaceId: string, asOf: string): Observable<{ recovered: number }> {
-    return this.http.post<{ recovered: number }>(
+  recover(workspaceId: string, asOf: string): Observable<RecoverAmbientMonitorsResponse> {
+    return this.http.post<RecoverAmbientMonitorsResponse>(
       `${this.workspaceUrl(workspaceId)}/monitors/recover`,
       { asOf }
     )

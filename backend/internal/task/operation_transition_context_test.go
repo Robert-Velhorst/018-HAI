@@ -24,6 +24,13 @@ func (r *taskTransitionStorage) WithTaskStateContext(ctx context.Context) (TaskS
 	return r, ctx.Err()
 }
 
+func (r *taskTransitionStorage) ClaimTaskOperationContext(ctx context.Context, owner, key, digest, mode, lease string, now time.Time, duration time.Duration) (TaskOperationClaim, error) {
+	if err := ctx.Err(); err != nil {
+		return TaskOperationClaim{}, err
+	}
+	return r.ClaimTaskOperation(owner, key, digest, mode, lease, now, duration)
+}
+
 func (r *taskTransitionStorage) ClaimTaskOperation(owner, key, digest, mode, lease string, now time.Time, duration time.Duration) (TaskOperationClaim, error) {
 	if strings.HasPrefix(r.boundary, "replay") {
 		return TaskOperationClaim{Operation: models.TaskOperationRecord{TaskPlanID: r.plan.ID}, Disposition: TaskOperationReplay}, nil
@@ -83,12 +90,20 @@ func TestTaskOperationTransitionCancellationAndEmptyReplay(t *testing.T) {
 				t.Fatalf("transition lost cancellation identity: %v", err)
 			}
 			if boundary == "after_claim" {
-				if executed != 0 || !errors.Is(err, ErrTaskOperationNeedsReview) {
-					t.Fatalf("cancelled acquired claim dispatched work: calls=%d err=%v", executed, err)
+				if executed != 0 || errors.Is(err, ErrTaskOperationNeedsReview) {
+					t.Fatalf("pre-execution cancellation dispatched work or required uncertain-outcome review: calls=%d err=%v", executed, err)
+				}
+				digest, digestErr := ReviewRequestDigest("alice", IntakeRequest{OwnerIdentity: "alice", Request: "Read notes", IdempotencyKey: "transition-after_claim"})
+				if digestErr != nil {
+					t.Fatal(digestErr)
+				}
+				claim, claimErr := repo.MemoryTaskStateRepository.ClaimTaskOperation("alice", "transition-after_claim", digest, "plan", "replay-worker", time.Now(), time.Minute)
+				if claimErr != nil || claim.Disposition != TaskOperationCanceled {
+					t.Fatalf("pre-execution cancellation was not durably recorded: %#v %v", claim, claimErr)
 				}
 				items, listErr := repo.ListReviewItems("alice", 10)
-				if listErr != nil || len(items) != 1 || items[0].Request.ExecutionContext != nil {
-					t.Fatal("cancelled claimed operation was not durably surfaced without dead context")
+				if listErr != nil || len(items) != 0 {
+					t.Fatalf("known pre-execution cancellation created uncertain-outcome review work: %#v %v", items, listErr)
 				}
 				return
 			}

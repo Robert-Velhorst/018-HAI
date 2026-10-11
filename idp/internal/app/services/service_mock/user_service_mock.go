@@ -79,6 +79,21 @@ func (m *MockUserService) ClearPasswordResetToken(id uuid.UUID, token string) er
 	return args.Error(0)
 }
 
+func (m *MockUserService) CompletePasswordReset(token, newPassword string) error {
+	args := m.Called(token, newPassword)
+	return args.Error(0)
+}
+
+func (m *MockUserService) StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error {
+	args := m.Called(id, token, expiresAt)
+	return args.Error(0)
+}
+
+func (m *MockUserService) ClearPasswordResetIfToken(id uuid.UUID, token string) error {
+	args := m.Called(id, token)
+	return args.Error(0)
+}
+
 func (m *MockUserService) VerifyPasswordResetToken(token string) error {
 	args := m.Called(token)
 	return args.Error(0)

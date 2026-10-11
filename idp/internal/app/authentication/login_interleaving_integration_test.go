@@ -106,7 +106,7 @@ func TestSuccessfulLoginBeforeThresholdFailureDoesNotClearLaterLockout(t *testin
 	require.NoError(t, repo.DB.First(&stored, "id = ?", user.ID).Error)
 	require.True(t, stored.IsBlocked)
 	require.Equal(t, 1, stored.FailedAttempts)
-	active, err := svc.IsUserAuthenticated(pair.AccessToken)
+	active, err := svc.IsUserAuthenticated(context.Background(), pair.AccessToken)
 	require.Error(t, err)
 	require.False(t, active, "a session issued before lockout must honor the current block")
 }

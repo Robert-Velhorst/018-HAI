@@ -194,6 +194,14 @@ func TestGovernanceMigrationTailPreservesSemanticUpgradeOrder(t *testing.T) {
 		"0116_workflow_success_criteria",
 		"0117_framework_preference_change_history",
 		"0118_operation_source_evidence_raw_digest",
+		"0119_opscontrol_approval_provenance",
+		"0120_context_memory_owner_query_indexes",
+		"0121_ambient_need_defaults",
+		"0122_life_ontology_bounded_query_indexes",
+		"0123_task_completion_history_projection",
+		"0124_source_oauth_state",
+		"0125_workflow_rule_defaults",
+		"0126_task_operation_cancellation",
 	}
 	entries, err := fs.ReadDir(Files, "pre")
 	if err != nil {

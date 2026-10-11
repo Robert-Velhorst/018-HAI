@@ -42,7 +42,7 @@ func (s *service) projectCoordinationDraft(plan *CompletionPlan, request IntakeR
 		return fmt.Errorf("project coordination draft: owner identity is required")
 	}
 	nodes, edges := taskCoordinationGraph(plan, request)
-	draft, err := s.coordinationProjector.Preview(context.Background(), ownerIdentity, plangraph.PreviewRequest{
+	draft, err := s.coordinationProjector.Preview(taskExecutionContext(request), ownerIdentity, plangraph.PreviewRequest{
 		IdempotencyKey: "task-plan-graph-" + operationID,
 		Title:          sanitizeTaskOperationalText(plan.RealGoal, 300),
 		Nodes:          nodes,

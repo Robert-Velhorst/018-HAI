@@ -2,6 +2,7 @@ package ambient
 
 import (
 	"automation-hub-backend/internal/durablejob"
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/memory"
 	"automation-hub-backend/internal/memoryengine"
 	"automation-hub-backend/internal/models"
@@ -31,6 +32,8 @@ const (
 	StatusAccepted  = "accepted"
 	StatusDismissed = "dismissed"
 	StatusCompleted = "completed"
+
+	ambientLastSeenWriteInterval = 24 * time.Hour
 )
 
 var ErrScanInProgress = errors.New("ambient scan already in progress")
@@ -107,6 +110,7 @@ type pursuitAmbientOpportunityRouter interface {
 type Service interface {
 	Overview() (*Overview, error)
 	OverviewForOwner(ownerIdentity string) (*Overview, error)
+	OverviewSummaryForOwner(ownerIdentity string) (*Overview, error)
 	Scan(trigger string) (*models.AmbientScan, error)
 	ScanForOwner(ownerIdentity, trigger string) (*models.AmbientScan, error)
 	UpdateNeedForOwner(ownerIdentity, key string, request NeedUpdateRequest) (*models.AmbientNeed, error)
@@ -191,7 +195,7 @@ func (s *service) scan(ctx context.Context, trigger string, allowed func() bool)
 	if err := scanCheckpoint(ctx, allowed); err != nil {
 		return nil, err
 	}
-	if s.workflows == nil || s.memoryEngine == nil {
+	if s == nil || s.workflows == nil || s.memoryEngine == nil {
 		return nil, ErrScanContextUnavailable
 	}
 	policy := policyFromEnv()
@@ -205,11 +209,10 @@ func (s *service) scan(ctx context.Context, trigger string, allowed func() bool)
 	if err := scanCheckpoint(ctx, allowed); err != nil {
 		return nil, err
 	}
-	started := time.Now().UTC()
 	scan, err := s.startScan(&models.AmbientScan{
 		Trigger:   firstNonEmpty(strings.TrimSpace(trigger), "manual"),
 		Status:    "running",
-		StartedAt: started,
+		StartedAt: time.Now().UTC(),
 	})
 	if err != nil {
 		return scan, err
@@ -221,7 +224,7 @@ func (s *service) scan(ctx context.Context, trigger string, allowed func() bool)
 	if err := scanCheckpoint(ctx, allowed); err != nil {
 		return fail(err)
 	}
-	needs, err := s.repo.Needs()
+	needs, err := s.needsForOwner("")
 	if err != nil {
 		return fail(err)
 	}
@@ -285,56 +288,10 @@ func (s *service) scan(ctx context.Context, trigger string, allowed func() bool)
 	candidates := buildCandidates(dashboard, items, memoryDashboard, pursuitDashboard, needMap)
 	scan.ItemsExamined = len(items) + len(memoryDashboard.DelegateToVA) + len(memoryDashboard.Contradictions) + len(dashboard.DueOpenLoops) + pursuitSignalCount(pursuitDashboard)
 	scan.OpportunitiesFound = len(candidates)
+	policy = policyFromEnv()
 	now := time.Now().UTC()
-	for _, candidate := range candidates {
-		if err := scanCheckpoint(ctx, allowed); err != nil {
-			return fail(err)
-		}
-		if candidate.PriorityScore < policy.MinimumScore || candidate.Confidence < policy.MinimumConfidence {
-			scan.Filtered++
-			continue
-		}
-		existing, findErr := s.repo.FindOpportunityByFingerprint(candidate.Fingerprint)
-		if findErr != nil {
-			return fail(findErr)
-		}
-		if err := scanCheckpoint(ctx, allowed); err != nil {
-			return fail(err)
-		}
-		if existing != nil {
-			if strings.TrimSpace(existing.OwnerIdentity) != strings.TrimSpace(candidate.OwnerIdentity) {
-				return fail(errors.New("ambient opportunity fingerprint owner mismatch"))
-			}
-			existing.Title = candidate.Title
-			existing.Rationale = candidate.Rationale
-			existing.NextAction = candidate.NextAction
-			existing.PriorityScore = candidate.PriorityScore
-			existing.Urgency = candidate.Urgency
-			existing.Impact = candidate.Impact
-			existing.Effort = candidate.Effort
-			existing.Confidence = candidate.Confidence
-			existing.Risk = candidate.Risk
-			existing.RequiresApproval = candidate.RequiresApproval
-			existing.EvidenceManifest = candidate.EvidenceManifest
-			existing.LastSeenAt = now
-			if existing.Status == StatusDismissed && (existing.CooldownUntil == nil || existing.CooldownUntil.Before(now)) {
-				existing.Status = StatusProposed
-			}
-			if _, saveErr := s.repo.SaveOpportunity(existing); saveErr != nil {
-				return fail(saveErr)
-			}
-			scan.Updated++
-			scan.Deduplicated++
-			scan.DeduplicatedBytes += int64(len(candidate.Rationale) + len(candidate.NextAction) + len(candidate.EvidenceManifest))
-		} else {
-			candidate.LastSeenAt = now
-			candidate.Status = StatusProposed
-			if _, saveErr := s.repo.SaveOpportunity(&candidate); saveErr != nil {
-				return fail(saveErr)
-			}
-			scan.Created++
-		}
-		scan.ManifestBytes += int64(len(candidate.EvidenceManifest))
+	if err := s.storeCandidatesContext(ctx, allowed, scan, candidates, policy, now); err != nil {
+		return fail(err)
 	}
 	if err := scanCheckpoint(ctx, allowed); err != nil {
 		return fail(err)
@@ -398,13 +355,13 @@ func (s *service) scan(ctx context.Context, trigger string, allowed func() bool)
 			return fail(durablejob.Defer("ambient execution paused by current safety policy"))
 		}
 		runs, runErr := s.workflows.RunDue(workflow.RunDueRequest{Limit: policy.ExecutionLimit})
+		if runErr != nil {
+			return fail(runErr)
+		}
 		if runs != nil {
 			scan.Advanced += runs.Completed
 			scan.Skipped += runs.Skipped
 			scan.Blocked += runs.Blocked
-		}
-		if runErr != nil {
-			return fail(runErr)
 		}
 		if runs == nil {
 			return fail(ErrScanOutcomeUnconfirmed)
@@ -420,8 +377,6 @@ func (s *service) scan(ctx context.Context, trigger string, allowed func() bool)
 	request := snapshotScan(scan)
 	updated, err := s.repo.UpdateScan(&request)
 	if err != nil || !scanOutcomeMatches(expected, updated) {
-		// The completion write may already have committed. Do not overwrite or
-		// turn an ambiguous completion into a claimed failure acknowledgement.
 		return unconfirmedScan(&expected, err)
 	}
 	if err := scanCheckpoint(ctx, allowed); err != nil {
@@ -438,6 +393,17 @@ func (s *service) scan(ctx context.Context, trigger string, allowed func() bool)
 // source, or memory queues and never starts execution. The result is a set of
 // private, reviewable proposals rather than background authority.
 func (s *service) ScanForOwner(ownerIdentity, trigger string) (*models.AmbientScan, error) {
+	return s.scanForOwner(ownerIdentity, trigger, nil)
+}
+
+// ScanForOwnerWithPursuitDashboard reuses the immutable pursuit projection
+// already built by an agent cycle after workflow execution. This avoids a
+// second full pursuit expansion while preserving the same candidate builder.
+func (s *service) ScanForOwnerWithPursuitDashboard(ownerIdentity, trigger string, dashboard *pursuitpkg.Dashboard) (*models.AmbientScan, error) {
+	return s.scanForOwner(ownerIdentity, trigger, dashboard)
+}
+
+func (s *service) scanForOwner(ownerIdentity, trigger string, dashboard *pursuitpkg.Dashboard) (*models.AmbientScan, error) {
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	if ownerIdentity == "" {
 		return nil, fmt.Errorf("an authenticated owner is required for a personal ambient scan")
@@ -452,12 +418,11 @@ func (s *service) ScanForOwner(ownerIdentity, trigger string) (*models.AmbientSc
 	if err := s.ensureNeeds(); err != nil {
 		return nil, err
 	}
-	started := time.Now().UTC()
 	scan, err := s.startScan(&models.AmbientScan{
 		OwnerIdentity: ownerIdentity,
 		Trigger:       firstNonEmpty(strings.TrimSpace(trigger), "manual"),
 		Status:        "running",
-		StartedAt:     started,
+		StartedAt:     time.Now().UTC(),
 	})
 	if err != nil {
 		return scan, err
@@ -473,8 +438,12 @@ func (s *service) ScanForOwner(ownerIdentity, trigger string) (*models.AmbientSc
 	for _, need := range needs {
 		needMap[need.Key] = need
 	}
-	dashboard, err := s.pursuits.DashboardForOwner(ownerIdentity)
-	if err != nil {
+	if dashboard == nil {
+		dashboard, err = s.pursuits.DashboardForOwner(ownerIdentity)
+		if err != nil {
+			return fail(err)
+		}
+	} else if err := validatePursuitDashboardOwner(ownerIdentity, dashboard); err != nil {
 		return fail(err)
 	}
 	pursuits, err := s.pursuits.ListForOwner(ownerIdentity, true)
@@ -516,52 +485,180 @@ func (s *service) ScanForOwner(ownerIdentity, trigger string) (*models.AmbientSc
 	return updated, nil
 }
 
+func validatePursuitDashboardOwner(ownerIdentity string, dashboard *pursuitpkg.Dashboard) error {
+	if dashboard == nil {
+		return fmt.Errorf("pursuit dashboard is required")
+	}
+	validate := func(items []pursuitpkg.PursuitListItem) error {
+		for _, item := range items {
+			itemOwner := strings.TrimSpace(item.Pursuit.OwnerIdentity)
+			if itemOwner == "" && !identity.CanReadLegacyOwnerlessData(ownerIdentity) {
+				return fmt.Errorf("pursuit dashboard contains inaccessible legacy data")
+			}
+			if itemOwner != "" && itemOwner != ownerIdentity {
+				return fmt.Errorf("pursuit dashboard contains another owner's data")
+			}
+		}
+		return nil
+	}
+	queues := [][]pursuitpkg.PursuitListItem{
+		dashboard.NeedsRobert, dashboard.VAReady, dashboard.SystemReady,
+		dashboard.Blocked, dashboard.Stale, dashboard.ReviewDue,
+		dashboard.PlanningNeeded, dashboard.RecentlyChanged,
+		dashboard.HighRisk, dashboard.CompletionCandidates,
+	}
+	for _, items := range queues {
+		if err := validate(items); err != nil {
+			return err
+		}
+	}
+	for _, decision := range dashboard.DecisionQueue {
+		decisionOwner := strings.TrimSpace(decision.Pursuit.OwnerIdentity)
+		if decisionOwner == "" && !identity.CanReadLegacyOwnerlessData(ownerIdentity) {
+			return fmt.Errorf("pursuit dashboard contains an inaccessible legacy decision")
+		}
+		if decisionOwner != "" && decisionOwner != ownerIdentity {
+			return fmt.Errorf("pursuit dashboard contains another owner's decision")
+		}
+	}
+	return nil
+}
+
 func (s *service) storeCandidates(scan *models.AmbientScan, candidates []models.AmbientOpportunity, policy Policy, now time.Time) error {
+	return s.storeCandidatesContext(context.Background(), func() bool { return true }, scan, candidates, policy, now)
+}
+
+func (s *service) storeCandidatesContext(ctx context.Context, allowed func() bool, scan *models.AmbientScan, candidates []models.AmbientOpportunity, policy Policy, now time.Time) error {
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return err
+	}
+	existingByFingerprint, err := s.existingCandidates(candidates, policy)
+	if err != nil {
+		return err
+	}
+	if err := scanCheckpoint(ctx, allowed); err != nil {
+		return err
+	}
 	for _, candidate := range candidates {
+		if err := scanCheckpoint(ctx, allowed); err != nil {
+			return err
+		}
 		if candidate.PriorityScore < policy.MinimumScore || candidate.Confidence < policy.MinimumConfidence {
 			scan.Filtered++
 			continue
 		}
-		existing, err := s.repo.FindOpportunityByFingerprint(candidate.Fingerprint)
-		if err != nil {
-			return err
+		existing, prefetched := existingByFingerprint[candidate.Fingerprint]
+		if !prefetched {
+			existing, err = s.repo.FindOpportunityByFingerprint(candidate.Fingerprint)
+			if err != nil {
+				return err
+			}
+			if err := scanCheckpoint(ctx, allowed); err != nil {
+				return err
+			}
 		}
 		if existing != nil {
 			if strings.TrimSpace(existing.OwnerIdentity) != strings.TrimSpace(candidate.OwnerIdentity) {
 				return fmt.Errorf("ambient opportunity fingerprint owner mismatch")
 			}
-			existing.Title = candidate.Title
-			existing.Rationale = candidate.Rationale
-			existing.NextAction = candidate.NextAction
-			existing.PriorityScore = candidate.PriorityScore
-			existing.Urgency = candidate.Urgency
-			existing.Impact = candidate.Impact
-			existing.Effort = candidate.Effort
-			existing.Confidence = candidate.Confidence
-			existing.Risk = candidate.Risk
-			existing.RequiresApproval = candidate.RequiresApproval
-			existing.EvidenceManifest = candidate.EvidenceManifest
-			existing.LastSeenAt = now
-			if existing.Status == StatusDismissed && (existing.CooldownUntil == nil || existing.CooldownUntil.Before(now)) {
-				existing.Status = StatusProposed
+			if mergeAmbientCandidate(existing, candidate, now) {
+				if err := scanCheckpoint(ctx, allowed); err != nil {
+					return err
+				}
+				if _, err := s.repo.SaveOpportunity(existing); err != nil {
+					return err
+				}
+				scan.Updated++
 			}
-			if _, err := s.repo.SaveOpportunity(existing); err != nil {
-				return err
-			}
-			scan.Updated++
 			scan.Deduplicated++
 			scan.DeduplicatedBytes += int64(len(candidate.Rationale) + len(candidate.NextAction) + len(candidate.EvidenceManifest))
 		} else {
 			candidate.LastSeenAt = now
 			candidate.Status = StatusProposed
-			if _, err := s.repo.SaveOpportunity(&candidate); err != nil {
+			if err := scanCheckpoint(ctx, allowed); err != nil {
 				return err
 			}
+			saved, err := s.repo.SaveOpportunity(&candidate)
+			if err != nil {
+				return err
+			}
+			existingByFingerprint[candidate.Fingerprint] = saved
 			scan.Created++
 		}
 		scan.ManifestBytes += int64(len(candidate.EvidenceManifest))
 	}
 	return nil
+}
+
+func (s *service) existingCandidates(candidates []models.AmbientOpportunity, policy Policy) (map[string]*models.AmbientOpportunity, error) {
+	reader, ok := s.repo.(opportunityBatchReader)
+	if !ok {
+		return map[string]*models.AmbientOpportunity{}, nil
+	}
+	fingerprints := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.PriorityScore < policy.MinimumScore || candidate.Confidence < policy.MinimumConfidence {
+			continue
+		}
+		fingerprints = append(fingerprints, candidate.Fingerprint)
+	}
+	items, err := reader.FindOpportunitiesByFingerprints(fingerprints)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]*models.AmbientOpportunity, len(items)+len(fingerprints))
+	for index := range items {
+		item := &items[index]
+		result[item.Fingerprint] = item
+	}
+	for _, fingerprint := range fingerprints {
+		if _, exists := result[fingerprint]; !exists {
+			result[fingerprint] = nil
+		}
+	}
+	return result, nil
+}
+
+// mergeAmbientCandidate applies generated fields while avoiding an hourly
+// database write when an identical proposal is rediscovered. Freshness is
+// still persisted once per day, and any semantic or cooldown change is saved
+// immediately.
+func mergeAmbientCandidate(existing *models.AmbientOpportunity, candidate models.AmbientOpportunity, now time.Time) bool {
+	contentChanged := existing.Title != candidate.Title ||
+		existing.Rationale != candidate.Rationale ||
+		existing.NextAction != candidate.NextAction ||
+		existing.PriorityScore != candidate.PriorityScore ||
+		existing.Urgency != candidate.Urgency ||
+		existing.Impact != candidate.Impact ||
+		existing.Effort != candidate.Effort ||
+		existing.Confidence != candidate.Confidence ||
+		existing.Risk != candidate.Risk ||
+		existing.RequiresApproval != candidate.RequiresApproval ||
+		existing.EvidenceManifest != candidate.EvidenceManifest
+
+	existing.Title = candidate.Title
+	existing.Rationale = candidate.Rationale
+	existing.NextAction = candidate.NextAction
+	existing.PriorityScore = candidate.PriorityScore
+	existing.Urgency = candidate.Urgency
+	existing.Impact = candidate.Impact
+	existing.Effort = candidate.Effort
+	existing.Confidence = candidate.Confidence
+	existing.Risk = candidate.Risk
+	existing.RequiresApproval = candidate.RequiresApproval
+	existing.EvidenceManifest = candidate.EvidenceManifest
+
+	if existing.Status == StatusDismissed && (existing.CooldownUntil == nil || existing.CooldownUntil.Before(now)) {
+		existing.Status = StatusProposed
+		contentChanged = true
+	}
+	refreshDue := existing.LastSeenAt.IsZero() ||
+		(now.After(existing.LastSeenAt) && now.Sub(existing.LastSeenAt) >= ambientLastSeenWriteInterval)
+	if contentChanged || refreshDue {
+		existing.LastSeenAt = now
+		return true
+	}
+	return false
 }
 
 func (s *service) UpdateNeedForOwner(ownerIdentity, key string, request NeedUpdateRequest) (*models.AmbientNeed, error) {
@@ -570,10 +667,7 @@ func (s *service) UpdateNeedForOwner(ownerIdentity, key string, request NeedUpda
 	if ownerIdentity == "" {
 		return nil, fmt.Errorf("an authenticated owner is required to update ambient planning preferences")
 	}
-	if err := s.ensureNeeds(); err != nil {
-		return nil, err
-	}
-	defaults, err := s.repo.Needs()
+	defaults, err := s.needsForOwner("")
 	if err != nil {
 		return nil, err
 	}
@@ -875,9 +969,45 @@ func (s *service) visibleOpportunities(ownerIdentity string, opportunities []mod
 	if ownerIdentity == "" {
 		return opportunities
 	}
+	ownedPursuits := map[uuid.UUID]struct{}{}
+	requiresPursuitVisibility := false
+	for _, item := range opportunities {
+		if strings.TrimSpace(item.OwnerIdentity) == ownerIdentity &&
+			s.pursuits != nil &&
+			strings.HasPrefix(strings.ToLower(strings.TrimSpace(item.SourceType)), "pursuit") {
+			requiresPursuitVisibility = true
+			break
+		}
+	}
+	pursuitVisibilityAvailable := !requiresPursuitVisibility
+	if requiresPursuitVisibility {
+		pursuits, err := s.pursuits.ListForOwner(ownerIdentity, true)
+		if err == nil {
+			pursuitVisibilityAvailable = true
+			for _, pursuit := range pursuits {
+				if pursuit.ID != uuid.Nil {
+					ownedPursuits[pursuit.ID] = struct{}{}
+				}
+			}
+		}
+	}
 	visible := make([]models.AmbientOpportunity, 0, len(opportunities))
 	for _, item := range opportunities {
-		if s.ensureOpportunityVisible(item, ownerIdentity) == nil {
+		if strings.TrimSpace(item.OwnerIdentity) != ownerIdentity {
+			continue
+		}
+		if s.pursuits == nil || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(item.SourceType)), "pursuit") {
+			visible = append(visible, item)
+			continue
+		}
+		if !pursuitVisibilityAvailable {
+			continue
+		}
+		pursuitID, err := uuid.Parse(strings.TrimSpace(item.SourceID))
+		if err != nil {
+			continue
+		}
+		if _, found := ownedPursuits[pursuitID]; found {
 			visible = append(visible, item)
 		}
 	}
@@ -929,17 +1059,16 @@ func (s *service) rememberOpportunityFeedback(item *models.AmbientOpportunity, o
 	})
 }
 
-func (s *service) ensureNeeds() error {
-	return s.repo.EnsureNeeds(defaultNeeds())
-}
-
 func (s *service) needsForOwner(ownerIdentity string) ([]models.AmbientNeed, error) {
-	if err := s.ensureNeeds(); err != nil {
-		return nil, err
-	}
 	needs, err := s.repo.Needs()
 	if err != nil {
 		return nil, err
+	}
+	// Default rows are seeded by the migration chain. Keeping an in-memory
+	// fallback makes lightweight and legacy repositories useful without turning
+	// this read path into a hidden write transaction.
+	if len(needs) == 0 {
+		needs = defaultNeeds()
 	}
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	if ownerIdentity == "" {
@@ -962,6 +1091,10 @@ func (s *service) needsForOwner(ownerIdentity string) ([]models.AmbientNeed, err
 		resolved[index] = need
 	}
 	return resolved, nil
+}
+
+func (s *service) ensureNeeds() error {
+	return s.repo.EnsureNeeds(defaultNeeds())
 }
 
 func applyNeedOverride(need models.AmbientNeed, override models.AmbientNeedOverride) models.AmbientNeed {

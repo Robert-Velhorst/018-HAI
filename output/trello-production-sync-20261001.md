@@ -1,6 +1,6 @@
 # Trello Production Sync Handoff
 
-Date: 2026-10-01. Workspace: `C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`. Branch observed: `codex/hai-runtime-release`.
+Date: 2026-10-01. Workspace: `%HAI_WORKSPACE%`. Branch observed: `codex/hai-runtime-release`.
 
 Status: source-only audit and bounded implementation handoff. This is NOT an executable-test, live-provider, deployment, or production-readiness verification.
 

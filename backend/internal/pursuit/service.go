@@ -1,6 +1,7 @@
 package pursuit
 
 import (
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/plangraph"
 	"automation-hub-backend/internal/safety"
@@ -155,13 +156,14 @@ type LinkRequest struct {
 }
 
 type MatchRequest struct {
-	OwnerIdentity string `json:"-"`
-	Input         string `json:"input,omitempty"`
-	ProjectKey    string `json:"projectKey,omitempty"`
-	SourceType    string `json:"sourceType,omitempty"`
-	SourceID      string `json:"sourceId,omitempty"`
-	SourceURI     string `json:"sourceUri,omitempty"`
-	Limit         int    `json:"limit,omitempty"`
+	OwnerIdentity  string `json:"-"`
+	Input          string `json:"input,omitempty"`
+	ProjectKey     string `json:"projectKey,omitempty"`
+	ProjectKeyHint string `json:"projectKeyHint,omitempty"`
+	SourceType     string `json:"sourceType,omitempty"`
+	SourceID       string `json:"sourceId,omitempty"`
+	SourceURI      string `json:"sourceUri,omitempty"`
+	Limit          int    `json:"limit,omitempty"`
 }
 
 type MatchCandidate struct {
@@ -219,9 +221,9 @@ type AutoLinkResult struct {
 type IntakeRequest struct {
 	OwnerIdentity    string                              `json:"-"`
 	Input            string                              `json:"input"`
-	SuccessCriteria  []string                            `json:"successCriteria,omitempty"`
 	ProjectKey       string                              `json:"projectKey,omitempty"`
 	ProjectKeyHint   string                              `json:"projectKeyHint,omitempty"`
+	SuccessCriteria  []string                            `json:"successCriteria,omitempty"`
 	AutomationID     string                              `json:"automationId,omitempty"`
 	MandateID        string                              `json:"mandateId,omitempty"`
 	SourceType       string                              `json:"sourceType,omitempty"`
@@ -335,6 +337,111 @@ type Dashboard struct {
 	CompletionCandidates []PursuitListItem          `json:"completionCandidates"`
 }
 
+// dashboardSummary keeps the queue and decision semantics intact while
+// removing record fields that are only used by the exact pursuit detail view.
+// The full dashboard remains the default API contract for existing clients.
+func dashboardSummary(source *Dashboard) *Dashboard {
+	if source == nil {
+		return nil
+	}
+	result := *source
+	result.DecisionQueue = make([]PursuitDashboardDecision, len(source.DecisionQueue))
+	for index, decision := range source.DecisionQueue {
+		decision.Pursuit = dashboardPursuitSummary(decision.Pursuit)
+		decision.Decision = dashboardDecisionSummary(decision.Decision)
+		result.DecisionQueue[index] = decision
+	}
+	result.NeedsRobert = dashboardListSummary(source.NeedsRobert, 1)
+	result.VAReady = dashboardListSummary(source.VAReady, 1)
+	result.SystemReady = dashboardListSummary(source.SystemReady, 1)
+	result.Blocked = dashboardListSummary(source.Blocked, 1)
+	result.Stale = dashboardListSummary(source.Stale, 1)
+	result.ReviewDue = dashboardListSummary(source.ReviewDue, 1)
+	result.PlanningNeeded = dashboardListSummary(source.PlanningNeeded, 1)
+	result.RecentlyChanged = dashboardListSummary(source.RecentlyChanged, 1)
+	result.HighRisk = dashboardListSummary(source.HighRisk, 1)
+	result.CompletionCandidates = dashboardListSummary(source.CompletionCandidates, 1)
+	return &result
+}
+
+func dashboardCounts(source *Dashboard) *Dashboard {
+	if source == nil {
+		return nil
+	}
+	counts := make(map[string]int64, len(source.Counts))
+	for key, value := range source.Counts {
+		counts[key] = value
+	}
+	return &Dashboard{
+		Counts:               counts,
+		DecisionQueue:        []PursuitDashboardDecision{},
+		NeedsRobert:          []PursuitListItem{},
+		VAReady:              []PursuitListItem{},
+		SystemReady:          []PursuitListItem{},
+		Blocked:              []PursuitListItem{},
+		Stale:                []PursuitListItem{},
+		ReviewDue:            []PursuitListItem{},
+		PlanningNeeded:       []PursuitListItem{},
+		RecentlyChanged:      []PursuitListItem{},
+		HighRisk:             []PursuitListItem{},
+		CompletionCandidates: []PursuitListItem{},
+	}
+}
+
+func dashboardListSummary(source []PursuitListItem, limit int) []PursuitListItem {
+	length := len(source)
+	if limit > 0 && length > limit {
+		length = limit
+	}
+	result := make([]PursuitListItem, length)
+	for index, item := range source[:length] {
+		item.Pursuit = dashboardPursuitSummary(item.Pursuit)
+		result[index] = item
+	}
+	return result
+}
+
+func dashboardPursuitSummary(pursuit models.Pursuit) models.Pursuit {
+	return models.Pursuit{
+		ID:                    pursuit.ID,
+		Title:                 pursuit.Title,
+		WhyItMatters:          pursuit.WhyItMatters,
+		ProjectKey:            pursuit.ProjectKey,
+		Domain:                pursuit.Domain,
+		CurrentStateSummary:   pursuit.CurrentStateSummary,
+		Status:                pursuit.Status,
+		PriorityScore:         pursuit.PriorityScore,
+		RiskLevel:             pursuit.RiskLevel,
+		Confidence:            pursuit.Confidence,
+		AutonomyLevel:         pursuit.AutonomyLevel,
+		NeedCategory:          pursuit.NeedCategory,
+		NextRecommendedAction: pursuit.NextRecommendedAction,
+		CompletionState:       pursuit.CompletionState,
+		LastActivityAt:        pursuit.LastActivityAt,
+		NextReviewAt:          pursuit.NextReviewAt,
+		TargetAt:              pursuit.TargetAt,
+		ReviewCadenceDays:     pursuit.ReviewCadenceDays,
+		Archived:              pursuit.Archived,
+		CreatedAt:             pursuit.CreatedAt,
+		UpdatedAt:             pursuit.UpdatedAt,
+	}
+}
+
+func dashboardDecisionSummary(decision PursuitDecision) PursuitDecision {
+	return PursuitDecision{
+		ID:               decision.ID,
+		DecisionType:     decision.DecisionType,
+		Status:           decision.Status,
+		Recommended:      decision.Recommended,
+		Reason:           decision.Reason,
+		RiskLevel:        decision.RiskLevel,
+		YesLabel:         decision.YesLabel,
+		NoLabel:          decision.NoLabel,
+		RequiresApproval: decision.RequiresApproval,
+		Approved:         decision.Approved,
+	}
+}
+
 type Brief struct {
 	GeneratedAt          time.Time   `json:"generatedAt"`
 	OperatingMode        string      `json:"operatingMode"`
@@ -348,6 +455,15 @@ type Brief struct {
 	CompletionCandidates int         `json:"completionCandidates"`
 	RecentlyChanged      int         `json:"recentlyChanged"`
 	Cards                []BriefCard `json:"cards"`
+}
+
+// OperatingSnapshot is the compact pursuit projection consumed by the agent
+// cycle. Both fields are derived from one dashboard build so a proactive pass
+// does not expand every pursuit and its linked records twice.
+type OperatingSnapshot struct {
+	Brief     *Brief                     `json:"brief"`
+	Decisions []PursuitDashboardDecision `json:"decisions"`
+	Dashboard *Dashboard                 `json:"-"`
 }
 
 type BriefCard struct {
@@ -424,6 +540,36 @@ type PursuitDetail struct {
 	Summary              PursuitSummary                 `json:"summary"`
 	OperationalDigest    PursuitOperationalDigest       `json:"operationalDigest"`
 	ResourceUsage        PursuitResourceUsage           `json:"resourceUsage"`
+}
+
+// pursuitDetailRecords is the owner-filtered record set used to derive one
+// pursuit detail. Keeping derivation separate from loading lets the dashboard
+// bulk-load records without creating a second set of decision rules.
+type pursuitDetailRecords struct {
+	Links                []models.PursuitLink
+	Activity             []models.PursuitActivity
+	Workflows            []models.WorkflowItem
+	ChecklistItems       []models.WorkflowChecklistItem
+	OpenLoops            []models.WorkflowOpenLoop
+	Proposals            []models.WorkflowProposal
+	QualityGates         []models.WorkflowQualityGate
+	Decisions            []models.WorkflowDecision
+	Transitions          []models.WorkflowTransition
+	SourceLinks          []models.WorkflowSourceLink
+	Events               []models.WorkflowEvent
+	Evidence             []models.WorkflowEvidenceClaim
+	Memories             []models.ContextMemory
+	Conversations        []models.AIConversationArchive
+	AmbientOpportunities []models.AmbientOpportunity
+	TaskAttempts         []models.PursuitTaskAttempt
+	VerificationRuns     []models.VerificationRun
+	VerificationClaims   []models.VerificationClaim
+	VerificationEvidence []models.VerificationEvidence
+	Automations          []models.Automation
+	RuntimeAttempts      []models.AutomationLaunchEvent
+	SourceItems          []models.SourceRawItem
+	SourceExtractions    []models.SourceExtraction
+	ResourceUsage        PursuitResourceUsage
 }
 
 // PursuitConversation exposes only archive metadata needed for provenance.
@@ -821,10 +967,6 @@ func (s *service) Create(request CreateRequest) (*models.Pursuit, error) {
 		return nil, err
 	}
 	contextText := title + " " + request.Description + " " + request.WhyItMatters + " " + request.DesiredOutcome
-	domain, err := canonicalPursuitDomain(request.Domain, contextText)
-	if err != nil {
-		return nil, err
-	}
 	riskLevel := conservativeRisk(request.RiskLevel, classifyRisk(contextText))
 	autonomyLevel := conservativeAutonomy(request.AutonomyLevel, riskLevel)
 	now := time.Now().UTC()
@@ -840,7 +982,7 @@ func (s *service) Create(request CreateRequest) (*models.Pursuit, error) {
 		WhyItMatters:          strings.TrimSpace(request.WhyItMatters),
 		ProjectKey:            strings.TrimSpace(request.ProjectKey),
 		MandateID:             mandateID,
-		Domain:                domain,
+		Domain:                firstNonEmpty(request.Domain, classifyDomain(contextText)),
 		DesiredOutcome:        strings.TrimSpace(request.DesiredOutcome),
 		CurrentStateSummary:   strings.TrimSpace(request.CurrentStateSummary),
 		Status:                firstNonEmpty(request.Status, StatusActive),
@@ -868,15 +1010,21 @@ func (s *service) Create(request CreateRequest) (*models.Pursuit, error) {
 	if pursuit.NextRecommendedAction == "" {
 		pursuit.NextRecommendedAction = "Define the first workflow item and evidence needed for this pursuit."
 	}
+	if strings.TrimSpace(pursuit.OwnerIdentity) != "" && s.lifeDomainLinker != nil {
+		pursuit.Domain, err = canonicalPursuitDomain(pursuit.Domain, contextText)
+		if err != nil {
+			return nil, err
+		}
+	}
 	created, err := s.repo.Create(pursuit)
 	if err != nil {
 		return nil, err
 	}
 	_, _ = s.recordActivity(created.ID, "pursuit.created", "Pursuit created: "+created.Title, firstNonEmpty(request.Actor, "operator"), "", "", "")
-	_, _ = s.projectLifeDomain(created, firstNonEmpty(request.Actor, "operator"))
 	if policyWasNormalized(request.RiskLevel, request.AutonomyLevel, riskLevel, autonomyLevel) {
 		_, _ = s.recordActivity(created.ID, "pursuit.safety_normalized", "Pursuit safety policy normalized from the goal context: "+riskLevel+" risk / "+autonomyLevel+" autonomy", firstNonEmpty(request.Actor, "operator"), "", "", "")
 	}
+	_, _ = s.projectLifeDomain(created, firstNonEmpty(request.Actor, "system"))
 	return created, nil
 }
 
@@ -895,6 +1043,7 @@ func (s *service) UpdateForOwner(ownerIdentity string, id uuid.UUID, request Upd
 	if updateAttemptsReopen(*pursuit, request) {
 		return nil, fmt.Errorf("cannot reopen a closed pursuit through a generic update; use the explicit reopen action")
 	}
+	priorDomain := pursuit.Domain
 	if requestsVerifiedCompletion(*pursuit, request) {
 		if isPursuitCandidate(*pursuit) {
 			return nil, fmt.Errorf("pursuit candidate must be accepted and planned before it can be marked complete")
@@ -915,20 +1064,13 @@ func (s *service) UpdateForOwner(ownerIdentity string, id uuid.UUID, request Upd
 	}
 	priorRiskLevel := pursuit.RiskLevel
 	priorAutonomyLevel := pursuit.AutonomyLevel
-	priorDomain := pursuit.Domain
 	if strings.TrimSpace(request.Title) != "" {
 		pursuit.Title = strings.TrimSpace(request.Title)
 	}
 	assignString(request.Description, &pursuit.Description)
 	assignString(request.WhyItMatters, &pursuit.WhyItMatters)
 	assignString(request.ProjectKey, &pursuit.ProjectKey)
-	if request.Domain != nil {
-		domain, err := canonicalPursuitDomain(*request.Domain, pursuit.Title+" "+pursuit.Description+" "+pursuit.WhyItMatters+" "+pursuit.DesiredOutcome)
-		if err != nil {
-			return nil, err
-		}
-		pursuit.Domain = domain
-	}
+	assignString(request.Domain, &pursuit.Domain)
 	assignString(request.DesiredOutcome, &pursuit.DesiredOutcome)
 	assignString(request.CurrentStateSummary, &pursuit.CurrentStateSummary)
 	assignString(request.NeedCategory, &pursuit.NeedCategory)
@@ -966,6 +1108,13 @@ func (s *service) UpdateForOwner(ownerIdentity string, id uuid.UUID, request Upd
 		pursuit.Status = strings.TrimSpace(request.Status)
 	}
 	contextText := pursuit.Title + " " + pursuit.Description + " " + pursuit.WhyItMatters + " " + pursuit.DesiredOutcome
+	if request.Domain != nil && strings.TrimSpace(*request.Domain) != "" && s.lifeDomainLinker != nil && strings.TrimSpace(pursuit.OwnerIdentity) != "" {
+		canonical, err := canonicalPursuitDomain(*request.Domain, contextText)
+		if err != nil {
+			return nil, err
+		}
+		pursuit.Domain = canonical
+	}
 	pursuit.RiskLevel = conservativeRisk(firstNonEmpty(request.RiskLevel, pursuit.RiskLevel), classifyRisk(contextText))
 	pursuit.AutonomyLevel = conservativeAutonomy(firstNonEmpty(request.AutonomyLevel, pursuit.AutonomyLevel), pursuit.RiskLevel)
 	if request.CompletionState != "" {
@@ -1015,11 +1164,11 @@ func (s *service) UpdateForOwner(ownerIdentity string, id uuid.UUID, request Upd
 		return nil, err
 	}
 	_, _ = s.recordActivity(id, "pursuit.updated", "Pursuit details updated", firstNonEmpty(request.Actor, "operator"), "", "", "")
-	if !strings.EqualFold(strings.TrimSpace(priorDomain), strings.TrimSpace(updated.Domain)) {
-		_, _ = s.projectLifeDomain(updated, firstNonEmpty(request.Actor, "operator"))
-	}
 	if !strings.EqualFold(priorRiskLevel, updated.RiskLevel) || !strings.EqualFold(priorAutonomyLevel, updated.AutonomyLevel) {
 		_, _ = s.recordActivity(id, "pursuit.safety_normalized", "Pursuit safety policy recalculated from the current goal context: "+updated.RiskLevel+" risk / "+updated.AutonomyLevel+" autonomy", firstNonEmpty(request.Actor, "operator"), "", "", "")
+	}
+	if !strings.EqualFold(strings.TrimSpace(priorDomain), strings.TrimSpace(updated.Domain)) {
+		_, _ = s.projectLifeDomain(updated, firstNonEmpty(request.Actor, "system"))
 	}
 	return updated, nil
 }
@@ -1076,9 +1225,9 @@ func (s *service) Dashboard() (*Dashboard, error) {
 	return s.DashboardForOwner("")
 }
 
-// ListForOwner scopes authenticated users to records they own while keeping
-// ownerless records available for local single-user deployments created before
-// identity-aware pursuit ownership existed.
+// ListForOwner scopes authenticated users to records they own. Only the
+// explicitly configured migration owner can additionally inspect ownerless
+// records created before identity-aware pursuit ownership existed.
 func (s *service) ListForOwner(ownerIdentity string, includeArchived bool) ([]models.Pursuit, error) {
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	var (
@@ -1108,7 +1257,7 @@ func pursuitVisibleTo(pursuit models.Pursuit, ownerIdentity string) bool {
 		return true
 	}
 	recordOwner := strings.TrimSpace(pursuit.OwnerIdentity)
-	return recordOwner == "" || recordOwner == ownerIdentity
+	return recordOwner == ownerIdentity || (recordOwner == "" && identity.CanReadLegacyOwnerlessData(ownerIdentity))
 }
 
 // pursuitMutableBy is intentionally stricter than read visibility. Ownerless
@@ -1128,27 +1277,6 @@ func (s *service) DashboardForOwner(ownerIdentity string) (*Dashboard, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.dashboardForPursuits(ownerIdentity, pursuits)
-}
-
-// DashboardWithPursuitsForOwner reuses the active records already loaded for
-// the dashboard projection. The route exposes this only when a client asks for
-// it, avoiding a second owner-scoped list request during the initial Pursuits
-// page load while keeping ordinary dashboard responses compact.
-func (s *service) DashboardWithPursuitsForOwner(ownerIdentity string) (*Dashboard, error) {
-	pursuits, err := s.ListForOwner(ownerIdentity, false)
-	if err != nil {
-		return nil, err
-	}
-	dashboard, err := s.dashboardForPursuits(ownerIdentity, pursuits)
-	if err != nil {
-		return nil, err
-	}
-	dashboard.Pursuits = pursuits
-	return dashboard, nil
-}
-
-func (s *service) dashboardForPursuits(ownerIdentity string, pursuits []models.Pursuit) (*Dashboard, error) {
 	dashboard := &Dashboard{
 		Counts: map[string]int64{
 			"active": 0, "waiting": 0, "blocked": 0, "completed": 0, "needsRobert": 0, "decisionQueue": 0, "stale": 0, "reviewDue": 0, "planningNeeded": 0, "highRisk": 0, "completionCandidates": 0,
@@ -1165,12 +1293,29 @@ func (s *service) dashboardForPursuits(ownerIdentity string, pursuits []models.P
 		HighRisk:             []PursuitListItem{},
 		CompletionCandidates: []PursuitListItem{},
 	}
+	bulkDetails, bulkAvailable, bulkErr := s.dashboardDetailsForOwner(ownerIdentity, pursuits)
+	if bulkErr != nil {
+		// A projection failure must not make the operator dashboard disappear.
+		// The established single-pursuit loader remains the fail-safe path.
+		bulkAvailable = false
+	}
 	for _, pursuit := range pursuits {
 		if pursuitClosed(pursuit) {
 			dashboard.Counts["completed"]++
 			continue
 		}
-		item, detail, detailErr := s.listItemWithDetailForOwner(ownerIdentity, pursuit)
+		var item PursuitListItem
+		var detail *PursuitDetail
+		var detailErr error
+		if bulkAvailable {
+			detail = bulkDetails[pursuit.ID]
+			if detail == nil {
+				detailErr = dashboardProjectionMissing(pursuit.ID)
+			}
+			item, detail, detailErr = pursuitListItemWithDetail(pursuit, detail, detailErr)
+		} else {
+			item, detail, detailErr = s.listItemWithDetailForOwner(ownerIdentity, pursuit)
+		}
 		if detailErr != nil {
 			item = detailUnavailableListItem(pursuit)
 		}
@@ -1237,87 +1382,20 @@ func (s *service) dashboardForPursuits(ownerIdentity string, pursuits []models.P
 	return dashboard, nil
 }
 
-func dashboardSummary(source *Dashboard) *Dashboard {
-	if source == nil {
-		return nil
+// DashboardWithPursuitsForOwner includes the owner-scoped pursuit records only
+// for clients that explicitly request them. The ordinary dashboard response
+// remains compact and does not expose this additional record list.
+func (s *service) DashboardWithPursuitsForOwner(ownerIdentity string) (*Dashboard, error) {
+	dashboard, err := s.DashboardForOwner(ownerIdentity)
+	if err != nil {
+		return nil, err
 	}
-	result := *source
-	result.Counts = make(map[string]int64, len(source.Counts))
-	for key, value := range source.Counts {
-		result.Counts[key] = value
+	pursuits, err := s.ListForOwner(ownerIdentity, false)
+	if err != nil {
+		return nil, err
 	}
-	result.Pursuits = nil
-	result.DecisionQueue = make([]PursuitDashboardDecision, len(source.DecisionQueue))
-	for index, decision := range source.DecisionQueue {
-		decision.Pursuit = dashboardPursuitSummary(decision.Pursuit)
-		decision.Decision = dashboardDecisionSummary(decision.Decision)
-		result.DecisionQueue[index] = decision
-	}
-	result.NeedsRobert = dashboardListSummary(source.NeedsRobert, 1)
-	result.VAReady = dashboardListSummary(source.VAReady, 1)
-	result.SystemReady = dashboardListSummary(source.SystemReady, 1)
-	result.Blocked = dashboardListSummary(source.Blocked, 1)
-	result.Stale = dashboardListSummary(source.Stale, 1)
-	result.ReviewDue = dashboardListSummary(source.ReviewDue, 1)
-	result.PlanningNeeded = dashboardListSummary(source.PlanningNeeded, 1)
-	result.RecentlyChanged = dashboardListSummary(source.RecentlyChanged, 1)
-	result.HighRisk = dashboardListSummary(source.HighRisk, 1)
-	result.CompletionCandidates = dashboardListSummary(source.CompletionCandidates, 1)
-	return &result
-}
-
-func dashboardListSummary(source []PursuitListItem, limit int) []PursuitListItem {
-	length := len(source)
-	if limit > 0 && length > limit {
-		length = limit
-	}
-	result := make([]PursuitListItem, length)
-	for index, item := range source[:length] {
-		item.Pursuit = dashboardPursuitSummary(item.Pursuit)
-		result[index] = item
-	}
-	return result
-}
-
-func dashboardPursuitSummary(pursuit models.Pursuit) models.Pursuit {
-	return models.Pursuit{
-		ID:                    pursuit.ID,
-		Title:                 pursuit.Title,
-		WhyItMatters:          pursuit.WhyItMatters,
-		ProjectKey:            pursuit.ProjectKey,
-		Domain:                pursuit.Domain,
-		CurrentStateSummary:   pursuit.CurrentStateSummary,
-		Status:                pursuit.Status,
-		PriorityScore:         pursuit.PriorityScore,
-		RiskLevel:             pursuit.RiskLevel,
-		Confidence:            pursuit.Confidence,
-		AutonomyLevel:         pursuit.AutonomyLevel,
-		NeedCategory:          pursuit.NeedCategory,
-		NextRecommendedAction: pursuit.NextRecommendedAction,
-		CompletionState:       pursuit.CompletionState,
-		LastActivityAt:        pursuit.LastActivityAt,
-		NextReviewAt:          pursuit.NextReviewAt,
-		TargetAt:              pursuit.TargetAt,
-		ReviewCadenceDays:     pursuit.ReviewCadenceDays,
-		Archived:              pursuit.Archived,
-		CreatedAt:             pursuit.CreatedAt,
-		UpdatedAt:             pursuit.UpdatedAt,
-	}
-}
-
-func dashboardDecisionSummary(decision PursuitDecision) PursuitDecision {
-	return PursuitDecision{
-		ID:               decision.ID,
-		DecisionType:     decision.DecisionType,
-		Status:           decision.Status,
-		Recommended:      decision.Recommended,
-		Reason:           decision.Reason,
-		RiskLevel:        decision.RiskLevel,
-		YesLabel:         decision.YesLabel,
-		NoLabel:          decision.NoLabel,
-		RequiresApproval: decision.RequiresApproval,
-		Approved:         decision.Approved,
-	}
+	dashboard.Pursuits = pursuits
+	return dashboard, nil
 }
 
 func (s *service) Decisions() ([]PursuitDashboardDecision, error) {
@@ -1325,12 +1403,12 @@ func (s *service) Decisions() ([]PursuitDashboardDecision, error) {
 }
 
 func (s *service) DecisionsForOwner(ownerIdentity string) ([]PursuitDashboardDecision, error) {
-	dashboard, err := s.DashboardForOwner(ownerIdentity)
+	snapshot, err := s.OperatingSnapshotForOwner(ownerIdentity)
 	if err != nil {
 		return nil, err
 	}
-	decisions := make([]PursuitDashboardDecision, len(dashboard.DecisionQueue))
-	copy(decisions, dashboard.DecisionQueue)
+	decisions := make([]PursuitDashboardDecision, len(snapshot.Decisions))
+	copy(decisions, snapshot.Decisions)
 	return decisions, nil
 }
 
@@ -1349,10 +1427,32 @@ func (s *service) Brief() (*Brief, error) {
 }
 
 func (s *service) BriefForOwner(ownerIdentity string) (*Brief, error) {
+	snapshot, err := s.OperatingSnapshotForOwner(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Brief, nil
+}
+
+func (s *service) OperatingSnapshot() (*OperatingSnapshot, error) {
+	return s.OperatingSnapshotForOwner("")
+}
+
+func (s *service) OperatingSnapshotForOwner(ownerIdentity string) (*OperatingSnapshot, error) {
 	dashboard, err := s.DashboardForOwner(ownerIdentity)
 	if err != nil {
 		return nil, err
 	}
+	decisions := make([]PursuitDashboardDecision, len(dashboard.DecisionQueue))
+	copy(decisions, dashboard.DecisionQueue)
+	return &OperatingSnapshot{
+		Brief:     briefFromDashboard(dashboard),
+		Decisions: decisions,
+		Dashboard: dashboard,
+	}, nil
+}
+
+func briefFromDashboard(dashboard *Dashboard) *Brief {
 	brief := &Brief{
 		GeneratedAt:          time.Now().UTC(),
 		NeedsRobert:          len(dashboard.NeedsRobert),
@@ -1367,7 +1467,7 @@ func (s *service) BriefForOwner(ownerIdentity string) (*Brief, error) {
 	brief.Summary = briefSummary(*brief, dashboard)
 	brief.PrimaryAction = briefPrimaryAction(*brief)
 	brief.Cards = briefCards(dashboard, 6)
-	return brief, nil
+	return brief
 }
 
 // UpsertTaskAttempt records the durable, compact task-engine projection for a
@@ -1485,11 +1585,8 @@ func pursuitTaskAttemptActivity(attempt models.PursuitTaskAttempt) (string, stri
 	if attempt.CompletedAt == nil {
 		return "pursuit.task_attempt_started", "Direct " + mode + " task attempt started."
 	}
-	if attempt.Status == "validated" {
-		if acceptedCompletionStatus(attempt.VerificationStatus) {
-			return "pursuit.task_attempt_validated", "Direct " + mode + " task attempt completed with verified output."
-		}
-		return "pursuit.task_attempt_recorded", "Direct " + mode + " task attempt validated; verification status: " + firstNonEmpty(attempt.VerificationStatus, "unavailable") + "."
+	if strings.EqualFold(strings.TrimSpace(attempt.Status), "validated") && acceptedTaskAttemptVerification(attempt) {
+		return "pursuit.task_attempt_validated", "Direct " + mode + " task attempt completed with verified output."
 	}
 	return "pursuit.task_attempt_recorded", "Direct " + mode + " task attempt recorded with status " + attempt.Status + "."
 }
@@ -1498,36 +1595,43 @@ var taskAttemptReviewVerificationStatuses = []string{"needs_review", "uncertain"
 
 var taskAttemptAcceptedVerificationStatuses = []string{"verified", "source_supported", "test_passed", "human_approved", "schema_validated"}
 
-// PostgreSQL BTRIM must match Go's Unicode TrimSpace at this authority boundary.
-const taskAttemptWhitespace = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
-
 func pursuitTaskAttemptNeedsReview(attempt models.PursuitTaskAttempt) bool {
-	status := strings.ToLower(strings.TrimSpace(attempt.Status))
-	if strings.EqualFold(strings.TrimSpace(attempt.Mode), "run") && (status == "validated" || status == "completed") {
-		accepted := false
-		for _, status := range taskAttemptAcceptedVerificationStatuses {
-			if strings.EqualFold(strings.TrimSpace(attempt.VerificationStatus), status) {
-				accepted = true
-				break
-			}
-		}
-		if !accepted {
-			return true
-		}
+	status := normalizeOperationalStatus(attempt.Status)
+	if strings.TrimSpace(attempt.BlockedReason) != "" {
+		return true
 	}
-	if strings.Contains(status, "review") || strings.TrimSpace(attempt.BlockedReason) != "" {
+	if strings.EqualFold(strings.TrimSpace(attempt.Mode), "run") {
+		if oneOf(status, "pending", "queued", "running", "started", "in_progress") {
+			return false
+		}
+		if oneOf(status, "validated", "completed") {
+			return !acceptedTaskAttemptVerification(attempt)
+		}
+		return true
+	}
+	if strings.Contains(status, "review") || strings.Contains(status, "uncertain") || strings.Contains(status, "indeterminate") {
 		return true
 	}
 	switch status {
-	case "blocked", "uncertain", "indeterminate", "failed":
+	case "blocked", "failed", "error", "cancelled", "canceled", "unsupported", "conflicting":
 		return true
 	}
-	for _, rejected := range taskAttemptReviewVerificationStatuses {
-		if strings.EqualFold(strings.TrimSpace(attempt.VerificationStatus), rejected) {
+	verificationStatus := normalizeOperationalStatus(attempt.VerificationStatus)
+	return oneOf(verificationStatus, "needs_review", "uncertain", "unsupported", "conflicting", "failed", "fail", "indeterminate")
+}
+
+func acceptedTaskAttemptVerification(attempt models.PursuitTaskAttempt) bool {
+	status := normalizeOperationalStatus(attempt.VerificationStatus)
+	for _, acceptedStatus := range taskAttemptAcceptedVerificationStatuses {
+		if status == acceptedStatus {
 			return true
 		}
 	}
 	return false
+}
+
+func normalizeOperationalStatus(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }
 
 func pursuitTaskAttemptBlockers(attempts []models.PursuitTaskAttempt, workflows []models.WorkflowItem) []PursuitBlocker {
@@ -1540,7 +1644,11 @@ func pursuitTaskAttemptBlockers(attempts []models.PursuitTaskAttempt, workflows 
 			runtimeAttemptRecoveredByWorkflow(models.AutomationLaunchEvent{ID: launchID}, workflows) {
 			continue
 		}
-		result = append(result, PursuitBlocker{Label: "Direct task requires review", Owner: "Robert", Reason: firstNonEmpty(attempt.BlockedReason, attempt.VerificationStatus, attempt.Status) + " (task://" + attempt.TaskPlanID + ")"})
+		result = append(result, PursuitBlocker{
+			Label:  "Direct task requires review",
+			Owner:  "Robert",
+			Reason: firstNonEmpty(attempt.BlockedReason, attempt.VerificationStatus, attempt.Status) + " (task://" + attempt.TaskPlanID + ")",
+		})
 	}
 	return result
 }
@@ -1573,22 +1681,12 @@ func (s *service) DetailForOwner(ownerIdentity string, id uuid.UUID) (*PursuitDe
 	if err != nil {
 		return nil, pursuitDetailLoadError("task attempts", err)
 	}
-	taskAttempts = taskAttemptsVisibleToOwner(ownerIdentity, taskAttempts)
-	reviewAttempts, err := s.repo.FindTaskAttemptsNeedingReview(id)
+	reviewAttempts, err := s.taskAttemptsNeedingReview(id)
 	if err != nil {
-		return nil, pursuitDetailLoadError("task attempts needing review", err)
+		return nil, pursuitDetailLoadError("task attempt review state", err)
 	}
-	reviewAttempts = taskAttemptsVisibleToOwner(ownerIdentity, reviewAttempts)
-	seenAttempts := map[string]bool{}
-	for _, attempt := range taskAttempts {
-		seenAttempts[attempt.TaskPlanID] = true
-	}
-	for _, attempt := range reviewAttempts {
-		if !seenAttempts[attempt.TaskPlanID] {
-			taskAttempts = append(taskAttempts, attempt)
-			seenAttempts[attempt.TaskPlanID] = true
-		}
-	}
+	taskAttempts = mergePursuitTaskAttempts(taskAttempts, reviewAttempts)
+	taskAttempts = taskAttemptsVisibleToOwner(ownerIdentity, taskAttempts)
 	if taskAttempts == nil {
 		taskAttempts = []models.PursuitTaskAttempt{}
 	}
@@ -1685,75 +1783,67 @@ func (s *service) DetailForOwner(ownerIdentity string, id uuid.UUID) (*PursuitDe
 	if err != nil {
 		return nil, pursuitDetailLoadError("linked automations", err)
 	}
-	runtimeAttempts, err := s.repo.FindLinkedAutomationLaunches(automationIDs, linkedRuntimeAttemptIDs, 20)
+	runtimeAttemptLimit := len(linkedRuntimeAttemptIDs)
+	if runtimeAttemptLimit < 20 {
+		runtimeAttemptLimit = 20
+	}
+	runtimeAttempts, err := s.repo.FindLinkedAutomationLaunches(automationIDs, linkedRuntimeAttemptIDs, runtimeAttemptLimit)
 	if err != nil {
 		return nil, pursuitDetailLoadError("linked runtime attempts", err)
 	}
 	runtimeAttempts = runtimeAttemptsVisibleToOwner(ownerIdentity, runtimeAttempts)
-	exactAttempts, err := s.findExactRuntimeAttempts(ownerIdentity, linkedRuntimeAttemptIDs)
-	if err != nil {
-		return nil, pursuitDetailLoadError("explicit runtime attempts", err)
-	}
-	seenLaunches := map[uuid.UUID]bool{}
-	for _, attempt := range runtimeAttempts {
-		seenLaunches[attempt.ID] = true
-	}
-	for _, attempt := range exactAttempts {
-		if !seenLaunches[attempt.ID] {
-			runtimeAttempts = append(runtimeAttempts, attempt)
-			seenLaunches[attempt.ID] = true
-		}
-	}
 	if runtimeAttempts == nil {
 		runtimeAttempts = []models.AutomationLaunchEvent{}
 	}
-	resolvedDecisions := resolvedPursuitDecisions(activity)
-	sourceBlockers := sourceRetractionBlockers(links, extractions)
-	qualityGateBlockers := qualityGateBlockers(qualityGates)
-	contractBlockers := pursuitGoalContractBlockers(*pursuit)
 	resourceUsage := s.resourceUsageForPursuit(ownerIdentity, *pursuit)
-	contractBlockers = append(contractBlockers, pursuitResourceBlockers(*pursuit, resourceUsage)...)
+	return s.buildPursuitDetail(*pursuit, pursuitDetailRecords{
+		Links: links, Activity: activity, Workflows: workflows,
+		ChecklistItems: checklistItems, OpenLoops: openLoops, Proposals: proposals,
+		QualityGates: qualityGates, Decisions: decisions, Transitions: transitions,
+		SourceLinks: sourceLinks, Events: events, Evidence: evidence, Memories: memories,
+		Conversations: conversations, AmbientOpportunities: ambientOpportunities,
+		TaskAttempts: taskAttempts, VerificationRuns: verificationRuns,
+		VerificationClaims: verificationClaims, VerificationEvidence: verificationEvidence,
+		Automations: automations, RuntimeAttempts: runtimeAttempts, SourceItems: sourceItems,
+		SourceExtractions: extractions, ResourceUsage: resourceUsage,
+	}), nil
+}
+
+func (s *service) buildPursuitDetail(pursuit models.Pursuit, records pursuitDetailRecords) *PursuitDetail {
+	resolvedDecisions := resolvedPursuitDecisions(records.Activity)
+	sourceBlockers := sourceRetractionBlockers(records.Links, records.SourceExtractions)
+	qualityReviewBlockers := qualityGateBlockers(records.QualityGates)
+	contractBlockers := pursuitGoalContractBlockers(pursuit)
+	contractBlockers = append(contractBlockers, pursuitResourceBlockers(pursuit, records.ResourceUsage)...)
 
 	detail := &PursuitDetail{
-		Pursuit:              *pursuit,
-		Links:                links,
-		Activity:             activity,
-		Workflows:            workflows,
-		ChecklistItems:       checklistItems,
-		OpenLoops:            openLoops,
-		Proposals:            proposals,
-		QualityGates:         qualityGates,
-		Decisions:            decisions,
-		Transitions:          transitions,
-		SourceLinks:          sourceLinks,
-		Events:               events,
-		Evidence:             evidence,
-		Memories:             memories,
-		Conversations:        compactConversations(conversations),
-		AmbientOpportunities: compactAmbientOpportunities(ambientOpportunities),
-		TaskRuns:             taskRunsFromWorkflows(workflows),
-		TaskAttempts:         taskAttempts,
-		VerificationRuns:     verificationRuns,
-		VerificationClaims:   verificationClaims,
-		VerificationEvidence: verificationEvidence,
-		Automations:          compactAutomations(automations),
-		RuntimeAttempts:      runtimeAttempts,
-		SourceItems:          compactSourceItems(sourceItems),
-		SourceExtractions:    extractions,
-		ResourceUsage:        resourceUsage,
+		Pursuit: pursuit, Links: records.Links, Activity: records.Activity,
+		Workflows: records.Workflows, ChecklistItems: records.ChecklistItems,
+		OpenLoops: records.OpenLoops, Proposals: records.Proposals,
+		QualityGates: records.QualityGates, Decisions: records.Decisions,
+		Transitions: records.Transitions, SourceLinks: records.SourceLinks,
+		Events: records.Events, Evidence: records.Evidence, Memories: records.Memories,
+		Conversations:        compactConversations(records.Conversations),
+		AmbientOpportunities: compactAmbientOpportunities(records.AmbientOpportunities),
+		TaskRuns:             taskRunsFromWorkflows(records.Workflows), TaskAttempts: records.TaskAttempts,
+		VerificationRuns: records.VerificationRuns, VerificationClaims: records.VerificationClaims,
+		VerificationEvidence: records.VerificationEvidence,
+		Automations:          compactAutomations(records.Automations), RuntimeAttempts: records.RuntimeAttempts,
+		SourceItems: compactSourceItems(records.SourceItems), SourceExtractions: records.SourceExtractions,
+		ResourceUsage: records.ResourceUsage,
 	}
-	detail.ApprovalItems = approvalWorkflows(workflows)
-	detail.DecisionQueue = decisionQueue(*pursuit, workflows, proposals, decisions, runtimeAttempts, resolvedDecisions)
-	detail.Timeline = pursuitTimeline(*pursuit, activity, workflows, transitions, sourceLinks, decisions, events, detail.TaskRuns, taskAttempts, verificationRuns, runtimeAttempts)
-	detail.Blockers = append(blockers(workflows, openLoops), runtimeAttemptBlockers(runtimeAttempts, workflows, resolvedDecisions)...)
+	detail.ApprovalItems = approvalWorkflows(records.Workflows)
+	detail.DecisionQueue = decisionQueue(pursuit, records.Workflows, records.Proposals, records.Decisions, records.RuntimeAttempts, resolvedDecisions)
+	detail.Timeline = pursuitTimeline(pursuit, records.Activity, records.Workflows, records.Transitions, records.SourceLinks, records.Decisions, records.Events, detail.TaskRuns, records.TaskAttempts, records.VerificationRuns, records.RuntimeAttempts)
+	detail.Blockers = append(blockers(records.Workflows, records.OpenLoops), runtimeAttemptBlockers(records.RuntimeAttempts, records.Workflows, resolvedDecisions)...)
+	detail.Blockers = append(detail.Blockers, pursuitTaskAttemptBlockers(records.TaskAttempts, records.Workflows)...)
 	detail.Blockers = append(detail.Blockers, sourceBlockers...)
-	detail.Blockers = append(detail.Blockers, qualityGateBlockers...)
+	detail.Blockers = append(detail.Blockers, qualityReviewBlockers...)
 	detail.Blockers = append(detail.Blockers, contractBlockers...)
-	detail.Blockers = append(detail.Blockers, pursuitTaskAttemptBlockers(taskAttempts, workflows)...)
-	detail.NextActions = nextActions(*pursuit, workflows, openLoops, proposals, runtimeAttempts, resolvedDecisions, len(qualityGateBlockers) > 0, len(contractBlockers) > 0)
-	detail.ActionQueues = actionQueues(*pursuit, detail.NextActions, detail.Blockers)
-	detail.Summary = summarize(*pursuit, links, workflows, openLoops, evidence, memories, detail.SourceItems, extractions, detail.TaskRuns, taskAttempts, verificationRuns, runtimeAttempts, activity, sourceBlockers, qualityGateBlockers, contractBlockers)
-	detail.Summary.QualityGatesNeedingReview = len(qualityGateBlockers)
+	detail.NextActions = nextActions(pursuit, records.Workflows, records.OpenLoops, records.Proposals, records.RuntimeAttempts, resolvedDecisions, len(qualityReviewBlockers) > 0, len(contractBlockers) > 0)
+	detail.ActionQueues = actionQueues(pursuit, detail.NextActions, detail.Blockers)
+	detail.Summary = summarize(pursuit, records.Links, records.Workflows, records.OpenLoops, records.Evidence, records.Memories, detail.SourceItems, records.SourceExtractions, detail.TaskRuns, records.TaskAttempts, records.VerificationRuns, records.RuntimeAttempts, records.Activity, sourceBlockers, qualityReviewBlockers, contractBlockers)
+	detail.Summary.QualityGatesNeedingReview = len(qualityReviewBlockers)
 	if len(detail.Timeline) > 0 {
 		detail.Summary.WhatChanged = timelineChangeSummary(detail.Timeline[0])
 	}
@@ -1763,7 +1853,7 @@ func (s *service) DetailForOwner(ownerIdentity string, id uuid.UUID) (*PursuitDe
 	if queueNeedsRobert := len(detail.ActionQueues.NeedsRobert); queueNeedsRobert > detail.Summary.NeedsRobert {
 		detail.Summary.NeedsRobert = queueNeedsRobert
 	}
-	if pursuitNeedsRobert(*pursuit, detail.NextActions) && detail.Summary.NeedsRobert == 0 {
+	if pursuitNeedsRobert(pursuit, detail.NextActions) && detail.Summary.NeedsRobert == 0 {
 		detail.Summary.NeedsRobert = 1
 	}
 	detail.Summary.DecisionCards = len(detail.DecisionQueue)
@@ -1772,8 +1862,8 @@ func (s *service) DetailForOwner(ownerIdentity string, id uuid.UUID) (*PursuitDe
 	detail.Summary.VAReadyActions = len(detail.ActionQueues.VAReady)
 	detail.Summary.SystemReadyActions = len(detail.ActionQueues.SystemReady)
 	detail.Summary.WaitingActions = len(detail.ActionQueues.Waiting)
-	detail.OperationalDigest = operationalDigest(*pursuit, *detail)
-	return detail, nil
+	detail.OperationalDigest = operationalDigest(pursuit, *detail)
+	return detail
 }
 
 func (s *service) ResolveEvidence(id uuid.UUID, uri string) (*PursuitEvidenceResolution, error) {
@@ -2158,6 +2248,50 @@ func taskAttemptsVisibleToOwner(ownerIdentity string, attempts []models.PursuitT
 	return visible
 }
 
+func (s *service) taskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error) {
+	if repository, ok := s.repo.(taskAttemptReviewRepository); ok {
+		return repository.FindTaskAttemptsNeedingReview(pursuitID)
+	}
+	attempts, err := s.repo.FindTaskAttempts(pursuitID, 50)
+	if err != nil {
+		return nil, err
+	}
+	if len(attempts) == 50 {
+		return nil, fmt.Errorf("task-attempt history exceeds the fallback inspection limit")
+	}
+	result := make([]models.PursuitTaskAttempt, 0)
+	for _, attempt := range attempts {
+		if pursuitTaskAttemptNeedsReview(attempt) {
+			result = append(result, attempt)
+		}
+	}
+	return result, nil
+}
+
+func mergePursuitTaskAttempts(recent, review []models.PursuitTaskAttempt) []models.PursuitTaskAttempt {
+	merged := append([]models.PursuitTaskAttempt(nil), recent...)
+	seen := make(map[string]struct{}, len(merged)+len(review))
+	keyFor := func(attempt models.PursuitTaskAttempt) string {
+		if attempt.ID != uuid.Nil {
+			return attempt.ID.String()
+		}
+		return strings.TrimSpace(attempt.TaskPlanID)
+	}
+	for _, attempt := range merged {
+		seen[keyFor(attempt)] = struct{}{}
+	}
+	for _, attempt := range review {
+		key := keyFor(attempt)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, attempt)
+	}
+	sort.Slice(merged, func(i, j int) bool { return merged[i].UpdatedAt.After(merged[j].UpdatedAt) })
+	return merged
+}
+
 func (s *service) Link(id uuid.UUID, request LinkRequest) (*models.PursuitLink, error) {
 	pursuit, err := s.repo.FindByID(id)
 	if err != nil {
@@ -2291,7 +2425,7 @@ func (s *service) Match(request MatchRequest) ([]MatchCandidate, error) {
 			}
 		}
 	}
-	query := normalizeWords(request.Input + " " + request.ProjectKey + " " + request.SourceURI)
+	query := normalizeWords(request.Input + " " + request.ProjectKey + " " + request.ProjectKeyHint + " " + request.SourceURI)
 	result := []MatchCandidate{}
 	for _, pursuit := range pursuits {
 		score := 0.0
@@ -2499,13 +2633,14 @@ func (s *service) RouteIntake(request IntakeRequest) (*RoutedIntakeResult, error
 	request.MandateID = pursuitMandateIDString(normalizedMandateID)
 	actor := firstNonEmpty(request.Actor, "operator")
 	matches, err := s.Match(MatchRequest{
-		OwnerIdentity: request.OwnerIdentity,
-		Input:         request.Input,
-		ProjectKey:    request.ProjectKey,
-		SourceType:    request.SourceType,
-		SourceID:      request.SourceID,
-		SourceURI:     request.SourceURI,
-		Limit:         3,
+		OwnerIdentity:  request.OwnerIdentity,
+		Input:          request.Input,
+		ProjectKey:     request.ProjectKey,
+		ProjectKeyHint: request.ProjectKeyHint,
+		SourceType:     request.SourceType,
+		SourceID:       request.SourceID,
+		SourceURI:      request.SourceURI,
+		Limit:          3,
 	})
 	if err != nil {
 		return nil, err
@@ -2536,16 +2671,23 @@ func (s *service) RouteIntake(request IntakeRequest) (*RoutedIntakeResult, error
 				Detail:    detail,
 			}, nil
 		}
-		detail, err := s.IntakeForOwner(request.OwnerIdentity, matches[0].Pursuit.ID, request)
+		intakeDetail, err := s.IntakeForOwner(request.OwnerIdentity, matches[0].Pursuit.ID, request)
 		if err != nil {
 			return nil, err
+		}
+		detail, err := s.DetailForOwner(request.OwnerIdentity, matches[0].Pursuit.ID)
+		if err != nil {
+			return nil, err
+		}
+		if detail != nil {
+			detail.IntakeWorkflowID = intakeDetail.IntakeWorkflowID
 		}
 		_, _ = s.recordActivity(matches[0].Pursuit.ID, "pursuit.routed_intake", fmt.Sprintf("Global intake routed into existing pursuit with %.2f confidence.", matches[0].Score), actor, firstNonEmpty(request.SourceType, "intake"), request.SourceID, request.SourceURI)
 		return &RoutedIntakeResult{
 			Mode:       "matched_existing",
-			WorkflowID: detail.IntakeWorkflowID,
 			Matched:    true,
 			PursuitID:  matches[0].Pursuit.ID,
+			WorkflowID: intakeDetail.IntakeWorkflowID,
 			Score:      matches[0].Score,
 			Reasons:    matches[0].Reasons,
 			Message:    "intake matched and created governed workflow under existing pursuit",
@@ -2558,7 +2700,7 @@ func (s *service) RouteIntake(request IntakeRequest) (*RoutedIntakeResult, error
 	// exists. This keeps sources, imported conversations, and direct API intake
 	// from leaving behind a review-held but separately addressable workflow that
 	// Robert never accepted as a real objective.
-	candidateEligible := candidateHasEnoughSignal(request.Input, request.ProjectKey, request.SourceLabel, request.SourceURI)
+	candidateEligible := candidateHasEnoughSignal(request.Input, request.ProjectKey, request.ProjectKeyHint, request.SourceLabel, request.SourceURI)
 	if candidateEligible {
 		return s.createIntakeCandidate(request, matches)
 	}
@@ -2567,9 +2709,9 @@ func (s *service) RouteIntake(request IntakeRequest) (*RoutedIntakeResult, error
 	record, err := s.workflowService.Intake(workflow.IntakeRequest{
 		OwnerIdentity:   request.OwnerIdentity,
 		Input:           request.Input,
-		SuccessCriteria: append([]string(nil), request.SuccessCriteria...),
 		ProjectKey:      request.ProjectKey,
 		ProjectKeyHint:  request.ProjectKeyHint,
+		SuccessCriteria: append([]string(nil), request.SuccessCriteria...),
 		AutomationID:    request.AutomationID,
 		MandateID:       request.MandateID,
 		SourceType:      request.SourceType,
@@ -2654,15 +2796,10 @@ func (s *service) createIntakeCandidate(request IntakeRequest, matches []MatchCa
 	actor := firstNonEmpty(request.Actor, "system")
 	sourceType := firstNonEmpty(strings.TrimSpace(request.SourceType), "intake")
 	sourceLabel := firstNonEmpty(request.SourceLabel, request.SourceURI, sourceType+" intake")
-	description := candidateDescription("intake", request.Input, request.SourceURI, sourceLabel)
-	projectKeyHint := strings.TrimSpace(request.ProjectKeyHint)
-	if projectKeyHint != "" {
-		description += "\n\nUnverified project hint from the source: " + projectKeyHint + ". This is context only and has not been confirmed as the pursuit project."
-	}
 	created, err := s.Create(CreateRequest{
 		OwnerIdentity:         request.OwnerIdentity,
 		Title:                 candidateTitle(sourceLabel, request.Input),
-		Description:           description,
+		Description:           candidateDescription("intake", request.Input, request.SourceURI, sourceLabel, request.ProjectKeyHint),
 		ProjectKey:            strings.TrimSpace(request.ProjectKey),
 		MandateID:             request.MandateID,
 		DesiredOutcome:        "Turn this intake into a verified, governed outcome.",
@@ -2709,11 +2846,11 @@ func (s *service) createIntakeCandidate(request IntakeRequest, matches []MatchCa
 	} else if linked {
 		links = append(links, *extractionLink)
 	}
-	candidateCreatedMessage := "Created pursuit candidate from unmatched intake before workflow creation."
-	if projectKeyHint != "" {
-		candidateCreatedMessage += " Preserved source project hint as unverified context only: " + projectKeyHint + "."
+	candidateMessage := "Created pursuit candidate from unmatched intake before workflow creation."
+	if hint := strings.TrimSpace(request.ProjectKeyHint); hint != "" {
+		candidateMessage += " Preserved source project hint as unverified context only: " + hint
 	}
-	_, _ = s.recordActivity(created.ID, "pursuit.candidate_created", candidateCreatedMessage, actor, sourceType, request.SourceID, request.SourceURI)
+	_, _ = s.recordActivity(created.ID, "pursuit.candidate_created", candidateMessage, actor, sourceType, request.SourceID, request.SourceURI)
 
 	result := &RoutedIntakeResult{
 		Mode:             "candidate_created",
@@ -2880,9 +3017,9 @@ func (s *service) RouteWorkflowIntake(request workflow.IntakeRequest) (*workflow
 	routed, err := s.RouteIntake(IntakeRequest{
 		OwnerIdentity:   request.OwnerIdentity,
 		Input:           request.Input,
-		SuccessCriteria: append([]string(nil), request.SuccessCriteria...),
 		ProjectKey:      request.ProjectKey,
 		ProjectKeyHint:  request.ProjectKeyHint,
+		SuccessCriteria: append([]string(nil), request.SuccessCriteria...),
 		AutomationID:    request.AutomationID,
 		MandateID:       request.MandateID,
 		SourceType:      request.SourceType,
@@ -3118,8 +3255,11 @@ func candidateTitle(sourceLabel, input string) string {
 	return compactCandidateText(title, 90)
 }
 
-func candidateDescription(kind, input, sourceURI, sourceLabel string) string {
+func candidateDescription(kind, input, sourceURI, sourceLabel string, projectKeyHint ...string) string {
 	parts := []string{"Candidate source: " + kind}
+	if len(projectKeyHint) > 0 && strings.TrimSpace(projectKeyHint[0]) != "" {
+		parts = append(parts, "Unverified project hint from the source: "+compactCandidateText(projectKeyHint[0], 120)+" (has not been confirmed)")
+	}
 	if strings.TrimSpace(sourceLabel) != "" {
 		parts = append(parts, "Source label: "+compactCandidateText(sourceLabel, 180))
 	}
@@ -3239,9 +3379,9 @@ func (s *service) IntakeForOwner(ownerIdentity string, id uuid.UUID, request Int
 	record, err := s.workflowService.Intake(workflow.IntakeRequest{
 		OwnerIdentity:    effectiveOwner,
 		Input:            request.Input,
-		SuccessCriteria:  append([]string(nil), request.SuccessCriteria...),
 		ProjectKey:       firstNonEmpty(request.ProjectKey, pursuit.ProjectKey),
 		ProjectKeyHint:   request.ProjectKeyHint,
+		SuccessCriteria:  append([]string(nil), request.SuccessCriteria...),
 		AutomationID:     request.AutomationID,
 		MandateID:        request.MandateID,
 		SourceType:       request.SourceType,
@@ -4084,7 +4224,7 @@ func (s *service) recordDecisionResolution(id uuid.UUID, request DecisionResolut
 func approvalWorkflows(workflows []models.WorkflowItem) []models.WorkflowItem {
 	result := []models.WorkflowItem{}
 	for _, item := range workflows {
-		if item.RequiresApproval && (item.ApprovalStatus == "" || item.ApprovalStatus == "pending") {
+		if item.RequiresApproval && !strings.EqualFold(strings.TrimSpace(item.ApprovalStatus), "approved") {
 			result = append(result, item)
 		}
 	}
@@ -4115,10 +4255,10 @@ func unresolvedWorkflowDecisions(decisions []models.WorkflowDecision) []models.W
 func blockers(workflows []models.WorkflowItem, loops []models.WorkflowOpenLoop) []PursuitBlocker {
 	result := []PursuitBlocker{}
 	for _, item := range workflows {
-		if item.CurrentState == workflow.StateBlocked || taskRunNeedsReview(item) {
+		if item.CurrentState == workflow.StateBlocked || strings.TrimSpace(item.BlockedReason) != "" {
 			result = append(result, PursuitBlocker{
 				Label:      item.Title,
-				Reason:     firstNonEmpty(item.BlockedReason, item.LastWorkerError, item.RecoveryStatus, "workflow is blocked"),
+				Reason:     firstNonEmpty(item.BlockedReason, "workflow is blocked"),
 				Owner:      "Robert or external party",
 				WorkflowID: item.ID.String(),
 			})
@@ -4893,7 +5033,7 @@ func pursuitTimeline(
 			RiskLevel:   firstNonEmpty(attempt.RiskLevel, pursuit.RiskLevel),
 			SourceURI:   "task://" + attempt.TaskPlanID,
 			SourceLabel: "direct task attempt",
-			NeedsReview: pursuitTaskAttemptNeedsReview(attempt),
+			NeedsReview: strings.Contains(attempt.Status, "review") || strings.TrimSpace(attempt.BlockedReason) != "",
 			CreatedAt:   when,
 		})
 	}
@@ -5013,15 +5153,16 @@ func firstTime(values ...time.Time) time.Time {
 func summarize(pursuit models.Pursuit, links []models.PursuitLink, workflows []models.WorkflowItem, loops []models.WorkflowOpenLoop, evidence []models.WorkflowEvidenceClaim, memories []models.ContextMemory, sourceItems []PursuitSourceItem, extractions []models.SourceExtraction, taskRuns []PursuitTaskRun, taskAttempts []models.PursuitTaskAttempt, verificationRuns []models.VerificationRun, runtimeAttempts []models.AutomationLaunchEvent, activity []models.PursuitActivity, sourceBlockers []PursuitBlocker, qualityGateBlockers []PursuitBlocker, contractBlockers []PursuitBlocker) PursuitSummary {
 	approvals := len(approvalWorkflows(workflows))
 	needsRobert := approvals
-	blocked := len(blockers(workflows, loops)) + len(runtimeAttemptBlockers(runtimeAttempts, workflows, resolvedPursuitDecisions(activity))) + len(sourceBlockers) + len(qualityGateBlockers) + len(contractBlockers)
-	blocked += len(pursuitTaskAttemptBlockers(taskAttempts, workflows))
-	linkedEvidence := len(evidence) + len(memories) + len(sourceItems) + activeSourceExtractions(extractions) + acceptedVerificationRuns(verificationRuns) + completedRuntimeAttempts(runtimeAttempts) + acceptedWorkflowCompletionEvidence(workflows) + acceptedAmbientOpportunityLinks(links)
-	completed := 0
+	workflowReviewBlockers := 0
 	for _, item := range workflows {
-		if workflowCompletionAccepted(item) {
-			completed++
+		if taskRunNeedsReview(item) {
+			workflowReviewBlockers++
 		}
 	}
+	directTaskBlockers := len(pursuitTaskAttemptBlockers(taskAttempts, workflows))
+	blocked := len(blockers(workflows, loops)) + workflowReviewBlockers + directTaskBlockers + len(runtimeAttemptBlockers(runtimeAttempts, workflows, resolvedPursuitDecisions(activity))) + len(sourceBlockers) + len(qualityGateBlockers) + len(contractBlockers)
+	linkedEvidence := len(evidence) + len(memories) + len(sourceItems) + activeSourceExtractions(extractions) + acceptedVerificationRuns(verificationRuns) + completedRuntimeAttempts(runtimeAttempts) + acceptedWorkflowCompletionEvidence(workflows) + acceptedAmbientOpportunityLinks(links)
+	completed := acceptedWorkflowCompletionEvidence(workflows)
 	state := fmt.Sprintf("%s has %d linked workflows, %d needing Robert, %d blockers, and %d open loops.", pursuit.Title, len(workflows), approvals, blocked, len(loops))
 	if isPursuitCandidate(pursuit) {
 		needsRobert++
@@ -5282,19 +5423,23 @@ func (s *service) completionActiveBlockerReasonForOwner(ownerIdentity string, id
 	if approvals := approvalWorkflows(workflows); len(approvals) > 0 {
 		return fmt.Sprintf("%d workflow approval%s still pending", len(approvals), pluralSuffix(len(approvals))), nil
 	}
+	for _, item := range workflows {
+		if taskRunNeedsReview(item) {
+			return firstNonEmpty(item.LastWorkerError, item.BlockedReason, item.VerificationStatus, "linked workflow requires review before pursuit completion"), nil
+		}
+	}
+	if attempts, err := s.taskAttemptsNeedingReview(id); err != nil {
+		return "", err
+	} else if visible := taskAttemptsVisibleToOwner(ownerIdentity, attempts); len(visible) > 0 {
+		attempt := visible[0]
+		return firstNonEmpty(attempt.BlockedReason, attempt.VerificationStatus, attempt.Status, "direct task attempt requires review"), nil
+	}
 	openLoops, err := s.repo.FindLinkedOpenLoops(workflowIDs)
 	if err != nil {
 		return "", err
 	}
 	if active := blockers(workflows, openLoops); len(active) > 0 {
 		return firstNonEmpty(active[0].Reason, active[0].Label, "linked workflow or open loop is still blocked"), nil
-	}
-	reviewAttempts, err := s.repo.FindTaskAttemptsNeedingReview(id)
-	if err != nil {
-		return "", err
-	}
-	if active := pursuitTaskAttemptBlockers(taskAttemptsVisibleToOwner(ownerIdentity, reviewAttempts), workflows); len(active) > 0 {
-		return active[0].Reason, nil
 	}
 	proposals, err := s.repo.FindLinkedProposals(workflowIDs)
 	if err != nil {
@@ -5319,7 +5464,7 @@ func (s *service) completionActiveBlockerReasonForOwner(ownerIdentity string, id
 	}
 	runtimeAttemptIDs := linkUUIDs(links, LinkAgentRuntime)
 	if len(runtimeAttemptIDs) > 0 {
-		attempts, err := s.findExactRuntimeAttempts(ownerIdentity, runtimeAttemptIDs)
+		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, runtimeAttemptIDs, len(runtimeAttemptIDs))
 		if err != nil {
 			return "", err
 		}
@@ -5362,12 +5507,12 @@ func (s *service) completionEvidenceAvailableForOwner(ownerIdentity string, id u
 	}
 	runtimeEvidenceIDs := completionEvidenceRuntimeIDs(links)
 	if len(runtimeEvidenceIDs) > 0 {
-		attempts, err := s.findExactRuntimeAttempts(ownerIdentity, runtimeEvidenceIDs)
+		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, runtimeEvidenceIDs, len(runtimeEvidenceIDs))
 		if err != nil {
 			return false, "", err
 		}
 		for _, attempt := range attempts {
-			if runtimeAttemptCompleted(attempt.Status) && !runtimeAttemptNeedsReview(attempt) {
+			if runtimeAttemptCompleted(attempt) {
 				return true, "linked agent-runtime attempt completed under HAI controls", nil
 			}
 		}
@@ -5413,34 +5558,6 @@ func completionEvidenceRuntimeIDs(links []models.PursuitLink) []uuid.UUID {
 		ids = append(ids, id)
 	}
 	return uniqueUUIDs(ids)
-}
-
-func (s *service) findExactRuntimeAttempts(ownerIdentity string, ids []uuid.UUID) ([]models.AutomationLaunchEvent, error) {
-	ids = uniqueUUIDs(ids)
-	var result []models.AutomationLaunchEvent
-	for offset := 0; offset < len(ids); offset += 50 {
-		end := offset + 50
-		if end > len(ids) {
-			end = len(ids)
-		}
-		batch := ids[offset:end]
-		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, batch, len(batch))
-		if err != nil {
-			return nil, err
-		}
-		found := map[uuid.UUID]models.AutomationLaunchEvent{}
-		for _, attempt := range runtimeAttemptsVisibleToOwner(ownerIdentity, attempts) {
-			found[attempt.ID] = attempt
-		}
-		for _, id := range batch {
-			attempt, ok := found[id]
-			if !ok {
-				return nil, fmt.Errorf("explicit runtime evidence is unavailable; reconcile linked records before completion")
-			}
-			result = append(result, attempt)
-		}
-	}
-	return result, nil
 }
 
 func acceptedCompletionStatus(status string) bool {
@@ -5565,8 +5682,11 @@ func workflowHasTaskRunEvidence(item models.WorkflowItem) bool {
 }
 
 func taskRunStatus(item models.WorkflowItem) string {
-	if taskRunNeedsReview(item) {
+	if strings.TrimSpace(item.LastWorkerError) != "" || strings.TrimSpace(item.BlockedReason) != "" || item.CurrentState == workflow.StateBlocked {
 		return "blocked"
+	}
+	if taskRunNeedsReview(item) {
+		return "needs_review"
 	}
 	if item.CurrentState == workflow.StateCompleted {
 		return "completed"
@@ -5581,17 +5701,17 @@ func taskRunStatus(item models.WorkflowItem) string {
 }
 
 func taskRunNeedsReview(item models.WorkflowItem) bool {
-	status := strings.ToLower(strings.TrimSpace(item.VerificationStatus))
-	return strings.TrimSpace(item.LastWorkerError) != "" ||
-		strings.TrimSpace(item.BlockedReason) != "" ||
-		item.RecoveryStatus == workflow.RecoveryNeedsReview ||
-		item.RequiresApproval && !strings.EqualFold(strings.TrimSpace(item.ApprovalStatus), "approved") ||
-		item.CurrentState == workflow.StateCompleted && !acceptedCompletionStatus(status) ||
-		status == "needs_review" ||
-		status == "uncertain" ||
-		status == "conflicting" ||
-		status == "unsupported" ||
-		strings.Contains(status, "fail")
+	if strings.TrimSpace(item.LastWorkerError) != "" || strings.TrimSpace(item.BlockedReason) != "" || item.RecoveryStatus == workflow.RecoveryNeedsReview {
+		return true
+	}
+	if item.RequiresApproval && !strings.EqualFold(strings.TrimSpace(item.ApprovalStatus), "approved") {
+		return true
+	}
+	if item.CurrentState == workflow.StateCompleted {
+		return !workflowCompletionAccepted(item)
+	}
+	status := normalizeOperationalStatus(item.VerificationStatus)
+	return oneOf(status, "needs_review", "unsupported", "conflicting", "failed", "fail", "unknown", "uncertain", "indeterminate")
 }
 
 func verificationRunIDs(runs []models.VerificationRun) []uuid.UUID {
@@ -5649,8 +5769,13 @@ func workflowsReadyForCompletion(workflows []models.WorkflowItem) bool {
 }
 
 func workflowCompletionAccepted(item models.WorkflowItem) bool {
-	return item.CurrentState == workflow.StateCompleted && acceptedCompletionStatus(item.VerificationStatus) &&
-		!taskRunNeedsReview(item)
+	if item.CurrentState != workflow.StateCompleted || !acceptedCompletionStatus(item.VerificationStatus) {
+		return false
+	}
+	if item.RecoveryStatus == workflow.RecoveryNeedsReview || strings.TrimSpace(item.LastWorkerError) != "" || strings.TrimSpace(item.BlockedReason) != "" {
+		return false
+	}
+	return !item.RequiresApproval || strings.EqualFold(strings.TrimSpace(item.ApprovalStatus), "approved")
 }
 
 func pursuitNeedsRobert(pursuit models.Pursuit, actions []PursuitAction) bool {
@@ -6045,15 +6170,27 @@ func uniqueUUIDs(ids []uuid.UUID) []uuid.UUID {
 func completedRuntimeAttempts(attempts []models.AutomationLaunchEvent) int {
 	count := 0
 	for _, attempt := range attempts {
-		if runtimeAttemptCompleted(attempt.Status) && !runtimeAttemptNeedsReview(attempt) {
+		if runtimeAttemptCompleted(attempt) {
 			count++
 		}
 	}
 	return count
 }
 
-func runtimeAttemptCompleted(status string) bool {
-	return strings.EqualFold(strings.TrimSpace(status), "completed")
+func runtimeAttemptCompleted(attempt models.AutomationLaunchEvent) bool {
+	if !strings.EqualFold(strings.TrimSpace(attempt.Status), "completed") || attempt.RequiresApproval {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(attempt.LaunchType)) {
+	case "api":
+		return (attempt.ExitCode >= 200 && attempt.ExitCode <= 299) || attempt.ExitCode == 404
+	case "docker_service":
+		return attempt.ExitCode == 204 || attempt.ExitCode == 304
+	case "script":
+		return attempt.ExitCode == 0
+	default:
+		return attempt.ExitCode == 0
+	}
 }
 
 func resolvedPursuitDecisions(activity []models.PursuitActivity) map[string]bool {
@@ -6072,25 +6209,13 @@ func resolvedPursuitDecisions(activity []models.PursuitActivity) map[string]bool
 }
 
 func runtimeAttemptNeedsReview(attempt models.AutomationLaunchEvent) bool {
-	if attempt.RequiresApproval {
-		return true
-	}
-	status := strings.ToLower(strings.TrimSpace(attempt.Status))
+	status := normalizeOperationalStatus(attempt.Status)
 	switch status {
-	case "failed", "blocked", "error", "timeout", "timed_out", "cancelled", "canceled", "needs_review", "unsupported":
+	case "failed", "blocked", "error", "timeout", "timed_out", "cancelled", "canceled", "needs_review", "unsupported", "unknown", "indeterminate", "uncertain", "conflicting", "":
 		return true
 	case "completed":
-		switch strings.ToLower(strings.TrimSpace(attempt.LaunchType)) {
-		case "api":
-			return attempt.ExitCode < 100 || attempt.ExitCode > 599
-		case "docker_service":
-			return attempt.ExitCode != 204 && attempt.ExitCode != 304
-		default:
-			return attempt.ExitCode != 0
-		}
-	case "ready", "stopped":
-		return attempt.ExitCode != 0
-	case "pending", "running", "started", "queued":
+		return !runtimeAttemptCompleted(attempt)
+	case "ready", "pending", "queued", "running", "started", "in_progress", "stopped":
 		return false
 	default:
 		return true
@@ -6589,12 +6714,8 @@ func classifyDomain(text string) string {
 		return "work_venture"
 	case containsAny(lower, "health", "doctor", "medical"):
 		return "health_wellbeing"
-	case containsAny(lower, "client", "invoice", "quote", "job", "business"):
+	case containsAny(lower, "client", "invoice", "quote", "job"):
 		return "work_venture"
-	case containsAny(lower, "housing", "home", "garden", "repair", "vehicle"):
-		return "home_assets"
-	case containsAny(lower, "money", "payment", "tax", "budget", "debt"):
-		return "financial"
 	default:
 		return "personal_productivity"
 	}

@@ -23,8 +23,17 @@ type TaskEngine interface {
 	Run(request task.IntakeRequest) (*task.CompletionPlan, error)
 }
 
+type ContextTaskEngine interface {
+	PlanContext(context.Context, task.IntakeRequest) (*task.CompletionPlan, error)
+	RunContext(context.Context, task.IntakeRequest) (*task.CompletionPlan, error)
+}
+
 type AgentCycleRunner interface {
 	Run(request agentcycle.RunRequest) *agentcycle.RunResult
+}
+
+type ContextAgentCycleRunner interface {
+	RunContext(context.Context, agentcycle.RunRequest) (*agentcycle.RunResult, error)
 }
 
 // PursuitCommandRouter is deliberately narrow: the assistant can inspect a
@@ -183,10 +192,10 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 		// evidence on the workflow ledger and avoids a duplicate direct plan.
 		result.record("pursuit workflow", nil, "created or reused governed workflow work; the workflow worker owns planning, execution, retries, and verification")
 	} else if request.ExecuteAllowed {
-		plan, err = s.tasks.Run(taskRequest)
+		plan, err = runTask(ctx, s.tasks, taskRequest)
 		result.record("task success engine", err, "ran safe allowed task steps")
 	} else {
-		plan, err = s.tasks.Plan(taskRequest)
+		plan, err = planTask(ctx, s.tasks, taskRequest)
 		result.record("task planner", err, "created completion-first plan")
 	}
 	if plan != nil {
@@ -207,15 +216,25 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 			if err := ctx.Err(); err != nil {
 				return result, err
 			}
-			cycle := s.cycle.Run(agentcycle.RunRequest{
+			cycleRequest := agentcycle.RunRequest{
 				OwnerIdentity:  request.OwnerIdentity,
 				Trigger:        "assistant." + intent,
 				Limit:          8,
 				SkipSourceSync: request.SkipSourceSync,
 				SkipAmbient:    request.SkipAmbient,
-			})
+			}
+			var cycle *agentcycle.RunResult
+			if contextual, ok := s.cycle.(ContextAgentCycleRunner); ok {
+				cycle, err = contextual.RunContext(ctx, cycleRequest)
+			} else {
+				cycle = s.cycle.Run(cycleRequest)
+			}
 			result.AgentCycle = cycle
-			result.record("agent cycle", nil, cycleSummary(cycle))
+			result.record("agent cycle", err, cycleSummary(cycle))
+			if err != nil {
+				result.ReviewRequired = true
+				return result, err
+			}
 			if err := ctx.Err(); err != nil {
 				result.ReviewRequired = true
 				return result, err
@@ -232,6 +251,30 @@ func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
 	}
 	s.addLog(*result)
 	return result, nil
+}
+
+func planTask(ctx context.Context, engine TaskEngine, request task.IntakeRequest) (*task.CompletionPlan, error) {
+	if contextual, ok := engine.(ContextTaskEngine); ok {
+		return contextual.PlanContext(ctx, request)
+	}
+	return engine.Plan(request)
+}
+
+func runTask(ctx context.Context, engine TaskEngine, request task.IntakeRequest) (*task.CompletionPlan, error) {
+	if contextual, ok := engine.(ContextTaskEngine); ok {
+		return contextual.RunContext(ctx, request)
+	}
+	return engine.Run(request)
+}
+
+// CommandContext binds the command and every context-aware engine it invokes
+// to the caller's lifetime. It does not grant additional execution authority.
+func (s *Service) CommandContext(ctx context.Context, request CommandRequest) (*CommandResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	request.ExecutionContext = ctx
+	return s.Command(request)
 }
 
 func commandExecutionContext(request CommandRequest) context.Context {

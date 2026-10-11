@@ -35,7 +35,7 @@ Cleanup boundary: test `Remove-Item` calls were intercepted to retain fixtures. 
 
 ## Retained Proof
 
-Temp root: `C:\Users\NO\AppData\Local\Temp\hai-installer-audit-20260930-d3d0261b746943e49174ecf8138b11c1`.
+Temp root: `%TEMP%\hai-installer-audit-20260930-d3d0261b746943e49174ecf8138b11c1`.
 - Repro/failure: `header-repro-before.log`, `directory-repro-before.log`, `regression-red.log`; original synthetic `.exe` inputs retained and never executed.
 - Final Windows PowerShell proof: `tests-powershell-5.1.26100.9549-3fabecf265154a7e94c5f8adf7f2dff5.log`.
 - Final PowerShell 7 proof: `tests-powershell-7.6.5-1f74bed1af9a412f82cf2541e1cb8341.log`.

@@ -44,6 +44,7 @@ type IntakeRequest struct {
 	// ExecutionContext is trusted caller lifetime, never serialized or restored
 	// from queued review data. It does not grant execution authority.
 	ExecutionContext context.Context `json:"-"`
+	executionContext context.Context `json:"-"`
 	OwnerIdentity    string          `json:"-"`
 	// IdempotencyKey identifies one caller intent. Reusing it with the same
 	// request replays the durable result; reusing it for changed work fails.
@@ -1449,7 +1450,7 @@ func (s *service) loadOperatingContext(request IntakeRequest) (IntakeRequest, er
 	}
 	if s.agentContext != nil {
 		if len(request.AvailableAgents) == 0 {
-			agents, err := s.agentContext.LatestAgents(request.OwnerIdentity, now)
+			agents, err := latestAgentsForTask(s.agentContext, request, now)
 			if err != nil {
 				return request, fmt.Errorf("load available agents: %w", err)
 			}
@@ -1492,6 +1493,18 @@ func (s *service) LogsForOwnerWithError(ownerIdentity string) ([]CompletionPlan,
 		logs[i] = sanitizeCompletionPlanApprovalData(logs[i])
 	}
 	return logs, nil
+}
+
+func (s *service) HistoryForOwnerWithLimit(ownerIdentity string, limit int) ([]CompletionPlanHistoryItem, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, fmt.Errorf("owner identity is required")
+	}
+	history, ok := s.stateRepository.(TaskHistoryRepository)
+	if !ok {
+		return nil, fmt.Errorf("durable task history projection is unavailable")
+	}
+	return history.ListCompletionPlanHistory(ownerIdentity, normalizeTaskStateLimit(limit))
 }
 
 func (s *service) ReviewQueue() []ReviewQueueItem {
@@ -1818,7 +1831,7 @@ func (s *service) verifiedApprovalDecisionForExecution(
 	if ownerIdentity != taskStateOwnerIdentity(plan.OwnerIdentity) {
 		return nil, fmt.Errorf("task review owner does not match the execution owner")
 	}
-	repo, cancelRead, err := s.taskOperationStorage(ctx, request.ExecutionContext != nil)
+	repo, cancelRead, err := s.taskOperationStorage(ctx, hasTaskExecutionContext(request))
 	if err != nil {
 		return nil, err
 	}
@@ -1926,7 +1939,7 @@ func (s *service) addLog(plan CompletionPlan) error {
 
 func (s *service) addLogForRequest(request IntakeRequest, plan CompletionPlan) error {
 	ctx := taskExecutionContext(request)
-	repo, cancelWrite, err := s.taskOperationStorage(ctx, request.ExecutionContext != nil)
+	repo, cancelWrite, err := s.taskOperationStorage(ctx, hasTaskExecutionContext(request))
 	if err != nil {
 		return err
 	}
@@ -1952,7 +1965,7 @@ func (s *service) addLogWithRepository(repo TaskStateRepository, plan Completion
 // review, never resolving or replaying one. Lightweight executors have no
 // production configuration; production registration still requires a snapshot.
 func (s *service) captureAutomationReviewConfiguration(request IntakeRequest) (IntakeRequest, error) {
-	return s.captureAutomationReviewConfigurationContext(taskExecutionContext(request), request.ExecutionContext != nil, request)
+	return s.captureAutomationReviewConfigurationContext(taskExecutionContext(request), hasTaskExecutionContext(request), request)
 }
 
 func (s *service) captureAutomationReviewConfigurationContext(ctx context.Context, required bool, request IntakeRequest) (IntakeRequest, error) {
@@ -2006,7 +2019,7 @@ func (s *service) addReviewItemWithRepositoryContext(ctx context.Context, repo T
 	if err := ctx.Err(); err != nil {
 		return ReviewQueueItem{}, err
 	}
-	request, err := s.captureAutomationReviewConfigurationContext(ctx, item.Request.ExecutionContext != nil, item.Request)
+	request, err := s.captureAutomationReviewConfigurationContext(ctx, hasTaskExecutionContext(item.Request), item.Request)
 	if err != nil {
 		// Keep the blocker inspectable without inventing approvable evidence.
 		request = item.Request
@@ -2031,7 +2044,7 @@ func (s *service) addReviewItemWithRepositoryContext(ctx context.Context, repo T
 
 func (s *service) attachReviewItem(plan *CompletionPlan, reason, risk string, request IntakeRequest) error {
 	ctx := taskExecutionContext(request)
-	repo, cancelWrite, err := s.taskOperationStorage(ctx, request.ExecutionContext != nil)
+	repo, cancelWrite, err := s.taskOperationStorage(ctx, hasTaskExecutionContext(request))
 	if err != nil {
 		return err
 	}
@@ -3497,6 +3510,17 @@ func applyFrameworkRisk(
 	// Preserve every missing participant so the operator can resolve the actual
 	// prerequisite rather than repeatedly approve an action that cannot run.
 	if request.ExecuteAllowed && request.agentInventoryEvaluated {
+		now := time.Now().UTC()
+		for _, role := range decision.RequiredAgents {
+			if !hasVerifiedRequiredFrameworkAgent(*decision, role, now) {
+				risk.AllowedNow = false
+				risk.MissingRequiredAgents = append(risk.MissingRequiredAgents, safety.RedactSecrets(role))
+				risk.Reasons = append(
+					risk.Reasons,
+					"execution is blocked until every framework-required participant has a fresh verified agent card from a trusted runtime probe",
+				)
+			}
+		}
 		for _, delegation := range decision.Delegations {
 			if delegation.State != "ready" && isUnreadyRequiredFrameworkDelegation(*decision, delegation) {
 				risk.AllowedNow = false
@@ -3524,6 +3548,29 @@ func applyFrameworkRisk(
 	}
 	risk.Reasons = uniqueStrings(risk.Reasons)
 	return risk
+}
+
+func hasVerifiedRequiredFrameworkAgent(decision frameworkregistry.SelectionDecision, role string, now time.Time) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	if role == "" {
+		return false
+	}
+	for _, card := range decision.AgentCards {
+		matches := strings.EqualFold(strings.TrimSpace(card.ID), role) || strings.EqualFold(strings.TrimSpace(card.Role), role)
+		if !matches || !card.Verified || card.Revoked || !strings.EqualFold(strings.TrimSpace(card.HealthStatus), "healthy") || card.LastVerifiedAt == nil {
+			continue
+		}
+		provenance := strings.ToLower(strings.TrimSpace(card.Provenance))
+		if strings.HasPrefix(provenance, "agent_registry:") || strings.HasPrefix(provenance, "agent_registry_declaration:") {
+			continue
+		}
+		verifiedAt := card.LastVerifiedAt.UTC()
+		if verifiedAt.IsZero() || verifiedAt.After(now.Add(time.Minute)) || now.Sub(verifiedAt) > 5*time.Minute {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func isUnreadyRequiredFrameworkDelegation(

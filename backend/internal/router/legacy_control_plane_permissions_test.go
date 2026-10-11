@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -320,6 +321,7 @@ func newLegacyControlPlanePermissionEngine(t *testing.T) *gin.Engine {
 	initializeSystemRoutes(
 		api,
 		func() doctor.Report { return doctor.Report{} },
+		func(context.Context) doctor.Report { return doctor.Report{} },
 		func() map[string]int { return map[string]int{} },
 	)
 	return engine

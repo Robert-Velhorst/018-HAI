@@ -240,8 +240,8 @@ func TestHTTPServerUsesBoundedUploadCompatibleTimeouts(t *testing.T) {
 	if server.ReadTimeout != maxRequestReadDuration {
 		t.Fatalf("ReadTimeout = %v, want %v", server.ReadTimeout, maxRequestReadDuration)
 	}
-	if server.WriteTimeout != maxUploadWriteDuration {
-		t.Fatalf("WriteTimeout = %v, want %v", server.WriteTimeout, maxUploadWriteDuration)
+	if server.WriteTimeout != 0 {
+		t.Fatalf("WriteTimeout = %v, want 0 so bounded long-running responses are not cut off", server.WriteTimeout)
 	}
 	if server.IdleTimeout != defaultIdleConnectionTTL {
 		t.Fatalf("IdleTimeout = %v, want %v", server.IdleTimeout, defaultIdleConnectionTTL)

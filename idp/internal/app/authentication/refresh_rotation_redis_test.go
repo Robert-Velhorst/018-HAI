@@ -126,11 +126,11 @@ func TestRedisSessionRefreshConcurrentCookiesAndLogout(t *testing.T) {
 	for _, cookie := range response.Result().Cookies() {
 		require.Equal(t, -1, cookie.MaxAge)
 	}
-	ok, err := svc.IsUserAuthenticated(winner["access_token"].Value)
+	ok, err := svc.IsUserAuthenticated(context.Background(), winner["access_token"].Value)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.False(t, ok)
 	for _, refresh := range []string{original.RefreshToken, winner["refresh_token"].Value} {
-		pair, err := svc.RefreshToken(refresh)
+		pair, err := svc.RefreshToken(context.Background(), refresh)
 		require.ErrorIs(t, err, ErrRevokedSession)
 		require.Nil(t, pair)
 	}
@@ -141,19 +141,19 @@ func TestRedisSessionReplayRevokesChildAndAccess(t *testing.T) {
 	user := svc.userService.(*fakeUserService).userByID
 	parent, parentID, _, err := svc.generateRefreshToken(user.ID)
 	require.NoError(t, err)
-	child, err := svc.RefreshToken(parent)
+	child, err := svc.RefreshToken(context.Background(), parent)
 	require.NoError(t, err)
 	require.NoError(t, client.PExpire(context.Background(), "refresh-rotation:"+parentID, 40*time.Millisecond).Err())
 	require.Eventually(t, func() bool {
 		return client.Exists(context.Background(), "refresh-rotation:"+parentID).Val() == 0
 	}, time.Second, 10*time.Millisecond)
-	pair, err := svc.RefreshToken(parent)
+	pair, err := svc.RefreshToken(context.Background(), parent)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.Nil(t, pair)
-	ok, err := svc.IsUserAuthenticated(child.AccessToken)
+	ok, err := svc.IsUserAuthenticated(context.Background(), child.AccessToken)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.False(t, ok)
-	pair, err = svc.RefreshToken(child.RefreshToken)
+	pair, err = svc.RefreshToken(context.Background(), child.RefreshToken)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.Nil(t, pair)
 }
@@ -172,12 +172,12 @@ func TestRedisSessionLogoutRacesRotation(t *testing.T) {
 		go func() {
 			defer wait.Done()
 			<-start
-			rotated, refreshErr = svc.RefreshToken(original.RefreshToken)
+			rotated, refreshErr = svc.RefreshToken(context.Background(), original.RefreshToken)
 		}()
 		go func() {
 			defer wait.Done()
 			<-start
-			logoutErr = svc.Logout(original.AccessToken)
+			logoutErr = svc.Logout(context.Background(), original.AccessToken)
 		}()
 		close(start)
 		wait.Wait()
@@ -191,10 +191,10 @@ func TestRedisSessionLogoutRacesRotation(t *testing.T) {
 			pairs = append(pairs, rotated)
 		}
 		for _, pair := range pairs {
-			ok, err := svc.IsUserAuthenticated(pair.AccessToken)
+			ok, err := svc.IsUserAuthenticated(context.Background(), pair.AccessToken)
 			require.ErrorIs(t, err, ErrRevokedSession)
 			require.False(t, ok)
-			result, err := svc.RefreshToken(pair.RefreshToken)
+			result, err := svc.RefreshToken(context.Background(), pair.RefreshToken)
 			require.ErrorIs(t, err, ErrRevokedSession)
 			require.Nil(t, result, "no result of a refresh/logout race may revive the session")
 		}

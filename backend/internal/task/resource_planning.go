@@ -26,21 +26,22 @@ type ResourcePlanner interface {
 }
 
 type ResourcePlanningRequest struct {
-	OwnerIdentity  string
-	WorkspaceID    string
-	PlanID         string
-	CreatedAt      time.Time
-	Deadline       *time.Time
-	Difficulty     int
-	Steps          []TaskStep
-	Risk           RiskAssessment
-	ModelDecision  llm.RouteDecision
-	SelectedTools  []string
-	Capacity       *frameworkregistry.CapacitySnapshot
-	CalendarBusy   []source.CalendarBusyInterval
-	PaidAllowed    bool
-	PaidBudgetEUR  float64
-	PaidBudgetUsed float64
+	OwnerIdentity      string
+	WorkspaceID        string
+	PlanID             string
+	CreatedAt          time.Time
+	Deadline           *time.Time
+	Difficulty         int
+	Steps              []TaskStep
+	Risk               RiskAssessment
+	ModelDecision      llm.RouteDecision
+	SelectedTools      []string
+	Capacity           *frameworkregistry.CapacitySnapshot
+	CalendarBusy       []source.CalendarBusyInterval
+	PaidAllowed        bool
+	PaidBudgetEUR      float64
+	PaidBudgetUsed     float64
+	AutomatedExecution bool
 }
 
 type resourcePlanningBridge struct {
@@ -89,7 +90,7 @@ func (bridge *resourcePlanningBridge) PlanResources(request ResourcePlanningRequ
 
 	tasks := make([]resourceplanner.Task, 0, len(request.Steps))
 	previous := ""
-	automaticRuntime := admittedAutomaticRuntime(request.Risk)
+	automaticRuntime := request.AutomatedExecution && admittedAutomaticRuntime(request.Risk)
 	for index, step := range request.Steps {
 		optimistic, expected, pessimistic := resourceDuration(request.Difficulty, step)
 		// Personal-capacity uncertainty applies when the plan depends on Robert's

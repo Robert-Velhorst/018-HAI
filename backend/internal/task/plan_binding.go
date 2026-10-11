@@ -1,7 +1,6 @@
 package task
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -30,7 +29,7 @@ func (s *service) resolveCoordinationPlan(request IntakeRequest) (*plangraph.Acc
 	if s.acceptedPlanResolver == nil {
 		return nil, fmt.Errorf("accepted coordination plan validation is unavailable")
 	}
-	binding, err := s.acceptedPlanResolver.ResolveAccepted(context.Background(), strings.TrimSpace(request.OwnerIdentity), reference)
+	binding, err := s.acceptedPlanResolver.ResolveAccepted(taskExecutionContext(request), strings.TrimSpace(request.OwnerIdentity), reference)
 	if err != nil {
 		return nil, fmt.Errorf("validate accepted coordination plan: %w", err)
 	}

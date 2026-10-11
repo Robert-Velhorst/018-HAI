@@ -155,10 +155,14 @@ func (a inMemoryTestExecutionAuthorizer) AuthorizeAndConsume(
 	return receipt, err
 }
 
+type acceptingAutomationEventPublisher struct{}
+
+func (acceptingAutomationEventPublisher) Publish(*events.AutomationEvent) error { return nil }
+
 func newTestServiceWithAuthorizedRuntime(
 	t *testing.T,
 	repo Repository,
-	publisher events.Publisher,
+	publisher automationEventPublisher,
 	adapter agentruntime.Adapter,
 ) Service {
 	t.Helper()
@@ -203,7 +207,7 @@ func newTestServiceWithAuthorizedRuntime(
 	)
 }
 
-func newTestService(repo Repository, publisher events.Publisher) Service {
+func newTestService(repo Repository, publisher automationEventPublisher) Service {
 	return newTestServiceWithRuntimeRegistry(
 		repo,
 		publisher,
@@ -213,7 +217,7 @@ func newTestService(repo Repository, publisher events.Publisher) Service {
 
 func newTestServiceWithRuntimeRegistry(
 	repo Repository,
-	publisher events.Publisher,
+	publisher automationEventPublisher,
 	registry *agentruntime.Registry,
 ) Service {
 	return newTestServiceWithRuntimeRegistryAndApprovalProofs(
@@ -235,7 +239,7 @@ func newUnitTestApprovalProofService() ApprovalProofService {
 
 func newTestServiceWithRuntimeRegistryAndApprovalProofs(
 	repo Repository,
-	publisher events.Publisher,
+	publisher automationEventPublisher,
 	registry *agentruntime.Registry,
 	proofs ApprovalProofService,
 ) Service {

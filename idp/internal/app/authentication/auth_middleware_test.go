@@ -143,16 +143,18 @@ func (s *middlewareAuthService) LocalPreviewLogin() (*dto.TokenDetails, error) {
 	}
 	return s.localPreviewResult, nil
 }
-func (s *middlewareAuthService) Logout(token string) error {
+func (s *middlewareAuthService) Logout(_ context.Context, token string) error {
 	s.logoutToken = token
 	return s.logoutErr
 }
-func (s *middlewareAuthService) RefreshToken(string) (*dto.TokenDetails, error) {
+func (s *middlewareAuthService) RefreshToken(context.Context, string) (*dto.TokenDetails, error) {
 	s.refreshCalls++
 	return s.refreshResult, nil
 }
-func (s *middlewareAuthService) IsUserAuthenticated(string) (bool, error) { return s.valid, nil }
-func (s *middlewareAuthService) RequestPasswordReset(email string) (string, time.Time, error) {
+func (s *middlewareAuthService) IsUserAuthenticated(context.Context, string) (bool, error) {
+	return s.valid, nil
+}
+func (s *middlewareAuthService) RequestPasswordReset(_ context.Context, email string) (string, time.Time, error) {
 	s.resetRequestCalls++
 	s.requestedResetEmail = email
 	return "", time.Time{}, errors.New("not implemented")

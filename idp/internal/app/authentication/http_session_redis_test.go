@@ -302,7 +302,7 @@ func TestRedisHTTPSessionCookieChain(t *testing.T) {
 				return jwt.NewValidator(jwt.WithExpirationRequired()).Validate(browser.claims) != nil
 			}, 10*time.Second, 25*time.Millisecond, "the original HTTP-issued JWT must reach observable expiry")
 			require.ErrorIs(t, jwt.NewValidator(jwt.WithExpirationRequired()).Validate(browser.claims), jwt.ErrTokenExpired)
-			ok, err := f.svc.IsUserAuthenticated(browser.access)
+			ok, err := f.svc.IsUserAuthenticated(context.Background(), browser.access)
 			require.ErrorIs(t, err, ErrRevokedSession)
 			require.False(t, ok)
 			f.assertDenied(t, []*http.Cookie{{Name: "access_token", Value: browser.access}})

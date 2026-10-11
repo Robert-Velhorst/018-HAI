@@ -168,18 +168,22 @@ type Service interface {
 
 type service struct {
 	repo            Repository
-	publisher       events.Publisher
+	publisher       automationEventPublisher
 	runtimeRegistry *agentruntime.Registry
 	approvalProofs  ApprovalProofService
 	executionAuth   ExecutionAuthorizer
 	finalEffects    *executionauth.FinalEffectBridge
 }
 
-func NewService(repo Repository, publisher events.Publisher) Service {
+type automationEventPublisher interface {
+	Publish(*events.AutomationEvent) error
+}
+
+func NewService(repo Repository, publisher automationEventPublisher) Service {
 	return NewServiceWithRuntimeRegistry(repo, publisher, agentruntime.DefaultRegistry())
 }
 
-func NewServiceWithRuntimeRegistry(repo Repository, publisher events.Publisher, runtimeRegistry *agentruntime.Registry) Service {
+func NewServiceWithRuntimeRegistry(repo Repository, publisher automationEventPublisher, runtimeRegistry *agentruntime.Registry) Service {
 	return NewServiceWithRuntimeRegistryAndApprovalProofs(
 		repo,
 		publisher,
@@ -190,7 +194,7 @@ func NewServiceWithRuntimeRegistry(repo Repository, publisher events.Publisher, 
 
 func NewServiceWithRuntimeRegistryAndExecutionAuthorization(
 	repo Repository,
-	publisher events.Publisher,
+	publisher automationEventPublisher,
 	runtimeRegistry *agentruntime.Registry,
 	executionAuthorizer ExecutionAuthorizer,
 ) Service {
@@ -205,7 +209,7 @@ func NewServiceWithRuntimeRegistryAndExecutionAuthorization(
 
 func NewServiceWithRuntimeRegistryExecutionAuthorizationAndFinalEffects(
 	repo Repository,
-	publisher events.Publisher,
+	publisher automationEventPublisher,
 	runtimeRegistry *agentruntime.Registry,
 	executionAuthorizer ExecutionAuthorizer,
 	finalEffects *executionauth.FinalEffectBridge,
@@ -222,7 +226,7 @@ func NewServiceWithRuntimeRegistryExecutionAuthorizationAndFinalEffects(
 
 func NewServiceWithRuntimeRegistryAndApprovalProofs(
 	repo Repository,
-	publisher events.Publisher,
+	publisher automationEventPublisher,
 	runtimeRegistry *agentruntime.Registry,
 	approvalProofs ApprovalProofService,
 ) Service {
@@ -237,7 +241,7 @@ func NewServiceWithRuntimeRegistryAndApprovalProofs(
 
 func NewServiceWithRuntimeRegistryApprovalProofsAndExecutionAuthorization(
 	repo Repository,
-	publisher events.Publisher,
+	publisher automationEventPublisher,
 	runtimeRegistry *agentruntime.Registry,
 	approvalProofs ApprovalProofService,
 	executionAuthorizer ExecutionAuthorizer,
@@ -254,7 +258,7 @@ func NewServiceWithRuntimeRegistryApprovalProofsAndExecutionAuthorization(
 
 func NewServiceWithRuntimeRegistryApprovalProofsExecutionAuthorizationAndFinalEffects(
 	repo Repository,
-	publisher events.Publisher,
+	publisher automationEventPublisher,
 	runtimeRegistry *agentruntime.Registry,
 	approvalProofs ApprovalProofService,
 	executionAuthorizer ExecutionAuthorizer,

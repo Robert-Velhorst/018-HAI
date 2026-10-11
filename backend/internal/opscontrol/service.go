@@ -46,16 +46,17 @@ type EmergencyStopFanoutSummary struct {
 // mode, Docker dependency status, crash/reboot recovery, and the Windows
 // readiness checklist. It shares the Operation Ledger + execution broker.
 type Service struct {
-	control       *Controller
-	broker        *executionbroker.Broker
-	ops           *operations.Service
-	runner        BackgroundRunner
-	openClawStop  OpenClawEmergencyStopFanout
-	authorization ExecutionAuthorizer
-	approvals     OwnerControlApprovalIssuer
-	owner         string
-	space         string
-	now           func() time.Time
+	control          *Controller
+	broker           *executionbroker.Broker
+	ops              *operations.Service
+	runner           BackgroundRunner
+	openClawStop     OpenClawEmergencyStopFanout
+	authorization    ExecutionAuthorizer
+	approvals        OwnerControlApprovalIssuer
+	controlApprovals ControlApprovalRepository
+	owner            string
+	space            string
+	now              func() time.Time
 }
 
 // NewService builds the ops-control service rooted at stateDir.
@@ -261,7 +262,7 @@ func (s *Service) DisengageEmergencyStop(
 		return s.control.EmergencyState(), fmt.Errorf("%w: %v", ErrControlPersistence, err)
 	}
 	if !state.Engaged {
-		return state, nil
+		return state, ErrControlChangeNotRequired
 	}
 	resourceID := emergencyStopResourceID(state.Revision)
 	if err := s.authorizeSafetyChange(

@@ -22,6 +22,8 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
+
+	"context"
 )
 
 func TestPasswordResetDigestAtRestAndLegacyTokenMigration(t *testing.T) {
@@ -49,7 +51,7 @@ func TestPasswordResetDigestAtRestAndLegacyTokenMigration(t *testing.T) {
 	sender := &recordingResetSender{}
 	userService := users.NewUserService(repo, noopLogger{}, integrationPasswordHasher{})
 	auth := &service{userService: userService, passwordResetter: sender, logger: noopLogger{}}
-	issuedToken, _, err := auth.RequestPasswordReset(user.Email)
+	issuedToken, _, err := auth.RequestPasswordReset(context.Background(), user.Email)
 	require.NoError(t, err)
 	require.True(t, sender.token == issuedToken, "email sender must receive the bearer token")
 	resolved, err := userService.GetUserByResetToken(issuedToken)
@@ -236,7 +238,7 @@ func TestAuthenticatedPasswordChangeRevokesSessionsAndPendingResetTokens(t *test
 
 	seedTestAccessAuthority(t, auth, accessToken)
 	require.NoError(t, auth.ChangePassword(accessToken, "old-password", "new-password-for-account"))
-	active, err := auth.IsUserAuthenticated(accessToken)
+	active, err := auth.IsUserAuthenticated(context.Background(), accessToken)
 	require.False(t, active)
 	require.ErrorIs(t, err, ErrRevokedSession)
 
@@ -267,7 +269,7 @@ func TestDeletingAndReactivatingUserDoesNotRestoreOldSessionOrResetToken(t *test
 	}
 	pair, err := auth.issueSession(&user)
 	require.NoError(t, err)
-	active, err := auth.IsUserAuthenticated(pair.AccessToken)
+	active, err := auth.IsUserAuthenticated(context.Background(), pair.AccessToken)
 	require.NoError(t, err)
 	require.True(t, active)
 
@@ -276,7 +278,7 @@ func TestDeletingAndReactivatingUserDoesNotRestoreOldSessionOrResetToken(t *test
 	// must already have invalidated the old session and reset credential.
 	require.NoError(t, db.Model(&models.User{}).Where("id = ?", user.ID).Update("is_active", true).Error)
 
-	active, err = auth.IsUserAuthenticated(pair.AccessToken)
+	active, err = auth.IsUserAuthenticated(context.Background(), pair.AccessToken)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.False(t, active)
 	require.ErrorIs(t, auth.ConfirmPasswordReset(resetToken, "replacement-password"), ErrInvalidPasswordReset)
@@ -481,7 +483,7 @@ func timePointer(value time.Time) *time.Time { return &value }
 type recordingResetSender struct{ token string }
 
 func (*recordingResetSender) Configured() bool { return true }
-func (s *recordingResetSender) SendPasswordReset(_ string, token string, _ time.Time) error {
+func (s *recordingResetSender) SendPasswordReset(_ context.Context, _ string, token string, _ time.Time) error {
 	s.token = token
 	return nil
 }

@@ -18,7 +18,7 @@ func TestSMTPPasswordResetSenderRequiresCompleteConfiguration(t *testing.T) {
 	sender := NewSMTPPasswordResetSender("smtp.example.com", "587", "operator@example.com", "", "operator@example.com", true)
 	require.False(t, sender.Configured())
 
-	err := sender.SendPasswordReset("recipient@example.com", "reset-code", time.Now().Add(time.Hour))
+	err := sender.SendPasswordReset(context.Background(), "recipient@example.com", "reset-code", time.Now().Add(time.Hour))
 	require.EqualError(t, err, "password reset email delivery is not configured")
 }
 
@@ -94,11 +94,23 @@ func TestSMTPPasswordResetSenderValidatesRecipientBeforeConnecting(t *testing.T)
 	sender := NewSMTPPasswordResetSender("smtp.example.com", "587", "operator@example.com", "app-password", "operator@example.com", true)
 	require.True(t, sender.Configured())
 
-	err := sender.SendPasswordReset("not-an-email", "reset-code", time.Now().Add(time.Hour))
+	err := sender.SendPasswordReset(context.Background(), "not-an-email", "reset-code", time.Now().Add(time.Hour))
 	require.EqualError(t, err, "password reset email delivery failed")
 	stage, ok := PasswordResetDeliveryFailureStage(err)
 	require.True(t, ok)
 	require.Equal(t, "recipient", stage)
+}
+
+func TestSMTPPasswordResetSenderStopsBeforeNetworkWhenContextIsCanceled(t *testing.T) {
+	sender := NewSMTPPasswordResetSender("smtp.example.com", "587", "operator@example.com", "app-password", "operator@example.com", true)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := sender.SendPasswordReset(ctx, "recipient@example.com", "reset-code", time.Now().Add(time.Hour))
+	require.ErrorIs(t, err, context.Canceled)
+	stage, ok := PasswordResetDeliveryFailureStage(err)
+	require.True(t, ok)
+	require.Equal(t, "deadline", stage)
 }
 
 func TestPasswordResetDeliveryErrorExposesOnlyAllowlistedStage(t *testing.T) {
@@ -127,7 +139,7 @@ func TestOpenSMTPConnectionUsesVerifiedImplicitTLS(t *testing.T) {
 	tlsConfig := smtpTLSConfig(host)
 	tlsConfig.RootCAs = roots
 
-	connection, err := openSMTPConnection(host, "465", localSMTPDialer(server.Listener.Addr().String()), tlsConfig)
+	connection, err := openSMTPConnection(context.Background(), host, "465", localSMTPDialer(server.Listener.Addr().String()), tlsConfig)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = connection.Close() })
 
@@ -148,7 +160,7 @@ func TestOpenSMTPConnectionRejectsUntrustedImplicitTLSWithoutPlaintextRetry(t *t
 		return localSMTPDialer(server.Listener.Addr().String())(ctx, network, address)
 	}
 
-	connection, err := openSMTPConnection(host, "465", dial, smtpTLSConfig(host))
+	connection, err := openSMTPConnection(context.Background(), host, "465", dial, smtpTLSConfig(host))
 	require.Nil(t, connection)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "certificate")
@@ -163,7 +175,7 @@ func TestOpenSMTPConnectionVerifiesImplicitTLSHostname(t *testing.T) {
 	roots.AddCert(server.Certificate())
 	tlsConfig := smtpTLSConfig("wrong.invalid")
 	tlsConfig.RootCAs = roots
-	connection, err := openSMTPConnection("wrong.invalid", "465", localSMTPDialer(server.Listener.Addr().String()), tlsConfig)
+	connection, err := openSMTPConnection(context.Background(), "wrong.invalid", "465", localSMTPDialer(server.Listener.Addr().String()), tlsConfig)
 	require.Nil(t, connection)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "wrong.invalid")
@@ -182,7 +194,7 @@ func TestOpenSMTPConnectionLeavesSubmissionPortForSTARTTLS(t *testing.T) {
 		}
 	}()
 
-	connection, err := openSMTPConnection("smtp.example.com", "587", localSMTPDialer(listener.Addr().String()), smtpTLSConfig("smtp.example.com"))
+	connection, err := openSMTPConnection(context.Background(), "smtp.example.com", "587", localSMTPDialer(listener.Addr().String()), smtpTLSConfig("smtp.example.com"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = connection.Close() })
 	_, isTLS := connection.(*tls.Conn)
@@ -205,7 +217,7 @@ func TestOpenSMTPConnectionBoundsDialWithContextDeadline(t *testing.T) {
 		return nil, context.DeadlineExceeded
 	}
 
-	connection, err := openSMTPConnection("smtp.example.com", "465", dial, smtpTLSConfig("smtp.example.com"))
+	connection, err := openSMTPConnection(context.Background(), "smtp.example.com", "465", dial, smtpTLSConfig("smtp.example.com"))
 	require.Nil(t, connection)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.WithinDuration(t, time.Now().Add(smtpDialTimeout), observedDeadline, 100*time.Millisecond)

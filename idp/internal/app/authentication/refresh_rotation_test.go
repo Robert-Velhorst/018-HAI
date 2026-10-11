@@ -10,6 +10,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"context"
 )
 
 type rotationHookBlockList struct {
@@ -56,7 +58,7 @@ func TestRefreshRejectsLogoutOrAccountChangeDuringRotation(t *testing.T) {
 				}
 				require.NoError(t, blocklist.RevokeRefreshFamily(family, time.Hour))
 			}
-			pair, err := svc.RefreshToken(original)
+			pair, err := svc.RefreshToken(context.Background(), original)
 			require.ErrorIs(t, err, ErrRevokedSession)
 			require.Nil(t, pair, "do not return cookies for a session revoked during rotation")
 		})
@@ -68,14 +70,14 @@ func TestRefreshRejectsCachedConsumedChild(t *testing.T) {
 	svc, user := rotationTestService(t, blocklist)
 	parent, _, _, err := svc.generateRefreshToken(user.ID)
 	require.NoError(t, err)
-	child, err := svc.RefreshToken(parent)
+	child, err := svc.RefreshToken(context.Background(), parent)
 	require.NoError(t, err)
-	grandchild, err := svc.RefreshToken(child.RefreshToken)
+	grandchild, err := svc.RefreshToken(context.Background(), child.RefreshToken)
 	require.NoError(t, err)
-	pair, err := svc.RefreshToken(parent)
+	pair, err := svc.RefreshToken(context.Background(), parent)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.Nil(t, pair)
-	ok, err := svc.IsUserAuthenticated(grandchild.AccessToken)
+	ok, err := svc.IsUserAuthenticated(context.Background(), grandchild.AccessToken)
 	require.NoError(t, err)
 	require.True(t, ok, "a stale concurrent response inside grace must not revoke the live descendant")
 }
@@ -119,7 +121,7 @@ func TestRefreshRejectsSwappedOrMalformedCachedPair(t *testing.T) {
 			if kind == "invalid ciphertext" {
 				blocklist.result = "v2.invalid"
 			}
-			pair, err := svc.RefreshToken(parent)
+			pair, err := svc.RefreshToken(context.Background(), parent)
 			require.Error(t, err)
 			require.Nil(t, pair)
 		})
@@ -131,7 +133,7 @@ func TestRefreshFailsClosedOnRotationStoreError(t *testing.T) {
 	svc, user := rotationTestService(t, blocklist)
 	parent, _, _, err := svc.generateRefreshToken(user.ID)
 	require.NoError(t, err)
-	pair, err := svc.RefreshToken(parent)
+	pair, err := svc.RefreshToken(context.Background(), parent)
 	require.Error(t, err)
 	require.Nil(t, pair)
 }
@@ -146,7 +148,7 @@ func TestExpiredAccessWithinJWTLeewayIsNotAuthenticated(t *testing.T) {
 	claims["exp"] = time.Now().Add(-time.Second).Unix()
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(svc.jwtSecret))
 	require.NoError(t, err)
-	ok, err := svc.IsUserAuthenticated(token)
+	ok, err := svc.IsUserAuthenticated(context.Background(), token)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.False(t, ok)
 }
@@ -162,7 +164,7 @@ func TestLogoutRejectsMalformedRevocationClaimsBeforeWriting(t *testing.T) {
 		claims["refresh_exp"] = expiry
 		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(svc.jwtSecret))
 		require.NoError(t, err)
-		require.Error(t, svc.Logout(token))
+		require.Error(t, svc.Logout(context.Background(), token))
 		require.Empty(t, blocklist.blocked)
 		require.Empty(t, blocklist.families)
 	}

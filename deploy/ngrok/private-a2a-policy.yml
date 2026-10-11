@@ -1,0 +1,17 @@
+on_http_request:
+  - expressions:
+      - "req.url.path == '/.well-known/agent-card.json' || req.url.path == '/api/v1/a2a'"
+    actions:
+      - type: custom-response
+        config:
+          status_code: 404
+          body: '{"error":"not found"}'
+          headers:
+            content-type: application/json
+
+on_http_response:
+  - actions:
+      - type: add-headers
+        config:
+          headers:
+            strict-transport-security: "max-age=31536000; includeSubDomains"

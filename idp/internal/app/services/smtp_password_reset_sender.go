@@ -102,7 +102,13 @@ func (s *SMTPPasswordResetSender) Configured() bool {
 	return s.requireStartTLS
 }
 
-func (s *SMTPPasswordResetSender) SendPasswordReset(email, resetToken string, expiresAt time.Time) error {
+func (s *SMTPPasswordResetSender) SendPasswordReset(ctx context.Context, email, resetToken string, expiresAt time.Time) error {
+	if ctx == nil {
+		return errors.New("password reset email delivery requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return NewPasswordResetDeliveryError("deadline", err)
+	}
 	if !s.Configured() {
 		return errors.New("password reset email delivery is not configured")
 	}
@@ -116,14 +122,20 @@ func (s *SMTPPasswordResetSender) SendPasswordReset(email, resetToken string, ex
 	}
 
 	dialer := &net.Dialer{Timeout: smtpDialTimeout}
-	connection, err := openSMTPConnection(s.host, s.port, dialer.DialContext, smtpTLSConfig(s.host))
+	connection, err := openSMTPConnection(ctx, s.host, s.port, dialer.DialContext, smtpTLSConfig(s.host))
 	if err != nil {
 		return NewPasswordResetDeliveryError("connect", err)
 	}
-	if err := connection.SetDeadline(time.Now().Add(smtpSessionTimeout)); err != nil {
+	deadline := time.Now().Add(smtpSessionTimeout)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
+		deadline = contextDeadline
+	}
+	if err := connection.SetDeadline(deadline); err != nil {
 		_ = connection.Close()
 		return NewPasswordResetDeliveryError("deadline", err)
 	}
+	stopCancel := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stopCancel()
 	client, err := smtp.NewClient(connection, s.host)
 	if err != nil {
 		_ = connection.Close()
@@ -176,8 +188,11 @@ func parseSMTPAddress(value string) (*mail.Address, error) {
 
 type smtpDialContextFunc func(context.Context, string, string) (net.Conn, error)
 
-func openSMTPConnection(host, port string, dialContext smtpDialContextFunc, tlsConfig *tls.Config) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), smtpDialTimeout)
+func openSMTPConnection(parent context.Context, host, port string, dialContext smtpDialContextFunc, tlsConfig *tls.Config) (net.Conn, error) {
+	if parent == nil {
+		return nil, errors.New("SMTP connection requires a context")
+	}
+	ctx, cancel := context.WithTimeout(parent, smtpDialTimeout)
 	defer cancel()
 
 	connection, err := dialContext(ctx, "tcp", net.JoinHostPort(host, port))

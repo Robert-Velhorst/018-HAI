@@ -1,7 +1,7 @@
 # Dashboard Style Budgets: Source Handoff
 
 Date: 2026-10-01
-Workspace: `C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`
+Workspace: `%HAI_WORKSPACE%`
 Branch observed: `codex/hai-runtime-release`
 
 ## Outcome

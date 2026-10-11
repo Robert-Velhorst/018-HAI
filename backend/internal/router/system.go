@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"net/http"
 
 	"automation-hub-backend/internal/buildinfo"
@@ -47,11 +48,17 @@ func supportBundleHandler(diagnose func() doctor.Report, counts func() map[strin
 	}
 }
 
-func initializeSystemRoutes(apiVersion *gin.RouterGroup, diagnose func() doctor.Report, counts func() map[string]int) {
+func initializeSystemRoutes(
+	apiVersion *gin.RouterGroup,
+	diagnose func() doctor.Report,
+	readiness func(context.Context) doctor.Report,
+	counts func() map[string]int,
+) {
 	sys := apiVersion.Group("/system")
 	sys.Use(requireAuthenticatedOwner())
 	{
 		sys.GET("/info", requirePermission(rbac.PermRead), systemInfoHandler(diagnose))
+		sys.GET("/readiness", requirePermission(rbac.PermRead), readinessDetailHandler(readiness))
 		// The support bundle is an operator/admin diagnostic, so it requires the
 		// admin permission carried by a verified owner JWT.
 		sys.GET("/support-bundle", requirePermission(rbac.PermAdmin), supportBundleHandler(diagnose, counts))

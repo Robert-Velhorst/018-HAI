@@ -25,25 +25,19 @@ describe('WorkflowService framework provenance', () => {
     let result: IWorkflowFrameworkSelectionDecision | undefined;
     service.frameworkSelection(` ${selection.id} `).subscribe((value) => (result = value));
 
-    const request = http.expectOne((candidate) =>
-      candidate.url === '/api/v1/framework-registry/selections' &&
-      candidate.params.get('limit') === '200'
-    );
+    const request = http.expectOne(`/api/v1/framework-registry/selections/${selection.id}`);
     expect(request.request.method).toBe('GET');
-    request.flush({ selections: [{ id: 'other-selection' }, selection] });
+    request.flush(selection);
 
     expect(result).toBe(selection);
   });
 
-  it('returns undefined when the exact selection is outside available registry history', () => {
+  it('returns undefined when the exact owner-scoped selection is unavailable', () => {
     let result: IWorkflowFrameworkSelectionDecision | undefined = selection;
     service.frameworkSelection(selection.id).subscribe((value) => (result = value));
 
-    const request = http.expectOne((candidate) =>
-      candidate.url === '/api/v1/framework-registry/selections' &&
-      candidate.params.get('limit') === '200'
-    );
-    request.flush({ selections: [] });
+    const request = http.expectOne(`/api/v1/framework-registry/selections/${selection.id}`);
+    request.flush({ error: 'framework registry record not found' }, { status: 404, statusText: 'Not Found' });
 
     expect(result).toBeUndefined();
   });
@@ -52,18 +46,13 @@ describe('WorkflowService framework provenance', () => {
     let result: IWorkflowFrameworkSelectionDecision | undefined = selection;
     service.frameworkSelection(selection.id).subscribe((value) => (result = value));
 
-    const request = http.expectOne((candidate) =>
-      candidate.url === '/api/v1/framework-registry/selections' &&
-      candidate.params.get('limit') === '200'
-    );
+    const request = http.expectOne(`/api/v1/framework-registry/selections/${selection.id}`);
     request.flush({
-      selections: [{
         ...selection,
         selectorAlgorithmVersion: 'selector-v5',
         taskRiskLevel: 'high',
         effectiveRiskCeiling: 'medium',
         selected: [{ riskCeiling: 'medium' }],
-      }],
     });
 
     expect(result).toBeUndefined();
@@ -73,18 +62,14 @@ describe('WorkflowService framework provenance', () => {
     let result: IWorkflowFrameworkSelectionDecision | undefined = selection;
     service.frameworkSelection(selection.id).subscribe((value) => (result = value));
 
-    const request = http.expectOne((candidate) =>
-      candidate.url === '/api/v1/framework-registry/selections'
-    );
+    const request = http.expectOne(`/api/v1/framework-registry/selections/${selection.id}`);
     request.flush({
-      selections: [{
         ...selection,
         selectorAlgorithmVersion: 'selector-v5',
         taskRiskLevel: 'low',
         effectiveRiskCeiling: 'high',
         maximumAutonomyLevel: 8,
         selected: [{ riskCeiling: 'high', maximumAutonomyLevel: 7 }],
-      }],
     });
 
     expect(result).toBeUndefined();

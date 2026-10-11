@@ -1874,7 +1874,7 @@ func TestLaunchStateUpdatePreservesConcurrentAutomationConfigurationEdit(t *test
 		ID: id, Name: "Hermes Runtime", URLPath: "hermes-runtime", Host: "localhost", Port: 8080,
 		LaunchType: "agent_runtime", RuntimeType: "hermes", LaunchTarget: "runtime://hermes",
 	})
-	service := newTestServiceWithAuthorizedRuntime(t, repo, events.Publisher{}, adapter)
+	service := newTestServiceWithAuthorizedRuntime(t, repo, acceptingAutomationEventPublisher{}, adapter)
 	request := approvedTaskLaunchRequest(t, service, id, TaskLaunchRequest{Task: "Run the approved test task."})
 
 	type launchOutcome struct {

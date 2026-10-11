@@ -26,10 +26,10 @@ func redisSessionIdentity(t *testing.T, svc *service, pair *dto.TokenDetails) (s
 
 func assertRedisSessionDenied(t *testing.T, svc *service, pair *dto.TokenDetails) {
 	t.Helper()
-	ok, err := svc.IsUserAuthenticated(pair.AccessToken)
+	ok, err := svc.IsUserAuthenticated(context.Background(), pair.AccessToken)
 	require.Error(t, err)
 	require.False(t, ok, "signed access JWT must not survive missing session authority")
-	result, err := svc.RefreshToken(pair.RefreshToken)
+	result, err := svc.RefreshToken(context.Background(), pair.RefreshToken)
 	require.Error(t, err)
 	require.Nil(t, result, "never issue a replacement for denied session authority")
 }
@@ -39,9 +39,9 @@ func TestRedisSessionStoreLossDoesNotReviveLoggedOutJWTs(t *testing.T) {
 	user := svc.userService.(*fakeUserService).userByID
 	original, err := svc.issueSession(user)
 	require.NoError(t, err)
-	child, err := svc.RefreshToken(original.RefreshToken)
+	child, err := svc.RefreshToken(context.Background(), original.RefreshToken)
 	require.NoError(t, err)
-	require.NoError(t, svc.Logout(child.AccessToken))
+	require.NoError(t, svc.Logout(context.Background(), child.AccessToken))
 	parentID, family, parentAccess := redisSessionIdentity(t, svc, original)
 	childID, childFamily, childAccess := redisSessionIdentity(t, svc, child)
 	require.Equal(t, family, childFamily)
@@ -58,17 +58,17 @@ func TestRedisSessionStoreLossDoesNotReviveRotatedJWTs(t *testing.T) {
 	user := svc.userService.(*fakeUserService).userByID
 	original, err := svc.issueSession(user)
 	require.NoError(t, err)
-	child, err := svc.RefreshToken(original.RefreshToken)
+	child, err := svc.RefreshToken(context.Background(), original.RefreshToken)
 	require.NoError(t, err)
 	parentID, _, parentAccess := redisSessionIdentity(t, svc, original)
 	require.NoError(t, client.Del(context.Background(), parentID, parentAccess, "refresh-rotation:"+parentID).Err())
-	ok, err := svc.IsUserAuthenticated(original.AccessToken)
+	ok, err := svc.IsUserAuthenticated(context.Background(), original.AccessToken)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.False(t, ok)
-	ok, err = svc.IsUserAuthenticated(child.AccessToken)
+	ok, err = svc.IsUserAuthenticated(context.Background(), child.AccessToken)
 	require.NoError(t, err)
 	require.True(t, ok, "selective key loss must not itself grant parent authority")
-	result, err := svc.RefreshToken(original.RefreshToken)
+	result, err := svc.RefreshToken(context.Background(), original.RefreshToken)
 	require.ErrorIs(t, err, ErrRevokedSession)
 	require.Nil(t, result)
 	assertRedisSessionDenied(t, svc, child)
@@ -81,7 +81,7 @@ func TestRedisSessionStoreLossOfPositiveAuthorityDeniesCurrentAndCachedJWTs(t *t
 			user := svc.userService.(*fakeUserService).userByID
 			parent, err := svc.issueSession(user)
 			require.NoError(t, err)
-			child, err := svc.RefreshToken(parent.RefreshToken)
+			child, err := svc.RefreshToken(context.Background(), parent.RefreshToken)
 			require.NoError(t, err)
 			refreshID, family, _ := redisSessionIdentity(t, svc, child)
 			keys := []string{"refresh-family-active:" + family}
@@ -119,14 +119,14 @@ func TestRedisSessionStoreLossFreshPasswordLoginRestoresOnlyNewFamily(t *testing
 	freshID, freshFamily, _ := redisSessionIdentity(t, svc, fresh)
 	require.NotEqual(t, refreshID, freshID)
 	require.NotEqual(t, family, freshFamily)
-	ok, err := svc.IsUserAuthenticated(fresh.AccessToken)
+	ok, err := svc.IsUserAuthenticated(context.Background(), fresh.AccessToken)
 	require.NoError(t, err)
 	require.True(t, ok)
-	rotated, err := svc.RefreshToken(fresh.RefreshToken)
+	rotated, err := svc.RefreshToken(context.Background(), fresh.RefreshToken)
 	require.NoError(t, err)
 	require.NotNil(t, rotated)
 	assertRedisSessionDenied(t, svc, original)
-	ok, err = svc.IsUserAuthenticated(rotated.AccessToken)
+	ok, err = svc.IsUserAuthenticated(context.Background(), rotated.AccessToken)
 	require.NoError(t, err)
 	require.True(t, ok, "old-session rejection must not revoke unrelated new login")
 }
@@ -156,11 +156,11 @@ func TestRedisSessionStoreLossMalformedAuthorityDoesNotIssueJWTs(t *testing.T) {
 				require.NoError(t, client.Set(ctx, key, "incorrect authority", time.Minute).Err())
 			}
 			if kind != "cache wrong type" {
-				ok, err := svc.IsUserAuthenticated(pair.AccessToken)
+				ok, err := svc.IsUserAuthenticated(context.Background(), pair.AccessToken)
 				require.Error(t, err)
 				require.False(t, ok)
 			}
-			result, err := svc.RefreshToken(pair.RefreshToken)
+			result, err := svc.RefreshToken(context.Background(), pair.RefreshToken)
 			require.Error(t, err)
 			require.Nil(t, result)
 		})

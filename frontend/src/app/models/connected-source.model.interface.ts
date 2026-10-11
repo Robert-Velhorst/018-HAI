@@ -43,6 +43,16 @@ export interface ISourceConnectionHealth {
   lastSyncedAt?: string;
 }
 
+export interface ISourceOverview {
+  extractionCount: number;
+  sensitiveExtractionCount: number;
+  uncertainExtractionCount: number;
+  failedJobs: number;
+  pendingJobs: number;
+  extractionCountsBySource: Record<string, number>;
+  latestJobStatusBySource: Record<string, string>;
+}
+
 export interface ICreateSourceRequest {
   connectorKey: string;
   name: string;

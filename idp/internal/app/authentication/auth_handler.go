@@ -378,7 +378,7 @@ func (h *Handler) Logout(c *gin.Context) {
 		return
 	}
 
-	err := h.authService.Logout(accessToken)
+	err := h.authService.Logout(c.Request.Context(), accessToken)
 	clearAuthCookies(c.Writer)
 	if err != nil {
 		c.Status(http.StatusInternalServerError)
@@ -451,7 +451,7 @@ func (h *Handler) CurrentSession(c *gin.Context) {
 
 func (h *Handler) resolveAuthenticatedAccessToken(c *gin.Context) (string, bool) {
 	if accessToken, err := c.Cookie("access_token"); err == nil && accessToken != "" {
-		if isAuthenticated, authErr := h.authService.IsUserAuthenticated(accessToken); authErr == nil && isAuthenticated {
+		if isAuthenticated, authErr := h.authService.IsUserAuthenticated(c.Request.Context(), accessToken); authErr == nil && isAuthenticated {
 			return accessToken, true
 		}
 	}
@@ -460,7 +460,7 @@ func (h *Handler) resolveAuthenticatedAccessToken(c *gin.Context) (string, bool)
 	if err != nil || refreshToken == "" {
 		return "", false
 	}
-	newAccessToken, err := h.authService.RefreshToken(refreshToken)
+	newAccessToken, err := h.authService.RefreshToken(c.Request.Context(), refreshToken)
 	if err != nil || newAccessToken == nil || newAccessToken.AccessToken == "" {
 		return "", false
 	}
@@ -519,7 +519,7 @@ func (h *Handler) RequestPasswordReset(c *gin.Context) {
 
 	// Do not reveal whether an account exists or whether its delivery channel is available.
 	// The reset service records operational errors in its own logs.
-	_, _, _ = h.authService.RequestPasswordReset(email)
+	_, _, _ = h.authService.RequestPasswordReset(c.Request.Context(), email)
 	response := dto.SuccessResponse{
 		Message:    "If recovery is available for this account, reset instructions may be sent. This response does not confirm account existence or email delivery.",
 		StatusCode: http.StatusOK,

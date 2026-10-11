@@ -5,10 +5,47 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"automation-hub-backend/internal/config"
 )
+
+type recordingPostgresPinger struct {
+	calls int
+	err   error
+}
+
+func (p *recordingPostgresPinger) PingContext(context.Context) error {
+	p.calls++
+	return p.err
+}
+
+func TestPostgresProbePingsAcquiredServingPool(t *testing.T) {
+	pinger := &recordingPostgresPinger{}
+	acquisitions := 0
+	probe := postgresProbe(config.Configuration{DbHost: "postgres", DbPort: 5432, DbName: "hai", DbUser: "hai"}, func() (postgresPinger, error) {
+		acquisitions++
+		return pinger, nil
+	})
+	if err := probe.Run(context.Background()); err != nil {
+		t.Fatalf("probe failed: %v", err)
+	}
+	if acquisitions != 1 || pinger.calls != 1 {
+		t.Fatalf("acquisitions = %d, pings = %d; want one of each", acquisitions, pinger.calls)
+	}
+}
+
+func TestPostgresProbeReportsServingPoolFailure(t *testing.T) {
+	pinger := &recordingPostgresPinger{err: errors.New("connection reset")}
+	probe := postgresProbe(config.Configuration{DbHost: "postgres", DbPort: 5432, DbName: "hai", DbUser: "hai"}, func() (postgresPinger, error) {
+		return pinger, nil
+	})
+	err := probe.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "connection reset") {
+		t.Fatalf("error = %v, want serving-pool failure", err)
+	}
+}
 
 func TestPostgresProbePropagatesCancellationBeforeOpening(t *testing.T) {
 	// No database or DNS is contacted. Invalid pool configuration ensures that

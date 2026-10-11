@@ -1,7 +1,7 @@
 # Windows lifecycle production hardening: source-only handoff
 
 Date: 2026-10-01.
-Workspace: `C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`.
+Workspace: `%HAI_WORKSPACE%`.
 Observed branch: `codex/hai-runtime-release`.
 Status: scoped source fixes delivered; behavioral and production acceptance remain unverified.
 

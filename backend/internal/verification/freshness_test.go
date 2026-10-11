@@ -37,7 +37,7 @@ func TestStaleEvidenceCannotMarkClaimSourceSupported(t *testing.T) {
 	if !strings.Contains(strings.ToLower(claims[0].SupportExplanation), "stale") {
 		t.Fatalf("claim does not explain its stale-source review state: %q", claims[0].SupportExplanation)
 	}
-	if got := runStatus(claims); got != StatusNeedsReview {
+	if got := runStatus(claims, ModeGrounded, AnswerRequest{}); got != StatusNeedsReview {
 		t.Fatalf("run status = %q, want %q for stale supporting evidence", got, StatusNeedsReview)
 	}
 }

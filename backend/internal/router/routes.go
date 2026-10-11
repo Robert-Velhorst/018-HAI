@@ -117,16 +117,11 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func initializeRoutes(router *gin.Engine) error {
-	return initializeRoutesWithContext(router, context.Background())
-}
-
 // initializeRoutesWithContext registers routes and starts background services
-// against the server lifecycle. The compatibility wrapper above keeps focused
-// route tests independent from process lifecycle management.
+// against the server lifecycle. Callers must provide the application context.
 func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context) error {
 	if runtimeCtx == nil {
-		runtimeCtx = context.Background()
+		return fmt.Errorf("application runtime context is required")
 	}
 	router.GET("/healthz", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "backend"})
@@ -976,7 +971,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		flagStore := defaultFeatureFlags()
 		initializeFeatureFlagRoutes(v1, flagStore)
 		diagnose := func() doctor.Report { return doctor.Diagnose(config.AppConfig) }
-		initializeSystemRoutes(v1, diagnose, func() map[string]int {
+		initializeSystemRoutes(v1, diagnose, func(context.Context) doctor.Report { return diagnose() }, func() map[string]int {
 			return map[string]int{
 				"featureFlags": len(flagStore.List()),
 				"languages":    len(i18n.Supported()),

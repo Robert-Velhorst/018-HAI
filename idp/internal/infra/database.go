@@ -66,10 +66,14 @@ func initializeIDPPostgresPool(ctx context.Context, pool *sql.DB) (database *gor
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	pool.SetMaxOpenConns(8)
-	pool.SetMaxIdleConns(2)
-	pool.SetConnMaxIdleTime(2 * time.Minute)
-	pool.SetConnMaxLifetime(30 * time.Minute)
+	poolSettings, err := loadPoolSettings(8, 2, 5*time.Minute, 30*time.Minute)
+	if err != nil {
+		return nil, err
+	}
+	pool.SetMaxOpenConns(poolSettings.maxOpenConnections)
+	pool.SetMaxIdleConns(poolSettings.maxIdleConnections)
+	pool.SetConnMaxIdleTime(poolSettings.connectionIdleTime)
+	pool.SetConnMaxLifetime(poolSettings.connectionLifetime)
 	// Own the first ping so its deadline and failure cleanup are explicit.
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{
 		DisableAutomaticPing: true,

@@ -998,7 +998,7 @@ func TestLogoutOriginIsCheckedBeforeSessionRefresh(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("IDP_COOKIE_SECURE", "false")
 	service := &middlewareAuthService{
-		valid: true,
+		valid:  true,
 		userID: uuid.New(),
 		refreshResult: &dto.TokenDetails{
 			AccessToken: "refreshed-access",

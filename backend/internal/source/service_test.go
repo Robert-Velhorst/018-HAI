@@ -3592,6 +3592,7 @@ type fakeSemanticService struct {
 	matches []semantic.Match
 	err     error
 	request semantic.SearchRequest
+	search  func(context.Context, semantic.SearchRequest) ([]semantic.Match, error)
 }
 
 func (s *fakeSemanticService) Enabled() bool  { return true }
@@ -3599,8 +3600,11 @@ func (s *fakeSemanticService) Reason() string { return "test semantic service" }
 func (s *fakeSemanticService) Index(context.Context, *models.SourceExtraction) error {
 	return nil
 }
-func (s *fakeSemanticService) Search(_ context.Context, request semantic.SearchRequest) ([]semantic.Match, error) {
+func (s *fakeSemanticService) Search(ctx context.Context, request semantic.SearchRequest) ([]semantic.Match, error) {
 	s.request = request
+	if s.search != nil {
+		return s.search(ctx, request)
+	}
 	return s.matches, s.err
 }
 func (s *fakeSemanticService) IndexMemory(context.Context, *models.ContextMemory) error { return nil }

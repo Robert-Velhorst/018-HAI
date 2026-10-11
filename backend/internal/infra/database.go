@@ -108,7 +108,7 @@ func GetDefaultDBContext(ctx context.Context) (*gorm.DB, error) {
 	if err == nil {
 		err = startupCtx.Err()
 	}
-	if err == nil && migrationsEnabledAtStartup() {
+	if err == nil && migrationsEnabledAtStartup() && databaseMigrationsEnabled() {
 		err = runDefaultMigrations(startupCtx, db)
 	}
 	defaultDBMu.Lock()
@@ -210,12 +210,24 @@ func databaseStartupTimeout() (time.Duration, error) {
 // command using the separate migration-owner credentials. An invalid value
 // fails closed: the process will not silently assume schema privileges.
 func migrationsEnabledAtStartup() bool {
+	if value, exists := os.LookupEnv("DB_RUN_MIGRATIONS"); exists && strings.TrimSpace(value) != "" {
+		return databaseMigrationsEnabled()
+	}
 	value, exists := os.LookupEnv("DB_MIGRATIONS_ENABLED")
 	if !exists || strings.TrimSpace(value) == "" {
 		return true
 	}
 	enabled, err := strconv.ParseBool(strings.TrimSpace(value))
 	return err == nil && enabled
+}
+
+func databaseMigrationsEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("DB_RUN_MIGRATIONS"))) {
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return true
+	}
 }
 
 // autoMigrateEnabled reports whether Gorm AutoMigrate should run for table
@@ -309,6 +321,7 @@ func RunMigrationsContext(ctx context.Context, db *gorm.DB) error {
 			&models.SourceIndexEntry{},
 			&models.SourceAuditLog{},
 			&models.SourceOAuthToken{},
+			&models.SourceOAuthState{},
 			&models.VerificationRun{},
 			&models.VerificationEvidence{},
 			&models.VerificationClaim{},

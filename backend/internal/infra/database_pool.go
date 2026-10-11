@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"strconv"
@@ -16,7 +17,33 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
+
+const defaultSlowQueryThreshold = time.Second
+
+func loadDatabaseLoggerConfig() (logger.Config, error) {
+	level := logger.Error
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("DB_LOG_LEVEL"))) {
+	case "", "error":
+		level = logger.Error
+	case "silent":
+		level = logger.Silent
+	case "warn":
+		level = logger.Warn
+	case "info":
+		level = logger.Info
+	default:
+		return logger.Config{}, errors.New("DB_LOG_LEVEL must be one of silent, error, warn, or info")
+	}
+	return logger.Config{
+		SlowThreshold:             defaultSlowQueryThreshold,
+		LogLevel:                  level,
+		IgnoreRecordNotFoundError: true,
+		ParameterizedQueries:      true,
+		Colorful:                  false,
+	}, nil
+}
 
 type postgresPoolSettings struct {
 	maxOpen, maxIdle            int
@@ -154,7 +181,15 @@ func initializePostgresPool(ctx context.Context, pool *sql.DB, settings postgres
 	pool.SetMaxIdleConns(settings.maxIdle)
 	pool.SetConnMaxIdleTime(settings.maxIdleTime)
 	pool.SetConnMaxLifetime(settings.maxLifetime)
-	db, err := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{DisableAutomaticPing: true})
+	loggerConfig, err := loadDatabaseLoggerConfig()
+	if err != nil {
+		_ = pool.Close()
+		return nil, err
+	}
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{
+		DisableAutomaticPing: true,
+		Logger:               logger.New(log.New(os.Stdout, "", log.LstdFlags), loggerConfig),
+	})
 	if err == nil {
 		openCtx, cancel := context.WithTimeout(ctx, settings.openTimeout)
 		err = pool.PingContext(openCtx)

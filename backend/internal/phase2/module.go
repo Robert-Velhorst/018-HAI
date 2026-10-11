@@ -94,6 +94,17 @@ func NewModuleWithExecutionAuthorization(
 	return newModule(svc, cfg, execAuth, nil, ErrEvidencePackRepositoryUnavailable)
 }
 
+func hasExecutionConstitution(value frameworkregistry.Constitution) bool {
+	if value.Status != frameworkregistry.ConstitutionActive {
+		return false
+	}
+	if strings.TrimSpace(value.ID) == frameworkregistry.DefaultConstitution().ID {
+		return true
+	}
+	id, err := uuid.Parse(strings.TrimSpace(value.ID))
+	return err == nil && id != uuid.Nil
+}
+
 // NewModuleWithEvidencePackRepository supplies the durable evidence-pack
 // boundary explicitly. It is intended for tests and composition roots that
 // already own a database connection.

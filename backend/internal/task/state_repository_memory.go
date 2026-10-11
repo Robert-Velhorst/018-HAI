@@ -81,6 +81,43 @@ func (r *MemoryTaskStateRepository) ListCompletionPlans(ownerIdentity string, li
 	return result, nil
 }
 
+func (r *MemoryTaskStateRepository) ListCompletionPlanHistory(ownerIdentity string, limit int) ([]CompletionPlanHistoryItem, error) {
+	ownerIdentity, err := normalizeTaskStateOwner(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	limit = normalizeTaskStateLimit(limit)
+	r.mu.RLock()
+	rows := make([]models.TaskCompletionPlanLog, 0)
+	for _, row := range r.completions {
+		if row.OwnerIdentity == ownerIdentity {
+			rows = append(rows, row)
+		}
+	}
+	r.mu.RUnlock()
+	sortCompletionRows(rows)
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	result := make([]CompletionPlanHistoryItem, 0, len(rows))
+	for _, row := range rows {
+		plan, decodeErr := completionPlanFromModel(row)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		result = append(result, CompletionPlanHistoryItem{
+			ID: plan.ID, CreatedAt: plan.CreatedAt.UTC(), Request: plan.Request,
+			ProjectKey: plan.ProjectKey,
+			Intake: CompletionPlanHistoryIntake{
+				TaskType:        plan.Intake.TaskType,
+				SuccessCriteria: append([]string(nil), plan.Intake.SuccessCriteria...),
+			},
+			CompletionStatus: plan.CompletionStatus,
+		})
+	}
+	return result, nil
+}
+
 func (r *MemoryTaskStateRepository) FindCompletionPlan(ownerIdentity, taskPlanID string) (*CompletionPlan, error) {
 	ownerIdentity, err := normalizeTaskStateOwner(ownerIdentity)
 	if err != nil {

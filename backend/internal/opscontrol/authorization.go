@@ -104,11 +104,12 @@ func (s *Service) authorizeSafetyChange(
 	if auth.ActorIdentity == "" {
 		return controlAuthorizationFailureFor("control.authorization.actor_missing", ErrUnauthenticated)
 	}
-	if strings.TrimSpace(s.owner) == "" {
-		return controlAuthorizationFailureFor(
-			"control.authorization.owner_unconfigured",
-			fmt.Errorf("%w: owner identity is not configured", ErrAuthorizationUnavailable),
-		)
+	// The configured owner is a workspace/ledger scope, not necessarily the
+	// authenticated identity issued by the IDP. Bind the safety effect to the
+	// authenticated actor so preparation and consumption use the same principal.
+	ownerIdentity := auth.ActorIdentity
+	if err := validateControlActor(ownerIdentity); err != nil {
+		return controlAuthorizationFailureFor("control.authorization.actor_missing", err)
 	}
 	// The direct owner-confirmation source is intentionally non-delegable. Other
 	// approval sources retain their existing policy-specific actor semantics.
@@ -128,7 +129,7 @@ func (s *Service) authorizeSafetyChange(
 
 	effectDigest, err := controlEffectDigest(controlEffect{
 		Version:       1,
-		OwnerIdentity: s.owner,
+		OwnerIdentity: ownerIdentity,
 		Action:        action,
 		ResourceType:  resourceType,
 		ResourceID:    resourceID,
@@ -145,7 +146,7 @@ func (s *Service) authorizeSafetyChange(
 	}
 
 	request := executionauth.Request{
-		OwnerIdentity:         s.owner,
+		OwnerIdentity:         ownerIdentity,
 		IdempotencyKey:        auth.IdempotencyKey,
 		ActorIdentity:         auth.ActorIdentity,
 		ActorKind:             executionauth.ActorHuman,
@@ -185,6 +186,12 @@ func (s *Service) authorizeSafetyChange(
 		return controlAuthorizationFailureFor(
 			code,
 			fmt.Errorf("%w: %v", ErrAuthorizationDenied, err),
+		)
+	}
+	if stop := receipt.Evidence.EmergencyStop; stop.Active && stop.Source != "persisted_control" {
+		return controlAuthorizationFailureFor(
+			"control.authorization.immutable_stop",
+			fmt.Errorf("%w: emergency stop source %q cannot be cleared by an owner approval", ErrAuthorizationDenied, stop.Source),
 		)
 	}
 	if err := s.validateSafetyReceipt(receipt, request); err != nil {

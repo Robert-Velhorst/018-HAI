@@ -132,6 +132,11 @@ func (s *Service) Get(owner, id string) (*FrameworkView, error) {
 
 func applyPreference(framework Framework, preference Preference) FrameworkView {
 	framework = cloneFramework(framework)
+	// The HTTP contract exposes collection fields as arrays. A nil conflict or
+	// adaptation set means "none", but encoding it as JSON null makes strict
+	// clients reject the complete catalogue. Keep the internal catalogue
+	// semantics while presenting stable empty collections at the view boundary.
+	framework.ConflictsWith = append([]string{}, framework.ConflictsWith...)
 	enabled := framework.Status == StatusActive
 	switch preference.State {
 	case PreferenceEnabled:
@@ -149,7 +154,7 @@ func applyPreference(framework Framework, preference Preference) FrameworkView {
 		Enabled:                enabled,
 		Pinned:                 preference.Pinned,
 		EffectiveAutonomyLevel: maxAutonomy,
-		Adaptations:            append([]string(nil), preference.Adaptations...),
+		Adaptations:            append([]string{}, preference.Adaptations...),
 	}
 	if !preference.UpdatedAt.IsZero() {
 		updated := preference.UpdatedAt

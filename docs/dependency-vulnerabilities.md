@@ -1,7 +1,8 @@
-# Dependency Vulnerabilities — Status & Next Action
+# Dependency Vulnerabilities — Historical Status & Next Action
 
-Records the actual `govulncheck` result, the CI scanning posture, and the exact
-remediation, so nothing is hand-waved.
+This document records historical scan results and the intended CI posture. The
+dated results below are not current release clearance; use checks from the
+candidate commit being reviewed as the authoritative result.
 
 ## Backend remediation completed (40 to 0)
 
@@ -21,7 +22,7 @@ Go 1.25 vet identified one dynamic `fmt.Errorf` call; it was changed to
 ## Backend (`govulncheck ./...`)
 
 `govulncheck` v1.6.0 using the 2026-07-27 vulnerability database and Go
-1.25.12 reports:
+1.25.12 reported at that time:
 
 - **0** vulnerabilities affecting code
 - **0** vulnerabilities in imported packages
@@ -31,10 +32,10 @@ The backend scan is pinned and blocking in CI.
 
 ## IDP (`govulncheck ./...`)
 
-The same scanner, database snapshot, and Go 1.25.12 toolchain report 0
-vulnerabilities affecting IDP code and 0 in imported packages. Two advisories
-remain in required modules whose vulnerable symbols are not called. The IDP
-scan is also pinned and blocking in CI.
+The same scanner, database snapshot, and Go 1.25.12 toolchain reported at that
+time zero vulnerabilities affecting IDP code and zero in imported packages.
+Two advisories remained in required modules whose vulnerable symbols were not
+called. The IDP scan is also pinned and blocking in CI.
 
 ## Nginx configuration manager (`govulncheck ./...`)
 
@@ -44,17 +45,27 @@ the Docker SDK and all Compose Docker-socket mounts, upgraded Sarama, and moved
 the service to Go 1.25.12. Enabling automatic reload now fails closed and tells
 the operator to use an approved deployment operation.
 
-Tests, vet, and build pass. The refreshed scan reports 0 vulnerabilities
-affecting code and 0 in imported packages. One advisory remains in a required
-module whose vulnerable symbol is not called. The scan is pinned and blocking
-in CI.
+Tests, vet, and build passed at that time. The refreshed scan reported zero
+vulnerabilities affecting code and zero in imported packages. One advisory
+remained in a required module whose vulnerable symbol was not called. The scan
+is pinned and blocking in CI.
 
-## Frontend (`npm audit --omit=dev --audit-level=high`)
+## Current verification snapshot (2026-10-11)
 
-The Angular 20/ng-zorro 20 production dependency graph reported **0
-vulnerabilities** when scanned on 2026-08-23. The prior Angular 16 advisory
-state is retained in the bug-hunt log as historical context, not as the current
-release posture.
+- Backend, IDP, generic-auto, and Nginx configuration manager Go tests passed
+  under Go 1.27.2. This is test evidence, not a fresh `govulncheck` result.
+- The frontend production dependency audit passed with zero vulnerabilities.
+- The full frontend dependency audit reported six high-severity findings, all
+  in the development/test dependency graph (`@angular/build`, Karma, and related
+  packages). npm's suggested fixes downgrade Angular/Karma across major
+  versions; no such downgrade was applied. Reassess these findings with a
+  compatible upstream fix before release.
+- The production frontend build passed and all 176 Node-based checks passed.
+  Angular browser specs compiled but could not execute because the verification
+  container has no Chrome binary.
+
+The 2026-08-23 Angular 20/ng-zorro 20 production audit and earlier Go scans
+below are historical results, not current release clearance.
 
 The production-only audit is a blocking CI gate. A future high-severity runtime
 advisory therefore blocks release until it is remediated or accepted through a

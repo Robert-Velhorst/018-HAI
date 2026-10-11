@@ -56,20 +56,32 @@ func Probes(cfg config.Configuration) []doctor.Probe {
 // pass with wrong credentials or a missing database, which are exactly the
 // failures an operator needs readiness to surface.
 func PostgresProbe(cfg config.Configuration) doctor.Probe {
+	return postgresProbe(cfg, func() (postgresPinger, error) {
+		gormDB, err := infra.GetDefaultDB()
+		if err != nil {
+			return nil, err
+		}
+		return gormDB.DB()
+	})
+}
+
+type postgresPinger interface {
+	PingContext(context.Context) error
+}
+
+func postgresProbe(cfg config.Configuration, acquire func() (postgresPinger, error)) doctor.Probe {
 	return doctor.Probe{
 		Name:     "database.connection",
 		Critical: true,
 		Run: func(ctx context.Context) error {
-			gormDB, err := infra.NewPostgresDatabaseContext(ctx, cfg.DbUser, cfg.DbPassword, cfg.DbName, cfg.DbHost, cfg.DbPort)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			pinger, err := acquire()
 			if err != nil {
 				return fmt.Errorf("connect %s:%d/%s as %s: %w", cfg.DbHost, cfg.DbPort, cfg.DbName, cfg.DbUser, err)
 			}
-			sqlDB, err := gormDB.DB()
-			if err != nil {
-				return fmt.Errorf("acquire pool: %w", err)
-			}
-			defer sqlDB.Close()
-			if err := sqlDB.PingContext(ctx); err != nil {
+			if err := pinger.PingContext(ctx); err != nil {
 				return fmt.Errorf("ping %s:%d/%s: %w", cfg.DbHost, cfg.DbPort, cfg.DbName, err)
 			}
 			return nil

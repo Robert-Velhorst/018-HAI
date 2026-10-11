@@ -20,9 +20,11 @@ import {
   ContactReviewDecisionResult,
   DomainClassificationResult,
   DomainPackPreferenceStatus,
+  DomainPackSummaryView,
   DomainPackView,
   ExecutionAuthorizationConsumption,
   ExecutionAuthorizationReceipt,
+  ExecutionAuthorizationSummary,
   GovernanceRisk,
   LearningApplicationSummary,
   LearningDecisionKind,
@@ -147,13 +149,19 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     domains: this.newSurfaceState(),
   }
 
-  receipts: ExecutionAuthorizationReceipt[] = []
+  receipts: ExecutionAuthorizationSummary[] = []
   mandates: StandingMandate[] = []
   mandateDecisions: MandateAuthorizationDecision[] = []
   proposals: LearningProposal[] = []
   learningOutcomes: LearningOutcomeRecord[] = []
   agents: AgentRecord[] = []
-  domainPacks: DomainPackView[] = []
+  domainPacks: DomainPackSummaryView[] = []
+  executionFullLoading = false
+  executionFullLoaded = false
+  executionFullError = ''
+  learningHistoryLoading = false
+  learningHistoryLoaded = false
+  learningHistoryError = ''
   catalogVersion = ''
   catalogDigest = ''
 
@@ -441,6 +449,24 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
+  loadExecutionSection(open: boolean): void {
+    if (!open || this.executionFullLoading || this.executionFullLoaded) return
+    this.executionFullLoading = true
+    this.executionFullError = ''
+    this.surfaceSubscriptions.execution?.unsubscribe()
+    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50, 'full').subscribe({
+      next: (response) => {
+        this.receipts = response.receipts || []
+        this.executionFullLoading = false
+        this.executionFullLoaded = true
+      },
+      error: (error) => {
+        this.executionFullLoading = false
+        this.executionFullError = this.describeError(error, 'Full authorization evidence is unavailable.')
+      },
+    })
+  }
+
   loadMandates(): void {
     this.beginLoad('mandates')
     this.surfaceSubscriptions.mandates?.unsubscribe()
@@ -456,16 +482,30 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
   loadLearning(): void {
     this.beginLoad('learning')
     this.surfaceSubscriptions.learning?.unsubscribe()
-    this.surfaceSubscriptions.learning = forkJoin({
-      proposals: this.service.listLearningProposals(100),
-      outcomes: this.service.listLearningOutcomes(100),
-    }).subscribe({
+    this.surfaceSubscriptions.learning = this.service.listLearningProposals(100).subscribe({
       next: (response) => {
-        this.proposals = response.proposals.proposals || []
-        this.learningOutcomes = response.outcomes.outcomes || []
+        this.proposals = response.proposals || []
         this.finishLoad('learning')
       },
       error: (error) => this.failLoad('learning', error, 'Learning evidence and proposals are unavailable.'),
+    })
+  }
+
+  loadLearningSection(open: boolean): void {
+    if (!open || this.learningHistoryLoading || this.learningHistoryLoaded) return
+    this.learningHistoryLoading = true
+    this.learningHistoryError = ''
+    this.surfaceSubscriptions.learning?.unsubscribe()
+    this.surfaceSubscriptions.learning = this.service.listLearningOutcomes(100).subscribe({
+      next: (response) => {
+        this.learningOutcomes = response.outcomes || []
+        this.learningHistoryLoading = false
+        this.learningHistoryLoaded = true
+      },
+      error: (error) => {
+        this.learningHistoryLoading = false
+        this.learningHistoryError = this.describeError(error, 'Verified learning history is unavailable.')
+      },
     })
   }
 
@@ -1147,6 +1187,35 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
+  recoverAmbientMonitors(): void {
+    if (this.monitorMutating) return
+    const workspaceId = this.advisoryScope.workspaceId.trim()
+    if (!workspaceId) {
+      this.notification.warning('Choose a workspace', 'Expired monitor work can only be recovered for a configured workspace.')
+      return
+    }
+
+    this.monitorMutating = true
+    this.ambientMonitor.recover(workspaceId, new Date().toISOString()).subscribe({
+      next: (result) => {
+        this.monitorMutating = false
+        if (result.recovered === 0) {
+          this.notification.info(
+            'No expired monitor work',
+            'There are no expired collection or advisory handoff leases to recover.'
+          )
+          return
+        }
+        this.notification.success(
+          'Expired monitor work recovered',
+          `${result.collectionRecovered} collection lease${result.collectionRecovered === 1 ? '' : 's'} and ${result.compositionRecovered} advisory handoff lease${result.compositionRecovered === 1 ? '' : 's'} returned to the bounded queue. No work was executed or delivered.`
+        )
+        this.loadAmbientMonitor(true)
+      },
+      error: (error) => this.failMonitorMutation(error, 'Expired monitor work could not be recovered.'),
+    })
+  }
+
   get selectedMonitorTarget(): MonitorTarget | undefined {
     return this.monitorTargets.find((target) => target.id === this.selectedMonitorTargetId)
   }
@@ -1494,7 +1563,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     this.inspectorVisible = true
   }
 
-  openReceipt(receipt: ExecutionAuthorizationReceipt): void {
+  openReceipt(receipt: ExecutionAuthorizationSummary): void {
     this.resetInspector('receipt')
     this.inspectorLoading = true
     this.inspectorVisible = true
@@ -1578,7 +1647,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
-  openDomain(view: DomainPackView): void {
+  openDomain(view: DomainPackSummaryView): void {
     this.resetInspector('domain')
     this.inspectorLoading = true
     this.inspectorVisible = true
@@ -1599,7 +1668,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
-  domainById(id: string): DomainPackView | undefined {
+  domainById(id: string): DomainPackSummaryView | undefined {
     return this.domainPacks.find((view) => view.pack.id === id)
   }
 
@@ -2354,7 +2423,7 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     return value.id
   }
 
-  trackByPackId(_: number, value: DomainPackView): string {
+  trackByPackId(_: number, value: DomainPackSummaryView): string {
     return value.pack.id
   }
 

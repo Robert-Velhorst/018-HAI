@@ -291,6 +291,7 @@ func TestArchiveEndpointRequiresExplicitArchiveIntent(t *testing.T) {
 }
 
 func TestPursuitEndpointsScopeRecordsToAuthenticatedOwner(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "alice")
 	gin.SetMode(gin.TestMode)
 	repo := newFakeRepo()
 	service := NewService(repo, nil)

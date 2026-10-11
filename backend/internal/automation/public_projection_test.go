@@ -191,7 +191,7 @@ func TestPublicAutomationUpdateRejectsChangedMaskBeforeWrites(t *testing.T) {
 func TestPublicAutomationUpdateAcceptsUnmaskedReplacements(t *testing.T) {
 	raw := credentialAutomation()
 	repo := newFakeAutomationRepo(raw)
-	service := newTestService(repo, events.Publisher{})
+	service := newTestService(repo, acceptingAutomationEventPublisher{})
 	incoming := *publicAutomation(raw)
 	incoming.LaunchTarget = "POST https://new-user:new-password@example.invalid/new?token=new-token&mode=slow"
 	incoming.PublicURL = "https://new-user:new-password@example.invalid/app?api_key=new-key"
@@ -311,7 +311,7 @@ func TestPublicAutomationEditorRoundTripPreservesCredentials(t *testing.T) {
 			}
 			original := *raw
 			repo := newFakeAutomationRepo(raw)
-			service := newTestService(repo, events.Publisher{})
+			service := newTestService(repo, acceptingAutomationEventPublisher{})
 			router := viewerAutomationRouter(service)
 			router.PATCH("/automations", NewHandler(service).Update)
 			response := httptest.NewRecorder()

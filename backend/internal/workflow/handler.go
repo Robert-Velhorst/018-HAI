@@ -614,6 +614,9 @@ func (h *Handler) RunDue(c *gin.Context) {
 		return
 	}
 	result, err := executor.RunDueForOwnerContext(c.Request.Context(), owner, *request)
+	if c.Request.Context().Err() != nil {
+		return
+	}
 	if err != nil || result == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": workflowRunFailedMessage})
 		return

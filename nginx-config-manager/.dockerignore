@@ -1,0 +1,9 @@
+.git
+.gitignore
+**/*_test.go
+**/testdata
+coverage
+coverage.*
+*.log
+*.out
+cmd/app

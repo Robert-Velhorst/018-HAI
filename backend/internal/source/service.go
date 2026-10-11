@@ -1498,6 +1498,7 @@ func (s *service) syncContext(ctx context.Context, sourceID uuid.UUID, request I
 	}
 	items := request.Items
 	adapterCursor := ""
+	adapterCursorReset := false
 	var trelloSlice *trelloSyncSlice
 	var trelloExistingRawItems []models.SourceRawItem
 	trelloExistingRawItemsLoaded := false
@@ -1698,7 +1699,8 @@ func (s *service) syncContext(ctx context.Context, sourceID uuid.UUID, request I
 		s.audit(sourceID, "source.airbyte_inventory_read", fmt.Sprintf("read %d bounded Airbyte source and connection inventory record(s) from approved workspaces", len(items)))
 	}
 	if len(items) == 0 && source.ConnectorKey == laroConnectorKey {
-		items, adapterCursor, err = fetchLAROSource(ctx, source)
+		var result laroFetchResult
+		result, err = fetchLAROSource(ctx, source)
 		if err != nil {
 			now := time.Now().UTC()
 			job.Status = "failed"
@@ -1708,6 +1710,9 @@ func (s *service) syncContext(ctx context.Context, sourceID uuid.UUID, request I
 			s.audit(sourceID, "source.sync_failed", sourceOperationalFailureMessage(err))
 			return nil, err
 		}
+		items = result.items
+		adapterCursor = result.nextCursor
+		adapterCursorReset = result.cursorReset
 		s.audit(sourceID, "source.laro_read", fmt.Sprintf("read %d bounded, owner-scoped LARO legal record(s)", len(items)))
 	}
 	if len(items) == 0 && source.ConnectorKey == workerControlConnectorKey {
@@ -2032,7 +2037,14 @@ func (s *service) syncContext(ctx context.Context, sourceID uuid.UUID, request I
 			source.LastSyncedAt = originalLastSyncedAt
 		} else {
 			source.LastSyncedAt = &now
-			source.Cursor = firstNonEmpty(adapterCursor, fmt.Sprintf("%s:%d", now.Format(time.RFC3339), len(items)))
+			if adapterCursorReset {
+				// LARO cursors are provider-owned opaque values. Do not replace a
+				// deliberately cleared rejected cursor with HAI's timestamp fallback.
+				source.Cursor = adapterCursor
+				s.audit(sourceID, "source.laro_cursor_reset", "cleared a rejected legacy LARO cursor after a successful cursorless retry")
+			} else {
+				source.Cursor = firstNonEmpty(adapterCursor, fmt.Sprintf("%s:%d", now.Format(time.RFC3339), len(items)))
+			}
 		}
 		job.Status = "completed"
 		job.CursorAfter = source.Cursor
@@ -2342,6 +2354,40 @@ func (s *service) RevokeAuthorized(
 }
 
 func (s *service) Search(request SearchRequest) (*SearchResult, error) {
+	return s.SearchContext(context.Background(), request)
+}
+
+// SearchWithContext preserves the existing Service API while allowing HTTP
+// handlers and background workers to cancel in-flight semantic retrieval.
+func SearchWithContext(sourceService Service, ctx context.Context, request SearchRequest) (*SearchResult, error) {
+	if sourceService == nil {
+		return nil, errors.New("source service is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if contextual, ok := sourceService.(interface {
+		SearchContext(context.Context, SearchRequest) (*SearchResult, error)
+	}); ok {
+		return contextual.SearchContext(ctx, request)
+	}
+	result, err := sourceService.Search(request)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	return result, err
+}
+
+func (s *service) SearchContext(ctx context.Context, request SearchRequest) (*SearchResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	limit := request.Limit
 	if limit <= 0 || limit > 20 {
 		limit = 8
@@ -2350,11 +2396,17 @@ func (s *service) Search(request SearchRequest) (*SearchResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(request.ExcludeConnectorKeys) == 0 && s.semanticService != nil && s.semanticService.Enabled() {
-		matches, semanticErr := s.semanticService.Search(context.Background(), semantic.SearchRequest{
+		matches, semanticErr := s.semanticService.Search(ctx, semantic.SearchRequest{
 			OwnerIdentity: request.OwnerIdentity, Query: request.Query, ProjectKey: request.ProjectKey,
 			Limit: limit, IncludeSensitive: request.IncludeSensitive,
 		})
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
 		if semanticErr == nil && len(matches) > 0 {
 			ranked := make([]RankedExtraction, 0, len(matches))
 			for _, match := range matches {
@@ -2381,6 +2433,9 @@ func (s *service) Search(request SearchRequest) (*SearchResult, error) {
 	}
 	extractions, err := s.repo.FindExtractionsForSources(sourceIDsFromSet(visibleSourceIDs), strings.TrimSpace(request.ProjectKey), false)
 	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	ranked := []RankedExtraction{}

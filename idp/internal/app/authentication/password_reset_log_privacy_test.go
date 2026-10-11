@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"context"
 )
 
 type resetPrivacyUserService struct {
@@ -48,7 +50,7 @@ func TestPasswordResetBackendFailuresDoNotLeakPrivateDetails(t *testing.T) {
 			svc := &service{userService: users, passwordResetter: sender, logger: logger}
 			var err error
 			if stage == "store" || stage == "clear" {
-				_, _, err = svc.RequestPasswordReset(user.Email)
+				_, _, err = svc.RequestPasswordReset(context.Background(), user.Email)
 			} else {
 				err = svc.ConfirmPasswordReset("reset-token", "new-strong-password")
 			}

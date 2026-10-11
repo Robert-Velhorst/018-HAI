@@ -3,6 +3,22 @@
 Executed commands and their results — the evidentiary basis for status claims.
 Reflects the final post-implementation state.
 
+## 2026-08-14 Windows signed ambient-monitor acceptance
+
+The rebuilt Windows stack completed the signed Governance Control due-run,
+pause/resume, and crash-recovery lifecycle against a disposable PostgreSQL
+database. The clean isolated pass retained exactly one outcome revision, target,
+observation, run, composition delivery, and successful composition attempt;
+three target command receipts represented create, pause, and resume. The final
+target was enabled with no remaining lease. Workflow items/events, automation
+launches, execution-authorization receipts/consumptions, and final-effect
+exercise tables remained empty.
+
+See
+[`docs/evidence/ambient-monitor-windows-acceptance-2026-08-14.md`](evidence/ambient-monitor-windows-acceptance-2026-08-14.md)
+for the signed UI steps, exact database reconciliation, isolation method, and
+remaining evidence boundaries.
+
 ## Commands run
 
 | Command | Result |

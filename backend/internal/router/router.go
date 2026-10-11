@@ -24,8 +24,8 @@ import (
 
 const (
 	maxRequestReadDuration   = 15 * time.Minute
-	maxUploadWriteDuration   = 15 * time.Minute
 	defaultIdleConnectionTTL = 60 * time.Second
+	httpMaxHeaderBytes       = 1 << 20
 )
 
 func Initialize() error {
@@ -139,7 +139,7 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       maxRequestReadDuration,
 		IdleTimeout:       defaultIdleConnectionTTL,
-		WriteTimeout:      maxUploadWriteDuration,
+		MaxHeaderBytes:    httpMaxHeaderBytes,
 	}
 }
 

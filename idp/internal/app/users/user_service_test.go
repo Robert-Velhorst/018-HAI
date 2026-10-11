@@ -686,3 +686,18 @@ func TestGetUserByEmailPreservesNotFoundClassification(t *testing.T) {
 	mockRepo.AssertExpectations(t)
 	mockLogger.AssertExpectations(t)
 }
+
+func TestConsumePasswordResetTokenPreservesInvalidTokenClassification(t *testing.T) {
+	mockRepo := new(MockUserRepository)
+	hasher := new(MockPasswordHasher)
+	userID := uuid.New()
+	hasher.On("Hash", "new-password-for-reset").Return("new-password-hash", nil)
+	mockRepo.On("ConsumePasswordResetToken", userID, "expired-token", "new-password-hash", mock.AnythingOfType("time.Time")).Return(irepository.ErrResetTokenNotConsumable)
+	service := NewUserService(mockRepo, nil, hasher)
+
+	err := service.ConsumePasswordResetToken(userID, "expired-token", "new-password-for-reset")
+
+	assert.ErrorIs(t, err, ErrInvalidPasswordResetToken)
+	hasher.AssertExpectations(t)
+	mockRepo.AssertExpectations(t)
+}

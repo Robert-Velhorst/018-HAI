@@ -1,6 +1,7 @@
 package pursuit
 
 import (
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
 	"fmt"
@@ -29,7 +30,6 @@ type Repository interface {
 	FindActivityByIdentity(pursuitID uuid.UUID, eventType, sourceType, sourceID, sourceURI string) (*models.PursuitActivity, bool, error)
 	UpsertTaskAttempt(attempt *models.PursuitTaskAttempt) (*models.PursuitTaskAttempt, error)
 	FindTaskAttempts(pursuitID uuid.UUID, limit int) ([]models.PursuitTaskAttempt, error)
-	FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error)
 	FindLinkedWorkflows(ids []uuid.UUID) ([]models.WorkflowItem, error)
 	FindLinkedChecklistItems(workflowIDs []uuid.UUID) ([]models.WorkflowChecklistItem, error)
 	FindLinkedOpenLoops(workflowIDs []uuid.UUID) ([]models.WorkflowOpenLoop, error)
@@ -50,6 +50,10 @@ type Repository interface {
 	FindLinkedVerificationEvidence(runIDs []uuid.UUID) ([]models.VerificationEvidence, error)
 	FindLinkedAutomations(ids []uuid.UUID) ([]models.Automation, error)
 	FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launchIDs []uuid.UUID, limit int) ([]models.AutomationLaunchEvent, error)
+}
+
+type taskAttemptReviewRepository interface {
+	FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error)
 }
 
 type GormRepository struct {
@@ -90,9 +94,8 @@ func (r *GormRepository) FindAll(includeArchived bool) ([]models.Pursuit, error)
 	return r.findAllForOwner("", includeArchived)
 }
 
-// FindAllForOwner enforces the ownership predicate in Postgres. Ownerless
-// records remain visible to support local single-user data created before
-// identity-aware ownership was introduced.
+// FindAllForOwner enforces the ownership predicate in Postgres. Only the
+// configured migration owner can additionally inspect ownerless legacy rows.
 func (r *GormRepository) FindAllForOwner(ownerIdentity string, includeArchived bool) ([]models.Pursuit, error) {
 	return r.findAllForOwner(ownerIdentity, includeArchived)
 }
@@ -104,7 +107,7 @@ func (r *GormRepository) findAllForOwner(ownerIdentity string, includeArchived b
 		query = query.Where("archived = ?", false)
 	}
 	if ownerIdentity != "" {
-		query = query.Where("owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL", ownerIdentity)
+		query = query.Where(ownerVisibilitySQL("owner_identity", ownerIdentity), ownerIdentity)
 	}
 	if err := query.Find(&pursuits).Error; err != nil {
 		return nil, err
@@ -120,7 +123,7 @@ func (r *GormRepository) LinkVisibleToOwner(ownerIdentity, linkType, linkID stri
 	if ownerIdentity == "" {
 		return false, true, nil
 	}
-	visibleOwner := "owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL"
+	visibleOwner := ownerVisibilitySQL("owner_identity", ownerIdentity)
 
 	switch strings.TrimSpace(linkType) {
 	case LinkPursuit:
@@ -212,7 +215,7 @@ func (r *GormRepository) sourceItemVisibleToOwner(ownerIdentity, linkID string) 
 func (r *GormRepository) visibleSourceIDs(ownerIdentity string) *gorm.DB {
 	return r.DB.Model(&models.ConnectedSource{}).
 		Select("id").
-		Where("owner_identity = ? OR owner_identity = '' OR owner_identity IS NULL", ownerIdentity)
+		Where(ownerVisibilitySQL("owner_identity", ownerIdentity), ownerIdentity)
 }
 
 func (r *GormRepository) CreateLink(link *models.PursuitLink) (*models.PursuitLink, error) {
@@ -308,12 +311,19 @@ func (r *GormRepository) findVisibleLink(ownerIdentity, condition string, args .
 		Joins("JOIN pursuits ON pursuits.id = pursuit_links.pursuit_id").
 		Where(condition, args...)
 	if ownerIdentity != "" {
-		query = query.Where("pursuits.owner_identity = ? OR pursuits.owner_identity = '' OR pursuits.owner_identity IS NULL", ownerIdentity)
+		query = query.Where(ownerVisibilitySQL("pursuits.owner_identity", ownerIdentity), ownerIdentity)
 	}
 	if err := query.Order("pursuit_links.confidence DESC, pursuit_links.created_at DESC").First(&link).Error; err != nil {
 		return nil, err
 	}
 	return &link, nil
+}
+
+func ownerVisibilitySQL(column, ownerIdentity string) string {
+	if identity.CanReadLegacyOwnerlessData(ownerIdentity) {
+		return column + " = ? OR " + column + " = '' OR " + column + " IS NULL"
+	}
+	return column + " = ?"
 }
 
 func (r *GormRepository) CreateActivity(activity *models.PursuitActivity) (*models.PursuitActivity, error) {
@@ -414,15 +424,25 @@ func (r *GormRepository) FindTaskAttempts(pursuitID uuid.UUID, limit int) ([]mod
 	return attempts, nil
 }
 
-// Completion authority must not depend on the recent-record display limit.
 func (r *GormRepository) FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error) {
 	var attempts []models.PursuitTaskAttempt
-	err := r.DB.Where("pursuit_id = ?", pursuitID).
-		Where("(LOWER(BTRIM(COALESCE(status, ''), ?)) LIKE ? OR LOWER(BTRIM(COALESCE(status, ''), ?)) IN ? OR LOWER(BTRIM(COALESCE(verification_status, ''), ?)) IN ? OR BTRIM(COALESCE(blocked_reason, ''), ?) <> '' OR (LOWER(BTRIM(COALESCE(mode, ''), ?)) = 'run' AND LOWER(BTRIM(COALESCE(status, ''), ?)) IN ? AND LOWER(BTRIM(COALESCE(verification_status, ''), ?)) NOT IN ?))",
-			taskAttemptWhitespace, "%review%", taskAttemptWhitespace, []string{"blocked", "uncertain", "indeterminate", "failed"}, taskAttemptWhitespace, taskAttemptReviewVerificationStatuses,
-			taskAttemptWhitespace, taskAttemptWhitespace, taskAttemptWhitespace, []string{"validated", "completed"}, taskAttemptWhitespace, taskAttemptAcceptedVerificationStatuses).
-		Order("updated_at DESC, task_plan_id ASC").Find(&attempts).Error
-	return attempts, err
+	query := r.DB.Where(`pursuit_id = ? AND (
+		COALESCE(blocked_reason, '') <> '' OR
+		LOWER(TRIM(COALESCE(status, ''))) LIKE '%review%' OR
+		LOWER(TRIM(COALESCE(status, ''))) IN ('blocked', 'failed', 'error', 'cancelled', 'canceled', 'uncertain', 'indeterminate', 'unsupported', 'conflicting') OR
+		LOWER(TRIM(COALESCE(verification_status, ''))) IN ('needs_review', 'uncertain', 'unsupported', 'conflicting', 'failed', 'fail') OR
+		LOWER(TRIM(COALESCE(mode, ''))) = 'run'
+	)`, pursuitID)
+	if err := query.Order("updated_at DESC, task_plan_id ASC").Find(&attempts).Error; err != nil {
+		return nil, err
+	}
+	result := make([]models.PursuitTaskAttempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		if pursuitTaskAttemptNeedsReview(attempt) {
+			result = append(result, attempt)
+		}
+	}
+	return result, nil
 }
 
 func (r *GormRepository) FindLinkedWorkflows(ids []uuid.UUID) ([]models.WorkflowItem, error) {
@@ -582,10 +602,20 @@ func (r *GormRepository) FindLinkedSourceItems(ids []uuid.UUID) ([]models.Source
 	if len(ids) == 0 {
 		return items, nil
 	}
-	if err := r.DB.Where("id IN ?", ids).Order("updated_at DESC").Find(&items).Error; err != nil {
+	// Pursuit responses expose provenance metadata, never the duplicated raw
+	// source body. Rich content stays behind the owner-scoped source endpoint.
+	if err := r.DB.Select(pursuitSourceItemProjectionColumns).
+		Where("id IN ?", ids).
+		Order("updated_at DESC").
+		Find(&items).Error; err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+var pursuitSourceItemProjectionColumns = []string{
+	"id", "source_id", "external_id", "project_key", "item_type", "title",
+	"source_uri", "metadata", "fetched_at", "created_at", "updated_at",
 }
 
 func (r *GormRepository) FindLinkedExtractions(ids []uuid.UUID) ([]models.SourceExtraction, error) {
@@ -648,7 +678,7 @@ func (r *GormRepository) FindLinkedAutomationLaunches(automationIDs []uuid.UUID,
 	if len(automationIDs) == 0 && len(launchIDs) == 0 {
 		return events, nil
 	}
-	if limit <= 0 || limit > 50 {
+	if limit <= 0 || limit > 500 {
 		limit = 20
 	}
 	query := r.DB.Model(&models.AutomationLaunchEvent{})

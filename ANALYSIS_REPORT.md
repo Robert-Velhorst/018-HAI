@@ -1,5 +1,9 @@
 # Automation Hub - Code Analysis Report
 
+> Historical snapshot. This report predates the canonical source-built Compose
+> topology and must not be used as current deployment guidance. Use `README.md`,
+> `docs/operator-runbook.md`, and `docs/completion-matrix.md` for current state.
+
 ## Issues Found and Recommendations
 
 ### 1. **CRITICAL: Missing Environment Files** ✅ FIXED

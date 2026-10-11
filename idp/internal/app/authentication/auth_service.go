@@ -471,7 +471,13 @@ func (a *service) createGoogleUser(email string) (*models.User, error) {
 	return a.userService.CreateUser(models.User{Email: email, Password: hashed, IsActive: true, Role: "operator"})
 }
 
-func (a *service) Logout(accessToken string) error {
+func (a *service) Logout(ctx context.Context, accessToken string) error {
+	if ctx == nil {
+		return errors.New("logout requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, claims, err := a.parseAndValidateToken(accessToken)
 	if err != nil {
 		a.logger.Error("Error parsing access token: %v", err)
@@ -551,7 +557,13 @@ func (a *service) Logout(accessToken string) error {
 	return nil
 }
 
-func (a *service) RefreshToken(refreshToken string) (*dto.TokenDetails, error) {
+func (a *service) RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenDetails, error) {
+	if ctx == nil {
+		return nil, errors.New("token refresh requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if a.blockListService == nil {
 		return nil, errors.New("session revocation store is unavailable")
 	}
@@ -708,7 +720,13 @@ func (a *service) RefreshToken(refreshToken string) (*dto.TokenDetails, error) {
 	return td, nil
 }
 
-func (a *service) IsUserAuthenticated(accessToken string) (bool, error) {
+func (a *service) IsUserAuthenticated(ctx context.Context, accessToken string) (bool, error) {
+	if ctx == nil {
+		return false, errors.New("authentication check requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	_, claims, err := a.parseAndValidateToken(accessToken)
 	if err != nil {
 		a.logger.Error("Error parsing accessToken: %v", err)
@@ -724,7 +742,13 @@ func (a *service) IsUserAuthenticated(accessToken string) (bool, error) {
 	return true, nil
 }
 
-func (a *service) RequestPasswordReset(email string) (string, time.Time, error) {
+func (a *service) RequestPasswordReset(ctx context.Context, email string) (string, time.Time, error) {
+	if ctx == nil {
+		return "", time.Time{}, errors.New("password reset requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", time.Time{}, err
+	}
 	if a.passwordResetter == nil || !a.passwordResetter.Configured() {
 		a.logger.Warn("Password reset requested while email delivery is not configured")
 		return "", time.Time{}, errors.New("password reset email delivery is not configured")
@@ -755,7 +779,7 @@ func (a *service) RequestPasswordReset(email string) (string, time.Time, error) 
 		return "", time.Time{}, errors.New("failed to update user")
 	}
 
-	if err := a.passwordResetter.SendPasswordReset(email, resetToken, resetTokenExpires); err != nil {
+	if err := a.passwordResetter.SendPasswordReset(ctx, email, resetToken, resetTokenExpires); err != nil {
 		// SMTP errors can echo recipient data, server responses, or credentials.
 		if stage, ok := services.PasswordResetDeliveryFailureStage(err); ok {
 			a.logger.Error("Password reset email delivery failed during SMTP stage %s", stage)

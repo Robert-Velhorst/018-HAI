@@ -9,8 +9,11 @@ func TestDefaultsUseLocalEventFallbackWhenBusIsDisabled(t *testing.T) {
 	for name, value := range map[string]string{
 		"HAI_EVENT_BUS_ENABLED":                "false",
 		"DB_PORT":                              "5432",
+		"DB_USER":                              "idp-test",
+		"DB_PASSWORD":                          "idp-test-password",
 		"DB_HOST":                              "postgres",
 		"DB_NAME":                              "idp",
+		"RUN_MODE":                             "test",
 		"BLOCKING_TIME_EXPONENTIATION_BASIS":   "1",
 		"MAX_LOGIN_ATTEMPTS_BEFORE_BLOCK":      "3",
 		"MIN_TIME_BETWEEN_ATTEMPTS_IN_SECONDS": "0",

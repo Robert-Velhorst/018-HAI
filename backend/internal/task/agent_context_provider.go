@@ -19,6 +19,13 @@ type AgentContextProvider interface {
 	LatestAgents(ownerIdentity string, at time.Time) ([]frameworkregistry.AgentCard, error)
 }
 
+// ContextAgentContextProvider is implemented by providers that can stop an
+// owner-scoped registry read when the task request is abandoned. The legacy
+// interface remains supported for externally supplied providers.
+type ContextAgentContextProvider interface {
+	LatestAgentsContext(context.Context, string, time.Time) ([]frameworkregistry.AgentCard, error)
+}
+
 type agentListRepository interface {
 	List(context.Context, string) ([]agentregistry.Agent, error)
 }
@@ -35,6 +42,16 @@ func NewAgentContextProvider(repository agentListRepository) (AgentContextProvid
 }
 
 func (p *registryAgentContextProvider) LatestAgents(ownerIdentity string, at time.Time) ([]frameworkregistry.AgentCard, error) {
+	return p.LatestAgentsContext(context.Background(), ownerIdentity, at)
+}
+
+func (p *registryAgentContextProvider) LatestAgentsContext(ctx context.Context, ownerIdentity string, at time.Time) ([]frameworkregistry.AgentCard, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	if ownerIdentity == "" {
 		return nil, fmt.Errorf("owner identity is required")
@@ -43,7 +60,7 @@ func (p *registryAgentContextProvider) LatestAgents(ownerIdentity string, at tim
 	if at.IsZero() {
 		return nil, fmt.Errorf("agent context time is required")
 	}
-	agents, err := p.repository.List(context.Background(), ownerIdentity)
+	agents, err := p.repository.List(ctx, ownerIdentity)
 	if err != nil {
 		return nil, fmt.Errorf("list owner-scoped agents: %w", err)
 	}
@@ -59,6 +76,21 @@ func (p *registryAgentContextProvider) LatestAgents(ownerIdentity string, at tim
 	}
 	sort.Slice(cards, func(i, j int) bool { return cards[i].ID < cards[j].ID })
 	return cards, nil
+}
+
+func latestAgentsForTask(provider AgentContextProvider, request IntakeRequest, at time.Time) ([]frameworkregistry.AgentCard, error) {
+	ctx := taskExecutionContext(request)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if contextual, ok := provider.(ContextAgentContextProvider); ok {
+		return contextual.LatestAgentsContext(ctx, request.OwnerIdentity, at)
+	}
+	cards, err := provider.LatestAgents(request.OwnerIdentity, at)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, contextErr
+	}
+	return cards, err
 }
 
 func mapRegistryAgentCard(agent agentregistry.Agent, at time.Time) frameworkregistry.AgentCard {

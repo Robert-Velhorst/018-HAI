@@ -19,7 +19,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrVerificationRunNotFound indicates that an owner-scoped run lookup found no visible run.
 var ErrVerificationRunNotFound = errors.New("verification run not found")
 
 const (
@@ -28,20 +27,17 @@ const (
 	ModeStrict   = "strict"
 	ModeAction   = "action"
 
-	StatusVerified        = "verified"
-	StatusSourceSupported = "source_supported"
-	StatusSchemaValidated = "schema_validated"
-	StatusTestPassed      = "test_passed"
-	StatusHumanApproved   = "human_approved"
-	StatusUncertain       = "uncertain"
-	StatusConflicting     = "conflicting"
-	StatusUnsupported     = "unsupported"
-	StatusNeedsReview     = "needs_review"
-
-	authorityConnectedReviewRequired = "connected_source:review_required"
-	minimumClaimEvidenceOverlap      = 0.22
-	minimumMemoryPromotionConfidence = 0.70
-	minimumMemoryEvidenceQuality     = 0.55
+	StatusVerified                   = "verified"
+	StatusSourceSupported            = "source_supported"
+	StatusSchemaValidated            = "schema_validated"
+	StatusTestPassed                 = "test_passed"
+	StatusHumanApproved              = "human_approved"
+	StatusUncertain                  = "uncertain"
+	StatusConflicting                = "conflicting"
+	StatusUnsupported                = "unsupported"
+	StatusNeedsReview                = "needs_review"
+	minimumMemoryPromotionConfidence = 0.75
+	minimumMemoryEvidenceQuality     = 0.75
 )
 
 type EvidenceInput struct {
@@ -58,19 +54,17 @@ type EvidenceInput struct {
 }
 
 type AnswerRequest struct {
-	OwnerIdentity    string          `json:"-"`
-	Question         string          `json:"question"`
-	ProjectKey       string          `json:"projectKey,omitempty"`
-	PursuitID        string          `json:"pursuitId,omitempty"`
-	Mode             string          `json:"mode,omitempty"`
-	DraftAnswer      string          `json:"draftAnswer,omitempty"`
-	ExternalEvidence []EvidenceInput `json:"externalEvidence,omitempty"`
-	IncludeSensitive bool            `json:"includeSensitive,omitempty"`
-	// Legacy compatibility hints are deliberately excluded from JSON and are
-	// never accepted as proof of a server-validated approval record.
-	HumanApproved          bool   `json:"-"`
-	HumanApprovalReference string `json:"-"`
-	AllowMemoryUpdate      bool   `json:"allowMemoryUpdate,omitempty"`
+	OwnerIdentity          string          `json:"-"`
+	Question               string          `json:"question"`
+	ProjectKey             string          `json:"projectKey,omitempty"`
+	PursuitID              string          `json:"pursuitId,omitempty"`
+	Mode                   string          `json:"mode,omitempty"`
+	DraftAnswer            string          `json:"draftAnswer,omitempty"`
+	ExternalEvidence       []EvidenceInput `json:"externalEvidence,omitempty"`
+	IncludeSensitive       bool            `json:"includeSensitive,omitempty"`
+	HumanApproved          bool            `json:"humanApproved,omitempty"`
+	HumanApprovalReference string          `json:"-"`
+	AllowMemoryUpdate      bool            `json:"allowMemoryUpdate,omitempty"`
 }
 
 type VerificationResult struct {
@@ -83,14 +77,22 @@ type VerificationResult struct {
 	UnsupportedClaims         []models.VerificationClaim    `json:"unsupportedClaims"`
 	ResearchQuestions         []string                      `json:"researchQuestions"`
 	Logs                      []string                      `json:"logs"`
-	AuditWarnings             []string                      `json:"auditWarnings,omitempty"`
 	KnowledgeClaimIDs         []string                      `json:"knowledgeClaimIds,omitempty"`
 	KnowledgeError            string                        `json:"knowledgeProjectionError,omitempty"`
-	MemoryUpdateRequested     bool                          `json:"memoryUpdateRequested,omitempty"`
-	MemoryUpdatesStored       int                           `json:"memoryUpdatesStored,omitempty"`
-	MemoryUpdateFailures      int                           `json:"memoryUpdateFailures,omitempty"`
-	MemoryUpdatesSkipped      int                           `json:"memoryUpdatesSkipped,omitempty"`
+	MemoryUpdateRequested     bool                          `json:"memoryUpdateRequested"`
+	MemoryUpdatesStored       int                           `json:"memoryUpdatesStored"`
+	MemoryUpdatesSkipped      int                           `json:"memoryUpdatesSkipped"`
+	MemoryUpdateFailures      int                           `json:"memoryUpdateFailures"`
 	MemoryUpdateBlockedReason string                        `json:"memoryUpdateBlockedReason,omitempty"`
+	AuditWarnings             []string                      `json:"auditWarnings,omitempty"`
+}
+
+type memoryPromotionOutcome struct {
+	Stored        int
+	Skipped       int
+	Failed        int
+	BlockedReason string
+	AuditWarning  bool
 }
 
 type Service interface {
@@ -99,6 +101,25 @@ type Service interface {
 	RunsForOwner(ownerIdentity string) ([]models.VerificationRun, error)
 	RunDetails(id uuid.UUID) (*VerificationResult, error)
 	RunDetailsForOwner(ownerIdentity string, id uuid.UUID) (*VerificationResult, error)
+}
+
+// ContextService binds an interactive verification pass to its caller without
+// changing the legacy Service contract used by focused test doubles.
+type ContextService interface {
+	AnswerContext(context.Context, AnswerRequest) (*VerificationResult, error)
+}
+
+func AnswerWithContext(service Service, ctx context.Context, request AnswerRequest) (*VerificationResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if contextual, ok := service.(ContextService); ok {
+		return contextual.AnswerContext(ctx, request)
+	}
+	return service.Answer(request)
 }
 
 type PursuitLinker interface {
@@ -117,6 +138,10 @@ type service struct {
 
 type ConnectedSourceSearcher interface {
 	Search(source.SearchRequest) (*source.SearchResult, error)
+}
+
+type contextConnectedSourceSearcher interface {
+	SearchContext(context.Context, source.SearchRequest) (*source.SearchResult, error)
 }
 
 // ClaimProjector copies eligible source-backed claims into immutable semantic
@@ -188,6 +213,16 @@ func DefaultService() Service {
 }
 
 func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
+	return s.AnswerContext(context.Background(), request)
+}
+
+func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*VerificationResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	request.OwnerIdentity = strings.TrimSpace(request.OwnerIdentity)
 	if request.OwnerIdentity == "" {
 		return nil, fmt.Errorf("authenticated owner identity is required")
@@ -203,7 +238,7 @@ func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
 	questions := researchQuestions(request.Question, request.ProjectKey)
 	logs := []string{"converted request into research questions"}
 	run, err := s.repo.CreateRun(&models.VerificationRun{
-		OwnerIdentity:     strings.TrimSpace(request.OwnerIdentity),
+		OwnerIdentity:     request.OwnerIdentity,
 		Mode:              mode,
 		Question:          strings.TrimSpace(request.Question),
 		ProjectKey:        strings.TrimSpace(request.ProjectKey),
@@ -214,170 +249,184 @@ func (s *service) Answer(request AnswerRequest) (*VerificationResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	memoryOptInRecorded := false
+	if request.AllowMemoryUpdate {
+		if auditErr := s.auditErr(run.ID, "verification.memory_update_requested", "owner requested source-supported memory promotion"); auditErr != nil {
+			logs = append(logs, "owner memory opt-in could not be durably recorded")
+		} else {
+			memoryOptInRecorded = true
+		}
+	}
 
-	evidence := s.collectEvidence(run.ID, request, questions, &logs)
+	evidence, err := s.collectEvidence(ctx, run.ID, request, questions, &logs)
+	if err != nil {
+		s.markCanceledRun(run, err)
+		return nil, err
+	}
 	answer := buildAnswer(request, mode, evidence)
 	claims := decomposeClaims(run.ID, answer, mode, request)
 	verifiedClaims := verifyClaims(claims, evidence, request, mode)
 	unsupported := unsupportedClaims(verifiedClaims)
-	status := runStatus(verifiedClaims)
+	status := runStatus(verifiedClaims, mode, request)
 
 	run.Answer = answer
 	run.Status = status
 	run.SourcesUsed = sourceLabels(filterEvidence(evidence, true))
 	run.SourcesRejected = sourceLabels(filterRejectedEvidence(evidence))
 	run.MissingSources = missingSources(request, evidence)
-	// A verification result is only trustworthy when its evidence, claims, and
-	// final status were durably stored. The Postgres repository performs that
-	// write set atomically; compact test repositories retain fail-closed order.
-	// Callers must not receive a completed-looking result with a missing audit
-	// trail.
-	finalizedRun, finalizeErr := s.persistFinalization(run, evidence, verifiedClaims)
-	if finalizeErr != nil {
-		if err := s.audit(run.ID, "verification.persistence_failed", finalizeErr.Error()); err != nil {
-			return nil, fmt.Errorf("%w; could not durably record the verification failure audit", finalizeErr)
-		}
-		return nil, finalizeErr
+	if err := s.stopIfCanceled(ctx, run); err != nil {
+		return nil, err
 	}
-	run = finalizedRun
-	auditWarnings := []string{}
-	var result *VerificationResult
-	recordAudit := func(action, message string) {
-		if err := s.audit(run.ID, action, message); err != nil {
-			auditWarnings = append(auditWarnings, action)
-			if result != nil {
-				result.AuditWarnings = append(result.AuditWarnings, action)
-			}
-			logs = append(logs, "audit event "+action+" could not be durably recorded")
+	if err := s.persistCompletedVerification(run, evidence, verifiedClaims); err != nil {
+		if auditErr := s.auditErr(run.ID, "verification.persistence_failed", "verification could not be durably finalized"); auditErr != nil {
+			return nil, fmt.Errorf("could not durably record the verification failure audit: %w", errors.Join(err, auditErr))
 		}
+		return nil, err
 	}
-	memoryUpdatesStored, memoryUpdateFailures, memoryUpdatesSkipped := 0, 0, 0
-	memoryUpdateBlockedReason := ""
-	promotedClaims := []models.VerificationClaim(nil)
+	memoryOutcome := memoryPromotionOutcome{}
+	auditWarnings := []string(nil)
 	if request.AllowMemoryUpdate {
-		if err := s.audit(run.ID, "verification.memory_update_requested", "authenticated owner explicitly opted in to source-supported memory promotion"); err != nil {
-			auditWarnings = append(auditWarnings, "verification.memory_update_requested")
-			memoryUpdatesSkipped = len(verifiedClaims)
-			memoryUpdateBlockedReason = "owner memory opt-in could not be durably recorded"
-			logs = append(logs, "durable-memory promotion was blocked because owner opt-in could not be durably recorded")
+		if memoryOptInRecorded {
+			memoryOutcome = s.storeVerifiedMemory(request, run, verifiedClaims, evidence)
 		} else {
-			outcome := s.storeVerifiedMemory(request, run, verifiedClaims, evidence)
-			memoryUpdatesStored = outcome.Stored
-			memoryUpdateFailures = outcome.Failed
-			memoryUpdatesSkipped = outcome.Skipped
-			memoryUpdateBlockedReason = outcome.BlockedReason
-			promotedClaims = outcome.PromotedClaims
+			memoryOutcome.BlockedReason = "owner memory opt-in could not be durably recorded"
+			memoryOutcome.Skipped = countPromotableClaims(verifiedClaims)
 		}
-		if memoryUpdatesStored > 0 {
-			logs = append(logs, fmt.Sprintf("stored %d source-grounded claim(s) in owner-scoped long-term memory", memoryUpdatesStored))
-			recordAudit("verification.memory_promoted", fmt.Sprintf("promoted %d source-grounded claim(s) with verification-run provenance", memoryUpdatesStored))
+		if memoryOutcome.BlockedReason != "" {
+			logs = append(logs, memoryOutcome.BlockedReason)
 		}
-		if memoryUpdateFailures > 0 {
-			logs = append(logs, fmt.Sprintf("%d eligible claim(s) could not be saved to long-term memory; verification results remain available", memoryUpdateFailures))
-			recordAudit("verification.memory_update_failed", fmt.Sprintf("%d verified memory write(s) failed", memoryUpdateFailures))
-		}
-		if memoryUpdatesSkipped > 0 {
-			logs = append(logs, fmt.Sprintf("skipped %d claim(s) that did not meet durable-memory source, confidence, risk, owner, or provenance requirements", memoryUpdatesSkipped))
-		}
-		if memoryUpdateBlockedReason != "" {
-			logs = append(logs, "durable-memory promotion was blocked: "+memoryUpdateBlockedReason)
-			recordAudit("verification.memory_promotion_blocked", memoryUpdateBlockedReason)
+		if memoryOutcome.AuditWarning {
+			logs = append(logs, "memory promotion succeeded but its audit event could not be durably recorded")
+			auditWarnings = append(auditWarnings, "verification.memory_promoted")
 		}
 	}
 	knowledgeClaimIDs := []string(nil)
 	knowledgeError := ""
-	if s.claimProjector != nil && request.AllowMemoryUpdate && len(promotedClaims) > 0 {
+	if s.claimProjector != nil && request.AllowMemoryUpdate && memoryOptInRecorded && memoryOutcome.Failed == 0 && memoryOutcome.BlockedReason == "" && memoryOutcome.Stored > 0 {
 		knowledgeClaimIDs, err = s.claimProjector.ProjectClaims(
-			context.Background(), request, *run, promotedClaims, evidence,
+			ctx, request, *run, verifiedClaims, evidence,
 		)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+			cancelErr := firstVerificationContextError(ctx, err)
+			s.markCanceledRun(run, cancelErr)
+			return nil, cancelErr
+		}
 		if err != nil {
 			knowledgeError = "semantic claim projection failed"
 			logs = append(logs, knowledgeError)
-			recordAudit("verification.knowledge_projection_failed", err.Error())
+			s.audit(run.ID, "verification.knowledge_projection_failed", err.Error())
 		} else if len(knowledgeClaimIDs) > 0 {
-			logs = append(logs, "promoted source-grounded claims into immutable semantic knowledge")
-			recordAudit("verification.knowledge_projected", fmt.Sprintf("projected %d memory-approved semantic claim(s)", len(knowledgeClaimIDs)))
+			logs = append(logs, "source-backed claims projected into immutable semantic knowledge")
+			s.audit(run.ID, "verification.knowledge_projected", fmt.Sprintf("projected %d semantic claim(s)", len(knowledgeClaimIDs)))
 		}
 	}
-	result = &VerificationResult{
+	if err := s.stopIfCanceled(ctx, run); err != nil {
+		return nil, err
+	}
+	result := &VerificationResult{
 		Run:                       *run,
 		Claims:                    verifiedClaims,
 		Evidence:                  evidence,
 		UnsupportedClaims:         unsupported,
 		ResearchQuestions:         questions,
 		Logs:                      append(logs, "verification status logged for every important claim"),
-		AuditWarnings:             append([]string(nil), auditWarnings...),
 		KnowledgeClaimIDs:         knowledgeClaimIDs,
 		KnowledgeError:            knowledgeError,
 		MemoryUpdateRequested:     request.AllowMemoryUpdate,
-		MemoryUpdatesStored:       memoryUpdatesStored,
-		MemoryUpdateFailures:      memoryUpdateFailures,
-		MemoryUpdatesSkipped:      memoryUpdatesSkipped,
-		MemoryUpdateBlockedReason: memoryUpdateBlockedReason,
+		MemoryUpdatesStored:       memoryOutcome.Stored,
+		MemoryUpdatesSkipped:      memoryOutcome.Skipped,
+		MemoryUpdateFailures:      memoryOutcome.Failed,
+		MemoryUpdateBlockedReason: memoryOutcome.BlockedReason,
+		AuditWarnings:             auditWarnings,
 	}
 	if pursuitID != uuid.Nil {
+		if err := s.stopIfCanceled(ctx, run); err != nil {
+			return nil, err
+		}
 		result.PursuitID = pursuitID.String()
 		if err := s.pursuitLinker.LinkVerificationForOwner(request.OwnerIdentity, pursuitID, run.ID); err != nil {
 			result.PursuitLinkError = err.Error()
 			result.Logs = append(result.Logs, "verification was saved but could not be linked to the requested pursuit")
-			recordAudit("verification.pursuit_link_failed", err.Error())
+			if auditErr := s.auditErr(run.ID, "verification.pursuit_link_failed", "pursuit link failed"); auditErr != nil {
+				result.AuditWarnings = append(result.AuditWarnings, "verification.pursuit_link_failed")
+			}
 		} else {
 			result.PursuitLinked = true
 			result.Logs = append(result.Logs, "verification linked to the requested pursuit")
-			recordAudit("verification.pursuit_linked", "verification run linked to requested pursuit "+pursuitID.String())
+			if auditErr := s.auditErr(run.ID, "verification.pursuit_linked", "verification run linked to requested pursuit"); auditErr != nil {
+				result.AuditWarnings = append(result.AuditWarnings, "verification.pursuit_linked")
+			}
 		}
 	}
 	return result, nil
 }
 
-func (s *service) persistFinalization(
-	run *models.VerificationRun,
-	evidence []models.VerificationEvidence,
-	claims []models.VerificationClaim,
-) (*models.VerificationRun, error) {
-	var stored *models.VerificationRun
+type verificationTransactionRepository interface {
+	WithinTransaction(func(Repository) error) error
+}
+
+func (s *service) persistCompletedVerification(run *models.VerificationRun, evidence []models.VerificationEvidence, claims []models.VerificationClaim) error {
 	persist := func(repository Repository) error {
-		if err := persistEvidenceAndClaims(repository, evidence, claims); err != nil {
-			return err
+		for index := range evidence {
+			saved, err := repository.CreateEvidence(&evidence[index])
+			if err != nil {
+				return fmt.Errorf("persist verification evidence: %w", err)
+			}
+			if saved == nil || saved.ID == uuid.Nil {
+				return fmt.Errorf("persist verification evidence: repository returned no durable identifier")
+			}
+			evidence[index] = *saved
+		}
+		for index := range claims {
+			saved, err := repository.CreateClaim(&claims[index])
+			if err != nil {
+				return fmt.Errorf("persist verification claim: %w", err)
+			}
+			if saved == nil || saved.ID == uuid.Nil {
+				return fmt.Errorf("persist verification claim: repository returned no durable identifier")
+			}
+			claims[index] = *saved
 		}
 		if _, err := repository.CreateAuditLog(&models.VerificationAuditLog{
-			RunID:   run.ID,
-			Action:  "verification.completed",
+			RunID: run.ID, Action: "verification.completed",
 			Message: "important claims decomposed and verified before acceptance",
 		}); err != nil {
 			return fmt.Errorf("persist verification completion audit: %w", err)
 		}
-		updated, err := repository.UpdateRun(run)
-		if err != nil {
-			return fmt.Errorf("finalize verification run: %w", err)
+		if _, err := repository.UpdateRun(run); err != nil {
+			return fmt.Errorf("persist completed verification run: %w", err)
 		}
-		stored = updated
 		return nil
 	}
-	if atomic, ok := s.repo.(AtomicRepository); ok {
-		if err := atomic.WithinTransaction(persist); err != nil {
-			return nil, err
-		}
-		return stored, nil
+	if transactional, ok := s.repo.(verificationTransactionRepository); ok {
+		return transactional.WithinTransaction(persist)
 	}
-	if err := persist(s.repo); err != nil {
-		return nil, err
-	}
-	return stored, nil
+	return persist(s.repo)
 }
 
-func persistEvidenceAndClaims(repository Repository, evidence []models.VerificationEvidence, claims []models.VerificationClaim) error {
-	for index := range evidence {
-		if _, err := repository.CreateEvidence(&evidence[index]); err != nil {
-			return fmt.Errorf("persist verification evidence: %w", err)
-		}
+func (s *service) stopIfCanceled(ctx context.Context, run *models.VerificationRun) error {
+	if ctx == nil || ctx.Err() == nil {
+		return nil
 	}
-	for index := range claims {
-		if _, err := repository.CreateClaim(&claims[index]); err != nil {
-			return fmt.Errorf("persist verification claim: %w", err)
-		}
+	s.markCanceledRun(run, ctx.Err())
+	return ctx.Err()
+}
+
+func (s *service) markCanceledRun(run *models.VerificationRun, cause error) {
+	if run == nil || (!errors.Is(cause, context.Canceled) && !errors.Is(cause, context.DeadlineExceeded)) {
+		return
 	}
-	return nil
+	run.Status = StatusNeedsReview
+	run.MissingSources = "verification request stopped before completion"
+	_, _ = s.repo.UpdateRun(run)
+	s.audit(run.ID, "verification.stopped", "caller context ended before verification completed")
+}
+
+func firstVerificationContextError(ctx context.Context, fallback error) error {
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return fallback
 }
 
 func requestedPursuitID(value string) (uuid.UUID, error) {
@@ -409,13 +458,26 @@ func (s *service) RunDetails(id uuid.UUID) (*VerificationResult, error) {
 }
 
 func (s *service) RunDetailsForOwner(ownerIdentity string, id uuid.UUID) (*VerificationResult, error) {
-	return s.runDetailsForOwner(strings.TrimSpace(ownerIdentity), id)
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, fmt.Errorf("authenticated owner identity is required")
+	}
+	return s.runDetailsForOwner(ownerIdentity, id)
 }
 
 func (s *service) runDetailsForOwner(ownerIdentity string, id uuid.UUID) (*VerificationResult, error) {
-	run, err := s.runForOwner(ownerIdentity, id)
+	run, err := s.repo.FindRunForOwner(ownerIdentity, id)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrVerificationRunNotFound
+		}
+		return nil, fmt.Errorf("load verification run: %w", err)
+	}
+	if run == nil {
+		return nil, ErrVerificationRunNotFound
+	}
+	if ownerIdentity != "" && strings.TrimSpace(run.OwnerIdentity) != ownerIdentity {
+		return nil, ErrVerificationRunNotFound
 	}
 	claims, err := s.repo.FindClaims(id)
 	if err != nil {
@@ -434,44 +496,30 @@ func (s *service) runDetailsForOwner(ownerIdentity string, id uuid.UUID) (*Verif
 	}, nil
 }
 
-func (s *service) runForOwner(ownerIdentity string, id uuid.UUID) (*models.VerificationRun, error) {
-	if ownerIdentity == "" {
-		return nil, fmt.Errorf("authenticated owner identity is required")
-	}
-	if scoped, ok := s.repo.(OwnerScopedRunRepository); ok {
-		run, err := scoped.FindRunForOwner(ownerIdentity, id)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrVerificationRunNotFound
-		}
-		if err == nil && run == nil {
-			return nil, ErrVerificationRunNotFound
-		}
-		return run, err
-	}
-	runs, err := s.RunsForOwner(ownerIdentity)
-	if err != nil {
-		return nil, err
-	}
-	for index := range runs {
-		if runs[index].ID == id {
-			copy := runs[index]
-			return &copy, nil
-		}
-	}
-	return nil, ErrVerificationRunNotFound
-}
-
-func (s *service) collectEvidence(runID uuid.UUID, request AnswerRequest, questions []string, logs *[]string) []models.VerificationEvidence {
+func (s *service) collectEvidence(ctx context.Context, runID uuid.UUID, request AnswerRequest, questions []string, logs *[]string) ([]models.VerificationEvidence, error) {
 	evidence := []models.VerificationEvidence{}
 	if s.sourceService != nil {
 		for _, question := range questions {
-			result, err := s.sourceService.Search(source.SearchRequest{
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			searchRequest := source.SearchRequest{
 				OwnerIdentity:    request.OwnerIdentity,
 				Query:            question,
 				ProjectKey:       request.ProjectKey,
 				Limit:            6,
 				IncludeSensitive: request.IncludeSensitive,
-			})
+			}
+			var result *source.SearchResult
+			var err error
+			if contextual, ok := s.sourceService.(contextConnectedSourceSearcher); ok {
+				result, err = contextual.SearchContext(ctx, searchRequest)
+			} else {
+				result, err = s.sourceService.Search(searchRequest)
+			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+				return nil, firstVerificationContextError(ctx, err)
+			}
 			if err == nil {
 				for _, ranked := range result.UsedContext {
 					item := models.VerificationEvidence{
@@ -483,26 +531,32 @@ func (s *service) collectEvidence(runID uuid.UUID, request AnswerRequest, questi
 						Snippet:      firstNonEmpty(ranked.Extraction.Summary, ranked.Extraction.Text),
 						QualityScore: math.Min(1, 0.62+ranked.Score/2),
 					}
-					requiresReview := ranked.RequiresReview || ranked.Extraction.Uncertain || strings.EqualFold(strings.TrimSpace(ranked.Extraction.ContentType), "trello_card")
 					if s.sourceEvidence == nil {
 						item.Authority = authorityConnectedUnverified
 						item.Rejected = true
 						item.RejectReason = "connected-source provenance resolver is unavailable"
 					} else {
 						snapshot, resolveErr := s.sourceEvidence.Resolve(
-							context.Background(), request.OwnerIdentity, ranked.Extraction.ID.String(),
+							ctx, request.OwnerIdentity, ranked.Extraction.ID.String(),
 						)
+						if errors.Is(resolveErr, context.Canceled) || errors.Is(resolveErr, context.DeadlineExceeded) || ctx.Err() != nil {
+							return nil, firstVerificationContextError(ctx, resolveErr)
+						}
 						payloadDigest := sourceevidence.ExtractionPayloadDigest(ranked.Extraction)
-						if resolveErr != nil || !sourceSnapshotMatches(request.OwnerIdentity, ranked.Extraction, snapshot, payloadDigest) {
+						if resolveErr != nil || strings.TrimSpace(snapshot.OwnerIdentity) != strings.TrimSpace(request.OwnerIdentity) ||
+							snapshot.SnapshotDigest == "" || snapshot.SnapshotDigest != sourceevidence.SnapshotDigest(snapshot) ||
+							snapshot.SourceID != ranked.Extraction.SourceID.String() ||
+							snapshot.RawItemID != ranked.Extraction.RawItemID.String() ||
+							snapshot.ExtractionPayloadDigest != payloadDigest {
 							item.Authority = authorityConnectedUnverified
 							item.Rejected = true
 							item.RejectReason = "connected-source extraction could not be matched to exact durable raw provenance"
 						} else {
 							item.Freshness = freshnessLabel(snapshot.FetchedAt)
-							if requiresReview {
+							if ranked.RequiresReview || ranked.Extraction.Uncertain || strings.EqualFold(strings.TrimSpace(ranked.Extraction.ContentType), "trello_card") {
 								item.Authority = authorityConnectedReviewRequired
 								item.Rejected = true
-								item.RejectReason = "connected-source content is uncertain or Trello-derived and requires owner review before it can support a claim"
+								item.RejectReason = "source owner review is required before this content can support a claim"
 							} else {
 								item.Authority = authorityConnectedProvenance
 								item.Used = true
@@ -518,6 +572,9 @@ func (s *service) collectEvidence(runID uuid.UUID, request AnswerRequest, questi
 		*logs = append(*logs, "connected-source index is not configured; using only supplied evidence")
 	}
 	for _, input := range request.ExternalEvidence {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		authority := normalizeAuthorityResolution(s.authorityResolver.ResolveExternalEvidence(request, input))
 		score := evidenceQuality(input, authority, request.Question)
 		if !authority.Trusted {
@@ -538,30 +595,14 @@ func (s *service) collectEvidence(runID uuid.UUID, request AnswerRequest, questi
 			RejectReason: rejectReason(score, input, authority),
 		})
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	evidence = deduplicateEvidence(evidence)
 	sort.SliceStable(evidence, func(i, j int) bool {
 		return evidence[i].QualityScore > evidence[j].QualityScore
 	})
-	return evidence
-}
-
-func sourceSnapshotMatches(ownerIdentity string, extraction models.SourceExtraction, snapshot sourceevidence.Snapshot, payloadDigest string) bool {
-	ownerIdentity = strings.TrimSpace(ownerIdentity)
-	return ownerIdentity != "" &&
-		snapshot.OwnerIdentity == ownerIdentity &&
-		snapshot.ExtractionID == extraction.ID.String() &&
-		snapshot.SourceID == extraction.SourceID.String() &&
-		snapshot.RawItemID == extraction.RawItemID.String() &&
-		snapshot.ProjectKey == strings.TrimSpace(extraction.ProjectKey) &&
-		snapshot.ProjectKey == snapshot.RawProjectKey &&
-		snapshot.ExtractionURI == strings.TrimSpace(extraction.SourceURI) &&
-		snapshot.ExtractionURI != "" && snapshot.ExtractionURI == snapshot.RawItemURI &&
-		snapshot.ExtractionHash == strings.TrimSpace(extraction.ContentHash) &&
-		snapshot.ExtractionHash != "" && snapshot.ExtractionHash == snapshot.RawItemHash &&
-		snapshot.ExtractionPayloadDigest == payloadDigest &&
-		!snapshot.FetchedAt.IsZero() && !snapshot.ExtractionAt.IsZero() &&
-		strings.TrimSpace(snapshot.ConnectorKey) != "" &&
-		snapshot.SnapshotDigest != "" && snapshot.SnapshotDigest == sourceevidence.SnapshotDigest(snapshot)
+	return evidence, nil
 }
 
 func deduplicateEvidence(values []models.VerificationEvidence) []models.VerificationEvidence {
@@ -578,16 +619,15 @@ func deduplicateEvidence(values []models.VerificationEvidence) []models.Verifica
 			byKey[key] = value
 			continue
 		}
-		currentRequiresReview := current.Authority == authorityConnectedReviewRequired
-		valueRequiresReview := value.Authority == authorityConnectedReviewRequired
-		if valueRequiresReview && !currentRequiresReview {
+		if value.Authority == authorityConnectedReviewRequired || current.Authority == authorityConnectedReviewRequired {
+			current.Authority = authorityConnectedReviewRequired
+			current.Rejected = true
+			current.Used = false
+			current.RejectReason = "source owner review is required before this content can support a claim"
+			byKey[key] = current
+		} else if value.Rejected && !current.Rejected {
 			byKey[key] = value
-			continue
-		}
-		if currentRequiresReview && !valueRequiresReview {
-			continue
-		}
-		if (!value.Rejected && current.Rejected) || value.QualityScore > current.QualityScore {
+		} else if !value.Rejected && !current.Rejected && value.QualityScore > current.QualityScore {
 			byKey[key] = value
 		}
 	}
@@ -654,10 +694,12 @@ func verifyClaims(claims []models.VerificationClaim, evidence []models.Verificat
 			claim.Confidence = 0.25
 			continue
 		}
+		// Approval-shaped request fields do not constitute a validated approval
+		// record; this package has no approval resolver, so high-risk claims stay gated.
 		if claim.HighRisk {
 			claim.Status = StatusNeedsReview
 			claim.NeedsReview = true
-			claim.SupportExplanation = "high-risk claims remain review-gated until a server-verified approval record can be checked"
+			claim.SupportExplanation = "high-risk output requires human approval"
 			claim.Confidence = 0.2
 			continue
 		}
@@ -689,10 +731,10 @@ func verifyClaims(claims []models.VerificationClaim, evidence []models.Verificat
 			claim.SupportExplanation = "source content overlaps the claim, but its provenance authority is untrusted; review is required"
 			continue
 		}
-		if isStaleEvidence(best) {
+		if strings.EqualFold(strings.TrimSpace(best.Freshness), "stale") {
 			claim.Status = StatusNeedsReview
 			claim.NeedsReview = true
-			claim.SupportExplanation = "source provenance is authenticated, but its snapshot is stale and must be refreshed before this claim can be supported"
+			claim.SupportExplanation = "supporting source is stale; refresh and review it before relying on this claim"
 			continue
 		}
 		claim.SupportExplanation = "claim overlaps source evidence with authenticated provenance; semantic truth is not inferred"
@@ -701,6 +743,10 @@ func verifyClaims(claims []models.VerificationClaim, evidence []models.Verificat
 			claim.Status = StatusTestPassed
 		}
 		if containsContradiction(claim.ClaimText, evidence) {
+			claim.Status = StatusConflicting
+			claim.NeedsReview = true
+			claim.SupportExplanation = "supporting sources appear to disagree"
+		} else if hasConflictingSingleWeekday(claim.ClaimText, best.Snippet) {
 			claim.Status = StatusConflicting
 			claim.NeedsReview = true
 			claim.SupportExplanation = "the claim conflicts with its supporting evidence; human review is required"
@@ -717,14 +763,11 @@ func bestEvidenceForClaim(claim string, evidence []models.VerificationEvidence) 
 		if evidence[i].Rejected || evidence[i].Snippet == "" {
 			continue
 		}
-		overlap := overlapScore(claimTokens, tokenSet(evidence[i].Snippet))
-		// Source quality establishes provenance, not relevance. Do not let a
-		// high-authority document support a claim when its text does not actually
-		// overlap the claim at all (or only matches a negligible fragment).
-		if overlap < minimumClaimEvidenceOverlap || overlapCount(claimTokens, tokenSet(evidence[i].Snippet)) < 2 {
+		score := overlapScore(claimTokens, tokenSet(evidence[i].Snippet))
+		if score < 0.2 {
 			continue
 		}
-		score := overlap*0.75 + evidence[i].QualityScore*0.25
+		score = score*0.75 + evidence[i].QualityScore*0.25
 		if score > bestScore {
 			bestScore = score
 			best = &evidence[i]
@@ -733,7 +776,7 @@ func bestEvidenceForClaim(claim string, evidence []models.VerificationEvidence) 
 	return best, bestScore
 }
 
-func runStatus(claims []models.VerificationClaim) string {
+func runStatus(claims []models.VerificationClaim, mode string, request AnswerRequest) string {
 	if len(claims) == 0 {
 		return StatusNeedsReview
 	}
@@ -761,145 +804,174 @@ func runStatus(claims []models.VerificationClaim) string {
 	if hasUnsupported {
 		return StatusUnsupported
 	}
-	// Keep an explicit test result distinct from the broader "verified" status.
-	// The claim may be accepted for task completion, but a passing test alone
-	// does not establish general factual verification.
 	if hasTestPassed {
 		return StatusTestPassed
 	}
 	if hasSourceSupported {
 		return StatusSourceSupported
 	}
+	if request.HumanApproved && mode == ModeAction {
+		return StatusHumanApproved
+	}
 	return StatusVerified
 }
 
-type memoryPromotionOutcome struct {
-	Stored         int
-	Failed         int
-	Skipped        int
-	BlockedReason  string
-	PromotedClaims []models.VerificationClaim
-}
-
 func (s *service) storeVerifiedMemory(request AnswerRequest, run *models.VerificationRun, claims []models.VerificationClaim, evidence []models.VerificationEvidence) memoryPromotionOutcome {
-	outcome := memoryPromotionOutcome{Skipped: len(claims)}
-	owner := strings.TrimSpace(request.OwnerIdentity)
-	if owner == "" {
-		outcome.BlockedReason = "an authenticated owner identity is required"
+	outcome := memoryPromotionOutcome{}
+	if run == nil || run.ID == uuid.Nil || strings.TrimSpace(request.OwnerIdentity) == "" || strings.TrimSpace(run.OwnerIdentity) != strings.TrimSpace(request.OwnerIdentity) {
+		outcome.BlockedReason = "verification run ownership could not be validated"
+		outcome.Skipped = countPromotableClaims(claims)
 		return outcome
 	}
-	if run == nil || run.ID == uuid.Nil || strings.TrimSpace(run.OwnerIdentity) != owner {
-		outcome.BlockedReason = "verification run ownership or provenance is unavailable"
+	if normalizeMode(request.Mode) == ModeAction || s.memoryService == nil {
+		outcome.BlockedReason = "memory promotion is unavailable for this verification mode"
+		outcome.Skipped = countPromotableClaims(claims)
 		return outcome
 	}
-	if s.memoryService == nil {
-		outcome.BlockedReason = "durable-memory storage is unavailable"
-		return outcome
-	}
-	outcome.Skipped = 0
 	for _, claim := range claims {
-		proof, eligible := memoryPromotionEvidence(request, run, claim, evidence)
-		if !eligible {
+		proof, eligible := memoryPromotionEvidence(claim, run.ID, evidence)
+		if !eligible || claim.Status != StatusSourceSupported || claim.NeedsReview || claim.HighRisk || claim.Confidence < minimumMemoryPromotionConfidence {
 			outcome.Skipped++
 			continue
 		}
-		created, err := memory.CreateVerifiedFactForOwner(s.memoryService, owner, memory.CreateRequest{
+		_, err := memory.CreateVerifiedFactForOwner(s.memoryService, request.OwnerIdentity, memory.CreateRequest{
 			ProjectKey:  request.ProjectKey,
 			Kind:        "source_supported_fact",
 			Content:     claim.ClaimText,
 			Summary:     compact(claim.ClaimText, 240),
-			Tags:        []string{"verification", claim.Status},
+			Tags:        []string{"source_supported"},
 			Confidence:  claim.Confidence,
-			SourceURI:   firstNonEmpty(strings.TrimSpace(proof.SourceURI), strings.TrimSpace(proof.SourceID)),
+			SourceURI:   firstNonEmpty(proof.SourceURI, proof.SourceID),
 			SourceLabel: "verification-run:" + run.ID.String(),
 		}, memory.VerifiedFactProvenance{RunID: run.ID, ClaimID: claim.ID, EvidenceID: proof.ID, SourceURI: proof.SourceURI, SourceID: proof.SourceID})
-		if err != nil || created == nil {
+		if err != nil {
 			outcome.Failed++
 			continue
 		}
 		outcome.Stored++
-		outcome.PromotedClaims = append(outcome.PromotedClaims, claim)
+		if auditErr := s.auditErr(run.ID, "verification.memory_promoted", "source-supported claim promoted with owner-bound evidence provenance"); auditErr != nil {
+			// The persisted fact is retained; callers must see that its follow-up audit failed.
+			outcome.AuditWarning = true
+		}
 	}
 	return outcome
 }
 
-func memoryPromotionEvidence(request AnswerRequest, run *models.VerificationRun, claim models.VerificationClaim, evidence []models.VerificationEvidence) (*models.VerificationEvidence, bool) {
-	owner := strings.TrimSpace(request.OwnerIdentity)
-	if owner == "" || run == nil || run.ID == uuid.Nil || strings.TrimSpace(run.OwnerIdentity) != owner ||
-		claim.RunID != run.ID || claim.NeedsReview || math.IsNaN(claim.Confidence) ||
-		math.IsInf(claim.Confidence, 0) || claim.Confidence < minimumMemoryPromotionConfidence || claim.Confidence > 1 ||
-		normalizeMode(request.Mode) == ModeAction {
-		return nil, false
-	}
-	switch claim.Status {
-	case StatusSourceSupported:
-		if claim.HighRisk {
-			return nil, false
-		}
-	default:
-		return nil, false
-	}
-	claimSource := strings.TrimSpace(claim.SourceRefs)
-	if claimSource == "" {
-		return nil, false
-	}
-	for _, item := range evidence {
-		if item.RunID != run.ID || item.Rejected || !item.Used || strings.TrimSpace(item.SourceType) == "" ||
-			!isSourceSupportedEvidence(item.Authority) ||
-			math.IsNaN(item.QualityScore) || math.IsInf(item.QualityScore, 0) ||
-			item.QualityScore < minimumMemoryEvidenceQuality || item.QualityScore > 1 || strings.TrimSpace(item.Snippet) == "" {
-			continue
-		}
-		if claimSource == strings.TrimSpace(item.SourceURI) || claimSource == strings.TrimSpace(item.SourceID) {
-			if strings.TrimSpace(item.SourceURI) == "" && strings.TrimSpace(item.SourceID) == "" {
-				continue
-			}
-			// Lexical overlap is not semantic entailment. Until HAI has a
-			// provider-backed entailment check, durable facts must be extractive:
-			// the entire claim must equal a complete sentence in accepted evidence.
-			if !matchesEvidenceSentence(claim.ClaimText, item.Snippet) {
-				continue
-			}
-			proof := item
-			return &proof, true
+func countPromotableClaims(claims []models.VerificationClaim) int {
+	count := 0
+	for _, claim := range claims {
+		if claim.Status == StatusSourceSupported || claim.Status == StatusVerified || claim.Status == StatusHumanApproved {
+			count++
 		}
 	}
-	return nil, false
+	return count
 }
 
-func matchesEvidenceSentence(claim, snippet string) bool {
-	want := normalizedEvidenceSentence(claim)
-	if want == "" || strings.TrimSpace(snippet) == "" {
+func memoryPromotionEvidence(claim models.VerificationClaim, runID uuid.UUID, evidence []models.VerificationEvidence) (models.VerificationEvidence, bool) {
+	for _, item := range evidence {
+		if item.RunID != runID || item.ID == uuid.Nil || item.Rejected || !item.Used || item.QualityScore < minimumMemoryEvidenceQuality || !isSourceSupportedEvidence(item.Authority) {
+			continue
+		}
+		if claim.RunID != runID || !matchesEvidenceSource(claim.SourceRefs, item) || !matchesEvidenceSentence(claim.ClaimText, item.Snippet) || hasConflictingSingleWeekday(claim.ClaimText, item.Snippet) {
+			continue
+		}
+		return item, true
+	}
+	return models.VerificationEvidence{}, false
+}
+
+func matchesEvidenceSource(reference string, evidence models.VerificationEvidence) bool {
+	reference = strings.TrimSpace(reference)
+	return reference != "" && (reference == strings.TrimSpace(evidence.SourceURI) || reference == strings.TrimSpace(evidence.SourceID))
+}
+
+func matchesEvidenceSentence(claim, source string) bool {
+	claim = normalizeEvidenceSentence(claim)
+	if claim == "" {
 		return false
 	}
-
-	start := 0
-	for index, char := range snippet {
-		boundary := char == '\n' || char == '\r' || char == ';' || char == '!' || char == '?'
-		if char == '.' {
-			next := index + 1
-			boundary = next >= len(snippet) || unicode.IsSpace(rune(snippet[next]))
-		}
-		if !boundary {
-			continue
-		}
-		if normalizedEvidenceSentence(snippet[start:index+1]) == want {
+	for _, sentence := range evidenceSentences(source) {
+		if normalizeEvidenceSentence(sentence) == claim {
 			return true
 		}
-		start = index + 1
 	}
-	return normalizedEvidenceSentence(snippet[start:]) == want
+	return false
 }
 
-func normalizedEvidenceSentence(value string) string {
-	value = strings.TrimSpace(value)
-	value = strings.Trim(value, "\"'“”‘’")
-	value = strings.TrimSpace(value)
-	value = strings.Trim(value, ".!?;:")
-	return strings.ToLower(strings.Join(strings.Fields(value), " "))
+func normalizeEvidenceSentence(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var normalized strings.Builder
+	space := true
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			normalized.WriteRune(r)
+			space = false
+			continue
+		}
+		if !space {
+			normalized.WriteByte(' ')
+			space = true
+		}
+	}
+	return strings.TrimSpace(normalized.String())
 }
 
-func (s *service) audit(runID uuid.UUID, action, message string) error {
+func evidenceSentences(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	result := []string{}
+	start := 0
+	runes := []rune(value)
+	for index, current := range runes {
+		if current != '.' && current != '!' && current != '?' {
+			continue
+		}
+		if index+1 >= len(runes) || runes[index+1] != ' ' && runes[index+1] != '\n' && runes[index+1] != '\t' {
+			continue
+		}
+		next := index + 1
+		for next < len(runes) && (runes[next] == ' ' || runes[next] == '\n' || runes[next] == '\t') {
+			next++
+		}
+		if next < len(runes) && unicode.IsUpper(runes[next]) {
+			result = append(result, string(runes[start:index+1]))
+			start = next
+		}
+	}
+	result = append(result, string(runes[start:]))
+	return result
+}
+
+func hasConflictingSingleWeekday(claim, source string) bool {
+	weekdays := map[string]bool{"monday": true, "tuesday": true, "wednesday": true, "thursday": true, "friday": true, "saturday": true, "sunday": true}
+	claimDays := map[string]bool{}
+	sourceDays := map[string]bool{}
+	for token := range tokenSet(claim) {
+		if weekdays[token] {
+			claimDays[token] = true
+		}
+	}
+	for token := range tokenSet(source) {
+		if weekdays[token] {
+			sourceDays[token] = true
+		}
+	}
+	if len(claimDays) != 1 || len(sourceDays) != 1 {
+		return false
+	}
+	for day := range claimDays {
+		return !sourceDays[day]
+	}
+	return false
+}
+
+func (s *service) audit(runID uuid.UUID, action, message string) {
+	_ = s.auditErr(runID, action, message)
+}
+
+func (s *service) auditErr(runID uuid.UUID, action, message string) error {
 	_, err := s.repo.CreateAuditLog(&models.VerificationAuditLog{
 		RunID:   runID,
 		Action:  action,
@@ -1022,44 +1094,21 @@ func sourceLabels(evidence []models.VerificationEvidence) string {
 
 func containsContradiction(claim string, evidence []models.VerificationEvidence) bool {
 	claimPolarity := statementPolarity(claim)
-	claimTokens := tokenSet(claim)
+	if claimPolarity == 0 {
+		return false
+	}
 	for _, item := range evidence {
 		if item.Rejected || !item.Used {
 			continue
 		}
-		evidenceTokens := tokenSet(item.Snippet)
-		if overlapScore(claimTokens, evidenceTokens) < minimumClaimEvidenceOverlap || overlapCount(claimTokens, evidenceTokens) == 0 {
+		if overlapScore(tokenSet(claim), tokenSet(item.Snippet)) < 0.2 {
 			continue
 		}
-		if hasConflictingSingleWeekday(claim, item.Snippet) {
-			return true
-		}
-		if evidencePolarity := statementPolarity(item.Snippet); claimPolarity != 0 && evidencePolarity != 0 && evidencePolarity != claimPolarity {
+		if evidencePolarity := statementPolarity(item.Snippet); evidencePolarity != 0 && evidencePolarity != claimPolarity {
 			return true
 		}
 	}
 	return false
-}
-
-func hasConflictingSingleWeekday(claim, evidence string) bool {
-	claimDay, claimHasSingleDay := singleWeekday(claim)
-	evidenceDay, evidenceHasSingleDay := singleWeekday(evidence)
-	return claimHasSingleDay && evidenceHasSingleDay && claimDay != evidenceDay
-}
-
-func singleWeekday(value string) (string, bool) {
-	tokens := tokenSet(value)
-	day := ""
-	for _, candidate := range []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"} {
-		if !tokens[candidate] {
-			continue
-		}
-		if day != "" {
-			return "", false
-		}
-		day = candidate
-	}
-	return day, day != ""
 }
 
 func statementPolarity(value string) int {
@@ -1173,26 +1222,11 @@ func freshnessLabel(value time.Time) string {
 	return "stale"
 }
 
-func isStaleEvidence(evidence *models.VerificationEvidence) bool {
-	return evidence != nil && strings.EqualFold(strings.TrimSpace(evidence.Freshness), "stale")
-}
-
-var verificationStopWords = map[string]struct{}{
-	"the": {}, "and": {}, "for": {}, "that": {}, "this": {}, "with": {}, "from": {}, "are": {}, "was": {}, "were": {},
-	"is": {}, "on": {}, "in": {}, "at": {}, "to": {}, "of": {}, "a": {}, "an": {}, "or": {}, "as": {}, "by": {}, "it": {},
-	"be": {}, "been": {}, "has": {}, "have": {}, "had": {}, "will": {}, "would": {}, "can": {}, "could": {}, "should": {},
-	"de": {}, "het": {}, "een": {}, "en": {}, "van": {}, "voor": {}, "met": {}, "dat": {}, "dit": {}, "die": {}, "op": {},
-	"aan": {}, "zijn": {}, "waren": {}, "als": {}, "bij": {}, "naar": {}, "door": {}, "er": {},
-}
-
 func tokenSet(value string) map[string]bool {
 	set := map[string]bool{}
 	replacer := strings.NewReplacer(",", " ", ".", " ", ";", " ", ":", " ", "/", " ", "\\", " ", "\n", " ", "\t", " ", "(", " ", ")", " ", "-", " ")
 	for _, token := range strings.Fields(strings.ToLower(replacer.Replace(value))) {
 		if len(token) >= 3 {
-			if _, stopWord := verificationStopWords[token]; stopWord {
-				continue
-			}
 			if _, err := strconv.ParseFloat(token, 64); err == nil {
 				set[token] = true
 				continue
@@ -1204,22 +1238,30 @@ func tokenSet(value string) map[string]bool {
 }
 
 func overlapScore(left, right map[string]bool) float64 {
-	if len(left) == 0 {
+	denominator := overlapCount(left, left)
+	if denominator == 0 {
 		return 0
 	}
-	matches := 0
-	for token := range left {
-		if right[token] {
-			matches++
-		}
-	}
-	return float64(matches) / float64(len(left))
+	return float64(overlapCount(left, right)) / float64(denominator)
 }
 
 func overlapCount(left, right map[string]bool) int {
+	stopwords := map[string]bool{
+		"the": true, "and": true, "for": true, "are": true, "was": true, "were": true,
+		"with": true, "from": true, "that": true, "this": true, "these": true, "those": true,
+		"have": true, "has": true, "had": true, "will": true, "would": true, "could": true,
+		"should": true, "can": true, "may": true, "might": true, "not": true, "but": true,
+		"into": true, "onto": true, "over": true, "under": true, "after": true, "before": true,
+		"about": true, "their": true, "there": true, "they": true, "them": true, "then": true,
+		"than": true, "when": true, "where": true, "what": true, "which": true, "while": true,
+		"who": true, "why": true, "how": true, "you": true, "your": true, "our": true,
+		"out": true, "all": true, "any": true, "some": true, "more": true, "most": true,
+		"one": true, "two": true, "also": true, "its": true, "it's": true, "been": true,
+		"being": true, "here": true, "each": true, "per": true, "via": true,
+	}
 	count := 0
 	for token := range left {
-		if right[token] {
+		if right[token] && !stopwords[token] {
 			count++
 		}
 	}

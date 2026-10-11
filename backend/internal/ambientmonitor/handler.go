@@ -322,8 +322,18 @@ func (h *Handler) Recover(c *gin.Context) {
 	if !decodeAmbientMonitorJSON(c, &body) {
 		return
 	}
-	recovered, err := h.service.RecoverExpiredLeases(c.Request.Context(), scope, body.AsOf)
-	respondAmbientMonitor(c, gin.H{"recovered": recovered, "authority": advisoryAuthority()}, err, http.StatusOK)
+	collectionRecovered, err := h.service.RecoverExpiredLeases(c.Request.Context(), scope, body.AsOf)
+	if err != nil {
+		respondAmbientMonitor(c, nil, err, http.StatusOK)
+		return
+	}
+	compositionRecovered, err := h.service.RecoverExpiredCompositionLeases(c.Request.Context(), scope, body.AsOf)
+	respondAmbientMonitor(c, gin.H{
+		"recovered":            collectionRecovered + compositionRecovered,
+		"collectionRecovered":  collectionRecovered,
+		"compositionRecovered": compositionRecovered,
+		"authority":            advisoryAuthority(),
+	}, err, http.StatusOK)
 }
 
 func (h *Handler) workspaceScope(c *gin.Context) (Scope, bool) {

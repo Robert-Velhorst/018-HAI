@@ -13,6 +13,16 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestPostgresSnapshotCursorKeyMatchesJSONBCanonicalText(t *testing.T) {
+	got, err := postgresSnapshotCursorKey(`signal-"quoted"`, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `["signal-\"quoted\"", 7]`; got != want {
+		t.Fatalf("cursor key = %q, want %q", got, want)
+	}
+}
+
 func TestPostgresCompositionRepositoryLifecycle(t *testing.T) {
 	db := openAmbientMonitorPostgresTestDatabase(t)
 	var tableName string

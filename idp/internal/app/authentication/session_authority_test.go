@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+
+	"context"
 )
 
 type unavailableRegistrationStore struct{ fakeBlockListService }
@@ -38,7 +40,7 @@ func TestAccessAndRefreshFailClosedWhenPositiveSessionAuthorityIsLost(t *testing
 			svc, user := rotationTestService(t, blocklist)
 			pair, err := svc.issueSession(user)
 			require.NoError(t, err)
-			ok, err := svc.IsUserAuthenticated(pair.AccessToken)
+			ok, err := svc.IsUserAuthenticated(context.Background(), pair.AccessToken)
 			require.NoError(t, err)
 			require.True(t, ok)
 			blocklist.mu.Lock()
@@ -49,10 +51,10 @@ func TestAccessAndRefreshFailClosedWhenPositiveSessionAuthorityIsLost(t *testing
 				delete(blocklist.activeTokens, pair.RefreshUUID)
 			}
 			blocklist.mu.Unlock()
-			ok, err = svc.IsUserAuthenticated(pair.AccessToken)
+			ok, err = svc.IsUserAuthenticated(context.Background(), pair.AccessToken)
 			require.ErrorIs(t, err, ErrRevokedSession)
 			require.False(t, ok)
-			refreshed, err := svc.RefreshToken(pair.RefreshToken)
+			refreshed, err := svc.RefreshToken(context.Background(), pair.RefreshToken)
 			require.ErrorIs(t, err, ErrRevokedSession)
 			require.Nil(t, refreshed)
 		})
@@ -64,17 +66,17 @@ func TestCachedDescendantCannotBeSubstitutedForAncestorReplay(t *testing.T) {
 	svc, user := rotationTestService(t, blocklist)
 	parent, parentID, _, err := svc.generateRefreshToken(user.ID)
 	require.NoError(t, err)
-	child, err := svc.RefreshToken(parent)
+	child, err := svc.RefreshToken(context.Background(), parent)
 	require.NoError(t, err)
-	grandchild, err := svc.RefreshToken(child.RefreshToken)
+	grandchild, err := svc.RefreshToken(context.Background(), child.RefreshToken)
 	require.NoError(t, err)
 	blocklist.mu.Lock()
 	blocklist.rotated[parentID] = blocklist.rotated[child.RefreshUUID]
 	blocklist.mu.Unlock()
-	pair, err := svc.RefreshToken(parent)
+	pair, err := svc.RefreshToken(context.Background(), parent)
 	require.Error(t, err)
 	require.Nil(t, pair, "valid ciphertext from another predecessor must not authorize replay")
-	ok, err := svc.IsUserAuthenticated(grandchild.AccessToken)
+	ok, err := svc.IsUserAuthenticated(context.Background(), grandchild.AccessToken)
 	require.NoError(t, err)
 	require.True(t, ok, "rejecting a substituted cache must not revoke the live descendant")
 }

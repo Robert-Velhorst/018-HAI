@@ -5,16 +5,10 @@ import {
   IBackgroundStatus,
   IEmergencyStopState,
   IEmergencyStopVerification,
+  IControlAuthorization,
   IReadiness,
   IRecoveryReport,
 } from '../models/runtime-control.model.interface'
-
-export interface IControlAuthorization {
-  idempotencyKey: string
-  taskId: string
-  approvalSourceId: string
-  approvalBindingDigest: string
-}
 
 interface IModeApprovalPreparation {
   authorizationRequired: boolean

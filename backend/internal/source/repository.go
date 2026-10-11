@@ -81,6 +81,7 @@ type transactionalGuardedExtractionDeleteRepository interface {
 var (
 	ErrExtractionCorrectionWorkerActive   = errors.New("source extraction has an active correction worker")
 	ErrGuardedExtractionDeleteUnavailable = errors.New("repository does not support guarded extraction deletion")
+	ErrSourceChanged                      = errors.New("connected source changed since it was read")
 )
 
 type GormRepository struct {
@@ -245,7 +246,7 @@ func (r *GormRepository) UpdateSource(source *models.ConnectedSource) (*models.C
 		return nil, result.Error
 	}
 	if result.RowsAffected != 1 {
-		return nil, gorm.ErrRecordNotFound
+		return nil, ErrSourceChanged
 	}
 	var updated models.ConnectedSource
 	if err := r.DB.First(&updated, "id = ?", source.ID).Error; err != nil {
