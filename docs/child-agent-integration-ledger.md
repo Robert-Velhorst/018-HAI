@@ -2181,3 +2181,23 @@ the isolated runner. Local rerun of the exact failing resource-regression
 command passed all 96 tests on Node 25.2.1; the repository requests Node 24.15.0.
 The hosted run was still in progress at this checkpoint. No source archive,
 worktree, database, runtime data, or diagnostic artifact was deleted.
+
+### October 11, 2026: queued sync superseded by operator pause
+
+The PR #34 durable-source review exposed a retry-policy gap in the current
+`syncHandler`: when an operator pauses or revokes a source after its scheduled
+sync has been enqueued, `syncContext` correctly returns
+`ErrSourceSyncUnavailable` before importing, but the scheduler treated that
+expected policy outcome as a provider failure and retried it. The handler now
+completes this obsolete scheduled intent without consuming retries; a later
+scan can enqueue work if the source is re-enabled. Added a regression test
+that pauses the source between enqueue and worker execution and verifies no
+sync starts and the durable job succeeds with zero attempts.
+
+Local Go execution is unavailable in this Windows worktree (neither `go.exe`
+nor `gofmt.exe` is installed or on PATH), so this change is not locally
+verified yet. The exact-head GitHub backend test/build and overall CI run must
+pass before this finding is considered integrated. `git diff --check` passes.
+No PR #34 branch content, local source, worktree, archive, database, or
+runtime data was deleted. The full PR #34 divergent-file review remains open;
+this entry records one reviewed behavior and its port, not a completion claim.

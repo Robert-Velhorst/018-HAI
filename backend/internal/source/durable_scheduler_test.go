@@ -473,6 +473,36 @@ func TestDurableSyncHandlerDeadLettersMalformedPayload(t *testing.T) {
 	}
 }
 
+func TestDurableSyncCompletesQueuedJobWhenSourceIsPaused(t *testing.T) {
+	src, _ := localFolderSource(t, "alice")
+	repo := newFakeSourceRepo(src)
+	service := NewService(repo, &fakeSourceMemoryService{})
+	now := time.Now().UTC()
+	jobs := newFakeJobRepo()
+	runner := durablejob.NewRunner(jobs, durablejob.Options{
+		WorkerID: "source-worker", Queue: "source", Now: func() time.Time { return now },
+	})
+	runner.Register(JobKindSync, syncHandler(service))
+	job, err := runner.Enqueue(JobKindSync, `{"sourceId":"`+src.ID.String()+`"}`, now, syncMaxAttempts)
+	if err != nil {
+		t.Fatalf("enqueue sync: %v", err)
+	}
+
+	// The operator pauses the source after the scheduler has already queued it.
+	repo.sources[src.ID].Enabled = false
+	repo.sources[src.ID].Status = "paused"
+	if processed, err := runner.RunOnce(context.Background()); err != nil || processed != 1 {
+		t.Fatalf("paused-source pass processed=%d err=%v, want one handled job", processed, err)
+	}
+	stored := jobs.jobs[job.ID]
+	if stored.Status != models.DurableJobSucceeded || stored.Attempts != 0 {
+		t.Fatalf("paused-source status/attempts=%q/%d, want succeeded/0", stored.Status, stored.Attempts)
+	}
+	if len(repo.jobs) != 0 {
+		t.Fatalf("paused source started %d sync job(s), want none", len(repo.jobs))
+	}
+}
+
 func TestDurableSyncDefersBusySourceWithoutConsumingRetryAndResumes(t *testing.T) {
 	src, _ := localFolderSource(t, "alice")
 	repo := newFakeSourceRepo(src)

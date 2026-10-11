@@ -242,6 +242,12 @@ func syncHandler(service Service, allowed ...func() bool) durablejob.Handler {
 		}
 		result, err := syncSourceWithContext(ctx, service, sourceID, ImportRequest{Mode: ModeScheduledSync})
 		if err != nil {
+			if errors.Is(err, ErrSourceSyncUnavailable) {
+				// An operator pause/revoke after enqueue makes this intent obsolete.
+				// Do not spend provider retries on a policy decision; a later scan
+				// will enqueue fresh work if the source is re-enabled.
+				return nil
+			}
 			if errors.Is(err, ErrSyncInProgress) {
 				// Keep this durable intent alive without consuming a provider retry.
 				// On the next attempt, the due-state check above will either retry
