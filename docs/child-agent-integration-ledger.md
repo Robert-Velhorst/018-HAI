@@ -954,6 +954,29 @@ checkout file was modified or deleted. The transcript, scratch, diagnostics,
 and cleanup gates are unchanged, and no local deletion is authorized by this
 checkpoint.
 
+## Merge-scratch conflict comparison refresh (2026-10-11)
+
+A read-only comparison of the 189 unmerged paths in
+`D:\codex-temp\hai-merge-scratch-20261010` against the current PR tree shows
+172 PR blobs still equal scratch stage 2 and 17 PR blobs distinct from all
+three conflict stages. The earlier eight-path count was measured against PR
+snapshot `9200ae3f`; it is historical and not a count of current unintegrated
+scratch work. The current 17-path set includes `.env.example`,
+`.github/workflows/ci.yml`, `backend/internal/phase2/handler.go` and its test,
+`backend/migrations/migration_chain_contract_test.go`,
+`docker-compose.local.yml`, `docs/optional-runtime-profiles.md`, the three
+workflow-engine component files, two auth service contract files, and the
+Windows backup/initializer/restore/recovery contract files plus
+`scripts/test_ci_contract.py`.
+
+Targeted comparison confirms the PR versions include the later profile/network
+configuration, workflow success-criteria UI and migrations, explicit void
+typing for the login API, test-only phase-2 diagnostics guards, and bounded
+Windows Docker process/recovery checks. These are later PR changes, not
+evidence that scratch content is missing. The remaining differing paths still
+need disposition; neither checkout was altered by this comparison, and the
+scratch state remains preserved.
+
 ## Exact-head CI regression review and fixes (2026-10-11)
 
 The completed GitHub Actions run `38093710608` tested the PR merge commit and
