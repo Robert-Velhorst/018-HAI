@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit, ViewChild } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit, ViewChild } from '@angular/core'
 import { forkJoin } from 'rxjs'
 import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
@@ -19,10 +19,11 @@ import { AuthSessionService } from '../../services/auth-session.service'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 
 @Component({
-    selector: 'app-agent-teams',
-    templateUrl: './agent-teams.component.html',
-    styleUrls: ['./agent-teams.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-agent-teams',
+  templateUrl: './agent-teams.component.html',
+  styleUrls: ['./agent-teams.component.scss'],
 })
 export class AgentTeamsComponent implements OnInit {
   @ViewChild('membersSection') membersSection?: HaiProgressiveSectionComponent

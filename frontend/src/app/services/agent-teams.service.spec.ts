@@ -1,8 +1,8 @@
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing'
 import { TestBed } from '@angular/core/testing'
+import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http'
 import { AgentTeamContract } from '../models/agent-teams.model'
 import { AgentTeamsService } from './agent-teams.service'
-import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 
 describe('AgentTeamsService', () => {
   let service: AgentTeamsService

@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -43,10 +43,11 @@ interface PolicyActionCard {
 }
 
 @Component({
-    selector: 'app-llm-policy',
-    templateUrl: './llm-policy.component.html',
-    styleUrls: ['./llm-policy.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-llm-policy',
+  templateUrl: './llm-policy.component.html',
+  styleUrls: ['./llm-policy.component.scss'],
 })
 export class LLMPolicyComponent implements OnInit {
   policy?: ILLMPolicy;
@@ -66,7 +67,18 @@ export class LLMPolicyComponent implements OnInit {
   probing = false;
   maintaining = false;
   routing = false;
+  catalogOpen = false;
+  providerInventoryOpen = false;
+  auditOpen = false;
   themeMode = this.themeService.mode();
+  private probeHistoryLoaded = false;
+  private probeHistoryLoading = false;
+  private maintenanceHistoryLoaded = false;
+  private maintenanceHistoryLoading = false;
+  private logsLoaded = false;
+  private logsLoading = false;
+  private generationHistoryLoaded = false;
+  private generationHistoryLoading = false;
   private providerTierGroups = new Map<string, TierModelGroup[]>();
   private providerPreviews = new Map<string, ILLMModel[]>();
   private providerHiddenCounts = new Map<string, number>();
@@ -104,10 +116,11 @@ export class LLMPolicyComponent implements OnInit {
         this.notification.error('Error', 'Failed to load LLM routing policy.');
       },
     });
-    this.loadLogs();
-    this.loadGenerationHistory();
-    this.loadProbeHistory();
-    this.loadModelMaintenanceHistory();
+    if (this.auditOpen) {
+      this.loadAuditEvidence(true);
+    } else if (this.providerInventoryOpen) {
+      this.loadProbeHistory(true);
+    }
   }
 
   toggleTheme(): void {
@@ -127,6 +140,7 @@ export class LLMPolicyComponent implements OnInit {
     this.llmPolicyService.probeProviders().subscribe({
       next: (probes) => {
         this.probes = probes;
+        this.probeHistoryLoaded = true;
         this.rebuildActionCards();
         this.probing = false;
       },
@@ -138,26 +152,42 @@ export class LLMPolicyComponent implements OnInit {
     });
   }
 
-  private loadProbeHistory(): void {
+  private loadProbeHistory(force = false): void {
+    if (this.probeHistoryLoading || (!force && this.probeHistoryLoaded)) {
+      return;
+    }
+    this.probeHistoryLoading = true;
     this.llmPolicyService.getProbeHistory().subscribe({
       next: (probes) => {
         this.probes = this.latestProbeByProvider(probes || []);
+        this.probeHistoryLoaded = true;
+        this.probeHistoryLoading = false;
         this.rebuildActionCards();
       },
       error: () => {
         // A missing history table must not hide routing policy or live probes.
+        this.probeHistoryLoading = false;
         this.rebuildActionCards();
       },
     });
   }
 
-  loadModelMaintenanceHistory(): void {
+  loadModelMaintenanceHistory(force = false): void {
+    if (this.maintenanceHistoryLoading || (!force && this.maintenanceHistoryLoaded)) {
+      return;
+    }
+    this.maintenanceHistoryLoading = true;
     this.llmPolicyService.getModelMaintenanceHistory().subscribe({
       next: (records) => {
         this.maintenance = records || [];
         this.maintenanceUnavailable = false;
+        this.maintenanceHistoryLoaded = true;
+        this.maintenanceHistoryLoading = false;
       },
-      error: () => (this.maintenanceUnavailable = true),
+      error: () => {
+        this.maintenanceUnavailable = true;
+        this.maintenanceHistoryLoading = false;
+      },
     });
   }
 
@@ -170,7 +200,7 @@ export class LLMPolicyComponent implements OnInit {
       next: (run) => {
         this.maintaining = false;
         this.maintenance = run.results || this.maintenance;
-        this.loadModelMaintenanceHistory();
+        this.loadModelMaintenanceHistory(true);
         const summary =
           `${run.checked}/${run.eligible} due checks, ${run.reused} still current, ` +
           `${run.updated} updated, ${run.failed} failed`;
@@ -232,32 +262,71 @@ export class LLMPolicyComponent implements OnInit {
       });
   }
 
-  loadLogs(): void {
+  loadLogs(force = true): void {
+    if (this.logsLoading || (!force && this.logsLoaded)) {
+      return;
+    }
+    this.logsLoading = true;
     this.llmPolicyService.getLogs().subscribe({
       next: (logs) => {
         this.logs = logs;
         this.logsUnavailable = false;
+        this.logsLoaded = true;
+        this.logsLoading = false;
         this.rebuildActionCards();
       },
       error: () => {
         this.logsUnavailable = true;
+        this.logsLoading = false;
         this.rebuildActionCards();
       },
     });
   }
 
-  loadGenerationHistory(): void {
+  loadGenerationHistory(force = true): void {
+    if (this.generationHistoryLoading || (!force && this.generationHistoryLoaded)) {
+      return;
+    }
+    this.generationHistoryLoading = true;
     this.llmPolicyService.getGenerationHistory().subscribe({
       next: (records) => {
         this.generations = records || [];
         this.generationsUnavailable = false;
+        this.generationHistoryLoaded = true;
+        this.generationHistoryLoading = false;
         this.rebuildActionCards();
       },
       error: () => {
         this.generationsUnavailable = true;
+        this.generationHistoryLoading = false;
         this.rebuildActionCards();
       },
     });
+  }
+
+  onCatalogToggle(event: Event): void {
+    this.catalogOpen = (event.target as HTMLDetailsElement).open;
+  }
+
+  onProviderInventoryToggle(event: Event): void {
+    this.providerInventoryOpen = (event.target as HTMLDetailsElement).open;
+    if (this.providerInventoryOpen) {
+      this.loadProbeHistory();
+    }
+  }
+
+  onAuditToggle(event: Event): void {
+    this.auditOpen = (event.target as HTMLDetailsElement).open;
+    if (this.auditOpen) {
+      this.loadAuditEvidence();
+    }
+  }
+
+  private loadAuditEvidence(force = false): void {
+    this.loadProbeHistory(force);
+    this.loadModelMaintenanceHistory(force);
+    this.loadLogs(force);
+    this.loadGenerationHistory(force);
   }
 
   private setPolicy(policy: ILLMPolicy): void {
@@ -295,13 +364,16 @@ export class LLMPolicyComponent implements OnInit {
         ? this.tierLabel(this.decision.tier)
         : 'No capable model under policy'
       : 'No route selected yet';
+    const auditHistoryLoaded = this.generationHistoryLoaded || this.logsLoaded;
     const latestLogMetric = this.generationsUnavailable
       ? 'Generation history unavailable'
       : this.logsUnavailable
         ? 'Routing history unavailable'
-        : this.generations[0]
+        : auditHistoryLoaded && this.generations[0]
       ? `${this.validationLabel(this.generations[0].validationStatus)} / ${this.generations[0].modelName || this.generations[0].modelId}`
-      : this.logs[0]?.selectedModelName || (this.logs.length ? 'Blocked route recorded' : 'No recent decisions');
+      : auditHistoryLoaded
+        ? this.logs[0]?.selectedModelName || (this.logs.length ? 'Blocked route recorded' : 'No recent decisions')
+        : 'Open verified routing evidence';
     this.policyActions = [
       {
         title: 'Route task',
@@ -329,8 +401,8 @@ export class LLMPolicyComponent implements OnInit {
         title: 'Provider inventory',
         detail: 'Inspect readiness, quota, budget, and token use.',
         icon: 'deployment-unit',
-        metric: `${this.enabledProviderCount(policy)} enabled`,
-        secondaryMetric: `${this.configuredProviderSummary(policy)} endpoints configured`,
+        metric: `${this.configuredProviderSummary(policy)} configured`,
+        secondaryMetric: `${this.liveProbeCount()} live / ${this.enabledProviderCount(policy)} catalog-enabled`,
         context:
           'Shows provider readiness, quota, budget, token counters, endpoint state, and model availability.',
         tone: 'blue',
@@ -351,7 +423,7 @@ export class LLMPolicyComponent implements OnInit {
         title: 'Review routing log',
         detail: 'Inspect recent choices and fallback paths.',
         icon: 'history',
-        metric: this.generationsUnavailable ? 'Unavailable' : `${this.generations.length} outcomes`,
+        metric: this.generationsUnavailable ? 'Unavailable' : auditHistoryLoaded ? `${this.generations.length} outcomes` : 'on demand',
         secondaryMetric: latestLogMetric,
         context:
           'Opens the trace of selected models, skipped options, estimated cost, validation pressure, and fallback history.',
@@ -381,8 +453,6 @@ export class LLMPolicyComponent implements OnInit {
         this.scrollToSection('routing-audit');
         break;
       case 'logs':
-        this.loadLogs();
-        this.loadGenerationHistory();
         this.scrollToSection('routing-audit');
         break;
       case 'providers':
@@ -904,7 +974,7 @@ export class LLMPolicyComponent implements OnInit {
 
   strictProbePolicyLabel(policy: ILLMPolicy): string {
     if (!policy.requireRecentLiveProviderProbe) {
-      return 'configured allowed';
+      return 'probe optional';
     }
     return `strict / ${this.probeAgeLabel(policy.providerProbeMaxAgeSeconds)}`;
   }
@@ -990,6 +1060,15 @@ export class LLMPolicyComponent implements OnInit {
     const element = document.getElementById(id);
     if (!element) {
       return;
+    }
+    if (id === 'model-catalog') {
+      this.catalogOpen = true;
+    } else if (id === 'provider-inventory') {
+      this.providerInventoryOpen = true;
+      this.loadProbeHistory();
+    } else if (id === 'routing-audit') {
+      this.auditOpen = true;
+      this.loadAuditEvidence();
     }
     const parentDetails = element.closest('details') as HTMLDetailsElement | null;
     if (parentDetails) {

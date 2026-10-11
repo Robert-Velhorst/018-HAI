@@ -147,7 +147,7 @@
         <div class="research-actions" *ngIf="anythingLLMStatus?.configured">
           <select #anythingLLMWorkspace aria-label="Approved AnythingLLM workspace">
             <option value="" selected>Select an approved workspace</option>
-            <option *ngFor="let workspace of anythingLLMStatus?.workspaceSlugs" [value]="workspace">{{ workspace }}</option>
+            <option *ngFor="let workspace of anythingLLMStatus.workspaceSlugs" [value]="workspace">{{ workspace }}</option>
           </select>
           <button nz-button nzType="default" (click)="searchAnythingLLM(anythingLLMWorkspace.value)" [nzLoading]="anythingLLMLoading" [disabled]="!anythingLLMWorkspace.value" title="Retrieves source chunks only through the approved local workspace vector-search endpoint. Results are not verified facts.">
             <i nz-icon nzType="database" nzTheme="outline"></i>

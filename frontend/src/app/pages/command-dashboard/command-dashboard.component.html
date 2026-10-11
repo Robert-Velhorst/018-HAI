@@ -399,7 +399,7 @@
             <div>
               <strong>{{ runtime.executionEnabled ? 'Enabled' : 'Blocked' }}</strong>
               <small *ngIf="runtime.missingConfiguration?.length">
-                Missing: {{ runtime.missingConfiguration?.join(', ') }}
+                Missing: {{ runtime.missingConfiguration.join(', ') }}
               </small>
             </div>
             <div>
@@ -501,8 +501,8 @@
                   <em>{{ surface.status }}</em>
                 </button>
               </span>
-              <small *ngIf="runtime.architecture?.length">Architecture: {{ runtime.architecture?.join(' -> ') }}</small>
-              <small *ngIf="runtime.controls?.length">Controls: {{ runtime.controls?.join(' · ') }}</small>
+              <small *ngIf="runtime.architecture?.length">Architecture: {{ runtime.architecture.join(' -> ') }}</small>
+              <small *ngIf="runtime.controls?.length">Controls: {{ runtime.controls.join(' · ') }}</small>
             </span>
           </div>
         </div>

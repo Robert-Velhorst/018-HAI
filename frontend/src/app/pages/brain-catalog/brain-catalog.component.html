@@ -154,15 +154,15 @@
               : 'Not configured. HAI cannot use this integration.' }}
           </span>
           <small *ngIf="status.endpoint">Endpoint: {{ status.endpoint }}</small>
-          <small *ngIf="status.workspaces?.length">Approved snapshots: {{ status.workspaces?.length }}.</small>
+          <small *ngIf="status.workspaces?.length">Approved snapshots: {{ status.workspaces.length }}.</small>
           <small *ngIf="status.experimentIds?.length">
-            Approved experiments: {{ status.experimentIds?.length }}. Metrics: {{ status.metricKeys?.length || 0 }}.
+            Approved experiments: {{ status.experimentIds.length }}. Metrics: {{ status.metricKeys?.length || 0 }}.
           </small>
-          <small *ngIf="status.profiles?.length">Approved verification profiles: {{ status.profiles?.length }}.</small>
+          <small *ngIf="status.profiles?.length">Approved verification profiles: {{ status.profiles.length }}.</small>
           <small *ngIf="status.configError">Configuration gate: {{ status.configError }}</small>
           <small>{{ status.scope }}</small>
           <small *ngIf="status.restrictions?.length">
-            Blocked capabilities: {{ status.restrictions?.join('; ') }}.
+            Blocked capabilities: {{ status.restrictions.join('; ') }}.
           </small>
           <div class="brain-catalog-page__bridge-actions" *ngIf="entry.id === 'openlit' && status.configured">
             <button
@@ -288,7 +288,7 @@
           Catalog configuration was not changed.
         </small>
         <small><strong>Readiness: {{ readinessLabel(review.readiness) }}</strong> - {{ review.readinessReason }}</small>
-        <small *ngIf="review.requiredGates?.length">Required before activation: {{ review.requiredGates?.join('; ') }}.</small>
+        <small *ngIf="review.requiredGates?.length">Required before activation: {{ review.requiredGates.join('; ') }}.</small>
         <small>Checked {{ review.checkedAt }}<ng-container *ngIf="review.license"> · {{ review.license }}</ng-container><ng-container *ngIf="review.defaultBranch"> · {{ review.defaultBranch }}</ng-container></small>
       </div>
       <div class="brain-catalog-page__control-mappings" *ngIf="entry.controlMappings?.length">
@@ -322,7 +322,7 @@
       <small *ngIf="recommendation.expandedTerms.length">Matched vocabulary: {{ recommendation.expandedTerms.join(', ') }}</small>
     </div>
     <div class="brain-catalog-page__recommendations" *ngIf="capabilityRecommendation?.recommendations?.length">
-      <article *ngFor="let recommendation of capabilityRecommendation?.recommendations">
+      <article *ngFor="let recommendation of capabilityRecommendation.recommendations">
         <div><strong>{{ recommendation.name }}</strong><small>{{ recommendation.role }} - score {{ recommendation.score }}<ng-container *ngIf="recommendation.roadmapPriority"> - roadmap priority {{ recommendation.roadmapPriority }}</ng-container></small><span>{{ recommendation.nextStep }}</span><small *ngIf="recommendation.roadmapReason">{{ recommendation.roadmapReason }}</small><small>Reviewed {{ recommendation.verifiedAt }}<ng-container *ngIf="recommendation.sourceCollection"> from {{ recommendation.sourceCollection }}</ng-container>.</small></div>
         <div><nz-tag [nzColor]="statusColor(recommendation.status)">{{ statusLabel(recommendation.status) }}</nz-tag><small>Direct matches: {{ recommendation.matchedTerms.join(', ') }}</small><small>{{ recommendation.reasons.join('; ') }}</small><a [href]="recommendation.upstreamUrl" target="_blank" rel="noopener noreferrer">Upstream</a><a [href]="recommendation.sourceCatalogUrl" target="_blank" rel="noopener noreferrer">Source record</a></div>
       </article>
@@ -402,8 +402,8 @@
 	<div class="brain-catalog-page__source-result" *ngIf="ossInsightReview as review" [class.brain-catalog-page__source-result--warning]="(review.newCollections?.length ?? 0) > 0 || (review.missingExpected?.length ?? 0) > 0">
 	  <strong>{{ review.currentTotal }} live / {{ review.expectedTotal }} recorded collections</strong>
 	  <span>{{ review.message }}</span>
-	  <small *ngIf="review.newCollections?.length">New: {{ review.newCollections?.join(', ') }}</small>
-	  <small *ngIf="review.missingExpected?.length">Missing from live list: {{ review.missingExpected?.join(', ') }}</small>
+	  <small *ngIf="review.newCollections?.length">New: {{ review.newCollections.join(', ') }}</small>
+	  <small *ngIf="review.missingExpected?.length">Missing from live list: {{ review.missingExpected.join(', ') }}</small>
 	</div>
     <div class="brain-catalog-page__source-review">
       <div><strong>Repository discovery</strong><span>Candidate scan reads categories awaiting an adapter. Relevant scan also reads categories HAI already represents, so complementary or replacement options can be reviewed. Both scans only return names and source records.</span></div>
@@ -418,8 +418,8 @@
       <small>{{ report.collectionsChecked }} of {{ report.eligibleCollections }} {{ report.scope === 'reviewable' ? 'relevant' : 'candidate' }} collections checked; {{ report.knownProfileHits }} known profiles skipped; {{ report.duplicateSourceHits }} cross-category source matches merged.<ng-container *ngIf="report.cached"> Reused the recent read-only result.</ng-container></small>
       <small *ngIf="report.sourceQueryLimit">OSS Insight query limit: {{ report.sourceQueryLimit }} rows per collection response. This is a ranked source list, not a complete GitHub inventory.</small>
       <small *ngIf="report.discoveriesTruncated">Results exceeded the current {{ report.maximumDiscoveries }}-item review capacity.</small>
-      <small *ngIf="report.unavailableCollections?.length">Unavailable: {{ report.unavailableCollections?.join(', ') }}</small>
-      <small *ngIf="report.missingCollections?.length">Missing from source: {{ report.missingCollections?.join(', ') }}</small>
+      <small *ngIf="report.unavailableCollections?.length">Unavailable: {{ report.unavailableCollections.join(', ') }}</small>
+      <small *ngIf="report.missingCollections?.length">Missing from source: {{ report.missingCollections.join(', ') }}</small>
     </div>
     <div class="brain-catalog-page__source-result" *ngIf="visibleKnownProfiles.length">
       <strong>Known profiles represented in HAI</strong>
@@ -456,7 +456,7 @@
         <div>
           <strong>{{ entry.collection }}</strong>
           <small>{{ entry.rationale }}</small>
-          <span *ngIf="entry.relatedEntryIds?.length">Related HAI profiles: {{ entry.relatedEntryIds?.join(', ') }}</span>
+          <span *ngIf="entry.relatedEntryIds?.length">Related HAI profiles: {{ entry.relatedEntryIds.join(', ') }}</span>
         </div>
         <div>
           <nz-tag [nzColor]="collectionDispositionColor(entry.disposition)">{{ collectionDispositionLabel(entry.disposition) }}</nz-tag>

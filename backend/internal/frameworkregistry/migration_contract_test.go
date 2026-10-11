@@ -69,8 +69,8 @@ func TestFrameworkSelectorV5MigrationRequiresRealOperatingDigest(t *testing.T) {
 		t.Fatalf("read selector-v5 digest rollback: %v", err)
 	}
 
-	up := strings.ToLower(string(upBytes))
-	down := strings.ToLower(string(downBytes))
+	up := strings.ToLower(strings.ReplaceAll(string(upBytes), "\r\n", "\n"))
+	down := strings.ToLower(strings.ReplaceAll(string(downBytes), "\r\n", "\n"))
 	for _, fragment := range []string{
 		"add column if not exists task_risk_level varchar(16)",
 		"add column if not exists effective_risk_ceiling varchar(16)",

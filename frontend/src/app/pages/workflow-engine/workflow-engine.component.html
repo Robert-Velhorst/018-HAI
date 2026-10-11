@@ -80,7 +80,7 @@
     <div class="reminder-focus__heading">
       <div>
         <span>Internal reminders</span>
-        <strong>{{ reminderProposals?.due || 0 }} due · {{ reminderProposals?.upcoming || 0 }} upcoming</strong>
+        <strong>{{ reminderProposals.due || 0 }} due · {{ reminderProposals.upcoming || 0 }} upcoming</strong>
       </div>
       <button
         *ngIf="reminderDeliveryHistory?.authorizations?.length"
@@ -93,11 +93,11 @@
         title="Run one bounded owner-scoped pass for already-authorized internal reminders."
         data-testid="reminder-run-due"
       >Run internal pass</button>
-      <span class="help-dot" [title]="reminderProposals?.freshness?.reason || 'Reminder proposals are read-only.'">?</span>
+      <span class="help-dot" [title]="reminderProposals ? reminderProposals.freshness.reason : 'Reminder proposals are read-only.'">?</span>
     </div>
     <article
       class="reminder-focus__item"
-      *ngFor="let proposal of reminderProposals?.items | slice:0:3"
+      *ngFor="let proposal of reminderProposals.items | slice:0:3"
       [title]="proposal.nextAction"
       [attr.data-testid]="'reminder-card-' + proposal.checklistItemId"
     >
@@ -667,12 +667,12 @@
         <article class="detail-box pursuit-context" *ngIf="selected?.pursuits?.length">
           <div class="box-title">
             <strong>Linked pursuit</strong>
-            <span>{{ selected?.pursuits?.length }} active</span>
+            <span>{{ selected ? selected.pursuits.length : 0 }} active</span>
           </div>
           <button
             type="button"
             class="pursuit-link-card"
-            *ngFor="let pursuit of selected?.pursuits"
+            *ngFor="let pursuit of selected.pursuits"
             (click)="openPursuit(pursuit.id)"
             [title]="pursuit.whyItMatters || pursuit.currentStateSummary || pursuit.desiredOutcome || 'Open pursuit'"
           >

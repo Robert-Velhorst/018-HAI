@@ -2,6 +2,7 @@ package task
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -39,6 +40,7 @@ var (
 	ErrTaskReviewInvalidTransition    = errors.New("invalid task review state transition")
 	ErrTaskOperationInProgress        = errors.New("task operation is already in progress")
 	ErrTaskOperationNeedsReview       = errors.New("task operation outcome requires review")
+	ErrTaskOperationCanceled          = errors.New("task operation was canceled before execution")
 	ErrTaskOperationRetryConfirmation = errors.New("uncertain task operation retry requires explicit confirmation")
 )
 
@@ -47,11 +49,44 @@ const (
 	TaskOperationReplay      = "replay"
 	TaskOperationInProgress  = "in_progress"
 	TaskOperationNeedsReview = "needs_review"
+	TaskOperationCanceled    = "canceled"
 )
 
 type TaskOperationClaim struct {
 	Operation   models.TaskOperationRecord
 	Disposition string
+}
+
+// ContextTaskOperationClaimer allows request-scoped claim acquisition to stop
+// promptly when the HTTP caller goes away. The legacy repository contract stays
+// valid for external implementations, while production storage implements this
+// context-aware extension.
+type ContextTaskOperationClaimer interface {
+	ClaimTaskOperationContext(context.Context, string, string, string, string, string, time.Time, time.Duration) (TaskOperationClaim, error)
+}
+
+type ContextTaskOperationHeartbeater interface {
+	HeartbeatTaskOperationContext(context.Context, string, uuid.UUID, string, int64, time.Time) (bool, error)
+}
+
+type ContextTaskOperationCompleter interface {
+	CompleteTaskOperationContext(context.Context, string, uuid.UUID, string, int64, string, time.Time) (bool, error)
+}
+
+type ContextTaskOperationReviewer interface {
+	MarkTaskOperationNeedsReviewContext(context.Context, string, uuid.UUID, string, int64, string, time.Time) (bool, error)
+}
+
+type TaskOperationCanceler interface {
+	CancelTaskOperation(string, uuid.UUID, string, int64, string, time.Time) (bool, error)
+}
+
+type ContextTaskOperationCanceler interface {
+	CancelTaskOperationContext(context.Context, string, uuid.UUID, string, int64, string, time.Time) (bool, error)
+}
+
+type ContextCompletionPlanFinder interface {
+	FindCompletionPlanContext(context.Context, string, string) (*CompletionPlan, error)
 }
 
 // TaskStateRepository is the durable boundary for task completion history and
@@ -74,6 +109,35 @@ type TaskStateRepository interface {
 	MarkReviewOutcome(ownerIdentity, reviewItemID string, outcome ReviewOutcome) (*ReviewQueueItem, error)
 	ListReviewDecisions(ownerIdentity, reviewItemID string, limit int) ([]ReviewDecisionRecord, error)
 	FindApprovedReviewDecision(ownerIdentity, reviewItemID string) (*ReviewDecisionRecord, error)
+}
+
+// TaskHistoryRepository exposes the small, owner-scoped projection required
+// by list views. Durable implementations must bind every projection to an
+// immutable completion record instead of trusting client-supplied summaries.
+type TaskHistoryRepository interface {
+	ListCompletionPlanHistory(ownerIdentity string, limit int) ([]CompletionPlanHistoryItem, error)
+}
+
+type CompletionPlanHistoryItem struct {
+	ID               string                      `json:"id"`
+	CreatedAt        time.Time                   `json:"createdAt"`
+	Request          string                      `json:"request"`
+	ProjectKey       string                      `json:"projectKey,omitempty"`
+	Intake           CompletionPlanHistoryIntake `json:"intake"`
+	CompletionStatus string                      `json:"completionStatus"`
+}
+
+type CompletionPlanHistoryIntake struct {
+	TaskType        string   `json:"taskType"`
+	SuccessCriteria []string `json:"successCriteria"`
+}
+
+// PendingReviewStateRepository lets the interactive queue read only work that
+// still requires a decision. Historical outcomes remain available to audit and
+// reconciliation paths, but an unreadable legacy outcome cannot take the live
+// approval queue offline.
+type PendingReviewStateRepository interface {
+	ListPendingReviewItems(ownerIdentity string, limit int) ([]ReviewQueueItem, error)
 }
 
 // ReviewResolution is the only input required to resolve an open review item.
@@ -174,6 +238,50 @@ func ReviewRequestDigest(ownerIdentity string, request IntakeRequest) (string, e
 	payload, _, err := marshalSanitizedJSONObject(projection)
 	if err != nil {
 		return "", fmt.Errorf("encode review request digest: %w", err)
+	}
+	sum := sha256.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:]), nil
+}
+
+// reviewRequestDigestV1 verifies records written before mandate and accepted
+// plan-revision provenance became part of the reviewed action identity. It may
+// only be used when those newer fields are absent, otherwise accepting the old
+// digest would leave action-defining data outside the integrity boundary.
+func reviewRequestDigestV1(ownerIdentity string, request IntakeRequest) (string, error) {
+	if strings.TrimSpace(request.MandateID) != "" || !request.CoordinationPlan.IsZero() {
+		return "", fmt.Errorf("legacy review digest cannot cover mandate or coordination provenance")
+	}
+	ownerIdentity, err := normalizeTaskStateOwner(ownerIdentity)
+	if err != nil {
+		return "", err
+	}
+	if requestOwner := strings.TrimSpace(request.OwnerIdentity); requestOwner != "" && requestOwner != ownerIdentity {
+		return "", fmt.Errorf("%w: request owner differs from repository owner", ErrTaskReviewBindingMismatch)
+	}
+	requestText := strings.TrimSpace(request.Request)
+	if requestText == "" {
+		return "", fmt.Errorf("review request is required")
+	}
+	projection := struct {
+		OwnerIdentity   string   `json:"ownerIdentity"`
+		PursuitID       string   `json:"pursuitId,omitempty"`
+		WorkflowID      string   `json:"workflowId,omitempty"`
+		Request         string   `json:"request"`
+		ProjectKey      string   `json:"projectKey,omitempty"`
+		AutomationID    string   `json:"automationId,omitempty"`
+		SuccessCriteria []string `json:"successCriteria,omitempty"`
+	}{
+		OwnerIdentity:   ownerIdentity,
+		PursuitID:       strings.TrimSpace(request.PursuitID),
+		WorkflowID:      strings.TrimSpace(request.WorkflowID),
+		Request:         requestText,
+		ProjectKey:      strings.TrimSpace(request.ProjectKey),
+		AutomationID:    strings.TrimSpace(request.AutomationID),
+		SuccessCriteria: append([]string(nil), request.SuccessCriteria...),
+	}
+	payload, _, err := marshalSanitizedJSONObject(projection)
+	if err != nil {
+		return "", fmt.Errorf("encode legacy review request digest: %w", err)
 	}
 	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:]), nil
@@ -351,7 +459,10 @@ func reviewItemFromModel(row models.TaskReviewItemRecord, latest *models.TaskRev
 		return ReviewQueueItem{}, fmt.Errorf("verify review item %s request: %w", row.ID, err)
 	}
 	if digest != row.RequestDigest {
-		return ReviewQueueItem{}, fmt.Errorf("review item %s request digest mismatch", row.ID)
+		legacyDigest, legacyErr := reviewRequestDigestV1(row.OwnerIdentity, request)
+		if legacyErr != nil || legacyDigest != row.RequestDigest {
+			return ReviewQueueItem{}, fmt.Errorf("review item %s request digest mismatch", row.ID)
+		}
 	}
 	item := ReviewQueueItem{
 		ID:         row.ID.String(),

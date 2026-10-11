@@ -47,7 +47,7 @@
       </div>
 
       <div class="leader-list" *ngIf="calibration?.laneLeaders?.length; else noLeaders">
-        <article class="leader-row" *ngFor="let leader of calibration?.laneLeaders; trackBy: trackLane">
+        <article class="leader-row" *ngFor="let leader of calibration.laneLeaders; trackBy: trackLane">
           <span class="lane-label">{{ leader.lane }}</span>
           <div class="leader-identity"><strong>{{ leader.providerId }}/{{ leader.modelId }}</strong><span>{{ leader.reason }}</span></div>
           <div class="leader-result"><strong>{{ leader.acceptedOutputs }}/{{ leader.evaluatedRuns }}</strong><span>{{ leader.acceptanceRate | percent:'1.0-0' }} accepted</span></div>
@@ -85,7 +85,7 @@
           <table class="data-table data-table--wide">
             <thead><tr><th>Lane and model</th><th>Provider calls</th><th>Accepted</th><th>Rejected</th><th>Review</th><th>Unvalidated</th><th>Conservative bound</th><th>Cost</th></tr></thead>
             <tbody>
-              <tr *ngFor="let model of calibration?.models; trackBy: trackModel">
+              <tr *ngFor="let model of calibration.models; trackBy: trackModel">
                 <td><strong>{{ model.lane }}</strong><small>{{ model.providerId }}/{{ model.modelId }}</small></td>
                 <td>{{ model.providerCallSuccesses }}/{{ model.totalRuns }}</td>
                 <td>{{ model.acceptedOutputs }}/{{ model.evaluatedRuns }}</td>

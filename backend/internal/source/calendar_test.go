@@ -44,6 +44,9 @@ func TestCalendarBusyIntervalsAreOwnerScopedAndSourceBacked(t *testing.T) {
 	if len(intervals) != 1 {
 		t.Fatalf("busy intervals = %#v, want one owner-scoped opaque event", intervals)
 	}
+	if repo.globalSourceReads != 0 || repo.ownerSourceReads != 1 || repo.lastSourceOwner != "alice@example.test" {
+		t.Fatalf("calendar source queries = global %d / owner %d (%q), want one database-scoped owner query", repo.globalSourceReads, repo.ownerSourceReads, repo.lastSourceOwner)
+	}
 	if !intervals[0].Start.Equal(start) || intervals[0].Title != "Owner meeting" || intervals[0].SourceID != aliceID.String() {
 		t.Fatalf("busy interval was not clipped and source linked: %#v", intervals[0])
 	}

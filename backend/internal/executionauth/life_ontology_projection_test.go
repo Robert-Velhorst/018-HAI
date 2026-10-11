@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,16 +83,52 @@ func TestAuthorizationProjectsApprovalCommitmentAndCostIntoOwnerGraph(t *testing
 	}
 
 	listed, err := service.List(context.Background(), "alice", 10)
-	if err != nil || len(listed) != 1 || listed[0].LifeGraphProjection == nil || !listed[0].LifeGraphProjection.AlreadyExisted {
-		t.Fatalf("idempotent list projection = %#v err=%v", listed, err)
+	if err != nil || len(listed) != 1 || listed[0].LifeGraphProjection != nil {
+		t.Fatalf("read-only list = %#v err=%v", listed, err)
 	}
 	entitiesAfter, _ := graph.QueryEntities(context.Background(), "alice", lifeontology.EntityQuery{AllowLocalOnly: true, Limit: 100})
 	if len(entitiesAfter) != len(entities) {
-		t.Fatalf("idempotent projection duplicated entities: before=%d after=%d", len(entities), len(entitiesAfter))
+		t.Fatalf("read-only list changed graph entities: before=%d after=%d", len(entities), len(entitiesAfter))
 	}
 	other, err := graph.QueryEntities(context.Background(), "bob", lifeontology.EntityQuery{AllowLocalOnly: true, Limit: 100})
 	if err != nil || len(other) != 0 {
 		t.Fatalf("cross-owner graph leak = %#v err=%v", other, err)
+	}
+}
+
+func TestAuthorizationReadsDoNotRunLifeGraphProjection(t *testing.T) {
+	repository := NewMemoryRepository()
+	service := newTestService(t, repository, permissiveConstitution(), nil, nil)
+	var calls atomic.Int32
+	if _, err := service.WithLifeOntologyProjection(authorizationProjectionFunc(func(context.Context, lifeontology.OperationalProjectionRequest) (lifeontology.OperationalProjectionResult, error) {
+		calls.Add(1)
+		return lifeontology.OperationalProjectionResult{AdvisoryOnly: true}, nil
+	})); err != nil {
+		t.Fatal(err)
+	}
+
+	receipt, err := service.Authorize(context.Background(), baseRequest("read-purity"))
+	if err != nil {
+		t.Fatalf("Authorize() error = %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("projection calls after authorize = %d, want 1", calls.Load())
+	}
+	if _, err := service.Get(context.Background(), receipt.OwnerIdentity, receipt.ID); err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if _, err := service.List(context.Background(), receipt.OwnerIdentity, 10); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("projection calls after reads = %d, want 1", calls.Load())
+	}
+
+	if _, err := service.Authorize(context.Background(), baseRequest("read-purity")); err != nil {
+		t.Fatalf("idempotent Authorize() error = %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("projection calls after authorization replay = %d, want 2", calls.Load())
 	}
 }
 

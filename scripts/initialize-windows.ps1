@@ -4,7 +4,7 @@ param(
     [string]$AdminEmail = "",
     [string]$AdminPasswordPlainText = "",
     [ValidateRange(1, 65535)]
-    [int]$GatewayPort = 8088,
+    [int]$GatewayPort = 80,
     [switch]$Force
 )
 
@@ -88,12 +88,14 @@ $content = Set-DotEnvValue $content "DB_PASSWORD" (New-HaiSecret)
 $content = Set-DotEnvValue $content "DB_RUNTIME_PASSWORD" (New-HaiSecret)
 $content = Set-DotEnvValue $content "FIRST_RUN_ADMIN_EMAIL" $AdminEmail
 $content = Set-DotEnvValue $content "FIRST_RUN_ADMIN_PASSWORD" ("'" + $AdminPasswordPlainText + "'")
-$a2aLocalPort = 8091
-$a2aBridgeUrl = "http://127.0.0.1:$a2aLocalPort/api/v1/a2a"
+$a2aBridgeUrl = if ($GatewayPort -eq 80) {
+    "http://127.0.0.1/api/v1/a2a"
+} else {
+    "http://127.0.0.1:$GatewayPort/api/v1/a2a"
+}
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_ENABLED" "true"
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_OWNER_ID" $AdminEmail
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_TOKEN" (New-HaiSecret)
-$content = Set-DotEnvValue $content "HAI_A2A_LOCAL_PORT" $a2aLocalPort.ToString()
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_URL" $a2aBridgeUrl
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED" "false"
 $content = Set-DotEnvValue $content "GATEWAY_HOST_PORT" $GatewayPort.ToString()

@@ -62,16 +62,8 @@ func EmergencyStopReason() string {
 // execution: inability to prove that the stop is clear is not permission to
 // continue.
 func EvaluateEmergencyStop() EmergencyStopDecision {
-	if environmentEmergencyStopActive() {
-		reason := strings.TrimSpace(os.Getenv("HAI_EMERGENCY_STOP_REASON"))
-		if reason == "" {
-			reason = defaultEmergencyStopReason
-		}
-		return EmergencyStopDecision{
-			Active: true,
-			Reason: RedactSecrets(reason),
-			Source: "environment",
-		}
+	if immutable := EvaluateImmutableEmergencyStop(); immutable.Active {
+		return immutable
 	}
 
 	emergencyStopProviderMu.RLock()
@@ -106,6 +98,28 @@ func EvaluateEmergencyStop() EmergencyStopDecision {
 		Active: true,
 		Reason: RedactSecrets(reason),
 		Source: "persisted_control",
+	}
+}
+
+// EvaluateImmutableEmergencyStop reads only deployment-level hard stops. It is
+// used by the narrowly-scoped recovery authorizer: an owner may clear the
+// persisted operator stop through exact approval, but can never override an
+// environment stop from inside the application.
+func EvaluateImmutableEmergencyStop() EmergencyStopDecision {
+	if !environmentEmergencyStopActive() {
+		return EmergencyStopDecision{
+			Reason: defaultEmergencyStopReason,
+			Source: "environment",
+		}
+	}
+	reason := strings.TrimSpace(os.Getenv("HAI_EMERGENCY_STOP_REASON"))
+	if reason == "" {
+		reason = defaultEmergencyStopReason
+	}
+	return EmergencyStopDecision{
+		Active: true,
+		Reason: RedactSecrets(reason),
+		Source: "environment",
 	}
 }
 

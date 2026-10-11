@@ -14,7 +14,7 @@ import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
-import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
+import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { FrameworkRegistryComponent } from './framework-registry.component';
 import { FrameworkRegistryInspectorComponent } from './framework-registry-inspector.component';
 import { FrameworkRegistryRecommendationComponent } from './framework-registry-recommendation.component';
@@ -43,7 +43,7 @@ const routes: Routes = [{ path: '', component: FrameworkRegistryComponent }];
     NzSpinModule,
     NzTableModule,
     NzTagModule,
-    NzToolTipModule,
+    NzTooltipModule,
   ],
 })
 export class FrameworkRegistryModule {}

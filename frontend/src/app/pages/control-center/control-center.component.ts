@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit, ViewEncapsulation } from '@angular/core'
+import { ChangeDetectionStrategy, Component, Inject, OnInit, ViewEncapsulation } from '@angular/core'
 import { Router } from '@angular/router'
 import { forkJoin, of } from 'rxjs'
 import { catchError, finalize, timeout } from 'rxjs/operators'
@@ -54,6 +54,7 @@ interface CommandAction {
   secondaryMetric: string
   context: string
   route?: string
+  queryParams?: Record<string, string>
   section?: ControlCenterSection
   execute?: () => void
 }
@@ -75,11 +76,12 @@ interface NavigationItem {
 }
 
 @Component({
-    selector: 'app-control-center',
-    templateUrl: './control-center.component.html',
-    styleUrls: ['./control-center.component.scss'],
-    encapsulation: ViewEncapsulation.None,
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-control-center',
+  templateUrl: './control-center.component.html',
+  styleUrls: ['./control-center.component.scss'],
+  encapsulation: ViewEncapsulation.None,
 })
 export class ControlCenterComponent implements OnInit {
   readonly currentHour = new Date().getHours()
@@ -221,7 +223,7 @@ export class ControlCenterComponent implements OnInit {
         },
       })
 
-    this.ambientService.overview().pipe(
+    this.ambientService.overview('summary').pipe(
         timeout(2500),
         catchError(() => {
           this.recordDashboardLoadFailure('Ambient scan')
@@ -238,7 +240,7 @@ export class ControlCenterComponent implements OnInit {
         },
       })
 
-    this.pursuitService.dashboard().pipe(
+    this.pursuitService.dashboard('counts').pipe(
         timeout(1800),
         catchError(() => {
           this.recordDashboardLoadFailure('Pursuit status')
@@ -583,13 +585,10 @@ export class ControlCenterComponent implements OnInit {
   pursuitAttentionCount(): number {
     const dashboard = this.pursuitDashboard
     if (!dashboard) return 0
-    // The backend serialises empty lists as null (Go nil slices), so a brand-new
-    // account with no pursuits sends null here — guard each list rather than
-    // assuming an array.
     return (
-      (dashboard.needsRobert?.length ?? 0) +
-      (dashboard.blocked?.length ?? 0) +
-      (dashboard.stale?.length ?? 0)
+      Number(dashboard.counts?.['needsRobert'] || 0) +
+      Number(dashboard.counts?.['blocked'] || 0) +
+      Number(dashboard.counts?.['stale'] || 0)
     )
   }
 
@@ -616,7 +615,8 @@ export class ControlCenterComponent implements OnInit {
         primaryMetric: `${this.attentionItemsView.length} waiting`,
         secondaryMetric: 'High-risk actions stay blocked',
         context: 'Legal, financial, public, account, destructive, and external-message actions require approval before execution.',
-        section: 'attention',
+        route: '/workflow-engine',
+        queryParams: { queue: 'approval' },
       },
       {
         id: 'automation',
@@ -645,7 +645,7 @@ export class ControlCenterComponent implements OnInit {
         tone: 'blue',
         primaryMetric: this.lastAgentCycle ? this.readableState(this.lastAgentCycle.status) : `${this.reviewedItemCount()} reviewed`,
         secondaryMetric: this.agentCycleSecondaryMetric(),
-        context: 'Uses your owner-scoped memory and pursuits to refresh decisions, blockers, and the next action. System sync, workflow execution, and ambient scanning run separately under the controlled worker.',
+        context: 'Runs your owner-scoped source sync, stale-claim recovery, follow-ups, safe workflows, ambient scan, pursuits, and learning. High-risk work remains approval-gated and no phase can fall back to global execution.',
         execute: () => this.runScan(),
       },
       {
@@ -789,7 +789,7 @@ export class ControlCenterComponent implements OnInit {
     if (key.includes('health')) return 'heart'
     if (key.includes('house')) return 'home'
     if (key.includes('finance')) return 'wallet'
-    if (key.includes('work') || key.includes('income')) return 'briefcase'
+    if (key.includes('work') || key.includes('income')) return 'project'
     if (key.includes('relationship')) return 'team'
     if (key.includes('learn')) return 'read'
     if (key.includes('freedom')) return 'rise'
@@ -874,13 +874,13 @@ export class ControlCenterComponent implements OnInit {
     }
   }
 
-  navigate(route: string): void {
+  navigate(route: string, queryParams?: Record<string, string>): void {
     this.mobileNavigationOpen = false
     if (route === '/control-center') {
       this.activeSection = 'overview'
       setTimeout(() => this.scrollToSection('overview'))
     }
-    this.router.navigate([route])
+    this.router.navigate([route], queryParams ? { queryParams } : undefined)
   }
 
   activateNavigationItem(item: NavigationItem): void {
@@ -978,7 +978,7 @@ export class ControlCenterComponent implements OnInit {
       return
     }
     if (action.route) {
-      this.navigate(action.route)
+      this.navigate(action.route, action.queryParams)
       return
     }
     if (action.section) {

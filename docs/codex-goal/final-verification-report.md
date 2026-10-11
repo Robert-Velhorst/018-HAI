@@ -1,5 +1,12 @@
 # Final Verification Report — Codex Goal Run
 
+> Historical evidence note (2026-08-09): this report records the 2026-07-08
+> run and must not be read as the current dependency or runtime status. Current
+> evidence is maintained in `docs/completion-matrix.md`,
+> `docs/dependency-vulnerabilities.md`, and the CI workflow contract. In
+> particular, Go is now 1.25.12, the frontend is Angular 22.1.1 with 379 tests,
+> and high/critical dependency scans are blocking.
+
 **Phases covered:** 093 (Manual verification evidence), 094 (Final no-excuses search), 096 (Final verification report), 097 (Final response requirements)
 **Date:** 2026-07-08 (final, post-implementation)
 **Base:** `main` @ `0f7f12c` → work delivered via PR #13 (merged)
@@ -43,8 +50,8 @@ This run added real, tested product source (not just docs):
 
 ## 4. Honest status summary
 
-- **Roll-up: 110 Implemented · 1 Partial · 0 Missing · 0 Blocked · 1 N/A (090, a process rule).**
-- **The 1 remaining Partial is an honest environment limit:** **032 Docker readiness** — Dockerfiles/compose/config-validation present, but a full multi-service `docker compose up` boot was not executed here (Docker daemon unavailable). Exact next action recorded. *(008 Authorization moved to Implemented this pass — per-user identity→role is now wired via verified IDP JWTs and runtime-proven; see §3.)*
+- **Current roll-up: 111 Implemented · 0 Partial · 0 Missing · 0 Blocked · 1 N/A (090, a process rule).**
+- **Historical note:** item 032 was partial when this report was written because Docker was unavailable. It is now implemented locally: all Compose entrypoints delegate to one source-built topology, and the standard root entrypoint has completed a healthy Docker Desktop boot with a ready gateway. Fresh-clone release-target acceptance remains required. *(008 Authorization moved to Implemented in the original pass — per-user identity→role is wired via verified IDP JWTs and runtime-proven; see §3.)*
 - The critical path (dashboard → source → task → LLM routing → approval → controlled execution → verification → workflow → audit) is implemented and was exercised end-to-end against a real database (§5).
 - **Honest nuance:** several "Implemented" phases are tested utility packages/documents that are not yet wired into *every* call site (e.g. `apierror`, `rbac`, `pathsafety`/`upload`, `autonomygate`, `actionresolver`). This is tracked openly in `docs/technical-debt.md`, and each matrix row's evidence states exactly what exists.
 

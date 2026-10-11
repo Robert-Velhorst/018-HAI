@@ -125,6 +125,93 @@ func TestPursuitRoutesRequireAnAuthenticatedOwner(t *testing.T) {
 	}
 }
 
+func TestDashboardCountsViewReturnsOnlyAggregateQueues(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	service := NewService(repo, nil)
+	if _, err := service.Create(CreateRequest{Title: "Count this pursuit", OwnerIdentity: "alice"}); err != nil {
+		t.Fatalf("Create pursuit: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/pursuits/dashboard", NewHandler(service).Dashboard)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/pursuits/dashboard?view=counts", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("counts dashboard status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var result Dashboard
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode counts dashboard: %v", err)
+	}
+	if result.Counts["active"] != 1 {
+		t.Fatalf("counts dashboard active = %d, want 1", result.Counts["active"])
+	}
+	if len(result.DecisionQueue) != 0 || len(result.NeedsRobert) != 0 || len(result.RecentlyChanged) != 0 {
+		t.Fatalf("counts dashboard retained record queues: %#v", result)
+	}
+}
+
+func TestPursuitListSummaryOmitsDetailOnlyFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	service := NewService(repo, nil)
+	created, err := service.Create(CreateRequest{
+		Title:                "Compact pursuit list",
+		Description:          "Long private context",
+		OwnerIdentity:        "alice",
+		CompletionDefinition: "All evidence is verified.",
+		SuccessCriteria:      []models.PursuitSuccessCriterion{{ID: "criterion-1", Description: "Evidence verified"}},
+		ResourceLimits:       models.PursuitResourceLimits{MaxEffortHours: 4},
+	})
+	if err != nil {
+		t.Fatalf("Create pursuit: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/pursuits/", NewHandler(service).List)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/pursuits/?view=summary", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("summary list status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var records []models.Pursuit
+	if err := json.Unmarshal(recorder.Body.Bytes(), &records); err != nil {
+		t.Fatalf("decode summary list: %v", err)
+	}
+	if len(records) != 1 || records[0].ID != created.ID || records[0].Title != created.Title {
+		t.Fatalf("summary list identity = %#v", records)
+	}
+	if records[0].OwnerIdentity != "" || records[0].Description != "" || records[0].CompletionDefinition != "" || records[0].SuccessCriteria != nil || records[0].ResourceLimits.MaxEffortHours != 0 {
+		t.Fatalf("summary list retained detail-only fields: %#v", records[0])
+	}
+}
+
+func TestPursuitListRejectsUnknownView(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	router.GET("/pursuits/", NewHandler(NewService(newFakeRepo(), nil)).List)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/pursuits/?view=everything", nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unknown list view status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+}
+
 func TestArchiveEndpointRequiresExplicitArchiveIntent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newFakeRepo()
@@ -201,7 +288,7 @@ func TestPursuitEndpointsScopeRecordsToAuthenticatedOwner(t *testing.T) {
 	for _, pursuit := range visible {
 		seen[pursuit.ID] = true
 	}
-	if !seen[alice.ID.String()] || !seen[legacy.ID.String()] || seen[bob.ID.String()] {
+	if !seen[alice.ID.String()] || seen[legacy.ID.String()] || seen[bob.ID.String()] {
 		t.Fatalf("owner-scoped list leaked or hid records: %#v", seen)
 	}
 
@@ -215,6 +302,27 @@ func TestPursuitEndpointsScopeRecordsToAuthenticatedOwner(t *testing.T) {
 	router.ServeHTTP(denied, httptest.NewRequest(http.MethodGet, "/pursuits/"+bob.ID.String()+"/activity", nil))
 	if denied.Code != http.StatusNotFound {
 		t.Fatalf("cross-owner activity status = %d, want %d; body=%s", denied.Code, http.StatusNotFound, denied.Body.String())
+	}
+}
+
+func TestPursuitListAllowsOwnerlessRecordsOnlyForConfiguredLegacyOwner(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "alice")
+	repo := newFakeRepo()
+	service := NewService(repo, nil)
+	legacy, err := service.Create(CreateRequest{Title: "Local legacy pursuit"})
+	if err != nil {
+		t.Fatalf("Create legacy pursuit: %v", err)
+	}
+
+	records, err := service.ListForOwner("alice", false)
+	if err != nil {
+		t.Fatalf("ListForOwner: %v", err)
+	}
+	if len(records) != 1 || records[0].ID != legacy.ID {
+		t.Fatalf("configured migration owner records = %#v", records)
+	}
+	if records, err = service.ListForOwner("bob", false); err != nil || len(records) != 0 {
+		t.Fatalf("non-migration owner saw legacy records: records=%#v err=%v", records, err)
 	}
 }
 
@@ -464,6 +572,50 @@ func TestPursuitMutationEndpointsRejectOwnerlessLegacyRecords(t *testing.T) {
 	}
 	if len(links) != 0 {
 		t.Fatalf("authenticated mutation linked legacy pursuit: %#v", links)
+	}
+}
+
+func TestPursuitOptionalBodyActionsRejectMalformedChunkedRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	service := NewService(repo, nil)
+	pursuit, err := service.Create(CreateRequest{OwnerIdentity: "alice", Title: "Malformed request guard", DesiredOutcome: "Remain unchanged"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := service.ArchiveForOwner("alice", pursuit.ID, true, "alice"); err != nil {
+		t.Fatalf("ArchiveForOwner: %v", err)
+	}
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	handler := NewHandler(service)
+	router.POST("/pursuits/:id/reopen", handler.Reopen)
+	router.POST("/pursuits/:id/summary", handler.RefreshSummary)
+
+	for _, path := range []string{
+		"/pursuits/" + pursuit.ID.String() + "/reopen",
+		"/pursuits/" + pursuit.ID.String() + "/summary",
+	} {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"note":`))
+		request.Header.Set("Content-Type", "application/json")
+		request.ContentLength = -1
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, want %d; body=%s", path, recorder.Code, http.StatusBadRequest, recorder.Body.String())
+		}
+	}
+
+	stored, err := repo.FindByID(pursuit.ID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if !stored.Archived || stored.Status != StatusArchived {
+		t.Fatalf("malformed optional-body action changed pursuit: %#v", stored)
 	}
 }
 

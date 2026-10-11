@@ -10,7 +10,7 @@ func TestFrameworkEvidencePreflightMigrationContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	up := string(upBytes)
+	up := normalizeMigrationLineEndings(string(upBytes))
 	for _, required := range []string{
 		"framework_evidence_preflights",
 		"PRIMARY KEY (\n        owner_identity,\n        task_plan_id,\n        framework_selection_id,\n        preflight_digest",
@@ -39,7 +39,7 @@ func TestFrameworkEvidencePreflightMigrationContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	down := string(downBytes)
+	down := normalizeMigrationLineEndings(string(downBytes))
 	if !strings.Contains(down, "refusing to remove non-empty immutable framework evidence preflight ledger") {
 		t.Fatal("framework evidence rollback must refuse to discard immutable records")
 	}

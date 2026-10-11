@@ -131,6 +131,98 @@ func (r *PostgresRepository) ListEntities(ctx context.Context, owner string) ([]
 	return result, nil
 }
 
+func (r *PostgresRepository) QueryEntities(ctx context.Context, owner string, query EntityQuery) ([]Entity, error) {
+	owner, err := normalizePostgresOwner(owner)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.ready(); err != nil {
+		return nil, err
+	}
+	limit, err := normalizedLimit(query.Limit)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := domainSet(query.Domains); err != nil {
+		return nil, err
+	}
+	if _, err := entityTypeSet(query.Types); err != nil {
+		return nil, err
+	}
+	if _, err := statusSet(query.Statuses); err != nil {
+		return nil, err
+	}
+	if _, err := verificationSet(query.VerificationStatuses); err != nil {
+		return nil, err
+	}
+	externalKeys := normalizeExternalKeys(query.ExternalKeys)
+	if len(query.ExternalKeys) > 0 {
+		if len(externalKeys) == 0 {
+			return nil, fmt.Errorf("external key filter cannot be empty")
+		}
+		if err := validateExternalKeys(externalKeys); err != nil {
+			return nil, err
+		}
+	}
+
+	db := r.DB.WithContext(ctx).
+		Table("public.life_ontology_entities").
+		Select(`owner_identity, entity_id, entity_type, life_domain,
+			lifecycle_status, verification_status, sensitivity, local_only,
+			priority, entity_digest, provenance_digest, valid_from,
+			valid_until, observed_at, created_at, payload::text AS payload`).
+		Where("owner_identity = ?", owner)
+	if !query.AllowLocalOnly {
+		db = db.Where("local_only = FALSE")
+	}
+	if len(query.Domains) > 0 {
+		db = db.Where("life_domain IN ?", query.Domains)
+	}
+	if len(query.Types) > 0 {
+		db = db.Where("entity_type IN ?", query.Types)
+	}
+	if len(query.Statuses) > 0 {
+		db = db.Where("lifecycle_status IN ?", query.Statuses)
+	}
+	if len(query.VerificationStatuses) > 0 {
+		db = db.Where("verification_status IN ?", query.VerificationStatuses)
+	}
+	if len(externalKeys) > 0 {
+		predicates := make([]string, 0, len(externalKeys))
+		arguments := make([]any, 0, len(externalKeys))
+		for _, key := range externalKeys {
+			encoded, marshalErr := json.Marshal(map[string]any{"externalKeys": []ExternalKey{key}})
+			if marshalErr != nil {
+				return nil, fmt.Errorf("encode external key filter: %w", marshalErr)
+			}
+			predicates = append(predicates, "payload @> CAST(? AS jsonb)")
+			arguments = append(arguments, string(encoded))
+		}
+		db = db.Where("("+strings.Join(predicates, " OR ")+")", arguments...)
+	}
+	if query.AsOf != nil {
+		asOf := query.AsOf.UTC()
+		db = db.Where("valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) AND observed_at <= ?", asOf, asOf, asOf)
+	}
+	if query.ObservedBy != nil {
+		db = db.Where("observed_at <= ?", query.ObservedBy.UTC())
+	}
+
+	var rows []postgresEntityRow
+	if err := db.Order("priority DESC, entity_id ASC").Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("query life ontology entities: %w", err)
+	}
+	result := make([]Entity, 0, len(rows))
+	for _, row := range rows {
+		entity, decodeErr := decodePostgresEntityRow(row, owner)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		result = append(result, entity)
+	}
+	return result, nil
+}
+
 func (r *PostgresRepository) AppendRelation(ctx context.Context, relation Relation) (Relation, error) {
 	if err := r.ready(); err != nil {
 		return Relation{}, err
@@ -226,6 +318,70 @@ func (r *PostgresRepository) ListRelations(ctx context.Context, owner string) ([
 	return result, nil
 }
 
+func (r *PostgresRepository) QueryRelations(ctx context.Context, owner string, query RelationQuery) ([]Relation, error) {
+	owner, err := normalizePostgresOwner(owner)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.ready(); err != nil {
+		return nil, err
+	}
+	limit, err := normalizedLimit(query.Limit)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := relationTypeSet(query.Types); err != nil {
+		return nil, err
+	}
+	if query.FromEntityID != "" && !validEntityID(query.FromEntityID) {
+		return nil, fmt.Errorf("invalid from entity id")
+	}
+	if query.ToEntityID != "" && !validEntityID(query.ToEntityID) {
+		return nil, fmt.Errorf("invalid to entity id")
+	}
+
+	db := r.DB.WithContext(ctx).
+		Table("public.life_ontology_relations").
+		Select(`owner_identity, relation_id, relation_type, from_entity_id,
+			to_entity_id, verification_status, sensitivity, local_only,
+			relation_digest, provenance_digest, valid_from, valid_until,
+			observed_at, created_at, payload::text AS payload`).
+		Where("owner_identity = ?", owner)
+	if !query.AllowLocalOnly {
+		db = db.Where("local_only = FALSE")
+	}
+	if len(query.Types) > 0 {
+		db = db.Where("relation_type IN ?", query.Types)
+	}
+	if query.FromEntityID != "" {
+		db = db.Where("from_entity_id = ?", query.FromEntityID)
+	}
+	if query.ToEntityID != "" {
+		db = db.Where("to_entity_id = ?", query.ToEntityID)
+	}
+	if query.AsOf != nil {
+		asOf := query.AsOf.UTC()
+		db = db.Where("valid_from <= ? AND (valid_until IS NULL OR valid_until > ?) AND observed_at <= ?", asOf, asOf, asOf)
+	}
+	if query.ObservedBy != nil {
+		db = db.Where("observed_at <= ?", query.ObservedBy.UTC())
+	}
+
+	var rows []postgresRelationRow
+	if err := db.Order("relation_id ASC").Limit(limit).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("query life ontology relations: %w", err)
+	}
+	result := make([]Relation, 0, len(rows))
+	for _, row := range rows {
+		relation, decodeErr := decodePostgresRelationRow(row, owner)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		result = append(result, relation)
+	}
+	return result, nil
+}
+
 func (r *PostgresRepository) AppendMergeProposal(ctx context.Context, proposal MergeProposal) (MergeProposal, error) {
 	if err := r.ready(); err != nil {
 		return MergeProposal{}, err
@@ -287,6 +443,40 @@ func (r *PostgresRepository) ListMergeProposals(ctx context.Context, owner strin
 		proposal, err := decodePostgresMergeProposalRow(row, owner)
 		if err != nil {
 			return nil, err
+		}
+		result = append(result, proposal)
+	}
+	return result, nil
+}
+
+func (r *PostgresRepository) ListMergeProposalsWithLimit(ctx context.Context, owner string, limit int) ([]MergeProposal, error) {
+	owner, err := normalizePostgresOwner(owner)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.ready(); err != nil {
+		return nil, err
+	}
+	limit, err = normalizedLimit(limit)
+	if err != nil {
+		return nil, err
+	}
+	var rows []postgresMergeProposalRow
+	if err := r.DB.WithContext(ctx).Raw(`
+		SELECT owner_identity, proposal_id, candidate_left_id,
+			candidate_right_id, match_type, proposal_status, confidence,
+			proposal_digest, created_at, payload::text AS payload
+		FROM public.life_ontology_merge_proposals
+		WHERE owner_identity = ?
+		ORDER BY proposal_id ASC
+		LIMIT ?`, owner, limit).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list bounded life ontology merge proposals: %w", err)
+	}
+	result := make([]MergeProposal, 0, len(rows))
+	for _, row := range rows {
+		proposal, decodeErr := decodePostgresMergeProposalRow(row, owner)
+		if decodeErr != nil {
+			return nil, decodeErr
 		}
 		result = append(result, proposal)
 	}

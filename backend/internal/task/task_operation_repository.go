@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -16,6 +17,13 @@ import (
 )
 
 const taskOperationMaximumErrorRunes = 1024
+
+func normalizedTaskOperationContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
 
 func taskOperationMapKey(ownerIdentity, idempotencyKey string) string {
 	return ownerIdentity + "\x00" + idempotencyKey
@@ -94,6 +102,8 @@ func classifyExistingTaskOperation(row models.TaskOperationRecord, requestDigest
 		return TaskOperationClaim{Operation: row, Disposition: TaskOperationReplay}, false, nil
 	case "needs_review":
 		return TaskOperationClaim{Operation: row, Disposition: TaskOperationNeedsReview}, false, nil
+	case "canceled":
+		return TaskOperationClaim{Operation: row, Disposition: TaskOperationCanceled}, false, nil
 	case "running":
 		if leaseDuration <= 0 {
 			leaseDuration = 2 * time.Minute
@@ -108,6 +118,16 @@ func classifyExistingTaskOperation(row models.TaskOperationRecord, requestDigest
 }
 
 func (r *MemoryTaskStateRepository) ClaimTaskOperation(ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string, now time.Time, leaseDuration time.Duration) (TaskOperationClaim, error) {
+	return r.ClaimTaskOperationContext(context.Background(), ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, now, leaseDuration)
+}
+
+func (r *MemoryTaskStateRepository) ClaimTaskOperationContext(ctx context.Context, ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string, now time.Time, leaseDuration time.Duration) (TaskOperationClaim, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return TaskOperationClaim{}, err
+	}
 	ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, err := normalizeTaskOperationIdentity(ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner)
 	if err != nil {
 		return TaskOperationClaim{}, err
@@ -116,6 +136,9 @@ func (r *MemoryTaskStateRepository) ClaimTaskOperation(ownerIdentity, idempotenc
 	key := taskOperationMapKey(ownerIdentity, idempotencyKey)
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return TaskOperationClaim{}, err
+	}
 	r.ensureInitialized()
 	if existing, ok := r.operations[key]; ok {
 		claim, expired, classifyErr := classifyExistingTaskOperation(existing, requestDigest, mode, now, leaseDuration)
@@ -144,7 +167,11 @@ func (r *MemoryTaskStateRepository) ClaimTaskOperation(ownerIdentity, idempotenc
 }
 
 func (r *MemoryTaskStateRepository) HeartbeatTaskOperation(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, now time.Time) (bool, error) {
-	return r.updateOwnedTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration, func(row *models.TaskOperationRecord) {
+	return r.HeartbeatTaskOperationContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, now)
+}
+
+func (r *MemoryTaskStateRepository) HeartbeatTaskOperationContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, now time.Time) (bool, error) {
+	return r.updateOwnedTaskOperationContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, func(row *models.TaskOperationRecord) {
 		now = normalizedTaskOperationTime(now)
 		row.LeasedAt = &now
 		row.UpdatedAt = now
@@ -152,11 +179,15 @@ func (r *MemoryTaskStateRepository) HeartbeatTaskOperation(ownerIdentity string,
 }
 
 func (r *MemoryTaskStateRepository) CompleteTaskOperation(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, taskPlanID string, now time.Time) (bool, error) {
+	return r.CompleteTaskOperationContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, taskPlanID, now)
+}
+
+func (r *MemoryTaskStateRepository) CompleteTaskOperationContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, taskPlanID string, now time.Time) (bool, error) {
 	taskPlanID = strings.TrimSpace(taskPlanID)
 	if taskPlanID == "" || len([]rune(taskPlanID)) > 160 {
 		return false, fmt.Errorf("task plan id must contain 1 to 160 characters")
 	}
-	return r.updateOwnedTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration, func(row *models.TaskOperationRecord) {
+	return r.updateOwnedTaskOperationContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, func(row *models.TaskOperationRecord) {
 		now = normalizedTaskOperationTime(now)
 		row.Status = "completed"
 		row.TaskPlanID = taskPlanID
@@ -169,7 +200,11 @@ func (r *MemoryTaskStateRepository) CompleteTaskOperation(ownerIdentity string, 
 }
 
 func (r *MemoryTaskStateRepository) MarkTaskOperationNeedsReview(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, reason string, now time.Time) (bool, error) {
-	return r.updateOwnedTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration, func(row *models.TaskOperationRecord) {
+	return r.MarkTaskOperationNeedsReviewContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+}
+
+func (r *MemoryTaskStateRepository) MarkTaskOperationNeedsReviewContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, reason string, now time.Time) (bool, error) {
+	return r.updateOwnedTaskOperationContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, func(row *models.TaskOperationRecord) {
 		now = normalizedTaskOperationTime(now)
 		row.Status = "needs_review"
 		row.LeaseOwner = ""
@@ -179,7 +214,32 @@ func (r *MemoryTaskStateRepository) MarkTaskOperationNeedsReview(ownerIdentity s
 	})
 }
 
+func (r *MemoryTaskStateRepository) CancelTaskOperation(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, reason string, now time.Time) (bool, error) {
+	return r.CancelTaskOperationContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+}
+
+func (r *MemoryTaskStateRepository) CancelTaskOperationContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, reason string, now time.Time) (bool, error) {
+	return r.updateOwnedTaskOperationContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, func(row *models.TaskOperationRecord) {
+		now = normalizedTaskOperationTime(now)
+		row.Status = "canceled"
+		row.LeaseOwner = ""
+		row.LeasedAt = nil
+		row.LastError = taskOperationReviewReason(reason)
+		row.UpdatedAt = now
+	})
+}
+
 func (r *MemoryTaskStateRepository) updateOwnedTaskOperation(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, mutate func(*models.TaskOperationRecord)) (bool, error) {
+	return r.updateOwnedTaskOperationContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, mutate)
+}
+
+func (r *MemoryTaskStateRepository) updateOwnedTaskOperationContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, mutate func(*models.TaskOperationRecord)) (bool, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	ownerIdentity, err := normalizeTaskStateOwner(ownerIdentity)
 	if err != nil {
 		return false, err
@@ -190,6 +250,9 @@ func (r *MemoryTaskStateRepository) updateOwnedTaskOperation(ownerIdentity strin
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	for key, row := range r.operations {
 		if row.ID == operationID && row.OwnerIdentity == ownerIdentity && row.Status == "running" && row.LeaseOwner == leaseOwner && row.LeaseGeneration == leaseGeneration {
 			mutate(&row)
@@ -201,13 +264,23 @@ func (r *MemoryTaskStateRepository) updateOwnedTaskOperation(ownerIdentity strin
 }
 
 func (r *PostgresTaskStateRepository) ClaimTaskOperation(ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string, now time.Time, leaseDuration time.Duration) (TaskOperationClaim, error) {
+	return r.ClaimTaskOperationContext(context.Background(), ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, now, leaseDuration)
+}
+
+func (r *PostgresTaskStateRepository) ClaimTaskOperationContext(ctx context.Context, ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string, now time.Time, leaseDuration time.Duration) (TaskOperationClaim, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return TaskOperationClaim{}, err
+	}
 	ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, err := normalizeTaskOperationIdentity(ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner)
 	if err != nil {
 		return TaskOperationClaim{}, err
 	}
 	now = normalizedTaskOperationTime(now)
 	var claim TaskOperationClaim
-	err = r.DB.Transaction(func(tx *gorm.DB) error {
+	err = r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		lockDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(ownerIdentity+"\x00"+idempotencyKey)))
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockDigest).Error; err != nil {
 			return err
@@ -254,18 +327,28 @@ func (r *PostgresTaskStateRepository) ClaimTaskOperation(ownerIdentity, idempote
 }
 
 func (r *PostgresTaskStateRepository) HeartbeatTaskOperation(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, now time.Time) (bool, error) {
+	return r.HeartbeatTaskOperationContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, now)
+}
+
+func (r *PostgresTaskStateRepository) HeartbeatTaskOperationContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, now time.Time) (bool, error) {
+	ctx = normalizedTaskOperationContext(ctx)
 	now = normalizedTaskOperationTime(now)
-	result := r.ownedTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration).Updates(map[string]any{"leased_at": now, "updated_at": now})
+	result := r.ownedTaskOperation(r.DB.WithContext(ctx), ownerIdentity, operationID, leaseOwner, leaseGeneration).Updates(map[string]any{"leased_at": now, "updated_at": now})
 	return result.RowsAffected == 1, result.Error
 }
 
 func (r *PostgresTaskStateRepository) CompleteTaskOperation(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, taskPlanID string, now time.Time) (bool, error) {
+	return r.CompleteTaskOperationContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, taskPlanID, now)
+}
+
+func (r *PostgresTaskStateRepository) CompleteTaskOperationContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, taskPlanID string, now time.Time) (bool, error) {
+	ctx = normalizedTaskOperationContext(ctx)
 	taskPlanID = strings.TrimSpace(taskPlanID)
 	if taskPlanID == "" || len([]rune(taskPlanID)) > 160 {
 		return false, fmt.Errorf("task plan id must contain 1 to 160 characters")
 	}
 	now = normalizedTaskOperationTime(now)
-	result := r.ownedTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration).Updates(map[string]any{
+	result := r.ownedTaskOperation(r.DB.WithContext(ctx), ownerIdentity, operationID, leaseOwner, leaseGeneration).Updates(map[string]any{
 		"status": "completed", "task_plan_id": taskPlanID, "lease_owner": "", "leased_at": nil,
 		"last_error": "", "completed_at": now, "updated_at": now,
 	})
@@ -273,16 +356,35 @@ func (r *PostgresTaskStateRepository) CompleteTaskOperation(ownerIdentity string
 }
 
 func (r *PostgresTaskStateRepository) MarkTaskOperationNeedsReview(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, reason string, now time.Time) (bool, error) {
+	return r.MarkTaskOperationNeedsReviewContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+}
+
+func (r *PostgresTaskStateRepository) MarkTaskOperationNeedsReviewContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, reason string, now time.Time) (bool, error) {
+	ctx = normalizedTaskOperationContext(ctx)
 	now = normalizedTaskOperationTime(now)
-	result := r.ownedTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration).Updates(map[string]any{
+	result := r.ownedTaskOperation(r.DB.WithContext(ctx), ownerIdentity, operationID, leaseOwner, leaseGeneration).Updates(map[string]any{
 		"status": "needs_review", "lease_owner": "", "leased_at": nil,
 		"last_error": taskOperationReviewReason(reason), "updated_at": now,
 	})
 	return result.RowsAffected == 1, result.Error
 }
 
-func (r *PostgresTaskStateRepository) ownedTaskOperation(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64) *gorm.DB {
-	return r.DB.Model(&models.TaskOperationRecord{}).Where(
+func (r *PostgresTaskStateRepository) CancelTaskOperation(ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, reason string, now time.Time) (bool, error) {
+	return r.CancelTaskOperationContext(context.Background(), ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+}
+
+func (r *PostgresTaskStateRepository) CancelTaskOperationContext(ctx context.Context, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64, reason string, now time.Time) (bool, error) {
+	ctx = normalizedTaskOperationContext(ctx)
+	now = normalizedTaskOperationTime(now)
+	result := r.ownedTaskOperation(r.DB.WithContext(ctx), ownerIdentity, operationID, leaseOwner, leaseGeneration).Updates(map[string]any{
+		"status": "canceled", "lease_owner": "", "leased_at": nil,
+		"last_error": taskOperationReviewReason(reason), "updated_at": now,
+	})
+	return result.RowsAffected == 1, result.Error
+}
+
+func (r *PostgresTaskStateRepository) ownedTaskOperation(db *gorm.DB, ownerIdentity string, operationID uuid.UUID, leaseOwner string, leaseGeneration int64) *gorm.DB {
+	return db.Model(&models.TaskOperationRecord{}).Where(
 		"id = ? AND owner_identity = ? AND status = 'running' AND lease_owner = ? AND lease_generation = ?",
 		operationID, strings.TrimSpace(ownerIdentity), strings.TrimSpace(leaseOwner), leaseGeneration,
 	)

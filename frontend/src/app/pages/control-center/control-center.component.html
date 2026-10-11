@@ -868,7 +868,7 @@
         </div>
 
         <h3>Recent execution</h3>
-        <div class="event-list" *ngIf="detail.recentLaunches?.length; else noLaunches">
+        <div class="event-list" *ngIf="detail.recentLaunches.length; else noLaunches">
           <article *ngFor="let event of detail.recentLaunches">
             <div>
               <strong>{{ event.status }}</strong>

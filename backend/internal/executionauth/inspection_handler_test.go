@@ -122,6 +122,50 @@ func TestInspectionHandlerScopesListGetAndConsumptionToOwner(t *testing.T) {
 	assertInspectionError(t, foreignConsumption, http.StatusNotFound, "consumption_not_found")
 }
 
+func TestInspectionHandlerReturnsCompactSummaryWithoutEvidence(t *testing.T) {
+	repository := NewMemoryRepository()
+	receipt := inspectionFixtureReceipt("alice", "automation.api.read")
+	receipt.Outcome = OutcomeDenied
+	receipt.Reason = "system workload effect does not match its registered operation contract"
+	mustStoreInspectionReceipt(t, repository, receipt)
+
+	router := inspectionRouter(repository, authenticatedInspectionOwner("alice"))
+	response := performInspectionRequest(t, router, http.MethodGet,
+		"/execution-authorizations?limit=25&view=summary")
+	if response.Code != http.StatusOK {
+		t.Fatalf("summary status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body map[string]any
+	decodeInspectionResponse(t, response, &body)
+	receipts, ok := body["receipts"].([]any)
+	if !ok || len(receipts) != 1 {
+		t.Fatalf("summary receipts = %#v", body["receipts"])
+	}
+	view, ok := receipts[0].(map[string]any)
+	if !ok {
+		t.Fatalf("summary receipt = %#v", receipts[0])
+	}
+	if view["id"] != receipt.ID.String() || view["action"] != receipt.Action ||
+		view["outcome"] != string(OutcomeDenied) || view["reason"] != receipt.Reason {
+		t.Fatalf("summary identity = %#v", view)
+	}
+	for _, forbidden := range []string{
+		"evidence", "requestFingerprint", "decisionFingerprint", "actorFingerprint",
+		"requiredAuthority", "requestedAutonomy", "effectiveAutonomy",
+	} {
+		if _, exists := view[forbidden]; exists {
+			t.Fatalf("summary exposed %s: %#v", forbidden, view)
+		}
+	}
+}
+
+func TestInspectionHandlerRejectsUnknownListView(t *testing.T) {
+	router := inspectionRouter(NewMemoryRepository(), authenticatedInspectionOwner("alice"))
+	response := performInspectionRequest(t, router, http.MethodGet,
+		"/execution-authorizations?view=everything")
+	assertInspectionError(t, response, http.StatusBadRequest, "invalid_view")
+}
+
 func TestInspectionHandlerDefendsAgainstFaultyReaderCrossOwnerResults(t *testing.T) {
 	bob := inspectionFixtureReceipt("bob", "hidden")
 	router := inspectionRouter(inspectionReaderStub{

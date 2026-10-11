@@ -257,14 +257,14 @@ func (s *service) CalendarBusyIntervalsForOwner(ownerIdentity string, start, end
 		return nil, fmt.Errorf("calendar source repository is unavailable")
 	}
 
-	sources, err := s.repo.FindSources(true)
+	sources, err := s.repo.FindSourcesForOwner(ownerIdentity, true, false)
 	if err != nil {
 		return nil, fmt.Errorf("find calendar sources: %w", err)
 	}
 	intervals := make([]CalendarBusyInterval, 0)
 	seen := map[string]bool{}
 	for _, connected := range sources {
-		if connected.OwnerIdentity != ownerIdentity || connected.ConnectorKey != calendarConnectorKey || !connected.Enabled || connected.RevokedAt != nil || !strings.EqualFold(connected.Status, "active") {
+		if connected.ConnectorKey != calendarConnectorKey || !connected.Enabled || connected.RevokedAt != nil || !strings.EqualFold(connected.Status, "active") {
 			continue
 		}
 		items, err := s.repo.FindRawItems(connected.ID)

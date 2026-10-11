@@ -48,7 +48,7 @@ func (s *service) retrieveLifeOntologyContext(
 		return nil, "Whole-life ontology context was skipped because no relevant life domain was selected.", nil
 	}
 	localRoute := strings.EqualFold(strings.TrimSpace(modelDecision.Tier), llm.TierLocal)
-	result, err := s.lifeOntology.SuggestNextContext(context.Background(), lifeontology.ContextSuggestionRequest{
+	result, err := s.lifeOntology.SuggestNextContext(taskExecutionContext(request), lifeontology.ContextSuggestionRequest{
 		OwnerIdentity:  owner,
 		Domains:        domains,
 		AsOf:           time.Now().UTC(),

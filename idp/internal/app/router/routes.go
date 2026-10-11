@@ -55,7 +55,7 @@ func initializeAuthRoutes(apiVersion *gin.RouterGroup) error {
 		auth.POST("/request-password-reset", authHandler.RequestPasswordReset)
 		auth.POST("/confirm-password-reset/:reset-token", authHandler.ConfirmPasswordReset)
 		auth.GET("/is-user-authenticated", authHandler.IsUserAuthenticated)
-		auth.GET("/session", authMiddleware, authHandler.CurrentSession)
+		auth.GET("/session", authHandler.CurrentSession)
 	}
 
 	user := apiVersion.Group("/user")

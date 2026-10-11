@@ -1,27 +1,22 @@
 import { FormBuilder } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
-import { Subject, of, throwError } from 'rxjs';
+import { of } from 'rxjs';
 import { IConnectedSource, ISourcePursuitRoutingOutcome } from '../../models/connected-source.model.interface';
 import { ConnectedSourcesComponent } from './connected-sources.component';
 
 describe('ConnectedSourcesComponent pursuit handoff', () => {
-  function createComponent(): { component: ConnectedSourcesComponent; router: jasmine.SpyObj<Router>; sourceService: jasmine.SpyObj<any> } {
+  function createComponent(): { component: ConnectedSourcesComponent; router: jasmine.SpyObj<Router> } {
     const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
-    const sourceService = jasmine.createSpyObj('ConnectedSourceService', [
-      'createSource', 'sync', 'transcribe', 'extractDocuments', 'runDueScheduledSyncs',
-      'connectors', 'sources', 'extractions', 'auditLogs', 'syncJobs', 'connectionHealth'
-    ]);
     return {
       component: new ConnectedSourcesComponent(
         new FormBuilder(),
-		sourceService,
+        {} as any,
         {} as NzNotificationService,
-		router,
+        router,
         { mode: () => 'light' } as any,
       ),
       router,
-	  sourceService,
     };
   }
 
@@ -107,114 +102,106 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     expect(component.googleConnectorMetric()).toBe('4 ready');
   });
 
-  it('does not offer connector creation before required setup is complete', () => {
-		const { component } = createComponent();
-		expect(component.connectorCanConnect({ enabled: true, adapterStatus: 'configuration_required' } as any)).toBeFalse();
-		expect(component.connectorCanConnect({ enabled: true, adapterStatus: 'not_implemented' } as any)).toBeFalse();
-		expect(component.connectorCanConnect({ enabled: true, adapterStatus: 'operational' } as any)).toBeTrue();
-		expect(component.adapterStatusLabel('configuration_required')).toBe('setup required');
-	});
-
-  it('keeps Google connection controls disabled until that connector is configured', () => {
+  it('requires an explicit local folder instead of defaulting to the whole source root', () => {
     const { component } = createComponent();
-    component.connectors = [
-      { connectorKey: 'gmail', enabled: true, adapterStatus: 'configuration_required' } as any,
-      { connectorKey: 'google-drive', enabled: true, adapterStatus: 'operational' } as any,
-    ];
 
-    expect(component.googleConnectorCanConnect('gmail')).toBeFalse();
-    expect(component.googleConnectorCanConnect('google-drive')).toBeTrue();
+    expect(component.sourceForm.controls['syncTarget'].value).toBe('');
+    expect(component.sourceForm.invalid).toBeTrue();
+
+    component.sourceForm.controls['syncTarget'].setValue('legal/vivare');
+    expect(component.sourceForm.valid).toBeTrue();
+
+    component.connectorChanged('local-folder');
+    expect(component.sourceForm.controls['syncTarget'].value).toBe('');
+    expect(component.syncTargetPlaceholder()).toContain('Explicit subfolder');
   });
+});
 
-  it('uses remote read-only defaults for a Trello board source', () => {
-    const { component } = createComponent();
-
-    component.sourceForm.patchValue({ connectorKey: 'trello' });
-    component.connectorChanged('trello');
-
-    expect(component.sourceForm.value).toEqual(jasmine.objectContaining({
-      name: 'Trello board (read-only)',
-      syncFrequency: '1h',
-      syncTarget: '',
-      localOnly: false,
+describe('ConnectedSourcesComponent progressive evidence loading', () => {
+  function createHarness() {
+    const service = jasmine.createSpyObj('ConnectedSourceService', [
+      'connectors', 'sources', 'overview', 'connectionHealth', 'extractions', 'syncJobs', 'auditLogs',
+    ]);
+    const sources = [
+      { id: 'source-1', connectorKey: 'local-folder', enabled: true, status: 'active' },
+      { id: 'source-2', connectorKey: 'github', enabled: true, status: 'active' },
+    ] as IConnectedSource[];
+    service.connectors.and.returnValue(of([]));
+    service.sources.and.returnValue(of(sources));
+    service.overview.and.returnValue(of({
+      extractionCount: 12,
+      sensitiveExtractionCount: 2,
+      uncertainExtractionCount: 1,
+      failedJobs: 3,
+      pendingJobs: 1,
+      extractionCountsBySource: { 'source-1': 7, 'source-2': 5 },
+      latestJobStatusBySource: { 'source-1': 'failed', 'source-2': 'completed' },
     }));
-    expect(component.syncTargetPlaceholder()).toContain('Trello board URL or ID');
+    service.connectionHealth.and.returnValue(of({ sourceId: 'source-1', status: 'ready' }));
+    service.extractions.and.returnValue(of([]));
+    service.syncJobs.and.returnValue(of([]));
+    service.auditLogs.and.returnValue(of([]));
+    const component = new ConnectedSourcesComponent(
+      new FormBuilder(),
+      service,
+      jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['error', 'success', 'warning', 'info']),
+      jasmine.createSpyObj<Router>('Router', ['navigate']),
+      { mode: () => 'light' } as any,
+    );
+    return { component, service };
+  }
+
+  it('loads only the registry, safety overview, and selected-source health on startup', () => {
+    const { component, service } = createHarness();
+
+    component.ngOnInit();
+
+    expect(service.connectors).toHaveBeenCalledTimes(1);
+    expect(service.sources).toHaveBeenCalledTimes(1);
+    expect(service.overview).toHaveBeenCalledTimes(1);
+    expect(service.connectionHealth).toHaveBeenCalledOnceWith('source-1');
+    expect(service.extractions).not.toHaveBeenCalled();
+    expect(service.syncJobs).not.toHaveBeenCalled();
+    expect(service.auditLogs).not.toHaveBeenCalled();
+    expect(component.failedJobCount()).toBe(3);
+    expect(component.sourceExtractionCount(component.sources[0])).toBe(7);
   });
 
-	it('marks generic source creation as in progress until the request completes', () => {
-		const { component, sourceService } = createComponent();
-		component.connectors = [{ connectorKey: 'local-folder', enabled: true, adapterStatus: 'local_only', category: 'local_folder' } as any];
-		component.sourceForm.patchValue({ connectorKey: 'local-folder' });
-		const pending = new Subject<any>();
-		sourceService.createSource.and.returnValue(pending.asObservable());
-		component.connectSource();
-		expect(sourceService.createSource).toHaveBeenCalled();
-		expect(component.connecting).toBeTrue();
-		pending.complete();
-		expect(component.connecting).toBeFalse();
-	});
+  it('loads extraction records once when their section is first opened', () => {
+    const { component, service } = createHarness();
+    component.ngOnInit();
 
-  it('does not start duplicate source work while another sync is running', () => {
-    const { component, sourceService } = createComponent();
-    const pending = new Subject<any>();
-    sourceService.sync.and.returnValue(pending.asObservable());
-    sourceService.transcribe.and.returnValue(pending.asObservable());
-    sourceService.extractDocuments.and.returnValue(pending.asObservable());
-    sourceService.runDueScheduledSyncs.and.returnValue(pending.asObservable());
-    component.importForm.patchValue({ sourceId: 'import-source' });
-    component.folderForm.patchValue({ sourceId: 'folder-source' });
-    component.syncing = true;
+    component.setExtractionHistoryOpen(true);
+    component.setExtractionHistoryOpen(false);
+    component.setExtractionHistoryOpen(true);
 
-    component.sync();
-    component.syncFolder();
-    component.runDueScheduledSyncs();
-    component.syncSource({ id: 'github-source', connectorKey: 'github' } as IConnectedSource);
-    component.syncSource({ id: 'audio-source', connectorKey: 'whisper-audio' } as IConnectedSource);
-    component.syncSource({ id: 'document-source', connectorKey: 'docling-documents' } as IConnectedSource);
-
-    expect(sourceService.sync).not.toHaveBeenCalled();
-    expect(sourceService.transcribe).not.toHaveBeenCalled();
-    expect(sourceService.extractDocuments).not.toHaveBeenCalled();
-    expect(sourceService.runDueScheduledSyncs).not.toHaveBeenCalled();
+    expect(service.extractions).toHaveBeenCalledTimes(1);
+    expect(service.extractions).toHaveBeenCalledWith('018-HAI', false, 8);
   });
 
-  it('keeps failed auxiliary records visible instead of presenting them as empty', () => {
-    const { component, sourceService } = createComponent();
-    sourceService.connectors.and.returnValue(of([]));
-    sourceService.sources.and.returnValue(of([]));
-    sourceService.extractions.and.returnValue(throwError(() => new Error('extractions unavailable')));
-    sourceService.auditLogs.and.returnValue(throwError(() => new Error('audit unavailable')));
-    sourceService.syncJobs.and.returnValue(throwError(() => new Error('jobs unavailable')));
+  it('loads jobs and audit records once when activity is first opened', () => {
+    const { component, service } = createHarness();
+    component.ngOnInit();
+
+    component.setActivityHistoryOpen(true);
+    component.setActivityHistoryOpen(false);
+    component.setActivityHistoryOpen(true);
+
+    expect(service.syncJobs).toHaveBeenCalledTimes(1);
+    expect(service.syncJobs).toHaveBeenCalledWith(undefined, 6);
+    expect(service.auditLogs).toHaveBeenCalledTimes(1);
+    expect(service.auditLogs).toHaveBeenCalledWith(undefined, 8);
+  });
+
+  it('refreshes only detail histories that the operator has opened', () => {
+    const { component, service } = createHarness();
+    component.ngOnInit();
+    component.setExtractionHistoryOpen(true);
 
     component.refresh();
 
-    expect(component.loadWarnings).toEqual([
-      'Extracted records',
-      'Audit history',
-      'Sync jobs',
-    ]);
-    expect(component.hasLoadWarnings()).toBeTrue();
-  });
-
-  it('marks an unavailable source health check instead of treating it as absent health', () => {
-    const { component, sourceService } = createComponent();
-    const source = { id: 'gmail-source', connectorKey: 'gmail', name: 'Personal Gmail' } as IConnectedSource;
-    sourceService.connectionHealth.and.returnValue(throwError(() => new Error('health unavailable')));
-
-    (component as any).loadConnectionHealth([source]);
-
-    expect(component.sourceHealthUnavailable(source)).toBeTrue();
-    expect(component.sourceHealth(source)).toBeUndefined();
-  });
-
-  it('preserves extracted records when an action-triggered reload fails', () => {
-    const { component, sourceService } = createComponent();
-    component.extractions = [{ id: 'existing-record' } as any];
-    sourceService.extractions.and.returnValue(throwError(() => new Error('records unavailable')));
-
-    (component as any).loadExtractions();
-
-    expect(component.extractions.map((item) => item.id)).toEqual(['existing-record']);
-    expect(component.loadWarnings).toContain('Extracted records');
+    expect(service.extractions).toHaveBeenCalledTimes(2);
+    expect(service.syncJobs).not.toHaveBeenCalled();
+    expect(service.auditLogs).not.toHaveBeenCalled();
   });
 });

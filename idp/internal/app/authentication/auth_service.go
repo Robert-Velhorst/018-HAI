@@ -83,6 +83,7 @@ func GetDefaultAuthService() (IService, error) {
 		config.MailConfig.Password,
 		config.MailConfig.From,
 		config.MailConfig.RequireStartTLS,
+		config.MailConfig.DeliveryTimeout,
 	)
 	return NewService(userService, hasher, sender, blockListService, logger, config.AuthenticationConfig.JwtSecret, passwordResetter), nil
 }
@@ -324,7 +325,7 @@ func calculateBlockDuration(failedLoginAttempts int) time.Duration {
 	return initialBlockDuration * time.Duration(math.Pow(2, exponent))
 }
 
-func (a *service) Logout(accessToken string) error {
+func (a *service) Logout(ctx context.Context, accessToken string) error {
 	_, claims, err := a.parseAndValidateToken(accessToken)
 	if err != nil {
 		a.logger.Error("Error parsing access token: %v", err)
@@ -372,11 +373,11 @@ func (a *service) Logout(accessToken string) error {
 	// Attempt both revocations even when one backing-store operation fails.
 	// Refresh is blocked first because it can mint new access tokens.
 	var revokeErrors []error
-	if refreshErr := a.blockListService.AddToBlockList(refreshUUID, rtDuration); refreshErr != nil {
+	if refreshErr := a.blockListService.AddToBlockList(ctx, refreshUUID, rtDuration); refreshErr != nil {
 		a.logger.Error("Failed to add refresh token to block list for user: %s, Error: %v", userID, refreshErr)
 		revokeErrors = append(revokeErrors, fmt.Errorf("revoke refresh token: %w", refreshErr))
 	}
-	if accessErr := a.blockListService.AddToBlockList(accessUUID, atDuration); accessErr != nil {
+	if accessErr := a.blockListService.AddToBlockList(ctx, accessUUID, atDuration); accessErr != nil {
 		a.logger.Error("Failed to add access token to block list for user: %s, Error: %v", userID, accessErr)
 		revokeErrors = append(revokeErrors, fmt.Errorf("revoke access token: %w", accessErr))
 	}
@@ -388,7 +389,7 @@ func (a *service) Logout(accessToken string) error {
 	return nil
 }
 
-func (a *service) RefreshToken(refreshToken string) (*dto.TokenDetails, error) {
+func (a *service) RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenDetails, error) {
 	_, claims, err := a.parseAndValidateToken(refreshToken)
 	if err != nil {
 		a.logger.Error("Error parsing refresh token: %v", err)
@@ -405,7 +406,7 @@ func (a *service) RefreshToken(refreshToken string) (*dto.TokenDetails, error) {
 	}
 
 	// Check if the refresh token is on the block list
-	isBlocked, err := a.blockListService.IsInBlockList(refreshUUID)
+	isBlocked, err := a.blockListService.IsInBlockList(ctx, refreshUUID)
 	if err != nil {
 		a.logger.Error("Failed to check blockList status: %v", err)
 		return nil, errors.New("error checking blockList status")
@@ -456,7 +457,7 @@ func (a *service) RefreshToken(refreshToken string) (*dto.TokenDetails, error) {
 	return td, nil
 }
 
-func (a *service) IsUserAuthenticated(accessToken string) (bool, error) {
+func (a *service) IsUserAuthenticated(ctx context.Context, accessToken string) (bool, error) {
 	_, claims, err := a.parseAndValidateToken(accessToken)
 	if err != nil {
 		a.logger.Error("Error parsing accessToken: %v", err)
@@ -472,7 +473,7 @@ func (a *service) IsUserAuthenticated(accessToken string) (bool, error) {
 		return false, errors.New("invalid accessToken")
 	}
 
-	isBlocked, err := a.blockListService.IsInBlockList(accessUUID)
+	isBlocked, err := a.blockListService.IsInBlockList(ctx, accessUUID)
 	if err != nil {
 		a.logger.Error("Error checking accessToken in block list: %v", err)
 		return false, err
@@ -489,7 +490,7 @@ func (a *service) IsUserAuthenticated(accessToken string) (bool, error) {
 	return true, nil
 }
 
-func (a *service) RequestPasswordReset(email string) (string, time.Time, error) {
+func (a *service) RequestPasswordReset(ctx context.Context, email string) (string, time.Time, error) {
 	if a.passwordResetter == nil || !a.passwordResetter.Configured() {
 		a.logger.Warn("Password reset requested while email delivery is not configured")
 		return "", time.Time{}, errors.New("password reset email delivery is not configured")
@@ -510,21 +511,14 @@ func (a *service) RequestPasswordReset(email string) (string, time.Time, error) 
 	resetToken := uuid.New().String()
 	resetTokenExpires := time.Now().Add(time.Hour * config.AuthenticationConfig.ExpirationTimeResetTokenHours)
 
-	// Add the reset token to the user
-	user.ResetPasswordToken = resetToken
-	user.ResetTokenExpires = &resetTokenExpires
-
-	_, err = a.userService.UpdateUser(*user)
-	if err != nil {
-		a.logger.Error("Error updating user: %v", err)
+	if err := a.userService.StorePasswordReset(user.ID, resetToken, resetTokenExpires); err != nil {
+		a.logger.Error("Error storing password reset: %v", err)
 		return "", time.Time{}, errors.New("failed to update user")
 	}
 
-	if err := a.passwordResetter.SendPasswordReset(email, resetToken, resetTokenExpires); err != nil {
+	if err := a.passwordResetter.SendPasswordReset(ctx, email, resetToken, resetTokenExpires); err != nil {
 		a.logger.Error("Error sending password-reset email: %v", err)
-		user.ResetPasswordToken = ""
-		user.ResetTokenExpires = nil
-		if _, rollbackErr := a.userService.UpdateUser(*user); rollbackErr != nil {
+		if rollbackErr := a.userService.ClearPasswordResetIfToken(user.ID, resetToken); rollbackErr != nil {
 			a.logger.Error("Failed to remove undelivered reset token: %v", rollbackErr)
 		}
 		return "", time.Time{}, errors.New("failed to send password reset email")
@@ -543,37 +537,12 @@ func (a *service) ConfirmPasswordReset(token, newPassword string) error {
 		return ErrRegistrationPasswordWeak
 	}
 
-	user, err := a.userService.GetUserByResetToken(token)
-	if err != nil {
-		a.logger.Error("Error fetching user by reset token: %v", err)
-		return errors.New("invalid token")
-	}
-
-	if user == nil {
-		return errors.New("invalid token")
-	}
-
-	if user.ResetTokenExpires == nil {
-		return errors.New("invalid token")
-	}
-
-	if user.ResetTokenExpires.Before(time.Now()) {
-		return errors.New("token expired")
-	}
-
-	user.ResetPasswordToken = ""
-	user.ResetTokenExpires = nil
-
-	err = a.userService.UpdatePassword(user.ID, newPassword)
-	if err != nil {
-		a.logger.Error("Error updating user: %v", err)
+	if err := a.userService.CompletePasswordReset(token, newPassword); err != nil {
+		if errors.Is(err, users.ErrInvalidResetToken) {
+			return errors.New("invalid token")
+		}
+		a.logger.Error("Error completing password reset: %v", err)
 		return errors.New("failed to change password")
-	}
-
-	_, err = a.userService.UpdateUser(*user)
-	if err != nil {
-		a.logger.Error("Error updating user: %v", err)
-		return errors.New("failed to update user")
 	}
 
 	return nil

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -50,6 +51,7 @@ import (
 	"automation-hub-backend/internal/hardwareprofile"
 	"automation-hub-backend/internal/health"
 	"automation-hub-backend/internal/i18n"
+	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/knowledgegraph"
 	"automation-hub-backend/internal/langfuse"
 	"automation-hub-backend/internal/lifeledger"
@@ -65,6 +67,7 @@ import (
 	"automation-hub-backend/internal/mlflow"
 	"automation-hub-backend/internal/modelintelligence"
 	"automation-hub-backend/internal/openlit"
+	"automation-hub-backend/internal/operationalgraph"
 	"automation-hub-backend/internal/opscontrol"
 	"automation-hub-backend/internal/outcomeevaluation"
 	"automation-hub-backend/internal/phase2"
@@ -103,28 +106,35 @@ import (
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func initializeRoutes(router *gin.Engine) error {
-	return initializeRoutesWithContext(router, context.Background())
-}
-
-// initializeRoutesWithContext registers routes and starts background services
-// against the server lifecycle. The compatibility wrapper above keeps focused
-// route tests independent from process lifecycle management.
-func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context) error {
-	if runtimeCtx == nil {
-		runtimeCtx = context.Background()
+func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserver ambientmonitor.SweepObserver) error {
+	if appCtx == nil {
+		return fmt.Errorf("application context is required")
 	}
-	router.GET("/healthz", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok", "service": "backend"})
-	})
-	router.GET("/readyz", readinessHandler(func(ctx context.Context) doctor.Report {
+	database, err := infra.GetDefaultDB()
+	if err != nil {
+		return fmt.Errorf("initialize event delivery database: %w", err)
+	}
+	eventPublisher := events.DefaultPublisher()
+	eventOutbox := events.NewOutboxStore(database)
+	eventDispatcher := events.NewOutboxDispatcher(eventOutbox, eventPublisher)
+	go eventDispatcher.Run(appCtx)
+	go func() {
+		<-appCtx.Done()
+		if err := eventPublisher.Close(); err != nil {
+			log.Printf("close Kafka event publisher: %v", err)
+		}
+	}()
+
+	router.GET("/healthz", livenessHandler)
+	readinessReport := func(ctx context.Context) doctor.Report {
 		// Static configuration diagnosis, then live dependency probes. The
 		// second half is what makes the answer trustworthy: without it a
 		// process with an unreachable database still reports itself ready.
 		configured := doctor.Diagnose(config.AppConfig)
 		live := doctor.RunProbes(ctx, health.DefaultTimeout, health.Probes(config.AppConfig))
 		return configured.Merge(live...)
-	}))
+	}
+	router.GET("/readyz", readinessHandler(readinessReport))
 
 	relativePathV1 := config.AppConfig.BaseUrl + "/v1"
 	docs.SwaggerInfo.BasePath = relativePathV1
@@ -201,7 +211,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		catalogHandler := braincatalog.NewHandlerWithReviewersAndScout(catalogReviewer, collectionReviewer, repositoryScout).
 			WithMaintenance(catalogMaintenance)
 		initializeBrainCatalogRoutes(v1, catalogHandler)
-		braincatalog.StartCatalogRevalidationScheduler(runtimeCtx, catalogMaintenance, backgroundAllowed)
+		braincatalog.StartCatalogRevalidationScheduler(appCtx, catalogMaintenance, backgroundAllowed)
 		semanticService := semantic.NewServiceFromEnv()
 		memoryService := memory.NewServiceWithSemantic(memory.DefaultRepository(), semanticService)
 		initializeMemoryRoutes(v1, memory.NewHandler(memoryService))
@@ -402,7 +412,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			return err
 		}
 		if ambientmonitor.DurableSchedulerEnabled() {
-			if err := ambientmonitor.StartDurableScheduler(runtimeCtx, ambientMonitorService, backgroundAllowed); err != nil {
+			if err := ambientmonitor.StartDurableScheduler(appCtx, ambientMonitorService, backgroundAllowed, monitorObserver); err != nil {
 				return err
 			}
 		}
@@ -426,6 +436,30 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			return err
 		}
 		initializeAgentRegistryRoutes(v1, agentregistry.NewHandler(agentRegistryService))
+		ownerMemoryService, ok := memoryService.(memory.OwnerScopedService)
+		if !ok {
+			return fmt.Errorf("operational graph requires owner-scoped memory persistence")
+		}
+		operationalGraphService, err := operationalgraph.NewService(
+			knowledgeRepository,
+			knowledgeService,
+			agentRegistryService,
+			agentTeamService,
+			workflowService,
+			pursuitService,
+			sourceService,
+			ownerMemoryService,
+			nil,
+		)
+		if err != nil {
+			return err
+		}
+		if err := initializeOperationalGraphRoutes(
+			v1,
+			operationalgraph.NewHandler(operationalGraphService),
+		); err != nil {
+			return err
+		}
 		agentContext, err := task.NewAgentContextProvider(agentRepository)
 		if err != nil {
 			return err
@@ -486,6 +520,17 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		if err != nil {
 			return err
 		}
+		controlApprovalRepository, err := opscontrol.DefaultControlApprovalRepository()
+		if err != nil {
+			return err
+		}
+		opsControlService.WithControlApprovalRepository(controlApprovalRepository)
+		controlApprovalResolver, err := opscontrol.NewControlApprovalResolver(
+			controlApprovalRepository,
+		)
+		if err != nil {
+			return err
+		}
 		portfolioApprovalRepository, ok := pursuitRepository.(pursuit.PortfolioWorkflowEffectApprovalRepository)
 		if !ok {
 			return fmt.Errorf("pursuit portfolio workflow approval repository is unavailable")
@@ -501,6 +546,10 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			taskReviewApprovalResolver,
 			workflowApprovalResolver,
 			portfolioApprovalResolver,
+			executionapproval.RegisterApprovalResolver(
+				opscontrol.ControlDecisionPrefix,
+				controlApprovalResolver,
+			),
 		)
 		if err != nil {
 			return err
@@ -588,7 +637,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			),
 		)
 		llm.StartModelMaintenanceScheduler(
-			runtimeCtx,
+			appCtx,
 			llmService,
 			backgroundAllowed,
 		)
@@ -604,7 +653,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			workflowService,
 			executionAuthorizationService,
 		)
-		temporalService.StartWorkerEventually(runtimeCtx)
+		temporalService.StartWorkerEventually(appCtx)
 		initializeTemporalRoutes(
 			v1,
 			temporalbridge.NewHandler(temporalService),
@@ -619,9 +668,18 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			executionAuthorizationService,
 			nil,
 		)
-		opsControlService.WithExecutionAuthorizer(
-			executionAuthorizationService,
-		)
+		controlExecutionAuthorizationService :=
+			executionAuthorizationService.CloneWithEmergencyStopEvaluator(
+				func() executionauth.EmergencyStopEvidence {
+					decision := safety.EvaluateImmutableEmergencyStop()
+					return executionauth.EmergencyStopEvidence{
+						Active: decision.Active,
+						Source: decision.Source,
+						Reason: decision.Reason,
+					}
+				},
+			)
+		opsControlService.WithExecutionAuthorizer(controlExecutionAuthorizationService)
 		initializeExecutionAuthorizationRoutes(
 			v1,
 			executionauth.NewInspectionHandler(executionAuthorizationService),
@@ -654,8 +712,8 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			return fmt.Errorf("initialize durable automation approval proofs: %w", err)
 		}
 		automationService := automation.NewServiceWithRuntimeRegistryApprovalProofsExecutionAuthorizationAndFinalEffects(
-			automation.DefaultRepository(),
-			*events.DefaultPublisher(),
+			automation.NewGormUserRepositoryWithNotifier(database, eventDispatcher.Notify),
+			*eventPublisher,
 			runtimeRegistry,
 			approvalProofService,
 			executionAuthorizationService,
@@ -665,6 +723,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		if err := initializeAutomationsRoutes(v1, autoHandler); err != nil {
 			return err
 		}
+		initializeEventDeliveryRoutes(v1, events.NewHandler(eventOutbox))
 		taskService := task.WithControlledLearning(
 			task.NewServiceWithDependenciesAndAgentContext(
 				memoryService,
@@ -730,8 +789,8 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		initializeA2ABridgeStatusRoutes(v1, a2aBridgeHandler)
 		initializeA2ABridgeRoutes(router, relativePathV1, a2aBridgeHandler)
 		workflowRunner.Set(workflowtask.NewRunner(taskService, automationService))
-		source.StartScheduler(runtimeCtx, sourceService, backgroundAllowed)
-		workflow.StartScheduler(runtimeCtx, workflowService, backgroundAllowed)
+		source.StartScheduler(appCtx, sourceService, backgroundAllowed)
+		workflow.StartScheduler(appCtx, workflowService, backgroundAllowed)
 		mcpBridgeHandler := mcpbridge.NewHandler(mcpbridge.NewServiceFromEnv(workflowService))
 		initializeMCPBridgeStatusRoutes(v1, mcpBridgeHandler)
 		initializeMCPAgentRoutes(router, relativePathV1, mcpBridgeHandler)
@@ -751,7 +810,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		)
 		initializeMemoryEngineRoutes(v1, memoryengine.NewHandler(memoryEngineService))
 		ambientService := ambient.NewServiceWithPursuits(ambient.DefaultRepository(), workflowService, memoryEngineService, pursuitService, memoryService)
-		ambient.StartScheduler(runtimeCtx, ambientService, backgroundAllowed)
+		ambient.StartScheduler(appCtx, ambientService, backgroundAllowed)
 		initializeAmbientRoutes(v1, ambient.NewHandler(ambientService))
 		agentCycleService := agentcycle.NewServiceWithPursuits(sourceService, workflowService, ambientService, pursuitService, memoryService)
 		initializeAgentCycleRoutes(v1, agentcycle.NewHandler(agentCycleService))
@@ -780,7 +839,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		flagStore := defaultFeatureFlags()
 		initializeFeatureFlagRoutes(v1, flagStore)
 		diagnose := func() doctor.Report { return doctor.Diagnose(config.AppConfig) }
-		initializeSystemRoutes(v1, diagnose, func() map[string]int {
+		initializeSystemRoutes(v1, diagnose, readinessReport, func() map[string]int {
 			return map[string]int{
 				"featureFlags": len(flagStore.List()),
 				"languages":    len(i18n.Supported()),
@@ -957,6 +1016,15 @@ func initializeAgentRegistryRoutes(apiVersion *gin.RouterGroup, handler *agentre
 	}
 }
 
+func initializeOperationalGraphRoutes(apiVersion *gin.RouterGroup, handler *operationalgraph.Handler) error {
+	return operationalgraph.RegisterRoutes(apiVersion, handler, operationalgraph.RouteGuards{
+		AuthenticatedOwner: requireAuthenticatedOwner(),
+		RecognizedRole:     requireRecognizedRole(),
+		Read:               requirePermission(rbac.PermRead),
+		Write:              requirePermission(rbac.PermWrite),
+	})
+}
+
 func initializeFrameworkRegistryRoutes(apiVersion *gin.RouterGroup, handler *frameworkregistry.Handler) {
 	routes := apiVersion.Group("/framework-registry")
 	routes.Use(requireAuthenticatedOwner())
@@ -968,6 +1036,7 @@ func initializeFrameworkRegistryRoutes(apiVersion *gin.RouterGroup, handler *fra
 		routes.POST("/select", requirePermission(rbac.PermWrite), handler.Select)
 		routes.PATCH("/frameworks/:id/preference", requirePermission(rbac.PermAdmin), handler.UpdatePreference)
 		routes.GET("/selections", requirePermission(rbac.PermRead), handler.Selections)
+		routes.GET("/selections/:id", requirePermission(rbac.PermRead), handler.Selection)
 		routes.GET("/constitution", requirePermission(rbac.PermRead), handler.Constitution)
 		routes.GET("/constitution/history", requirePermission(rbac.PermRead), handler.ConstitutionHistory)
 		routes.POST("/constitution/drafts", requirePermission(rbac.PermAdmin), handler.CreateConstitutionDraft)
@@ -1190,6 +1259,13 @@ func initializeAutomationsRoutes(apiVersion *gin.RouterGroup, autoHandler *autom
 	return nil
 }
 
+func initializeEventDeliveryRoutes(apiVersion *gin.RouterGroup, handler *events.Handler) {
+	routes := apiVersion.Group("/event-delivery")
+	routes.Use(requireAuthenticatedOwner())
+	routes.GET("/", requirePermission(rbac.PermRead), handler.Stats)
+	routes.POST("/:id/retry", requirePermission(rbac.PermAdmin), handler.Retry)
+}
+
 func initializeLLMRoutes(apiVersion *gin.RouterGroup, llmHandler *llm.Handler) {
 	llmRoutes := apiVersion.Group("/llm")
 	llmRoutes.Use(requireAuthenticatedOwner())
@@ -1245,6 +1321,7 @@ func initializeSourceRoutes(apiVersion *gin.RouterGroup, sourceHandler *source.H
 	{
 		sourceRoutes.GET("/connectors", requirePermission(rbac.PermRead), sourceHandler.Connectors)
 		sourceRoutes.GET("/", requirePermission(rbac.PermRead), sourceHandler.Sources)
+		sourceRoutes.GET("/overview", requirePermission(rbac.PermRead), sourceHandler.Overview)
 		sourceRoutes.POST("/", requirePermission(rbac.PermWrite), sourceHandler.CreateSource)
 		sourceRoutes.POST("/search", requirePermission(rbac.PermRead), sourceHandler.Search)
 		// The HTTP handler scopes this batch to the authenticated owner. The
@@ -1266,10 +1343,9 @@ func initializeSourceRoutes(apiVersion *gin.RouterGroup, sourceHandler *source.H
 		sourceRoutes.POST("/:id/revoke", requirePermission(rbac.PermWrite), sourceHandler.Revoke)
 	}
 
-	// Google OAuth for Google-backed connectors. This group is not under
-	// requireAuthenticatedOwner because the browser returning from consent may
-	// not carry a HAI session. The callback is protected by HMAC-signed, expiring
-	// state. Start still verifies source ownership inside the handler.
+	// Google OAuth for Google-backed connectors. Both start and callback require
+	// a verified HAI role. The callback additionally consumes HMAC-signed,
+	// expiring state that is durably bound to the initiating source owner.
 	sourceOAuth := apiVersion.Group("/sources")
 	{
 		sourceOAuth.GET("/oauth/google/start", requirePermission(rbac.PermWrite), sourceHandler.StartGoogleOAuth)
@@ -1660,6 +1736,8 @@ func initializeOpsControlRoutes(apiVersion *gin.RouterGroup, handler *opscontrol
 		// Operators may always halt work. Only an owner may resume it or change
 		// the autonomy mode.
 		bg.POST("/pause", requirePermission(rbac.PermExecute), handler.Pause)
+		bg.POST("/control-approvals", requirePermission(rbac.PermAdmin), handler.PrepareControlApproval)
+		bg.POST("/control-approvals/:id/decision", requirePermission(rbac.PermAdmin), handler.DecideControlApproval)
 		bg.POST("/resume", requirePermission(rbac.PermAdmin), handler.Resume)
 		bg.PATCH("/mode", requirePermission(rbac.PermAdmin), handler.SetMode)
 	}
@@ -1717,9 +1795,10 @@ func initializeAutoGenCompatibilityRoutes(apiVersion *gin.RouterGroup, handler *
 	}
 }
 
-// initializeA2ABridgeRoutes implements a small local A2A compatibility
-// boundary. The Agent Card carries no user context, and the JSON-RPC endpoint
-// requires a separate bridge token rather than browser identity or API keys.
+// initializeA2ABridgeRoutes implements a small A2A compatibility boundary.
+// It is local by default and can use only the explicitly governed fixed-ngrok
+// mode. The Agent Card carries no user context, and the JSON-RPC endpoint uses
+// a separate bridge token rather than browser identity or API keys.
 func initializeA2ABridgeRoutes(router *gin.Engine, relativePathV1 string, handler *a2abridge.Handler) {
 	router.GET("/.well-known/agent-card.json", handler.AgentCard)
 	router.POST(relativePathV1+"/a2a", handler.Send)

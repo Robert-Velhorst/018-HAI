@@ -257,6 +257,68 @@ func TestMemoryTaskStateRepositoryReviewItemsAreDeterministicAndRejectMalformedJ
 	}
 }
 
+func TestReviewItemAcceptsOnlyExactLegacyDigestWithoutNewProvenance(t *testing.T) {
+	item := taskStateTestReviewItem("alice", "legacy-plan", time.Now().UTC())
+	row, err := reviewItemToModel("alice", item)
+	if err != nil {
+		t.Fatalf("serialize review item: %v", err)
+	}
+	legacyDigest, err := reviewRequestDigestV1("alice", item.Request)
+	if err != nil {
+		t.Fatalf("create legacy digest: %v", err)
+	}
+	row.RequestDigest = legacyDigest
+	if _, err := reviewItemFromModel(row, nil); err != nil {
+		t.Fatalf("read exact legacy review item: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(row.RequestJSON), &payload); err != nil {
+		t.Fatalf("decode review request: %v", err)
+	}
+	payload["mandateId"] = "new-action-provenance"
+	mutated, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encode mutated review request: %v", err)
+	}
+	row.RequestJSON = string(mutated)
+	if _, err := reviewItemFromModel(row, nil); err == nil || !strings.Contains(err.Error(), "digest mismatch") {
+		t.Fatalf("legacy digest accepted new provenance: %v", err)
+	}
+}
+
+func TestDurableReviewQueueIgnoresUnreadableResolvedHistory(t *testing.T) {
+	repo := NewMemoryTaskStateRepository()
+	base := time.Now().UTC().Add(-time.Minute)
+	pending := taskStateTestReviewItem("alice", "pending-plan", base)
+	resolved := taskStateTestReviewItem("alice", "resolved-plan", base.Add(time.Second))
+	if _, err := repo.CreateReviewItem("alice", pending); err != nil {
+		t.Fatalf("create pending review: %v", err)
+	}
+	if _, err := repo.CreateReviewItem("alice", resolved); err != nil {
+		t.Fatalf("create resolved review: %v", err)
+	}
+	if _, err := repo.ResolveReviewItem("alice", resolved.ID, ReviewResolution{
+		Decision:   "rejected",
+		ResolvedAt: base.Add(2 * time.Second),
+	}); err != nil {
+		t.Fatalf("resolve historical review: %v", err)
+	}
+	resolvedID, _ := uuid.Parse(resolved.ID)
+	row := repo.reviews[resolvedID]
+	row.RequestJSON = `{"unreadableLegacyHistory":true}`
+	repo.reviews[resolvedID] = row
+
+	taskService := &service{stateRepository: repo}
+	items, err := taskService.ReviewQueueForOwnerWithError("alice")
+	if err != nil {
+		t.Fatalf("read pending review queue: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != pending.ID {
+		t.Fatalf("pending review queue = %#v, want only %s", items, pending.ID)
+	}
+}
+
 func TestMemoryTaskStateRepositoryRejectsForgedApprovalStateAndOwnerSpoofing(t *testing.T) {
 	repo := NewMemoryTaskStateRepository()
 	item := taskStateTestReviewItem("alice", "plan", time.Now().UTC())

@@ -53,8 +53,8 @@ export class AuthService implements IAuthService {
     }
 
     loggedIn() {
-        return this.http.get(`${this.apiUrl}/is-user-authenticated`).pipe(
-            map(() => true),
+        return this.http.get<{authenticated?: boolean}>(`${this.apiUrl}/session`).pipe(
+            map((session) => session.authenticated === true),
             catchError(() => of(false))
         );
     }

@@ -6,19 +6,21 @@ import {NZ_I18N} from 'ng-zorro-antd/i18n';
 import {en_US} from 'ng-zorro-antd/i18n';
 import {registerLocaleData} from '@angular/common';
 import en from '@angular/common/locales/en';
-import {HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi} from '@angular/common/http';
+import {provideHttpClient, withInterceptors, withXhr} from "@angular/common/http";
+import {HTTP_INTERCEPTORS, withInterceptorsFromDi} from '@angular/common/http';
 import {BrowserAnimationsModule} from '@angular/platform-browser/animations';
-import {BulbOutline, CalendarOutline, ContactsOutline, HeartOutline, NodeIndexOutline, StarOutline} from '@ant-design/icons-angular/icons';
 import {NZ_ICONS} from 'ng-zorro-antd/icon';
 import {AUTH_SERVICE_TOKEN} from './services/auth/auth.service.token';
 import {AuthService} from './services/auth/auth.service';
 import {ChunkLoadRecoveryHandler} from './services/chunk-load-recovery.handler';
 import {ControlRoomModule} from './control-room/control-room.module';
 import {RequestTimeoutInterceptor} from './interceptors/request-timeout.interceptor';
+import {HAI_ICONS} from './hai-icons';
+import {httpViewRefreshInterceptor} from './services/http-view-refresh.interceptor';
 
 registerLocaleData(en);
 
-export const HAI_ICONS = [BulbOutline, CalendarOutline, ContactsOutline, HeartOutline, NodeIndexOutline, StarOutline];
+export {HAI_ICONS} from './hai-icons';
 
 @NgModule({
     declarations: [
@@ -36,7 +38,7 @@ export const HAI_ICONS = [BulbOutline, CalendarOutline, ContactsOutline, HeartOu
         {provide: AUTH_SERVICE_TOKEN, useClass: AuthService},
         {provide: ErrorHandler, useClass: ChunkLoadRecoveryHandler},
         {provide: HTTP_INTERCEPTORS, useClass: RequestTimeoutInterceptor, multi: true},
-        provideHttpClient(withInterceptorsFromDi()),
+        provideHttpClient(withInterceptors([httpViewRefreshInterceptor]), withInterceptorsFromDi(), withXhr()),
     ],
     bootstrap: [AppComponent],
 })

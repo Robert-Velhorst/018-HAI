@@ -15,7 +15,7 @@ func TestControlledLearningApplicationMigrationContract(t *testing.T) {
 		t.Fatalf("read controlled learning application down migration: %v", err)
 	}
 
-	up := string(upBytes)
+	up := normalizeMigrationLineEndings(string(upBytes))
 	for _, fragment := range []string{
 		"CREATE TABLE public.controlled_learning_applications",
 		"CREATE TABLE public.controlled_learning_application_events",
@@ -52,7 +52,7 @@ func TestControlledLearningApplicationMigrationContract(t *testing.T) {
 		"CREATE TRIGGER trg_controlled_learning_applications_guard_update",
 	)
 
-	down := string(downBytes)
+	down := normalizeMigrationLineEndings(string(downBytes))
 	for _, fragment := range []string{
 		"DROP TRIGGER IF EXISTS trg_controlled_learning_applications_no_truncate",
 		"DROP TRIGGER IF EXISTS trg_controlled_learning_application_events_immutable",

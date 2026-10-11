@@ -3,10 +3,7 @@
 HAI ships as a local Windows installer around the canonical Docker Compose
 stack. It installs product files under `Program Files`, stores the local
 configuration in `%LOCALAPPDATA%\HAI`, and keeps all services bound to
-`127.0.0.1` on port `8088` by default. The optional local A2A planning
-connector is separately bound to `127.0.0.1:8091`; it cannot be reached from
-the cloud tunnel and only serves the Agent Card plus its bearer-authenticated
-planning endpoint.
+`127.0.0.1` on port `8088` by default.
 
 ## Prerequisite
 
@@ -36,11 +33,20 @@ asks for the local owner email and password, creates independent secrets in
 readiness, and opens `http://127.0.0.1:8088`.
 
 Use the Start menu entries to open the dashboard, inspect HAI status, or stop
-the stack. **Test local agent connector** fetches and validates the local A2A
-Agent Card, then sends one bearer-authenticated, non-executable planning probe.
-It verifies the bounded planning response without exposing the connector
-publicly or creating work. Stop HAI preserves the Docker volumes and local
-settings.
+the stack. Stop HAI preserves the Docker volumes and local settings.
+
+## Enable a local EUR 0 model
+
+The installed stack does not download a model until you choose to do so. Select
+**Enable local model** from the HAI Local Start menu group to download the
+reviewed small `qwen2.5:0.5b` model, configure HAI to use only the private
+`ollama-local` service, restart the backend, and wait for `/readyz`.
+
+The model download can take several minutes and consumes local disk space. It
+does not enable cloud providers, expose ngrok access, change HAI's paid budget,
+or send connected-source data to another service. Use **Stop HAI** afterwards
+when the local model is not needed; Docker retains the downloaded model volume
+until you explicitly remove it.
 
 ## One installation at a time
 

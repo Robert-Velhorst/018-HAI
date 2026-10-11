@@ -1,12 +1,15 @@
 package source
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"automation-hub-backend/internal/models"
 
@@ -114,6 +117,50 @@ func TestSyncTrelloImportsCardsWithProvenanceAndCursor(t *testing.T) {
 		if method != http.MethodGet {
 			t.Fatalf("trello adapter issued a %s request; the connector must be read-only", method)
 		}
+	}
+}
+
+func TestSyncContextCancelsTrelloWithoutExposingCredentials(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	t.Setenv(trelloBaseURLEnv, server.URL)
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "127.0.0.1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL", "true")
+	t.Setenv(trelloAPIKeyEnv, "test-key-secret")
+	t.Setenv(trelloReadTokenEnv, "test-read-token-secret")
+
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(newTrelloSource(sourceID, "abc123XY", "cursor-before"))
+	service := NewService(repo, &fakeSourceMemoryService{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.SyncContext(ctx, sourceID, ImportRequest{Mode: ModeIncrementalSync})
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Trello sync did not reach the read-only endpoint")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Trello cancellation error = %v, want context canceled", err)
+		}
+		if strings.Contains(err.Error(), "test-key-secret") || strings.Contains(err.Error(), "test-read-token-secret") {
+			t.Fatalf("Trello cancellation leaked credentials: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Trello sync ignored caller cancellation")
+	}
+	if len(repo.jobs) != 1 || repo.jobs[0].Status != "failed" || repo.jobs[0].CursorAfter != "cursor-before" {
+		t.Fatalf("canceled Trello job = %#v", repo.jobs)
 	}
 }
 

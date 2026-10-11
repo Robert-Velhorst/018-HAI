@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -6,6 +6,7 @@ import { NzModalService } from 'ng-zorro-antd/modal';
 import { timeout } from 'rxjs/operators';
 import {
   ICompletionPlan,
+	ITaskPlanHistoryItem,
 	IApprovedReviewReconciliationResult,
   IReviewQueueItem,
   IToolExecutionResult,
@@ -46,16 +47,17 @@ interface SuggestedPrompt {
 }
 
 @Component({
-    selector: 'app-task-blueprint',
-    templateUrl: './task-blueprint.component.html',
-    styleUrls: ['./task-blueprint.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-task-blueprint',
+  templateUrl: './task-blueprint.component.html',
+  styleUrls: ['./task-blueprint.component.scss'],
 })
 export class TaskBlueprintComponent implements OnInit {
 	private readonly taskOperationRetryConfirmation = 'RETRY UNCERTAIN OPERATION';
   plan?: ICompletionPlan;
   lastCommand?: IAssistantCommandResult;
-  logs: ICompletionPlan[] = [];
+  logs: ITaskPlanHistoryItem[] = [];
   reviewQueue: IReviewQueueItem[] = [];
   logsUnavailable = false;
   reviewQueueUnavailable = false;
@@ -378,7 +380,7 @@ export class TaskBlueprintComponent implements OnInit {
   loadLogs(): void {
     this.taskPlanService.logs().pipe(timeout(this.loadTimeoutMs)).subscribe({
       next: (logs) => {
-        this.logs = (logs || []).map((plan) => this.normalizePlan(plan));
+        this.logs = logs || [];
         this.logsUnavailable = false;
       },
       error: () => (this.logsUnavailable = true),
@@ -505,7 +507,7 @@ export class TaskBlueprintComponent implements OnInit {
     this.plan = undefined;
   }
 
-  copyPlanToComposer(plan: ICompletionPlan): void {
+  copyPlanToComposer(plan: ITaskPlanHistoryItem): void {
     this.planForm.patchValue({
       request: plan.request,
       projectKey: plan.projectKey || this.planForm.value.projectKey,
@@ -708,7 +710,7 @@ export class TaskBlueprintComponent implements OnInit {
 		return item.status === 'open' || item.status === 'needs_review';
 	}
 
-  latestLog(): ICompletionPlan | undefined {
+  latestLog(): ITaskPlanHistoryItem | undefined {
     return this.logs[0];
   }
 

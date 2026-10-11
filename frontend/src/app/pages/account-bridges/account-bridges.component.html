@@ -58,7 +58,7 @@
         <span class="ab__muted">Connector preference:</span> {{ b.connectorPreference.join(' → ') }}
       </div>
 
-      <div class="ab__setup" *ngIf="b.setupRequirements?.length">
+      <div class="ab__setup" *ngIf="b.setupRequirements.length">
         <div class="ab__muted">Setup required</div>
         <ol>
           <li *ngFor="let s of b.setupRequirements"><strong>{{ s.step }}</strong> — {{ s.detail }}</li>

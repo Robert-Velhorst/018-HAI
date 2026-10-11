@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# The backend intentionally fails closed when controlled-automation approval
+# capabilities cannot be signed. Smoke suites run in production mode, so give
+# every suite a dedicated test-only key without weakening that startup gate.
+: "${HAI_APPROVAL_PROOF_SIGNING_KEY:=ci-smoke-approval-proof-signing-key-v1-0123456789}"
+export HAI_APPROVAL_PROOF_SIGNING_KEY
+
 hai_smoke_mint_jwt() { # role, secret, optional subject
   local role="$1"
   local secret="$2"

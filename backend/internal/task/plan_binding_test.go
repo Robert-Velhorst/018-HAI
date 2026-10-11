@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,12 @@ type acceptedPlanResolverStub struct {
 	binding *plangraph.AcceptedRevisionBinding
 	err     error
 	owner   string
+}
+
+type cancellationAwareAcceptedPlanResolver struct{}
+
+func (cancellationAwareAcceptedPlanResolver) ResolveAccepted(ctx context.Context, _ string, _ plangraph.AcceptedRevisionReference) (*plangraph.AcceptedRevisionBinding, error) {
+	return nil, ctx.Err()
 }
 
 func (stub *acceptedPlanResolverStub) ResolveAccepted(_ context.Context, owner string, _ plangraph.AcceptedRevisionReference) (*plangraph.AcceptedRevisionBinding, error) {
@@ -77,5 +84,21 @@ func TestResolveCoordinationPlanAllowsAbsentOptionalReference(t *testing.T) {
 	binding, err := service.resolveCoordinationPlan(IntakeRequest{OwnerIdentity: "owner-a"})
 	if err != nil || binding != nil {
 		t.Fatalf("absent optional reference should preserve existing behavior: binding=%+v err=%v", binding, err)
+	}
+}
+
+func TestResolveCoordinationPlanPropagatesTaskCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	service := NewService(nil, nil).(*service)
+	service.acceptedPlanResolver = cancellationAwareAcceptedPlanResolver{}
+
+	_, err := service.resolveCoordinationPlan(IntakeRequest{
+		OwnerIdentity:    "owner-a",
+		CoordinationPlan: taskPlanReference(),
+		executionContext: ctx,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("resolve coordination plan error = %v, want context canceled", err)
 	}
 }

@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { ActivatedRoute, Router } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { catchError, forkJoin, of } from 'rxjs'
@@ -15,10 +15,11 @@ import { KnowledgeClaimService } from '../../services/knowledge-claim.service'
 type ClaimFilter = 'attention' | 'all' | ClaimAssessmentStatus
 
 @Component({
-    selector: 'app-knowledge-claims',
-    templateUrl: './knowledge-claims.component.html',
-    styleUrls: ['./knowledge-claims.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-knowledge-claims',
+  templateUrl: './knowledge-claims.component.html',
+  styleUrls: ['./knowledge-claims.component.scss'],
 })
 export class KnowledgeClaimsComponent implements OnInit {
   workspaceId = '018-HAI'

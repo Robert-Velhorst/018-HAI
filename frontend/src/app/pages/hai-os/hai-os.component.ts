@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { IHAIOSOverview } from '../../models/hai-os.model.interface';
@@ -6,10 +6,11 @@ import { HAI_OS_SERVICE_TOKEN } from '../../services/hai-os/hai-os.service.token
 import { IHAIOSService } from '../../services/hai-os.service.interface';
 
 @Component({
-    selector: 'app-hai-os',
-    templateUrl: './hai-os.component.html',
-    styleUrls: ['./hai-os.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-hai-os',
+  templateUrl: './hai-os.component.html',
+  styleUrls: ['./hai-os.component.scss'],
 })
 export class HAIOSComponent implements OnInit {
   overview?: IHAIOSOverview;

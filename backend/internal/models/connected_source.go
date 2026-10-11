@@ -138,3 +138,16 @@ type SourceOAuthToken struct {
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
+
+// SourceOAuthState is the durable, single-use authorization attempt for one
+// connected source. Only a SHA-256 digest is stored: the browser state value is
+// a short-lived bearer secret and must not appear in the database or API.
+type SourceOAuthState struct {
+	ID            uuid.UUID  `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"-"`
+	SourceID      uuid.UUID  `gorm:"type:uuid;uniqueIndex:ux_source_oauth_states_source;index:idx_source_oauth_states_source_created,priority:1;not null" json:"-"`
+	OwnerIdentity string     `gorm:"type:varchar(255);index:idx_source_oauth_states_owner_expiry,priority:1;not null" json:"-"`
+	StateDigest   string     `gorm:"type:char(64);uniqueIndex:ux_source_oauth_states_digest;not null" json:"-"`
+	ExpiresAt     time.Time  `gorm:"index:idx_source_oauth_states_owner_expiry,priority:2;not null" json:"-"`
+	ConsumedAt    *time.Time `json:"-"`
+	CreatedAt     time.Time  `gorm:"index:idx_source_oauth_states_source_created,priority:2" json:"-"`
+}

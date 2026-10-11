@@ -20,13 +20,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	httpShutdownTimeout = 10 * time.Second
+	// The reviewed OpenClaw archive route permits large local uploads. Keep a
+	// finite connection lifetime without imposing a 30-second failure on that
+	// explicitly bounded operation; public traffic is additionally constrained
+	// by the loopback gateway and its client-body timeout.
+	httpReadTimeout    = 5 * time.Minute
+	httpIdleTimeout    = 60 * time.Second
+	httpMaxHeaderBytes = 1 << 20
+)
+
 func Initialize() error {
 	ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
 	defer stop()
-	return initializeWithContext(ctx)
+	return InitializeContext(ctx)
 }
 
-func initializeWithContext(ctx context.Context) error {
+// InitializeContext starts the HTTP server and background workers under one
+// application lifetime. It is injectable for controlled shutdown tests.
+func InitializeContext(ctx context.Context) error {
+	if ctx == nil {
+		return fmt.Errorf("application context is required")
+	}
 	// Startup config guard: refuse to serve with a broken configuration so a
 	// misconfigured deployment fails fast and loudly rather than half-working.
 	// Warnings (e.g. empty optional keys) do not block startup.
@@ -48,6 +64,7 @@ func initializeWithContext(ctx context.Context) error {
 		return err
 	}
 	router.Use(securityHeadersMiddleware())
+	router.Use(requestBodyLimitMiddleware(maxNonMultipartRequestBytes))
 	router.Use(rateLimitMiddleware(newRateLimitEnforcer()))
 	router.Use(idempotencyMiddleware(idempotency.New(10 * time.Minute)))
 	router.Use(localCaptureCORSMiddleware())
@@ -58,7 +75,7 @@ func initializeWithContext(ctx context.Context) error {
 	router.Use(metricsExporter.Middleware())
 
 	// initialize routes
-	err = initializeRoutesWithContext(router, ctx)
+	err = initializeRoutes(ctx, router, metricsExporter)
 	if err != nil {
 		return err
 	}
@@ -66,19 +83,55 @@ func initializeWithContext(ctx context.Context) error {
 		router.GET("/metrics", metricsExporter.RequireBearerToken(), gin.WrapH(metricsExporter.Handler()))
 	}
 
-	server := &http.Server{
-		Addr:              config.AppConfig.ServerPort,
-		Handler:           router,
-		ReadHeaderTimeout: 5 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		WriteTimeout:      60 * time.Second,
+	server := newHTTPServer(config.AppConfig.ServerPort, router)
+	listener, err := net.Listen("tcp", server.Addr)
+	if err != nil {
+		return err
 	}
-	return serveWithContext(ctx, server, nil)
+	return serveUntilCancelled(ctx, server, listener)
+}
+func newHTTPServer(address string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              address,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       httpReadTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		MaxHeaderBytes:    httpMaxHeaderBytes,
+	}
 }
 
-// serveWithContext gives the API and the schedulers that derive from its
-// lifecycle one termination signal. It supports a listener in tests and uses
-// the configured server address in production.
+func serveUntilCancelled(ctx context.Context, server *http.Server, listener net.Listener) error {
+	if ctx == nil || server == nil || listener == nil {
+		return fmt.Errorf("server lifecycle requires context, server, and listener")
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(listener)
+	}()
+
+	select {
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
+			return fmt.Errorf("graceful HTTP shutdown: %w", err)
+		}
+		err := <-errCh
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
+}
+
 func serveWithContext(ctx context.Context, server *http.Server, listener net.Listener) error {
 	if server == nil {
 		return errors.New("HTTP server is required")
@@ -86,31 +139,14 @@ func serveWithContext(ctx context.Context, server *http.Server, listener net.Lis
 	if ctx == nil {
 		ctx = context.Background()
 	}
-
-	shutdownDone := make(chan struct{})
-	defer close(shutdownDone)
-	go func() {
-		select {
-		case <-ctx.Done():
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			defer cancel()
-			if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Printf("server shutdown: %v", err)
-			}
-		case <-shutdownDone:
+	if listener == nil {
+		var err error
+		listener, err = net.Listen("tcp", server.Addr)
+		if err != nil {
+			return err
 		}
-	}()
-
-	var err error
-	if listener != nil {
-		err = server.Serve(listener)
-	} else {
-		err = server.ListenAndServe()
 	}
-	if errors.Is(err, http.ErrServerClosed) {
-		return nil
-	}
-	return err
+	return serveUntilCancelled(ctx, server, listener)
 }
 
 // newRateLimitEnforcer selects where rate-limit counters live. When REDIS_ADDR

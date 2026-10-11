@@ -353,7 +353,7 @@
       </div>
       <div class="overview-strip__freshness">
         <strong>
-          {{ overview?.generatedAt ? (overview?.generatedAt | date: 'HH:mm': 'UTC') + ' UTC' : 'Unavailable' }}
+          {{ overview?.generatedAt ? (overview.generatedAt | date: 'HH:mm': 'UTC') + ' UTC' : 'Unavailable' }}
         </strong>
         <span>Registry freshness</span>
       </div>

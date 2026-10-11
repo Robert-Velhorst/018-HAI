@@ -16,7 +16,7 @@ Initialize-HaiLocalEnvironment -GatewayPort $GatewayPort
 
 $composeArguments = Get-HaiComposeArguments
 Write-Host "Starting the local HAI stack. The first run downloads and builds its containers." -ForegroundColor Cyan
-& docker @composeArguments --profile local-a2a up -d --build
+& docker @composeArguments up -d --build
 if ($LASTEXITCODE -ne 0) {
     throw "HAI startup failed. Open Docker Desktop and inspect the 018-hai container logs."
 }

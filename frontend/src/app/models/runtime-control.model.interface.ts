@@ -56,3 +56,30 @@ export interface IRecoveryReport {
   details?: string[]
   ranAt: string
 }
+
+export type ControlApprovalAction = 'resume' | 'set_mode'
+export type ControlApprovalDecision = 'approved' | 'rejected'
+
+export interface IPreparedControlApproval {
+  requestId: string
+  action: string
+  resourceType: string
+  resourceId: string
+  target: string
+  bindingDigest: string
+  expiresAt: string
+}
+
+export interface IControlAuthorization {
+  idempotencyKey: string
+  taskId: string
+  approvalSourceId: string
+  approvalBindingDigest: string
+}
+
+export interface IDecidedControlApproval extends Partial<IControlAuthorization> {
+  requestId: string
+  decisionId: string
+  decision: ControlApprovalDecision
+  expiresAt: string
+}

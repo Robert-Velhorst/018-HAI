@@ -1,18 +1,51 @@
+worker_processes 1;
+error_log /dev/stderr warn;
+pid /tmp/nginx.pid;
+
 events {
-    worker_connections 1024;
+    worker_connections 256;
 }
 http {
+    server_tokens off;
+    access_log /dev/stdout;
+    client_body_temp_path /tmp/client_temp;
+    proxy_temp_path /tmp/proxy_temp;
+    fastcgi_temp_path /tmp/fastcgi_temp;
+    uwsgi_temp_path /tmp/uwsgi_temp;
+    scgi_temp_path /tmp/scgi_temp;
     resolver 127.0.0.11 valid=10s;
     resolver_timeout 5s;
+    # Fixed-size gateway limits protect unauthenticated public surfaces even if
+    # an application-side store is unavailable. One MiB per zone is ample for
+    # this single-owner deployment and avoids reserving unnecessary memory.
+    limit_req_zone $binary_remote_addr zone=hai_auth:1m rate=30r/m;
+    limit_req_zone $binary_remote_addr zone=hai_a2a_bridge:1m rate=10r/m;
     server {
-        listen 80;
+        listen 8080;
+        limit_req_status 429;
+        # The gateway owns the public security policy. Hide equivalent
+        # upstream headers so clients receive one unambiguous value instead of
+        # comma-joined backend/frontend policies.
+        proxy_hide_header Content-Security-Policy;
+        proxy_hide_header Cross-Origin-Resource-Policy;
+        proxy_hide_header Referrer-Policy;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header X-XSS-Protection;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-XSS-Protection "0" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Resource-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'" always;
 
         # Resolve Docker service names per request so replacing a container
         # cannot leave the gateway pinned to its former IP address.
         set $backend_upstream backend:80;
         set $idp_upstream idp:8080;
-        set $frontend_upstream frontend:80;
-        set $generic_auto_upstream generic-auto:80;
+        set $frontend_upstream frontend:8080;
 
         # Health endpoints are intentionally unauthenticated and must not fall
         # through to the Angular single-page application.
@@ -34,6 +67,14 @@ http {
             auth_request_set $hai_refreshed_access_cookie $upstream_http_set_cookie;
             auth_request_set $hai_verified_access_token $upstream_http_x_hai_verified_access_token;
             add_header Set-Cookie $hai_refreshed_access_cookie always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-Frame-Options "DENY" always;
+            add_header X-XSS-Protection "0" always;
+            add_header Referrer-Policy "no-referrer" always;
+            add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+            add_header Cross-Origin-Opener-Policy "same-origin" always;
+            add_header Cross-Origin-Resource-Policy "same-origin" always;
+            add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'" always;
             proxy_pass http://$backend_upstream;
             proxy_set_header X-Original-URI $request_uri;
             proxy_set_header Authorization "Bearer $hai_verified_access_token";
@@ -45,7 +86,32 @@ http {
         # Keep these explicit so every other product API can use the scalable
         # authenticated backend catch-all below without a route allowlist that
         # silently turns newly added modules into gateway 404s.
+        # Session and capability reads are intentionally outside the mutation
+        # throttle. Angular checks the session while moving between modules;
+        # sharing the login/reset bucket caused valid sessions to receive 429
+        # and be redirected to login during ordinary rapid navigation.
+        location = /api/v1/auth/session {
+            limit_except GET { deny all; }
+            proxy_pass http://$idp_upstream;
+            proxy_set_header Host $host;
+            proxy_set_header X-Original-URI $request_uri;
+            proxy_set_header Cookie $http_cookie;
+            proxy_set_header X-HAI-Auth-Subrequest "";
+            proxy_hide_header X-HAI-Verified-Access-Token;
+        }
+
+        location = /api/v1/auth/capabilities {
+            limit_except GET { deny all; }
+            proxy_pass http://$idp_upstream;
+            proxy_set_header Host $host;
+            proxy_set_header X-Original-URI $request_uri;
+            proxy_set_header Cookie $http_cookie;
+            proxy_set_header X-HAI-Auth-Subrequest "";
+            proxy_hide_header X-HAI-Verified-Access-Token;
+        }
+
         location ^~ /api/v1/auth/ {
+            limit_req zone=hai_auth burst=10 nodelay;
             proxy_pass http://$idp_upstream;
             proxy_set_header Host $host;
             proxy_set_header X-Original-URI $request_uri;
@@ -55,6 +121,7 @@ http {
         }
 
         location ^~ /api/v1/user/ {
+            limit_req zone=hai_auth burst=10 nodelay;
             proxy_pass http://$idp_upstream;
             proxy_set_header Host $host;
             proxy_set_header X-Original-URI $request_uri;
@@ -73,6 +140,29 @@ http {
             proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
         }
 
+        # A2A is deliberately separate from browser identity. The well-known
+        # Agent Card contains no owner data and returns 404 while the bridge is
+        # disabled. SendMessage requires the dedicated bridge bearer token and
+        # is independently throttled before the bounded backend parser runs.
+        location = /.well-known/agent-card.json {
+            limit_req zone=hai_a2a_bridge burst=10 nodelay;
+            proxy_pass http://$backend_upstream;
+            proxy_set_header Authorization "";
+            proxy_set_header Cookie "";
+            proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
+        }
+
+        location = /api/v1/a2a {
+            limit_req zone=hai_a2a_bridge burst=5 nodelay;
+            limit_except POST { deny all; }
+            client_max_body_size 16k;
+            proxy_pass http://$backend_upstream;
+            proxy_set_header Authorization $http_authorization;
+            proxy_set_header A2A-Version $http_a2a_version;
+            proxy_set_header Cookie "";
+            proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
+        }
+
         # All non-IDP APIs are backend APIs. Authentication is checked by the
         # IDP subrequest and only its verified token is forwarded as identity.
         # The backend still enforces its own owner and RBAC checks.
@@ -81,6 +171,14 @@ http {
             auth_request_set $hai_refreshed_access_cookie $upstream_http_set_cookie;
             auth_request_set $hai_verified_access_token $upstream_http_x_hai_verified_access_token;
             add_header Set-Cookie $hai_refreshed_access_cookie always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-Frame-Options "DENY" always;
+            add_header X-XSS-Protection "0" always;
+            add_header Referrer-Policy "no-referrer" always;
+            add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+            add_header Cross-Origin-Opener-Policy "same-origin" always;
+            add_header Cross-Origin-Resource-Policy "same-origin" always;
+            add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'" always;
             proxy_pass http://$backend_upstream;
             proxy_set_header X-Original-URI $request_uri;
             proxy_set_header Authorization "Bearer $hai_verified_access_token";
@@ -101,6 +199,12 @@ http {
         error_page 401 /login;
 
         include /etc/nginx/sites-enabled/*.conf;
+
+        # generic-auto is an internal, opt-in compatibility runtime. Keep its
+        # former public path from falling through to the Angular application.
+        location ^~ /generic-auto/ {
+            return 404;
+        }
 
         location / {
             proxy_pass http://$frontend_upstream;

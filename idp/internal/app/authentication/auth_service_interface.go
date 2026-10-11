@@ -19,10 +19,10 @@ type IService interface {
 	// LocalPreviewLogin is an explicitly enabled, local-only owner session for
 	// a single-user installation. It is not a general authentication bypass.
 	LocalPreviewLogin() (*dto.TokenDetails, error)
-	Logout(accessToken string) error
-	RefreshToken(refreshToken string) (*dto.TokenDetails, error)
-	IsUserAuthenticated(accessToken string) (bool, error)
-	RequestPasswordReset(email string) (string, time.Time, error)
+	Logout(ctx context.Context, accessToken string) error
+	RefreshToken(ctx context.Context, refreshToken string) (*dto.TokenDetails, error)
+	IsUserAuthenticated(ctx context.Context, accessToken string) (bool, error)
+	RequestPasswordReset(ctx context.Context, email string) (string, time.Time, error)
 	ConfirmPasswordReset(token, newPassword string) error
 	ChangePassword(accessToken string, newPassword string) error
 	GetIdFromToken(accessToken string) (uuid.UUID, error)

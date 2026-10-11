@@ -91,7 +91,7 @@ func controlAuthorizationFor(
 	t.Helper()
 	digest, err := controlEffectDigest(controlEffect{
 		Version:       1,
-		OwnerIdentity: service.owner,
+		OwnerIdentity: actor,
 		Action:        action,
 		ResourceType:  resourceType,
 		ResourceID:    resourceID,
@@ -193,7 +193,7 @@ func TestDisengageAuthorizationBindsExactControlEffect(t *testing.T) {
 		target string,
 	) (executionauth.Receipt, error) {
 		calls++
-		if request.OwnerIdentity != service.owner ||
+		if request.OwnerIdentity != "operator" ||
 			request.Action != clearEmergencyStopAction ||
 			request.ResourceType != emergencyStopResourceType ||
 			request.ResourceID != emergencyStopResourceID(state.Revision) ||
@@ -522,7 +522,7 @@ func TestVerifyEmergencyStopDoesNotOverwriteConcurrentOperatorStop(t *testing.T)
 	}
 }
 
-func TestSafetyWeakeningRejectsMissingOwnerIdentity(t *testing.T) {
+func TestSafetyWeakeningUsesAuthenticatedActorWhenConfiguredOwnerIsEmpty(t *testing.T) {
 	service := newTestServiceAtStateDirAndOwner(t, t.TempDir(), "")
 	if _, err := service.EngageEmergencyStop("test", "operator"); err != nil {
 		t.Fatalf("engage emergency stop: %v", err)
@@ -545,18 +545,21 @@ func TestSafetyWeakeningRejectsMissingOwnerIdentity(t *testing.T) {
 		_ string,
 	) (executionauth.Receipt, error) {
 		calls++
+		if request.OwnerIdentity != "operator" || request.ActorIdentity != "operator" {
+			t.Fatalf("authorization identity = %q/%q, want operator/operator", request.OwnerIdentity, request.ActorIdentity)
+		}
 		return exactControlReceipt(request, service.now()), nil
 	}))
 
 	_, err := service.DisengageEmergencyStop(context.Background(), auth)
-	if !errors.Is(err, ErrAuthorizationUnavailable) {
-		t.Fatalf("missing owner error = %v, want ErrAuthorizationUnavailable", err)
+	if err != nil {
+		t.Fatalf("authenticated actor recovery failed: %v", err)
 	}
-	if calls != 0 {
-		t.Fatalf("authorizer calls = %d, want 0 for missing owner", calls)
+	if calls != 1 {
+		t.Fatalf("authorizer calls = %d, want 1", calls)
 	}
-	if !service.Control().EmergencyStop() {
-		t.Fatal("missing owner must leave emergency stop engaged")
+	if service.Control().EmergencyStop() {
+		t.Fatal("approved recovery must clear emergency stop")
 	}
 }
 

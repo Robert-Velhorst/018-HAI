@@ -5,6 +5,7 @@ import (
 	"automation-hub-idp/internal/app/utils"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
+	"time"
 )
 
 type MockLogger struct {
@@ -104,4 +105,19 @@ func (m *MockUserRepository) FindByResetToken(token string) (*models.User, error
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*models.User), args.Error(1)
+}
+
+func (m *MockUserRepository) ConsumePasswordReset(token, passwordHash string) error {
+	args := m.Called(token, passwordHash)
+	return args.Error(0)
+}
+
+func (m *MockUserRepository) StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error {
+	args := m.Called(id, token, expiresAt)
+	return args.Error(0)
+}
+
+func (m *MockUserRepository) ClearPasswordResetIfToken(id uuid.UUID, token string) error {
+	args := m.Called(id, token)
+	return args.Error(0)
 }

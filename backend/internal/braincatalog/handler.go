@@ -1,9 +1,15 @@
 package braincatalog
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 )
@@ -24,6 +30,10 @@ type Handler struct {
 	collectionReviewer OSSInsightCollectionReviewer
 	repositoryScout    OSSInsightRepositoryScout
 	maintenance        *CatalogMaintenanceService
+	catalogOnce        sync.Once
+	catalogJSON        []byte
+	catalogETag        string
+	catalogErr         error
 }
 
 func NewHandler() *Handler {
@@ -50,15 +60,43 @@ func (h *Handler) WithMaintenance(maintenance *CatalogMaintenanceService) *Handl
 }
 
 func (h *Handler) List(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"sourceCatalog":       sourceCatalogURL,
-		"discoverySources":    DiscoverySources(),
-		"verifiedAt":          verifiedAt,
-		"entries":             Entries(),
-		"planeCoverage":       CapabilityPlaneCoverageReport(),
-		"collectionScreening": OSSInsightScreening(),
-		"activationPolicy":    "Catalog discovery is read-only. HAI never installs, enables, or executes a listed project without a reviewed adapter and the existing approval gates.",
+	h.catalogOnce.Do(func() {
+		h.catalogJSON, h.catalogErr = json.Marshal(gin.H{
+			"sourceCatalog":       sourceCatalogURL,
+			"discoverySources":    DiscoverySources(),
+			"verifiedAt":          verifiedAt,
+			"entries":             Entries(),
+			"planeCoverage":       CapabilityPlaneCoverageReport(),
+			"collectionScreening": OSSInsightScreening(),
+			"activationPolicy":    "Catalog discovery is read-only. HAI never installs, enables, or executes a listed project without a reviewed adapter and the existing approval gates.",
+		})
+		if h.catalogErr == nil {
+			digest := sha256.Sum256(h.catalogJSON)
+			h.catalogETag = fmt.Sprintf(`"%x"`, digest)
+		}
 	})
+	if h.catalogErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not encode capability catalog"})
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=300, must-revalidate")
+	c.Header("ETag", h.catalogETag)
+	c.Header("Vary", "Authorization, Cookie")
+	if matchesETag(c.GetHeader("If-None-Match"), h.catalogETag) {
+		c.Status(http.StatusNotModified)
+		return
+	}
+	c.Data(http.StatusOK, "application/json; charset=utf-8", h.catalogJSON)
+}
+
+func matchesETag(header, current string) bool {
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || strings.TrimPrefix(candidate, "W/") == current {
+			return true
+		}
+	}
+	return false
 }
 
 // AdoptionPlan exposes the reviewed implementation queue. It is derived only
@@ -90,8 +128,11 @@ func (h *Handler) Revalidate(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "upstream revalidation is unavailable"})
 		return
 	}
-	review, err := h.reviewer.Review(entry)
+	review, err := reviewUpstream(c.Request.Context(), h.reviewer, entry)
 	if err != nil {
+		if requestStopped(err) {
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not revalidate the configured upstream"})
 		return
 	}
@@ -177,7 +218,7 @@ func (h *Handler) RunDueRevalidations(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "catalog revalidation is unavailable"})
 		return
 	}
-	c.JSON(http.StatusOK, h.maintenance.RunDueRevalidations())
+	c.JSON(http.StatusOK, h.maintenance.RunDueRevalidationsContext(c.Request.Context()))
 }
 
 // RunDueCollectionRevalidation runs the same bounded, daily source-index
@@ -188,7 +229,7 @@ func (h *Handler) RunDueCollectionRevalidation(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "catalog collection revalidation is unavailable"})
 		return
 	}
-	c.JSON(http.StatusOK, h.maintenance.RunDueCollectionRevalidation())
+	c.JSON(http.StatusOK, h.maintenance.RunDueCollectionRevalidationContext(c.Request.Context()))
 }
 
 // RunDueRepositoryDiscoveryRevalidation runs the opted-in, daily read-only
@@ -199,7 +240,7 @@ func (h *Handler) RunDueRepositoryDiscoveryRevalidation(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "catalog repository discovery revalidation is unavailable"})
 		return
 	}
-	c.JSON(http.StatusOK, h.maintenance.RunDueRepositoryDiscoveryRevalidation())
+	c.JSON(http.StatusOK, h.maintenance.RunDueRepositoryDiscoveryRevalidationContext(c.Request.Context()))
 }
 
 // RevalidateCollections compares HAI's fixed 138-category source snapshot to
@@ -210,8 +251,11 @@ func (h *Handler) RevalidateCollections(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OSS Insight collection revalidation is unavailable"})
 		return
 	}
-	review, err := h.collectionReviewer.ReviewCollections()
+	review, err := reviewCollections(c.Request.Context(), h.collectionReviewer)
 	if err != nil {
+		if requestStopped(err) {
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not revalidate the OSS Insight collection list"})
 		return
 	}
@@ -226,8 +270,11 @@ func (h *Handler) DiscoverRepositories(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OSS Insight repository discovery is unavailable"})
 		return
 	}
-	report, err := h.repositoryScout.DiscoverRepositories()
+	report, err := discoverRepositoriesFor(c.Request.Context(), h.repositoryScout, OSSInsightCandidateScope)
 	if err != nil {
+		if requestStopped(err) {
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not discover OSS Insight repositories"})
 		return
 	}
@@ -243,8 +290,11 @@ func (h *Handler) DiscoverReviewableRepositories(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "OSS Insight repository discovery is unavailable"})
 		return
 	}
-	report, err := h.repositoryScout.DiscoverReviewableRepositories()
+	report, err := discoverRepositoriesFor(c.Request.Context(), h.repositoryScout, OSSInsightReviewableScope)
 	if err != nil {
+		if requestStopped(err) {
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not discover OSS Insight reviewable repositories"})
 		return
 	}
@@ -264,8 +314,11 @@ func (h *Handler) RevalidateDiscovery(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "repository is required"})
 		return
 	}
-	report, err := h.repositoryScout.DiscoverRepositoriesFor(request.Scope)
+	report, err := discoverRepositoriesFor(c.Request.Context(), h.repositoryScout, request.Scope)
 	if err != nil {
+		if requestStopped(err) {
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify the OSS Insight discovery report"})
 		return
 	}
@@ -279,12 +332,19 @@ func (h *Handler) RevalidateDiscovery(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "discovered repository is not a valid GitHub repository path"})
 		return
 	}
-	review, err := h.reviewer.Review(entry)
+	review, err := reviewUpstream(c.Request.Context(), h.reviewer, entry)
 	if err != nil {
+		if requestStopped(err) {
+			return
+		}
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not retrieve discovered repository metadata"})
 		return
 	}
 	c.JSON(http.StatusOK, review)
+}
+
+func requestStopped(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // RecommendCapabilities maps a stated need to the reviewed catalog only. It

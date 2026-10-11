@@ -1,14 +1,15 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
 import {
   IFrameworkSelectionDecision,
   ISelectedFramework,
 } from '../../models/framework-registry.model.interface';
 
 @Component({
-    selector: 'app-framework-registry-recommendation',
-    templateUrl: './framework-registry-recommendation.component.html',
-    styleUrls: ['./framework-registry-recommendation.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-framework-registry-recommendation',
+  templateUrl: './framework-registry-recommendation.component.html',
+  styleUrls: ['./framework-registry-recommendation.component.scss'],
 })
 export class FrameworkRegistryRecommendationComponent {
   @Input() selection?: IFrameworkSelectionDecision;

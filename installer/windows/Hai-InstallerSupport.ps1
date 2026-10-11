@@ -19,23 +19,6 @@ function Get-HaiEnvironmentFile {
     return (Join-Path (Get-HaiDataRoot) "hai.env")
 }
 
-function Get-HaiEnvironmentValue {
-    param([Parameter(Mandatory = $true)][string]$Name)
-
-    $environmentFile = Get-HaiEnvironmentFile
-    if (-not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
-        throw "HAI is not initialized. Use Start HAI before reading local connector settings."
-    }
-
-    $pattern = "(?m)^$([Regex]::Escape($Name))=(?<value>.*)$"
-    $match = [Regex]::Match([IO.File]::ReadAllText($environmentFile), $pattern)
-    if (-not $match.Success) {
-        throw "HAI environment file is missing $Name. Start HAI again to recreate the local configuration."
-    }
-
-    return $match.Groups["value"].Value.Trim().Trim("'").Trim('"')
-}
-
 function Get-HaiComposeFile {
     $composeFile = Join-Path (Get-HaiInstallRoot) "docker-compose.local.yml"
     if (-not (Test-Path -LiteralPath $composeFile -PathType Leaf)) {
@@ -65,33 +48,8 @@ function Get-HaiGatewayPort {
     return $port
 }
 
-function Get-HaiA2ALocalPort {
-    $environmentFile = Get-HaiEnvironmentFile
-    if (-not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
-        return 8091
-    }
-
-    $match = [Regex]::Match(
-        [IO.File]::ReadAllText($environmentFile),
-        "(?m)^HAI_A2A_LOCAL_PORT=(?<port>[0-9]{1,5})$"
-    )
-    if (-not $match.Success) {
-        return 8091
-    }
-
-    $port = [int]$match.Groups["port"].Value
-    if ($port -lt 1 -or $port -gt 65535) {
-        throw "HAI environment file contains an invalid local A2A port."
-    }
-    return $port
-}
-
 function Get-HaiUrl {
     return "http://127.0.0.1:$(Get-HaiGatewayPort)"
-}
-
-function Get-HaiA2AUrl {
-    return "http://127.0.0.1:$(Get-HaiA2ALocalPort)"
 }
 
 function Assert-HaiDockerReady {
@@ -119,7 +77,20 @@ function Assert-HaiSingleInstallation {
 
     $workingDirectories = @(
         $containerIds |
-            ForEach-Object { & docker inspect --format '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' $_ 2>$null } |
+            ForEach-Object {
+                $labelLines = @(& docker inspect --format '{{json .Config.Labels}}' $_ 2>$null)
+                $inspectExitCode = $LASTEXITCODE
+                $labelsJSON = $labelLines | Select-Object -First 1
+                if ($inspectExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($labelsJSON)) {
+                    throw "Could not inspect the existing HAI container $_ before checking its installation directory."
+                }
+                try {
+                    $labels = $labelsJSON | ConvertFrom-Json -ErrorAction Stop
+                } catch {
+                    throw "Existing HAI container $_ returned invalid Compose labels. Stop it manually before starting this installation."
+                }
+                [string]$labels.'com.docker.compose.project.working_dir'
+            } |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
             Select-Object -Unique
     )

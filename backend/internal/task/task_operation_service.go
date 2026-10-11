@@ -1,6 +1,7 @@
 package task
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -14,9 +15,117 @@ import (
 const (
 	taskOperationLeaseDuration     = 2 * time.Minute
 	taskOperationHeartbeatInterval = 20 * time.Second
+	taskOperationWriteTimeout      = 10 * time.Second
 )
 
 type taskOperationFunc func(IntakeRequest) (*CompletionPlan, error)
+
+func claimTaskOperationContext(
+	ctx context.Context,
+	repository TaskStateRepository,
+	ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string,
+	now time.Time,
+	leaseDuration time.Duration,
+) (TaskOperationClaim, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return TaskOperationClaim{}, err
+	}
+	if contextual, ok := repository.(ContextTaskOperationClaimer); ok {
+		return contextual.ClaimTaskOperationContext(
+			ctx, ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, now, leaseDuration,
+		)
+	}
+	return repository.ClaimTaskOperation(
+		ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, now, leaseDuration,
+	)
+}
+
+func heartbeatTaskOperationContext(
+	ctx context.Context,
+	repository TaskStateRepository,
+	ownerIdentity string,
+	operationID uuid.UUID,
+	leaseOwner string,
+	leaseGeneration int64,
+	now time.Time,
+) (bool, error) {
+	if contextual, ok := repository.(ContextTaskOperationHeartbeater); ok {
+		return contextual.HeartbeatTaskOperationContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, now)
+	}
+	return repository.HeartbeatTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration, now)
+}
+
+func completeTaskOperationContext(
+	ctx context.Context,
+	repository TaskStateRepository,
+	ownerIdentity string,
+	operationID uuid.UUID,
+	leaseOwner string,
+	leaseGeneration int64,
+	taskPlanID string,
+	now time.Time,
+) (bool, error) {
+	if contextual, ok := repository.(ContextTaskOperationCompleter); ok {
+		return contextual.CompleteTaskOperationContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, taskPlanID, now)
+	}
+	return repository.CompleteTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration, taskPlanID, now)
+}
+
+func markTaskOperationNeedsReviewContext(
+	ctx context.Context,
+	repository TaskStateRepository,
+	ownerIdentity string,
+	operationID uuid.UUID,
+	leaseOwner string,
+	leaseGeneration int64,
+	reason string,
+	now time.Time,
+) (bool, error) {
+	if contextual, ok := repository.(ContextTaskOperationReviewer); ok {
+		return contextual.MarkTaskOperationNeedsReviewContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+	}
+	return repository.MarkTaskOperationNeedsReview(ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+}
+
+func cancelTaskOperationContext(
+	ctx context.Context,
+	repository TaskStateRepository,
+	ownerIdentity string,
+	operationID uuid.UUID,
+	leaseOwner string,
+	leaseGeneration int64,
+	reason string,
+	now time.Time,
+) (bool, error) {
+	if contextual, ok := repository.(ContextTaskOperationCanceler); ok {
+		return contextual.CancelTaskOperationContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+	}
+	if canceler, ok := repository.(TaskOperationCanceler); ok {
+		return canceler.CancelTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+	}
+	return false, fmt.Errorf("task operation cancellation persistence is not configured")
+}
+
+func findCompletionPlanContext(ctx context.Context, repository TaskStateRepository, ownerIdentity, taskPlanID string) (*CompletionPlan, error) {
+	if contextual, ok := repository.(ContextCompletionPlanFinder); ok {
+		return contextual.FindCompletionPlanContext(ctx, ownerIdentity, taskPlanID)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	plan, err := repository.FindCompletionPlan(ownerIdentity, taskPlanID)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, contextErr
+	}
+	return plan, err
+}
+
+func taskOperationWriteContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), taskOperationWriteTimeout)
+}
 
 func (s *service) withTaskOperation(request IntakeRequest, mode string, execute taskOperationFunc) (*CompletionPlan, error) {
 	if s.stateRepository == nil {
@@ -27,12 +136,18 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 		request.IdempotencyKey = uuid.NewString()
 	}
 	ownerIdentity := taskStateOwnerIdentity(request.OwnerIdentity)
+	requestContext := taskExecutionContext(request)
+	if err := requestContext.Err(); err != nil {
+		return nil, err
+	}
 	digest, err := ReviewRequestDigest(ownerIdentity, request)
 	if err != nil {
 		return nil, err
 	}
 	leaseOwner := "task-worker:" + uuid.NewString()
-	claim, err := s.stateRepository.ClaimTaskOperation(
+	claim, err := claimTaskOperationContext(
+		requestContext,
+		s.stateRepository,
 		ownerIdentity,
 		request.IdempotencyKey,
 		digest,
@@ -44,12 +159,35 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 	if err != nil {
 		return nil, err
 	}
+	if contextErr := requestContext.Err(); contextErr != nil {
+		if claim.Disposition == TaskOperationAcquired {
+			writeContext, cancel := taskOperationWriteContext()
+			canceled, cancelErr := cancelTaskOperationContext(
+				writeContext,
+				s.stateRepository,
+				ownerIdentity,
+				claim.Operation.ID,
+				leaseOwner,
+				claim.Operation.LeaseGeneration,
+				taskOperationCancellationReason(contextErr),
+				time.Now().UTC(),
+			)
+			cancel()
+			if cancelErr != nil {
+				return nil, fmt.Errorf("%w: persist pre-execution cancellation: %v", contextErr, cancelErr)
+			}
+			if !canceled {
+				return nil, fmt.Errorf("%w: durable task claim ownership was lost", contextErr)
+			}
+		}
+		return nil, contextErr
+	}
 	switch claim.Disposition {
 	case TaskOperationReplay:
 		if strings.TrimSpace(claim.Operation.TaskPlanID) == "" {
 			return nil, ErrTaskOperationNeedsReview
 		}
-		plan, findErr := s.stateRepository.FindCompletionPlan(ownerIdentity, claim.Operation.TaskPlanID)
+		plan, findErr := findCompletionPlanContext(requestContext, s.stateRepository, ownerIdentity, claim.Operation.TaskPlanID)
 		if findErr != nil {
 			return nil, fmt.Errorf("%w: completed task operation has no durable result", ErrTaskOperationNeedsReview)
 		}
@@ -61,6 +199,8 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 			return nil, fmt.Errorf("surface uncertain task operation for review: %w", err)
 		}
 		return nil, ErrTaskOperationNeedsReview
+	case TaskOperationCanceled:
+		return nil, ErrTaskOperationCanceled
 	case TaskOperationAcquired:
 		// Continue below with the fenced claim.
 	default:
@@ -73,9 +213,13 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 	leaseLost := stopHeartbeat()
 	if executeErr != nil {
 		reason := "task operation stopped before a durable result was confirmed: " + safety.RedactSecrets(executeErr.Error())
-		marked, markErr := s.stateRepository.MarkTaskOperationNeedsReview(
+		writeContext, cancel := taskOperationWriteContext()
+		marked, markErr := markTaskOperationNeedsReviewContext(
+			writeContext,
+			s.stateRepository,
 			ownerIdentity, claim.Operation.ID, leaseOwner, claim.Operation.LeaseGeneration, reason, time.Now().UTC(),
 		)
+		cancel()
 		if markErr != nil {
 			return nil, fmt.Errorf("%w: mark uncertain task operation: %v", executeErr, markErr)
 		}
@@ -88,10 +232,14 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 	}
 	if leaseLost || plan == nil {
 		reason := "task operation lease was lost before its durable result could be fenced"
-		marked, markErr := s.stateRepository.MarkTaskOperationNeedsReview(
+		writeContext, cancel := taskOperationWriteContext()
+		marked, markErr := markTaskOperationNeedsReviewContext(
+			writeContext,
+			s.stateRepository,
 			ownerIdentity, claim.Operation.ID, leaseOwner, claim.Operation.LeaseGeneration,
 			reason, time.Now().UTC(),
 		)
+		cancel()
 		if markErr != nil {
 			return nil, fmt.Errorf("%w: mark lost task operation lease: %v", ErrTaskOperationNeedsReview, markErr)
 		}
@@ -102,7 +250,10 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 		}
 		return nil, ErrTaskOperationNeedsReview
 	}
-	completed, completeErr := s.stateRepository.CompleteTaskOperation(
+	writeContext, cancelWrite := taskOperationWriteContext()
+	completed, completeErr := completeTaskOperationContext(
+		writeContext,
+		s.stateRepository,
 		ownerIdentity,
 		claim.Operation.ID,
 		leaseOwner,
@@ -110,11 +261,16 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 		plan.ID,
 		time.Now().UTC(),
 	)
+	cancelWrite()
 	if completeErr != nil {
 		reason := "task operation completion could not be confirmed: " + safety.RedactSecrets(completeErr.Error())
-		marked, _ := s.stateRepository.MarkTaskOperationNeedsReview(
+		writeContext, cancel := taskOperationWriteContext()
+		marked, _ := markTaskOperationNeedsReviewContext(
+			writeContext,
+			s.stateRepository,
 			ownerIdentity, claim.Operation.ID, leaseOwner, claim.Operation.LeaseGeneration, reason, time.Now().UTC(),
 		)
+		cancel()
 		if marked {
 			_ = s.ensureTaskOperationReview(request, claim.Operation, reason)
 		}
@@ -127,11 +283,20 @@ func (s *service) withTaskOperation(request IntakeRequest, mode string, execute 
 	// as well as on replay. PostgreSQL normalizes timestamp precision and JSON
 	// values, so returning the pre-storage object here would make the same
 	// completed operation observably different on a later replay.
-	durablePlan, findErr := s.stateRepository.FindCompletionPlan(ownerIdentity, plan.ID)
+	readContext, cancelRead := taskOperationWriteContext()
+	durablePlan, findErr := findCompletionPlanContext(readContext, s.stateRepository, ownerIdentity, plan.ID)
+	cancelRead()
 	if findErr != nil {
 		return nil, fmt.Errorf("%w: completed task operation has no durable result", ErrTaskOperationNeedsReview)
 	}
 	return durablePlan, nil
+}
+
+func taskOperationCancellationReason(err error) string {
+	if err == context.DeadlineExceeded {
+		return "task operation deadline expired before planning or execution began"
+	}
+	return "task operation was canceled before planning or execution began"
 }
 
 func (s *service) ensureTaskOperationReview(request IntakeRequest, operation models.TaskOperationRecord, reason string) error {
@@ -194,13 +359,17 @@ func (s *service) startTaskOperationHeartbeat(claim TaskOperationClaim, leaseOwn
 			case <-done:
 				return
 			case now := <-ticker.C:
-				owned, err := s.stateRepository.HeartbeatTaskOperation(
+				writeContext, cancel := taskOperationWriteContext()
+				owned, err := heartbeatTaskOperationContext(
+					writeContext,
+					s.stateRepository,
 					claim.Operation.OwnerIdentity,
 					claim.Operation.ID,
 					leaseOwner,
 					claim.Operation.LeaseGeneration,
 					now.UTC(),
 				)
+				cancel()
 				if err != nil || !owned {
 					select {
 					case lost <- struct{}{}:

@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { ActivatedRoute } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
@@ -27,10 +27,11 @@ interface PreviewForm {
 }
 
 @Component({
-    selector: 'app-plan-coordination',
-    templateUrl: './plan-coordination.component.html',
-    styleUrls: ['./plan-coordination.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-plan-coordination',
+  templateUrl: './plan-coordination.component.html',
+  styleUrls: ['./plan-coordination.component.scss'],
 })
 export class PlanCoordinationComponent implements OnInit {
   readonly moduleId = 'plan-coordination'

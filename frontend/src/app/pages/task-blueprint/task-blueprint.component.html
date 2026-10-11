@@ -422,15 +422,15 @@
           </div>
         </article>
 
-        <article class="inspector-card">
+        <article class="inspector-card" *ngIf="plan as currentPlan">
           <h3>Risk Gate <span title="Determines whether HAI may act or must ask you first">?</span></h3>
-          <div class="risk-box" [class.risk-box--blocked]="plan?.riskAssessment?.approvalRequired">
+          <div class="risk-box" [class.risk-box--blocked]="currentPlan.riskAssessment.approvalRequired">
             <i nz-icon nzType="safety-certificate" nzTheme="outline"></i>
             <div>
-              <strong>{{ plan?.riskAssessment?.level || 'Safe mode active' }}</strong>
-              <span>{{ plan?.riskAssessment?.approvalRequired ? 'Approval required before risky execution' : plan?.riskAssessment?.actionResolution === 'clarify' ? 'More execution detail is needed' : 'No high-risk action detected yet' }}</span>
-              <small *ngIf="plan?.riskAssessment?.missingParameters?.length">
-                Needs: {{ plan?.riskAssessment?.missingParameters?.join(', ') }}
+              <strong>{{ currentPlan.riskAssessment.level || 'Safe mode active' }}</strong>
+              <span>{{ currentPlan.riskAssessment.approvalRequired ? 'Approval required before risky execution' : currentPlan.riskAssessment.actionResolution === 'clarify' ? 'More execution detail is needed' : 'No high-risk action detected yet' }}</span>
+              <small *ngIf="(currentPlan.riskAssessment.missingParameters || []).length">
+                Needs: {{ (currentPlan.riskAssessment.missingParameters || []).join(', ') }}
               </small>
             </div>
           </div>
@@ -621,7 +621,7 @@
 									nz-button
 									nzSize="small"
 									nzType="primary"
-									[disabled]="!reconciliation?.dryRun || !reconciliation?.eligible"
+									[disabled]="!reconciliation?.dryRun || !reconciliation.eligible"
 									[nzLoading]="reconcilingReviews"
 									title="Apply the preview. Verified evidence may close an item; every uncertain outcome returns to review. No action is retried."
 									(click)="applyApprovedReviewRecovery()"
@@ -838,24 +838,26 @@
           </div>
         </article>
 
-        <article class="inspector-card" *ngIf="plan?.toolDecision?.capabilityRecommendations?.length">
-          <h3>Reviewed capability options <span title="Catalog matches are planning context only. HAI still requires a configured adapter, health evidence, and any required approval before it can use one.">?</span></h3>
-          <p>Matched from the reviewed HAI catalog. No external project was installed, configured, or executed.</p>
-          <div class="mini-table task-capability-option" *ngFor="let option of plan?.toolDecision?.capabilityRecommendations || []">
-            <div>
-              <strong>{{ option.name }}</strong>
-              <small>{{ option.role }} - {{ option.status }}</small>
-              <small>Direct matches: {{ option.matchedTerms.join(', ') }}</small>
-              <small>{{ option.reasons.join('; ') }}</small>
-              <small *ngIf="option.sourceCollection">Reviewed {{ option.verifiedAt }} from {{ option.sourceCollection }}.</small>
+        <ng-container *ngIf="plan as currentPlan">
+          <article class="inspector-card" *ngIf="currentPlan.toolDecision.capabilityRecommendations?.length">
+            <h3>Reviewed capability options <span title="Catalog matches are planning context only. HAI still requires a configured adapter, health evidence, and any required approval before it can use one.">?</span></h3>
+            <p>Matched from the reviewed HAI catalog. No external project was installed, configured, or executed.</p>
+            <div class="mini-table task-capability-option" *ngFor="let option of currentPlan.toolDecision.capabilityRecommendations || []">
+              <div>
+                <strong>{{ option.name }}</strong>
+                <small>{{ option.role }} - {{ option.status }}</small>
+                <small>Direct matches: {{ option.matchedTerms.join(', ') }}</small>
+                <small>{{ option.reasons.join('; ') }}</small>
+                <small *ngIf="option.sourceCollection">Reviewed {{ option.verifiedAt }} from {{ option.sourceCollection }}.</small>
+              </div>
+              <div>
+                <span>{{ option.nextStep }}</span>
+                <a *ngIf="option.upstreamUrl" [href]="option.upstreamUrl" target="_blank" rel="noopener noreferrer">Inspect upstream</a>
+                <a *ngIf="option.sourceCatalogUrl" [href]="option.sourceCatalogUrl" target="_blank" rel="noopener noreferrer">Inspect source</a>
+              </div>
             </div>
-            <div>
-              <span>{{ option.nextStep }}</span>
-              <a *ngIf="option.upstreamUrl" [href]="option.upstreamUrl" target="_blank" rel="noopener noreferrer">Inspect upstream</a>
-              <a *ngIf="option.sourceCatalogUrl" [href]="option.sourceCatalogUrl" target="_blank" rel="noopener noreferrer">Inspect source</a>
-            </div>
-          </div>
-        </article>
+          </article>
+        </ng-container>
       </section>
 
       <section class="inspector-body" *ngIf="inspectorMode === 'evidence'">
@@ -928,14 +930,14 @@
           <nz-empty *ngIf="!plan?.contextPlan?.usedContext?.length" nzNotFoundContent="No relevant memory loaded."></nz-empty>
         </article>
 
-        <article class="inspector-card">
+        <article class="inspector-card" *ngIf="plan as currentPlan">
           <h3>Connected Sources</h3>
-          <p *ngIf="plan?.contextPlan?.sourceRefreshExplanation">{{ plan?.contextPlan?.sourceRefreshExplanation }}</p>
-          <div class="source-row" *ngFor="let item of plan?.contextPlan?.sourceContext || []">
+          <p *ngIf="currentPlan.contextPlan.sourceRefreshExplanation">{{ currentPlan.contextPlan.sourceRefreshExplanation }}</p>
+          <div class="source-row" *ngFor="let item of currentPlan.contextPlan.sourceContext">
             <strong>{{ item.extraction.summary || item.extraction.text }}</strong>
             <span>{{ item.extraction.sourceLabel || item.extraction.sourceUri || '-' }}</span>
           </div>
-          <nz-empty *ngIf="!plan?.contextPlan?.sourceContext?.length" nzNotFoundContent="No source context loaded."></nz-empty>
+          <nz-empty *ngIf="!currentPlan.contextPlan.sourceContext.length" nzNotFoundContent="No source context loaded."></nz-empty>
         </article>
 
         <article class="inspector-card">
@@ -944,7 +946,7 @@
             <span title="Owner-scoped operational records derived from this durable plan. Graph records are advisory and never grant approval or execution authority.">?</span>
           </h3>
           <div class="section-error" *ngIf="plan?.lifeGraphProjectionError" role="alert">
-            {{ plan?.lifeGraphProjectionError }}
+            {{ plan.lifeGraphProjectionError }}
           </div>
           <ng-container *ngIf="plan?.lifeGraphProjection as graph; else noLifeGraphProjection">
             <div class="validation-counts" aria-label="Life graph projection counts">
@@ -970,25 +972,27 @@
           </ng-template>
         </article>
 
-        <article
-          class="inspector-card"
-          *ngIf="plan?.contextPlan?.ragflowExplanation || plan?.contextPlan?.ragflowCandidates?.length"
-        >
-          <h3>
-            RAGFlow leads
-            <span title="Optional retrieval leads from approved local datasets. These are not evidence, facts, memory, or execution instructions.">?</span>
-          </h3>
-          <p>{{ plan?.contextPlan?.ragflowExplanation }}</p>
-          <div class="source-row" *ngFor="let item of plan?.contextPlan?.ragflowCandidates || []">
-            <strong>{{ item.documentName || item.chunkId }}</strong>
-            <span>{{ item.snippet }}</span>
-            <small>{{ item.status }} &middot; {{ item.sourceUri }}</small>
-          </div>
-          <nz-empty
-            *ngIf="!plan?.contextPlan?.ragflowCandidates?.length"
-            nzNotFoundContent="No RAGFlow leads were used for this plan."
-          ></nz-empty>
-        </article>
+        <ng-container *ngIf="plan as currentPlan">
+          <article
+            class="inspector-card"
+            *ngIf="currentPlan.contextPlan.ragflowExplanation || currentPlan.contextPlan.ragflowCandidates?.length"
+          >
+            <h3>
+              RAGFlow leads
+              <span title="Optional retrieval leads from approved local datasets. These are not evidence, facts, memory, or execution instructions.">?</span>
+            </h3>
+            <p>{{ currentPlan.contextPlan.ragflowExplanation }}</p>
+            <div class="source-row" *ngFor="let item of currentPlan.contextPlan.ragflowCandidates || []">
+              <strong>{{ item.documentName || item.chunkId }}</strong>
+              <span>{{ item.snippet }}</span>
+              <small>{{ item.status }} &middot; {{ item.sourceUri }}</small>
+            </div>
+            <nz-empty
+              *ngIf="!currentPlan.contextPlan.ragflowCandidates?.length"
+              nzNotFoundContent="No RAGFlow leads were used for this plan."
+            ></nz-empty>
+          </article>
+        </ng-container>
 
         <article class="inspector-card" *ngIf="plan?.executionResult as result">
           <h3>Execution Output</h3>
@@ -1041,7 +1045,7 @@
               <span *ngIf="trace.recommendedSkills?.length">{{ compactTraceList('skills', trace.recommendedSkills, 3) }}</span>
               <span *ngIf="trace.blockedSurfaces?.length">{{ compactTraceList('blocked', trace.blockedSurfaces, 2) }}</span>
             </div>
-            <ol class="runtime-audit-list" *ngIf="tool.auditEvents?.length">
+            <ol class="runtime-audit-list" *ngIf="tool.auditEvents.length">
               <li *ngFor="let auditEvent of tool.auditEvents">{{ auditEvent }}</li>
             </ol>
           </div>

@@ -37,7 +37,7 @@
         <span>{{ r.canExecute ? 'yes' : 'no' }}</span>
       </div>
 
-      <div class="rl__caps" *ngIf="r.capabilities?.length">
+      <div class="rl__caps" *ngIf="r.capabilities.length">
         <nz-tag
           *ngFor="let c of r.capabilities"
           [nzColor]="c.startsWith('forbidden') ? 'red' : c.startsWith('exercised') ? 'green' : 'default'"
@@ -70,7 +70,7 @@
     </nz-card>
   </div>
 
-  <details class="rl__parity">
+  <details class="rl__parity" (toggle)="onParityToggle($event)">
     <summary>
       <span>External runtime feature parity</span>
       <small *ngIf="parityOverview as parity">

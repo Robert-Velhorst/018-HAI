@@ -1,40 +1,13 @@
-# Development Docker Compose Override
-# Use with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
-
-version: "3.5"
+# Optional behavior-only development override.
+#
+# Use after generating .env.local:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Ports, databases, networks, and source builds remain owned by the canonical
+# topology. This override does not add duplicate infrastructure or mount source
+# over the static runtime binary.
 services:
-  # Development overrides for easier debugging
   backend:
-    ports:
-      - "${HAI_DEV_BACKEND_BIND_ADDRESS:-127.0.0.1}:17070:80"  # Loopback-only unless explicitly overridden
     environment:
-      - GIN_MODE=debug
-    volumes:
-      - ./backend:/app  # Mount source code for hot reload (if supported)
-
-  frontend:
-    ports:
-      - "4200:80"  # Expose frontend port for direct access
-
-  postgres-idp:
-    ports:
-      - "5433:5432"  # Expose IDP database for external tools
-
-  postgres-automation:
-    ports:
-      - "5434:5432"  # Expose automation database for external tools
-
-  redis:
-    ports:
-      - "6379:6379"  # Expose Redis for external tools
-
-  # Add development tools
-  adminer:
-    image: adminer
-    restart: always
-    ports:
-      - "8080:8080"
-    networks:
-      - idp_network
-      - automation_hub_network
-
+      GIN_MODE: debug
+      RUN_MODE: development

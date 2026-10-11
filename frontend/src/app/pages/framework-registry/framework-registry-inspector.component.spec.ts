@@ -11,7 +11,7 @@ import { NzInputNumberModule } from 'ng-zorro-antd/input-number';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzSpinModule } from 'ng-zorro-antd/spin';
 import { NzTagModule } from 'ng-zorro-antd/tag';
-import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
+import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
 import { IFrameworkView } from '../../models/framework-registry.model.interface';
 import { FrameworkRegistryInspectorComponent } from './framework-registry-inspector.component';
 import { provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
@@ -67,9 +67,10 @@ describe('FrameworkRegistryInspectorComponent role rendering', () => {
         NzSelectModule,
         NzSpinModule,
         NzTagModule,
-        NzToolTipModule],
-    providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()]
-}).compileComponents();
+        NzTooltipModule,
+      ],
+      providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()],
+    }).compileComponents();
 
     fixture = TestBed.createComponent(FrameworkRegistryInspectorComponent);
     component = fixture.componentInstance;
@@ -164,26 +165,26 @@ describe('FrameworkRegistryInspectorComponent role rendering', () => {
   });
 
   it('makes experimental and deprecated lifecycle behavior explicit', () => {
-    component.framework = {
+    fixture.componentRef.setInput('framework', {
       ...framework,
       id: 'agent-development-implementations',
       status: 'experimental',
       effectiveStatus: 'experimental',
       enabled: false,
-    };
+    });
     fixture.detectChanges();
 
     let root = fixture.nativeElement as HTMLElement;
     expect(root.textContent).toContain('Experimental contract');
     expect(root.textContent).toContain('disabled by default');
 
-    component.framework = {
+    fixture.componentRef.setInput('framework', {
       ...framework,
       id: 'legacy-framework',
       status: 'deprecated',
       effectiveStatus: 'deprecated',
       enabled: false,
-    };
+    });
     fixture.detectChanges();
 
     root = fixture.nativeElement as HTMLElement;

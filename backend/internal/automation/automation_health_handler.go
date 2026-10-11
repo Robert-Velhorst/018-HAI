@@ -25,7 +25,7 @@ func (h *Handler) Launch(c *gin.Context) {
 	}
 	actor := verifiedAutomationActor(c)
 	request := TaskLaunchRequest{}
-	if c.Request.ContentLength > 0 {
+	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&request); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid launch request"})
 			return

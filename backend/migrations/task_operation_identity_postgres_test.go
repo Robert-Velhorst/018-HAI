@@ -3,7 +3,10 @@
 package migrations_test
 
 import (
+	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -82,6 +85,100 @@ func TestTaskOperationIdentityConcurrencyAndFencingInPostgres(t *testing.T) {
 	assertTaskOperationMutationRejected(t, db, "TRUNCATE task_operations")
 	if err := infra.RollbackMigration(db, migrations.Files, "pre", "pre/0037_task_operation_identity"); err == nil {
 		t.Fatal("rollback discarded non-empty task operation audit state")
+	}
+}
+
+func TestTaskOperationCancellationIsTerminalAndRollbackSafeInPostgres(t *testing.T) {
+	db := openIsolatedMigrationDatabase(t)
+	files := migrationFilesThrough(t, "pre/0067_task_operation_cancellation")
+	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
+		t.Fatalf("apply task operation cancellation migration: %v", err)
+	}
+	repository := task.NewPostgresTaskStateRepository(db)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	digest := "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+	claim, err := repository.ClaimTaskOperation(
+		"alice", "event:postgres-canceled", digest, "plan", "worker:one", now, time.Minute,
+	)
+	if err != nil || claim.Disposition != task.TaskOperationAcquired {
+		t.Fatalf("claim cancellable operation = (%#v, %v)", claim, err)
+	}
+	canceled, err := repository.CancelTaskOperation(
+		"alice",
+		claim.Operation.ID,
+		claim.Operation.LeaseOwner,
+		claim.Operation.LeaseGeneration,
+		"caller canceled before task execution began",
+		now.Add(time.Second),
+	)
+	if err != nil || !canceled {
+		t.Fatalf("cancel operation = (%v, %v)", canceled, err)
+	}
+	replay, err := repository.ClaimTaskOperation(
+		"alice", "event:postgres-canceled", digest, "plan", "worker:two", now.Add(2*time.Second), time.Minute,
+	)
+	if err != nil || replay.Disposition != task.TaskOperationCanceled || replay.Operation.Status != "canceled" {
+		t.Fatalf("canceled replay = (%#v, %v)", replay, err)
+	}
+	assertTaskOperationMutationRejected(
+		t,
+		db,
+		"UPDATE task_operations SET status = 'needs_review', last_error = 'rewritten' WHERE id = ?",
+		claim.Operation.ID,
+	)
+	if err := infra.RollbackMigration(
+		db,
+		migrations.Files,
+		"pre",
+		"pre/0067_task_operation_cancellation",
+	); err == nil || !strings.Contains(err.Error(), "canceled audit state") {
+		t.Fatalf("rollback cancellation migration error = %v, want audit-state refusal", err)
+	}
+}
+
+func TestTaskOperationClaimHonorsContextWhileWaitingForPostgresLock(t *testing.T) {
+	db := openIsolatedMigrationDatabase(t)
+	files := migrationFilesThrough(t, "pre/0067_task_operation_cancellation")
+	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
+		t.Fatalf("apply task operation cancellation migration: %v", err)
+	}
+	owner := "alice"
+	key := "event:postgres-context"
+	lockDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(owner+"\x00"+key)))
+	lockTx := db.Begin()
+	if lockTx.Error != nil {
+		t.Fatal(lockTx.Error)
+	}
+	t.Cleanup(func() { _ = lockTx.Rollback().Error })
+	if err := lockTx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", lockDigest).Error; err != nil {
+		t.Fatalf("hold task operation advisory lock: %v", err)
+	}
+
+	repository := task.NewPostgresTaskStateRepository(db)
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	_, err := repository.ClaimTaskOperationContext(
+		ctx,
+		owner,
+		key,
+		"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		"plan",
+		"worker:context",
+		time.Now().UTC(),
+		time.Minute,
+	)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("blocked PostgreSQL claim error = %v, want deadline exceeded", err)
+	}
+	if err := lockTx.Rollback().Error; err != nil {
+		t.Fatalf("release task operation advisory lock: %v", err)
+	}
+	var count int64
+	if err := db.Table("task_operations").Where("owner_identity = ? AND idempotency_key = ?", owner, key).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("canceled claim persisted %d task operation rows", count)
 	}
 }
 

@@ -309,10 +309,11 @@ describe('GovernanceControlComponent', () => {
       'listCompositions',
       'listCompositionAttempts',
       'runDue',
+      'recover',
     ])
     notification = jasmine.createSpyObj<NzNotificationService>(
       'NzNotificationService',
-      ['success', 'warning', 'error']
+      ['success', 'info', 'warning', 'error']
     )
     modal = jasmine.createSpyObj<NzModalService>('NzModalService', ['confirm'])
     preferences = new ModuleViewPreferencesService()
@@ -365,10 +366,10 @@ describe('GovernanceControlComponent', () => {
   it('loads independent surfaces and reports source-backed counts', () => {
     component.ngOnInit()
 
-    expect(service.listExecutionReceipts).toHaveBeenCalledWith(50)
+    expect(service.listExecutionReceipts).toHaveBeenCalledWith(50, 'summary')
     expect(service.listMandates).toHaveBeenCalled()
     expect(service.listLearningProposals).toHaveBeenCalledWith(100)
-    expect(service.listLearningOutcomes).toHaveBeenCalledWith(100)
+    expect(service.listLearningOutcomes).not.toHaveBeenCalled()
     expect(service.listAgents).toHaveBeenCalled()
     expect(service.domainCatalog).toHaveBeenCalled()
     expect(component.surfaceMetric('execution')).toBe('1 need attention')
@@ -376,6 +377,61 @@ describe('GovernanceControlComponent', () => {
     expect(component.surfaceMetric('learning')).toBe('1 awaiting review')
     expect(component.surfaceMetric('agents')).toBe('0 ready')
     expect(component.surfaceMetric('domains')).toBe('1 enabled')
+  })
+
+  it('does not load collapsed advisory engines in the default Basic view', () => {
+    component.ngOnInit()
+
+    expect(service.listAgentTeams).not.toHaveBeenCalled()
+    expect(service.listLifeEntities).not.toHaveBeenCalled()
+    expect(service.listLifeRelations).not.toHaveBeenCalled()
+    expect(service.listLifeMergeProposals).not.toHaveBeenCalled()
+    expect(service.listContactReviewDecisions).not.toHaveBeenCalled()
+    expect(service.listLifeCommitments).not.toHaveBeenCalled()
+    expect(service.listLifeCosts).not.toHaveBeenCalled()
+    expect(service.proactivityPolicy).not.toHaveBeenCalled()
+    expect(service.listProactivitySignals).not.toHaveBeenCalled()
+    expect(service.listProactivityDecisions).not.toHaveBeenCalled()
+    expect(service.listProactivityFeedback).not.toHaveBeenCalled()
+  })
+
+  it('restores only advisory engines whose sections were saved open', () => {
+    preferences.setSection('governance-control', 'whole-life-context', true)
+    preferences.setSection('governance-control', 'proactivity-policy', true)
+
+    component.ngOnInit()
+
+    expect(service.listLifeEntities).toHaveBeenCalled()
+    expect(service.listLifeRelations).toHaveBeenCalled()
+    expect(service.listLifeMergeProposals).toHaveBeenCalled()
+    expect(service.listContactReviewDecisions).toHaveBeenCalled()
+    expect(service.proactivityPolicy).toHaveBeenCalled()
+    expect(service.listProactivitySignals).toHaveBeenCalled()
+    expect(service.listProactivityDecisions).toHaveBeenCalled()
+    expect(service.listProactivityFeedback).toHaveBeenCalled()
+    expect(service.listAgentTeams).not.toHaveBeenCalled()
+    expect(service.listLifeCommitments).not.toHaveBeenCalled()
+    expect(service.listLifeCosts).not.toHaveBeenCalled()
+  })
+
+  it('loads full controlled-learning outcome history only when its section opens', () => {
+    component.ngOnInit()
+    expect(service.listLearningOutcomes).not.toHaveBeenCalled()
+
+    component.loadLearningSection(true)
+
+    expect(service.listLearningOutcomes).toHaveBeenCalledOnceWith(100)
+    expect(service.listLearningProposals).toHaveBeenCalledTimes(2)
+  })
+
+  it('loads full authorization evidence only when its section opens', () => {
+    component.ngOnInit()
+    expect(service.listExecutionReceipts).toHaveBeenCalledOnceWith(50, 'summary')
+
+    component.loadExecutionSection(true)
+
+    expect(service.listExecutionReceipts).toHaveBeenCalledTimes(2)
+    expect(service.listExecutionReceipts).toHaveBeenCalledWith(50, 'full')
   })
 
   it('builds the Basic decision queue only from unresolved records', () => {
@@ -702,7 +758,12 @@ describe('GovernanceControlComponent', () => {
     )
   })
 
-  it('loads source-backed advisory engines while leaving scoped engines unconfigured', () => {
+  it('loads opened source-backed advisory engines while leaving scoped engines unconfigured', () => {
+    preferences.setSection('governance-control', 'agent-teams', true)
+    preferences.setSection('governance-control', 'whole-life-context', true)
+    preferences.setSection('governance-control', 'life-ledger-overview', true)
+    preferences.setSection('governance-control', 'proactivity-policy', true)
+
     component.ngOnInit()
 
     expect(service.listAgentTeams).toHaveBeenCalled()
@@ -1445,6 +1506,52 @@ describe('GovernanceControlComponent', () => {
     expect(notification.error).toHaveBeenCalledWith(
       'Due monitor pass failed',
       jasmine.stringMatching(/monitor_failed/i)
+    )
+  })
+
+  it('recovers both expired monitor lease classes and refreshes their state', () => {
+    spyOn(component, 'loadAmbientMonitor')
+    component.advisoryScope = { workspaceId: '018-HAI', outcomeId: 'verified-work' }
+    component.monitorTargets = [monitorTarget]
+    component.selectedMonitorTargetId = monitorTarget.id
+    ambientMonitor.recover.and.returnValue(of({
+      recovered: 2,
+      collectionRecovered: 1,
+      compositionRecovered: 1,
+      authority: monitorAuthority,
+    }))
+
+    component.recoverAmbientMonitors()
+
+    expect(ambientMonitor.recover).toHaveBeenCalledWith('018-HAI', jasmine.any(String))
+    expect(notification.success).toHaveBeenCalledWith(
+      'Expired monitor work recovered',
+      jasmine.stringMatching(/1 collection lease and 1 advisory handoff lease/i)
+    )
+    expect(component.loadAmbientMonitor).toHaveBeenCalledWith(true)
+    expect(component.monitorMutating).toBeFalse()
+  })
+
+  it('does not claim recovery when no expired monitor leases exist', () => {
+    spyOn(component, 'loadAmbientMonitor')
+    component.advisoryScope = { workspaceId: '018-HAI', outcomeId: 'verified-work' }
+    component.monitorTargets = [monitorTarget]
+    ambientMonitor.recover.and.returnValue(of({
+      recovered: 0,
+      collectionRecovered: 0,
+      compositionRecovered: 0,
+      authority: monitorAuthority,
+    }))
+
+    component.recoverAmbientMonitors()
+
+    expect(notification.info).toHaveBeenCalledWith(
+      'No expired monitor work',
+      jasmine.stringMatching(/no expired collection or advisory handoff leases/i)
+    )
+    expect(notification.success).not.toHaveBeenCalledWith(
+      'Expired monitor work recovered',
+      jasmine.any(String)
     )
   })
 

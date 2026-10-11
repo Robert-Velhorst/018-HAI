@@ -27,7 +27,7 @@ func (h *Handler) Probe(c *gin.Context) {
 }
 
 func (h *Handler) Run(c *gin.Context) {
-	if c.Request.ContentLength > 0 {
+	if c.Request.ContentLength != 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "local LM Evaluation Harness runs the configured fixed suite and accepts no caller-provided model, task, endpoint, or data"})
 		return
 	}

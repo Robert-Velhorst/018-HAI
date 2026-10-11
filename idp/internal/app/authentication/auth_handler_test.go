@@ -1,6 +1,7 @@
 package authentication
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -31,6 +32,24 @@ func TestRequestPasswordResetDoesNotRevealServiceErrors(t *testing.T) {
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Contains(t, recorder.Body.String(), "If recovery is available")
 	require.NotContains(t, recorder.Body.String(), "not implemented")
+}
+
+func TestRequestPasswordResetForwardsRequestContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &middlewareAuthService{}
+	router := gin.New()
+	router.POST("/request-password-reset", NewHandler(service).RequestPasswordReset)
+
+	requestContext, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	form := url.Values{"email": {"operator@example.com"}}
+	request := httptest.NewRequest(http.MethodPost, "/request-password-reset", strings.NewReader(form.Encode())).WithContext(requestContext)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.Equal(t, requestContext, service.passwordResetContext)
 }
 
 func TestIsUserAuthenticatedRefreshesSessionAndReturnsVerifiedTokenInternally(t *testing.T) {
@@ -134,6 +153,26 @@ func TestCurrentSessionIgnoresIdentityHeaders(t *testing.T) {
 	require.Equal(t, userID.String(), session.Subject)
 	require.False(t, session.Permissions.CanAdminister)
 	require.Equal(t, "valid-access", service.lastSessionToken)
+	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+}
+
+func TestCurrentSessionReturnsExplicitUnauthenticatedState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(&middlewareAuthService{})
+	router := gin.New()
+	router.GET("/session", handler.CurrentSession)
+
+	request := httptest.NewRequest(http.MethodGet, "/session", nil)
+	request.Header.Set("X-HAI-Role", "owner")
+	request.Header.Set("X-HAI-Subject", "spoofed-owner")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var session dto.AuthSession
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &session))
+	require.False(t, session.Authenticated)
+	require.Empty(t, session.Subject)
 	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 }
 

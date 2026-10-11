@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"automation-hub-backend/internal/models"
 )
@@ -24,6 +25,10 @@ type QueryParams struct {
 const (
 	defaultPageSize = 20
 	maxPageSize     = 100
+	maxSearchLength = 512
+	maxKindLength   = 50
+	maxTagLength    = 255
+	maxSearchTokens = 16
 )
 
 // PageResult is the paginated envelope returned by memory queries. It echoes
@@ -46,9 +51,9 @@ type PageResult struct {
 // can never produce a panic or an unbounded page.
 func (p QueryParams) normalized() QueryParams {
 	out := p
-	out.Search = strings.TrimSpace(p.Search)
-	out.Kind = strings.TrimSpace(p.Kind)
-	out.Tag = strings.TrimSpace(p.Tag)
+	out.Search = boundedQueryText(p.Search, maxSearchLength)
+	out.Kind = boundedQueryText(p.Kind, maxKindLength)
+	out.Tag = boundedQueryText(p.Tag, maxTagLength)
 
 	switch strings.ToLower(strings.TrimSpace(p.Sort)) {
 	case "createdat":
@@ -109,16 +114,8 @@ func Query(items []models.ContextMemory, params QueryParams) PageResult {
 	sortMemories(filtered, p, searchTokens)
 
 	total := len(filtered)
-	totalPages := 0
-	if total > 0 {
-		totalPages = (total + p.PageSize - 1) / p.PageSize
-	}
-
-	// Paginate with safe bounds; a page past the end yields an empty slice
-	// rather than an error, and the requested page is echoed back honestly.
-	start := (p.Page - 1) * p.PageSize
 	pageItems := []models.ContextMemory{}
-	if start < total {
+	if start, ok := pageStart(p, total); ok {
 		end := start + p.PageSize
 		if end > total {
 			end = total
@@ -126,8 +123,19 @@ func Query(items []models.ContextMemory, params QueryParams) PageResult {
 		pageItems = append(pageItems, filtered[start:end]...)
 	}
 
+	return pageResult(p, total, pageItems)
+}
+
+func pageResult(p QueryParams, total int, items []models.ContextMemory) PageResult {
+	totalPages := 0
+	if total > 0 {
+		totalPages = 1 + (total-1)/p.PageSize
+	}
+	if items == nil {
+		items = []models.ContextMemory{}
+	}
 	return PageResult{
-		Items:      pageItems,
+		Items:      items,
 		Total:      total,
 		Page:       p.Page,
 		PageSize:   p.PageSize,
@@ -138,6 +146,18 @@ func Query(items []models.ContextMemory, params QueryParams) PageResult {
 		Kind:       p.Kind,
 		Tag:        p.Tag,
 	}
+}
+
+func pageStart(p QueryParams, total int) (int, bool) {
+	if total <= 0 {
+		return 0, false
+	}
+	maxInt := int(^uint(0) >> 1)
+	if p.Page-1 > maxInt/p.PageSize {
+		return 0, false
+	}
+	start := (p.Page - 1) * p.PageSize
+	return start, start < total
 }
 
 func sortMemories(items []models.ContextMemory, p QueryParams, searchTokens []string) {
@@ -259,8 +279,28 @@ func searchTokensOf(search string) []string {
 		}
 		seen[field] = true
 		tokens = append(tokens, field)
+		if len(tokens) == maxSearchTokens {
+			break
+		}
 	}
 	return tokens
+}
+
+func boundedQueryText(value string, maxRunes int) string {
+	value = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == 0 || (unicode.IsControl(r) && !unicode.IsSpace(r)) {
+			return -1
+		}
+		if unicode.IsSpace(r) {
+			return ' '
+		}
+		return r
+	}, value))
+	runes := []rune(value)
+	if len(runes) > maxRunes {
+		value = string(runes[:maxRunes])
+	}
+	return strings.Join(strings.Fields(value), " ")
 }
 
 // hasTag reports whether the comma-joined tag string contains an exact,

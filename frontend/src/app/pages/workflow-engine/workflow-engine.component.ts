@@ -1,4 +1,5 @@
-import { Component, Inject, OnInit, ViewEncapsulation } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
+import { ViewEncapsulation } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -34,11 +35,12 @@ import { IWorkflowService } from '../../services/workflow.service.interface';
 type FrameworkProvenanceState = 'missing' | 'invalid' | 'recorded' | 'verified';
 
 @Component({
-    selector: 'app-workflow-engine',
-    templateUrl: './workflow-engine.component.html',
-    styleUrls: ['./workflow-engine.component.scss'],
-    encapsulation: ViewEncapsulation.None,
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-workflow-engine',
+  templateUrl: './workflow-engine.component.html',
+  styleUrls: ['./workflow-engine.component.scss'],
+  encapsulation: ViewEncapsulation.None,
 })
 export class WorkflowEngineComponent implements OnInit {
   overview?: IWorkflowOverview;
@@ -124,6 +126,10 @@ export class WorkflowEngineComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    const requestedQueue = this.route.snapshot.queryParamMap.get('queue');
+    if (this.isWorkflowQueue(requestedQueue)) {
+      this.activeQueue = requestedQueue;
+    }
     this.refresh();
     this.intakeForm.valueChanges.subscribe(() => {
       // A changed signal must be matched again; never link edited intake to a stale pursuit choice.
@@ -137,6 +143,12 @@ export class WorkflowEngineComponent implements OnInit {
         error: () => this.notification.error('Error', 'The linked workflow could not be opened.'),
       });
     }
+  }
+
+  private isWorkflowQueue(
+    value: string | null
+  ): value is 'all' | 'approval' | 'ready' | 'blocked' | 'review' {
+    return !!value && ['all', 'approval', 'ready', 'blocked', 'review'].includes(value);
   }
 
   refresh(showNotification = false, preserveLastOperation = false): void {

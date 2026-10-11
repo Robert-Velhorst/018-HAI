@@ -1,4 +1,4 @@
-import { HAI_MODULES, HAI_MODULE_GROUPS, moduleForUrl } from './module-registry';
+import { HAI_MODULES, HAI_MODULE_GROUPS, moduleDocumentTitle, moduleForUrl } from './module-registry';
 
 describe('HAI module registry', () => {
   it('maps every registered route to a unique module', () => {
@@ -11,6 +11,11 @@ describe('HAI module registry', () => {
   it('keeps navigation groups limited to operational intent', () => {
     expect(HAI_MODULE_GROUPS.map((group) => group.id)).toEqual(['work', 'intelligence', 'system']);
     expect(HAI_MODULES.every((module) => HAI_MODULE_GROUPS.some((group) => group.id === module.group))).toBeTrue();
+  });
+
+  it('builds a product-qualified browser title for every module', () => {
+    expect(HAI_MODULES.every((module) => moduleDocumentTitle(module) === `${module.title} | HAI Automation Hub`))
+      .toBeTrue();
   });
 
   it('registers the guarded Framework Registry route with its shell contract', () => {

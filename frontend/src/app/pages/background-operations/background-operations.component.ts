@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
 import { forkJoin } from 'rxjs'
 import { finalize, timeout } from 'rxjs/operators'
@@ -14,10 +14,11 @@ import {
 import { BackgroundOperationsService } from '../../services/background-operations.service'
 
 @Component({
-    selector: 'app-background-operations',
-    templateUrl: './background-operations.component.html',
-    styleUrls: ['./background-operations.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-background-operations',
+  templateUrl: './background-operations.component.html',
+  styleUrls: ['./background-operations.component.scss'],
 })
 export class BackgroundOperationsComponent implements OnInit {
   dashboard?: IOperationsDashboard

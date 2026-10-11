@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,6 +22,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if os.Getenv("HAI_RUNTIME_TASK_ID") == "block-runtime-cli" {
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "chat" || os.Args[1] == "agent") {
 		for _, arg := range os.Args[1:] {
 			fmt.Fprintln(os.Stdout, arg)
@@ -544,6 +549,55 @@ func TestOdysseusAdapterUsesAgentModeWithoutBash(t *testing.T) {
 	}
 }
 
+func TestAgentRuntimeHTTPClientRejectsBlockedDNSResolution(t *testing.T) {
+	t.Parallel()
+
+	client := noRedirectClientWithResolver(5*time.Second, func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("169.254.169.254")}}, nil
+	})
+	transport := client.Transport.(*http.Transport)
+	if transport.Proxy != nil {
+		t.Fatal("agent runtime transport must not inherit environment proxy settings")
+	}
+	_, err := transport.DialContext(context.Background(), "tcp", "odysseus.example:443")
+	if err == nil || !strings.Contains(err.Error(), "blocked address space") {
+		t.Fatalf("DialContext error = %v, want blocked address rejection", err)
+	}
+}
+
+func TestOdysseusAdapterFromEnvReusesDirectHTTPClient(t *testing.T) {
+	t.Setenv("ODYSSEUS_AGENT_TIMEOUT_SECONDS", "15")
+	adapter := newOdysseusAdapterFromEnv()
+	if adapter.httpClient == nil || adapter.directHTTPClient() != adapter.directHTTPClient() {
+		t.Fatal("production Odysseus adapter must reuse its bounded HTTP client")
+	}
+	transport, ok := adapter.httpClient.Transport.(*http.Transport)
+	if !ok || transport.Proxy != nil {
+		t.Fatalf("Odysseus transport = %#v, want direct no-proxy transport", adapter.httpClient.Transport)
+	}
+}
+
+func TestRuntimeEndpointURLsRejectEmbeddedCredentials(t *testing.T) {
+	t.Parallel()
+
+	odysseus := &odysseusAdapter{
+		baseURL:     "https://user:secret@odysseus.example",
+		allowedHost: map[string]bool{"odysseus.example": true},
+	}
+	if reason := odysseus.validBaseURL(); !strings.Contains(reason, "must not contain credentials") {
+		t.Fatalf("Odysseus URL rejection = %q", reason)
+	}
+	openClaw := &openClawAdapter{
+		gatewayURL: "wss://user:secret@openclaw.example",
+		allowedHost: map[string]bool{
+			"openclaw.example": true,
+		},
+	}
+	if reason := openClaw.validGatewayURL(); !strings.Contains(reason, "must not contain credentials") {
+		t.Fatalf("OpenClaw URL rejection = %q", reason)
+	}
+}
+
 func TestOdysseusStreamRejectsTruncatedOutput(t *testing.T) {
 	if _, err := readOdysseusStream(strings.NewReader("data: {\"delta\":\"partial\"}\n\n"), 4096); err == nil {
 		t.Fatalf("expected incomplete stream to be rejected")
@@ -682,6 +736,39 @@ func TestHermesAdapterInvokesControlledCli(t *testing.T) {
 	}
 	if strings.Contains(result.Output, "--yolo") {
 		t.Fatalf("Hermes execution must not use --yolo: %q", result.Output)
+	}
+}
+
+func TestHermesAdapterCancelsControlledCli(t *testing.T) {
+	root := t.TempDir()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve native test executable: %v", err)
+	}
+	adapter := &hermesAdapter{
+		enabled:       true,
+		executable:    executable,
+		workspace:     root,
+		workspaceRoot: root,
+		maxTurns:      1,
+		timeout:       30 * time.Second,
+		outputLimit:   defaultOutputLimit,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan Result, 1)
+	go func() {
+		done <- adapter.ExecuteTask(ctx, Task{ID: "block-runtime-cli", Prompt: "wait"})
+	}()
+	time.Sleep(150 * time.Millisecond)
+	cancel()
+
+	select {
+	case result := <-done:
+		if result.Status != "blocked" || !strings.Contains(result.Message, "process tree was stopped") {
+			t.Fatalf("canceled Hermes result = %#v", result)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Hermes CLI remained alive after caller cancellation")
 	}
 }
 
@@ -903,6 +990,41 @@ func TestOpenClawAdapterInvokesControlledCli(t *testing.T) {
 		if strings.Contains(result.Output, forbidden) {
 			t.Fatalf("OpenClaw execution exposed forbidden operation %q in %q", forbidden, result.Output)
 		}
+	}
+}
+
+func TestOpenClawAdapterCancelsControlledCli(t *testing.T) {
+	root := t.TempDir()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve native test executable: %v", err)
+	}
+	adapter := &openClawAdapter{
+		enabled:         true,
+		executable:      executable,
+		workspace:       root,
+		workspaceRoot:   root,
+		timeout:         30 * time.Second,
+		outputLimit:     defaultOutputLimit,
+		agentCLIEnabled: true,
+		sandboxRequired: true,
+		sandboxMode:     "all",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan Result, 1)
+	go func() {
+		done <- adapter.ExecuteTask(ctx, Task{ID: "block-runtime-cli", Prompt: "wait"})
+	}()
+	time.Sleep(150 * time.Millisecond)
+	cancel()
+
+	select {
+	case result := <-done:
+		if result.Status != "blocked" || !strings.Contains(result.Message, "process tree was stopped") {
+			t.Fatalf("canceled OpenClaw result = %#v", result)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("OpenClaw CLI remained alive after caller cancellation")
 	}
 }
 

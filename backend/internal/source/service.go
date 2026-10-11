@@ -1,6 +1,7 @@
 package source
 
 import (
+	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/memory"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/pursuit"
@@ -173,13 +174,20 @@ func syncSourceWithContext(ctx context.Context, service Service, sourceID uuid.U
 	return service.Sync(sourceID, request)
 }
 
+type OverviewService interface {
+	OverviewForOwner(ownerIdentity, projectKey string, includeArchived bool) (*SourceOverview, error)
+}
+
 type Service interface {
 	Connectors() ([]models.SourceConnector, error)
 	CreateSource(request CreateSourceRequest) (*models.ConnectedSource, error)
 	UpdateSource(id uuid.UUID, request UpdateSourceRequest) (*models.ConnectedSource, error)
 	Sources(includeDisabled bool) ([]models.ConnectedSource, error)
-	SyncJobs(sourceID *uuid.UUID) ([]models.SourceSyncJob, error)
+	SourcesForOwner(ownerIdentity string, includeDisabled bool) ([]models.ConnectedSource, error)
+	SyncJobs(sourceID *uuid.UUID, limit int) ([]models.SourceSyncJob, error)
+	SyncJobsForOwner(ownerIdentity string, limit int) ([]models.SourceSyncJob, error)
 	Sync(sourceID uuid.UUID, request ImportRequest) (*SyncResult, error)
+	SyncContext(ctx context.Context, sourceID uuid.UUID, request ImportRequest) (*SyncResult, error)
 	// DueSources lists enabled sources whose schedule is due at now. The durable
 	// scheduler uses it to enqueue one retryable job per source.
 	DueSources(now time.Time) ([]models.ConnectedSource, error)
@@ -191,12 +199,59 @@ type Service interface {
 	Search(request SearchRequest) (*SearchResult, error)
 	Extractions(projectKey string, includeArchived bool) ([]models.SourceExtraction, error)
 	ExtractionsForOwner(ownerIdentity, projectKey string, includeArchived bool) ([]models.SourceExtraction, error)
+	ExtractionsForOwnerLimit(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.SourceExtraction, error)
+	ExtractionForOwner(ownerIdentity string, id uuid.UUID) (*models.SourceExtraction, error)
 	UpdateExtraction(id uuid.UUID, request models.SourceExtraction) (*models.SourceExtraction, error)
 	ArchiveExtraction(id uuid.UUID, archived bool) (*models.SourceExtraction, error)
 	DeleteExtraction(id uuid.UUID) error
-	AuditLogs(sourceID *uuid.UUID) ([]models.SourceAuditLog, error)
+	AuditLogs(sourceID *uuid.UUID, limit int) ([]models.SourceAuditLog, error)
+	AuditLogsForOwner(ownerIdentity string, limit int) ([]models.SourceAuditLog, error)
 	StartGoogleOAuth(sourceID uuid.UUID) (string, error)
-	CompleteGoogleOAuth(ctx context.Context, code, state string) (uuid.UUID, error)
+	CompleteGoogleOAuth(ctx context.Context, code, state, ownerIdentity string) (uuid.UUID, error)
+}
+
+// ContextSearchService binds an interactive source lookup to its caller while
+// preserving the legacy Service contract used by narrow test doubles and
+// trusted in-process workers.
+type ContextSearchService interface {
+	SearchContext(context.Context, SearchRequest) (*SearchResult, error)
+}
+
+// ContextScheduledSyncService lets interactive owner-scoped batches stop when
+// their HTTP caller disconnects. Trusted background schedulers keep using the
+// durable, background-context Service methods.
+type ContextScheduledSyncService interface {
+	RunDueScheduledSyncsForOwnerContext(context.Context, time.Time, string) (*ScheduledSyncRun, error)
+}
+
+// RunDueScheduledSyncsForOwnerWithContext prefers the cancellable production
+// path while retaining compatibility with narrow in-process Service doubles.
+func RunDueScheduledSyncsForOwnerWithContext(service Service, ctx context.Context, now time.Time, ownerIdentity string) (*ScheduledSyncRun, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cancellable, ok := service.(ContextScheduledSyncService); ok {
+		return cancellable.RunDueScheduledSyncsForOwnerContext(ctx, now, ownerIdentity)
+	}
+	return service.RunDueScheduledSyncsForOwner(now, ownerIdentity)
+}
+
+// SearchWithContext uses the cancellable search path when the service supports
+// it and fails promptly when the caller is already gone.
+func SearchWithContext(service Service, ctx context.Context, request SearchRequest) (*SearchResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if contextual, ok := service.(ContextSearchService); ok {
+		return contextual.SearchContext(ctx, request)
+	}
+	return service.Search(request)
 }
 
 type service struct {
@@ -225,7 +280,22 @@ type pursuitWorkflowIntakeRouter interface {
 }
 
 var errLocalFolderLimitReached = fmt.Errorf("local folder scan limit reached")
-var ErrSyncInProgress = errors.New("source sync is already in progress")
+var (
+	ErrSyncInProgress    = errors.New("source sync is already in progress")
+	ErrSourceRevoked     = errors.New("source access is revoked")
+	ErrSourceChanged     = errors.New("source changed concurrently; refresh and retry")
+	ErrOAuthStateInvalid = errors.New("oauth state is invalid, expired, already used, or belongs to another operator")
+)
+
+func rejectRevokedSource(source *models.ConnectedSource) error {
+	if source == nil {
+		return gorm.ErrRecordNotFound
+	}
+	if source.RevokedAt != nil || strings.EqualFold(strings.TrimSpace(source.Status), "revoked") {
+		return ErrSourceRevoked
+	}
+	return nil
+}
 
 const maxSyncErrorDetails = 20
 const maxSyncPursuitOutcomes = 20
@@ -528,16 +598,8 @@ func (s *service) UpdateSource(id uuid.UUID, request UpdateSourceRequest) (*mode
 	if err != nil {
 		return nil, err
 	}
-	if source.ConnectorKey == shareTConnectorKey {
-		if _, err := shareTConfigFromEnv(); err != nil {
-			return nil, fmt.Errorf("ShareT connector requires explicit configuration: %w", err)
-		}
-		if request.LocalOnly != nil && *request.LocalOnly {
-			return nil, fmt.Errorf("ShareT is a remote read-only source; localOnly must remain false")
-		}
-		if request.SyncTarget != nil && strings.TrimSpace(*request.SyncTarget) != "" {
-			return nil, fmt.Errorf("ShareT endpoint is configured only through HAI_SHARET_BASE_URL; syncTarget must remain empty")
-		}
+	if err := rejectRevokedSource(source); err != nil {
+		return nil, err
 	}
 	if source.ConnectorKey == cloudQuerySummaryConnectorKey {
 		if _, err := cloudQuerySummaryConfigFromEnv(); err != nil {
@@ -548,6 +610,17 @@ func (s *service) UpdateSource(id uuid.UUID, request UpdateSourceRequest) (*mode
 		}
 		if request.SyncTarget != nil && strings.TrimSpace(*request.SyncTarget) != "" {
 			return nil, fmt.Errorf("CloudQuery summary path is configured only through HAI_CLOUDQUERY_SUMMARY_PATH; syncTarget must remain empty")
+		}
+	}
+	if source.ConnectorKey == shareTConnectorKey {
+		if _, err := shareTConfigFromEnv(); err != nil {
+			return nil, fmt.Errorf("ShareT connector requires explicit configuration: %w", err)
+		}
+		if request.LocalOnly != nil && *request.LocalOnly {
+			return nil, fmt.Errorf("ShareT is a remote read-only source; localOnly must remain false")
+		}
+		if request.SyncTarget != nil && strings.TrimSpace(*request.SyncTarget) != "" {
+			return nil, fmt.Errorf("ShareT endpoint is configured only through HAI_SHARET_BASE_URL; syncTarget must remain empty")
 		}
 	}
 	if source.ConnectorKey == airbyteInventoryConnectorKey {
@@ -653,8 +726,32 @@ func (s *service) Sources(includeDisabled bool) ([]models.ConnectedSource, error
 	return s.repo.FindSources(includeDisabled)
 }
 
-func (s *service) SyncJobs(sourceID *uuid.UUID) ([]models.SourceSyncJob, error) {
-	return s.repo.FindSyncJobs(sourceID)
+func (s *service) SourcesForOwner(ownerIdentity string, includeDisabled bool) ([]models.ConnectedSource, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return []models.ConnectedSource{}, nil
+	}
+	return s.repo.FindSourcesForOwner(ownerIdentity, includeDisabled, identity.CanReadLegacyOwnerlessData(ownerIdentity))
+}
+
+func (s *service) OverviewForOwner(ownerIdentity, projectKey string, includeArchived bool) (*SourceOverview, error) {
+	visibleSourceIDs, err := s.visibleSourceIDs(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.FindOverviewForSources(sourceIDsFromSet(visibleSourceIDs), projectKey, includeArchived)
+}
+
+func (s *service) SyncJobs(sourceID *uuid.UUID, limit int) ([]models.SourceSyncJob, error) {
+	return s.repo.FindSyncJobs(sourceID, limit)
+}
+
+func (s *service) SyncJobsForOwner(ownerIdentity string, limit int) ([]models.SourceSyncJob, error) {
+	visibleSourceIDs, err := s.visibleSourceIDs(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.FindSyncJobsForSources(sourceIDsFromSet(visibleSourceIDs), limit)
 }
 
 func (s *service) ConnectionHealth(sourceID uuid.UUID) (*ConnectionHealth, error) {
@@ -791,7 +888,10 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 	if err != nil {
 		return nil, err
 	}
-	if !source.Enabled || source.Status == "paused" || source.Status == "revoked" {
+	if err := rejectRevokedSource(source); err != nil {
+		return nil, err
+	}
+	if !source.Enabled || source.Status == "paused" {
 		return nil, fmt.Errorf("source is not enabled for sync")
 	}
 	if source.ConnectorKey == "whisper-audio" && !request.controlledTranscription {
@@ -863,6 +963,7 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 		Mode:         mode,
 		Status:       "running",
 		CursorBefore: source.Cursor,
+		CursorAfter:  source.Cursor,
 		StartedAt:    started,
 	})
 	if err != nil {
@@ -877,14 +978,33 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 	failed := 0
 	itemErrors := []string{}
 	warnings := []string{}
+	items := request.Items
 	recordFailure := func(item ImportItem, stage string, err error) {
 		failed++
 		if len(itemErrors) < maxSyncErrorDetails {
 			itemErrors = append(itemErrors, itemFailure(item, stage, err))
 		}
 	}
-	items := request.Items
+	abortCanceledSync := func() error {
+		errContext := ctx.Err()
+		if errContext == nil {
+			return nil
+		}
+		now := time.Now().UTC()
+		job.Status = "failed"
+		job.Message = "sync canceled before all source items were processed; cursor retained for retry"
+		job.ItemsSeen = len(items)
+		job.ItemsAdded = added
+		job.ItemsUpdated = updated
+		job.ItemsFailed = failed
+		job.CursorAfter = job.CursorBefore
+		job.CompletedAt = &now
+		_, _ = s.repo.UpdateSyncJob(job)
+		s.audit(sourceID, "source.sync_canceled", job.Message)
+		return errContext
+	}
 	adapterCursor := ""
+	adapterCursorAuthoritative := false
 	if len(items) == 0 && sourceUsesLocalFolder(source.ConnectorKey) {
 		items, err = s.localFolderItems(source, request)
 		items = filterConnectorLocalItems(items, source.ConnectorKey)
@@ -1035,7 +1155,8 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 		s.audit(sourceID, "source.airbyte_inventory_read", fmt.Sprintf("read %d bounded Airbyte source and connection inventory record(s) from approved workspaces", len(items)))
 	}
 	if len(items) == 0 && source.ConnectorKey == laroConnectorKey {
-		items, adapterCursor, err = fetchLAROSource(ctx, source)
+		var laroResult laroFetchResult
+		laroResult, err = fetchLAROSource(ctx, source)
 		if err != nil {
 			now := time.Now().UTC()
 			job.Status = "failed"
@@ -1044,6 +1165,12 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 			_, _ = s.repo.UpdateSyncJob(job)
 			s.audit(sourceID, "source.sync_failed", err.Error())
 			return nil, err
+		}
+		items = laroResult.items
+		adapterCursor = laroResult.nextCursor
+		adapterCursorAuthoritative = true
+		if laroResult.cursorReset {
+			s.audit(sourceID, "source.laro_cursor_reset", "LARO rejected the stored incremental cursor; HAI completed one bounded read without it and cleared the stale cursor")
 		}
 		s.audit(sourceID, "source.laro_read", fmt.Sprintf("read %d bounded, owner-scoped LARO legal record(s)", len(items)))
 	}
@@ -1134,14 +1261,8 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 		}
 	}
 	for index, item := range items {
-		if err := ctx.Err(); err != nil {
-			now := time.Now().UTC()
-			job.Status = "cancelled"
-			job.Message = "sync cancelled before all source items were processed; the cursor was retained"
-			job.CompletedAt = &now
-			_, _ = s.repo.UpdateSyncJob(job)
-			s.audit(sourceID, "source.sync_cancelled", job.Message)
-			return nil, err
+		if errContext := abortCanceledSync(); errContext != nil {
+			return nil, errContext
 		}
 		if shouldExclude(source.ExcludePatterns, item.Title+" "+item.SourceURI) {
 			continue
@@ -1161,7 +1282,7 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 			recordFailure(item, "extraction failed", errExtract)
 			continue
 		}
-		if errIndex := s.indexExtraction(extraction); errIndex != nil {
+		if errIndex := s.indexExtraction(ctx, extraction); errIndex != nil {
 			recordFailure(item, "index update failed", errIndex)
 			continue
 		}
@@ -1209,6 +1330,9 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 		extractions = append(extractions, *extraction)
 		s.storeUsefulMemory(source, extraction)
 	}
+	if errContext := abortCanceledSync(); errContext != nil {
+		return nil, errContext
+	}
 
 	now := time.Now().UTC()
 	job.ItemsSeen = len(items)
@@ -1218,7 +1342,11 @@ func (s *service) SyncContext(ctx context.Context, sourceID uuid.UUID, request I
 	job.CursorAfter = source.Cursor
 	if failed == 0 {
 		source.LastSyncedAt = &now
-		source.Cursor = firstNonEmpty(adapterCursor, fmt.Sprintf("%s:%d", now.Format(time.RFC3339), len(items)))
+		if adapterCursorAuthoritative {
+			source.Cursor = adapterCursor
+		} else {
+			source.Cursor = firstNonEmpty(adapterCursor, fmt.Sprintf("%s:%d", now.Format(time.RFC3339), len(items)))
+		}
 		job.Status = "completed"
 		job.CursorAfter = source.Cursor
 		job.Message = "sync completed with cached extraction and provenance links"
@@ -1271,33 +1399,46 @@ func (s *service) RunDueScheduledSyncs(now time.Time) (*ScheduledSyncRun, error)
 	if err != nil {
 		return nil, err
 	}
-	return s.runDueScheduledSyncs(now, sources)
+	return s.runDueScheduledSyncs(context.Background(), now, sources)
 }
 
 // RunDueScheduledSyncsForOwner refreshes only sources explicitly owned by the
 // authenticated user. Ownerless legacy sources remain readable for local
 // compatibility but are never modified by an owner-scoped task request.
 func (s *service) RunDueScheduledSyncsForOwner(now time.Time, ownerIdentity string) (*ScheduledSyncRun, error) {
+	return s.RunDueScheduledSyncsForOwnerContext(context.Background(), now, ownerIdentity)
+}
+
+func (s *service) RunDueScheduledSyncsForOwnerContext(ctx context.Context, now time.Time, ownerIdentity string) (*ScheduledSyncRun, error) {
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	if ownerIdentity == "" {
-		return s.RunDueScheduledSyncs(now)
+		return nil, fmt.Errorf("owner identity is required for owner-scoped scheduled source sync")
 	}
-	sources, err := s.repo.FindSources(false)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	sources, err := s.repo.FindSourcesForOwner(ownerIdentity, false, false)
 	if err != nil {
 		return nil, err
 	}
-	owned := make([]models.ConnectedSource, 0, len(sources))
-	for _, item := range sources {
-		if item.OwnerIdentity == ownerIdentity {
-			owned = append(owned, item)
-		}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	return s.runDueScheduledSyncs(now, owned)
+	return s.runDueScheduledSyncs(ctx, now, sources)
 }
 
-func (s *service) runDueScheduledSyncs(now time.Time, sources []models.ConnectedSource) (*ScheduledSyncRun, error) {
+func (s *service) runDueScheduledSyncs(ctx context.Context, now time.Time, sources []models.ConnectedSource) (*ScheduledSyncRun, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	run := &ScheduledSyncRun{Checked: len(sources)}
 	for _, source := range sources {
+		if err := ctx.Err(); err != nil {
+			return run, err
+		}
 		due, reason := scheduledSourceDue(source, now)
 		if !due {
 			run.Skipped++
@@ -1307,12 +1448,15 @@ func (s *service) runDueScheduledSyncs(now time.Time, sources []models.Connected
 			continue
 		}
 		run.Due++
-		result, errSync := s.Sync(source.ID, ImportRequest{
+		result, errSync := s.SyncContext(ctx, source.ID, ImportRequest{
 			Mode:       ModeScheduledSync,
 			FolderPath: source.SyncTarget,
 			ProjectKey: source.DefaultProjectKey,
 		})
 		if errSync != nil {
+			if errors.Is(errSync, context.Canceled) || errors.Is(errSync, context.DeadlineExceeded) {
+				return run, errSync
+			}
 			if errors.Is(errSync, ErrSyncInProgress) {
 				run.Skipped++
 				run.Messages = append(run.Messages, fmt.Sprintf("%s skipped: sync already in progress", source.Name))
@@ -1381,6 +1525,9 @@ func (s *service) Reindex(sourceID uuid.UUID) (*SyncResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectRevokedSource(source); err != nil {
+		return nil, err
+	}
 	items, err := s.repo.FindRawItems(sourceID)
 	if err != nil {
 		return nil, err
@@ -1409,6 +1556,9 @@ func (s *service) Pause(sourceID uuid.UUID, paused bool) (*models.ConnectedSourc
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectRevokedSource(source); err != nil {
+		return nil, err
+	}
 	source.Enabled = !paused
 	if paused {
 		source.Status = "paused"
@@ -1435,6 +1585,9 @@ func (s *service) RevokeAuthorized(
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectRevokedSource(source); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(source.OwnerIdentity) == "" ||
 		strings.TrimSpace(source.OwnerIdentity) != strings.TrimSpace(auth.OwnerIdentity) {
 		return nil, ErrDestructiveOwnerMismatch
@@ -1451,6 +1604,16 @@ func (s *service) RevokeAuthorized(
 }
 
 func (s *service) Search(request SearchRequest) (*SearchResult, error) {
+	return s.SearchContext(context.Background(), request)
+}
+
+func (s *service) SearchContext(ctx context.Context, request SearchRequest) (*SearchResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	limit := request.Limit
 	if limit <= 0 || limit > 20 {
 		limit = 8
@@ -1459,11 +1622,17 @@ func (s *service) Search(request SearchRequest) (*SearchResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(request.ExcludeConnectorKeys) == 0 && s.semanticService != nil && s.semanticService.Enabled() {
-		matches, semanticErr := s.semanticService.Search(context.Background(), semantic.SearchRequest{
+		matches, semanticErr := s.semanticService.Search(ctx, semantic.SearchRequest{
 			OwnerIdentity: request.OwnerIdentity, Query: request.Query, ProjectKey: request.ProjectKey,
 			Limit: limit, IncludeSensitive: request.IncludeSensitive,
 		})
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if semanticErr == nil && len(matches) > 0 {
 			ranked := make([]RankedExtraction, 0, len(matches))
 			for _, match := range matches {
@@ -1483,8 +1652,14 @@ func (s *service) Search(request SearchRequest) (*SearchResult, error) {
 					Explanation: fmt.Sprintf("Retrieved %d source-backed records through local pgvector semantic retrieval; owner, source-revocation, project, archive, and sensitivity filters were enforced.", len(ranked))}, nil
 			}
 		}
+		if semanticErr != nil && (errors.Is(semanticErr, context.Canceled) || errors.Is(semanticErr, context.DeadlineExceeded) || ctx.Err() != nil) {
+			return nil, firstContextError(ctx, semanticErr)
+		}
 		// A semantic failure falls back to the existing bounded keyword search.
 		// It is deliberately not attached to an arbitrary source audit record.
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	extractions, err := s.repo.FindExtractionsForSources(sourceIDsFromSet(visibleSourceIDs), strings.TrimSpace(request.ProjectKey), false)
 	if err != nil {
@@ -1492,6 +1667,9 @@ func (s *service) Search(request SearchRequest) (*SearchResult, error) {
 	}
 	ranked := []RankedExtraction{}
 	for _, extraction := range extractions {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !visibleSourceIDs[extraction.SourceID] {
 			continue
 		}
@@ -1522,16 +1700,26 @@ func (s *service) Search(request SearchRequest) (*SearchResult, error) {
 	}, nil
 }
 
+func firstContextError(ctx context.Context, fallback error) error {
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return fallback
+}
+
 func (s *service) visibleSourceIDs(ownerIdentity string) (map[uuid.UUID]bool, error) {
 	return s.visibleSourceIDsExcluding(ownerIdentity, nil)
 }
 
 func (s *service) visibleSourceIDsExcluding(ownerIdentity string, excludedConnectorKeys []string) (map[uuid.UUID]bool, error) {
-	sources, err := s.repo.FindSources(true)
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return map[uuid.UUID]bool{}, nil
+	}
+	sources, err := s.repo.FindSourcesForOwner(ownerIdentity, true, identity.CanReadLegacyOwnerlessData(ownerIdentity))
 	if err != nil {
 		return nil, err
 	}
-	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	excluded := make(map[string]bool, len(excludedConnectorKeys))
 	for _, connectorKey := range excludedConnectorKeys {
 		if connectorKey = strings.TrimSpace(connectorKey); connectorKey != "" {
@@ -1546,9 +1734,7 @@ func (s *service) visibleSourceIDsExcluding(ownerIdentity string, excludedConnec
 		if source.RevokedAt != nil || strings.EqualFold(strings.TrimSpace(source.Status), "revoked") {
 			continue
 		}
-		if ownerIdentity == "" || source.OwnerIdentity == "" || source.OwnerIdentity == ownerIdentity {
-			visible[source.ID] = true
-		}
+		visible[source.ID] = true
 	}
 	return visible, nil
 }
@@ -1571,6 +1757,23 @@ func (s *service) ExtractionsForOwner(ownerIdentity, projectKey string, includeA
 		return nil, err
 	}
 	return s.repo.FindExtractionsForSources(sourceIDsFromSet(visibleSourceIDs), projectKey, includeArchived)
+}
+
+func (s *service) ExtractionsForOwnerLimit(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.SourceExtraction, error) {
+	visibleSourceIDs, err := s.visibleSourceIDs(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.FindRecentExtractionsForSources(
+		sourceIDsFromSet(visibleSourceIDs),
+		strings.TrimSpace(projectKey),
+		includeArchived,
+		limit,
+	)
+}
+
+func (s *service) ExtractionForOwner(ownerIdentity string, id uuid.UUID) (*models.SourceExtraction, error) {
+	return s.repo.FindExtractionForOwner(id, ownerIdentity)
 }
 
 func (s *service) UpdateExtraction(id uuid.UUID, request models.SourceExtraction) (*models.SourceExtraction, error) {
@@ -1603,7 +1806,7 @@ func (s *service) UpdateExtraction(id uuid.UUID, request models.SourceExtraction
 	updated, err := s.repo.SaveExtraction(extraction)
 	if err == nil && updated != nil {
 		s.audit(extraction.SourceID, "extraction.corrected", "operator corrected extraction")
-		if errIndex := s.indexExtraction(updated); errIndex != nil {
+		if errIndex := s.indexExtraction(context.Background(), updated); errIndex != nil {
 			return updated, fmt.Errorf("extraction corrected but index update failed: %w", errIndex)
 		}
 		if errWorkflow := s.reconcileWorkflowFromExtraction(updated); errWorkflow != nil {
@@ -1691,8 +1894,16 @@ func (s *service) DeleteExtractionAuthorized(
 	return nil
 }
 
-func (s *service) AuditLogs(sourceID *uuid.UUID) ([]models.SourceAuditLog, error) {
-	return s.repo.FindAuditLogs(sourceID)
+func (s *service) AuditLogs(sourceID *uuid.UUID, limit int) ([]models.SourceAuditLog, error) {
+	return s.repo.FindAuditLogs(sourceID, limit)
+}
+
+func (s *service) AuditLogsForOwner(ownerIdentity string, limit int) ([]models.SourceAuditLog, error) {
+	visibleSourceIDs, err := s.visibleSourceIDs(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.FindAuditLogsForSources(sourceIDsFromSet(visibleSourceIDs), limit)
 }
 
 func (s *service) localFolderItems(source *models.ConnectedSource, request ImportRequest) ([]ImportItem, error) {
@@ -2436,7 +2647,7 @@ func (s *service) retractWorkflowForExtraction(extraction *models.SourceExtracti
 	return s.workflowService.RetractSource(source.Category, extraction.ID.String(), reason)
 }
 
-func (s *service) indexExtraction(extraction *models.SourceExtraction) error {
+func (s *service) indexExtraction(ctx context.Context, extraction *models.SourceExtraction) error {
 	keywords := strings.Join(mapKeys(tokenSet(extraction.Text+" "+extraction.Summary+" "+extraction.Entities+" "+extraction.Tasks)), ",")
 	if _, err := s.repo.SaveIndexEntry(&models.SourceIndexEntry{
 		SourceID:     extraction.SourceID,
@@ -2453,7 +2664,7 @@ func (s *service) indexExtraction(extraction *models.SourceExtraction) error {
 	if s.semanticService == nil || !s.semanticService.Enabled() {
 		return nil
 	}
-	if err := s.semanticService.Index(context.Background(), extraction); err != nil {
+	if err := s.semanticService.Index(ctx, extraction); err != nil {
 		// Semantic indexing is optional enrichment. Preserve the extracted record
 		// and keyword index, then expose the degraded state in the source audit.
 		s.audit(extraction.SourceID, "semantic.index_failed", "local semantic index was not updated: "+compact(err.Error(), 240))

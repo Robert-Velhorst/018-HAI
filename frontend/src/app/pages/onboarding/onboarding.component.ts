@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { Router } from '@angular/router';
 
 interface OnboardingStep {
@@ -9,10 +9,11 @@ interface OnboardingStep {
 const ONBOARDED_KEY = 'hai_onboarded';
 
 @Component({
-    selector: 'app-onboarding',
-    templateUrl: './onboarding.component.html',
-    styleUrls: ['./onboarding.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-onboarding',
+  templateUrl: './onboarding.component.html',
+  styleUrls: ['./onboarding.component.scss'],
 })
 export class OnboardingComponent {
   current = 0;

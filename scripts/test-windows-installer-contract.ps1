@@ -1,7 +1,5 @@
 [CmdletBinding()]
-param(
-    [switch]$SkipPayload
-)
+param()
 
 $ErrorActionPreference = "Stop"
 
@@ -9,10 +7,11 @@ $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Pat
 $buildScript = Join-Path $PSScriptRoot "build-windows-installer.ps1"
 $installerScript = Join-Path $repositoryRoot "installer\windows\HAI.iss"
 $supportScript = Join-Path $repositoryRoot "installer\windows\Hai-InstallerSupport.ps1"
+$localModelScript = Join-Path $repositoryRoot "installer\windows\Enable-LocalModel.ps1"
 $initializerScript = Join-Path $PSScriptRoot "initialize-windows.ps1"
 $documentation = Join-Path $repositoryRoot "docs\windows-installer.md"
 
-foreach ($requiredFile in @($buildScript, $installerScript, $supportScript, $initializerScript, $documentation)) {
+foreach ($requiredFile in @($buildScript, $installerScript, $supportScript, $localModelScript, $initializerScript, $documentation)) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "Windows installer contract is missing: $requiredFile"
     }
@@ -22,8 +21,6 @@ $build = [IO.File]::ReadAllText($buildScript)
 $installer = [IO.File]::ReadAllText($installerScript)
 $support = [IO.File]::ReadAllText($supportScript)
 $initializer = [IO.File]::ReadAllText($initializerScript)
-$startScript = [IO.File]::ReadAllText((Join-Path $repositoryRoot "installer\windows\Start-HAI.ps1"))
-$connectorTest = [IO.File]::ReadAllText((Join-Path $repositoryRoot "installer\windows\Test-HAI-LocalConnector.ps1"))
 $docs = [IO.File]::ReadAllText($documentation)
 $gitignore = [IO.File]::ReadAllText((Join-Path $repositoryRoot ".gitignore"))
 
@@ -34,10 +31,10 @@ if ($gitignore -notmatch [Regex]::Escape("/installer/release/")) {
 foreach ($script in @(
     $buildScript,
     $supportScript,
+    $localModelScript,
     (Join-Path $repositoryRoot "installer\windows\Start-HAI.ps1"),
     (Join-Path $repositoryRoot "installer\windows\Stop-HAI.ps1"),
     (Join-Path $repositoryRoot "installer\windows\HAI-Status.ps1"),
-    (Join-Path $repositoryRoot "installer\windows\Test-HAI-LocalConnector.ps1"),
     (Join-Path $repositoryRoot "installer\windows\Open-HAI.ps1")
 )) {
     $tokens = $null
@@ -53,6 +50,41 @@ foreach ($required in @(
 )) {
     if ($build -notmatch [Regex]::Escape($required)) {
         throw "Installer build contract is missing '$required'."
+    }
+}
+
+if ($support -match [Regex]::Escape('{{index .Config.Labels "com.docker.compose.project.working_dir"}}')) {
+    throw "Installer conflict detection must not pass nested quotes through Docker's Go template."
+}
+if ($support -notmatch [Regex]::Escape('{{json .Config.Labels}}')) {
+    throw "Installer conflict detection must parse Docker labels as JSON."
+}
+if ($support -notmatch [Regex]::Escape('inspectExitCode')) {
+    throw "Installer conflict detection must preserve Docker's exit code before processing output."
+}
+
+foreach ($required in @(
+    "Enable local model",
+    "Enable-LocalModel.ps1"
+)) {
+    if ($installer -notmatch [Regex]::Escape($required)) {
+        throw "Inno Setup local-model activation is missing '$required'."
+    }
+}
+
+$localModel = [IO.File]::ReadAllText($localModelScript)
+foreach ($required in @(
+    "OLLAMA_BASE_URL",
+    "OLLAMA_MODEL_IDS",
+    "qwen2.5:0.5b",
+    "ollama pull",
+    "--profile",
+    "Wait-HaiReady",
+    "containerIDLine",
+    "serviceExitCode"
+)) {
+    if ($localModel -notmatch [Regex]::Escape($required)) {
+        throw "Local-model activation contract is missing '$required'."
     }
 }
 
@@ -79,33 +111,6 @@ foreach ($required in @(
     if ($support -notmatch [Regex]::Escape($required)) {
         throw "Installer runtime contract is missing '$required'."
     }
-}
-
-if ($initializer -notmatch [Regex]::Escape('HAI_A2A_LOCAL_PORT') -or
-    $initializer -notmatch [Regex]::Escape('127.0.0.1:$a2aLocalPort/api/v1/a2a')) {
-    throw "The first-run initializer does not configure the separate local A2A connector."
-}
-
-if ($startScript -notmatch [Regex]::Escape('--profile local-a2a')) {
-    throw "The installed start command must activate the local A2A connector profile."
-}
-
-foreach ($required in @(
-    "HAI_A2A_BRIDGE_TOKEN",
-    "A2A-Version",
-    "supportedInterfaces",
-    'Planning endpoint: $($planningInterface.url)',
-    "SendMessage",
-    "TASK_STATE_COMPLETED",
-    "hai-controlled-planning-proposal"
-)) {
-    if ($connectorTest -notmatch [Regex]::Escape($required)) {
-        throw "The local connector diagnostic does not verify '$required'."
-    }
-}
-
-if ($connectorTest -match [Regex]::Escape('Planning endpoint: $($agentCard.url)')) {
-    throw "The local connector diagnostic reports the removed Agent Card URL field instead of its advertised planning interface."
 }
 
 if ($initializer -notmatch [Regex]::Escape('GATEWAY_HOST_BIND') -or
@@ -167,11 +172,6 @@ foreach ($required in @(
     }
 }
 
-if ($SkipPayload) {
-    Write-Host "Windows installer source contracts passed without regenerating the release payload."
-    exit 0
-}
-
 & $buildScript -SkipCompile
 if ($LASTEXITCODE -ne 0) {
     throw "Installer payload preparation failed."
@@ -193,11 +193,10 @@ if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot ".env.example") -PathTy
 }
 foreach ($requiredPayloadPath in @(
     "docker-compose.local.yml",
-    "nginx-config\a2a-local.conf.template",
     "installer\windows\Start-HAI.ps1",
+    "installer\windows\Enable-LocalModel.ps1",
     "installer\windows\Stop-HAI.ps1",
-    "installer\windows\HAI-Status.ps1",
-    "installer\windows\Test-HAI-LocalConnector.ps1"
+    "installer\windows\HAI-Status.ps1"
 )) {
     if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot $requiredPayloadPath) -PathType Leaf)) {
         throw "Installer payload is missing required product file: $requiredPayloadPath"

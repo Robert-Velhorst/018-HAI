@@ -10,7 +10,7 @@ func TestWorkflowCompletionSettlementProofsMigrationContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	up := string(upBytes)
+	up := normalizeMigrationLineEndings(string(upBytes))
 
 	for _, required := range []string{
 		"CREATE TABLE public.workflow_completion_attestations",
@@ -81,7 +81,7 @@ func TestWorkflowCompletionSettlementProofsMigrationContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	down := string(downBytes)
+	down := normalizeMigrationLineEndings(string(downBytes))
 	if !strings.Contains(
 		down,
 		"refusing to remove non-empty workflow completion and portfolio settlement proof ledgers",

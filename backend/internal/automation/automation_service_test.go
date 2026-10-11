@@ -57,6 +57,10 @@ func TestMain(m *testing.M) {
 	case "redact":
 		fmt.Println("token=super-secret-token")
 		os.Exit(0)
+	case "wait":
+		time.Sleep(30 * time.Second)
+		fmt.Println("too-late")
+		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }
@@ -585,6 +589,53 @@ func TestLaunchDoesNotFollowAPIRedirect(t *testing.T) {
 	}
 }
 
+func TestLaunchCancelsAPIRequestWithCallerContext(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	id := uuid.New()
+	repo := newFakeAutomationRepo(&models.Automation{
+		ID: id, Name: "Cancelable API Automation", URLPath: "cancelable-api-automation",
+		LaunchType: "api", LaunchTarget: server.URL,
+	})
+	service := newTestService(repo, events.Publisher{})
+	ctx, cancel := context.WithCancel(context.Background())
+	request := approvedTaskLaunchRequest(t, service, id, TaskLaunchRequest{ExecutionContext: ctx})
+	resultChannel := make(chan *LaunchResult, 1)
+	errorChannel := make(chan error, 1)
+	go func() {
+		result, err := service.LaunchTask(id, request)
+		resultChannel <- result
+		errorChannel <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("API launch did not reach the server")
+	}
+	cancel()
+	select {
+	case err := <-errorChannel:
+		if err != nil {
+			t.Fatalf("LaunchTask: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("API launch ignored caller cancellation")
+	}
+	result := <-resultChannel
+	if result == nil || result.Status != "failed" || !strings.Contains(strings.ToLower(result.Message), "canceled") {
+		t.Fatalf("canceled API result = %#v", result)
+	}
+	if len(repo.launchEvents) != 1 || !containsString(repo.launchEvents[0].AuditEvents, "api request canceled with its caller context") {
+		t.Fatalf("canceled API audit = %#v", repo.launchEvents)
+	}
+}
+
 func TestLaunchRunsAllowlistedScriptWithoutShell(t *testing.T) {
 	dir := t.TempDir()
 	target := writeExecutableScriptFixture(t, dir, "ok")
@@ -613,6 +664,49 @@ func TestLaunchRunsAllowlistedScriptWithoutShell(t *testing.T) {
 	}
 	if result.Output != "script-ok" {
 		t.Fatalf("output = %q, want script-ok", result.Output)
+	}
+}
+
+func TestLaunchCancelsScriptWithCallerContext(t *testing.T) {
+	dir := t.TempDir()
+	target := writeExecutableScriptFixture(t, dir, "wait")
+	t.Setenv("AUTOMATION_SCRIPT_EXECUTION_ENABLED", "true")
+	t.Setenv("AUTOMATION_SCRIPT_DIR", dir)
+	t.Setenv("AUTOMATION_SCRIPT_SHA256_ALLOWLIST", scriptPin(t, filepath.Join(dir, target)))
+	t.Setenv("AUTOMATION_SCRIPT_TIMEOUT_SECONDS", "10")
+
+	id := uuid.New()
+	repo := newFakeAutomationRepo(&models.Automation{
+		ID: id, Name: "Cancelable Script Automation", URLPath: "cancelable-script-automation",
+		Host: "localhost", Port: 8080, LaunchType: "script", LaunchTarget: target,
+	})
+	service := newTestService(repo, events.Publisher{})
+	ctx, cancel := context.WithCancel(context.Background())
+	request := approvedTaskLaunchRequest(t, service, id, TaskLaunchRequest{ExecutionContext: ctx})
+	resultChannel := make(chan *LaunchResult, 1)
+	errorChannel := make(chan error, 1)
+	go func() {
+		result, err := service.LaunchTask(id, request)
+		resultChannel <- result
+		errorChannel <- err
+	}()
+
+	time.Sleep(150 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-errorChannel:
+		if err != nil {
+			t.Fatalf("LaunchTask: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("script launch ignored caller cancellation")
+	}
+	result := <-resultChannel
+	if result == nil || result.Status != "failed" || !strings.Contains(strings.ToLower(result.Message), "canceled") {
+		t.Fatalf("canceled script result = %#v", result)
+	}
+	if len(repo.launchEvents) != 1 || !containsString(repo.launchEvents[0].AuditEvents, "script process canceled with its caller context") {
+		t.Fatalf("canceled script audit = %#v", repo.launchEvents)
 	}
 }
 
@@ -741,6 +835,8 @@ func writeExecutableScriptFixture(t *testing.T, dir, mode string) string {
 		body = "#!/bin/sh\nif [ -n \"$SECRET_TOKEN\" ]; then echo leaked; else echo clean; fi\n"
 	case "redact":
 		body = "#!/bin/sh\necho 'token=super-secret-token'\n"
+	case "wait":
+		body = "#!/bin/sh\nsleep 30\necho too-late\n"
 	default:
 		t.Fatalf("unsupported script fixture mode %q", mode)
 	}
@@ -1172,6 +1268,68 @@ func TestLaunchAllowsDockerWithApproval(t *testing.T) {
 	}
 }
 
+func TestLaunchCancelsDockerRequestWithCallerContext(t *testing.T) {
+	socketPath := filepath.Join(os.TempDir(), "hai-"+uuid.NewString()+".sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Skipf("Unix sockets are unavailable on this platform: %v", err)
+	}
+	started := make(chan struct{})
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	})}
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(func() {
+		_ = server.Shutdown(context.Background())
+		_ = listener.Close()
+		_ = os.Remove(socketPath)
+	})
+	t.Setenv("AUTOMATION_DOCKER_CONTROL_ENABLED", "true")
+	t.Setenv("AUTOMATION_DOCKER_ALLOWED_CONTAINERS", "safe-container")
+	t.Setenv("AUTOMATION_DOCKER_SOCKET", socketPath)
+
+	id := uuid.New()
+	repo := newFakeAutomationRepo(&models.Automation{
+		ID: id, Name: "Cancelable Docker Automation", URLPath: "cancelable-docker-automation",
+		LaunchType: "docker_service", LaunchTarget: "safe-container",
+	})
+	service := newTestService(repo, events.Publisher{})
+	ctx, cancel := context.WithCancel(context.Background())
+	request := approvedTaskLaunchRequest(t, service, id, TaskLaunchRequest{
+		OwnerIdentity: "alice", ExecutionContext: ctx,
+	})
+	resultChannel := make(chan *LaunchResult, 1)
+	errorChannel := make(chan error, 1)
+	go func() {
+		result, launchErr := service.LaunchTask(id, request)
+		resultChannel <- result
+		errorChannel <- launchErr
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Docker launch did not reach the socket server")
+	}
+	cancel()
+	select {
+	case launchErr := <-errorChannel:
+		if launchErr != nil {
+			t.Fatalf("LaunchTask: %v", launchErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Docker launch ignored caller cancellation")
+	}
+	result := <-resultChannel
+	if result == nil || result.Status != "failed" || !strings.Contains(strings.ToLower(result.Message), "canceled") {
+		t.Fatalf("canceled Docker result = %#v", result)
+	}
+	if len(repo.launchEvents) != 1 || !containsString(repo.launchEvents[0].AuditEvents, "docker socket request canceled with its caller context") {
+		t.Fatalf("canceled Docker audit = %#v", repo.launchEvents)
+	}
+}
+
 func TestLaunchBlocksDockerWhenContainerNotAllowlisted(t *testing.T) {
 	t.Setenv("AUTOMATION_DOCKER_CONTROL_ENABLED", "true")
 	t.Setenv("AUTOMATION_DOCKER_ALLOWED_CONTAINERS", "safe-container")
@@ -1246,6 +1404,62 @@ func TestLaunchBlocksAPILinkLocalTarget(t *testing.T) {
 	}
 	if result.Status != "blocked" {
 		t.Fatalf("status = %q, want blocked", result.Status)
+	}
+}
+
+func TestAutomationHTTPClientRejectsBlockedDNSResolution(t *testing.T) {
+	t.Parallel()
+
+	client := noRedirectHTTPClientWithResolver(5*time.Second, func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("169.254.169.254")}}, nil
+	})
+	transport := client.Transport.(*http.Transport)
+	if transport.Proxy != nil {
+		t.Fatal("automation transport must not inherit environment proxy settings")
+	}
+	_, err := transport.DialContext(context.Background(), "tcp", "automation.example:443")
+	if err == nil || !strings.Contains(err.Error(), "blocked address space") {
+		t.Fatalf("DialContext error = %v, want blocked address rejection", err)
+	}
+}
+
+func TestAutomationServiceReusesDirectHTTPClient(t *testing.T) {
+	t.Parallel()
+
+	service := NewService(newFakeAutomationRepo(nil), events.Publisher{}).(*service)
+	if service.httpClient == nil || service.directHTTPClient() != service.directHTTPClient() {
+		t.Fatal("automation service must reuse its bounded HTTP client")
+	}
+}
+
+func TestAutomationTargetsRejectEmbeddedCredentials(t *testing.T) {
+	t.Setenv("AUTOMATION_API_ALLOWED_HOSTS", "127.0.0.1")
+
+	id := uuid.New()
+	repo := newFakeAutomationRepo(&models.Automation{
+		ID:             id,
+		Name:           "Credential URL automation",
+		URLPath:        "credential-url-automation",
+		LaunchType:     "api",
+		LaunchTarget:   "POST http://user:secret@127.0.0.1:9/start",
+		HealthCheckURL: "http://user:secret@127.0.0.1:9/health",
+	})
+	service := newTestService(repo, events.Publisher{})
+
+	health, err := service.RunHealthCheck(id)
+	if err != nil {
+		t.Fatalf("RunHealthCheck: %v", err)
+	}
+	if !strings.Contains(health.FailureReason, "must not contain credentials") {
+		t.Fatalf("health result = %#v, want credential rejection", health)
+	}
+
+	result, err := service.LaunchTask(id, approvedTaskLaunchRequest(t, service, id, TaskLaunchRequest{}))
+	if err != nil {
+		t.Fatalf("LaunchTask: %v", err)
+	}
+	if result.Status != "blocked" || !strings.Contains(result.Message, "must not contain credentials") {
+		t.Fatalf("launch result = %#v, want credential rejection", result)
 	}
 }
 

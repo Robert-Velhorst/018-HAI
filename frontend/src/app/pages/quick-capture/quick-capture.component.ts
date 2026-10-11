@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
@@ -7,10 +7,11 @@ import { ContextMemoryService } from '../../services/context-memory/context-memo
 const DRAFT_KEY = 'hai_quick_capture_draft';
 
 @Component({
-    selector: 'app-quick-capture',
-    templateUrl: './quick-capture.component.html',
-    styleUrls: ['./quick-capture.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-quick-capture',
+  templateUrl: './quick-capture.component.html',
+  styleUrls: ['./quick-capture.component.scss'],
 })
 export class QuickCaptureComponent implements OnInit, OnDestroy {
   form: FormGroup;

@@ -27,6 +27,34 @@ export interface IContextMemoryRequest {
   archived?: boolean;
 }
 
+export type MemoryQuerySort = 'updatedAt' | 'createdAt' | 'confidence' | 'kind' | 'relevance';
+export type MemoryQueryOrder = 'asc' | 'desc';
+
+export interface IMemoryQueryParams {
+  projectKey?: string;
+  includeArchived?: boolean;
+  q?: string;
+  kind?: string;
+  tag?: string;
+  sort?: MemoryQuerySort;
+  order?: MemoryQueryOrder;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface IMemoryPageResult {
+  items: IContextMemory[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  sort: MemoryQuerySort;
+  order: MemoryQueryOrder;
+  search?: string;
+  kind?: string;
+  tag?: string;
+}
+
 export interface IMemoryRetrieveRequest {
   query: string;
   projectKey?: string;

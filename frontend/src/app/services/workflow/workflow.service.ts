@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { Observable, catchError, map, of, throwError } from 'rxjs';
 import { IWorkflowService } from '../workflow.service.interface';
 import {
   IWorkflowApprovalResolutionRequest,
@@ -31,10 +31,6 @@ import {
   IWorkflowRunSummary,
   IWorkflowTransitionRequest,
 } from '../../models/workflow.model.interface';
-
-type WorkflowFrameworkSelectionListResponse =
-  | IWorkflowFrameworkSelectionDecision[]
-  | { selections: IWorkflowFrameworkSelectionDecision[] };
 
 @Injectable({
   providedIn: 'root',
@@ -74,17 +70,15 @@ export class WorkflowService implements IWorkflowService {
     selectionDecisionId: string
   ): Observable<IWorkflowFrameworkSelectionDecision | undefined> {
     const expectedId = selectionDecisionId.trim();
-    return this.http.get<WorkflowFrameworkSelectionListResponse>(
-      '/api/v1/framework-registry/selections',
-      { params: new HttpParams().set('limit', 200) }
+    return this.http.get<IWorkflowFrameworkSelectionDecision>(
+      `/api/v1/framework-registry/selections/${encodeURIComponent(expectedId)}`
     ).pipe(
-      map((response) => {
-        const selections = Array.isArray(response) ? response : response.selections ?? [];
-        const selection = selections.find((item) => item.id === expectedId);
-        return selection && this.hasValidFrameworkRiskContract(selection)
+      map((selection) => {
+        return selection.id === expectedId && this.hasValidFrameworkRiskContract(selection)
           ? selection
           : undefined;
-      })
+      }),
+      catchError((error) => error?.status === 404 ? of(undefined) : throwError(() => error))
     );
   }
 

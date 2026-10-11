@@ -21,7 +21,7 @@
           nzType="default"
           (click)="refresh()"
           [nzLoading]="loading"
-          title="Reload policy, providers, token usage, budget, probes, and routing logs"
+          title="Reload policy and any advanced records currently open"
         >
           <i nz-icon nzType="reload" nzTheme="outline"></i>
           Refresh
@@ -94,8 +94,8 @@
       </button>
 
       <button type="button" class="status-tile" (click)="scrollToSection('provider-inventory')" title="Open provider readiness, quota, budget, and endpoint details">
-        <strong>{{ enabledProviderCount(p) }}/{{ p.providers.length }}</strong>
-        <span>providers enabled</span>
+        <strong>{{ configuredProviderSummary(p) }}</strong>
+        <span>endpoints configured</span>
       </button>
 
       <button
@@ -211,10 +211,10 @@
           </div>
 
           <div class="scorecard-grid">
-            <button type="button" (click)="scrollToSection('provider-inventory')" title="Enabled model providers">
+            <button type="button" (click)="scrollToSection('provider-inventory')" title="Configured and live model providers">
               <span>Providers</span>
-              <strong>{{ enabledProviderCount(p) }}</strong>
-              <small>{{ configuredProviderSummary(p) }} configured</small>
+              <strong>{{ configuredProviderCount(p) }}</strong>
+              <small>{{ liveProbeCount() }} live / {{ enabledProviderCount(p) }} catalog-enabled</small>
             </button>
             <button type="button" (click)="scrollToSection('model-catalog')" title="Total configured model catalog">
               <span>Models</span>
@@ -308,12 +308,13 @@
       </aside>
     </section>
 
-    <details class="advanced-section model-catalog-section" id="model-catalog" open>
+    <details class="advanced-section model-catalog-section" id="model-catalog" (toggle)="onCatalogToggle($event)">
       <summary title="Expand or collapse the seven-tier model catalog">
         <span>Seven-tier model catalog</span>
         <small>{{ totalModelCount(p) }} models grouped by local, free, cheap, acceptable, high, premium, and expensive</small>
       </summary>
 
+      <ng-container *ngIf="catalogOpen">
       <section class="tier-overview" aria-label="Model tier summary">
         <button
           type="button"
@@ -427,15 +428,16 @@
           </ng-template>
         </article>
       </section>
+      </ng-container>
     </details>
 
-    <details class="advanced-section" id="provider-inventory">
+    <details class="advanced-section" id="provider-inventory" (toggle)="onProviderInventoryToggle($event)">
       <summary title="Expand or collapse provider readiness, budget, quota, and model detail">
         <span>Provider inventory</span>
-        <small>{{ enabledProviderCount(p) }} enabled, {{ configuredProviderSummary(p) }} configured endpoints</small>
+        <small>{{ configuredProviderSummary(p) }} configured, {{ liveProbeCount() }} live, {{ enabledProviderCount(p) }} catalog-enabled</small>
       </summary>
 
-      <div class="provider-grid">
+      <div class="provider-grid" *ngIf="providerInventoryOpen">
         <article
           class="provider-card"
           *ngFor="let provider of p.providers; trackBy: trackByProvider"
@@ -518,13 +520,13 @@
       </div>
     </details>
 
-    <details class="advanced-section" id="routing-audit">
+    <details class="advanced-section" id="routing-audit" (toggle)="onAuditToggle($event)">
       <summary title="Expand or collapse probes, routing logs, and fallback path">
         <span>Routing audit</span>
         <small>Provider probes, selected routes, fallback history, and rejected candidates</small>
       </summary>
 
-      <section class="diagnostics-grid">
+      <section class="diagnostics-grid" *ngIf="auditOpen">
         <article class="surface-panel">
           <div class="panel-heading compact">
             <button

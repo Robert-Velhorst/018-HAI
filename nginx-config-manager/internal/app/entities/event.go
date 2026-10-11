@@ -9,6 +9,8 @@ const (
 )
 
 type AutomationEvent struct {
+	ID         string              `json:"eventId"`
 	Type       AutomationEventType `json:"type"`
 	Automation *Automation         `json:"automation"`
+	OccurredAt string              `json:"occurredAt,omitempty"`
 }

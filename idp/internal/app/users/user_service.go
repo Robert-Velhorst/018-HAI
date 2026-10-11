@@ -11,6 +11,7 @@ import (
 	"automation-hub-idp/internal/infra"
 	"errors"
 	"github.com/google/uuid"
+	"time"
 )
 
 type userServiceImpl struct {
@@ -22,6 +23,7 @@ type userServiceImpl struct {
 var (
 	ErrUserAlreadyExists = errors.New("user already exists")
 	ErrUserNotFound      = errors.New("user not found")
+	ErrInvalidResetToken = errors.New("invalid or expired reset token")
 )
 
 func NewUserService(repo irepository.UserRepository, logger iservice.Logger, hasher utils.PasswordHasher) UserService {
@@ -123,6 +125,38 @@ func (s *userServiceImpl) UpdatePassword(id uuid.UUID, newPassword string) error
 	if err != nil {
 		s.logger.Error("Error updating user with ID: %s, %v", id, err)
 		return errors.New("error updating user")
+	}
+	return nil
+}
+
+func (s *userServiceImpl) CompletePasswordReset(token, newPassword string) error {
+	passwordHash, err := s.hasher.Hash(newPassword)
+	if err != nil {
+		s.logger.Error("Error hashing password for password reset: %v", err)
+		return errors.New("error hashing password")
+	}
+	if err := s.userRepo.ConsumePasswordReset(token, passwordHash); err != nil {
+		if errors.Is(err, irepository.ErrInvalidResetToken) {
+			return ErrInvalidResetToken
+		}
+		s.logger.Error("Error completing password reset: %v", err)
+		return errors.New("error completing password reset")
+	}
+	return nil
+}
+
+func (s *userServiceImpl) StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error {
+	if err := s.userRepo.StorePasswordReset(id, token, expiresAt); err != nil {
+		s.logger.Error("Error storing password reset for user with ID %s: %v", id, err)
+		return errors.New("error storing password reset")
+	}
+	return nil
+}
+
+func (s *userServiceImpl) ClearPasswordResetIfToken(id uuid.UUID, token string) error {
+	if err := s.userRepo.ClearPasswordResetIfToken(id, token); err != nil {
+		s.logger.Error("Error clearing undelivered password reset for user with ID %s: %v", id, err)
+		return errors.New("error clearing password reset")
 	}
 	return nil
 }

@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"automation-hub-backend/internal/identity"
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -52,8 +53,11 @@ func (h *Handler) Command(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
 		return
 	}
-	result, err := h.service.Command(request)
+	result, err := h.service.CommandContext(c.Request.Context(), request)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
 		if errors.Is(err, ErrInvalidStandingMandateID) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return

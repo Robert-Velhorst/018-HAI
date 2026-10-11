@@ -1,6 +1,7 @@
 package a2abridge
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -37,8 +38,8 @@ func (h *Handler) AgentCard(c *gin.Context) {
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
-	c.Header("Cache-Control", "private, max-age=300")
-	c.Header("ETag", `"hai-a2a-controlled-planning-1.0.1"`)
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Header("ETag", `"hai-a2a-controlled-planning-1.0.2"`)
 	c.JSON(http.StatusOK, card)
 }
 
@@ -55,19 +56,12 @@ func (h *Handler) Send(c *gin.Context) {
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxJSONRPCBody)
 	var request jsonRPCRequest
-	decoder := json.NewDecoder(c.Request.Body)
-	if err := decoder.Decode(&request); err != nil {
+	if err := decodeStrictJSON(c.Request.Body, &request); err != nil {
 		writeRPCError(c, nil, -32600, "invalid JSON-RPC request")
 		return
 	}
-	// A JSON-RPC request is exactly one JSON object. Accepting a valid request
-	// followed by another value would make an authenticated planning boundary
-	// ambiguous and could allow a peer to believe two requests were accepted.
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		writeRPCError(c, nil, -32600, "invalid JSON-RPC request")
-		return
-	}
-	if request.JSONRPC != "2.0" || !validRequestID(request.ID) {
+	// Invalid request IDs are not safe to reflect into an error response.
+	if request.JSONRPC != "2.0" || !validRequestID(request.ID) || !validJSONRPCID(request.ID) {
 		// An invalid JSON-RPC id cannot safely be echoed in an error response.
 		// Use null as required for an invalid request rather than reflecting an
 		// object or array supplied by an untrusted peer.
@@ -75,11 +69,11 @@ func (h *Handler) Send(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(c.GetHeader("A2A-Version")) != a2aVersion {
-		writeRPCError(c, request.ID, -32009, "A2A-Version 1.0 is required by this local bridge")
+		writeRPCError(c, request.ID, -32009, "A2A-Version 1.0 is required by this bridge")
 		return
 	}
 	if request.Method != "SendMessage" {
-		writeRPCError(c, request.ID, -32601, "only SendMessage is supported by this local planning bridge")
+		writeRPCError(c, request.ID, -32601, "only SendMessage is supported by this planning bridge")
 		return
 	}
 	text, err := taskText(request.Params)
@@ -180,7 +174,7 @@ type sendMessageResponse struct {
 
 func taskText(raw json.RawMessage) (string, error) {
 	var params sendParams
-	if len(raw) == 0 || json.Unmarshal(raw, &params) != nil || strings.TrimSpace(params.Message.Role) != "ROLE_USER" || !validMessageID(params.Message.MessageID) || params.Message.ContextID != "" || params.Message.TaskID != "" || params.Message.Metadata != nil || len(params.Message.Extensions) != 0 || len(params.Message.Parts) == 0 || len(params.Message.Parts) > 4 {
+	if len(raw) == 0 || decodeStrictJSON(bytes.NewReader(raw), &params) != nil || strings.TrimSpace(params.Message.Role) != "ROLE_USER" || !validMessageID(params.Message.MessageID) || params.Message.ContextID != "" || params.Message.TaskID != "" || params.Message.Metadata != nil || len(params.Message.Extensions) != 0 || len(params.Message.Parts) == 0 || len(params.Message.Parts) > 4 {
 		return "", ErrInvalidInput
 	}
 	parts := make([]string, 0, len(params.Message.Parts))
@@ -195,6 +189,42 @@ func taskText(raw json.RawMessage) (string, error) {
 		return "", ErrInvalidInput
 	}
 	return text, nil
+}
+
+func decodeStrictJSON(reader io.Reader, destination any) error {
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return ErrInvalidInput
+		}
+		return err
+	}
+	return nil
+}
+
+func validJSONRPCID(raw json.RawMessage) bool {
+	if len(raw) == 0 || len(raw) > 256 {
+		return false
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return false
+	}
+	switch typed := value.(type) {
+	case string:
+		return utf8.ValidString(typed) && utf8.RuneCountInString(typed) <= 255
+	case json.Number:
+		return len(typed.String()) <= 64
+	default:
+		return false
+	}
 }
 
 func acceptsJSON(contentType string) bool {

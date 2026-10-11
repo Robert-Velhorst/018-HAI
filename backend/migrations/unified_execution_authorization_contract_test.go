@@ -16,7 +16,7 @@ func TestUnifiedExecutionAuthorizationMigrationContract(t *testing.T) {
 		t.Fatalf("read unified execution authorization down migration: %v", err)
 	}
 
-	up := string(upBytes)
+	up := normalizeMigrationLineEndings(string(upBytes))
 	for _, fragment := range []string{
 		"CREATE TABLE public.execution_authorization_receipts",
 		"CREATE TABLE public.execution_authorization_consumptions",
@@ -93,7 +93,7 @@ func TestUnifiedExecutionAuthorizationMigrationContract(t *testing.T) {
 		}
 	}
 
-	down := string(downBytes)
+	down := normalizeMigrationLineEndings(string(downBytes))
 	for _, fragment := range []string{
 		"DROP TRIGGER IF EXISTS trg_execution_authorization_final_effects_no_truncate",
 		"DROP TRIGGER IF EXISTS trg_execution_authorization_final_effects_immutable",
@@ -214,7 +214,7 @@ func readUnifiedExecutionAuthorizationMigration(t *testing.T, path string) strin
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	return string(data)
+	return normalizeMigrationLineEndings(string(data))
 }
 
 func requireMigrationFragments(t *testing.T, text string, fragments []string) {

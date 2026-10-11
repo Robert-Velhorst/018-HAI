@@ -119,7 +119,7 @@ describe('FrameworkRegistryRecommendationComponent', () => {
       }],
       learningPlan: ['Record only verified corrections'],
     };
-    component.advanced = true;
+    fixture.componentRef.setInput('advanced', true);
     fixture.detectChanges();
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
@@ -253,7 +253,7 @@ describe('FrameworkRegistryRecommendationComponent', () => {
     expect(text).toContain('Review the legal deadline');
     expect(text).not.toContain('Per-action autonomy');
 
-    component.advanced = true;
+    fixture.componentRef.setInput('advanced', true);
     fixture.detectChanges();
     text = (fixture.nativeElement as HTMLElement).textContent ?? '';
     [

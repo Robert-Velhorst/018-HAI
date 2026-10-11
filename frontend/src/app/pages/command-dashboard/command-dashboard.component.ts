@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
@@ -48,10 +48,11 @@ interface RuntimeSurfaceGroup {
 }
 
 @Component({
-    selector: 'app-command-dashboard',
-    templateUrl: './command-dashboard.component.html',
-    styleUrls: ['./command-dashboard.component.scss'],
-    standalone: false
+  changeDetection: ChangeDetectionStrategy.Eager,
+  standalone: false,
+  selector: 'app-command-dashboard',
+  templateUrl: './command-dashboard.component.html',
+  styleUrls: ['./command-dashboard.component.scss'],
 })
 export class CommandDashboardComponent implements OnInit {
   private readonly openClawArchiveMaxBytes = 750 * 1024 * 1024;
@@ -114,8 +115,8 @@ export class CommandDashboardComponent implements OnInit {
     {
       key: 'run-cycle',
       title: 'Refresh my operating brief',
-      description: 'Refresh your own context, pursuit decisions, and next action without starting global workers.',
-      metric: 'Personal refresh',
+      description: 'Run your owner-scoped source, workflow, ambient, pursuit, and learning pass without starting global workers.',
+      metric: 'Personal operations',
       icon: 'deployment-unit',
       message: 'Refresh my HAI operating brief and surface my next best action.',
       executeAllowed: true,
@@ -151,7 +152,6 @@ export class CommandDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.refresh();
-    this.refreshPursuits();
     this.refreshRuntimes();
     this.loadCommandLogs();
   }

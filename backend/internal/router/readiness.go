@@ -9,8 +9,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// readinessHandler exposes the configuration self-diagnostic *and* live
-// dependency probes as an HTTP readiness probe.
+func livenessHandler(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "backend"})
+}
+
+// readinessHandler exposes only the aggregate readiness state needed by a
+// load balancer or container orchestrator. Detailed checks can contain
+// internal topology and configuration information, so they are served by the
+// authenticated system readiness endpoint instead.
 //
 // The three states are distinct on purpose, because an operator needs to tell
 // them apart:
@@ -27,7 +34,19 @@ import (
 // The diagnose function is injected so the handler is testable without touching
 // global configuration or opening real sockets.
 func readinessHandler(diagnose func(ctx context.Context) doctor.Report) gin.HandlerFunc {
+	return readinessResponseHandler(diagnose, false)
+}
+
+// readinessDetailHandler exposes the same live report with individual checks.
+// Route registration must keep this handler behind owner authentication and
+// read permission checks.
+func readinessDetailHandler(diagnose func(ctx context.Context) doctor.Report) gin.HandlerFunc {
+	return readinessResponseHandler(diagnose, true)
+}
+
+func readinessResponseHandler(diagnose func(ctx context.Context) doctor.Report, includeChecks bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
 		report := diagnose(c.Request.Context())
 		ok, warn, fail := report.Counts()
 
@@ -41,11 +60,14 @@ func readinessHandler(diagnose func(ctx context.Context) doctor.Report) gin.Hand
 			status = "degraded"
 		}
 
-		c.JSON(code, gin.H{
+		response := gin.H{
 			"status":  status,
 			"service": "backend",
 			"summary": gin.H{"ok": ok, "warn": warn, "fail": fail},
-			"checks":  report.Checks,
-		})
+		}
+		if includeChecks {
+			response["checks"] = report.Checks
+		}
+		c.JSON(code, response)
 	}
 }

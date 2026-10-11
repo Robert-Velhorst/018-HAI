@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -126,6 +127,43 @@ func TestWorkflowHandlerKeepsUsefulBadRequestValidation(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "unexpected EOF") {
 		t.Fatalf("bad-request validation detail was lost: %s", response.Body.String())
+	}
+}
+
+func TestWorkflowActionHandlersRejectMalformedChunkedBodiesBeforeServiceCalls(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name   string
+		path   string
+		invoke func(*Handler, *gin.Context)
+		calls  func(*countingWorkflowHandlerService) int
+	}{
+		{name: "run due", path: "/workflow/run-due", invoke: func(handler *Handler, c *gin.Context) { handler.RunDue(c) }, calls: func(service *countingWorkflowHandlerService) int { return service.runDueCalls }},
+		{name: "recover stale claims", path: "/workflow/recover-stale-claims", invoke: func(handler *Handler, c *gin.Context) { handler.RecoverStaleClaims(c) }, calls: func(service *countingWorkflowHandlerService) int { return service.recoverCalls }},
+		{name: "run due open loops", path: "/workflow/run-due-open-loops", invoke: func(handler *Handler, c *gin.Context) { handler.RunDueOpenLoops(c) }, calls: func(service *countingWorkflowHandlerService) int { return service.openLoopCalls }},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := &countingWorkflowHandlerService{Service: NewService(newFakeWorkflowRepo())}
+			handler := NewHandler(service)
+			request := httptest.NewRequest(http.MethodPost, test.path, bytes.NewBufferString(`{"limit":`))
+			request.Header.Set("Content-Type", "application/json")
+			request.ContentLength = -1
+			response := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(response)
+			context.Request = request
+			context.Set(identity.ContextSubjectKey, "verified-operator")
+
+			test.invoke(handler, context)
+
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", response.Code, response.Body.String())
+			}
+			if got := test.calls(service); got != 0 {
+				t.Fatalf("malformed request called service %d times", got)
+			}
+		})
 	}
 }
 
@@ -392,6 +430,34 @@ func TestRunDueHandlerRunsOnlyVerifiedOwnerWorkflow(t *testing.T) {
 	}
 }
 
+func TestRunDueHandlerHonorsCancelledRequestContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeWorkflowRepo()
+	runner := &fakeTaskRunner{result: &TaskRunResult{PlanID: "cancelled-handler-plan", CompletionStatus: "validated", VerificationStatus: "verified", Passed: true}}
+	service := NewServiceWithTaskRunner(repo, runner)
+	if _, err := service.Intake(IntakeRequest{OwnerIdentity: "alice", Input: "Create Alice's low-risk cancellation test checklist."}); err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	handler := NewHandler(service)
+	requestContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	request := httptest.NewRequest(http.MethodPost, "/workflow/run-due", bytes.NewBufferString(`{"limit":5}`)).WithContext(requestContext)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	ginContext, _ := gin.CreateTestContext(response)
+	ginContext.Request = request
+	ginContext.Set(identity.ContextSubjectKey, "alice")
+
+	handler.RunDue(ginContext)
+
+	if len(runner.requests) != 0 {
+		t.Fatalf("cancelled handler started work: %#v", runner.requests)
+	}
+	if response.Body.Len() != 0 {
+		t.Fatalf("cancelled handler wrote response body: %s", response.Body.String())
+	}
+}
+
 func TestRunOneHandlerRunsOnlyTheSelectedVerifiedOwnerWorkflow(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newFakeWorkflowRepo()
@@ -513,6 +579,28 @@ func (e candidatePendingHandlerError) CandidateIntakeMessage() string { return e
 type failingWorkflowHandlerService struct {
 	Service
 	err error
+}
+
+type countingWorkflowHandlerService struct {
+	Service
+	runDueCalls   int
+	recoverCalls  int
+	openLoopCalls int
+}
+
+func (s *countingWorkflowHandlerService) RunDueForOwner(string, RunDueRequest) (*WorkflowRunSummary, error) {
+	s.runDueCalls++
+	return &WorkflowRunSummary{}, nil
+}
+
+func (s *countingWorkflowHandlerService) RecoverStaleClaimsForOwner(string, RunDueRequest) (*ClaimRecoverySummary, error) {
+	s.recoverCalls++
+	return &ClaimRecoverySummary{}, nil
+}
+
+func (s *countingWorkflowHandlerService) RunDueOpenLoopsForOwner(string, RunDueRequest) (*OpenLoopRunSummary, error) {
+	s.openLoopCalls++
+	return &OpenLoopRunSummary{}, nil
 }
 
 func (s *failingWorkflowHandlerService) ItemsForOwner(string, bool) ([]models.WorkflowItem, error) {
