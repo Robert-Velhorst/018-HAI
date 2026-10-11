@@ -2222,6 +2222,17 @@ database-query, and progressive-loading work; each still needs behavior-level
 comparison against current code/tests. The ref remains preserved and no local
 artifact or branch was deleted.
 
+The ambient branch's `7fabfe75` opt-in local-model installer action was also
+checked against current Compose and model policy. It invokes an `ollama-local`
+service/profile that does not exist in current `docker-compose.local.yml` and
+writes only `OLLAMA_BASE_URL`/`OLLAMA_MODEL_IDS`; current local Model
+Intelligence stays blocked until the operator records a model-specific local
+inference attestation and a recent live provider probe passes. Therefore this
+installer action would fail or overstate readiness if copied unchanged. Keep
+it as an open candidate for a deliberate opt-in service/configuration flow,
+including resource limits, explicit confirmation, policy attestation, live
+probe, rollback, and end-to-end Windows validation.
+
 ### October 11, 2026: queued sync superseded by operator pause
 
 The PR #34 durable-source review exposed a retry-policy gap in the current
