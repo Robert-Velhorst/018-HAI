@@ -2723,3 +2723,23 @@ contracts. These are material losses in reliable job recovery, durable event
 delivery, and database least privilege. No candidate files were copied or
 modified; this is a focused infrastructure review, not a complete audit of
 durable jobs, event delivery, or database lifecycle behavior.
+
+### October 12, 2026: DeepSeek Harness bridge execution gate
+
+Reviewed the candidate Windows DSH bridge and adapter against PR #36. The
+candidate intentionally fails closed: configuration, worker-loop, lease
+acquisition, and process execution return
+`errDSHIsolationUnavailable`. Its stated missing prerequisites are TLS peer
+pinning, a verified OS-enforced least-privilege sandbox, and a server-to-Windows
+process-start acknowledgment protocol that orders Resume against emergency
+stop. This prevents the candidate bridge from starting, but it is not a working
+DSH integration and does not prove those controls are available on Windows.
+
+The separate `hai-runtime-safety-audit` candidate was not ported because its
+DeepSeek/host-runtime changes remove cancellation receipt identity checks,
+request-context failure handling, environment filtering, bounded/redacted
+output, reparse-point rejection, and durable start-intent/acknowledgment
+recovery. The reviewed material therefore supports a release gate, not enabling
+host execution: DSH must remain unavailable until the isolation and start/stop
+ordering controls are implemented and verified on Windows. No candidate code
+was copied, and no live host-process acceptance test was run.
