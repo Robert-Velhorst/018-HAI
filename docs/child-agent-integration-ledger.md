@@ -4273,3 +4273,41 @@ in the PR tree. The exact current PR head before these changes,
 run. PR #36 remains open and unmerged. No transcript, archive, or worktree was
 deleted, moved, truncated, compressed, or archived. The 20 retained files and
 all other unreviewed local HAI worktrees remain protected.
+
+### October 12, 2026: scratch-worktree integration recheck
+
+Rechecked the local OpenClaw-artifact and runtime-safety worktrees against the
+current PR tree. All 255 untracked OpenClaw-worktree paths and all 25 untracked
+runtime-safety-worktree paths already exist in the PR tree. The OpenClaw
+worktree has 143 modified tracked paths, 107 of which differ from the current
+PR copy; the runtime-safety worktree has 13 modified tracked paths, 12 of
+which differ. These counts identify a remaining semantic-review set and are
+not evidence that every divergent hunk is integrated. Targeted review of the
+OpenClaw artifact URL/download implementation confirmed bounded content,
+receipt and owner binding, approved HTTPS origins, DNS/IP validation,
+redirect/proxy denial, and emergency-stop rechecks in the PR. The runtime
+scratch contains older alternatives for these same surfaces; no code was
+copied from either scratch tree.
+
+Compared the model-maintenance scratch's `maintenance.go` with the PR copy.
+The scratch removes provider catalog probes and the Odysseus health-only
+status, narrows accepted API-root paths, and differs in the handling of
+unavailable durable history. Those alternatives would reduce observability
+or weaken current fail-closed/version-check behavior, so they were not
+adopted. This is a targeted file review, not full semantic review of the
+model-maintenance worktree.
+
+The exact PR head `f890e3c8a0abd0d7299e86d218df526c267f6a6f` completed CI run
+`38206115512`: 35 of 36 jobs passed. The sole failure was the `gosec-runner`
+container build receiving HTTP 500 from `sum.golang.org` while verifying
+`google.golang.org/api@v0.288.0`; its compile and isolated contract-test step
+passed. Backend, IDP, frontend, browser acceptance, migration integration,
+Windows, and cleanup-readiness jobs passed. The PR remains open and mergeable
+but its checks are unstable until the transient dependency-service failure is
+resolved. No rerun or merge was performed. The local environment has no `go`
+executable, so the focused local agent-runtime/host-runtime test attempt could
+not run; CI remains the available package-test evidence.
+
+No source archive or scratch-worktree file was modified or deleted. The full
+divergent-file review and historical patch-event attribution remain open, so
+the cleanup gate remains closed.
