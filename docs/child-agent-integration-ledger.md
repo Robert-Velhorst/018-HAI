@@ -6100,3 +6100,47 @@ has no Go toolchain or frontend dependencies, so hosted exact-head CI remains
 the execution gate. The historical reports' original unexecuted checkpoints
 remain historical; this crosswalk does not claim user-database acceptance or
 close the broader semantic/provenance review and cleanup gates.
+
+### October 12, 2026: ambient, worker, configuration, and execution-gate crosswalk
+
+Compared the preserved older checkout's ambient scheduler/service and adjacent
+configuration, health, background-worker, durable-job, execution-authorization,
+safe-worker, approval-resolver, and phase-two paths with the current PR tree.
+No code from this batch was copied because the local variants remove or weaken
+current safeguards:
+
+- Ambient scheduling loses durable scheduler status reporting and the second
+  explicit opt-in required for a legacy in-process fallback. The local
+  opportunity path replaces the batched fingerprint lookup with per-item
+  reads, removes the nil-service guard, and changes the needs lookup. The
+  older five-minute worker-poll fallback is not adopted: the tracked
+  environment template already sets the poll to 300 seconds, and no measured
+  runtime benefit justifies changing the fallback independently.
+- Configuration changes allow port zero and delete the regression asserting
+  that ephemeral/out-of-range values are invalid. The local health test variant
+  deletes serving-pool, noncritical scheduler-status, and Redis fallback
+  diagnostics. Its database-password branch also drops the explicit production
+  failure for the default `postgres` password; the PR keeps these checks.
+- The local background worker removes paused-mode handling and safe deferral,
+  writes raw error details into reports instead of redacting secrets, and
+  deletes regressions for secret leakage and approval-gated handling. Its
+  altered reliability expectation treats a fresh operation as verified rather
+  than requiring it to remain awaiting approval.
+- The local durable-job integration test uses an unscoped lease reaper and
+  deletes the regression proving recovery in one queue leaves another queue's
+  lease untouched. The ambient-monitor test variant also removes the JSONB
+  canonical cursor-key quoting regression.
+- The local execution-authority and phase-two variants drop exact safety-control
+  approval resolution, reserved resolver-prefix checks, request validation,
+  source-approval validation/consumption, and final-effect policy checks. The
+  safe worker raises the artifact-size bound from 8 KiB to 64 KiB. These
+  changes would weaken authority and execution constraints; the PR versions
+  remain canonical.
+
+This was a targeted semantic comparison of the named files, not completion of
+the full stale-checkout or transcript audit. No local source, archive, output,
+diagnostic, environment, database, or worktree was changed or removed. The
+current PR head `6a2aa8fdae802d83aa854f59d880952de25c2287` passed exact-head
+GitHub Actions run `38299612642` with all 36 jobs successful, including the
+real-Postgres migration suite. PR #36 remains open and unmerged; the wider
+content/provenance crosswalk and local cleanup gates remain incomplete.
