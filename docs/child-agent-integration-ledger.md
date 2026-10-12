@@ -4587,3 +4587,21 @@ compatibility include of the canonical local Compose stack, avoiding a second
 Kafka deployment and unpinned images. The local multi-container definition was
 not copied; this matches the user's prior request to avoid duplicate HAI
 instances and reduces unnecessary local resource use.
+
+### October 12, 2026: runtime configuration and CI contract review
+
+Reviewed the local deltas in `.env.example`, `.github/workflows/ci.yml`,
+`docker-compose.local.yml`, and the frontend package manifests. The local
+configuration removes the explicit legacy-data owner setting, the private/
+link-local source-network guard, the opt-in ChatGPT-logs MCP settings, isolated
+A2A/runtime subnet controls, and bounded operational-graph settings that are
+present in the PR. The local Compose diff also removes the SearXNG isolation
+networks/cache and Nginx-manager inbox/health settings. These are not safe
+resource-only simplifications; they remove isolation, policy, or integrations.
+
+The local CI workflow drops the cleanup-readiness safety-contract job and its
+related contract checks, and downgrades the configured Go toolchain. The local
+frontend test command drops the framework-registry history-state test and
+removes the declared `less` dependency. The PR-side guards and test coverage
+remain; none of these local removals was copied. This is a targeted review of
+the shown configuration hunks, not a complete deployment/runtime acceptance.
