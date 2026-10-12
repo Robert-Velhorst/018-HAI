@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +56,8 @@ func TestGlobalEmergencyStopUsesVerifiedAdminRoleNotWorkerOwnerScope(t *testing.
 			TokenType: "access", IssuedAt: now.Unix(), Expiry: now.Add(time.Hour).Unix(),
 		}, "global-stop-test-secret")
 		recorder := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/background/pause", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/background/pause", strings.NewReader(`{"reason":"operator request"}`))
+		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+token)
 		engine.ServeHTTP(recorder, req)
 		return recorder

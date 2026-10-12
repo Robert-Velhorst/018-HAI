@@ -34,26 +34,28 @@ func trelloTestServerWithActions(t *testing.T, cardsJSON string, additionalActio
 	if err := json.Unmarshal([]byte(cardsJSON), &fixtureCards); err != nil {
 		t.Fatalf("decode card fixture: %v", err)
 	}
-	fixtureActions := make([]trelloAction, 0)
+	commentActions := make([]trelloAction, 0)
 	for _, card := range fixtureCards {
-		if _, valid := parseTrelloTime(card.DateLastActivity); valid {
-			fixtureActions = append(fixtureActions, trelloAction{
-				Type: "updateCard", Date: card.DateLastActivity,
-				Data: trelloActionData{Card: trelloActionCard{ID: card.ID, Name: card.Name}},
-			})
-		}
 		for _, action := range card.Actions {
 			if action.Data.Card.ID == "" {
 				action.Data.Card.ID = card.ID
 			}
-			fixtureActions = append(fixtureActions, action)
+			commentActions = append(commentActions, action)
 		}
 	}
-	fixtureActions = append(fixtureActions, additionalActions...)
+	for index := range additionalActions {
+		if strings.TrimSpace(additionalActions[index].ID) == "" {
+			additionalActions[index].ID = testTrelloMongoID(9000 + index)
+		}
+	}
 	cardsJSON = string(trelloTestCardPayload([]byte(cardsJSON)))
-	actionsJSON, err := json.Marshal(fixtureActions)
+	commentActionsJSON, err := json.Marshal(commentActions)
 	if err != nil {
-		t.Fatalf("encode action fixture: %v", err)
+		t.Fatalf("encode comment action fixture: %v", err)
+	}
+	activityActionsJSON, err := json.Marshal(append(append([]trelloAction(nil), commentActions...), additionalActions...))
+	if err != nil {
+		t.Fatalf("encode activity action fixture: %v", err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		*methods = append(*methods, r.Method)
@@ -72,7 +74,11 @@ func trelloTestServerWithActions(t *testing.T, cardsJSON string, additionalActio
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"},{"id":"list-2","name":"Done"}]`))
 		case strings.HasSuffix(r.URL.Path, "/actions"):
-			_, _ = w.Write(actionsJSON)
+			if r.URL.Query().Get("filter") == "all" {
+				_, _ = w.Write(activityActionsJSON)
+			} else {
+				_, _ = w.Write(commentActionsJSON)
+			}
 		case strings.HasSuffix(r.URL.Path, "/cards"):
 			*cardQueries = append(*cardQueries, r.URL.RawQuery)
 			_, _ = w.Write(trelloTestCardPayload([]byte(cardsJSON)))
@@ -610,16 +616,20 @@ func TestSyncTrelloRetriesOlderChangedCardAfterWorkflowIntakeFailure(t *testing.
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
 		case strings.HasSuffix(r.URL.Path, "/actions"):
-			actions, err := json.Marshal([]trelloAction{{
-				Type: "updateCard", Date: "2026-09-24T13:00:00Z",
-				Data: trelloActionData{Card: trelloActionCard{ID: "old-card", Name: "Case task"}},
-			}})
-			if err != nil {
-				t.Errorf("encode action fixture: %v", err)
+			if r.URL.Query().Get("filter") == "all" {
+				actions, err := json.Marshal([]trelloAction{{
+					ID: testTrelloMongoID(9000), Type: "updateCard", Date: "2026-09-24T13:00:00Z",
+					Data: trelloActionData{Card: trelloActionCard{ID: "old-card", Name: "Case task"}},
+				}})
+				if err != nil {
+					t.Errorf("encode activity fixture: %v", err)
+					_, _ = w.Write([]byte(`[]`))
+					return
+				}
+				_, _ = w.Write(actions)
+			} else {
 				_, _ = w.Write([]byte(`[]`))
-				return
 			}
-			_, _ = w.Write(actions)
 		case strings.HasSuffix(r.URL.Path, "/cards"):
 			_, _ = w.Write(trelloTestCardPayload([]byte(cardResponse.Load().(string))))
 		default:

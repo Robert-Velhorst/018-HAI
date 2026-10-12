@@ -110,6 +110,12 @@ func (s *recordingUserService) CreateUser(models.User) (*models.User, error)    
 func (s *recordingUserService) GetUserByID(uuid.UUID) (*models.User, error)      { return s.user, nil }
 func (s *recordingUserService) GetUserByEmail(string) (*models.User, error)      { return nil, nil }
 func (s *recordingUserService) GetUserByResetToken(string) (*models.User, error) { return nil, nil }
+func (s *recordingUserService) StorePasswordResetToken(uuid.UUID, int64, string, time.Time) error {
+	return nil
+}
+func (s *recordingUserService) CompleteSuccessfulLogin(models.User) (*models.User, error) {
+	return nil, nil
+}
 func (s *recordingUserService) UpdateUser(user models.User) (*models.User, error) {
 	s.updatedUser = &user
 	return &user, nil
@@ -126,3 +132,6 @@ func (s *recordingUserService) StorePasswordReset(uuid.UUID, string, time.Time) 
 func (s *recordingUserService) ClearPasswordResetIfToken(uuid.UUID, string) error     { return nil }
 func (s *recordingUserService) CompletePasswordReset(string, string) error            { return nil }
 func (s *recordingUserService) ClearPasswordResetToken(uuid.UUID, string) error       { return nil }
+func (s *recordingUserService) ConsumePasswordResetToken(uuid.UUID, string, string) error {
+	return nil
+}

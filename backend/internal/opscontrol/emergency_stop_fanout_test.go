@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"automation-hub-backend/internal/identity"
@@ -37,7 +38,8 @@ func TestPausePersistsStopBeforeFanoutAndReportsPartialDelivery(t *testing.T) {
 		c.Next()
 	})
 	router.POST("/pause", NewHandler(service).Pause)
-	request := httptest.NewRequest(http.MethodPost, "/pause", nil)
+	request := httptest.NewRequest(http.MethodPost, "/pause", strings.NewReader(`{"reason":"operator request"}`))
+	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if !called || response.Code != http.StatusMultiStatus || !service.Control().EmergencyStop() {
