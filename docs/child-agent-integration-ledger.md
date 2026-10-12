@@ -3791,3 +3791,62 @@ The cleanup scripts were not invoked, and all local transcript, snapshot,
 merge-scratch, environment, and worktree data remain untouched. PR #35's
 separate current-head CI result is not evidence for PR #36 or for live
 production acceptance.
+
+### October 12, 2026: documentation and browser-acceptance evidence
+
+Compared the remaining documentation and Playwright acceptance differences;
+the two child-report ID sets were also compared directly:
+
+- `docs/child-agent-archive-2026-07-30/child-agent-final-reports.md` contains
+  the same 9 report IDs in both trees, and `docs/child-agent-final-reports.md`
+  contains the same 104 IDs. The snapshot's report text has old absolute
+  Windows links and stale source line coordinates; PR #36 normalizes links to
+  repository-relative paths and explicitly labels historical checkpoints.
+  There is no additional child report to import based on these manifests.
+- The snapshot cleanup-readiness document is substantially older than the PR
+  version (720 versus 1,198 lines at this comparison). The PR adds later
+  source-snapshot, transcript-integrity, runtime, and cleanup-gate evidence.
+  Keep the PR's longer history; do not replace it with the snapshot's earlier
+  checkpoint.
+- The snapshot root `README.md` retains older Phase 2 feed-import instructions
+  and omits the current Autofever non-connection status. The PR documents
+  Autofever as unconnected and points to the actual integration prerequisite.
+  The snapshot
+  `ANALYSIS_REPORT.md` also presents missing `.env-*` files as a fixed startup
+  issue; PR #36 marks that report historical and directs operators to the
+  canonical Compose and current runbook. Do not restore those stale
+  instructions, especially because the snapshot `.env-*` contents were not
+  inspected.
+- Snapshot completion and verification documents predate current Compose and
+  runtime evidence: they describe multi-service boot as unrun/partial, while
+  PR #36 records the later local Docker Desktop run and preserves fresh-clone
+  release-target acceptance as outstanding. Snapshot dependency notes also
+  cite an older Go patch version and frame dated scans as current. Keep the
+  PR's date-scoped wording; neither document is universal production
+  acceptance.
+- PR #36's backend endpoint audit includes authenticated detailed system
+  readiness routes that the snapshot table omits. The PR's optional-runtime
+  matrix records per-profile inputs, limits, and capability boundaries, while
+  the snapshot matrix is shorter and omits several current profiles. The PR
+  performance baseline separates in-memory fallback measurements from the
+  PostgreSQL path; the snapshot's older Apple-silicon benchmark is not
+  comparable production-database evidence. These are documentation/evidence
+  improvements, not unique executable features in the snapshot.
+- The snapshot Playwright acceptance test proceeds from a selected runtime
+  through an owner approval and then executes it, asserting a completed
+  result. PR #36's current test intentionally stops at the real fail-closed
+  boundary: missing participant assignment, capable model, approval, and
+  framework evidence leave the operation blocked with zero attempts. It also
+  verifies the persisted sync job and exact synthetic extraction before
+  workflow planning. Preserve the PR test as the current safety contract; the
+  snapshot's successful execution scenario is not proof that the present
+  runtime is ready to execute.
+- The snapshot completion matrix has older role-claim and Compose summaries.
+  PR #36 records current owner/operator/viewer auth and the single source-built
+  topology. Historical `final-verification-report.md` and phase reports remain
+  dated records; their completion language must not be reused as a current
+  release claim.
+
+No documentation or Playwright files were ported in this pass. This was a
+static comparison of committed file content and report-ID sets; no browser
+acceptance test or clean-clone release run was repeated locally.
