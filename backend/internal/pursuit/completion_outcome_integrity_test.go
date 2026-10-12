@@ -121,12 +121,13 @@ func TestPursuitTaskActivityDoesNotAnnounceContradictorySuccess(t *testing.T) {
 }
 
 func TestPursuitTaskAttemptTimelineUsesSharedReviewPredicate(t *testing.T) {
+	now := time.Now().UTC()
 	for _, attempt := range []models.PursuitTaskAttempt{
-		{Status: "validated", VerificationStatus: "uncertain"},
-		{Status: "validated", VerificationStatus: "conflicting"},
-		{Status: "validated", BlockedReason: "unknown outcome"},
-		{Status: "review_required"},
-		{Status: "validated", VerificationStatus: "verified"},
+		{Status: "validated", VerificationStatus: "uncertain", CompletedAt: &now},
+		{Status: "validated", VerificationStatus: "conflicting", CompletedAt: &now},
+		{Status: "validated", BlockedReason: "unknown outcome", CompletedAt: &now},
+		{Status: "review_required", CompletedAt: &now},
+		{Status: "validated", VerificationStatus: "verified", CompletedAt: &now},
 	} {
 		items := pursuitTimeline(
 			models.Pursuit{}, nil, nil, nil, nil, nil, nil, nil,

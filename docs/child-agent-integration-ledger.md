@@ -5126,10 +5126,11 @@ with uncertain or conflicting verification could therefore appear ordinary
 in timeline detail. Changed the timeline projection to use
 `pursuitTaskAttemptNeedsReview` and added
 `TestPursuitTaskAttemptTimelineUsesSharedReviewPredicate` for uncertain,
-conflicting, blocked, review-required, and verified records. This source change
-is not yet executable-verified: Go/gofmt are unavailable in this checkout.
-The prior exact-head CI run `38292809831` passed before this new fix and does
-not validate it; the new commit's backend CI must pass before this entry is
+conflicting, blocked, review-required, and verified records. The first
+exact-head CI run `38294366584` exposed a defect in the test fixture: its task
+attempt had no timestamp, so the production timeline correctly omitted it.
+The fixture now supplies `CompletedAt`; Go/gofmt remain unavailable locally,
+so a follow-up exact-head backend CI pass is required before this entry is
 considered tested. No other report finding required a source change in this
 batch. The broader semantic/provenance audit and cleanup gates remain open.
 
