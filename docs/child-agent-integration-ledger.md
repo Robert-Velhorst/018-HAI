@@ -5606,13 +5606,13 @@ cleanup eligibility.
 This is the latest state check and supersedes earlier same-day branch, PR-head,
 and dirty-checkout counts above. The canonical repository is
 `Robert-Velhorst/018-HAI`; PR #36 remains open against `main` from
-`codex/hai-runtime-release` at `9a83903f9e19930f627e05a3a31a1ad7c21231b6`.
+`codex/hai-runtime-release` at `6ea5c83db7d18d0b96b5bdd979db3c799c06211e`.
 The local audit worktree is at the same commit. A live GitHub query reported
 `CLEAN` merge state and 36 successful checks out of 36, including browser
 acceptance. The user authorized pushing to PR #36 and running its CI; no merge
 was authorized or performed. The audit-ledger commit
-`9a83903f9e19930f627e05a3a31a1ad7c21231b6` was pushed to PR #36; its
-exact-head CI run `38280635341` completed successfully.
+`6ea5c83db7d18d0b96b5bdd979db3c799c06211e` was pushed to PR #36; its
+exact-head CI run `38281476207` completed successfully.
 
 The preserved older checkout is currently at
 `e07b9daeb3ba2630ecbe12a64d948f791203c241`, 414 commits behind the PR branch.
@@ -5661,9 +5661,31 @@ not be overwritten by it:
   public key is byte-encoded to avoid a credential-scanner false positive.
 - The execution-claim implementation uses the current `payload_json` schema
   column; the old checkout referred to `payload`.
+- Runtime safety-control changes require durable owner reviews bound to the
+  current emergency-stop revision and exact confirmation. Resolver prefixes
+  are checked against reserved namespaces, resume has no caller-supplied
+  authorization-proof bypass, and malformed pause bodies are rejected. The
+  service, handler, and resolver regression tests are present.
+- The ambient scheduler requires the durable path or both explicit controls
+  for a legacy in-process fallback, and publishes its disabled/degraded state.
+  Tests cover policy-disabled startup and the explicit fallback requirement.
+- OpenClaw ecosystem uploads recheck request cancellation after inspecting a
+  streamed upload and before persistence; the handler test verifies that
+  cancellation does not change the stored ecosystem path.
+- The progressive workflow UI converts bounded multiline success criteria
+  into the backend's `successCriteria` request contract, with component tests
+  asserting the normalized payload. The shell also keeps browser titles in
+  sync with the active module and avoids stealing focus from an already focused
+  mobile-navigation control.
+- Windows installer selection retains versioned pre/post SQL migrations while
+  excluding unversioned SQL exports, databases, secrets, and unreviewed
+  untracked payloads; the selection contract tests cover those cases. The
+  Promptfoo runner lock is at `0.124.1`, with a pinned native `libsql` package
+  and `basic-ftp` override; the production dependency audit remains enabled.
 
 No source from the old checkout was copied in this audit step because the
-inspected deltas were already represented by the PR version. Remaining work is
+inspected deltas were already represented by the PR version, and exact-head CI
+passed. Remaining work is
 still substantial: semantically review the 227 tracked and 67 untracked
 source/document content differences; identify and account for the ten absent
 evidence paths; finish provenance and unique-finding review of outputs,
