@@ -35,4 +35,14 @@ test('document requests keep no-store policy and SPA deep-link fallback', () => 
   assert.match(config, /try_files \$uri \$uri\/ \/index\.html;/)
   const angular = JSON.parse(readFileSync(new URL('../angular.json', import.meta.url)))
   assert.equal(angular.projects.app.architect.build.configurations.production.outputHashing, 'all')
+  assert.equal(angular.projects.app.architect.build.configurations.production.optimization.styles.inlineCritical, false)
+})
+
+test('theme bootstrap stays same-origin for the restrictive script policy', () => {
+  const html = readFileSync(new URL('../src/index.html', import.meta.url), 'utf8')
+  const initializer = readFileSync(new URL('../src/assets/theme-init.js', import.meta.url), 'utf8')
+  assert.match(html, /<script src="assets\/theme-init\.js"><\/script>/)
+  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/)
+  assert.match(initializer, /hai-theme-mode/)
+  assert.match(initializer, /data-hai-theme/)
 })
