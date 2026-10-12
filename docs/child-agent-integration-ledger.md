@@ -5078,6 +5078,35 @@ remains open and unmerged; local source, transcript, diagnostic, and runtime
 data remain untouched. The broader semantic/provenance audit and cleanup gates
 are still incomplete.
 
+### October 12, 2026: safe-outcome consumer handoff revalidation
+
+Crosswalked `output/safe-outcome-consumers-production-20261001.md` against the
+current PR source. The broker preserves `SafeWorkerOutput` alongside an
+execution error without invoking verification; phase-two responses retain
+redacted receipt/operation correlation and uncertainty flags; Runtime Lab
+attempts retain redacted receipt/status evidence and classify ambiguous
+post-effect outcomes as inconclusive. The three assigned consumers retain
+nonterminal claim fences when post-effect evidence is returned rather than
+releasing authority for ordinary replay. Current focused regression sources
+include `broker_partial_outcome_test.go`, `safe_outcome_response_test.go`, and
+`safe_outcome_attempt_test.go`; the exact-head Actions run `38292809831` passed
+all 36 jobs, including backend and IDP tests.
+
+One handoff limitation is stale at the current source: it says the concrete
+`LocalSafeWorker` returns zero output on its own error paths. After authority
+consumption, `Run` now returns observed progress and a bounded reconciliation
+summary on errors; the runtime adapter preserves that bounded output, and the
+broker retains the structured partial result. `local_safe_worker_partial_outcome_test.go`
+covers preflight/authorization/open/create failures, write/sync/read and
+verification failures, bounded/redacted output, identity replacement, replay
+refusal, and runtime-level failure output. This does not mean every partial
+filesystem outcome has a complete artifact hash or verified completion: those
+fields are withheld when the corresponding read/identity checks did not
+complete. A receipt/HTTP response is not crash-durable; database persistence,
+restart recovery, provider acceptance, and live production behavior remain
+separate gates. No source code or local archive was changed in this
+crosswalk; the broader content/provenance audit and cleanup gates remain open.
+
 ### October 12, 2026: task retry economics and provenance review
 
 The snapshot task service retries after validation failure whenever a retry is
