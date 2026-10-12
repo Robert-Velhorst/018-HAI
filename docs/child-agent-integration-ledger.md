@@ -2585,6 +2585,25 @@ current PR retains these checks. No files were copied or changed in the source
 candidate worktree. This remains a focused review of source/OAuth paths, not a
 complete review of the candidate's 770 dirty entries.
 
+### October 12, 2026: identity and session candidate review
+
+Reviewed the HAI backend JWT verifier, IDP authentication handlers/service, and
+identity route changes in `hai-model-maintenance-audit` against PR #36. The
+candidate was not ported. It removes bounded multi-key JWT verification and
+strict token parsing checks for canonical base64url encoding, duplicate JSON
+claims, critical headers, stable principal presence, and consistent `iat`,
+`nbf`, and `exp` ordering. The candidate verifier also drops enforcement of
+`nbf`, so a correctly signed token with a future not-before value can be
+accepted early.
+
+The IDP candidate removes rate limiting for public registration, login, and
+password-reset confirmation, drops request-origin validation on logout, and
+removes readiness checks for the durable session authority and revocation
+store. These weaken token validation, brute-force resistance, logout
+protection, and fail-closed authentication startup. The candidate worktree was
+not changed; this remains a path-scoped review, not a complete audit of its
+770 dirty entries.
+
 ### October 12, 2026: task approval and delivery candidate review
 
 Reviewed the task execution, automation approval-proof, and agent-coordination
