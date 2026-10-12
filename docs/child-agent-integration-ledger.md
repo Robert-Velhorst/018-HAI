@@ -3737,3 +3737,57 @@ container contracts:
 No environment files or Compose files were copied or deleted. This pass does
 not establish whether any environment file contains an active credential; it
 was deliberately not read.
+
+### October 12, 2026: CI, smoke-path, and cleanup-gate crosswalk
+
+Compared the snapshot's CI workflow and supporting smoke/cleanup scripts with
+the current PR #36 versions:
+
+- The snapshot CI workflow omits the PR's Windows no-fake-claims audit and
+  live Trello acceptance-launcher contract steps. It also invokes the Windows
+  installer smoke without the PR's explicit hosted-runner Docker-unavailable
+  allowance, which can make the snapshot test fail for an environment
+  prerequisite unrelated to the installer contract.
+- The PR browser-acceptance workflow writes a separately redacted startup log
+  for diagnostics; the snapshot does not retain that artifact-generation
+  step. Both versions redact command output and collected owner-container
+  logs, so this finding is limited to the startup-log artifact.
+- The PR's Postgres CI lane includes source-extraction history bounds and
+  authorization-receipt owner-control cases that are absent from the snapshot
+  workflow. Its approval-proof test key is unique to each workflow run and
+  attempt; the snapshot uses one static test-only value. These are test
+  coverage/isolation differences, not evidence that production keys are
+  exposed.
+- PR #36's Promptfoo dependency audit omits optional packages; the snapshot
+  does not. Keep the PR's defined audit scope rather than silently expanding
+  or changing dependency installation behavior.
+- The snapshot's `smoke-background-operations.sh` asserts that a low-risk
+  source-derived operation is auto-executed before owner review. The PR smoke
+  instead requires both items to enter the approval queue, binds approval to
+  the reviewed revision digest, and only then executes the explicitly
+  approved safe item. The snapshot test therefore contradicts the current
+  approval-first contract and must not be used as evidence that unreviewed
+  source work may run.
+- Snapshot `smoke-auth.sh` mints JWTs containing only `sub`, `role`, and `exp`;
+  PR #36 includes `iss`, `aud`, `token_type`, and `iat`, matching the IDP's
+  token contract. Keep the richer fixture so smoke tests exercise real auth
+  validation rather than relying on permissive test-only claims.
+- The PR secret-scan runner requires a valid base revision in CI and scopes
+  the Gitleaks diff to that revision; the snapshot instead scans the whole
+  repository history without a required CI comparison ref and prints at most
+  25 redacted finding summaries rather than 100. The broader history scan is
+  not inherently weaker, but it does not prove the intended base-to-head CI
+  comparison contract; retain the explicit PR base-ref validation.
+- The PR transcript remover additionally verifies the supplemental transcript
+  roots and requires a `supplemental_source_archive_verified` report before
+  it can reach deletion preflight. The snapshot remover omits this second
+  source-integrity gate. Related PR cleanup-readiness checks also account for
+  the integration snapshot, merge scratch, conflicted state, and ignored
+  environment-file names; do not treat snapshot cleanup readiness as
+  equivalent or use it to authorize deletion.
+
+No CI, smoke, or cleanup code was ported or run in this static comparison.
+The cleanup scripts were not invoked, and all local transcript, snapshot,
+merge-scratch, environment, and worktree data remain untouched. PR #35's
+separate current-head CI result is not evidence for PR #36 or for live
+production acceptance.
