@@ -4799,3 +4799,33 @@ local source artifacts were removed, and no private data or test output was
 copied into the repository. The full untracked-output and differing-source
 crosswalk remains in progress; all local material stays intact until each
 relevant item has a verified PR disposition.
+
+### October 12, 2026: refreshed source comparison and hosted CI state
+
+Rechecked the preserved primary checkout against PR #36 head
+`dec50d06b164cc69b9fa98e316d1e167c64cfd8e` without modifying the primary
+checkout. It still reports 3,167 status entries (692 tracked changes and 2,475
+untracked paths). Of those untracked paths, 1,509 have no same-named path in
+the PR tree: 1,493 are under `output/`, ten are dated PostgreSQL test-evidence
+files, four are local agent-state files, and two are diagnostic logs. These
+counts classify paths only; they do not authorize cleanup.
+
+A fresh byte comparison of the scoped untracked source-like text files
+(`backend/`, `frontend/`, `idp/`, `services/`, `scripts/`, `installer/`, and
+`docs/`, with the audited source/document extensions) found 841 paths that
+already exist by name in the PR: 779 are byte-identical and 62 differ. This is
+a deliberately scoped comparison, not a complete audit of all tracked changes,
+binary/non-text files, generated output, or transcript archives. Prior ledger
+entries review many of these differences by safety topic; they do not yet
+establish line-by-line disposition of all 62. No candidate was copied in this
+pass. Spot checks reconfirmed that the local database logger removes the PR's
+validated `DB_LOG_LEVEL` handling and parameterized-query logger, the local
+task context drops the PR's private-context fallback, and the local secret
+scanner drops required CI base-revision validation and redacted finding
+summaries. Those weaker variants remain excluded.
+
+At this check, PR #36 remains open at the same head. Hosted run
+`38210695028` is for that exact commit and is still in progress: all reported
+checks passed except the `whispercpp-runner` contract, which was pending. PR
+#35's separate CI result does not satisfy this gate. No source snapshots,
+transcripts, logs, databases, or local application state were removed.
