@@ -3182,3 +3182,26 @@ No brain-catalog code was ported. This comparison does not establish current
 upstream availability or live provider correctness. Snapshot files remain
 preserved, and PR #36 CI must pass for the exact head before the PR can count
 as release-validated.
+
+### October 12, 2026: execution-approval resolver comparison
+
+Reviewed four differing staged paths under `backend/internal/executionapproval/`
+against PR #36 at `3e36e173005eb298448d528ba77409fd4910cca4`:
+
+- The snapshot deletes `OpsControlReviewResolver` and its tests. The PR
+  resolver accepts only a fresh, owner-approved review decision whose
+  immutable task identity binds to the exact emergency-stop control-effect
+  digest; it verifies owner, review item, decision, approver, freshness, and
+  digest before producing resolved approval evidence.
+- The snapshot removes `opscontrol-review:` dispatch from the composite
+  resolver, so even a valid review cannot reach the execution authorization
+  boundary. Routing tests that prove this namespace cannot fall through to
+  generic task/workflow/portfolio resolvers are removed.
+- The existing composite resolver's no-fallback behavior remains important:
+  a selected resolver rejection must not be retried against a different
+  approval namespace.
+
+No approval code was ported. This source review complements the operations-
+control comparison above; it is not a live database or emergency-stop
+acceptance test. The snapshot remains intact and PR #36 CI remains the exact-
+head release gate.
