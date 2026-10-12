@@ -54,7 +54,7 @@ test('both reminder authorization controls expose the execution review gate with
 
 test('selected workflow confirmation rechecks context and bounds uncertain execution responses', () => {
   const id = '11111111-1111-4111-8111-111111111111'
-  for (const mode of ['valid', 'selection', 'state', 'approval', 'unavailable', 'destroy_before', 'duplicate', 'foreign', 'empty', 'error', 'destroy_after', 'review', 'id_changed', 'malformed']) {
+  for (const mode of ['valid', 'refreshed', 'selection', 'state', 'approval', 'unavailable', 'destroy_before', 'duplicate', 'foreign', 'empty', 'error', 'destroy_after', 'review', 'malformed']) {
     const response = new Subject(); const calls = []; const notices = []; const readbacks = []; let confirm
     const component = new WorkflowEngineComponent(new FormBuilder(), { runOne: value => { calls.push(value); return response } }, {}, Object.fromEntries(['info', 'success', 'warning', 'error'].map(kind => [kind, (...args) => notices.push(args)])), { confirm: options => { confirm = options.nzOnOk } }, {}, {}, { detectChanges: () => {} }, {})
     component.selected = { item: { id, currentState: 'ready', approvalStatus: 'approved', requiresApproval: true } }
@@ -66,14 +66,14 @@ test('selected workflow confirmation rechecks context and bounds uncertain execu
     try {
       component.runSelectedWorkflow()
       assert.equal(typeof confirm, 'function', mode)
-      if (mode === 'selection') component.selected = { item: { ...component.selected.item } }
+      if (mode === 'refreshed' || mode === 'selection') component.selected = { item: { ...component.selected.item } }
+      if (mode === 'selection') component.selected.item.id = '22222222-2222-4222-8222-222222222222'
       if (mode === 'state') component.selected.item.currentState = 'blocked'
-      if (mode === 'id_changed') component.selected.item.id = '22222222-2222-4222-8222-222222222222'
       if (mode === 'approval') component.selected.item.approvalStatus = 'pending'
       if (mode === 'unavailable') component.actionsUnavailable = () => true
       if (mode === 'destroy_before') component.ngOnDestroy()
       confirm()
-      const prevented = ['selection', 'state', 'approval', 'unavailable', 'destroy_before', 'id_changed'].includes(mode)
+      const prevented = ['selection', 'state', 'approval', 'unavailable', 'destroy_before'].includes(mode)
       assert.equal(calls.length, prevented ? 0 : 1, mode)
       if (prevented) continue
       if (mode === 'duplicate') { confirm(); assert.equal(calls.length, 1) }

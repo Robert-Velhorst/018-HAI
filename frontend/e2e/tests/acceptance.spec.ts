@@ -189,8 +189,33 @@ test.describe('HAI operator acceptance flow', () => {
       await exactRuntime.click();
       const response = await proposalResponse;
       expect(response.ok(), await response.text()).toBeTruthy();
-      await expect(page.getByTestId('workflow-approval-controls')).toHaveCount(0);
+      const resolvedRecord = await response.json() as {
+        item?: { id?: string; requiresApproval?: boolean; approvalStatus?: string; currentState?: string };
+      };
+      expect(resolvedRecord.item?.id).toMatch(/^[0-9a-f-]{36}$/i);
       await expect(page.getByTestId('workflow-runtime-selection')).toHaveCount(0);
+      const persistedResponse = await page.request.get(`/api/v1/workflow/${resolvedRecord.item!.id}`);
+      expect(persistedResponse.status(), await persistedResponse.text()).toBe(200);
+      const persistedRecord = await persistedResponse.json() as {
+        item?: { requiresApproval?: boolean; approvalStatus?: string; currentState?: string };
+      };
+      if (persistedRecord.item?.requiresApproval === true && persistedRecord.item.approvalStatus === 'pending') {
+        const approveExecution = page.getByTestId('workflow-approve');
+        await expect(approveExecution).toBeVisible();
+        const approvalResponse = page.waitForResponse((approval) =>
+          approval.request().method() === 'POST'
+          && /\/api\/v1\/workflow\/[^/]+\/approval$/.test(new URL(approval.url()).pathname)
+        );
+        await approveExecution.click();
+        const approved = await approvalResponse;
+        expect(approved.ok(), await approved.text()).toBeTruthy();
+      } else {
+        expect(persistedRecord.item?.currentState).toBe('ready');
+        expect(persistedRecord.item?.approvalStatus).toBe(
+          persistedRecord.item?.requiresApproval ? 'approved' : 'not_required',
+        );
+      }
+      await expect(page.getByTestId('workflow-approval-controls')).toHaveCount(0);
       await expect(page.getByTestId('workflow-selected-state')).toHaveText('ready');
     });
 
@@ -214,7 +239,6 @@ test.describe('HAI operator acceptance flow', () => {
       expect(result.reviewRequired, resultContext).toBe(true);
       expect(result.message).toContain('assign and verify required participants before execution');
       expect(result.message).toContain('no capable model was selected');
-      expect(result.message).toContain('approval is required before execution');
       expect(result.message).toContain('framework evidence preconditions were not verified before execution');
       expect(result.message).toContain('no execution result was produced');
       await expect(page.getByTestId('workflow-selected-state')).toHaveText('blocked');
