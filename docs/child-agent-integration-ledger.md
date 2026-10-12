@@ -6059,6 +6059,9 @@ scanner rejected its captured output as non-JSON and withheld the details. The
 section test now removes that global class at setup and teardown so it owns its
 fixture state; no runtime behavior was changed. This checkout has no installed
 frontend dependencies, so the focused Angular test could not be run locally.
-The secret-scan failure is intentionally unresolved rather than weakening its
-fail-closed redaction contract. Exact-head hosted CI is required for this
-follow-up; the semantic source review and cleanup gates remain open.
+Exact-head Actions run `38298570056` passed all 36 jobs on
+`ec56cd9cca4e875717fd2c916c57373067a69145`, including the frontend suite, the
+repository secret scan, and real-Postgres migration integration. The earlier
+secret-scan parser failure did not recur; its cause remains unknown and the
+scanner's fail-closed redaction contract was not weakened. The semantic source
+review and cleanup gates remain open.
