@@ -5504,3 +5504,24 @@ pushed to PR #36. PR #36's browser acceptance is still a failing release gate,
 and its workflow has not been rerun. PR #35's separate CI authorization does
 not authorize a PR #36 run. All browser artifacts and worktrees remain
 preserved.
+
+### October 12, 2026: refreshed dirty-checkout content comparison
+
+Recomputed the older May checkout's tracked working-tree paths against the
+preserved PR #36 audit worktree. The older checkout is on
+`codex/hai-runtime-release` at `e07b9daeb3ba2630ecbe12a64d948f791203c241`,
+388 commits behind its remote-tracking branch, and has 682 modified tracked
+paths. Comparing working-tree contents after normalizing CRLF and CR line
+endings against the audit worktree at `70149373f50481e4f844c8757440d2710547402b`
+found 447 identical paths, 234 differing paths, and one path present only in
+the older checkout (`nginx-config/nginx.conf`). The current PR #36 remote head
+remains `ea35ea180b1755ce2ba807c949864d5a73c4adf7`.
+
+This live result supersedes the earlier 75-content-difference checkpoint for
+the current checkout state; the reason for the count change is not established.
+The comparison is path/content evidence only, not semantic acceptance of the
+234 changes. The lone Nginx file is a legacy configuration candidate; current
+gateway references and tests use `nginx.conf.template`, so it was not copied.
+No source files were moved or changed in either checkout, and all existing
+worktrees and artifacts remain preserved. Continue package-by-package review
+of the 234 differing files before any port or cleanup decision.
