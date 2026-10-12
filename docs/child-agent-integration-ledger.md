@@ -5261,13 +5261,11 @@ rendering present in the separately submitted ChatGPT Logs MCP work. PR #35
 (`feat: add model-directed ChatGPT logs MCP tools`) includes the Task Blueprint
 template/style/spec/component files and corresponding backend task, MCP
 preflight, execution authorization, verification, and route changes. Its
-current head is `57357dd1045ff3a6580d4055f2b7a5f634042acf`; all ten CI checks
-were successful when checked on October 12, 2026. PR #35 remains open and
-unmerged, so its feature is submitted for review but is not yet part of the
-default branch. Do not duplicate its implementation into PR #36; the required
-integration gate is review/merge of #35. This cross-reference establishes the
-feature's separate PR disposition, not that an open PR is deployed or accepted
-as production behavior.
+head `57357dd1045ff3a6580d4055f2b7a5f634042acf` passed all ten CI jobs on
+October 12, 2026, and PR #35 is now merged. Do not duplicate its implementation
+into PR #36; the merge is already present in `main`. The CI and merge evidence
+establish repository integration, not production deployment or live-provider
+acceptance.
 
 ### October 12, 2026: progressive disclosure and pursuit selection review
 
@@ -5418,3 +5416,18 @@ snapshot labels them `0004`, colliding with the PR's existing
 `post/0004_automation_event_outbox`; do not add or renumber them. This
 crosswalk does not replace a full semantic review of every migration pair or
 a real upgrade/restore test against a production database.
+
+### October 12, 2026: current PR and merge-base status
+
+Rechecked the repository after PR #35's CI authorization and rerun. PR #34
+(`Add Windows 11 HAI installer`) and PR #35 are both merged; PR #34's merge
+commit is `4f24b449c0ef88f87b9d9f8fc250e81021876266`, and PR #35's exact-head
+CI run `38175351645` completed successfully with ten successful jobs and no
+failures. PR #36 remains open at `531cb7ed5b0776dedaa480cb112801924fd02a4f`.
+Against current `origin/main` (`7efe1183`), a read-only `git merge-tree`
+simulation reports 125 conflicting paths; 120 overlap with PR #34's merged
+change set and 13 overlap with PR #35's (some paths overlap both). No merge or
+conflict resolution was attempted in this audit update. PR #36 cannot be
+considered integrated until these conflicts are resolved, verified, pushed,
+and its current-head checks pass. Local source archives and scratch worktrees
+remain preserved; no cleanup was performed.
