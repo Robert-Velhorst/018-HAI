@@ -2760,3 +2760,46 @@ The current PR retains these integrity checks. The candidate migration changes
 were not ported; they weaken detection of schema/source drift on databases
 whose data must be preserved. This is a focused migration-runner comparison,
 not a live upgrade/rollback rehearsal against Robert's database.
+
+### October 12, 2026: completed supplemental report-to-PR crosswalk
+
+Mapped the three completed supplemental reports (Hubble, Popper, and Anscombe)
+to the current PR #36 tree at `8f030a74d230ef102741859667c0862df5d24d73`.
+This is a report-level behavior crosswalk; the source worktree that originally
+held their diffs is unavailable, so it does not claim byte-for-byte patch
+provenance or reconcile every intermediate patch event in the 4,651,926,405
+bytes of source transcripts.
+
+- Hubble's reported framework-registry behavior is represented in the current
+  frontend implementation and focused specs: request-field focus after empty
+  validation; owner plus `canAdminister` authorization; verified-owner-only
+  mutations; loading, unavailable, and empty-state distinction; redacted
+  credential-like failures; duplicate-submit prevention; and keyboard/focus
+  handling. Relevant files include the registry component, inspector, and
+  recommendation components and their specs under
+  `frontend/src/app/pages/framework-registry/`. The current PR contains focused
+  cases including `moves focus to the request field when empty selection
+  validation fails`, `requires both the signed owner role and administration
+  permission`, `fails closed when signed authorization capabilities are
+  unavailable`, `does not expose credential-like client error text`, and
+  `prevents duplicate preference submission while a save is running`.
+- Popper's icon correction is represented by `BulbOutline` and `StarOutline`
+  registrations in `frontend/src/app/hai-icons.ts`, the star/bulb selection in
+  `frontend/src/app/services/theme.service.ts`, and a theme regression test
+  asserting that the unsupported `moon` icon is absent.
+- Anscombe's CI hardening is represented by the authenticated-smoke aggregator
+  requiring a nonzero pass count and zero failures for each expected suite in
+  `.github/workflows/ci.yml`, alongside the contract test
+  `test_authenticated_smoke_requires_each_suite_result` in
+  `scripts/test_ci_contract.py`. The workflow also uses uncached race tests,
+  exact migration-test names, and explicit timeouts in the corresponding jobs.
+
+Local verification: `python scripts/test_ci_contract.py` passed 110 tests.
+Angular tests were not rerun from this clean audit worktree because its
+`frontend/node_modules` is absent. The completed reports record their own
+focused Angular results (Hubble 36/36; Popper 2 tests plus production build),
+but those historical results are not current-head CI evidence. At this ledger
+entry, PR #36 run `38187618372` is still queued. Treat these three reports as
+behaviorally represented in the PR source, with current frontend CI pending;
+do not use this crosswalk alone to authorize deletion of their source
+transcripts or any of the six unfinished supplemental transcripts.
