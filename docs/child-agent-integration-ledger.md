@@ -3850,3 +3850,73 @@ the two child-report ID sets were also compared directly:
 No documentation or Playwright files were ported in this pass. This was a
 static comparison of committed file content and report-ID sets; no browser
 acceptance test or clean-clone release run was repeated locally.
+
+### October 12, 2026: Windows setup, installer-smoke, and recovery safety
+
+Compared the snapshot's Windows initialization, installer-smoke, and backup
+contracts against PR #36:
+
+- Both initializers serialize existing-environment maintenance and check for
+  existing Docker volumes/projects before creating replacement credentials.
+  The PR version adds post-replacement verification of the original ACL and
+  exact file bytes, attempts an explicit rollback on a failed verification,
+  and preserves recovery files when rollback cannot be proven. The snapshot
+  uses an atomic file replacement and temporary backup but lacks that same
+  read-back/ACL-verification and verified-rollback sequence. Keep the PR's
+  fail-closed recovery path; do not port the older initializer over it.
+- Both Windows installer smoke tests refuse local/self-hosted execution and
+  check the user's profile paths. The snapshot additionally requires
+  `RUNNER_TEMP` to be nested under `RUNNER_WORKSPACE`, which is not a portable
+  assumption for hosted Windows runner layouts; PR #36 instead requires a
+  distinct existing temp directory and rejects a reparse-point temp root.
+  Preserve the PR's runner-specific containment and cleanup ownership checks.
+- Both backup implementations verify the local Docker engine and enumerate
+  covered/uncovered recovery state. No new supported backup artifact or
+  backupable HAI data volume was identified in the snapshot. The reviewed
+  snapshot is not evidence that the local machine's actual volumes or backup
+  contents are covered; that still requires the guarded host-side preflight.
+- The snapshot's Windows recovery contract tests exercise many of the same
+  protected-environment, manifest, volume-coverage, and failure cases. Their
+  presence does not make the snapshot implementation interchangeable with
+  the PR's more defensive read-back/rollback behavior. The CI change already
+  recorded above also omits two current Windows audit/acceptance steps.
+
+No installer, environment migration, backup, restore, or recovery drill was
+run on this machine. These are source/test-contract findings only; no
+environment file, Docker volume, scheduled task, or installed application was
+changed.
+
+### October 12, 2026: current-head reconciliation and isolated acceptance
+
+This note supersedes older pass-specific head and changed-path counts above;
+those counts remain historical evidence for their stated commits. The latest
+comparison is against PR #36 head
+`a09248628e6c166067f075638e364269fd6a2b96` and the preserved snapshot's staged
+index:
+
+- Snapshot staged paths: 2,917. PR tree paths: 3,147. Identical Git blobs:
+  2,510. Differing blobs at shared paths: 400. Snapshot-only paths: 7. PR-only
+  paths: 237. These figures reconcile arithmetically and describe file-level
+  differences, not missing features or deletable source data.
+- The seven snapshot-only paths are the three unopened `.env-*` files, the two
+  dedupe-migration files already represented by PR migration `0006`, and two
+  legacy nginx files already covered by the gateway template/configuration
+  manager review. None is a newly identified feature to port. The env files
+  remain secret-bearing/unreviewed and excluded.
+- The isolated acceptance-stack script in the snapshot omits the PR's bounded
+  gateway readiness retry, service-dependency validation, and runtime-UID
+  ownership for private phase-two tmpfs. The PR implementation retains these
+  startup and least-privilege safeguards. The compared Python runner smoke,
+  isolated recovery rehearsal, and critical-path smoke files are byte-identical
+  to the snapshot versions; no change is needed for those paths.
+- PR #36 remains open and mergeable at this head. Its exact-head GitHub Actions
+  run `38190771606` is queued, with jobs not yet started; this is not a CI pass.
+  The GitHub app connector requested reauthentication, so status was verified
+  through the authenticated local `gh` CLI instead. PR #35's separate green
+  checks do not qualify PR #36.
+
+This is a repository-tree and script-contract reconciliation, not a claim of
+live-provider, real-account, local Windows installer, database restore, or
+production acceptance. No source snapshot files, local runtime state, or user
+data were changed or removed. Cleanup remains blocked on the exact PR merge and
+the source-archive/readiness gates documented above.
