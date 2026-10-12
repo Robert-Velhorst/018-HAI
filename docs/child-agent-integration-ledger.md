@@ -4829,3 +4829,23 @@ At this check, PR #36 remains open at the same head. Hosted run
 checks passed except the `whispercpp-runner` contract, which was pending. PR
 #35's separate CI result does not satisfy this gate. No source snapshots,
 transcripts, logs, databases, or local application state were removed.
+
+### October 12, 2026: local transcript archive identity verification
+
+Ran the current read-only cleanup-readiness verifiers from this PR worktree
+against the inventoried local roots. The main-root verifier returned
+`source_archive_verified=true`: 18 manifest files / 20,739,169,122 logical
+bytes, five SHA-256-verified candidates / 3,179,439,595 bytes, and 13 retained
+files. The supplemental verifier returned
+`supplemental_source_archive_verified`: nine files / 14,013,737,298 bytes,
+two SHA-256-verified candidates / 3,113,294,358 bytes, seven retained files,
+and 19 report-linked source paths present and tracked.
+
+Combined inventory: 27 transcript files / 34,752,906,420 logical bytes; seven
+candidate files / 6,292,733,953 bytes; 20 retained files / 28,460,172,467
+bytes. The verifiers did not delete files and returned
+`deletion_performed=false` and `cleanup_authorized=false`. Hash and path checks
+establish source identity and crosswalk structure, not semantic understanding
+of oversized, aborted, duplicate, or unattributed transcript content. PR #36
+is still open, so the repository's merged-main cleanup gate is not met. All
+27 local transcript files remain in place.
