@@ -2987,3 +2987,39 @@ No authorization code was ported. This pass reviewed the staged snapshot
 blobs and current source/tests only; no live database or external execution
 provider was invoked. PR #36 run `38188757244` was pending during review.
 Neither the snapshot nor any other local source artifact was removed.
+
+### October 12, 2026: route registration and control-plane comparison
+
+Reviewed 17 staged snapshot differences under `backend/internal/router/`
+against PR #36 at `c70aae7151fc0a3c817672dda9d271bcd62109ea`, including route
+registration, middleware setup, readiness responses, identity propagation,
+and their associated tests. The snapshot was not ported:
+
+- It removes ChatGPT logs route/service composition and operational-graph
+  route composition, leaving these PR features unreachable through the
+  registered API. Browser verification is registered without the current
+  workflow-linker composition, dropping workflow linkage.
+- It removes the operations-control review repository and tests, stops
+  connecting the owner-bound review repository and resolver to the
+  authorization path, and removes the review repository from ops-control
+  service composition.
+- It removes the automation event outbox route, durable outbox dispatcher,
+  and notifier wiring, replacing the publisher dependency with a direct
+  publisher value. The snapshot does not preserve the outbox-backed recovery
+  path.
+- It collapses the protected detailed readiness endpoint into the aggregate
+  readiness handler and includes individual dependency checks in that
+  response. The current PR keeps detailed topology behind owner authentication
+  and a read permission, and disables caching for readiness output.
+- It removes lifecycle, readiness, automation-permission, and legacy
+  control-plane permission tests. The current route tree also maintains
+  operator-scope identity propagation that the snapshot deletes.
+
+The snapshot adds a context-free route-initialization wrapper, but that alone
+does not justify importing its broader route and guard regressions. The
+separate legacy `request_limits.go` helper has no production caller in the
+current router; the runtime JSON-body limit is implemented in
+`request_body_limit.go` and remains mounted, so its deletion was not counted
+as a live request-size-control loss. No runtime route or identity code was
+changed. PR #36 head CI remained pending; this review is static source
+comparison, not a live route-security acceptance test.
