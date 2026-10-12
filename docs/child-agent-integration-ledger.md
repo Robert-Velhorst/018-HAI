@@ -4974,3 +4974,29 @@ PR worktree. It excluded environment/secret-named files and makes no claim
 about paths outside this 14-file set. PR #36 head at comparison was
 `8c9bc2139dd11ac8945bea42804180c177e5a331`; its exact-head CI run
 `38215737492` was still in progress, so no CI result is claimed here.
+
+### October 12, 2026: framework registry API and lock-key review
+
+Compared all 23 staged snapshot paths under `backend/internal/frameworkregistry/`
+with PR #36. Nineteen were byte-identical. Four differ:
+
+- `handler.go` removes `Handler.Selection`, although the PR router still binds
+  `GET /selections/:id` to that method. Applying the snapshot change would
+  leave the route binding uncompilable.
+- `repository.go` replaces the PR's hex-encoded owner/framework lock identity
+  with raw owner + NUL + framework ID. The lock is passed as PostgreSQL text;
+  a NUL byte is invalid in PostgreSQL text values. The PR's repository test
+  also exercises distinct identities containing delimiter-like NUL data to
+  protect against key collisions.
+- `service.go` removes normalization of nil `conflictsWith` and `adaptations`
+  slices to JSON arrays. That reintroduces `null` in the public framework
+  catalog where clients consume collection fields.
+- `service_test.go` deletes the regression test that rejects those `null`
+  values.
+
+No snapshot code was adopted. The 14-path agent coordination/framework
+crosswalk above is a subset of the full snapshot comparison, not a complete
+resolution of the remaining differing paths. The PR's latest head is
+`9a21fe1b1b74ad52e45e75ea0604d4fc97d7c21d`; its exact-head CI run
+`38216417197` was queued when this entry was written. The source snapshot and
+transcript archives remain unchanged.
