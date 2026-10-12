@@ -2564,3 +2564,23 @@ This is a targeted source-level safety review, not proof that every file in the
 770-entry dirty candidate worktree has been reviewed. No candidate files were
 copied or modified; the source worktree remains preserved. Other changed areas
 still require separate scoped review before integration or cleanup.
+
+### October 12, 2026: connected-source candidate safety review
+
+Continued the targeted review of `hai-model-maintenance-audit` against PR #36.
+The source connector changes are not ported. The candidate removes the
+JSON-feed HTTP dial path's blocked-address checks and DNS-pinned dialing,
+including protections for private, link-local, multicast, carrier-grade NAT,
+and cloud metadata addresses. Its Trello request path also removes the guard
+that limits credentials to `api.trello.com` over HTTPS port 443 (with loopback
+allowed only for tests). Those changes weaken SSRF and credential-exfiltration
+boundaries.
+
+The candidate additionally removes Google OAuth state binding to the source,
+owner, and connector; atomic token persistence that rechecks the source binding
+inside the database transaction; refresh-token compare-before-save; and
+revocation/reconnect-state checks before token use. This would permit stale or
+misbound OAuth state and grants to be accepted across source changes. The
+current PR retains these checks. No files were copied or changed in the source
+candidate worktree. This remains a focused review of source/OAuth paths, not a
+complete review of the candidate's 770 dirty entries.
