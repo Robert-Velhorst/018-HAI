@@ -3150,3 +3150,35 @@ against PR #36 at `5ef9acdb49b118714fe8488fc17f66e84379701a`:
 No framework-registry code was ported. These checks are static source and
 test comparison, not live PostgreSQL or provider validation. PR #36's current
 head run remains a separate release gate; queued runs do not count as pass.
+
+### October 12, 2026: brain catalog and upstream review comparison
+
+Reviewed ten differing staged paths under `backend/internal/braincatalog/`
+against PR #36 at `fa8adb974edd202234b180b5e2bcfa43a2ffeeba`:
+
+- The snapshot removes the ChatGPT/Codex conversation-history MCP catalog
+  entry even though the current PR contains its bounded, read-only integration
+  and model-directed tool loop. The snapshot therefore does not add this
+  requested capability; it drops catalog discoverability for code already
+  present in the PR.
+- Upstream entry, OSS Insight collection, and repository-discovery review
+  paths lose caller-context propagation and use `context.Background()` for
+  outbound review work. The PR-only tests
+  `TestUpstreamReviewStopsWithCallerContext`,
+  `TestCollectionReviewStopsWithCallerContext`, and
+  `TestRepositoryDiscoveryStopsWithCallerContext` verify prompt cancellation.
+- The catalog handler loses its cached JSON/ETag response and re-marshals the
+  complete catalog on every request. This is a needless resource regression
+  for a static payload, not a missing feature.
+- A2A's snapshot catalog entry describes only a local bridge and omits the
+  PR's separately guarded fixed-ngrok opt-in. The PR's exact-origin,
+  production-mode, and local-login-bypass conditions remain the current
+  reviewed boundary; no broader remote-agent authority is implied.
+- Candidate repository discovery changes were compared as static source;
+  no verified, safe missing capability justified copying the snapshot's
+  alterations, and its tests do not establish live OSS Insight correctness.
+
+No brain-catalog code was ported. This comparison does not establish current
+upstream availability or live provider correctness. Snapshot files remain
+preserved, and PR #36 CI must pass for the exact head before the PR can count
+as release-validated.
