@@ -5871,6 +5871,36 @@ against `main`, with `CLEAN` merge state and successful exact-head CI run
 transcript archives remain untouched; the semantic crosswalk, archive
 provenance review, merged-main gate, and local cleanup are still incomplete.
 
+### October 12, 2026: account-feed report revalidation
+
+Rechecked `output/feed-sync-production-review-20261001.md` against the current
+account-feed implementation. Its missing/null item-envelope finding is closed:
+`ParseGenericFeed` requires an explicit valid `items` array (while preserving
+valid explicit empty arrays), and `sync_observation_test.go` asserts malformed
+envelopes return no cursor, do not advance successful freshness, and are
+recorded as failed. Its overlapping-sync regression is closed by the durable
+per-feed sync token: claim is committed before fetch/intake, only the matching
+token can finish, and token-conditioned completion plus the accepted source
+observation generation prevents stale evidence and freshness from superseding
+a newer observation. Deterministic blocked-intake coverage checks overlapping
+manual/due runs, independent-feed progress, and post-release latest evidence.
+
+The PostgreSQL integration test uses independent repository calls against an
+owned real Postgres database to prove only one concurrent claim wins, stale
+finish tokens are refused, finish-audit failure rolls back feed state, and
+committed health/audit state survives fresh-pool reconstruction. Exact-head CI
+run `38290881474` passed its `Migration integration (real Postgres 17)` job,
+which invokes that account-feed integration test, as well as the backend suite.
+
+Two report boundaries remain intentional rather than unresolved defects: a
+crashed sync token does not expire or get stolen automatically and requires
+operator review; archived/dismissed operations may be re-intaken by a later
+whole-feed retry under the documented active-operation dedupe policy. The
+successful timestamp means local ingestion completion, not proof of live
+provider freshness or complete pagination. This was a source/test crosswalk,
+not a live feed-provider acceptance. No product code or local archives were
+changed; the broader semantic/provenance review and cleanup gates remain open.
+
 ### October 12, 2026: claimed-effect safety report revalidation
 
 Rechecked the five findings in the preserved local-only
