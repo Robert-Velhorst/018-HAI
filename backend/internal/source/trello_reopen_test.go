@@ -35,6 +35,10 @@ func newTrelloReopenHarness(t *testing.T) (Service, *atomic.Value, *fakeSourceRe
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
 		case strings.HasSuffix(r.URL.Path, "/actions"):
+			if r.URL.Query().Get("filter") != "all" {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
 			var cards []trelloCard
 			if err := json.Unmarshal([]byte(cardResponse.Load().(string)), &cards); err != nil {
 				t.Errorf("decode action fixture cards: %v", err)
@@ -42,9 +46,9 @@ func newTrelloReopenHarness(t *testing.T) (Service, *atomic.Value, *fakeSourceRe
 				return
 			}
 			actions := make([]trelloAction, 0, len(cards))
-			for _, card := range cards {
+			for index, card := range cards {
 				actions = append(actions, trelloAction{
-					Type: "updateCard", Date: card.DateLastActivity,
+					ID: testTrelloMongoID(8000 + index), Type: "updateCard", Date: card.DateLastActivity,
 					Data: trelloActionData{Card: trelloActionCard{ID: card.ID, Name: card.Name}},
 				})
 			}

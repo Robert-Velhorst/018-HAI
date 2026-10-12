@@ -35,12 +35,20 @@ func trelloTestServerWithActions(t *testing.T, cardsJSON string, additionalActio
 		t.Fatalf("decode card fixture: %v", err)
 	}
 	commentActions := make([]trelloAction, 0)
+	activityActions := make([]trelloAction, 0)
 	for _, card := range fixtureCards {
+		if _, valid := parseTrelloTime(card.DateLastActivity); valid {
+			activityActions = append(activityActions, trelloAction{
+				ID: testTrelloMongoID(8000 + len(activityActions)), Type: "updateCard", Date: card.DateLastActivity,
+				Data: trelloActionData{Card: trelloActionCard{ID: card.ID, Name: card.Name}},
+			})
+		}
 		for _, action := range card.Actions {
 			if action.Data.Card.ID == "" {
 				action.Data.Card.ID = card.ID
 			}
 			commentActions = append(commentActions, action)
+			activityActions = append(activityActions, action)
 		}
 	}
 	for index := range additionalActions {
@@ -53,7 +61,8 @@ func trelloTestServerWithActions(t *testing.T, cardsJSON string, additionalActio
 	if err != nil {
 		t.Fatalf("encode comment action fixture: %v", err)
 	}
-	activityActionsJSON, err := json.Marshal(append(append([]trelloAction(nil), commentActions...), additionalActions...))
+	activityActions = append(activityActions, additionalActions...)
+	activityActionsJSON, err := json.Marshal(activityActions)
 	if err != nil {
 		t.Fatalf("encode activity action fixture: %v", err)
 	}
@@ -411,7 +420,11 @@ func TestSyncTrelloClosedCardTombstonesExistingProjection(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
 		case strings.HasSuffix(r.URL.Path, "/actions"):
-			_, _ = w.Write([]byte(`[]`))
+			if r.URL.Query().Get("filter") == "all" {
+				_, _ = w.Write([]byte(`[{"id":"000000000000000000000800","type":"updateCard","date":"2026-09-24T10:00:00Z","data":{"card":{"id":"closure-card","name":"Prepare case file"}}}]`))
+			} else {
+				_, _ = w.Write([]byte(`[]`))
+			}
 		case strings.HasSuffix(r.URL.Path, "/cards"):
 			if got := r.URL.Query().Get("filter"); got != "all" {
 				t.Errorf("Trello cards filter = %q, want all", got)
@@ -524,7 +537,11 @@ func TestSyncTrelloMissingBoardCardArchivesProjectionWithoutDeletingEvidence(t *
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
 		case strings.HasSuffix(r.URL.Path, "/actions"):
-			_, _ = w.Write([]byte(`[]`))
+			if r.URL.Query().Get("filter") == "all" {
+				_, _ = w.Write([]byte(`[{"id":"000000000000000000000800","type":"updateCard","date":"2026-09-24T10:00:00Z","data":{"card":{"id":"missing-card","name":"Keep this case record"}}}]`))
+			} else {
+				_, _ = w.Write([]byte(`[]`))
+			}
 		case strings.HasSuffix(r.URL.Path, "/cards"):
 			_, _ = w.Write(trelloTestCardPayload([]byte(cardResponse.Load().(string))))
 		default:
