@@ -4605,3 +4605,17 @@ frontend test command drops the framework-registry history-state test and
 removes the declared `less` dependency. The PR-side guards and test coverage
 remain; none of these local removals was copied. This is a targeted review of
 the shown configuration hunks, not a complete deployment/runtime acceptance.
+
+### October 12, 2026: transcript cleanup evidence boundary
+
+Reviewed the local delta in `scripts/audit-child-agent-transcripts.ps1` against
+the PR version because this script informs whether local transcript material
+may be removed. The local version scans only a configurable tail window rather
+than attributing lifecycle/patch records across the full transcript; it drops
+turn attribution, duplicate-child detection, changed-during-scan detection,
+malformed/oversized-record retention, optional source hashing, and cleanup
+candidate byte totals. It can therefore classify a truncated or concurrently
+changing file without the PR's evidence needed to justify a cleanup candidate.
+The PR's stronger full-file, duplicate-aware, hash-capable audit remains in
+place. No transcript was classified or deleted based on the local variant, and
+no cleanup readiness is inferred from a report alone.
