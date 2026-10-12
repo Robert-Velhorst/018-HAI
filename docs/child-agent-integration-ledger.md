@@ -5552,3 +5552,25 @@ These are selected production-code spot checks, not a semantic review of all
 passed at its recorded head, but no live Trello, Google OAuth, LARO, or other
 provider-account acceptance was performed. No source was copied from the
 older checkout.
+
+### October 12, 2026: backend ownership and frontend contract spot review
+
+Reviewed several primary-addition-dominant files in the refreshed crosswalk.
+The PR's verification repository bounds run history at 200 and supports exact
+owner-scoped record lookup, with ownerless legacy reads restricted by
+`CanReadLegacyOwnerlessData`; the HTTP handler rejects absent authenticated
+owners and the service rejects blank owners before calling the owner-scoped
+repository methods. A production call-site search found no callers of the
+separate unscoped `Runs()`/`RunDetails()` methods outside the verification
+package; the HTTP handler does not use them. They remain exported on the
+internal service interface, so future in-process callers must not treat them
+as authenticated reads.
+
+The PR's framework-provenance client fetches the exact selection through
+`/framework-registry/selections/{id}` instead of scanning a fixed 200-row
+history; its backend route provides the owner-scoped lookup. The PR's memory
+service interface aliases shared model query/page types rather than maintaining
+a second frontend contract. These PR-side implementations were retained; no
+older-checkout code was copied. This is a targeted contract/security review,
+not semantic acceptance of every frontend or verification delta. Full
+frontend component tests remain unverified in this partial worktree.
