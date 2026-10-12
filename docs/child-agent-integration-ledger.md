@@ -4960,3 +4960,17 @@ path-by-path crosswalk is reconciled; no arithmetic subtraction from the
 heuristic count is assumed. PR #36 is open at
 `732fdeb61acdc90f1cf9a68820e1d263a8a170da`; exact-head run `38214966689`
 passed. The snapshot and transcript archives remain unchanged by the review.
+
+### October 12, 2026: agent coordination and framework crosswalk
+
+Compared the snapshot's staged contents against the PR #36 checkout for all
+14 paths under `backend/internal/agentcoordination/`, `agentcycle/`,
+`agentframework/`, and `agentguidance/`. This included the coordinator,
+timeouts, validation, dispatch and guidance implementation files and their
+associated tests. SHA-256 digests matched for every path, so these are exact
+content matches rather than unreviewed snapshot variants; no source change was
+needed. The comparison read file contents but did not modify the snapshot or
+PR worktree. It excluded environment/secret-named files and makes no claim
+about paths outside this 14-file set. PR #36 head at comparison was
+`8c9bc2139dd11ac8945bea42804180c177e5a331`; its exact-head CI run
+`38215737492` was still in progress, so no CI result is claimed here.
