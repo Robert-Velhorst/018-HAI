@@ -4211,3 +4211,37 @@ was copied. The PR's Promptfoo runner image CI check passed on the audited
 head. This resolves only these candidate deltas, not a complete semantic
 review of the 66-file divergence set, the 1,576 output artifacts, or historical
 patch-event attribution. No local files were moved or deleted.
+
+### October 12, 2026: current bounded transcript inventory and PR checkpoint
+
+This checkpoint supersedes older cleanup-candidate counts in the dated entries
+above. A full-file bounded rescan now attributes only three main-archive
+transcripts, totaling 1,644,177 bytes, as cleanup candidates after ledger
+commit; the other 15 main-archive files (20,737,524,945 bytes) remain retained.
+Thirteen of those retained files contain oversized records (1,630 skipped),
+so any earlier observed completion is not sufficient to classify the complete
+file. The 18-file source archive was reverified against its manifest and the
+three candidate SHA-256 values.
+
+The two supplemental roots contain nine files (14,013,737,298 bytes). Their
+current bounded manifest has zero candidates and nine retained/unattributed
+files; each contains oversized records (783 skipped total). The supplemental
+readiness check verified the exact nine-file inventory and all 19 repository
+source links in the preserved reports. Combined known transcript inventory is
+27 files / 34,752,906,420 bytes: 3 candidates and 24 retained. This remains a
+partial local-device inventory, not a claim that every HAI-related artifact
+has been processed.
+
+The audit updates were committed as `6f039bf3` and `3f1c00de` on the existing
+`codex/hai-runtime-release` PR branch. Immediately before this ledger update,
+PR #36 was open against `main` at `3f1c00de2a433b18637c7230fbe41d0a184cadd5`;
+its exact-head GitHub Actions run `38201605903` completed successfully with
+all 36 jobs passing. The branch is part of `Robert-Velhorst/018-HAI`, not a
+separate repository. No transcript or local worktree was deleted, moved,
+truncated, compressed, or archived.
+
+Transcript cleanup is still not authorized: PR #36 is unmerged, the canonical
+`main` ledger gate has not passed, and full semantic integration of oversized
+transcript content remains incomplete. The three candidates are not removed
+until the merged-main gate is independently satisfied. All 24 retained files
+remain protected.
