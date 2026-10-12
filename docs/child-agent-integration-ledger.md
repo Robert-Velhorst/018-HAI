@@ -5079,3 +5079,16 @@ cross-reference or review before claiming complete snapshot reconciliation.
 Accordingly, this ledger is not yet a proof that every item from the source
 snapshot or transcript archives has been integrated. No source or archive
 data was modified, moved, or removed.
+
+### October 12, 2026: completed-report source-link verification
+
+Parsed repository-relative Markdown links in
+`docs/child-agent-final-reports.md` and checked them against the current PR
+worktree and Git index. The report bundle contains 756 link occurrences and
+297 unique targets; 294 targets are files, all 294 exist and are tracked in
+the PR tree, with no missing file targets. The remaining three unique targets
+are non-file references. This establishes that linked source paths from the
+preserved completed-agent reports remain available in the PR, not that each
+report claim or nested `task_complete` event has been semantically validated.
+The original transcript archives therefore remain protected pending the open
+semantic crosswalk and PR/cleanup gates.
