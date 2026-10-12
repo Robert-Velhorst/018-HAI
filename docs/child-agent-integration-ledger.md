@@ -2669,6 +2669,24 @@ enforcement, and recovery after an uncertain scan result. No ambient candidate
 files were copied or modified. This was a focused scheduler/scan review, not a
 complete audit of ambient or ambient-monitor code.
 
+### October 12, 2026: verification provenance and memory-promotion review
+
+Reviewed the verification and memory changes in
+`hai-model-maintenance-audit` against PR #36. The candidate removes
+`VerifiedFactPromotionRepository` and the PostgreSQL transaction that
+revalidates promotion evidence against persisted owner-bound verification
+runs, recent explicit memory opt-in, source-supported low-risk claims, absence
+of contradictions, exact used evidence, matching source provenance, and an
+exact sentence in the cited source. A symbol search found no equivalent
+promotion boundary in the candidate.
+
+The candidate also deletes the source-extraction correction-lesson API and
+transactional persistence path keyed to owner, extraction identity, and source
+revision, plus its PostgreSQL and regression tests. These removals weaken
+evidence-grounded memory promotion and correction provenance. No files were
+copied or changed in the candidate worktree. This is a focused review of
+verification/memory promotion, not a complete memory subsystem audit.
+
 ### October 12, 2026: runtime admission and artifact boundary review
 
 Reviewed the agent-runtime and OpenClaw artifact changes in
