@@ -3553,3 +3553,38 @@ OpenClaw maintenance:
 No model, evaluation, browser-verification, or OpenClaw-maintenance files were
 ported in this batch. Findings are code/test-contract comparisons; no live
 provider, local browser worker, or model-maintenance run was performed.
+
+### October 12, 2026: health, rate limiting, MCP, and domain-pack APIs
+
+Compared the snapshot with PR #36 in backend health probes, rate limiting,
+MCP preflight, domain-pack catalog, and Runtime Lab ownership:
+
+- The snapshot rate limiter retains every unique client key indefinitely.
+  PR #36 caps the local fallback map at 4,096 entries, prunes expired windows,
+  and evicts an oldest active key only when necessary. Without that bound,
+  requests with rotating keys can grow process memory without limit; the
+  snapshot also deletes the two bounded-memory regression tests.
+- The snapshot MCP preflight drops the configured bearer-token handling and
+  never sends the token expected by a protected MCP listener. It also removes
+  `text/event-stream` negotiation and parsing used by the ChatGPT logs bridge,
+  and removes the explicit opt-in policy that permits a remote endpoint only
+  with TLS and a usable bearer token. The current PR keeps tokens out of
+  reports and requires remote opt-in; preserve those contracts.
+- The snapshot removes the `view=summary` domain-pack catalog projection.
+  The PR projection returns bounded pack metadata and method counts without
+  exposing the full rules/playbook payload, and its test asserts those fields
+  are absent. Keep the summary route for scalable initial loads.
+- The snapshot health handler removes the shared serving-pool probe and
+  background scheduler status probes. It also reports that empty Kafka
+  configuration drops events, while PR #36 queues automation events in a
+  durable outbox and delivers them when a broker becomes available. The
+  snapshot's warning would misstate the current delivery contract.
+- Runtime Lab in the snapshot again requires exact owner identity and removes
+  PR #36's configured first-run owner-scope allowance. This matches the IDP
+  and identity scope regressions above; keep the narrow role-plus-configured
+  scope gate rather than broadening to role-only access.
+- The inspected `a2abridge/handler.go` is identical in the staged snapshot and
+  PR #36, so this area has no delta to port.
+
+No health, rate-limit, MCP, domain-pack, or Runtime Lab code was ported. These
+are source and test-contract findings; no remote MCP server was contacted.
