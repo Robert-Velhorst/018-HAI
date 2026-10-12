@@ -5526,6 +5526,12 @@ No source files were moved or changed in either checkout, and all existing
 worktrees and artifacts remain preserved. Continue package-by-package review
 of the 234 differing files before any port or cleanup decision.
 
+The Nginx distinction was verified in the PR worktree: local Compose renders
+`/etc/nginx/nginx.conf` from `nginx-config/nginx.conf.template`, and
+`python -m unittest nginx-config.test_gateway_contract` passed all 20 tests.
+This verifies the repository gateway template contract, not a live container
+reload or deployed proxy behavior.
+
 ### October 12, 2026: source-connector delta spot review
 
 Reviewed the current source-package differences in the older checkout against
