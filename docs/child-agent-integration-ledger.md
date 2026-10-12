@@ -6041,7 +6041,11 @@ state, and review predicate all pass.
 Added regular unit coverage for 51 linked receipts, oldest uncertain state,
 foreign ownership, and a missing receipt. Wired the existing PostgreSQL
 integration test for those same boundaries into the CI migration job; that
-tagged test was previously not run by CI. This change is awaiting exact-head
-CI; Go/gofmt are unavailable in this local checkout. No old-checkout content or
+tagged test was previously not run by CI. Exact-head Actions run
+`38296662563` passed all 36 jobs on commit
+`7a3c344693b0e37686ad9ef985fa470b492dbdb3`; its backend and browser jobs passed,
+and its Postgres migration job logged
+`TestPostgresPursuitExactRuntimeQueryBatchesAllLinkedReceipts` as PASS. Go and
+gofmt remain unavailable in this local checkout. No old-checkout content or
 local archive was modified, and semantic source review and cleanup gates remain
 open.
