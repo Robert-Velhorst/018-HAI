@@ -5240,3 +5240,16 @@ guard. Retain the PR versions; neither staged file is an improvement to port.
 
 This is a source-path review of these two workflow files, not an acceptance
 claim for the remaining workflow, frontend, IDP, or backend differences.
+
+### October 12, 2026: IDP authentication context propagation comparison
+
+Compared the staged snapshot's IDP authentication handler and service against
+the PR tree. The handler in the PR passes the request context into logout,
+session validation, refresh, and password-reset calls. The snapshot uses
+context-free service calls. The corresponding PR service methods validate
+context presence and cancellation and propagate it through token/session work;
+the snapshot service exposes older context-free method signatures. The PR
+therefore retains cancellation and request-lifetime boundaries that the
+snapshot would remove. Keep the PR implementation; do not port the staged
+handler/service pair as a replacement. This is a scoped authentication-path
+review, not a complete review of the 24 differing IDP paths.
