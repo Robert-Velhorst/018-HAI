@@ -2584,3 +2584,25 @@ misbound OAuth state and grants to be accepted across source changes. The
 current PR retains these checks. No files were copied or changed in the source
 candidate worktree. This remains a focused review of source/OAuth paths, not a
 complete review of the candidate's 770 dirty entries.
+
+### October 12, 2026: task approval and delivery candidate review
+
+Reviewed the task execution, automation approval-proof, and agent-coordination
+changes in `hai-model-maintenance-audit` against PR #36. None were ported. The
+candidate removes the pre-review automation configuration snapshot used to
+bind approval to the reviewed configuration. Its task executor also drops
+request-context propagation and cancellation checks, the distinction between
+failure before dispatch and uncertain launch outcome, receipt identity/status
+validation, and sanitization of runtime output and audit fields. Approval proof
+consumption loses its bounded timeout and explicit reconciliation result for
+an uncertain persistence outcome.
+
+In agent coordination, the candidate abandons the idempotency claim after any
+transport error, rather than retaining it when delivery may already have been
+accepted. A retry could therefore duplicate an externally accepted message.
+The timeout evaluator also removes the due-time guard for subsequent reminders,
+so repeated scheduler scans may issue reminders before the configured interval
+elapses. These changes weaken approval binding, cancellation, outcome
+reconciliation, privacy, idempotency, and follow-up cadence. The candidate
+worktree remains untouched; this review covers these execution paths only, not
+all 770 dirty entries.
