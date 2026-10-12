@@ -77,7 +77,14 @@ function Get-TailText {
         }
         [void]$stream.Seek(-[int64]$take, [System.IO.SeekOrigin]::End)
         $buffer = [byte[]]::new($take)
-        [void]$stream.Read($buffer, 0, $take)
+        $offset = 0
+        while ($offset -lt $take) {
+            $read = $stream.Read($buffer, $offset, $take - $offset)
+            if ($read -le 0) {
+                throw 'Transcript ended before the requested audit tail was read.'
+            }
+            $offset += $read
+        }
         return [System.Text.Encoding]::UTF8.GetString($buffer)
     } finally {
         $stream.Dispose()

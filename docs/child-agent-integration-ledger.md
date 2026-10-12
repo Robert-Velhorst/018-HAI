@@ -4130,3 +4130,16 @@ The six generated PostgreSQL evidence files, four local agent-state files,
 excluded outputs/logs/transcripts, and full historical patch-to-source
 attribution remain preserved and unresolved. No local file was removed or
 moved.
+
+### October 12, 2026: transcript audit reader hardening
+
+The transcript audit utility's tail reader previously made one `FileStream.Read`
+call and assumed it returned all requested bytes. Since a stream read may return
+fewer bytes before the requested count, the utility now loops until the full
+tail is read and fails explicitly on premature EOF. Added a synthetic Windows
+regression test to the cleanup-readiness CI job. The test verified one completed
+transcript, manifest/report/summary generation, and `deletion_performed=false`,
+and confirmed the source transcript still existed after the audit. The test
+passed locally. It used a unique temporary directory, which was removed after
+the containment check; no real transcript, report, or other archive artifact
+was read or changed by this test.
