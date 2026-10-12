@@ -107,7 +107,7 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 		Critical: false,
 		Run: func(ctx context.Context) error {
 			if addr == "" {
-				return fmt.Errorf("REDIS_ADDR is not set; quota and rate-limit state stays in-process and resets on restart")
+				return fmt.Errorf("REDIS_ADDR is not set; quota and rate-limit state stays in per-process in-memory storage and resets on restart")
 			}
 			var dialer net.Dialer
 			conn, err := dialer.DialContext(ctx, "tcp", addr)

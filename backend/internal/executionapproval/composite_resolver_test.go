@@ -288,7 +288,7 @@ func TestCompositeResolverRejectsOverlappingAdditionalNamespaces(t *testing.T) {
 	spy := &approvalResolverSpy{}
 	for _, registrations := range [][]ApprovalResolverRegistration{
 		{RegisterApprovalResolver(taskReviewPrefix+"custom:", spy)},
-		{RegisterApprovalResolver("custom:", spy), RegisterApprovalResolver("custom-review:", spy)},
+		{RegisterApprovalResolver("custom:", spy), RegisterApprovalResolver("custom:review:", spy)},
 	} {
 		if _, err := NewCompositeResolver(spy, spy, spy, spy, registrations...); !errors.Is(err, ErrInvalidRequest) {
 			t.Fatalf("overlapping registrations error = %v, want ErrInvalidRequest", err)

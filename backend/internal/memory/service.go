@@ -716,10 +716,14 @@ func (s *service) QueryForOwner(ctx context.Context, ownerIdentity, projectKey s
 		return PageResult{}, err
 	}
 	repository, ok := s.repo.(OwnerQueryRepository)
-	if !ok {
-		return PageResult{}, errors.New("owner-scoped memory query is unavailable")
+	if ok {
+		return repository.QueryForOwner(ctx, ownerIdentity, projectKey, includeArchived, params)
 	}
-	return repository.QueryForOwner(ctx, ownerIdentity, projectKey, includeArchived, params)
+	memories, err := s.findAllReadable(ownerIdentity, projectKey, includeArchived)
+	if err != nil {
+		return PageResult{}, err
+	}
+	return Query(memories, params), nil
 }
 
 func (s *service) RecentForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error) {

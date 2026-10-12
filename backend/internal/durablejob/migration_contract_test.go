@@ -54,11 +54,11 @@ func TestDurableJobQueueIndexMigrationContract(t *testing.T) {
 }
 
 func TestDurableJobQueueLeaseIndexMigrationContract(t *testing.T) {
-	up, err := migrations.Files.ReadFile("post/0005_durable_jobs_queue_lease_index.up.sql")
+	up, err := migrations.Files.ReadFile("post/0007_durable_jobs_queue_lease_index.up.sql")
 	if err != nil {
 		t.Fatalf("read queue-lease up migration: %v", err)
 	}
-	down, err := migrations.Files.ReadFile("post/0005_durable_jobs_queue_lease_index.down.sql")
+	down, err := migrations.Files.ReadFile("post/0007_durable_jobs_queue_lease_index.down.sql")
 	if err != nil {
 		t.Fatalf("read queue-lease down migration: %v", err)
 	}

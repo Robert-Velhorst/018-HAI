@@ -401,8 +401,8 @@ func TestRunOnceDoesNotExposeFeedFailureSecrets(t *testing.T) {
 	)
 
 	report, err := worker.RunOnce(context.Background())
-	if err != nil {
-		t.Fatalf("RunOnce: %v", err)
+	if !errors.Is(err, ErrReportedFailures) {
+		t.Fatalf("RunOnce error = %v, want sanitized feed failure", err)
 	}
 	if len(report.Errors) != 1 {
 		t.Fatalf("report errors = %#v", report.Errors)
@@ -674,8 +674,8 @@ func TestRunOnceRecoversDraftAfterDraftReadyPersistenceFailure(t *testing.T) {
 	if !errors.Is(err, ErrReportedFailures) {
 		t.Fatalf("first RunOnce error = %v, want reported persistence failure", err)
 	}
-	if len(first.Errors) != 1 || !strings.Contains(first.Errors[0], "simulated transient update failure") {
-		t.Fatalf("first run errors = %v, want the injected DraftReady persistence failure", first.Errors)
+	if len(first.Errors) != 1 || first.Errors[0] == "" || strings.Contains(first.Errors[0], "simulated transient update failure") {
+		t.Fatalf("first run errors = %v, want a sanitized DraftReady persistence failure", first.Errors)
 	}
 	partial, err := svc.Get("user-1", "local", classified.ID)
 	if err != nil {

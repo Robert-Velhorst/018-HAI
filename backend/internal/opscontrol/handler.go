@@ -41,7 +41,10 @@ type pauseRequest struct {
 // Pause engages the emergency stop (halts background processing).
 func (h *Handler) Pause(c *gin.Context) {
 	var req pauseRequest
-	_ = c.ShouldBindJSON(&req)
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pause request"})
+		return
+	}
 	actor, _ := h.actor(c)
 	state, cancellation, err := h.svc.EngageEmergencyStopAuthenticatedWithFanout(c.Request.Context(), req.Reason, actor)
 	if errors.Is(err, ErrUnauthenticated) {

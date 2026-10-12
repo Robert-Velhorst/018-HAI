@@ -284,7 +284,7 @@ func (r *GormUserRepository) FindByResetToken(token string) (*models.User, error
 }
 
 func (r *GormUserRepository) SetPasswordResetToken(id uuid.UUID, expectedSessionVersion int64, tokenDigest string, expiresAt, now time.Time) error {
-	if id == uuid.Nil || len(tokenDigest) != 64 || !expiresAt.After(now) {
+	if id == uuid.Nil || !utils.IsPasswordResetTokenDigest(tokenDigest) || !expiresAt.After(now) {
 		return errors.New("invalid password reset token record")
 	}
 	result := r.DB.Model(&models.User{}).

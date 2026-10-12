@@ -2194,6 +2194,19 @@ func (s *service) runDueScheduledSyncs(ctx context.Context, now time.Time, sourc
 }
 
 func (s *service) createSyncFailureWorkflow(source models.ConnectedSource, reason string) {
+	s.createSyncFailureWorkflowWithTrigger(source, reason, "scheduled_source_sync_failed")
+}
+
+func (s *service) ReportScheduledSyncTerminalFailure(sourceID uuid.UUID, reason string) {
+	source, err := s.repo.FindSource(sourceID)
+	if err != nil || source == nil {
+		s.audit(sourceID, "source.failure_workflow_failed", "terminal sync failure could not load its connected source")
+		return
+	}
+	s.createSyncFailureWorkflowWithTrigger(*source, reason, "scheduled_source_sync_dead_lettered")
+}
+
+func (s *service) createSyncFailureWorkflowWithTrigger(source models.ConnectedSource, reason, trigger string) {
 	if s.workflowService == nil {
 		return
 	}
@@ -2211,7 +2224,7 @@ func (s *service) createSyncFailureWorkflow(source models.ConnectedSource, reaso
 		SourceURI:      safety.RedactURL(source.SyncTarget),
 		SourceLabel:    source.Name,
 		ContentType:    "operational_failure",
-		Trigger:        "scheduled_source_sync_failed",
+		Trigger:        trigger,
 		Actor:          "source-scheduler",
 		RequiresReview: true,
 		ReviewReason:   "background source ingestion failed and requires operator review",

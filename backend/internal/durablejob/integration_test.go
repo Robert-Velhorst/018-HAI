@@ -471,7 +471,7 @@ func TestReclaimedLeaseFencesStaleWorkerCompletion(t *testing.T) {
 		Update("locked_at", now.Add(-2*lease)).Error; err != nil {
 		t.Fatalf("expire first lease: %v", err)
 	}
-	if reaped, err := repo.ReapExpiredLeases("workflow", now, lease); err != nil || reaped != 1 {
+	if reaped, err := repo.ReapExpiredLeasesForQueue("workflow", now, lease); err != nil || reaped != 1 {
 		t.Fatalf("reap: count=%d err=%v", reaped, err)
 	}
 
@@ -537,7 +537,7 @@ func TestReapExpiredLeasesDoesNotTouchOtherQueues(t *testing.T) {
 		}
 	}
 
-	if reaped, err := repo.ReapExpiredLeases("source", now, lease); err != nil || reaped != 1 {
+	if reaped, err := repo.ReapExpiredLeasesForQueue("source", now, lease); err != nil || reaped != 1 {
 		t.Fatalf("reap source queue: count=%d err=%v", reaped, err)
 	}
 	var workflow models.DurableJob

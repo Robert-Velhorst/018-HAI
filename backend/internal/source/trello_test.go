@@ -23,6 +23,10 @@ import (
 // trelloTestServer returns an httptest server that serves a small read-only
 // board and records every request method and whether credentials were sent.
 func trelloTestServer(t *testing.T, cardsJSON string) (*httptest.Server, *[]string, *[]string) {
+	return trelloTestServerWithActions(t, cardsJSON, nil)
+}
+
+func trelloTestServerWithActions(t *testing.T, cardsJSON string, additionalActions []trelloAction) (*httptest.Server, *[]string, *[]string) {
 	t.Helper()
 	methods := &[]string{}
 	cardQueries := &[]string{}
@@ -32,6 +36,12 @@ func trelloTestServer(t *testing.T, cardsJSON string) (*httptest.Server, *[]stri
 	}
 	fixtureActions := make([]trelloAction, 0)
 	for _, card := range fixtureCards {
+		if _, valid := parseTrelloTime(card.DateLastActivity); valid {
+			fixtureActions = append(fixtureActions, trelloAction{
+				Type: "updateCard", Date: card.DateLastActivity,
+				Data: trelloActionData{Card: trelloActionCard{ID: card.ID, Name: card.Name}},
+			})
+		}
 		for _, action := range card.Actions {
 			if action.Data.Card.ID == "" {
 				action.Data.Card.ID = card.ID
@@ -39,6 +49,7 @@ func trelloTestServer(t *testing.T, cardsJSON string) (*httptest.Server, *[]stri
 			fixtureActions = append(fixtureActions, action)
 		}
 	}
+	fixtureActions = append(fixtureActions, additionalActions...)
 	cardsJSON = string(trelloTestCardPayload([]byte(cardsJSON)))
 	actionsJSON, err := json.Marshal(fixtureActions)
 	if err != nil {
@@ -599,7 +610,16 @@ func TestSyncTrelloRetriesOlderChangedCardAfterWorkflowIntakeFailure(t *testing.
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
 		case strings.HasSuffix(r.URL.Path, "/actions"):
-			_, _ = w.Write([]byte(`[]`))
+			actions, err := json.Marshal([]trelloAction{{
+				Type: "updateCard", Date: "2026-09-24T13:00:00Z",
+				Data: trelloActionData{Card: trelloActionCard{ID: "old-card", Name: "Case task"}},
+			}})
+			if err != nil {
+				t.Errorf("encode action fixture: %v", err)
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			_, _ = w.Write(actions)
 		case strings.HasSuffix(r.URL.Path, "/cards"):
 			_, _ = w.Write(trelloTestCardPayload([]byte(cardResponse.Load().(string))))
 		default:
@@ -2918,7 +2938,10 @@ func TestFetchTrelloReconciliationSkipsUnchangedCardAtCursorBoundary(t *testing.
 func TestFetchTrelloReprocessesOlderCardWhenContentHashChanged(t *testing.T) {
 	const activity = "2026-07-10T12:00:00Z"
 	cards := `[{"id":"changed-card","name":"Updated plan","desc":"new source content","shortUrl":"https://trello.com/c/changed-card","dateLastActivity":"` + activity + `","idList":"list-1"}]`
-	server, _, _ := trelloTestServer(t, cards)
+	server, _, _ := trelloTestServerWithActions(t, cards, []trelloAction{{
+		Type: "updateCard", Date: "2026-07-13T00:00:00Z",
+		Data: trelloActionData{Card: trelloActionCard{ID: "changed-card", Name: "Updated plan"}},
+	}})
 	defer server.Close()
 	configureTrelloTest(t, server.URL)
 
@@ -2935,7 +2958,10 @@ func TestFetchTrelloReprocessesOlderCardWhenContentHashChanged(t *testing.T) {
 }
 
 func TestFetchTrelloEmitsRetainedTombstoneForCardMissingFromConfiguredBoard(t *testing.T) {
-	server, _, _ := trelloTestServer(t, `[]`)
+	server, _, _ := trelloTestServerWithActions(t, `[]`, []trelloAction{{
+		Type: "deleteCard", Date: "2026-07-13T00:00:00Z",
+		Data: trelloActionData{Card: trelloActionCard{ID: "previously-seen", Name: "Preserve this card"}},
+	}})
 	defer server.Close()
 	configureTrelloTest(t, server.URL)
 

@@ -125,3 +125,4 @@ func (s *recordingUserService) UpdatePassword(_ uuid.UUID, password string) erro
 func (s *recordingUserService) StorePasswordReset(uuid.UUID, string, time.Time) error { return nil }
 func (s *recordingUserService) ClearPasswordResetIfToken(uuid.UUID, string) error     { return nil }
 func (s *recordingUserService) CompletePasswordReset(string, string) error            { return nil }
+func (s *recordingUserService) ClearPasswordResetToken(uuid.UUID, string) error       { return nil }

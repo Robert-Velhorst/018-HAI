@@ -162,8 +162,12 @@ func TestDiagnoseAllowsLocalPostgresDefaults(t *testing.T) {
 	report := Diagnose(cfg)
 	for _, name := range []string{"database.user", "database.password"} {
 		check, ok := find(report, name)
-		if !ok || check.Severity != SeverityOK {
-			t.Fatalf("%s severity = %s (found=%v), want ok", name, check.Severity, ok)
+		want := SeverityOK
+		if name == "database.password" {
+			want = SeverityWarn
+		}
+		if !ok || check.Severity != want {
+			t.Fatalf("%s severity = %s (found=%v), want %s", name, check.Severity, ok, want)
 		}
 	}
 }

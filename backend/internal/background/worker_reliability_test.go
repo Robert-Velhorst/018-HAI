@@ -206,8 +206,8 @@ func TestRunOnceSurfacesFeedFailureAlongsideReport(t *testing.T) {
 	if !errors.Is(err, ErrReportedFailures) {
 		t.Fatalf("RunOnce error = %v, want reported feed failure", err)
 	}
-	if len(report.Errors) != 1 || !strings.Contains(report.Errors[0], "test-feed") {
-		t.Fatalf("RunOnce report errors = %v, want feed failure retained", report.Errors)
+	if len(report.Errors) != 1 || report.Errors[0] == "" || strings.Contains(report.Errors[0], "test-feed") {
+		t.Fatalf("RunOnce report errors = %v, want a sanitized feed failure", report.Errors)
 	}
 }
 

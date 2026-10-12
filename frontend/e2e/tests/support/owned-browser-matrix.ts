@@ -70,11 +70,21 @@ export function ownedMatrixTarget(info: TestInfo): OwnedMatrixTarget {
 
 interface MatrixHealth {
   consoleErrors: number;
+  consoleErrorKinds: Record<string, number>;
   pageErrors: number;
   failedRequests: number;
   httpErrors: number;
   deniedWrites: number;
   deniedExternal: number;
+}
+
+function consoleErrorKind(text: string): string {
+  if (/\b401\b|unauthori[sz]ed/i.test(text)) return 'authorization';
+  if (/Failed to load resource|net::ERR_|ERR_CONNECTION|ERR_NAME_NOT_RESOLVED/i.test(text)) return 'resource-load';
+  if (/ChunkLoadError|Loading chunk|dynamic import/i.test(text)) return 'module-load';
+  if (/\bNG\d{3,}\b|Angular/i.test(text)) return 'framework';
+  if (/aria-|focus|accessibility/i.test(text)) return 'accessibility';
+  return 'other';
 }
 
 export interface OwnedBrowserMatrix {
@@ -102,7 +112,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
     page.setDefaultTimeout(10_000);
     page.setDefaultNavigationTimeout(15_000);
     const health: MatrixHealth = {
-      consoleErrors: 0, pageErrors: 0, failedRequests: 0, httpErrors: 0,
+      consoleErrors: 0, consoleErrorKinds: {}, pageErrors: 0, failedRequests: 0, httpErrors: 0,
       deniedWrites: 0, deniedExternal: 0,
     };
     let bootstrapAuthRefusals = 0;
@@ -119,6 +129,8 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
       if (bootstrapAuthRefusals > 0 && bootstrapProbe(message.location().url)
         && /\b401\b/.test(message.text())) return;
       health.consoleErrors++;
+      const kind = consoleErrorKind(message.text());
+      health.consoleErrorKinds[kind] = (health.consoleErrorKinds[kind] || 0) + 1;
     });
     page.on('pageerror', () => health.pageErrors++);
     page.on('requestfailed', (request) => {
@@ -172,7 +184,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
       },
       assertHealthy: () => {
         expect(health, 'Counts only: console text, bodies, headers and credentials are deliberately excluded').toEqual({
-          consoleErrors: 0, pageErrors: 0, failedRequests: 0, httpErrors: 0,
+          consoleErrors: 0, consoleErrorKinds: {}, pageErrors: 0, failedRequests: 0, httpErrors: 0,
           deniedWrites: 0, deniedExternal: 0,
         });
       },
