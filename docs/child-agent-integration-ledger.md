@@ -5606,21 +5606,42 @@ cleanup eligibility.
 This is the latest state check and supersedes earlier same-day branch, PR-head,
 and dirty-checkout counts above. The canonical repository is
 `Robert-Velhorst/018-HAI`; PR #36 remains open against `main` from
-`codex/hai-runtime-release` at `d1e02b4bba391db0672b4bc23c2e6460e840704e`.
+`codex/hai-runtime-release` at `9a83903f9e19930f627e05a3a31a1ad7c21231b6`.
 The local audit worktree is at the same commit. A live GitHub query reported
 `CLEAN` merge state and 36 successful checks out of 36, including browser
 acceptance. The user authorized pushing to PR #36 and running its CI; no merge
-was authorized or performed.
+was authorized or performed. The audit-ledger commit
+`9a83903f9e19930f627e05a3a31a1ad7c21231b6` was pushed to PR #36; its
+exact-head CI run `38280635341` completed successfully.
 
 The preserved older checkout is currently at
 `e07b9daeb3ba2630ecbe12a64d948f791203c241`, 414 commits behind the PR branch.
 Its working tree contains 3,167 status paths: 692 tracked modifications and
-2,475 untracked paths. The latest content crosswalk for eligible source and
-documentation paths covered 841 untracked candidates (772 equal after line
-ending normalization, 63 differing, six absent) and 667 tracked modifications
-(440 equal by bytes or normalized line endings, 227 differing, zero absent).
-The counts classify content/path equality only. They do not establish semantic
-integration for each changed file.
+2,475 untracked paths. The latest crosswalk covers 860 eligible untracked
+source/document/local agent-state candidates (one byte-identical, 782 equal
+after line-ending normalization, 67 differing, ten absent from the PR
+checkout) and 653 eligible tracked modifications (three byte-identical, 423
+equal after line-ending normalization, 227 differing, none absent). The
+crosswalk excludes secret/environment-named files and paths outside the
+configured source/document extension allowlist. These counts show path/content
+equality only, not semantic integration.
+
+The ten PR-absent paths are `.claude-flow/agents/store.json`,
+`.claude-flow/policy/state.json`, `.claude-flow/terminals/store.json`,
+`.swarm/model-router-state.json`, and six generated PostgreSQL evidence files:
+`backend/internal/outcomeevaluation/test-evidence/20260930-pg-snapshot/cleanup-proof.json`,
+`format-ownership.json`, `pass-summary.json`, `pg-ownership.json`,
+`pre-cleanup.json`, and `runner-ownership.json`. Their contents and provenance
+have not yet been semantically verified; all ten remain in place. A metadata-
+only JSON inspection found no sensitive-looking key names, but did not inspect
+or publish secret-bearing values. The four agent-state records include
+ephemeral agent, policy, terminal/history/output/environment, working-directory,
+and model-router state; they are runtime state, not product source. The six
+PostgreSQL snapshot records include machine-specific container identifiers,
+mounts, commands, networks, and hashes. Their fields self-report 15 passes,
+zero skips/failures, and a zero remaining-row count alongside zero deleted
+volumes and `parentStackUsed=false`; these are not independently verified live
+acceptance or cleanup receipts. Raw records were not copied into the PR.
 
 Additional bounded source comparisons in this audit confirmed these PR-side
 implementations are already more complete than the older checkout and should
@@ -5643,8 +5664,8 @@ not be overwritten by it:
 
 No source from the old checkout was copied in this audit step because the
 inspected deltas were already represented by the PR version. Remaining work is
-still substantial: semantically review the 227 tracked and 63 untracked
-source/document content differences; identify and account for the six absent
+still substantial: semantically review the 227 tracked and 67 untracked
+source/document content differences; identify and account for the ten absent
 evidence paths; finish provenance and unique-finding review of outputs,
 diagnostics, and transcript archives; and only then define an exact, safe local
 cleanup allowlist. No local files were removed or moved. The earlier 2026-10-12
