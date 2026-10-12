@@ -3520,3 +3520,36 @@ files were identified by name only and were not read or copied; environment
 files may contain credentials and are not PR artifacts. The live gateway and
 database migration acceptance remain governed by PR #36's CI and deployment
 checks.
+
+### October 12, 2026: model, evaluation, and browser-verification crosswalk
+
+Compared the snapshot with PR #36 in model-intelligence endpoint validation,
+calibration, the fixed-suite LM-evaluation endpoint, browser verification, and
+OpenClaw maintenance:
+
+- The snapshot accepts `host.docker.internal` for every local model provider.
+  PR #36 centralizes provider-aware validation and only permits the
+  `ollama-local` Docker alias for the Ollama provider; keep the narrower
+  endpoint policy so a provider entry cannot be redirected to an unintended
+  local service.
+- The snapshot removes the explicit `successes == 0` calibration branch. PR
+  #36 returns a stable zero Wilson lower bound in that case instead of
+  persisting floating-point noise, including negative zero. This is a small
+  numerical correctness improvement already present in the PR.
+- The snapshot LM-evaluation handler rejects only positive `Content-Length`.
+  Go represents an unknown/chunked body length as `-1`, so such a request can
+  pass the snapshot's “accepts no caller-provided data” check and trigger the
+  fixed evaluation. PR #36 rejects every non-zero length, including unknown
+  length. Preserve the stricter bodyless contract.
+- PR #36 adds read-only browser-verification linkage to a workflow as a
+  review-quality signal, without authorizing execution or changing workflow
+  completion. The snapshot omits that integration and its result fields; it
+  supplies no replacement behavior to port.
+- The snapshot's OpenClaw lease-token validation and the PR's equivalent
+  `IndexFunc` implementation both accept only 64 lowercase hexadecimal
+  characters. The pinned signing-key byte encoding is a secret-scanner
+  representation change, not a runtime behavior change.
+
+No model, evaluation, browser-verification, or OpenClaw-maintenance files were
+ported in this batch. Findings are code/test-contract comparisons; no live
+provider, local browser worker, or model-maintenance run was performed.
