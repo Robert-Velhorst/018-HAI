@@ -3588,3 +3588,152 @@ MCP preflight, domain-pack catalog, and Runtime Lab ownership:
 
 No health, rate-limit, MCP, domain-pack, or Runtime Lab code was ported. These
 are source and test-contract findings; no remote MCP server was contacted.
+
+### October 12, 2026: life-ontology bounds and monotonic timestamps
+
+Compared staged snapshot code with PR #36 in life-ontology persistence/query,
+proactivity snapshots, outcome evaluation, and safety-stop helpers:
+
+- PR #36 adds `BoundedQueryRepository` so PostgreSQL applies owner, local-only,
+  temporal, external-key, and row-limit predicates before returning life-
+  ontology entities and relations. The snapshot removes this repository
+  contract and falls back to loading/filtering records in the service. That
+  transfers unbounded, potentially private graph data into application memory
+  and defeats database-side query limits; keep the bounded repository path.
+- PR #36 accepts an `AsOf` timestamp at most two microseconds ahead of its
+  service clock, then advances the logical clock to that timestamp. This
+  bounded allowance covers the monitor's claim/completion timestamp steps.
+  The snapshot rejects any future `AsOf`, which can reject an otherwise valid
+  immediate handoff. Larger future timestamps remain invalid in the PR.
+- Outcome request normalization in the snapshot removes defensive copies of
+  observations, corrections, and indicators before normalizing/sorting them.
+  The PR copies those caller-owned slices before mutation, preserving caller
+  data and avoiding mutation of shared slices during concurrent evaluation.
+- The snapshot inlines the deployment emergency-stop check into
+  `EvaluateEmergencyStop`; the reviewed call sites and decision logic are
+  equivalent to PR #36's helper form. This is a mechanical refactor, not a
+  demonstrated safety bypass.
+
+No life-ontology, proactivity, outcome-evaluation, or emergency-stop code was
+ported. The PR includes explicit bounded-query and monotonic-clock tests; the
+review did not run a live PostgreSQL concurrency test in this audit worktree.
+
+### October 12, 2026: system-status and shared-shell frontend crosswalk
+
+Compared the staged frontend snapshot with PR #36 in System Status, the
+shared module registry/shell, and service contracts:
+
+- The snapshot's System Status page polls the unauthenticated aggregate
+  `/readyz` endpoint every 15 seconds. PR #36 uses the authenticated detailed
+  `/api/v1/system/readiness` endpoint, bounded request timeouts, visibility-
+  aware polling, and adaptive 120-second healthy / 60-second degraded /
+  15-second recovery cadence. The snapshot would increase idle probe traffic
+  and remove detailed operator diagnostics.
+- The snapshot removes authenticated system build information and the event
+  delivery overview/retry API contract. Those are present in PR #36's service
+  and model types, including operator-visible outbox recovery; do not replace
+  them with a public aggregate readiness response.
+- The PR's module registry contains `/operational-brain`, which is absent from
+  the snapshot. Its removal would hide a real route already implemented in
+  PR #36, not simplify a duplicate page.
+- The PR's shared shell updates the document title from the current module and
+  keeps its mobile-navigation focus guard. The snapshot removes both. It also
+  lacks the registry's URL-segment parser, which avoids treating an encoded
+  slash inside a segment as a route boundary.
+- The snapshot removes the ambient service's `view=summary` request option and
+  weakens the typed response contract for monitor recovery. This would
+  encourage full payload loads and lose explicit recovery response typing;
+  retain the PR's projections and response model.
+
+No frontend route or service code was ported. The review was static and did not
+rerun Angular or browser tests; the PR's exact-head CI remains the frontend
+execution evidence.
+
+### October 12, 2026: model constraints and residual test-only deltas
+
+Reviewed the remaining model and small test-file differences in the current
+snapshot-to-PR reconciliation:
+
+- The snapshot adds a generic GORM `uniqueIndex` tag to `Workflow.WorkflowID`.
+  PR #36 deliberately leaves the versioned migration's explicitly named
+  workflow-ID constraint as the sole owner, with a source comment explaining
+  that AutoMigrate could otherwise try to rename or drop that named
+  constraint. Keep the migration-owned constraint contract.
+- The snapshot removes `TestHAIOSOverviewFailsClosedWhenMetricsAreUnavailable`.
+  This is a loss of regression coverage for an unavailable metrics provider;
+  the production handler itself is unchanged in this file comparison, so no
+  runtime failure is claimed.
+- Privacy-filter and Evidently tests in the PR construct synthetic secret-like
+  fixtures from fragments instead of embedding scanner-triggering literal
+  values. The snapshot restores literals; this is test-fixture representation,
+  not a production scanner behavior change, and should not be copied in a way
+  that causes secret scanners to reject the test source.
+- The Promptfoo and proactive differences are fixture-only (pinned synthetic
+  runner version and idempotency-key text). No runtime behavior or unique
+  feature was found in those files.
+- The connected-source OAuth-state entity and raw evidence digest fields are
+  already covered by the source and operations reviews above; the snapshot
+  omits those fields and their corresponding durable contracts.
+
+No model or test code was ported from this batch. The conclusions distinguish
+schema risk and deleted coverage from production behavior changes.
+
+### October 12, 2026: Nginx config-manager event durability
+
+Compared the snapshot's six changed Nginx config-manager files with PR #36's
+`nginx-config-manager` implementation:
+
+- The snapshot consumes only Kafka partition 0 with `OffsetNewest` and has no
+  consumer group or durable inbox. Events already in Kafka when the service
+  starts, and events missed during an outage, are not replayed by this
+  consumer. PR #36 starts from the oldest offset, uses a consumer group, and
+  records messages in a durable retry/retention inbox before marking them.
+- Snapshot event processing logs malformed, unknown, and failed messages but
+  does not return a durable retry decision. PR #36's inbox retries failures,
+  tracks terminal outcomes, and makes at-least-once delivery idempotent.
+- Snapshot config writes use `os.Create` directly, so a process interruption
+  can leave a truncated/partial live `.conf`; updates delete the old route
+  before writing the new one. PR #36 renders first, writes and syncs a
+  same-directory temporary file, then atomically renames it; updates write the
+  replacement before removing the old path.
+- The snapshot consumer has no cancellation-aware group loop, restart backoff,
+  or readiness state. Its main process blocks in an unbounded `Start()` and
+  lacks the PR's bounded health server and graceful shutdown. Configuration
+  also omits validation for broker addresses, group/inbox settings, retry
+  retention, and health port.
+- The snapshot event payload omits the event ID/timestamp fields used by the
+  durable inbox contract. Its consumer therefore cannot adopt the PR's
+  idempotent event identity without restoring that schema.
+
+No Nginx config-manager code was ported. This package comparison is based on
+source and tests; no live Kafka broker or gateway reload was exercised. The
+existing policy that refuses unapproved Docker-socket reload remains intact.
+
+### October 12, 2026: Compose and environment artifact boundary
+
+Compared the snapshot index with PR #36's Compose, ignore, and frontend
+container contracts:
+
+- PR #36's `.gitignore` excludes `.env-backend`, `.env-gateway`, and `.env-idp`;
+  these three files are present as new entries in the snapshot index. Their
+  contents were not opened. They may contain deployment secrets and must not
+  be copied, committed, or removed as part of integration without a separate
+  explicit secrets-safe disposition.
+- The snapshot's `frontend/nginx-custom.conf` listens on port 80, while the
+  canonical gateway and Compose health contract target the frontend on port
+  8080. The snapshot version would break the gateway-to-frontend path; retain
+  the PR's listener port.
+- The snapshot's local Compose file omits PR #36's opt-in internal SearXNG
+  research-discovery profile and several backend configuration bindings for
+  operational-graph bounds, authenticated MCP preflight, and the operator
+  scope. Its omission is not a reason to copy the much larger file wholesale;
+  preserve the canonical Compose topology and only port a reviewed matching
+  configuration if a missing capability is demonstrated.
+- The snapshot also drops `.gitattributes` rules for output and source
+  material line endings. This is repository hygiene, not executable behavior.
+- The checked compatibility Compose wrappers are otherwise equivalent in the
+  reviewed blocks.
+
+No environment files or Compose files were copied or deleted. This pass does
+not establish whether any environment file contains an active credential; it
+was deliberately not read.
