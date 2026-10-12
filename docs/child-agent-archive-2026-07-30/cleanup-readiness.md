@@ -9,20 +9,20 @@ ledgering do not themselves authorize or perform deletion.
 
 The audited source contains 18 JSONL files occupying 20,739,169,122 bytes
 (about 19.315 GiB). They represent 16 unique child IDs because two IDs each
-have duplicate transcript files. A bounded full-file rescan on 2026-10-12
-found oversized records in 13 files; those files are retained as
-unattributed, even where an earlier full parse observed a terminal message.
-The previous terminal messages remain preserved as observations, not as proof
-that the current bounded scan could independently classify the whole file.
+have duplicate transcript files. A bounded full-file rescan on 2026-10-12 with
+a 10 MiB record limit found two oversized records in two files. Those files
+remain unattributed even where an earlier full parse observed a terminal
+message. The previous terminal messages remain observations, not proof that the
+bounded scan independently classified the whole file.
 
 | Disposition | Files | Bytes | Meaning |
 | --- | ---: | ---: | --- |
-| Hashed cleanup candidates | 3 | 1,644,177 | Completed, uniquely attributed transcripts with exact SHA-256; candidate only, not deleted. |
-| Retain | 15 | 20,737,524,945 | Oversized/unattributed, duplicate-ID, aborted, or nonterminal transcripts. |
+| Hashed cleanup candidates | 5 | 3,179,439,595 | Completed, uniquely attributed transcripts with exact SHA-256; candidate only, not deleted. |
+| Retain | 13 | 17,559,729,527 | Oversized/unattributed, duplicate-ID, aborted, or nonterminal transcripts. |
 
 The generated manifest records per-file size, verified and observed status,
 turn attribution, skipped oversized/malformed-record counts, disposition,
-final-message hash, and (for each candidate) full transcript SHA-256. The three
+final-message hash, and (for each candidate) full transcript SHA-256. The five
 candidate files were hashed after the bounded scan; no source length or
 last-write-time change was observed while hashing. Preserved reports and their
 qualification are in `child-agent-final-reports.md`; machine-readable counts
@@ -181,15 +181,14 @@ It must run from a clean checkout of `main` after PR #36 and all required checks
 are complete. A normal source-hash verification intentionally reports
 `cleanup_gate_ready=false` when the repository/PR gates were not requested.
 
-The ledger-only check passed with 18 manifest rows, 8 candidates, 10 retained
-transcripts, and 8 matching candidate crosswalk rows. The source check also
-passed against `D:\codex-temp\hai-completed-agent-sessions`: all 18 files
-(20,739,169,122 logical bytes) were present and the eight candidate files
-(7,939,888,699 bytes total) matched their recorded size and SHA-256. This
-verifies the archive inventory and candidate bytes against the ledger; it does
-not establish that every event in the six retained histories has been
-integrated, close the separate PR/CI and repository-history gates, or authorize
-deletion.
+At the earlier 8 MiB scan checkpoint, the ledger-only and source checks passed
+with 18 rows, 8 candidate files (7,939,888,699 bytes), and 10 retained files.
+That scan is superseded by the 10 MiB rescan below, which newly attributes two
+completed reports and changes the current candidate/retained disposition. The
+older hash check proves only that the archive matched that earlier manifest;
+it does not validate the current candidate hashes or prove every event in the
+retained histories is integrated, close the PR/CI and repository-history gates,
+or authorize deletion.
 
 The Windows backup preflight now inventories mounted HAI volumes by Compose
 project and HAI container name, checks Docker's
@@ -1200,14 +1199,13 @@ Sentry import, so this audit did not infer whether that dependency is required
 transitively or remove it; that dependency difference remains open pending
 lock-generation and runtime evidence.
 
-### Current bounded transcript cleanup disposition (2026-10-12)
+### Superseded 8 MiB transcript disposition (2026-10-12)
 
-This is the current scan summary; older counts and classifications above are
-dated historical snapshots. The main archive bounded scan now records 3
-uniquely attributed, hashed candidate transcripts (1,644,177 bytes) and 15
-retained transcripts (20,737,524,945 bytes). Thirteen retained files contain
-oversized JSONL records (1,630 skipped records) and are unattributed in the
-bounded scan; prior terminal observations do not override that disposition.
+This scan was superseded by the 10 MiB rescan below. It recorded 3 uniquely
+attributed, hashed candidate transcripts (1,644,177 bytes) and 15 retained
+transcripts (20,737,524,945 bytes). Thirteen retained files contained
+oversized JSONL records (1,630 skipped records) and were unattributed in that
+bounded scan; prior terminal observations did not override that disposition.
 
 The two supplemental roots add 9 retained transcripts (14,013,737,298 bytes);
 all nine contain oversized records (783 skipped records), leaving zero
