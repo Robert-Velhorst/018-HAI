@@ -242,7 +242,7 @@ if ($RequireMergedPullRequest) {
     try { $pr = [string]$prJson[0] | ConvertFrom-Json -ErrorAction Stop }
     catch { Stop-ReadinessCheck 'GitHub returned invalid pull request metadata.' }
     $pullRequestMergeCommit = [string]$pr.mergeCommit.oid
-    if ([string]$pr.state -cne 'CLOSED' -or [string]::IsNullOrWhiteSpace([string]$pr.mergedAt) -or
+    if ([string]$pr.state -cne 'MERGED' -or [string]::IsNullOrWhiteSpace([string]$pr.mergedAt) -or
         [string]$pr.baseRefName -cne 'main' -or $pullRequestMergeCommit -notmatch '^[0-9a-f]{40}$') {
         Stop-ReadinessCheck 'the integration pull request is not verified as merged into main.'
     }
