@@ -5311,3 +5311,24 @@ precedence. The PR ordering test also includes SQL-order assertions for
 does not. Retain the PR implementation and tests; do not port these older
 variants. This comparison covers these paths, not all 139 differing backend
 files.
+
+### October 12, 2026: LLM maintenance and provider-probe comparison
+
+Compared the staged LLM policy and scheduler with the PR after an initial
+filename/line-delta check suggested an endpoint-credential validation gap.
+There is no such gap: the PR readiness parser rejects embedded URL
+credentials, query parameters, and fragments, while the staged version checks
+embedded credentials but omits the latter two checks. Existing PR tests cover
+credential and query rejection. The PR also starts the model-maintenance
+loop only when maintenance is enabled and eligible work exists; the staged
+version starts it without that eligibility guard. Keep the PR behavior.
+
+The staged policy uses a 256 KiB cap for the model-catalog response, while
+the PR uses the named 4 MiB bounded cap for provider catalogs and retains
+smaller caps for health probes. This is a bounded compatibility/resource
+tradeoff; do not lower it without verifying supported catalog sizes. The
+`modelintelligence/maintenance.go` and
+`modelintelligence/provider_registry.go` files are line-identical between the
+staged index and PR in this comparison. No LLM code was copied from the
+snapshot. This is a scoped review, not a full review of the 139 backend
+differences or live-provider evidence.
