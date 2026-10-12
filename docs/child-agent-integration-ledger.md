@@ -4188,3 +4188,26 @@ and verified all 21 report-linked repository paths. The result was
 `cleanup_authorized=false`. The supplemental completed reports have a
 source-path crosswalk, but full historical patch-event attribution remains
 incomplete and these files remain preserved.
+
+### October 12, 2026: remaining candidate-delta disposition
+
+Reviewed the three remaining local-only candidates that appeared potentially
+additive. `backend/internal/runtimelab/owner_gate_handler_test.go` differs from
+the PR copy only by a clarifying comment; the authorization assertions already
+exist in the PR. `scripts/test-isolated-acceptance-stack.ps1` is superseded by
+the PR copy, which retains the external-configuration denial checks and adds
+gateway retry, credential-inheritance, and interrupted-cleanup provenance
+coverage. The local `scripts/test-frontend-build-resource-limit.cjs` adds
+observations about invalid values accepted by the installed Angular parser,
+but the PR already enforces the supported worker values at the Docker build
+boundary; those upstream-parser expectations would be brittle across Angular
+updates and do not establish a missing product guarantee.
+
+Compared `services/promptfoo-runner/package.json` in the stale checkout with
+the PR tree. The PR pins Promptfoo `0.124.1`, includes the required
+`@libsql/linux-x64-gnu` package, and applies a `basic-ftp` override; the stale
+copy pins `0.123.1` and omits both. No stale dependency manifest or lockfile
+was copied. The PR's Promptfoo runner image CI check passed on the audited
+head. This resolves only these candidate deltas, not a complete semantic
+review of the 66-file divergence set, the 1,576 output artifacts, or historical
+patch-event attribution. No local files were moved or deleted.
