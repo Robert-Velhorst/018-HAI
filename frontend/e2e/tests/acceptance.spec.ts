@@ -17,6 +17,16 @@ const email = process.env.E2E_OPERATOR_EMAIL || 'operator@example.com';
 const password = process.env.E2E_OPERATOR_PASSWORD || '';
 const allowMutation = process.env.E2E_ALLOW_MUTATION === 'true';
 
+function safeConsoleSummary(value: string): string {
+  return value
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/https?:\/\/[^\s"'`]+/gi, '[url]')
+    .replace(/\b[a-f0-9]{32,}\b/gi, '[identifier]')
+    .replace(/\bprobe-\d+\b/gi, 'probe-[run]')
+    .slice(0, 180);
+}
+
 async function login(page: Page) {
   await page.goto('/');
   await page.getByTestId('login-submit').waitFor({ state: 'visible' });
@@ -44,6 +54,10 @@ test.describe('HAI operator acceptance flow', () => {
 
   test('login -> source -> sync -> workflow -> fail-closed runtime preflight', async ({ page }) => {
     test.setTimeout(180_000);
+    const browserConsoleErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') browserConsoleErrors.push(safeConsoleSummary(message.text()));
+    });
     let sourceName = '';
     let sourceId = '';
     const runId = Date.now();
@@ -182,12 +196,17 @@ test.describe('HAI operator acceptance flow', () => {
         exact: true,
       });
       await expect(exactRuntime).toBeVisible();
+      await expect(exactRuntime).toBeEnabled();
       const proposalResponse = page.waitForResponse((response) =>
         response.request().method() === 'POST'
-        && /\/api\/v1\/workflow\/[^/]+\/proposals\/[^/]+\/resolve$/.test(new URL(response.url()).pathname)
+        && /\/api\/v1\/workflow\/[^/]+\/proposals\/[^/]+\/resolve$/.test(new URL(response.url()).pathname),
+        { timeout: 15_000 },
       );
       await exactRuntime.click();
-      const response = await proposalResponse;
+      const response = await proposalResponse.catch((error) => {
+        const cause = error instanceof Error ? error.message : 'response wait failed';
+        throw new Error(`Runtime selection dispatched no matching API response (${cause}). Browser console: ${browserConsoleErrors.join(' | ') || 'none'}`);
+      });
       expect(response.ok(), await response.text()).toBeTruthy();
       const resolvedRecord = await response.json() as {
         item?: { id?: string; requiresApproval?: boolean; approvalStatus?: string; currentState?: string };

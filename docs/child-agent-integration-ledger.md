@@ -5475,3 +5475,32 @@ exits 1. The available failed-job log does not expose a specific Playwright
 assertion or root cause, so this remains an unresolved release gate rather
 than a verified product defect. PR merge state is `UNSTABLE`; no push, rerun,
 merge, cleanup, or mutation of the existing scratch worktrees was performed.
+
+### October 12, 2026: PR #36 browser failure artifact follow-up
+
+Downloaded and inspected the retained browser-acceptance artifact for run
+`38254639526`. The exact failing flow is runtime-selection approval in
+`frontend/e2e/tests/acceptance.spec.ts`: the candidate button is visible and
+the workflow record remains in `needs approval`, but the expected
+`POST /api/v1/workflow/{id}/proposals/{id}/resolve` is never observed. The
+isolated backend log contains no matching resolution request and no failed
+HTTP status for that action. This narrows the fault to the client-side action
+path or its pre-dispatch guards; it does not prove which guard or UI condition
+caused the drop. The post-failure snapshot still shows the selection proposal
+open and no framework selection recorded.
+
+The artifact also records two console errors categorized as `other` on route
+matrix cases, with zero page errors, failed requests, or HTTP errors. The
+artifact intentionally excludes raw console messages. Updated the operator
+acceptance test to assert the candidate button is enabled, cap the response
+wait at 15 seconds, and include a bounded, redacted console summary if the
+expected request is absent. TypeScript syntax transpilation and
+`git diff --check` passed for this test-only diagnostic change. The instrumented
+test has not been run, and no product-code fix has been made or claimed.
+
+The diagnostic test change and ledger update are committed locally in
+`codex/hai-ledger-review-20261012` (commit `0eef9fd5`); they have not been
+pushed to PR #36. PR #36's browser acceptance is still a failing release gate,
+and its workflow has not been rerun. PR #35's separate CI authorization does
+not authorize a PR #36 run. All browser artifacts and worktrees remain
+preserved.
