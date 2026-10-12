@@ -1,5 +1,31 @@
 # Supplemental child-batch audit (2026-07-30)
 
+## Current bounded-scan disposition (2026-10-12)
+
+This section supersedes cleanup classifications in the historical scan notes
+below. The bounded parser processes JSONL records up to 8 MiB; any file with
+an oversized or malformed candidate record remains unattributed and retained,
+even when an earlier full-file scan observed a completion event.
+
+| Scope | Files | Logical bytes | Cleanup candidates | Retained | Oversized records |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Supplemental roots | 9 | 14,013,737,298 | 0 | 9 | 783 |
+| Main archive root | 18 | 20,739,169,122 | 3 | 15 | 1,630 |
+| **Combined known inventory** | **27** | **34,752,906,420** | **3** | **24** | **2,413** |
+
+The supplemental scan found an oversized record in every file. Hubble and
+Popper have completion reports observed in a prior full-file pass, but both
+files are currently `unattributed` with disposition
+`retain_unparsed_candidate_record`; these observations do not qualify them for
+cleanup. The three main-root candidates are the only files that currently pass
+bounded attribution and hashing, and remain candidates only. No transcript
+was removed. This is still not a complete inventory of every HAI-related local
+file, and transcript deletion is not authorized by this ledger alone.
+
+Machine-readable current results are in
+`supplemental-child-transcript-summary.json` and
+`supplemental-child-transcript-manifest.csv`.
+
 ## Scope and inventory
 
 Two additional local folders contain HAI child transcripts whose first-line
@@ -7,17 +33,18 @@ metadata links them to root session `019e7acc-44f2-7c90-a04e-253f6d43df28`.
 They are not covered by `child-agent-transcript-manifest.csv` or its current
 automated cleanup gate.
 
-| Local batch | Files | Bytes | Completed | Retained |
+| Historical full-parse observation | Files | Bytes | Observed completed | Retained by bounded rescan |
 | --- | ---: | ---: | ---: | ---: |
-| `D:\codex-temp\completed-agent-sessions` | 3 | 4,651,926,405 | 3 | 0 |
+| `D:\codex-temp\completed-agent-sessions` | 3 | 4,651,926,405 | 2 | 3 |
 | `D:\codex-temp\session-log-relief` | 6 | 9,361,810,893 | 0 | 6 |
-| **Supplemental total** | **9** | **14,013,737,298** | **3** | **6** |
+| **Supplemental total** | **9** | **14,013,737,298** | **2** | **9** |
 
 Compared with the existing 18-file manifest, these nine files add nine
 non-overlapping child IDs. The combined known inventory is 27 files, 25
-unique child IDs, 12 completed transcripts, 8 aborted transcripts, 7
-nonterminal transcripts, and 34,752,906,420 logical bytes. This is not yet a
-complete inventory of every HAI-related local file.
+unique child IDs, and 34,752,906,420 logical bytes. Statuses from this older
+full parse are historical observations, not the current bounded-scan
+disposition; use the current summary above for cleanup decisions. This is not
+yet a complete inventory of every HAI-related local file.
 
 The machine-readable nine-row inventory is
 `supplemental-child-transcript-manifest.csv`; the three preserved completed
@@ -25,7 +52,11 @@ final reports are in `supplemental-child-final-reports.md`. The supplemental
 manifest is deliberately not treated as part of the existing automated
 deletion gate.
 
-## Completed reports and code disposition
+## Historical completion reports and code disposition
+
+The rows below document prior report/source cross-checks. They do not override
+the current scan's unattributed status or make any transcript eligible for
+cleanup.
 
 | Child | Work | Source disposition | Final-message SHA-256 | Transcript SHA-256 |
 | --- | --- | --- | --- | --- |

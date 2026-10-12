@@ -7,20 +7,25 @@ ledgering do not themselves authorize or perform deletion.
 
 ## Transcript inventory
 
-The audited source contained 18 JSONL files occupying 20,739,169,122 bytes
+The audited source contains 18 JSONL files occupying 20,739,169,122 bytes
 (about 19.315 GiB). They represent 16 unique child IDs because two IDs each
-have duplicate transcript files. The audit preserved all nine completed final
-messages, including the completed transcript whose ID is duplicated.
+have duplicate transcript files. A bounded full-file rescan on 2026-10-12
+found oversized records in 13 files; those files are retained as
+unattributed, even where an earlier full parse observed a terminal message.
+The previous terminal messages remain preserved as observations, not as proof
+that the current bounded scan could independently classify the whole file.
 
 | Disposition | Files | Bytes | Meaning |
 | --- | ---: | ---: | --- |
-| Hashed cleanup candidates | 8 | 7,939,888,699 | Completed, unique-ID transcripts; exact SHA-256 is in the manifest. Candidate only, not deleted. |
-| Retain | 10 | 12,799,280,423 | Aborted/nonterminal transcripts and every transcript for duplicated child IDs. |
+| Hashed cleanup candidates | 3 | 1,644,177 | Completed, uniquely attributed transcripts with exact SHA-256; candidate only, not deleted. |
+| Retain | 15 | 20,737,524,945 | Oversized/unattributed, duplicate-ID, aborted, or nonterminal transcripts. |
 
-The generated manifest records per-file size, status, disposition, final-message
-hash, and (for each candidate) full transcript SHA-256. The audit reported no
-source length or last-write-time change during candidate hashing. The preserved
-completed reports are in `child-agent-final-reports.md`; machine-readable counts
+The generated manifest records per-file size, verified and observed status,
+turn attribution, skipped oversized/malformed-record counts, disposition,
+final-message hash, and (for each candidate) full transcript SHA-256. The three
+candidate files were hashed after the bounded scan; no source length or
+last-write-time change was observed while hashing. Preserved reports and their
+qualification are in `child-agent-final-reports.md`; machine-readable counts
 are in `child-agent-transcript-summary.json`. `deletion_performed` is `false`.
 
 ## Integration assessment and limits
@@ -65,20 +70,17 @@ are in `child-agent-transcript-summary.json`. `deletion_performed` is `false`.
   history and explicit workflow success criteria were included in checkpoint
   `29e9743`; their frontend behavior is not yet compiled or browser-tested.
 
-### Completed-report integration crosswalk (2026-10-10)
+### Completed-report integration crosswalk (2026-10-12)
 
-This maps all eight manifest rows marked `candidate_after_ledger_commit` to the
+This maps the three manifest rows marked `candidate_after_ledger_commit` to the
 preserved report and current repository evidence. It records source integration,
-not permission to remove the source transcript. The two duplicate-ID transcripts
-are outside this candidate set and remain retained as shown in the manifest.
+not permission to remove the source transcript. Duplicate-ID and oversized
+transcripts remain retained as shown in the manifest. The other two completion
+reports from the earlier full parse are observations only because the bounded
+rescan could not parse all records in those files.
 
 | Child | Report kind | Integrated finding / disposition | Current repository evidence |
 | --- | --- | --- | --- |
-| `019fb1d1-53a5-78a0-9387-b23f05eb6aef` | Partial IDP report | Auth configuration, token/session checks, logout/OAuth failure handling, DB error distinction, Kafka nil handling, and non-root runtime are present; the report explicitly said latest edits still needed validation. | `idp/internal/app/config/`, `idp/internal/app/authentication/`, `idp/Dockerfile`; IDP package tests remain a separate gate. |
-| `019fb1d3-1ebf-7b63-897a-a4fa0fbf1f10` | Advisory | Approval binding, criterion-specific evidence, workflow success-criteria propagation, task recovery, Constitution history, registry rendering, and preference audit findings were cross-checked; missing paths have since been implemented. | `backend/internal/automation/approval_proof.go`; `backend/internal/task/validation.go`, `review_reconciliation.go`; `backend/internal/workflow/service.go`; `backend/internal/workflowtask/runner.go`; `backend/internal/frameworkregistry/`; Framework Registry and Workflow Engine pages. |
-| `019fb20c-2b95-7550-8304-1117de872148` | Advisory | Exact historical workflow snapshot could not be restored; no incorrect replacement was made. Its report is preserved, and current workflow code is verified independently rather than represented as that snapshot. | `backend/internal/workflow/` and its tests; see the preserved report in `child-agent-final-reports.md`. |
-| `019fb220-c797-77d1-8060-0f220cd733e1` | Implementation | Constitution base-version provenance, stale-draft protections, invariant enforcement, and catalog contract checks are represented in current registry implementation and tests. | `backend/internal/frameworkregistry/constitution_rules_test.go`, `repository.go`, `catalog_test.go`; registry migrations. |
-| `019fb221-54e7-7921-8c65-8a74da2e6d93` | Implementation | The Framework Registry template and accessible automation-form button styling are present; latest UI integration adds preference audit details. | `frontend/src/app/pages/framework-registry/framework-registry.component.html`; `frontend/src/app/pages/home/modals/automations-form/automations-form.component.scss`; registry component specs. |
 | `019fb287-b2e4-7251-8f1b-bc8fa9febc07` | Advisory | Action-bound approval, value/negation-aware criterion evidence, approved-review reconciliation, and workflow-owned success criteria are wired and covered by focused tests. | `backend/internal/task/validation_test.go`, `review_reconciliation_test.go`; `backend/internal/workflow/service_test.go`; `backend/internal/workflowtask/runner_test.go`; workflow intake spec. |
 | `019fb287-d1ed-75f0-99a8-8cd09c1ef9f2` | Advisory | Owner-scoped Constitution history and append-only framework-preference history are exposed; preference events are digest-checked, and frontend contracts preserve `baseVersion`. | `backend/internal/frameworkregistry/history_test.go`, `handler.go`, `repository.go`; routes `/frameworks/:id/preference-history` and `/constitution/history`; frontend registry model, service, component, and specs. |
 | `019fb287-f3be-7860-ba1f-e6b05088db73` | Advisory | Selection-history fetch failures render as unavailable/stale rather than empty history; workflow framework inspector includes conflicts, context requirements, and learning plan. | `frontend/src/app/pages/framework-registry/framework-registry.component.html`; `frontend/src/app/models/workflow.model.interface.ts`; Workflow Engine template and spec. |
@@ -1195,3 +1197,22 @@ its alternate input/lock files differ. The runner code currently has no direct
 Sentry import, so this audit did not infer whether that dependency is required
 transitively or remove it; that dependency difference remains open pending
 lock-generation and runtime evidence.
+
+### Current bounded transcript cleanup disposition (2026-10-12)
+
+This is the current scan summary; older counts and classifications above are
+dated historical snapshots. The main archive bounded scan now records 3
+uniquely attributed, hashed candidate transcripts (1,644,177 bytes) and 15
+retained transcripts (20,737,524,945 bytes). Thirteen retained files contain
+oversized JSONL records (1,630 skipped records) and are unattributed in the
+bounded scan; prior terminal observations do not override that disposition.
+
+The two supplemental roots add 9 retained transcripts (14,013,737,298 bytes);
+all nine contain oversized records (783 skipped records), leaving zero
+supplemental cleanup candidates. The combined known inventory is 27 files and
+34,752,906,420 bytes: 3 candidates and 24 retained. The supplemental summary
+and manifest are now part of this ledger, but neither source root is yet wired
+into the destructive cleanup command. The 3 main-root files remain candidates
+only; no source transcript was deleted. Full semantic reconciliation of
+oversized transcript content, external integration, canonical merge, and
+post-merge source verification are still outstanding, so cleanup is not ready.

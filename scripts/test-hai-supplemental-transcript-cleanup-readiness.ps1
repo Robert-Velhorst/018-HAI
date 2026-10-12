@@ -10,6 +10,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $archiveDir = Join-Path $repoRoot 'docs/child-agent-archive-2026-07-30'
 $manifestPath = Join-Path $archiveDir 'supplemental-child-transcript-manifest.csv'
+$summaryPath = Join-Path $archiveDir 'supplemental-child-transcript-summary.json'
 $reportsPath = Join-Path $archiveDir 'supplemental-child-final-reports.md'
 $expectedRootNames = @('completed-agent-sessions', 'session-log-relief')
 
@@ -44,11 +45,23 @@ if ((@($rootsByName.Keys | Sort-Object) -join ',') -cne (@($expectedRootNames | 
 $rows = @(Import-Csv -LiteralPath $manifestPath)
 $candidates = @($rows | Where-Object disposition -CEQ 'candidate_after_ledger_commit')
 $retained = @($rows | Where-Object disposition -CLike 'retain*')
-if ($rows.Count -ne 9 -or $candidates.Count -ne 3 -or $retained.Count -ne 6) {
-    throw 'Supplemental manifest counts differ from the audited nine-file inventory.'
-}
 if (@($rows | Group-Object child_id | Where-Object Count -ne 1).Count -gt 0) {
     throw 'Supplemental manifest child IDs are duplicated.'
+}
+$summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
+$candidateBytes = [long](($candidates | Measure-Object -Property logical_bytes -Sum).Sum)
+$retainedBytes = [long](($retained | Measure-Object -Property logical_bytes -Sum).Sum)
+if ([int]$summary.audited_transcripts -ne $rows.Count -or
+    [long]$summary.logical_bytes_scanned -ne [long](($rows | Measure-Object -Property logical_bytes -Sum).Sum) -or
+    [int]$summary.cleanup_candidate_transcripts -ne $candidates.Count -or
+    [long]$summary.cleanup_candidate_logical_bytes -ne $candidateBytes -or
+    [int]$summary.retained_transcripts -ne $retained.Count -or
+    [long]$summary.retained_logical_bytes -ne $retainedBytes -or
+    [int]$summary.unattributed_transcripts -ne @($rows | Where-Object terminal_status -CEQ 'unattributed').Count -or
+    [int]$summary.transcripts_with_oversized_records -ne @($rows | Where-Object { [int]$_.scan_oversized_records -gt 0 }).Count -or
+    [int]$summary.oversized_records_skipped -ne [int](($rows | Measure-Object -Property scan_oversized_records -Sum).Sum) -or
+    $summary.deletion_performed -ne $false) {
+    throw 'Supplemental generated summary does not match the manifest.'
 }
 
 $sourcePaths = @{}
@@ -96,8 +109,13 @@ foreach ($row in $rows) {
         throw 'Supplemental transcript size or exact archive inventory differs from the manifest.'
     }
     if ([string]$row.disposition -ceq 'candidate_after_ledger_commit') {
+        $childId = [string]$row.child_id
+        $childTurnId = [string]$row.child_turn_id
         if ([string]$row.terminal_status -cne 'completed' -or
             [string]$row.final_report_preserved -cne 'True' -or
+            [string]$row.turn_attribution -cne 'unique_prefix_match' -or
+            $childId.Length -lt 8 -or
+            -not $childTurnId.StartsWith($childId.Substring(0, 8), [StringComparison]::OrdinalIgnoreCase) -or
             [int]$row.duplicate_id_file_count -ne 1 -or
             [string]$row.transcript_sha256 -cnotmatch '^[0-9a-f]{64}$') {
             throw 'A supplemental candidate lacks completed, unique, reported, hash-ledgered metadata.'
@@ -124,6 +142,7 @@ $git = Get-Command git -ErrorAction Stop
 $gitPrefix = @('-c', "safe.directory=$repoRoot", '-C', $repoRoot)
 $ledgerPaths = @(
     'docs/child-agent-archive-2026-07-30/supplemental-child-transcript-manifest.csv',
+    'docs/child-agent-archive-2026-07-30/supplemental-child-transcript-summary.json',
     'docs/child-agent-archive-2026-07-30/supplemental-child-batch-audit.md',
     'docs/child-agent-archive-2026-07-30/supplemental-child-final-reports.md'
 )

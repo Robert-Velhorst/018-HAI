@@ -3,7 +3,6 @@ param(
     [string]$RootSessionId = '019e7acc-44f2-7c90-a04e-253f6d43df28',
     [string]$SessionsRoot = 'C:\Users\NO\.codex\sessions\2026\08',
     [string]$OutputDirectory = '',
-    [int]$TailBytes = 16777216,
     [switch]$HashCleanupCandidates
 )
 
@@ -13,9 +12,6 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $PSScriptRoot '..\docs'
 }
 
-if ($TailBytes -lt 1048576) {
-    throw 'TailBytes must be at least 1 MiB.'
-}
 if (-not (Test-Path -LiteralPath $SessionsRoot -PathType Container)) {
     throw "Sessions root does not exist: $SessionsRoot"
 }
@@ -60,37 +56,6 @@ public static class HaiTranscriptAllocation
 '@
 }
 
-function Get-TailText {
-    param([Parameter(Mandatory)][string]$Path)
-
-    $stream = [System.IO.File]::Open(
-        $Path,
-        [System.IO.FileMode]::Open,
-        [System.IO.FileAccess]::Read,
-        [System.IO.FileShare]::ReadWrite
-    )
-    try {
-        $take = if ($stream.Length -lt $TailBytes) {
-            [int]$stream.Length
-        } else {
-            $TailBytes
-        }
-        [void]$stream.Seek(-[int64]$take, [System.IO.SeekOrigin]::End)
-        $buffer = [byte[]]::new($take)
-        $offset = 0
-        while ($offset -lt $take) {
-            $read = $stream.Read($buffer, $offset, $take - $offset)
-            if ($read -le 0) {
-                throw 'Transcript ended before the requested audit tail was read.'
-            }
-            $offset += $read
-        }
-        return [System.Text.Encoding]::UTF8.GetString($buffer)
-    } finally {
-        $stream.Dispose()
-    }
-}
-
 function Get-Sha256 {
     param([AllowEmptyString()][string]$Text)
 
@@ -107,8 +72,7 @@ function Protect-ReportText {
     param([AllowEmptyString()][string]$Text)
 
     $protected = $Text
-    $protected = $protected -replace '(?i)[A-Z]:\\Users\\[^\\\s`]+\\Documents\\Codex\\(?:[^\\\s`]+\\)*?work\\018-hai-port-engine-control\\', '[HAI_REPO]\'
-    $protected = $protected -replace '(?i)[A-Z]:\\Users\\[^\\\s`]+\\Documents\\Codex\\(?:[^\\\s`]+\\)*?github-plugin-github-openai-curated-noodzakelijk\\', '[HAI_REPO]\'
+    $protected = $protected -replace '(?i)[A-Z]:[\\/]+Users[\\/]+[^\\/\s`]+[\\/]+Documents[\\/]+Codex[\\/]+(?:[^\\/\s`]+[\\/]+)*?(?:work[\\/]+018-hai-port-engine-control|github-plugin-github-openai-curated-noodzakelijk)[\\/]+', '[HAI_REPO]/'
     $protected = $protected -replace '(?i)(Authorization:\s*Bearer\s+)[A-Za-z0-9._~+/=-]+', '$1[REDACTED]'
     $protected = $protected -replace '(?i)sk-[A-Za-z0-9_-]{12,}', 'sk-[REDACTED]'
     $protected = $protected -replace '(?i)ghp_[A-Za-z0-9]{12,}', 'ghp_[REDACTED]'
@@ -125,6 +89,8 @@ function ConvertTo-CsvField {
 $records = [System.Collections.Generic.List[object]]::new()
 $relativeBase = (Split-Path -Parent $SessionsRoot).TrimEnd('\')
 $sessionFiles = Get-ChildItem -LiteralPath $SessionsRoot -Recurse -File -Filter '*.jsonl'
+[long]$bytesScanned = 0
+$maxRecordCharacters = 8MB
 
 foreach ($file in $sessionFiles) {
     $firstLine = Get-Content -LiteralPath $file.FullName -TotalCount 1
@@ -134,41 +100,160 @@ foreach ($file in $sessionFiles) {
 
     $metadata = $firstLine | ConvertFrom-Json
     $childId = [string]$metadata.payload.id
-    $tail = Get-TailText -Path $file.FullName
-    $terminalEvents = @(
-        $tail -split "`n" |
-            Where-Object { $_ -match '"type":"(task_complete|turn_aborted|task_aborted|task_cancelled)"' }
-    )
+    $childPrefix = if ($childId.Length -ge 8) { $childId.Substring(0, 8) } else { '' }
+    $lifecycleEvents = [System.Collections.Generic.List[object]]::new()
+    $patchCountsByTurn = @{}
+    $turnIdMarker = if ($childPrefix) {
+        [regex]::new('"turn_id"\s*:\s*"' + [regex]::Escape($childPrefix), [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    } else {
+        $null
+    }
+    $topLevelEventMsg = [regex]::new('^\s*\{\s*(?:"timestamp"\s*:\s*"[^"]+"\s*,\s*)?"type"\s*:\s*"event_msg"', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $topLevelResponseItem = [regex]::new('^\s*\{\s*(?:"timestamp"\s*:\s*"[^"]+"\s*,\s*)?"type"\s*:\s*"response_item"', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $patchToolTypeMarker = [regex]::new('"type"\s*:\s*"custom_tool_call"', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $patchToolNameMarker = [regex]::new('"name"\s*:\s*"apply_patch"', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $beforeScan = Get-Item -LiteralPath $file.FullName
+    [long]$oversizedRecordCount = 0
+    $script:malformedCandidateCount = 0
 
-    $terminalStatus = 'nonterminal'
-    $terminalReason = ''
-    $finalMessage = ''
-    for ($index = $terminalEvents.Count - 1; $index -ge 0; $index--) {
+    function Process-TranscriptRecord([string]$RecordLine) {
+        if ($null -eq $turnIdMarker -or -not $turnIdMarker.IsMatch($RecordLine)) {
+            return
+        }
+        $isLifecycleCandidate = $topLevelEventMsg.IsMatch($RecordLine)
+        $isPatchCandidate = $topLevelResponseItem.IsMatch($RecordLine) -and
+            $patchToolTypeMarker.IsMatch($RecordLine) -and $patchToolNameMarker.IsMatch($RecordLine)
+        if (-not $isLifecycleCandidate -and -not $isPatchCandidate) {
+            return
+        }
         try {
-            $event = $terminalEvents[$index] | ConvertFrom-Json
-            $eventType = [string]$event.payload.type
-            if ($eventType -eq 'task_complete') {
-                $terminalStatus = 'completed'
-                $finalMessage = [string]$event.payload.last_agent_message
-                break
+            $event = $RecordLine | ConvertFrom-Json -ErrorAction Stop
+            if ($isLifecycleCandidate -and $event.type -eq 'event_msg' -and
+                [string]$event.payload.type -in @('task_started', 'task_complete', 'turn_aborted', 'task_aborted', 'task_cancelled')) {
+                $turnId = [string]$event.payload.turn_id
+                if ($turnId.StartsWith($childPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                    $lifecycleEvents.Add([pscustomobject]@{
+                        turn_id = $turnId
+                        type = [string]$event.payload.type
+                        reason = [string]$event.payload.reason
+                        last_agent_message = [string]$event.payload.last_agent_message
+                    })
+                }
             }
-            if ($eventType -in @('turn_aborted', 'task_aborted', 'task_cancelled')) {
-                $terminalStatus = 'aborted'
-                $terminalReason = [string]$event.payload.reason
-                break
+            if ($isPatchCandidate -and $event.type -eq 'response_item' -and
+                $event.payload.type -eq 'custom_tool_call' -and
+                [string]$event.payload.name -eq 'apply_patch') {
+                $turnId = [string]$event.payload.internal_chat_message_metadata_passthrough.turn_id
+                if ($turnId.StartsWith($childPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                    if (-not $patchCountsByTurn.ContainsKey($turnId)) {
+                        $patchCountsByTurn[$turnId] = 0
+                    }
+                    $patchCountsByTurn[$turnId]++
+                }
             }
         } catch {
-            # A partial first line is expected when the tail starts mid-record.
+            $script:malformedCandidateCount++
         }
     }
 
-    $patchCallCount = @(
-        $tail -split "`n" |
-            Where-Object {
-                $_ -match '"type":"custom_tool_call"' -and
-                $_ -match '(tools\\?\.apply_patch|\*\*\* Begin Patch)'
+    $stream = [System.IO.File]::Open(
+        $file.FullName,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::ReadWrite
+    )
+    $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8, $true, 1048576)
+    $buffer = [char[]]::new(65536)
+    $lineBuilder = [System.Text.StringBuilder]::new()
+    $skippingOversizedRecord = $false
+    try {
+        [void]$reader.ReadLine()
+        while (($readCharacters = $reader.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $offset = 0
+            while ($offset -lt $readCharacters) {
+                $newline = [Array]::IndexOf($buffer, [char]10, $offset, $readCharacters - $offset)
+                $segmentLength = if ($newline -ge 0) { $newline - $offset } else { $readCharacters - $offset }
+                if (-not $skippingOversizedRecord) {
+                    if ($lineBuilder.Length + $segmentLength -gt $maxRecordCharacters) {
+                        $lineBuilder.Clear() | Out-Null
+                        $skippingOversizedRecord = $true
+                    } elseif ($segmentLength -gt 0) {
+                        [void]$lineBuilder.Append($buffer, $offset, $segmentLength)
+                    }
+                }
+                if ($newline -ge 0) {
+                    if ($skippingOversizedRecord) {
+                        $oversizedRecordCount++
+                    } else {
+                        $recordLine = $lineBuilder.ToString().TrimEnd("`r")
+                        Process-TranscriptRecord $recordLine
+                    }
+                    $lineBuilder.Clear() | Out-Null
+                    $skippingOversizedRecord = $false
+                    $offset = $newline + 1
+                } else {
+                    $offset += $segmentLength
+                }
             }
-    ).Count
+        }
+        if ($skippingOversizedRecord) {
+            $oversizedRecordCount++
+        } elseif ($lineBuilder.Length -gt 0) {
+            Process-TranscriptRecord $lineBuilder.ToString().TrimEnd("`r")
+        }
+    } finally {
+        $reader.Dispose()
+        $stream.Dispose()
+    }
+    $afterScan = Get-Item -LiteralPath $file.FullName
+    $bytesScanned += [long]$beforeScan.Length
+    $changedDuringScan = $beforeScan.Length -ne $afterScan.Length -or
+        $beforeScan.LastWriteTimeUtc -ne $afterScan.LastWriteTimeUtc
+
+    $childTurnIds = @($lifecycleEvents | Select-Object -ExpandProperty turn_id -Unique)
+    $observedChildTurnId = if ($childTurnIds.Count -eq 1) { [string]$childTurnIds[0] } else { '' }
+    $observedTerminalEvents = @($lifecycleEvents | Where-Object {
+        $_.turn_id -ceq $observedChildTurnId -and $_.type -in @('task_complete', 'turn_aborted', 'task_aborted', 'task_cancelled')
+    })
+    $observedLastTerminalEvent = if ($observedTerminalEvents.Count -gt 0) { $observedTerminalEvents[-1] } else { $null }
+    $observedTerminalStatus = if ($null -eq $observedLastTerminalEvent) {
+        'nonterminal'
+    } elseif ($observedLastTerminalEvent.type -eq 'task_complete') {
+        'completed'
+    } else {
+        'aborted'
+    }
+    $turnAttribution = if ($oversizedRecordCount -gt 0) {
+        'oversized_record_unparsed'
+    } elseif ($script:malformedCandidateCount -gt 0) {
+        'malformed_candidate_record'
+    } elseif ($childTurnIds.Count -eq 1) {
+        'unique_prefix_match'
+    } else {
+        'no_unique_match'
+    }
+    $childTurnId = $observedChildTurnId
+    $terminalStatus = if ($turnAttribution -eq 'unique_prefix_match') { 'nonterminal' } else { 'unattributed' }
+    $terminalReason = ''
+    $finalMessage = ''
+    $patchCallCount = 0
+    if ($null -ne $observedLastTerminalEvent) {
+        if ($observedTerminalStatus -eq 'completed') {
+            $finalMessage = [string]$observedLastTerminalEvent.last_agent_message
+        } else {
+            $terminalReason = [string]$observedLastTerminalEvent.reason
+        }
+    }
+    if ($turnAttribution -eq 'unique_prefix_match') {
+        $patchCallCount = [int]$patchCountsByTurn[$childTurnId]
+        if ($null -ne $observedLastTerminalEvent) {
+            if ($observedTerminalStatus -eq 'completed') {
+                $terminalStatus = 'completed'
+            } else {
+                $terminalStatus = 'aborted'
+            }
+        }
+    }
 
     $workKind = if ($terminalStatus -ne 'completed') {
         $terminalStatus
@@ -182,7 +267,11 @@ foreach ($file in $sessionFiles) {
 
     $relativePath = $file.FullName.Substring($relativeBase.Length).TrimStart('\').Replace('\', '/')
     $allocatedBytes = [HaiTranscriptAllocation]::GetAllocatedBytes($file.FullName)
-    $disposition = if ($terminalStatus -eq 'completed') {
+    $disposition = if ($changedDuringScan) {
+        'retain_changed_during_audit'
+    } elseif ($oversizedRecordCount -gt 0 -or $script:malformedCandidateCount -gt 0) {
+        'retain_unparsed_candidate_record'
+    } elseif ($terminalStatus -eq 'completed') {
         'candidate_after_ledger_commit'
     } else {
         'retain'
@@ -200,7 +289,10 @@ foreach ($file in $sessionFiles) {
         session_date = $sessionDate
         nickname = [string]$metadata.payload.agent_nickname
         terminal_status = $terminalStatus
+        observed_terminal_status = $observedTerminalStatus
         terminal_reason = $terminalReason
+        child_turn_id = $childTurnId
+        turn_attribution = $turnAttribution
         work_kind = $workKind
         patch_call_count = $patchCallCount
         logical_bytes = [int64]$file.Length
@@ -211,6 +303,10 @@ foreach ($file in $sessionFiles) {
         duplicate_id_file_count = 1
         transcript_sha256 = ''
         session_path = $relativePath
+        scan_scope = 'full_file'
+        scan_changed_during_audit = $changedDuringScan
+        scan_oversized_records = $oversizedRecordCount
+        scan_malformed_candidate_records = $script:malformedCandidateCount
         protected_final_message = Protect-ReportText -Text $finalMessage
     })
 }
@@ -241,9 +337,9 @@ $candidates = @($records | Where-Object disposition -eq 'candidate_after_ledger_
 $retained = @($records | Where-Object disposition -ne 'candidate_after_ledger_commit')
 
 $csvHeader = @(
-    'child_id', 'session_date', 'nickname', 'terminal_status', 'terminal_reason',
+    'child_id', 'session_date', 'nickname', 'terminal_status', 'observed_terminal_status', 'terminal_reason', 'child_turn_id', 'turn_attribution',
     'work_kind', 'patch_call_count', 'logical_bytes', 'allocated_bytes',
-    'final_message_sha256', 'final_report_preserved', 'disposition',
+    'final_message_sha256', 'final_report_preserved', 'disposition', 'scan_scope', 'scan_changed_during_audit', 'scan_oversized_records', 'scan_malformed_candidate_records',
     'duplicate_id_file_count', 'transcript_sha256', 'session_path'
 )
 $csvLines = [System.Collections.Generic.List[string]]::new()
@@ -258,14 +354,16 @@ foreach ($record in $records) {
 $reportLines = [System.Collections.Generic.List[string]]::new()
 $reportLines.Add('# Completed child-agent final reports')
 $reportLines.Add('')
-$reportLines.Add('This generated archive preserves the terminal report from each completed')
-$reportLines.Add('HAI child transcript in the audited cohort. Credential-shaped values and')
+$reportLines.Add('This generated archive preserves terminal reports observed in the audited')
+$reportLines.Add('transcripts. A report marked observed is not proof that the whole file')
+$reportLines.Add('was attributable or complete; such transcripts remain retained.')
+$reportLines.Add('Credential-shaped values and')
 $reportLines.Add('local repository roots are redacted; the manifest retains the SHA-256 of')
 $reportLines.Add('the original terminal message. Aborted and nonterminal transcripts are not')
 $reportLines.Add('represented as completed work and must be retained. Every transcript sharing')
 $reportLines.Add('a child ID is also retained until its duplicate history is reconciled.')
 $reportLines.Add('')
-foreach ($record in $completed) {
+foreach ($record in @($records | Where-Object { $_.terminal_status -eq 'completed' -or $_.observed_terminal_status -eq 'completed' })) {
     $agentLabel = if ([string]::IsNullOrWhiteSpace($record.nickname)) {
         '(not recorded)'
     } else {
@@ -276,6 +374,9 @@ foreach ($record in $completed) {
     $reportLines.Add("- Date: $($record.session_date)")
     $reportLines.Add("- Agent: $agentLabel")
     $reportLines.Add("- Work kind: $($record.work_kind)")
+    if ($record.terminal_status -ne 'completed') {
+        $reportLines.Add('- Status: observed completion only; transcript remains unattributed and retained.')
+    }
     $reportLines.Add('- Original report SHA-256: `' + $record.final_message_sha256 + '`')
     $reportLines.Add('- Transcript: `' + $record.session_path + '`')
     $reportLines.Add('')
@@ -300,13 +401,23 @@ $summary = [ordered]@{
     generated_at_utc = [DateTime]::UtcNow.ToString('o')
     root_session_id = $RootSessionId
     audited_transcripts = $records.Count
+    full_file_scan = $true
+    logical_bytes_scanned = $bytesScanned
+    max_jsonl_record_characters = $maxRecordCharacters
+    oversized_or_malformed_candidate_records_retained = $true
     unique_child_ids = @($records | Select-Object -ExpandProperty child_id -Unique).Count
     duplicate_child_ids = $duplicateGroups.Count
     completed_transcripts = $completed.Count
+    observed_completed_transcripts = @($records | Where-Object observed_terminal_status -eq 'completed').Count
     cleanup_candidate_transcripts = $candidates.Count
     candidate_transcripts_hashed = @($candidates | Where-Object { $_.transcript_sha256 -match '^[0-9a-f]{64}$' }).Count
     candidate_hashing_requested = [bool]$HashCleanupCandidates
     retained_transcripts = $retained.Count
+    unattributed_transcripts = @($records | Where-Object terminal_status -eq 'unattributed').Count
+    transcripts_with_oversized_records = @($records | Where-Object { [long]$_.scan_oversized_records -gt 0 }).Count
+    transcripts_with_malformed_candidate_records = @($records | Where-Object { [long]$_.scan_malformed_candidate_records -gt 0 }).Count
+    oversized_records_skipped = [long](($records | Measure-Object -Property scan_oversized_records -Sum).Sum)
+    malformed_candidate_records_skipped = [long](($records | Measure-Object -Property scan_malformed_candidate_records -Sum).Sum)
     cleanup_candidate_logical_bytes = [int64](($candidates | Measure-Object logical_bytes -Sum).Sum)
     cleanup_candidate_allocated_bytes = [uint64](($candidates | Measure-Object allocated_bytes -Sum).Sum)
     completed_logical_bytes = [int64](($completed | Measure-Object logical_bytes -Sum).Sum)

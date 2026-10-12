@@ -112,9 +112,16 @@ function Get-HaiTranscriptCandidatePath($Entry) {
 }
 
 function Assert-HaiTranscriptCandidate($Entry) {
+    $childId = [string]$Entry.child_id
+    $childTurnId = [string]$Entry.child_turn_id
     if ([string]$Entry.disposition -cne 'candidate_after_ledger_commit' -or
         [string]$Entry.terminal_status -cne 'completed' -or
         [string]$Entry.final_report_preserved -cne 'True' -or
+        [string]$Entry.turn_attribution -cne 'unique_prefix_match' -or
+        $childId.Length -lt 8 -or
+        -not $childTurnId.StartsWith($childId.Substring(0, 8), [StringComparison]::OrdinalIgnoreCase) -or
+        [long]$Entry.scan_oversized_records -ne 0 -or
+        [long]$Entry.scan_malformed_candidate_records -ne 0 -or
         [int]$Entry.duplicate_id_file_count -ne 1 -or
         [string]$Entry.transcript_sha256 -cnotmatch '^[0-9a-f]{64}$' -or
         [long]$Entry.logical_bytes -le 0) {

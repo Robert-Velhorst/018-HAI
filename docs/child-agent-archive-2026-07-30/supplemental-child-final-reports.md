@@ -1,5 +1,8 @@
 # Completed child-agent final reports
 
+> Classification note: The Hubble and Popper completion reports were observed in the earlier full-file pass. The bounded rescan found oversized records in all three files in this source root, so these reports are retained as observations and none of the nine supplemental transcripts is a cleanup candidate. The six session-log-relief files are unattributed due to oversized records and remain protected.
+
+
 This generated archive preserves the terminal report from each completed
 HAI child transcript in the audited cohort. Credential-shaped values and
 local repository roots are redacted; the manifest retains the SHA-256 of
@@ -28,10 +31,10 @@ Fixed these Framework Registry defects:
 - Losing owner authority clears in-progress Constitution approval data.
 
 **Files Changed**
-- Main registry: [component.ts](../../frontend/src/app/pages/framework-registry/framework-registry.component.ts), [component.html](../../frontend/src/app/pages/framework-registry/framework-registry.component.html), [component.scss](../../frontend/src/app/pages/framework-registry/framework-registry.component.scss), [component.spec.ts](../../frontend/src/app/pages/framework-registry/framework-registry.component.spec.ts)
-- Inspector: [inspector.html](../../frontend/src/app/pages/framework-registry/framework-registry-inspector.component.html), [inspector.scss](../../frontend/src/app/pages/framework-registry/framework-registry-inspector.component.scss), [inspector.spec.ts](../../frontend/src/app/pages/framework-registry/framework-registry-inspector.component.spec.ts)
-- Recommendation: [recommendation.ts](../../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.ts), [recommendation.html](../../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.html), [recommendation.scss](../../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.scss), [recommendation.spec.ts](../../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.spec.ts)
-- Wiring/API: [module.ts](../../frontend/src/app/pages/framework-registry/framework-registry.module.ts), [service.ts](../../frontend/src/app/services/framework-registry.service.ts), [service.spec.ts](../../frontend/src/app/services/framework-registry.service.spec.ts)
+- Main registry: [component.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.component.ts), [component.html]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.component.html), [component.scss]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.component.scss), [component.spec.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.component.spec.ts)
+- Inspector: [inspector.html]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-inspector.component.html), [inspector.scss]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-inspector.component.scss), [inspector.spec.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-inspector.component.spec.ts)
+- Recommendation: [recommendation.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.ts), [recommendation.html]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.html), [recommendation.scss]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.scss), [recommendation.spec.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.spec.ts)
+- Wiring/API: [module.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.module.ts), [service.ts]([HAI_REPO]/frontend/src/app/services/framework-registry.service.ts), [service.spec.ts]([HAI_REPO]/frontend/src/app/services/framework-registry.service.spec.ts)
 
 **Validation**
 - Focused Angular suite: **36/36 passed** in Chrome Headless.
@@ -55,50 +58,20 @@ A supplemental full production build exceeded the 180-second limit and was stopp
 - Removed the duplicate icon logic from Model Routing.
 
 Changed:
-- [app.module.ts](../../frontend/src/app/app.module.ts)
-- [theme.service.ts](../../frontend/src/app/services/theme.service.ts)
-- [theme.service.spec.ts](../../frontend/src/app/services/theme.service.spec.ts)
-- [llm-policy.component.ts](../../frontend/src/app/pages/llm-policy/llm-policy.component.ts)
-- [llm-policy.component.spec.ts](../../frontend/src/app/pages/llm-policy/llm-policy.component.spec.ts)
+- [app.module.ts]([HAI_REPO]/frontend/src/app/app.module.ts)
+- [theme.service.ts]([HAI_REPO]/frontend/src/app/services/theme.service.ts)
+- [theme.service.spec.ts]([HAI_REPO]/frontend/src/app/services/theme.service.spec.ts)
+- [llm-policy.component.ts]([HAI_REPO]/frontend/src/app/pages/llm-policy/llm-policy.component.ts)
+- [llm-policy.component.spec.ts]([HAI_REPO]/frontend/src/app/pages/llm-policy/llm-policy.component.spec.ts)
 
 **Verification**
 - Focused tests: `2 SUCCESS`
 - Production build: passed
 - Runtime source scan: no remaining `moon` references outside tests
-- Browser: local `/control-center` route in an ephemeral dev server (not a deployed URL).
+- Browser: `http://localhost:4300/control-center`
 - Light-to-dark interaction rendered `anticon-star` with `nzType="star"`
 - Dark mode remained correct after reload
 - Browser console warnings/errors: `0`
 - `git diff --check`: passed
 
 The build still reports unrelated existing size warnings for the Framework Registry stylesheet and initial bundle. No files were staged, committed, or pushed, and the existing workflow-engine SCSS change was untouched.
-
-## 019fb09c-e5bb-7c31-b6c4-59479eaca1e6
-
-- Date: 2026-07-30
-- Agent: Anscombe
-- Work kind: implementation
-- Original report SHA-256: `52478a75db344592832394bcd6197ac6cf7d6c5f34c65eb2c1a2572061fba352`
-- Transcript: `completed-agent-sessions/rollout-2026-07-30T03-21-40-019fb09c-e5bb-7c31-b6c4-59479eaca1e6.jsonl`
-
-**Findings Fixed**
-- Smoke aggregation could pass without per-suite result evidence. CI now verifies all five suites report `0 failed`.
-- Isolation testing did not explicitly fail when the backend never started. It now checks process survival and liveness.
-- Migration filters could match no integration tests and still exit successfully. CI now verifies exact test names passed.
-- Race tests could use cached results. Added `-count=1`.
-- Added explicit timeouts to long-running security and integration jobs.
-- Added a regression contract covering these guarantees.
-
-**Files Changed**
-- [.github/workflows/ci.yml](../../.github/workflows/ci.yml)
-- [scripts/test_ci_contract.py](../../scripts/test_ci_contract.py)
-
-**Verification**
-- Actionlint `v1.7.7`: passed
-- YAML parsing: passed
-- Shell syntax for all 25 workflow run blocks: passed
-- CI/auth/gateway contracts: 14 tests passed
-- Dependency and cache paths: valid
-- `git diff --check`: passed
-
-No production source, migrations, documentation, smoke scripts, or `.playwright-cli` files were changed. Nothing was staged, committed, or pushed. Docker-dependent jobs were not run locally.

@@ -53,6 +53,10 @@ if ($candidates.Count -eq 0 -or
 foreach ($candidate in $candidates) {
     if ($candidate.terminal_status -cne 'completed' -or
         $candidate.final_report_preserved -cne 'True' -or
+        $candidate.turn_attribution -cne 'unique_prefix_match' -or
+        -not ([string]$candidate.child_turn_id).StartsWith(([string]$candidate.child_id).Substring(0, 8), [StringComparison]::OrdinalIgnoreCase) -or
+        [long]$candidate.scan_oversized_records -ne 0 -or
+        [long]$candidate.scan_malformed_candidate_records -ne 0 -or
         [int]$candidate.duplicate_id_file_count -ne 1 -or
         $candidate.transcript_sha256 -notmatch '^[0-9a-f]{64}$' -or
         [long]$candidate.logical_bytes -le 0) {
