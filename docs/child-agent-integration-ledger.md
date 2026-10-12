@@ -2743,3 +2743,20 @@ recovery. The reviewed material therefore supports a release gate, not enabling
 host execution: DSH must remain unavailable until the isolation and start/stop
 ordering controls are implemented and verified on Windows. No candidate code
 was copied, and no live host-process acceptance test was run.
+
+### October 12, 2026: migration-history integrity comparison
+
+Compared `backend/internal/infra/migrate.go` and its migration tests in
+`hai-model-maintenance-audit` with the exact PR #36 head. The candidate removes
+the `schema_migrations` content-checksum column and the `MigrationChecksum`,
+applied-record loading, checksum validation, source validation, and explicit
+legacy-checksum adoption path. An already-applied migration whose checked-in
+SQL changes would therefore no longer be detected at startup. It also removes
+the out-of-order/gap check, allowing an applied later migration to pass even
+when an earlier migration in that phase is absent. Related checksum and
+ordering contract tests are removed as well.
+
+The current PR retains these integrity checks. The candidate migration changes
+were not ported; they weaken detection of schema/source drift on databases
+whose data must be preserved. This is a focused migration-runner comparison,
+not a live upgrade/rollback rehearsal against Robert's database.
