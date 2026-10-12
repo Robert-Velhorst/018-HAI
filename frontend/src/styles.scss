@@ -70,7 +70,13 @@ nz-notification-container,
   pointer-events: none !important;
 }
 
-.ant-notification-notice-close {
+nz-notification-container *,
+.ant-notification * {
+  pointer-events: none !important;
+}
+
+nz-notification-container .ant-notification-notice-close,
+.ant-notification .ant-notification-notice-close {
   pointer-events: auto !important;
 }
 .hai-execution-diagnostics {
