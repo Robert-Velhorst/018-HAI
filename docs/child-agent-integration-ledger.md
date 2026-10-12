@@ -3242,3 +3242,39 @@ migration, and durable-ID guarantees. No verification code was ported. This is
 a staged-source/test audit only; it does not establish live source-provider or
 database behavior. Snapshot data remains intact and PR #36 must pass checks on
 its exact current head before release validation.
+
+### October 12, 2026: ambient monitor and collector comparison
+
+Reviewed seven staged paths under `backend/internal/ambientmonitor/` against
+PR #36 at `174346d58cbb378d207d8ffbd9ca5fc0540ce852`:
+
+- The collector snapshot reads the aggregate count and record rows as separate
+  database statements rather than in the PR's read-only repeatable-read
+  transaction. Concurrent source changes can therefore make one observation
+  combine a count from one database state with records from another.
+- The snapshot changes `postgresSnapshotCursorKey` to compact JSON. Migration
+  `0051` compares this value byte-for-byte with PostgreSQL's
+  `jsonb_build_array(... )::text`, which includes a space after the comma. The
+  deleted `TestPostgresSnapshotCursorKeyMatchesJSONBCanonicalText` covers the
+  exact canonical representation; preserve it or the database integrity
+  trigger can reject otherwise valid composition snapshots.
+- The manual lease-recovery handler stops calling
+  `RecoverExpiredCompositionLeases`, so it recovers collection leases but
+  leaves expired composition-delivery leases untouched. The snapshot deletes
+  `TestRecoverReturnsCollectionAndCompositionLeaseCounts`.
+- `ProcessDue` no longer advances the composition-processing `asOf` time after
+  a collector advances the service clock. Newly queued composition delivery
+  can remain pending until a later sweep; the snapshot deletes
+  `TestProcessDueComposesNewDeliveryWhenCollectionAdvancesClock`, which
+  requires collection and its resulting delivery to complete in one pass.
+- The snapshot removes the guard that advances a very fast collection's
+  completion timestamp beyond its claim timestamp. The remaining test
+  `TestProcessDueRecordsAfterACollectorObservationCreatedMillisecondsLater`
+  exercises a clock that advances by 10 milliseconds, not the same-tick case;
+  retain a direct equality/coarse-clock regression test and the monotonicity
+  guard.
+
+No ambient-monitor source was ported. These are source, SQL-migration, and
+focused test-contract findings; they are not a live scheduler or production
+PostgreSQL run. Snapshot files remain preserved. PR #36 exact-head CI was
+queued at the time of this comparison.
