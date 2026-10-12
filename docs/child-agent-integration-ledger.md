@@ -4510,3 +4510,42 @@ placeholder backend key and is not mounted as the gateway's main config. The
 remaining tracked content differences and all 68 divergent untracked candidate
 files remain open for semantic review; no primary-checkout file or archive was
 removed.
+
+### October 12, 2026: verification, pursuit, and worker-boundary review
+
+Reviewed the local-vs-PR variants of `backend/internal/verification/service.go`,
+`backend/internal/pursuit/service.go`, `backend/internal/ambient/service.go`,
+`backend/internal/task/service.go`, `backend/internal/automation/automation_service.go`,
+`backend/internal/identity/jwt.go`, and `backend/internal/safety/emergency_stop.go`.
+The review was limited to behavioral deltas in those files; it does not close
+the remaining 202-path source audit or 68 same-path untracked-content review.
+
+Did not copy the local verification-service rewrite. It removes context-aware
+cancellation from source retrieval and semantic projection, and lowers durable
+memory promotion thresholds. Its sentence-extractive promotion and finite-value
+checks are useful, but the PR already requires matching accepted evidence for
+promotion and uses stricter confidence and evidence-quality thresholds. The
+PR's cancellation and completion-audit behavior is retained.
+
+Rejected local pursuit changes that widen access to ownerless records for any
+authenticated user; the PR limits legacy ownerless access through the explicit
+`CanReadLegacyOwnerlessData` policy. Also rejected the local workflow/runtime
+completion changes: they weaken status and execution-result validation, while
+the PR checks approval, recovery/error state, launch type, and exit outcome.
+The local exact-runtime-evidence lookup is a candidate for a separate focused
+review, but was not ported because its interaction with owner filtering and the
+repository's batched lookup contract has not yet been established.
+
+The local ambient variant removes candidate merging and refresh behavior and
+has a simplified opportunity-visibility path; the PR's merge and owner/pursuit
+visibility checks were retained. The local task variant removes the model-
+directed ChatGPT-logs tool loop and verified-framework-agent gate, as well as
+context propagation and several review/approval paths. These are not safe
+replacements for the PR implementation. The local emergency-stop variant
+removes immutable-stop evaluation; it was rejected. Automation API type changes
+and JWT field removals were not independently demonstrated to improve runtime
+behavior and were not copied.
+
+This comparison produced no additional code changes. Existing PR content remains
+the safer implementation for the reviewed behaviors. No primary-checkout file,
+untracked artifact, archive, or worktree was modified or deleted.
