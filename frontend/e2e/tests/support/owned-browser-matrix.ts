@@ -70,7 +70,9 @@ export function ownedMatrixTarget(info: TestInfo): OwnedMatrixTarget {
 
 interface MatrixHealth {
   consoleErrors: number;
+  consoleErrorClasses: Record<string, number>;
   consoleErrorKinds: Record<string, number>;
+  consoleErrorLocations: Record<string, number>;
   consoleErrorBundles: Record<string, number>;
   pageErrors: number;
   failedRequests: number;
@@ -86,6 +88,10 @@ function consoleErrorKind(text: string): string {
   if (/\bNG\d{3,}\b|Angular/i.test(text)) return 'framework';
   if (/aria-|focus|accessibility/i.test(text)) return 'accessibility';
   return 'other';
+}
+
+function consoleErrorClass(text: string): string {
+  return text.match(/\b(TypeError|ReferenceError|RangeError|SyntaxError|ChunkLoadError|Error)\b/)?.[1] || 'unknown';
 }
 
 export interface OwnedBrowserMatrix {
@@ -113,7 +119,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
     page.setDefaultTimeout(10_000);
     page.setDefaultNavigationTimeout(15_000);
     const health: MatrixHealth = {
-      consoleErrors: 0, consoleErrorKinds: {}, consoleErrorBundles: {},
+      consoleErrors: 0, consoleErrorClasses: {}, consoleErrorKinds: {}, consoleErrorLocations: {}, consoleErrorBundles: {},
       pageErrors: 0, failedRequests: 0, httpErrors: 0,
       deniedWrites: 0, deniedExternal: 0,
     };
@@ -131,6 +137,8 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
       if (bootstrapAuthRefusals > 0 && bootstrapProbe(message.location().url)
         && /\b401\b/.test(message.text())) return;
       health.consoleErrors++;
+      const errorClass = consoleErrorClass(message.text());
+      health.consoleErrorClasses[errorClass] = (health.consoleErrorClasses[errorClass] || 0) + 1;
       const kind = consoleErrorKind(message.text());
       health.consoleErrorKinds[kind] = (health.consoleErrorKinds[kind] || 0) + 1;
       let bundle = 'inline';
@@ -142,6 +150,9 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
           bundle = 'external-or-framework';
         }
       } catch { /* Keep only the source category when the location is not a URL. */ }
+      const location = message.location();
+      const sourceLocation = `${bundle}:${Math.max(0, location.lineNumber)}:${Math.max(0, location.columnNumber)}`;
+      health.consoleErrorLocations[sourceLocation] = (health.consoleErrorLocations[sourceLocation] || 0) + 1;
       health.consoleErrorBundles[bundle] = (health.consoleErrorBundles[bundle] || 0) + 1;
     });
     page.on('pageerror', () => health.pageErrors++);
@@ -196,7 +207,7 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
       },
       assertHealthy: () => {
         expect(health, 'Counts and same-origin bundle names only; console text, URLs, bodies, headers and credentials are excluded').toEqual({
-          consoleErrors: 0, consoleErrorKinds: {}, consoleErrorBundles: {},
+          consoleErrors: 0, consoleErrorClasses: {}, consoleErrorKinds: {}, consoleErrorLocations: {}, consoleErrorBundles: {},
           pageErrors: 0, failedRequests: 0, httpErrors: 0,
           deniedWrites: 0, deniedExternal: 0,
         });
