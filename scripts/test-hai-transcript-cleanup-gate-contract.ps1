@@ -8,6 +8,8 @@ $required = @(
     'diff --quiet HEAD --',
     'diff --cached --quiet HEAD --',
     'gh.Source pr view',
+    "state -cne 'MERGED'",
+    "baseRefName -cne 'main'",
     'gh.Source pr checks',
     '--json name,state',
     "state -cne 'SUCCESS'",
@@ -23,6 +25,9 @@ $required = @(
 )
 foreach ($token in $required) {
     if (-not $source.Contains($token)) { throw "Transcript cleanup readiness is missing required gate: $token" }
+}
+if ($source.Contains("state -cne 'CLOSED'")) {
+    throw 'Merged pull-request verification must use GitHub CLI state MERGED, not GraphQL state CLOSED.'
 }
 if ($source -match 'Remove-Item|Move-Item|git\s+clean|docker\s+volume\s+rm') {
     throw 'Transcript cleanup readiness must remain read-only.'
