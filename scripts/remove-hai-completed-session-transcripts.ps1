@@ -20,7 +20,7 @@ $supplementalReadinessScript = Join-Path $PSScriptRoot 'test-hai-supplemental-tr
 
 function Get-HaiTranscriptReadiness {
     try {
-        $output = @(& $readinessScript -TranscriptRoot $TranscriptRoot -RequireSourceArchive -RequireCommittedLedger -RequireMergedPullRequest -PullRequestNumber 36)
+        $output = @(& $readinessScript -TranscriptRoot $TranscriptRoot -RequireSourceArchive -RequireCommittedLedger -RequireMergedPullRequest -PullRequestNumber 37)
         if ($output.Count -eq 0) {
             return [pscustomobject]@{ ready = $false; reason = 'readiness verifier returned an unsuccessful or ambiguous result'; report = $null }
         }
@@ -51,34 +51,47 @@ function Test-HaiTranscriptRemovalPreflight {
     if ($LASTEXITCODE -ne 0 -or $branch -cne 'main') {
         return [pscustomobject]@{ ready = $false; reason = 'cleanup must run from canonical main after the PR is merged' }
     }
+    $head = (& $git.Source @gitPrefix rev-parse --verify HEAD 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $head -notmatch '^[0-9a-f]{40}$') {
+        return [pscustomobject]@{ ready = $false; reason = 'canonical main commit could not be verified' }
+    }
     $origin = (& $git.Source @gitPrefix remote get-url origin 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or $origin -notmatch '(?i)(github\.com[:/]Robert-Velhorst/018-HAI(?:\.git)?$)') {
         return [pscustomobject]@{ ready = $false; reason = 'origin does not identify the expected HAI repository' }
     }
     $gh = Get-Command gh -ErrorAction SilentlyContinue
     if ($null -eq $gh) { return [pscustomobject]@{ ready = $false; reason = 'GitHub CLI is unavailable' } }
-    $prOutput = @(& $gh.Source pr view 36 --repo Robert-Velhorst/018-HAI --json state,mergedAt,baseRefName,mergeCommit 2>$null)
+    $prOutput = @(& $gh.Source pr view 37 --repo Robert-Velhorst/018-HAI --json state,mergedAt,baseRefName,mergeCommit 2>$null)
     if ($LASTEXITCODE -ne 0 -or $prOutput.Count -eq 0) {
-        return [pscustomobject]@{ ready = $false; reason = 'GitHub could not verify PR #36' }
+        return [pscustomobject]@{ ready = $false; reason = 'GitHub could not verify PR #37' }
     }
     try { $pr = ($prOutput -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop }
     catch { return [pscustomobject]@{ ready = $false; reason = 'GitHub returned invalid PR metadata' } }
     $mergeCommit = [string]$pr.mergeCommit.oid
-    if ([string]$pr.state -cne 'CLOSED' -or [string]::IsNullOrWhiteSpace([string]$pr.mergedAt) -or
+    if ([string]$pr.state -cne 'MERGED' -or [string]::IsNullOrWhiteSpace([string]$pr.mergedAt) -or
         [string]$pr.baseRefName -cne 'main' -or $mergeCommit -notmatch '^[0-9a-f]{40}$') {
-        return [pscustomobject]@{ ready = $false; reason = 'PR #36 is not verified as merged into main' }
+        return [pscustomobject]@{ ready = $false; reason = 'PR #37 is not verified as merged into main' }
     }
-    $checkOutput = @(& $gh.Source pr checks 36 --repo Robert-Velhorst/018-HAI --json name,state 2>$null)
+    $checkOutput = @(& $gh.Source pr checks 37 --repo Robert-Velhorst/018-HAI --json name,state 2>$null)
     if ($LASTEXITCODE -ne 0 -or $checkOutput.Count -eq 0) {
-        return [pscustomobject]@{ ready = $false; reason = 'PR #36 checks are unavailable or empty' }
+        return [pscustomobject]@{ ready = $false; reason = 'PR #37 checks are unavailable or empty' }
     }
     try { $checks = @(($checkOutput -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop) }
     catch { return [pscustomobject]@{ ready = $false; reason = 'GitHub returned invalid PR check metadata' } }
     if ($checks.Count -eq 0 -or @($checks | Where-Object { [string]$_.state -cne 'SUCCESS' }).Count -gt 0) {
-        return [pscustomobject]@{ ready = $false; reason = 'one or more PR #36 checks are not successful' }
+        return [pscustomobject]@{ ready = $false; reason = 'one or more PR #37 checks are not successful' }
     }
     & $git.Source @gitPrefix merge-base --is-ancestor $mergeCommit HEAD 2>$null
     if ($LASTEXITCODE -ne 0) { return [pscustomobject]@{ ready = $false; reason = 'the verified merge commit is not in canonical main history' } }
+    $remoteMain = @(& $git.Source @gitPrefix ls-remote origin refs/heads/main 2>$null)
+    $remoteMatch = if ($remoteMain.Count -eq 1) { [regex]::Match([string]$remoteMain[0], '^([0-9a-f]{40})\s+refs/heads/main$') } else { [regex]::Match('', 'a^') }
+    if ($LASTEXITCODE -ne 0 -or -not $remoteMatch.Success -or $remoteMatch.Groups[1].Value -cne $head) {
+        return [pscustomobject]@{ ready = $false; reason = 'the checked-out main is not the current remote main commit' }
+    }
+    $status = @(& $git.Source @gitPrefix status --porcelain=v1 --untracked-files=all 2>$null)
+    if ($LASTEXITCODE -ne 0 -or $status.Count -ne 0) {
+        return [pscustomobject]@{ ready = $false; reason = 'canonical main worktree is not completely clean' }
+    }
     return [pscustomobject]@{ ready = $true; reason = $null }
 }
 
@@ -219,6 +232,7 @@ foreach ($entry in $selected) { $paths.Add((Assert-HaiTranscriptCandidate $entry
 
 $processes = Get-CimInstance Win32_Process -ErrorAction Stop
 $archiveReferences = @($processes | Where-Object {
+    [int]$_.ProcessId -ne $PID -and
     -not [string]::IsNullOrWhiteSpace([string]$_.CommandLine) -and
     ([string]$_.CommandLine).IndexOf($resolvedRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0
 })
