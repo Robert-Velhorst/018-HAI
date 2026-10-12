@@ -2461,11 +2461,11 @@ review of the remaining divergent branch commits or external Kafka acceptance.
 
 ### October 12, 2026: archive integrity and local-source reconciliation
 
-Refreshed the live repository state. PR #36 is open at
-`7d0f4645f1f784d42c6d477bc25d5edceaeefc49`; GitHub reports all 36 checks
-successful and none pending. PRs #33, #34, and #35 are also still open; their
-current listed checks pass. A green check run does not satisfy the archive
-semantic-reconciliation or merge gates.
+Before this ledger update, PR #36 was open at
+`df87e871e6639bb51829ad6d0e382af2b0479ad0`; exact-head CI run `38185989903`
+completed successfully with 36 of 36 jobs and no failures. PRs #33, #34, and
+#35 were also open with passing listed checks at that observation. A green
+check run does not satisfy the archive semantic-reconciliation or merge gates.
 
 Rechecked the original July 30 source root
 `D:\codex-temp\hai-completed-agent-sessions` against the checked-in
@@ -2502,6 +2502,27 @@ though `generic-auto` is an opt-in compatibility service, not part of HAI's
 operational path. The current PR retains the environment-substituted secret and
 returns 404 for this public path. The conflicted source worktree remains
 preserved for review; no files were copied from it.
+
+Reviewed the safety-sensitive source deltas in
+`hai-runtime-safety-audit` (worktree base `e07b9da`). Its edited DeepSeek path
+removes the current PR's strict cancellation receipt identity checks, request
+context failure handling, sensitive-environment filtering, bounded/redacted
+child-process output, and Windows reparse-point rejection. Its host-runtime
+variant also removes the persisted start-intent/acknowledgment protocol and
+conservative uncertain-start recovery. These are regressions relative to PR
+#36, so none of those edits were copied. The dirty worktree and its files remain
+unchanged and preserved.
+
+The separate `hai-openclaw-artifact-audit` worktree is based on the same older
+`e07b9da` commit and has 405 uncommitted entries. A content-hash comparison of
+its 255 untracked files found 97 that are not byte-identical to current PR #36;
+this is a triage signal, not a code review or proof of unique capability. In
+the OpenClaw maintenance subset, the worktree version lacks controls already
+present in the PR, including the background-processing gate, bounded process
+output handling, pinned Authenticode verification path, post-install evidence
+binding, and fresh provider-metadata binding. That subset was not ported. The
+remaining artifact, connector, frontend, and migration deltas require targeted
+review; the worktree remains untouched.
 
 Removed only the clean `hai-tree-compare` checkout after confirming it was at
 the exact PR #36 head and contained no ignored or untracked files. Its 3,147
