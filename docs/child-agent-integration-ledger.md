@@ -1635,6 +1635,28 @@ and link checks (280,611,707 bytes); it is reproducible with `npm ci`. No
 transcript, patch, environment file, runtime database, or worktree was deleted
 as part of this reconciliation.
 
+### October 12, 2026: unstaged integration-snapshot layer crosswalk
+
+Compared all 19 files in the snapshot worktree's unstaged diff with the current
+PR #36 worktree, separately from the 1,790 staged snapshot paths above. Fourteen
+files are content-identical after ignoring CRLF-only differences. The five
+remaining paths are `.github/workflows/ci.yml`,
+`docs/child-agent-integration-ledger.md`,
+`frontend/src/app/pages/governance-control/governance-control.component.spec.ts`,
+`idp/internal/app/authentication/auth_service_test.go`, and
+`scripts/smoke-model-intelligence.sh`.
+
+The scanner-safe CI signing fixture, governance test identifier, IDP test
+secret, and assembled privacy-scan fixture are already represented in the PR.
+The PR's corresponding CI and IDP tests also include newer isolated-startup,
+redaction, and request-context coverage than the snapshot versions. The
+snapshot ledger's October 10 note about 542 deduplicated completion texts is
+superseded by the reproducible retained-completion audit above; the PR keeps
+the distinction between exact-text deduplication and verified integrated work.
+No unique product implementation from this unstaged layer was missing from the
+PR, and none was copied. This was a text/source comparison, not a rerun of its
+reported tests. The snapshot's staged and unstaged files remain untouched.
+
 ### October 11, 2026: captured branch-only feature review
 
 Compared the three captured inventory branches with unique commits against
