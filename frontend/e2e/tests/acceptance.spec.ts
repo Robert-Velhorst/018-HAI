@@ -74,17 +74,26 @@ async function safePointerDiagnostics(page: Page, target: Locator) {
           }
         };
         let readableStylesheets = 0;
+        const stylesheetState: Array<{ source: string; disabled: boolean; media: string; active: boolean }> = [];
         for (const sheet of [...document.styleSheets]) {
           try {
             if (sheet.cssRules) {
               readableStylesheets += 1;
+              const media = sheet.media.mediaText || 'all';
+              const source = sheet.href
+                ? new URL(sheet.href).pathname.split('/').pop() || 'stylesheet'
+                : (sheet.ownerNode as Element | null)?.tagName.toLowerCase() || 'constructed';
+              stylesheetState.push({ source, disabled: sheet.disabled, media, active: media === 'all' || matchMedia(media).matches });
               inspectRules(sheet.cssRules);
             }
           } catch { /* inaccessible cross-origin stylesheet */ }
         }
         return {
           ...describe(element),
+          rootType: element.getRootNode().constructor.name,
+          activeAnimations: element.getAnimations().length,
           readableStylesheets,
+          stylesheetState: stylesheetState.slice(0, 10),
           matchingPointerRules: matchingPointerRules.slice(-12),
         };
       });
