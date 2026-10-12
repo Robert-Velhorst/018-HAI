@@ -6276,3 +6276,36 @@ These are PR-side implementations and test evidence, not fresh local test
 execution. The compared legacy variants omit these controls; no source was
 copied. The broader semantic/provenance audit, transcript review, and cleanup
 gates remain open.
+
+### October 12, 2026: post-merge repository and Autofever-branch disposition
+
+Live GitHub CLI verification confirms PR #36 is `MERGED` into `main` in
+`Robert-Velhorst/018-HAI` at squash commit
+`c31cec1ba2a25fcfd280b1f2f499297e54d96aa4` (merged 2026-10-12 20:42 UTC).
+This supersedes earlier checkpoints in this ledger that described PR #36 as
+open. The canonical remote `main` currently resolves to that same commit.
+
+The cleanup-readiness verifier still tests for GitHub PR state `CLOSED`, even
+though the GitHub API reports merged pull requests as `MERGED`. That prevents
+the verifier from recognizing the successful PR #36 merge. PR #37
+(`codex/fix-hai-transcript-merged-state`) changes the gate to require `MERGED`
+and adds a contract test rejecting the obsolete state check. PR #37 is open
+and cleanly mergeable at `9ec3a326ecac663ed74732e60db5e0ed45e3f991`; its
+exact-head CI passed all 36 checks. No merge of PR #37 or transcript cleanup
+has been performed in this checkpoint.
+
+Also reviewed the local-only `codex/autofever-connector` commit
+`7eed157b5c740e6909eb560beaf313bd1d4cb619`. It adds a bearer-token adapter for
+`/api/integrations/hai/feed`, but its tests exercise only a synthetic
+`httptest` server. Current HAI `main` and `docs/autofever-connector.md` state
+that the sibling Autofever app has no such endpoint, vehicle-review model, or
+owner-scoped contract; the connector is intentionally disabled. The old
+adapter is therefore not a verified integration and was not ported. Keep the
+branch and its worktree until the broader local-source audit is complete; an
+upstream API contract and authorized live acceptance are prerequisites to
+re-enabling it.
+
+These checks update repository and candidate status only. The full transcript
+semantic/provenance reconciliation, exact-main cleanup gate, and local cleanup
+remain incomplete. All archives, source checkouts, and branch worktrees remain
+unchanged.
