@@ -72,7 +72,8 @@ function Protect-ReportText {
     param([AllowEmptyString()][string]$Text)
 
     $protected = $Text
-    $protected = $protected -replace '(?i)[A-Z]:[\\/]+Users[\\/]+[^\\/\s`]+[\\/]+Documents[\\/]+Codex[\\/]+(?:[^\\/\s`]+[\\/]+)*?(?:work[\\/]+018-hai-port-engine-control|github-plugin-github-openai-curated-noodzakelijk)[\\/]+', '[HAI_REPO]/'
+    $protected = $protected -replace '(?i)[A-Z]:[\\/]+Users[\\/]+[^\\/\s`]+[\\/]+Documents[\\/]+Codex[\\/]+(?:[^\\/\s`]+[\\/]+)*?(?:work[\\/]+018-hai-port-engine-control|github-plugin-github-openai-curated-noodzakelijk)[\\/]+', '../../'
+    $protected = [regex]::Replace($protected, '(?<=\.\./\.\./)[^\s`]+', { param($match) $match.Value.Replace('\', '/') })
     $protected = $protected -replace '(?i)(Authorization:\s*Bearer\s+)[A-Za-z0-9._~+/=-]+', '$1[REDACTED]'
     $protected = $protected -replace '(?i)sk-[A-Za-z0-9_-]{12,}', 'sk-[REDACTED]'
     $protected = $protected -replace '(?i)ghp_[A-Za-z0-9]{12,}', 'ghp_[REDACTED]'

@@ -88,6 +88,8 @@ try {
         $oversizedRow.disposition -cne 'retain_unparsed_candidate_record' -or
         -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('Synthetic completed report.') -or
         -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('observed completion only') -or
+        -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('../../backend/example.go') -or
+        -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('../../docs/example.md') -or
         (Get-Content -LiteralPath $reportsPath -Raw) -match '(?i)[A-Z]:[\\/]+Users[\\/]+[^\\/\s]+[\\/]+Documents[\\/]+Codex') {
         throw 'Synthetic transcript was not classified and reported as expected.'
     }

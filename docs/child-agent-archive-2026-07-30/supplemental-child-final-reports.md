@@ -31,10 +31,10 @@ Fixed these Framework Registry defects:
 - Losing owner authority clears in-progress Constitution approval data.
 
 **Files Changed**
-- Main registry: [component.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.component.ts), [component.html]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.component.html), [component.scss]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.component.scss), [component.spec.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.component.spec.ts)
-- Inspector: [inspector.html]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-inspector.component.html), [inspector.scss]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-inspector.component.scss), [inspector.spec.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-inspector.component.spec.ts)
-- Recommendation: [recommendation.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.ts), [recommendation.html]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.html), [recommendation.scss]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.scss), [recommendation.spec.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.spec.ts)
-- Wiring/API: [module.ts]([HAI_REPO]/frontend/src/app/pages/framework-registry/framework-registry.module.ts), [service.ts]([HAI_REPO]/frontend/src/app/services/framework-registry.service.ts), [service.spec.ts]([HAI_REPO]/frontend/src/app/services/framework-registry.service.spec.ts)
+- Main registry: [component.ts](../../frontend/src/app/pages/framework-registry/framework-registry.component.ts), [component.html](../../frontend/src/app/pages/framework-registry/framework-registry.component.html), [component.scss](../../frontend/src/app/pages/framework-registry/framework-registry.component.scss), [component.spec.ts](../../frontend/src/app/pages/framework-registry/framework-registry.component.spec.ts)
+- Inspector: [inspector.html](../../frontend/src/app/pages/framework-registry/framework-registry-inspector.component.html), [inspector.scss](../../frontend/src/app/pages/framework-registry/framework-registry-inspector.component.scss), [inspector.spec.ts](../../frontend/src/app/pages/framework-registry/framework-registry-inspector.component.spec.ts)
+- Recommendation: [recommendation.ts](../../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.ts), [recommendation.html](../../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.html), [recommendation.scss](../../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.scss), [recommendation.spec.ts](../../frontend/src/app/pages/framework-registry/framework-registry-recommendation.component.spec.ts)
+- Wiring/API: [module.ts](../../frontend/src/app/pages/framework-registry/framework-registry.module.ts), [service.ts](../../frontend/src/app/services/framework-registry.service.ts), [service.spec.ts](../../frontend/src/app/services/framework-registry.service.spec.ts)
 
 **Validation**
 - Focused Angular suite: **36/36 passed** in Chrome Headless.
@@ -58,11 +58,11 @@ A supplemental full production build exceeded the 180-second limit and was stopp
 - Removed the duplicate icon logic from Model Routing.
 
 Changed:
-- [app.module.ts]([HAI_REPO]/frontend/src/app/app.module.ts)
-- [theme.service.ts]([HAI_REPO]/frontend/src/app/services/theme.service.ts)
-- [theme.service.spec.ts]([HAI_REPO]/frontend/src/app/services/theme.service.spec.ts)
-- [llm-policy.component.ts]([HAI_REPO]/frontend/src/app/pages/llm-policy/llm-policy.component.ts)
-- [llm-policy.component.spec.ts]([HAI_REPO]/frontend/src/app/pages/llm-policy/llm-policy.component.spec.ts)
+- [app.module.ts](../../frontend/src/app/app.module.ts)
+- [theme.service.ts](../../frontend/src/app/services/theme.service.ts)
+- [theme.service.spec.ts](../../frontend/src/app/services/theme.service.spec.ts)
+- [llm-policy.component.ts](../../frontend/src/app/pages/llm-policy/llm-policy.component.ts)
+- [llm-policy.component.spec.ts](../../frontend/src/app/pages/llm-policy/llm-policy.component.spec.ts)
 
 **Verification**
 - Focused tests: `2 SUCCESS`
