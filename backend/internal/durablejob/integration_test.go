@@ -471,7 +471,13 @@ func TestReclaimedLeaseFencesStaleWorkerCompletion(t *testing.T) {
 		Update("locked_at", now.Add(-2*lease)).Error; err != nil {
 		t.Fatalf("expire first lease: %v", err)
 	}
-	if reaped, err := repo.ReapExpiredLeasesForQueue("workflow", now, lease); err != nil || reaped != 1 {
+	reaper, ok := repo.(interface {
+		ReapExpiredLeasesForQueue(queue string, now time.Time, lease time.Duration) (int, error)
+	})
+	if !ok {
+		t.Fatal("Gorm repository does not support queue-scoped lease recovery")
+	}
+	if reaped, err := reaper.ReapExpiredLeasesForQueue("workflow", now, lease); err != nil || reaped != 1 {
 		t.Fatalf("reap: count=%d err=%v", reaped, err)
 	}
 
@@ -537,7 +543,13 @@ func TestReapExpiredLeasesDoesNotTouchOtherQueues(t *testing.T) {
 		}
 	}
 
-	if reaped, err := repo.ReapExpiredLeasesForQueue("source", now, lease); err != nil || reaped != 1 {
+	reaper, ok := repo.(interface {
+		ReapExpiredLeasesForQueue(queue string, now time.Time, lease time.Duration) (int, error)
+	})
+	if !ok {
+		t.Fatal("Gorm repository does not support queue-scoped lease recovery")
+	}
+	if reaped, err := reaper.ReapExpiredLeasesForQueue("source", now, lease); err != nil || reaped != 1 {
 		t.Fatalf("reap source queue: count=%d err=%v", reaped, err)
 	}
 	var workflow models.DurableJob
