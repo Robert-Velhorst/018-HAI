@@ -2955,3 +2955,35 @@ No task code was ported: the PR contains the stronger and more complete
 behavior. PR #36 run `38188686693` for the new head was pending at the time of
 this audit; no CI result is inferred from source comparison. Snapshot files
 and local artifacts remain untouched.
+
+### October 12, 2026: execution-authorization comparison
+
+Compared ten staged snapshot paths under `backend/internal/executionauth/`
+with PR #36 at `5a117f8c53108d8e5e99585b7cc51a22fa3c9937`:
+
+- The snapshot removes the inspection API's `view=summary` contract and its
+  tests. The current PR can return a minimal receipt projection separately
+  from full inspection detail; keep that bounded representation available.
+- The snapshot removes control-plane and operations-control decision IDs from
+  persisted authorization-receipt references and removes the corresponding
+  `opscontrol-review:` resolution path and provenance tests. Those references
+  bind authorization to the actual reviewed decisions and must remain.
+- It deletes the explicit system workload policies for free task-engine
+  inference, including the local read-only tool-loop policy, and their
+  provider/runtime binding check. No broad or paid inference permission is
+  implied by this audit; the existing scoped policies remain the intended
+  boundary.
+- The snapshot adds life-ontology projection calls to authorization receipt
+  `Get` and `List`. The current test
+  `TestAuthorizationReadsDoNotRunLifeGraphProjection` explicitly requires
+  authorization reads to be side-effect-free, so this snapshot addition is
+  not portable without changing that contract and its rationale.
+- The snapshot also removes the isolated emergency-stop evaluator clone and
+  deletes workload-policy, inspection, and projection regression coverage.
+  Its PostgreSQL advisory-lock rewrite is unnecessary to recover any missing
+  feature and is not adopted over the current implementation.
+
+No authorization code was ported. This pass reviewed the staged snapshot
+blobs and current source/tests only; no live database or external execution
+provider was invoked. PR #36 run `38188757244` was pending during review.
+Neither the snapshot nor any other local source artifact was removed.
