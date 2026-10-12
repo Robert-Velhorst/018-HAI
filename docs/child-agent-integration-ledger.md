@@ -5163,3 +5163,29 @@ transcript event. The other 1,214 scratch-checkout references, 325 temporary
 references, source snapshot differences, child attribution, and external
 acceptance remain open. No source checkout, snapshot, transcript, diagnostic,
 credential, or runtime data was altered or removed.
+
+### October 12, 2026: recovered PostgreSQL invariant patch disposition
+
+Inspected the last successful transcript records for the PostgreSQL recovery
+patch artifacts rather than relying on their filenames. The 722-character
+`recovery\pg-active-invariant.patch` adds a PostgreSQL rejection assertion for
+superseding an active Constitution without a replacement. The 1,205-character
+`recovery\pg-functions.patch` adds catalog checks for the active-history
+function and trigger. Both behaviors are present in the PR's canonical
+`backend/internal/frameworkregistry/repository_postgres_test.go` (including the
+rejection assertion) and `backend/migrations/pre/0003_framework_registry.up.sql`;
+the migration contract tests assert the constraint trigger and rollback
+function. These checks confirm those two patch artifacts do not contain an
+additional unported invariant.
+
+The transcript's `recovery\pg-trigger.patch` record is a failed add attempt,
+not accepted implementation. `recovery\test-small.patch` is a synthetic
+one-line `a` to `b` patch. The final successful delete records for
+`pg-lifecycle-recovery.go.txt`, `registry-postgres-audit-test.tmp`, and
+`repository_postgres_constitution_test.go` carry zero-byte content. The
+non-empty registry-audit-stage copies remain covered by the framework-registry
+source comparisons above; their path and deletion events alone do not make the
+copies authoritative over the canonical PR files. No patch was replayed.
+
+This closes the disposition of these specific recovered patch/test artifacts,
+not every event that mentioned them or the full 793-target semantic audit.
