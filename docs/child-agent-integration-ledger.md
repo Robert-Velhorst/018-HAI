@@ -4619,3 +4619,39 @@ changing file without the PR's evidence needed to justify a cleanup candidate.
 The PR's stronger full-file, duplicate-aware, hash-capable audit remains in
 place. No transcript was classified or deleted based on the local variant, and
 no cleanup readiness is inferred from a report alone.
+
+### October 12, 2026: isolated acceptance, installer, and runner contracts
+
+Reviewed local-only diffs in `scripts/isolated-acceptance-stack.ps1` and
+`scripts/isolated-recovery-rehearsal.ps1`. The acceptance variant removes
+gateway readiness retries, service-dependency validation, cleanup-manifest
+hash/size evidence, generic credential scrubbing for synthetic environment
+values, and the explicit runtime UID/GID on private tmpfs state. The recovery
+rehearsal variant drops `-LibraryOnly` when dot-sourcing the backup helper;
+that helper contains executable backup/recovery logic, so sourcing it without
+the library-only guard is not a safe simplification. These local versions were
+not copied.
+
+The local Windows installer smoke test removes the hosted-runner opt-in for
+unavailable Docker, distinct/existing/non-reparse-point runner-temp checks,
+isolated `LOCALAPPDATA`, and the installed-payload read/write probe (replacing
+the latter with an ACL inspection). The local payload selector
+excludes all SQL files, including versioned schema migrations that the PR
+intentionally permits, and its source-selection fixtures omit migration and
+customer-export cases. The local runtime lifecycle test also stops verifying
+that an operator-selected network range survives environment replacement.
+The PR-side ownership, migration, and preservation contracts remain in place.
+
+The local secret-scan runner drops the required CI base revision and history
+range, and suppresses all finding metadata instead of emitting the PR's
+bounded, sanitized summary. It also switches away from the PR's pinned
+`github.com/gitleaks/gitleaks/v8` module path. Local tests delete coverage for
+invalid/missing base revisions, bounded finding summaries, and malformed
+reports. The PR's fail-closed history scan and redaction behavior were kept.
+Finally, the local Python runner smoke contract removes the Grype runner's
+synthetic configuration and isolated read-only mounts, and deletes its smoke
+test. None of these local changes was copied.
+
+This batch reviewed the shown diffs only; it did not run Windows installer,
+Docker acceptance, or third-party runner workloads. The source checkout and
+all local artifacts remain untouched.
