@@ -6193,6 +6193,46 @@ The primary dirty checkout, its untracked files, transcript archives, and local
 runtime data remain unchanged. The full semantic/provenance audit and cleanup
 gates remain open.
 
+### October 12, 2026: giant compacted-transcript record classification
+
+Re-read the two previously oversized transcript records with fixed-buffer
+streaming. Their exact record lengths are 1,016,062,444 bytes and 904,740,623
+bytes; SHA-256 values are `4417a8e6efac27578b30609fcd53fb5bfeed662c86cbe883c64ed886eeeb879d`
+and `621b40c6ac6df8a5b248266e56bf913267b83ca1bb4be10dbd9272e6a7a27606`,
+respectively. Their top-level type field is `compacted` (confirmed from the
+record prefix). A streaming marker scan found no `patch_apply_end`,
+`event_msg`, `changes`, or patch-array markers in either record, so neither is
+an unscanned source-patch event.
+
+This closes only their source-patch-event classification. The giant compacted
+message contents have not been fully semantically read, and the other
+transcript records still require provenance and unique-finding reconciliation.
+Both archive files remain intact and protected; this result does not make them
+eligible for deletion.
+
+### October 12, 2026: progressive shell, dashboard, and safety-runner crosswalk
+
+The same source comparison confirmed the current PR's frontend application
+module wires the shared Control Room module and centralized icon registry,
+while the preserved checkout still carries a separate inline icon list. The
+PR's Pursuits view intentionally leaves the detail pane unselected until the
+user chooses a record, rather than silently opening the first result. The
+Control Center requests summary-sized ambient and pursuit payloads and rejects
+malformed dashboard counts before rendering; the older component requests the
+larger overview/dashboard payload and derives counts from arrays. These
+changes align with the progressive disclosure and payload-reduction design;
+no frontend code was copied.
+
+For the safety runner, the PR installs the Promptfoo production lock with
+optional packages omitted, while keeping install scripts disabled and the
+lockfile audit enabled. The compared Dockerfile variant does not omit optional
+packages. The existing CI job builds and exercises the runner image and audits
+production dependencies. The older lockfile delta was not adopted because it
+does not by itself establish a safer or compatible dependency graph; the PR's
+lock and package manifest remain canonical. These source and workflow checks
+do not replace fresh local browser or provider acceptance. The broader
+semantic/provenance audit and cleanup gates remain open.
+
 ### October 12, 2026: agent runtime and coordination source crosswalk
 
 Compared the legacy checkout's complete `backend/internal/agentruntime`
@@ -6212,3 +6252,27 @@ their existing files match the PR after newline normalization, and no port is
 needed. No source code was copied. The old checkout and its untracked data
 remain untouched; the full content/provenance audit and cleanup gates remain
 open.
+
+### October 12, 2026: task history, memory query, and Trello efficiency crosswalk
+
+Compared the legacy variants of the task-history handler, memory handler, and
+Trello source connector against the current PR implementation. The PR bounds
+task-history requests to 1-50 entries (default 10), returns a compact list
+projection, and exposes full records only by explicit request while retaining
+owner-scoped durable reads. Its memory handler uses the PostgreSQL owner-query
+capability when available, keeps the compatibility fallback owner-scoped, and
+returns a service-unavailable response rather than panicking when no scoped
+service exists. The repository query applies owner/project/archive predicates,
+literal escaped AND-token search, stable ordering, and pagination in the
+database; focused PostgreSQL tests cover isolation, literal wildcard search,
+pagination, and cancellation.
+
+The Trello connector checks a bounded actions page before fetching every card
+and comment. It skips the expensive reconciliation only when the page proves
+there was no card-level activity or only recognized board-metadata changes;
+saturated, malformed, unknown, or card-affecting activity falls back to the
+normal bounded reconciliation. Focused tests exercise those fallback cases.
+These are PR-side implementations and test evidence, not fresh local test
+execution. The compared legacy variants omit these controls; no source was
+copied. The broader semantic/provenance audit, transcript review, and cleanup
+gates remain open.
