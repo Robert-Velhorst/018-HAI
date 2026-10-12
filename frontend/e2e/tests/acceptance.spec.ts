@@ -209,12 +209,30 @@ test.describe('HAI operator acceptance flow', () => {
         await approveExecution.click();
         const approved = await approvalResponse;
         expect(approved.ok(), await approved.text()).toBeTruthy();
+        const approvalRecord = await approved.json() as {
+          item?: { id?: string; requiresApproval?: boolean; approvalStatus?: string; currentState?: string };
+        };
+        expect(approvalRecord.item).toMatchObject({
+          id: resolvedRecord.item!.id,
+          requiresApproval: true,
+          approvalStatus: 'approved',
+          currentState: 'ready',
+        });
       } else {
         expect(persistedRecord.item?.currentState).toBe('ready');
         expect(persistedRecord.item?.approvalStatus).toBe(
           persistedRecord.item?.requiresApproval ? 'approved' : 'not_required',
         );
       }
+      const currentResponse = await page.request.get(`/api/v1/workflow/${resolvedRecord.item!.id}`);
+      expect(currentResponse.status(), await currentResponse.text()).toBe(200);
+      const currentRecord = await currentResponse.json() as {
+        item?: { requiresApproval?: boolean; approvalStatus?: string; currentState?: string };
+      };
+      expect(currentRecord.item?.currentState, JSON.stringify(currentRecord.item)).toBe('ready');
+      expect(currentRecord.item?.approvalStatus, JSON.stringify(currentRecord.item)).toBe(
+        currentRecord.item?.requiresApproval ? 'approved' : 'not_required',
+      );
       await expect(page.getByTestId('workflow-approval-controls')).toHaveCount(0);
       await expect(page.getByTestId('workflow-selected-state')).toHaveText('ready');
     });
@@ -227,7 +245,8 @@ test.describe('HAI operator acceptance flow', () => {
       await expect(confirmation.getByText('Run this selected workflow?')).toBeVisible();
       const runResponse = page.waitForResponse((response) =>
         response.request().method() === 'POST'
-        && /\/api\/v1\/workflow\/[^/]+\/run$/.test(new URL(response.url()).pathname)
+        && /\/api\/v1\/workflow\/[^/]+\/run$/.test(new URL(response.url()).pathname),
+        { timeout: 30_000 },
       );
       await confirmation.getByRole('button', { name: 'Run this workflow', exact: true }).click();
       const response = await runResponse;

@@ -901,6 +901,7 @@ describe('WorkflowEngineComponent', () => {
     refreshed.item.id = ready.item.id;
     refreshed.item.currentState = 'ready';
     refreshed.item.approvalStatus = 'approved';
+    workflowService.get.and.returnValue(of(refreshed));
     component.applyWorkflowRecord(refreshed);
 
     confirmation.nzOnOk();
