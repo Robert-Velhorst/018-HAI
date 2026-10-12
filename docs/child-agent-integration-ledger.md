@@ -3088,3 +3088,36 @@ These are source and test comparisons, not live ambient polling or
 cross-account runtime acceptance. Snapshot files remain unchanged. The latest
 PR #36 head is tracked above; queued CI from preceding heads does not prove
 this or the current head's runtime behavior.
+
+### October 12, 2026: pursuit-planning comparison
+
+Reviewed ten differing staged paths under `backend/internal/pursuit/` against
+PR #36 at `ae577926833c1ebcdf22f726c5700f1a2c9b6374`. Five substantial PR
+files, including `dashboard_projection.go` and `dashboard_repository.go`, are
+absent from the snapshot. No pursuit code was ported:
+
+- The snapshot replaces the identity-aware legacy owner predicate with
+  unconditional visibility of ownerless rows (`owner_identity = '' OR IS
+  NULL`) for every authenticated owner. The PR's
+  `TestOwnerVisibilitySQLAllowsLegacyRowsOnlyForConfiguredOwner` verifies
+  legacy visibility is restricted to the configured migration owner.
+- It removes the validated `view=summary` dashboard contract and the
+  owner-scoped summary implementation. The PR-only summary projection bounds
+  queue previews and omits private detail; its handler/service tests are
+  absent from the snapshot.
+- Intake in the PR returns the exact transient `IntakeWorkflowID` produced by
+  the operation. The snapshot discards that result and re-reads the pursuit,
+  which cannot reproduce a response-only workflow reference; its exact
+  workflow-reference test is removed.
+- The snapshot narrows `FindTaskAttemptsNeedingReview` in SQL. The PR applies
+  the canonical `pursuitTaskAttemptNeedsReview` predicate after conservative
+  candidate selection. The snapshot query omits some statuses handled by
+  that predicate, including `error`, canceled, unsupported, and conflicting
+  run outcomes, so it can hide items requiring review.
+- The resource-ledger refactor mostly inlines the PR's calculation helper,
+  but the snapshot removes associated coverage without showing a safer
+  contract. It was not necessary to recover a missing feature.
+
+This is a staged-source and test comparison, not a production multi-account
+acceptance test. Snapshot data remains intact. PR #36 CI was still queued on
+prior heads; no current runtime verification is inferred here.
