@@ -5832,3 +5832,41 @@ Exact-head CI for PR #36 commit `19f44c506c55f04e468992c6ad27a6c69854d646`
 completed successfully in run `38287191833`. This follow-up closes these
 named path differences only; it does not reduce the remaining 227 tracked and
 67 untracked content-difference review set or the archive/cleanup gates.
+
+### October 12, 2026: crosswalk correction and Trello cursor contract tests
+
+Reconciled a conflicting exploratory scan: the earlier two-path result was not
+a full crosswalk. In particular, `backend/internal/operations/source_approval.go`
+is untracked in the preserved checkout, so a tracked-only scan cannot count or
+review it. The PR version already has the stricter evidence-hash and owner-type
+binding documented above. A separate expanded-extension scan is not
+comparable with the established 653/860 candidate filters and is not used to
+replace those historical counts. The exact content-review backlog remains
+open; no local data was changed.
+
+The old checkout also has a tracked `nginx-config/nginx.conf` that is absent
+from the PR tree. It is superseded by `nginx-config/nginx.conf.template`, which
+adds current gateway security headers, dedicated local-runtime routing, and
+runtime-injected backend/local-preview secrets; the old static file embeds a
+placeholder backend key and lacks those newer controls. `docker-compose.yml`
+mounts the template read-only, and `nginx-config/test_gateway_contract.py`
+asserts that contract. The old file was not copied.
+
+The PR already contains newer implementations than the preserved checkout for
+Trello's quiet-board cursor fast path, cancellable owner-scoped task-agent
+context lookup, and avoiding an idle model-maintenance scheduler when no
+eligible models exist. The Trello fast path had no direct tests for its
+essential behavior, so `backend/internal/source/trello_test.go` now covers no
+activity, board-metadata-only cursor advancement, card/unknown/malformed
+activity fallback, and saturated-page fallback. The test change is staged for
+the existing PR #36 branch under the user's push/CI authorization. This
+environment has no `go` or `gofmt` executable on PATH or in the checked
+standard locations; local Go execution and formatting therefore remain
+unverified. Git whitespace validation passed before this ledger addition;
+exact-head GitHub CI is the required validation gate after push.
+
+PR #36 was rechecked at `c7d191c8ab1f522617957781a68dccd41c559640`, open
+against `main`, with `CLEAN` merge state and successful exact-head CI run
+`38287984906`. No merge is authorized or performed. All source checkouts and
+transcript archives remain untouched; the semantic crosswalk, archive
+provenance review, merged-main gate, and local cleanup are still incomplete.

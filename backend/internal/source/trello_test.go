@@ -128,6 +128,87 @@ func configureTrelloTest(t *testing.T, baseURL string) {
 	t.Setenv(trelloAccountMemberIDEnv, testTrelloAccountMemberID)
 }
 
+func TestTrelloQuietBoardCursorOnlySkipsKnownBoardMetadataActivity(t *testing.T) {
+	cursorTime := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	activityTime := cursorTime.Add(2 * time.Minute)
+	tests := []struct {
+		name       string
+		actions    []trelloAction
+		wantQuiet  bool
+		wantCursor string
+	}{
+		{name: "no activity", wantQuiet: true, wantCursor: "existing-cursor"},
+		{
+			name: "board metadata activity advances cursor",
+			actions: []trelloAction{{Type: "updateBoard", Date: activityTime.Format(time.RFC3339Nano)}},
+			wantQuiet: true,
+		},
+		{
+			name: "card activity requires full sync",
+			actions: []trelloAction{{Type: "updateCard", Date: activityTime.Format(time.RFC3339Nano)}},
+		},
+		{
+			name: "unknown activity requires full sync",
+			actions: []trelloAction{{Type: "futureAction", Date: activityTime.Format(time.RFC3339Nano)}},
+		},
+		{
+			name: "malformed activity requires full sync",
+			actions: []trelloAction{{Type: "updateBoard", Date: "not-a-timestamp"}},
+		},
+		{
+			name: "saturated page requires full sync",
+			actions: make([]trelloAction, trelloActionPageSize),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload, err := json.Marshal(test.actions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/1/boards/board-1/actions" {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+				}
+				if r.URL.Query().Get("since") != cursorTime.Format(time.RFC3339Nano) ||
+					r.URL.Query().Get("limit") != strconv.Itoa(trelloActionPageSize) {
+					t.Errorf("unexpected activity query: %s", r.URL.RawQuery)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(payload)
+			}))
+			defer server.Close()
+			configureTrelloTest(t, server.URL)
+			base, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client := &trelloAPIClient{base: base, key: "test-key", token: "test-read-token"}
+
+			quiet, cursor, err := trelloQuietBoardCursor(context.Background(), client, "board-1", "existing-cursor", cursorTime)
+			if err != nil {
+				t.Fatalf("trelloQuietBoardCursor() error = %v", err)
+			}
+			if quiet != test.wantQuiet {
+				t.Fatalf("quiet = %t, want %t", quiet, test.wantQuiet)
+			}
+			if test.wantCursor != "" && cursor != test.wantCursor {
+				t.Fatalf("cursor = %q, want unchanged cursor %q", cursor, test.wantCursor)
+			}
+			if test.name == "board metadata activity advances cursor" {
+				activity, _, ok, err := parseTrelloCursor(cursor)
+				if err != nil || !ok || !activity.Equal(activityTime) {
+					t.Fatalf("advanced cursor = %q (%v, %t, %v), want %s", cursor, activity, ok, err, activityTime)
+				}
+			}
+			if !test.wantQuiet && cursor != "" {
+				t.Fatalf("fallback cursor = %q, want empty cursor", cursor)
+			}
+		})
+	}
+}
+
 const testTrelloAccountMemberID = "000000000000000000000001"
 const testTrelloCanonicalBoardID = "0123456789abcdef01234567"
 
