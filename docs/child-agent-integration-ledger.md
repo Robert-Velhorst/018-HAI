@@ -4655,3 +4655,36 @@ test. None of these local changes was copied.
 This batch reviewed the shown diffs only; it did not run Windows installer,
 Docker acceptance, or third-party runner workloads. The source checkout and
 all local artifacts remain untouched.
+
+### October 12, 2026: browser matrix, task-history evidence, and runner locks
+
+Compared the local `owned-browser-matrix.ts` helper with the PR. The local
+variant places the synthetic operator password in the fixture target and logs
+in through the browser UI, but removes the PR's run-scoped storage-state path
+validation and authenticated-session refresh/rotated-cookie persistence. It
+also counts canceled requests as failures and adds a global pending-request
+poll, which can conflate expected route cancellation or long-lived polling with
+an acceptance failure. The direct-login path may be useful for a separately
+scoped login acceptance test, but copying this helper wholesale would weaken
+the serial matrix's session lifecycle and failure classification. No change
+was ported from it.
+
+The local task-history handoff note asserts that a cold selected receipt is not
+retained as a non-runnable restriction. The PR source calls
+`rememberExecutionSafety` when loading a saved plan and reconstructs
+restrictions from persisted API history; its `task-blueprint.accessibility.spec.ts`
+also asserts the cold receipt remains visible in Basic after refresh, sensitive
+values are redacted, and run/cycle controls remain blocked. That is focused
+component-test coverage, not proof that the full browser scenario ran. The
+handoff note's runtime acceptance caveat is retained; its contradictory source
+gap assertion was not ported as a code change.
+
+Other local browser test changes remove uncapped attention-count coverage and
+the post-worker record-readback assertion. The local Python runner tests drop
+Grype smoke coverage already noted above. The local DeepTeam lock removes the
+declared `sentry-sdk` dependency and was generated from `requirements.txt`
+rather than the checked-in `requirements.in`; local Promptfoo is older and
+removes the PR's explicit Linux libsql package pin and `basic-ftp` override.
+No current evidence justifies replacing these PR-side dependency/security
+contracts with the local versions. This review is source/diff analysis only;
+it does not establish live browser acceptance or third-party provider health.
