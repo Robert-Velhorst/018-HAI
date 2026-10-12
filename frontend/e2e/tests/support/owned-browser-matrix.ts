@@ -71,6 +71,7 @@ export function ownedMatrixTarget(info: TestInfo): OwnedMatrixTarget {
 interface MatrixHealth {
   consoleErrors: number;
   consoleErrorKinds: Record<string, number>;
+  consoleErrorBundles: Record<string, number>;
   pageErrors: number;
   failedRequests: number;
   httpErrors: number;
@@ -112,7 +113,8 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
     page.setDefaultTimeout(10_000);
     page.setDefaultNavigationTimeout(15_000);
     const health: MatrixHealth = {
-      consoleErrors: 0, consoleErrorKinds: {}, pageErrors: 0, failedRequests: 0, httpErrors: 0,
+      consoleErrors: 0, consoleErrorKinds: {}, consoleErrorBundles: {},
+      pageErrors: 0, failedRequests: 0, httpErrors: 0,
       deniedWrites: 0, deniedExternal: 0,
     };
     let bootstrapAuthRefusals = 0;
@@ -131,6 +133,16 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
       health.consoleErrors++;
       const kind = consoleErrorKind(message.text());
       health.consoleErrorKinds[kind] = (health.consoleErrorKinds[kind] || 0) + 1;
+      let bundle = 'inline';
+      try {
+        const location = new URL(message.location().url);
+        if (location.origin === target.origin) {
+          bundle = location.pathname.split('/').filter(Boolean).pop() || 'document';
+        } else if (location.protocol !== 'data:' && location.protocol !== 'blob:') {
+          bundle = 'external-or-framework';
+        }
+      } catch { /* Keep only the source category when the location is not a URL. */ }
+      health.consoleErrorBundles[bundle] = (health.consoleErrorBundles[bundle] || 0) + 1;
     });
     page.on('pageerror', () => health.pageErrors++);
     page.on('requestfailed', (request) => {
@@ -183,8 +195,9 @@ export const test = base.extend<{ matrix: OwnedBrowserMatrix }>({
         await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       },
       assertHealthy: () => {
-        expect(health, 'Counts only: console text, bodies, headers and credentials are deliberately excluded').toEqual({
-          consoleErrors: 0, consoleErrorKinds: {}, pageErrors: 0, failedRequests: 0, httpErrors: 0,
+        expect(health, 'Counts and same-origin bundle names only; console text, URLs, bodies, headers and credentials are excluded').toEqual({
+          consoleErrors: 0, consoleErrorKinds: {}, consoleErrorBundles: {},
+          pageErrors: 0, failedRequests: 0, httpErrors: 0,
           deniedWrites: 0, deniedExternal: 0,
         });
       },
