@@ -152,6 +152,7 @@
 
   <hai-progressive-section moduleId="runtime-lab" sectionId="runtime-feature-parity"
     title="External runtime feature parity"
+    (openChange)="onFeatureParityToggle($event)"
     [summary]="parityOverview ? parityOverview.inventories.length + ' projects · readiness capped at declared' : 'Source-reviewed implementation and backlog mapping.'">
     <p>
       This is HAI's source-reviewed disposition ledger. It records what can be retained, adapted, constrained,

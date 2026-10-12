@@ -5431,3 +5431,47 @@ conflict resolution was attempted in this audit update. PR #36 cannot be
 considered integrated until these conflicts are resolved, verified, pushed,
 and its current-head checks pass. Local source archives and scratch worktrees
 remain preserved; no cleanup was performed.
+
+### October 12, 2026: runtime-lab lazy-load improvement and control-center payload candidate
+
+The PR worktree now defers Runtime Lab feature-parity and capability-catalog
+requests until the corresponding progressive section opens. Successful results
+are reused while the section is collapsed; an explicit refresh reloads them
+only when the section remains open. The component template is wired to the
+progressive disclosure's `openChange` event, including its saved-open state.
+Focused Angular component tests were added for deferred loading, cached reuse,
+and explicit refresh behavior.
+
+Reviewed ambient-composition commit `13bb9452` (`Reduce control center
+payloads`). Its `view=counts` pursuit projection is not a safe drop-in: current
+Control Center action selection reads the summarized decision queue and
+representative pursuit records to produce a concrete next action. The PR
+already has a bounded pursuit summary projection and an ambient summary
+projection; preserve those richer action inputs rather than replacing them
+with count-only responses. No backend code from that historical commit was
+copied.
+
+Verification in this worktree: `git diff --check` and the progressive-section
+contract checker passed. TypeScript syntax transpilation for both changed
+component files and Angular template parsing also passed using the existing
+primary-checkout toolchain. The frontend Node suite reported 23 of 34 cases
+passing; its 11 failures require packages missing from this worktree's partial
+`frontend/node_modules` (including Angular compiler/forms/router, RxJS,
+TypeScript, `semver`, and Jasmine). The targeted Angular component tests and
+production build remain unverified. Existing dependencies in the primary
+checkout were used read-only through a temporary Node loader; no dependencies
+were installed and no scratch data was modified.
+
+### October 12, 2026: refreshed PR #36 publication and CI state
+
+Queried GitHub for PR #36 after the earlier merge-base checkpoint. It remains
+open at head `ea35ea180b1755ce2ba807c949864d5a73c4adf7`, targeting `main` at
+`bec266b74329b2b74f51234c1da14db1080d38e9`. The current `origin/main` is an
+ancestor of the PR head, so the older 125-path merge-tree conflict result
+against `7efe1183` is superseded and must not be used as the current blocker.
+CI run `38254639526` reports all listed jobs successful except `Browser
+acceptance (owned disposable stack)`, which fails when its `npm test` process
+exits 1. The available failed-job log does not expose a specific Playwright
+assertion or root cause, so this remains an unresolved release gate rather
+than a verified product defect. PR merge state is `UNSTABLE`; no push, rerun,
+merge, cleanup, or mutation of the existing scratch worktrees was performed.

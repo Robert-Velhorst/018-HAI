@@ -48,6 +48,7 @@ export class RuntimeLabComponent implements OnInit {
   mcpLoading = false
   parityLoading = false
   capabilityLoading = false
+  featureParityOpen = false
   probeBusy: Record<string, boolean> = {}
   selfTestBusy: Record<string, boolean> = {}
   mcpBusy: Record<string, boolean> = {}
@@ -103,8 +104,10 @@ export class RuntimeLabComponent implements OnInit {
     this.loadError = false
     this.refreshAgentRuntimeInfo()
     this.refreshMCPPreflight()
-    this.refreshFeatureParity()
-    this.refreshCapabilities()
+    if (this.featureParityOpen) {
+      this.refreshFeatureParity(true)
+      this.refreshCapabilities(true)
+    }
     this.service.overview().subscribe({
       next: (res) => {
         this.runtimes = (res.runtimes ?? []).map((runtime) => {
@@ -203,7 +206,8 @@ export class RuntimeLabComponent implements OnInit {
       Boolean(info.missingConfiguration?.some((reason) => /OS-enforced sandbox/i.test(reason)))
   }
 
-  refreshCapabilities(): void {
+  refreshCapabilities(force = false): void {
+    if (this.capabilityLoading || (!force && this.capabilityOverview)) return
     this.capabilityLoading = true
     this.service.capabilities().subscribe({
       next: (overview) => {
@@ -252,7 +256,8 @@ export class RuntimeLabComponent implements OnInit {
     return `${roster.agentCount} agents · ${roster.systemCount} system · ${roster.unknownKindCount} legacy/unknown`
   }
 
-  refreshFeatureParity(): void {
+  refreshFeatureParity(force = false): void {
+    if (this.parityLoading || (!force && this.parityOverview)) return
     this.parityLoading = true
     this.service.featureParity().subscribe({
       next: (overview) => {
@@ -264,6 +269,13 @@ export class RuntimeLabComponent implements OnInit {
         this.parityLoading = false
       },
     })
+  }
+
+  onFeatureParityToggle(open: boolean): void {
+    this.featureParityOpen = open
+    if (!open) return
+    this.refreshFeatureParity()
+    this.refreshCapabilities()
   }
 
   dispositionColor(disposition: RuntimeFeatureDisposition): string {

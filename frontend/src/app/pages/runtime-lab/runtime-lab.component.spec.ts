@@ -112,24 +112,44 @@ describe('RuntimeLabComponent MCP readiness', () => {
     expect(component.runtimeAttentionDetail(component.runtimes[0])).toBe('External runtime.');
   });
 
-  it('loads the source-reviewed runtime parity inventory without changing readiness', () => {
-    const { component } = make();
+  it('defers runtime parity and capability requests until their progressive section opens', () => {
+    const { component, runtimeService } = make();
     component.refresh();
 
+    expect(runtimeService.featureParity).not.toHaveBeenCalled();
+    expect(runtimeService.capabilities).not.toHaveBeenCalled();
+
+    component.onFeatureParityToggle(true);
     expect(component.parityOverview?.inventories[0].runtimeId).toBe('openclaw');
     expect(component.parityOverview?.inventories[0].readinessCeiling).toBe('declared');
     expect(component.parityLoading).toBeFalse();
+    expect(runtimeService.featureParity).toHaveBeenCalledTimes(1);
+    expect(runtimeService.capabilities).toHaveBeenCalledTimes(1);
   });
 
-  it('loads non-executable HAI capability cards separately from runtime claims', () => {
-    const { component } = make();
+  it('reuses loaded parity data and refreshes it only when the open section is explicitly refreshed', () => {
+    const { component, runtimeService } = make();
     component.refresh();
+    component.onFeatureParityToggle(true);
 
     const cards = component.cardsForRuntime('openclaw');
     expect(cards.length).toBe(1);
     expect(cards[0].readinessLevel).toBe('declared');
     expect(cards[0].canInvoke).toBeFalse();
     expect(cards[0].canExecuteExternalEffect).toBeFalse();
+
+    component.onFeatureParityToggle(false);
+    component.refresh();
+    expect(runtimeService.featureParity).toHaveBeenCalledTimes(1);
+    expect(runtimeService.capabilities).toHaveBeenCalledTimes(1);
+
+    component.onFeatureParityToggle(true);
+    expect(runtimeService.featureParity).toHaveBeenCalledTimes(1);
+    expect(runtimeService.capabilities).toHaveBeenCalledTimes(1);
+
+    component.refresh();
+    expect(runtimeService.featureParity).toHaveBeenCalledTimes(2);
+    expect(runtimeService.capabilities).toHaveBeenCalledTimes(2);
   });
 
   it('distinguishes capability loading, unavailable, empty, and available states', () => {
