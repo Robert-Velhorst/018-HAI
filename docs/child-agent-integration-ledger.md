@@ -5019,9 +5019,41 @@ The snapshot also removes the `chatgpt-codex-mcp-daemon` entry from
 `integration_boundary.go`. That entry declares the concrete HAI route,
 implementation, and safety boundary for its nine reviewed read-only tools;
 without it, the integration is no longer represented in the boundary
-inventory. No snapshot code was adopted. PR #36 is currently at
-`f6c0960e98334afb2eb1ffcde9edba8926f95b27`; the successful CI run recorded
+inventory. No snapshot code was adopted. PR #36 was at
+`f6c0960e98334afb2eb1ffcde9edba8926f95b27` at comparison time; the successful CI run recorded
 above was for the earlier code head `9a21fe1b1b74ad52e45e75ea0604d4fc97d7c21d`,
 so it is not claimed as an exact-head run for this documentation-only update.
 The source snapshot, transcript archives, and primary checkout remain
 unchanged.
+
+### October 12, 2026: task retry economics and provenance review
+
+The snapshot task service retries after validation failure whenever a retry is
+available. PR #36 also checks whether another model can plausibly change the
+result: if every claim is rejected solely for untrusted provenance, the
+evidence boundary will produce the same review outcome, so the service skips
+the redundant attempt and records why human review is needed. The PR's
+`TestRetryRequiresPotentiallyActionableValidationFailure` covers all-untrusted,
+mixed, empty, and nil claim results. This avoids unnecessary model work without
+weakening evidence or approval requirements. No snapshot code was adopted; the
+existing broader task-history, MCP-context, and cancellation findings remain
+in the task comparison above.
+
+### October 12, 2026: snapshot-wide byte inventory and remaining coverage
+
+Re-ran a read-only SHA-256 comparison of all 1,790 paths staged in the source
+snapshot index against the PR #36 worktree. Of these, 1,487 shared paths are
+byte-identical, 299 shared paths differ, and three staged paths are absent
+from the PR worktree. One staged path with a sensitive-name pattern was
+excluded before reading either file's contents. This is a byte comparison of
+staged snapshot paths only; unstaged snapshot changes and any path not staged
+in that repository are outside this count.
+
+The ledger does not quote 225 of the 299 differing filenames verbatim. That
+number is a filename-indexing signal, not a count of semantically unreviewed
+changes: existing package-level entries may already assess several files, and
+byte differences can include formatting. Those paths still need explicit
+cross-reference or review before claiming complete snapshot reconciliation.
+Accordingly, this ledger is not yet a proof that every item from the source
+snapshot or transcript archives has been integrated. No source or archive
+data was modified, moved, or removed.
