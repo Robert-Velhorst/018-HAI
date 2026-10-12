@@ -5294,3 +5294,20 @@ hidden, and does not apply the readiness timeout. The PR tests exercise
 backoff, hidden-page suspension/resume, and stalled-request recovery. Keep the
 PR implementation; the staged version would add unnecessary background load
 and allow a stalled request to remain unresolved.
+
+### October 12, 2026: operation approval and worker-claim comparison
+
+Compared the staged snapshot's operation approval, claim, and regression-test
+paths with the PR. The PR binds a source-approval receipt to the exact
+operation evidence revision, rejects duplicate approval receipts, and includes
+raw-evidence digest expectations in ingest atomicity tests. The staged
+`source_approval.go` variant lacks those exact-revision digest checks. The PR
+claim query uses the actual `operation_events.payload_json` column and permits
+a fresh receipt-backed exact approval to supersede an earlier self-hold
+reminder; its query contract test asserts both rules. The staged claim variant
+uses a different `payload` column and lacks the tested review-reminder
+precedence. The PR ordering test also includes SQL-order assertions for
+`ClaimNext` (`created_at`, `updated_at`, then `id`), which the staged version
+does not. Retain the PR implementation and tests; do not port these older
+variants. This comparison covers these paths, not all 139 differing backend
+files.
