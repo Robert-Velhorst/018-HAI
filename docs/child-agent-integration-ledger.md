@@ -4849,3 +4849,51 @@ establish source identity and crosswalk structure, not semantic understanding
 of oversized, aborted, duplicate, or unattributed transcript content. PR #36
 is still open, so the repository's merged-main cleanup gate is not met. All
 27 local transcript files remain in place.
+
+### October 12, 2026: refreshed integration-snapshot diff and guard review
+
+Recomputed the preserved `D:\codex-temp\hai-integration-snapshot` comparison
+against PR #36 head `297f5070b29bf123aa93aa2204b8791b53ccc978`. The snapshot
+has 1,794 changed paths: 1,503 normalize to the same content as the PR, 275
+differ at shared paths, three are snapshot-only, and 13 paths whose names
+indicate environment/secret material were skipped without reading their
+contents. Of the 275 differing paths, 224 are not mentioned by exact path in
+this ledger; this is a path-reference heuristic, not a semantic disposition
+count. The three snapshot-only files are the already-reviewed duplicate-name
+post migrations and standalone legacy Nginx config. The snapshot and its
+staged index remain untouched.
+
+Fresh focused diffs rejected these additional snapshot variants:
+
+- `backend/internal/modelintelligence/calibration.go` removes the exact-zero
+  Wilson lower-bound case. The PR returns stable `0` when there are zero
+  successes instead of persisting floating-point noise or negative zero.
+- `backend/internal/llm/policy.go` replaces the named 4 MiB provider-catalog
+  response bound with a 256 KiB literal, which can truncate larger catalogs,
+  and removes rejection of endpoint query parameters/fragments. The explicit
+  bound and endpoint validation in the PR are retained.
+- `backend/internal/modelintelligence/http_openai.go` removes the explicitly
+  recognized `ollama-local` provider host, reducing support for the isolated
+  local Ollama topology.
+- `backend/internal/assistant/service.go` removes context-aware task and agent
+  cycle dispatch; it also no longer turns an agent-cycle error into a review-
+  required result. The PR's cancellation propagation and surfaced failure
+  state remain.
+- `backend/internal/opscontrol/authorization.go` changes the safety-effect
+  owner from the authenticated actor to configured workspace owner and removes
+  the non-delegable immutable emergency-stop check. The PR's actor-bound
+  receipt and emergency-stop fence remain.
+- `backend/docker-compose.yml` removes the fixed Compose project name and
+  explicit environment-file selection from the compatibility entrypoint.
+  Those changes can make project identity depend on invocation directory and
+  alter configuration loading; they do not establish a safe resource saving.
+  The canonical explicit entrypoint remains.
+
+No code from these six diffs was ported. This batch does not close the 275-file
+semantic review, the primary-checkout tracked/untracked crosswalk, or the 13
+skipped sensitive-name paths. PR #36 remains open at the recorded head; exact-
+head Actions run `38212705796` completed successfully. PR #35 is separate: its
+authorized Actions rerun (attempt 6) passed at
+`57357dd1045ff3a6580d4055f2b7a5f634042acf`, but that is not evidence for PR
+#36. No local source, transcript, archive, environment, database, or worktree
+was modified or removed.
