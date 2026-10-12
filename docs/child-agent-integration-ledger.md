@@ -3484,3 +3484,39 @@ logic visible in the compared files, but contributes no unique safe behavior
 here. No IDP code was ported. This is a source/interface/test comparison, not
 live SMTP or external identity-provider acceptance; snapshot files remain
 intact.
+
+### October 12, 2026: gateway, legacy service, and migration crosswalk
+
+Compared the snapshot's new `nginx-config/nginx.conf`,
+`nginx-config/sites-enabled/generic-auto.conf`, `generic-auto/server.go`,
+`generic-auto/dockerfile`, and post-migration against PR #36's gateway,
+Compose, and migration files:
+
+- The new direct Nginx config embeds the literal
+  `change-this-local-backend-key` instead of rendering the configured secret.
+  It omits the template's local-preview secret boundary, host-runtime route
+  denial, explicit IDP readiness proxy, and frontend listener-port contract.
+  The PR's mounted/rendered template is the authoritative configuration;
+  this extra direct config is not safe to substitute for it.
+- The snapshot's generic-auto server replaces the PR implementation with an
+  unauthenticated `http.ListenAndServe(":80", nil)` handler that serves a
+  static page for every path, has no method restrictions, response security
+  headers, timeouts, health contract, or graceful shutdown. Its Dockerfile
+  downgrades Go to 1.17 and runs as root rather than the PR's pinned Go 1.25
+  multi-stage image and non-root scratch runtime. No service behavior from
+  this snapshot is an improvement to port.
+- The snapshot adds
+  `post/0004_operations_owner_workspace_dedupe_active`, but PR #36 already
+  applies the same partial unique index in
+  `post/0006_operations_owner_workspace_dedupe_active`. The snapshot's number
+  collides with PR #36's `post/0004_automation_event_outbox`; adding it would
+  conflict with the established migration sequence and duplicate the index.
+- The new `sites-enabled/generic-auto.conf` only routes the legacy service;
+  it does not replace the PR's authenticated product API routes or make that
+  legacy endpoint canonical.
+
+No gateway, generic-auto, or migration files were ported. Snapshot `.env-*`
+files were identified by name only and were not read or copied; environment
+files may contain credentials and are not PR artifacts. The live gateway and
+database migration acceptance remain governed by PR #36's CI and deployment
+checks.
