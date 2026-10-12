@@ -3455,3 +3455,32 @@ No safety or phase-two code was ported. The pause finding is backed by the
 actual worker control flow and removed assertions; production stop behavior is
 not inferred from the deleted helper name. Snapshot files remain intact, and
 the PR's exact-head checks remain the release gate.
+
+### October 12, 2026: IDP cancellation and owner-scope comparison
+
+Compared the staged snapshot's IDP authentication service, interface, HTTP
+handler, and password-reset SMTP sender with PR #36:
+
+- The snapshot changes `Logout`, `RefreshToken`, `IsUserAuthenticated`, and
+  `RequestPasswordReset` back to context-free APIs. The PR checks for an
+  already-canceled caller context before doing work and passes request context
+  through the handler, service, and SMTP sender. The snapshot therefore loses
+  cancellation propagation for session-store/database operations and password
+  reset delivery.
+- The snapshot SMTP sender creates its dial context from
+  `context.Background()` and does not close an active SMTP connection when
+  the caller cancels. The PR sender derives the dial timeout from the request,
+  observes cancellation during the SMTP session, and has a regression test
+  proving a canceled request stops before network access. That test is absent
+  from the snapshot.
+- The snapshot removes the configured first-run-admin operator-scope claim
+  builder and `TestOperatorScopeIsBoundToConfiguredFirstRunAdmin`. The claim is
+  consumed by privileged runtime routes; the identity/router audit above
+  already records the related scope propagation loss. Do not replace this
+  narrowly configured authority with role-only authorization.
+
+The snapshot retains the durable session, refresh-rotation, and reset-token
+logic visible in the compared files, but contributes no unique safe behavior
+here. No IDP code was ported. This is a source/interface/test comparison, not
+live SMTP or external identity-provider acceptance; snapshot files remain
+intact.
