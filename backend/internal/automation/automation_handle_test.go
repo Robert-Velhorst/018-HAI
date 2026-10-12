@@ -90,7 +90,7 @@ func TestUpdateRejectsOversizedRequestBody(t *testing.T) {
 	router.PATCH("/automation", NewHandler(updateOnlyAutomationService{}).Update)
 
 	recorder := httptest.NewRecorder()
-	body := bytes.Repeat([]byte("x"), maxAutomationUpdateBodyBytes+1)
+	body := bytes.Repeat([]byte("x"), int(maxAutomationUpdateBodyBytes+1))
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPatch, "/automation", bytes.NewReader(body)))
 
 	if recorder.Code != http.StatusRequestEntityTooLarge {

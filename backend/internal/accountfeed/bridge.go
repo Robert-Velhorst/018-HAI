@@ -2,6 +2,8 @@ package accountfeed
 
 import (
 	"fmt"
+	"os"
+	"strings"
 )
 
 // Provider is a supported account-bridge provider contract (§14). Metadata and
@@ -95,8 +97,24 @@ func (b BridgeContract) ConnectionStatus() ConnectionStatus {
 	switch b.Provider {
 	case ProviderGenericJSONFeed, ProviderLocalFolder:
 		return ConnAvailable
-	default:
+	}
+	if b.CredentialEnv == "" {
 		return ConnContractOnly
+	}
+	for _, name := range strings.Split(b.CredentialEnv, ",") {
+		if strings.TrimSpace(os.Getenv(strings.TrimSpace(name))) == "" {
+			return ConnCredentialsRequired
+		}
+	}
+	return ConnCredentialsPresentUnverified
+}
+
+func (b BridgeContract) ReportsCredentialGrant() bool {
+	switch b.Provider {
+	case ProviderGmail, ProviderGoogleDrive, ProviderGoogleCalendar:
+		return false
+	default:
+		return b.CredentialEnv != ""
 	}
 }
 
@@ -116,15 +134,15 @@ func bridgeContracts() []BridgeContract {
 		{Provider: ProviderLocalFolder, DisplayName: "Local Folder", ConnectorPreference: []string{"local_export"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: []SetupRequirement{{Step: "Configure a feeds folder", Detail: "Files must live under the allowlisted feeds root."}}},
 		{Provider: ProviderGmail, DisplayName: "Gmail (read-only)", ConnectorPreference: []string{"official_api", "local_export", "browser_read_only"}, ReadOnly: true,
-			RequiredScopes: []string{"gmail.readonly"}, ItemTypes: []ItemType{ItemEmail}, SetupRequirements: providerImportSetup("Gmail")},
+			RequiredScopes: []string{"gmail.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemEmail}, SetupRequirements: providerImportSetup("Gmail")},
 		{Provider: ProviderGoogleDrive, DisplayName: "Google Drive (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"drive.readonly"}, ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: providerImportSetup("Google Drive")},
+			RequiredScopes: []string{"drive.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: providerImportSetup("Google Drive")},
 		{Provider: ProviderGoogleCalendar, DisplayName: "Google Calendar (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"calendar.readonly"}, ItemTypes: []ItemType{ItemCalendarEvent}, SetupRequirements: providerImportSetup("Google Calendar")},
+			RequiredScopes: []string{"calendar.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemCalendarEvent}, SetupRequirements: providerImportSetup("Google Calendar")},
 		{Provider: ProviderGitHub, DisplayName: "GitHub (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"repo:read"}, ItemTypes: []ItemType{ItemIssue, ItemPullRequest}, SetupRequirements: providerImportSetup("GitHub")},
+			RequiredScopes: []string{"repo:read"}, CredentialEnv: "GITHUB_SOURCE_TOKEN", ItemTypes: []ItemType{ItemIssue, ItemPullRequest}, SetupRequirements: providerImportSetup("GitHub")},
 		{Provider: ProviderTrello, DisplayName: "Trello (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"read"}, ItemTypes: []ItemType{ItemCard}, SetupRequirements: providerImportSetup("Trello")},
+			RequiredScopes: []string{"read"}, CredentialEnv: "TRELLO_API_KEY, TRELLO_READ_TOKEN", ItemTypes: []ItemType{ItemCard}, SetupRequirements: providerImportSetup("Trello")},
 		{Provider: ProviderUpworkAssisted, DisplayName: "Upwork (assisted)", ConnectorPreference: []string{"human_manual", "browser_read_only"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Assisted only", Detail: "Upwork has no automated connector; items arrive via human/manual export. No fake access."}}},
 		{Provider: ProviderChatExport, DisplayName: "Chat Export", ConnectorPreference: []string{"local_export"}, ReadOnly: true,

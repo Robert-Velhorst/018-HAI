@@ -184,6 +184,14 @@ type RecentMemoryService interface {
 	RecentForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error)
 }
 
+type OwnerQueryService interface {
+	QueryForOwner(ctx context.Context, ownerIdentity, projectKey string, includeArchived bool, params QueryParams) (PageResult, error)
+}
+
+type OwnerQueryRepository interface {
+	QueryForOwner(ctx context.Context, ownerIdentity, projectKey string, includeArchived bool, params QueryParams) (PageResult, error)
+}
+
 type service struct {
 	repo            Repository
 	semanticService semantic.Service
@@ -700,6 +708,18 @@ func (s *service) FindAllForOwner(ownerIdentity, projectKey string, includeArchi
 		return nil, err
 	}
 	return s.findAllReadable(ownerIdentity, projectKey, includeArchived)
+}
+
+func (s *service) QueryForOwner(ctx context.Context, ownerIdentity, projectKey string, includeArchived bool, params QueryParams) (PageResult, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return PageResult{}, err
+	}
+	repository, ok := s.repo.(OwnerQueryRepository)
+	if !ok {
+		return PageResult{}, errors.New("owner-scoped memory query is unavailable")
+	}
+	return repository.QueryForOwner(ctx, ownerIdentity, projectKey, includeArchived, params)
 }
 
 func (s *service) RecentForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error) {

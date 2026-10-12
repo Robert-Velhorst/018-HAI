@@ -78,7 +78,7 @@ func (h *Handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, memoryListResponse(memories))
 }
 
-func RecentForOwner(service Service, ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error) {
+func RecentForOwner(service any, ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error) {
 	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
 	if err != nil {
 		return nil, err

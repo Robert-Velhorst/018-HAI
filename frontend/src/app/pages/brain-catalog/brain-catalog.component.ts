@@ -236,7 +236,7 @@ export class BrainCatalogComponent implements OnInit {
     if (open) this.loadSelectedProfileStatus()
   }
 
-  onOSSInsightOpen(open: boolean): void {
+  onOSSInsightScreeningOpen(open: boolean): void {
     if (!open) return
     this.loadCollectionMaintenanceHistory()
     this.loadRepositoryDiscoveryMaintenanceHistory()
