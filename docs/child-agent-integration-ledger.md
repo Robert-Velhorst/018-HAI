@@ -3278,3 +3278,47 @@ No ambient-monitor source was ported. These are source, SQL-migration, and
 focused test-contract findings; they are not a live scheduler or production
 PostgreSQL run. Snapshot files remain preserved. PR #36 exact-head CI was
 queued at the time of this comparison.
+
+### October 12, 2026: automation, workflow, assistant, and agent-cycle comparison
+
+Reviewed the differing staged files under `backend/internal/automation/`,
+`backend/internal/workflow/`, `backend/internal/assistant/`, and
+`backend/internal/agentcycle/` against PR #36 at
+`8eb28053f59dbbe29684b80c0680b02ac5f6671e`:
+
+- Automation snapshot drops `CreateWithEvent`, `UpdateWithEvent`, and
+  `DeleteWithEvent`, which commit each mutation and its event-outbox row in
+  one database transaction. The service now persists the change first and
+  publishes separately; a publish failure leaves changed state without its
+  durable delivery intent. `TestCRUDUsesDurableAutomationEventsWhenRepositorySupportsThem`
+  is removed. Keep the transaction/outbox path for durable repositories.
+- The workflow handler snapshot removes its cancelled-request check after the
+  worker returns, and deletes
+  `TestRunDueHandlerHonorsCancelledRequestContext`. This allows a cancelled
+  request to proceed into response handling instead of stopping at the
+  cancellation boundary. The scheduler also stops reporting enabled,
+  disabled, durable, fallback, running, and shutdown-rejected states to
+  `schedulerstatus`; its disabled-state test is removed. This makes system
+  health less observable without adding a replacement status source.
+- A second workflow test for malformed chunked JSON is removed, although the
+  handler implementation itself is unchanged in this diff. Record this as a
+  coverage loss only; the comparison does not prove the current handler accepts
+  malformed bodies.
+- Assistant snapshot removes `CommandContext`, the task-engine context
+  adapters, and context-aware agent-cycle execution, calling the plain
+  `Run`/`Plan` methods instead. Its two cancellation-propagation tests are
+  deleted, so request cancellation is no longer forwarded through the
+  assistant orchestration boundary.
+- Authenticated agent-cycle snapshot replaces the owner-scoped operational
+  pass with a context/pursuit refresh and marks stale-claim recovery, source
+  sync, follow-ups, safe workflows, ambient scanning, and workflow dashboard
+  refresh as skipped. Six owner-scoped phase/learning tests and the
+  cancellation test are removed; one replacement test asserts only the
+  narrowed refresh. This is a substantial capability reduction, not a safe
+  integration of the existing owner-scoped contracts.
+
+No code from these snapshots was ported. Preserve durable event publication,
+context propagation, authenticated owner-scoped operating phases, and
+scheduler-status reporting. This comparison is static source/test evidence,
+not live Kafka, scheduler, or assistant acceptance. Snapshot files remain
+intact; PR #36 requires checks on its exact latest head.
