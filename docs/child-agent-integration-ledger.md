@@ -5693,3 +5693,13 @@ diagnostics, and transcript archives; and only then define an exact, safe local
 cleanup allowlist. No local files were removed or moved. The earlier 2026-10-12
 counts elsewhere in this ledger describe earlier snapshots and must not be
 used as current state.
+
+### October 12, 2026: exact-head CI completion
+
+Superseding the PR-head and check status above: commit
+`43e9e236f731e7d85b862ba13649a6b05d81568f` is the current PR #36 head. GitHub
+Actions run `38282312428` completed with conclusion `success` for that exact
+SHA. The user authorized pushing the two local commits to PR #36 and running
+its workflow; no merge was authorized or performed. This CI result establishes
+repository workflow success only; it does not complete semantic review of the
+remaining local deltas or establish live external-provider acceptance.
