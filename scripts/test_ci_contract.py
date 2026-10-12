@@ -242,8 +242,12 @@ class CIWorkflowContractTest(unittest.TestCase):
         # ThemeService so a slow local Windows startup does not flash the light
         # theme or present an unbranded document title.
         self.assertIn("HAI Automation Hub", index)
-        self.assertIn("hai-theme-mode", index)
-        self.assertIn("document.documentElement.classList.add(themeClass)", index)
+        self.assertIn('<script src="assets/theme-init.js"></script>', index)
+        theme_initializer = (
+            ROOT / "frontend" / "src" / "assets" / "theme-init.js"
+        ).read_text(encoding="utf-8")
+        self.assertIn("hai-theme-mode", theme_initializer)
+        self.assertIn("document.documentElement.classList.add(themeClass)", theme_initializer)
         self.assertIn("background:#08111f", index)
 
     def test_operational_shell_avoids_decorative_compositing_effects(self) -> None:
