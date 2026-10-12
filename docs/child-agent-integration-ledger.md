@@ -5600,3 +5600,53 @@ fixtures were intentionally retained under the system temporary directory. The
 shared reader has not yet been run across the source transcript archives; their
 contents remain untouched, and this change alone does not alter transcript
 cleanup eligibility.
+
+### October 12, 2026: canonical PR and stale-checkout audit refresh
+
+This is the latest state check and supersedes earlier same-day branch, PR-head,
+and dirty-checkout counts above. The canonical repository is
+`Robert-Velhorst/018-HAI`; PR #36 remains open against `main` from
+`codex/hai-runtime-release` at `d1e02b4bba391db0672b4bc23c2e6460e840704e`.
+The local audit worktree is at the same commit. A live GitHub query reported
+`CLEAN` merge state and 36 successful checks out of 36, including browser
+acceptance. The user authorized pushing to PR #36 and running its CI; no merge
+was authorized or performed.
+
+The preserved older checkout is currently at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`, 414 commits behind the PR branch.
+Its working tree contains 3,167 status paths: 692 tracked modifications and
+2,475 untracked paths. The latest content crosswalk for eligible source and
+documentation paths covered 841 untracked candidates (772 equal after line
+ending normalization, 63 differing, six absent) and 667 tracked modifications
+(440 equal by bytes or normalized line endings, 227 differing, zero absent).
+The counts classify content/path equality only. They do not establish semantic
+integration for each changed file.
+
+Additional bounded source comparisons in this audit confirmed these PR-side
+implementations are already more complete than the older checkout and should
+not be overwritten by it:
+
+- Source-approval revision digests include `SourceEvidenceRawSHA256` and the
+  reviewed owner type; execution rejects mutated approvals with distinct stale
+  diagnostics, and an explicit approval remains claimable despite a future
+  review reminder. Regression tests cover these cases.
+- The database logger validates `DB_LOG_LEVEL` and enables parameterized
+  queries.
+- OpenClaw pulled-lease tokens are rejected if any character is outside
+  lowercase hexadecimal. The older `strings.Trim` predicate did not reject
+  invalid interior characters.
+- Reminder-boundary tests permit a nil summary for zero processed work.
+- Password-reset tests use the context-aware request method. OpenClaw's pinned
+  public key is byte-encoded to avoid a credential-scanner false positive.
+- The execution-claim implementation uses the current `payload_json` schema
+  column; the old checkout referred to `payload`.
+
+No source from the old checkout was copied in this audit step because the
+inspected deltas were already represented by the PR version. Remaining work is
+still substantial: semantically review the 227 tracked and 63 untracked
+source/document content differences; identify and account for the six absent
+evidence paths; finish provenance and unique-finding review of outputs,
+diagnostics, and transcript archives; and only then define an exact, safe local
+cleanup allowlist. No local files were removed or moved. The earlier 2026-10-12
+counts elsewhere in this ledger describe earlier snapshots and must not be
+used as current state.
