@@ -5332,3 +5332,18 @@ tradeoff; do not lower it without verifying supported catalog sizes. The
 staged index and PR in this comparison. No LLM code was copied from the
 snapshot. This is a scoped review, not a full review of the 139 backend
 differences or live-provider evidence.
+
+### October 12, 2026: environment-template name crosswalk
+
+Compared assignment names only in the staged snapshot's `.env.example` and
+the PR template; no environment values were printed or copied. The staged
+snapshot has 593 distinct assignment names, all present in the PR. The PR has
+ten additional names: `CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL`,
+`HAI_A2A_LOCAL_SUBNET`, `HAI_CHATGPT_LOGS_MCP_ENABLED`,
+`HAI_CHATGPT_LOGS_MCP_TIMEOUT_SECONDS`, `HAI_CHATGPT_LOGS_MCP_URL`,
+`HAI_HOST_RUNTIME_INTERNAL_SUBNET`, `HAI_LEGACY_DATA_OWNER_IDENTITY`,
+`HAI_SEARXNG_SECRET`, `OPERATIONAL_GRAPH_CACHE_SECONDS`, and
+`OPERATIONAL_GRAPH_MAX_NODES`. These cover controls/features present in the
+PR that are absent from the snapshot template; the template comparison found
+no environment configuration to port from the snapshot. It does not inspect
+or authorize changes to machine-specific `.env` files.
