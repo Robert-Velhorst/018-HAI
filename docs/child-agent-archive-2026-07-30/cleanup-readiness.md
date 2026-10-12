@@ -1238,3 +1238,10 @@ bytes; 2 hashed candidates / 3,113,294,358 bytes; 7 retained /
 canonical-main evidence, updated cleanup tooling for both supplemental roots,
 and passing exact-hash cleanup gates; none of those conditions is asserted by
 this scan.
+
+The read-only supplemental archive verifier was rerun on 2026-10-12 at
+14:35 UTC. It verified all 9 manifest paths and byte totals, both candidate
+SHA-256 values, and 19 tracked report-source links. It reported
+`cleanup_authorized=false` and `deletion_performed=false`. This verifies
+inventory/hash integrity for the two supplemental roots, not semantic
+integration of the oversized transcript contents or eligibility for removal.
