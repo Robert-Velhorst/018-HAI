@@ -2803,3 +2803,16 @@ entry, PR #36 run `38187618372` is still queued. Treat these three reports as
 behaviorally represented in the PR source, with current frontend CI pending;
 do not use this crosswalk alone to authorize deletion of their source
 transcripts or any of the six unfinished supplemental transcripts.
+
+### October 12, 2026: supplemental source integrity revalidation
+
+Reran `scripts/test-hai-supplemental-transcript-cleanup-readiness.ps1` against
+the two inventoried source roots. The read-only verifier returned
+`supplemental_source_archive_verified`: all 9 manifest files matched their
+paths and recorded lengths, the three completed-candidate SHA-256 values
+matched, and all 21 report source paths resolved. The two roots total
+14,013,737,298 logical bytes; the three completed candidates total
+4,651,926,405 bytes, and the six aborted/nonterminal files remain retained.
+The verifier reported `deletion_performed: false` and
+`cleanup_authorized: false`. This confirms source integrity, not semantic
+integration; no source transcript or worktree was modified or deleted.
