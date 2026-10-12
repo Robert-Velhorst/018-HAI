@@ -4143,3 +4143,36 @@ and confirmed the source transcript still existed after the audit. The test
 passed locally. It used a unique temporary directory, which was removed after
 the containment check; no real transcript, report, or other archive artifact
 was read or changed by this test.
+
+### October 12, 2026: duplicate-ID transcript hash check
+
+Independently hashed both files in each of the two duplicate-child-ID groups.
+Although each pair has identical logical byte length, neither pair is
+byte-identical:
+
+| Child ID | Transcript suffix | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| `019fb20b-b4b1-7250-9d7c-9d1e591ab852` | `.duplicate-5d868d4ecc874ff3a34f508517ace927.jsonl` | 1,603,851,727 | `a7b0bb14fbffa7571f436b023ed5316c9ab07fed6142874eb1fc6e4d53228ce9` |
+| `019fb20b-b4b1-7250-9d7c-9d1e591ab852` | `.jsonl` | 1,603,851,727 | `84e07b24a3acaed044a1f52db04de1cbc69c635f4d111d6f86fbb243cdcbc89c` |
+| `019fb277-0ddf-7500-9088-52cb4655be1a` | `.duplicate-5c6ea92b1f1c491ea0af46a1937e6b08.jsonl` | 1,603,399,243 | `961fb8ff7619f95ef70a7b32c1737605fc61d14d0b3ffe79f5e410a5b6e94500` |
+| `019fb277-0ddf-7500-9088-52cb4655be1a` | `.jsonl` | 1,603,399,243 | `85da9f27d10a60112b327f9c4e478ecdf78dcd6db5ac8a0b8c96e24415bc3a65` |
+
+The `.duplicate-*` records have terminal markers that differ from their
+same-ID counterparts (completed vs nonterminal for Meitner; aborted vs
+nonterminal for Volta). Their different hashes and terminal classifications
+mean neither file can be discarded as a redundant copy. All four remain
+preserved; no archive data was modified.
+
+### October 12, 2026: full source-archive integrity gate
+
+Ran `scripts/test-hai-transcript-cleanup-readiness.ps1` in read-only mode with
+`D:\codex-temp\hai-completed-agent-sessions` as the source archive. It verified
+all 18 manifest rows against all 18 source files, totaling 20,739,169,122
+logical bytes. All eight candidate source hashes matched the manifest
+(7,939,888,699 candidate bytes); the ten retained files were present with
+matching sizes. The gate reported `source_archive_verified=true`,
+`cleanup_gate_ready=false`, `deletion_performed=false`, and
+`cleanup_authorized=false`. The gate is correct to remain closed: the
+integration PR is still unmerged, the committed-ledger-on-main check was not
+requested/passed, and semantic patch-event-to-source attribution remains
+incomplete. No archive file was changed or deleted.
