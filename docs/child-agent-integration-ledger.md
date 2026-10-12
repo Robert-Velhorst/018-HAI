@@ -2922,3 +2922,36 @@ head remains `de5b86fed426d731405374177b76f1bebc9f1df1`; GitHub run
 `38188496240` was still queued at the time of review, so the complete PR head
 is not yet CI-validated. PR #35's separate CI run `38175351645` completed
 successfully across all ten reported checks and is not evidence for PR #36.
+
+### October 12, 2026: task and ChatGPT-log tool-loop comparison
+
+Compared the staged snapshot index with PR #36 head
+`9cd49d8ccd4eea9bcb7a98e330d8397840f8a7b4`. The overall tree comparison has
+644 differing paths: 400 shared paths have different blobs, 237 PR paths are
+absent from the snapshot index, and seven snapshot paths do not exist in the
+PR tree. This task-focused pass covers 29 differing paths under
+`backend/internal/task/`; it reads staged blobs and leaves the snapshot's
+unstaged changes out of scope.
+
+- The three PR-only ChatGPT-log files (`chatgpt_logs_tool_loop.go` and its
+  context and tool-loop tests) are absent from the snapshot. They are already
+  in the current PR and were not reconstructed from an older snapshot.
+- The snapshot's resource planner computes automatic runtime admission from
+  risk alone and drops the `AutomatedExecution` request gate. This would allow
+  low-risk work to enter an automatic runtime path even when the request did
+  not authorize automated execution; retain the PR implementation.
+- The snapshot removes context-aware task-operation claim, heartbeat,
+  completion, cancellation, and review transitions, reverting repository
+  operations to non-cancellable calls. It also removes cancellation tests.
+- The task history handler loses bounded limit validation and compact list
+  projections, instead returning full owner-scoped completion records. The PR
+  keeps list payloads bounded and offers an explicit full-detail view.
+- The diff also removes numeric/state repository regression tests and reduces
+  coverage for required participant admission, plan binding/projection,
+  resource planning, and task-operation transitions. No snapshot test result
+  establishes those deletions as safe.
+
+No task code was ported: the PR contains the stronger and more complete
+behavior. PR #36 run `38188686693` for the new head was pending at the time of
+this audit; no CI result is inferred from source comparison. Snapshot files
+and local artifacts remain untouched.
