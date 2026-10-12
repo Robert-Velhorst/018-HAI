@@ -165,7 +165,7 @@ describe('RuntimeLabComponent MCP readiness', () => {
     expect(component.capabilityState('openclaw')).toBe('empty')
 
     runtimeService.capabilities.and.returnValue(throwError(() => new Error('offline')))
-    component.refreshCapabilities()
+    component.refreshCapabilities(true)
     expect(component.capabilityState('openclaw')).toBe('unavailable')
 
     component.capabilityOverview = { cards: [{ runtimeId: 'openclaw' }] } as any
