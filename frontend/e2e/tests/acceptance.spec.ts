@@ -52,7 +52,41 @@ async function safePointerDiagnostics(page: Page, target: Locator) {
       hitStack.push(describe(element));
     }
     const notifications = [...document.querySelectorAll('nz-notification-container')]
-      .slice(0, 3).map(describe);
+      .slice(0, 3).map((element) => {
+        const matchingPointerRules: Array<{ selector: string; value: string; priority: string }> = [];
+        const inspectRules = (rules: CSSRuleList) => {
+          for (const rule of [...rules]) {
+            if ('selectorText' in rule && 'style' in rule) {
+              const styleRule = rule as CSSStyleRule;
+              const value = styleRule.style.getPropertyValue('pointer-events');
+              if (value && element.matches(styleRule.selectorText)) {
+                matchingPointerRules.push({
+                  selector: styleRule.selectorText.slice(0, 240),
+                  value,
+                  priority: styleRule.style.getPropertyPriority('pointer-events'),
+                });
+              }
+            }
+            if ('cssRules' in rule && rule.cssRules) {
+              try { inspectRules(rule.cssRules); } catch { /* inaccessible imported rules */ }
+            }
+          }
+        };
+        let readableStylesheets = 0;
+        for (const sheet of [...document.styleSheets]) {
+          try {
+            if (sheet.cssRules) {
+              readableStylesheets += 1;
+              inspectRules(sheet.cssRules);
+            }
+          } catch { /* inaccessible cross-origin stylesheet */ }
+        }
+        return {
+          ...describe(element),
+          readableStylesheets,
+          matchingPointerRules: matchingPointerRules.slice(-12),
+        };
+      });
     return {
       point: [Math.round(x), Math.round(y)],
       hitStack,
