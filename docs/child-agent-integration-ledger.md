@@ -4769,3 +4769,33 @@ The local Promptfoo lock is older and removes the explicit Linux libsql pin and
 the `basic-ftp` override. Neither dependency change was copied. This batch
 found no additional code improvement to port; it was a targeted diff review,
 not a live TLS, npm audit, Docker, or provider integration run.
+
+### October 12, 2026: expanded local artifact inventory reconciliation
+
+Rechecked the live PR head (`ef7ee540c2301b35e88f841b6568ff64850ffa85`)
+against the separate primary checkout without modifying that checkout. The
+local backend tree contains a hidden deploy marker and PostgreSQL test-evidence
+files that are absent from the PR; these are local state/evidence, not product
+source, and were not copied. Two additional local post-migration files named
+`0004_operations_owner_workspace_dedupe_active.{up,down}.sql` have byte-identical
+counterparts in the PR as `0006_operations_owner_workspace_dedupe_active`; PR
+`0004` is already the automation event outbox. The candidate migration adds no
+new behavior and must not be renumbered or applied a second time.
+
+The local `output/` directory contains 62 Markdown review/handoff documents plus
+large machine-generated run evidence. Their headings and selected current-state
+amendments were indexed during this pass; they are not all independently
+re-audited here. Examples checked against the PR include the Account Bridges
+loading/error/accessibility/timestamp repairs and account-feed admission lock,
+configuration version, source-head and effect-policy fences. Historical source
+reviews explicitly distinguish fixes from residual limits; the PR source, not a
+dated report's initial finding, is authoritative. Raw logs, receipts, database
+dumps, browser output and sidecar reports remain local and were neither staged
+nor deleted. This is an inventory reconciliation, not completion of the
+remaining file-by-file audit or a claim that every report finding is closed.
+
+The PR worktree was clean at the recorded head before this ledger update. No
+local source artifacts were removed, and no private data or test output was
+copied into the repository. The full untracked-output and differing-source
+crosswalk remains in progress; all local material stays intact until each
+relevant item has a verified PR disposition.
