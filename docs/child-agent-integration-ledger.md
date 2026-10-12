@@ -3205,3 +3205,40 @@ No approval code was ported. This source review complements the operations-
 control comparison above; it is not a live database or emergency-stop
 acceptance test. The snapshot remains intact and PR #36 CI remains the exact-
 head release gate.
+
+### October 12, 2026: verification service and persistence comparison
+
+Reviewed the staged snapshot under `backend/internal/verification/` against
+PR #36 at `83383e1eeb19da0a17f37d41a88948e320ee39a9`:
+
+- The snapshot removes `AnswerContext`/`AnswerWithContext`, caller-context
+  checks during source search and provenance resolution, and the cancellation
+  path that marks an interrupted run for review. Provenance lookups now use
+  `context.Background()`. It also deletes
+  `TestAnswerContextStopsBlockedEvidenceSearchAndMarksRunForReview`, so a
+  cancelled or timed-out verification can continue unnecessary external work
+  without the PR's interrupted-run state transition.
+- The snapshot removes the 200-run cap from both repository history queries.
+  `TestVerificationRunHistoryIsBounded` is deleted; long-lived installations
+  can load an unbounded verification history into routine reads.
+- The PR's `verificationRunsForOwnerQuery` preserves ownerless legacy rows
+  only for the explicitly authorized migration identity. The snapshot removes
+  that policy helper and its owner-query coverage, making those legacy runs
+  invisible to the migration operator. This is a compatibility/recovery loss;
+  it does not justify broadening legacy access to other users.
+- The snapshot's new evidence/claim persistence helper discards the objects
+  returned by `CreateEvidence` and `CreateClaim` and does not reject nil or
+  zero-ID results. The PR verifies durable identifiers before finalizing the
+  run. Retain that verification even when finalization is wrapped in the
+  snapshot's transaction helper.
+- The staged snapshot removes `TestFindRunForOwnerUsesOwnerAndIDPredicates`.
+  Its optional owner-scoped repository interface can fall back to a
+  `FindRunsForOwner` scan; preserve an explicit test that both direct and
+  fallback detail reads enforce exact owner and run ID predicates.
+
+The atomic finalization transaction is a potentially useful addition, but it
+does not compensate for the removed cancellation, bounded-history, legacy
+migration, and durable-ID guarantees. No verification code was ported. This is
+a staged-source/test audit only; it does not establish live source-provider or
+database behavior. Snapshot data remains intact and PR #36 must pass checks on
+its exact current head before release validation.
