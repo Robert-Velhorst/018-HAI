@@ -2884,3 +2884,41 @@ they do not complete review of the remaining differences in the 289-path
 queue. No snapshot content was copied or modified. Frontend tests were
 inspected but not rerun locally in this dependency-free audit worktree; exact-
 head GitHub CI remains the execution gate.
+
+### October 12, 2026: connected-source backend comparison
+
+Compared the staged Git index in the preserved
+`D:\codex-temp\hai-integration-snapshot` with PR #36 at
+`de5b86fed426d731405374177b76f1bebc9f1df1`. The snapshot differs across 17
+paths under `backend/internal/source/` (2,917 staged paths and 3,147 paths in
+the PR tree overall). The staged index was read directly; the snapshot's
+unstaged edits were not treated as candidate content. None of these source
+deltas were ported because they remove or weaken current behavior:
+
+- OAuth removes persistence and atomic consumption of owner-bound,
+  single-use Google OAuth state, weakening callback replay protection.
+- Repository and handler changes remove owner-scoped extraction lookup and
+  bounded history queries. The snapshot handler instead loads all owner
+  extractions before filtering and truncating in memory.
+- Search removes request-context cancellation and invokes semantic retrieval
+  with `context.Background()`; the corresponding cancellation test is deleted.
+- Scheduler changes remove runtime scheduler status reporting, including
+  disabled, durable, and explicitly degraded volatile-fallback states and
+  their regression tests.
+- Sync changes remove the fail-closed Autofever feed-contract guard and
+  rejected-LARO-cursor recovery, and remove the test cases that assert those
+  safety and recovery behaviors.
+- Durable sync changes remove the handling that completes queued work when a
+  source is paused, risking provider retries for an obsolete operator intent.
+- The snapshot also deletes `history_repository.go`,
+  `repository_postgres_test.go`, and source-search cancellation coverage.
+  Remaining small differences include extraction pagination assertions and
+  Trello test context plumbing; they do not justify adopting the regressive
+  snapshot versions.
+
+This is a source-delta review, not a live Google/Trello provider acceptance
+test. No source, snapshot, or worktree files were deleted or moved. PR #36
+head remains `de5b86fed426d731405374177b76f1bebc9f1df1`; GitHub run
+`38188496240` was still queued at the time of review, so the complete PR head
+is not yet CI-validated. PR #35's separate CI run `38175351645` completed
+successfully across all ten reported checks and is not evidence for PR #36.
