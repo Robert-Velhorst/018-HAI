@@ -5751,3 +5751,28 @@ reviewed. Do not infer that all are disposable or that all represent missing
 product behavior. The source transcripts were not modified. The two skipped
 records and all 23 missing-path references remain open items; no cleanup
 allowlist can be derived from this scan alone.
+
+### October 12, 2026: oversized-record identification and current PR checkpoint
+
+A fixed-buffer byte scan identified the two records skipped by the focused
+10 MiB path scan. Both are in files previously designated retained:
+
+- `rollout-2026-07-30T10-02-19-019fb20b-b4b1-7250-9d7c-9d1e591ab852.jsonl`,
+  line 29,807: 1,016,062,444 bytes.
+- `rollout-2026-07-30T11-59-34-019fb277-0ddf-7500-9088-52cb4655be1a.jsonl`,
+  line 31,014: 904,740,623 bytes.
+
+The bounded prefix of each record identifies it as a `compacted` record,
+consistent with the earlier structural classification. Only the record prefix,
+line number, and byte count were read for this identification; the complete
+records were not parsed or semantically reviewed. This byte measurement
+supersedes the earlier approximate 67 MB note for these same two records. A
+first metadata-only pass using PowerShell line strings grew to approximately
+6.2 GB working set and was stopped; the fixed-buffer replacement remained
+below 170 MB. No transcript data was modified.
+
+Current PR checkpoint: PR #36 remains open against `main` at
+`5c623fe98c04763589868fabaaa45f969a8eef90`, merge state `CLEAN`. GitHub Actions
+run `38283787440` completed successfully on that exact SHA. These checks do not
+resolve the historical records' contents or authorize local cleanup. No files
+were deleted or moved.
