@@ -5268,3 +5268,20 @@ default branch. Do not duplicate its implementation into PR #36; the required
 integration gate is review/merge of #35. This cross-reference establishes the
 feature's separate PR disposition, not that an open PR is deployed or accepted
 as production behavior.
+
+### October 12, 2026: progressive disclosure and pursuit selection review
+
+Compared the staged snapshot's Angular page variants with the PR for the
+framework registry and Pursuits. The PR framework-registry component exposes
+per-module Basic/Advanced mode and section toggles through
+`ModuleViewPreferencesService`; those controls are absent from the staged
+snapshot variant. Retain the PR's progressive-disclosure implementation.
+
+The staged Pursuits variant automatically selects the first record when no
+route selection exists. The PR intentionally keeps the list compact until the
+user selects a pursuit, with a component test asserting that
+`applyPursuits()` does not invoke `selectPursuit()` in that state. Auto-select
+would also initiate detail loading and replace route query state. Treat this
+as an intentional interaction contract, not missing functionality; do not
+port the staged behavior. These are focused UI-path decisions, not a complete
+review of the 67 differing frontend paths.
