@@ -6065,3 +6065,38 @@ repository secret scan, and real-Postgres migration integration. The earlier
 secret-scan parser failure did not recur; its cause remains unknown and the
 scanner's fail-closed redaction contract was not weakened. The semantic source
 review and cleanup gates remain open.
+
+### October 12, 2026: portfolio and pursuit report source crosswalk
+
+Rechecked the five historical pursuit findings in
+`output/background-outcome-production-20261001.md` against the current PR
+source and regression tests. Launch completion now validates status by
+`LaunchType` (including API 200/204/404, Docker 204/304, and script zero) and
+rejects required-but-unapproved receipts. Rejected, revoked, expired, and
+unknown required approvals remain review-required even when a separate
+verification record exists. Completed workflow task projections derive from
+accepted completion, rather than the state label alone. Completion evidence
+ignores non-UUID verification labels as proof. Direct-task persistence,
+activity, timeline, and review projections share the accepted-verification
+boundary; uncertainty, missing execution evidence, blocked reasons, failed
+validation, and ungranted approval cannot be projected as verified success.
+Focused source tests cover these cases, including accepted historical
+verification and pending intent compatibility.
+
+Also rechecked `output/portfolio-postgres-integrity-review-20261001.md`. The
+reported PostgreSQL `CHAR(64)` blank-padding defect now has a narrow
+canonicalizer that removes only all-ASCII-space absence; present and malformed
+nonempty digests remain exact. Both the digest and request-digest paths use the
+canonical representation, and tests assert unchanged source values and reject
+altered evidence. The report's unresolved-attempt display-cap query has a
+separate guarded Postgres test covering stale unresolved attempts, null legacy
+verification status, and owner isolation.
+
+These specific regression sources had not been selected by the migration CI
+job. Wired the existing guarded PostgreSQL save/reload test for absent and
+present coordination digests, and the unresolved-attempt query test, alongside
+the exact-runtime receipt test. `git diff --check` is clean; the local checkout
+has no Go toolchain or frontend dependencies, so hosted exact-head CI remains
+the execution gate. The historical reports' original unexecuted checkpoints
+remain historical; this crosswalk does not claim user-database acceptance or
+close the broader semantic/provenance review and cleanup gates.

@@ -1118,9 +1118,11 @@ jobs:
           grep -q -- '^--- PASS: TestPostgresRegistryCommittedReconstructionAndAtomicFailure (' "$account_feed_log"
           pursuit_runtime_log="$RUNNER_TEMP/pursuit-exact-runtime-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -p 1 -parallel 1 -timeout 5m -tags integration \
-            -run '^TestPostgresPursuitExactRuntimeQueryBatchesAllLinkedReceipts$' \
+            -run '^(TestPostgresPursuitExactRuntimeQueryBatchesAllLinkedReceipts|TestPostgresPursuitUnresolvedAttemptQueryIgnoresDisplayLimit|TestPostgresPortfolioCoordinationDigestSurvivesSaveReloadWithoutWeakeningEvidence)$' \
             ./internal/pursuit/ -v | tee "$pursuit_runtime_log"
           grep -q -- '^--- PASS: TestPostgresPursuitExactRuntimeQueryBatchesAllLinkedReceipts (' "$pursuit_runtime_log"
+          grep -q -- '^--- PASS: TestPostgresPursuitUnresolvedAttemptQueryIgnoresDisplayLimit (' "$pursuit_runtime_log"
+          grep -q -- '^--- PASS: TestPostgresPortfolioCoordinationDigestSurvivesSaveReloadWithoutWeakeningEvidence (' "$pursuit_runtime_log"
 
   # Boots the real backend against a real Postgres + Redis and runs the
   # two-account isolation acceptance test over HTTP: two authenticated owners
