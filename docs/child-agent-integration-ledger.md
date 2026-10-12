@@ -3023,3 +3023,32 @@ current router; the runtime JSON-body limit is implemented in
 as a live request-size-control loss. No runtime route or identity code was
 changed. PR #36 head CI remained pending; this review is static source
 comparison, not a live route-security acceptance test.
+
+### October 12, 2026: operations-control authorization comparison
+
+Reviewed 13 differing staged snapshot paths under
+`backend/internal/opscontrol/` against PR #36 at
+`560f3effb41f2a1bc2c1fab434836ff2f7faa1bb`. Nine PR paths are absent from
+the snapshot index, including durable approval/resume-review implementations
+and their tests. The staged snapshot is not a safe replacement:
+
+- Its direct control-authorization path substitutes the configured owner for
+  the authenticated actor when binding the safety effect. The PR binds the
+  action to the authenticated actor, preventing an owner configuration from
+  standing in for the caller's identity.
+- It removes the immutable-stop check that prevents an owner approval from
+  clearing an emergency stop raised by a non-persisted safety source.
+- Its `Resume` handler disengages the stop from a direct authorization
+  request. The PR requires a durable owner review, a fresh exact-bound
+  approval, and the explicit confirmation `RESUME BACKGROUND PROCESSING`;
+  approval preparation alone does not resume background work.
+- It removes the durable control-review repository and approval resolver
+  wiring, including tests for persisted review evidence and lifecycle.
+- It changes an already-disengaged stop from an explicit
+  `ErrControlChangeNotRequired` result to success, changing the control API's
+  idempotency/error contract without a demonstrated need.
+
+No operations-control code was ported. This is static comparison of staged
+source and tests; emergency-stop behavior was not exercised against a live
+runtime. PR #36 CI status is tracked separately and remains pending until a
+successful check for the exact pushed head is observed.
