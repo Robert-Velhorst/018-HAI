@@ -367,4 +367,26 @@ describe('BrainCatalogComponent adapter reviews', () => {
     expect(component.ossInsightDiscovery?.scope).toBe('reviewable')
     expect(notification.success).toHaveBeenCalledWith('Relevant discovery complete', '1 unreviewed repositories were found across candidate and represented categories. No catalog entry, credential, or runtime state changed.')
   })
+
+  it('defers persisted maintenance history until collection coverage is opened', () => {
+    const { component } = createComponent()
+    const catalogService = (component as any).service
+    catalogService.overview = jasmine.createSpy('overview').and.returnValue(of({ entries: [candidate] }))
+    catalogService.collectionRevalidationHistory = jasmine
+      .createSpy('collectionRevalidationHistory')
+      .and.returnValue(of([]))
+    catalogService.repositoryDiscoveryRevalidationHistory = jasmine
+      .createSpy('repositoryDiscoveryRevalidationHistory')
+      .and.returnValue(of([]))
+
+    component.ngOnInit()
+
+    expect(catalogService.collectionRevalidationHistory).not.toHaveBeenCalled()
+    expect(catalogService.repositoryDiscoveryRevalidationHistory).not.toHaveBeenCalled()
+
+    ;(component as any).onOSSInsightScreeningOpen(true)
+
+    expect(catalogService.collectionRevalidationHistory).toHaveBeenCalledTimes(1)
+    expect(catalogService.repositoryDiscoveryRevalidationHistory).toHaveBeenCalledTimes(1)
+  })
 })

@@ -136,6 +136,15 @@
         </button>
       </div>
 
+      <nz-alert
+        *ngIf="overviewLoadError"
+        nzType="warning"
+        nzShowIcon
+        nzMessage="Some command-center data is unavailable"
+        [nzDescription]="overviewLoadError"
+        class="command-center-load-alert"
+      ></nz-alert>
+
       <section class="command-board" aria-label="Primary actions">
         <button
           type="button"
@@ -673,7 +682,7 @@
           <i nz-icon nzType="warning" nzTheme="outline"></i>
           <div>
             <h2>Technical diagnostics are incomplete</h2>
-            <p>{{ diagnosticsLoadErrors.join(', ') }} could not be loaded. HAI cannot confirm that these controls are clear.</p>
+            <p>{{ diagnosticsLoadError || diagnosticsLoadErrors.join(', ') + ' could not be loaded. HAI cannot confirm that these controls are clear.' }}</p>
           </div>
           <button
             type="button"

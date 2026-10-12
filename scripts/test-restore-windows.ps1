@@ -84,11 +84,26 @@ if ($scratchAutomation -eq $liveAutomation -or $scratchIdentity -eq $liveIdentit
     throw "Scratch database name collides with a configured live database."
 }
 
+foreach ($target in @(
+    @{ Container = "018-hai-postgres-automation"; Database = $scratchAutomation },
+    @{ Container = "018-hai-postgres-idp"; Database = $scratchIdentity }
+)) {
+    $exists = (& docker exec $target.Container psql -U $dbUser -d postgres -Atqc "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = '$($target.Database)')" 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "Could not verify scratch database is absent: $($target.Database)" }
+    if ($exists -ne "f") { throw "Scratch database already exists; refusing to modify it: $($target.Database)" }
+}
+& docker volume inspect $scratchControlVolume 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) { throw "Scratch control-state volume already exists; refusing to modify it: $scratchControlVolume" }
+
 $automationTemp = "/tmp/$scratchAutomation.dump"
 $identityTemp = "/tmp/$scratchIdentity.dump"
+$automationCreated = $false
+$identityCreated = $false
+$controlVolumeCreated = $false
 try {
     & docker volume create $scratchControlVolume | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not create the safety-control restore volume." }
+    $controlVolumeCreated = $true
     & docker run --rm --network none --read-only --cap-drop ALL --cap-add CHOWN --user 0:0 `
         -v "${scratchControlVolume}:/restore" `
         -v "${bundle}:/backup:ro" `
@@ -107,11 +122,13 @@ try {
 
     & docker exec 018-hai-postgres-automation createdb -U $dbUser $scratchAutomation
     if ($LASTEXITCODE -ne 0) { throw "Could not create the automation scratch database." }
+    $automationCreated = $true
     & docker exec 018-hai-postgres-automation pg_restore -U $dbUser --exit-on-error --no-owner --no-privileges -d $scratchAutomation $automationTemp
     if ($LASTEXITCODE -ne 0) { throw "Automation restore drill failed." }
 
     & docker exec 018-hai-postgres-idp createdb -U $dbUser $scratchIdentity
     if ($LASTEXITCODE -ne 0) { throw "Could not create the identity scratch database." }
+    $identityCreated = $true
     & docker exec 018-hai-postgres-idp pg_restore -U $dbUser --exit-on-error --no-owner --no-privileges -d $scratchIdentity $identityTemp
     if ($LASTEXITCODE -ne 0) { throw "Identity restore drill failed." }
 
@@ -121,9 +138,9 @@ try {
     if ($identityTables -lt 1) { throw "Identity restore contains no public tables." }
     Write-Host "Restore drill passed: automation tables=$automationTables; identity tables=$identityTables; safety controls extracted; live state untouched."
 } finally {
-    & docker exec 018-hai-postgres-automation dropdb -U $dbUser --if-exists $scratchAutomation 2>$null | Out-Null
-    & docker exec 018-hai-postgres-idp dropdb -U $dbUser --if-exists $scratchIdentity 2>$null | Out-Null
+    if ($automationCreated) { & docker exec 018-hai-postgres-automation dropdb -U $dbUser --if-exists $scratchAutomation 2>$null | Out-Null }
+    if ($identityCreated) { & docker exec 018-hai-postgres-idp dropdb -U $dbUser --if-exists $scratchIdentity 2>$null | Out-Null }
     & docker exec 018-hai-postgres-automation rm -f $automationTemp 2>$null | Out-Null
     & docker exec 018-hai-postgres-idp rm -f $identityTemp 2>$null | Out-Null
-    & docker volume rm $scratchControlVolume 2>$null | Out-Null
+    if ($controlVolumeCreated) { & docker volume rm $scratchControlVolume 2>$null | Out-Null }
 }

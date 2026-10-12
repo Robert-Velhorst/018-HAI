@@ -1,18 +1,19 @@
 import { FormBuilder } from '@angular/forms';
 import { Router } from '@angular/router';
+import { of, Subject, throwError } from 'rxjs';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
-import { of } from 'rxjs';
 import { IConnectedSource, ISourcePursuitRoutingOutcome } from '../../models/connected-source.model.interface';
 import { ConnectedSourcesComponent } from './connected-sources.component';
 
 describe('ConnectedSourcesComponent pursuit handoff', () => {
   function createComponent(): { component: ConnectedSourcesComponent; router: jasmine.SpyObj<Router> } {
     const router = jasmine.createSpyObj<Router>('Router', ['navigate']);
+    const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['error']);
     return {
       component: new ConnectedSourcesComponent(
         new FormBuilder(),
         {} as any,
-        {} as NzNotificationService,
+        notification,
         router,
         { mode: () => 'light' } as any,
       ),

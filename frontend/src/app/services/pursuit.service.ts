@@ -10,6 +10,7 @@ import {
   IPursuitBlocker,
   IPursuitCreateRequest,
   IPursuitDashboard,
+  IPursuitOverview,
   IPursuitDashboardDecision,
   IPursuitDelegationPackage,
   IPursuitDecisionResolutionRequest,
@@ -69,6 +70,15 @@ export class PursuitService {
       params: new HttpParams().set('view', view),
     }).pipe(
       map((dashboard) => this.normalizeDashboard(dashboard)),
+    );
+  }
+
+  overview(): Observable<IPursuitOverview> {
+    return this.http.get<IPursuitOverview>(`${this.apiUrl}/overview`).pipe(
+      map((overview) => ({
+        dashboard: this.normalizeDashboard(overview?.dashboard || {} as IPursuitDashboard),
+        brief: overview?.brief || {} as IPursuitBrief,
+      })),
     );
   }
 

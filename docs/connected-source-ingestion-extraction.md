@@ -98,6 +98,30 @@ remain modeled only. They share the same source registry and sync-job table.
 - `DELETE /api/v1/sources/extractions/:id`
 - `GET /api/v1/sources/audit-logs`
 
+### Bounded source history
+
+Connected-source history can grow without limit after Gmail, Drive, Trello, or
+local-folder ingestion is enabled. To prevent an operator screen from loading a
+complete personal ledger, `sync-jobs`, `extractions`, and `audit-logs` accept
+`limit` (1-250) and `offset` query parameters. A request with either parameter
+returns an owner-scoped page envelope:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "limit": 100,
+  "offset": 0,
+  "hasMore": false
+}
+```
+
+The Angular dashboard requests pages of 100 records only after the operator
+opens source history, and exposes an explicit **Load older** action when more
+records are available. Calls without pagination parameters retain the legacy
+array response for compatible external clients; new HAI clients should use the
+bounded form.
+
 ## Task Integration
 
 The universal task success engine searches connected-source extractions before

@@ -94,6 +94,16 @@ func TestLLMProviderProbeUsesConfiguredMistralRSEndpoint(t *testing.T) {
 	}
 }
 
+func TestRedisProbeExplainsInProcessFallbackWhenSharedRateLimitIsEnabled(t *testing.T) {
+	err := RedisProbe(config.Configuration{RateLimitPerMinute: 60}).Run(context.Background())
+	if err == nil {
+		t.Fatal("RedisProbe error = nil, want an explicit local-rate-limit diagnostic")
+	}
+	if !strings.Contains(err.Error(), "per-process in-memory") {
+		t.Fatalf("RedisProbe error = %q, want a per-process fallback explanation", err)
+	}
+}
+
 func TestLLMProviderProbeUsesConfiguredLMStudioEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)

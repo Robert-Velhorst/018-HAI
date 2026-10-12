@@ -232,7 +232,7 @@ func TestReclaimedLeaseFencesStaleWorkerCompletion(t *testing.T) {
 		Update("locked_at", now.Add(-2*lease)).Error; err != nil {
 		t.Fatalf("expire first lease: %v", err)
 	}
-	if reaped, err := repo.ReapExpiredLeases(now, lease); err != nil || reaped != 1 {
+	if reaped, err := repo.ReapExpiredLeases("workflow", now, lease); err != nil || reaped != 1 {
 		t.Fatalf("reap: count=%d err=%v", reaped, err)
 	}
 
@@ -269,6 +269,44 @@ func TestReclaimedLeaseFencesStaleWorkerCompletion(t *testing.T) {
 	)
 	if err != nil || !updated {
 		t.Fatalf("current worker completion: updated=%t err=%v", updated, err)
+	}
+}
+
+func TestReapExpiredLeasesDoesNotTouchOtherQueues(t *testing.T) {
+	repo, db := integrationRepo(t)
+	now := time.Now().UTC()
+	lease := 30 * time.Second
+	expired := now.Add(-2 * lease)
+
+	for _, queue := range []string{"source", "workflow"} {
+		job, err := repo.Enqueue(&models.DurableJob{
+			Queue:       queue,
+			Kind:        "reap-isolation",
+			Payload:     "{}",
+			Status:      models.DurableJobRunning,
+			RunAt:       now,
+			LockedBy:    "dead-worker",
+			LockedAt:    &expired,
+			MaxAttempts: 3,
+		})
+		if err != nil {
+			t.Fatalf("enqueue %s job: %v", queue, err)
+		}
+		if err := db.Model(&models.DurableJob{}).Where("id = ?", job.ID).
+			Updates(map[string]any{"status": models.DurableJobRunning, "locked_at": expired}).Error; err != nil {
+			t.Fatalf("expire %s lease: %v", queue, err)
+		}
+	}
+
+	if reaped, err := repo.ReapExpiredLeases("source", now, lease); err != nil || reaped != 1 {
+		t.Fatalf("reap source queue: count=%d err=%v", reaped, err)
+	}
+	var workflow models.DurableJob
+	if err := db.Where("queue = ?", "workflow").First(&workflow).Error; err != nil {
+		t.Fatalf("load workflow job: %v", err)
+	}
+	if workflow.Status != models.DurableJobRunning || workflow.LockedAt == nil {
+		t.Fatalf("source reaper changed workflow lease: %#v", workflow)
 	}
 }
 

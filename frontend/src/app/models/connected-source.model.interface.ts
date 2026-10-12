@@ -121,6 +121,14 @@ export interface ISourceExtraction {
   updatedAt: string;
 }
 
+export interface ISourceHistoryPage<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 export interface ISourceSyncResult {
   job: ISourceSyncJob;
   extractions: ISourceExtraction[];

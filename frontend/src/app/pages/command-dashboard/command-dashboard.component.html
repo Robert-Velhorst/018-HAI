@@ -278,6 +278,21 @@
         </div>
       </section>
 
+      <nz-alert
+        *ngIf="pursuitLoadError"
+        nzType="warning"
+        [nzMessage]="pursuitLoadError"
+        nzShowIcon
+        [nzAction]="pursuitRetryAction"
+        (nzOnClose)="pursuitLoadError = ''"
+        class="command-dashboard-alert"
+      ></nz-alert>
+      <ng-template #pursuitRetryAction>
+        <button type="button" nz-button nzType="link" nzSize="small" (click)="refreshPursuits()" [nzLoading]="pursuitsLoading">
+          Retry
+        </button>
+      </ng-template>
+
       <section class="runtime-band">
           <div class="section-heading">
             <div>
@@ -693,6 +708,15 @@
         <span *ngFor="let warning of view.warnings">{{ warning }}</span>
       </div>
 
+      <hai-progressive-section
+        #commandHistorySection
+        moduleId="command-dashboard"
+        sectionId="assistant-command-history"
+        title="Assistant command history"
+        summary="Load recorded command outcomes only when you need to inspect them."
+        [advancedOnly]="false"
+        (openChange)="onCommandHistoryOpen($event)"
+      >
       <nz-card nzTitle="Assistant Command History" class="full-band">
         <div class="command-history-unavailable" *ngIf="commandLogsUnavailable" role="status">
           <span>Command history is unavailable. Existing records are retained and HAI will not infer that no commands exist.</span>
@@ -724,6 +748,7 @@
         </nz-table>
         <nz-empty *ngIf="!commandLogsUnavailable && !commandLogs.length" nzNotFoundContent="No assistant commands yet."></nz-empty>
       </nz-card>
+      </hai-progressive-section>
     </nz-content>
   </nz-layout>
 </section>

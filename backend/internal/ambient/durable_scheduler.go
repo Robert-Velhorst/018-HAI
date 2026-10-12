@@ -72,11 +72,11 @@ func startDurableScheduler(ctx context.Context, service Service, interval time.D
 func ambientPollInterval() time.Duration {
 	value := strings.TrimSpace(os.Getenv("AMBIENT_WORKER_POLL_SECONDS"))
 	if value == "" {
-		return 15 * time.Second
+		return time.Minute
 	}
 	var seconds int64
 	if _, err := fmt.Sscanf(value, "%d", &seconds); err != nil || seconds < 1 {
-		return 15 * time.Second
+		return time.Minute
 	}
 	return time.Duration(seconds) * time.Second
 }

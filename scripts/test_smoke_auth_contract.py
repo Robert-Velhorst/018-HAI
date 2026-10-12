@@ -41,6 +41,16 @@ class SmokeAuthContractTest(unittest.TestCase):
             aggregator,
         )
 
+    def test_production_smoke_fixtures_do_not_use_the_shipped_database_password(self) -> None:
+        for name in SMOKE_SUITES:
+            with self.subTest(script=name):
+                script = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+                self.assertNotIn("DB_PASSWORD=postgres", script)
+                self.assertIn(
+                    "DB_PASSWORD=smoke-local-postgres-password",
+                    script,
+                )
+
     def test_signed_session_helper_uses_expiring_hmac_sha256_jwts(self) -> None:
         helper = (ROOT / "scripts" / "smoke-auth.sh").read_text(encoding="utf-8")
         for contract in (
@@ -104,6 +114,22 @@ class SmokeAuthContractTest(unittest.TestCase):
             '"wrongly signed owner JWT is rejected"',
             '"${key_hdr[@]}"',
             '"${jwt_hdr[@]}"',
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, script)
+
+    def test_account_bridge_smoke_uses_isolated_retryable_ports(self) -> None:
+        script = (ROOT / "scripts" / "smoke-account-bridges.sh").read_text(
+            encoding="utf-8"
+        )
+        for contract in (
+            "allocate_loopback_port()",
+            'PG_PORT_OVERRIDE="${PG_PORT:-}"',
+            'PG_PORT="${PG_PORT_OVERRIDE:-$(allocate_loopback_port)}"',
+            'API_PORT="${API_PORT:-$(allocate_loopback_port)}"',
+            'pg_attempts=5',
+            '[ "${attempt}" -eq 1 ] || PG_PORT="$(allocate_loopback_port)"',
+            'PostgreSQL could not start after ${pg_attempts} attempt(s).',
         ):
             with self.subTest(contract=contract):
                 self.assertIn(contract, script)

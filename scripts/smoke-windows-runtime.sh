@@ -69,10 +69,10 @@ createdb -h 127.0.0.1 -p "${PG_PORT}" automation
 
 echo "==> Building and starting backend on :${API_PORT}"
 mkdir -p "${IMAGES}"
-( cd "${ROOT}/backend" && go build -o "${BIN}" ./cmd )
+( cd "${ROOT}/backend" && go build -buildvcs=false -o "${BIN}" ./cmd )
 
 start_backend() {
-  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=postgres \
+  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=smoke-local-postgres-password \
     DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
     BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
     RUN_MODE=production KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
@@ -105,6 +105,11 @@ hdr=("${key_hdr[@]}" -H "Authorization: Bearer ${owner_jwt}")
 echo "==> Authentication boundary"
 check "API key alone is rejected" '401' \
   "$(curl -sS -o /dev/null -w '%{http_code}' "${key_hdr[@]}" "${BASE}/windows-runtime/readiness")"
+
+echo "==> Owner activates the durable local execution baseline"
+hai_smoke_activate_baseline_constitution "${BASE}" "${API_KEY}" "${owner_jwt}"
+kill "${BACKEND_PID}" 2>/dev/null; wait "${BACKEND_PID}" 2>/dev/null || true
+start_backend; wait_live
 
 echo "==> Windows-runtime readiness is truthful"
 rd="$(curl -sS "${hdr[@]}" "${BASE}/windows-runtime/readiness")"

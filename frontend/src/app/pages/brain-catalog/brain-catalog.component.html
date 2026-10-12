@@ -338,7 +338,7 @@
     </div>
   </hai-progressive-section>
 
-  <hai-progressive-section moduleId="brain-catalog" sectionId="oss-insight-screening" title="OSS Insight collection coverage" summary="The complete discovery pass is visible here. A collection is evidence for review, never a permission to install its repositories.">
+  <hai-progressive-section moduleId="brain-catalog" sectionId="oss-insight-screening" title="OSS Insight collection coverage" summary="The complete discovery pass is visible here. A collection is evidence for review, never a permission to install its repositories." (openChange)="onOSSInsightScreeningOpen($event)">
     <div class="brain-catalog-page__source-review">
       <div>
         <strong>Catalog metadata maintenance</strong>

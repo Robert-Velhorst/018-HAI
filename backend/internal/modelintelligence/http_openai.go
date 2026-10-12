@@ -32,6 +32,9 @@ func validateEndpointURL(raw string) error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("URL scheme must be http/https, got %q", u.Scheme)
 	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("URL must not contain credentials, query parameters, or fragments")
+	}
 	host := u.Hostname()
 	if host == "" {
 		return fmt.Errorf("URL host is empty")

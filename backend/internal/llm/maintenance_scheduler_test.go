@@ -18,6 +18,20 @@ func TestModelMaintenanceSchedulerDefaultsAndExplicitDisable(t *testing.T) {
 	}
 }
 
+func TestServiceReportsWhetherAnyModelMaintenanceWorkIsEligible(t *testing.T) {
+	policy := testPolicyWithoutEndpoints()
+	service := &Service{policy: policy}
+	if service.hasEligibleModelMaintenanceWork() {
+		t.Fatal("an unconfigured model endpoint must not start maintenance work")
+	}
+
+	policy.Providers[0].EndpointURL = "http://127.0.0.1:11434"
+	service.policy = policy
+	if !service.hasEligibleModelMaintenanceWork() {
+		t.Fatal("a configured enabled local model should allow maintenance work")
+	}
+}
+
 func TestModelMaintenanceSchedulerIntervalIsBounded(t *testing.T) {
 	t.Setenv(maintenanceSchedulerIntervalEnv, "")
 	if interval := modelMaintenanceSchedulerInterval(); interval != time.Hour {

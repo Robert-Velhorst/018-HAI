@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -45,6 +47,23 @@ func frameworkRegistryLifecycleMigrations(t *testing.T) fstest.MapFS {
 		}
 	}
 	return files
+}
+
+func preMigrationVersionsAfter(t *testing.T, after string) []string {
+	t.Helper()
+	paths, err := fs.Glob(frameworkRegistryLifecycleMigrations(t), "pre/*.up.sql")
+	if err != nil {
+		t.Fatalf("list lifecycle migrations: %v", err)
+	}
+	versions := make([]string, 0, len(paths))
+	for _, path := range paths {
+		version := strings.TrimSuffix(path, ".up.sql")
+		if version > after {
+			versions = append(versions, version)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(versions)))
+	return versions
 }
 
 func openFrameworkRegistryPostgresTestDB(t *testing.T) *gorm.DB {
@@ -213,12 +232,7 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 		t.Fatal("rejected out-of-order rollback changed the registry schema")
 	}
 
-	for _, version := range []string{
-		"pre/0006_durable_job_fencing",
-		"pre/0005_framework_operating_contract",
-		"pre/0004_task_state_storage",
-		frameworkRegistryMigrationVersion,
-	} {
+	for _, version := range append(preMigrationVersionsAfter(t, frameworkRegistryMigrationVersion), frameworkRegistryMigrationVersion) {
 		if err := infra.RollbackMigration(
 			db,
 			files,
@@ -266,8 +280,11 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reapply framework registry migration: %v", err)
 	}
-	if reapplied != 4 {
-		t.Fatalf("reapplied %d migrations, want 4", reapplied)
+	// The extension and baseline migrations remain applied throughout this
+	// focused rollback. The framework registry itself plus every later
+	// migration are replayed.
+	if want := len(preMigrationVersionsAfter(t, frameworkRegistryMigrationVersion)) + 1; reapplied != want {
+		t.Fatalf("reapplied %d migrations, want %d", reapplied, want)
 	}
 	if !relationExists(t, db, "framework_selection_records") {
 		t.Fatal("framework registry schema was not restored")

@@ -38,8 +38,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      kafka:
-        condition: service_healthy
     environment:
       GIN_MODE: release
       RUN_MODE: ${RUN_MODE:-production}
@@ -166,8 +164,6 @@ services:
       backend-migrate:
         condition: service_completed_successfully
       postgres-automation:
-        condition: service_healthy
-      kafka:
         condition: service_healthy
       idp:
         condition: service_healthy
@@ -539,19 +535,32 @@ services:
       CONNECTED_SOURCE_HTTP_MAX_BYTES: ${CONNECTED_SOURCE_HTTP_MAX_BYTES}
       GITHUB_SOURCE_API_BASE_URL: ${GITHUB_SOURCE_API_BASE_URL}
       GITHUB_SOURCE_TOKEN: ${GITHUB_SOURCE_TOKEN}
+      # Trello stays read-only. The board target belongs to each ConnectedSource
+      # record; only the API credentials flow from the local environment.
+      TRELLO_API_KEY: ${TRELLO_API_KEY:-}
+      TRELLO_READ_TOKEN: ${TRELLO_READ_TOKEN:-}
+      TRELLO_API_BASE_URL: ${TRELLO_API_BASE_URL:-https://api.trello.com}
       SOURCE_SCHEDULER_ENABLED: ${SOURCE_SCHEDULER_ENABLED}
       SOURCE_SCHEDULER_INTERVAL_SECONDS: ${SOURCE_SCHEDULER_INTERVAL_SECONDS}
       SOURCE_SCHEDULER_RUN_ON_STARTUP: ${SOURCE_SCHEDULER_RUN_ON_STARTUP}
+      DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED: ${DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED:-false}
+      SOURCE_SCHEDULER_DURABLE: ${SOURCE_SCHEDULER_DURABLE:-true}
+      SOURCE_WORKER_POLL_SECONDS: ${SOURCE_WORKER_POLL_SECONDS:-60}
       WORKFLOW_SCHEDULER_ENABLED: ${WORKFLOW_SCHEDULER_ENABLED}
       WORKFLOW_OPEN_LOOP_SCHEDULER_ENABLED: ${WORKFLOW_OPEN_LOOP_SCHEDULER_ENABLED}
       WORKFLOW_SCHEDULER_INTERVAL_SECONDS: ${WORKFLOW_SCHEDULER_INTERVAL_SECONDS}
       WORKFLOW_SCHEDULER_RUN_LIMIT: ${WORKFLOW_SCHEDULER_RUN_LIMIT}
       WORKFLOW_SCHEDULER_RUN_ON_STARTUP: ${WORKFLOW_SCHEDULER_RUN_ON_STARTUP}
+      WORKFLOW_SCHEDULER_DURABLE: ${WORKFLOW_SCHEDULER_DURABLE:-true}
+      WORKFLOW_WORKER_POLL_SECONDS: ${WORKFLOW_WORKER_POLL_SECONDS:-60}
+      WORKFLOW_REMINDER_DELIVERY_ENABLED: ${WORKFLOW_REMINDER_DELIVERY_ENABLED:-true}
       WORKFLOW_CLAIM_LEASE_SECONDS: ${WORKFLOW_CLAIM_LEASE_SECONDS}
       AMBIENT_SCHEDULER_ENABLED: ${AMBIENT_SCHEDULER_ENABLED}
       AMBIENT_EXECUTION_ENABLED: ${AMBIENT_EXECUTION_ENABLED}
       AMBIENT_RUN_ON_STARTUP: ${AMBIENT_RUN_ON_STARTUP}
       AMBIENT_SCAN_INTERVAL_SECONDS: ${AMBIENT_SCAN_INTERVAL_SECONDS}
+      AMBIENT_SCHEDULER_DURABLE: ${AMBIENT_SCHEDULER_DURABLE:-true}
+      AMBIENT_WORKER_POLL_SECONDS: ${AMBIENT_WORKER_POLL_SECONDS:-60}
       AMBIENT_MINIMUM_SCORE: ${AMBIENT_MINIMUM_SCORE}
       AMBIENT_MINIMUM_CONFIDENCE: ${AMBIENT_MINIMUM_CONFIDENCE}
       AMBIENT_OPPORTUNITY_LIMIT: ${AMBIENT_OPPORTUNITY_LIMIT}
@@ -560,7 +569,7 @@ services:
       AMBIENT_SCAN_RETENTION: ${AMBIENT_SCAN_RETENTION}
       OUTCOME_MONITOR_SCHEDULER_ENABLED: ${OUTCOME_MONITOR_SCHEDULER_ENABLED:-true}
       OUTCOME_MONITOR_SWEEP_SECONDS: ${OUTCOME_MONITOR_SWEEP_SECONDS:-300}
-      OUTCOME_MONITOR_POLL_SECONDS: ${OUTCOME_MONITOR_POLL_SECONDS:-15}
+      OUTCOME_MONITOR_POLL_SECONDS: ${OUTCOME_MONITOR_POLL_SECONDS:-60}
       OUTCOME_MONITOR_LEASE_SECONDS: ${OUTCOME_MONITOR_LEASE_SECONDS:-120}
       OUTCOME_MONITOR_SCOPE_LIMIT: ${OUTCOME_MONITOR_SCOPE_LIMIT:-50}
       OUTCOME_MONITOR_BATCH_LIMIT: ${OUTCOME_MONITOR_BATCH_LIMIT:-20}
@@ -1011,10 +1020,19 @@ services:
       - ALL
     environment:
       BACKEND_API_SHARED_KEY: ${BACKEND_API_SHARED_KEY}
+      HAI_NGROK_URL: ${HAI_NGROK_URL:-}
+      HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED: ${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED:-false}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        envsubst '$$BACKEND_API_SHARED_KEY' < /etc/nginx/nginx.conf.template > /tmp/nginx.conf
+        set -eu
+        HAI_NGROK_HOST="$${HAI_NGROK_URL#https://}"
+        HAI_NGROK_HOST="$${HAI_NGROK_HOST%%/*}"
+        case "$$HAI_NGROK_HOST" in
+          ""|*[!A-Za-z0-9.-]*) HAI_NGROK_HOST=disabled.invalid ;;
+        esac
+        export HAI_NGROK_HOST
+        envsubst '$$BACKEND_API_SHARED_KEY $${HAI_NGROK_HOST} $${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED}' < /etc/nginx/nginx.conf.template > /tmp/nginx.conf
         exec nginx -c /tmp/nginx.conf -g 'daemon off;'
     depends_on:
       frontend:
@@ -1096,6 +1114,7 @@ services:
       context: ./nginx-config-manager
       dockerfile: Dockerfile
     container_name: 018-hai-nginx-config-manager
+    profiles: ["event-bus"]
     restart: unless-stopped
     user: "10001:10001"
     init: true
@@ -1767,6 +1786,7 @@ services:
     image: docker.redpanda.com/redpandadata/redpanda:v26.2.1@sha256:9a47c1f8d6736f98fa2616f6f0b715c051cb0bdac1a1176e38321bf45a5b572d
     container_name: 018-hai-kafka
     hostname: kafka
+    profiles: ["event-bus"]
     restart: unless-stopped
     init: true
     tmpfs:

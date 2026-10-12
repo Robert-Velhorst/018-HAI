@@ -20,7 +20,21 @@ type CompositeResolver struct {
 	taskReview executionauth.ApprovalResolver
 	workflow   executionauth.ApprovalResolver
 	portfolio  executionauth.ApprovalResolver
+	opsControl executionauth.ApprovalResolver
 	additional []ApprovalResolverRegistration
+}
+
+// WithOpsControlReviewResolver adds the dedicated exact-effect resolver used
+// for safety-control changes. It is checked before generic registrations so
+// this namespace cannot be shadowed by a broader prefix.
+func (r *CompositeResolver) WithOpsControlReviewResolver(
+	resolver executionauth.ApprovalResolver,
+) (*CompositeResolver, error) {
+	if r == nil || isNilApprovalResolver(resolver) {
+		return nil, fmt.Errorf("%w: ops-control review resolver is required", ErrInvalidRequest)
+	}
+	r.opsControl = resolver
+	return r, nil
 }
 
 // ApprovalResolverRegistration adds a server-owned approval namespace without
@@ -102,6 +116,11 @@ func (r *CompositeResolver) Resolve(
 		return r.workflow.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
 	case strings.HasPrefix(sourceID, portfolioDecisionPrefix):
 		return r.portfolio.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
+	case strings.HasPrefix(sourceID, OpsControlReviewPrefix):
+		if isNilApprovalResolver(r.opsControl) {
+			return executionauth.ResolvedApproval{}, ErrUnsupportedApprovalReference
+		}
+		return r.opsControl.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
 	default:
 		for _, registration := range r.additional {
 			if strings.HasPrefix(sourceID, registration.Prefix) {

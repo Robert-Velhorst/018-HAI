@@ -16,7 +16,10 @@ import (
 // LocalSafeWorkerID is the runtime id of the local safe worker.
 const LocalSafeWorkerID = "hai-local-safe-worker"
 
-const maxSafeOutput = 4096
+const (
+	maxSafeOutput        = 4096
+	maxSafeArtifactBytes = maxSafeOutput * 2
+)
 
 // SafeWorkerInput is the safe worker's bounded payload (§10.15).
 type SafeWorkerInput struct {
@@ -135,6 +138,9 @@ func (w *LocalSafeWorker) Run(ctx context.Context, in SafeWorkerInput) (SafeWork
 	if strings.TrimSpace(in.Marker) == "" {
 		return SafeWorkerOutput{}, fmt.Errorf("safe worker: marker required")
 	}
+	if len(in.Marker) > maxSafeArtifactBytes {
+		return SafeWorkerOutput{}, fmt.Errorf("safe worker: marker exceeds %d bytes", maxSafeArtifactBytes)
+	}
 	if err := validateArtifactName(in.ArtifactName); err != nil {
 		return SafeWorkerOutput{}, err
 	}
@@ -193,7 +199,7 @@ func (w *LocalSafeWorker) Run(ctx context.Context, in SafeWorkerInput) (SafeWork
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return SafeWorkerOutput{}, fmt.Errorf("safe worker: seek artifact: %w", err)
 	}
-	read, err := io.ReadAll(file)
+	read, err := readBoundedArtifact(file)
 	if err != nil {
 		return SafeWorkerOutput{}, fmt.Errorf("safe worker: read artifact: %w", err)
 	}
@@ -291,7 +297,7 @@ func (w *LocalSafeWorker) Verify(in SafeWorkerInput, out SafeWorkerOutput) SafeW
 			v.OutputBounded = len(out.BoundedOutput) <= maxSafeOutput
 			return v
 		}
-		data, readErr := io.ReadAll(file)
+		data, readErr := readBoundedArtifact(file)
 		if readErr != nil || root.VerifyFile(in.ArtifactName, file, currentInfo) != nil {
 			v.OutputBounded = len(out.BoundedOutput) <= maxSafeOutput
 			return v
@@ -340,6 +346,17 @@ func parseSafeWorkerInputOrZero(payload map[string]any) SafeWorkerInput {
 func stringValue(value any) string {
 	result, _ := value.(string)
 	return result
+}
+
+func readBoundedArtifact(file *os.File) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(file, maxSafeArtifactBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxSafeArtifactBytes {
+		return nil, fmt.Errorf("artifact exceeds %d bytes", maxSafeArtifactBytes)
+	}
+	return data, nil
 }
 
 func boundOutput(s string, max int) string {

@@ -162,7 +162,7 @@
       </div>
 
       <ng-template #emptyAutomationState>
-        <section class="automation-empty">
+        <section class="automation-empty" *ngIf="!automationLoadFailed; else automationLoadFailure">
           <span class="automation-empty__eyebrow">Automation registry</span>
           <h2>No automations registered yet</h2>
           <p>
@@ -197,6 +197,28 @@
               (click)="navigateFromMenu('/workflow-engine')"
             >
               Workflow Engine
+            </button>
+          </div>
+        </section>
+      </ng-template>
+
+      <ng-template #automationLoadFailure>
+        <section class="automation-empty" role="alert">
+          <span class="automation-empty__eyebrow">Automation registry</span>
+          <h2>Automations could not be loaded</h2>
+          <p>
+            HAI could not reach the automation registry. Existing workflows remain unchanged.
+          </p>
+          <div class="automation-empty__actions">
+            <button
+              type="button"
+              nz-button
+              nzType="primary"
+              data-testid="automation-load-retry"
+              (click)="loadAutomations()"
+            >
+              <i nz-icon nzType="reload" nzTheme="outline"></i>
+              Retry
             </button>
           </div>
         </section>

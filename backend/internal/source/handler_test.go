@@ -1,6 +1,7 @@
 package source
 
 import (
+	"automation-hub-backend/internal/docling"
 	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/whispercpp"
@@ -22,6 +23,39 @@ type sourceTranscriberStub struct {
 	transcripts []whispercpp.Transcript
 	err         error
 	folder      string
+}
+
+type sourceDocumentExtractorStub struct {
+	documents []docling.Document
+	err       error
+	folder    string
+}
+
+type ownerScopedSourceListStub struct {
+	Service
+	sources []models.ConnectedSource
+	calls   int
+}
+
+func (s *ownerScopedSourceListStub) Sources(bool) ([]models.ConnectedSource, error) {
+	return nil, errors.New("global source listing must not be used for an owner-scoped request")
+}
+
+func (s *ownerScopedSourceListStub) SourcesForOwner(ownerIdentity string, includeDisabled bool) ([]models.ConnectedSource, error) {
+	s.calls++
+	if ownerIdentity != "alice" || includeDisabled {
+		return nil, errors.New("unexpected owner-scoped source query")
+	}
+	return s.sources, nil
+}
+
+func (s *sourceDocumentExtractorStub) Status() docling.Status { return docling.Status{} }
+func (s *sourceDocumentExtractorStub) Probe(context.Context) (*docling.ProbeResult, error) {
+	return &docling.ProbeResult{Reachable: true}, nil
+}
+func (s *sourceDocumentExtractorStub) Extract(_ context.Context, folder string) ([]docling.Document, error) {
+	s.folder = folder
+	return s.documents, s.err
 }
 
 func (s *sourceTranscriberStub) Status() whispercpp.Status { return whispercpp.Status{} }
@@ -642,6 +676,30 @@ func TestHandlerTranscribesOnlyAnOwnedExplicitAudioSource(t *testing.T) {
 	}
 	if !strings.HasPrefix(raw.SourceURI, "audio://selected-source/") {
 		t.Fatalf("source uri = %q", raw.SourceURI)
+	}
+}
+
+func TestHandlerExtractsOwnedDoclingSourceThroughNormalIngestion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(&models.ConnectedSource{
+		ID: sourceID, OwnerIdentity: "alice", ConnectorKey: "docling-documents", Name: "Case evidence", Category: "cloud_document",
+		Enabled: true, LocalOnly: true, Status: "active", SyncTarget: "legal/vivare", DefaultProjectKey: "Robert-life-os",
+	})
+	digest := strings.Repeat("a", 64)
+	extractor := &sourceDocumentExtractorStub{documents: []docling.Document{{Path: "legal/vivare/evidence.docx", Text: "Follow up: review the evidence bundle.", Format: "docx", PageCount: 2, ContentDigest: digest}}}
+	handler := NewHandlerWithDocling(NewService(repo, nil), nil, extractor)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set(identity.ContextSubjectKey, "alice") })
+	router.POST("/sources/:id/extract-documents", handler.ExtractDocuments)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/sources/"+sourceID.String()+"/extract-documents", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("extract status = %d, body=%s", response.Code, response.Body.String())
+	}
+	if extractor.folder != "legal/vivare" || len(repo.rawItems) != 1 {
+		t.Fatalf("folder=%q rawItems=%#v", extractor.folder, repo.rawItems)
 	}
 }
 

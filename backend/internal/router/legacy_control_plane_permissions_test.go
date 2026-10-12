@@ -39,6 +39,7 @@ func TestLegacyControlPlaneRejectsAPIKeyWithoutAuthenticatedOwner(t *testing.T) 
 		body   string
 	}{
 		{method: http.MethodGet, path: "/api/v1/operations"},
+		{method: http.MethodGet, path: "/api/v1/background/overview"},
 		{method: http.MethodPost, path: "/api/v1/background/run"},
 		{method: http.MethodPost, path: "/api/v1/background/control-approvals", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/background/control-approvals/not-a-uuid/decision", body: `{}`},
@@ -65,6 +66,7 @@ func TestLegacyControlPlaneViewerCanReadButCannotMutate(t *testing.T) {
 
 	for _, path := range []string{
 		"/api/v1/operations",
+		"/api/v1/background/overview",
 		"/api/v1/model-intelligence/overview",
 		"/api/v1/privacy/scans",
 		"/api/v1/runtime-lab/feature-parity",
@@ -126,6 +128,7 @@ func TestLegacyControlPlaneOperatorGetsOperationalButNotAdministrativeAuthority(
 		want   int
 	}{
 		{method: http.MethodGet, path: "/api/v1/operations", want: http.StatusOK},
+		{method: http.MethodGet, path: "/api/v1/background/overview", want: http.StatusOK},
 		{method: http.MethodPost, path: "/api/v1/operations/not-a-uuid/approve", want: http.StatusForbidden},
 		{method: http.MethodPost, path: "/api/v1/operations/not-a-uuid/reject", want: http.StatusForbidden},
 		{method: http.MethodPost, path: "/api/v1/operations/not-a-uuid/block-similar", want: http.StatusForbidden},

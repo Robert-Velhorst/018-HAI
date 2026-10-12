@@ -4,6 +4,68 @@
 Personal AI Operating System for turning authorized source material, durable
 memory, workflows, approvals, and controlled execution into inspectable work.
 
+HAI is a command centre for personal and project operations. It gathers
+approved information, identifies work that may need attention, links it to the
+right objective, prepares a bounded plan, and keeps the decision, evidence,
+approval, execution, and verification records together. It is designed to
+reduce administrative friction without pretending that a language model, a
+dashboard, or an integration is automatically trustworthy.
+
+## Start Here
+
+### For an operator
+
+1. Install Docker Desktop on Windows 11 and start its Linux container engine.
+2. Either run the [Windows installer](docs/windows-installer.md), or follow
+   [Start the local stack](#start-the-local-stack) from a Git checkout.
+3. Open [http://127.0.0.1:8088](http://127.0.0.1:8088), sign in with the
+   first-run owner account configured in your untracked `.env.local`, and open
+   **Control Center**.
+4. Start with a local/exported source, a pursuit, or a manual workflow. Review
+   source links, proposed actions, and approvals before enabling any optional
+   model, account connector, or runtime.
+
+HAI is useful before any external integration is configured: local import,
+project/pursuit tracking, checklists, source-linked planning, memory review,
+workflow review, audit records, and local model configuration are all local
+operator flows. A provider, account, or runtime is not enabled merely by
+appearing in the UI.
+
+### For a developer
+
+The canonical product stack is **Angular + Go + Postgres + Docker Compose**.
+`main` is the product branch. The older Manus React/tRPC/MySQL implementation
+is reference material, not a second product. Build from source, create an
+untracked `.env.local` with `scripts\initialize-windows.ps1` rather than
+starting directly from `.env.example`, keep secrets outside Git, and use the
+checks in [Developer Checks](#developer-checks) before publishing a change.
+The root `docker-compose.yml` is a compatibility entry point to
+`docker-compose.local.yml`; both start the same source-built stack when given
+the same environment file.
+
+### What HAI is and is not
+
+| HAI does | HAI deliberately does not do by default |
+| --- | --- |
+| Keeps objectives, workflows, evidence, memory, decisions, approvals, verification, and audits in one local control plane. | Act as an unrestricted desktop agent, send communications, spend money, publish content, delete data, or take legal/government/account actions on its own. |
+| Supports local-first model routing, budget policies, provider probes, and seven-tier model selection. | Treat a configured provider, a successful probe, or model confidence as proof of correct real-world output. |
+| Offers guarded adapters for API, script, Docker, MCP-related, Hermes, Odysseus, and OpenClaw-style runtimes. | Bundle, install, or implicitly trust upstream agent projects, browser automation, credentials, or broad host access. |
+| Imports authorized local/exported data and exposes bounded read-only connector paths. | Scrape private accounts, write back to accounts, or activate an OAuth/API connector without the owner configuring it and completing its own acceptance check. |
+| Produces proposals, reminders, plans, and governed task candidates. | Treat a proposal, internal reminder record, or dashboard status as a delivered notification or completed external action. |
+
+### Documentation map
+
+- **Use the product:** [operator runbook](docs/operator-runbook.md),
+  [user guide](docs/user-guide.md), [troubleshooting](docs/troubleshooting.md),
+  and [Windows installer](docs/windows-installer.md).
+- **Understand the boundaries:** [external provider reality review](docs/external-provider-reality-review.md),
+  [threat model](docs/threat-model.md), [privacy impact assessment](docs/privacy-impact-assessment.md),
+  and [release process](docs/release-process.md).
+- **Build or extend it:** [architecture decision record](docs/architecture-decision-records/0001-canonical-stack-and-readiness.md),
+  [backend endpoint audit](docs/backend-endpoint-audit.md),
+  [framework registry](docs/framework-registry.md), and
+  [migration safety](docs/migrations.md).
+
 The canonical product is this repository's Go, Angular, Postgres, and Docker
 Compose stack. It is not an unrestricted desktop agent: planning, execution,
 verification, and approval are separate; external effects remain blocked until a
@@ -231,6 +293,12 @@ profile names, environment contract, resource ceilings, read-only mount rules,
 activation commands, and evidence required before any capability is described
 as live-proven.
 
+The ordinary local stack has explicit CPU and memory ceilings. Redis also has a
+separate 128 MB data budget with a `noeviction` policy: if rate-limit or token
+revocation storage reaches that budget, the affected operation fails rather
+than discarding a security record. Adjust `REDIS_MAXMEMORY` only together with
+the higher Redis container ceiling in `docker-compose.local.yml`.
+
 MLflow and OpenLIT remain bridge-only integrations to separately operated
 local/private services; this repository does not silently install or expose
 either observability server.
@@ -410,6 +478,11 @@ work from the command dashboard.
   configured local semantic adapter is healthy.
 - The runtime registry enforces emergency stop at its own boundary, including
   direct Hermes, Odysseus, and OpenClaw registry execution calls.
+- Clearing an emergency stop is itself a high-risk state change. The owner must
+  prepare and explicitly approve a one-time review bound to the current stop
+  revision; re-engaging the stop invalidates an earlier resume review. The
+  server rechecks the stored owner, review decision, exact effect digest,
+  authorization, and emergency state before it clears the stop.
 - Runtime execution is constrained by enablement flags, allowlisted tools,
   hosts, paths, workspaces, timeouts, output limits, redacted audit records,
   and verification before completion.
@@ -489,7 +562,7 @@ Go API and operating engines
   |-- local-first LLM router and provider probes
   |-- ambient planning and controlled runtime registry
         |
-Postgres + Redis + Kafka
+Postgres + Redis (+ optional Kafka event bus)
 ```
 
 The local deployment targets Windows 11 with Docker Desktop. The control-plane
@@ -689,7 +762,34 @@ test. It is no longer exposed through the public gateway:
 docker compose --profile compatibility up -d generic-auto
 ```
 
-Open [http://localhost](http://localhost).
+Kafka, ZooKeeper, and the Kafka-driven nginx configuration manager are not
+started by default. The local backend and IDP degrade safely without the event
+bus, which avoids allocating those services on an ordinary Windows machine.
+Before using the explicit `event-bus` profile, set these values in `.env.local`:
+
+```text
+IDP_KAFKA_ENABLED=true
+KAFKA_BROKERS=kafka:9092
+BROKERS_ADDR=kafka:9092
+```
+
+Then start the profile only when an installation requires it:
+
+```powershell
+docker compose --env-file .env.local -f docker-compose.local.yml --profile event-bus up --build -d
+```
+
+### Windows 11 installer
+
+For a product-style local installation, build the Inno Setup executable and
+use its Start menu shortcuts rather than manually operating Compose. The
+installer keeps the source-built stack loopback-only, stores first-run secrets
+outside the application directory, and refuses to start a competing HAI stack.
+See [Windows installer](docs/windows-installer.md).
+
+Open [http://127.0.0.1:8088](http://127.0.0.1:8088). The Compose template
+binds the gateway to loopback on port `8088` by default; this avoids colliding
+with an existing local web server and keeps the dashboard off the LAN.
 
 For a single-user local preview, set `LOCAL_LOGIN_BYPASS_ENABLED=true` and keep
 `GATEWAY_HOST_BIND=127.0.0.1`. The login screen then shows **Open local
@@ -697,14 +797,15 @@ dashboard**, which creates a normal signed session for the configured first-run
 owner. It is deliberately hidden by default and must never be enabled on a
 LAN- or internet-exposed gateway.
 
-The `.env.example` development defaults are:
+Do not start production mode from an unchanged copy of `.env.example`. It
+contains deliberately invalid placeholder secrets, and `/readyz` will report
+`not_ready` until they are replaced. The initializer generates independent
+values for the backend API key, memory encryption, JWT signing, approval
+proof signing, database runtime password, and the local A2A connector token.
+It also prompts for the first-run owner account. For unattended installation,
+pass `-AdminEmail` and `-AdminPasswordPlainText` explicitly to
+`scripts\initialize-windows.ps1`; do not place those values in source control.
 
-```text
-Email: noodzakelijkonline@gmail.com
-Password: ChangeMe123!
-```
-
-Change `FIRST_RUN_ADMIN_PASSWORD` and `BACKEND_API_SHARED_KEY` before first use.
 If the Postgres data volume already exists, changing first-run values does not
 rewrite the existing account. Do not commit `.env.local`, Docker state,
 database directories, uploaded material, frontend build output, or secrets.
@@ -731,13 +832,13 @@ For a dedicated Google OAuth **web** client, register this redirect URI for the
 local gateway:
 
 ```text
-http://localhost/api/v1/auth/google/callback
+http://127.0.0.1:8088/api/v1/auth/google/callback
 ```
 
 Then set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and
 `GOOGLE_LOGIN_REDIRECT_URL` in `.env.local`, and recreate the IDP container.
 The Gmail, Drive, Contacts, and Calendar connected-source callback is separate. Register
-`http://localhost/api/v1/sources/oauth/google/callback`, set it as
+`http://127.0.0.1:8088/api/v1/sources/oauth/google/callback`, set it as
 `GOOGLE_OAUTH_REDIRECT_URL`, and enable both APIs you intend to use. Each source
 requests only its own read-only scope. Also set independent
 `HAI_OAUTH_TOKEN_ENCRYPTION_KEY` and `HAI_OAUTH_STATE_SIGNING_KEY` values; HAI
@@ -765,10 +866,10 @@ docker compose --env-file .env.local -f docker-compose.local.yml up -d --build i
 ```powershell
 docker compose --env-file .env.local -f docker-compose.local.yml ps
 docker compose --env-file .env.local -f docker-compose.local.yml logs backend
-curl.exe -i http://localhost/
-curl.exe -i http://localhost/healthz
-curl.exe -i http://localhost/readyz
-curl.exe -i http://localhost/api/v1/llm/policy
+curl.exe -i http://127.0.0.1:8088/
+curl.exe -i http://127.0.0.1:8088/healthz
+curl.exe -i http://127.0.0.1:8088/readyz
+curl.exe -i http://127.0.0.1:8088/api/v1/llm/policy
 ```
 
 Expected behavior:
@@ -866,6 +967,35 @@ general importer accepts `.txt`, `.md`, `.markdown`, `.csv`, `.tsv`, `.json`,
 `.yaml`, `.yml`, and `.log`; export connectors also support `.mbox`, `.eml`,
 and `.ics` within the same allowlisted root.
 
+### Extract a selected local document folder
+
+For Office, HTML, Markdown, text, or reviewed PDF extraction, enable the
+disabled-by-default `local-document-extraction` profile in `.env.local`:
+
+```text
+HAI_DOCLING_ENABLED=true
+HAI_DOCLING_RUNNER_TOKEN=<unique local runner token>
+HAI_DOCLING_PDF_ENABLED=false
+```
+
+Start the backend and the profile, then create a **Selected documents
+(Docling)** source in **Connected Sources**. Keep **Local only** enabled and
+set a specific folder relative to `connected-sources/`, such as
+`legal/vivare`; `.` and paths outside that root are rejected. The **Extract
+documents** action sends no file upload: the isolated runner reads that one
+mounted folder, HAI records source-linked extractions through the normal
+governed intake flow, and it cannot write to the folder, promote memory, or
+execute an external action. PDF extraction remains off until its local model
+artifacts have been reviewed.
+
+```powershell
+docker compose --env-file .env.local -f docker-compose.local.yml `
+  --profile local-document-extraction up -d --build backend docling-runner
+```
+
+See [optional runtime profiles](docs/optional-runtime-profiles.md) for the
+runner isolation and resource limits.
+
 ### Connect LARO case intelligence
 
 HAI includes a dedicated `laro` read-only connected-source adapter. Create the
@@ -903,6 +1033,107 @@ HAI does not create automatic memory from them and has no LARO write path.
 
 These screens are authenticated operator surfaces. Technical logs and deep
 diagnostics remain behind their relevant detail or audit views.
+
+## How Work Moves Through HAI
+
+HAI is stateful. It should be operated as a controlled work system, not as a
+chatbot with privileged buttons.
+
+```text
+Authorized signal or manual input
+  -> normalize and retain source/provenance
+  -> match to an active pursuit, or create a non-executable candidate
+  -> assess risk, missing context, policy, ownership, and success criteria
+  -> prepare a workflow or bounded task plan
+  -> request human review when required
+  -> execute only through an enabled, allowlisted, approval-bound adapter
+  -> validate result and retain audit/evidence
+  -> complete, retry with a bounded policy, follow up, block, or return to review
+```
+
+### Status language
+
+| State | Meaning | Typical next step |
+| --- | --- | --- |
+| `new` / `candidate` | Input has been retained but is not executable work. | Inspect it; accept or archive the candidate. |
+| `planned` / `ready` | Scope and a next action exist; no prohibited effect has happened. | Run a permitted low-risk step or request approval. |
+| `needs_approval` / `needs_review` | HAI has reached a decision boundary or uncertain result. | Inspect evidence and approve, reject, clarify, or correct. |
+| `waiting` / `blocked` | Progress depends on Robert, another party, a missing source, configuration, or a failed dependency. | Resolve the named blocker or follow up. |
+| `running` | A bounded worker or reviewed task is active. | Monitor progress; use emergency stop if safety is uncertain. |
+| `verified` / `completed` | The configured success check has passed and evidence was retained. | Review the completion record; archive only when appropriate. |
+| `failed` | A step did not meet its postcondition or a dependency failed. | Read the redacted error and use the recorded recovery path. |
+
+`Completed` does not mean “the model sounded confident.” It requires the
+applicable source, schema, deterministic, test, human, or runtime verification
+record. A generated plan, draft, reminder preparation, or suggested next action
+is not external execution.
+
+### Roles and approval
+
+The first-run account is seeded as the **owner**. New local registrations are
+**operators** unless an owner changes their role. Viewers can inspect permitted
+records; operators can work with planning and operational records; owner or
+approval-capable actions are required for sensitive decisions and configuration.
+Roles never arrive from browser headers or a client-side flag.
+
+The precise route-level policy is code-owned and tested. In practical terms:
+
+- use an owner account to configure sources, provider credentials, global
+  policies, runtime allowlists, emergency-stop recovery, and Constitution
+  settings;
+- treat legal, government, financial, account, deletion, public-posting,
+  destructive-file, and broad-host actions as approval-gated; and
+- use the review queue rather than trying to force a blocked action through a
+  generic API call.
+
+### Emergency stop and recovery
+
+**Emergency stop** halts background processing and blocks controlled runtime
+execution. It is not a cosmetic dashboard switch. To resume, the owner prepares
+a resume review, explicitly confirms it, and HAI consumes an authorization bound
+to the current emergency-stop revision. A newer stop invalidates older resume
+reviews. This prevents a stale approval from clearing a later safety incident.
+
+Use the stop when a task is behaving unexpectedly, a provider/runtime boundary
+is uncertain, or an operator needs to preserve the current state for review.
+Preserve audit evidence and inspect the downstream system before attempting a
+new reviewed run.
+
+## Configuration And Integration Truth
+
+The source tree contains connector and runtime adapters so that HAI can expose
+their health, capabilities, policy, evidence, and audits consistently. An
+adapter being present does **not** install software, obtain credentials, grant
+permissions, or prove an integration works with a specific account.
+
+| Capability family | Default | What an owner must do before use | External effect boundary |
+| --- | --- | --- | --- |
+| Local/exported files, MBOX/EML, ICS, Trello JSON, normalized feeds | Local-only, read-only root | Put authorized material below `connected-sources/`; create and inspect a source. | No source write-back. |
+| GitHub, Gmail, Drive, Contacts, Calendar, Trello, ShareT, LARO | Disabled or unconfigured | Configure credentials/tokens in `.env.local`, restrict scopes, connect the account, run a bounded sync, and retain acceptance evidence. | Primarily read-only; never infer write permission from a successful read. |
+| Ollama, llama.cpp, LM Studio, OpenAI-compatible local endpoints | Disabled until configured | Start the local service, configure the endpoint, probe it, then run a bounded verified task. | Paid use remains disabled and budgeted at EUR 0 unless deliberately changed. |
+| Free/freemium cloud model provider | Disabled until configured | Add a provider configuration, set quota/budget policy, validate a narrow task, and inspect routing history. | Paid or expensive use needs explicit policy/approval; request JSON cannot self-approve it. |
+| Script, Docker, API, MCP-related, Hermes, Odysseus, OpenClaw adapters | Disabled until explicitly allowlisted | Install/configure upstream tools separately; set narrow host/path/workspace/tool/time limits; review a dry run and verify a bounded task. | Mutating actions need exact approval proof, emergency-stop clearance, postcondition/idempotency evidence, and audit records. |
+| ngrok public access | Disabled | Follow [governed ngrok cloud access](docs/ngrok-cloud-access.md) with a reserved endpoint, secure cookies, matching OAuth redirects, and reviewed token ACL. | Only nginx is tunnelled; no database, backend, IDP, or inspector port is published. |
+
+Never paste credentials into a source record, workflow, task text, browser chat,
+Git history, screenshots, or issue. Keep them in the protected local
+environment/configuration mechanism documented for that connector.
+
+## Data, Privacy, And Backup
+
+HAI is local-first by default. Local files are mounted read-only; connected
+source records retain provenance; memory and conversation capture are governed
+by owner scope, source policy, redaction, correction, archive, export, and
+deletion controls. Sensitive sources can remain local-only. Raw imported data is
+not automatically accepted as a fact or added to long-term memory.
+
+Before changing Docker volumes, `%LOCALAPPDATA%\HAI`, an imported source tree,
+or a database, use [backup and restore](docs/backup-restore.md). The Windows
+uninstaller intentionally leaves application data and Docker volumes in place;
+it removes program files only. This avoids silently deleting personal records.
+
+For security/privacy review, read the [privacy impact assessment](docs/privacy-impact-assessment.md),
+[threat model](docs/threat-model.md), and [compliance boundaries](docs/compliance-boundaries.md).
 
 ## API Overview
 
@@ -1039,6 +1270,63 @@ The repository's verification evidence is in:
 These reports distinguish exercised local behavior from unproven real-world
 integrations. Treat target-machine and provider-specific checks as release
 gates, not paperwork.
+
+## Development And Release Expectations
+
+This repository is deliberately conservative about operational claims. A change
+is not ready because a page renders, a stub returns `200`, or a model produces
+plausible text. Keep behavior, persistence, UI, gateway policy, migration,
+documentation, and tests aligned.
+
+### Before changing code
+
+1. Read the adjacent package, route handler, migration, and existing test
+   contract before adding a parallel abstraction.
+2. Keep externally consequential work fail-closed. Plan, approval, execution,
+   verification, and audit must remain separate stages.
+3. Preserve owner scoping, source provenance, redaction, local-first defaults,
+   allowlists, bounded resource use, idempotency, and emergency-stop checks.
+4. Add only the smallest integration or UI surface that has a real caller and
+   a clear operational owner. A catalog entry or feature flag must not be
+   described as a live integration.
+
+### Before opening or merging a pull request
+
+1. Run the relevant Go tests, frontend build/tests, and Compose validation from
+   [Developer Checks](#developer-checks).
+2. Exercise the changed API and UI action chain. Test direct deep links,
+   authentication/authorization, loading/error states, and a narrow viewport
+   when a route or shell changes.
+3. For a state-changing or provider change, test retries/idempotency, audit
+   entries, failure handling, authorization, emergency stop, and the expected
+   postcondition. Do not call a provider-live path proven without retained
+   target/account evidence.
+4. Update this README and the targeted document/runbook when the operator
+   contract, environment keys, route, data retention behavior, or release gate
+   changes.
+5. Do not commit `.env.local`, secrets, Docker volumes, imported personal data,
+   generated browser diagnostics, build output, or local logs.
+
+GitHub Actions checks backend, IDP, nginx configuration manager, frontend,
+Compose/gateway contracts, signed-session smoke, migrations, isolation
+acceptance, Windows contracts, and the installer build. A passing CI run is a
+necessary engineering gate, not a substitute for a real configured account or
+target-machine acceptance run.
+
+### Reporting readiness accurately
+
+Use these terms in issues, documentation, and release notes:
+
+- **Implemented:** repository code, persistence/API contract, and focused
+  coverage exist.
+- **CI/local validated:** a reproducible build, test, migration, Compose, or
+  bounded browser/smoke path has exercised the capability.
+- **Live-proven:** a configured account/provider/runtime completed a bounded,
+  approved task on the target machine and retained audit plus verification
+  evidence.
+- **Blocked/external gate:** a dependency is intentionally not configured,
+  awaits owner credentials/consent, needs upstream software, or requires a
+  target-machine acceptance run.
 
 ## Repository Layout
 

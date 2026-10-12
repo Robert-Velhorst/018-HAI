@@ -333,14 +333,19 @@ func RunMigrations(db *gorm.DB) error {
 			&models.WorkflowSourceLink{},
 			&models.WorkflowDecision{},
 			&models.WorkflowEvent{},
-			&models.WorkflowCompletionAttestation{},
+			// workflow_completion_attestations is governed by a versioned SQL
+			// migration. Including it here makes GORM try to remove the named
+			// database uniqueness constraint when the Go model intentionally has
+			// no generated unique index.
 			&models.WorkflowReminderActivationRequest{},
 			&models.WorkflowReminderActivationDecision{},
 			&models.Pursuit{},
 			&models.PursuitLink{},
 			&models.PursuitActivity{},
 			&models.PursuitTaskAttempt{},
-			&models.PursuitPortfolioWorkflowSettlementProof{},
+			// pursuit_portfolio_workflow_settlement_proofs is an immutable,
+			// migration-owned proof ledger. GORM must not reconcile its named
+			// uniqueness constraints or append-only triggers.
 			&models.AmbientNeed{},
 			&models.AmbientNeedOverride{},
 			&models.AmbientOpportunity{},

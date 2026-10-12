@@ -8,6 +8,7 @@ import {
   ISourceConnectionHealth,
   ISourceOverview,
   ISourceExtraction,
+	ISourceHistoryPage,
   ISourceSearchRequest,
   ISourceSearchResult,
   ISourceSyncJob,

@@ -229,7 +229,8 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 		initializeAgentFrameworkRoutes(v1, agentframework.NewHandler(agentframework.WithModelMaintenance(agentframework.DefaultService(), llmService)))
 		initializeAutoGenCompatibilityRoutes(v1, autogencompat.NewHandler(autogencompat.DefaultService()))
 		initializeCrewAIRoutes(v1, crewai.NewHandler(crewai.WithModelMaintenance(crewai.DefaultService(), llmService)))
-		initializeDoclingRoutes(v1, docling.NewHandler(docling.DefaultService()))
+		doclingService := docling.DefaultService()
+		initializeDoclingRoutes(v1, docling.NewHandler(doclingService))
 		gitleaksService := gitleaks.DefaultService()
 		if workflowLinker, ok := workflowService.(gitleaks.WorkflowLinker); ok {
 			gitleaksService = gitleaks.DefaultService(workflowLinker)
@@ -510,6 +511,12 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 		if err != nil {
 			return err
 		}
+		opsControlReviewResolver, err := executionapproval.NewOpsControlReviewResolver(
+			taskStateRepository,
+		)
+		if err != nil {
+			return err
+		}
 		workflowApprovalRepository, err := approvaladapter.New(workflowRepository)
 		if err != nil {
 			return err
@@ -525,6 +532,7 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 			return err
 		}
 		opsControlService.WithControlApprovalRepository(controlApprovalRepository)
+		opsControlService.WithControlReviewRepository(taskStateRepository)
 		controlApprovalResolver, err := opscontrol.NewControlApprovalResolver(
 			controlApprovalRepository,
 		)
@@ -550,6 +558,12 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 				opscontrol.ControlDecisionPrefix,
 				controlApprovalResolver,
 			),
+		)
+		if err != nil {
+			return err
+		}
+		approvalResolver, err = approvalResolver.WithOpsControlReviewResolver(
+			opsControlReviewResolver,
 		)
 		if err != nil {
 			return err
@@ -794,7 +808,7 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 		mcpBridgeHandler := mcpbridge.NewHandler(mcpbridge.NewServiceFromEnv(workflowService))
 		initializeMCPBridgeStatusRoutes(v1, mcpBridgeHandler)
 		initializeMCPAgentRoutes(router, relativePathV1, mcpBridgeHandler)
-		initializeSourceRoutes(v1, source.NewHandler(sourceService, whisperService))
+		initializeSourceRoutes(v1, source.NewHandlerWithDocling(sourceService, whisperService, doclingService))
 		initializeWorkflowRoutes(v1, workflow.NewHandlerWithPursuitIntakeRouter(workflowService, pursuitService))
 		initializePursuitRoutes(v1, pursuit.NewHandler(pursuitService))
 		memoryEngineSecret := config.AppConfig.MemoryEngineKey
@@ -1328,6 +1342,7 @@ func initializeSourceRoutes(apiVersion *gin.RouterGroup, sourceHandler *source.H
 		// separate in-process scheduler is the only global source worker.
 		sourceRoutes.POST("/sync-due", requirePermission(rbac.PermWrite), sourceHandler.RunDueScheduledSyncs)
 		sourceRoutes.GET("/sync-jobs", requirePermission(rbac.PermRead), sourceHandler.SyncJobs)
+		sourceRoutes.GET("/health", requirePermission(rbac.PermRead), sourceHandler.ConnectionHealthSummary)
 		sourceRoutes.GET("/extractions", requirePermission(rbac.PermRead), sourceHandler.Extractions)
 		sourceRoutes.GET("/audit-logs", requirePermission(rbac.PermRead), sourceHandler.AuditLogs)
 		sourceRoutes.GET("/:id/health", requirePermission(rbac.PermRead), sourceHandler.ConnectionHealth)
@@ -1337,6 +1352,7 @@ func initializeSourceRoutes(apiVersion *gin.RouterGroup, sourceHandler *source.H
 		sourceRoutes.PATCH("/:id", requirePermission(rbac.PermWrite), sourceHandler.UpdateSource)
 		sourceRoutes.POST("/:id/sync", requirePermission(rbac.PermWrite), sourceHandler.Sync)
 		sourceRoutes.POST("/:id/transcribe", requirePermission(rbac.PermWrite), sourceHandler.Transcribe)
+		sourceRoutes.POST("/:id/extract-documents", requirePermission(rbac.PermWrite), sourceHandler.ExtractDocuments)
 		sourceRoutes.POST("/:id/reindex", requirePermission(rbac.PermWrite), sourceHandler.Reindex)
 		sourceRoutes.POST("/:id/pause", requirePermission(rbac.PermWrite), sourceHandler.Pause)
 		sourceRoutes.POST("/:id/resume", requirePermission(rbac.PermWrite), sourceHandler.Resume)
@@ -1642,6 +1658,7 @@ func initializePhase2Routes(apiVersion *gin.RouterGroup, handler *phase2.Handler
 	backgroundRuns := apiVersion.Group("/background")
 	backgroundRuns.Use(requireAuthenticatedOwner())
 	{
+		backgroundRuns.GET("/overview", requirePermission(rbac.PermRead), handler.Overview)
 		backgroundRuns.POST("/run", requirePermission(rbac.PermExecute), handler.RunBackground)
 	}
 }
@@ -1739,6 +1756,8 @@ func initializeOpsControlRoutes(apiVersion *gin.RouterGroup, handler *opscontrol
 		bg.POST("/control-approvals", requirePermission(rbac.PermAdmin), handler.PrepareControlApproval)
 		bg.POST("/control-approvals/:id/decision", requirePermission(rbac.PermAdmin), handler.DecideControlApproval)
 		bg.POST("/resume", requirePermission(rbac.PermAdmin), handler.Resume)
+		bg.POST("/resume-approval", requirePermission(rbac.PermAdmin), handler.RequestResumeApproval)
+		bg.POST("/resume-approval/:id/approve-and-resume", requirePermission(rbac.PermAdmin), handler.ApproveAndResume)
 		bg.PATCH("/mode", requirePermission(rbac.PermAdmin), handler.SetMode)
 	}
 	wr := apiVersion.Group("/windows-runtime")
@@ -1982,6 +2001,7 @@ func initializePursuitRoutes(apiVersion *gin.RouterGroup, pursuitHandler *pursui
 		pursuitRoutes.POST("/", requirePermission(rbac.PermWrite), pursuitHandler.Create)
 		pursuitRoutes.GET("/dashboard", requirePermission(rbac.PermRead), pursuitHandler.Dashboard)
 		pursuitRoutes.GET("/brief", requirePermission(rbac.PermRead), pursuitHandler.Brief)
+		pursuitRoutes.GET("/overview", requirePermission(rbac.PermRead), pursuitHandler.Overview)
 		pursuitRoutes.GET("/decisions", requirePermission(rbac.PermRead), pursuitHandler.Decisions)
 		pursuitRoutes.POST("/portfolio-plan", requirePermission(rbac.PermRead), pursuitHandler.PlanPortfolio)
 		pursuitRoutes.POST("/portfolio-plan/accept", requirePermission(rbac.PermApprove), pursuitHandler.AcceptPortfolioAllocation)

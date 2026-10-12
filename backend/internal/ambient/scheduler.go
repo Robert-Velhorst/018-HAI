@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"automation-hub-backend/internal/schedulerstatus"
 )
 
 type Scheduler struct {
@@ -18,11 +20,13 @@ type Scheduler struct {
 // StartScheduler starts ambient scanning.
 //
 // It prefers the durable path (persisted, retried, crash-recovered — see
-// durable_scheduler.go) and falls back to the legacy in-process ticker, saying
-// so, if the durable queue cannot be reached.
+// durable_scheduler.go). A failed durable queue stops the scheduler by default
+// rather than silently using a non-recoverable ticker. The fallback is only
+// available when explicitly enabled for local development.
 func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) {
 	policy := policyFromEnv()
 	if !policy.SchedulerEnabled {
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Detail: "disabled by AMBIENT_SCHEDULER_ENABLED"})
 		return
 	}
 	interval := time.Duration(policy.ScanIntervalSeconds) * time.Second
@@ -32,13 +36,32 @@ func StartScheduler(ctx context.Context, service Service, allowed ...func() bool
 	}
 	if durableSchedulerEnabled() {
 		if err := startDurableScheduler(ctx, service, interval, backgroundAllowed); err != nil {
-			log.Printf("ambient scheduler: durable queue unavailable (%v); falling back to the in-process ticker", err)
+			if !legacyFallbackEnabled() {
+				schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Durable: true, Detail: "durable queue unavailable: " + err.Error()})
+				log.Printf("ambient scheduler: durable queue unavailable (%v); scheduler not started; set DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED=true only for local development", err)
+				return
+			}
+			schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Detail: "durable queue unavailable; explicitly enabled legacy fallback: " + err.Error()})
+			log.Printf("ambient scheduler: durable queue unavailable (%v); using the explicitly enabled in-process fallback", err)
 		} else {
+			schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Durable: true, Running: true, Detail: "durable worker attached"})
 			return
 		}
+	} else {
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Detail: "legacy scheduler explicitly configured"})
+	}
+	if !durableSchedulerEnabled() {
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Running: true, Detail: "legacy scheduler explicitly configured"})
+	} else if legacyFallbackEnabled() {
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Running: true, Detail: "explicitly enabled legacy fallback"})
 	}
 	scheduler := &Scheduler{service: service, backgroundAllowed: backgroundAllowed}
 	go scheduler.Start(ctx, interval)
+}
+
+func legacyFallbackEnabled() bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv("DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED")))
+	return value == "true" || value == "1" || value == "yes"
 }
 
 func (s *Scheduler) Start(ctx context.Context, interval time.Duration) {

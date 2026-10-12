@@ -20,6 +20,16 @@ import (
 	"github.com/google/uuid"
 )
 
+type failingFeedReader struct {
+	feed accountfeed.Feed
+	err  error
+}
+
+func (r failingFeedReader) Feed() accountfeed.Feed { return r.feed }
+func (r failingFeedReader) Read(context.Context) ([]accountfeed.FeedItem, error) {
+	return nil, r.err
+}
+
 func buildWorker(t *testing.T, mode autonomypolicy.Mode, feedJSON string) (*Worker, *operations.Service, string) {
 	return buildWorkerWithAuthorization(t, mode, feedJSON, true)
 }
@@ -269,6 +279,32 @@ func TestRunOnceIsIdempotent(t *testing.T) {
 	}
 	if rep.OperationsCreated != 0 {
 		t.Fatalf("second pass must not create duplicate operations, created %d", rep.OperationsCreated)
+	}
+}
+
+func TestRunOnceDoesNotExposeFeedFailureSecrets(t *testing.T) {
+	reader := failingFeedReader{
+		feed: accountfeed.Feed{Name: "private-feed token=background-report-secret", Enabled: true},
+		err:  errors.New("Authorization: Bearer background-report-secret failed at C:\\Users\\NO\\private-feed.json"),
+	}
+	worker := New(
+		operations.NewService(operations.NewMemoryRepository()),
+		executionbroker.NewBroker(t.TempDir()),
+		[]accountfeed.Reader{reader},
+		Options{OwnerUserID: "user-1", WorkspaceID: "local"},
+	)
+
+	report, err := worker.RunOnce(context.Background())
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if len(report.Errors) != 1 {
+		t.Fatalf("report errors = %#v", report.Errors)
+	}
+	for _, leaked := range []string{"background-report-secret", "Authorization", "C:\\Users\\NO\\private-feed.json"} {
+		if strings.Contains(report.Errors[0], leaked) {
+			t.Fatalf("background report leaked %q: %q", leaked, report.Errors[0])
+		}
 	}
 }
 

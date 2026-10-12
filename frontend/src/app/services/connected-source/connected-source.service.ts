@@ -11,6 +11,7 @@ import {
   ISourceConnectionHealth,
   ISourceOverview,
   ISourceExtraction,
+	ISourceHistoryPage,
   ISourceSearchRequest,
   ISourceSearchResult,
   ISourceSyncJob,
@@ -50,6 +51,14 @@ export class ConnectedSourceService implements IConnectedSourceService {
       params = params.set('limit', limit);
     }
     return this.http.get<ISourceSyncJob[]>(`${this.apiUrl}/sync-jobs`, { params });
+  }
+
+  pageSyncJobs(limit: number, offset: number, sourceId?: string): Observable<ISourceHistoryPage<ISourceSyncJob>> {
+    let params = new HttpParams().set('limit', limit).set('offset', offset);
+    if (sourceId) {
+      params = params.set('sourceId', sourceId);
+    }
+    return this.http.get<ISourceHistoryPage<ISourceSyncJob>>(`${this.apiUrl}/sync-jobs`, { params });
   }
 
   createSource(request: ICreateSourceRequest): Observable<IConnectedSource> {
@@ -122,6 +131,21 @@ export class ConnectedSourceService implements IConnectedSourceService {
       params = params.set('limit', limit);
     }
     return this.http.get<ISourceExtraction[]>(`${this.apiUrl}/extractions`, { params });
+  }
+
+  pageExtractions(
+    projectKey: string,
+    includeArchived: boolean,
+    limit: number,
+    offset: number
+  ): Observable<ISourceHistoryPage<ISourceExtraction>> {
+    return this.http.get<ISourceHistoryPage<ISourceExtraction>>(`${this.apiUrl}/extractions`, {
+      params: new HttpParams()
+        .set('projectKey', projectKey || '')
+        .set('includeArchived', includeArchived)
+        .set('limit', limit)
+        .set('offset', offset),
+    });
   }
 
   updateExtraction(id: string, extraction: Partial<ISourceExtraction>): Observable<ISourceExtraction> {

@@ -221,7 +221,7 @@ func (r *Runner) RegisterRecurring(kind string, interval time.Duration, maxAttem
 // returned, so one bad job cannot stall the queue.
 func (r *Runner) RunOnce(ctx context.Context) (int, error) {
 	now := r.now()
-	if _, err := r.repo.ReapExpiredLeases(now, r.lease); err != nil {
+	if _, err := r.repo.ReapExpiredLeases(r.queue, now, r.lease); err != nil {
 		return 0, fmt.Errorf("reap expired leases: %w", err)
 	}
 	jobs, err := r.repo.ClaimDue(r.workerID, r.queue, now, r.batch)

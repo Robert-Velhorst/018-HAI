@@ -29,9 +29,10 @@ import (
 //   - Bounded. It reuses the shared host allowlist, blocked-address guard,
 //     timeout, transport, and response-size cap that gate every outbound source
 //     fetch (see sourceHTTPHostAllowed / sourceHTTPTransport / sourceHTTPMaxBytes).
-//   - Incremental. The cursor is the newest card `dateLastActivity` seen. On the
-//     next sync only cards whose activity is strictly newer than the cursor are
-//     ingested, so unchanged cards do not churn extractions.
+//   - Incremental. After the initial scan, the connector asks Trello for board
+//     actions since the saved cursor and retrieves full detail only for the
+//     affected cards. An ambiguous or saturated action page triggers a safe
+//     full-board reconciliation, so the optimization cannot drop changes.
 //   - Provenance + audit. Each card becomes an ImportItem carrying the card's
 //     canonical shortUrl, so every downstream extraction and workflow links back
 //     to its source. Sync itself records the audit trail via the generic
@@ -50,8 +51,9 @@ const (
 	trelloCheckItemFields  = "name,state,due,dueComplete,pos"
 	// Trello caps actions nested under the /boards/{id}/cards URL resource at
 	// 300, even though the dedicated actions endpoint permits a larger page.
-	trelloCommentLimit    = 300
-	trelloTimeParseLayout = time.RFC3339
+	trelloCommentLimit     = 300
+	trelloActionFetchLimit = 1000
+	trelloTimeParseLayout  = time.RFC3339
 )
 
 // trelloIDPattern matches a raw Trello board id (24 hex) or 8-char shortLink.
@@ -82,6 +84,9 @@ type trelloMember struct {
 
 type trelloActionData struct {
 	Text string `json:"text"`
+	Card struct {
+		ID string `json:"id"`
+	} `json:"card"`
 }
 
 type trelloAction struct {
@@ -176,33 +181,104 @@ func fetchTrelloSource(ctx context.Context, source *models.ConnectedSource) ([]I
 		listNames[list.ID] = list.Name
 	}
 
-	var cards []trelloCard
-	cardQuery := url.Values{
-		"fields":                      {trelloCardFields},
-		"filter":                      {"visible"},
-		"limit":                       {fmt.Sprintf("%d", trelloCardFetchLimit)},
-		"actions":                     {"commentCard"},
-		"actions_limit":               {fmt.Sprintf("%d", trelloCommentLimit)},
-		"action_fields":               {trelloActionFields},
-		"action_memberCreator":        {"true"},
-		"action_memberCreator_fields": {"fullName,username"},
-		"attachments":                 {"true"},
-		"attachment_fields":           {trelloAttachmentFields},
-		"checklists":                  {"all"},
-		"checklist_fields":            {trelloChecklistFields},
-		"checkItem_fields":            {trelloCheckItemFields},
-	}
-	if err := trelloGetJSON(ctx, base, key, token, "/1/boards/"+boardID+"/cards", cardQuery, &cards); err != nil {
-		return nil, "", fmt.Errorf("fetch trello cards: %w", err)
-	}
-
 	boardName := firstNonEmpty(strings.TrimSpace(board.Name), boardID)
 	projectKey := firstNonEmpty(source.DefaultProjectKey, slugText(boardName))
-	// Trello's cards endpoint cannot filter by last-activity, so we advance the
-	// cursor by comparing dateLastActivity client-side. This keeps ingestion
-	// incremental (unchanged cards are skipped) without over-claiming an
-	// API-level since filter that Trello does not provide for activity.
 	cursorTime, hasCursor := parseTrelloTime(source.Cursor)
+	if hasCursor {
+		items, actionCursor, requiresFullScan, err := fetchTrelloChangedCards(ctx, base, key, token, boardID, source.Cursor, cursorTime, boardName, listNames, projectKey)
+		if err != nil {
+			return nil, "", err
+		}
+		if !requiresFullScan {
+			return items, actionCursor, nil
+		}
+		items, fullCursor, err := fetchTrelloBoardCards(ctx, base, key, token, boardID, source.Cursor, cursorTime, boardName, listNames, projectKey)
+		if err != nil {
+			return nil, "", err
+		}
+		return items, latestTrelloCursor(fullCursor, actionCursor), nil
+	}
+	return fetchTrelloBoardCards(ctx, base, key, token, boardID, source.Cursor, cursorTime, boardName, listNames, projectKey)
+}
+
+// fetchTrelloChangedCards asks Trello for board actions after the saved cursor.
+// A normal quiet scheduled run reads one small action page and returns no
+// cards. When the page is saturated or lacks a card reference, callers fall
+// back to the proven full-board scan so the optimization cannot drop changes.
+func fetchTrelloChangedCards(ctx context.Context, base *url.URL, key, token, boardID, cursor string, cursorTime time.Time, boardName string, listNames map[string]string, projectKey string) ([]ImportItem, string, bool, error) {
+	var actions []trelloAction
+	actionQuery := url.Values{
+		"fields":        {trelloActionFields},
+		"filter":        {"all"},
+		"limit":         {fmt.Sprintf("%d", trelloActionFetchLimit)},
+		"member":        {"false"},
+		"memberCreator": {"false"},
+		"since":         {cursor},
+	}
+	if err := trelloGetJSONContext(ctx, base, key, token, "/1/boards/"+boardID+"/actions", actionQuery, &actions); err != nil {
+		return nil, "", false, fmt.Errorf("fetch trello board actions: %w", err)
+	}
+
+	latest := cursorTime
+	cardIDs := make(map[string]struct{})
+	requiresFullScan := len(actions) >= trelloActionFetchLimit
+	for _, action := range actions {
+		activity, ok := parseTrelloTime(action.Date)
+		if !ok || !activity.After(cursorTime) {
+			continue
+		}
+		if activity.After(latest) {
+			latest = activity
+		}
+		cardID := strings.TrimSpace(action.Data.Card.ID)
+		if cardID == "" {
+			// updateBoard changes board metadata only. Board metadata is already
+			// read at the start of this run, so re-reading every card cannot add
+			// card content. All other cardless events remain conservative: Trello
+			// may introduce a card-affecting shape we do not yet understand.
+			if !trelloActionIsBoardOnly(action.Type) {
+				requiresFullScan = true
+			}
+			continue
+		}
+		cardIDs[cardID] = struct{}{}
+	}
+	if requiresFullScan {
+		return nil, trelloCursor(latest, cursor), true, nil
+	}
+
+	ids := make([]string, 0, len(cardIDs))
+	for cardID := range cardIDs {
+		ids = append(ids, cardID)
+	}
+	sort.Strings(ids)
+	items := make([]ImportItem, 0, len(ids))
+	for _, cardID := range ids {
+		var card trelloCard
+		if err := trelloGetJSONContext(ctx, base, key, token, "/1/cards/"+cardID, trelloCardDetailQuery(), &card); err != nil {
+			// A deleted/archived card or an incomplete action shape should behave
+			// exactly as the older full scan: reconcile the whole board instead of
+			// failing a source run or silently omitting a change.
+			return nil, trelloCursor(latest, cursor), true, nil
+		}
+		if card.Closed || strings.TrimSpace(card.ID) == "" {
+			continue
+		}
+		items = append(items, trelloImportItem(card, boardName, listNames[card.IDList], projectKey))
+	}
+	return items, trelloCursor(latest, cursor), false, nil
+}
+
+func trelloActionIsBoardOnly(actionType string) bool {
+	return strings.EqualFold(strings.TrimSpace(actionType), "updateBoard")
+}
+
+func fetchTrelloBoardCards(ctx context.Context, base *url.URL, key, token, boardID, cursor string, cursorTime time.Time, boardName string, listNames map[string]string, projectKey string) ([]ImportItem, string, error) {
+	var cards []trelloCard
+	if err := trelloGetJSONContext(ctx, base, key, token, "/1/boards/"+boardID+"/cards", trelloBoardCardQuery(), &cards); err != nil {
+		return nil, "", fmt.Errorf("fetch trello cards: %w", err)
+	}
+	hasCursor := !cursorTime.IsZero()
 	latest := cursorTime
 	items := make([]ImportItem, 0, len(cards))
 	for _, card := range cards {
@@ -220,11 +296,46 @@ func fetchTrelloSource(ctx context.Context, source *models.ConnectedSource) ([]I
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].ExternalID < items[j].ExternalID })
 
-	nextCursor := source.Cursor
-	if !latest.IsZero() {
-		nextCursor = latest.UTC().Format(time.RFC3339Nano)
+	return items, trelloCursor(latest, cursor), nil
+}
+
+func trelloBoardCardQuery() url.Values {
+	query := trelloCardDetailQuery()
+	query.Set("filter", "visible")
+	query.Set("limit", fmt.Sprintf("%d", trelloCardFetchLimit))
+	return query
+}
+
+func trelloCardDetailQuery() url.Values {
+	return url.Values{
+		"fields":                      {trelloCardFields},
+		"actions":                     {"commentCard"},
+		"actions_limit":               {fmt.Sprintf("%d", trelloCommentLimit)},
+		"action_fields":               {trelloActionFields},
+		"action_memberCreator":        {"true"},
+		"action_memberCreator_fields": {"fullName,username"},
+		"attachments":                 {"true"},
+		"attachment_fields":           {trelloAttachmentFields},
+		"checklists":                  {"all"},
+		"checklist_fields":            {trelloChecklistFields},
+		"checkItem_fields":            {trelloCheckItemFields},
 	}
-	return items, nextCursor, nil
+}
+
+func trelloCursor(latest time.Time, fallback string) string {
+	if latest.IsZero() {
+		return fallback
+	}
+	return latest.UTC().Format(time.RFC3339Nano)
+}
+
+func latestTrelloCursor(left, right string) string {
+	leftTime, leftOK := parseTrelloTime(left)
+	rightTime, rightOK := parseTrelloTime(right)
+	if rightOK && (!leftOK || rightTime.After(leftTime)) {
+		return rightTime.UTC().Format(time.RFC3339Nano)
+	}
+	return left
 }
 
 func trelloImportItem(card trelloCard, boardName, listName, projectKey string) ImportItem {
@@ -396,6 +507,9 @@ func trelloBaseURL() (*url.URL, error) {
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
 		return nil, fmt.Errorf("%s must be an absolute HTTP(S) URL", trelloBaseURLEnv)
 	}
+	if sourceHTTPURLHasCredentials(parsed) {
+		return nil, fmt.Errorf("%s must not contain credentials", trelloBaseURLEnv)
+	}
 	if !sourceHTTPHostAllowed(parsed.Hostname()) || sourceHTTPAddressBlocked(parsed.Hostname()) {
 		return nil, fmt.Errorf("trello API host %s is not allowlisted; add api.trello.com to CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", parsed.Hostname())
 	}
@@ -452,6 +566,10 @@ func trelloGetJSON(ctx context.Context, base *url.URL, key, token, resourcePath 
 		return fmt.Errorf("decode trello response for %s: %w", resourcePath, err)
 	}
 	return nil
+}
+
+func trelloGetJSONContext(ctx context.Context, base *url.URL, key, token, resourcePath string, query url.Values, out any) error {
+	return trelloGetJSON(ctx, base, key, token, resourcePath, query, out)
 }
 
 func parseTrelloTime(value string) (time.Time, bool) {

@@ -47,6 +47,12 @@ export interface IOperationsDashboard {
   recent: IOperation[]
 }
 
+export interface IBackgroundOperationsOverview {
+  dashboard: IOperationsDashboard
+  operations: IOperation[]
+  feeds: IAccountFeed[]
+}
+
 export interface IBackgroundRunReport {
   feedsRead: number
   itemsIngested: number

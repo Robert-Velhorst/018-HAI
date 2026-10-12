@@ -215,7 +215,10 @@ type WorkflowEvent struct {
 // projection; accounting and downstream effects must rely on this record.
 type WorkflowCompletionAttestation struct {
 	ID                    uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id,omitempty"`
-	WorkflowID            uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"workflowId"`
+	// The versioned migration owns the unique workflow_id constraint. Do not add
+	// a generated GORM unique index here: DB_AUTOMIGRATE would otherwise try to
+	// rename or drop a constraint that the migration deliberately names itself.
+	WorkflowID            uuid.UUID `gorm:"type:uuid;not null" json:"workflowId"`
 	OwnerIdentity         string    `gorm:"type:varchar(255);index;not null" json:"-"`
 	TaskPlanID            string    `gorm:"type:varchar(120);not null" json:"taskPlanId"`
 	CompletionStatus      string    `gorm:"type:varchar(40);not null" json:"completionStatus"`

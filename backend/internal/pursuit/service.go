@@ -332,6 +332,12 @@ type Dashboard struct {
 	CompletionCandidates []PursuitListItem          `json:"completionCandidates"`
 }
 
+// Overview combines the dashboard and its operator brief from one snapshot.
+type Overview struct {
+	Dashboard *Dashboard `json:"dashboard"`
+	Brief     *Brief     `json:"brief"`
+}
+
 // dashboardSummary keeps the queue and decision semantics intact while
 // removing record fields that are only used by the exact pursuit detail view.
 // The full dashboard remains the default API contract for existing clients.
@@ -852,6 +858,7 @@ type Service interface {
 	UpsertTaskAttempt(attempt models.PursuitTaskAttempt) error
 	Dashboard() (*Dashboard, error)
 	DashboardForOwner(ownerIdentity string) (*Dashboard, error)
+	OverviewForOwner(ownerIdentity string) (*Overview, error)
 	Decisions() ([]PursuitDashboardDecision, error)
 	DecisionsForOwner(ownerIdentity string) ([]PursuitDashboardDecision, error)
 	Brief() (*Brief, error)
@@ -1391,6 +1398,14 @@ func (s *service) BriefForOwner(ownerIdentity string) (*Brief, error) {
 		return nil, err
 	}
 	return snapshot.Brief, nil
+}
+
+func (s *service) OverviewForOwner(ownerIdentity string) (*Overview, error) {
+	snapshot, err := s.OperatingSnapshotForOwner(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	return &Overview{Dashboard: snapshot.Dashboard, Brief: snapshot.Brief}, nil
 }
 
 func (s *service) OperatingSnapshot() (*OperatingSnapshot, error) {

@@ -185,6 +185,9 @@ func TestRollbackMigrationReversesPostMigration(t *testing.T) {
 	if applied["post/0003_durable_jobs_queue_index"] {
 		t.Fatal("queue-index migration should not remain recorded")
 	}
+	if applied["post/0005_durable_jobs_queue_lease_index"] {
+		t.Fatal("queue-lease-index migration should not remain recorded")
+	}
 	// Re-apply cleanly.
 	count, err := ApplyMigrations(db, migrations.Files, "post")
 	if err != nil {

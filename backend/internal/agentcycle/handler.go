@@ -1,11 +1,12 @@
 package agentcycle
 
 import (
-	"automation-hub-backend/internal/identity"
 	"context"
 	"errors"
 	"net/http"
 	"strings"
+
+	"automation-hub-backend/internal/identity"
 
 	"github.com/gin-gonic/gin"
 )

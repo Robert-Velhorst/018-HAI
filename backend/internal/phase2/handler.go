@@ -23,6 +23,14 @@ type Handler struct {
 	m *Module
 }
 
+type accountFeedView struct {
+	Name         string `json:"name"`
+	Provider     string `json:"provider"`
+	AccountLabel string `json:"accountLabel"`
+	SourceType   string `json:"sourceType"`
+	Enabled      bool   `json:"enabled"`
+}
+
 // NewHandler builds a handler over a module.
 func NewHandler(m *Module) *Handler { return &Handler{m: m} }
 
@@ -348,6 +356,40 @@ func (h *Handler) RunBackground(c *gin.Context) {
 	c.JSON(http.StatusOK, rep)
 }
 
+// Overview returns the single page-load payload for Background Operations. It
+// keeps the dashboard, ledger, and configured feeds scoped to the same caller
+// while avoiding three independent HTTP requests from the client.
+func (h *Handler) Overview(c *gin.Context) {
+	owner, workspace := h.owner(c)
+	dashboard, err := h.m.svc.Dashboard(owner, workspace)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	filter := operations.Filter{OwnerUserID: owner, WorkspaceID: workspace}
+	if status := c.Query("status"); status != "" {
+		filter.Status = operations.OperationStatus(status)
+	}
+	if risk := c.Query("risk"); risk != "" {
+		filter.RiskLevel = operations.RiskLevel(risk)
+	}
+	if limit := c.Query("limit"); limit != "" {
+		if parsed, err := strconv.Atoi(limit); err == nil {
+			filter.Limit = parsed
+		}
+	}
+	operations, err := h.m.svc.List(filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"dashboard":  dashboard,
+		"operations": operations,
+		"feeds":      h.feedViews(),
+	})
+}
+
 // backgroundRunHTTPStatus keeps a concurrent run distinguishable from an
 // unexpected engine failure. Clients can safely offer a retry only for the
 // former instead of presenting every failure as a conflict.
@@ -377,17 +419,14 @@ func authenticatedOwner(c *gin.Context) (string, bool) {
 
 // ListFeeds returns the configured account feeds.
 func (h *Handler) ListFeeds(c *gin.Context) {
-	type feedView struct {
-		Name         string `json:"name"`
-		Provider     string `json:"provider"`
-		AccountLabel string `json:"accountLabel"`
-		SourceType   string `json:"sourceType"`
-		Enabled      bool   `json:"enabled"`
-	}
-	views := make([]feedView, 0, len(h.m.readers))
+	c.JSON(http.StatusOK, gin.H{"feeds": h.feedViews()})
+}
+
+func (h *Handler) feedViews() []accountFeedView {
+	views := make([]accountFeedView, 0, len(h.m.readers))
 	for _, r := range h.m.readers {
 		f := r.Feed()
-		views = append(views, feedView{f.Name, f.Provider, f.AccountLabel, string(f.SourceType), f.Enabled})
+		views = append(views, accountFeedView{f.Name, f.Provider, f.AccountLabel, string(f.SourceType), f.Enabled})
 	}
-	c.JSON(http.StatusOK, gin.H{"feeds": views})
+	return views
 }

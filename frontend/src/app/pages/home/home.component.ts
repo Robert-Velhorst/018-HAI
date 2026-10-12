@@ -43,6 +43,7 @@ export class HomeComponent implements OnInit {
   hidePassword: boolean = true
   hidePasswordConfirm: boolean = true
   automations: IAutomationModel[] = []
+  automationLoadFailed = false
   @ViewChild('automationModal', { static: false })
   automationModal!: AutomationsFormComponent
 
@@ -214,9 +215,18 @@ export class HomeComponent implements OnInit {
     if (!id1 || !id2 || id1 === id2) {
       return
     }
+    const previousOrder = [...this.automations]
     moveItemInArray(this.automations, event.previousIndex, event.currentIndex)
 
-    this.automationsService.swapAutomations(id1, id2).subscribe()
+    this.automationsService.swapAutomations(id1, id2).subscribe({
+      error: () => {
+        this.automations = previousOrder
+        this.notification.error(
+          'Order was not saved',
+          'The automation list was restored. Check the connection and try again.'
+        )
+      },
+    })
   }
 
   handleFormDataAutomationSubmitted(automation: IAutomationModel) {
@@ -247,9 +257,18 @@ export class HomeComponent implements OnInit {
   }
 
   showProfileModal(): void {
-    this.userSubscription = this.userService.getUser().subscribe((user) => {
-      this.profileForm.get('email')?.setValue(user.email)
-      this.isProfileVisible = true
+    this.userSubscription = this.userService.getUser().subscribe({
+      next: (user) => {
+        this.profileForm.get('email')?.setValue(user.email)
+        this.isProfileVisible = true
+      },
+      error: () => {
+        this.isProfileVisible = false
+        this.notification.error(
+          'Profile unavailable',
+          'Your profile could not be loaded. Check the connection and try again.'
+        )
+      },
     })
   }
 
@@ -306,14 +325,14 @@ export class HomeComponent implements OnInit {
     this.automationsService.getAutomations().subscribe({
       next: (automations: IAutomationModel[]) => {
         this.automations = automations.sort((a, b) => a.position - b.position)
+        this.automationLoadFailed = false
       },
-      error: (error) => {
-        // registry a log
-        console.error('Error fetching automations', error)
+      error: () => {
+        this.automationLoadFailed = true
         this.notification.create(
           'error',
-          'Error',
-          'There was an error fetching the automations.'
+          'Automations unavailable',
+          'The registry could not be loaded. Check the connection and try again.'
         )
       },
     })
@@ -333,13 +352,21 @@ export class HomeComponent implements OnInit {
       nzOkText: 'Yes',
       nzOkType: 'primary',
       nzOnOk: () => {
-        this.automationsService.deleteAutomation(automationId).subscribe(() => {
-          this.loadAutomations()
-          this.notification.create(
-            'success',
-            'Automation deleted',
-            'Automation deleted successfully.'
-          )
+        this.automationsService.deleteAutomation(automationId).subscribe({
+          next: () => {
+            this.loadAutomations()
+            this.notification.create(
+              'success',
+              'Automation deleted',
+              'Automation deleted successfully.'
+            )
+          },
+          error: () => {
+            this.notification.error(
+              'Automation was not deleted',
+              'The automation remains unchanged. Check the connection and try again.'
+            )
+          },
         })
       },
       nzCancelText: 'No',

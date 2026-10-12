@@ -20,7 +20,7 @@ import (
 const (
 	JobKindSweep      = "workflow.sweep"
 	sweepMaxAttempts  = 3
-	defaultPollSecond = 15 * time.Second
+	defaultPollSecond = time.Minute
 )
 
 // RegisterDurableScheduling registers the workflow sweep as a durable recurring

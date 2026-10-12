@@ -43,6 +43,38 @@ func TestVerifiedActorDoesNotUseClientSuppliedActor(t *testing.T) {
 	}
 }
 
+func TestPursuitHandlerRejectsMalformedOptionalMutationRequests(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := newFakeRepo()
+	service := NewService(repo, nil)
+	record, err := service.Create(CreateRequest{OwnerIdentity: "alice", Title: "Malformed request guard"})
+	if err != nil {
+		t.Fatalf("create pursuit: %v", err)
+	}
+	handler := NewHandler(service)
+	router := gin.New()
+	router.Use(func(context *gin.Context) {
+		context.Set(identity.ContextSubjectKey, "alice")
+		context.Next()
+	})
+	router.POST("/pursuits/:id/reopen", handler.Reopen)
+	router.POST("/pursuits/:id/summary", handler.RefreshSummary)
+
+	for _, path := range []string{"reopen", "summary"} {
+		t.Run(path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/pursuits/"+record.ID.String()+"/"+path, strings.NewReader(`{"note":`))
+			request.Header.Set("Content-Type", "application/json")
+
+			router.ServeHTTP(response, request)
+
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestSettlePortfolioWorkflowHandlerUsesVerifiedOwnerAndReturnsCreated(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service, _, item, execution := completedPortfolioWorkflowFixture(t, "verified")

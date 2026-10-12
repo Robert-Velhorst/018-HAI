@@ -107,6 +107,15 @@ func (h *Handler) Brief(c *gin.Context) {
 	c.JSON(http.StatusOK, record)
 }
 
+func (h *Handler) Overview(c *gin.Context) {
+	record, err := h.service.OverviewForOwner(pursuitOwner(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, record)
+}
+
 func (h *Handler) Decisions(c *gin.Context) {
 	decisions, err := h.service.DecisionsForOwner(pursuitOwner(c))
 	if err != nil {
@@ -1048,6 +1057,14 @@ func (h *Handler) RefreshSummary(c *gin.Context) {
 		return
 	}
 	h.respondScopedDetail(c, id, http.StatusOK)
+}
+
+func bindOptionalPursuitJSON(c *gin.Context, request any) bool {
+	if err := c.ShouldBindJSON(request); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request body must be valid JSON"})
+		return false
+	}
+	return true
 }
 
 func (h *Handler) Review(c *gin.Context) {

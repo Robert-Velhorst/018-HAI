@@ -32,6 +32,8 @@ func trelloTestServer(t *testing.T, cardsJSON string) (*httptest.Server, *[]stri
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"},{"id":"list-2","name":"Done"}]`))
+		case strings.HasSuffix(r.URL.Path, "/actions"):
+			_, _ = w.Write([]byte(`[]`))
 		case strings.HasSuffix(r.URL.Path, "/cards"):
 			*cardQueries = append(*cardQueries, r.URL.RawQuery)
 			_, _ = w.Write([]byte(cardsJSON))
@@ -234,12 +236,8 @@ func TestSyncTrelloPreservesComplexCardAcceptanceShape(t *testing.T) {
 	}
 }
 
-func TestSyncTrelloIncrementalSkipsUnchangedCards(t *testing.T) {
-	cards := `[
-		{"id":"card-old","name":"Stale card","shortUrl":"https://trello.com/c/old","dateLastActivity":"2026-07-01T00:00:00Z","idList":"list-1"},
-		{"id":"card-new","name":"Fresh activity","shortUrl":"https://trello.com/c/new","dateLastActivity":"2026-07-12T00:00:00Z","idList":"list-1"}
-	]`
-	server, _, _ := trelloTestServer(t, cards)
+func TestSyncTrelloIncrementalSkipsBoardScanWhenNoActionsAreNewerThanCursor(t *testing.T) {
+	server, _, _ := trelloTestServer(t, `[]`)
 	defer server.Close()
 
 	t.Setenv(trelloBaseURLEnv, server.URL)
@@ -249,20 +247,171 @@ func TestSyncTrelloIncrementalSkipsUnchangedCards(t *testing.T) {
 	t.Setenv(trelloReadTokenEnv, "test-read-token")
 
 	sourceID := uuid.New()
-	// Cursor sits between the two cards' activity timestamps.
 	repo := newFakeSourceRepo(newTrelloSource(sourceID, "abc123XY", "2026-07-05T00:00:00Z"))
 	result, err := NewService(repo, &fakeSourceMemoryService{}).Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if result.Job.ItemsSeen != 1 {
-		t.Fatalf("ItemsSeen = %d, want 1 (only the card changed after the cursor)", result.Job.ItemsSeen)
+	if result.Job.ItemsSeen != 0 {
+		t.Fatalf("ItemsSeen = %d, want 0 when no board actions are newer", result.Job.ItemsSeen)
 	}
-	if len(result.Extractions) != 1 || !strings.Contains(result.Extractions[0].SourceURI, "/c/new") {
-		t.Fatalf("expected only the freshly-updated card, got %#v", result.Extractions)
+	if len(result.Extractions) != 0 {
+		t.Fatalf("extractions = %#v, want no unchanged cards", result.Extractions)
+	}
+	if result.Job.CursorAfter != "2026-07-05T00:00:00Z" {
+		t.Fatalf("CursorAfter = %q, want unchanged cursor", result.Job.CursorAfter)
+	}
+}
+
+func TestSyncTrelloIncrementalFetchesOnlyCardsNamedByRecentBoardActions(t *testing.T) {
+	var fullBoardCardRequest bool
+	var actionSince string
+	var detailRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("key") == "" || r.URL.Query().Get("token") == "" {
+			http.Error(w, "missing credentials", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/1/boards/abc123XY":
+			_, _ = w.Write([]byte(`{"id":"board-1","name":"Client Delivery","shortUrl":"https://trello.com/b/abc123"}`))
+		case "/1/boards/abc123XY/lists":
+			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
+		case "/1/boards/abc123XY/actions":
+			actionSince = r.URL.Query().Get("since")
+			_, _ = w.Write([]byte(`[{"id":"action-1","type":"updateCard","date":"2026-07-12T00:00:00Z","data":{"card":{"id":"card-new"}}}]`))
+		case "/1/cards/card-new":
+			detailRequests++
+			_, _ = w.Write([]byte(`{"id":"card-new","name":"Fresh activity","shortUrl":"https://trello.com/c/new","dateLastActivity":"2026-07-12T00:00:00Z","idList":"list-1"}`))
+		case "/1/boards/abc123XY/cards":
+			fullBoardCardRequest = true
+			http.Error(w, "incremental sync must not request every board card", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv(trelloBaseURLEnv, server.URL)
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "127.0.0.1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL", "true")
+	t.Setenv(trelloAPIKeyEnv, "test-key")
+	t.Setenv(trelloReadTokenEnv, "test-read-token")
+
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(newTrelloSource(sourceID, "abc123XY", "2026-07-05T00:00:00Z"))
+	result, err := NewService(repo, &fakeSourceMemoryService{}).Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if fullBoardCardRequest {
+		t.Fatal("incremental sync fetched every board card")
+	}
+	if actionSince != "2026-07-05T00:00:00Z" {
+		t.Fatalf("board action since = %q, want stored cursor", actionSince)
+	}
+	if detailRequests != 1 || result.Job.ItemsSeen != 1 {
+		t.Fatalf("incremental detail requests=%d items=%d, want one changed card", detailRequests, result.Job.ItemsSeen)
 	}
 	if result.Job.CursorAfter != "2026-07-12T00:00:00Z" {
-		t.Fatalf("CursorAfter = %q, want advance to newest activity", result.Job.CursorAfter)
+		t.Fatalf("CursorAfter = %q, want latest board action", result.Job.CursorAfter)
+	}
+}
+
+func TestSyncTrelloIncrementalFallsBackToBoardScanForAmbiguousAction(t *testing.T) {
+	var fullBoardCardRequest bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("key") == "" || r.URL.Query().Get("token") == "" {
+			http.Error(w, "missing credentials", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/1/boards/abc123XY":
+			_, _ = w.Write([]byte(`{"id":"board-1","name":"Client Delivery","shortUrl":"https://trello.com/b/abc123"}`))
+		case "/1/boards/abc123XY/lists":
+			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
+		case "/1/boards/abc123XY/actions":
+			// An unknown cardless action must reconcile safely instead of
+			// advancing the cursor and potentially losing a card change.
+			_, _ = w.Write([]byte(`[{"id":"action-1","type":"futureCardChange","date":"2026-07-12T00:00:00Z","data":{}}]`))
+		case "/1/boards/abc123XY/cards":
+			fullBoardCardRequest = true
+			_, _ = w.Write([]byte(`[{"id":"card-new","name":"Fresh activity","shortUrl":"https://trello.com/c/new","dateLastActivity":"2026-07-12T00:00:00Z","idList":"list-1"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv(trelloBaseURLEnv, server.URL)
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "127.0.0.1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL", "true")
+	t.Setenv(trelloAPIKeyEnv, "test-key")
+	t.Setenv(trelloReadTokenEnv, "test-read-token")
+
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(newTrelloSource(sourceID, "abc123XY", "2026-07-05T00:00:00Z"))
+	result, err := NewService(repo, &fakeSourceMemoryService{}).Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if !fullBoardCardRequest {
+		t.Fatal("ambiguous action did not trigger a safe full-board reconciliation")
+	}
+	if result.Job.ItemsSeen != 1 || len(result.Extractions) != 1 {
+		t.Fatalf("items=%d extractions=%d, want board reconciliation result", result.Job.ItemsSeen, len(result.Extractions))
+	}
+	if result.Job.CursorAfter != "2026-07-12T00:00:00Z" {
+		t.Fatalf("CursorAfter = %q, want latest observed action/card activity", result.Job.CursorAfter)
+	}
+}
+
+func TestSyncTrelloIncrementalIgnoresBoardOnlyActionsWithoutCardScan(t *testing.T) {
+	var fullBoardCardRequest bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("key") == "" || r.URL.Query().Get("token") == "" {
+			http.Error(w, "missing credentials", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/1/boards/abc123XY":
+			_, _ = w.Write([]byte(`{"id":"board-1","name":"Client Delivery","shortUrl":"https://trello.com/b/abc123"}`))
+		case "/1/boards/abc123XY/lists":
+			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
+		case "/1/boards/abc123XY/actions":
+			_, _ = w.Write([]byte(`[{"id":"action-1","type":"updateBoard","date":"2026-07-12T00:00:00Z","data":{}}]`))
+		case "/1/boards/abc123XY/cards":
+			fullBoardCardRequest = true
+			http.Error(w, "board-only action must not trigger a card reconciliation", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv(trelloBaseURLEnv, server.URL)
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "127.0.0.1")
+	t.Setenv("CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL", "true")
+	t.Setenv(trelloAPIKeyEnv, "test-key")
+	t.Setenv(trelloReadTokenEnv, "test-read-token")
+
+	sourceID := uuid.New()
+	repo := newFakeSourceRepo(newTrelloSource(sourceID, "abc123XY", "2026-07-05T00:00:00Z"))
+	result, err := NewService(repo, &fakeSourceMemoryService{}).Sync(sourceID, ImportRequest{Mode: ModeIncrementalSync})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if fullBoardCardRequest {
+		t.Fatal("board-only action triggered a card reconciliation")
+	}
+	if result.Job.ItemsSeen != 0 || len(result.Extractions) != 0 {
+		t.Fatalf("items=%d extractions=%d, want no card work for a board-only action", result.Job.ItemsSeen, len(result.Extractions))
+	}
+	if result.Job.CursorAfter != "2026-07-12T00:00:00Z" {
+		t.Fatalf("CursorAfter = %q, want board event cursor", result.Job.CursorAfter)
 	}
 }
 
@@ -320,5 +469,12 @@ func TestTrelloBoardID(t *testing.T) {
 		if err != nil || got != tc.want {
 			t.Fatalf("trelloBoardID(%q) = %q, %v; want %q", tc.in, got, err, tc.want)
 		}
+	}
+}
+
+func TestTrelloBaseURLRejectsEmbeddedCredentials(t *testing.T) {
+	t.Setenv(trelloBaseURLEnv, "https://operator:secret@api.trello.com")
+	if _, err := trelloBaseURL(); err == nil || !strings.Contains(err.Error(), "credentials") {
+		t.Fatalf("trelloBaseURL error=%v, want credential rejection", err)
 	}
 }

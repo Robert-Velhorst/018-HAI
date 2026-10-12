@@ -9,6 +9,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon'
 import { NzModalModule } from 'ng-zorro-antd/modal'
 import { NzDrawerModule } from 'ng-zorro-antd/drawer'
 import { NzSpinModule } from 'ng-zorro-antd/spin'
+import { NzAlertModule } from 'ng-zorro-antd/alert'
 import { ControlCenterComponent } from './control-center.component'
 import { AUTOMATIONS_SERVICE_TOKEN } from '../../services/automations/automations.service.token'
 import { AutomationsService } from '../../services/automations/automations.service'
@@ -28,6 +29,7 @@ const routes: Routes = [{ path: '', component: ControlCenterComponent }]
     NzModalModule,
     NzDrawerModule,
     NzSpinModule,
+    NzAlertModule,
   ],
   providers: [
     { provide: AUTOMATIONS_SERVICE_TOKEN, useClass: AutomationsService },

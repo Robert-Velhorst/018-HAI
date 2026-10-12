@@ -32,7 +32,14 @@ func (h *Handler) ownerID(c *gin.Context) string {
 
 // List returns feed health for all registered feeds.
 func (h *Handler) List(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"feeds": h.reg.Health()})
+	owner := h.ownerID(c)
+	visible := make([]FeedHealth, 0)
+	for _, health := range h.reg.Health() {
+		if health.Feed.OwnerUserID == owner {
+			visible = append(visible, health)
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"feeds": visible})
 }
 
 // Bridges returns the provider bridge contracts with truthful connection status.
@@ -101,7 +108,7 @@ func (h *Handler) Get(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	feed, ok := h.reg.Get(id)
+	feed, ok := h.feedForOwner(c, id)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
 		return
@@ -127,6 +134,10 @@ func (h *Handler) Patch(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if _, ok := h.feedForOwner(c, id); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
+		return
+	}
 	feed, ok := h.reg.Patch(id, req.Enabled, req.Name, req.OperationType)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
@@ -142,6 +153,10 @@ func (h *Handler) Sync(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
+	if _, ok := h.feedForOwner(c, id); !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
+		return
+	}
 	rep, ok := h.reg.Sync(c.Request.Context(), id)
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
@@ -152,7 +167,7 @@ func (h *Handler) Sync(c *gin.Context) {
 
 // SyncDue syncs all enabled feeds.
 func (h *Handler) SyncDue(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"reports": h.reg.SyncDue(c.Request.Context())})
+	c.JSON(http.StatusOK, gin.H{"reports": h.reg.SyncDueForOwner(c.Request.Context(), h.ownerID(c))})
 }
 
 // Audit returns a feed's audit trail.
@@ -162,9 +177,17 @@ func (h *Handler) Audit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 		return
 	}
-	if _, ok := h.reg.Get(id); !ok {
+	if _, ok := h.feedForOwner(c, id); !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "feed not found"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"audit": h.reg.Audit(id)})
+}
+
+func (h *Handler) feedForOwner(c *gin.Context, id uuid.UUID) (Feed, bool) {
+	feed, ok := h.reg.Get(id)
+	if !ok || feed.OwnerUserID != h.ownerID(c) {
+		return Feed{}, false
+	}
+	return feed, true
 }

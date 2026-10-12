@@ -56,6 +56,22 @@ func TestHandlerIgnoresForgedOwnerAndScopesMemoryListing(t *testing.T) {
 	}
 }
 
+func TestHandlerReturnsServiceUnavailableWithoutOwnerScopedService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(nonOwnerScopedService{Service: NewService(newFakeRepository())})
+	router := gin.New()
+	router.GET("/memory", handler.List)
+
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/memory", nil))
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("List status=%d body=%s, want %d", response.Code, response.Body.String(), http.StatusServiceUnavailable)
+	}
+}
+
+type nonOwnerScopedService struct{ Service }
+
 // buildQueryHandler wires the real handler over the in-memory fake repository
 // and seeds a few memories, so the HTTP layer is exercised end-to-end.
 func buildQueryHandler(t *testing.T) *Handler {

@@ -40,6 +40,11 @@ preflight adds the stronger secret and OAuth consistency checks. The gateway
 also applies a small fixed-memory throttle to unauthenticated authentication
 and A2A routes, independently of the backend's Redis-backed limiter.
 
+The local A2A planning bridge and its Agent Card are deliberately excluded from
+the public tunnel. Local peers use their dedicated bearer token directly through
+the loopback gateway; cloud access must not turn that local-only planning
+surface into remote-agent discovery or execution.
+
 Use a dedicated ngrok authtoken with an ACL restricted to the reserved HAI
 domain. Do not reuse a general account token. The agent image is digest-pinned,
 remote management and request inspection are disabled, and the container is
@@ -157,9 +162,18 @@ script reconciles and health-checks the IDP, backend, frontend, and gateway with
 the hardened environment before it creates the public endpoint. This prevents
 an IDP that was previously started with insecure cookie settings from being
 exposed merely because the file was edited afterward. A healthy container and
-reachable login page prove only transport and authentication routing. Each
+reachable login page prove only transport and authentication routing. After the
+tunnel reports healthy, the launcher also requires the configured public
+`/readyz` route to return HTTP 200 without redirecting. If that public check
+does not become ready, it stops the ngrok service instead of claiming cloud
+access. Each
 external connector, model, or runtime still requires its own bounded
 authorization and acceptance evidence.
+
+The launcher also verifies that any existing `018-hai` Compose containers belong
+to the same installation directory as the selected Compose file. It refuses to
+start or stop cloud access for another checkout, preventing an accidental public
+change to a different local HAI stack with the same Compose project name.
 
 ## Recovery
 

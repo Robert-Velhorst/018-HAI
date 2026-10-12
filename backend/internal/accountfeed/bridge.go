@@ -97,10 +97,36 @@ func (b BridgeContract) ConnectionStatus() ConnectionStatus {
 	case ProviderUpworkAssisted, ProviderChatExport, ProviderBrowserCapture:
 		return ConnContractOnly
 	default:
-		if b.CredentialEnv != "" && strings.TrimSpace(os.Getenv(b.CredentialEnv)) != "" {
+		if b.hasConfiguredCredentials() {
 			return ConnCredentialsPresentUnverified
 		}
 		return ConnCredentialsRequired
+	}
+}
+
+func (b BridgeContract) hasConfiguredCredentials() bool {
+	values := strings.Split(b.CredentialEnv, ",")
+	if len(values) == 0 {
+		return false
+	}
+	for _, value := range values {
+		name := strings.TrimSpace(value)
+		if name == "" || strings.TrimSpace(os.Getenv(name)) == "" {
+			return false
+		}
+	}
+	return true
+}
+
+// ReportsCredentialGrant is intentionally false for Google OAuth bootstrap
+// variables. A client id and secret enable the owner-scoped consent flow, but
+// do not prove that this owner has granted a read-only source connection.
+func (b BridgeContract) ReportsCredentialGrant() bool {
+	switch b.Provider {
+	case ProviderGmail, ProviderGoogleDrive, ProviderGoogleCalendar:
+		return false
+	default:
+		return true
 	}
 }
 
@@ -121,21 +147,29 @@ func bridgeContracts() []BridgeContract {
 		{Provider: ProviderLocalFolder, DisplayName: "Local Folder", ConnectorPreference: []string{"local_export"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: []SetupRequirement{{Step: "Configure a feeds folder", Detail: "Files must live under the allowlisted feeds root."}}},
 		{Provider: ProviderGmail, DisplayName: "Gmail (read-only)", ConnectorPreference: []string{"official_api", "local_export", "browser_read_only"}, ReadOnly: true,
-			RequiredScopes: []string{"gmail.readonly"}, CredentialEnv: "GMAIL_OAUTH_TOKEN", ItemTypes: []ItemType{ItemEmail}, SetupRequirements: apiSetup("Gmail", "GMAIL_OAUTH_TOKEN")},
+			RequiredScopes: []string{"gmail.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemEmail}, SetupRequirements: googleOAuthSetup("Gmail", "gmail.readonly")},
 		{Provider: ProviderGoogleDrive, DisplayName: "Google Drive (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"drive.readonly"}, CredentialEnv: "GDRIVE_OAUTH_TOKEN", ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: apiSetup("Google Drive", "GDRIVE_OAUTH_TOKEN")},
+			RequiredScopes: []string{"drive.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: googleOAuthSetup("Google Drive", "drive.readonly")},
 		{Provider: ProviderGoogleCalendar, DisplayName: "Google Calendar (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"calendar.readonly"}, CredentialEnv: "GCAL_OAUTH_TOKEN", ItemTypes: []ItemType{ItemCalendarEvent}, SetupRequirements: apiSetup("Google Calendar", "GCAL_OAUTH_TOKEN")},
+			RequiredScopes: []string{"calendar.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemCalendarEvent}, SetupRequirements: googleOAuthSetup("Google Calendar", "calendar.readonly")},
 		{Provider: ProviderGitHub, DisplayName: "GitHub (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"repo:read"}, CredentialEnv: "GITHUB_READ_TOKEN", ItemTypes: []ItemType{ItemIssue, ItemPullRequest}, SetupRequirements: apiSetup("GitHub", "GITHUB_READ_TOKEN")},
+			RequiredScopes: []string{"repo:read"}, CredentialEnv: "GITHUB_SOURCE_TOKEN", ItemTypes: []ItemType{ItemIssue, ItemPullRequest}, SetupRequirements: apiSetup("GitHub", "GITHUB_SOURCE_TOKEN")},
 		{Provider: ProviderTrello, DisplayName: "Trello (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"read"}, CredentialEnv: "TRELLO_READ_TOKEN", ItemTypes: []ItemType{ItemCard}, SetupRequirements: apiSetup("Trello", "TRELLO_READ_TOKEN")},
+			RequiredScopes: []string{"read"}, CredentialEnv: "TRELLO_API_KEY, TRELLO_READ_TOKEN", ItemTypes: []ItemType{ItemCard}, SetupRequirements: apiSetup("Trello", "TRELLO_API_KEY and TRELLO_READ_TOKEN")},
 		{Provider: ProviderUpworkAssisted, DisplayName: "Upwork (assisted)", ConnectorPreference: []string{"human_manual", "browser_read_only"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Assisted only", Detail: "Upwork has no automated connector; items arrive via human/manual export. No fake access."}}},
 		{Provider: ProviderChatExport, DisplayName: "Chat Export", ConnectorPreference: []string{"local_export"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemChat, ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Export a chat log", Detail: "Provide a normalized chat export in the generic feed format."}}},
 		{Provider: ProviderBrowserCapture, DisplayName: "Browser Capture (read-only)", ConnectorPreference: []string{"browser_read_only", "guarded_browser"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemDocument, ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Bounded read-only capture", Detail: "Only allowlisted-domain read-only capture; no state changes. No executor is faked."}}},
+	}
+}
+
+func googleOAuthSetup(name, scope string) []SetupRequirement {
+	return []SetupRequirement{
+		{Step: "Configure the OAuth client", Detail: "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET for the read-only " + name + " connector."},
+		{Step: "Connect this owner account", Detail: "Complete the owner-scoped OAuth consent flow in Connected Sources for the " + scope + " scope. Client bootstrap alone does not grant account access."},
+		{Step: "Run a real read smoke", Detail: "A bounded read against " + name + " must succeed before it is treated as connected."},
 	}
 }
 

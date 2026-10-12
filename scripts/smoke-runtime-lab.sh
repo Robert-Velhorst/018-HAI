@@ -58,26 +58,33 @@ createdb -h 127.0.0.1 -p "${PG_PORT}" automation
 
 echo "==> Building and starting backend on :${API_PORT}"
 mkdir -p "${IMAGES}"
-( cd "${ROOT}/backend" && go build -o "${BIN}" ./cmd )
+( cd "${ROOT}/backend" && go build -buildvcs=false -o "${BIN}" ./cmd )
 
-DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=postgres \
-  DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
-  BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
-  RUN_MODE=production KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
-  HAI_PHASE2_WORKSPACE_DIR="${WORKSPACE}" \
-  "${BIN}" > "${WORKDIR}/backend.log" 2>&1 &
-BACKEND_PID=$!
+start_backend() {
+  DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=smoke-local-postgres-password \
+    DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
+    BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
+    RUN_MODE=production KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
+    HAI_PHASE2_WORKSPACE_DIR="${WORKSPACE}" \
+    "${BIN}" > "${WORKDIR}/backend.log" 2>&1 &
+  BACKEND_PID=$!
+}
 
+wait_live() {
+  local ready=""
+  for i in $(seq 1 60); do
+    if curl -fsS "http://127.0.0.1:${API_PORT}/healthz" >/dev/null 2>&1; then ready=1; break; fi
+    if ! kill -0 "${BACKEND_PID}" 2>/dev/null; then
+      echo "backend exited early; log:"; tail -20 "${WORKDIR}/backend.log"; exit 1
+    fi
+    sleep 1
+  done
+  [ -n "${ready}" ] || { echo "backend never became live; log:"; tail -20 "${WORKDIR}/backend.log"; exit 1; }
+}
+
+start_backend
 echo "==> Waiting for liveness"
-ready=""
-for i in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:${API_PORT}/healthz" >/dev/null 2>&1; then ready=1; break; fi
-  if ! kill -0 "${BACKEND_PID}" 2>/dev/null; then
-    echo "backend exited early; log:"; tail -20 "${WORKDIR}/backend.log"; exit 1
-  fi
-  sleep 1
-done
-[ -n "${ready}" ] || { echo "backend never became live; log:"; tail -20 "${WORKDIR}/backend.log"; exit 1; }
+wait_live
 
 owner_jwt="$(hai_smoke_mint_jwt owner "${JWT_SECRET}")"
 key_hdr=(-H "X-HAI-Backend-Key: ${API_KEY}" -H "Content-Type: application/json")
@@ -86,6 +93,11 @@ hdr=("${key_hdr[@]}" -H "Authorization: Bearer ${owner_jwt}")
 echo "==> Authentication boundary"
 check "API key alone is rejected" '401' \
   "$(curl -sS -o /dev/null -w '%{http_code}' "${key_hdr[@]}" "${BASE}/runtime-lab/overview")"
+
+echo "==> Owner activates the durable local execution baseline"
+hai_smoke_activate_baseline_constitution "${BASE}" "${API_KEY}" "${owner_jwt}"
+kill "${BACKEND_PID}" 2>/dev/null; wait "${BACKEND_PID}" 2>/dev/null || true
+start_backend; wait_live
 
 echo "==> Truthful runtime overview"
 ov="$(curl -sS "${hdr[@]}" "${BASE}/runtime-lab/overview")"

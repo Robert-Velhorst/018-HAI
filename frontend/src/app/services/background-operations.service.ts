@@ -3,6 +3,7 @@ import { Injectable } from '@angular/core'
 import { Observable } from 'rxjs'
 import {
   IAccountFeed,
+  IBackgroundOperationsOverview,
   IBackgroundRunReport,
   IOperation,
   IOperationEvent,
@@ -25,6 +26,14 @@ export class BackgroundOperationsService {
 
   dashboard(): Observable<IOperationsDashboard> {
     return this.http.get<IOperationsDashboard>(`${this.apiUrl}/operations/dashboard`)
+  }
+
+  overview(filters?: { status?: string; risk?: string; limit?: number }): Observable<IBackgroundOperationsOverview> {
+    let params = new HttpParams()
+    if (filters?.status) params = params.set('status', filters.status)
+    if (filters?.risk) params = params.set('risk', filters.risk)
+    if (filters?.limit) params = params.set('limit', String(filters.limit))
+    return this.http.get<IBackgroundOperationsOverview>(`${this.apiUrl}/background/overview`, { params })
   }
 
   get(id: string): Observable<IOperation> {

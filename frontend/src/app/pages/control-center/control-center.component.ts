@@ -105,11 +105,13 @@ export class ControlCenterComponent implements OnInit {
   diagnosticsLoadErrors: string[] = []
 
   loading = false
+  overviewLoadError = ''
   scanning = false
   memoryLoading = false
   memoriesLoaded = false
   diagnosticsListLoading = false
   diagnosticsLoaded = false
+  diagnosticsLoadError = ''
   resolvingId = ''
   archivingMemoryId = ''
   diagnosticsExpanded = false
@@ -196,70 +198,64 @@ export class ControlCenterComponent implements OnInit {
   }
 
   refresh(): void {
-    this.loading = true
-    this.dashboardLoadErrors = []
-    let pending = 3
-    const done = () => {
-      pending -= 1
-      if (pending <= 0) {
-        this.loading = false
-      }
+    if (this.loading) {
+      return
     }
-
-    this.workflowService.dashboard().pipe(
+    this.dashboardLoadErrors = []
+    this.loading = true
+    this.overviewLoadError = ''
+    const failedLoads: string[] = []
+    forkJoin({
+      workflow: this.workflowService.dashboard().pipe(
         timeout(2500),
         catchError(() => {
+          failedLoads.push('workflow')
           this.recordDashboardLoadFailure('Workflow status')
           return of(undefined)
         })
-      ).subscribe({
-        next: (workflow) => {
-          this.workflowDashboard = workflow
-          this.rebuildViewModel()
-          done()
-        },
-        error: () => {
-          done()
-        },
-      })
-
-    this.ambientService.overview('summary').pipe(
+      ),
+      ambient: this.ambientService.overview('summary').pipe(
         timeout(2500),
         catchError(() => {
+          failedLoads.push('ambient priorities')
           this.recordDashboardLoadFailure('Ambient scan')
           return of(undefined)
         })
-      ).subscribe({
-        next: (ambient) => {
-          this.ambientOverview = ambient
-          this.rebuildViewModel()
-          done()
-        },
-        error: () => {
-          done()
-        },
-      })
-
-    this.pursuitService.dashboard('counts').pipe(
+      ),
+      pursuits: this.pursuitService.dashboard('counts').pipe(
         timeout(1800),
         catchError(() => {
+          failedLoads.push('pursuits')
           this.recordDashboardLoadFailure('Pursuit status')
           return of(undefined)
         })
-      ).subscribe({
-        next: (pursuits) => {
+      ),
+    }).subscribe({
+      next: ({ workflow, ambient, pursuits }) => {
+        if (workflow !== undefined) {
+          this.workflowDashboard = workflow
+        }
+        if (ambient !== undefined) {
+          this.ambientOverview = ambient
+        }
+        if (pursuits !== undefined) {
           this.pursuitDashboard = pursuits
-          this.rebuildViewModel()
-          done()
-        },
-        error: () => {
-          done()
-        },
-      })
+        }
+        if (failedLoads.length) {
+          this.overviewLoadError = `Unable to refresh ${failedLoads.join(', ')}. Some information may be unavailable; retry when the service is ready.`
+        }
+        this.rebuildViewModel()
+        this.loading = false
+      },
+      error: () => {
+        this.overviewLoadError = 'The command center could not be refreshed. Check system status, then try again.'
+        this.loading = false
+      },
+    })
   }
 
   hasDashboardLoadError(): boolean {
-    return this.dashboardLoadErrors.length > 0
+    return this.dashboardLoadErrors.length > 0 || !!this.overviewLoadError
   }
 
   private recordDashboardLoadFailure(label: string): void {
@@ -301,16 +297,20 @@ export class ControlCenterComponent implements OnInit {
       return
     }
     this.diagnosticsListLoading = true
+    this.diagnosticsLoadError = ''
+    const failedLoads: string[] = []
     this.diagnosticsLoadErrors = []
     forkJoin({
       automations: this.automationsService.getAutomations().pipe(
         catchError(() => {
+          failedLoads.push('automations')
           this.recordDiagnosticsLoadFailure('Automation registry')
-          return of([] as IAutomationModel[])
+          return of(undefined as IAutomationModel[] | undefined)
         })
       ),
       summary: this.automationsService.getHealthSummary().pipe(
         catchError(() => {
+          failedLoads.push('automation health')
           this.recordDiagnosticsLoadFailure('Automation health')
           return of(undefined)
         })
@@ -318,19 +318,30 @@ export class ControlCenterComponent implements OnInit {
       runtimes: this.agentRuntimeService.overview().pipe(
         timeout(2500),
         catchError(() => {
+          failedLoads.push('runtime health')
           this.recordDiagnosticsLoadFailure('Runtime overview')
-          return of({ runtimes: [] as IAgentRuntimeInfo[], health: [] as IAgentRuntimeHealth[] })
+          return of(undefined)
         })
       ),
     }).subscribe({
       next: (result) => {
-        this.automations = result.automations.sort(
-          (a, b) => a.position - b.position
-        )
-        this.summary = result.summary
-        this.runtimes = result.runtimes.runtimes
-        this.runtimeHealth = result.runtimes.health
-        this.diagnosticsLoaded = true
+        if (result.automations) {
+          this.automations = result.automations.sort(
+            (a, b) => a.position - b.position
+          )
+        }
+        if (result.summary) this.summary = result.summary
+        if (result.runtimes) {
+          this.runtimes = result.runtimes.runtimes
+          this.runtimeHealth = result.runtimes.health
+        }
+        if (failedLoads.length) {
+          this.diagnosticsLoadError = `Could not load ${failedLoads.join(' or ')}. Existing diagnostic data is retained and may be incomplete.`
+        }
+        this.diagnosticsLoadErrors = failedLoads.length
+          ? this.diagnosticsLoadErrors
+          : []
+        this.diagnosticsLoaded = this.diagnosticsLoaded || !!result.automations || !!result.summary || !!result.runtimes
         this.diagnosticsListLoading = false
         this.rebuildViewModel()
       },
@@ -342,6 +353,16 @@ export class ControlCenterComponent implements OnInit {
         )
       },
     })
+  }
+
+  hasDiagnosticsLoadError(): boolean {
+    return this.diagnosticsLoadErrors.length > 0
+  }
+
+  private recordDiagnosticsLoadFailure(label: string): void {
+    if (!this.diagnosticsLoadErrors.includes(label)) {
+      this.diagnosticsLoadErrors = [...this.diagnosticsLoadErrors, label]
+    }
   }
 
   runScan(): void {
@@ -515,16 +536,6 @@ export class ControlCenterComponent implements OnInit {
 
   hasLiveWork(): boolean {
     return this.loading || this.hasDashboardLoadError() || this.attentionItemsView.length > 0 || this.activeItemsView.length > 0
-  }
-
-  hasDiagnosticsLoadError(): boolean {
-    return this.diagnosticsLoadErrors.length > 0
-  }
-
-  private recordDiagnosticsLoadFailure(label: string): void {
-    if (!this.diagnosticsLoadErrors.includes(label)) {
-      this.diagnosticsLoadErrors = [...this.diagnosticsLoadErrors, label]
-    }
   }
 
   private buildRecentActivity(): ActivityEntry[] {
