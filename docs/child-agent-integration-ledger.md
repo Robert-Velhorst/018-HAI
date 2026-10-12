@@ -4400,3 +4400,43 @@ These two report comparisons are now recorded; they do not close the broader
 untracked-path inventory or prove every local transcript/patch event was
 integrated. No local report, source tree, test output, archive, or worktree was
 removed.
+
+### October 12, 2026: installer and untracked-path inventory crosswalk
+
+Compared the installer and Windows-lifecycle audit claims with the current PR
+source. The PE parser enforces a complete PE32+ fixed header and bounds declared
+data directories; its Windows PowerShell regression covers malformed and
+positive payload shapes. Production installer builds now require an explicit
+SignTool path, pinned certificate thumbprint, and HTTPS RFC 3161 timestamp
+endpoint; Setup and the signed uninstaller are Authenticode-verified and the
+signing path has focused synthetic tests. This closes the earlier source-level
+finding that the build path had no enforced signing mode. It does not supply or
+validate an actual signing identity, prove a signed release artifact exists, or
+establish trust on a clean Windows machine. The retained release/signing and
+rollback acceptance gaps remain.
+
+The current Windows runtime source also contains strict Compose project-name
+parsing, exact-project ownership enumeration, a second ownership check after
+initialization, safe restoration of inherited settings in Stop, and a
+directory/reparse-point refusal before worker replacement. Focused source and
+mock contracts are present. These checks do not prove an actual Docker
+installation, upgrade, stop, or uninstall lifecycle.
+
+Recomputed the primary checkout's untracked-path inventory against the exact
+PR tree with Git blob IDs. Of 2,475 untracked paths, 1,586 were excluded from
+code/documentation comparison as `output/`, nested `test-evidence/`, browser
+diagnostics, agent state, or generated/build/test artifacts. Of the remaining
+889 candidate paths, 821 are byte-identical to a PR blob, 68 have the same path
+but different contents, and zero candidate paths are absent from the PR. This
+reconciles the earlier inconsistent mismatch count. The 68 mismatches are
+listed in the audit output for the October 12 inventory; several inspected
+examples are older in the primary checkout than the PR (including the
+OpenClaw-maintenance signing-key representation and promptfoo runner lockfile),
+but this is not a semantic review of all 68. Keep the set open until each
+difference has an explicit disposition; recompute it with the same Git-blob
+comparison if the primary checkout or PR head changes.
+
+The 1,586 excluded diagnostics/evidence paths are not source candidates merely
+because they are untracked; they remain preserved and are not cleanup-approved
+by this comparison. No local archive, output, diagnostic, source file, or
+worktree was removed.
