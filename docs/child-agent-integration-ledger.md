@@ -6049,3 +6049,16 @@ and its Postgres migration job logged
 gofmt remain unavailable in this local checkout. No old-checkout content or
 local archive was modified, and semantic source review and cleanup gates remain
 open.
+
+The follow-up documentation-only commit triggered CI run `38297575184` on
+`6bf6426e8d8356c629f4f709ce277cad8b5852d5`. Backend, real-Postgres migration,
+browser, and two-account jobs passed, but the run concluded with two failures:
+the progressive-section unit test observed a stale global
+`hai-view-advanced` body class left by another spec, and the repository secret
+scanner rejected its captured output as non-JSON and withheld the details. The
+section test now removes that global class at setup and teardown so it owns its
+fixture state; no runtime behavior was changed. This checkout has no installed
+frontend dependencies, so the focused Angular test could not be run locally.
+The secret-scan failure is intentionally unresolved rather than weakening its
+fail-closed redaction contract. Exact-head hosted CI is required for this
+follow-up; the semantic source review and cleanup gates remain open.

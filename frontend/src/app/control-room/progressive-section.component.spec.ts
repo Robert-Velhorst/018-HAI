@@ -33,6 +33,7 @@ describe('HaiProgressiveSectionComponent', () => {
   const moduleIds = ['progressive-section-test', 'progressive-section-other', 'hai-os']
 
   beforeEach(async () => {
+    document.body.classList.remove('hai-view-advanced')
     await TestBed.configureTestingModule({
       declarations: [HaiProgressiveSectionComponent, ProgressiveSectionHostComponent],
       imports: [CommonModule, NzIconModule],
@@ -45,6 +46,7 @@ describe('HaiProgressiveSectionComponent', () => {
   afterEach(() => {
     const preferences = TestBed.inject(ModuleViewPreferencesService)
     for (const moduleId of moduleIds) preferences.reset(moduleId)
+    document.body.classList.remove('hai-view-advanced')
   })
 
   function createHost(): ComponentFixture<ProgressiveSectionHostComponent> {
