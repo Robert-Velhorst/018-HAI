@@ -3920,3 +3920,62 @@ live-provider, real-account, local Windows installer, database restore, or
 production acceptance. No source snapshot files, local runtime state, or user
 data were changed or removed. Cleanup remains blocked on the exact PR merge and
 the source-archive/readiness gates documented above.
+
+### October 12, 2026: stale primary-checkout and local-review reconciliation
+
+Rechecked the older primary checkout, the current PR checkout, and PR #36 after
+the later ledger updates:
+
+- The primary checkout remains on `codex/hai-runtime-release` at
+  `e07b9daeb3ba2630ecbe12a64d948f791203c241`, 313 commits behind its remote
+  tracking branch. It has 3,167 status entries: 692 tracked modifications and
+  2,475 untracked paths. `output/` contains 1,576 files totaling 126,970,802
+  bytes. These are current inventory counts, not permission to delete or proof
+  that every item is disposable. Do not stage or remove this checkout wholesale.
+- The audit checkout is at PR #36 head
+  `7fad8bd45f0ca148c5e2db133a429de2a8475a81`; PR #36 is open and mergeable.
+  Its exact-head workflow currently has 36 queued checks and no completed
+  result. The independently green PR #35 is a different change and does not
+  satisfy PR #36's gates.
+- Previously identified weak local variants in execution approval, approval
+  source ownership, execution context fallback, public-key byte handling,
+  database logging configuration, and the older frontend shell remain excluded:
+  the local copies are not a safe replacement for the PR implementation.
+  Earlier blob inventory also found 108 untracked files whose names already
+  exist in the PR but whose contents differ, plus many generated/output-only
+  paths. Their semantic differences are not all reviewed; this remains an open
+  source-reconciliation item.
+
+#### Prior review handoffs checked against current PR source
+
+The following outcomes are confirmed by current source/tests, not inferred
+from the handoff report's older status:
+
+| Handoff finding | Current PR evidence | Remaining boundary |
+| --- | --- | --- |
+| Acceptance CI could attach to installation volumes or delete them | CI uses `isolated-acceptance-stack.ps1` Prepare/Start/Stop with a unique temp evidence directory; it validates owned container labels and mounts before collecting logs. The old ordinary local Compose `down -v` cleanup path is not used in this job. | Hosted job has not completed at this head; 36 checks are queued. |
+| Acceptance manifest could import external env/secrets/configs | Guard rejects service `env_file`, `secrets`, `configs`, and top-level `secrets`, `configs`, `include`, and `extends`; contract tests include external-source and empty-env-file negatives. | Source/contracts are not proof against every Docker Compose implementation/runtime. |
+| Production accepted weak non-empty memory/API secrets | `doctor.go` requires at least 32 characters for these production secrets; focused secret tests exist. | Does not prove installed secrets are random or rotated safely; no current host secret was read. |
+| JSON access/refresh credentials bypassed redaction | Structured redactor tests cover JSON, escaped keys/strings, NDJSON, malformed URLs, and sensitive query parameters. | No live credential-bearing provider response was exercised. |
+| Atomic mutation trusted caller-supplied previous state or changed creation time | `validateMutationState` checks transition `BeforeStatus` and legal transition against the locked current row; both memory and PostgreSQL paths preserve `CreatedAt`; a forged-before-status regression is present. | Real PostgreSQL locking/concurrency behavior remains dependent on the queued integration checks. |
+| Automation approval could be rebound to changed configuration after human review | Durable task review snapshots, configuration digest validation, and changed/missing/old snapshot regressions exist across task and automation packages. | Tests in current PR CI are queued; no live operator workflow was exercised. |
+| Local safe worker could hide partial effects or retry after uncertain authorization | Worker progress fields are carried into background outcome classification; non-empty/contradictory progress prevents treating a refusal as safely pre-effect. | First-ledger-write crash durability and cross-process recovery of filesystem identity remain unproven/open. |
+| Source-derived action might execute after its source changed | Current source-head generation/config epoch is checked at final effect admission; regression tests cover superseded source observations. | This is source/test evidence, not a live connector race or hosted execution result. |
+| Installer release could claim signing without verifying retained uninstaller | Inno production/preview signing branches and exact retained-uninstaller verification are in source; doubles-based contract suites and Windows CI jobs are defined. | A real certificate, signing service, signed artifact, clean-machine install/upgrade/uninstall, and data-retention drill have not been verified here. |
+| Durable session tests were not included in hosted CI | Current workflow contains the disposable PostgreSQL/Redis-backed durable-session test step and exact named-pass validation. | The current hosted workflow is still queued; no completed hosted logs are available. |
+
+This pass did not run local tests or builds because the current PR's broad hosted
+workflow is already queued and the stale primary checkout is not the candidate
+tree. It also did not commit or push. No files were removed. Two scoped
+worktree edits remain uncommitted: this inventory/crosswalk update and the
+`owned-browser-matrix-handoff.md` correction. The latter fixes a stale note
+about task-history receipt restoration but does not claim that the end-to-end
+owned-browser matrix has passed.
+
+Cleanup remains unsafe at this point: PR #36 has not merged, the primary
+checkout's 108 same-name content variants and 202 previously identified
+non-matching tracked variants have not all received semantic review, and the
+20.7 GB transcript archive/source packages have not completed item-level
+integration. Generated logs may eventually be removable after the evidence they
+uniquely carry is summarized and checked against hosted/committed records; no
+such deletion is authorized by this audit note alone.
