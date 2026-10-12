@@ -4356,10 +4356,47 @@ distinguishes read-only discovery from verified execution. Current PR CI
 passed frontend tests/build and browser acceptance; this is CI evidence, not
 live-provider, deployed-service, screen-reader, or cross-restart acceptance.
 
-The latest PR #36 head is `8c49f348496c664efbce201f37b57c526a953bff` and its
-exact-head Actions run `38206730870` passed all 36 jobs. The PR is open and
-mergeable, not merged. Local Go is unavailable in this environment, so no
-independent native rerun is claimed. This crosswalk closes these report-level
-source comparisons only; the remaining divergent-file set, diagnostic/output
-artifact attribution, and historical patch-event attribution remain open.
-No source archive, diagnostic, or worktree file was modified or deleted.
+At the time of this crosswalk, PR #36 was at
+`8c49f348496c664efbce201f37b57c526a953bff` and exact-head Actions run
+`38206730870` passed all 36 jobs. The PR was open and mergeable, not merged.
+Local Go is unavailable in this environment, so no independent native rerun is
+claimed. This crosswalk closes these report-level source comparisons only; the
+remaining divergent-file set, diagnostic/output artifact attribution, and
+historical patch-event attribution remain open. No source archive, diagnostic,
+or worktree file was modified or deleted.
+
+### October 12, 2026: Trello and operation-audit crosswalk
+
+Compared `output/trello-production-sync-20261001.md` with the current PR source.
+All seven named regression cases are present in
+`backend/internal/source/trello_production_sync_test.go`: long-running action
+watermarks, configured short-link webhook refresh, webhook-first comment
+deletion, canonical card and action-card identities, retry-cap inventory
+checkpointing, and list-record aggregate caps. The corresponding durable sync,
+webhook, and canonicalization paths are present in the PR source. PR CI passed
+the backend suite, but that is synthetic/CI coverage, not live Trello account,
+webhook registration, provider pagination, or permission acceptance. The local
+handoff's PostgreSQL helper concern is addressed in current PR source:
+`openTrelloRepositoryPostgresTestDB` calls
+`pgtestguard.RequireDedicatedPostgresTestDSN` before opening its fixed
+`hai_migration_runner_test` database, with dedicated rejection tests for
+lookalike names, unrelated databases, sockets, and remote fallback hosts. No
+operator DSN was supplied or used here, and this does not claim that the
+Trello-specific PostgreSQL integration suite ran in CI.
+
+Compared `output/operation-audit-atomicity-20261001.md` with the current PR
+source. `UpdateWithEvent` is wired into unclaimed `Transition`/`Save`, while
+`CreateWithEvent` and contextual atomic write methods cover ingestion and
+source-observation flows. The PR contains the focused mutation transaction
+regressions plus the later `ingest_atomicity_regression_test.go` scenarios for
+atomic creation, evidence refresh, and audit-event failure. The implementation
+retains claim-only authorization boundaries instead of falling back to
+separate operation/event writes. Exact-head PR CI passed the backend tests.
+Audit guarantees still depend on the selected repository implementation; the
+source-only report's unexecuted SQL-driver tests were not independently run
+locally because Go is unavailable in this environment.
+
+These two report comparisons are now recorded; they do not close the broader
+untracked-path inventory or prove every local transcript/patch event was
+integrated. No local report, source tree, test output, archive, or worktree was
+removed.
