@@ -1245,3 +1245,13 @@ SHA-256 values, and 19 tracked report-source links. It reported
 `cleanup_authorized=false` and `deletion_performed=false`. This verifies
 inventory/hash integrity for the two supplemental roots, not semantic
 integration of the oversized transcript contents or eligibility for removal.
+
+The read-only main archive verifier was rerun on 2026-10-12 at 14:37 UTC with
+`-RequireSourceArchive`. It verified all 18 manifest paths and 20,739,169,122
+bytes, all five candidate hashes (3,179,439,595 bytes), and all five candidate
+crosswalk IDs. It reported `source_archive_verified=true`, but
+`committed_ledger_verified=false`, `merged_pull_request_verified=false`,
+`cleanup_gate_ready=false`, `cleanup_authorized=false`, and
+`deletion_performed=false`. The combined main and supplemental inventories
+therefore remain preserved: 27 files, 34,752,906,420 bytes, and seven hashed
+candidate transcripts totaling 6,292,733,953 bytes; none has been deleted.
