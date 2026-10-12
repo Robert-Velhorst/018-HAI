@@ -2816,3 +2816,26 @@ matched, and all 21 report source paths resolved. The two roots total
 The verifier reported `deletion_performed: false` and
 `cleanup_authorized: false`. This confirms source integrity, not semantic
 integration; no source transcript or worktree was modified or deleted.
+
+### October 12, 2026: refreshed integration-snapshot blob comparison
+
+Compared the 1,790 staged paths in the preserved
+`D:\codex-temp\hai-integration-snapshot` index with PR #36 tree
+`89dd87276a6c545a5f994549bfd95697c1371d29` using Git blob IDs. A total of
+1,501 staged files are byte-identical to the PR tree; 289 are different or
+snapshot-only. Four of those 289 are new paths. This is a changed-file queue,
+not a count of unintegrated features: the older October 11 comparison had a
+different PR head and must not be reused as current evidence. The snapshot
+remains unchanged with 19 unstaged paths and no untracked paths.
+
+Reviewed the four snapshot-only paths. The two operations-dedupe migration
+files are already represented by PR #36 migrations `0006` up/down: their Git
+blob IDs match exactly despite the snapshot assigning the candidate migration
+number `0004`. No data cleanup was added or inferred. The candidate static
+`nginx-config/nginx.conf` and `sites-enabled/generic-auto.conf` are not copied:
+the former contains a literal `change-this-local-backend-key` value and a
+legacy static service-routing layout; the current PR uses its Gate nginx
+template and the governed nginx configuration manager for dynamic routes.
+The static candidate was not validated against the current container topology.
+No snapshot files were changed. Current-head CI run `38188151400` for PR #36
+remains pending; the path review is limited to these four additions.
