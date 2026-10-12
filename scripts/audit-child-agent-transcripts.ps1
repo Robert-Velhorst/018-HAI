@@ -3,10 +3,12 @@ param(
     [string]$RootSessionId = '019e7acc-44f2-7c90-a04e-253f6d43df28',
     [string]$SessionsRoot = 'C:\Users\NO\.codex\sessions\2026\08',
     [string]$OutputDirectory = '',
-    [switch]$HashCleanupCandidates
+    [switch]$HashCleanupCandidates,
+    [ValidateRange(1, 10485760)][int]$MaxRecordCharacters = 10485760
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib\hai-transcript-records.ps1')
 
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $PSScriptRoot '..\docs'
@@ -91,10 +93,24 @@ $records = [System.Collections.Generic.List[object]]::new()
 $relativeBase = (Split-Path -Parent $SessionsRoot).TrimEnd('\')
 $sessionFiles = Get-ChildItem -LiteralPath $SessionsRoot -Recurse -File -Filter '*.jsonl'
 [long]$bytesScanned = 0
-$maxRecordCharacters = 10MB
+$maxRecordCharacters = $MaxRecordCharacters
+$oversizedMetadataRecordsSkipped = 0
 
 foreach ($file in $sessionFiles) {
-    $firstLine = Get-Content -LiteralPath $file.FullName -TotalCount 1
+    $metadataStream = [IO.File]::Open($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    $metadataReader = [IO.StreamReader]::new($metadataStream, [Text.Encoding]::UTF8, $true, 1048576)
+    try {
+        $firstRecord = Read-HaiBoundedTranscriptRecords -Reader $metadataReader -MaximumCharacters $maxRecordCharacters | Select-Object -First 1
+    } finally {
+        $metadataReader.Dispose()
+        $metadataStream.Dispose()
+    }
+    if ($null -eq $firstRecord) { continue }
+    if ($firstRecord.Oversized) {
+        $oversizedMetadataRecordsSkipped++
+        continue
+    }
+    $firstLine = $firstRecord.Text
     if ($firstLine -notmatch [regex]::Escape($RootSessionId)) {
         continue
     }
@@ -402,7 +418,8 @@ $summary = [ordered]@{
     generated_at_utc = [DateTime]::UtcNow.ToString('o')
     root_session_id = $RootSessionId
     audited_transcripts = $records.Count
-    full_file_scan = $true
+    full_file_scan = ($oversizedMetadataRecordsSkipped -eq 0)
+    oversized_metadata_records_skipped = $oversizedMetadataRecordsSkipped
     logical_bytes_scanned = $bytesScanned
     max_jsonl_record_characters = $maxRecordCharacters
     oversized_or_malformed_candidate_records_retained = $true

@@ -14,6 +14,7 @@ $abortedChildTurn = '019fb2aa-6d0b-7fd0-af97-9e88a3022f11'
 $ambiguousChildId = '019fb2bb-53a5-78a0-9387-b23f05eb6aef'
 $oversizedChildId = '019fb2cc-53a5-78a0-9387-b23f05eb6aef'
 $oversizedChildTurn = '019fb2cc-6d0b-7fd0-af97-9e88a3022f11'
+$oversizedMetadataTranscript = Join-Path $sessions 'rollout-2026-08-01T00-04-00-019fb2dd-53a5-78a0-9387-b23f05eb6aef.jsonl'
 $transcript = Join-Path $sessions "rollout-2026-08-01T00-00-00-$childId.jsonl"
 $abortedTranscript = Join-Path $sessions "rollout-2026-08-01T00-01-00-$abortedChildId.jsonl"
 $ambiguousTranscript = Join-Path $sessions "rollout-2026-08-01T00-02-00-$ambiguousChildId.jsonl"
@@ -52,11 +53,13 @@ try {
     )
     [IO.File]::WriteAllLines($ambiguousTranscript, [string[]]$ambiguousRecords, [Text.UTF8Encoding]::new($false))
     $oversizedMetadata = New-SyntheticTranscriptLine 'session_meta' @{ id = $oversizedChildId; agent_nickname = 'oversized'; root_session_id = $rootSessionId }
-    $oversizedRecord = '{"timestamp":"2026-08-01T00:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"' + $oversizedChildTurn + '","content":"' + ('x' * (11MB)) + '"}}'
+    $oversizedRecord = '{"timestamp":"2026-08-01T00:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"' + $oversizedChildTurn + '","content":"' + ('x' * (300KB)) + '"}}'
     $laterCompletion = New-SyntheticTranscriptLine 'event_msg' @{ type = 'task_complete'; turn_id = $oversizedChildTurn; last_agent_message = 'Must stay retained because an earlier event was too large to parse.' }
     [IO.File]::WriteAllLines($oversizedTranscript, [string[]]@($oversizedMetadata, $oversizedRecord, $laterCompletion), [Text.UTF8Encoding]::new($false))
+    $oversizedHeader = '{"type":"session_meta","payload":{"id":"019fb2dd-53a5-78a0-9387-b23f05eb6aef","root_session_id":"' + $rootSessionId + '","padding":"' + ('y' * (300KB)) + '"}}'
+    [IO.File]::WriteAllText($oversizedMetadataTranscript, $oversizedHeader, [Text.UTF8Encoding]::new($false))
 
-    & $audit -RootSessionId $rootSessionId -SessionsRoot $sessions -OutputDirectory $output | Out-Null
+    & $audit -RootSessionId $rootSessionId -SessionsRoot $sessions -OutputDirectory $output -MaxRecordCharacters 256KB | Out-Null
 
     $summaryPath = Join-Path $output 'child-agent-transcript-summary.json'
     $manifestPath = Join-Path $output 'child-agent-transcript-manifest.csv'
@@ -65,6 +68,7 @@ try {
     $rows = @(Import-Csv -LiteralPath $manifestPath)
     if ($summary.audited_transcripts -ne 4 -or $summary.completed_transcripts -ne 1 -or
         $summary.cleanup_candidate_transcripts -ne 1 -or $summary.retained_transcripts -ne 3 -or
+        $summary.full_file_scan -ne $false -or $summary.oversized_metadata_records_skipped -ne 1 -or
         $summary.deletion_performed -ne $false) {
         throw "Synthetic audit summary mismatch: $($summary | ConvertTo-Json -Compress)"
     }
@@ -93,12 +97,12 @@ try {
         (Get-Content -LiteralPath $reportsPath -Raw) -match '(?i)[A-Z]:[\\/]+Users[\\/]+[^\\/\s]+[\\/]+Documents[\\/]+Codex') {
         throw 'Synthetic transcript was not classified and reported as expected.'
     }
-    $sourceTranscripts = @($transcript, $abortedTranscript, $ambiguousTranscript, $oversizedTranscript)
+    $sourceTranscripts = @($transcript, $abortedTranscript, $ambiguousTranscript, $oversizedTranscript, $oversizedMetadataTranscript)
     if (@($sourceTranscripts | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -gt 0) {
         throw 'Transcript audit unexpectedly removed its source file.'
     }
 
-    Write-Host 'Synthetic transcript attribution, patch counting, reports, and non-deletion contract passed.'
+    Write-Host 'Synthetic transcript attribution, bounded metadata/event records, reports, and non-deletion contract passed.'
     if ($KeepArtifacts) {
         Write-Host "Preserved test artifacts: $scratch"
     }
