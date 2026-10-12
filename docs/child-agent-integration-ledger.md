@@ -5858,7 +5858,7 @@ context lookup, and avoiding an idle model-maintenance scheduler when no
 eligible models exist. The Trello fast path had no direct tests for its
 essential behavior, so `backend/internal/source/trello_test.go` now covers no
 activity, board-metadata-only cursor advancement, card/unknown/malformed
-activity fallback, and saturated-page fallback. The test change is staged for
+activity fallback, and saturated-page fallback. The test change was pushed to
 the existing PR #36 branch under the user's push/CI authorization. This
 environment has no `go` or `gofmt` executable on PATH or in the checked
 standard locations; local Go execution and formatting therefore remain
@@ -5870,3 +5870,40 @@ against `main`, with `CLEAN` merge state and successful exact-head CI run
 `38287984906`. No merge is authorized or performed. All source checkouts and
 transcript archives remain untouched; the semantic crosswalk, archive
 provenance review, merged-main gate, and local cleanup are still incomplete.
+
+### October 12, 2026: claimed-effect safety report revalidation
+
+Rechecked the five findings in the preserved local-only
+`output/claimed-effect-source-head-audit-20261001.md` against current PR source
+and regression tests. The report's Runtime Lab confused-deputy finding is
+closed in the PR: `Handler.requireConfiguredOwner` rejects missing, malformed,
+or foreign subjects before service access; `owner_gate_handler_test.go` checks
+every Runtime Lab endpoint, caller-supplied owner aliases, no data leakage,
+and no ledger/runtime side effects on rejection. The report's context-free
+Constitution lookup is closed: execution authorization passes its context
+through `ConstitutionPolicyAdapter`, `EvaluateConstitutionExecutionPolicyContext`,
+and `ListConstitutionsContext`; the GORM lookup uses contextual connection
+admission. Tests cover context propagation, refusal of context-free repository
+fallback, and cancellation while the DB pool is saturated.
+
+The report's mutable mode/block/stop policy race is closed at the current
+in-process boundary: `ExecuteSafeOperationClaimed` takes the final-effect fence
+before policy recheck and dispatch; control and block-rule mutations take the
+exclusive mutation fence. Regression tests cover mode changes during admission
+and block-rule serialization. The detached-context scope issue is closed by
+retaining and checking the original private authority context/deadline. The
+artifact-collision issue is closed by using the full operation UUID in the
+managed artifact basename. Source-head publication and final effect share the
+origin/head/operation/claim lock order; current tests cover supersession,
+observation order, A-B-A recurrence, and missing/unsequenced heads.
+
+These are source and test crosswalk results, not a fresh local Go test run;
+this machine still has no Go toolchain in PATH. Exact-head GitHub Actions for
+`e88e6d1b56a408afcd5e1f84f106590babcc701b` passed all 36 jobs, including
+backend and guarded Windows runtime checks. The guarantee remains bounded:
+cancellation cannot undo a filesystem syscall after it begins, so uncertain
+outcomes must remain latched and must not be replayed automatically. No
+production code was changed for this revalidation. PR #36 remains open and
+unmerged; all local source, transcript, and diagnostic material remains
+preserved, and the broader content/provenance crosswalk and cleanup gates
+remain incomplete.
