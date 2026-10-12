@@ -1270,7 +1270,30 @@ func TestSyncTrelloLargeTimestampTieIsLosslessAndIncremental(t *testing.T) {
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
 		case strings.HasSuffix(r.URL.Path, "/actions"):
-			_, _ = w.Write([]byte(`[]`))
+			if r.URL.Query().Get("filter") != "all" {
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			var currentCards []trelloCard
+			if err := json.Unmarshal([]byte(cardResponse.Load().(string)), &currentCards); err != nil {
+				t.Errorf("decode activity fixture cards: %v", err)
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			actions := make([]trelloAction, 0, len(currentCards))
+			for index, card := range currentCards {
+				actions = append(actions, trelloAction{
+					ID: testTrelloMongoID(7000 + index), Type: "updateCard", Date: card.DateLastActivity,
+					Data: trelloActionData{Card: trelloActionCard{ID: card.ID, Name: card.Name}},
+				})
+			}
+			payload, err := json.Marshal(actions)
+			if err != nil {
+				t.Errorf("encode activity fixture: %v", err)
+				_, _ = w.Write([]byte(`[]`))
+				return
+			}
+			_, _ = w.Write(payload)
 		case strings.HasSuffix(r.URL.Path, "/cards"):
 			if got := r.URL.Query().Get("filter"); got != "all" {
 				t.Errorf("cards filter = %q, want all", got)
