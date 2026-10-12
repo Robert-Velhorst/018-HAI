@@ -5048,7 +5048,7 @@ func pursuitTimeline(
 			RiskLevel:   firstNonEmpty(attempt.RiskLevel, pursuit.RiskLevel),
 			SourceURI:   "task://" + attempt.TaskPlanID,
 			SourceLabel: "direct task attempt",
-			NeedsReview: strings.Contains(attempt.Status, "review") || strings.TrimSpace(attempt.BlockedReason) != "",
+			NeedsReview: pursuitTaskAttemptNeedsReview(attempt),
 			CreatedAt:   when,
 		})
 	}

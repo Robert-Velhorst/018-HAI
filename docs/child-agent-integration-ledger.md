@@ -5107,6 +5107,32 @@ restart recovery, provider acceptance, and live production behavior remain
 separate gates. No source code or local archive was changed in this
 crosswalk; the broader content/provenance audit and cleanup gates remain open.
 
+### October 12, 2026: pursuit completion handoff and timeline correction
+
+Rechecked the five source findings in the pursuit appendix of
+`output/background-outcome-production-20261001.md` against current source and
+tests. The current PR recognizes completed runtime receipts by launch-specific
+codes; unresolved required approvals block completion even when separate
+verification evidence exists; task-run display status requires accepted
+verification; non-UUID verification labels cannot substitute for an internal
+verification record; and direct task-attempt activity/blockers use the shared
+review predicate. Focused coverage is in
+`backend/internal/pursuit/completion_outcome_integrity_test.go`.
+
+That audit exposed one remaining inconsistency in the fifth finding: the direct
+task-attempt timeline still derived `NeedsReview` only from status text and
+`BlockedReason`, unlike activity/blocker projection. A `validated` attempt
+with uncertain or conflicting verification could therefore appear ordinary
+in timeline detail. Changed the timeline projection to use
+`pursuitTaskAttemptNeedsReview` and added
+`TestPursuitTaskAttemptTimelineUsesSharedReviewPredicate` for uncertain,
+conflicting, blocked, review-required, and verified records. This source change
+is not yet executable-verified: Go/gofmt are unavailable in this checkout.
+The prior exact-head CI run `38292809831` passed before this new fix and does
+not validate it; the new commit's backend CI must pass before this entry is
+considered tested. No other report finding required a source change in this
+batch. The broader semantic/provenance audit and cleanup gates remain open.
+
 ### October 12, 2026: task retry economics and provenance review
 
 The snapshot task service retries after validation failure whenever a retry is

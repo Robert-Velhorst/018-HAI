@@ -120,6 +120,27 @@ func TestPursuitTaskActivityDoesNotAnnounceContradictorySuccess(t *testing.T) {
 	}
 }
 
+func TestPursuitTaskAttemptTimelineUsesSharedReviewPredicate(t *testing.T) {
+	for _, attempt := range []models.PursuitTaskAttempt{
+		{Status: "validated", VerificationStatus: "uncertain"},
+		{Status: "validated", VerificationStatus: "conflicting"},
+		{Status: "validated", BlockedReason: "unknown outcome"},
+		{Status: "review_required"},
+		{Status: "validated", VerificationStatus: "verified"},
+	} {
+		items := pursuitTimeline(
+			models.Pursuit{}, nil, nil, nil, nil, nil, nil, nil,
+			[]models.PursuitTaskAttempt{attempt}, nil, nil,
+		)
+		if len(items) != 1 || items[0].Kind != "task_attempt" {
+			t.Fatalf("unexpected timeline projection: %#v", items)
+		}
+		if got, want := items[0].NeedsReview, pursuitTaskAttemptNeedsReview(attempt); got != want {
+			t.Errorf("status=%q verification=%q: timeline NeedsReview=%v, want %v", attempt.Status, attempt.VerificationStatus, got, want)
+		}
+	}
+}
+
 func TestPursuitOldDirectUncertaintyCannotDisappearBehindDisplayLimit(t *testing.T) {
 	repo := newFakeRepo()
 	s := NewService(repo, nil)
