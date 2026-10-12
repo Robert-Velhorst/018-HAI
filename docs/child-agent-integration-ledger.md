@@ -5224,3 +5224,19 @@ No snapshot files were read into the worktree, changed, staged, or removed by
 this comparison. No code was automatically adopted from the snapshot. This
 crosswalk does not close the semantic audit or make any local archive eligible
 for deletion.
+
+### October 12, 2026: workflow scheduler and request-cancellation comparison
+
+Reviewed the staged snapshot versions of
+`backend/internal/workflow/scheduler.go` and
+`backend/internal/workflow/handler.go` against the PR tree. The PR scheduler
+records disabled, durable-attached, startup-canceled, lifecycle-rejected, and
+in-process-fallback states through `schedulerstatus`; its fallback detail is
+secret-redacted. The snapshot version omits these operational status records
+and logs the durable-queue error without redaction. In the handler, the PR
+checks request-context cancellation after contextual execution and avoids
+writing a response to a canceled request; the staged snapshot lacks that
+guard. Retain the PR versions; neither staged file is an improvement to port.
+
+This is a source-path review of these two workflow files, not an acceptance
+claim for the remaining workflow, frontend, IDP, or backend differences.
