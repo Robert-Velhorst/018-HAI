@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"automation-hub-backend/internal/accountfeed"
@@ -22,6 +23,7 @@ import (
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/operations"
 	"automation-hub-backend/internal/privacyfilter"
+	"automation-hub-backend/internal/safety"
 
 	"github.com/google/uuid"
 )
@@ -182,7 +184,7 @@ func (w *Worker) RunOnce(ctx context.Context) (Report, error) {
 	var rep Report
 	recovery, err := w.svc.RecoverExpiredClaims(ctx, w.opts.OwnerUserID, w.opts.WorkspaceID, 200)
 	if err != nil {
-		rep.Errors = append(rep.Errors, fmt.Sprintf("recover expired operation claims: %v", err))
+		appendBackgroundReportError(&rep, "Expired operations could not be fully recovered. Review the operation ledger.", err)
 	} else {
 		rep.RecoveredOperations = recovery.Recovered
 		rep.UnleasedExecutingOperations = recovery.UnleasedRunning + recovery.UnleasedVerifying
@@ -260,7 +262,7 @@ func (w *Worker) deferPausedSafeOperations(ctx context.Context, rep *Report) err
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				rep.Errors = append(rep.Errors, fmt.Sprintf("operation %s: %v", claimed.Operation.ID, err))
+				appendBackgroundReportError(rep, "An approved operation could not be safely deferred. Inspect its audit trail.", err)
 				return errors.Join(ErrReportedFailures, fmt.Errorf("defer safe operation while paused: %w", err))
 			}
 		}
@@ -278,13 +280,15 @@ func (w *Worker) ingest(ctx context.Context, rep *Report) error {
 			}
 			rep.ItemsIngested += result.OperationsCreated + result.OperationsRefresh
 			rep.OperationsCreated += result.OperationsCreated
-			rep.Errors = append(rep.Errors, result.Errors...)
+			for _, reportErr := range result.Errors {
+				appendBackgroundReportError(rep, "A connected source reported an ingestion issue. Review the source record and retry.", errors.New(reportErr))
+			}
 		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			rep.Errors = append(rep.Errors, "configured feed storage could not be verified; inspect local operator diagnostics")
+			appendBackgroundReportError(rep, "Configured feed storage could not be verified. Inspect local operator diagnostics.", err)
 			return reportFailures(*rep)
 		}
 		return nil
@@ -308,7 +312,7 @@ func (w *Worker) ingest(ctx context.Context, rep *Report) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			rep.Errors = append(rep.Errors, fmt.Sprintf("feed %s: %v", feed.Name, err))
+			appendBackgroundReportError(rep, "A configured feed could not be read. Check its connection and permissions.", err)
 		}
 	}
 	return nil
@@ -327,7 +331,7 @@ func (w *Worker) ingestObservedFeed(ctx context.Context, r accountfeed.Reader, f
 		rep.ItemsIngested++
 		in, err := feed.ToOperationInput(it)
 		if err != nil {
-			rep.Errors = append(rep.Errors, fmt.Sprintf("feed %s item %s: %v", feed.Name, it.ExternalID, err))
+			appendBackgroundReportError(rep, "A source item could not be converted into an operation. Review the source record.", err)
 			continue
 		}
 		res, err := w.svc.IngestContext(ctx, in)
@@ -335,7 +339,7 @@ func (w *Worker) ingestObservedFeed(ctx context.Context, r accountfeed.Reader, f
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			rep.Errors = append(rep.Errors, fmt.Sprintf("ingest %s: %v", it.ExternalID, err))
+			appendBackgroundReportError(rep, "A source item could not be saved. Refresh and retry.", err)
 			continue
 		}
 		if res.Created {
@@ -343,6 +347,16 @@ func (w *Worker) ingestObservedFeed(ctx context.Context, r accountfeed.Reader, f
 		}
 	}
 	return nil
+}
+
+func appendBackgroundReportError(report *Report, publicMessage string, err error) {
+	if err != nil {
+		log.Printf("background worker: %s: %s", publicMessage, safety.RedactSecrets(err.Error()))
+	}
+	const maxReportErrors = 20
+	if len(report.Errors) < maxReportErrors {
+		report.Errors = append(report.Errors, publicMessage)
+	}
 }
 
 // process claims one operation at a time. A batch of claims would let later
@@ -354,7 +368,7 @@ func (w *Worker) process(ctx context.Context, rep *Report) error {
 		}
 		claimed, err := w.svc.ClaimNext(ctx, w.opts.OwnerUserID, w.opts.WorkspaceID, w.claimOwner, w.claimLease)
 		if err != nil {
-			rep.Errors = append(rep.Errors, fmt.Sprintf("claim next operation: %v", err))
+			appendBackgroundReportError(rep, "The next operation could not be claimed. Inspect the operational ledger.", err)
 			return fmt.Errorf("claim next operation: %w", err)
 		}
 		if claimed == nil {
@@ -364,14 +378,14 @@ func (w *Worker) process(ctx context.Context, rep *Report) error {
 			if releaseErr := w.svc.ReleaseClaim(ctx, claimed.Claim); releaseErr != nil {
 				err = errors.Join(err, fmt.Errorf("release invalid operation claim: %w", releaseErr))
 			}
-			rep.Errors = append(rep.Errors, err.Error())
+			appendBackgroundReportError(rep, "An operation failed its safety validation. Inspect the audit trail.", err)
 			return errors.Join(ErrReportedFailures, fmt.Errorf("validate claimed operation: %w", err))
 		}
 		if err := w.processClaimed(ctx, *claimed, rep); err != nil {
 			if err == errExecutionDeferredByPolicy {
 				continue
 			}
-			rep.Errors = append(rep.Errors, fmt.Sprintf("operation %s: %v", claimed.Operation.ID, err))
+			appendBackgroundReportError(rep, "An operation could not be completed. Inspect its audit trail before retrying.", err)
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}

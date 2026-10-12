@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"automation-hub-backend/internal/identity"
@@ -16,6 +17,43 @@ type updateOnlyAutomationService struct{ Service }
 
 func (updateOnlyAutomationService) Update(automation *models.Automation) (*models.Automation, error) {
 	return automation, nil
+}
+
+func TestAutomationUpdateRejectsOversizedRequestBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PATCH("/automation", NewHandler(nil).Update)
+
+	request := httptest.NewRequest(
+		http.MethodPatch,
+		"/automation",
+		bytes.NewBufferString(strings.Repeat("x", int(maxAutomationUpdateBodyBytes+1))),
+	)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized update status = %d, want %d: %s", response.Code, http.StatusRequestEntityTooLarge, response.Body.String())
+	}
+}
+
+func TestAutomationCreateRejectsOversizedMultipartRequestBeforeParsing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/automation", NewHandler(nil).Create)
+
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/automation",
+		bytes.NewBufferString(strings.Repeat("x", 7<<20)),
+	)
+	request.Header.Set("Content-Type", "multipart/form-data; boundary=hai-test")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized create status = %d, want %d: %s", response.Code, http.StatusRequestEntityTooLarge, response.Body.String())
+	}
 }
 
 func TestAutomationRoutesRequireVerifiedOperator(t *testing.T) {

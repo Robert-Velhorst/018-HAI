@@ -7,6 +7,7 @@ package source
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -125,6 +126,16 @@ func boundedCloudQuerySummaryLimit(raw string) int {
 }
 
 func fetchCloudQuerySummary(source *models.ConnectedSource) ([]ImportItem, string, error) {
+	return fetchCloudQuerySummaryContext(context.Background(), source)
+}
+
+func fetchCloudQuerySummaryContext(ctx context.Context, source *models.ConnectedSource) ([]ImportItem, string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 	if source == nil {
 		return nil, "", fmt.Errorf("CloudQuery summary source is required")
 	}
@@ -155,6 +166,9 @@ func fetchCloudQuerySummary(source *models.ConnectedSource) ([]ImportItem, strin
 	reader := bufio.NewReaderSize(file, cloudQuerySummaryMaxLineBytes+1)
 	items := make([]ImportItem, 0, config.maxEntries)
 	for len(items) < config.maxEntries {
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
+		}
 		line, readErr := reader.ReadSlice('\n')
 		if readErr == bufio.ErrBufferFull {
 			return nil, "", fmt.Errorf("CloudQuery summary contains a line over the 16 KiB safety limit")

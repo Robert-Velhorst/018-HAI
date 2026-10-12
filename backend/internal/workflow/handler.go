@@ -783,6 +783,14 @@ func (h *Handler) Overview(c *gin.Context) {
 	c.JSON(http.StatusOK, h.service.Overview())
 }
 
+func bindOptionalRunRequest(c *gin.Context, request *RunDueRequest) bool {
+	if err := c.ShouldBindJSON(request); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request body must be valid JSON"})
+		return false
+	}
+	return true
+}
+
 func parseWorkflowID(c *gin.Context) (uuid.UUID, bool) {
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {

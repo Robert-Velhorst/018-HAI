@@ -206,6 +206,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	sources.DELETE("/extractions/:id", mark("sourceExtractionDelete"))
 	sources.PATCH("/:id", mark("sourceUpdate"))
 	sources.POST("/:id/sync", mark("sourceSync"))
+	sources.POST("/:id/extract-documents", mark("sourceDocumentExtract"))
 	sources.POST("/:id/reindex", mark("sourceReindex"))
 	sources.POST("/:id/pause", mark("sourcePause"))
 	sources.POST("/:id/resume", mark("sourceResume"))
@@ -230,6 +231,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	operationsRoutes.POST("/:id/run", mark("operationsRun"))
 	operationsRoutes.POST("/:id/evidence-pack", mark("operationsEvidencePack"))
 	r.Group("/api/v1").GET("/evidence-packs/:id", mark("evidencePackGet"))
+	r.Group("/api/v1").GET("/background/overview", mark("backgroundOverview"))
 	r.Group("/api/v1").POST("/background/run", mark("backgroundRun"))
 
 	bgctl := r.Group("/api/v1").Group("/background")
@@ -332,6 +334,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 	pursuits.POST("/reconcile-life-domains", mark("pursuitReconcileLifeDomains"))
 	pursuits.GET("/dashboard", mark("pursuitDashboard"))
 	pursuits.GET("/brief", mark("pursuitBrief"))
+	pursuits.GET("/overview", mark("pursuitOverview"))
 	pursuits.GET("/decisions", mark("pursuitDecisions"))
 	pursuits.POST("/match", mark("pursuitMatch"))
 	pursuits.POST("/intake", mark("pursuitRouteIntake"))
@@ -468,6 +471,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"DELETE", "/api/v1/sources/extractions/abc", "sourceExtractionDelete"},
 		{"PATCH", "/api/v1/sources/abc", "sourceUpdate"},
 		{"POST", "/api/v1/sources/abc/sync", "sourceSync"},
+		{"POST", "/api/v1/sources/abc/extract-documents", "sourceDocumentExtract"},
 		{"POST", "/api/v1/sources/abc/reindex", "sourceReindex"},
 		{"POST", "/api/v1/sources/abc/pause", "sourcePause"},
 		{"POST", "/api/v1/sources/abc/resume", "sourceResume"},
@@ -509,6 +513,7 @@ func TestAutomationRoutesNoConflict(t *testing.T) {
 		{"POST", "/api/v1/pursuits/reconcile-life-domains", "pursuitReconcileLifeDomains"},
 		{"GET", "/api/v1/pursuits/dashboard", "pursuitDashboard"},
 		{"GET", "/api/v1/pursuits/brief", "pursuitBrief"},
+		{"GET", "/api/v1/pursuits/overview", "pursuitOverview"},
 		{"POST", "/api/v1/pursuits/match", "pursuitMatch"},
 		{"POST", "/api/v1/pursuits/intake", "pursuitRouteIntake"},
 		{"GET", "/api/v1/pursuits/abc/evidence?uri=automation-launch://example", "pursuitEvidence"},

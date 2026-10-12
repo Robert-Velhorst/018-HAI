@@ -4716,6 +4716,34 @@ func TestBriefSummarizesOperatingPrioritiesAndDeduplicatesCards(t *testing.T) {
 	}
 }
 
+func TestOverviewBuildsDashboardAndBriefFromOneOwnerScopedSnapshot(t *testing.T) {
+	repo := newFakeRepo()
+	service := NewService(repo, nil)
+	created, err := service.Create(CreateRequest{
+		OwnerIdentity:         "robert@example.com",
+		Title:                 "Review provider readiness",
+		RiskLevel:             "high",
+		NextRecommendedAction: "Approve the provider validation plan",
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	overview, err := service.OverviewForOwner("robert@example.com")
+	if err != nil {
+		t.Fatalf("OverviewForOwner returned error: %v", err)
+	}
+	if overview.Dashboard == nil || overview.Brief == nil {
+		t.Fatalf("overview must include both dashboard and brief: %#v", overview)
+	}
+	if overview.Dashboard.Counts["active"] != 1 || overview.Brief.NeedsRobert != 1 {
+		t.Fatalf("overview did not project the owner-scoped pursuit: %#v", overview)
+	}
+	if len(overview.Brief.Cards) == 0 || overview.Brief.Cards[0].PursuitID != created.ID.String() {
+		t.Fatalf("overview brief did not preserve dashboard priority: %#v", overview.Brief)
+	}
+}
+
 func TestReviewClearsDueReviewAndAuditsDecision(t *testing.T) {
 	repo := newFakeRepo()
 	service := NewService(repo, nil)

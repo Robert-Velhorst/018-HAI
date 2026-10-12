@@ -276,6 +276,15 @@ func fetchTrelloSourceSnapshot(ctx context.Context, source *models.ConnectedSour
 	if err != nil {
 		return nil, "", fmt.Errorf("verify trello board identity: %w", err)
 	}
+	if hasCursor && !cursorTime.IsZero() && (!reconcileExistingSnapshot || len(existingItems) > 0) {
+		quiet, nextCursor, err := trelloQuietBoardCursor(ctx, client, boardID, source.Cursor, cursorTime)
+		if err != nil {
+			return nil, "", fmt.Errorf("check trello board activity: %w", err)
+		}
+		if quiet {
+			return []ImportItem{}, nextCursor, nil
+		}
+	}
 
 	lists, err := getTrelloJSONArray[trelloList](ctx, client, "/1/boards/"+boardID+"/lists", url.Values{"fields": {"name"}, "filter": {"all"}})
 	if err != nil {
@@ -385,6 +394,51 @@ func fetchTrelloSourceSnapshot(ctx context.Context, source *models.ConnectedSour
 		return nil, "", newProviderSyncError("Trello", 0, err)
 	}
 	return items, nextCursor, nil
+}
+
+// trelloQuietBoardCursor avoids fetching every card and comment on scheduled
+// runs with no card-level activity. Any card-affecting, unknown, saturated, or
+// malformed action page falls back to the complete bounded reconciliation.
+func trelloQuietBoardCursor(ctx context.Context, client *trelloAPIClient, boardID, currentCursor string, cursorTime time.Time) (bool, string, error) {
+	var actions []trelloAction
+	query := url.Values{
+		"fields":        {trelloActionFields},
+		"filter":        {"all"},
+		"limit":         {strconv.Itoa(trelloActionPageSize)},
+		"member":        {"false"},
+		"memberCreator": {"false"},
+		"since":         {cursorTime.UTC().Format(time.RFC3339Nano)},
+	}
+	if err := client.getJSON(ctx, "/1/boards/"+boardID+"/actions", query, &actions); err != nil {
+		return false, "", err
+	}
+	if len(actions) >= trelloActionPageSize {
+		return false, "", nil
+	}
+	latest := cursorTime
+	for _, action := range actions {
+		activity, ok := parseTrelloTime(action.Date)
+		if !ok {
+			return false, "", nil
+		}
+		if activity.Before(cursorTime) {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(action.Type), "updateBoard") {
+			return false, "", nil
+		}
+		if activity.After(latest) {
+			latest = activity
+		}
+	}
+	if latest.Equal(cursorTime) {
+		return true, currentCursor, nil
+	}
+	nextCursor, err := encodeTrelloCursor(latest, nil)
+	if err != nil {
+		return false, "", fmt.Errorf("encode quiet board cursor: %w", err)
+	}
+	return true, nextCursor, nil
 }
 
 type trelloAPIClient struct {

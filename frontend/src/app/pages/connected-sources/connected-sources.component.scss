@@ -785,6 +785,33 @@ dl div,
   }
 }
 
+.connector-readiness {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  margin: 0 18px 18px;
+  padding-top: 14px;
+
+  > div {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  p {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  button {
+    justify-self: start;
+    min-height: 38px;
+  }
+}
+
 .source-detail {
   display: grid;
   gap: 14px;

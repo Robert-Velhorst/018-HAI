@@ -97,3 +97,24 @@ func TestLegacyResumeHandlerRejectsCallerSuppliedAuthorizationProof(t *testing.T
 		t.Fatal("legacy resume cleared the emergency stop")
 	}
 }
+
+func TestPauseHandlerRejectsMalformedRequestWithoutEngagingEmergencyStop(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := newTestService(t)
+	handler := NewHandler(service)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("subject", service.owner) })
+	router.POST("/pause", handler.Pause)
+
+	request := httptest.NewRequest(http.MethodPost, "/pause", strings.NewReader(`{"reason":`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+	if service.Control().EmergencyState().Engaged {
+		t.Fatal("malformed request engaged the emergency stop")
+	}
+}

@@ -15,6 +15,22 @@ no false completion, and no mock behavior masquerading as production.
 | Manual steps not pretended automatic | Yes — assisted workflows tell the user what remains manual. |
 | Run mode visible | Yes — `/system/info` + `runtime.mode` doctor check expose production vs demo. |
 
+## Run
+
+Use the native audit for the platform running the checkout:
+
+```powershell
+.\scripts\test-no-fake-claims-audit.ps1
+```
+
+```sh
+scripts/no-fake-claims-audit.sh
+```
+
+Both audits are static safeguards. They catch repository claims, unsafe tracked
+artifacts, and required fail-closed code guards; they do not establish that an
+external account, model provider, or runtime has completed a live task.
+
 ## Anti-patterns searched for
 
 - Endpoints returning hard-coded "success" without doing work → none found in new

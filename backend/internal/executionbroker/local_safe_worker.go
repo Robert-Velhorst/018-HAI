@@ -20,7 +20,7 @@ const LocalSafeWorkerID = "hai-local-safe-worker"
 
 const (
 	maxSafeOutput        = 4096
-	maxSafeArtifactBytes = 64 * 1024
+	maxSafeArtifactBytes = maxSafeOutput * 2
 )
 
 // SafeWorkerInput is the safe worker's bounded payload (§10.15).

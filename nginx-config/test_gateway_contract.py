@@ -42,6 +42,32 @@ def compose_service_block(name: str) -> str:
 
 
 class GatewayAuthContractTest(unittest.TestCase):
+    def test_gateway_applies_security_headers_to_all_and_cookie_refresh_responses(self) -> None:
+        required = (
+            'add_header X-Content-Type-Options "nosniff" always;',
+            'add_header X-Frame-Options "DENY" always;',
+            'add_header X-XSS-Protection "0" always;',
+            'add_header Referrer-Policy "no-referrer" always;',
+            'add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;',
+            'add_header Cross-Origin-Opener-Policy "same-origin" always;',
+            'add_header Cross-Origin-Resource-Policy "same-origin" always;',
+            "add_header Content-Security-Policy \"default-src 'self';",
+        )
+        for header in required:
+            with self.subTest(header=header):
+                self.assertIn(header, location_block("server {"))
+
+        # Nginx does not inherit parent add_header directives into locations
+        # that define Set-Cookie, so the two refresh paths repeat the policy.
+        for marker in (
+            "location = /api/v1/agent-runtimes/openclaw/ecosystem/upload",
+            "location /api/v1 {",
+        ):
+            block = location_block(marker)
+            for header in required:
+                with self.subTest(marker=marker, header=header):
+                    self.assertIn(header, block)
+
     def test_gateway_renders_secret_bearing_config_with_restrictive_permissions(self) -> None:
         gateway = compose_service_block("nginx")
         umask = gateway.index("umask 077")

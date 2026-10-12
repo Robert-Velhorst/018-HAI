@@ -202,6 +202,29 @@ func (h *Handler) Sources(c *gin.Context) {
 	c.JSON(http.StatusOK, filterVisibleSources(sources, owner))
 }
 
+// Overview returns the compact owner-scoped source snapshot used by the
+// connected-sources module's initial view.
+func (h *Handler) Overview(c *gin.Context) {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
+		return
+	}
+	service, ok := h.service.(interface {
+		OverviewForOwner(ownerIdentity, projectKey string, includeArchived bool) (*SourceOverview, error)
+	})
+	if !ok {
+		c.JSON(http.StatusNotImplemented, gin.H{"error": "source overview is not available"})
+		return
+	}
+	includeArchived, _ := strconv.ParseBool(c.Query("includeArchived"))
+	overview, err := service.OverviewForOwner(owner, c.Query("projectKey"), includeArchived)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "source overview is unavailable")})
+		return
+	}
+	c.JSON(http.StatusOK, overview)
+}
+
 func (h *Handler) SyncJobs(c *gin.Context) {
 	owner, ok := requireSourceOwner(c)
 	if !ok {
@@ -398,6 +421,12 @@ func (h *Handler) ConnectionHealths(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, health)
+}
+
+// ConnectionHealthSummary is the compact dashboard alias for the per-source
+// connection status endpoint.
+func (h *Handler) ConnectionHealthSummary(c *gin.Context) {
+	h.ConnectionHealths(c)
 }
 
 func (h *Handler) UpdateSource(c *gin.Context) {

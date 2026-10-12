@@ -13,8 +13,20 @@
 # Usage: scripts/smoke-account-bridges.sh
 set -euo pipefail
 
-PG_PORT="${PG_PORT:-55436}"
-API_PORT="${API_PORT:-18084}"
+allocate_loopback_port() {
+  python3 - <<'PY'
+import socket
+
+with socket.socket() as listener:
+    listener.bind(("127.0.0.1", 0))
+    print(listener.getsockname()[1])
+PY
+}
+
+PG_PORT_OVERRIDE="${PG_PORT:-}"
+PG_PORT="${PG_PORT_OVERRIDE:-$(allocate_loopback_port)}"
+API_PORT="${API_PORT:-$(allocate_loopback_port)}"
+pg_attempts=5
 API_KEY="${API_KEY:-hai-ci-smoke-api-key-0123456789abcdef}"
 JWT_SECRET="${JWT_SECRET:-hai-ci-smoke-jwt-secret-0123456789abcdef}"
 BASE="http://127.0.0.1:${API_PORT}/api/v1"
@@ -63,13 +75,22 @@ JSON
 
 echo "==> Starting throwaway PostgreSQL on :${PG_PORT}"
 initdb -D "${PGDATA}" -U "$(whoami)" --auth=trust --locale=C --encoding=UTF8 >/dev/null
-if ! pg_ctl -D "${PGDATA}" -o "-p ${PG_PORT} -h 127.0.0.1 -k ${WORKDIR}" -l "${PGDATA}/server.log" start >/dev/null; then
+pg_started=""
+for attempt in $(seq 1 "${pg_attempts}"); do
+  [ "${attempt}" -eq 1 ] || PG_PORT="$(allocate_loopback_port)"
+  if pg_ctl -D "${PGDATA}" -o "-p ${PG_PORT} -h 127.0.0.1 -k ${WORKDIR}" -l "${PGDATA}/server.log" start >/dev/null; then
+    pg_started=1
+    break
+  fi
+done
+if [ -z "${pg_started}" ]; then
   echo "PostgreSQL failed to start; server log:"
   if [ -f "${PGDATA}/server.log" ]; then
     cat "${PGDATA}/server.log"
   else
     echo "No PostgreSQL server log was created."
   fi
+  echo "PostgreSQL could not start after ${pg_attempts} attempt(s)."
   exit 1
 fi
 for i in $(seq 1 30); do
@@ -82,7 +103,7 @@ echo "==> Building and starting backend on :${API_PORT}"
 mkdir -p "${IMAGES}"
 ( cd "${ROOT}/backend" && go build -o "${BIN}" ./cmd )
 
-DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=hai-ci-smoke-postgres-password-0123456789abcdef \
+DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=smoke-local-postgres-password \
   DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
   BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
   RUN_MODE=test KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \

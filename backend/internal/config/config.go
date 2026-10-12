@@ -150,7 +150,7 @@ func getStringListFromEnv(envVarName, defaultValue string) []string {
 }
 
 func validatePort(port int) error {
-	if port < 0 || port > 65535 {
+	if port < 1 || port > 65535 {
 		return fmt.Errorf("error: Port %d is not valid", port)
 	}
 	return nil

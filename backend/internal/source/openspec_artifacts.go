@@ -5,6 +5,7 @@ package source
 // permission to edit, commit, branch, or open a pull request.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,16 @@ type openSpecArtifact struct {
 }
 
 func (s *service) openSpecArtifactItems(source *models.ConnectedSource, request ImportRequest) ([]ImportItem, error) {
+	return s.openSpecArtifactItemsContext(context.Background(), source, request)
+}
+
+func (s *service) openSpecArtifactItemsContext(ctx context.Context, source *models.ConnectedSource, request ImportRequest) ([]ImportItem, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if source == nil {
 		return nil, fmt.Errorf("OpenSpec source is required")
 	}
@@ -47,6 +58,9 @@ func (s *service) openSpecArtifactItems(source *models.ConnectedSource, request 
 	changes := map[string][]openSpecArtifact{}
 	filesRead := 0
 	err = filepath.WalkDir(changesRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return nil
 		}
@@ -101,6 +115,9 @@ func (s *service) openSpecArtifactItems(source *models.ConnectedSource, request 
 	}
 	items := make([]ImportItem, 0, len(changeNames))
 	for _, change := range changeNames {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		artifacts := changes[change]
 		sort.Slice(artifacts, func(i, j int) bool {
 			if artifacts[i].kind == artifacts[j].kind {

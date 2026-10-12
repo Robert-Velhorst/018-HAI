@@ -328,6 +328,8 @@ jobs:
         # runtime-registration races without making every CI package pay the
         # race-detector cost.
         run: go test -count=1 -race ./internal/automation ./internal/task ./internal/source ./internal/llm ./internal/agentruntime ./internal/durablejob ./internal/background ./internal/lifecycle ./internal/temporalbridge
+      - name: A2A bridge race tests
+        run: go test -count=1 -race ./internal/a2abridge
       - run: go build ./...
       - name: Vulnerability scan
         run: |
@@ -702,6 +704,9 @@ jobs:
       - name: Offline acceptance startup guard
         shell: pwsh
         run: ./scripts/test-acceptance-start-guard.ps1
+      - name: Docling runner boundary tests
+        working-directory: services/docling-runner
+        run: python3 -m unittest test_app.py
       - run: docker compose --env-file .env.example -f docker-compose.local.yml config
       - name: Provider fixture Compose contract
         run: docker compose --env-file .env.example --profile provider-fixture -f docker-compose.local.yml config --quiet
@@ -713,6 +718,8 @@ jobs:
           source = Path("nginx-config/nginx.conf.template").read_text(encoding="utf-8")
           Path(sys.argv[1]).write_text(
               source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key")
+                    .replace("${HAI_NGROK_HOST}", "hai-ci.ngrok.app")
+                    .replace("${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED}", "false")
                     .replace("${LOCAL_PREVIEW_GATEWAY_SECRET}", "ci-preview-key"),
               encoding="utf-8",
           )

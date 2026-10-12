@@ -22,7 +22,7 @@ run:
 run-with-docs: docs run
 
 build: update-docs
-	@go build -o $(APP_NAME) ./cmd/main.go
+	@go build -buildvcs=false -o $(APP_NAME) ./cmd/main.go
 
 test:
 	@go test ./...

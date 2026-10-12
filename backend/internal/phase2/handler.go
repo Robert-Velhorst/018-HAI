@@ -31,11 +31,20 @@ type Handler struct {
 }
 
 // OperationsOverview keeps the operations page's initial ledger reads in one
-// owner-scoped response. Feed state remains a separate connector-registry read
-// because it has different lifecycle and authorization ownership.
+// owner-scoped response. Configured feed metadata is included for the unified
+// page load; credential material is never exposed here.
 type OperationsOverview struct {
 	Dashboard  operations.Dashboard `json:"dashboard"`
 	Operations []models.Operation   `json:"operations"`
+	Feeds      []accountFeedView    `json:"feeds"`
+}
+
+type accountFeedView struct {
+	Name         string `json:"name"`
+	Provider     string `json:"provider"`
+	AccountLabel string `json:"accountLabel"`
+	SourceType   string `json:"sourceType"`
+	Enabled      bool   `json:"enabled"`
 }
 
 // NewHandler builds a handler over a module.
@@ -78,7 +87,7 @@ func (h *Handler) Overview(c *gin.Context) {
 		writeServerError(c, err, "background operations are unavailable")
 		return
 	}
-	c.JSON(http.StatusOK, OperationsOverview{Dashboard: dashboard, Operations: operationsList})
+	c.JSON(http.StatusOK, OperationsOverview{Dashboard: dashboard, Operations: operationsList, Feeds: h.feedViews()})
 }
 
 func operationFilter(c *gin.Context, owner, workspace string) operations.Filter {
@@ -642,17 +651,14 @@ func authenticatedOwner(c *gin.Context) (string, bool) {
 
 // ListFeeds returns the configured account feeds.
 func (h *Handler) ListFeeds(c *gin.Context) {
-	type feedView struct {
-		Name         string `json:"name"`
-		Provider     string `json:"provider"`
-		AccountLabel string `json:"accountLabel"`
-		SourceType   string `json:"sourceType"`
-		Enabled      bool   `json:"enabled"`
-	}
-	views := make([]feedView, 0, len(h.m.readers))
+	c.JSON(http.StatusOK, gin.H{"feeds": h.feedViews()})
+}
+
+func (h *Handler) feedViews() []accountFeedView {
+	views := make([]accountFeedView, 0, len(h.m.readers))
 	for _, r := range h.m.readers {
 		f := r.Feed()
-		views = append(views, feedView{f.Name, f.Provider, f.AccountLabel, string(f.SourceType), f.Enabled})
+		views = append(views, accountFeedView{f.Name, f.Provider, f.AccountLabel, string(f.SourceType), f.Enabled})
 	}
-	c.JSON(http.StatusOK, gin.H{"feeds": views})
+	return views
 }

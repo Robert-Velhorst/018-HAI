@@ -393,6 +393,9 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 	}
 	defer h.releaseOpenClawUploadSlot()
 	inspection, err := inspectOpenClawEcosystemUpload(c)
+	if rejectCancelledEcosystemUpload(c) {
+		return
+	}
 	if err != nil {
 		writeOpenClawEcosystemUploadError(c, err)
 		return
@@ -430,6 +433,9 @@ func (h *Handler) UploadOpenClawEcosystem(c *gin.Context) {
 		return
 	}
 	if !recheckEcosystemEmergencyStop(c) {
+		return
+	}
+	if rejectCancelledEcosystemUpload(c) {
 		return
 	}
 
@@ -488,6 +494,9 @@ func (h *Handler) PrepareUploadOpenClawEcosystem(c *gin.Context) {
 	}
 	defer h.releaseOpenClawUploadSlot()
 	inspection, err := inspectOpenClawEcosystemUpload(c)
+	if rejectCancelledEcosystemUpload(c) {
+		return
+	}
 	if err != nil {
 		writeOpenClawEcosystemUploadError(c, err)
 		return
@@ -506,6 +515,14 @@ func (h *Handler) PrepareUploadOpenClawEcosystem(c *gin.Context) {
 		UploadedContentDigest: inspection.contentDigest,
 		UploadedSize:          inspection.size,
 	})
+}
+
+func rejectCancelledEcosystemUpload(c *gin.Context) bool {
+	if c.Request.Context().Err() == nil {
+		return false
+	}
+	c.JSON(http.StatusRequestTimeout, gin.H{"error": "openclaw ecosystem upload was cancelled"})
+	return true
 }
 
 type openClawEcosystemUploadInspection struct {

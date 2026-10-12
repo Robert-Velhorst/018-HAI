@@ -7,6 +7,20 @@ http {
     resolver_timeout 5s;
     server {
         listen 80;
+        proxy_hide_header Content-Security-Policy;
+        proxy_hide_header Cross-Origin-Resource-Policy;
+        proxy_hide_header Referrer-Policy;
+        proxy_hide_header X-Content-Type-Options;
+        proxy_hide_header X-Frame-Options;
+        proxy_hide_header X-XSS-Protection;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header X-XSS-Protection "0" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+        add_header Cross-Origin-Opener-Policy "same-origin" always;
+        add_header Cross-Origin-Resource-Policy "same-origin" always;
+        add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'" always;
 
         # Resolve Docker service names per request so replacing a container
         # cannot leave the gateway pinned to its former IP address.
@@ -55,6 +69,14 @@ http {
             auth_request_set $hai_verified_access_token $upstream_http_x_hai_verified_access_token;
             add_header Set-Cookie $hai_refreshed_access_cookie always;
             add_header Set-Cookie $hai_refreshed_refresh_cookie always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-Frame-Options "DENY" always;
+            add_header X-XSS-Protection "0" always;
+            add_header Referrer-Policy "no-referrer" always;
+            add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+            add_header Cross-Origin-Opener-Policy "same-origin" always;
+            add_header Cross-Origin-Resource-Policy "same-origin" always;
+            add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'" always;
             proxy_pass http://$backend_upstream;
             proxy_set_header X-Original-URI $request_uri;
             proxy_set_header Authorization "Bearer $hai_verified_access_token";
@@ -159,6 +181,14 @@ http {
             auth_request_set $hai_verified_access_token $upstream_http_x_hai_verified_access_token;
             add_header Set-Cookie $hai_refreshed_access_cookie always;
             add_header Set-Cookie $hai_refreshed_refresh_cookie always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-Frame-Options "DENY" always;
+            add_header X-XSS-Protection "0" always;
+            add_header Referrer-Policy "no-referrer" always;
+            add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+            add_header Cross-Origin-Opener-Policy "same-origin" always;
+            add_header Cross-Origin-Resource-Policy "same-origin" always;
+            add_header Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; img-src 'self' data: blob:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'" always;
             proxy_pass http://$backend_upstream;
             proxy_set_header X-Original-URI $request_uri;
             proxy_set_header Authorization "Bearer $hai_verified_access_token";

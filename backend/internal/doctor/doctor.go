@@ -124,14 +124,18 @@ func Diagnose(cfg config.Configuration) Report {
 			detail = "DB_PASSWORD is empty; set an explicit production secret of at least 32 bytes (for example, openssl rand -hex 32)"
 		}
 		add("database.password", severity, detail)
+	case strings.EqualFold(strings.TrimSpace(cfg.DbPassword), "postgres"):
+		severity := SeverityWarn
+		if production {
+			severity = SeverityFail
+		}
+		add("database.password", severity, "DB_PASSWORD still holds the shipped default credential; generate a real database password")
 	case IsPlaceholderSecret(databasePassword):
 		severity := SeverityWarn
 		if production {
 			severity = SeverityFail
 		}
-		add("database.password", severity, "DB_PASSWORD still holds a shipped placeholder value; generate a real secret")
-	case production && strings.EqualFold(databasePassword, "postgres"):
-		add("database.password", SeverityFail, "DB_PASSWORD must not use the default postgres password in production; set a unique secret of at least 32 bytes")
+		add("database.password", severity, "DB_PASSWORD still holds a shipped placeholder value; generate a real database password")
 	case production && len([]byte(databasePassword)) < 32:
 		add("database.password", SeverityFail, "DB_PASSWORD must contain at least 32 bytes in production; generate one with openssl rand -hex 32")
 	default:

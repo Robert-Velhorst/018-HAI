@@ -81,6 +81,31 @@ subjects, or token values. Treat a skipped test as no live acceptance evidence.
   separate source to preserve board provenance and cursor history. HAI never
   writes to Trello.
 
+## Trello read-only acceptance
+
+HAI's Trello connector imports board cards, descriptions, comments, checklists,
+attachment metadata, due dates, and labels. It has no Trello write path. Before
+calling it live-proven, add the following non-placeholder values to untracked
+`.env.local`:
+
+```text
+TRELLO_API_KEY=...
+TRELLO_READ_TOKEN=...
+TRELLO_LIVE_BOARD=<board ID or https://trello.com/b/... URL>
+```
+
+Then run from PowerShell:
+
+```powershell
+.\scripts\test-live-trello.ps1 -EnvFile .env.local
+```
+
+The runner mounts the backend source read-only in a disposable Go container and
+runs only the connector's three GET-only live tests. It fails if credentials
+are absent, placeholders, API access fails, any test is skipped, the cursor is
+not incremental, or Trello reports write permission. It does not print the
+credential values or change a Trello board.
+
 ## Sign-off
 
 A provider is "verified" only when every box is checked and a probe has succeeded

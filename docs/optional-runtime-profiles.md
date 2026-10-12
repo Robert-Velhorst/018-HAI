@@ -140,10 +140,11 @@ upgraded.
 
 ## Safe Activation
 
-Copy `.env.example` to `.env.local`, generate unique runner tokens, and enable
-only one reviewed profile at a time. This general activation procedure does
-not apply to the `local-host-runtime` profile or DeepSeek Harness; those remain
-hard-disabled as described below.
+On Windows, initialize `.env.local` with `scripts\\initialize-windows.ps1`;
+else copy `.env.example` to `.env.local`. Generate unique runner tokens and
+enable only one reviewed profile at a time. This general activation procedure
+does not apply to the `local-host-runtime` profile or DeepSeek Harness; those
+remain hard-disabled as described below.
 
 ### Local SearXNG source discovery
 

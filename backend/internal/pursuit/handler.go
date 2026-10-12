@@ -61,11 +61,21 @@ func (h *Handler) Create(c *gin.Context) {
 }
 
 func (h *Handler) List(c *gin.Context) {
+	viewMode := strings.ToLower(strings.TrimSpace(c.Query("view")))
+	if viewMode != "" && viewMode != "full" && viewMode != "summary" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pursuit list view must be full or summary"})
+		return
+	}
 	includeArchived, _ := strconv.ParseBool(c.Query("includeArchived"))
 	records, err := h.service.ListForOwner(pursuitOwner(c), includeArchived)
 	if err != nil {
 		writePursuitServiceError(c, http.StatusInternalServerError, err, "pursuits are unavailable")
 		return
+	}
+	if viewMode == "summary" {
+		for index := range records {
+			records[index] = dashboardPursuitSummary(records[index])
+		}
 	}
 	c.JSON(http.StatusOK, records)
 }
@@ -88,8 +98,8 @@ func (h *Handler) ReconcileLifeDomains(c *gin.Context) {
 
 func (h *Handler) Dashboard(c *gin.Context) {
 	view := strings.ToLower(strings.TrimSpace(c.Query("view")))
-	if view != "" && view != "full" && view != "summary" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "pursuit dashboard view must be full or summary"})
+	if view != "" && view != "full" && view != "summary" && view != "counts" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "pursuit dashboard view must be full, summary, or counts"})
 		return
 	}
 	ownerIdentity := pursuitOwner(c)
@@ -115,6 +125,8 @@ func (h *Handler) Dashboard(c *gin.Context) {
 	}
 	if view == "summary" {
 		record = dashboardSummary(record)
+	} else if view == "counts" {
+		record = dashboardCounts(record)
 	}
 	c.JSON(http.StatusOK, record)
 }
@@ -123,6 +135,15 @@ func (h *Handler) Brief(c *gin.Context) {
 	record, err := h.service.BriefForOwner(pursuitOwner(c))
 	if err != nil {
 		writePursuitServiceError(c, http.StatusInternalServerError, err, "pursuit brief is unavailable")
+		return
+	}
+	c.JSON(http.StatusOK, record)
+}
+
+func (h *Handler) Overview(c *gin.Context) {
+	record, err := h.service.OverviewForOwner(pursuitOwner(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, record)
@@ -847,7 +868,9 @@ func (h *Handler) Reopen(c *gin.Context) {
 	var request struct {
 		Note string `json:"note,omitempty"`
 	}
-	_ = c.ShouldBindJSON(&request)
+	if !bindOptionalPursuitJSON(c, &request) {
+		return
+	}
 	record, err := h.service.ReopenForOwner(pursuitOwner(c), id, verifiedActor(c, "operator"), request.Note)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1072,7 +1095,9 @@ func (h *Handler) RefreshSummary(c *gin.Context) {
 	var request struct {
 		Actor string `json:"actor,omitempty"`
 	}
-	_ = c.ShouldBindJSON(&request)
+	if !bindOptionalPursuitJSON(c, &request) {
+		return
+	}
 	request.Actor = verifiedActor(c, "system")
 	_, err := h.service.RefreshSummaryForOwner(pursuitOwner(c), id, request.Actor)
 	if err != nil {
@@ -1080,6 +1105,14 @@ func (h *Handler) RefreshSummary(c *gin.Context) {
 		return
 	}
 	h.respondScopedDetail(c, id, http.StatusOK)
+}
+
+func bindOptionalPursuitJSON(c *gin.Context, request any) bool {
+	if err := c.ShouldBindJSON(request); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request body must be valid JSON"})
+		return false
+	}
+	return true
 }
 
 func (h *Handler) Review(c *gin.Context) {

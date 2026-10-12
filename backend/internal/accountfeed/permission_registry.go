@@ -1,8 +1,9 @@
 package accountfeed
 
 // AccountPermission records the read-only scopes a bridge declares and whether
-// they have actually been granted (a real credential is present). Granted never
-// means "connected" — only that a credential exists to attempt a real read.
+// a direct provider credential is present. OAuth client bootstrap is not an
+// owner grant, so it never sets Granted. Granted never means "connected" — it
+// only means a direct credential exists to attempt a real read.
 type AccountPermission struct {
 	Provider       Provider         `json:"provider"`
 	DisplayName    string           `json:"displayName"`
@@ -32,7 +33,7 @@ func (r *PermissionRegistry) Permissions() []AccountPermission {
 			ReadOnly:       b.ReadOnly,
 			DeclaredScopes: b.RequiredScopes,
 			CredentialEnv:  b.CredentialEnv,
-			Granted:        status == ConnCredentialsPresentUnverified,
+			Granted:        status == ConnCredentialsPresentUnverified && b.ReportsCredentialGrant(),
 			Status:         status,
 		})
 	}

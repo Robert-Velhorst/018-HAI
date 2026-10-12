@@ -103,6 +103,53 @@ func TestHandlerProvidesCardAndTokenBoundedSendMessage(t *testing.T) {
 	}
 }
 
+func TestHandlerDeduplicatesRepeatedMessageDelivery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	planner := &previewStub{}
+	handler := NewHandler(configuredService(planner))
+	router := gin.New()
+	router.POST("/api/v1/a2a", handler.Send)
+
+	body := `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"retry-safe-message","role":"ROLE_USER","parts":[{"text":"Plan a source-backed response","mediaType":"text/plain"}]}}}`
+	request := func(id string) *http.Request {
+		value := strings.Replace(body, `"id":1`, `"id":`+id, 1)
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/a2a", strings.NewReader(value))
+		r.Header.Set("Authorization", "Bearer "+testBridgeToken)
+		r.Header.Set("A2A-Version", "1.0")
+		r.Header.Set("Content-Type", "application/json")
+		return r
+	}
+
+	first := httptest.NewRecorder()
+	router.ServeHTTP(first, request("1"))
+	second := httptest.NewRecorder()
+	router.ServeHTTP(second, request("2"))
+
+	if first.Code != http.StatusOK || second.Code != http.StatusOK {
+		t.Fatalf("status = %d / %d, bodies = %s / %s", first.Code, second.Code, first.Body.String(), second.Body.String())
+	}
+	if len(planner.requests) != 1 {
+		t.Fatalf("planner calls = %d, want one for an idempotent retry", len(planner.requests))
+	}
+	if !strings.Contains(first.Body.String(), `"id":1`) || !strings.Contains(second.Body.String(), `"id":2`) {
+		t.Fatalf("JSON-RPC request ids were not preserved: %s / %s", first.Body.String(), second.Body.String())
+	}
+
+	changed := strings.Replace(body, "Plan a source-backed response", "Plan a different response", 1)
+	changedRequest := httptest.NewRequest(http.MethodPost, "/api/v1/a2a", strings.NewReader(changed))
+	changedRequest.Header.Set("Authorization", "Bearer "+testBridgeToken)
+	changedRequest.Header.Set("A2A-Version", "1.0")
+	changedRequest.Header.Set("Content-Type", "application/json")
+	changedResponse := httptest.NewRecorder()
+	router.ServeHTTP(changedResponse, changedRequest)
+	if changedResponse.Code != http.StatusBadRequest || !strings.Contains(changedResponse.Body.String(), "messageId was already used") {
+		t.Fatalf("changed retry = %d %s", changedResponse.Code, changedResponse.Body.String())
+	}
+	if len(planner.requests) != 1 {
+		t.Fatalf("changed replay triggered another planner call: %d", len(planner.requests))
+	}
+}
+
 func TestHandlerRejectsOldShapesAndUnsupportedA2AVersion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler(configuredService(&previewStub{}))

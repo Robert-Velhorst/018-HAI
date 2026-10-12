@@ -9,6 +9,7 @@ import { NzIconModule } from 'ng-zorro-antd/icon'
 import { NzModalModule } from 'ng-zorro-antd/modal'
 import { NzDrawerModule } from 'ng-zorro-antd/drawer'
 import { NzSpinModule } from 'ng-zorro-antd/spin'
+import { NzAlertModule } from 'ng-zorro-antd/alert'
 import { ControlCenterComponent } from './control-center.component'
 import { OpenclawUsageComponent } from '../../components/openclaw-usage/openclaw-usage.component'
 import { OpenclawArtifactsComponent } from '../../components/openclaw-artifacts/openclaw-artifacts.component'
@@ -34,6 +35,7 @@ const routes: Routes = [{ path: '', component: ControlCenterComponent }]
     NzModalModule,
     NzDrawerModule,
     NzSpinModule,
+    NzAlertModule,
   ],
   providers: [
     { provide: AUTOMATIONS_SERVICE_TOKEN, useClass: AutomationsService },

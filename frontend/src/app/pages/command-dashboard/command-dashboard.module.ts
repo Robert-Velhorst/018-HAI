@@ -3,6 +3,7 @@ import { NgModule } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { RouterModule, Routes } from '@angular/router';
 import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzAlertModule } from 'ng-zorro-antd/alert';
 import { NzCardModule } from 'ng-zorro-antd/card';
 import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { NzIconModule } from 'ng-zorro-antd/icon';
@@ -25,6 +26,8 @@ const routes: Routes = [{ path: '', component: CommandDashboardComponent }];
     CommonModule,
     ReactiveFormsModule,
     RouterModule.forChild(routes),
+    ControlRoomModule,
+    NzAlertModule,
     NzButtonModule,
     NzCardModule,
     NzEmptyModule,

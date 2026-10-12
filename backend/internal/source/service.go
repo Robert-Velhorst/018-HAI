@@ -238,7 +238,10 @@ func runOwnerScheduledSyncsWithContext(ctx context.Context, service Service, now
 type ExtractionPage struct {
 	Items      []models.SourceExtraction `json:"items"`
 	TotalCount int64                     `json:"totalCount"`
+	Total      int                       `json:"total"`
 	Limit      int                       `json:"limit"`
+	Offset     int                       `json:"offset"`
+	HasMore    bool                      `json:"hasMore"`
 }
 
 type ExtractionPageService interface {

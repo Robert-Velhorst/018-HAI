@@ -50,7 +50,8 @@ func Snapshot(name string) (State, bool) {
 func Probe(name string) doctor.Probe {
 	name = strings.TrimSpace(name)
 	return doctor.Probe{
-		Name: "scheduler." + name,
+		Name:     "scheduler." + name,
+		Critical: false,
 		Run: func(context.Context) error {
 			state, ok := Snapshot(name)
 			if !ok {

@@ -1554,7 +1554,7 @@ Go API and operating engines
   |-- local-first LLM router and provider probes
   |-- ambient planning and controlled runtime registry
         |
-Postgres + Redis + optional event bus
+Postgres + Redis + optional Kafka-compatible event bus
 ```
 
 The local deployment targets Windows 11 with Docker Desktop. The control-plane
@@ -1649,12 +1649,17 @@ docker compose --env-file .env.local -f docker-compose.local.yml config --quiet
 ```
 
 To enable Kafka-compatible account/event delivery and dynamic gateway
-configuration deliberately, set `HAI_EVENT_BUS_ENABLED=true` in `.env.local`
-and start the additional profile:
+configuration deliberately, set `HAI_EVENT_BUS_ENABLED=true`,
+`IDP_KAFKA_ENABLED=true`, `KAFKA_BROKERS=kafka:9092`, and
+`BROKERS_ADDR=kafka:9092` in `.env.local`, then start the additional profile:
 
 ```powershell
-docker compose --env-file .env.local -f docker-compose.local.yml --profile event-bus up -d
+docker compose --env-file .env.local -f docker-compose.local.yml --profile event-bus up --build -d
 ```
+
+Kafka, ZooKeeper, and the Kafka-driven nginx configuration manager are not
+started by default. The backend and IDP operate without the event bus; enable
+the profile only when the installation needs Kafka-compatible delivery.
 
 The owner-session preview bypass is disabled by default. First-run setup or
 `scripts/generate-secrets.sh` creates a dedicated 32-byte
@@ -1689,9 +1694,14 @@ local gateway:
 http://localhost:8088/api/v1/auth/google/callback
 ```
 
+Use the same hostname in the registered URI and `GOOGLE_LOGIN_REDIRECT_URL`.
+If the installation uses `127.0.0.1` rather than `localhost`, register and
+configure that exact loopback URI instead.
+
 Then set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and
 `GOOGLE_LOGIN_REDIRECT_URL` in `.env.local`, and recreate the IDP container.
-The Gmail, Drive, Contacts, and Calendar connected-source callback is separate. Register
+The Gmail, Drive, Contacts, and Calendar connected-source callback is separate.
+Register it with the same hostname used by the gateway and configured redirect:
 `http://localhost:8088/api/v1/sources/oauth/google/callback`, set it as
 `GOOGLE_OAUTH_REDIRECT_URL`, and enable both APIs you intend to use. Each source
 requests only its own read-only scope. Also set independent
@@ -1823,6 +1833,35 @@ From `backend`, the explicitly approved test command is:
 ```powershell
 go test -tags=integration -count=1 -timeout=60s ./internal/accountfeed -run '^TestPostgresRegistryCommittedReconstructionAndAtomicFailure$'
 ```
+
+### Extract a selected local document folder
+
+For Office, HTML, Markdown, text, or reviewed PDF extraction, enable the
+disabled-by-default `local-document-extraction` profile in `.env.local`:
+
+```text
+HAI_DOCLING_ENABLED=true
+HAI_DOCLING_RUNNER_TOKEN=<unique local runner token>
+HAI_DOCLING_PDF_ENABLED=false
+```
+
+Start the backend and the profile, then create a **Selected documents
+(Docling)** source in **Connected Sources**. Keep **Local only** enabled and
+set a specific folder relative to `connected-sources/`, such as
+`legal/vivare`; `.` and paths outside that root are rejected. The **Extract
+documents** action sends no file upload: the isolated runner reads that one
+mounted folder, HAI records source-linked extractions through the normal
+governed intake flow, and it cannot write to the folder, promote memory, or
+execute an external action. PDF extraction remains off until its local model
+artifacts have been reviewed.
+
+```powershell
+docker compose --env-file .env.local -f docker-compose.local.yml `
+  --profile local-document-extraction up -d --build backend docling-runner
+```
+
+See [optional runtime profiles](docs/optional-runtime-profiles.md) for the
+runner isolation and resource limits.
 
 ### Connect LARO case intelligence
 

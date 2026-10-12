@@ -580,6 +580,18 @@ func TestNamedLocalProviderProfilesRejectRemoteEndpoints(t *testing.T) {
 	}
 }
 
+func TestEndpointValidationRejectsCredentialOrQueryData(t *testing.T) {
+	for _, raw := range []string{
+		"https://operator:secret@example.test/v1",
+		"https://example.test/v1?token=do-not-store",
+		"https://example.test/v1#credential-data",
+	} {
+		if err := validateEndpointURL(raw); err == nil {
+			t.Fatalf("validateEndpointURL(%q) unexpectedly accepted unsafe endpoint data", raw)
+		}
+	}
+}
+
 func TestLocalAIRegistryRequiresLoopbackEndpointAndUsesConfiguredModel(t *testing.T) {
 	t.Setenv("LOCALAI_BASE_URL", "https://models.example.test")
 	registry := NewRegistryFromEnv()

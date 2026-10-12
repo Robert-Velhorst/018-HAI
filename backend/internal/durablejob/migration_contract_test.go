@@ -53,6 +53,23 @@ func TestDurableJobQueueIndexMigrationContract(t *testing.T) {
 	}
 }
 
+func TestDurableJobQueueLeaseIndexMigrationContract(t *testing.T) {
+	up, err := migrations.Files.ReadFile("post/0005_durable_jobs_queue_lease_index.up.sql")
+	if err != nil {
+		t.Fatalf("read queue-lease up migration: %v", err)
+	}
+	down, err := migrations.Files.ReadFile("post/0005_durable_jobs_queue_lease_index.down.sql")
+	if err != nil {
+		t.Fatalf("read queue-lease down migration: %v", err)
+	}
+	if !strings.Contains(string(up), "(queue, status, locked_at)") || !strings.Contains(string(up), "WHERE locked_at IS NOT NULL") {
+		t.Fatal("queue-lease migration must index queue-scoped expired lease recovery")
+	}
+	if !strings.Contains(string(down), "idx_durable_jobs_queue_lease") {
+		t.Fatal("queue-lease rollback must remove the queue-scoped lease index")
+	}
+}
+
 func TestReviewReplayPolicyMigrationPreservesAuthority(t *testing.T) {
 	up, err := migrations.Files.ReadFile("pre/0115_durable_job_replay_policy.up.sql")
 	if err != nil {

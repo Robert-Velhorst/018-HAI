@@ -41,7 +41,11 @@ func (h *Handler) Create(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "this memory type can only be written by its review workflow"})
 		return
 	}
-	memory, err := h.ownerService(c).CreateForOwner(owner, request)
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
+	memory, err := service.CreateForOwner(owner, request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "memory could not be created")})
 		return
@@ -56,12 +60,16 @@ func (h *Handler) List(c *gin.Context) {
 	}
 	includeArchived, _ := strconv.ParseBool(c.Query("includeArchived"))
 	limit, _ := strconv.Atoi(c.Query("limit"))
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
 	var memories []models.ContextMemory
 	var err error
 	if limit > 0 {
-		memories, err = RecentForOwner(h.service, owner, c.Query("projectKey"), includeArchived, limit)
+		memories, err = RecentForOwner(service, owner, c.Query("projectKey"), includeArchived, limit)
 	} else {
-		memories, err = h.ownerService(c).FindAllForOwner(owner, c.Query("projectKey"), includeArchived)
+		memories, err = service.FindAllForOwner(owner, c.Query("projectKey"), includeArchived)
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "memories are unavailable"})
@@ -104,14 +112,13 @@ func (h *Handler) Query(c *gin.Context) {
 		return
 	}
 	includeArchived, _ := strconv.ParseBool(c.Query("includeArchived"))
-	memories, err := h.ownerService(c).FindAllForOwner(owner, c.Query("projectKey"), includeArchived)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "memories are unavailable"})
+	service, ok := h.ownerService(c)
+	if !ok {
 		return
 	}
 	page, _ := strconv.Atoi(c.Query("page"))
 	pageSize, _ := strconv.Atoi(c.Query("pageSize"))
-	result := Query(memories, QueryParams{
+	params := QueryParams{
 		Search:   c.Query("q"),
 		Kind:     c.Query("kind"),
 		Tag:      c.Query("tag"),
@@ -119,7 +126,22 @@ func (h *Handler) Query(c *gin.Context) {
 		Order:    c.Query("order"),
 		Page:     page,
 		PageSize: pageSize,
-	})
+	}
+	var result PageResult
+	var err error
+	if queryService, ok := h.service.(OwnerQueryService); ok {
+		result, err = queryService.QueryForOwner(c.Request.Context(), owner, c.Query("projectKey"), includeArchived, params)
+	} else {
+		var memories []models.ContextMemory
+		memories, err = service.FindAllForOwner(owner, c.Query("projectKey"), includeArchived)
+		if err == nil {
+			result = Query(memories, params)
+		}
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "memory query is unavailable"})
+		return
+	}
 	result.Items = memoryListResponse(result.Items)
 	c.JSON(http.StatusOK, result)
 }
@@ -133,7 +155,11 @@ func (h *Handler) Get(c *gin.Context) {
 	if !ok {
 		return
 	}
-	memory, err := h.ownerService(c).FindByIDForOwner(owner, id)
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
+	memory, err := service.FindByIDForOwner(owner, id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": apierror.PublicMessage(err, "memory not found")})
 		return
@@ -154,7 +180,11 @@ func (h *Handler) Update(c *gin.Context) {
 	if !bindBoundedMemoryJSON(c, &request, "invalid memory update request") {
 		return
 	}
-	memory, err := h.ownerService(c).UpdateForOwner(owner, id, request)
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
+	memory, err := service.UpdateForOwner(owner, id, request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "memory could not be updated")})
 		return
@@ -171,7 +201,11 @@ func (h *Handler) Archive(c *gin.Context) {
 	if !ok {
 		return
 	}
-	memory, err := h.ownerService(c).ArchiveForOwner(owner, id, true)
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
+	memory, err := service.ArchiveForOwner(owner, id, true)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "memory could not be archived")})
 		return
@@ -188,7 +222,11 @@ func (h *Handler) Restore(c *gin.Context) {
 	if !ok {
 		return
 	}
-	memory, err := h.ownerService(c).ArchiveForOwner(owner, id, false)
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
+	memory, err := service.ArchiveForOwner(owner, id, false)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "memory could not be restored")})
 		return
@@ -205,7 +243,11 @@ func (h *Handler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.ownerService(c).DeleteForOwner(owner, id); err != nil {
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
+	if err := service.DeleteForOwner(owner, id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "memory could not be deleted"})
 		return
 	}
@@ -221,7 +263,11 @@ func (h *Handler) Retrieve(c *gin.Context) {
 	if !bindBoundedMemoryJSON(c, &request, "invalid memory retrieval request") {
 		return
 	}
-	result, err := h.ownerService(c).RetrieveForOwner(owner, request)
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
+	result, err := service.RetrieveForOwner(owner, request)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "memory retrieval is unavailable")})
 		return
@@ -253,7 +299,11 @@ func (h *Handler) Export(c *gin.Context) {
 	if !ok {
 		return
 	}
-	memories, err := h.ownerService(c).FindAllForOwner(owner, c.Query("projectKey"), true)
+	service, ok := h.ownerService(c)
+	if !ok {
+		return
+	}
+	memories, err := service.FindAllForOwner(owner, c.Query("projectKey"), true)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "memory export is unavailable"})
 		return
@@ -296,12 +346,13 @@ func retrieveResultResponse(result *RetrieveResult) *RetrieveResult {
 	return &response
 }
 
-func (h *Handler) ownerService(c *gin.Context) OwnerScopedService {
+func (h *Handler) ownerService(c *gin.Context) (OwnerScopedService, bool) {
 	scoped, ok := h.service.(OwnerScopedService)
 	if !ok {
-		panic("memory handler requires owner-scoped service")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "owner-scoped memory service is unavailable"})
+		return nil, false
 	}
-	return scoped
+	return scoped, true
 }
 
 func memoryOwner(c *gin.Context) string {

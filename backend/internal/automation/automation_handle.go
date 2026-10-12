@@ -18,9 +18,18 @@ import (
 )
 
 const (
-	maxAutomationUpdateBodyBytes = 1 << 20
-	automationImageFormOverhead  = 1 << 20
+	maxAutomationUpdateBodyBytes     int64 = 1 << 20
+	defaultAutomationImageMaxBytes   int64 = 5 << 20
+	automationMultipartMetadataBytes int64 = 1 << 20
 )
+
+func maxAutomationCreateBodyBytes() int64 {
+	imageLimit := config.AppConfig.ImageMaxSize
+	if imageLimit <= 0 {
+		imageLimit = defaultAutomationImageMaxBytes
+	}
+	return imageLimit + automationMultipartMetadataBytes
+}
 
 type Handler struct {
 	service Service
@@ -149,14 +158,6 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, publicAutomation(newAutomation))
-}
-
-func maxAutomationCreateBodyBytes() int64 {
-	imageMaxSize := config.AppConfig.ImageMaxSize
-	if imageMaxSize <= 0 {
-		imageMaxSize = 5 << 20
-	}
-	return imageMaxSize + automationImageFormOverhead
 }
 
 // GetAll
@@ -297,9 +298,9 @@ func (h *Handler) Update(c *gin.Context) {
 	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxAutomationUpdateBodyBytes))
 	defer c.Request.Body.Close()
 	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "automation update exceeds maximum request size"})
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "automation update exceeds the 1 MiB request limit"})
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})

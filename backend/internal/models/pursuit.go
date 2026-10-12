@@ -157,12 +157,16 @@ func (PursuitResourceReservationSettlement) TableName() string {
 // and measured usage that justified it. It grants no execution authority.
 type PursuitPortfolioWorkflowSettlementProof struct {
 	ID                          uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id,omitempty"`
-	SettlementID                uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"settlementId"`
+	// The immutable proof ledger and its uniqueness constraints are owned by
+	// pre/0044_workflow_completion_settlement_proofs. Keep generated GORM
+	// unique indexes out of this model so an opt-in development AutoMigrate can
+	// never rewrite the migration-owned schema.
+	SettlementID                uuid.UUID `gorm:"type:uuid;not null" json:"settlementId"`
 	SettlementDigest            string    `gorm:"type:char(64);not null" json:"settlementDigest"`
-	ReservationID               uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"reservationId"`
+	ReservationID               uuid.UUID `gorm:"type:uuid;not null" json:"reservationId"`
 	PursuitID                   uuid.UUID `gorm:"type:uuid;index;not null" json:"pursuitId"`
 	OwnerIdentity               string    `gorm:"type:varchar(255);index;not null" json:"-"`
-	ProposalItemID              uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"proposalItemId"`
+	ProposalItemID              uuid.UUID `gorm:"type:uuid;not null" json:"proposalItemId"`
 	ProposalItemDigest          string    `gorm:"type:char(64);not null" json:"proposalItemDigest"`
 	ApprovalDecisionID          uuid.UUID `gorm:"type:uuid;not null" json:"approvalDecisionId"`
 	ApprovalDecisionDigest      string    `gorm:"type:char(64);not null" json:"approvalDecisionDigest"`
@@ -170,8 +174,8 @@ type PursuitPortfolioWorkflowSettlementProof struct {
 	AuthorizationReceiptDigest  string    `gorm:"type:char(64);not null" json:"authorizationReceiptDigest"`
 	AuthorizationConsumptionKey string    `gorm:"column:authorization_consumption_digest;type:char(64);not null" json:"authorizationConsumptionDigest"`
 	AuthorizationTarget         string    `gorm:"column:authorization_consumption_target;type:varchar(1024);not null" json:"authorizationTarget"`
-	WorkflowID                  uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"workflowId"`
-	CompletionAttestationID     uuid.UUID `gorm:"type:uuid;uniqueIndex;not null" json:"completionAttestationId"`
+	WorkflowID                  uuid.UUID `gorm:"type:uuid;not null" json:"workflowId"`
+	CompletionAttestationID     uuid.UUID `gorm:"type:uuid;not null" json:"completionAttestationId"`
 	CompletionAttestationDigest string    `gorm:"type:char(64);not null" json:"completionAttestationDigest"`
 	ActualEffortMinutes         int64     `gorm:"not null;default:0" json:"actualEffortMinutes"`
 	ActualCostMicros            int64     `gorm:"not null;default:0" json:"actualCostMicros"`

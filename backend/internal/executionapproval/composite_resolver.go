@@ -24,6 +24,18 @@ type CompositeResolver struct {
 	portfolio  executionauth.ApprovalResolver
 	control    executionauth.ApprovalResolver
 	opsControl executionauth.ApprovalResolver
+	additional []ApprovalResolverRegistration
+}
+
+// ApprovalResolverRegistration adds a server-owned approval namespace. Generic
+// prefixes must not overlap canonical safety-sensitive namespaces.
+type ApprovalResolverRegistration struct {
+	Prefix   string
+	Resolver executionauth.ApprovalResolver
+}
+
+func RegisterApprovalResolver(prefix string, resolver executionauth.ApprovalResolver) ApprovalResolverRegistration {
+	return ApprovalResolverRegistration{Prefix: prefix, Resolver: resolver}
 }
 
 // WithOpsControlReviewResolver adds the dedicated exact-effect resolver for
@@ -43,6 +55,7 @@ func NewCompositeResolver(
 	workflow executionauth.ApprovalResolver,
 	portfolio executionauth.ApprovalResolver,
 	control executionauth.ApprovalResolver,
+	additional ...ApprovalResolverRegistration,
 ) (*CompositeResolver, error) {
 	if isNilApprovalResolver(taskReview) {
 		return nil, fmt.Errorf("%w: task review resolver is required", ErrInvalidRequest)
@@ -56,11 +69,30 @@ func NewCompositeResolver(
 	if isNilApprovalResolver(control) {
 		return nil, fmt.Errorf("%w: owner control approval resolver is required", ErrInvalidRequest)
 	}
+	reserved := []string{taskReviewPrefix, workflowDecisionPrefix, portfolioDecisionPrefix, OpsControlReviewPrefix, opscontrol.OwnerControlApprovalPrefix}
+	for i := range additional {
+		additional[i].Prefix = strings.TrimSpace(additional[i].Prefix)
+		if additional[i].Prefix == "" || !strings.HasSuffix(additional[i].Prefix, ":") || isNilApprovalResolver(additional[i].Resolver) {
+			return nil, fmt.Errorf("%w: additional approval resolver is invalid", ErrInvalidRequest)
+		}
+		for _, existing := range reserved {
+			if strings.HasPrefix(existing, additional[i].Prefix) || strings.HasPrefix(additional[i].Prefix, existing) {
+				return nil, fmt.Errorf("%w: additional approval resolver prefix overlaps a reserved namespace", ErrInvalidRequest)
+			}
+		}
+		for _, existing := range additional[:i] {
+			if strings.HasPrefix(existing.Prefix, additional[i].Prefix) || strings.HasPrefix(additional[i].Prefix, existing.Prefix) {
+				return nil, fmt.Errorf("%w: additional approval resolver prefixes overlap", ErrInvalidRequest)
+			}
+		}
+		reserved = append(reserved, additional[i].Prefix)
+	}
 	return &CompositeResolver{
 		taskReview: taskReview,
 		workflow:   workflow,
 		portfolio:  portfolio,
 		control:    control,
+		additional: append([]ApprovalResolverRegistration(nil), additional...),
 	}, nil
 }
 
@@ -95,6 +127,11 @@ func (r *CompositeResolver) Resolve(
 	case strings.HasPrefix(sourceID, opscontrol.OwnerControlApprovalPrefix):
 		return r.control.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
 	default:
+		for _, registration := range r.additional {
+			if strings.HasPrefix(sourceID, registration.Prefix) {
+				return registration.Resolver.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
+			}
+		}
 		return executionauth.ResolvedApproval{}, ErrUnsupportedApprovalReference
 	}
 }

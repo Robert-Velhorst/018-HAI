@@ -528,7 +528,9 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		if err != nil {
 			return err
 		}
-		opsControlReviewResolver, err := executionapproval.NewOpsControlReviewResolver(taskStateRepository)
+		opsControlReviewResolver, err := executionapproval.NewOpsControlReviewResolver(
+			taskStateRepository,
+		)
 		if err != nil {
 			return err
 		}
@@ -538,6 +540,18 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 		}
 		workflowApprovalResolver, err := executionapproval.NewWorkflowApprovalResolver(
 			workflowApprovalRepository,
+		)
+		if err != nil {
+			return err
+		}
+		controlApprovalRepository, err := opscontrol.DefaultControlApprovalRepository()
+		if err != nil {
+			return err
+		}
+		opsControlService.WithControlApprovalRepository(controlApprovalRepository)
+		opsControlService.WithControlReviewRepository(newOpsControlTaskReviewRepository(taskStateRepository))
+		controlApprovalResolver, err := opscontrol.NewControlApprovalResolver(
+			controlApprovalRepository,
 		)
 		if err != nil {
 			return err
@@ -564,11 +578,14 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			workflowApprovalResolver,
 			portfolioApprovalResolver,
 			ownerControlApprovalService,
+			executionapproval.RegisterApprovalResolver(opscontrol.ControlDecisionPrefix, controlApprovalResolver),
 		)
 		if err != nil {
 			return err
 		}
-		approvalResolver, err = approvalResolver.WithOpsControlReviewResolver(opsControlReviewResolver)
+		approvalResolver, err = approvalResolver.WithOpsControlReviewResolver(
+			opsControlReviewResolver,
+		)
 		if err != nil {
 			return err
 		}
@@ -1578,6 +1595,8 @@ func initializeSourceRoutes(apiVersion *gin.RouterGroup, sourceHandler *source.H
 		sourceRoutes.POST("/sync-due", requirePermission(rbac.PermWrite), sourceHandler.RunDueScheduledSyncs)
 		sourceRoutes.GET("/sync-jobs", requirePermission(rbac.PermRead), sourceHandler.SyncJobs)
 		sourceRoutes.GET("/sync-jobs/:id", requirePermission(rbac.PermRead), sourceHandler.ManualSyncJob)
+		sourceRoutes.GET("/overview", requirePermission(rbac.PermRead), sourceHandler.Overview)
+		sourceRoutes.GET("/health", requirePermission(rbac.PermRead), sourceHandler.ConnectionHealthSummary)
 		sourceRoutes.GET("/extractions", requirePermission(rbac.PermRead), sourceHandler.Extractions)
 		sourceRoutes.GET("/extraction-corrections/:id", requirePermission(rbac.PermRead), sourceHandler.ExtractionCorrection)
 		sourceRoutes.GET("/audit-logs", requirePermission(rbac.PermRead), sourceHandler.AuditLogs)
@@ -1905,6 +1924,7 @@ func initializePhase2Routes(apiVersion *gin.RouterGroup, handler *phase2.Handler
 	backgroundRuns := apiVersion.Group("/background")
 	backgroundRuns.Use(requireAuthenticatedOwner())
 	{
+		backgroundRuns.GET("/overview", requirePermission(rbac.PermRead), handler.Overview)
 		backgroundRuns.POST("/run", requirePermission(rbac.PermExecute), handler.RunBackground)
 	}
 }
@@ -2008,6 +2028,8 @@ func initializeOpsControlRoutes(apiVersion *gin.RouterGroup, handler *opscontrol
 		bg.POST("/resume", requirePermission(rbac.PermAdmin), handler.Resume)
 		bg.POST("/resume-approval", requirePermission(rbac.PermAdmin), handler.RequestResumeApproval)
 		bg.POST("/resume-approval/:id/approve-and-resume", requirePermission(rbac.PermAdmin), handler.ApproveAndResume)
+		bg.POST("/control-approvals", requirePermission(rbac.PermAdmin), handler.PrepareControlApproval)
+		bg.POST("/control-approvals/:id/decision", requirePermission(rbac.PermAdmin), handler.DecideControlApproval)
 		bg.POST("/mode/approval", requirePermission(rbac.PermAdmin), handler.PrepareModeChange)
 		bg.PATCH("/mode", requirePermission(rbac.PermAdmin), handler.SetMode)
 	}
@@ -2253,6 +2275,7 @@ func initializePursuitRoutes(apiVersion *gin.RouterGroup, pursuitHandler *pursui
 		pursuitRoutes.POST("/reconcile-life-domains", requirePermission(rbac.PermWrite), pursuitHandler.ReconcileLifeDomains)
 		pursuitRoutes.GET("/dashboard", requirePermission(rbac.PermRead), pursuitHandler.Dashboard)
 		pursuitRoutes.GET("/brief", requirePermission(rbac.PermRead), pursuitHandler.Brief)
+		pursuitRoutes.GET("/overview", requirePermission(rbac.PermRead), pursuitHandler.Overview)
 		pursuitRoutes.GET("/decisions", requirePermission(rbac.PermRead), pursuitHandler.Decisions)
 		pursuitRoutes.POST("/portfolio-plan", requirePermission(rbac.PermRead), pursuitHandler.PlanPortfolio)
 		pursuitRoutes.POST("/portfolio-plan/accept", requirePermission(rbac.PermApprove), pursuitHandler.AcceptPortfolioAllocation)

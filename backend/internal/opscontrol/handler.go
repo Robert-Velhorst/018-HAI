@@ -8,6 +8,7 @@ import (
 	"automation-hub-backend/internal/apierror"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // Handler serves the always-on runtime control API (§30/§31): background status,
@@ -202,6 +203,62 @@ func (h *Handler) approveAndResume(c *gin.Context, req approveResumeRequest, rev
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"emergencyStop": state})
+}
+
+type prepareControlApprovalRequest struct {
+	Action     string `json:"action"`
+	TargetMode string `json:"targetMode,omitempty"`
+}
+
+// PrepareControlApproval creates a short-lived, exact-effect request from
+// persisted control state; it neither approves nor executes the change.
+func (h *Handler) PrepareControlApproval(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthenticated.Error()})
+		return
+	}
+	var req prepareControlApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval request is required"})
+		return
+	}
+	prepared, err := h.svc.PrepareControlApproval(c.Request.Context(), actor, req.Action, req.TargetMode)
+	if err != nil {
+		c.JSON(controlErrorStatus(err), gin.H{"error": publicControlError(err)})
+		return
+	}
+	c.JSON(http.StatusCreated, prepared)
+}
+
+type decideControlApprovalRequest struct {
+	Decision string `json:"decision"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// DecideControlApproval appends an owner decision for one server-derived effect.
+func (h *Handler) DecideControlApproval(c *gin.Context) {
+	actor, ok := h.actor(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthenticated.Error()})
+		return
+	}
+	requestID, err := uuid.Parse(c.Param("id"))
+	if err != nil || requestID == uuid.Nil || c.Param("id") != requestID.String() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval request id is invalid"})
+		return
+	}
+	var req decideControlApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "control approval decision is required"})
+		return
+	}
+	decision, err := h.svc.DecideControlApproval(c.Request.Context(), actor, requestID, req.Decision, req.Reason)
+	if err != nil {
+		c.JSON(controlErrorStatus(err), gin.H{"error": publicControlError(err)})
+		return
+	}
+	c.JSON(http.StatusCreated, decision)
 }
 
 type modeRequest struct {

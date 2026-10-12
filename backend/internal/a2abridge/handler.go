@@ -1,12 +1,15 @@
 package a2abridge
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
 	"mime"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -14,13 +17,32 @@ import (
 	"github.com/google/uuid"
 )
 
-const maxJSONRPCBody int64 = 16 << 10
+const (
+	maxJSONRPCBody int64 = 16 << 10
+	replayCacheMax       = 128
+	replayCacheTTL       = 10 * time.Minute
+)
 
 const a2aVersion = "1.0"
 
-type Handler struct{ service *Service }
+type Handler struct {
+	service *Service
 
-func NewHandler(service *Service) *Handler { return &Handler{service: service} }
+	replayMu    sync.Mutex
+	replayCache map[string]*replayEntry
+}
+
+type replayEntry struct {
+	fingerprint [sha256.Size]byte
+	response    *sendMessageResponse
+	done        chan struct{}
+	createdAt   time.Time
+	expiresAt   time.Time
+}
+
+func NewHandler(service *Service) *Handler {
+	return &Handler{service: service, replayCache: make(map[string]*replayEntry)}
+}
 
 func (h *Handler) Status(c *gin.Context) { c.JSON(http.StatusOK, h.service.Status()) }
 
@@ -37,8 +59,8 @@ func (h *Handler) AgentCard(c *gin.Context) {
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
-	c.Header("Cache-Control", "private, max-age=300")
-	c.Header("ETag", `"hai-a2a-controlled-planning-1.0.1"`)
+	c.Header("Cache-Control", "public, max-age=300")
+	c.Header("ETag", `"hai-a2a-controlled-planning-1.0.2"`)
 	c.JSON(http.StatusOK, card)
 }
 
@@ -55,19 +77,12 @@ func (h *Handler) Send(c *gin.Context) {
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxJSONRPCBody)
 	var request jsonRPCRequest
-	decoder := json.NewDecoder(c.Request.Body)
-	if err := decoder.Decode(&request); err != nil {
+	if err := decodeStrictJSON(c.Request.Body, &request); err != nil {
 		writeRPCError(c, nil, -32600, "invalid JSON-RPC request")
 		return
 	}
-	// A JSON-RPC request is exactly one JSON object. Accepting a valid request
-	// followed by another value would make an authenticated planning boundary
-	// ambiguous and could allow a peer to believe two requests were accepted.
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		writeRPCError(c, nil, -32600, "invalid JSON-RPC request")
-		return
-	}
-	if request.JSONRPC != "2.0" || !validRequestID(request.ID) {
+	// Invalid request IDs are not safe to reflect into an error response.
+	if request.JSONRPC != "2.0" || !validRequestID(request.ID) || !validJSONRPCID(request.ID) {
 		// An invalid JSON-RPC id cannot safely be echoed in an error response.
 		// Use null as required for an invalid request rather than reflecting an
 		// object or array supplied by an untrusted peer.
@@ -75,28 +90,55 @@ func (h *Handler) Send(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(c.GetHeader("A2A-Version")) != a2aVersion {
-		writeRPCError(c, request.ID, -32009, "A2A-Version 1.0 is required by this local bridge")
+		writeRPCError(c, request.ID, -32009, "A2A-Version 1.0 is required by this bridge")
 		return
 	}
 	if request.Method != "SendMessage" {
 		writeRPCError(c, request.ID, -32601, "only SendMessage is supported by this local planning bridge")
 		return
 	}
-	text, err := taskText(request.Params)
+	message, err := taskInput(request.Params)
 	if err != nil {
 		writeRPCError(c, request.ID, -32602, "SendMessage requires one bounded ROLE_USER text message with a messageId")
 		return
 	}
-	proposal, err := h.service.Draft(text)
+	for {
+		cached, plan, conflict, overloaded, pending := h.beginReplay(message.MessageID, message.Text)
+		if conflict {
+			writeRPCError(c, request.ID, -32602, "messageId was already used for a different request")
+			return
+		}
+		if overloaded {
+			writeRPCError(c, request.ID, -32001, "HAI local planning bridge is busy; retry with the same messageId")
+			return
+		}
+		if cached != nil {
+			c.JSON(http.StatusOK, jsonRPCResponse{JSONRPC: "2.0", ID: request.ID, Result: *cached})
+			return
+		}
+		if !plan {
+			select {
+			case <-pending:
+				continue
+			case <-c.Request.Context().Done():
+				return
+			}
+		}
+		break
+	}
+
+	proposal, err := h.service.Draft(message.Text)
 	if errors.Is(err, ErrInvalidInput) {
+		h.failReplay(message.MessageID)
 		writeRPCError(c, request.ID, -32602, "task text must be non-empty and at most 4096 characters")
 		return
 	}
 	if err != nil {
+		h.failReplay(message.MessageID)
 		writeRPCError(c, request.ID, -32603, "HAI could not create a controlled planning draft")
 		return
 	}
-	c.JSON(http.StatusOK, jsonRPCResponse{JSONRPC: "2.0", ID: request.ID, Result: sendMessageResponse{Task: a2aTask{
+	result := sendMessageResponse{Task: a2aTask{
 		ID: uuid.NewString(), ContextID: uuid.NewString(),
 		Status: taskStatus{State: "TASK_STATE_COMPLETED", Timestamp: time.Now().UTC().Format(time.RFC3339Nano)},
 		Artifacts: []a2aArtifact{{
@@ -104,7 +146,9 @@ func (h *Handler) Send(c *gin.Context) {
 			Description: "Non-executable planning draft. Review it in HAI before creating, approving, or running any work.",
 			Parts:       []a2aOutputPart{{Data: proposal, MediaType: "application/json"}},
 		}},
-	}}})
+	}}
+	h.completeReplay(message.MessageID, result)
+	c.JSON(http.StatusOK, jsonRPCResponse{JSONRPC: "2.0", ID: request.ID, Result: result})
 }
 
 type jsonRPCRequest struct {
@@ -128,6 +172,11 @@ type jsonRPCError struct {
 
 type sendParams struct {
 	Message a2aMessage `json:"message"`
+}
+
+type incomingTask struct {
+	MessageID string
+	Text      string
 }
 
 type a2aMessage struct {
@@ -178,23 +227,132 @@ type sendMessageResponse struct {
 	Task a2aTask `json:"task"`
 }
 
-func taskText(raw json.RawMessage) (string, error) {
+func taskInput(raw json.RawMessage) (incomingTask, error) {
 	var params sendParams
-	if len(raw) == 0 || json.Unmarshal(raw, &params) != nil || strings.TrimSpace(params.Message.Role) != "ROLE_USER" || !validMessageID(params.Message.MessageID) || params.Message.ContextID != "" || params.Message.TaskID != "" || params.Message.Metadata != nil || len(params.Message.Extensions) != 0 || len(params.Message.Parts) == 0 || len(params.Message.Parts) > 4 {
-		return "", ErrInvalidInput
+	if len(raw) == 0 || decodeStrictJSON(bytes.NewReader(raw), &params) != nil || strings.TrimSpace(params.Message.Role) != "ROLE_USER" || !validMessageID(params.Message.MessageID) || params.Message.ContextID != "" || params.Message.TaskID != "" || params.Message.Metadata != nil || len(params.Message.Extensions) != 0 || len(params.Message.Parts) == 0 || len(params.Message.Parts) > 4 {
+		return incomingTask{}, ErrInvalidInput
 	}
 	parts := make([]string, 0, len(params.Message.Parts))
 	for _, part := range params.Message.Parts {
 		if part.Text == nil || strings.TrimSpace(*part.Text) == "" || len(part.Raw) != 0 || part.URL != nil || len(part.Data) != 0 || part.Filename != "" || (part.MediaType != "" && !strings.EqualFold(part.MediaType, "text/plain")) || part.Metadata != nil {
-			return "", ErrInvalidInput
+			return incomingTask{}, ErrInvalidInput
 		}
 		parts = append(parts, *part.Text)
 	}
 	text := normalize(strings.Join(parts, " "))
 	if text == "" || utf8.RuneCountInString(text) > 4096 {
-		return "", ErrInvalidInput
+		return incomingTask{}, ErrInvalidInput
 	}
-	return text, nil
+	return incomingTask{MessageID: strings.TrimSpace(params.Message.MessageID), Text: text}, nil
+}
+
+// beginReplay provides at-least-once message delivery without duplicated local
+// planning work. The cache is process-local by design: the A2A bridge is a
+// local advisory boundary, not HAI's durable workflow authority.
+func (h *Handler) beginReplay(messageID, text string) (cached *sendMessageResponse, plan, conflict, overloaded bool, pending <-chan struct{}) {
+	fingerprint := sha256.Sum256([]byte(text))
+	now := time.Now().UTC()
+
+	h.replayMu.Lock()
+	defer h.replayMu.Unlock()
+	h.pruneReplayLocked(now)
+	if entry := h.replayCache[messageID]; entry != nil {
+		if entry.fingerprint != fingerprint {
+			return nil, false, true, false, nil
+		}
+		if entry.response != nil {
+			return entry.response, false, false, false, nil
+		}
+		return nil, false, false, false, entry.done
+	}
+	if len(h.replayCache) >= replayCacheMax {
+		return nil, false, false, true, nil
+	}
+	h.replayCache[messageID] = &replayEntry{
+		fingerprint: fingerprint, done: make(chan struct{}), createdAt: now,
+	}
+	return nil, true, false, false, nil
+}
+
+func (h *Handler) completeReplay(messageID string, result sendMessageResponse) {
+	h.replayMu.Lock()
+	defer h.replayMu.Unlock()
+	entry := h.replayCache[messageID]
+	if entry == nil || entry.response != nil {
+		return
+	}
+	entry.response = &result
+	entry.expiresAt = time.Now().UTC().Add(replayCacheTTL)
+	close(entry.done)
+}
+
+func (h *Handler) failReplay(messageID string) {
+	h.replayMu.Lock()
+	defer h.replayMu.Unlock()
+	entry := h.replayCache[messageID]
+	if entry == nil || entry.response != nil {
+		return
+	}
+	delete(h.replayCache, messageID)
+	close(entry.done)
+}
+
+func (h *Handler) pruneReplayLocked(now time.Time) {
+	for messageID, entry := range h.replayCache {
+		if entry.response != nil && !entry.expiresAt.After(now) {
+			delete(h.replayCache, messageID)
+		}
+	}
+	if len(h.replayCache) < replayCacheMax {
+		return
+	}
+	var oldestID string
+	var oldest time.Time
+	for messageID, entry := range h.replayCache {
+		if entry.response == nil || (!oldest.IsZero() && !entry.createdAt.Before(oldest)) {
+			continue
+		}
+		oldestID, oldest = messageID, entry.createdAt
+	}
+	if oldestID != "" {
+		delete(h.replayCache, oldestID)
+	}
+}
+
+func decodeStrictJSON(reader io.Reader, destination any) error {
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return ErrInvalidInput
+		}
+		return err
+	}
+	return nil
+}
+
+func validJSONRPCID(raw json.RawMessage) bool {
+	if len(raw) == 0 || len(raw) > 256 {
+		return false
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return false
+	}
+	switch typed := value.(type) {
+	case string:
+		return utf8.ValidString(typed) && utf8.RuneCountInString(typed) <= 255
+	case json.Number:
+		return len(typed.String()) <= 64
+	default:
+		return false
+	}
 }
 
 func acceptsJSON(contentType string) bool {
