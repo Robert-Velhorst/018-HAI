@@ -4311,3 +4311,55 @@ not run; CI remains the available package-test evidence.
 No source archive or scratch-worktree file was modified or deleted. The full
 divergent-file review and historical patch-event attribution remain open, so
 the cleanup gate remains closed.
+
+### October 12, 2026: source-review report crosswalk
+
+Compared the local-only account-bridge, account-feed, and safe-outcome review
+reports with the current PR source rather than treating the reports' parent
+amendments as proof. The account-bridge implementation now distinguishes
+unknown feed totals from a known empty registry, blocks per-feed and bulk sync
+during refresh, retains data after failed refresh, includes visible labels in
+accessible names, and renders attempt/success timestamps separately in UTC.
+Its component tests include failed initial load, refresh guards, label checks,
+timestamp DOM bindings, failed-refresh retention, and recovery paths. These
+source and tests are in PR #36.
+
+The account-feed envelope parser rejects absent or null item arrays while
+preserving a valid explicit empty array. Sync admission uses a durable
+per-feed token; PostgreSQL row locking and the token-conditioned completion
+write make competing sync claims fail closed across repository instances.
+For operation evidence, observations receive durable monotonically increasing
+generations. Intake locks source authority before writes, rejects an
+observation older than the accepted source head, and publishes the head only
+after the operation write. Deterministic source-head tests cover an older
+blocked read completing after a newer one and an older duplicate-evidence
+refresh attempting to overwrite newer evidence. These mechanisms and tests
+are present in PR #36; the latest exact-head CI run also passed the real
+Postgres migration-integration job.
+
+The remaining account-feed lifecycle point is a product policy, not a verified
+code defect: deduplication is intentionally limited to active operations, so a
+later full sync can re-intake an item after its operation was archived or
+dismissed. No durable feed-revision receipt currently changes that contract.
+The report itself treats this as conditional on whether dismissal should
+survive an automatic re-intake; do not broaden uniqueness or silently change
+the behavior without an explicit product decision. Also, a successful local
+ingestion timestamp is not proof of live-provider freshness or pagination
+completeness.
+
+The safe-outcome review's frontend safeguards are present in the PR: uncertain
+execution receipts remain latched across stale or failed reads, duplicate
+execution is withheld until reconciliation, completion labels require
+consistent operation/verification evidence, and unresolved work is surfaced
+in Basic view. Runtime Lab applies the corresponding self-test fence and
+distinguishes read-only discovery from verified execution. Current PR CI
+passed frontend tests/build and browser acceptance; this is CI evidence, not
+live-provider, deployed-service, screen-reader, or cross-restart acceptance.
+
+The latest PR #36 head is `8c49f348496c664efbce201f37b57c526a953bff` and its
+exact-head Actions run `38206730870` passed all 36 jobs. The PR is open and
+mergeable, not merged. Local Go is unavailable in this environment, so no
+independent native rerun is claimed. This crosswalk closes these report-level
+source comparisons only; the remaining divergent-file set, diagnostic/output
+artifact attribution, and historical patch-event attribution remain open.
+No source archive, diagnostic, or worktree file was modified or deleted.
