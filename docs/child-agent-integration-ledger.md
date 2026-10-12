@@ -5000,3 +5000,28 @@ resolution of the remaining differing paths. The PR's latest head is
 `9a21fe1b1b74ad52e45e75ea0604d4fc97d7c21d`; its exact-head CI run
 `38216417197` was queued when this entry was written. The source snapshot and
 transcript archives remain unchanged.
+
+### October 12, 2026: health probes and integration-boundary review
+
+Compared the staged snapshot versions of
+`backend/internal/health/health.go`, `health_test.go`, and
+`backend/internal/braincatalog/integration_boundary.go` with PR #36. The
+snapshot removes the source, workflow, and ambient scheduler-status probes,
+which would make those background-operation health states disappear from the
+health report. It also replaces the PR's PostgreSQL probe of the acquired
+serving pool with construction and ping of a separate database pool. That can
+report a healthy new connection while the pool used by application requests is
+unhealthy, and adds connection-pool work to a readiness check. The snapshot
+deletes the tests that assert serving-pool identity, serving-pool failure
+reporting, and inclusion of the noncritical scheduler probes.
+
+The snapshot also removes the `chatgpt-codex-mcp-daemon` entry from
+`integration_boundary.go`. That entry declares the concrete HAI route,
+implementation, and safety boundary for its nine reviewed read-only tools;
+without it, the integration is no longer represented in the boundary
+inventory. No snapshot code was adopted. PR #36 is currently at
+`f6c0960e98334afb2eb1ffcde9edba8926f95b27`; the successful CI run recorded
+above was for the earlier code head `9a21fe1b1b74ad52e45e75ea0604d4fc97d7c21d`,
+so it is not claimed as an exact-head run for this documentation-only update.
+The source snapshot, transcript archives, and primary checkout remain
+unchanged.
