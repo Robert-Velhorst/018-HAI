@@ -4688,3 +4688,23 @@ removes the PR's explicit Linux libsql package pin and `basic-ftp` override.
 No current evidence justifies replacing these PR-side dependency/security
 contracts with the local versions. This review is source/diff analysis only;
 it does not establish live browser acceptance or third-party provider health.
+
+### October 12, 2026: authentication and migration regression coverage
+
+Compared the local IDP authentication tests with the PR. The local deltas in
+password-reset, refresh rotation, login interleaving, Redis session loss, and
+session-authority tests only remove `context.Context` from service and sender
+calls. They target the older non-context-aware API and are not compatible
+coverage improvements for the PR's context-aware authentication path. No local
+test version was copied.
+
+The local PostgreSQL migration tests also remove meaningful guard coverage:
+the protected-data rollback fixture omits the later `post` phase; source
+configuration/head tests no longer verify refusal to roll back a pre-phase
+migration while a later phase remains applied, and weaken the isolated
+populated-origin rollback guard; the source-observation fixture stops at an
+older migration head; and the Trello reconciliation test applies every
+migration rather than only the targeted migration and its prerequisites. The
+PR's isolated real-Postgres assertions and migration-order checks remain. This
+batch did not run the Postgres integration suite; no pass is inferred from
+source inspection.
