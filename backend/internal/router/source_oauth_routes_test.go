@@ -17,7 +17,7 @@ type oauthRouteServiceStub struct {
 	source.Service
 }
 
-func (oauthRouteServiceStub) CompleteGoogleOAuth(context.Context, string, string, string) (uuid.UUID, error) {
+func (oauthRouteServiceStub) CompleteGoogleOAuth(context.Context, string, string) (uuid.UUID, error) {
 	return uuid.Nil, errors.New("invalid OAuth state")
 }
 
