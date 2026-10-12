@@ -109,6 +109,9 @@ func durableSchedulerEnabled() bool {
 }
 
 func volatileSchedulerFallbackEnabled() bool {
+	if legacyFallbackEnabled() {
+		return true
+	}
 	switch strings.TrimSpace(strings.ToLower(os.Getenv("SOURCE_SCHEDULER_VOLATILE_FALLBACK"))) {
 	case "true", "1", "yes", "on":
 		return true

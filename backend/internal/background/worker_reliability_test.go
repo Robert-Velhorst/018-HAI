@@ -198,7 +198,7 @@ func TestRunOnceSurfacesLedgerReadFailureAlongsideReport(t *testing.T) {
 
 func TestRunOnceSurfacesFeedFailureAlongsideReport(t *testing.T) {
 	service := operations.NewService(operations.NewMemoryRepository())
-	worker := New(service, nil, []accountfeed.Reader{failingFeedReader{}}, Options{
+	worker := New(service, nil, []accountfeed.Reader{reliabilityFailingFeedReader{}}, Options{
 		OwnerUserID: "user-1", WorkspaceID: "local",
 	})
 
@@ -311,12 +311,12 @@ func (r *failClaimRepository) ClaimNext(context.Context, string, string, uuid.UU
 	return nil, r.err
 }
 
-type failingFeedReader struct{}
+type reliabilityFailingFeedReader struct{}
 
-func (failingFeedReader) Feed() accountfeed.Feed {
+func (reliabilityFailingFeedReader) Feed() accountfeed.Feed {
 	return accountfeed.Feed{ID: uuid.New(), Name: "test-feed", Enabled: true}
 }
 
-func (failingFeedReader) Read(context.Context) ([]accountfeed.FeedItem, error) {
+func (reliabilityFailingFeedReader) Read(context.Context) ([]accountfeed.FeedItem, error) {
 	return nil, errors.New("simulated feed read failure")
 }

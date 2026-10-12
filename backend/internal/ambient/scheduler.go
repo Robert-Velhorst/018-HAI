@@ -25,7 +25,8 @@ type Scheduler struct {
 //
 // Durable startup fails closed: a queue failure must not bypass a persistent
 // review hold by silently switching to the context-only ticker. Legacy ticker
-// mode requires an explicit AMBIENT_SCHEDULER_DURABLE=false operator opt-out.
+// mode requires both an explicit durable-scheduler opt-out and a global
+// legacy-fallback opt-in.
 func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) {
 	if ctx == nil || ctx.Err() != nil {
 		return
@@ -53,6 +54,10 @@ func StartScheduler(ctx context.Context, service Service, allowed ...func() bool
 			schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Durable: true, Running: true, Detail: "durable worker attached"})
 			return
 		}
+	}
+	if !legacyFallbackEnabled() {
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Detail: "legacy scheduler disabled; set DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED=true to explicitly opt in"})
+		return
 	}
 	scheduler := &Scheduler{service: service, backgroundAllowed: backgroundAllowed}
 	if lifecycle.Go(ctx, "ambient-scheduler", func() { scheduler.Start(ctx, interval) }) {

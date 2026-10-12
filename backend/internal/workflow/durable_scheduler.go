@@ -23,7 +23,7 @@ import (
 const (
 	JobKindSweep      = "workflow.sweep"
 	sweepMaxAttempts  = 3
-	defaultPollSecond = 5 * time.Minute
+	defaultPollSecond = time.Minute
 	minPollInterval   = 15 * time.Second
 	maxPollInterval   = time.Hour
 )
@@ -222,6 +222,15 @@ func workflowPollInterval() time.Duration {
 		return defaultPollSecond
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func legacyFallbackEnabled() bool {
+	switch strings.TrimSpace(strings.ToLower(os.Getenv("DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED"))) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func durableSchedulerEnabled() bool {

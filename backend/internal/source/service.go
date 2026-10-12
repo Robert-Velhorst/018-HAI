@@ -389,6 +389,7 @@ var (
 	ErrSourceExtractionFenceUnavailable = errors.New("source extraction fence is unavailable")
 	ErrInvalidSyncRequest               = errors.New("invalid source sync request")
 	ErrSourceSyncUnavailable            = errors.New("source is not enabled for sync")
+	ErrSourceNotEnabled                 = ErrSourceSyncUnavailable
 	ErrSourceOwnerRequired              = errors.New("authenticated source owner is required")
 )
 

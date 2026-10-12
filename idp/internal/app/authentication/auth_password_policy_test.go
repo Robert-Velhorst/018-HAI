@@ -9,7 +9,7 @@ import (
 func TestChangePasswordRejectsWeakPasswordBeforeTokenValidation(t *testing.T) {
 	svc := &service{logger: noopLogger{}}
 
-	err := svc.ChangePassword("not-a-token", "short")
+	err := svc.ChangePassword("not-a-token", "current-password", "short")
 
 	require.ErrorIs(t, err, ErrRegistrationPasswordWeak)
 }

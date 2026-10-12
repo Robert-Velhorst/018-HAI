@@ -22,7 +22,7 @@ import (
 const (
 	JobKindScan            = "ambient.scan"
 	scanMaxAttempts        = 3
-	defaultAmbientPoll     = 5 * time.Minute
+	defaultAmbientPoll     = time.Minute
 	minAmbientPollInterval = 15 * time.Second
 	maxAmbientPollInterval = time.Hour
 )
@@ -117,6 +117,15 @@ func ambientPollInterval() time.Duration {
 		return defaultAmbientPoll
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func legacyFallbackEnabled() bool {
+	switch strings.TrimSpace(strings.ToLower(os.Getenv("DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED"))) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func durableSchedulerEnabled() bool {

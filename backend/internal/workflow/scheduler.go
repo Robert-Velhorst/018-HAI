@@ -47,8 +47,8 @@ func NewScheduler(service ScheduledWorkflowService, interval time.Duration, limi
 // StartScheduler starts the workflow sweep.
 //
 // It prefers the durable path (persisted, retried, crash-recovered — see
-// durable_scheduler.go) and falls back to the legacy in-process ticker, saying
-// so, if the durable queue cannot be reached.
+// durable_scheduler.go). Legacy in-process scheduling is available only after
+// an explicit operator opt-in because it is not crash-recoverable.
 func StartScheduler(ctx context.Context, service ScheduledWorkflowService, allowed ...func() bool) {
 	if ctx == nil || ctx.Err() != nil {
 		return
@@ -66,12 +66,20 @@ func StartScheduler(ctx context.Context, service ScheduledWorkflowService, allow
 				schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Durable: true, Detail: "startup canceled before durable worker attached"})
 				return
 			}
-			schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Durable: true, Detail: "durable worker unavailable; using configured in-process fallback: " + safety.RedactSecrets(err.Error())})
-			log.Printf("workflow scheduler: durable queue unavailable (%s); falling back to the in-process ticker", safety.RedactSecrets(err.Error()))
+			if !legacyFallbackEnabled() {
+				schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Durable: true, Detail: "durable worker unavailable; legacy fallback disabled: " + safety.RedactSecrets(err.Error())})
+				log.Printf("workflow scheduler not started: durable queue unavailable and legacy fallback is disabled (%s)", safety.RedactSecrets(err.Error()))
+				return
+			}
+			schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Durable: true, Detail: "durable worker unavailable; explicit legacy fallback enabled: " + safety.RedactSecrets(err.Error())})
+			log.Printf("workflow scheduler: durable queue unavailable (%s); explicitly enabled in-process fallback", safety.RedactSecrets(err.Error()))
 		} else {
 			schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Durable: true, Running: true, Detail: "durable worker attached"})
 			return
 		}
+	} else if !legacyFallbackEnabled() {
+		schedulerstatus.Record(schedulerstatus.State{Name: "workflow", Enabled: true, Detail: "durable scheduler disabled; legacy fallback disabled"})
+		return
 	}
 	scheduler := NewScheduler(service, interval, limit, backgroundAllowed)
 	if lifecycle.Go(ctx, "workflow-scheduler", func() { scheduler.Start(ctx) }) {

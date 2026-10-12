@@ -43,7 +43,7 @@ const (
 	scanMaxAttempts = 3
 	// An individual sync is worth retrying harder before dead-lettering.
 	syncMaxAttempts            = 5
-	defaultDurablePollInterval = 5 * time.Minute
+	defaultDurablePollInterval = time.Minute
 	minDurablePollInterval     = 15 * time.Second
 	maxDurablePollInterval     = time.Hour
 	syncLeaseDeferredReason    = "source sync is already in progress; retry after the active sync finishes"
@@ -110,6 +110,15 @@ func durablePollInterval() time.Duration {
 		return defaultDurablePollInterval
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+func legacyFallbackEnabled() bool {
+	switch strings.TrimSpace(strings.ToLower(os.Getenv("DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED"))) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // RegisterDurableScheduling wires the source sync handlers into a durable
