@@ -4751,3 +4751,21 @@ instead of the PR's normalized descriptor helper. These are not adopted.
 The only code edit from the current audit batch is the shared fixed-clock test
 cleanup recorded above. The Go package test could not run because Go is not
 installed in the available shell; `git diff --check` passed before commit.
+
+### October 12, 2026: provider transport and acceptance harness review
+
+The local TLS test changes `httptest.Server.TLS` to `Server.Config.TLSConfig`
+before `StartTLS`. Go's `httptest.StartTLS` consumes the former, so the local
+change no longer installs the intended fixture certificate; the PR's test is
+correct and was retained. The local production-dependency audit removes its
+`include-optional`/`omit-optional` modes, so CI loses explicit coverage of both
+audit scopes. The local isolated-acceptance contract deletes readiness retry,
+synthetic-secret scrubbing, failed-preparation cleanup-manifest/hash, and
+runtime-owned tmpfs assertions. These are not safe omissions.
+
+The local Python lock check compares raw bytes and therefore rejects
+line-ending-only differences, unlike the PR's CRLF-normalized lock comparison.
+The local Promptfoo lock is older and removes the explicit Linux libsql pin and
+the `basic-ftp` override. Neither dependency change was copied. This batch
+found no additional code improvement to port; it was a targeted diff review,
+not a live TLS, npm audit, Docker, or provider integration run.
