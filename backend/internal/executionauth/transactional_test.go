@@ -178,7 +178,7 @@ func TestPostgresAuthorizeAndConsumeInCallerTransaction(t *testing.T) {
 func TestPostgresAuthorizeAndConsumeClaimsTaskReviewApprovalInTransaction(t *testing.T) {
 	repository, db := executionAuthorizationPostgresRepository(t)
 	ctx := context.Background()
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	now := fixedNow()
 	owner := "executionauth-task-review-" + uuid.NewString()
 	decisionID, sourceID := createTaskReviewDecisionFixture(t, db, owner, now.Add(-time.Minute))
 	decisionDigest := postgresDigest("task-review-approval-" + decisionID.String())
@@ -190,7 +190,6 @@ func TestPostgresAuthorizeAndConsumeClaimsTaskReviewApprovalInTransaction(t *tes
 		ExpiresAt: now.Add(10 * time.Minute),
 	}}
 	service := newTestService(t, repository, permissiveConstitution(), resolver, nil)
-	service.now = func() time.Time { return now }
 	request := baseRequest("task-review-transaction-" + uuid.NewString())
 	request.OwnerIdentity = owner
 	request.ActorIdentity = owner

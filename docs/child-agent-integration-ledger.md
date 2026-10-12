@@ -4708,3 +4708,10 @@ migration rather than only the targeted migration and its prerequisites. The
 PR's isolated real-Postgres assertions and migration-order checks remain. This
 batch did not run the Postgres integration suite; no pass is inferred from
 source inspection.
+
+One safe local test improvement was ported: the transactional approval test
+now uses the package's shared `fixedNow` clock and no longer overrides the
+service clock redundantly. `git diff --check` passed. The local shell has no Go
+installation (`go.exe` was not found in the standard Windows locations), so
+the package test could not be run locally; exact-head GitHub Actions is the
+remaining executable verification for this edit.
