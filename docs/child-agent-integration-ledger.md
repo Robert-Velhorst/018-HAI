@@ -5776,3 +5776,33 @@ Current PR checkpoint: PR #36 remains open against `main` at
 run `38283787440` completed successfully on that exact SHA. These checks do not
 resolve the historical records' contents or authorize local cleanup. No files
 were deleted or moved.
+
+### October 12, 2026: Windows contract and runner-delta dispositions
+
+Rechecked additional old-checkout variants against the current PR tree. The
+runtime DB role contract test in the PR already normalizes CRLF to LF before
+checking shell-script guard order; the Windows worktree is confirmed `w/crlf`,
+and the older local test does not normalize it. The PR's
+`backend-state-permissions` contract matches the actual local Compose service:
+it uses the already-built backend image with a bounded, networkless `chown`
+helper. The older local test expects a separate Postgres utility image and the
+prior `find/stat/chown` command, so it is stale and was not copied. The PR
+emergency-stop permission test supplies the valid JSON request body; the local
+variant sends no body and conflicts with the current malformed-body rejection.
+
+The Python container smoke implementation in the PR includes the Grype
+runner's synthetic token/workspace and isolated read-only input/database
+tmpfs mounts, which are absent from the older local copy. The PR's Windows
+installer smoke test performs an actual bounded create/read/delete probe in
+the isolated installation directory rather than relying only on ACL
+inspection. The local DeepTeam lockfile has 68 package pins; the PR has 69,
+including `sentry-sdk==2.71.0`; it is not a newer replacement candidate. The
+outbound TLS test differs only in choosing `httptest.Server.TLS` rather than
+`Config.TLSConfig` before `StartTLS`; no missing product behavior was found.
+No code or lockfile was copied from the older checkout in this batch.
+
+Current PR checkpoint: PR #36 remains open against `main` at
+`abe41d66e6863d4a9bb2acb11f26ca676b72139f`, merge state `CLEAN`. GitHub Actions
+run `38286402325` completed successfully for that exact SHA. This closes only
+the listed file-level comparisons; the wider semantic crosswalk, transcript
+attribution, merged-main gate, and local cleanup remain incomplete.
