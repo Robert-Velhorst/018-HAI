@@ -40,7 +40,7 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 		if err != nil {
 			return nil, fmt.Errorf("accountfeed: %w", err)
 		}
-		return os.ReadFile(full)
+		return readBoundedLocalFeedFile(ctx, full)
 	case SourceHTTPJSONFeed:
 		if !opts.AllowHTTP {
 			return nil, fmt.Errorf("accountfeed: HTTP feeds are disabled (set the enable flag to allow %s)", feed.URL)
@@ -76,8 +76,42 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 	}
 }
 
-// validateFeedURL rejects link-local, metadata, and unspecified hosts. Localhost
-// is allowed only for local dev (§10.11).
+func readBoundedLocalFeedFile(ctx context.Context, full string) ([]byte, error) {
+	info, err := os.Stat(full)
+	if err != nil {
+		return nil, err
+	}
+	if info.Size() > maxFeedBytes {
+		return nil, fmt.Errorf("accountfeed: feed exceeds maximum size of %d bytes", maxFeedBytes)
+	}
+	file, err := os.Open(full)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return readBoundedFeedBytes(ctx, file)
+}
+
+func readBoundedFeedBytes(ctx context.Context, reader io.Reader) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, maxFeedBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(data) > maxFeedBytes {
+		return nil, fmt.Errorf("accountfeed: feed exceeds maximum size of %d bytes", maxFeedBytes)
+	}
+	return data, nil
+}
+
+// validateFeedURL rejects private, link-local, metadata, and unspecified hosts.
+// Localhost is allowed only for local development (§10.11). Host names are
+// resolved and checked again immediately before dialing in accountFeedHTTPTransport.
 func validateFeedURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -92,6 +126,9 @@ func validateFeedURL(raw string) error {
 	host := u.Hostname()
 	if host == "" {
 		return fmt.Errorf("accountfeed: feed URL host is empty")
+	}
+	if u.User != nil {
+		return fmt.Errorf("accountfeed: feed URL credentials are not allowed")
 	}
 	if strings.Contains(strings.ToLower(host), "metadata") {
 		return fmt.Errorf("accountfeed: metadata host not allowed")

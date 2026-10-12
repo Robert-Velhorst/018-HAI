@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,12 +21,16 @@ import (
 )
 
 const (
-	taskStateDefaultLimit                = 50
-	taskStateMaximumLimit                = 200
-	taskStateMaximumPayloadSize          = 2 * 1024 * 1024
-	taskStateMaximumStringRunes          = 16 * 1024
-	taskStateMaximumReasonRunes          = 4096
-	taskStateMaximumResolutionNoteRunes  = 512
+	taskStateDefaultLimit               = 50
+	taskStateMaximumLimit               = 200
+	taskStateMaximumPayloadSize         = 2 * 1024 * 1024
+	taskStateMaximumStringRunes         = 16 * 1024
+	taskStateMaximumReasonRunes         = 4096
+	taskStateMaximumResolutionNoteRunes = 512
+	// taskStateMaximumNumberScale bounds how far a number may be shifted when it
+	// is rendered in the storage-stable form, so an absurd exponent cannot turn
+	// one literal into megabytes of zeroes.
+	taskStateMaximumNumberScale          = 4096
 	taskStateStorageTimestampGranularity = time.Microsecond
 
 	taskCompletionProvenance = "task-success-engine"
@@ -669,6 +674,7 @@ func marshalSanitizedJSONObject(value interface{}) (string, string, error) {
 		return "", "", fmt.Errorf("payload must be a JSON object")
 	}
 	redactTaskStateJSONStrings(decoded)
+	normalizeTaskStateJSONNumbers(decoded)
 	canonical, err := json.Marshal(decoded)
 	if err != nil {
 		return "", "", err
@@ -699,6 +705,98 @@ func redactTaskStateJSONStrings(value interface{}) {
 			redactTaskStateJSONStrings(child)
 		}
 	}
+}
+
+// normalizeTaskStateJSONNumbers rewrites every number into the form the payload
+// column will hand back, so the digest taken before the write still describes
+// the text read afterwards.
+func normalizeTaskStateJSONNumbers(value interface{}) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, child := range typed {
+			if number, ok := child.(json.Number); ok {
+				typed[key] = storageStableJSONNumber(number)
+				continue
+			}
+			normalizeTaskStateJSONNumbers(child)
+		}
+	case []interface{}:
+		for index, child := range typed {
+			if number, ok := child.(json.Number); ok {
+				typed[index] = storageStableJSONNumber(number)
+				continue
+			}
+			normalizeTaskStateJSONNumbers(child)
+		}
+	}
+}
+
+// storageStableJSONNumber renders one number the way a jsonb column returns it.
+// Postgres keeps numbers as numeric: it folds any exponent into plain decimal,
+// keeps the scale that was written, and has no signed zero. Go writes any float
+// below 1e-6 in exponent form and writes negative zero as -0, so a digest taken
+// over Go's own text stops matching the moment the row is read back.
+//
+// A literal that cannot be read this way is returned unchanged; malformed JSON
+// is not this function's to reject.
+func storageStableJSONNumber(number json.Number) json.Number {
+	literal := number.String()
+	text := literal
+	negative := strings.HasPrefix(text, "-")
+	if negative || strings.HasPrefix(text, "+") {
+		text = text[1:]
+	}
+	mantissa, exponentText, hasExponent := cutJSONExponent(text)
+	exponent := 0
+	if hasExponent {
+		parsed, err := strconv.Atoi(strings.TrimPrefix(exponentText, "+"))
+		if err != nil {
+			return number
+		}
+		exponent = parsed
+	}
+	integer, fraction, _ := strings.Cut(mantissa, ".")
+	digits := integer + fraction
+	if digits == "" || strings.TrimLeft(digits, "0123456789") != "" {
+		return number
+	}
+	scale := len(fraction) - exponent
+	if scale < -taskStateMaximumNumberScale || scale > taskStateMaximumNumberScale {
+		return number
+	}
+
+	var rendered string
+	if scale <= 0 {
+		rendered = trimLeadingZeroDigits(digits + strings.Repeat("0", -scale))
+	} else {
+		if padding := scale + 1 - len(digits); padding > 0 {
+			digits = strings.Repeat("0", padding) + digits
+		}
+		split := len(digits) - scale
+		rendered = trimLeadingZeroDigits(digits[:split]) + "." + digits[split:]
+	}
+	if negative && strings.Trim(rendered, "0.") != "" {
+		rendered = "-" + rendered
+	}
+	if rendered == literal {
+		return number
+	}
+	return json.Number(rendered)
+}
+
+func cutJSONExponent(text string) (mantissa, exponent string, found bool) {
+	if index := strings.IndexAny(text, "eE"); index >= 0 {
+		return text[:index], text[index+1:], true
+	}
+	return text, "", false
+}
+
+func trimLeadingZeroDigits(digits string) string {
+	trimmed := strings.TrimLeft(digits, "0")
+	if trimmed == "" {
+		return "0"
+	}
+	return trimmed
 }
 
 func boundedTaskStateText(value string) string {
@@ -767,6 +865,7 @@ func canonicalTaskStateJSONObject(payload string) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("invalid trailing JSON: %w", err)
 	}
+	normalizeTaskStateJSONNumbers(object)
 	canonical, err := json.Marshal(object)
 	if err != nil {
 		return nil, fmt.Errorf("canonicalize JSON object: %w", err)

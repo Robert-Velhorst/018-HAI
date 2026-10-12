@@ -27,6 +27,7 @@ import (
 	"automation-hub-backend/internal/doctor"
 	"automation-hub-backend/internal/events"
 	"automation-hub-backend/internal/infra"
+	"automation-hub-backend/internal/schedulerstatus"
 
 	"github.com/IBM/sarama"
 )
@@ -51,6 +52,9 @@ func Probes(cfg config.Configuration) []doctor.Probe {
 		KafkaProbe(cfg),
 		EventOutboxProbe(),
 		LLMProviderProbe(),
+		schedulerstatus.Probe("source"),
+		schedulerstatus.Probe("workflow"),
+		schedulerstatus.Probe("ambient"),
 	}
 }
 
@@ -104,7 +108,7 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 		Critical: false,
 		Run: func(ctx context.Context) error {
 			if addr == "" {
-				return fmt.Errorf("REDIS_ADDR is not set; rate-limit state stays in-process and resets on restart")
+				return fmt.Errorf("REDIS_ADDR is not set; rate-limit state uses a per-process in-memory fallback and resets on restart")
 			}
 			var dialer net.Dialer
 			conn, err := dialer.DialContext(ctx, "tcp", addr)

@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -335,9 +337,30 @@ func TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability(t *testi
 	if err != nil {
 		t.Fatalf("reapply task-state migration: %v", err)
 	}
-	if reapplied != 3 || !taskStateRelationExists(t, db, "task_review_items") {
+	if reapplied != len(taskStatePreMigrationVersionsAfter(t, files, "pre/0003_framework_registry")) || !taskStateRelationExists(t, db, "task_review_items") {
 		t.Fatalf("task-state migration reapply = %d, relation=%t", reapplied, taskStateRelationExists(t, db, "task_review_items"))
 	}
+}
+
+func taskStatePreMigrationVersionsAfter(t *testing.T, fsys fs.FS, version string) []string {
+	t.Helper()
+	entries, err := fs.ReadDir(fsys, "pre")
+	if err != nil {
+		t.Fatalf("read pre migrations: %v", err)
+	}
+	versions := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") {
+			continue
+		}
+		candidate := "pre/" + strings.TrimSuffix(name, ".up.sql")
+		if candidate > version {
+			versions = append(versions, candidate)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(versions)))
+	return versions
 }
 
 func openTaskStatePostgresTestDB(t *testing.T) *gorm.DB {

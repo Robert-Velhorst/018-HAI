@@ -1,10 +1,9 @@
-import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
-import { ViewEncapsulation } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit, ViewEncapsulation } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { NzModalService } from 'ng-zorro-antd/modal';
-import { catchError, forkJoin, of, timeout } from 'rxjs';
+import { catchError, forkJoin, of, Subscription, timeout } from 'rxjs';
 import {
   IPursuitDetail,
   IPursuitMatchCandidate,
@@ -42,7 +41,7 @@ type FrameworkProvenanceState = 'missing' | 'invalid' | 'recorded' | 'verified';
   styleUrls: ['./workflow-engine.component.scss'],
   encapsulation: ViewEncapsulation.None,
 })
-export class WorkflowEngineComponent implements OnInit {
+export class WorkflowEngineComponent implements OnInit, OnDestroy {
   overview?: IWorkflowOverview;
   dashboard?: IWorkflowDashboard;
   reminderProposals?: IWorkflowReminderProposalSnapshot;
@@ -84,6 +83,7 @@ export class WorkflowEngineComponent implements OnInit {
   riskFilter = 'all';
   activeQueue: 'all' | 'approval' | 'ready' | 'blocked' | 'review' = 'all';
   private frameworkSelectionLookup = 0;
+  private readonly subscriptions = new Subscription();
   activationBusyId?: string;
 
   intakeForm: FormGroup = this.fb.group({
@@ -131,11 +131,11 @@ export class WorkflowEngineComponent implements OnInit {
       this.activeQueue = requestedQueue;
     }
     this.refresh();
-    this.intakeForm.valueChanges.subscribe(() => {
+    this.subscriptions.add(this.intakeForm.valueChanges.subscribe(() => {
       // A changed signal must be matched again; never link edited intake to a stale pursuit choice.
       this.selectedPursuitMatch = undefined;
       this.pursuitMatches = [];
-    });
+    }));
     const workflowId = this.route.snapshot.queryParamMap.get('workflowId');
     if (workflowId) {
       this.workflowService.get(workflowId).subscribe({
@@ -143,6 +143,10 @@ export class WorkflowEngineComponent implements OnInit {
         error: () => this.notification.error('Error', 'The linked workflow could not be opened.'),
       });
     }
+  }
+
+  ngOnDestroy(): void {
+    this.subscriptions.unsubscribe();
   }
 
   private isWorkflowQueue(

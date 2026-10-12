@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"net/http"
+	"sync"
 
 	"automation-hub-backend/internal/doctor"
 
@@ -45,9 +46,13 @@ func readinessDetailHandler(diagnose func(ctx context.Context) doctor.Report) gi
 }
 
 func readinessResponseHandler(diagnose func(ctx context.Context) doctor.Report, includeChecks bool) gin.HandlerFunc {
+	probes := &readinessProbes{}
 	return func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		report := diagnose(c.Request.Context())
+		report, completed := probes.run(c.Request.Context(), diagnose)
+		if !completed {
+			return
+		}
 		ok, warn, fail := report.Counts()
 
 		status := "ready"
@@ -70,4 +75,40 @@ func readinessResponseHandler(diagnose func(ctx context.Context) doctor.Report, 
 		}
 		c.JSON(code, response)
 	}
+}
+
+type readinessFlight struct {
+	done   chan struct{}
+	report doctor.Report
+}
+
+type readinessProbes struct {
+	mu     sync.Mutex
+	flight *readinessFlight
+}
+
+func (p *readinessProbes) run(
+	ctx context.Context,
+	diagnose func(context.Context) doctor.Report,
+) (doctor.Report, bool) {
+	p.mu.Lock()
+	if flight := p.flight; flight != nil {
+		p.mu.Unlock()
+		select {
+		case <-flight.done:
+			return flight.report, true
+		case <-ctx.Done():
+			return doctor.Report{}, false
+		}
+	}
+	flight := &readinessFlight{done: make(chan struct{})}
+	p.flight = flight
+	p.mu.Unlock()
+
+	flight.report = diagnose(ctx)
+	p.mu.Lock()
+	p.flight = nil
+	close(flight.done)
+	p.mu.Unlock()
+	return flight.report, true
 }

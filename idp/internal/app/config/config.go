@@ -17,7 +17,7 @@ var (
 
 func Setup() error {
 	var err error
-	KafkaConfig, err = newKafkaConfig()
+	KafkaConfig, err = newOptionalKafkaConfig()
 	if err != nil {
 		return err
 	}

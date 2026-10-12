@@ -87,6 +87,7 @@ func newTestRouter(m *Module, subject string, setSubject bool) *gin.Engine {
 	ops.POST("/:id/evidence-pack", h.GenerateEvidencePack)
 	r.GET("/evidence-packs/:id", h.GetEvidencePack)
 	r.POST("/background/run", h.RunBackground)
+	r.GET("/background/overview", h.Overview)
 	r.GET("/account-feeds", h.ListFeeds)
 	return r
 }
@@ -288,6 +289,27 @@ func TestBackgroundRunRejectsMissingOrBlankAuthenticatedOwner(t *testing.T) {
 	}
 }
 
+func TestBackgroundRunReturnsBusyWhileAnotherPassOwnsTheModule(t *testing.T) {
+	m := newTestModule(t)
+	m.runMu.Lock()
+	defer m.runMu.Unlock()
+
+	result := make(chan error, 1)
+	go func() {
+		_, err := m.RunBackgroundForOwner(t.Context(), "local-operator")
+		result <- err
+	}()
+
+	select {
+	case err := <-result:
+		if !errors.Is(err, background.ErrBusy) {
+			t.Fatalf("RunBackgroundForOwner error = %v, want background.ErrBusy", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("RunBackgroundForOwner blocked while another pass was active")
+	}
+}
+
 func TestAccountFeedsListed(t *testing.T) {
 	r, _ := newTestServer(t)
 	w := do(t, r, http.MethodGet, "/account-feeds")
@@ -304,6 +326,36 @@ func TestAccountFeedsListed(t *testing.T) {
 	}
 	if len(got.Feeds) != 1 || got.Feeds[0].Name != "inbox" {
 		t.Fatalf("expected the inbox feed to be listed, got %+v", got.Feeds)
+	}
+}
+
+func TestBackgroundOverviewReturnsDashboardOperationsAndFeedsInOneRequest(t *testing.T) {
+	r, _ := newTestServer(t)
+
+	w := do(t, r, http.MethodGet, "/background/overview")
+	if w.Code != http.StatusOK {
+		t.Fatalf("background overview: status %d body %s", w.Code, w.Body.String())
+	}
+	var overview struct {
+		Dashboard  operations.Dashboard `json:"dashboard"`
+		Operations []struct {
+			Title string `json:"title"`
+		} `json:"operations"`
+		Feeds []struct {
+			Name string `json:"name"`
+		} `json:"feeds"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	if overview.Dashboard.CountsByStatus == nil {
+		t.Fatal("background overview is missing dashboard data")
+	}
+	if len(overview.Operations) != 0 {
+		t.Fatalf("new background overview returned %d operations, want 0", len(overview.Operations))
+	}
+	if len(overview.Feeds) != 1 || overview.Feeds[0].Name != "inbox" {
+		t.Fatalf("background overview feeds = %+v, want inbox", overview.Feeds)
 	}
 }
 

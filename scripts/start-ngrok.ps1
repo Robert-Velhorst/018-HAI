@@ -72,6 +72,7 @@ $envPath = Resolve-RepoFile $EnvFile
 $composePath = Resolve-RepoFile $ComposeFile
 
 if ($Stop) {
+    Assert-HaiComposeOwnership (Split-Path -Parent $composePath)
     & docker compose --env-file $envPath --profile cloud-tunnel -f $composePath stop ngrok
     if ($LASTEXITCODE -ne 0) {
         throw 'Failed to stop the ngrok service.'
@@ -143,6 +144,11 @@ foreach ($entry in $callbackPaths.GetEnumerator()) {
         throw "$($entry.Key) must equal $publicUrlText$($entry.Value) when configured."
     }
 }
+
+# Reject unsafe cloud configuration before touching Docker. This keeps
+# validation deterministic on developer machines and CI hosts without a daemon,
+# while the ownership check still runs before any Compose operation.
+Assert-HaiComposeOwnership (Split-Path -Parent $composePath)
 
 & docker compose --env-file $envPath --profile cloud-tunnel -f $composePath config --quiet
 if ($LASTEXITCODE -ne 0) {
@@ -333,6 +339,29 @@ function Test-PublicEndpointOwnership(
     }
 }
 
+function Wait-ForPublicGateway([string]$PublicUrl, [int]$TimeoutSeconds = 60) {
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastFailure = 'the public readiness endpoint has not responded yet'
+    do {
+        try {
+            $response = Invoke-WebRequest -Uri "$PublicUrl/readyz" -UseBasicParsing -TimeoutSec 5
+            $payload = $response.Content | ConvertFrom-Json
+            if ($response.StatusCode -eq 200 -and
+                $payload.service -eq 'backend' -and
+                $payload.status -in @('ready', 'degraded') -and
+                $response.Headers['Cache-Control'] -match 'no-store') {
+                return
+            }
+            $lastFailure = 'the readiness response did not identify a no-store HAI backend'
+        } catch {
+            $lastFailure = $_.Exception.Message
+        }
+        Start-Sleep -Seconds 2
+    } while ([DateTimeOffset]::UtcNow -lt $deadline)
+
+    throw "The public ngrok gateway did not become ready within $TimeoutSeconds seconds. $lastFailure"
+}
+
 function Test-PublicOrigin([string]$BaseUrl, [bool]$PublicA2A) {
     $handler = [System.Net.Http.HttpClientHandler]::new()
     $handler.AllowAutoRedirect = $false
@@ -432,6 +461,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 Wait-ForHealthyContainer '018-hai-ngrok' 30
 try {
+    Wait-ForPublicGateway $publicUrlText
     Test-PublicOrigin $publicUrlText $publicA2A
     if ($publicA2A) {
         & (Join-Path $repoRoot 'scripts/smoke-a2a-bridge.ps1') -EnvFile $envPath -Public

@@ -92,8 +92,14 @@ $temporaryFiles = @(
     @{ Container = "018-hai-postgres-idp"; Path = "/tmp/hai-identity-$stamp.dump" }
 )
 
-New-Item -ItemType Directory -Path $bundle -Force | Out-Null
+$bundleCreated = $false
 try {
+    if (Test-Path -LiteralPath $bundle) {
+        throw "Backup bundle already exists; refusing to overwrite it: $bundle"
+    }
+    New-Item -ItemType Directory -Path $bundle -ErrorAction Stop | Out-Null
+    $bundleCreated = $true
+
     foreach ($service in @("backend", "idp")) {
         if ($running[$service]) {
             & docker compose --env-file $envPath -f $compose stop --timeout 30 $service | Out-Null
@@ -157,7 +163,9 @@ try {
     $manifest | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $bundle "manifest.json") -Encoding utf8
     Write-Host "Backup created: $bundle"
 } catch {
-    Remove-Item -LiteralPath $bundle -Recurse -Force -ErrorAction SilentlyContinue
+    if ($bundleCreated -and (Test-Path -LiteralPath $bundle -PathType Container)) {
+        Remove-Item -LiteralPath $bundle -Recurse -Force -ErrorAction SilentlyContinue
+    }
     throw
 } finally {
     foreach ($temporary in $temporaryFiles) {

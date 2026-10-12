@@ -53,8 +53,10 @@ upgraded.
 
 ## Safe Activation
 
-Copy `.env.example` to `.env.local`, generate unique runner tokens, and enable
-only one reviewed profile at a time.
+Create `.env.local` with `scripts\initialize-windows.ps1`, generate unique
+runner tokens, and enable only one reviewed profile at a time. The template is
+not directly runnable because it deliberately contains a rejected sample
+first-run owner password.
 
 For the canonical local model profile, set `OLLAMA_BASE_URL` to the exact
 Compose-internal service and list only reviewed model tags:

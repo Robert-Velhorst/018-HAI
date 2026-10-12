@@ -18,6 +18,20 @@ func TestModelMaintenanceSchedulerDefaultsAndExplicitDisable(t *testing.T) {
 	}
 }
 
+func TestServiceReportsWhetherAnyModelMaintenanceWorkIsEligible(t *testing.T) {
+	policy := testPolicyWithoutEndpoints()
+	service := &Service{policy: policy}
+	if service.hasEligibleModelMaintenanceWork() {
+		t.Fatal("an unconfigured model endpoint must not start maintenance work")
+	}
+
+	policy.Providers[0].EndpointURL = "http://127.0.0.1:11434"
+	service.policy = policy
+	if !service.hasEligibleModelMaintenanceWork() {
+		t.Fatal("a configured enabled local model should allow maintenance work")
+	}
+}
+
 func TestModelMaintenanceSchedulerIntervalIsBounded(t *testing.T) {
 	t.Setenv(maintenanceSchedulerIntervalEnv, "")
 	if interval := modelMaintenanceSchedulerInterval(); interval != time.Hour {
@@ -67,12 +81,12 @@ func TestModelMaintenanceResultReportsTheNextDailyCheck(t *testing.T) {
 	t.Setenv("LLM_MODEL_MAINTENANCE_INTERVAL_HOURS", "9999")
 	checkedAt := time.Date(2026, time.July, 21, 9, 0, 0, 0, time.UTC)
 	result := modelMaintenanceResult(models.LLMModelMaintenance{
-		ProviderID: "ollama",
+		ProviderID:   "ollama",
 		ProviderName: "Ollama",
-		ModelID: "qwen2.5:7b",
-		ModelName: "Qwen",
-		Status: "current",
-		CheckedAt: checkedAt,
+		ModelID:      "qwen2.5:7b",
+		ModelName:    "Qwen",
+		Status:       "current",
+		CheckedAt:    checkedAt,
 	})
 	if result.NextCheckDueAt == nil || !result.NextCheckDueAt.Equal(checkedAt.Add(24*time.Hour)) {
 		t.Fatalf("next check due = %v, want %v", result.NextCheckDueAt, checkedAt.Add(24*time.Hour))
@@ -184,6 +198,30 @@ func TestMiniSWEOllamaEndpointIsExactAndCannotAliasAnotherLocalModelServer(t *te
 	for _, endpoint := range []string{"http://host.docker.internal:11434", "http://ollama:11434", "https://ollama-miniswe:11434"} {
 		if isMiniSWEOllamaEndpoint(endpoint) {
 			t.Fatalf("non-isolated endpoint accepted: %q", endpoint)
+		}
+	}
+}
+
+func TestMaintenanceEndpointKeyAcceptsAMountPrefixButNotARoute(t *testing.T) {
+	for endpoint, want := range map[string]string{
+		"https://openrouter.ai/api":     "https://openrouter.ai/api",
+		"https://openrouter.ai/api/v1":  "https://openrouter.ai/api",
+		"https://openrouter.ai/api/v1/": "https://openrouter.ai/api",
+		"https://example.test/v1":       "https://example.test",
+		"https://example.test":          "https://example.test",
+	} {
+		got, err := maintenanceEndpointKey(endpoint)
+		if err != nil || got != want {
+			t.Fatalf("endpoint key for %q = %q, %v; want %q", endpoint, got, err, want)
+		}
+	}
+	for _, endpoint := range []string{
+		"https://example.test/v1/other",
+		"https://example.test/a/b/c",
+		"https://example.test/api/../secret",
+	} {
+		if _, err := maintenanceEndpointKey(endpoint); err == nil {
+			t.Fatalf("route-shaped endpoint accepted: %q", endpoint)
 		}
 	}
 }

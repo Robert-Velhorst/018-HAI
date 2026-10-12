@@ -10,7 +10,7 @@ package background
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log"
 	"time"
 
 	"automation-hub-backend/internal/accountfeed"
@@ -21,6 +21,7 @@ import (
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/operations"
 	"automation-hub-backend/internal/privacyfilter"
+	"automation-hub-backend/internal/safety"
 
 	"github.com/google/uuid"
 )
@@ -167,7 +168,7 @@ func (w *Worker) ingest(ctx context.Context, rep *Report) error {
 		rep.FeedsRead++
 		items, err := r.Read(ctx)
 		if err != nil {
-			rep.Errors = append(rep.Errors, fmt.Sprintf("feed %s: %v", feed.Name, err))
+			appendBackgroundReportError(rep, "A configured feed could not be read. Check its connection, permissions, and selected path before retrying.", err)
 			continue
 		}
 		for _, it := range items {
@@ -177,12 +178,12 @@ func (w *Worker) ingest(ctx context.Context, rep *Report) error {
 			rep.ItemsIngested++
 			in, err := feed.ToOperationInput(it)
 			if err != nil {
-				rep.Errors = append(rep.Errors, fmt.Sprintf("feed %s item %s: %v", feed.Name, it.ExternalID, err))
+				appendBackgroundReportError(rep, "One item from a configured feed could not be processed. Review the source record and retry.", err)
 				continue
 			}
 			res, err := w.svc.Ingest(in)
 			if err != nil {
-				rep.Errors = append(rep.Errors, fmt.Sprintf("ingest %s: %v", it.ExternalID, err))
+				appendBackgroundReportError(rep, "A new operation could not be stored. Refresh and retry.", err)
 				continue
 			}
 			if res.Created {
@@ -201,7 +202,7 @@ func (w *Worker) process(ctx context.Context, rep *Report) error {
 	}
 	due, err := w.svc.ListDue(w.opts.OwnerUserID, w.opts.WorkspaceID, w.opts.MaxOps)
 	if err != nil {
-		rep.Errors = append(rep.Errors, fmt.Sprintf("list due: %v", err))
+		appendBackgroundReportError(rep, "The background operation ledger could not be read. Refresh and retry.", err)
 		return nil
 	}
 	for _, op := range due {
@@ -212,10 +213,20 @@ func (w *Worker) process(ctx context.Context, rep *Report) error {
 			continue // Phase 2A processes freshly-ingested operations.
 		}
 		if err := w.processOne(ctx, op, rep); err != nil {
-			rep.Errors = append(rep.Errors, fmt.Sprintf("operation %s: %v", op.ID, err))
+			appendBackgroundReportError(rep, "One operation could not be processed. Inspect its audit trail before retrying.", err)
 		}
 	}
 	return nil
+}
+
+func appendBackgroundReportError(report *Report, publicMessage string, err error) {
+	if err != nil {
+		log.Printf("background worker: %s: %s", publicMessage, safety.RedactSecrets(err.Error()))
+	}
+	const maxReportErrors = 20
+	if len(report.Errors) < maxReportErrors {
+		report.Errors = append(report.Errors, publicMessage)
+	}
 }
 
 func (w *Worker) processOne(ctx context.Context, op models.Operation, rep *Report) error {

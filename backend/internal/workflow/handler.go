@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -620,6 +621,14 @@ func bindOptionalWorkflowRunRequest(c *gin.Context, request *RunDueRequest, mess
 
 func (h *Handler) Overview(c *gin.Context) {
 	c.JSON(http.StatusOK, h.service.Overview())
+}
+
+func bindOptionalRunRequest(c *gin.Context, request *RunDueRequest) bool {
+	if err := c.ShouldBindJSON(request); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "request body must be valid JSON"})
+		return false
+	}
+	return true
 }
 
 func parseWorkflowID(c *gin.Context) (uuid.UUID, bool) {

@@ -14,6 +14,16 @@
     </button>
   </header>
 
+  <nz-alert
+    *ngIf="overviewLoadError"
+    nzType="error"
+    nzShowIcon
+    [nzMessage]="overviewLoadError"
+    nzDescription="Retry before using this screen to decide that no action is required."
+    nzCloseable
+    (nzOnClose)="overviewLoadError = ''"
+  ></nz-alert>
+
   <section class="bg-ops__action-stage" *ngIf="dashboard as d">
     <article class="bg-ops__run-card">
       <div class="bg-ops__run-icon"><span nz-icon nzType="thunderbolt"></span></div>
@@ -114,8 +124,8 @@
             <td><span class="bg-ops__decision">{{ op.recommendedAction || op.currentDecision }}</span></td>
             <td><nz-tag [nzColor]="statusColor(op.status)">{{ op.status }}</nz-tag></td>
             <td class="bg-ops__right" (click)="$event.stopPropagation()">
-              <button nz-button nzSize="small" nzType="primary" *ngIf="canApprove(op)" (click)="approve(op)">Approve</button>
-              <button nz-button nzSize="small" *ngIf="canRun(op)" (click)="run(op)">Run</button>
+              <button nz-button nzSize="small" nzType="primary" *ngIf="canApprove(op)" (click)="approve(op)" [nzLoading]="isOperationActionPending(op)" [disabled]="isOperationActionPending(op)">Approve</button>
+              <button nz-button nzSize="small" *ngIf="canRun(op)" (click)="run(op)" [nzLoading]="isOperationActionPending(op)" [disabled]="isOperationActionPending(op)">Run</button>
               <button nz-button nzType="text" nzSize="small" (click)="openDetail(op)" title="Inspect decision and audit trail"><span nz-icon nzType="right"></span></button>
             </td>
           </tr>
@@ -160,8 +170,8 @@
         <div *ngIf="op.lastError"><dt>Last error</dt><dd class="bg-ops__error">{{ op.lastError }}</dd></div>
       </dl>
       <div class="bg-ops__detail-actions">
-        <button nz-button nzType="primary" *ngIf="canApprove(op)" (click)="approve(op)">Approve</button>
-        <button nz-button *ngIf="canRun(op)" (click)="run(op)">Run safe worker</button>
+        <button nz-button nzType="primary" *ngIf="canApprove(op)" (click)="approve(op)" [nzLoading]="isOperationActionPending(op)" [disabled]="isOperationActionPending(op)">Approve</button>
+        <button nz-button *ngIf="canRun(op)" (click)="run(op)" [nzLoading]="isOperationActionPending(op)" [disabled]="isOperationActionPending(op)">Run safe worker</button>
       </div>
       <h3 class="bg-ops__audit-title">Audit trail</h3>
       <nz-timeline>

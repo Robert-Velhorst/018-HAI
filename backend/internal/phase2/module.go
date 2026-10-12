@@ -242,7 +242,9 @@ func (m *Module) RunBackgroundForOwner(ctx context.Context, ownerIdentity string
 		return background.Report{}, fmt.Errorf("phase2: authenticated owner identity required")
 	}
 
-	m.runMu.Lock()
+	if !m.runMu.TryLock() {
+		return background.Report{}, background.ErrBusy
+	}
 	defer m.runMu.Unlock()
 
 	worker := m.newOwnerWorker(ownerIdentity)
@@ -252,7 +254,9 @@ func (m *Module) RunBackgroundForOwner(ctx context.Context, ownerIdentity string
 // RunConfiguredBackground is the distinct internal scheduler path. It is not
 // called by the HTTP handler and always uses the explicitly configured owner.
 func (m *Module) RunConfiguredBackground(ctx context.Context) (background.Report, error) {
-	m.runMu.Lock()
+	if !m.runMu.TryLock() {
+		return background.Report{}, background.ErrBusy
+	}
 	defer m.runMu.Unlock()
 	return m.worker.RunOnce(ctx)
 }

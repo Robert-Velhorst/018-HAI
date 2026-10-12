@@ -467,6 +467,23 @@ class CIWorkflowContractTest(unittest.TestCase):
             with self.subTest(path=relative_path):
                 self.assertTrue((ROOT / relative_path).is_file())
 
+    def test_running_stack_isolation_acceptance_covers_source_to_governed_work_routing(
+        self,
+    ) -> None:
+        script = (ROOT / "scripts" / "two-account-isolation-test.sh").read_text(
+            encoding="utf-8"
+        )
+        for contract in (
+            'source_sync=',
+            '"source sync persisted an extraction"',
+            '"source sync creates a governed pursuit/workflow outcome"',
+            'pursuitOutcomes',
+            'candidate_pending',
+            'pursuit_routed',
+        ):
+            with self.subTest(contract=contract):
+                self.assertIn(contract, script)
+
     def test_execution_boundary_race_tests_are_not_served_from_test_cache(
         self,
     ) -> None:
@@ -475,6 +492,16 @@ class CIWorkflowContractTest(unittest.TestCase):
             "go test -count=1 -race ./internal/automation ./internal/task",
             backend,
         )
+
+    def test_production_isolation_fixture_never_uses_the_shipped_database_password(
+        self,
+    ) -> None:
+        isolation = job_block("isolation-acceptance")
+        fixture_password = "ci-isolation-postgres-password"
+
+        self.assertNotRegex(isolation, r"(?m)^\s+(?:POSTGRES_PASSWORD|DB_PASSWORD): postgres$")
+        self.assertEqual(isolation.count(f"POSTGRES_PASSWORD: {fixture_password}"), 1)
+        self.assertEqual(isolation.count(f"DB_PASSWORD: {fixture_password}"), 1)
 
     def test_backend_vulnerability_scan_is_pinned_and_blocking(self) -> None:
         backend = job_block("backend")
@@ -707,6 +734,12 @@ class CIWorkflowContractTest(unittest.TestCase):
         frontend = job_block("frontend")
 
         self.assertIn('"packageManager": "npm@10.9.8"', package)
+        self.assertIn(
+            '"node": "^22.22.3 || ^24.15.0 || >=26.0.0"',
+            package,
+        )
+        self.assertIn('"@angular/core": "22.2.2"', package)
+        self.assertIn('"@angular/build": "22.2.2"', package)
         package_data = json.loads(package)
         self.assertEqual(
             package_data["dependencies"]["@angular/core"],
@@ -854,6 +887,19 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn(secured_up, preflight)
         self.assertIn(tunnel_up, preflight)
         self.assertLess(preflight.index(secured_up), preflight.index(tunnel_up))
+        for contract in (
+            "Wait-ForPublicGateway",
+            '"$PublicUrl/readyz"',
+            "The public ngrok gateway did not become ready",
+            "stop ngrok",
+        ):
+            with self.subTest(public_gateway_contract=contract):
+                self.assertIn(contract, preflight)
+        self.assertIn(
+            "Get-Setting $settings 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED' 'false'",
+            preflight,
+        )
+        self.assertIn("if ($publicA2A)", preflight)
         self.assertIn("remote_management: false", config)
         self.assertIn("update_check: false", config)
         self.assertIn("inspect_db_size: -1", config)
@@ -1159,6 +1205,12 @@ class CIWorkflowContractTest(unittest.TestCase):
             smoke,
         )
 
+    def test_docling_runner_boundary_tests_run_in_compose_ci(self) -> None:
+        compose = job_block("compose")
+        self.assertIn("Docling runner boundary tests", compose)
+        self.assertIn("working-directory: services/docling-runner", compose)
+        self.assertIn("python3 -m unittest test_app.py", compose)
+
     def test_postgres_jobs_cannot_silently_skip_or_match_no_tests(self) -> None:
         migrations = job_block("migrations-integration")
         for contract in (
@@ -1178,6 +1230,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             "^--- PASS: TestRollbackMigrationReversesPostMigration",
             "^--- PASS: TestConcurrentMigrationRunnersSerializeAndRecheck",
             "^--- PASS: TestLegacyBaselineRejectsDifferentExistingPrimaryKey",
+            "^--- PASS: TestRuntimeRoleCanUseApplicationDataButCannotOwnSchema",
             "^--- PASS: TestFrameworkRegistryPostgresIntegrationRequiredEnvironment",
             "^--- PASS: TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun",
             "^--- PASS: TestFrameworkRegistryPostgresConstraintsAndImmutability",

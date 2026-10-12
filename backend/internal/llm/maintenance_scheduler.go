@@ -16,7 +16,7 @@ const maintenanceSchedulerIntervalEnv = "LLM_MODEL_MAINTENANCE_SCHEDULER_INTERVA
 // provider I/O. The caller supplies the emergency-stop check so maintenance
 // cannot continue while HAI background processing is paused.
 func StartModelMaintenanceScheduler(ctx context.Context, service *Service, backgroundAllowed func() bool) {
-	if service == nil || !modelMaintenanceSchedulerEnabled() {
+	if service == nil || !modelMaintenanceEnabled() || !modelMaintenanceSchedulerEnabled() || !service.hasEligibleModelMaintenanceWork() {
 		return
 	}
 	interval := modelMaintenanceSchedulerInterval()

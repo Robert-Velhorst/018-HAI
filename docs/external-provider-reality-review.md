@@ -12,7 +12,7 @@ connected account.
 | Local LLM (Ollama) | Probeable | Local/free model probe and fallback preference. | Unit and probe coverage; no configured live model acceptance run. |
 | OpenAI-compatible endpoint | Probeable, paid-gated | Model probe; paid use remains approval-gated. | Unit coverage; no configured live model acceptance run. |
 | Gmail (Google OAuth) | `operational`, unconfigured by default | Read-only headers, bounded bodies and textual attachments; encrypted grants; refresh; Gmail history-ID incremental sync; safe backfill when a history cursor expires; revoke; retained source links. Dedicated encryption and state-signing keys are mandatory. | Unit-tested and previously live-tested against a sandbox mailbox. The newer full-content/history path still needs a fresh live acceptance run. |
-| Trello (read-only REST) | `operational`, unconfigured by default | Read-only board card, list, due-date, and label sync with incremental cursor and card provenance. Every request is a GET; there is no write path. Reports `not_implemented` until a board id and least-privilege `TRELLO_API_KEY` and `TRELLO_READ_TOKEN` are set. | Unit-tested and live-tested against a real board on 2026-07-23. |
+| Trello (read-only REST) | `operational`, unconfigured by default | Read-only board card, list, due-date, and label sync with incremental cursor and card provenance. After the initial sync, HAI reads board actions since the cursor and fetches full detail only for affected cards; ambiguous or saturated action pages safely fall back to a board reconciliation. Every request is a GET; there is no write path. Reports `not_implemented` until a board id and least-privilege `TRELLO_API_KEY` and `TRELLO_READ_TOKEN` are set. | Unit-tested and live-tested against a real board on 2026-07-23. A Windows acceptance runner is included for a newly configured board; it must pass before that account is relied on. |
 | Trello JSON export | `local_only` | Reads Trello JSON exports from an allowlisted local folder. This is distinct from the Trello REST adapter. | Unit-tested. |
 | Google Drive | `operational`, unconfigured by default | Separate Drive read-only grant; bounded initial file inventory; native change-page cursor; Google Docs text and Sheets CSV export; bounded text-file reads; metadata-only binary records; non-destructive removal tombstones. | Unit and contract tested. A real sandbox-folder OAuth/backfill/change/revoke acceptance run is still required. |
 | Google Contacts | `operational`, unconfigured by default | Separate Contacts read-only grant; bounded People API backfill; native sync token with bounded backfill recovery after token expiry; source-linked candidate records; non-destructive removal tombstones. There is no merge, delete, or provider write-back path. | Unit and contract tested. A real sandbox address-book OAuth/backfill/change/revoke acceptance run is still required. |
@@ -61,6 +61,10 @@ read-only: provider write-back is not implemented.
 Gmail and Trello are unconfigured by default despite their retained bounded
 acceptance evidence. Any newly connected account must complete its own
 consent/token, source-sync, audit, and revoke test before it is relied upon.
+For Trello, run `scripts/test-live-trello.ps1 -EnvFile .env.local` with a
+least-privilege read-only token and a designated board. The runner uses a
+disposable Go container, fails if any expected live assertion is skipped, and
+does not mutate the board or print credentials.
 GitHub needs a chosen repository and, where necessary, a least-privilege token.
 LLM provider and agent-runtime acceptance runs remain separate external gates.
 

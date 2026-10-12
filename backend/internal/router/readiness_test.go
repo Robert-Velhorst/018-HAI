@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"automation-hub-backend/internal/doctor"
 
@@ -140,5 +143,63 @@ func TestReadinessNotReadyWhenAnyFailure(t *testing.T) {
 	}
 	if body["status"] != "not_ready" {
 		t.Fatalf("status = %v, want not_ready", body["status"])
+	}
+}
+
+func TestReadinessCoalescesOnlyOverlappingLiveProbes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	handler := readinessHandler(func(context.Context) doctor.Report {
+		if calls.Add(1) == 1 {
+			close(started)
+			<-release
+		}
+		return doctor.Report{Checks: []doctor.Check{{Name: "database.connection", Severity: doctor.SeverityOK}}}
+	})
+
+	router := gin.New()
+	router.GET("/readyz", handler)
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			response, err := http.Get(server.URL + "/readyz")
+			if err != nil {
+				t.Errorf("readiness request: %v", err)
+				return
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				t.Errorf("readiness status = %d, want 200", response.StatusCode)
+			}
+		}()
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("first readiness probe did not start")
+	}
+	// Give the second request a short scheduling window to join the active run.
+	time.Sleep(20 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("overlapping readiness calls = %d, want one probe run", got)
+	}
+
+	response, err := http.Get(server.URL + "/readyz")
+	if err != nil {
+		t.Fatalf("fresh readiness request: %v", err)
+	}
+	response.Body.Close()
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("sequential readiness calls = %d, want a fresh second probe run", got)
 	}
 }

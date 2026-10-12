@@ -4,11 +4,14 @@ import (
 	"automation-hub-idp/internal/app/models"
 	"automation-hub-idp/internal/app/repositories/irepository"
 	"automation-hub-idp/internal/app/utils"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+	"strings"
 	"time"
 )
 
@@ -58,6 +61,7 @@ func (r *GormUserRepository) FindByEmail(email string) (*models.User, error) {
 }
 
 func (r *GormUserRepository) Create(user *models.User) (*models.User, error) {
+	user.ResetPasswordToken = normalizeResetTokenForPersistence(user.ResetPasswordToken)
 	err := r.DB.Create(user).Error
 	if err != nil {
 		var postgresError *pgconn.PgError
@@ -71,6 +75,7 @@ func (r *GormUserRepository) Create(user *models.User) (*models.User, error) {
 }
 
 func (r *GormUserRepository) Update(user *models.User) (*models.User, error) {
+	user.ResetPasswordToken = normalizeResetTokenForPersistence(user.ResetPasswordToken)
 	err := r.DB.Save(user).Error
 	if err != nil {
 		r.logger.Error("Failed to update user: %s", err)
@@ -100,8 +105,12 @@ func (r *GormUserRepository) FindAll(p utils.Pagination) ([]*models.User, error)
 }
 
 func (r *GormUserRepository) FindByResetToken(token string) (*models.User, error) {
+	candidates := resetTokenLookupCandidates(token)
+	if len(candidates) == 0 {
+		return nil, irepository.ErrUserNotFound
+	}
 	var user models.User
-	err := r.DB.First(&user, "reset_password_token = ? AND is_active = ?", token, true).Error
+	err := r.DB.First(&user, "reset_password_token IN ? AND is_active = ?", candidates, true).Error
 	if err != nil {
 		r.logger.Error("Failed to fetch user by reset token: %s", err)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -112,11 +121,44 @@ func (r *GormUserRepository) FindByResetToken(token string) (*models.User, error
 	return &user, nil
 }
 
+func resetTokenDigest(token string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(digest[:])
+}
+
+func isResetTokenDigest(value string) bool {
+	if len(value) != sha256.Size*2 || value != strings.ToLower(value) {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func normalizeResetTokenForPersistence(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" || isResetTokenDigest(token) {
+		return token
+	}
+	return resetTokenDigest(token)
+}
+
+func resetTokenLookupCandidates(token string) []string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+	if isResetTokenDigest(token) {
+		return []string{token}
+	}
+	return []string{resetTokenDigest(token), token}
+}
+
 func (r *GormUserRepository) StorePasswordReset(id uuid.UUID, token string, expiresAt time.Time) error {
+	storedToken := normalizeResetTokenForPersistence(token)
 	result := r.DB.Model(&models.User{}).
 		Where("id = ? AND is_active = ?", id, true).
 		Updates(map[string]interface{}{
-			"reset_password_token": token,
+			"reset_password_token": storedToken,
 			"reset_token_expires":  expiresAt,
 		})
 	if result.Error != nil {
@@ -132,8 +174,12 @@ func (r *GormUserRepository) StorePasswordReset(id uuid.UUID, token string, expi
 // ClearPasswordResetIfToken rolls back only the token issued by the failed
 // delivery attempt. A newer concurrent request remains intact.
 func (r *GormUserRepository) ClearPasswordResetIfToken(id uuid.UUID, token string) error {
+	candidates := resetTokenLookupCandidates(token)
+	if len(candidates) == 0 {
+		return nil
+	}
 	result := r.DB.Model(&models.User{}).
-		Where("id = ? AND reset_password_token = ? AND is_active = ?", id, token, true).
+		Where("id = ? AND reset_password_token IN ? AND is_active = ?", id, candidates, true).
 		Updates(map[string]interface{}{
 			"reset_password_token": "",
 			"reset_token_expires":  nil,
@@ -149,10 +195,14 @@ func (r *GormUserRepository) ClearPasswordResetIfToken(id uuid.UUID, token strin
 // one conditional statement. Concurrent or replayed requests cannot both
 // consume the same token, and expired tokens never mutate the user record.
 func (r *GormUserRepository) ConsumePasswordReset(token, passwordHash string) error {
+	candidates := resetTokenLookupCandidates(token)
+	if len(candidates) == 0 {
+		return irepository.ErrInvalidResetToken
+	}
 	result := r.DB.Model(&models.User{}).
 		Where(
-			"reset_password_token = ? AND reset_token_expires IS NOT NULL AND reset_token_expires > CURRENT_TIMESTAMP AND is_active = ?",
-			token,
+			"reset_password_token IN ? AND reset_token_expires IS NOT NULL AND reset_token_expires > CURRENT_TIMESTAMP AND is_active = ?",
+			candidates,
 			true,
 		).
 		Updates(map[string]interface{}{

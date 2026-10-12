@@ -132,5 +132,11 @@ func smtpContextError(ctx context.Context, operation string, err error) error {
 	if contextErr := ctx.Err(); contextErr != nil {
 		return fmt.Errorf("%s: %w", operation, contextErr)
 	}
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		var networkError net.Error
+		if errors.As(err, &networkError) && networkError.Timeout() {
+			return fmt.Errorf("%s: %w", operation, context.DeadlineExceeded)
+		}
+	}
 	return fmt.Errorf("%s: %w", operation, err)
 }

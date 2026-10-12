@@ -181,6 +181,25 @@ func (h *Handler) Logs(c *gin.Context) {
 	if !ok {
 		return
 	}
+	full := strings.EqualFold(strings.TrimSpace(c.Query("view")), "full")
+	if full {
+		if durable, ok := h.service.(DurableOwnerScopedService); ok {
+			logs, err := durable.LogsForOwnerWithError(ownerIdentity)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "task history is temporarily unavailable"})
+				return
+			}
+			c.JSON(http.StatusOK, taskHistoryView(recentCompletionPlans(logs, limit), true))
+			return
+		}
+		scoped, ok := h.service.(OwnerScopedService)
+		if !ok {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "owner-scoped task history is unavailable"})
+			return
+		}
+		c.JSON(http.StatusOK, taskHistoryView(recentCompletionPlans(scoped.LogsForOwner(ownerIdentity), limit), true))
+		return
+	}
 	if compact, ok := h.service.(CompactDurableOwnerScopedService); ok {
 		logs, err := compact.HistoryForOwnerWithLimit(ownerIdentity, limit)
 		if err != nil {
@@ -214,6 +233,37 @@ func (h *Handler) Logs(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, completionPlanHistory(recentCompletionPlans(scoped.LogsForOwner(ownerIdentity), limit)))
+}
+
+// taskHistoryView answers a request for the task list with what a list needs.
+//
+// A completion plan is the whole audit record of a run: every event, every
+// claim, every retrieved snippet. Returning the full record for each entry made
+// the history endpoint ship megabytes to draw a few lines of text, which is slow
+// to send, slow to parse, and grows with every run. The summary keeps the fields
+// the list actually shows and nothing else; view=full still returns the record
+// itself for anyone who wants to read one.
+func taskHistoryView(logs []CompletionPlan, full bool) []CompletionPlan {
+	if full {
+		return logs
+	}
+	summaries := make([]CompletionPlan, 0, len(logs))
+	for _, plan := range logs {
+		summaries = append(summaries, CompletionPlan{
+			ID:               plan.ID,
+			Request:          plan.Request,
+			RealGoal:         plan.RealGoal,
+			ProjectKey:       plan.ProjectKey,
+			CompletionStatus: plan.CompletionStatus,
+			CreatedAt:        plan.CreatedAt,
+			Intake: IntakeAnalysis{
+				TaskType:        plan.Intake.TaskType,
+				RiskLevel:       plan.Intake.RiskLevel,
+				SuccessCriteria: plan.Intake.SuccessCriteria,
+			},
+		})
+	}
+	return summaries
 }
 
 func taskLogLimit(c *gin.Context) (int, bool) {

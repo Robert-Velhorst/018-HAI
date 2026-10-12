@@ -70,6 +70,23 @@ func frameworkRegistryLifecycleMigrations(t *testing.T) fstest.MapFS {
 	return files
 }
 
+func preMigrationVersionsAfter(t *testing.T, after string) []string {
+	t.Helper()
+	paths, err := fs.Glob(frameworkRegistryLifecycleMigrations(t), "pre/*.up.sql")
+	if err != nil {
+		t.Fatalf("list lifecycle migrations: %v", err)
+	}
+	versions := make([]string, 0, len(paths))
+	for _, path := range paths {
+		version := strings.TrimSuffix(path, ".up.sql")
+		if version > after {
+			versions = append(versions, version)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(versions)))
+	return versions
+}
+
 func openFrameworkRegistryPostgresTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))

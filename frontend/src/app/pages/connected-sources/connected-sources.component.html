@@ -26,6 +26,24 @@
   </header>
 
   <main class="sources-content">
+    <nz-alert
+      *ngIf="overviewLoadError"
+      nzType="error"
+      nzShowIcon
+      [nzMessage]="overviewLoadError"
+      nzDescription="Retry before treating this overview as complete."
+      nzCloseable
+      (nzOnClose)="overviewLoadError = ''"
+    ></nz-alert>
+    <nz-alert
+      *ngIf="connectionHealthLoadError"
+      nzType="warning"
+      nzShowIcon
+      [nzMessage]="connectionHealthLoadError"
+      nzCloseable
+      (nzOnClose)="connectionHealthLoadError = ''"
+    ></nz-alert>
+
     <section class="status-strip" aria-label="Source status">
       <div title="Enabled sources that can currently be used by HAI">
         <strong>{{ enabledSources().length }}</strong>
@@ -113,7 +131,7 @@
             <div class="source-row__badges">
               <span class="status-pill" [attr.data-status]="statusTone(source.status)">{{ statusText(source.status) }}</span>
               <span *ngIf="source.localOnly" class="status-pill local">local</span>
-              <span class="status-pill">{{ sourceExtractionCount(source) }} records</span>
+              <span class="status-pill">{{ sourceExtractionCountLabel(source) }}</span>
             </div>
             <div class="source-row__actions">
               <button
@@ -157,7 +175,7 @@
                     *ngFor="let connector of connectors"
                     [nzValue]="connector.connectorKey"
                     [nzLabel]="connectorLabel(connector)"
-					[nzDisabled]="!connectorCanConnect(connector)"
+                    [nzDisabled]="!connectorCanCreateSource(connector)"
                   ></nz-option>
                 </nz-select>
               </label>
@@ -214,7 +232,7 @@
               <label>
                 <span>Source</span>
                 <nz-select formControlName="sourceId">
-                  <nz-option *ngFor="let source of sources" [nzValue]="source.id" [nzLabel]="source.name"></nz-option>
+                  <nz-option *ngFor="let source of folderSources()" [nzValue]="source.id" [nzLabel]="source.name"></nz-option>
                 </nz-select>
               </label>
               <div class="field-grid">
@@ -366,7 +384,7 @@
                 <input nz-input formControlName="name" />
               </label>
               <label>
-                <span>Odoo base URL</span>
+                <span>Odoo reference URL</span>
                 <input nz-input formControlName="baseUrl" placeholder="https://your-company.odoo.com/odoo" />
               </label>
               <label>
@@ -389,6 +407,18 @@
                 <button type="button" nz-button nzType="primary" (click)="syncOdooApps()" [nzLoading]="syncing">Model apps</button>
               </div>
             </form>
+            <section class="connector-readiness" aria-live="polite">
+              <div>
+                <strong>Live Odoo JSON-2</strong>
+                <span class="status-pill" [attr.data-status]="odooJSON2Ready() ? 'good' : 'attention'">
+                  {{ odooJSON2StatusLabel() }}
+                </span>
+              </div>
+              <p>{{ odooJSON2StatusReason() }}</p>
+              <button type="button" nz-button nzType="default" (click)="startOdooJSON2Connection()">
+                Use read-only connector
+              </button>
+            </section>
           </div>
 
           <div *ngSwitchCase="'import'" class="operation">
@@ -745,7 +775,7 @@
               </button>
             </div>
           </article>
-          <nz-empty *ngIf="!recentExtractions().length" nzNotFoundContent="No extracted records yet."></nz-empty>
+          <nz-empty *ngIf="!recentExtractions().length" [nzNotFoundContent]="recordHistoryLoaded ? 'No extracted records yet.' : 'Load records when you need source history.'"></nz-empty>
         </div>
       </details>
 
@@ -789,7 +819,7 @@
               <small>{{ log.createdAt | date: 'short' }}</small>
             </div>
           </article>
-          <nz-empty *ngIf="!recentSyncJobs().length && !recentAuditLogs().length" nzNotFoundContent="No source activity yet."></nz-empty>
+          <nz-empty *ngIf="!recentSyncJobs().length && !recentAuditLogs().length" [nzNotFoundContent]="recordHistoryLoaded ? 'No source activity yet.' : 'Load records when you need the audit trail.'"></nz-empty>
         </div>
       </details>
     </section>

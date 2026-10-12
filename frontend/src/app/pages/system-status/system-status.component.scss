@@ -68,6 +68,12 @@
     opacity: 0.7;
   }
 
+  .build-info {
+    font-size: 12px;
+    opacity: 0.7;
+    white-space: nowrap;
+  }
+
   &.status-ok {
     background: #f6ffed;
     border: 1px solid #b7eb8f;

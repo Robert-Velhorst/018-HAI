@@ -1,6 +1,7 @@
 package modelintelligence
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -78,5 +79,17 @@ func TestParseTriageOutputFailsClosed(t *testing.T) {
 	category, summary, ok := parseTriageOutput("category=financial; summary=review invoice")
 	if !ok || category != "financial" || summary != "review invoice" {
 		t.Fatalf("valid triage output = %q %q %v", category, summary, ok)
+	}
+}
+
+func TestTheWilsonBoundStaysAProportionWhenNothingWasAccepted(t *testing.T) {
+	for total := 1; total <= 40; total++ {
+		bound := wilsonLowerBound(0, total)
+		if bound != 0 || math.Signbit(bound) {
+			t.Fatalf("no accepted outputs out of %d gave %v, want a plain zero", total, bound)
+		}
+	}
+	if bound := wilsonLowerBound(8, 10); bound <= 0 || bound >= 1 {
+		t.Fatalf("8 of 10 accepted gave %v, want a proportion", bound)
 	}
 }

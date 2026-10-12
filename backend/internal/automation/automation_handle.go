@@ -17,6 +17,20 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	maxAutomationUpdateBodyBytes     int64 = 1 << 20
+	defaultAutomationImageMaxBytes   int64 = 5 << 20
+	automationMultipartMetadataBytes int64 = 1 << 20
+)
+
+func maxAutomationCreateBodyBytes() int64 {
+	imageLimit := config.AppConfig.ImageMaxSize
+	if imageLimit <= 0 {
+		imageLimit = defaultAutomationImageMaxBytes
+	}
+	return imageLimit + automationMultipartMetadataBytes
+}
+
 type Handler struct {
 	service Service
 }
@@ -284,9 +298,14 @@ func (h *Handler) SwapPosition(c *gin.Context) {
 func (h *Handler) Update(c *gin.Context) {
 	var automation models.Automation
 
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxAutomationUpdateBodyBytes))
 	defer c.Request.Body.Close()
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "automation update body exceeds 1 MiB"})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
 		return
 	}

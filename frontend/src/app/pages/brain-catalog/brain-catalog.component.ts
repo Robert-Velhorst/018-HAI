@@ -91,8 +91,10 @@ export class BrainCatalogComponent implements OnInit {
   catalogRevalidation?: IBrainCatalogRevalidationRun
   collectionMaintenanceHistory: IBrainCatalogOSSInsightReview[] = []
   collectionMaintenanceHistoryUnavailable = false
+  private collectionMaintenanceHistoryLoaded = false
   repositoryDiscoveryMaintenanceHistory: IBrainCatalogRepositoryDiscoveryMaintenanceReview[] = []
   repositoryDiscoveryMaintenanceHistoryUnavailable = false
+  private repositoryDiscoveryMaintenanceHistoryLoaded = false
   ossInsightDiscovery?: IBrainCatalogOSSInsightDiscoveryReport
   adoptionPlan?: IBrainCatalogAdoptionPlan
   capabilityRecommendation?: IBrainCatalogCapabilityRecommendationResponse
@@ -195,8 +197,6 @@ export class BrainCatalogComponent implements OnInit {
       next: (catalog) => {
         this.catalog = catalog
         this.select(this.integrated[0] ?? catalog.entries[0])
-        this.loadCollectionMaintenanceHistory()
-        this.loadRepositoryDiscoveryMaintenanceHistory()
         this.loading = false
       },
       error: () => {
@@ -731,8 +731,8 @@ export class BrainCatalogComponent implements OnInit {
       next: (run) => {
         this.runningCatalogRevalidation = false
         this.catalogRevalidation = run
-        this.loadCollectionMaintenanceHistory()
-        this.loadRepositoryDiscoveryMaintenanceHistory()
+        this.loadCollectionMaintenanceHistory(true)
+        this.loadRepositoryDiscoveryMaintenanceHistory(true)
         if (!run.enabled) {
           this.notification.error(
             'Catalog maintenance is disabled',
@@ -759,7 +759,15 @@ export class BrainCatalogComponent implements OnInit {
     })
   }
 
-  private loadCollectionMaintenanceHistory(): void {
+  onOSSInsightScreeningOpen(open: boolean): void {
+    if (!open) return
+    this.loadCollectionMaintenanceHistory()
+    this.loadRepositoryDiscoveryMaintenanceHistory()
+  }
+
+  private loadCollectionMaintenanceHistory(force = false): void {
+    if (this.collectionMaintenanceHistoryLoaded && !force) return
+    this.collectionMaintenanceHistoryLoaded = true
     this.collectionMaintenanceHistoryUnavailable = false
     this.service.collectionRevalidationHistory().subscribe({
       next: (history) => (this.collectionMaintenanceHistory = history || []),
@@ -769,7 +777,9 @@ export class BrainCatalogComponent implements OnInit {
     })
   }
 
-  private loadRepositoryDiscoveryMaintenanceHistory(): void {
+  private loadRepositoryDiscoveryMaintenanceHistory(force = false): void {
+    if (this.repositoryDiscoveryMaintenanceHistoryLoaded && !force) return
+    this.repositoryDiscoveryMaintenanceHistoryLoaded = true
     this.repositoryDiscoveryMaintenanceHistoryUnavailable = false
     this.service.repositoryDiscoveryRevalidationHistory().subscribe({
       next: (history) => (this.repositoryDiscoveryMaintenanceHistory = history || []),

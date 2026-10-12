@@ -49,8 +49,11 @@ source builds.
 
 Expected result:
 
-- Backend, frontend, gateway, Postgres, Redis, Kafka, and their required
-  dependencies are running; services that define health checks report healthy.
+- Backend, frontend, gateway, Postgres, and Redis are running; services that
+  define health checks report healthy. Kafka, ZooKeeper, and the Kafka-driven
+  nginx configuration manager are intentionally absent from the default
+  resource-efficient stack. Start the optional `event-bus` profile only when
+  an installation explicitly requires it.
 - `GET /` returns the Angular dashboard shell.
 - `GET /healthz` returns the backend health JSON, and `GET /readyz` returns a
   ready response through the nginx gateway.

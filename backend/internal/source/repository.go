@@ -53,6 +53,12 @@ type Repository interface {
 	FindOAuthToken(sourceID uuid.UUID) (*models.SourceOAuthToken, error)
 }
 
+type pagedSourceHistoryRepository interface {
+	FindSyncJobsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceSyncJob, int, error)
+	FindExtractionsPageForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool, limit, offset int) ([]models.SourceExtraction, int, error)
+	FindAuditLogsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceAuditLog, int, error)
+}
+
 type SourceOverview struct {
 	ExtractionCount          int64             `json:"extractionCount"`
 	SensitiveExtractionCount int64             `json:"sensitiveExtractionCount"`
@@ -303,6 +309,40 @@ func (r *GormRepository) FindSyncJobsForSources(sourceIDs []uuid.UUID, limit int
 	return jobs, query.Find(&jobs).Error
 }
 
+func (r *GormRepository) FindSyncJobsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceSyncJob, int, error) {
+	if len(sourceIDs) == 0 {
+		return []models.SourceSyncJob{}, 0, nil
+	}
+	query := r.DB.Model(&models.SourceSyncJob{}).Where("source_id IN ?", sourceIDs)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var jobs []models.SourceSyncJob
+	err := query.Order("created_at desc").Limit(limit).Offset(offset).Find(&jobs).Error
+	return jobs, int(total), err
+}
+
+func (r *GormRepository) FindExtractionsPageForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool, limit, offset int) ([]models.SourceExtraction, int, error) {
+	if len(sourceIDs) == 0 {
+		return []models.SourceExtraction{}, 0, nil
+	}
+	query := r.DB.Model(&models.SourceExtraction{}).Where("source_id IN ?", sourceIDs)
+	if projectKey != "" {
+		query = query.Where("project_key = ?", projectKey)
+	}
+	if !includeArchived {
+		query = query.Where("archived = ?", false)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var extractions []models.SourceExtraction
+	err := query.Order("updated_at desc").Limit(limit).Offset(offset).Find(&extractions).Error
+	return extractions, int(total), err
+}
+
 func (r *GormRepository) FindRawItem(sourceID uuid.UUID, externalID string) (*models.SourceRawItem, error) {
 	var item models.SourceRawItem
 	if err := r.DB.Where("source_id = ? AND external_id = ?", sourceID, externalID).First(&item).Error; err != nil {
@@ -506,6 +546,20 @@ func (r *GormRepository) FindAuditLogsForSources(sourceIDs []uuid.UUID, limit in
 		query = query.Limit(limit)
 	}
 	return logs, query.Find(&logs).Error
+}
+
+func (r *GormRepository) FindAuditLogsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceAuditLog, int, error) {
+	if len(sourceIDs) == 0 {
+		return []models.SourceAuditLog{}, 0, nil
+	}
+	query := r.DB.Model(&models.SourceAuditLog{}).Where("source_id IN ?", sourceIDs)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var logs []models.SourceAuditLog
+	err := query.Order("created_at desc").Limit(limit).Offset(offset).Find(&logs).Error
+	return logs, int(total), err
 }
 
 func (r *GormRepository) FindOverviewForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool) (*SourceOverview, error) {

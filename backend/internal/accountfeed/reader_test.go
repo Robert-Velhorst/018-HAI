@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -64,6 +65,21 @@ func TestLocalFileReaderRejectsInvalidItem(t *testing.T) {
 	r, _ := NewLocalFileReader(testFeed("feed.json"), dir)
 	if _, err := r.Read(context.Background()); err == nil {
 		t.Fatalf("invalid item must be rejected")
+	}
+}
+
+func TestLocalFileReaderRejectsOversizedFeedBeforeParsingIt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "oversized.json"), []byte(strings.Repeat("x", maxFeedBytes+1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewLocalFileReader(testFeed("oversized.json"), dir)
+	if err != nil {
+		t.Fatalf("new reader: %v", err)
+	}
+	_, err = r.Read(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Fatalf("oversized reader error=%v", err)
 	}
 }
 

@@ -56,9 +56,14 @@ AID="$(mksrc "$A" "Alice board $STAMP" "alice-$STAMP")"
 BID="$(mksrc "$B" "Bob board $STAMP" "bob-$STAMP")"
 [ -n "$AID" ] && [ -n "$BID" ] || { echo "could not create sources; is the stack running?"; exit 2; }
 
-# Give Alice private content to protect.
-curl -s -X POST "$BASE/api/v1/sources/$AID/sync" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
-  -d "{\"mode\":\"manual_import\",\"items\":[{\"externalId\":\"alice-secret-$STAMP\",\"title\":\"Alice confidential brief\",\"content\":\"Follow up: Alice client quote is $SECRET_TEXT, decision due Friday.\",\"sourceUri\":\"file://alice/brief.md\",\"itemType\":\"note\",\"projectKey\":\"alice-$STAMP\"}]}" >/dev/null
+# Give Alice private content to protect. The result must prove that source
+# extraction also reaches the governed pursuit/workflow intake boundary.
+source_sync="$(curl -s -X POST "$BASE/api/v1/sources/$AID/sync" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' \
+  -d "{\"mode\":\"manual_import\",\"items\":[{\"externalId\":\"alice-secret-$STAMP\",\"title\":\"Alice confidential brief\",\"content\":\"Follow up: Alice client quote is $SECRET_TEXT, decision due Friday.\",\"sourceUri\":\"file://alice/brief.md\",\"itemType\":\"note\",\"projectKey\":\"alice-$STAMP\"}]}" )"
+check "source sync persisted an extraction" \
+  "$(printf '%s' "$source_sync" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('extractions') or []))")" "1"
+check "source sync creates a governed pursuit/workflow outcome" \
+  "$(printf '%s' "$source_sync" | python3 -c "import json,sys; outcomes=json.load(sys.stdin).get('pursuitOutcomes') or []; allowed={'candidate_pending','pursuit_routed','workflow_created','pursuit_linked'}; print(str(len(outcomes) == 1 and outcomes[0].get('status') in allowed).lower())")" "true"
 
 echo "1. Source listing is owner-scoped"
 check "alice sees exactly 1 source" "$(curl -s -H "Authorization: Bearer $A" "$BASE/api/v1/sources/" | jlen)" "1"

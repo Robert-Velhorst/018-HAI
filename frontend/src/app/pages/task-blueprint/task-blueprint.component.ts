@@ -1,13 +1,16 @@
-import { ChangeDetectionStrategy, Component, Inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { NzModalService } from 'ng-zorro-antd/modal';
 import { timeout } from 'rxjs/operators';
+import { Subscription } from 'rxjs';
 import {
   ICompletionPlan,
 	ITaskPlanHistoryItem,
 	IApprovedReviewReconciliationResult,
+  IChatGPTLogsContextItem,
+  IMcpToolCallTrace,
   IReviewQueueItem,
   IToolExecutionResult,
   IValidationCriterionResult,
@@ -53,7 +56,7 @@ interface SuggestedPrompt {
   templateUrl: './task-blueprint.component.html',
   styleUrls: ['./task-blueprint.component.scss'],
 })
-export class TaskBlueprintComponent implements OnInit {
+export class TaskBlueprintComponent implements OnInit, OnDestroy {
 	private readonly taskOperationRetryConfirmation = 'RETRY UNCERTAIN OPERATION';
   plan?: ICompletionPlan;
   lastCommand?: IAssistantCommandResult;
@@ -80,8 +83,16 @@ export class TaskBlueprintComponent implements OnInit {
   crewProposal?: ICrewAIResponse;
   crewProposalLoading = false;
   themeMode: ThemeMode = 'light';
+  private routeSubscription?: Subscription;
   private readonly loadTimeoutMs = 6000;
+  // Enough for a call that only reads or drafts.
   private readonly operationTimeoutMs = 20000;
+  // A run drives a model through a bounded MCP tool loop, which takes minutes.
+  // Giving up after twenty seconds reported failure for work the backend went
+  // on to finish, so this matches the gateway's own ceiling instead.
+  private readonly executionTimeoutMs = 900000;
+  // Enough to read what came back without pasting a whole corpus into the panel.
+  private readonly mcpResultPreviewChars = 4000;
 
   chatMessages: ChatMessage[] = [
     {
@@ -167,7 +178,7 @@ export class TaskBlueprintComponent implements OnInit {
 
   ngOnInit(): void {
     this.themeMode = this.themeService.mode();
-    this.route.queryParamMap.subscribe((params) => {
+    this.routeSubscription = this.route.queryParamMap.subscribe((params) => {
       const pursuitId = params.get('pursuitId') || '';
       this.planForm.patchValue({
         pursuitId,
@@ -181,6 +192,10 @@ export class TaskBlueprintComponent implements OnInit {
     });
     this.loadLogs();
     this.loadReviewQueue();
+  }
+
+  ngOnDestroy(): void {
+    this.routeSubscription?.unsubscribe();
   }
 
   createPlan(): void {
@@ -339,7 +354,7 @@ export class TaskBlueprintComponent implements OnInit {
       runCycle: intent === 'cycle',
     };
 
-    this.assistantCommandService.command(request).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    this.assistantCommandService.command(request).pipe(timeout(this.executionTimeoutMs)).subscribe({
       next: (command) => {
         this.lastCommand = command;
         if (command.plan) {
@@ -437,7 +452,7 @@ export class TaskBlueprintComponent implements OnInit {
 			note,
 			confirmation,
       })
-      .pipe(timeout(this.operationTimeoutMs))
+      .pipe(timeout(this.executionTimeoutMs))
       .subscribe({
         next: (result) => {
           this.resolvingReviewId = '';
@@ -738,6 +753,76 @@ export class TaskBlueprintComponent implements OnInit {
 
   toolRuntimeEvidenceUri(tool?: IToolExecutionResult): string {
     return tool?.launchEventId ? `automation-launch://${tool.launchEventId}` : '';
+  }
+
+  /**
+   * The data one call returned.
+   *
+   * The trace records that a call happened; the result itself is kept with the
+   * rest of the retrieved context. They are written in the same order, one
+   * context item per call that succeeded, so the nth successful call owns the
+   * nth item. The tool names are compared before anything is shown: on a
+   * mismatch nothing is displayed, because a plausible-looking result from the
+   * wrong call is worse than none.
+   */
+  mcpToolCallResult(call: IMcpToolCallTrace): IChatGPTLogsContextItem | undefined {
+    if (call.status !== 'completed') {
+      return undefined;
+    }
+    const calls = this.plan?.executionResult?.mcpToolCalls || [];
+    const items = this.plan?.contextPlan?.chatgptLogsContext || [];
+    let position = -1;
+    for (const candidate of calls) {
+      if (candidate.status === 'completed') {
+        position += 1;
+      }
+      if (candidate === call) {
+        break;
+      }
+    }
+    const item = position >= 0 ? items[position] : undefined;
+    return item && item.tool === call.tool ? item : undefined;
+  }
+
+  mcpToolCallResultText(call: IMcpToolCallTrace): string {
+    const content = this.mcpToolCallResult(call)?.content || '';
+    if (content.length <= this.mcpResultPreviewChars) {
+      return content;
+    }
+    return `${content.slice(0, this.mcpResultPreviewChars)}\n… ${content.length - this.mcpResultPreviewChars} more characters not shown.`;
+  }
+
+  mcpToolCallLabel(call: IMcpToolCallTrace): string {
+    if (!call.attempt || call.attempt <= 1) {
+      return `${call.round}. ${call.tool}`;
+    }
+    return `attempt ${call.attempt}, ${call.round}. ${call.tool}`;
+  }
+
+  mcpToolCallArguments(call: IMcpToolCallTrace): string {
+    if (call.arguments === undefined || call.arguments === null) {
+      return 'no arguments';
+    }
+    try {
+      return JSON.stringify(call.arguments);
+    } catch {
+      return 'arguments could not be displayed';
+    }
+  }
+
+  mcpToolCallResultLabel(call: IMcpToolCallTrace): string {
+    if (call.status !== 'completed') {
+      return call.detail || call.status;
+    }
+    return `${call.resultChars} chars returned`;
+  }
+
+  mcpToolCallTitle(call: IMcpToolCallTrace): string {
+    const parts = [call.detail || call.status];
+    if (call.sourceUri) {
+      parts.push(call.sourceUri);
+    }
+    return parts.join(' · ');
   }
 
   toolRuntimeEvidenceLabel(tool?: IToolExecutionResult): string {

@@ -179,10 +179,14 @@ def require_token(headers) -> None:
 def extract(folder_name: str) -> dict:
     folder, relative = selected_folder(folder_name)
     _, _, pdf_enabled, artifacts = configured()
-    document_converter = converter(pdf_enabled, artifacts)
+    candidates = candidate_files(folder, pdf_enabled)
+    # Text and Markdown need no Docling import or converter initialization.
+    # This keeps routine low-cost source intake within the runner's small path.
+    requires_converter = any(file_format not in TEXT_FORMATS.values() for _, file_format in candidates)
+    document_converter = converter(pdf_enabled, artifacts) if requires_converter else None
     documents = []
     total_chars = 0
-    for document_path, file_format in candidate_files(folder, pdf_enabled):
+    for document_path, file_format in candidates:
         text, pages = extract_text(document_path, file_format, pdf_enabled, artifacts, document_converter)
         text = text.strip()
         if not text or len(text) > MAX_DOCUMENT_CHARS or pages < 0 or pages > MAX_PAGES:

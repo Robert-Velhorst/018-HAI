@@ -15,6 +15,16 @@
     </button>
   </header>
 
+  <nz-alert
+    *ngIf="overviewLoadError"
+    nzType="error"
+    nzShowIcon
+    [nzMessage]="overviewLoadError"
+    nzDescription="Retry before using this screen to decide that no account setup or feed action is required."
+    nzCloseable
+    (nzOnClose)="overviewLoadError = ''"
+  ></nz-alert>
+
   <nz-card nzTitle="Registered feeds" nzSize="small" class="ab__feeds">
     <nz-table #feedTable [nzData]="feeds" [nzLoading]="loading" nzSize="small" [nzNoResult]="emptyTpl">
       <thead>

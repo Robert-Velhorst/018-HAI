@@ -13,7 +13,7 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
     commands: jasmine.SpyObj<any>;
     notification: jasmine.SpyObj<any>;
   } {
-    const pursuits = jasmine.createSpyObj('PursuitService', ['acceptCandidate', 'archive', 'resolveDecision']);
+    const pursuits = jasmine.createSpyObj('PursuitService', ['acceptCandidate', 'archive', 'resolveDecision', 'overview']);
     const workflows = jasmine.createSpyObj('WorkflowService', ['resolveApproval', 'resolveProposal']);
     const commands = jasmine.createSpyObj('AssistantCommandService', ['logs']);
     const notification = jasmine.createSpyObj('NzNotificationService', ['success', 'error']);
@@ -136,6 +136,49 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
       actor: 'Robert',
     });
     expect(notification.success).toHaveBeenCalledWith('Pursuit completed', 'Verified completion and the Robert decision were recorded in the audit trail.');
+  });
+
+  it('loads core dashboard data once without fetching command history on startup', () => {
+    const pursuits = jasmine.createSpyObj('PursuitService', ['overview']);
+    pursuits.overview.and.returnValue(of({ dashboard: {}, brief: {} }));
+    const assistantCommands = jasmine.createSpyObj('AssistantCommandService', ['logs']);
+    assistantCommands.logs.and.returnValue(of([]));
+    const component = new CommandDashboardComponent(
+      new FormBuilder(),
+      { dashboard: jasmine.createSpy('dashboard').and.returnValue(of({})) } as any,
+      { overview: jasmine.createSpy('overview').and.returnValue(of({ runtimes: [], health: [] })) } as any,
+      assistantCommands,
+      pursuits,
+      {} as any,
+      jasmine.createSpyObj('NzNotificationService', ['success', 'error']) as NzNotificationService,
+      jasmine.createSpyObj<Router>('Router', ['navigate']),
+    );
+
+    component.ngOnInit();
+
+    expect(pursuits.overview).toHaveBeenCalledTimes(1);
+    expect(assistantCommands.logs).not.toHaveBeenCalled();
+
+    component.onCommandHistoryOpen(true);
+
+    expect(assistantCommands.logs).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a useful pursuit brief when a refresh fails', () => {
+    const { component, pursuits } = createComponent();
+    (component.refreshPursuits as jasmine.Spy).and.callThrough();
+    const priorDashboard = { counts: { active: 1 } } as any;
+    const priorBrief = { summary: 'Keep prior brief' } as any;
+    component.pursuitDashboard = priorDashboard;
+    component.pursuitBrief = priorBrief;
+    pursuits.overview.and.returnValue(throwError(() => ({ error: { error: 'pursuit service unavailable' } })));
+
+    component.refreshPursuits();
+
+    expect(component.pursuitDashboard).toBe(priorDashboard);
+    expect(component.pursuitBrief).toBe(priorBrief);
+    expect(component.pursuitLoadError).toBe('pursuit service unavailable');
+    expect(component.pursuitsLoading).toBeFalse();
   });
 
   it('retains confirmed command history when the next ledger read is unavailable', () => {

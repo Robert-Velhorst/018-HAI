@@ -219,6 +219,26 @@ func TestRouteBlocksLinkLocalProviderEndpointByDefault(t *testing.T) {
 	}
 }
 
+func TestRouteBlocksCredentialedProviderEndpoint(t *testing.T) {
+	policy := testPolicyWithoutEndpoints()
+	policy.Providers[0].EndpointURL = "http://operator:secret@127.0.0.1:11434?token=do-not-store"
+	service := &Service{policy: annotatePolicyReadiness(policy)}
+
+	decision, err := service.Route(RouteRequest{Task: "Summarize this short note"})
+	if err != nil {
+		t.Fatalf("Route returned error: %v", err)
+	}
+	if decision.SelectedModelID != "" {
+		t.Fatalf("selected %q for credentialed provider endpoint", decision.SelectedModelID)
+	}
+	for _, skipped := range decision.Skipped {
+		if skipped.ProviderID == "ollama" && strings.Contains(skipped.Reason, "credentials") {
+			return
+		}
+	}
+	t.Fatalf("expected credentialed endpoint skip, got %#v", decision.Skipped)
+}
+
 func TestRouteBlocksRemoteLlamaCPPProviderEndpoint(t *testing.T) {
 	policy := testPolicyWithoutEndpoints()
 	llamaIndex := providerIndex(t, policy, "llama-cpp")

@@ -45,7 +45,9 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - name: Execution-boundary race tests
-        run: go test -count=1 -race ./internal/automation ./internal/task
+        run: go test -count=1 -race ./internal/automation ./internal/task ./internal/durablejob ./internal/source
+      - name: A2A bridge race tests
+        run: go test -count=1 -race ./internal/a2abridge
       - run: go build ./...
       - name: Vulnerability scan
         run: |
@@ -130,6 +132,9 @@ jobs:
         run: python3 scripts/test_ci_contract.py
       - name: Gateway authentication contract
         run: python3 nginx-config/test_gateway_contract.py
+      - name: Docling runner boundary tests
+        working-directory: services/docling-runner
+        run: python3 -m unittest test_app.py
       - run: docker compose --env-file .env.example -f docker-compose.local.yml config
       - name: Kafka protocol broker acceptance
         run: |
@@ -235,7 +240,9 @@ jobs:
           import sys
           source = Path("nginx-config/nginx.conf.template").read_text(encoding="utf-8")
           Path(sys.argv[1]).write_text(
-              source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key"),
+              source.replace("${BACKEND_API_SHARED_KEY}", "ci-test-key")
+                    .replace("${HAI_NGROK_HOST}", "hai-ci.ngrok.app")
+                    .replace("${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED}", "false"),
               encoding="utf-8",
           )
           PY
@@ -403,7 +410,7 @@ jobs:
         image: postgres:17-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: ci-isolation-postgres-password
           POSTGRES_DB: automation_hub
         ports:
           - 5432:5432
@@ -436,7 +443,7 @@ jobs:
           DB_HOST: localhost
           DB_PORT: "5432"
           DB_USER: postgres
-          DB_PASSWORD: postgres
+          DB_PASSWORD: ci-isolation-postgres-password
           DB_NAME: automation_hub
           # Empty CI database: production migrations are the schema authority.
           DB_AUTOMIGRATE: "false"

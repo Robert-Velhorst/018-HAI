@@ -41,8 +41,10 @@ type Repository interface {
 	// ExtendLease heartbeats a running job only while the caller still owns its
 	// current lease generation.
 	ExtendLease(id uuid.UUID, workerID string, leaseGeneration int64, now time.Time) (bool, error)
-	// ReapExpiredLeases returns jobs whose worker died back to pending.
-	ReapExpiredLeases(now time.Time, lease time.Duration) (int, error)
+	// ReapExpiredLeases returns expired jobs from one queue to pending. A worker
+	// only reaps its own queue so independent runners do not repeatedly scan or
+	// mutate one another's leases.
+	ReapExpiredLeases(queue string, now time.Time, lease time.Duration) (int, error)
 	Find(id uuid.UUID) (*models.DurableJob, error)
 	// CountActiveByKind counts jobs of a kind that are still pending or running.
 	// Used to keep recurring work singleton across restarts.
@@ -240,10 +242,13 @@ func (r *gormRepository) ownedLease(id uuid.UUID, workerID string, leaseGenerati
 }
 
 // ReapExpiredLeases recovers jobs whose worker died while holding the lease.
-func (r *gormRepository) ReapExpiredLeases(now time.Time, lease time.Duration) (int, error) {
+func (r *gormRepository) ReapExpiredLeases(queue string, now time.Time, lease time.Duration) (int, error) {
+	if queue == "" {
+		queue = "default"
+	}
 	cutoff := now.Add(-lease)
 	result := r.db.Model(&models.DurableJob{}).
-		Where("status = ? AND locked_at IS NOT NULL AND locked_at < ?", models.DurableJobRunning, cutoff).
+		Where("queue = ? AND status = ? AND locked_at IS NOT NULL AND locked_at < ?", queue, models.DurableJobRunning, cutoff).
 		Updates(map[string]any{
 			"status":    models.DurableJobPending,
 			"locked_by": "",

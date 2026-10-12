@@ -374,6 +374,15 @@ var entries = []Entry{
 		VerifiedAt: "2026-07-20", VerificationNote: "Current jlowin/fastmcp main revision and Apache-2.0 license checked on 2026-07-20. The isolated profile pins fastmcp 3.4.4 and implements no upstream tool execution, source access, or write capability by default.",
 	},
 	{
+		ID: "chatgpt-codex-mcp-daemon", Name: "ChatGPT/Codex Conversation History MCP", UpstreamURL: "https://github.com/oogxdd/chatgpt-codex-mcp-daemon", SourceCatalogURL: "https://api.ossinsight.io/v1/collections/10105/repos/", SourceCollection: "MCP Servers",
+		Status: StatusIntegrated, Category: "local conversation-history retrieval", IntegrationMode: "opt-in model-directed bounded read-only MCP tool loop",
+		Capabilities: []string{"conversation and Codex-session discovery", "message and surrounding-context retrieval", "original-record provenance", "corpus synchronization inspection", "bounded provenance-bearing task context"}, RecommendedFor: []string{"project continuity", "prior-decision recall", "latest-instruction discovery", "unfinished or conflicting commitment review", "conversation-history evidence discovery"},
+		RequiresApproval: true, LocalFirstCompatible: true,
+		Activation: "Run the operator-managed hist MCP helper behind a reviewed local Streamable HTTP adapter, set HAI_CHATGPT_LOGS_MCP_ENABLED=true and HAI_CHATGPT_LOGS_MCP_URL, then recreate the backend. During generation the model may select among nine statically reviewed read-only tools; HAI validates every argument and enforces per-result, call-count, model-round, and aggregate-context limits.",
+		Rationale:  "A bounded model-directed retrieval loop can discover sessions, follow search hits to original context, and inspect corpus completeness without exposing arbitrary MCP execution, starting a process, writing or refreshing the corpus, or granting retrieved text any authority.",
+		VerifiedAt: "2026-08-23", VerificationNote: "The upstream stdio MCP handshake and nine-tool read-only inventory were exercised on Windows. HAI's adapter supports JSON and Streamable HTTP SSE responses. Unit tests exercise model-directed multi-tool chaining, zero-call answers, rejected unreviewed calls, strict argument validation, and bounded results; a database-backed smoke test still requires an initialized operator corpus.",
+	},
+	{
 		ID: "vllm", Name: "vLLM", UpstreamURL: "https://github.com/vllm-project/vllm", SourceCatalogURL: "https://api.ossinsight.io/v1/collections/10109/repos/", SourceCollection: "LLM Inference Engines",
 		Status: StatusIntegrated, Category: "local high-throughput model inference", IntegrationMode: "integrated loopback OpenAI-compatible provider profile",
 		Capabilities: []string{"local model serving", "OpenAI-compatible API", "batched inference", "model capability discovery"}, RecommendedFor: []string{"local reasoning", "larger local models", "high-volume extraction"},

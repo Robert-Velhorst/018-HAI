@@ -4,6 +4,7 @@ package source
 // executes them, attaches them automatically, or lets them change policy.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,6 +33,16 @@ func isManualPlanningContextOnlyConnector(connectorKey string) bool {
 }
 
 func (s *service) fabricPatternItems(source *models.ConnectedSource, request ImportRequest) ([]ImportItem, error) {
+	return s.fabricPatternItemsContext(context.Background(), source, request)
+}
+
+func (s *service) fabricPatternItemsContext(ctx context.Context, source *models.ConnectedSource, request ImportRequest) ([]ImportItem, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if source == nil {
 		return nil, fmt.Errorf("Fabric patterns source is required")
 	}
@@ -47,6 +58,9 @@ func (s *service) fabricPatternItems(source *models.ConnectedSource, request Imp
 
 	items := make([]ImportItem, 0, fabricPatternMaxCount)
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if len(items) == fabricPatternMaxCount {
 			break
 		}

@@ -64,6 +64,19 @@ func TestLocalSafeWorkerRequiresMarker(t *testing.T) {
 	}
 }
 
+func TestLocalSafeWorkerRejectsOversizedMarkerWithoutCreatingArtifact(t *testing.T) {
+	workspace := t.TempDir()
+	w := NewAuthorizedLocalSafeWorker(workspace, newTestAuthorizationVerifier())
+	input := authorizedInput(t, workspace, "oversized.txt", strings.Repeat("x", maxSafeArtifactBytes+1))
+
+	if _, err := w.Run(context.Background(), input); err == nil {
+		t.Fatalf("oversized marker must be rejected")
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "oversized.txt")); !os.IsNotExist(err) {
+		t.Fatalf("oversized marker must not create an artifact, stat error = %v", err)
+	}
+}
+
 func TestVerifyFailsWhenMarkerAbsent(t *testing.T) {
 	ws := t.TempDir()
 	w := NewAuthorizedLocalSafeWorker(ws, newTestAuthorizationVerifier())
@@ -182,6 +195,31 @@ func TestVerifyDetectsByteIdenticalTargetSubstitution(t *testing.T) {
 	}
 	if verification := w.Verify(in, out); verification.Passed {
 		t.Fatalf("verification must reject a substituted target: %+v", verification)
+	}
+}
+
+func TestVerifyRejectsOversizedArtifactWithoutReadingItUnbounded(t *testing.T) {
+	ws := t.TempDir()
+	w := NewAuthorizedLocalSafeWorker(ws, newTestAuthorizationVerifier())
+	in := authorizedInput(t, ws, "artifact.txt", marker)
+	out, err := w.Run(context.Background(), in)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	file, err := os.OpenFile(out.ArtifactPath, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		t.Fatalf("open artifact: %v", err)
+	}
+	if _, err := file.WriteString(strings.Repeat("x", maxSafeArtifactBytes+1)); err != nil {
+		_ = file.Close()
+		t.Fatalf("expand artifact: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("close artifact: %v", err)
+	}
+
+	if verification := w.Verify(in, out); verification.Passed {
+		t.Fatalf("verification must reject oversized artifacts: %+v", verification)
 	}
 }
 

@@ -16,7 +16,7 @@ func healthyConfig() config.Configuration {
 		DbPort:                  5432,
 		DbName:                  "automation",
 		DbUser:                  "postgres",
-		DbPassword:              "postgres",
+		DbPassword:              "9f2b7c1ad4e83f5061bc9e7a2d4f8b13c6e05a97fd2b4e18c73a9056be1f2d4c",
 		ImageMaxSize:            5 * 1024 * 1024,
 		ImageSaveDir:            "images",
 		Brokers:                 []string{"kafka1:9092", "kafka2:9093"},
@@ -89,6 +89,34 @@ func TestDiagnoseEmptySecretsWarnButDoNotFail(t *testing.T) {
 		if c, ok := find(r, name); !ok || c.Severity != SeverityWarn {
 			t.Fatalf("%s severity = %s (found=%v), want warn", name, c.Severity, ok)
 		}
+	}
+}
+
+func TestDiagnoseRejectsShippedDatabaseCredentialInProduction(t *testing.T) {
+	cfg := healthyConfig()
+	cfg.RunMode = "production"
+	cfg.DbPassword = "postgres"
+
+	check, found := find(Diagnose(cfg), "database.password")
+	if !found {
+		t.Fatal("database.password check missing")
+	}
+	if check.Severity != SeverityFail {
+		t.Fatalf("severity = %q, want fail for shipped database credential in production", check.Severity)
+	}
+}
+
+func TestDiagnoseWarnsAboutShippedDatabaseCredentialOutsideProduction(t *testing.T) {
+	cfg := healthyConfig()
+	cfg.RunMode = "demo"
+	cfg.DbPassword = "postgres"
+
+	check, found := find(Diagnose(cfg), "database.password")
+	if !found {
+		t.Fatal("database.password check missing")
+	}
+	if check.Severity != SeverityWarn {
+		t.Fatalf("severity = %q, want warning for shipped database credential outside production", check.Severity)
 	}
 }
 

@@ -1082,7 +1082,11 @@ func probeProviderContext(parent context.Context, provider Provider, policy Poli
 		return result
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	// A provider catalogue is still bounded, but 256 KiB is smaller than a real
+	// aggregator's model list: truncating it makes the JSON unparseable and
+	// blocks a model that the provider does in fact report. The exact-identifier
+	// requirement below is unchanged; this only lets the check see the answer.
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, providerProbeResponseLimitBytes))
 	result.HTTPStatus = resp.StatusCode
 	if resp.StatusCode >= 300 {
 		result.Status = "failed"
@@ -1176,6 +1180,10 @@ func probeOdysseusProviderContext(parent context.Context, provider Provider, res
 func countProbeModels(provider Provider, raw []byte) int {
 	return len(probeModelIDs(provider, raw))
 }
+
+// providerProbeResponseLimitBytes bounds how much of a provider catalogue HAI
+// will read during a probe.
+const providerProbeResponseLimitBytes = 4 * 1024 * 1024
 
 func probeModelIDs(provider Provider, raw []byte) []string {
 	ids := []string{}
@@ -1868,6 +1876,9 @@ func providerRuntimeReadiness(provider Provider) providerReadiness {
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return providerReadiness{configured: false, status: "invalid_endpoint", reason: "provider endpoint must be an absolute http or https URL"}
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return providerReadiness{configured: false, status: "invalid_endpoint", reason: "provider endpoint must not contain credentials, query parameters, or fragments"}
 	}
 	host := parsed.Hostname()
 	if unsafeEndpointHost(host) && strings.ToLower(strings.TrimSpace(os.Getenv("LLM_ALLOW_LINK_LOCAL_ENDPOINTS"))) != "true" {

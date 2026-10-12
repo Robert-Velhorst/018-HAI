@@ -265,6 +265,11 @@ export interface IPursuitBrief {
   cards: IPursuitBriefCard[];
 }
 
+export interface IPursuitOverview {
+  dashboard: IPursuitDashboard;
+  brief: IPursuitBrief;
+}
+
 export interface IPursuitAction {
   label: string;
   owner: string;

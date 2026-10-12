@@ -3,6 +3,7 @@ import { NgModule } from '@angular/core'
 import { FormsModule } from '@angular/forms'
 import { RouterModule, Routes } from '@angular/router'
 import { NzButtonModule } from 'ng-zorro-antd/button'
+import { NzAlertModule } from 'ng-zorro-antd/alert'
 import { NzCardModule } from 'ng-zorro-antd/card'
 import { NzDrawerModule } from 'ng-zorro-antd/drawer'
 import { NzEmptyModule } from 'ng-zorro-antd/empty'
@@ -23,6 +24,7 @@ const routes: Routes = [{ path: '', component: BackgroundOperationsComponent }]
     CommonModule,
     FormsModule,
     RouterModule.forChild(routes),
+    NzAlertModule,
     NzButtonModule,
     NzCardModule,
     NzDrawerModule,

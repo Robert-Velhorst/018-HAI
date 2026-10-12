@@ -47,10 +47,22 @@ export interface IIntakeAnalysis {
   reason: string;
 }
 
+/** One bounded read-only result the model pulled from conversation history. */
+export interface IChatGPTLogsContextItem {
+  provider: string;
+  tool: string;
+  query: string;
+  projectKey?: string;
+  content: string;
+  sourceUri: string;
+  untrusted: boolean;
+}
+
 export interface IContextPlan {
   strategy: string[];
   usedContext: IRankedMemory[];
   sourceContext: IRankedExtraction[];
+  chatgptLogsContext?: IChatGPTLogsContextItem[];
   ragflowCandidates?: IRAGFlowCandidateContext[];
   ragflowExplanation?: string;
   sourceRefresh?: IScheduledSyncRun;
@@ -172,6 +184,20 @@ export interface IExecutedAction {
   endedAt: string;
 }
 
+/** One read-only MCP call the model asked for during the bounded tool loop. */
+export interface IMcpToolCallTrace {
+  attempt?: number;
+  round: number;
+  tool: string;
+  arguments?: unknown;
+  status: string;
+  resultChars: number;
+  sourceUri?: string;
+  detail: string;
+  startedAt: string;
+  completedAt: string;
+}
+
 export interface IExecutionResult {
   startedAt: string;
   completedAt: string;
@@ -184,6 +210,7 @@ export interface IExecutionResult {
   llmGeneration?: ILLMGenerationResult;
   toolExecution?: IToolExecutionResult;
   actions: IExecutedAction[];
+  mcpToolCalls?: IMcpToolCallTrace[];
   blockedReason?: string;
 }
 

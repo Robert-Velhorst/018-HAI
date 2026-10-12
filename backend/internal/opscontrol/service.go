@@ -11,6 +11,9 @@ import (
 	"automation-hub-backend/internal/autonomypolicy"
 	"automation-hub-backend/internal/executionbroker"
 	"automation-hub-backend/internal/operations"
+	"automation-hub-backend/internal/task"
+
+	"github.com/google/uuid"
 )
 
 var ErrControlPersistence = errors.New("opscontrol state persistence failed")
@@ -30,6 +33,7 @@ type Service struct {
 	runner        BackgroundRunner
 	authorization ExecutionAuthorizer
 	approvals     ControlApprovalRepository
+	reviews       task.TaskStateRepository
 	owner         string
 	space         string
 	now           func() time.Time
@@ -69,6 +73,190 @@ func (s *Service) SetBackgroundRunner(r BackgroundRunner) { s.runner = r }
 func (s *Service) WithExecutionAuthorizer(authorizer ExecutionAuthorizer) *Service {
 	s.authorization = authorizer
 	return s
+}
+
+// WithControlReviewRepository stores owner approvals for safety-control
+// changes in the existing append-only review ledger. It deliberately does not
+// accept caller-provided approval data.
+func (s *Service) WithControlReviewRepository(repository task.TaskStateRepository) *Service {
+	s.reviews = repository
+	return s
+}
+
+// ResumeApprovalRequest is the durable, exact-effect review created before an
+// emergency stop can be cleared. The binding digest changes with the persisted
+// stop revision, so an older approval cannot clear a newer stop.
+type ResumeApprovalRequest struct {
+	ReviewItemID          string `json:"reviewItemId"`
+	ApprovalSourceID      string `json:"approvalSourceId"`
+	ApprovalBindingDigest string `json:"approvalBindingDigest"`
+}
+
+const controlReviewApprovalPrefix = "opscontrol-review:"
+
+// RequestResumeApproval creates or returns the one pending owner review for
+// the current emergency-stop revision.
+func (s *Service) RequestResumeApproval(ctx context.Context, actor string) (ResumeApprovalRequest, error) {
+	if err := s.requireOwnerActor(actor); err != nil {
+		return ResumeApprovalRequest{}, err
+	}
+	if s.reviews == nil {
+		return ResumeApprovalRequest{}, ErrAuthorizationUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return ResumeApprovalRequest{}, err
+	}
+	state, err := s.control.emergency.Status()
+	if err != nil {
+		return ResumeApprovalRequest{}, fmt.Errorf("%w: %v", ErrControlPersistence, err)
+	}
+	if !state.Engaged {
+		return ResumeApprovalRequest{}, fmt.Errorf("%w: emergency stop is not engaged", ErrAuthorizationDenied)
+	}
+	binding, err := s.resumeEffectDigest(state.Revision)
+	if err != nil {
+		return ResumeApprovalRequest{}, err
+	}
+	taskID := resumeReviewTaskID(binding)
+	items, err := s.pendingControlReviews()
+	if err != nil {
+		return ResumeApprovalRequest{}, fmt.Errorf("read pending control reviews: %w", err)
+	}
+	for _, item := range items {
+		if item.TaskID == taskID {
+			return resumeApprovalFor(item.ID, binding), nil
+		}
+	}
+
+	item, err := s.reviews.CreateReviewItem(s.owner, task.ReviewQueueItem{
+		ID:     uuid.NewString(),
+		TaskID: taskID,
+		Request: task.IntakeRequest{
+			OwnerIdentity:   s.owner,
+			Request:         fmt.Sprintf("Resume background processing after emergency-stop revision %d.", state.Revision),
+			ProjectKey:      "runtime-control",
+			SuccessCriteria: []string{"clear only emergency-stop revision " + fmt.Sprint(state.Revision), "retain approval audit evidence"},
+		},
+		Reason:    "Emergency-stop resume is a critical safety-control change. Owner approval is required for this exact stop revision.",
+		Priority:  "high",
+		Status:    "open",
+		CreatedAt: s.now().UTC(),
+	})
+	if err != nil {
+		return ResumeApprovalRequest{}, fmt.Errorf("create control review: %w", err)
+	}
+	return resumeApprovalFor(item.ID, binding), nil
+}
+
+// ResumeWithApprovedReview consumes the fresh durable approval for the current
+// stop revision. It never resolves a review itself: review and execution are
+// deliberately separate owner actions.
+func (s *Service) ResumeWithApprovedReview(ctx context.Context, actor, reviewItemID string) (EmergencyStopState, error) {
+	if err := s.requireOwnerActor(actor); err != nil {
+		return s.control.EmergencyState(), err
+	}
+	if s.reviews == nil {
+		return s.control.EmergencyState(), ErrAuthorizationUnavailable
+	}
+	state, err := s.control.emergency.Status()
+	if err != nil {
+		return s.control.EmergencyState(), fmt.Errorf("%w: %v", ErrControlPersistence, err)
+	}
+	if !state.Engaged {
+		return state, nil
+	}
+	binding, err := s.resumeEffectDigest(state.Revision)
+	if err != nil {
+		return state, err
+	}
+	reviewItemID = strings.TrimSpace(reviewItemID)
+	item, err := s.reviews.FindReviewItem(s.owner, reviewItemID)
+	if err != nil {
+		return state, fmt.Errorf("%w: approved resume review is unavailable", ErrAuthorizationDenied)
+	}
+	if item.TaskID != resumeReviewTaskID(binding) {
+		return state, ErrAuthorizationMismatch
+	}
+	decision, err := s.reviews.FindApprovedReviewDecision(s.owner, reviewItemID)
+	if err != nil || decision == nil {
+		return state, fmt.Errorf("%w: approved resume review is required", ErrAuthorizationDenied)
+	}
+	return s.DisengageEmergencyStop(ctx, ControlAuthorization{
+		ActorIdentity:         strings.TrimSpace(actor),
+		IdempotencyKey:        "opscontrol-resume:" + reviewItemID,
+		TaskID:                item.TaskID,
+		ApprovalSourceID:      controlReviewApprovalPrefix + reviewItemID,
+		ApprovalBindingDigest: binding,
+	})
+}
+
+// ApproveAndResume records the owner's explicit decision and immediately
+// consumes it for the exact stop revision. A transport or authorization retry
+// after the decision is durable may consume that same exact review; it cannot
+// approve a different effect or clear a later stop revision.
+func (s *Service) ApproveAndResume(ctx context.Context, actor, reviewItemID, note string) (EmergencyStopState, error) {
+	if err := s.requireOwnerActor(actor); err != nil {
+		return s.control.EmergencyState(), err
+	}
+	if s.reviews == nil {
+		return s.control.EmergencyState(), ErrAuthorizationUnavailable
+	}
+	reviewItemID = strings.TrimSpace(reviewItemID)
+	if _, err := s.reviews.ResolveReviewItem(s.owner, reviewItemID, task.ReviewResolution{
+		Decision:   "approved",
+		Note:       strings.TrimSpace(note),
+		ResolvedAt: s.now().UTC(),
+	}); err != nil {
+		// ResolveReviewItem correctly rejects resolving an already approved
+		// record. That must not turn a completed owner confirmation into an
+		// unrecoverable state when the following exact authorization call had a
+		// transient failure. ResumeWithApprovedReview still verifies the owner,
+		// current stop revision, binding, freshness, and authorization receipt.
+		if approved, lookupErr := s.reviews.FindApprovedReviewDecision(s.owner, reviewItemID); lookupErr == nil && approved != nil {
+			return s.ResumeWithApprovedReview(ctx, actor, reviewItemID)
+		}
+		return s.control.EmergencyState(), fmt.Errorf("%w: resume approval could not be recorded", ErrAuthorizationDenied)
+	}
+	return s.ResumeWithApprovedReview(ctx, actor, reviewItemID)
+}
+
+func (s *Service) pendingControlReviews() ([]task.ReviewQueueItem, error) {
+	if pending, ok := s.reviews.(task.PendingReviewStateRepository); ok {
+		return pending.ListPendingReviewItems(s.owner, 200)
+	}
+	return s.reviews.ListReviewItems(s.owner, 200)
+}
+
+func (s *Service) requireOwnerActor(actor string) error {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return ErrUnauthenticated
+	}
+	if strings.TrimSpace(s.owner) == "" || actor != s.owner {
+		return ErrAuthorizationDenied
+	}
+	return nil
+}
+
+func (s *Service) resumeEffectDigest(revision uint64) (string, error) {
+	return controlEffectDigest(controlEffect{
+		Version:       1,
+		OwnerIdentity: s.owner,
+		Action:        clearEmergencyStopAction,
+		ResourceType:  emergencyStopResourceType,
+		ResourceID:    emergencyStopResourceID(revision),
+		Target:        "disengaged",
+	})
+}
+
+func resumeReviewTaskID(binding string) string { return "opscontrol:resume:" + binding }
+
+func resumeApprovalFor(reviewItemID, binding string) ResumeApprovalRequest {
+	return ResumeApprovalRequest{
+		ReviewItemID:          reviewItemID,
+		ApprovalSourceID:      controlReviewApprovalPrefix + reviewItemID,
+		ApprovalBindingDigest: binding,
+	}
 }
 
 // EngageEmergencyStop halts all background processing (persisted).

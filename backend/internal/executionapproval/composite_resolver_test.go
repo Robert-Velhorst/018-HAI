@@ -48,6 +48,32 @@ func TestCompositeResolverRoutesEachReferenceToExactlyOneResolver(t *testing.T) 
 	}
 }
 
+func TestCompositeResolverRoutesOpsControlReviewsWithoutFallback(t *testing.T) {
+	digest := strings.Repeat("c", 64)
+	controlSpy := &approvalResolverSpy{result: executionauth.ResolvedApproval{
+		SourceID: OpsControlReviewPrefix + uuid.NewString(),
+	}}
+	taskSpy := &approvalResolverSpy{}
+	workflowSpy := &approvalResolverSpy{}
+	portfolioSpy := &approvalResolverSpy{}
+	composite, err := NewCompositeResolver(taskSpy, workflowSpy, portfolioSpy)
+	if err != nil {
+		t.Fatalf("NewCompositeResolver: %v", err)
+	}
+	composite, err = composite.WithOpsControlReviewResolver(controlSpy)
+	if err != nil {
+		t.Fatalf("WithOpsControlReviewResolver: %v", err)
+	}
+
+	result, err := composite.Resolve(context.Background(), "alice", controlSpy.result.SourceID, digest)
+	if err != nil || result.SourceID != controlSpy.result.SourceID {
+		t.Fatalf("control review result = %#v, %v", result, err)
+	}
+	if controlSpy.calls != 1 || taskSpy.calls != 0 || workflowSpy.calls != 0 || portfolioSpy.calls != 0 {
+		t.Fatalf("control=%d task=%d workflow=%d portfolio=%d", controlSpy.calls, taskSpy.calls, workflowSpy.calls, portfolioSpy.calls)
+	}
+}
+
 func TestCompositeResolverNeverFallsBackAfterSelectedResolverRejects(t *testing.T) {
 	digest := strings.Repeat("6", 64)
 	taskSpy := &approvalResolverSpy{err: ErrBindingMismatch}

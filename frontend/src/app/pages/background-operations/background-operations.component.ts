@@ -1,8 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http'
 import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
-import { forkJoin } from 'rxjs'
-import { finalize, timeout } from 'rxjs/operators'
+import { finalize, timeout } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
   IAccountFeed,
@@ -26,18 +25,21 @@ export class BackgroundOperationsComponent implements OnInit {
   feeds: IAccountFeed[] = []
   lastReport?: IBackgroundRunReport
   lastRunError = ''
+  overviewLoadError = ''
   lastRunNotice = ''
 
   loading = false
   running = false
   statusFilter = ''
+  private refreshQueued = false
 
   selected?: IOperation
   selectedEvents: IOperationEvent[] = []
   detailVisible = false
+  private readonly pendingOperationActionIds = new Set<string>()
 
-	private readonly loadTimeoutMs = 6000
-	private readonly operationTimeoutMs = 30000
+  private readonly loadTimeoutMs = 6000
+  private readonly operationTimeoutMs = 30000
 
   readonly statusFilters = [
     { value: '', label: 'All' },
@@ -58,24 +60,33 @@ export class BackgroundOperationsComponent implements OnInit {
   }
 
   refresh(): void {
+    if (this.loading) {
+      this.refreshQueued = true
+      return
+    }
     this.loading = true
-    forkJoin({
-      dashboard: this.service.dashboard(),
-      operations: this.service.list(this.statusFilter ? { status: this.statusFilter } : undefined),
-      feeds: this.service.feeds(),
-	}).pipe(
-	  timeout(this.loadTimeoutMs),
-	  finalize(() => (this.loading = false))
-	).subscribe({
+    this.overviewLoadError = ''
+    this.service.overview(this.statusFilter ? { status: this.statusFilter } : undefined).pipe(
+      timeout(this.loadTimeoutMs),
+      finalize(() => this.finishRefresh())
+    ).subscribe({
       next: ({ dashboard, operations, feeds }) => {
         this.dashboard = dashboard
-        this.operations = operations.operations ?? []
-        this.feeds = feeds.feeds ?? []
+        this.operations = operations ?? []
+        this.feeds = feeds ?? []
       },
       error: () => {
+        this.overviewLoadError = 'Could not load the operational dashboard. The displayed queue may be incomplete.'
         this.notification.error('Error', 'Failed to load background operations.')
       },
     })
+  }
+
+  private finishRefresh(): void {
+    this.loading = false
+    if (!this.refreshQueued) return
+    this.refreshQueued = false
+    this.refresh()
   }
 
   setFilter(value: string): void {
@@ -84,6 +95,7 @@ export class BackgroundOperationsComponent implements OnInit {
   }
 
   runBackground(): void {
+    if (this.running) return
     if (!this.hasEnabledFeeds()) {
       this.lastRunNotice = 'No enabled account feed is configured for this background pass. Connect or enable a feed first.'
       this.notification.info('Connect a source first', 'This pass reads only enabled account feeds. No work was started.')
@@ -92,10 +104,10 @@ export class BackgroundOperationsComponent implements OnInit {
     this.running = true
     this.lastRunError = ''
     this.lastRunNotice = ''
-	this.service.runBackground().pipe(
-	  timeout(this.operationTimeoutMs),
-	  finalize(() => (this.running = false))
-	).subscribe({
+    this.service.runBackground().pipe(
+      timeout(this.operationTimeoutMs),
+      finalize(() => (this.running = false))
+    ).subscribe({
       next: (report) => {
         this.lastReport = report
         this.notification.success(
@@ -113,8 +125,6 @@ export class BackgroundOperationsComponent implements OnInit {
 
   backgroundRunError(err: unknown): string {
     const response = err as HttpErrorResponse
-    const detail = response?.error?.error
-    if (typeof detail === 'string' && detail.trim()) return detail
     if (response?.status === 404) {
       return 'The background engine is not reachable. Refresh the page after the local gateway has restarted.'
     }
@@ -130,6 +140,8 @@ export class BackgroundOperationsComponent implements OnInit {
     if (response?.status === 0 || response?.status >= 500) {
       return 'The background engine is temporarily unavailable. Your sources and existing operations were not changed. Refresh after the local backend is healthy.'
     }
+    const detail = response?.error?.error
+    if (typeof detail === 'string' && detail.trim() && response.status >= 400 && response.status < 500) return detail
     return 'The background pass could not start. Your sources and existing operations were not changed.'
   }
 
@@ -147,7 +159,7 @@ export class BackgroundOperationsComponent implements OnInit {
     this.selected = op
     this.selectedEvents = []
     this.detailVisible = true
-	this.service.events(op.id).pipe(timeout(this.loadTimeoutMs)).subscribe({
+    this.service.events(op.id).pipe(timeout(this.loadTimeoutMs)).subscribe({
       next: (res) => (this.selectedEvents = res.events ?? []),
       error: () => this.notification.error('Error', 'Failed to load the audit trail.'),
     })
@@ -159,7 +171,12 @@ export class BackgroundOperationsComponent implements OnInit {
   }
 
   approve(op: IOperation): void {
-	this.service.approve(op.id).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    if (!this.beginOperationAction(op)) return
+
+    this.service.approve(op.id).pipe(
+      timeout(this.operationTimeoutMs),
+      finalize(() => this.endOperationAction(op))
+    ).subscribe({
       next: () => {
         this.notification.success('Approved', `${op.title} approved.`)
         this.refresh()
@@ -169,7 +186,12 @@ export class BackgroundOperationsComponent implements OnInit {
   }
 
   run(op: IOperation): void {
-	this.service.run(op.id).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    if (!this.beginOperationAction(op)) return
+
+    this.service.run(op.id).pipe(
+      timeout(this.operationTimeoutMs),
+      finalize(() => this.endOperationAction(op))
+    ).subscribe({
       next: (res) => {
         if (res.verified) {
           this.notification.success('Verified', `${op.title} executed and verified.`)
@@ -185,6 +207,20 @@ export class BackgroundOperationsComponent implements OnInit {
 
   canApprove(op: IOperation): boolean {
     return op.status === 'awaiting_approval'
+  }
+
+  isOperationActionPending(op: IOperation): boolean {
+    return this.pendingOperationActionIds.has(op.id)
+  }
+
+  private beginOperationAction(op: IOperation): boolean {
+    if (this.isOperationActionPending(op)) return false
+    this.pendingOperationActionIds.add(op.id)
+    return true
+  }
+
+  private endOperationAction(op: IOperation): void {
+    this.pendingOperationActionIds.delete(op.id)
   }
 
   canRun(op: IOperation): boolean {

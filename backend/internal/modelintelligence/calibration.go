@@ -191,6 +191,13 @@ func wilsonLowerBound(successes, total int) float64 {
 	p := float64(successes) / n
 	denominator := 1 + z*z/n
 	center := p + z*z/(2*n)
+	if successes == 0 {
+		// The bound is exactly zero here: the centre and the margin are the same
+		// quantity. Computing it anyway leaves floating-point noise a few parts
+		// in 10^18 either side of zero, which is not an acceptance rate and,
+		// when it lands on negative zero, is not even stable in storage.
+		return 0
+	}
 	margin := z * math.Sqrt((p*(1-p)+z*z/(4*n))/n)
 	return (center - margin) / denominator
 }

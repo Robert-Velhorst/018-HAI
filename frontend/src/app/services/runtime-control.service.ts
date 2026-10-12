@@ -12,6 +12,7 @@ import {
   IPreparedControlApproval,
   IReadiness,
   IRecoveryReport,
+  IResumeApprovalRequest,
 } from '../models/runtime-control.model.interface'
 
 @Injectable({ providedIn: 'root' })

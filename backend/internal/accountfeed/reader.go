@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"automation-hub-backend/internal/pathsafety"
 )
@@ -47,7 +46,7 @@ func (r *LocalFileReader) Read(ctx context.Context) ([]FeedItem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("accountfeed: %w", err)
 	}
-	data, err := os.ReadFile(full)
+	data, err := readBoundedLocalFeedFile(ctx, full)
 	if err != nil {
 		return nil, fmt.Errorf("accountfeed: read feed file: %w", err)
 	}

@@ -114,6 +114,7 @@ describe('RuntimeControlComponent role boundaries', () => {
       'success',
       'warning',
       'error',
+	  'info',
     ])
 
     runtimeService.status.and.returnValue(of(activeStatus))
@@ -178,7 +179,7 @@ describe('RuntimeControlComponent role boundaries', () => {
     }).compileComponents()
   })
 
-  it('renders owner controls and permits resume and autonomy changes', () => {
+  it('requires a durable owner review before resuming and then consumes it', () => {
     authSessionService.session.and.returnValue(of(ownerSession))
     runtimeService.status.and.returnValue(of({
       ...activeStatus,
@@ -191,9 +192,9 @@ describe('RuntimeControlComponent role boundaries', () => {
     createComponent()
 
     expect(text()).toContain('Owner authority')
-    expect(button('Resume').disabled).toBeFalse()
+    expect(button('Prepare resume review').disabled).toBeFalse()
 
-    button('Resume').click()
+    button('Prepare resume review').click()
     expect(runtimeService.resume).not.toHaveBeenCalled()
     expect(modal.confirm).toHaveBeenCalled()
     ;(modal.confirm.calls.mostRecent().args[0]!.nzOnOk as () => void)()
@@ -294,7 +295,7 @@ describe('RuntimeControlComponent role boundaries', () => {
     }
     fixture.detectChanges()
 
-    expect(button('Resume').disabled).toBeTrue()
+    expect(button('Prepare resume review').disabled).toBeTrue()
     component.resume()
     expect(runtimeService.resume).not.toHaveBeenCalled()
     expect(text()).toContain('Only the owner can resume processing')

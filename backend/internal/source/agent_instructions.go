@@ -4,6 +4,7 @@ package source
 // reviewed plan, but never override HAI policy or grant execution capability.
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,16 @@ const (
 var projectInstructionNames = []string{"AGENTS.md", "CLAUDE.md"}
 
 func (s *service) projectInstructionItems(source *models.ConnectedSource, request ImportRequest) ([]ImportItem, error) {
+	return s.projectInstructionItemsContext(context.Background(), source, request)
+}
+
+func (s *service) projectInstructionItemsContext(ctx context.Context, source *models.ConnectedSource, request ImportRequest) ([]ImportItem, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if source == nil {
 		return nil, fmt.Errorf("project instructions source is required")
 	}
@@ -31,6 +42,9 @@ func (s *service) projectInstructionItems(source *models.ConnectedSource, reques
 
 	items := make([]ImportItem, 0, len(projectInstructionNames))
 	for _, name := range projectInstructionNames {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		path := filepath.Join(projectRoot, name)
 		info, err := os.Lstat(path)
 		if err != nil {
