@@ -3052,3 +3052,39 @@ No operations-control code was ported. This is static comparison of staged
 source and tests; emergency-stop behavior was not exercised against a live
 runtime. PR #36 CI status is tracked separately and remains pending until a
 successful check for the exact pushed head is observed.
+
+### October 12, 2026: ambient and proactivity comparison
+
+Reviewed eight differing staged files under `backend/internal/ambient/`,
+seven under `backend/internal/ambientmonitor/`, and three under
+`backend/internal/proactivity/` against PR #36 at `efc0f714`. No ambient or
+proactivity code was ported:
+
+- The snapshot deletes `OverviewSummaryForOwner` and the handler's validated
+  summary view. That reverts the PR's small owner-scoped dashboard projection
+  to loading full opportunity history; tests that verify summary bounds and
+  skip loading opportunity records are removed.
+- It deletes tests for one owner-scoped pursuit read, fail-closed behavior
+  when owner lookup fails, rejection of cross-owner/unscoped dashboard data,
+  and non-pursuit visibility that does not read pursuit state. These are
+  important tenant-isolation and minimal-read contracts.
+- The snapshot removes the batched fingerprint lookup and the persistence
+  optimization that avoids unchanged hourly writes while refreshing freshness
+  daily. It also removes tests for bulk lookup, semantic-change writes, and
+  daily freshness. These resource-saving behaviors already exist in the PR.
+- It removes scheduler status reporting and its disabled-policy test.
+- Ambient-monitor collectors in the snapshot read counts and rows in separate
+  queries rather than a read-only repeatable-read transaction. That can make
+  the displayed count and captured record set disagree under concurrent
+  updates. A monotonic completion timestamp adjustment and composition
+  eligibility calculation are also absent; the related completion-clock test
+  is deleted.
+- Proactivity drops its narrowly bounded two-microsecond logical-clock
+  allowance for durable monitor transitions and deletes its test. This is not
+  a reason to accept unbounded future timestamps; retain the current bounded
+  rule.
+
+These are source and test comparisons, not live ambient polling or
+cross-account runtime acceptance. Snapshot files remain unchanged. The latest
+PR #36 head is tracked above; queued CI from preceding heads does not prove
+this or the current head's runtime behavior.
