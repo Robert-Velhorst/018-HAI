@@ -79,7 +79,11 @@ func (h *Handler) Update(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, errorResponse)
 		return
 	}
-	userID := temp.(uuid.UUID)
+	userID, ok := temp.(uuid.UUID)
+	if !ok || userID == uuid.Nil {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Message: "Unauthorized", ErrorCode: http.StatusUnauthorized})
+		return
+	}
 	sessionValue, ok := c.Get("authSession")
 	if !ok {
 		c.JSON(http.StatusUnauthorized, dto.ErrorResponse{Message: "Please log in again", ErrorCode: http.StatusUnauthorized})
@@ -111,6 +115,10 @@ func (h *Handler) Update(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, errorResponse)
 		return
 	}
+	if updatedUser == nil {
+		c.JSON(http.StatusInternalServerError, dto.ErrorResponse{Message: "Error updating user", ErrorCode: http.StatusInternalServerError})
+		return
+	}
 	userResponse := dto.UserResponse{
 		ID:    updatedUser.ID,
 		Email: updatedUser.Email,
@@ -136,10 +144,16 @@ func (h *Handler) GetCurrentUser(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, errorResponse)
 		return
 	}
-	userID := temp.(uuid.UUID)
+	userID, ok := temp.(uuid.UUID)
+	if !ok || userID == uuid.Nil {
+		errorResponse.Message = "Unauthorized"
+		errorResponse.ErrorCode = http.StatusUnauthorized
+		c.JSON(http.StatusUnauthorized, errorResponse)
+		return
+	}
 
 	user, err := h.userService.GetUserByID(userID)
-	if err != nil {
+	if err != nil || user == nil {
 		errorResponse.Message = "User not found"
 		errorResponse.ErrorCode = http.StatusNotFound
 		c.JSON(http.StatusNotFound, errorResponse)
