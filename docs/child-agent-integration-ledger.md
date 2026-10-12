@@ -5189,3 +5189,38 @@ copies authoritative over the canonical PR files. No patch was replayed.
 
 This closes the disposition of these specific recovered patch/test artifacts,
 not every event that mentioned them or the full 793-target semantic audit.
+
+### October 12, 2026: staged integration snapshot blob crosswalk
+
+Compared the staged path set in the read-only integration snapshot at
+`91c8620c557229f1da4ed15fcbb7088c6a6947a7` against this PR worktree at
+`62a1f5eeb451ffeef0782ce3e5ba96990bd82dfc`, using Git index/tree blob IDs
+only. Of 1,790 staged paths, 1,498 have byte-identical blobs in the PR, 288
+shared paths differ, and three paths are absent from the PR tree:
+
+- `backend/migrations/post/0004_operations_owner_workspace_dedupe_active.down.sql`
+- `backend/migrations/post/0004_operations_owner_workspace_dedupe_active.up.sql`
+- `nginx-config/nginx.conf`
+
+One path matching a secret/credential filename pattern was excluded from this
+comparison without reading its contents. `.env.example` was included. The two
+snapshot-only migration filenames are not missing behavior: prior source and
+blob checks recorded that their contents are identical to the PR's
+`0006_operations_owner_workspace_dedupe_active` pair. The snapshot labels them
+`0004`, which collides with the PR's automation-event outbox migration and
+must not be copied or applied under that number. The third path,
+`nginx-config/nginx.conf`, was previously found stale and unsafe to substitute
+for the PR's current template; it is not an adoption candidate.
+
+The snapshot path list itself does not establish that each changed blob is
+valid, safe, or authoritative. The ledger contained literal path mentions for
+76 of the 291 non-identical eligible paths; this is a navigation aid only, not
+a semantic coverage measure. The differing paths are concentrated in backend
+(139), frontend (67), IDP (24), scripts (31), docs (14), and smaller root,
+gateway, services, and Nginx areas. Each candidate still requires provenance,
+behavioral comparison, and appropriate tests before any port is considered.
+
+No snapshot files were read into the worktree, changed, staged, or removed by
+this comparison. No code was automatically adopted from the snapshot. This
+crosswalk does not close the semantic audit or make any local archive eligible
+for deletion.
