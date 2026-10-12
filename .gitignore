@@ -36,7 +36,9 @@ Thumbs.db
 .playwright-mcp/
 .playwright-cli/
 workflow-*.png
-security-snapshots/
+security-snapshots/*
+!security-snapshots/.gitignore
+!security-snapshots/README.md
 
 # Environment backups. Never deliver these — a backup of .env.local carries the
 # same real local secrets. Covers .env.local.bak and any *.bak.
@@ -64,7 +66,9 @@ support-bundle-*.tar.gz
 !/agent-workspaces/.gitkeep
 /phase2-feeds/*
 !/phase2-feeds/.gitkeep
-mini-swe-workspaces/
+mini-swe-workspaces/*
+!mini-swe-workspaces/.gitignore
+!mini-swe-workspaces/.gitkeep
 hai-repo-link/
 
 # Local deployment stamps and extracted frontend bundles.

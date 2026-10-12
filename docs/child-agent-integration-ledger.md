@@ -5092,3 +5092,74 @@ preserved completed-agent reports remain available in the PR, not that each
 report claim or nested `task_complete` event has been semantically validated.
 The original transcript archives therefore remain protected pending the open
 semantic crosswalk and PR/cleanup gates.
+
+### October 12, 2026: corrected transcript patch-path reconciliation
+
+Added the read-only PowerShell 7 utility
+`scripts/audit-hai-transcript-patch-paths.ps1` and ran it over all 18 files in
+`D:\codex-temp\hai-completed-agent-sessions` (20,739,169,122 bytes). The
+utility emits only counts and relative target paths. It does not write to or
+remove transcript data. The invocation compared absolute targets from the
+original checkout with the current PR worktree, including the historical
+`hai-repo-link` alias.
+
+The pass found 45,017 JSONL records containing the `patch_apply_end` marker;
+44,997 were actual `event_msg` patch records (44,941 successful, 56 failed)
+and 20 were other record types containing that text. It parsed all marker
+records without JSON errors. The patch events contain 793 unique target paths
+and 70,295 path references: 68,756 to the primary checkout, 1,214 to the
+separate `work\018-hai-port-engine-control` checkout, and 325 to temporary
+audit/smoke paths. This reconciles the earlier 45,017 count: that was a marker
+count, not an exact count of patch event records.
+
+Of 704 unique primary-checkout paths, 14 use the historical
+`hai-repo-link\` prefix and resolve to canonical, tracked PR paths after alias
+normalization. At scan time 677 paths were tracked in the PR; four additional
+paths existed in the worktree but were the safe workspace-policy files added
+for this crosswalk and had not yet been committed. The remaining 23 paths were
+not present in the PR tree:
+
+- Local-only state: `.env.local` and `.git\info\exclude`. Neither was read or
+  copied; the former is secret-bearing environment state and the latter is
+  repository-local configuration.
+- Preview/review tooling: `.codex-preview-server.mjs`,
+  `.tmp-ai-code-review.json`, `frontend\mock-preview-server.js`, and
+  `frontend\proxy.preview.json`. These are absent from both the current source
+  checkout and staged source snapshot; path references alone do not justify
+  restoring them as product code.
+- `nginx-config\nginx.conf` is present in the old source checkout but not the
+  staged snapshot or PR. It is a stale runtime config with a literal
+  placeholder backend key and lacks the PR template's configured secret
+  interpolation and host-runtime deny route. The current
+  `nginx-config/nginx.conf.template` is the canonical implementation; the old
+  file was deliberately not copied.
+- Sixteen recovery/audit paths were not present in the current source checkout
+  or staged snapshot: `pg-lifecycle-recovery.go.txt`,
+  `recovery\catalog_test.go`, `recovery\pg-active-invariant.patch`,
+  `recovery\pg-functions.patch`, `recovery\pg-trigger.patch`, the eight
+  `recovery\registry-audit-stage\...` files, `recovery\test-small.patch`,
+  `registry-postgres-audit-test.tmp`, and
+  `repository_postgres_constitution_test.go`. Transcript patch records show
+  these paths were subsequently deleted from the working tree; the lifecycle
+  note was empty at deletion. The registry-audit staged copies map to canonical
+  registry/migration/document paths already in the PR and are covered by the
+  registry comparison entries above. The reviewed migration includes the
+  active-constitution history trigger/functions and corresponding contract
+  assertions. The remaining patch-file intent is not all semantically closed
+  by this path inventory, so those historical records remain protected.
+
+The four workspace-policy files added during this pass are
+`security-snapshots/.gitignore`, `security-snapshots/README.md`,
+`mini-swe-workspaces/.gitignore`, and `mini-swe-workspaces/.gitkeep`. Root
+ignore rules now allow only these policy/placeholder files while keeping
+snapshot and workspace payloads ignored. `git check-ignore` confirmed example
+payloads remain ignored and the four policy files are visible to Git. They
+were still untracked when the archive scan ran and must be included in the PR
+commit before this entry is considered published.
+
+This closes a structural path inventory and ports the missing repository
+workspace guidance, not the full semantic review of 793 targets or every
+transcript event. The other 1,214 scratch-checkout references, 325 temporary
+references, source snapshot differences, child attribution, and external
+acceptance remain open. No source checkout, snapshot, transcript, diagnostic,
+credential, or runtime data was altered or removed.
