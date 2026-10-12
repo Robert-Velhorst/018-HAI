@@ -144,6 +144,7 @@ jobs:
           ./scripts/test-hai-transcript-cleanup-readiness.ps1
           ./scripts/test-hai-transcript-cleanup-gate-contract.ps1
           ./scripts/test-hai-transcript-removal-contract.ps1
+          ./scripts/test-hai-supplemental-transcript-removal-contract.ps1
           ./scripts/test-hai-supplemental-transcript-cleanup-contract.ps1
           ./scripts/test-hai-local-cleanup-readiness.ps1
           ./scripts/test-hai-temp-fixture-cleanup-contract.ps1
@@ -221,6 +222,7 @@ jobs:
           ./scripts/test-hai-detached-volume-archive-contract.ps1
           ./scripts/test-hai-transcript-cleanup-gate-contract.ps1
           ./scripts/test-hai-transcript-removal-contract.ps1
+          ./scripts/test-hai-supplemental-transcript-removal-contract.ps1
           ./scripts/test-hai-supplemental-transcript-cleanup-contract.ps1
           ./scripts/test-hai-temp-fixture-cleanup-contract.ps1
           ./scripts/test-hai-volume-cleanup-readiness-contract.ps1
