@@ -2440,11 +2440,11 @@ func (s *service) executeAllowedSteps(plan *CompletionPlan, request IntakeReques
 		if ctx.Err() != nil {
 			return cancelledTaskExecution(result, plan, request, started)
 		}
-		generateWithContext := func(request llm.GenerateRequest) (*llm.GenerationResult, error) {
-			if err := ctx.Err(); err != nil {
+		generateWithContext := func(generationContext context.Context, request llm.GenerateRequest) (*llm.GenerationResult, error) {
+			if err := generationContext.Err(); err != nil {
 				return nil, err
 			}
-			request.CancellationContext = ctx
+			request.CancellationContext = generationContext
 			return s.llmService.Generate(request)
 		}
 		loop := runChatGPTLogsToolLoop(ctx, s.chatgptLogsContext, generateWithContext, generationRequest)
