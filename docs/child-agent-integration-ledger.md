@@ -6170,3 +6170,45 @@ diagnostic, environment, database, or worktree was changed or removed. The
 current PR head `6a2aa8fdae802d83aa854f59d880952de25c2287` passed exact-head
 GitHub Actions run `38299612642` with all 36 jobs successful, including the
 real-Postgres migration suite. PR #36 remains open and unmerged; the wider
+content/provenance crosswalk and local cleanup gates remain incomplete.
+
+### October 12, 2026: dirty-checkout CI workflow crosswalk
+
+Compared the preserved checkout's 786-addition/103-deletion change to
+`.github/workflows/ci.yml` with the current PR workflow. The PR already contains
+the common runner matrix, redacted secret scan, guarded Windows installer and
+native runtime checks, Redis/PostgreSQL IDP regressions, strict frontend checks,
+owned browser stack, provider fixture, Promptfoo runner, authenticated smoke,
+real-Postgres migration integration, and two-account isolation gates. The older
+checkout's workflow omits four current PR safeguards: the detached-volume
+cleanup-readiness contracts, A2A bridge race tests, Docling runner boundary
+tests, and live-Trello acceptance launcher contract. Those omissions would
+reduce coverage, so no workflow code was copied.
+
+This is a source-level contract comparison; exact workflow execution evidence
+for the current PR head `a1a54445bca5dfcd6c5a1e72660674ad17ab574a` is Actions run
+`38301996815`, which passed all 36 jobs. It does not establish that the older
+checkout's 3,167 dirty/untracked paths have all been semantically reviewed.
+The primary dirty checkout, its untracked files, transcript archives, and local
+runtime data remain unchanged. The full semantic/provenance audit and cleanup
+gates remain open.
+
+### October 12, 2026: agent runtime and coordination source crosswalk
+
+Compared the legacy checkout's complete `backend/internal/agentruntime`
+candidate set with the PR source after normalizing CRLF/LF. The candidate
+`runtime.go`, `runtime_test.go`, DeepSeek harness and authorization files,
+execution admission, OpenClaw artifact/Gateway/maintenance/archive/usage
+modules, and their focused safety tests match the PR exactly. The PR's
+`handler.go` adds request-cancellation checks after archive inspection and
+before persistence; its tests add cancelled-upload and oversized-request
+regressions. The legacy versions therefore must not replace the PR files.
+
+The runtime directory comparison is source parity, not a new independent
+security certification. In particular, host execution remains governed by the
+PR's explicit admission and provider/runtime gates. Separately compared the
+legacy dirty `agentcoordination`, `agentframework`, and `agentguidance` paths;
+their existing files match the PR after newline normalization, and no port is
+needed. No source code was copied. The old checkout and its untracked data
+remain untouched; the full content/provenance audit and cleanup gates remain
+open.
