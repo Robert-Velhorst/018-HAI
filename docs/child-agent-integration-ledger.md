@@ -4715,3 +4715,39 @@ service clock redundantly. `git diff --check` passed. The local shell has no Go
 installation (`go.exe` was not found in the standard Windows locations), so
 the package test could not be run locally; exact-head GitHub Actions is the
 remaining executable verification for this edit.
+
+### October 12, 2026: workflow admission and Windows runtime contracts
+
+The local ambient scheduler test deletes the PR assertion that a disabled
+scheduler is reported as disabled and not running. Local automation projection
+tests replace the accepting event publisher with an empty publisher, reducing
+coverage of the publish path. The local Phase 2 Postgres claim test removes the
+end-to-end path that ingests, classifies, owner-approves, claims, and releases
+a source-derived operation. These coverage reductions were not copied. The
+runtime-owner-gate delta is comment-only. The dossier test changes a generated
+credential-shaped fixture to its equivalent literal, with no behavior gain.
+
+The local task execution-context helper drops its private-context fallback and
+the `hasTaskExecutionContext` distinction. Its transition test also replaces
+the known pre-dispatch cancellation outcome (durably canceled, no review item)
+with an uncertain-review expectation; the local required-participant test
+removes the verified/healthy/provenance/freshness evidence and treats a ready
+delegation alone as sufficient. The PR's cancellation and participant gates
+are retained. The local reminder-boundary assertion also requires a non-nil
+result when zero deliveries are eligible, contrary to the PR's explicit
+no-work contract. None of these local changes was ported.
+
+The local Phase 2 state-permissions proposal conditionally scans the full
+volume before `chown`, but adds `DAC_READ_SEARCH` to a root one-shot container
+and uses a shell pipeline whose final `grep` status can conceal a failed
+`find`. It may avoid repeat ownership writes, but no benchmark or runtime test
+establishes a net resource improvement, and its failure semantics need repair
+before consideration. The PR's direct, networkless `chown` utility remains.
+Local compiler-deadline tests cut fixture timeouts from 15 seconds to 5, and
+local Windows native-runtime/process tests target Go 1.25.13 rather than the
+PR's pinned Go 1.27.2. The local OpenClaw migration test compares raw SDDL
+instead of the PR's normalized descriptor helper. These are not adopted.
+
+The only code edit from the current audit batch is the shared fixed-clock test
+cleanup recorded above. The Go package test could not run because Go is not
+installed in the available shell; `git diff --check` passed before commit.
