@@ -31,7 +31,12 @@ const (
 	StatusUncertain       = "uncertain"
 	StatusConflicting     = "conflicting"
 	StatusUnsupported     = "unsupported"
-	StatusNeedsReview     = "needs_review"
+	// ExplanationUntrustedProvenance is the verdict for a claim that a source
+	// does cover, where the source is not one HAI will vouch for. It is named so
+	// callers can recognise the outcome instead of matching prose, and so they
+	// can tell it apart from a claim nothing supports at all.
+	ExplanationUntrustedProvenance = "source content overlaps the claim, but its provenance authority is untrusted; review is required"
+	StatusNeedsReview              = "needs_review"
 )
 
 type EvidenceInput struct {
@@ -604,7 +609,7 @@ func verifyClaims(claims []models.VerificationClaim, evidence []models.Verificat
 		if !isSourceSupportedEvidence(best.Authority) {
 			claim.Status = StatusNeedsReview
 			claim.NeedsReview = true
-			claim.SupportExplanation = "source content overlaps the claim, but its provenance authority is untrusted; review is required"
+			claim.SupportExplanation = ExplanationUntrustedProvenance
 			continue
 		}
 		claim.SupportExplanation = "claim overlaps source evidence with authenticated provenance; semantic truth is not inferred"

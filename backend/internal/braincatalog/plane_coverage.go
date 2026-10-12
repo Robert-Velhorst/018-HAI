@@ -56,11 +56,11 @@ var capabilityPlaneDefinitions = map[CapabilityPlane]capabilityPlaneDefinition{
 	},
 	PlaneMemory: {
 		name: "Memory and knowledge", description: "Source-linked retrieval, workspace context, and durable knowledge patterns.",
-		entryIDs: []string{"anythingllm", "cognee", "graphrag", "haystack", "langchain", "langmem", "letta", "llamaindex", "mem0", "omega-memory", "pgvector", "qdrant", "ragflow", "source-linked-knowledge-graph"},
+		entryIDs: []string{"anythingllm", "chatgpt-codex-mcp-daemon", "cognee", "graphrag", "haystack", "langchain", "langmem", "letta", "llamaindex", "mem0", "omega-memory", "pgvector", "qdrant", "ragflow", "source-linked-knowledge-graph"},
 	},
 	PlaneIntake: {
 		name: "Source intake", description: "Read-first connector, document, search, and transcription capability candidates.",
-		entryIDs: []string{"airbyte", "claude-code-project-instructions", "cloudquery", "docling", "fabric-patterns", "google-genai-toolbox", "livekit-agents", "omniparser", "pipecat", "ragflow", "searxng", "whisper-cpp"},
+		entryIDs: []string{"airbyte", "chatgpt-codex-mcp-daemon", "claude-code-project-instructions", "cloudquery", "docling", "fabric-patterns", "google-genai-toolbox", "livekit-agents", "omniparser", "pipecat", "ragflow", "searxng", "whisper-cpp"},
 	},
 	PlaneOperations: {
 		name: "Operations", description: "Durable workflows, business-system bridges, and controlled operational data flows.",

@@ -27,6 +27,7 @@ import (
 	"automation-hub-backend/internal/autonomypolicy"
 	"automation-hub-backend/internal/braincatalog"
 	"automation-hub-backend/internal/browserverify"
+	"automation-hub-backend/internal/chatgptlogs"
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/controlledlearning"
 	"automation-hub-backend/internal/crewai"
@@ -753,6 +754,10 @@ func initializeRoutes(appCtx context.Context, router *gin.Engine, monitorObserve
 			),
 			controlledLearningService,
 		)
+		taskService, err = task.WithChatGPTLogsContext(taskService, chatgptlogs.DefaultService())
+		if err != nil {
+			return err
+		}
 		taskService, err = task.WithFrameworkEvidenceRepository(
 			taskService,
 			frameworkEvidenceRepository,

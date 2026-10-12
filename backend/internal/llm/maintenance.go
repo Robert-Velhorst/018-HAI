@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -189,18 +190,42 @@ func maintenanceEndpointKey(raw string) (string, error) {
 	if (parsed.Scheme == "http" && port == "80") || (parsed.Scheme == "https" && port == "443") {
 		port = ""
 	}
+	// An API root is not always the host root: aggregators commonly serve
+	// /api/v1. Accept a short mount prefix and keep it in the key, so endpoint
+	// identity stays exact rather than collapsing two different APIs on one
+	// host. The trailing /v1 is the version, not part of the mount point, and a
+	// v1 segment anywhere else means the caller passed a route rather than a
+	// root.
 	path := strings.TrimRight(parsed.EscapedPath(), "/")
-	if path == "/v1" {
-		path = ""
+	segments := []string{}
+	for _, segment := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
+		if segment != "" {
+			segments = append(segments, segment)
+		}
 	}
-	if path != "" {
+	if len(segments) > 0 && strings.EqualFold(segments[len(segments)-1], "v1") {
+		segments = segments[:len(segments)-1]
+	}
+	if len(segments) > 2 {
 		return "", fmt.Errorf("unsupported endpoint path")
+	}
+	for _, segment := range segments {
+		if strings.EqualFold(segment, "v1") || !endpointPathSegment.MatchString(segment) {
+			return "", fmt.Errorf("unsupported endpoint path")
+		}
 	}
 	if port != "" {
 		host += ":" + port
 	}
-	return strings.ToLower(parsed.Scheme) + "://" + host, nil
+	key := strings.ToLower(parsed.Scheme) + "://" + host
+	for _, segment := range segments {
+		key += "/" + strings.ToLower(segment)
+	}
+	return key, nil
 }
+
+// endpointPathSegment bounds a mount-point segment to an ordinary path word.
+var endpointPathSegment = regexp.MustCompile(`^[A-Za-z0-9._-]{1,32}$`)
 
 func (s *Service) ModelMaintenanceHistory(limit int) ([]ModelMaintenanceResult, error) {
 	if s.maintenanceHistory == nil {

@@ -72,6 +72,30 @@ var builtInSystemWorkloadPolicies = []systemWorkloadPolicy{
 		risk: RiskHigh, reversible: true, maximumCostEUR: 0,
 	},
 	{
+		// Free, unpaid cloud inference for the task engine. Prompt content
+		// leaves the machine, so this is data access rather than tool use, is
+		// classified as irreversible, and needs a higher authority than the
+		// local profile. Zero cost is part of the contract: a priced or paid
+		// model arrives as expenditure and matches nothing here.
+		id: "task-engine-free-cloud-llm-generate-v1", actorIdentity: "hai:task-engine",
+		action: "llm.generate", stage: StageDataAccess,
+		resourceType: "llm-model", requireRuntimeID: true,
+		requiredAuthority: 6, requestedAutonomy: 6,
+		risk: RiskMedium, reversible: false, maximumCostEUR: 0,
+	},
+	{
+		// Local, free, reversible inference for the task engine, including the
+		// bounded model-directed read-only MCP tool loop. Only the local-safe
+		// classification is registered: a cloud, paid, or approval-gated model
+		// arrives with a different stage, authority and risk, matches nothing
+		// here, and stays denied.
+		id: "task-engine-local-llm-generate-v1", actorIdentity: "hai:task-engine",
+		action: "llm.generate", stage: StageToolUse,
+		resourceType: "llm-model", requireRuntimeID: true,
+		requiredAuthority: 4, requestedAutonomy: 8,
+		risk: RiskLow, reversible: true, maximumCostEUR: 0,
+	},
+	{
 		id: "local-model-maintenance-v1", actorIdentity: "hai:model-maintenance",
 		action: "llm.model.pull", stage: StageToolUse,
 		resourceType: "llm-model", requireRuntimeID: true,
@@ -120,6 +144,10 @@ func evaluateSystemWorkload(request Request) (SystemWorkloadEvidence, error) {
 	evidence.PolicyID = policy.id
 	if policy.id == "local-model-maintenance-v1" && request.ToolID != request.RuntimeID {
 		return evidence, fmt.Errorf("model maintenance provider binding does not match its registered runtime")
+	}
+	if (policy.id == "task-engine-local-llm-generate-v1" ||
+		policy.id == "task-engine-free-cloud-llm-generate-v1") && request.ToolID != request.RuntimeID {
+		return evidence, fmt.Errorf("model generation provider binding does not match its registered runtime")
 	}
 	evidence.Matched = true
 	return evidence, nil

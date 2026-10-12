@@ -94,6 +94,7 @@ none is installed, configured, or executable through HAI.
 | [PydanticAI](https://github.com/pydantic/pydantic-ai) | Integrated, opt-in | Local schema-validated planning draft | The optional `typed-planning` profile pins `pydantic-ai-slim[openai]` 2.13.0 and accepts only a short task request plus success criteria for one operator-reviewed loopback model. It has no tools, MCP, web, file, source, memory, persistence, retries, provider selection, approval, or execution authority. The result remains a HAI-validated draft. |
 | [A2A Protocol](https://github.com/a2aproject/A2A) | Integrated, opt-in | Authenticated planning interoperability; local by default, governed fixed-ngrok optional | HAI exposes a disabled-by-default A2A 1.0-shaped Agent Card and a narrow `SendMessage` JSON-RPC profile for one named bearer-token peer. Public transport requires a second explicit opt-in, production mode, disabled local-login bypass, and the exact governed `HAI_NGROK_URL` origin. It requires `A2A-Version: 1.0`, accepts only standalone `ROLE_USER` text with a `messageId`, and returns one bounded non-executable proposal artifact. It is not a full A2A task-lifecycle server: task persistence/polling, source refresh, approval, execution, peer discovery, streaming, file input, memory/source disclosure, and tool invocation are unavailable. |
 | [FastMCP](https://github.com/jlowin/fastmcp) | Integrated, opt-in | Authenticated local read-only HAI MCP bridge | The optional `mcp-bridge` profile pins FastMCP 3.4.4 and exposes only workflow aggregate and bounded actionable-summary tools to one local bearer-token client. It uses a second bridge token to read one configured owner's HAI state, binds to loopback only, and has no task, approval, execution, source, memory, policy, filesystem, process, or secret-returning tool. |
+| [ChatGPT/Codex Conversation History MCP](https://github.com/oogxdd/chatgpt-codex-mcp-daemon) | Integrated, opt-in | Model-directed bounded conversation-history context | HAI connects only to an operator-managed local Streamable HTTP endpoint. During generation the model may choose among nine statically reviewed read-only tools; HAI validates every call, permits at most six calls, caps each result at 12,000 characters and aggregate MCP context at 48,000 characters. Results retain endpoint/tool provenance and remain untrusted. HAI never starts the daemon, invokes unreviewed/future tools, or grants retrieved text execution authority. |
 | [Promptfoo](https://github.com/promptfoo/promptfoo) | Integrated, opt-in | Fixed synthetic local safety regression | The optional `safety-evaluation` profile runs a shipped six-case local prompt-injection and high-risk-action suite against one configured OpenAI-compatible endpoint. Its health probe requires that model and suite configuration, the runner clears inherited proxy variables and runs unprivileged, and it returns aggregate pass/fail metadata only. It cannot accept real prompts, sources, models, providers, endpoints, commands, or alter HAI decisions. |
 | [garak](https://github.com/NVIDIA/garak) | Integrated, opt-in | Fixed synthetic local prompt-injection regression | The optional `garak-evaluation` profile pins garak 0.15.1 and runs one four-case `PromptInject` probe against one configured local OpenAI-compatible endpoint. The runner clears inherited provider credentials and proxy variables, accepts no caller-selected target/model/probe/input, deletes raw JSONL/hit/HTML reports, and returns aggregate metadata only. It cannot target HAI, connected sources, accounts, runtimes, or actions, and the result cannot change HAI decisions. |
 | [DeepEval](https://github.com/confident-ai/deepeval) | Integrated, opt-in | Fixed synthetic source-grounding regression | The optional `deepeval-evaluation` profile pins DeepEval 4.1.1 and evaluates only three shipped synthetic evidence/answer pairs with `FaithfulnessMetric` through one configured local OpenAI-compatible judge. It returns aggregate evaluator accuracy only; no real HAI answer, source, prompt, model output, metric reason, routing, verification, policy, memory, workflow, approval, or action is accessible. |
@@ -202,6 +203,49 @@ over 1 MiB, non-JSON responses, unexpected response IDs, and protocol-version
 downgrades. It returns a bounded tool name inventory only. It does not execute
 a listed tool, retain schemas/descriptions, expose headers, accept bearer
 tokens, or enable an HAI runtime.
+
+## ChatGPT/Codex conversation-history context
+
+`chatgpt-codex-mcp-daemon` ships a local stdio server, while the containerized
+HAI backend accepts only an operator-managed local Streamable HTTP endpoint.
+Expose the already-built helper without giving HAI process-launch authority:
+
+```powershell
+npx -y supergateway `
+  --stdio 'C:\absolute\path\to\hist.exe mcp' `
+  --outputTransport streamableHttp `
+  --stateful `
+  --protocolVersion 2025-06-18 `
+  --port 8099 `
+  --streamableHttpPath /mcp
+```
+
+Then opt in through `.env.local`:
+
+```dotenv
+HAI_CHATGPT_LOGS_MCP_ENABLED=true
+HAI_CHATGPT_LOGS_MCP_URL=http://host.docker.internal:8099/mcp
+HAI_CHATGPT_LOGS_MCP_TIMEOUT_SECONDS=8
+HAI_MCP_PREFLIGHT_ENABLED=true
+HAI_MCP_PREFLIGHT_SERVERS=chatgpt-logs@chatgpt-codex-mcp-daemon=http://host.docker.internal:8099/mcp
+```
+
+Planning performs no speculative history lookup. During generation, a
+provider-neutral JSON decision loop lets the selected model either answer or
+request one of these reviewed read-only tools: `list_sources`,
+`list_conversations`, `search`, `get_conversation`, `get_context`,
+`get_message`, `get_raw`, `sync_status`, and `stats`. This supports discovery,
+follow-up retrieval, original-message provenance, and corpus-completeness
+checks without requiring provider-specific function-calling support.
+
+HAI, not the model, enforces the boundary: every tool name and argument is
+allowlisted and normalized, each result is capped at 12,000 characters, a task
+may make at most six calls across eight model rounds, and aggregate MCP context
+is capped at 48,000 characters. Tool results are persisted with call traces and
+endpoint/tool provenance, fed back to the model as untrusted data, and supplied
+to normal grounding and verification. HAI never starts the daemon, follows
+instructions found in retrieved text, invokes a future advertised tool, writes
+to the corpus, or treats MCP data as execution authority.
 
 ## OR-Tools planning profile
 

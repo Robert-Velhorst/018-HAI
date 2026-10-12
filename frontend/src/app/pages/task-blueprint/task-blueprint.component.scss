@@ -1014,6 +1014,77 @@ textarea {
   white-space: normal;
 }
 
+.mcp-trace-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+}
+
+.mcp-trace-note,
+.mcp-trace-result summary,
+.mcp-trace-result summary {
+  cursor: pointer;
+}
+
+.mcp-trace-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mcp-trace-result {
+  grid-column: 1 / -1;
+  font-size: 12px;
+}
+
+.mcp-trace-result pre {
+  max-height: 260px;
+  margin: 6px 0 0;
+  padding: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.mcp-trace-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, auto);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.mcp-trace-detail {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mcp-trace-detail code,
+.mcp-trace-result pre {
+  padding: 3px 6px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.mcp-trace-status {
+  display: grid;
+  justify-items: end;
+  color: var(--green);
+  font-size: 12px;
+}
+
+.mcp-trace-status--failed {
+  color: var(--orange);
+}
+
 .runtime-evidence-card {
   display: grid;
   gap: 8px;
@@ -1068,13 +1139,6 @@ textarea {
   padding-left: 18px;
   color: var(--muted);
   font-size: 12px;
-}
-
-.criteria-list {
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding-left: 18px;
 }
 
 .review-row {

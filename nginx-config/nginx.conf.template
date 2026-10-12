@@ -199,6 +199,12 @@ http {
         # IDP subrequest and only its verified token is forwarded as identity.
         # The backend still enforces its own owner and RBAC checks.
         location /api/v1 {
+            # A task run drives a model through a bounded MCP tool loop, which
+            # takes minutes rather than seconds. The 60s proxy default cut the
+            # browser off mid-run and reported a gateway timeout for work the
+            # backend went on to finish.
+            proxy_read_timeout 900s;
+            proxy_send_timeout 900s;
             auth_request /auth-verify;
             auth_request_set $hai_refreshed_access_cookie $upstream_http_set_cookie;
             auth_request_set $hai_verified_access_token $upstream_http_x_hai_verified_access_token;

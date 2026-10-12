@@ -10,6 +10,7 @@ var integratedImplementationBoundaries = map[string]ImplementationBoundary{
 	"anythingllm":                      {"local retrieval adapter", "/api/v1/anythingllm", "backend/internal/anythingllm/service.go", "fixed-workspace candidate retrieval only"},
 	"claude-code-project-instructions": {"project-guidance intake", "/api/v1/sources", "backend/internal/source/agent_instructions.go", "root AGENTS.md and CLAUDE.md as untrusted read-only planning context"},
 	"cloudquery":                       {"local summary intake", "/api/v1/sources", "backend/internal/source/cloudquery_summary.go", "read-only operator-produced JSONL sync summaries"},
+	"chatgpt-codex-mcp-daemon":         {"conversation-history task context", "/api/v1/task", "backend/internal/chatgptlogs/service.go", "model-directed loop over nine reviewed read-only tools; bounded untrusted context and no process launch"},
 	"crewai":                           {"local planning review", "/api/v1/crewai", "backend/internal/crewai/service.go", "fixed no-tool planner/reviewer draft only"},
 	"fabric-patterns":                  {"prompt-pattern intake", "/api/v1/sources", "backend/internal/source/fabric_patterns.go", "immediate-child local system.md files as untrusted manual-review records"},
 	"deepeval":                         {"local evaluation bridge", "/api/v1/deepeval", "backend/internal/deepeval/service.go", "fixed synthetic evaluation evidence only"},

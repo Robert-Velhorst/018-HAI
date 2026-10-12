@@ -8,6 +8,7 @@
 package mcppreflight
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -29,6 +30,8 @@ import (
 
 const (
 	serversEnv       = "HAI_MCP_PREFLIGHT_SERVERS"
+	tokensEnv        = "HAI_MCP_PREFLIGHT_TOKENS"
+	allowRemoteEnv   = "HAI_MCP_PREFLIGHT_ALLOW_REMOTE"
 	enabledEnv       = "HAI_MCP_PREFLIGHT_ENABLED"
 	timeoutEnv       = "HAI_MCP_PREFLIGHT_TIMEOUT_SECONDS"
 	protocolVersion  = "2025-06-18"
@@ -39,11 +42,12 @@ const (
 var serverIDPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
 var preflightCatalogIDs = map[string]bool{
-	"mcp-inspector":        true,
-	"github-mcp-server":    true,
-	"playwright-mcp":       true,
-	"google-genai-toolbox": true,
-	"serena":               true,
+	"chatgpt-codex-mcp-daemon": true,
+	"mcp-inspector":            true,
+	"github-mcp-server":        true,
+	"playwright-mcp":           true,
+	"google-genai-toolbox":     true,
+	"serena":                   true,
 }
 
 // Server is a reviewed MCP endpoint. It intentionally has no auth fields:
@@ -52,6 +56,9 @@ type Server struct {
 	ID        string `json:"id"`
 	CatalogID string `json:"catalogId"`
 	URL       string `json:"url"`
+	// BearerToken is never serialized. A preflight result is shown in the UI and
+	// written to the audit trail, and the secret belongs in neither.
+	BearerToken string `json:"-"`
 }
 
 // Config controls the optional local-only preflight service.
@@ -59,6 +66,11 @@ type Config struct {
 	Enabled bool
 	Servers []Server
 	Timeout time.Duration
+	// AllowRemoteEndpoints lifts the local-only restriction on server URLs. It
+	// has to be said outright, and a server it admits must then be reached over
+	// TLS with a bearer token, so lifting the restriction cannot happen by
+	// accident and cannot happen in the clear.
+	AllowRemoteEndpoints bool
 }
 
 // Tool is the bounded, non-secret portion of a tools/list result. HAI does not
@@ -159,8 +171,11 @@ func NewServiceFromEnv() *Service {
 	}
 	return NewService(Config{
 		Enabled: strings.EqualFold(strings.TrimSpace(os.Getenv(enabledEnv)), "true"),
-		Servers: parseServers(os.Getenv(serversEnv)),
+		Servers: withBearerTokens(parseServers(os.Getenv(serversEnv)), os.Getenv(tokensEnv)),
 		Timeout: timeout,
+		AllowRemoteEndpoints: strings.EqualFold(
+			strings.TrimSpace(os.Getenv(allowRemoteEnv)), "true",
+		),
 	})
 }
 
@@ -311,9 +326,12 @@ func (s *Service) rpc(ctx context.Context, server Server, method string, id int,
 		return rpcResponse{}, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("MCP-Protocol-Version", protocolVersion)
 	req.Header.Set("User-Agent", "HAI-MCP-Preflight/1.0")
+	if safeBearerToken(server.BearerToken) {
+		req.Header.Set("Authorization", "Bearer "+server.BearerToken)
+	}
 	if sessionID != "" {
 		req.Header.Set("MCP-Session-Id", sessionID)
 	}
@@ -325,7 +343,7 @@ func (s *Service) rpc(ctx context.Context, server Server, method string, id int,
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return rpcResponse{}, "", fmt.Errorf("HTTP %d", response.StatusCode)
 	}
-	decoded, err := decodeResponse(response.Body)
+	decoded, err := decodeResponse(response.Body, response.Header.Get("Content-Type"))
 	if err != nil {
 		return rpcResponse{}, "", err
 	}
@@ -352,9 +370,12 @@ func (s *Service) notifyInitialized(ctx context.Context, server Server, sessionI
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("MCP-Protocol-Version", version)
 	req.Header.Set("User-Agent", "HAI-MCP-Preflight/1.0")
+	if safeBearerToken(server.BearerToken) {
+		req.Header.Set("Authorization", "Bearer "+server.BearerToken)
+	}
 	if sessionID != "" {
 		req.Header.Set("MCP-Session-Id", sessionID)
 	}
@@ -369,7 +390,7 @@ func (s *Service) notifyInitialized(ctx context.Context, server Server, sessionI
 	return nil
 }
 
-func decodeResponse(body io.Reader) (rpcResponse, error) {
+func decodeResponse(body io.Reader, contentType ...string) (rpcResponse, error) {
 	limited := io.LimitReader(body, maxResponseBytes+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
@@ -379,6 +400,20 @@ func decodeResponse(body io.Reader) (rpcResponse, error) {
 		return rpcResponse{}, fmt.Errorf("response exceeds %d byte limit", maxResponseBytes)
 	}
 	var decoded rpcResponse
+	if len(contentType) > 0 && strings.Contains(strings.ToLower(contentType[0]), "text/event-stream") {
+		scanner := bufio.NewScanner(bytes.NewReader(data))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			candidate := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if json.Unmarshal([]byte(candidate), &decoded) == nil && decoded.JSONRPC == "2.0" {
+				return decoded, nil
+			}
+		}
+		return rpcResponse{}, fmt.Errorf("response event stream did not contain JSON-RPC")
+	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		return rpcResponse{}, fmt.Errorf("response is not JSON")
 	}
@@ -452,8 +487,16 @@ var playwrightReadOnlyContextTools = map[string]struct{}{
 	"browser_route_list": {}, "browser_snapshot": {},
 }
 
+var chatgptLogsReadOnlyContextTools = map[string]struct{}{
+	"get_context": {}, "get_conversation": {}, "get_message": {}, "get_raw": {},
+	"list_conversations": {}, "list_sources": {}, "search": {}, "search_insights": {},
+	"search_passages": {}, "stats": {}, "sync_status": {},
+}
+
 func readOnlyToolContract(catalogID string) (map[string]struct{}, string, bool) {
 	switch strings.TrimSpace(catalogID) {
+	case "chatgpt-codex-mcp-daemon":
+		return chatgptLogsReadOnlyContextTools, "ChatGPT logs MCP", true
 	case "github-mcp-server":
 		return githubReadOnlyContextTools, "GitHub MCP", true
 	case "playwright-mcp":
@@ -523,6 +566,44 @@ func parseServers(raw string) []Server {
 	return servers
 }
 
+// withBearerTokens attaches the token each listener asks for, keyed by server
+// id. The tokens live in their own variable rather than inside the server list
+// so the endpoint list stays printable in logs and support output.
+//
+// Format: HAI_MCP_PREFLIGHT_TOKENS=chatgpt-logs=abc123;other-server=def456
+func withBearerTokens(servers []Server, raw string) []Server {
+	tokens := map[string]string{}
+	for _, part := range strings.Split(raw, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, token, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		tokens[strings.TrimSpace(id)] = strings.TrimSpace(token)
+	}
+	for index := range servers {
+		servers[index].BearerToken = tokens[servers[index].ID]
+	}
+	return servers
+}
+
+// safeBearerToken refuses a secret that could become header syntax rather than
+// a header value.
+func safeBearerToken(token string) bool {
+	if token == "" || len([]rune(token)) > 512 {
+		return false
+	}
+	for _, r := range token {
+		if r < 0x21 || r > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
 func validateConfig(config Config) string {
 	if len(config.Servers) == 0 {
 		return serversEnv + " must contain at least one reviewed local server when preflight is enabled"
@@ -539,7 +620,7 @@ func validateConfig(config Config) string {
 		if err := validateCatalogProfile(server.CatalogID); err != nil {
 			return "server " + server.ID + ": " + err.Error()
 		}
-		if err := validateLocalURL(server.URL); err != nil {
+		if err := validateEndpointURL(server, config.AllowRemoteEndpoints); err != nil {
 			return "server " + server.ID + ": " + err.Error()
 		}
 	}
@@ -572,7 +653,8 @@ func catalogName(id string) string {
 	return entry.Name
 }
 
-func validateLocalURL(raw string) error {
+func validateEndpointURL(server Server, allowRemote bool) error {
+	raw := server.URL
 	u, err := url.Parse(raw)
 	if err != nil {
 		return fmt.Errorf("invalid URL")
@@ -593,9 +675,20 @@ func validateLocalURL(raw string) error {
 	if host == "localhost" || host == "host.docker.internal" {
 		return nil
 	}
-	ip := net.ParseIP(host)
-	if ip != nil && ip.IsLoopback() {
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
 		return nil
 	}
-	return fmt.Errorf("only localhost, loopback IPs, or host.docker.internal are allowed")
+	if !allowRemote {
+		return fmt.Errorf(
+			"only localhost, loopback IPs, or host.docker.internal are allowed unless %s is true",
+			allowRemoteEnv,
+		)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("a remote server must use https when %s is true", allowRemoteEnv)
+	}
+	if !safeBearerToken(server.BearerToken) {
+		return fmt.Errorf("a remote server needs a bearer token in %s when %s is true", tokensEnv, allowRemoteEnv)
+	}
+	return nil
 }
