@@ -5376,3 +5376,45 @@ callers use `trelloGetJSONContext`. Do not port either staged test variant.
 The source connector has not been tested against Robert's live Trello
 account in this audit; CI fixture and contract results are not provider
 acceptance.
+
+### October 12, 2026: account-feed and source-runtime crosswalk
+
+Compared every staged production file under `backend/internal/accountfeed`;
+all 12 files are identical to the PR, as are the staged account-feed tests.
+No account-feed source or test code needs porting from this snapshot.
+
+Reviewed the changed source-runtime production paths. The PR already has the
+newer or safer behavior in the compared variants: durable source jobs retire
+stale work after a source is disabled/revoked rather than spending provider
+retries; the scheduler reports lifecycle/readiness and obeys the background
+safety gate; legacy Autofever sync is explicitly disabled until its upstream
+feed/review contract exists; and extraction listing uses an owner-scoped
+database page query with a hard limit. The staged extraction handler instead
+loads every matching extraction and slices the result in memory, so its
+apparent pagination is not a bounded database query. The staged background
+worker also omits the live paused-mode handling and safe deferral for already
+approved local operations. Keep the PR implementations; do not port these
+snapshot variants. Core authorization, calendar, contacts, Drive, extraction
+correction, OAuth retry, manual sync, provider error, Trello, and worker-control
+files compared in this pass are byte-identical. This is a focused source and
+account-feed crosswalk, not a complete audit of every source test or provider
+acceptance against real accounts.
+
+### October 12, 2026: migration-tree reconciliation
+
+Compared all 186 staged paths under `backend/migrations` by Git blob identity:
+177 are byte-identical to the PR, seven existing paths differ, and two staged
+post-phase migration files are absent from the PR. Reviewed differences
+include older or less isolated snapshot tests: its chain contract omits the
+PR's later migration tail, its source-head rollback test attempts to remove a
+pre-phase prerequisite from a database with post-phase runtime migrations
+already applied, its source-configuration rollback assertion does not isolate
+the down-SQL data guard from phase-order refusal, and its Trello test applies
+the full migration set where the PR limits the operation to migration 0109.
+Keep the PR tests.
+The two snapshot-only post migrations are the same active-operation dedupe
+pair already present in the PR under the correct `0006` version, but the
+snapshot labels them `0004`, colliding with the PR's existing
+`post/0004_automation_event_outbox`; do not add or renumber them. This
+crosswalk does not replace a full semantic review of every migration pair or
+a real upgrade/restore test against a production database.
