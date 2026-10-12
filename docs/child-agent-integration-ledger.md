@@ -3322,3 +3322,136 @@ context propagation, authenticated owner-scoped operating phases, and
 scheduler-status reporting. This comparison is static source/test evidence,
 not live Kafka, scheduler, or assistant acceptance. Snapshot files remain
 intact; PR #36 requires checks on its exact latest head.
+
+### October 12, 2026: LLM maintenance, memory, and OpenClaw worker comparison
+
+Reviewed the differing staged files under `backend/internal/llm/`,
+`backend/internal/memory/`, `backend/internal/memoryengine/`, and
+`backend/internal/openclawmaintenance/` against PR #36 at
+`7e505c2b5ae9375b16bca871c518f587adb639c9`:
+
+- LLM readiness in the snapshot stops rejecting provider endpoint query
+  parameters and fragments. The PR explicitly rejects those URL components;
+  query data is sent as part of provider requests and can contain credentials
+  or other sensitive values. Preserve the rejection unless a separately
+  designed, redacted secret transport is implemented.
+- Model maintenance startup no longer checks `modelMaintenanceEnabled()` or
+  whether any eligible enabled model exists. This can keep a periodic
+  scheduler alive when there is no authorized maintenance work, contrary to
+  the configured-work gate and the resource-control requirement. The snapshot
+  deletes `TestServiceReportsWhetherModelMaintenanceWorkIsEligible`.
+- The endpoint-key change rejects mount-prefixed API roots such as `/api/v1`
+  and collapses endpoint identity to scheme/host, removing the PR's explicit
+  support and `TestMaintenanceEndpointKeyAcceptsAMountPrefixButNotARoute`.
+  This is a provider-compatibility regression for valid API gateways.
+- Provider catalogue response allowance is reduced from 4 MiB to 256 KiB.
+  That may save memory, but no fixture proves real provider catalogues fit the
+  smaller cap; retain the documented bound or add size-based provider contract
+  coverage before changing it.
+- Memory query normalization loses search/kind/tag length bounds, the
+  16-token cap, and control-character cleanup. It also removes the checked
+  page-offset multiplication and computes `(page - 1) * pageSize` directly;
+  sufficiently large page values can overflow to a negative index and panic.
+  `TestQueryBoundsTextAndTokenWork` and
+  `TestQueryHandlesPlatformMaximumPageWithoutOverflow` are deleted. Restore
+  bounded inputs and overflow-safe pagination.
+- The memory-engine repository no longer applies the configured migration
+  owner's allowlist when reading legacy ownerless archives, and
+  `TestConfiguredLegacyOwnerCanReadButNotDeleteOwnerlessArchive` is deleted.
+  This makes legacy material unavailable to its recovery operator; do not
+  broaden reads to ordinary accounts.
+- The OpenClaw lease token check is equivalent as written: `strings.Trim` with
+  the lowercase hexadecimal character set rejects any remaining non-hex
+  character. The public signing-key representation is only reformatted; no
+  unique functional addition was identified in these two files.
+
+No LLM, memory, or OpenClaw worker code was ported. The findings are source and
+unit-test comparisons, not live provider or model-update acceptance. Snapshot
+files remain intact; PR #36 must pass checks on its exact latest head.
+
+### October 12, 2026: events, database infrastructure, and operations comparison
+
+Reviewed staged changes under `backend/internal/events/`,
+`backend/internal/identity/`, `backend/internal/infra/`, and
+`backend/internal/operations/` against PR #36 at
+`7e505c2b5ae9375b16bca871c518f587adb639c9`:
+
+- The snapshot changes an unavailable Kafka publisher into a success-returning
+  no-op and removes reconnection/backoff state. In combination with the
+  automation change that publishes outside the database transaction, failed
+  or unconfigured Kafka can silently lose automation events after the data
+  mutation has committed. The snapshot deletes
+  `TestUnconfiguredPublisherFailsClosed`; do not treat the no-op as durable
+  event delivery.
+- The snapshot removes the GORM logger configuration that enabled
+  parameterized-query logging and a defined slow-query threshold. This loses
+  the PR's protection against interpolating bound values into logged SQL and
+  reduces database diagnostics; keep the explicit safe logger configuration.
+- Migration startup no longer honors the existing `DB_RUN_MIGRATIONS=false`
+  gate. With that flag set and `DB_MIGRATIONS_ENABLED` unset, the snapshot's
+  startup predicate defaults to enabled and can attempt schema migrations
+  under a production DML-only API role. Preserve backward-compatible
+  fail-closed migration gating.
+- Operations claim SQL changes `operation_events.payload_json` to `payload`,
+  but the checked-in baseline migration defines `payload_json jsonb`; no
+  corresponding column migration is present. Both affected approval queries
+  will fail against the repository schema. Keep the mapped column name.
+- The snapshot removes the approved-status exception for `next_review_at` in
+  due selection. A fresh exact-revision approval receipt previously superseded
+  a self-hold reminder; the new unconditional review-time filter can defer
+  approved work despite its valid receipt. Preserve the shared in-memory and
+  PostgreSQL eligibility contract.
+- The snapshot replaces `UpdateColumns` with `Updates` in the operation CAS.
+  GORM then assigns `UpdatedAt` automatically, despite the operation and
+  immutable audit event having their timestamps bound together. This can
+  invalidate the expected lifecycle/audit timestamp identity; retain the
+  explicit timestamp write semantics.
+- Raw source-evidence fingerprints are removed in favor of comparing the
+  stored JSON string with incoming bytes. PostgreSQL `jsonb` may reserialize
+  equivalent JSON, so the snapshot can repeatedly treat unchanged evidence as
+  refreshed and increment/audit it unnecessarily. The two raw-byte stability
+  tests are deleted; retain canonical/raw-digest semantics and their coverage.
+- Identity snapshot removes the operator-scope claim/context members. The
+  related authenticated runtime-lab scope behavior is already recorded in the
+  router audit; this confirms the loss originates in the identity contract,
+  not merely route wiring.
+
+No events, infrastructure, identity, or operations code was ported. The
+operation SQL finding is grounded in the actual migration schema; Kafka and
+database runtime effects still need provider-backed acceptance. Snapshot
+files remain intact. PR #36 requires exact-head CI before release validation.
+
+### October 12, 2026: worker pause and phase-two safety comparison
+
+Reviewed staged changes under `backend/internal/safety/`,
+`backend/internal/background/`, and `backend/internal/phase2/` against PR #36 at
+`7e505c2b5ae9375b16bca871c518f587adb639c9`:
+
+- The background worker removes its early paused-mode return and calls the
+  ordinary operation-processing loop. In the snapshot, paused mode can claim
+  and classify newly ingested items (and invoke configured model triage)
+  instead of leaving them new. The two removed tests,
+  `TestPausedModeIngestsButProcessesNothing` and
+  `TestPausedModeDefersPreviouslyClassifiedSafeOperation`, specify that pause
+  leaves new work untouched and only defers previously approved safe work.
+  Downstream policy checks still gate actual safe execution, so this audit does
+  not claim pause bypasses every execution authorization; it does remove the
+  established no-processing pause contract.
+- The phase-two PostgreSQL integration test removes its end-to-end case that
+  creates a source-derived operation, records an owner approval receipt, and
+  verifies that the approved operation can be claimed. This reduces live-DB
+  coverage for the approval-to-claim boundary; retain it alongside the
+  authorization unit tests.
+- Test-only phase-two diagnostic output and its explicit opt-in test are
+  removed. This is diagnostic coverage removal, not evidence of a production
+  behavior change.
+- `EvaluateImmutableEmergencyStop` is removed as a helper, but its environment
+  stop check is inlined into `EvaluateEmergencyStop`; no other call site exists
+  in the PR. This is a mechanical refactor, not a demonstrated stop bypass.
+- No changed `backend/internal/processcontrol/` files were present in the
+  staged snapshot, so this batch contains no process-control code to port.
+
+No safety or phase-two code was ported. The pause finding is backed by the
+actual worker control flow and removed assertions; production stop behavior is
+not inferred from the deleted helper name. Snapshot files remain intact, and
+the PR's exact-head checks remain the release gate.
