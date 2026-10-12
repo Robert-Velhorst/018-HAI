@@ -2,8 +2,6 @@ package accountfeed
 
 import (
 	"fmt"
-	"os"
-	"strings"
 )
 
 // Provider is a supported account-bridge provider contract (§14). Metadata and
@@ -97,16 +95,11 @@ func (b BridgeContract) ConnectionStatus() ConnectionStatus {
 	switch b.Provider {
 	case ProviderGenericJSONFeed, ProviderLocalFolder:
 		return ConnAvailable
-	}
-	if b.CredentialEnv == "" {
+	default:
+		// Provider credentials do not make this normalized-feed registry a live
+		// provider connector. Native health is owned by Connected Sources.
 		return ConnContractOnly
 	}
-	for _, name := range strings.Split(b.CredentialEnv, ",") {
-		if strings.TrimSpace(os.Getenv(strings.TrimSpace(name))) == "" {
-			return ConnCredentialsRequired
-		}
-	}
-	return ConnCredentialsPresentUnverified
 }
 
 func (b BridgeContract) ReportsCredentialGrant() bool {
