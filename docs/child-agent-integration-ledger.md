@@ -5253,3 +5253,18 @@ therefore retains cancellation and request-lifetime boundaries that the
 snapshot would remove. Keep the PR implementation; do not port the staged
 handler/service pair as a replacement. This is a scoped authentication-path
 review, not a complete review of the 24 differing IDP paths.
+
+### October 12, 2026: ChatGPT Logs MCP feature cross-PR reconciliation
+
+The staged snapshot's Task Blueprint does not contain the MCP tool-call result
+rendering present in the separately submitted ChatGPT Logs MCP work. PR #35
+(`feat: add model-directed ChatGPT logs MCP tools`) includes the Task Blueprint
+template/style/spec/component files and corresponding backend task, MCP
+preflight, execution authorization, verification, and route changes. Its
+current head is `57357dd1045ff3a6580d4055f2b7a5f634042acf`; all ten CI checks
+were successful when checked on October 12, 2026. PR #35 remains open and
+unmerged, so its feature is submitted for review but is not yet part of the
+default branch. Do not duplicate its implementation into PR #36; the required
+integration gate is review/merge of #35. This cross-reference establishes the
+feature's separate PR disposition, not that an open PR is deployed or accepted
+as production behavior.
