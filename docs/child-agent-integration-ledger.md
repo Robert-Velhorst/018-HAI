@@ -4440,3 +4440,39 @@ The 1,586 excluded diagnostics/evidence paths are not source candidates merely
 because they are untracked; they remain preserved and are not cleanup-approved
 by this comparison. No local archive, output, diagnostic, source file, or
 worktree was removed.
+
+### October 12, 2026: targeted review of divergent source candidates
+
+Recomputed the inventory against PR #36 at `2ab9beede7650f71ed35acdbaa59fb36b76e186f`.
+The source/documentation filter yields 889 candidate paths: all 889 exist in
+the PR tree, 821 are byte-identical, and 68 differ at the same path. Four
+additional untracked paths under `.claude-flow/` and `.swarm/` are agent state,
+not source candidates. This corrects the broader filter's apparent four-path
+absence without changing the earlier 889-candidate disposition.
+
+Compared local and PR versions of the main divergent production files and
+acceptance helpers. The PR versions retain additional database acquisition
+timeouts and safe connection setup, complete operation-approval revision and
+receipt binding, stronger claim-state fencing, and authenticated browser-matrix
+session refresh through an isolated run-owned state file. The stale checkout's
+variants do not provide a demonstrated behavior improvement over those PR
+versions. The local OpenClaw public-key byte encoding is not needed to preserve
+secret-scan behavior: the current PR's exact-head secret scan passed, and the
+key is public verification material. The local resource-limit parser assertions
+test the helper's numeric parsing rather than the production Docker build
+boundary; the PR's boundary checks are the relevant contract. Local installer
+smoke assertions were reviewed against the expanded PR installer safety tests;
+no missing source behavior was established.
+
+Across the divergent test-like paths, a name-level comparison found no local
+test functions absent from the PR. This is only a test-inventory signal, not
+proof that every assertion is semantically equivalent. The remaining 68 files
+still require full per-file semantic disposition, particularly the large
+Playwright acceptance-helper and dependency-lockfile differences; no local
+content was copied on the strength of path presence or test-name overlap.
+
+The PR remains open and mergeable. Exact-head Actions run `38207676729` tests
+`2ab9beede7650f71ed35acdbaa59fb36b76e186f`; at the time of this check it had
+34 successful jobs and two running, with no failures; final CI status is not
+yet established. No local file or archive was deleted or modified by this
+review.
