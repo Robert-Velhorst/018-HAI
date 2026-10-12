@@ -5048,6 +5048,36 @@ so it is not claimed as an exact-head run for this documentation-only update.
 The source snapshot, transcript archives, and primary checkout remain
 unchanged.
 
+### October 12, 2026: Windows lifecycle handoff revalidation
+
+Rechecked `output/windows-lifecycle-production-20261001.md` against the exact
+PR #36 source head `5c31d54aed5e35a13bbebf44c10fb68ecf519e9e`. Its source fixes
+are present: Compose project assignments are counted before validation;
+ownership enumeration includes the configured project and checks command
+failures; `Start-HAI.ps1` repeats ownership validation after initialization;
+`Stop-HAI.ps1` suspends optional caller overrides, snapshots the stop result,
+and restores overrides in `finally`; worker promotion rejects directory and
+reparse-point destinations before replacement.
+
+Ran `scripts/test-windows-lifecycle-production-source.ps1` locally, then ran
+its isolated `-MockedOwnership -MockedStop` modes. Both passed. The mocks
+covered valid/foreign/missing ownership metadata, duplicate enumeration,
+enumeration failure, Stop success/nonzero/throw paths, and exactly-once
+environment restoration; they invoked no real Docker or process operation.
+The exact-head GitHub Actions run `38291715078` passed all 36 jobs, including
+`Windows installer preview and signing guards`. That job invokes
+`test-windows-installer-contract.ps1`, which calls the runtime lifecycle and
+installer update-promotion fixtures; this is hosted Windows regression
+evidence, not acceptance on Robert's installed Windows machine.
+
+The handoff's remaining production limits still apply: no user-machine
+installation/update/uninstall or signing acceptance is established, and
+path-based promotion checks are not a handle-bound defense against every
+concurrent filesystem race. This crosswalk changes documentation only. PR #36
+remains open and unmerged; local source, transcript, diagnostic, and runtime
+data remain untouched. The broader semantic/provenance audit and cleanup gates
+are still incomplete.
+
 ### October 12, 2026: task retry economics and provenance review
 
 The snapshot task service retries after validation failure whenever a retry is
