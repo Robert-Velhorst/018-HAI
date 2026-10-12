@@ -4576,3 +4576,14 @@ remaining content deltas remain open rather than being presumed equivalent.
 
 No further source changes were justified by this batch. The main checkout and
 all local source, transcript, diagnostic, and build artifacts remain untouched.
+
+### October 12, 2026: Kafka entrypoint comparison
+
+Reviewed the larger local-only delta in `kafka/docker-compose.yaml`. The local
+file restores the retired three-broker ZooKeeper stack, uses mutable `latest`
+images, publishes broker/control-center ports, and assumes an externally
+created `service-hub` network. The PR deliberately makes this path a
+compatibility include of the canonical local Compose stack, avoiding a second
+Kafka deployment and unpinned images. The local multi-container definition was
+not copied; this matches the user's prior request to avoid duplicate HAI
+instances and reduces unnecessary local resource use.
