@@ -1465,13 +1465,15 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
       nzOkText: 'Run this workflow',
       nzCancelText: 'Cancel',
       nzOnOk: () => {
-        const approvalStillSatisfied = item.approvalStatus === 'approved'
-          || (item.requiresApproval === false && item.approvalStatus === 'not_required');
-        if (dispatched || this.destroyed || this.workerReviewRequired || this.selected !== original || original.item !== item || item.id !== id ||
-            item.currentState !== 'ready' || !approvalStillSatisfied ||
+        const current = this.selected;
+        const currentItem = current?.item;
+        const approvalStillSatisfied = currentItem?.approvalStatus === 'approved'
+          || (currentItem?.requiresApproval === false && currentItem.approvalStatus === 'not_required');
+        if (dispatched || this.destroyed || this.workerReviewRequired || !current || !currentItem ||
+            currentItem.id !== id || currentItem.currentState !== 'ready' || !approvalStillSatisfied ||
             this.actionsUnavailable() || this.anyActionRunning()) return;
         dispatched = true;
-        this.executeSelectedWorkflow(id, original);
+        this.executeSelectedWorkflow(id, current);
       },
     });
   }

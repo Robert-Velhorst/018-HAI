@@ -879,6 +879,56 @@ describe('WorkflowEngineComponent', () => {
     expect(component.selected).toBe(newer);
   });
 
+  it('revalidates the refreshed selected workflow instead of rejecting a replacement record object', () => {
+    const { component, workflowService, modal } = createComponent();
+    component.dataLoaded = true;
+    component.overview = { states: ['ready', 'completed'] } as any;
+    const ready = workflowRecord([]);
+    ready.item.id = '11111111-1111-4111-8111-111111111111';
+    ready.item.currentState = 'ready';
+    ready.item.approvalStatus = 'approved';
+    component.applyWorkflowRecord(ready);
+    workflowService.runOne.and.returnValue(of({
+      workflowId: ready.item.id,
+      status: 'completed',
+      state: 'completed',
+      attempts: 1,
+    }));
+
+    component.runSelectedWorkflow();
+    const confirmation = modal.confirm.calls.mostRecent().args[0];
+    const refreshed = workflowRecord([]);
+    refreshed.item.id = ready.item.id;
+    refreshed.item.currentState = 'ready';
+    refreshed.item.approvalStatus = 'approved';
+    component.applyWorkflowRecord(refreshed);
+
+    confirmation.nzOnOk();
+
+    expect(workflowService.runOne).toHaveBeenCalledOnceWith(ready.item.id);
+  });
+
+  it('does not dispatch when the selected workflow changes state while confirmation is open', () => {
+    const { component, workflowService, modal } = createComponent();
+    component.dataLoaded = true;
+    const ready = workflowRecord([]);
+    ready.item.id = '11111111-1111-4111-8111-111111111111';
+    ready.item.currentState = 'ready';
+    ready.item.approvalStatus = 'approved';
+    component.applyWorkflowRecord(ready);
+    component.runSelectedWorkflow();
+    const confirmation = modal.confirm.calls.mostRecent().args[0];
+    const changed = workflowRecord([]);
+    changed.item.id = ready.item.id;
+    changed.item.currentState = 'needs_approval';
+    changed.item.approvalStatus = 'pending';
+    component.applyWorkflowRecord(changed);
+
+    confirmation.nzOnOk();
+
+    expect(workflowService.runOne).not.toHaveBeenCalled();
+  });
+
   it('allows a ready workflow with no approval requirement to enter the controlled run confirmation', () => {
     const { component, modal } = createComponent();
     component.dataLoaded = true;
