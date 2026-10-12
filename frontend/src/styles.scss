@@ -60,11 +60,13 @@ body.hai-theme-dark :is(h1, h2, h3, h4, h5, h6) {
    transparent to input while preserving the explicit close affordance. */
 .cdk-overlay-container .cdk-overlay-pane:has(nz-notification-container),
 .cdk-overlay-container .cdk-overlay-pane:has(nz-notification-container) nz-notification-container,
+.cdk-overlay-container nz-notification-container,
+.cdk-overlay-container .ant-notification,
 .cdk-overlay-container .cdk-overlay-pane:has(nz-notification-container) .ant-notification-notice {
   pointer-events: none !important;
 }
 
-.cdk-overlay-container .cdk-overlay-pane:has(nz-notification-container) .ant-notification-notice-close {
+.cdk-overlay-container .ant-notification-notice-close {
   pointer-events: auto !important;
 }
 .hai-execution-diagnostics {
