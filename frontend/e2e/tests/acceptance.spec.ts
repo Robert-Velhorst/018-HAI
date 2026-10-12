@@ -1,4 +1,4 @@
-import { expect, Page, test } from '@playwright/test';
+import { expect, Locator, Page, test } from '@playwright/test';
 import { assertIsolatedAcceptanceTarget } from './support/isolated-stack';
 
 /**
@@ -25,6 +25,40 @@ function safeConsoleSummary(value: string): string {
     .replace(/\b[a-f0-9]{32,}\b/gi, '[identifier]')
     .replace(/\bprobe-\d+\b/gi, 'probe-[run]')
     .slice(0, 180);
+}
+
+async function safePointerDiagnostics(page: Page, target: Locator) {
+  const targetBox = await target.boundingBox();
+  if (!targetBox) return { target: null, hitStack: [] };
+  return page.evaluate(({ x, y }) => {
+    const hit = document.elementFromPoint(x, y);
+    const describe = (element: Element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        tag: element.tagName.toLowerCase(),
+        classes: typeof element.className === 'string'
+          ? element.className.split(/\s+/).filter(Boolean).slice(0, 8)
+          : [],
+        pointerEvents: style.pointerEvents,
+        inlinePointerEvents: (element as HTMLElement).style?.getPropertyValue('pointer-events') || '',
+        position: style.position,
+        zIndex: style.zIndex,
+        rect: [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)],
+      };
+    };
+    const hitStack: Array<ReturnType<typeof describe>> = [];
+    for (let element = hit; element && hitStack.length < 8; element = element.parentElement) {
+      hitStack.push(describe(element));
+    }
+    const notifications = [...document.querySelectorAll('nz-notification-container')]
+      .slice(0, 3).map(describe);
+    return {
+      point: [Math.round(x), Math.round(y)],
+      hitStack,
+      notifications,
+    };
+  }, { x: targetBox.x + targetBox.width / 2, y: targetBox.y + targetBox.height / 2 });
 }
 
 async function login(page: Page) {
@@ -202,7 +236,13 @@ test.describe('HAI operator acceptance flow', () => {
         && /\/api\/v1\/workflow\/[^/]+\/proposals\/[^/]+\/resolve$/.test(new URL(response.url()).pathname),
         { timeout: 15_000 },
       );
-      await exactRuntime.click();
+      try {
+        await exactRuntime.click({ timeout: 5_000 });
+      } catch (error) {
+        const cause = error instanceof Error ? error.message : 'click failed';
+        const pointer = await safePointerDiagnostics(page, exactRuntime).catch(() => null);
+        throw new Error(`Runtime selection click failed (${safeConsoleSummary(cause)}). Pointer diagnostics: ${JSON.stringify(pointer)}`);
+      }
       const response = await proposalResponse.catch((error) => {
         const cause = error instanceof Error ? error.message : 'response wait failed';
         throw new Error(`Runtime selection dispatched no matching API response (${cause}). Browser console: ${browserConsoleErrors.join(' | ') || 'none'}`);
