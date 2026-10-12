@@ -4927,3 +4927,36 @@ files or the 224 differences lacking an exact-path ledger reference. The latest
 PR #36 head remains `20e5ca69315588aa285c0f1278f09c7d53c01d6f`; its exact-head
 run `38214257223` completed successfully. No local source or archive was
 changed or removed.
+
+### October 12, 2026: OAuth, evidence identity, and navigation contracts
+
+Compared five more snapshot paths with PR #36:
+
+- `backend/internal/source/oauth.go` removes creation and single-use consumption
+  of the persisted, owner/source-bound Google OAuth state. This would remove
+  the durable replay check for the callback. The PR's signed state plus
+  digest-only persisted consume-once record remains.
+- `backend/internal/source/repository.go` removes the OAuth-state repository
+  methods and revocation cleanup, maps an optimistic source-version conflict
+  to generic `gorm.ErrRecordNotFound`, and removes the ID tie-break from
+  extraction-page ordering. These weaken replay protection, typed stale-write
+  handling, and deterministic pagination; the PR behavior remains.
+- `backend/internal/operations/domain.go` stops setting the initial raw source
+  evidence SHA-256. The PR uses that fingerprint when deciding whether a
+  duplicate observation represents changed evidence; the snapshot omission
+  weakens the source-change check.
+- `backend/internal/source/scheduler.go` removes scheduler-status publication
+  for disabled, durable-running, failed-start, and volatile-fallback states.
+  That hides operational health/degraded mode from the system status surface;
+  the PR's redacted status reporting remains.
+- `frontend/src/app/control-room/progressive-section.component.html` removes
+  `data-hai-section`, which the PR shell uses to resolve module section
+  deep-links and which the shell's route/deep-link tests query. The snapshot
+  template would break that location contract; the PR attribute remains.
+
+No code from these variants was imported. This comparison adds five exact-path
+dispositions but does not reduce the audited 275-difference set until a full
+path-by-path crosswalk is reconciled; no arithmetic subtraction from the
+heuristic count is assumed. PR #36 is open at
+`732fdeb61acdc90f1cf9a68820e1d263a8a170da`; exact-head run `38214966689`
+passed. The snapshot and transcript archives remain unchanged by the review.
