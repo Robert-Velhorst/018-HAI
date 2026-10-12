@@ -1807,6 +1807,20 @@ func (s *service) DetailForOwner(ownerIdentity string, id uuid.UUID) (*PursuitDe
 		return nil, pursuitDetailLoadError("linked runtime attempts", err)
 	}
 	runtimeAttempts = runtimeAttemptsVisibleToOwner(ownerIdentity, runtimeAttempts)
+	exactAttempts, err := s.findExactRuntimeAttempts(ownerIdentity, linkedRuntimeAttemptIDs)
+	if err != nil {
+		return nil, pursuitDetailLoadError("explicit runtime attempts", err)
+	}
+	seenLaunches := make(map[uuid.UUID]bool, len(runtimeAttempts)+len(exactAttempts))
+	for _, attempt := range runtimeAttempts {
+		seenLaunches[attempt.ID] = true
+	}
+	for _, attempt := range exactAttempts {
+		if !seenLaunches[attempt.ID] {
+			runtimeAttempts = append(runtimeAttempts, attempt)
+			seenLaunches[attempt.ID] = true
+		}
+	}
 	if runtimeAttempts == nil {
 		runtimeAttempts = []models.AutomationLaunchEvent{}
 	}
@@ -5479,7 +5493,7 @@ func (s *service) completionActiveBlockerReasonForOwner(ownerIdentity string, id
 	}
 	runtimeAttemptIDs := linkUUIDs(links, LinkAgentRuntime)
 	if len(runtimeAttemptIDs) > 0 {
-		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, runtimeAttemptIDs, len(runtimeAttemptIDs))
+		attempts, err := s.findExactRuntimeAttempts(ownerIdentity, runtimeAttemptIDs)
 		if err != nil {
 			return "", err
 		}
@@ -5522,12 +5536,12 @@ func (s *service) completionEvidenceAvailableForOwner(ownerIdentity string, id u
 	}
 	runtimeEvidenceIDs := completionEvidenceRuntimeIDs(links)
 	if len(runtimeEvidenceIDs) > 0 {
-		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, runtimeEvidenceIDs, len(runtimeEvidenceIDs))
+		attempts, err := s.findExactRuntimeAttempts(ownerIdentity, runtimeEvidenceIDs)
 		if err != nil {
 			return false, "", err
 		}
 		for _, attempt := range attempts {
-			if runtimeAttemptCompleted(attempt) {
+			if runtimeAttemptCompleted(attempt) && !runtimeAttemptNeedsReview(attempt) {
 				return true, "linked agent-runtime attempt completed under HAI controls", nil
 			}
 		}
@@ -5573,6 +5587,34 @@ func completionEvidenceRuntimeIDs(links []models.PursuitLink) []uuid.UUID {
 		ids = append(ids, id)
 	}
 	return uniqueUUIDs(ids)
+}
+
+func (s *service) findExactRuntimeAttempts(ownerIdentity string, ids []uuid.UUID) ([]models.AutomationLaunchEvent, error) {
+	ids = uniqueUUIDs(ids)
+	result := make([]models.AutomationLaunchEvent, 0, len(ids))
+	for offset := 0; offset < len(ids); offset += 50 {
+		end := offset + 50
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch := ids[offset:end]
+		attempts, err := s.repo.FindLinkedAutomationLaunches(nil, batch, len(batch))
+		if err != nil {
+			return nil, err
+		}
+		found := make(map[uuid.UUID]models.AutomationLaunchEvent, len(attempts))
+		for _, attempt := range runtimeAttemptsVisibleToOwner(ownerIdentity, attempts) {
+			found[attempt.ID] = attempt
+		}
+		for _, id := range batch {
+			attempt, ok := found[id]
+			if !ok {
+				return nil, fmt.Errorf("explicit runtime evidence is unavailable; reconcile linked records before completion")
+			}
+			result = append(result, attempt)
+		}
+	}
+	return result, nil
 }
 
 func acceptedCompletionStatus(status string) bool {

@@ -6023,3 +6023,25 @@ production code was changed for this revalidation. PR #36 remains open and
 unmerged; all local source, transcript, and diagnostic material remains
 preserved, and the broader content/provenance crosswalk and cleanup gates
 remain incomplete.
+
+### October 12, 2026: exact pursuit runtime receipt integration
+
+Revisited the local exact-runtime-receipt candidate against PR source. The
+current PR fetched explicit runtime links through the display-capped query,
+which can silently omit linked launches when the repository applies its
+500-row cap; completion checks could also treat missing or foreign-owner
+receipts as absent rather than unresolved. Restored an exact lookup that
+deduplicates IDs, reads in batches of 50, filters to the requested owner, and
+fails closed if any requested receipt is unavailable. Pursuit detail now merges
+all exact linked receipts with its recent-activity result, and both completion
+evidence and active-blocker checks use the exact lookup. A runtime launch is
+accepted as completion evidence only when its status, exit result, approval
+state, and review predicate all pass.
+
+Added regular unit coverage for 51 linked receipts, oldest uncertain state,
+foreign ownership, and a missing receipt. Wired the existing PostgreSQL
+integration test for those same boundaries into the CI migration job; that
+tagged test was previously not run by CI. This change is awaiting exact-head
+CI; Go/gofmt are unavailable in this local checkout. No old-checkout content or
+local archive was modified, and semantic source review and cleanup gates remain
+open.

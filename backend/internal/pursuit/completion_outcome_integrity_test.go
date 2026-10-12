@@ -142,6 +142,65 @@ func TestPursuitTaskAttemptTimelineUsesSharedReviewPredicate(t *testing.T) {
 	}
 }
 
+func TestFindExactRuntimeAttemptsBatchesAndRejectsIncompleteReceipts(t *testing.T) {
+	repo := newFakeRepo()
+	s := &service{repo: repo}
+	ids := make([]uuid.UUID, 0, 51)
+	for index := 0; index < 51; index++ {
+		id := uuid.New()
+		status := "completed"
+		if index == 50 {
+			status = "indeterminate"
+		}
+		ids = append(ids, id)
+		repo.launchEvents = append(repo.launchEvents, models.AutomationLaunchEvent{
+			ID: id, OwnerIdentity: "alice", LaunchType: "script", Status: status,
+			StartedAt: time.Now().UTC().Add(-time.Duration(index) * time.Minute),
+		})
+	}
+	attempts, err := s.findExactRuntimeAttempts("alice", ids)
+	if err != nil || len(attempts) != len(ids) {
+		t.Fatalf("exact receipt count=%d err=%v", len(attempts), err)
+	}
+	if blockers := runtimeAttemptBlockers(attempts, nil, nil); len(blockers) != 1 {
+		t.Fatalf("oldest uncertain receipt was omitted: %#v", blockers)
+	}
+	if _, err := s.findExactRuntimeAttempts("bob", ids); err == nil {
+		t.Fatal("foreign-owner receipts were accepted")
+	}
+	if _, err := s.findExactRuntimeAttempts("alice", append(ids, uuid.New())); err == nil {
+		t.Fatal("missing exact receipt was treated as complete evidence")
+	}
+}
+
+func TestPursuitDetailIncludesEveryExplicitRuntimeReceiptBeyondRepositoryCap(t *testing.T) {
+	repo := newFakeRepo()
+	s := NewService(repo, nil)
+	pursuit, err := s.Create(CreateRequest{Title: "Load all linked runtime receipts", OwnerIdentity: "alice"})
+	if err != nil {
+		t.Fatalf("create pursuit: %v", err)
+	}
+	for index := 0; index < 501; index++ {
+		id := uuid.New()
+		repo.launchEvents = append(repo.launchEvents, models.AutomationLaunchEvent{
+			ID: id, OwnerIdentity: "alice", LaunchType: "script", Status: "completed",
+			StartedAt: time.Now().UTC().Add(-time.Duration(index) * time.Minute),
+		})
+		link := models.PursuitLink{
+			ID: uuid.New(), PursuitID: pursuit.ID, LinkType: LinkAgentRuntime,
+			LinkID: id.String(), Relationship: "execution_attempt",
+		}
+		repo.links[link.ID] = link
+	}
+	detail, err := s.DetailForOwner("alice", pursuit.ID)
+	if err != nil {
+		t.Fatalf("load pursuit detail: %v", err)
+	}
+	if len(detail.RuntimeAttempts) != 501 {
+		t.Fatalf("detail runtime receipt count=%d, want all 501 explicitly linked receipts", len(detail.RuntimeAttempts))
+	}
+}
+
 func TestPursuitOldDirectUncertaintyCannotDisappearBehindDisplayLimit(t *testing.T) {
 	repo := newFakeRepo()
 	s := NewService(repo, nil)

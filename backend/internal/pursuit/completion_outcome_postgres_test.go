@@ -180,7 +180,7 @@ func TestPostgresPursuitExactRuntimeQueryBatchesAllLinkedReceipts(t *testing.T) 
 		}
 		ids = append(ids, item.ID)
 	}
-	recent, err := repo.FindLinkedAutomationLaunches(nil, ids, len(ids))
+	recent, err := repo.FindLinkedAutomationLaunches(nil, ids, 0)
 	if err != nil || len(recent) != 20 {
 		t.Fatalf("real display cap %d: %v", len(recent), err)
 	}
