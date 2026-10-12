@@ -4549,3 +4549,30 @@ behavior and were not copied.
 This comparison produced no additional code changes. Existing PR content remains
 the safer implementation for the reviewed behaviors. No primary-checkout file,
 untracked artifact, archive, or worktree was modified or deleted.
+
+### October 12, 2026: source pagination, event durability, and test-artifact review
+
+Additional targeted diffs confirm that the local `backend/internal/source/handler.go`
+replaces the PR's bounded extraction-page service with a full owner extraction
+read followed by in-memory filtering and truncation. The PR's bounded service
+contract remains; the local path can load substantially more data than the
+requested API limit and returns a total derived only after loading the full set.
+
+The local `backend/internal/automation/automation_service.go` removes the
+repository interfaces that persist an automation mutation and its event
+together (`CreateWithEvent`, `UpdateWithEvent`, and `DeleteWithEvent`). It
+performs the mutation first and publishes afterward, so publication failure
+can leave durable state without its corresponding event. The PR's durable
+mutation/event path is retained.
+
+The local verification checkout deletes the PR's focused contradiction-
+relevance, evidence-freshness, and memory-promotion regression tests. Those
+checks remain present in the PR; the local deletion is not an integration
+candidate. A targeted read of `docs/child-agent-final-reports.md` also shows
+local edits replacing repository-relative links with machine-specific absolute
+paths and removing its historical-record caveat. The PR's portable references
+are retained. Since the large report diff was not reviewed line by line, its
+remaining content deltas remain open rather than being presumed equivalent.
+
+No further source changes were justified by this batch. The main checkout and
+all local source, transcript, diagnostic, and build artifacts remain untouched.
