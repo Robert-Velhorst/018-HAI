@@ -2668,3 +2668,21 @@ These changes weaken account isolation, emergency-stop/background policy
 enforcement, and recovery after an uncertain scan result. No ambient candidate
 files were copied or modified. This was a focused scheduler/scan review, not a
 complete audit of ambient or ambient-monitor code.
+
+### October 12, 2026: runtime admission and artifact boundary review
+
+Reviewed the agent-runtime and OpenClaw artifact changes in
+`hai-model-maintenance-audit` against PR #36. The candidate deletes
+`backend/internal/agentruntime/execution_admission.go` and its contract tests.
+That current-PR fence bounds a final emergency-stop check and the durable
+host-job/process-start admission in one short serialized operation; no
+equivalent admission-fence symbol was found in the candidate runtime package.
+
+The candidate also removes the OpenClaw signed-artifact URL validation and
+redaction implementation and its URL/download contract tests, along with the
+managed-archive validation/rollback implementation. In the upload handler it
+drops the concurrent-upload semaphore and the ZIP compression-ratio check.
+Together these remove protections around network artifact retrieval, secret
+URLs, archive handling, resource exhaustion, and recovery. No runtime candidate
+files were copied or modified; this review does not cover every deleted
+OpenClaw integration or every runtime behavior.
