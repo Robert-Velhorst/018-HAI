@@ -5806,3 +5806,29 @@ Current PR checkpoint: PR #36 remains open against `main` at
 run `38286402325` completed successfully for that exact SHA. This closes only
 the listed file-level comparisons; the wider semantic crosswalk, transcript
 attribution, merged-main gate, and local cleanup remain incomplete.
+
+### October 12, 2026: runner and test-harness crosswalk follow-up
+
+Completed the remaining review of the small source-like differences surfaced
+by the bounded untracked-file scan. The PR's Python runner CI contract
+normalizes CRLF/LF before exact lock-versus-runtime requirements comparison;
+the older variant does not. The PR's Grype container-smoke contract now checks
+the synthetic workspace/token and empty read-only `/inputs` and `/grype-db`
+mounts. The corresponding implementation adds that only for the Grype runner,
+matching the runner's required configuration and read-only inputs. These
+checks are present in the PR, not missing local work.
+
+The local outbound-TLS test changes only the `httptest` TLS configuration
+field used before `StartTLS`; no production transport behavior is changed. The
+local phase-two permission contract expects an older Postgres-based helper,
+while the PR's Compose contract uses the already-built backend image and
+networkless `chown` service. The PR emergency-stop test uses the valid request
+body required by the current handler. The corresponding source-approval
+differences were already reviewed in the preceding audit entry: the PR binds
+approvals to source-evidence hashes and owner type, while the local variant
+does not. No new product code was found to port from this batch.
+
+Exact-head CI for PR #36 commit `19f44c506c55f04e468992c6ad27a6c69854d646`
+completed successfully in run `38287191833`. This follow-up closes these
+named path differences only; it does not reduce the remaining 227 tracked and
+67 untracked content-difference review set or the archive/cleanup gates.
