@@ -4245,3 +4245,31 @@ Transcript cleanup is still not authorized: PR #36 is unmerged, the canonical
 transcript content remains incomplete. The three candidates are not removed
 until the merged-main gate is independently satisfied. All 24 retained files
 remain protected.
+
+### October 12, 2026: 10 MiB rescan and integration update
+
+The bounded record cap was raised from 8 MiB to 10 MiB after a byte scan of a
+1.53 GB retained transcript found its largest record was 9,293,992 characters.
+The synthetic regression now uses an 11 MiB record and continues to verify that
+oversized content forces retention. `test-child-agent-transcript-audit.ps1`
+passed after this change.
+
+The full main archive scan covered all 18 files / 20,739,169,122 bytes. It
+identified five uniquely attributed, completed, hashed candidates totaling
+3,179,439,595 bytes; 13 files totaling 17,559,729,527 bytes remain retained.
+Two records in two files are still over the cap. The supplemental scan covered
+all 9 files / 14,013,737,298 bytes and identified two candidates totaling
+3,113,294,358 bytes; seven files totaling 10,900,442,940 bytes remain
+retained, including five over-limit records. Combined: 27 files /
+34,752,906,420 bytes, seven candidates / 6,292,733,953 bytes, and 20 retained
+files / 28,460,172,467 bytes. All candidate transcript hashes were computed;
+both manifests state `deletion_performed: false`.
+
+The two newly attributed main-archive reports name 16 source paths, all present
+in the PR tree. The two supplemental reports name 19 source paths, also present
+in the PR tree. The exact current PR head before these changes,
+`5d2e24ddf4431f893de290fdcb368cd7a5fb0dd7`, passed all 36 Actions jobs in run
+`38202234619`; the pending ledger/parser update requires its own new-head CI
+run. PR #36 remains open and unmerged. No transcript, archive, or worktree was
+deleted, moved, truncated, compressed, or archived. The 20 retained files and
+all other unreviewed local HAI worktrees remain protected.

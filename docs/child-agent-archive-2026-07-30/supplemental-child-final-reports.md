@@ -1,10 +1,9 @@
 # Completed child-agent final reports
 
-> Classification note: The Hubble and Popper completion reports were observed in the earlier full-file pass. The bounded rescan found oversized records in all three files in this source root, so these reports are retained as observations and none of the nine supplemental transcripts is a cleanup candidate. The six session-log-relief files are unattributed due to oversized records and remain protected.
-
-
-This generated archive preserves the terminal report from each completed
-HAI child transcript in the audited cohort. Credential-shaped values and
+This generated archive preserves terminal reports observed in the audited
+transcripts. A report marked observed is not proof that the whole file
+was attributable or complete; such transcripts remain retained.
+Credential-shaped values and
 local repository roots are redacted; the manifest retains the SHA-256 of
 the original terminal message. Aborted and nonterminal transcripts are not
 represented as completed work and must be retained. Every transcript sharing

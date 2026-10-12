@@ -52,7 +52,7 @@ try {
     )
     [IO.File]::WriteAllLines($ambiguousTranscript, [string[]]$ambiguousRecords, [Text.UTF8Encoding]::new($false))
     $oversizedMetadata = New-SyntheticTranscriptLine 'session_meta' @{ id = $oversizedChildId; agent_nickname = 'oversized'; root_session_id = $rootSessionId }
-    $oversizedRecord = '{"timestamp":"2026-08-01T00:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"' + $oversizedChildTurn + '","content":"' + ('x' * (9MB)) + '"}}'
+    $oversizedRecord = '{"timestamp":"2026-08-01T00:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"' + $oversizedChildTurn + '","content":"' + ('x' * (11MB)) + '"}}'
     $laterCompletion = New-SyntheticTranscriptLine 'event_msg' @{ type = 'task_complete'; turn_id = $oversizedChildTurn; last_agent_message = 'Must stay retained because an earlier event was too large to parse.' }
     [IO.File]::WriteAllLines($oversizedTranscript, [string[]]@($oversizedMetadata, $oversizedRecord, $laterCompletion), [Text.UTF8Encoding]::new($false))
 

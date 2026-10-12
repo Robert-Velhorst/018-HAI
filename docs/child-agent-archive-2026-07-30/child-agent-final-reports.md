@@ -1,10 +1,9 @@
 # Completed child-agent final reports
 
-> Classification note: This preserves completion reports from the earlier unbounded full-file pass. The bounded rescan fully attributes only the three small files listed as candidates. Two other completion reports (Copernicus and Aristotle) are observations from the prior pass; their transcripts contain oversized records in the bounded rescan and remain retained. Other oversized transcripts also remain unattributed. This report archive is not proof that every edit in retained histories was integrated.
-
-
-This generated archive preserves the terminal report from each completed
-HAI child transcript in the audited cohort. Credential-shaped values and
+This generated archive preserves terminal reports observed in the audited
+transcripts. A report marked observed is not proof that the whole file
+was attributable or complete; such transcripts remain retained.
+Credential-shaped values and
 local repository roots are redacted; the manifest retains the SHA-256 of
 the original terminal message. Aborted and nonterminal transcripts are not
 represented as completed work and must be retained. Every transcript sharing

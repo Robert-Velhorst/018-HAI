@@ -98,3 +98,22 @@ eligible for deletion until their report/code crosswalk is incorporated into
 the canonical archive manifest and the cleanup tooling verifies all source
 roots. The six retained files are not deletion candidates. No file was
 changed, moved, or deleted during this audit.
+
+## 10 MiB full-file rescan update (2026-10-12)
+
+The scanner now accepts records up to 10 MiB; all nine files across both
+supplemental roots were rescanned. Two completed transcripts in
+`completed-agent-sessions` are now uniquely attributed, report-preserved, and
+SHA-256 hashed: Hubble (`019fb087-5a29-7983-bc56-3f8956867155`) and Popper
+(`019fb090-112e-7741-8c8b-1f78cafa14d6`). Their reports map to 14 and 5 source
+paths respectively; all 19 paths exist in the current PR tree. The 1.54 GB
+Anscombe transcript remains unattributed: its full scan has no unique child
+turn prefix or terminal event and it stays retained.
+
+The full supplemental inventory is 9 files / 14,013,737,298 bytes: 2
+candidate transcripts / 3,113,294,358 bytes and 7 retained / 10,900,442,940
+bytes. Five over-limit records across five files remain unparsed and retained.
+The current manifest and summary record the 10 MiB bound, candidate hashes,
+and `deletion_performed: false`. No transcript was removed. These are
+source-integration facts only; cleanup still requires the canonical-main gate
+and tooling that verifies both supplemental roots.

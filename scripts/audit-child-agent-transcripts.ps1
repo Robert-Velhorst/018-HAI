@@ -91,7 +91,7 @@ $records = [System.Collections.Generic.List[object]]::new()
 $relativeBase = (Split-Path -Parent $SessionsRoot).TrimEnd('\')
 $sessionFiles = Get-ChildItem -LiteralPath $SessionsRoot -Recurse -File -Filter '*.jsonl'
 [long]$bytesScanned = 0
-$maxRecordCharacters = 8MB
+$maxRecordCharacters = 10MB
 
 foreach ($file in $sessionFiles) {
     $firstLine = Get-Content -LiteralPath $file.FullName -TotalCount 1

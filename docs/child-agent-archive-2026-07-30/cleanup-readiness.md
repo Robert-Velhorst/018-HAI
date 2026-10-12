@@ -72,18 +72,20 @@ are in `child-agent-transcript-summary.json`. `deletion_performed` is `false`.
 
 ### Completed-report integration crosswalk (2026-10-12)
 
-This maps the three manifest rows marked `candidate_after_ledger_commit` to the
+This maps the five manifest rows marked `candidate_after_ledger_commit` to the
 preserved report and current repository evidence. It records source integration,
 not permission to remove the source transcript. Duplicate-ID and oversized
-transcripts remain retained as shown in the manifest. The other two completion
-reports from the earlier full parse are observations only because the bounded
-rescan could not parse all records in those files.
+transcripts remain retained as shown in the manifest. The 10 MiB rescan now
+attributes two completed reports (Copernicus and Aristotle) that the earlier
+8 MiB scan retained only as observations.
 
 | Child | Report kind | Integrated finding / disposition | Current repository evidence |
 | --- | --- | --- | --- |
 | `019fb287-b2e4-7251-8f1b-bc8fa9febc07` | Advisory | Action-bound approval, value/negation-aware criterion evidence, approved-review reconciliation, and workflow-owned success criteria are wired and covered by focused tests. | `backend/internal/task/validation_test.go`, `review_reconciliation_test.go`; `backend/internal/workflow/service_test.go`; `backend/internal/workflowtask/runner_test.go`; workflow intake spec. |
 | `019fb287-d1ed-75f0-99a8-8cd09c1ef9f2` | Advisory | Owner-scoped Constitution history and append-only framework-preference history are exposed; preference events are digest-checked, and frontend contracts preserve `baseVersion`. | `backend/internal/frameworkregistry/history_test.go`, `handler.go`, `repository.go`; routes `/frameworks/:id/preference-history` and `/constitution/history`; frontend registry model, service, component, and specs. |
 | `019fb287-f3be-7860-ba1f-e6b05088db73` | Advisory | Selection-history fetch failures render as unavailable/stale rather than empty history; workflow framework inspector includes conflicts, context requirements, and learning plan. | `frontend/src/app/pages/framework-registry/framework-registry.component.html`; `frontend/src/app/models/workflow.model.interface.ts`; Workflow Engine template and spec. |
+| `019fb20c-2b95-7550-8304-1117de872148` | Implementation | Pursuit approval tests use the owner role for approval-only paths while preserving non-approver coverage. | `backend/internal/pursuit/handler_test.go`. |
+| `019fb220-c797-77d1-8060-0f220cd733e1` | Implementation | Constitution base-version provenance and stale activation protection, first-owner draft selection, deferred active-Constitution invariant, and deterministic catalog digest are present. | `backend/internal/frameworkregistry/catalog_test.go`, `constitution_rules_test.go`, `migration_contract_test.go`, `repository.go`, `repository_integration_test.go`, `repository_postgres_test.go`, `repository_test.go`, `selector_test.go`, `service.go`, `service_test.go`, `types.go`; `backend/internal/models/framework_registry.go`; `backend/migrations/pre/0003_framework_registry.up.sql`, `0003_framework_registry.down.sql`; `docs/framework-registry.md`. |
 
 ### Retained-transcript work assessment (2026-10-10)
 
@@ -1216,3 +1218,25 @@ into the destructive cleanup command. The 3 main-root files remain candidates
 only; no source transcript was deleted. Full semantic reconciliation of
 oversized transcript content, external integration, canonical merge, and
 post-merge source verification are still outstanding, so cleanup is not ready.
+
+### Latest 10 MiB rescan crosswalk (2026-10-12)
+
+This supersedes the preceding 8 MiB cleanup totals. It also confirms the two
+newly attributable completion reports against the current PR tree. Source
+presence and hosted CI do not authorize transcript removal.
+
+| Child | Work integrated | Current source evidence |
+| --- | --- | --- |
+| `019fb20c-2b95-7550-8304-1117de872148` (Copernicus) | Approval-only pursuit tests use an owner role; non-approver checks are preserved. | `backend/internal/pursuit/handler_test.go`; current PR tree contains the path and the exact prior PR head's backend CI passed. |
+| `019fb220-c797-77d1-8060-0f220cd733e1` (Aristotle) | Constitution base-version provenance/stale-activation protection, first-owner draft selection, deferred active-Constitution invariant, and deterministic catalog digest are present. | Framework Registry service/repository/types and focused tests; model contract, `0003_framework_registry` up/down migrations, and `docs/framework-registry.md`; all named paths exist in current PR tree. Exact prior PR head CI passed; live PostgreSQL assertions remain environment-dependent. |
+
+Current main-root inventory: 18 files / 20,739,169,122 bytes; 5 hashed
+candidates / 3,179,439,595 bytes; 13 retained / 17,559,729,527 bytes; two
+records remain oversized. Supplemental inventory: 9 files / 14,013,737,298
+bytes; 2 hashed candidates / 3,113,294,358 bytes; 7 retained /
+10,900,442,940 bytes; five records remain oversized. Combined: 27 files /
+34,752,906,420 bytes; 7 candidates / 6,292,733,953 bytes and 20 retained /
+28,460,172,467 bytes. Candidate files remain local. Deletion requires merged
+canonical-main evidence, updated cleanup tooling for both supplemental roots,
+and passing exact-hash cleanup gates; none of those conditions is asserted by
+this scan.
