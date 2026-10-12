@@ -2532,3 +2532,35 @@ local checkout data. No archive, transcript, diagnostic, environment file,
 database, or unresolved worktree was removed. The wider
 branch, transcript-semantic, and local-artifact audits remain incomplete; no
 other cleanup gate is claimed.
+
+### October 12, 2026: model-maintenance candidate safety review
+
+Reviewed the model-maintenance and model-intelligence changes in the dirty
+`hai-model-maintenance-audit` worktree against PR #36 head
+`86e8d3d3fc51f3a8c0cbbd2feac9630a22f83444`. The candidate is based on the
+older `e07b9da` tree; comparison was limited to the maintenance scheduler,
+maintenance execution, provider registry, provider adapters, and inference
+validation paths.
+
+The candidate was not ported. In `backend/internal/llm/maintenance.go`, it
+removes provider-specific restrictions on reusing past maintenance records,
+including indefinite reuse of a prior `provider_managed` result, removes error
+redaction, and no longer fails closed when durable maintenance history is
+unavailable. In `backend/internal/modelintelligence/maintenance.go`, it drops
+the selected profile's provider-ID consistency check. It also removes the
+provider-specific restriction that prevents health-only checks from being
+treated as verified artifact freshness. In
+`backend/internal/llm/maintenance_scheduler.go`,
+it removes lifecycle admission for maintenance runs and makes a missing
+background-processing gate permissive instead of denying the run. In
+`backend/internal/modelintelligence/provider_registry.go` and `service.go`, it
+removes provider-probe age expiry and secret redaction, bypasses the active
+profile check before inference, and removes validation of returned provider,
+model, lane, success status, output text, and numeric metrics. These changes
+would allow stale or inconsistent provider evidence and unverified inference
+results to pass through, and weaken runtime and privacy controls.
+
+This is a targeted source-level safety review, not proof that every file in the
+770-entry dirty candidate worktree has been reviewed. No candidate files were
+copied or modified; the source worktree remains preserved. Other changed areas
+still require separate scoped review before integration or cleanup.
