@@ -2625,3 +2625,28 @@ elapses. These changes weaken approval binding, cancellation, outcome
 reconciliation, privacy, idempotency, and follow-up cadence. The candidate
 worktree remains untouched; this review covers these execution paths only, not
 all 770 dirty entries.
+
+### October 12, 2026: account-feed and operational authority review
+
+Reviewed the account-feed fetcher and operations changes in
+`hai-model-maintenance-audit` against PR #36. The candidate weakens feed
+boundaries: local files use `SafeJoin` followed by ordinary `os.Open` instead
+of secure-root open and file-identity verification; loopback feeds no longer
+require an exact opt-in; URL credentials, fragments, and secret-bearing query
+keys are no longer rejected; the HTTP transport no longer bypasses environment
+proxies or caps response-header bytes; and special-use, metadata, and
+carrier-grade NAT address protections and their security tests are removed.
+With a configured proxy, destination validation may apply to the proxy rather
+than the feed host. These changes increase local-file race, SSRF, and credential
+disclosure risk.
+
+The candidate also deletes the current PR's operations safe-effect boundary,
+execution-claim authority, source-approval and source-observation components,
+along with their atomicity, ownership, generation, and replay regression tests.
+The deleted safe-effect scope binds the owner/workspace, operation version,
+worker claim, source identity/revision, observation generation, and source
+configuration epoch. No equivalent authority modules were found in the
+candidate's operations package. The focused comparison accounted for more
+than 22,000 removed lines across 102 account-feed/ambient/operations/source-
+evidence paths; this is not a file-by-file review of the 770-entry candidate.
+No candidate files were copied or modified.
