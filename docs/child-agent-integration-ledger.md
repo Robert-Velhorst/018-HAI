@@ -2704,3 +2704,22 @@ Together these remove protections around network artifact retrieval, secret
 URLs, archive handling, resource exhaustion, and recovery. No runtime candidate
 files were copied or modified; this review does not cover every deleted
 OpenClaw integration or every runtime behavior.
+
+### October 12, 2026: durable jobs, event delivery, and database roles review
+
+Reviewed the durable-job, event, and database infrastructure deltas in
+`hai-model-maintenance-audit` against PR #36. The candidate deletes the
+review-recurring settlement implementation and its tests. The current PR uses
+a two-phase settling barrier so a successor job is not released until the
+first terminal transition is acknowledged, and requires reconciliation when a
+commit result is uncertain. The candidate has no `CompleteReviewRecurring`
+replacement.
+
+The candidate also deletes the transactional event outbox and its management
+handler/tests; no `EnqueueTx` or `OutboxStore` replacement was found. It removes
+the PostgreSQL runtime-role provisioning and bounded execution-connection
+manager, including their migration/runtime separation and pool lifecycle
+contracts. These are material losses in reliable job recovery, durable event
+delivery, and database least privilege. No candidate files were copied or
+modified; this is a focused infrastructure review, not a complete audit of
+durable jobs, event delivery, or database lifecycle behavior.
