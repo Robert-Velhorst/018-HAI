@@ -4897,3 +4897,33 @@ authorized Actions rerun (attempt 6) passed at
 `57357dd1045ff3a6580d4055f2b7a5f634042acf`, but that is not evidence for PR
 #36. No local source, transcript, archive, environment, database, or worktree
 was modified or removed.
+
+### October 12, 2026: receipt-read and safety-approval boundary review
+
+Continued the snapshot comparison on three execution-boundary files. In
+`backend/internal/executionauth/service.go`, the snapshot removes
+`CloneWithEmergencyStopEvaluator`, which creates an isolated service for a
+server-owned recovery boundary without mutating the shared authorizer. It also
+adds life-graph projection calls to receipt `Get` and `List`. The PR performs
+projection during receipt persistence or the transactional write projection;
+the projector is an append-only operational-record operation, so putting it on
+read endpoints would make inspection cause graph writes and potentially repeat
+them. Neither snapshot change was adopted.
+
+`backend/internal/executionapproval/composite_resolver.go` removes the dedicated
+`opsControl` review resolver and its exact safety-control approval-prefix
+routing. That would leave the privileged runtime-safety review reference
+unsupported rather than resolving it under its own exact-effect policy. The
+PR resolver remains.
+
+The snapshot `backend/internal/phase2/handler.go` removes an explicitly
+test-only diagnostics response, gated by both `RUN_MODE=test` and
+`HAI_PHASE2_TEST_DIAGNOSTICS=1`. This removes test failure detail, not a
+production feature; no runtime behavior improvement was established, and it
+does not justify changing the current PR implementation.
+
+This focused set is not a complete disposition of the 275 differing snapshot
+files or the 224 differences lacking an exact-path ledger reference. The latest
+PR #36 head remains `20e5ca69315588aa285c0f1278f09c7d53c01d6f`; its exact-head
+run `38214257223` completed successfully. No local source or archive was
+changed or removed.
