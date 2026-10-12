@@ -5347,3 +5347,32 @@ ten additional names: `CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL`,
 PR that are absent from the snapshot template; the template comparison found
 no environment configuration to port from the snapshot. It does not inspect
 or authorize changes to machine-specific `.env` files.
+
+### October 12, 2026: cleanup-gate audit and Trello regression crosswalk
+
+Ran the transcript-removal and unified cleanup readiness contract tests from
+the PR worktree; both reported PASS. The remover is constrained to the
+inventoried transcript root and manifest-listed candidate files, revalidates
+candidate size/hash, checks the supplemental source archives and the
+source/ledger/merged-PR gates, and requires both an explicit apply switch and
+a count-bound confirmation phrase. The source-integrity readiness script
+reported 18 ledger rows (5 candidate files, 3,179,439,595 candidate bytes),
+but `source_archive_verified`, committed-ledger verification, merged-PR
+verification, and `cleanup_gate_ready` were all false; no deletion was
+performed. PR #36 remains open, so local archive cleanup remains blocked.
+These contract checks do not execute the remover or prove post-delete
+recovery; no removal was attempted.
+
+Compared staged Trello connector files with the PR. The core connector,
+durable sync, network, sync repository, webhook intake, reconciliation, and
+webhook repository implementations are byte-identical. The PR's
+`trello_webhook_reconciliation_generations_integration_test.go` correctly
+limits apply/reapply/rollback operations to migration 0109. The staged
+snapshot instead passes the full migration set while asserting exactly one
+migration, so keep the PR test. The staged `trello_live_test.go` also calls
+the context-free `trelloGetJSON` with a context argument; the PR's
+context-free call matches the helper signature, while cancellation-aware
+callers use `trelloGetJSONContext`. Do not port either staged test variant.
+The source connector has not been tested against Robert's live Trello
+account in this audit; CI fixture and contract results are not provider
+acceptance.
