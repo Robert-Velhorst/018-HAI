@@ -2650,3 +2650,21 @@ candidate's operations package. The focused comparison accounted for more
 than 22,000 removed lines across 102 account-feed/ambient/operations/source-
 evidence paths; this is not a file-by-file review of the 770-entry candidate.
 No candidate files were copied or modified.
+
+### October 12, 2026: ambient scan authorization and durability review
+
+Reviewed the ambient service and scheduler changes in
+`hai-model-maintenance-audit` against PR #36. The candidate's scheduler treats a
+missing background-processing callback as permission to run, and the legacy
+scan path does not accept the request-scoped safety gate. Its scan reads
+unscoped workflow dashboards/items, memory dashboards, pursuit data, and
+repository records rather than requiring the owner-scoped/contextual interfaces
+used by the current PR. The candidate also removes durable scan checkpoints,
+context-aware persistence, the explicit unconfirmed-outcome state, and
+acknowledgement handling/tests. On scan failure it best-effort updates the
+record and ignores whether that update succeeded.
+
+These changes weaken account isolation, emergency-stop/background policy
+enforcement, and recovery after an uncertain scan result. No ambient candidate
+files were copied or modified. This was a focused scheduler/scan review, not a
+complete audit of ambient or ambient-monitor code.
