@@ -4041,3 +4041,92 @@ Postgres migration, browser acceptance, isolation, provider fixture, secret
 scan, nginx manager, gateway/Compose, authenticated control-plane, and
 framework-runner jobs remain queued. No full-suite or live-provider claim is
 made from this partial run. No local files were removed.
+
+### October 12, 2026: additional high-impact local source variants
+
+Inspected additional differing files directly against the PR tree. These
+examples confirm that the stale checkout's differences are not automatically
+missing work to port:
+
+- `backend/internal/braincatalog/catalog.go` in the PR includes the bounded,
+  read-only ChatGPT/Codex history MCP integration and constrains optional A2A
+  public transport to an explicit fixed-ngrok origin. The local version lacks
+  the MCP entry and has the earlier, broader A2A endpoint wording.
+- `backend/internal/lifeontology/repository_postgres.go` in the PR adds
+  owner-scoped, bounded entity/relation queries and bounded merge-proposal
+  history, with explicit domain/type/status validation and temporal filters.
+- `backend/internal/ambient/service.go` in the PR adds a summary projection,
+  rechecks scan dependencies, extracts candidate persistence behind a
+  checkpoint-aware helper, and treats due-work failures as scan failures.
+- `backend/internal/opscontrol/handler.go` and `service.go` in the PR require
+  durable review plus exact typed confirmation for emergency-stop resume;
+  the older local handler exposes a direct disengage request. The PR also
+  distinguishes a no-op control transition from a successful state change.
+- `backend/internal/phase2/module.go` in the PR separates the source-derived
+  operation approval check from the final safe-effect policy, so a generic
+  safe-action decision cannot authorize an unapproved source operation.
+- `backend/internal/source/durable_scheduler.go` in the PR completes queued
+  sync intent when an operator pause/revocation makes it obsolete instead of
+  spending provider retries on that policy state.
+- `backend/internal/task/state_repository_postgres.go` in the PR adds bounded,
+  immutable completion-history projection and context-aware plan lookup.
+- `backend/internal/identity/jwt.go` in the PR carries the operator-scope
+  claim/context key; this comparison establishes the claim surface only, not
+  end-to-end operator-scope enforcement.
+
+These are targeted content comparisons, not an exhaustive review of every
+remaining differing path. The PR includes these changes already; no code was
+ported in this pass. No local runtime data or source archives were changed.
+
+### October 12, 2026: untracked source-like file crosswalk
+
+Compared the stale checkout's untracked, source-like text files with PR #36
+after normalizing line endings. The comparison excluded `output/`, logs,
+`.env*`, locks, exit markers, JSONL transcripts, dumps, archives, and binaries.
+Of 871 eligible paths, 795 match the PR file content exactly, 66 share a path
+but differ in content, and 10 are absent from the PR tree. The absent paths
+are four `.claude-flow`/`.swarm` local-state files and six dated PostgreSQL
+test-evidence JSON files; no product source path is absent in this scoped
+comparison. These local-state and generated-evidence files remain preserved.
+
+Reviewed divergent examples across operation approval/claiming, source sync,
+task execution, database logging, OpenClaw maintenance, isolated acceptance,
+Windows installer smoke, Postgres claim integration, IDP session tests, and
+the control-room test harness. PR-side versions add or retain exact-revision
+approval binding, context propagation, fail-closed policy and source-change
+handling, redacted secret-scan output with a required CI base SHA, isolated
+synthetic browser authentication, and owned temporary-path checks. The local
+alternatives inspected were older or less restrictive; they were not copied.
+
+One divergent local `scripts/audit-npm-production-dependencies.sh` adds an
+`omit-optional` mode. It was not adopted: current PR behavior audits optional
+production dependencies by default, while the alternate mode could suppress
+their advisories. The default audit remains fail-closed on missing or
+untrustworthy reports.
+
+This is a bounded path/content crosswalk, not semantic review of all 66
+divergent files. The remaining differences, all excluded transcript/log/test
+artifacts, and the full historical patch-to-source mapping remain open. No
+local file was removed or moved.
+
+### October 12, 2026: expanded divergent-file review
+
+Continued the same-path review using normalized line endings and inspected the
+remaining high-signal Go, IDP, frontend, migration, and CI-support differences.
+The observed PR-side changes are current API/context migrations, stronger
+source-evidence revision binding and execution-claim checks, session-auth test
+updates for context-aware IDP methods, isolated run-scoped browser auth state,
+and migration rollback tests that use disposable databases instead of
+unwinding later-phase schema/data. Other reviewed deltas are fixture fixes for
+credential-like scanner fixtures, Windows runner compatibility/toolchain
+version updates, environment preservation checks, and the installer migration
+payload-selection correction already noted above. These are all present in
+the PR tree; no stale-checkout code was copied.
+
+This review still does not certify every assertion in each changed test or
+every dependency transitive in the regenerated Promptfoo lockfile. The 66-file
+set therefore remains an audit set, not a reason to delete the stale checkout.
+The six generated PostgreSQL evidence files, four local agent-state files,
+excluded outputs/logs/transcripts, and full historical patch-to-source
+attribution remain preserved and unresolved. No local file was removed or
+moved.
