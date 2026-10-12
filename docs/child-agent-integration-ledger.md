@@ -5703,3 +5703,51 @@ SHA. The user authorized pushing the two local commits to PR #36 and running
 its workflow; no merge was authorized or performed. This CI result establishes
 repository workflow success only; it does not complete semantic review of the
 remaining local deltas or establish live external-provider acceptance.
+
+### October 12, 2026: retained transcript path-reference scan
+
+A read-only streaming scan processed all 18 JSONL files in
+`D:\codex-temp\hai-completed-agent-sessions` (20,739,169,122 bytes). It found
+45,017 marker-containing records: 44,997 patch events, 44,941 successful and
+56 failed; 20 markers were not patch-event records. No matching-line JSON parse
+errors occurred. Two oversized records were skipped at the configured
+10,485,760-character limit, so `patch_event_scan_complete=false`; this is not
+a complete patch-history scan.
+
+The scan found 793 unique target paths, 70,295 total references, and 704 unique
+paths under the preserved checkout prefix. Of those, 681 are tracked in the
+current PR repository, zero were present-but-untracked there, and 23 were not
+found in the PR checkout:
+
+```text
+.codex-preview-server.mjs
+.env.local
+.git/info/exclude
+.tmp-ai-code-review.json
+frontend/mock-preview-server.js
+frontend/proxy.preview.json
+nginx-config/nginx.conf
+pg-lifecycle-recovery.go.txt
+recovery/catalog_test.go
+recovery/pg-active-invariant.patch
+recovery/pg-functions.patch
+recovery/pg-trigger.patch
+recovery/registry-audit-stage/backend__internal__frameworkregistry__migration_contract_test.go
+recovery/registry-audit-stage/backend__internal__frameworkregistry__repository_postgres_constitution_test.go
+recovery/registry-audit-stage/backend__internal__frameworkregistry__repository_postgres_test.go
+recovery/registry-audit-stage/backend__internal__frameworkregistry__repository.go
+recovery/registry-audit-stage/backend__internal__frameworkregistry__service_test.go
+recovery/registry-audit-stage/backend__migrations__pre__0003_framework_registry.down.sql
+recovery/registry-audit-stage/backend__migrations__pre__0003_framework_registry.up.sql
+recovery/registry-audit-stage/docs__framework-registry.md
+recovery/test-small.patch
+registry-postgres-audit-test.tmp
+repository_postgres_constitution_test.go
+```
+
+The paths include local configuration, preview-only tooling, and recovery/test
+artifacts, but their originating patch contents have not been semantically
+reviewed. Do not infer that all are disposable or that all represent missing
+product behavior. The source transcripts were not modified. The two skipped
+records and all 23 missing-path references remain open items; no cleanup
+allowlist can be derived from this scan alone.
