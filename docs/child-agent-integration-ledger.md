@@ -2839,3 +2839,48 @@ template and the governed nginx configuration manager for dynamic routes.
 The static candidate was not validated against the current container topology.
 No snapshot files were changed. Current-head CI run `38188151400` for PR #36
 remains pending; the path review is limited to these four additions.
+
+### October 12, 2026: focused progressive-control frontend comparison
+
+Compared the staged snapshot versions of the Control Center, Governance
+Control, Runtime Control, Task Blueprint, and Workflow Engine with PR #36 at
+`89dd87276a6c545a5f994549bfd95697c1371d29`. The snapshot changes were not
+ported because the current PR has stronger data, approval, and recovery
+boundaries:
+
+- Control Center: the snapshot calls full ambient and pursuit endpoints rather
+  than their summary projections, removes the requirement for complete
+  needs-Robert/blocked/stale counts, and counts by list length. The backend
+  already tests `TestDashboardSerializesEmptyQueuesAsArrays`, while the current
+  frontend intentionally distinguishes incomplete counts from a verified
+  empty queue. No evidence supports replacing these contracts with the older
+  full-dashboard requests.
+- Governance Control: the snapshot loads advanced agent, life-context,
+  ledger, and proactivity surfaces on initialization instead of restoring only
+  the advanced sections previously opened. The current specs assert
+  `restores only advisory engines whose sections were saved open`,
+  `loads full controlled-learning outcome history only when its section opens`,
+  and `loads full authorization evidence only when its section opens`.
+- Runtime Control: the snapshot removes the durable resume-review request,
+  validates review evidence and the stop revision, and requires the exact
+  typed confirmation `RESUME BACKGROUND PROCESSING`. Current tests assert the
+  review is prepared without resuming, reject incomplete/mismatched review
+  evidence, and prevent resume without explicit confirmation.
+- Task Blueprint: the snapshot replaces the 900,000 ms execution timeout with
+  the 20,000 ms ordinary-operation timeout and removes MCP call/result
+  identity-pairing helpers. Current regression tests cover
+  `pairs each successful MCP tool call with the result that call returned`
+  and explain failed calls without misattributing a result.
+- Workflow Engine: on `reviewRequired`, the snapshot calls `uncertain()` and
+  returns, omitting the current PR's selected-record reload and queue refresh.
+  Those steps reconcile a possibly completed operation before more work is
+  authorized; the current spec asserts the worker enters review-required
+  state.
+
+The snapshot versions of the shell also remove the mobile-navigation focus
+guard and document-title update; the current versions retain both. These
+reviews establish that the examined snapshot deltas are not missing behavior;
+they do not complete review of the remaining differences in the 289-path
+queue. No snapshot content was copied or modified. Frontend tests were
+inspected but not rerun locally in this dependency-free audit worktree; exact-
+head GitHub CI remains the execution gate.
