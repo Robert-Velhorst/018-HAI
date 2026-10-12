@@ -3979,3 +3979,65 @@ non-matching tracked variants have not all received semantic review, and the
 integration. Generated logs may eventually be removable after the evidence they
 uniquely carry is summarized and checked against hosted/committed records; no
 such deletion is authorized by this audit note alone.
+
+### October 12, 2026: supplemental completed-report paths at current PR head
+
+Re-extracted the repository-relative source links from the three completed
+supplemental child reports and checked them against PR #36's exact current
+tree, `69bbcbc9a621112bc82e9e1d476fda6c8840a3a7`. All 21 distinct report-named
+paths are present and tracked; none is missing. This closes the source-presence
+check for Hubble, Popper, and Anscombe's report-listed files only. It does not
+reconstruct every historical patch, establish that unrelated archive events
+were integrated, or turn the archived focused test results into current-head
+CI evidence.
+
+The three transcript files remain local cleanup candidates only: their
+recorded source hashes were verified by the supplemental readiness check, but
+the remover requires the verified ledger on merged canonical `main`. PR #36
+is still open. Exact-head run `38192192044` is for this commit; at that earlier
+check, Windows installer/signing, cleanup-readiness safety, and guarded native
+Windows regression jobs were running while the run remained nonterminal. No
+transcript or other local data was removed.
+
+### October 12, 2026: focused stale-checkout source comparison
+
+Compared the current dirty primary checkout's versions of six operational
+files against PR #36 at the exact head above, normalizing line endings before
+review. The current PR implementation is ahead of that checkout in each
+reviewed area:
+
+- `backend/internal/operations/service.go` fingerprints raw evidence with
+  SHA-256 before refreshing source evidence.
+- `backend/internal/workflow/service.go` bounds and validates success criteria,
+  persists them, passes them into task execution, and includes them in the
+  source revision identity.
+- `backend/internal/source/trello_live_test.go` uses the context-aware live
+  Trello request helper.
+- Previously reviewed `backend/internal/task/service.go` contains the
+  read-only ChatGPT logs MCP loop and trace retention, retry/review safeguards,
+  and durable review snapshot checks.
+- Previously reviewed `backend/internal/source/service.go` contains
+  owner-scoped source lookup, an explicit disabled state for the unimplemented
+  Autofever connector, opaque LARO cursor handling, cancellation-aware search,
+  and owner-filtered extraction pages.
+- Previously reviewed `backend/internal/automation/automation_service.go`
+  persists mutation and outbox events transactionally.
+
+These file-level findings do not establish that all local changes were ported.
+The stale checkout has 692 modified tracked paths; its working diff reports
+142,921 insertions and 17,804 deletions across those paths, and `output/`
+contains a large generated artifact tree. Earlier normalized triage counted
+195 differing shared text paths and two legacy nginx paths absent from the
+current PR; those paths, plus all non-text and untracked material, still need
+classification and semantic disposition. The two missing nginx files are
+legacy static configurations; they were not copied because the PR uses the
+governed nginx template/config-manager path and the legacy files include a
+placeholder key.
+
+Exact-head CI run `38192192044` remains nonterminal. Its Windows installer
+preview/signing guards, guarded native Windows regressions, cleanup-readiness
+contracts, and Windows CI/smoke-path contract have passed. Backend, frontend,
+Postgres migration, browser acceptance, isolation, provider fixture, secret
+scan, nginx manager, gateway/Compose, authenticated control-plane, and
+framework-runner jobs remain queued. No full-suite or live-provider claim is
+made from this partial run. No local files were removed.
