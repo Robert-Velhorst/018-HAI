@@ -4176,3 +4176,15 @@ matching sizes. The gate reported `source_archive_verified=true`,
 integration PR is still unmerged, the committed-ledger-on-main check was not
 requested/passed, and semantic patch-event-to-source attribution remains
 incomplete. No archive file was changed or deleted.
+
+### October 12, 2026: supplemental source-archive integrity gate
+
+Ran `scripts/test-hai-supplemental-transcript-cleanup-readiness.ps1` against
+the two inventoried supplemental roots. It verified all nine manifest paths
+and 14,013,737,298 logical bytes, hashed all three completed candidates
+(4,651,926,405 bytes), confirmed all six retained transcripts remain present,
+and verified all 21 report-linked repository paths. The result was
+`supplemental_source_archive_verified`; `deletion_performed=false` and
+`cleanup_authorized=false`. The supplemental completed reports have a
+source-path crosswalk, but full historical patch-event attribution remains
+incomplete and these files remain preserved.
