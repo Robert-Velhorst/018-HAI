@@ -901,8 +901,9 @@ CI/local discrepancy. The PR is not green and no cleanup gate passes.
 The six retained files behind the previously unattributed completion-text
 figure are now identified by exact `session_path` values in the manifest. The
 read-only `scripts/audit-hai-retained-completions.ps1` validates each path and
-byte length against that manifest, then streams the six files and prints only
-counts derived from hashes, not message bodies or hash values. Results: four
+byte length against that manifest, then scans the six files with a bounded
+record reader and prints only counts derived from hashes, not message bodies
+or hash values. Results: four
 large aborted files each contain 580 completion
 records and 542 non-empty final messages; two small aborted files contain no
 completion records. The cross-file totals are 2,320 completion records, 2,168

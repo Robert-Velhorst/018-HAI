@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib\hai-transcript-records.ps1')
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
     throw 'PowerShell 7 or later is required for ConvertFrom-Json -AsHashtable.'
@@ -14,51 +15,6 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 
 if ($MaxMissingPaths -lt 0) {
     throw 'MaxMissingPaths must be zero or greater.'
-}
-
-function Read-BoundedTranscriptRecords {
-    param(
-        [Parameter(Mandatory)][IO.StreamReader]$Reader,
-        [Parameter(Mandatory)][int]$MaximumCharacters
-    )
-
-    $buffer = [char[]]::new(65536)
-    $builder = [Text.StringBuilder]::new()
-    $skippingOversized = $false
-    while (($readCharacters = $Reader.Read($buffer, 0, $buffer.Length)) -gt 0) {
-        $offset = 0
-        while ($offset -lt $readCharacters) {
-            $newline = [Array]::IndexOf($buffer, [char]10, $offset, $readCharacters - $offset)
-            $segmentLength = if ($newline -ge 0) { $newline - $offset } else { $readCharacters - $offset }
-            if (-not $skippingOversized) {
-                if ($builder.Length + $segmentLength -gt $MaximumCharacters) {
-                    [void]$builder.Clear()
-                    $skippingOversized = $true
-                } elseif ($segmentLength -gt 0) {
-                    [void]$builder.Append($buffer, $offset, $segmentLength)
-                }
-            }
-
-            if ($newline -ge 0) {
-                if ($skippingOversized) {
-                    [pscustomobject]@{ Text = ''; Oversized = $true }
-                } else {
-                    [pscustomobject]@{ Text = $builder.ToString().TrimEnd("`r"); Oversized = $false }
-                }
-                [void]$builder.Clear()
-                $skippingOversized = $false
-                $offset = $newline + 1
-            } else {
-                $offset += $segmentLength
-            }
-        }
-    }
-
-    if ($skippingOversized) {
-        [pscustomobject]@{ Text = ''; Oversized = $true }
-    } elseif ($builder.Length -gt 0) {
-        [pscustomobject]@{ Text = $builder.ToString().TrimEnd("`r"); Oversized = $false }
-    }
 }
 
 $transcriptPath = (Resolve-Path -LiteralPath $TranscriptRoot -ErrorAction Stop).Path.TrimEnd('\', '/')
@@ -96,7 +52,7 @@ foreach ($file in $files) {
     $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8, $true, 1048576)
     $fileHadOversizedRecord = $false
     try {
-        Read-BoundedTranscriptRecords -Reader $reader -MaximumCharacters $MaxRecordCharacters | ForEach-Object {
+        Read-HaiBoundedTranscriptRecords -Reader $reader -MaximumCharacters $MaxRecordCharacters | ForEach-Object {
             $scannedRecord = $_
             if ($scannedRecord.Oversized) {
                 $oversizedRecordsSkipped++
