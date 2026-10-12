@@ -6063,6 +6063,20 @@ gofmt remain unavailable in this local checkout. No old-checkout content or
 local archive was modified, and semantic source review and cleanup gates remain
 open.
 
+Also cross-checked the three findings in
+`output/pursuit-outcome-review-second-20261001.md`. For direct task receipts,
+the review query includes every `mode=run` row independently of verification
+text, then applies the shared Go predicate; terminal validated/completed runs
+with empty, NULL, unknown, or whitespace-wrapped uncertainty therefore remain
+review blockers instead of being treated as verified. The PostgreSQL regression
+`TestPostgresPursuitUnresolvedAttemptQueryIgnoresDisplayLimit` seeds old rows
+outside the recent display window, including NULL and tab/newline/non-ASCII
+whitespace cases, and asserts owner scope and parity with the Go predicate.
+Exact linked runtime receipts use the batched lookup above, so the display cap
+cannot authorize completion when an older explicit receipt is unresolved. This
+was source/test reconciliation only; the prior hosted exact-head run is the
+available execution evidence, not a fresh local PostgreSQL run.
+
 The follow-up documentation-only commit triggered CI run `38297575184` on
 `6bf6426e8d8356c629f4f709ce277cad8b5852d5`. Backend, real-Postgres migration,
 browser, and two-account jobs passed, but the run concluded with two failures:
