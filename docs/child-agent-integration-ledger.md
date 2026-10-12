@@ -5499,7 +5499,7 @@ expected request is absent. TypeScript syntax transpilation and
 test has not been run, and no product-code fix has been made or claimed.
 
 The diagnostic test change and ledger update are committed locally in
-`codex/hai-ledger-review-20261012` (commit `0eef9fd5`); they have not been
+`codex/hai-ledger-review-20261012` (commit `879e37d3`); they have not been
 pushed to PR #36. PR #36's browser acceptance is still a failing release gate,
 and its workflow has not been rerun. PR #35's separate CI authorization does
 not authorize a PR #36 run. All browser artifacts and worktrees remain
