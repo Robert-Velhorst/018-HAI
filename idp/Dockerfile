@@ -31,7 +31,6 @@ RUN apt-get update \
     && groupadd --gid 10001 hai \
     && useradd --uid 10001 --gid hai --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin hai \
     && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Copy the pre-built binary from the previous stage

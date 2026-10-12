@@ -26,6 +26,27 @@ import (
 
 const frameworkRegistryMigrationVersion = "pre/0003_framework_registry"
 
+func preMigrationVersionsAfter(t *testing.T, files fs.FS, version string) []string {
+	t.Helper()
+	entries, err := fs.ReadDir(files, "pre")
+	if err != nil {
+		t.Fatalf("read pre migrations: %v", err)
+	}
+	versions := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".up.sql") {
+			continue
+		}
+		candidate := "pre/" + strings.TrimSuffix(name, ".up.sql")
+		if candidate > version {
+			versions = append(versions, candidate)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(versions)))
+	return versions
+}
+
 func frameworkRegistryLifecycleMigrations(t *testing.T) fstest.MapFS {
 	t.Helper()
 	files := fstest.MapFS{}
@@ -71,23 +92,6 @@ func migrationFilesThrough(t *testing.T, lastVersion string) fs.FS {
 	}
 	files["post/.keep"] = &fstest.MapFile{Data: []byte("test fixture")}
 	return files
-}
-
-func preMigrationVersionsAfter(t *testing.T, after string) []string {
-	t.Helper()
-	paths, err := fs.Glob(frameworkRegistryLifecycleMigrations(t), "pre/*.up.sql")
-	if err != nil {
-		t.Fatalf("list lifecycle migrations: %v", err)
-	}
-	versions := make([]string, 0, len(paths))
-	for _, path := range paths {
-		version := strings.TrimSuffix(path, ".up.sql")
-		if version > after {
-			versions = append(versions, version)
-		}
-	}
-	sort.Sort(sort.Reverse(sort.StringSlice(versions)))
-	return versions
 }
 
 func openFrameworkRegistryPostgresTestDB(t *testing.T) *gorm.DB {
@@ -276,7 +280,7 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 		t.Fatal("rejected out-of-order rollback changed the registry schema")
 	}
 
-	for _, version := range append(preMigrationVersionsAfter(t, frameworkRegistryMigrationVersion), frameworkRegistryMigrationVersion) {
+	for _, version := range append(preMigrationVersionsAfter(t, files, frameworkRegistryMigrationVersion), frameworkRegistryMigrationVersion) {
 		if err := infra.RollbackMigration(
 			db,
 			files,
@@ -324,10 +328,9 @@ func TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reapply framework registry migration: %v", err)
 	}
-	// The extension and baseline migrations remain applied throughout this
-	// focused rollback. The framework registry itself plus every later
-	// migration are replayed.
-	if want := len(preMigrationVersionsAfter(t, frameworkRegistryMigrationVersion)) + 1; reapplied != want {
+	// The baseline migrations pre/0001 and pre/0002 remain applied; only the
+	// framework registry migration and later lifecycle migrations are replayed.
+	if want := len(preMigrationVersionsAfter(t, files, frameworkRegistryMigrationVersion)) + 1; reapplied != want {
 		t.Fatalf("reapplied %d migrations, want %d", reapplied, want)
 	}
 	if !relationExists(t, db, "framework_selection_records") {
