@@ -4476,3 +4476,37 @@ The PR remains open and mergeable. Exact-head Actions run `38207676729` tests
 34 successful jobs and two running, with no failures; final CI status is not
 yet established. No local file or archive was deleted or modified by this
 review.
+
+### October 12, 2026: tracked-tree comparison and compatibility-route integration
+
+A fresh comparison of the primary checkout's 682 modified tracked paths against
+the current PR tree, ignoring end-of-line-only changes, found 202 content-
+divergent paths. This supersedes the older 75-path estimate in prior ledger
+entries. The comparison did not modify the primary checkout. The PR remains
+ahead on net across the inspected files; review is continuing by behavior,
+not by line count.
+
+Targeted diffs in ambient scanning, operation approval/claims, source reads,
+workflow execution, phase-two policy handling, IDP state handling, and
+dashboard data loading showed that many stale-checkout variants remove PR-side
+guards, bounded retrieval, explicit success criteria, or preflight checks. The
+locally changed acceptance test that proceeds from approval to a completed
+workflow is not evidence that those removed execution prerequisites are
+unnecessary; it was not imported. A name-level test comparison is not treated
+as assertion-level equivalence.
+
+One local-only route was a concrete gap: the opt-in `compatibility` Compose
+profile defines `generic-auto`, and the gateway mounts `nginx-config/sites-enabled`,
+but the PR had no static `/generic-auto/` route. Added that route to the PR tree
+with the existing internal auth subrequest, access/refresh cookie propagation,
+and service-name upstream. Extended the gateway contract test to verify the
+route's authentication and its opt-in Compose profile. `python
+nginx-config/test_gateway_contract.py` passed all 19 tests.
+
+Did not import the local standalone `nginx-config/nginx.conf`: the active
+Compose path renders `nginx.conf.template` with the protected backend and
+preview secrets under `umask 077`, while the standalone file embeds a literal
+placeholder backend key and is not mounted as the gateway's main config. The
+remaining tracked content differences and all 68 divergent untracked candidate
+files remain open for semantic review; no primary-checkout file or archive was
+removed.

@@ -4,6 +4,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 NGINX_TEMPLATE = (ROOT / "nginx-config" / "nginx.conf.template").read_text(encoding="utf-8")
+GENERIC_AUTO_ROUTE = (
+    ROOT / "nginx-config" / "sites-enabled" / "generic-auto.conf"
+).read_text(encoding="utf-8")
 COMPOSE = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
 LEGACY_COMPOSE = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
@@ -112,6 +115,17 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertIn("set $frontend_upstream frontend:8080;", NGINX_TEMPLATE)
 
     def test_compatibility_and_generated_routes_propagate_rotated_cookies(self) -> None:
+        generic_auto = compose_service_block("generic-auto")
+        self.assertIn('profiles: ["compatibility"]', generic_auto)
+
+        static_route = location_block("location /generic-auto/ {", GENERIC_AUTO_ROUTE)
+        self.assertIn("auth_request /auth-verify;", static_route)
+        self.assertIn("proxy_pass http://$generic_auto_upstream;", static_route)
+        self.assertIn("$upstream_http_x_hai_refreshed_access_cookie", static_route)
+        self.assertIn("$upstream_http_x_hai_refreshed_refresh_cookie", static_route)
+        self.assertIn("add_header Set-Cookie $hai_refreshed_access_cookie always;", static_route)
+        self.assertIn("add_header Set-Cookie $hai_refreshed_refresh_cookie always;", static_route)
+
         generated_route = (
             ROOT / "nginx-config-manager" / "internal" / "app" / "autoconfig" / "config_template.go"
         ).read_text(encoding="utf-8")
