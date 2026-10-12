@@ -67,8 +67,9 @@ async function safePointerDiagnostics(page: Page, target: Locator) {
                 });
               }
             }
-            if ('cssRules' in rule && rule.cssRules) {
-              try { inspectRules(rule.cssRules); } catch { /* inaccessible imported rules */ }
+            const nestedRules = (rule as CSSGroupingRule).cssRules;
+            if (nestedRules) {
+              try { inspectRules(nestedRules); } catch { /* inaccessible imported rules */ }
             }
           }
         };
