@@ -5525,3 +5525,24 @@ gateway references and tests use `nginx.conf.template`, so it was not copied.
 No source files were moved or changed in either checkout, and all existing
 worktrees and artifacts remain preserved. Continue package-by-package review
 of the 234 differing files before any port or cleanup decision.
+
+### October 12, 2026: source-connector delta spot review
+
+Reviewed the current source-package differences in the older checkout against
+the PR worktree, confirming the direction of the earlier comparison: these
+examples are safeguards already present on the PR side, not missing local
+features to copy. The PR source implementation persists owner-bound,
+single-use Google OAuth state by digest; passes cancellation through semantic
+source search; escalates terminal scheduled-sync failures into reviewable
+workflows; disables Autofever sync until its contract exists; preserves an
+opaque LARO cursor reset after a successful cursorless retry; and requires an
+explicit setting before a volatile scheduler fallback may run. The PR's
+Trello adapter also checks a bounded action page before skipping a quiet-board
+reconciliation and falls back to the full bounded read on activity,
+saturation, or malformed action data.
+
+These are selected production-code spot checks, not a semantic review of all
+15 differing source-package files or their tests. The PR's backend checks have
+passed at its recorded head, but no live Trello, Google OAuth, LARO, or other
+provider-account acceptance was performed. No source was copied from the
+older checkout.
