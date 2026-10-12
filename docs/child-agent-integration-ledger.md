@@ -6144,3 +6144,51 @@ current PR head `6a2aa8fdae802d83aa854f59d880952de25c2287` passed exact-head
 GitHub Actions run `38299612642` with all 36 jobs successful, including the
 real-Postgres migration suite. PR #36 remains open and unmerged; the wider
 content/provenance crosswalk and local cleanup gates remain incomplete.
+
+### October 12, 2026: claimed-effect safety handoff revalidation
+
+Revalidated the source-only findings in
+`output/claimed-effect-source-head-audit-20261001.md` against the current PR
+tree. The report's five concrete findings are superseded by current code and
+regressions as follows:
+
+- Runtime Lab handlers now require the exact configured owner, except for an
+  explicit owner-role claim scoped to that configured owner. The handler gate
+  runs before service access; `owner_gate_handler_test.go` verifies foreign,
+  case-distinct, anonymous, malformed, and missing-owner requests are rejected
+  without reads, writes, attempt changes, or adapter calls.
+- Constitution policy evaluation now receives the final-boundary context
+  through `EvaluateConstitutionExecutionPolicyContext`; the adapter rejects
+  nil/canceled contexts. The locked PostgreSQL path reserves an independent
+  execution connection and fails closed when the configured pool has fewer than
+  two connections. The original small-pool saturation schedule is not claimed
+  as exercised by this source crosswalk.
+- The safe worker rechecks current mode and block rules from inside the locked
+  final-effect callback. That callback and control mutations share the
+  execution-commit fence: mode changes use the mutation side of the fence, and
+  block-rule insertion has `TestBlockRuleMutationWaitsForFinalEffectFence`.
+  The worker callback also checks context and policy before entering the broker.
+- Effect authority retains and checks the server deadline, including when a
+  callback presents `context.WithoutCancel`; regression coverage verifies
+  cancellation/deadline revokes scope before callback return and after return.
+- Managed artifact names now include the full operation UUID; identity tests
+  verify different operation IDs do not share a path and that the exact name and
+  marker remain deterministic.
+
+The report's source-head ordering concern was separately reconciled above with
+the durable observation-generation, source-head lock, stale-observation, and
+final-boundary regression work. Its broader cautions remain material: the
+database lock and filesystem syscall are not one atomic transaction; a
+cancellation or failure after dispatch can leave an uncertain effect, so
+recovery must preserve uncertainty and must not guess-replay. Source-only review
+does not establish live provider freshness, production deployment behavior, or
+operator-machine acceptance.
+
+The `output/` inventory contains 34 Markdown reports; 25 filenames were not
+literal matches in this ledger at inventory time. Filename absence is only a
+navigation signal, not evidence that their findings were unintegrated. The
+reports are preserved, and the remaining report/source crosswalk is still open.
+No local source, report, transcript, diagnostic, environment, database, or
+worktree was modified or removed for this review. PR #36 remains open and
+unmerged. The exact-head CI run for `4bf3f2e848d9d5ee2a32a37d11ff9150ea1ee80a`
+was still in progress at this entry; no success is claimed.
