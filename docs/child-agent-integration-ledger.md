@@ -5574,3 +5574,26 @@ a second frontend contract. These PR-side implementations were retained; no
 older-checkout code was copied. This is a targeted contract/security review,
 not semantic acceptance of every frontend or verification delta. Full
 frontend component tests remain unverified in this partial worktree.
+
+### October 12, 2026: bounded patch-path transcript scan
+
+The first patch-path audit script used `StreamReader.ReadLine()`, which could
+allocate an entire JSONL record before inspecting it. The retained transcript
+inventory includes records larger than 1.5 GB, so rerunning that audit over the
+source archive with the old reader risked excessive memory use or process
+failure. The scanner now reads fixed-size character chunks, caps a record at
+10,485,760 UTF-16 character units (with a lower configurable limit for tests),
+skips an oversized record without retaining its contents, and continues with
+following records. Its report exposes skipped-record/file counts and sets
+`patch_event_scan_complete` false when a record was skipped or a marker record
+failed to parse.
+
+`pwsh -NoLogo -NoProfile -File
+scripts/test-hai-transcript-patch-path-audit.ps1` passed using a synthetic
+oversized record followed by a valid final record without a newline. The test
+confirmed the oversized record is reported, the later event is still counted,
+the tracked path is resolved, and the scan is marked incomplete. Its fixture
+was intentionally retained under the system temporary directory. The new
+scanner has not yet been run across the source transcript archives; their
+contents remain untouched, and this change alone does not alter transcript
+cleanup eligibility.

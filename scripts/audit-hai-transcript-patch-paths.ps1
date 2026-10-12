@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory)][string]$TranscriptRoot,
     [Parameter(Mandatory)][string]$SourceCheckoutRoot,
     [Parameter(Mandatory)][string]$RepositoryRoot,
-    [int]$MaxMissingPaths = 100
+    [int]$MaxMissingPaths = 100,
+    [ValidateRange(1, 10485760)][int]$MaxRecordCharacters = 10485760
 )
 
 $ErrorActionPreference = 'Stop'
@@ -13,6 +14,51 @@ if ($PSVersionTable.PSVersion.Major -lt 7) {
 
 if ($MaxMissingPaths -lt 0) {
     throw 'MaxMissingPaths must be zero or greater.'
+}
+
+function Read-BoundedTranscriptRecords {
+    param(
+        [Parameter(Mandatory)][IO.StreamReader]$Reader,
+        [Parameter(Mandatory)][int]$MaximumCharacters
+    )
+
+    $buffer = [char[]]::new(65536)
+    $builder = [Text.StringBuilder]::new()
+    $skippingOversized = $false
+    while (($readCharacters = $Reader.Read($buffer, 0, $buffer.Length)) -gt 0) {
+        $offset = 0
+        while ($offset -lt $readCharacters) {
+            $newline = [Array]::IndexOf($buffer, [char]10, $offset, $readCharacters - $offset)
+            $segmentLength = if ($newline -ge 0) { $newline - $offset } else { $readCharacters - $offset }
+            if (-not $skippingOversized) {
+                if ($builder.Length + $segmentLength -gt $MaximumCharacters) {
+                    [void]$builder.Clear()
+                    $skippingOversized = $true
+                } elseif ($segmentLength -gt 0) {
+                    [void]$builder.Append($buffer, $offset, $segmentLength)
+                }
+            }
+
+            if ($newline -ge 0) {
+                if ($skippingOversized) {
+                    [pscustomobject]@{ Text = ''; Oversized = $true }
+                } else {
+                    [pscustomobject]@{ Text = $builder.ToString().TrimEnd("`r"); Oversized = $false }
+                }
+                [void]$builder.Clear()
+                $skippingOversized = $false
+                $offset = $newline + 1
+            } else {
+                $offset += $segmentLength
+            }
+        }
+    }
+
+    if ($skippingOversized) {
+        [pscustomobject]@{ Text = ''; Oversized = $true }
+    } elseif ($builder.Length -gt 0) {
+        [pscustomobject]@{ Text = $builder.ToString().TrimEnd("`r"); Oversized = $false }
+    }
 }
 
 $transcriptPath = (Resolve-Path -LiteralPath $TranscriptRoot -ErrorAction Stop).Path.TrimEnd('\', '/')
@@ -32,6 +78,8 @@ $failedEvents = 0
 $markerRecords = 0
 $nonEventMarkers = 0
 $parseErrors = 0
+$oversizedRecordsSkipped = 0
+$filesWithOversizedRecords = 0
 
 $trackedPaths = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $trackedFileList = @(git -C $repositoryPath ls-files)
@@ -46,46 +94,56 @@ $files = @(Get-ChildItem -LiteralPath $transcriptPath -File -Filter '*.jsonl' | 
 foreach ($file in $files) {
     $stream = [IO.FileStream]::new($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite, 1048576, [IO.FileOptions]::SequentialScan)
     $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8, $true, 1048576)
+    $fileHadOversizedRecord = $false
     try {
-        while ($null -ne ($line = $reader.ReadLine())) {
-            if (-not $line.Contains('patch_apply_end')) { continue }
-            $markerRecords++
+        Read-BoundedTranscriptRecords -Reader $reader -MaximumCharacters $MaxRecordCharacters | ForEach-Object {
+            $scannedRecord = $_
+            if ($scannedRecord.Oversized) {
+                $oversizedRecordsSkipped++
+                $fileHadOversizedRecord = $true
+            } else {
+                $line = $scannedRecord.Text
+                if ($line.Contains('patch_apply_end')) {
+                    $markerRecords++
+                    $record = $null
+                    try {
+                        $record = ConvertFrom-Json -InputObject $line -AsHashtable -Depth 100
+                    }
+                    catch {
+                        $parseErrors++
+                    }
+                    if ($null -ne $record) {
+                        if ($record.type -ne 'event_msg' -or $record.payload.type -ne 'patch_apply_end') {
+                            $nonEventMarkers++
+                        } else {
+                            $eventCount++
+                            if ($record.payload.success -eq $true) { $successfulEvents++ } else { $failedEvents++ }
 
-            try {
-                $record = ConvertFrom-Json -InputObject $line -AsHashtable -Depth 100
-            }
-            catch {
-                $parseErrors++
-                continue
-            }
-            if ($record.type -ne 'event_msg' -or $record.payload.type -ne 'patch_apply_end') {
-                $nonEventMarkers++
-                continue
-            }
+                            foreach ($path in @($record.payload.changes.Keys)) {
+                                if ([string]::IsNullOrWhiteSpace($path)) { continue }
+                                [void]$paths.Add($path)
 
-            $eventCount++
-            if ($record.payload.success -eq $true) { $successfulEvents++ } else { $failedEvents++ }
-
-            foreach ($path in @($record.payload.changes.Keys)) {
-                if ([string]::IsNullOrWhiteSpace($path)) { continue }
-                [void]$paths.Add($path)
-
-                if ($path.StartsWith($primaryPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-                    $primaryReferences++
-                }
-                elseif ($path -match [regex]::Escape($scratchMarker)) {
-                    $scratchReferences++
-                }
-                elseif ($path -match [regex]::Escape($temporaryMarker)) {
-                    $temporaryReferences++
-                }
-                else {
-                    $otherReferences++
+                                if ($path.StartsWith($primaryPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                                    $primaryReferences++
+                                }
+                                elseif ($path -match [regex]::Escape($scratchMarker)) {
+                                    $scratchReferences++
+                                }
+                                elseif ($path -match [regex]::Escape($temporaryMarker)) {
+                                    $temporaryReferences++
+                                }
+                                else {
+                                    $otherReferences++
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
     }
     finally {
+        if ($fileHadOversizedRecord) { $filesWithOversizedRecords++ }
         $reader.Dispose()
         $stream.Dispose()
     }
@@ -118,6 +176,10 @@ $summary = [ordered]@{
     transcript_files = $files.Count
     transcript_bytes = (($files | Measure-Object -Property Length -Sum).Sum)
     marker_records = $markerRecords
+    oversized_records_skipped = $oversizedRecordsSkipped
+    files_with_oversized_records = $filesWithOversizedRecords
+    max_record_characters = $MaxRecordCharacters
+    patch_event_scan_complete = ($oversizedRecordsSkipped -eq 0 -and $parseErrors -eq 0)
     patch_events = $eventCount
     non_event_marker_records = $nonEventMarkers
     successful_events = $successfulEvents
