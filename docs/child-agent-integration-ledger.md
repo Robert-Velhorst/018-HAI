@@ -2981,7 +2981,9 @@ with PR #36 at `5a117f8c53108d8e5e99585b7cc51a22fa3c9937`:
 - The snapshot also removes the isolated emergency-stop evaluator clone and
   deletes workload-policy, inspection, and projection regression coverage.
   Its PostgreSQL advisory-lock rewrite is unnecessary to recover any missing
-  feature and is not adopted over the current implementation.
+  feature and is not adopted. The rewrite also embeds NUL bytes in a value
+  sent to `hashtextextended(text, 0)`; PostgreSQL `text` rejects NUL. The PR's
+  hex-encoded lock identity avoids that invalid parameter.
 
 No authorization code was ported. This pass reviewed the staged snapshot
 blobs and current source/tests only; no live database or external execution
@@ -3121,3 +3123,30 @@ absent from the snapshot. No pursuit code was ported:
 This is a staged-source and test comparison, not a production multi-account
 acceptance test. Snapshot data remains intact. PR #36 CI was still queued on
 prior heads; no current runtime verification is inferred here.
+
+### October 12, 2026: framework registry and agent-role comparison
+
+Reviewed nine differing staged paths under `backend/internal/frameworkregistry/`
+against PR #36 at `5ef9acdb49b118714fe8488fc17f66e84379701a`:
+
+- The snapshot changes life-domain matching so a generic `health` signal
+  always selects personal health, removing the distinction between personal
+  care and operational health probes. It deletes tests for mixed clinical
+  context and runtime-health classification.
+- It removes the explicit allowlist mapping implemented deterministic HAI
+  control-plane services to agent roles. The PR keeps unavailable external
+  specialists explicitly unassigned rather than silently claiming the
+  generic engine implements them; the snapshot deletes both role-contract
+  tests.
+- It removes the owner-scoped framework selection detail handler and its
+  authorization test, along with catalog-source coverage.
+- It removes stable empty-array normalization for conflict/adaptation fields,
+  which can turn a valid empty collection into JSON `null` for strict clients.
+- The snapshot changes the PostgreSQL advisory-lock key to concatenate owner
+  and framework IDs with a NUL byte, then passes that value as PostgreSQL
+  `text` to `hashtextextended`. PostgreSQL text cannot contain NUL; keep the
+  current unambiguous hex encoding and its text-safety regression test.
+
+No framework-registry code was ported. These checks are static source and
+test comparison, not live PostgreSQL or provider validation. PR #36's current
+head run remains a separate release gate; queued runs do not count as pass.
