@@ -57,6 +57,7 @@ $planningInterface = @($agentCard.supportedInterfaces | Where-Object {
 if ($agentCard.name -ne "HAI controlled planning" -or $null -eq $planningSkill -or $null -eq $planningInterface) {
     throw "The local HAI connector returned an unexpected Agent Card. Do not connect another tool until the HAI installation has been repaired."
 }
+Write-Host "Planning endpoint: $($planningInterface.url)"
 
 $requestId = [guid]::NewGuid().ToString()
 $planningRequest = @{

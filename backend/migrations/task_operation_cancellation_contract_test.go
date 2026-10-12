@@ -6,7 +6,7 @@ import (
 )
 
 func TestTaskOperationCancellationMigrationContract(t *testing.T) {
-	upBytes, err := Files.ReadFile("pre/0067_task_operation_cancellation.up.sql")
+	upBytes, err := Files.ReadFile("pre/0126_task_operation_cancellation.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestTaskOperationCancellationMigrationContract(t *testing.T) {
 		t.Fatal("task operation cancellation migration must not use CASCADE")
 	}
 
-	downBytes, err := Files.ReadFile("pre/0067_task_operation_cancellation.down.sql")
+	downBytes, err := Files.ReadFile("pre/0126_task_operation_cancellation.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

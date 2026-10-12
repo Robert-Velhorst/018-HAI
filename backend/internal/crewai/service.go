@@ -18,6 +18,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"automation-hub-backend/internal/agentguidance"
 )
 
 const (
@@ -65,11 +67,19 @@ type Proposal struct {
 }
 
 type Response struct {
-	Engine        string   `json:"engine"`
-	ModelID       string   `json:"modelId"`
-	RequestDigest string   `json:"requestDigest"`
-	Proposal      Proposal `json:"proposal"`
-	Scope         string   `json:"scope"`
+	Engine             string              `json:"engine"`
+	ModelID            string              `json:"modelId"`
+	RequestDigest      string              `json:"requestDigest"`
+	Proposal           Proposal            `json:"proposal"`
+	Scope              string              `json:"scope"`
+	GuidanceStatus     string              `json:"guidanceStatus,omitempty"`
+	AppliedBrainSkills []agentguidance.Pin `json:"appliedBrainSkills,omitempty"`
+}
+
+type runnerRequest struct {
+	Request         string               `json:"request"`
+	SuccessCriteria []string             `json:"successCriteria,omitempty"`
+	Guidance        []agentguidance.Item `json:"guidance,omitempty"`
 }
 
 type ProbeResult struct {
@@ -181,6 +191,19 @@ func (s *service) Probe(ctx context.Context) (*ProbeResult, error) {
 }
 
 func (s *service) Propose(ctx context.Context, input Request) (*Response, error) {
+	return s.propose(ctx, input, nil)
+}
+
+// ProposeWithGuidance adds only current, request-matched HAI catalog guidance
+// resolved from the authenticated owner's stored consent by the router.
+func (s *service) ProposeWithGuidance(ctx context.Context, input Request, guidance []agentguidance.Item) (*Response, error) {
+	if err := agentguidance.Validate("planning", input.Request, guidance); err != nil {
+		return nil, err
+	}
+	return s.propose(ctx, input, guidance)
+}
+
+func (s *service) propose(ctx context.Context, input Request, guidance []agentguidance.Item) (*Response, error) {
 	if !s.configured() {
 		return nil, ErrNotConfigured
 	}
@@ -190,7 +213,7 @@ func (s *service) Propose(ctx context.Context, input Request) (*Response, error)
 	if err := s.ensureMaintainedModel(ctx); err != nil {
 		return nil, err
 	}
-	payload, err := json.Marshal(input)
+	payload, err := json.Marshal(runnerRequest{Request: input.Request, SuccessCriteria: input.SuccessCriteria, Guidance: guidance})
 	if err != nil {
 		return nil, fmt.Errorf("could not encode local CrewAI planning request")
 	}
@@ -214,6 +237,10 @@ func (s *service) Propose(ctx context.Context, input Request) (*Response, error)
 		return nil, fmt.Errorf("local CrewAI planning runner returned an invalid proposal")
 	}
 	result.Scope = s.Status().Scope
+	if len(guidance) > 0 {
+		result.GuidanceStatus = "applied"
+		result.AppliedBrainSkills = agentguidance.Pins(guidance)
+	}
 	return &result, nil
 }
 

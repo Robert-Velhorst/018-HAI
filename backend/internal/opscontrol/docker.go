@@ -4,8 +4,6 @@ import (
 	"context"
 	"os/exec"
 	"time"
-
-	"automation-hub-backend/internal/processcontrol"
 )
 
 // DockerStatus is the truthful Docker Desktop dependency status (§31). HAI does
@@ -34,7 +32,6 @@ func DetectDocker(ctx context.Context) DockerStatus {
 	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, path, "info", "--format", "{{.ServerVersion}}")
-	processcontrol.Configure(cmd)
 	if err := cmd.Run(); err != nil {
 		st.Detail = "docker CLI present but daemon not responding; not required"
 		return st

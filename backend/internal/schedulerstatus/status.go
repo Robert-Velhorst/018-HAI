@@ -1,7 +1,5 @@
-// Package schedulerstatus keeps the in-process startup state of background
-// schedulers visible to the shared readiness endpoint. Durable jobs themselves
-// remain persisted in Postgres; this package only answers whether this backend
-// process successfully attached a worker to them.
+// Package schedulerstatus exposes whether this backend process attached its
+// background workers. Durable job state remains persisted by durablejob.
 package schedulerstatus
 
 import (
@@ -23,10 +21,10 @@ type State struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-var states = struct {
+var registry = struct {
 	sync.RWMutex
 	items map[string]State
-}{items: map[string]State{}}
+}{items: make(map[string]State)}
 
 func Record(state State) {
 	state.Name = strings.TrimSpace(state.Name)
@@ -35,21 +33,20 @@ func Record(state State) {
 	}
 	state.Detail = strings.TrimSpace(state.Detail)
 	state.UpdatedAt = time.Now().UTC()
-	states.Lock()
-	states.items[state.Name] = state
-	states.Unlock()
+	registry.Lock()
+	registry.items[state.Name] = state
+	registry.Unlock()
 }
 
 func Snapshot(name string) (State, bool) {
-	states.RLock()
-	state, ok := states.items[strings.TrimSpace(name)]
-	states.RUnlock()
+	registry.RLock()
+	state, ok := registry.items[strings.TrimSpace(name)]
+	registry.RUnlock()
 	return state, ok
 }
 
-// Probe makes a scheduler's startup status visible in /readyz. It is a warning
-// rather than a traffic-serving failure: the control plane remains usable for
-// inspection and recovery even when background work is intentionally paused.
+// Probe reports scheduler degradation as a warning, not a traffic-serving
+// failure: the control plane remains available for inspection and recovery.
 func Probe(name string) doctor.Probe {
 	name = strings.TrimSpace(name)
 	return doctor.Probe{
@@ -58,7 +55,7 @@ func Probe(name string) doctor.Probe {
 		Run: func(context.Context) error {
 			state, ok := Snapshot(name)
 			if !ok {
-				return fmt.Errorf("scheduler has not reported a startup state")
+				return fmt.Errorf("scheduler has not reported startup state")
 			}
 			if !state.Enabled {
 				return fmt.Errorf("scheduler disabled%s", detailSuffix(state.Detail))

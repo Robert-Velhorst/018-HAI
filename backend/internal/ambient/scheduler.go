@@ -8,6 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"automation-hub-backend/internal/durablejob"
+	"automation-hub-backend/internal/lifecycle"
+	"automation-hub-backend/internal/safety"
 	"automation-hub-backend/internal/schedulerstatus"
 )
 
@@ -15,18 +18,22 @@ type Scheduler struct {
 	service           Service
 	backgroundAllowed func() bool
 	running           atomic.Bool
+	reviewHeld        atomic.Bool
 }
 
 // StartScheduler starts ambient scanning.
 //
-// It prefers the durable path (persisted, retried, crash-recovered — see
-// durable_scheduler.go). A failed durable queue stops the scheduler by default
-// rather than silently using a non-recoverable ticker. The fallback is only
-// available when explicitly enabled for local development.
+// Durable startup fails closed: a queue failure must not bypass a persistent
+// review hold by silently switching to the context-only ticker. Legacy ticker
+// mode requires both an explicit durable-scheduler opt-out and a global
+// legacy-fallback opt-in.
 func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	policy := policyFromEnv()
 	if !policy.SchedulerEnabled {
-		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Detail: "disabled by AMBIENT_SCHEDULER_ENABLED"})
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Detail: "disabled by ambient scheduler policy"})
 		return
 	}
 	interval := time.Duration(policy.ScanIntervalSeconds) * time.Second
@@ -36,40 +43,39 @@ func StartScheduler(ctx context.Context, service Service, allowed ...func() bool
 	}
 	if durableSchedulerEnabled() {
 		if err := startDurableScheduler(ctx, service, interval, backgroundAllowed); err != nil {
-			if !legacyFallbackEnabled() {
-				schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Durable: true, Detail: "durable queue unavailable: " + err.Error()})
-				log.Printf("ambient scheduler: durable queue unavailable (%v); scheduler not started; set DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED=true only for local development", err)
+			if ctx.Err() != nil {
+				schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Durable: true, Detail: "startup canceled before durable worker attached"})
 				return
 			}
-			schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Detail: "durable queue unavailable; explicitly enabled legacy fallback: " + err.Error()})
-			log.Printf("ambient scheduler: durable queue unavailable (%v); using the explicitly enabled in-process fallback", err)
+			schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Durable: true, Detail: "durable worker unavailable; scheduler not started: " + safety.RedactSecrets(err.Error())})
+			log.Printf("ambient scheduler not started: durable queue/review persistence unavailable (%s)", safety.RedactSecrets(err.Error()))
+			return
 		} else {
 			schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Durable: true, Running: true, Detail: "durable worker attached"})
 			return
 		}
-	} else {
-		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Detail: "legacy scheduler explicitly configured"})
 	}
-	if !durableSchedulerEnabled() {
-		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Running: true, Detail: "legacy scheduler explicitly configured"})
-	} else if legacyFallbackEnabled() {
-		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Running: true, Detail: "explicitly enabled legacy fallback"})
+	if !legacyFallbackEnabled() {
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Detail: "legacy scheduler disabled; set DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED=true to explicitly opt in"})
+		return
 	}
 	scheduler := &Scheduler{service: service, backgroundAllowed: backgroundAllowed}
-	go scheduler.Start(ctx, interval)
-}
-
-func legacyFallbackEnabled() bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv("DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED")))
-	return value == "true" || value == "1" || value == "yes"
+	if lifecycle.Go(ctx, "ambient-scheduler", func() { scheduler.Start(ctx, interval) }) {
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Running: true, Detail: "explicitly configured in-process scheduler; not crash-recoverable"})
+	} else {
+		schedulerstatus.Record(schedulerstatus.State{Name: "ambient", Enabled: true, Detail: "lifecycle rejected worker during shutdown"})
+	}
 }
 
 func (s *Scheduler) Start(ctx context.Context, interval time.Duration) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	if interval < 30*time.Second {
 		interval = 5 * time.Minute
 	}
 	if runOnStartup() {
-		s.runOnce()
+		s.runOnce(ctx)
 	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -78,7 +84,10 @@ func (s *Scheduler) Start(ctx context.Context, interval time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.runOnce()
+			if ctx.Err() != nil {
+				return
+			}
+			s.runOnce(ctx)
 		}
 	}
 }
@@ -88,18 +97,16 @@ func runOnStartup() bool {
 	return value == "true" || value == "1" || value == "yes"
 }
 
-func (s *Scheduler) runOnce() {
-	if s.service == nil || (s.backgroundAllowed != nil && !s.backgroundAllowed()) || !s.running.CompareAndSwap(false, true) {
+func (s *Scheduler) runOnce(ctx context.Context) {
+	if ctx == nil || ctx.Err() != nil || s.reviewHeld.Load() || s.service == nil || s.backgroundAllowed == nil || !s.backgroundAllowed() || !s.running.CompareAndSwap(false, true) {
 		return
 	}
 	defer s.running.Store(false)
-	scan, err := s.service.Scan("scheduler")
-	if err != nil {
-		log.Printf("ambient scan failed: %v", err)
-		return
-	}
-	if scan.Created > 0 || scan.Updated > 0 || scan.Advanced > 0 {
-		log.Printf("ambient scan examined=%d created=%d updated=%d deduplicated=%d advanced=%d filtered=%d skipped=%d blocked=%d", scan.ItemsExamined, scan.Created, scan.Updated, scan.Deduplicated, scan.Advanced, scan.Filtered, scan.Skipped, scan.Blocked)
+	if err := runAmbientScan(ctx, s.service, s.backgroundAllowed); err != nil {
+		if durablejob.RequiresManualReview(err) {
+			s.reviewHeld.Store(true)
+		}
+		log.Printf("ambient scan failed: %s", safety.RedactSecrets(err.Error()))
 	}
 }
 
@@ -107,5 +114,5 @@ func schedulerBackgroundGate(allowed []func() bool) func() bool {
 	if len(allowed) > 0 && allowed[0] != nil {
 		return allowed[0]
 	}
-	return func() bool { return true }
+	return func() bool { return false }
 }

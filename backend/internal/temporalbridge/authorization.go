@@ -72,7 +72,7 @@ func buildScheduleAuthorizationRequest(
 		TaskID:           taskID,
 		ProjectKey:       strings.TrimSpace(request.ProjectKey),
 		ApprovalSourceID: strings.TrimSpace(request.ApprovalSourceID),
-		RunAt:            request.RunAt.UTC(),
+		RunAt:            request.RunAt.UTC().Truncate(time.Microsecond),
 		Limit:            normalizeLimit(request.Limit),
 	}
 	if ownerIdentity == "" || runID == "" || workflowID == "" {

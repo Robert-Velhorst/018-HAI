@@ -8,11 +8,15 @@ import (
 	"github.com/IBM/sarama"
 	"log"
 	"strings"
+	"sync"
 )
 
 type KafkaLogger struct {
 	producer sarama.SyncProducer
 	topic    string
+	mu       sync.RWMutex
+	closed   bool
+	closeErr error
 }
 
 func NewKafkaLogger(brokers []string, topic string) (iservice.Logger, error) {
@@ -47,8 +51,14 @@ func newKafkaLogger(producer sarama.SyncProducer, topic string) (*KafkaLogger, e
 }
 
 func (k *KafkaLogger) sendMessage(level, message string, args ...interface{}) {
-	if k == nil || k.producer == nil {
+	if k == nil {
 		log.Printf("Failed to send %s message to Kafka: producer is not configured", level)
+		return
+	}
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	if k.producer == nil || k.closed {
+		log.Printf("Failed to send %s message to Kafka: producer is unavailable", level)
 		return
 	}
 	formattedMessage := fmt.Sprintf("[%s] %s", level, fmt.Sprintf(message, args...))
@@ -59,18 +69,24 @@ func (k *KafkaLogger) sendMessage(level, message string, args ...interface{}) {
 
 	_, _, err := k.producer.SendMessage(msg)
 	if err != nil {
-		log.Printf("Failed to send %s message to Kafka: %v", level, err)
+		log.Printf("Failed to send %s message to Kafka: transport error; raw details withheld", level)
 	}
 }
 
 func (k *KafkaLogger) Close() error {
-	if k == nil || k.producer == nil {
+	if k == nil {
 		return nil
 	}
-	if err := k.producer.Close(); err != nil {
-		return fmt.Errorf("close Kafka logger: %w", err)
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.producer == nil || k.closed {
+		return k.closeErr
 	}
-	return nil
+	k.closed = true
+	if err := k.producer.Close(); err != nil {
+		k.closeErr = fmt.Errorf("close Kafka logger: %w", err)
+	}
+	return k.closeErr
 }
 
 func (k *KafkaLogger) Info(message string, args ...interface{}) {

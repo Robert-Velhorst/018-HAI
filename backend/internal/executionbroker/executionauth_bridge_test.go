@@ -56,6 +56,7 @@ func newBridgeHarness(t *testing.T, owner string) bridgeHarness {
 type allowLowRiskConstitution struct{}
 
 func (allowLowRiskConstitution) EvaluateExecutionPolicy(
+	_ context.Context,
 	owner string,
 	capabilities []string,
 	requiredAuthority int,

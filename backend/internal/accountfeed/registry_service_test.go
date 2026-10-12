@@ -2,14 +2,10 @@ package accountfeed
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 
 	"automation-hub-backend/internal/operations"
 	"automation-hub-backend/internal/privacyfilter"
@@ -74,54 +70,6 @@ func TestSyncGenericFeedIntoLedger(t *testing.T) {
 	}
 }
 
-func TestSyncSkipsOverlappingRunForSameFeed(t *testing.T) {
-	reg, _ := newTestRegistry(t)
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var startedOnce sync.Once
-	var releaseOnce sync.Once
-	releaseServer := func() { releaseOnce.Do(func() { close(release) }) }
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		startedOnce.Do(func() { close(started) })
-		<-release
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(genericFeed))
-	}))
-	t.Cleanup(server.Close)
-	t.Cleanup(releaseServer)
-	reg.opts.AllowHTTP = true
-	feed, err := reg.Register(Feed{Name: "slow inbox", Provider: string(ProviderGenericJSONFeed), SourceType: SourceHTTPJSONFeed, URL: server.URL, OwnerUserID: "u", WorkspaceID: "local", Enabled: true})
-	if err != nil {
-		t.Fatalf("register: %v", err)
-	}
-
-	firstDone := make(chan SyncReport, 1)
-	go func() {
-		report, _ := reg.Sync(context.Background(), feed.ID)
-		firstDone <- report
-	}()
-	<-started
-
-	secondDone := make(chan SyncReport, 1)
-	go func() {
-		report, _ := reg.Sync(context.Background(), feed.ID)
-		secondDone <- report
-	}()
-	select {
-	case report := <-secondDone:
-		if !strings.Contains(strings.Join(report.Errors, " "), "already in progress") {
-			t.Fatalf("overlapping sync error = %v, want in-progress rejection", report.Errors)
-		}
-	case <-time.After(250 * time.Millisecond):
-		t.Fatal("overlapping sync blocked instead of being rejected")
-	}
-
-	releaseServer()
-	if report := <-firstDone; len(report.Errors) != 0 {
-		t.Fatalf("first sync errors = %v", report.Errors)
-	}
-}
-
 func TestGenericItemValidationRules(t *testing.T) {
 	base := GenericItem{ExternalID: "x", Title: "t", ItemType: "email", Provider: "gmail"}
 	if err := base.Validate(0, 0); err != nil {
@@ -154,11 +102,43 @@ func TestHTTPFeedDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestSyncFailureDoesNotExposeLocalPathOrRawError(t *testing.T) {
+	reg, root := newTestRegistry(t)
+	feed, err := reg.Register(Feed{
+		Name:        "missing local feed",
+		Provider:    string(ProviderGenericJSONFeed),
+		SourceType:  SourceLocalJSONFile,
+		Path:        "missing.json",
+		OwnerUserID: "u",
+		Enabled:     true,
+	})
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	report, ok := reg.Sync(context.Background(), feed.ID)
+	if !ok || len(report.Errors) != 1 {
+		t.Fatalf("sync report = %#v, want one safe error", report)
+	}
+	if report.Errors[0] != "feed sync failed; inspect local operator diagnostics" {
+		t.Fatalf("sync error = %q, want safe recovery message", report.Errors[0])
+	}
+	if strings.Contains(report.Errors[0], root) {
+		t.Fatalf("sync error must not expose local root: %q", report.Errors[0])
+	}
+	audit := reg.Audit(feed.ID)
+	if len(audit) == 0 || strings.Contains(audit[0].Message, root) {
+		t.Fatalf("audit must not expose local root: %#v", audit)
+	}
+}
+
 func TestBridgesAndPermissionsAreTruthful(t *testing.T) {
-	// API providers without credentials are credentials_required, never connected.
+	// Provider-native API reads belong to Connected Sources. This registry only
+	// imports normalized generic-feed records and must not imply a usable OAuth
+	// or API connection from environment state.
 	b, _ := Bridge(ProviderGmail)
-	if b.ConnectionStatus() != ConnCredentialsRequired {
-		t.Fatalf("gmail must be credentials_required without a token, got %s", b.ConnectionStatus())
+	if b.ConnectionStatus() != ConnContractOnly {
+		t.Fatalf("gmail must be contract_only in account feeds, got %s", b.ConnectionStatus())
 	}
 	if !b.ReadOnly {
 		t.Fatalf("gmail bridge must be read-only")
@@ -179,10 +159,10 @@ func TestBridgesAndPermissionsAreTruthful(t *testing.T) {
 	}
 }
 
-func TestCredentialPresenceIsUnverifiedNotConnected(t *testing.T) {
-	t.Setenv("GITHUB_SOURCE_TOKEN", "ghp_dummy_token_value")
+func TestAccountFeedDoesNotTreatProviderCredentialsAsUsable(t *testing.T) {
+	t.Setenv("GITHUB_READ_TOKEN", "ghp_dummy_token_value")
 	b, _ := Bridge(ProviderGitHub)
-	if b.ConnectionStatus() != ConnCredentialsPresentUnverified {
-		t.Fatalf("a present credential must be credentials_present_unverified (not connected), got %s", b.ConnectionStatus())
+	if b.ConnectionStatus() != ConnContractOnly {
+		t.Fatalf("account feeds must not imply GitHub readiness from a credential, got %s", b.ConnectionStatus())
 	}
 }

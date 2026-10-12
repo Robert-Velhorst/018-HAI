@@ -94,7 +94,7 @@ func (h *Handler) Send(c *gin.Context) {
 		return
 	}
 	if request.Method != "SendMessage" {
-		writeRPCError(c, request.ID, -32601, "only SendMessage is supported by this planning bridge")
+		writeRPCError(c, request.ID, -32601, "only SendMessage is supported by this local planning bridge")
 		return
 	}
 	message, err := taskInput(request.Params)

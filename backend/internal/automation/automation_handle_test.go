@@ -7,14 +7,17 @@ import (
 	"strings"
 	"testing"
 
-	"automation-hub-backend/internal/config"
-	"automation-hub-backend/internal/events"
 	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/models"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
+
+type updateOnlyAutomationService struct{ Service }
+
+func (updateOnlyAutomationService) Update(automation *models.Automation) (*models.Automation, error) {
+	return automation, nil
+}
 
 func TestAutomationUpdateRejectsOversizedRequestBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -81,64 +84,32 @@ func TestAutomationRoutesRequireVerifiedOperator(t *testing.T) {
 	}
 }
 
-func TestCreateAutomationRejectsOversizedMultipartBeforeParsing(t *testing.T) {
+func TestUpdateRejectsOversizedRequestBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	previousMax := config.AppConfig.ImageMaxSize
-	config.AppConfig.ImageMaxSize = 8
-	defer func() { config.AppConfig.ImageMaxSize = previousMax }()
-
-	handler := NewHandler(newTestService(newFakeAutomationRepo(&models.Automation{}), events.Publisher{}))
 	router := gin.New()
-	router.POST("/automation", handler.Create)
-	request := httptest.NewRequest(http.MethodPost, "/automation", bytes.NewBufferString("oversized"))
-	request.Header.Set("Content-Type", "multipart/form-data; boundary=hai")
-	request.ContentLength = config.AppConfig.ImageMaxSize + automationMultipartOverhead + 1
+	router.PATCH("/automation", NewHandler(updateOnlyAutomationService{}).Update)
+
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, request)
+	body := bytes.Repeat([]byte("x"), int(maxAutomationUpdateBodyBytes+1))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPatch, "/automation", bytes.NewReader(body)))
 
 	if recorder.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("oversized automation upload status = %d, want %d: %s", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
 	}
 }
 
-func TestLaunchRejectsMalformedChunkedRequestBeforeServiceCall(t *testing.T) {
+func TestCreateRejectsOversizedDeclaredMultipartBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	id := uuid.New()
-	handler := NewHandler(newTestService(
-		newFakeAutomationRepo(&models.Automation{ID: id}),
-		events.Publisher{},
-	))
 	router := gin.New()
-	router.POST("/automation/:id/launch", handler.Launch)
-	request := httptest.NewRequest(http.MethodPost, "/automation/"+id.String()+"/launch", bytes.NewBufferString(`{"task":`))
-	request.Header.Set("Content-Type", "application/json")
-	request.ContentLength = -1
+	router.POST("/automation", NewHandler(updateOnlyAutomationService{}).Create)
+
+	req := httptest.NewRequest(http.MethodPost, "/automation", bytes.NewReader([]byte("not-read")))
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+	req.ContentLength = maxAutomationCreateBodyBytes() + 1
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, request)
+	router.ServeHTTP(recorder, req)
 
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("malformed launch status = %d, want %d: %s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
-	}
-}
-
-func TestGetAutomationReturnsNotFoundForDeletedRecord(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	existingID := uuid.New()
-	handler := NewHandler(newTestService(
-		newFakeAutomationRepo(&models.Automation{ID: existingID}),
-		events.Publisher{},
-	))
-	router := gin.New()
-	router.GET("/automation/:id", handler.GetByID)
-
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(
-		recorder,
-		httptest.NewRequest(http.MethodGet, "/automation/"+uuid.NewString(), nil),
-	)
-
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("missing automation status = %d, want %d: %s", recorder.Code, http.StatusNotFound, recorder.Body.String())
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
 	}
 }

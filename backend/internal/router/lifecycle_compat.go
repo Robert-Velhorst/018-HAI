@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 )
+
+const httpShutdownTimeout = 20 * time.Second
 
 type listenAndShutdown interface {
 	ListenAndServe() error

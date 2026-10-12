@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"automation-hub-backend/internal/pgtestguard"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -368,10 +369,7 @@ func TestPostgresRepositoryRejectsCorruptStoredPayload(t *testing.T) {
 
 func resiliencePostgresTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("HAI_RESILIENCE_POSTGRES_TEST_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_RESILIENCE_POSTGRES_TEST_DSN is not configured")
-	}
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_RESILIENCE_TEST_DATABASE_DSN", "hai_resilience_test")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatalf("open postgres: %v", err)
@@ -380,8 +378,8 @@ func resiliencePostgresTestDB(t *testing.T) *gorm.DB {
 	if err := db.Raw(`SELECT current_database()`).Scan(&database).Error; err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(strings.ToLower(database), "test") {
-		t.Fatalf("refusing destructive schema setup outside a test database: %s", database)
+	if database != "hai_resilience_test" {
+		t.Fatalf("refusing destructive schema setup against unexpected database identity %q", database)
 	}
 	if err := db.Exec(resiliencePostgresDropSQL).Error; err != nil {
 		t.Fatalf("drop old resilience test tables: %v", err)

@@ -12,8 +12,19 @@ export interface IAgentRuntimeInfo {
   controls?: string[];
   ecosystem?: IAgentRuntimeEcosystemSurface[];
   ecosystemPath?: string;
+  ecosystemRollbackAvailable: boolean;
   missingConfiguration?: string[];
   endpoint?: string;
+}
+
+// Short-lived, server-issued references for one exact OpenClaw ecosystem
+// mutation. They are deliberately kept in-memory by the caller and are never
+// persisted in browser storage.
+export interface IAgentRuntimeEcosystemAuthorization {
+  idempotencyKey: string;
+  taskId: string;
+  approvalSourceId: string;
+  approvalBindingDigest: string;
 }
 
 export interface IAgentRuntimeEcosystemSurface {
@@ -53,6 +64,14 @@ export interface IAgentRuntimeHealth {
   runtimeId: string;
   status: string;
   reason: string;
+  version?: string;
+  gatewayTaskLedger?: IAgentRuntimeGatewayTaskLedger;
   checkedAt: string;
   latencyMs: number;
+}
+
+export interface IAgentRuntimeGatewayTaskLedger {
+  sampledTasks: number;
+  statusCounts: Record<string, number>;
+  truncated: boolean;
 }

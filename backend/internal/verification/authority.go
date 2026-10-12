@@ -3,10 +3,11 @@ package verification
 import "strings"
 
 const (
-	authorityConnectedProvenance = "connected_source:provenance_verified"
-	authorityConnectedUnverified = "connected_source:unverified"
-	authorityExternalUntrusted   = "untrusted_external"
-	trustedExternalPrefix        = "trusted_external:"
+	authorityConnectedProvenance     = "connected_source:provenance_verified"
+	authorityConnectedUnverified     = "connected_source:unverified"
+	authorityConnectedReviewRequired = "connected_source:owner_review_required"
+	authorityExternalUntrusted       = "untrusted_external"
+	trustedExternalPrefix            = "trusted_external:"
 )
 
 // EvidenceAuthorityResolver is an in-process provenance validation boundary.

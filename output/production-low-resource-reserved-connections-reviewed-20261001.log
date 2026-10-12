@@ -1,0 +1,6 @@
+ok  	automation-hub-backend/internal/infra	1.291s
+ok  	automation-hub-backend/internal/operations	0.567s
+ok  	automation-hub-backend/internal/executionauth	0.850s
+ok  	automation-hub-backend/internal/frameworkregistry	1.471s
+ok  	automation-hub-backend/internal/frameworkevidence	0.170s
+ok  	automation-hub-backend/internal/sourceevidence	0.193s

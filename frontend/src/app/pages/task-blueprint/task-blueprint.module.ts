@@ -15,6 +15,7 @@ import { NzTagModule } from 'ng-zorro-antd/tag';
 import { TaskBlueprintComponent } from './task-blueprint.component';
 import { TASK_PLAN_SERVICE_TOKEN } from '../../services/task-plan/task-plan.service.token';
 import { TaskPlanService } from '../../services/task-plan/task-plan.service';
+import { ControlRoomModule } from '../../control-room/control-room.module';
 
 const routes: Routes = [{ path: '', component: TaskBlueprintComponent }];
 
@@ -24,6 +25,7 @@ const routes: Routes = [{ path: '', component: TaskBlueprintComponent }];
     CommonModule,
     RouterModule.forChild(routes),
     ReactiveFormsModule,
+    ControlRoomModule,
     NzButtonModule,
     NzCardModule,
     NzEmptyModule,

@@ -1,6 +1,7 @@
 package modelintelligence
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -96,6 +97,12 @@ func (r *Router) Route(lane RoutingLane, in LaneInput, now time.Time) RouteDecis
 		dec.Reason = "no active model serves this lane"
 		return dec
 	}
+	// A configured, explicitly attested model takes precedence over the
+	// deterministic rules fallback. The rule provider remains available when
+	// no real local model is usable, but must not mask one that is ready.
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return !candidates[i].Deterministic && candidates[j].Deterministic
+	})
 	cloudRestricted := !in.SafeForCloud
 	dec.CloudRestricted = cloudRestricted
 	for _, prof := range candidates {

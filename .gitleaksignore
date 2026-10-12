@@ -1,0 +1,14 @@
+d3ad5606bec79d63c85bc509324a9c96b15b896d:backend/internal/openclawmaintenance/pull_client.go:generic-api-key:291
+d3ad5606bec79d63c85bc509324a9c96b15b896d:backend/internal/openclawmaintenance/worker.go:generic-api-key:69
+d3ad5606bec79d63c85bc509324a9c96b15b896d:backend/internal/safety/redaction_test.go:generic-api-key:234
+d3ad5606bec79d63c85bc509324a9c96b15b896d:backend/internal/workflow/project_dossier_test.go:aws-access-token:255
+d3ad5606bec79d63c85bc509324a9c96b15b896d:backend/internal/workflow/project_dossier_test.go:aws-access-token:272
+d3ad5606bec79d63c85bc509324a9c96b15b896d:frontend/scripts/framework-secret-boundary.test.mjs:private-key:15
+541b87042b2b5a4af7d6d0ff09c7976a46a82b44:.github/workflows/ci.yml:generic-api-key:153
+541b87042b2b5a4af7d6d0ff09c7976a46a82b44:.github/workflows/ci.yml:generic-api-key:155
+541b87042b2b5a4af7d6d0ff09c7976a46a82b44:.github/workflows/ci.yml:generic-api-key:156
+541b87042b2b5a4af7d6d0ff09c7976a46a82b44:.github/workflows/ci.yml:generic-api-key:157
+541b87042b2b5a4af7d6d0ff09c7976a46a82b44:.github/workflows/ci.yml:generic-api-key:158
+541b87042b2b5a4af7d6d0ff09c7976a46a82b44:.github/workflows/ci.yml:generic-api-key:159
+d2afd556aaf4c5e37f8153bcfcd4001e9c941fe8:idp/internal/infra/migrations_test.go:generic-api-key:21
+5c794e6ac8971f99fae5c8aad189f010abd97774:.github/workflows/ci.yml:generic-api-key:302

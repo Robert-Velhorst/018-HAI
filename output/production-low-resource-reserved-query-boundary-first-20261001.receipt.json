@@ -1,0 +1,22 @@
+{
+  "startedAt": "2026-10-01T21:55:18.2890456+00:00",
+  "finishedAt": "2026-10-01T21:55:54.5316715+00:00",
+  "packages": [
+    "infra",
+    "operations",
+    "executionauth"
+  ],
+  "runPattern": ".",
+  "outputMode": "compact-package-results",
+  "integrationTag": false,
+  "deadlineSeconds": 240,
+  "timedOut": false,
+  "exitCode": 0,
+  "completedSuccessfully": true,
+  "goVersion": "go1.25.13 windows/amd64",
+  "dockerStarted": false,
+  "dependencyDownloadsEnabled": false,
+  "destructiveDatabaseTestsEnabled": false,
+  "goWorkers": 1,
+  "heapSoftLimit": "384MiB"
+}

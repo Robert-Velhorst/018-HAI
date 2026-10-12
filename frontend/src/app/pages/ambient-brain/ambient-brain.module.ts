@@ -13,6 +13,7 @@ import { NzModalModule } from 'ng-zorro-antd/modal';
 import { NzRadioModule } from 'ng-zorro-antd/radio';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
+import { ControlRoomModule } from '../../control-room/control-room.module';
 import { AmbientBrainComponent } from './ambient-brain.component';
 
 const routes: Routes = [{ path: '', component: AmbientBrainComponent }];
@@ -23,6 +24,7 @@ const routes: Routes = [{ path: '', component: AmbientBrainComponent }];
     CommonModule,
     FormsModule,
     RouterModule.forChild(routes),
+    ControlRoomModule,
     NzButtonModule,
     NzCheckboxModule,
     NzEmptyModule,

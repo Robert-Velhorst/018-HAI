@@ -166,9 +166,13 @@ type ambientRepositoryStub struct {
 	needs                      []models.AmbientNeed
 	overrides                  []models.AmbientNeedOverride
 	scans                      []models.AmbientScan
-	saveOpportunityCalls       int
 	opportunitiesForOwnerCalls int
 	lastScanLimit              int
+	saveOpportunityCalls       int
+}
+
+func (r *ambientRepositoryStub) EnsureNeeds([]models.AmbientNeed) error {
+	return nil
 }
 
 func (r *ambientRepositoryStub) Needs() ([]models.AmbientNeed, error) {
@@ -216,11 +220,11 @@ func (r *ambientRepositoryStub) FindOpportunity(uuid.UUID) (*models.AmbientOppor
 }
 
 func (r *ambientRepositoryStub) FindOpportunityByFingerprint(fingerprint string) (*models.AmbientOpportunity, error) {
-	if r.opportunity != nil && r.opportunity.Fingerprint != "" && r.opportunity.Fingerprint == fingerprint {
-		copy := *r.opportunity
-		return &copy, nil
+	if r.opportunity == nil || r.opportunity.Fingerprint != fingerprint {
+		return nil, nil
 	}
-	return nil, nil
+	copy := *r.opportunity
+	return &copy, nil
 }
 
 func (r *ambientRepositoryStub) SaveOpportunity(item *models.AmbientOpportunity) (*models.AmbientOpportunity, error) {
@@ -270,7 +274,7 @@ func (r *ambientRepositoryStub) ScansForOwner(ownerIdentity string, limit int) (
 			result = append(result, scan)
 		}
 	}
-	if len(result) > limit {
+	if limit > 0 && len(result) > limit {
 		result = result[:limit]
 	}
 	return result, nil

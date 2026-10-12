@@ -22,12 +22,55 @@ type Handler struct {
 	service *Service
 }
 
+// LifeOverview is the bounded initial payload for the whole-life module. It
+// keeps all values owner-scoped and represents an absent capacity snapshot as
+// null rather than asking the client to treat a 404 as normal page state.
+type LifeOverview struct {
+	Domains  []LifeDomain      `json:"domains"`
+	Needs    []NeedObservation `json:"needs"`
+	Capacity *CapacitySnapshot `json:"capacity"`
+	Goals    []GoalNode        `json:"goals"`
+	Forest   []GoalTreeNode    `json:"forest"`
+}
+
 func NewHandler(service *Service) *Handler {
 	return &Handler{service: service}
 }
 
 func (h *Handler) Domains(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"domains": h.service.Domains()})
+}
+
+// Overview returns the initial whole-life workspace context in one response.
+// It shares the goal list with the forest builder so the initial screen does
+// not read the same owner-scoped goals twice.
+func (h *Handler) Overview(c *gin.Context) {
+	owner, ok := lifeOpsOwner(c)
+	if !ok {
+		return
+	}
+	needs, err := h.service.Needs(owner, "", 100)
+	if err != nil {
+		respondLifeOps(c, nil, err, http.StatusOK)
+		return
+	}
+	capacity, err := h.service.LatestCapacity(owner)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		respondLifeOps(c, nil, err, http.StatusOK)
+		return
+	}
+	goals, err := h.service.Goals(owner)
+	if err != nil {
+		respondLifeOps(c, nil, err, http.StatusOK)
+		return
+	}
+	c.JSON(http.StatusOK, LifeOverview{
+		Domains:  h.service.Domains(),
+		Needs:    needs,
+		Capacity: capacity,
+		Goals:    goals,
+		Forest:   GoalForestFromGoals(goals),
+	})
 }
 
 func (h *Handler) LinkEntity(c *gin.Context) {

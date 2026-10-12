@@ -26,6 +26,15 @@ type GormRepository struct {
 	DB *gorm.DB
 }
 
+func (r *GormRepository) WithinTransaction(action func(Repository) error) error {
+	if action == nil {
+		return nil
+	}
+	return r.DB.Transaction(func(tx *gorm.DB) error {
+		return action(&GormRepository{DB: tx})
+	})
+}
+
 const verificationRunHistoryLimit = 200
 
 func NewGormRepository(db *gorm.DB) Repository {

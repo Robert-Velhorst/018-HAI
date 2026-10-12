@@ -297,6 +297,12 @@
 
 :host ::ng-deep .ant-radio-group { white-space: nowrap; }
 
+.brain-header button:focus-visible,
+.opportunity-actions button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
 @media (max-width: 1180px) {
   .action-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .need-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

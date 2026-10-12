@@ -15,115 +15,24 @@ import { UserService } from '../../services/user/user.service'
 import { USER_SERVICE_TOKEN } from '../../services/user/user.service.token'
 import { IUserModel } from '../../models/user.model.interface'
 
-interface NavigationItem {
-  label: string
-  detail: string
-  icon: string
-  route?: string
-  action?: () => void
-}
-
-interface NavigationGroup {
-  label: string
-  items: NavigationItem[]
-}
-
 @Component({
-  changeDetection: ChangeDetectionStrategy.Eager,
-  standalone: false,
-  selector: 'app-home',
-  templateUrl: './home.component.html',
-  styleUrls: ['./home.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-home',
+    templateUrl: './home.component.html',
+    styleUrls: ['./home.component.scss'],
+    standalone: false
 })
 export class HomeComponent implements OnInit {
   private userSubscription?: Subscription
   isProfileVisible = false
-  isNavigationVisible = false
   profileForm: FormGroup = this.fb.group({})
   hidePassword: boolean = true
   hidePasswordConfirm: boolean = true
   automations: IAutomationModel[] = []
-  automationLoadFailed = false
+  automationLoadState: 'loading' | 'loaded' | 'error' = 'loading'
+  automationReorderInFlight = false
   @ViewChild('automationModal', { static: false })
   automationModal!: AutomationsFormComponent
-
-  readonly navigationGroups: NavigationGroup[] = [
-    {
-      label: 'Work',
-      items: [
-        {
-          label: 'Command Center',
-          detail: 'Daily actions and attention queue',
-          icon: 'appstore',
-          route: '/control-center',
-        },
-        {
-          label: 'Pursuits',
-          detail: 'Long-running goals and linked operational work',
-          icon: 'flag',
-          route: '/pursuits',
-        },
-        {
-          label: 'Approvals & Tasks',
-          detail: 'Workflow queue and approval gates',
-          icon: 'check-square',
-          route: '/workflow-engine',
-        },
-        {
-          label: 'Add Automation',
-          detail: 'Register a local app, script, or service',
-          icon: 'plus',
-          action: () => this.openAutomationModal(),
-        },
-      ],
-    },
-    {
-      label: 'Intelligence',
-      items: [
-        {
-          label: 'Life Priorities',
-          detail: 'Tune proactive ranking targets',
-          icon: 'heart',
-          route: '/ambient-brain',
-        },
-        {
-          label: 'Sources',
-          detail: 'Connected accounts and indexed records',
-          icon: 'cluster',
-          route: '/connected-sources',
-        },
-        {
-          label: 'Memory',
-          detail: 'Review reusable context',
-          icon: 'database',
-          route: '/memory',
-        },
-        {
-          label: 'Task Planning',
-          detail: 'Inspect planning, context, and validation',
-          icon: 'partition',
-          route: '/task-blueprint',
-        },
-        {
-          label: 'Verified Answers',
-          detail: 'Grounded claims and source checks',
-          icon: 'safety-certificate',
-          route: '/grounded-answers',
-        },
-      ],
-    },
-    {
-      label: 'System',
-      items: [
-        {
-          label: 'Model Routing',
-          detail: 'Providers, tiers, tokens, and budget',
-          icon: 'deployment-unit',
-          route: '/llm-policy',
-        },
-      ],
-    },
-  ]
 
   constructor(
     private fb: FormBuilder,
@@ -163,7 +72,6 @@ export class HomeComponent implements OnInit {
   }
 
   logout() {
-    this.closeNavigation()
     this.authService.logout().subscribe({
       next: () => {
         this.router.navigate(['/login']).then(() => {})
@@ -175,40 +83,12 @@ export class HomeComponent implements OnInit {
     })
   }
 
-  openNavigation(): void {
-    this.isNavigationVisible = true
-  }
-
-  closeNavigation(): void {
-    this.isNavigationVisible = false
-  }
-
   navigateFromMenu(route: string): void {
-    this.closeNavigation()
     this.router.navigate([route])
   }
 
-  runMenuAction(action: () => void): void {
-    this.closeNavigation()
-    action()
-  }
-
-  activateNavigationItem(item: NavigationItem): void {
-    if (item.route) {
-      this.navigateFromMenu(item.route)
-      return
-    }
-    if (item.action) {
-      this.runMenuAction(item.action)
-    }
-  }
-
-  showProfileFromMenu(): void {
-    this.closeNavigation()
-    this.showProfileModal()
-  }
-
   drop(event: CdkDragDrop<string[]>) {
+    if (this.automationReorderInFlight) return
     const id1 = this.automations[event.previousIndex].id
     const id2 = this.automations[event.currentIndex].id
 
@@ -217,22 +97,24 @@ export class HomeComponent implements OnInit {
     }
     const previousOrder = [...this.automations]
     moveItemInArray(this.automations, event.previousIndex, event.currentIndex)
-
+    this.automationReorderInFlight = true
     this.automationsService.swapAutomations(id1, id2).subscribe({
+      next: () => { this.automationReorderInFlight = false },
       error: () => {
         this.automations = previousOrder
-        this.notification.error(
-          'Order was not saved',
-          'The automation list was restored. Check the connection and try again.'
-        )
+        this.automationReorderInFlight = false
+        this.notification.error('Reorder not confirmed', 'The request failed. HAI restored the previous order and is checking the saved registry.')
+        this.loadAutomations()
       },
     })
   }
 
   handleFormDataAutomationSubmitted(automation: IAutomationModel) {
+    if (this.automationModal?.submitting !== true) return
     if (this.automationModal.isUpdate) {
       this.automationsService.updateAutomation(automation).subscribe({
         next: () => {
+          this.automationModal.completeSubmission()
           this.notification.success(
             'Success',
             'Automation updated successfully'
@@ -240,16 +122,19 @@ export class HomeComponent implements OnInit {
           this.loadAutomations()
         },
         error: () => {
+          this.automationModal.failSubmission()
           this.notification.error('Error', 'Error updating automation')
         },
       })
     } else {
       this.automationsService.addAutomation(automation).subscribe({
         next: () => {
+          this.automationModal.completeSubmission()
           this.notification.success('Success', 'Automation added successfully')
           this.loadAutomations()
         },
         error: () => {
+          this.automationModal.failSubmission()
           this.notification.error('Error', 'Error adding automation')
         },
       })
@@ -257,18 +142,9 @@ export class HomeComponent implements OnInit {
   }
 
   showProfileModal(): void {
-    this.userSubscription = this.userService.getUser().subscribe({
-      next: (user) => {
-        this.profileForm.get('email')?.setValue(user.email)
-        this.isProfileVisible = true
-      },
-      error: () => {
-        this.isProfileVisible = false
-        this.notification.error(
-          'Profile unavailable',
-          'Your profile could not be loaded. Check the connection and try again.'
-        )
-      },
+    this.userSubscription = this.userService.getUser().subscribe((user) => {
+      this.profileForm.get('email')?.setValue(user.email)
+      this.isProfileVisible = true
     })
   }
 
@@ -322,17 +198,25 @@ export class HomeComponent implements OnInit {
   }
 
   loadAutomations() {
+    this.automationLoadState = 'loading'
     this.automationsService.getAutomations().subscribe({
       next: (automations: IAutomationModel[]) => {
-        this.automations = automations.sort((a, b) => a.position - b.position)
-        this.automationLoadFailed = false
+        if (!Array.isArray(automations)) {
+          this.automationLoadState = 'error'
+          this.notification.error('Automation registry unavailable', 'The registry returned an unreadable response. HAI cannot confirm whether it is empty.')
+          return
+        }
+        this.automations = [...automations].sort((a, b) => a.position - b.position)
+        this.automationLoadState = 'loaded'
       },
-      error: () => {
-        this.automationLoadFailed = true
+      error: (error) => {
+        this.automationLoadState = 'error'
+        // registry a log
+        console.error('Error fetching automations', error)
         this.notification.create(
           'error',
-          'Automations unavailable',
-          'The registry could not be loaded. Check the connection and try again.'
+          'Error',
+          'There was an error fetching the automations.'
         )
       },
     })
@@ -355,18 +239,9 @@ export class HomeComponent implements OnInit {
         this.automationsService.deleteAutomation(automationId).subscribe({
           next: () => {
             this.loadAutomations()
-            this.notification.create(
-              'success',
-              'Automation deleted',
-              'Automation deleted successfully.'
-            )
+            this.notification.create('success', 'Automation deleted', 'Automation deleted successfully.')
           },
-          error: () => {
-            this.notification.error(
-              'Automation was not deleted',
-              'The automation remains unchanged. Check the connection and try again.'
-            )
-          },
+          error: () => this.notification.error('Delete failed', 'The automation was not deleted. Try again.'),
         })
       },
       nzCancelText: 'No',

@@ -1,19 +1,8 @@
-# Dependency Vulnerabilities — Status & Next Action
+# Dependency Vulnerabilities — Historical Status & Next Action
 
-Records the actual `govulncheck` result, the CI scanning posture, and the exact
-remediation, so nothing is hand-waved.
-
-## 2026-08-14 Go security patch
-
-GitHub's blocking scans detected new standard-library advisories in Go 1.25.12.
-All four Go modules now recommend Go 1.25.13; the backend, IDP, and nginx
-configuration manager builders use the digest-pinned official 1.25.13 image,
-and every matching CI job uses 1.25.13. Fresh vet, full-test, build, and
-`govulncheck` v1.6.0 runs report zero code-affecting vulnerabilities in all
-three networked services. The scanner still reports unreachable advisories in
-imported or required packages; they remain visible but do not call vulnerable
-symbols. Go's official download feed lists 1.25.13 as a stable release:
-<https://go.dev/dl/?mode=json>.
+This document records historical scan results and the intended CI posture. The
+dated results below are not current release clearance; use checks from the
+candidate commit being reviewed as the authoritative result.
 
 ## Backend remediation completed (40 to 0)
 
@@ -33,7 +22,7 @@ Go 1.25 vet identified one dynamic `fmt.Errorf` call; it was changed to
 ## Backend (`govulncheck ./...`)
 
 `govulncheck` v1.6.0 using the 2026-07-27 vulnerability database and Go
-1.25.12 reports:
+1.25.12 reported at that time:
 
 - **0** vulnerabilities affecting code
 - **0** vulnerabilities in imported packages
@@ -43,10 +32,10 @@ The backend scan is pinned and blocking in CI.
 
 ## IDP (`govulncheck ./...`)
 
-The same scanner, database snapshot, and Go 1.25.12 toolchain report 0
-vulnerabilities affecting IDP code and 0 in imported packages. Two advisories
-remain in required modules whose vulnerable symbols are not called. The IDP
-scan is also pinned and blocking in CI.
+The same scanner, database snapshot, and Go 1.25.12 toolchain reported at that
+time zero vulnerabilities affecting IDP code and zero in imported packages.
+Two advisories remained in required modules whose vulnerable symbols were not
+called. The IDP scan is also pinned and blocking in CI.
 
 ## Nginx configuration manager (`govulncheck ./...`)
 
@@ -56,49 +45,31 @@ the Docker SDK and all Compose Docker-socket mounts, upgraded Sarama, and moved
 the service to Go 1.25.12. Enabling automatic reload now fails closed and tells
 the operator to use an approved deployment operation.
 
-Tests, vet, and build pass. The refreshed scan reports 0 vulnerabilities
-affecting code and 0 in imported packages. One advisory remains in a required
-module whose vulnerable symbol is not called. The scan is pinned and blocking
-in CI.
+Tests, vet, and build passed at that time. The refreshed scan reported zero
+vulnerabilities affecting code and zero in imported packages. One advisory
+remained in a required module whose vulnerable symbol was not called. The scan
+is pinned and blocking in CI.
 
-## Frontend (`npm audit --audit-level=high`)
+## Current verification snapshot (2026-10-11)
 
-The coordinated 2026-08-09 migration replaced Angular 16 and the legacy webpack
-builder with Angular 22.1.1, `@angular/build`/CLI 22.1.3, ng-zorro 22.0.1,
-TypeScript 6.0.3, Zone.js 0.16.2, and the supported esbuild/Vite application
-builder. The unused drag/drop package and duplicate pnpm lock/workspace files
-were removed; npm 10.9.8 and `package-lock.json` are now authoritative.
+- Backend, IDP, generic-auto, and Nginx configuration manager Go tests passed
+  under Go 1.27.2. This is test evidence, not a fresh `govulncheck` result.
+- The frontend production dependency audit passed with zero vulnerabilities.
+- The full frontend dependency audit reported six high-severity findings, all
+  in the development/test dependency graph (`@angular/build`, Karma, and related
+  packages). npm's suggested fixes downgrade Angular/Karma across major
+  versions; no such downgrade was applied. Reassess these findings with a
+  compatible upstream fix before release.
+- The production frontend build passed and all 176 Node-based checks passed.
+  Angular browser specs compiled but could not execute because the verification
+  container has no Chrome binary.
 
-The migration reduced the audit from **91 findings (4 critical, 59 high, 19
-moderate, 9 low)** to **3 moderate, 0 high, and 0 critical**. The complete
-418-test frontend suite and production build pass. The initial production bundle
-is approximately 626 kB, down from approximately 1.40 MB under the old builder.
+The 2026-08-23 Angular 20/ng-zorro 20 production audit and earlier Go scans
+below are historical results, not current release clearance.
 
-The three remaining records describe one development-tool chain:
-
-`@angular/cli@22.1.3` -> `@modelcontextprotocol/sdk@1.29.0` ->
-`@hono/node-server<2.0.5` ([GHSA-frvp-7c67-39w9](https://github.com/advisories/GHSA-frvp-7c67-39w9)).
-
-This code is used by the local Angular CLI and is not copied into the nginx
-runtime image. Angular CLI 22.1.3 pins MCP SDK 1.29.0; npm's proposed automatic
-fix is a breaking downgrade to Angular CLI 21.0.4. Forcing Hono 2.0.5 would also
-violate MCP SDK 1.29.0's declared dependency range, so neither workaround is an
-accepted production remediation without upstream compatibility evidence.
-
-The repository maintainer accepts this **moderate, development-only** exposure
-until the earlier of an upstream Angular CLI release that adopts MCP SDK 1.30+
-or **2026-09-09**, when it must be reviewed again. The CLI development server
-must remain loopback-only and must not be used as the deployed application
-server. The production nginx image does not contain Angular CLI, MCP SDK, or
-Hono.
-
-## Frontend CI gate
-
-The frontend audit is now a blocking high/critical gate. CI installs from the
-lockfile, builds, runs all headless-browser unit tests, and then executes `npm
-audit --audit-level=high` without `continue-on-error`. A high or critical
-finding fails the job. Moderate findings remain visible and are governed by the
-time-bounded exception above.
+The production-only audit is a blocking CI gate. A future high-severity runtime
+advisory therefore blocks release until it is remediated or accepted through a
+time-bounded security decision with an owner and scope.
 
 ## Current CI posture
 
@@ -107,5 +78,5 @@ time-bounded exception above.
 - IDP: vet, build, test, and pinned `govulncheck` are **hard gates**.
 - Nginx configuration manager: vet, build, test, and pinned `govulncheck` are
   **hard gates**; Docker-socket control is forbidden by an executable contract.
-- Frontend: lockfile install, production build, **unit tests (headless Chrome)**,
-  and `npm audit --audit-level=high` are hard gates.
+- Frontend: build + **unit tests (headless Chrome)** +
+  `npm audit --omit=dev --audit-level=high` are hard gates.

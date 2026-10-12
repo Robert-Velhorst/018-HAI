@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -53,5 +54,26 @@ func TestNoSleepAfterFinalAttempt(t *testing.T) {
 	// 2 attempts => only 1 inter-attempt sleep.
 	if sleeps != 1 {
 		t.Fatalf("sleeps = %d, want 1 (no sleep after the last attempt)", sleeps)
+	}
+}
+
+func TestCancellationStopsRetries(t *testing.T) {
+	calls := 0
+	sleeps := 0
+	wrappedCancelErr := errors.Join(errors.New("worker stopped"), context.Canceled)
+
+	attempts, err := RunWithRetry(3, backoff.DefaultPolicy(), func(int64) { sleeps++ }, func(int) error {
+		calls++
+		return wrappedCancelErr
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
+	}
+	if attempts != 1 || calls != 1 {
+		t.Fatalf("attempts=%d calls=%d, want 1/1 after cancellation", attempts, calls)
+	}
+	if sleeps != 0 {
+		t.Fatalf("sleeps=%d, want 0 after cancellation", sleeps)
 	}
 }

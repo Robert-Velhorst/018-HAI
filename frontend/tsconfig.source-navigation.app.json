@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.app.json",
+  "files": [
+    "src/app/pages/control-center/control-center.module.ts",
+    "src/app/pages/ambient-brain/ambient-brain.module.ts",
+    "src/app/pages/command-dashboard/command-dashboard.module.ts"
+  ]
+}

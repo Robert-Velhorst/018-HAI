@@ -13,11 +13,15 @@ import (
 	"time"
 )
 
-const defaultSMTPDeliveryTimeout = 10 * time.Second
+const (
+	smtpDialTimeout     = 10 * time.Second
+	smtpSessionTimeout  = 30 * time.Second
+	smtpImplicitTLSPort = 465
+)
 
 // SMTPPasswordResetSender delivers short-lived reset codes over a standard
-// STARTTLS SMTP connection. It deliberately supports port 587-style STARTTLS;
-// implicit TLS (usually port 465) is not silently downgraded to plaintext.
+// encrypted SMTP connection. Port 465 uses implicit TLS; other ports use
+// STARTTLS. Neither mode falls back to plaintext.
 type SMTPPasswordResetSender struct {
 	host            string
 	port            string
@@ -25,22 +29,57 @@ type SMTPPasswordResetSender struct {
 	password        string
 	from            string
 	requireStartTLS bool
-	deliveryTimeout time.Duration
 }
 
-func NewSMTPPasswordResetSender(host, port, username, password, from string, requireStartTLS bool, timeout ...time.Duration) *SMTPPasswordResetSender {
-	deliveryTimeout := defaultSMTPDeliveryTimeout
-	if len(timeout) > 0 && timeout[0] > 0 {
-		deliveryTimeout = timeout[0]
+// PasswordResetDeliveryError carries a redacted SMTP stage for operator logs.
+// Its rendered message never includes provider text, addresses, or credentials.
+type PasswordResetDeliveryError struct {
+	Stage string
+	cause error
+}
+
+func (e *PasswordResetDeliveryError) Error() string {
+	return "password reset email delivery failed"
+}
+
+func (e *PasswordResetDeliveryError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
+func NewPasswordResetDeliveryError(stage string, cause error) *PasswordResetDeliveryError {
+	return &PasswordResetDeliveryError{Stage: stage, cause: cause}
+}
+
+// PasswordResetDeliveryFailureStage returns only a known, non-sensitive stage
+// label suitable for logs. Unknown errors and caller-supplied labels stay hidden.
+func PasswordResetDeliveryFailureStage(err error) (string, bool) {
+	var deliveryError *PasswordResetDeliveryError
+	if !errors.As(err, &deliveryError) || deliveryError == nil {
+		return "", false
+	}
+	switch deliveryError.Stage {
+	case "connect", "deadline", "protocol", "tls", "authentication", "sender", "recipient", "submission":
+		return deliveryError.Stage, true
+	default:
+		return "", false
+	}
+}
+
+func NewSMTPPasswordResetSender(host, port, username, password, from string, requireStartTLS bool) *SMTPPasswordResetSender {
+	port = strings.TrimSpace(port)
+	if number, err := strconv.Atoi(port); err == nil && number >= 1 && number <= 65535 {
+		port = strconv.Itoa(number)
 	}
 	return &SMTPPasswordResetSender{
 		host:            strings.TrimSpace(host),
-		port:            strings.TrimSpace(port),
+		port:            port,
 		username:        strings.TrimSpace(username),
-		password:        strings.TrimSpace(password),
+		password:        password,
 		from:            strings.TrimSpace(from),
 		requireStartTLS: requireStartTLS,
-		deliveryTimeout: deliveryTimeout,
 	}
 }
 
@@ -52,91 +91,134 @@ func (s *SMTPPasswordResetSender) Configured() bool {
 	if err != nil || port < 1 || port > 65535 {
 		return false
 	}
-	if _, err := mail.ParseAddress(s.from); err != nil {
+	if _, err := parseSMTPAddress(s.from); err != nil {
 		return false
 	}
-	return (s.username == "") == (s.password == "")
+	if (s.username == "") != (s.password == "") {
+		return false
+	}
+	// Reset tokens are bearer credentials, so encrypted transport is mandatory.
+	// The port selects implicit TLS (465) or explicit STARTTLS (other ports).
+	return s.requireStartTLS
 }
 
 func (s *SMTPPasswordResetSender) SendPasswordReset(ctx context.Context, email, resetToken string, expiresAt time.Time) error {
+	if ctx == nil {
+		return errors.New("password reset email delivery requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return NewPasswordResetDeliveryError("deadline", err)
+	}
 	if !s.Configured() {
 		return errors.New("password reset email delivery is not configured")
 	}
+	parsedFrom, err := parseSMTPAddress(s.from)
+	if err != nil {
+		return NewPasswordResetDeliveryError("sender", err)
+	}
 	parsedRecipient, err := mail.ParseAddress(email)
 	if err != nil || parsedRecipient.Address != email {
-		return errors.New("invalid recipient email")
+		return NewPasswordResetDeliveryError("recipient", errors.New("invalid recipient mailbox"))
 	}
 
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	dialer := &net.Dialer{Timeout: s.deliveryTimeout}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(s.host, s.port))
+	dialer := &net.Dialer{Timeout: smtpDialTimeout}
+	connection, err := openSMTPConnection(ctx, s.host, s.port, dialer.DialContext, smtpTLSConfig(s.host))
 	if err != nil {
-		return smtpContextError(ctx, "connect to smtp server", err)
+		return NewPasswordResetDeliveryError("connect", err)
 	}
-	defer conn.Close() //nolint:errcheck // The operation result is decided before socket cleanup.
-
-	deadline := time.Now().Add(s.deliveryTimeout)
+	deadline := time.Now().Add(smtpSessionTimeout)
 	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(deadline) {
 		deadline = contextDeadline
 	}
-	if err := conn.SetDeadline(deadline); err != nil {
-		return fmt.Errorf("set smtp deadline: %w", err)
+	if err := connection.SetDeadline(deadline); err != nil {
+		_ = connection.Close()
+		return NewPasswordResetDeliveryError("deadline", err)
 	}
-	stopCancellation := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
-	defer stopCancellation()
-
-	client, err := smtp.NewClient(conn, s.host)
+	stopCancel := context.AfterFunc(ctx, func() { _ = connection.Close() })
+	defer stopCancel()
+	client, err := smtp.NewClient(connection, s.host)
 	if err != nil {
-		return smtpContextError(ctx, "read smtp greeting", err)
+		_ = connection.Close()
+		return NewPasswordResetDeliveryError("protocol", err)
 	}
-	defer client.Close() //nolint:errcheck // The message result is decided before connection cleanup.
+	defer client.Quit() //nolint:errcheck // The message result is decided before QUIT.
 
-	if s.requireStartTLS {
+	if !isImplicitTLSPort(s.port) {
 		if ok, _ := client.Extension("STARTTLS"); !ok {
-			return errors.New("smtp server does not support required STARTTLS")
+			return NewPasswordResetDeliveryError("tls", errors.New("required STARTTLS extension is unavailable"))
 		}
-		if err := client.StartTLS(&tls.Config{ServerName: s.host, MinVersion: tls.VersionTLS12}); err != nil {
-			return smtpContextError(ctx, "start smtp TLS", err)
+		if err := client.StartTLS(smtpTLSConfig(s.host)); err != nil {
+			return NewPasswordResetDeliveryError("tls", err)
 		}
 	}
 	if s.username != "" {
 		if err := client.Auth(smtp.PlainAuth("", s.username, s.password, s.host)); err != nil {
-			return smtpContextError(ctx, "authenticate with smtp server", err)
+			return NewPasswordResetDeliveryError("authentication", err)
 		}
 	}
-	if err := client.Mail(s.from); err != nil {
-		return smtpContextError(ctx, "set smtp sender", err)
+	if err := client.Mail(parsedFrom.Address); err != nil {
+		return NewPasswordResetDeliveryError("sender", err)
 	}
 	if err := client.Rcpt(parsedRecipient.Address); err != nil {
-		return smtpContextError(ctx, "set smtp recipient", err)
+		return NewPasswordResetDeliveryError("recipient", err)
 	}
 
 	writer, err := client.Data()
 	if err != nil {
-		return smtpContextError(ctx, "open smtp message", err)
+		return NewPasswordResetDeliveryError("submission", err)
 	}
-	message := fmt.Sprintf("To: %s\r\nFrom: %s\r\nSubject: HAI password reset code\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nYour one-time HAI password reset code is:\r\n\r\n%s\r\n\r\nIt expires at %s. If you did not request this reset, you can ignore this email.\r\n", parsedRecipient.Address, s.from, resetToken, expiresAt.UTC().Format(time.RFC1123))
+	message := fmt.Sprintf("To: %s\r\nFrom: %s\r\nSubject: HAI password reset code\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nYour one-time HAI password reset code is:\r\n\r\n%s\r\n\r\nIt expires at %s. If you did not request this reset, you can ignore this email.\r\n", parsedRecipient.Address, parsedFrom.String(), resetToken, expiresAt.UTC().Format(time.RFC1123))
 	if _, err := writer.Write([]byte(message)); err != nil {
 		_ = writer.Close()
-		return smtpContextError(ctx, "write smtp message", err)
+		return NewPasswordResetDeliveryError("submission", err)
 	}
 	if err := writer.Close(); err != nil {
-		return smtpContextError(ctx, "send smtp message", err)
+		return NewPasswordResetDeliveryError("submission", err)
 	}
 	return nil
 }
 
-func smtpContextError(ctx context.Context, operation string, err error) error {
-	if contextErr := ctx.Err(); contextErr != nil {
-		return fmt.Errorf("%s: %w", operation, contextErr)
+func parseSMTPAddress(value string) (*mail.Address, error) {
+	address, err := mail.ParseAddress(value)
+	if err != nil || address.Address == "" {
+		return nil, errors.New("invalid SMTP mailbox")
 	}
-	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
-		var networkError net.Error
-		if errors.As(err, &networkError) && networkError.Timeout() {
-			return fmt.Errorf("%s: %w", operation, context.DeadlineExceeded)
-		}
+	return address, nil
+}
+
+type smtpDialContextFunc func(context.Context, string, string) (net.Conn, error)
+
+func openSMTPConnection(parent context.Context, host, port string, dialContext smtpDialContextFunc, tlsConfig *tls.Config) (net.Conn, error) {
+	if parent == nil {
+		return nil, errors.New("SMTP connection requires a context")
 	}
-	return fmt.Errorf("%s: %w", operation, err)
+	ctx, cancel := context.WithTimeout(parent, smtpDialTimeout)
+	defer cancel()
+
+	connection, err := dialContext(ctx, "tcp", net.JoinHostPort(host, port))
+	if err != nil {
+		return nil, err
+	}
+	if !isImplicitTLSPort(port) {
+		return connection, nil
+	}
+
+	tlsConnection := tls.Client(connection, tlsConfig.Clone())
+	if err := tlsConnection.HandshakeContext(ctx); err != nil {
+		_ = connection.Close()
+		return nil, fmt.Errorf("establish implicit smtp TLS: %w", err)
+	}
+	return tlsConnection, nil
+}
+
+func smtpTLSConfig(serverName string) *tls.Config {
+	return &tls.Config{
+		ServerName: serverName,
+		MinVersion: tls.VersionTLS12,
+	}
+}
+
+func isImplicitTLSPort(port string) bool {
+	parsedPort, err := strconv.Atoi(port)
+	return err == nil && parsedPort == smtpImplicitTLSPort
 }

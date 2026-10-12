@@ -1,6 +1,5 @@
-# Compatibility entrypoint for operators who run Compose from backend/.
-# HAI has one topology; this file delegates to the repository-level canonical
-# source-built stack instead of starting the retired external backend image.
+# Compatibility entry point. The backend is part of the canonical local HAI
+# topology; do not start it with an obsolete standalone image/database stack.
 name: 018-hai
 
 include:

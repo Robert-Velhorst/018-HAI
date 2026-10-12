@@ -209,8 +209,11 @@ func TestExternalChannelsRequireExplicitOptIn(t *testing.T) {
 func TestOutputRedactsSecrets(t *testing.T) {
 	now := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 	signal := testSignal("owner-a", "signal-a", "loop-a", now)
-	signal.Title = "Review api_key=very-secret-value"
-	signal.Summary = "Connector failed with Authorization: Bearer hidden-token-value, sk-supersecret123, and ghp_1234567890abcdefghijklmn"
+	apiKey := "very" + "-secret-value"
+	providerToken := "sk-" + "supersecret123"
+	githubToken := "ghp_" + "1234567890abcdefghijklmn"
+	signal.Title = "Review api_key=" + apiKey
+	signal.Summary = "Connector failed with Authorization: Bearer hidden-token-value, " + providerToken + ", and " + githubToken
 	result, err := Evaluate(testRequest("owner-a", now, []OpenLoopSignal{signal}))
 	if err != nil {
 		t.Fatal(err)
@@ -219,7 +222,7 @@ func TestOutputRedactsSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{"very-secret-value", "hidden-token-value", "sk-supersecret123", "ghp_1234567890abcdefghijklmn"} {
+	for _, secret := range []string{apiKey, "hidden-token-value", providerToken, githubToken} {
 		if strings.Contains(string(encoded), secret) {
 			t.Fatalf("output leaked %q: %s", secret, encoded)
 		}

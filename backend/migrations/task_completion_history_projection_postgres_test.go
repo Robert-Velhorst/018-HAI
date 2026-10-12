@@ -15,7 +15,7 @@ import (
 
 func TestTaskCompletionHistoryProjectionIsDurableBoundedAndImmutable(t *testing.T) {
 	db := openIsolatedMigrationDatabase(t)
-	files := migrationFilesThrough(t, "pre/0064_task_completion_history_projection")
+	files := migrationFilesThrough(t, "pre/0123_task_completion_history_projection")
 	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
 		t.Fatalf("apply pre migrations: %v", err)
 	}

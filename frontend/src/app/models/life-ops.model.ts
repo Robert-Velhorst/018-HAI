@@ -207,6 +207,14 @@ export interface GoalTreeNode {
   children: GoalTreeNode[]
 }
 
+export interface LifeOpsOverview {
+  domains: LifeDomain[]
+  needs: NeedObservation[]
+  capacity: CapacitySnapshot | null
+  goals: GoalNode[]
+  forest: GoalTreeNode[]
+}
+
 export interface PriorityFactors {
   importance: number
   urgency: number

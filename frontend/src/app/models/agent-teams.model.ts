@@ -154,6 +154,12 @@ export interface AgentTeamAttention {
   executionAuthorizationRequired: boolean
 }
 
+export interface AgentTeamDecisionOverview {
+  generatedAt: string
+  messages: AgentCoordinationMessage[]
+  attention: AgentTeamAttention[]
+}
+
 export interface AgentTeamConsensusOutcome {
   id: string
   teamId: string

@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"automation-hub-backend/internal/infra"
@@ -46,10 +47,23 @@ func (s *PostgresApprovalProofConsumptionStore) Consume(
 	if ctx == nil {
 		return fmt.Errorf("approval proof consumption context is required")
 	}
+	ctx, cancel := context.WithTimeout(ctx, approvalProofConsumptionTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := validateApprovalProofConsumption(value); err != nil {
 		return err
 	}
-	result := s.DB.WithContext(ctx).Exec(`
+	scoped, err := (&GormUserRepository{DB: s.DB}).WithAutomationRepositoryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("scope approval proof consumption database: %w", err)
+	}
+	db := scoped.(*GormUserRepository).DB
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result := db.Exec(`
 		INSERT INTO public.automation_approval_proof_consumptions (
 			contract_version, owner_identity, proof_id, automation_id,
 			action_digest, scope, approval_source_id, nonce_digest,
@@ -71,11 +85,17 @@ func (s *PostgresApprovalProofConsumptionStore) Consume(
 		value.ExpiresAt.UTC(),
 		value.ConsumedAt.UTC(),
 	)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return errors.Join(ErrApprovalProofConsumptionUnconfirmed, result.Error, contextErr)
+	}
 	if result.Error != nil {
-		return fmt.Errorf("consume approval proof: %w", result.Error)
+		return errors.Join(ErrApprovalProofConsumptionUnconfirmed, fmt.Errorf("consume approval proof: %w", result.Error))
+	}
+	if result.RowsAffected == 0 {
+		return ErrApprovalProofConsumed
 	}
 	if result.RowsAffected != 1 {
-		return ErrApprovalProofConsumed
+		return fmt.Errorf("%w: unexpected approval consumption row count", ErrApprovalProofConsumptionUnconfirmed)
 	}
 	return nil
 }

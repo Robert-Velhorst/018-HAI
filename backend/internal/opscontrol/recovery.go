@@ -1,6 +1,7 @@
 package opscontrol
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -9,41 +10,35 @@ import (
 
 // RecoveryReport summarizes a crash/reboot recovery pass.
 type RecoveryReport struct {
-	ScannedRunning   int       `json:"scannedRunning"`
-	ScannedVerifying int       `json:"scannedVerifying"`
-	Recovered        int       `json:"recovered"`
-	Details          []string  `json:"details,omitempty"`
-	RanAt            time.Time `json:"ranAt"`
+	ScannedRunning    int       `json:"scannedRunning"`
+	ScannedVerifying  int       `json:"scannedVerifying"`
+	Recovered         int       `json:"recovered"`
+	LiveRunning       int       `json:"liveRunning"`
+	LiveVerifying     int       `json:"liveVerifying"`
+	UnleasedRunning   int       `json:"unleasedRunning"`
+	UnleasedVerifying int       `json:"unleasedVerifying"`
+	ExpiredRemaining  int       `json:"expiredClaimsRemaining"`
+	Details           []string  `json:"details,omitempty"`
+	RanAt             time.Time `json:"ranAt"`
 }
 
-// Recover reconciles operations left in a non-terminal executing state by a
-// crash/reboot (§31 recovery). A `running` operation had an uncertain side
-// effect, so it is moved to `interrupted` for review; a `verifying` operation
-// is moved to `awaiting_approval` so a human confirms the outcome. Nothing is
-// silently completed.
-func Recover(svc *operations.Service, ownerUserID, workspaceID string, now time.Time) RecoveryReport {
+// Recover reconciles only executing operations whose durable worker lease has
+// expired. Live leases are preserved; rows without a claim remain untouched
+// and visible for manual reconciliation. No side effect is automatically run.
+func Recover(ctx context.Context, svc *operations.Service, ownerUserID, workspaceID string, now time.Time) (RecoveryReport, error) {
 	rep := RecoveryReport{RanAt: now.UTC()}
-
-	running, _ := svc.List(operations.Filter{OwnerUserID: ownerUserID, WorkspaceID: workspaceID, Status: operations.StatusRunning, Limit: 200})
-	rep.ScannedRunning = len(running)
-	for _, op := range running {
-		if _, err := svc.Transition(op, operations.StatusInterrupted, "recovery", "", "recovered after crash/reboot: run interrupted, side effect uncertain"); err != nil {
-			rep.Details = append(rep.Details, fmt.Sprintf("op %s: %v", op.ID, err))
-			continue
-		}
-		rep.Recovered++
-		rep.Details = append(rep.Details, fmt.Sprintf("op %s: running -> interrupted", op.ID))
+	result, err := svc.RecoverExpiredClaims(ctx, ownerUserID, workspaceID, 200)
+	if err != nil {
+		return rep, fmt.Errorf("recover expired operation claims: %w", err)
 	}
-
-	verifying, _ := svc.List(operations.Filter{OwnerUserID: ownerUserID, WorkspaceID: workspaceID, Status: operations.StatusVerifying, Limit: 200})
-	rep.ScannedVerifying = len(verifying)
-	for _, op := range verifying {
-		if _, err := svc.Transition(op, operations.StatusAwaitingApproval, "recovery", "", "recovered after crash/reboot: verification incomplete, needs human confirmation"); err != nil {
-			rep.Details = append(rep.Details, fmt.Sprintf("op %s: %v", op.ID, err))
-			continue
-		}
-		rep.Recovered++
-		rep.Details = append(rep.Details, fmt.Sprintf("op %s: verifying -> awaiting_approval", op.ID))
-	}
-	return rep
+	rep.ScannedRunning = result.ScannedRunning
+	rep.ScannedVerifying = result.ScannedVerifying
+	rep.Recovered = result.Recovered
+	rep.LiveRunning = result.LiveRunning
+	rep.LiveVerifying = result.LiveVerifying
+	rep.UnleasedRunning = result.UnleasedRunning
+	rep.UnleasedVerifying = result.UnleasedVerifying
+	rep.ExpiredRemaining = result.ExpiredClaimsRemain
+	rep.Details = append(rep.Details, result.Details...)
+	return rep, nil
 }

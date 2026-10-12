@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -72,6 +73,419 @@ func TestPostgresReminderCandidatesAreOwnerScopedAndExcludeClosedWork(t *testing
 	if len(candidates) != 1 || candidates[0].Workflow.ID != wantedID ||
 		candidates[0].Reminder.WorkflowID != wantedID {
 		t.Fatalf("reminder candidates = %#v, want only owner workflow %s", candidates, wantedID)
+	}
+}
+
+func TestPostgresWorkflowItemIdempotencyUsesURIWhenSourceIDIsMissing(t *testing.T) {
+	dsn := os.Getenv("HAI_TEST_DATABASE_DSN")
+	if dsn == "" {
+		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping Postgres workflow URI idempotency test")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open Postgres: %v", err)
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+	repo := NewGormRepository(tx)
+
+	owner := "workflow-uri-idempotency-" + uuid.NewString()
+	first := &models.WorkflowItem{
+		ID:             uuid.New(),
+		OwnerIdentity:  owner,
+		Title:          "URI-only source",
+		Description:    "Create a checklist from this source",
+		CurrentState:   StateReady,
+		TaskType:       "administrative",
+		RiskLevel:      "low",
+		AutonomyLevel:  "execute_low_risk",
+		SourceType:     "trello",
+		SourceURI:      "https://trello.example/card/" + uuid.NewString(),
+		SourceRevision: "revision-1",
+	}
+	created, firstInsert, err := repo.CreateItemIdempotent(first)
+	if err != nil || !firstInsert || created == nil || created.ID != first.ID {
+		t.Fatalf("first URI-only insert = (%#v, %t, %v), want inserted original item", created, firstInsert, err)
+	}
+
+	replay := *first
+	replay.ID = uuid.New()
+	got, replayInserted, err := repo.CreateItemIdempotent(&replay)
+	if err != nil || replayInserted || got == nil || got.ID != first.ID {
+		t.Fatalf("URI-only replay = (%#v, %t, %v), want existing item without insert", got, replayInserted, err)
+	}
+
+	revised := replay
+	revised.ID = uuid.New()
+	revised.SourceRevision = "revision-2"
+	if _, _, err := repo.CreateItemIdempotent(&revised); err == nil {
+		t.Fatal("URI-only identity accepted a different active source revision")
+	}
+
+	otherOwner := replay
+	otherOwner.ID = uuid.New()
+	otherOwner.OwnerIdentity = owner + "-other"
+	otherOwner.SourceRevision = "revision-1"
+	if got, inserted, err := repo.CreateItemIdempotent(&otherOwner); err != nil || !inserted || got == nil || got.ID != otherOwner.ID {
+		t.Fatalf("other owner's URI-only insert = (%#v, %t, %v), want an independent item", got, inserted, err)
+	}
+
+	concurrentOwner := owner + "-concurrent"
+	concurrentURI := "https://trello.example/card/" + uuid.NewString()
+	t.Cleanup(func() {
+		if err := db.Where("owner_identity = ?", concurrentOwner).Delete(&models.WorkflowItem{}).Error; err != nil {
+			t.Errorf("clean up concurrent URI idempotency workflows: %v", err)
+		}
+	})
+	type insertResult struct {
+		item     *models.WorkflowItem
+		inserted bool
+		err      error
+	}
+	const workers = 8
+	start := make(chan struct{})
+	results := make(chan insertResult, workers)
+	var wait sync.WaitGroup
+	for index := 0; index < workers; index++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			candidate := &models.WorkflowItem{
+				ID: uuid.New(), OwnerIdentity: concurrentOwner, Title: "Concurrent URI source",
+				CurrentState: StateReady, TaskType: "administrative", RiskLevel: "low",
+				AutonomyLevel: "execute_low_risk", SourceType: "trello",
+				SourceURI: concurrentURI, SourceRevision: "concurrent-revision",
+			}
+			stored, inserted, createErr := NewGormRepository(db).CreateItemIdempotent(candidate)
+			results <- insertResult{item: stored, inserted: inserted, err: createErr}
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	createdCount := 0
+	var sharedID uuid.UUID
+	for result := range results {
+		if result.err != nil {
+			t.Errorf("concurrent URI-only insert: %v", result.err)
+			continue
+		}
+		if result.item == nil {
+			t.Error("concurrent URI-only insert returned no workflow")
+			continue
+		}
+		if result.inserted {
+			createdCount++
+		}
+		if sharedID == uuid.Nil {
+			sharedID = result.item.ID
+		} else if result.item.ID != sharedID {
+			t.Errorf("concurrent URI-only insert returned workflow %s; want shared workflow %s", result.item.ID, sharedID)
+		}
+	}
+	if createdCount != 1 {
+		t.Errorf("concurrent URI-only inserts created %d workflows, want exactly one", createdCount)
+	}
+}
+
+func TestPostgresSourceRetractionCannotBeReactivatedOrClaimed(t *testing.T) {
+	db := workflowTransactionalPostgres(t)
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+	repo := NewGormRepository(tx)
+	owner := "workflow-source-retraction-guard-" + uuid.NewString()
+	item, err := repo.CreateItem(&models.WorkflowItem{
+		ID: uuid.New(), OwnerIdentity: owner, Title: "Previously approved source workflow",
+		CurrentState: StateReady, TaskType: "administrative", RiskLevel: "low",
+		AutonomyLevel: "execute_low_risk", RequiresApproval: true, ApprovalStatus: "approved",
+		SourceType: "email", SourceID: uuid.NewString(), SourceURI: "local://source/retracted",
+	})
+	if err != nil {
+		t.Fatalf("create source workflow: %v", err)
+	}
+	if _, err := repo.CreateEvent(&models.WorkflowEvent{
+		WorkflowID: item.ID, EventType: "workflow.source_retracted", Trigger: "source_retraction",
+	}); err != nil {
+		t.Fatalf("create source retraction event: %v", err)
+	}
+
+	candidates, err := repo.FindRunnableItemsForOwner(owner, time.Now().UTC(), 10)
+	if err != nil {
+		t.Fatalf("find runnable workflows: %v", err)
+	}
+	for _, candidate := range candidates {
+		if candidate.ID == item.ID {
+			t.Fatal("source-retracted workflow remained in the runnable queue")
+		}
+	}
+	if _, claimed, err := repo.ClaimRunnableItemForOwner(owner, item.ID, "stale-approval-worker", time.Now().UTC(), time.Now().UTC().Add(time.Minute)); err != nil || claimed {
+		t.Fatalf("claim source-retracted workflow = (%t, %v), want no claim", claimed, err)
+	}
+
+	expected := *item
+	updated := expected
+	updated.NextAction = "attempted reactivation"
+	if _, changed, err := repo.UpdateWorkflowItemCAS(&expected, &updated); err != nil || changed {
+		t.Fatalf("CAS source-retracted workflow = (changed=%t, err=%v), want fail-closed conflict", changed, err)
+	}
+	stored, err := repo.FindItem(item.ID)
+	if err != nil || stored.CurrentState != StateReady || stored.NextAction == "attempted reactivation" {
+		t.Fatalf("source retraction guard changed persisted workflow: %#v err=%v", stored, err)
+	}
+}
+
+func TestPostgresRetractedInterruptionAllowsEvidenceBackedCompletionButNotRetry(t *testing.T) {
+	db := workflowTransactionalPostgres(t)
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+	repo := NewGormRepository(tx)
+	item, err := repo.CreateItem(&models.WorkflowItem{
+		ID: uuid.New(), OwnerIdentity: "workflow-retracted-recovery-" + uuid.NewString(),
+		Title: "Interrupted, then retracted", CurrentState: StateBlocked,
+		TaskType: "administrative", RiskLevel: "low", AutonomyLevel: "execute_low_risk",
+		RecoveryStatus: RecoveryNeedsReview, SourceType: "email", SourceID: uuid.NewString(),
+		SourceURI: "local://source/interrupted-retracted",
+	})
+	if err != nil {
+		t.Fatalf("create interrupted workflow: %v", err)
+	}
+	if _, err := repo.CreateEvent(&models.WorkflowEvent{WorkflowID: item.ID, EventType: "workflow.source_retracted"}); err != nil {
+		t.Fatalf("create source retraction event: %v", err)
+	}
+
+	expected := *item
+	retry := expected
+	retry.CurrentState = StateReady
+	retry.RecoveryStatus = RecoveryRetryConfirmed
+	retryLink := &models.WorkflowSourceLink{WorkflowID: item.ID, SourceURI: "local://recovery/retry", Relationship: "execution_reconciliation"}
+	retryEvidence := &models.WorkflowEvidenceClaim{
+		WorkflowID: item.ID, ClaimText: "operator reconciled previous execution", SourceURI: retryLink.SourceURI,
+		Reliability: "operator_attestation", Status: "human_approved",
+	}
+	if _, resolved, err := repo.ResolveInterruptedExecutionCAS(&expected, &retry, retryLink, retryEvidence, nil); err != nil || resolved {
+		t.Fatalf("source-retracted retry resolution = (resolved=%t, err=%v), want blocked", resolved, err)
+	}
+
+	completed := expected
+	completed.CurrentState = StateCompleted
+	completed.VerificationStatus = "human_approved"
+	completed.RecoveryStatus = RecoveryCompletionConfirmed
+	completed.ApprovalStatus = approvalStatus(false)
+	completedAt := time.Now().UTC()
+	completed.CompletedAt = &completedAt
+	completionURI := "local://recovery/completion"
+	completionLink := &models.WorkflowSourceLink{
+		WorkflowID: item.ID, SourceType: "recovery_evidence", SourceURI: completionURI,
+		Relationship: "completion_evidence",
+	}
+	completionEvidence := &models.WorkflowEvidenceClaim{
+		WorkflowID: item.ID, ClaimText: "operator confirmed the independently reconciled outcome",
+		SourceURI: completionURI, Reliability: "operator_attestation", Status: "human_approved",
+	}
+	completionGate := &models.WorkflowQualityGate{
+		WorkflowID: item.ID, Gate: "verification before completion", Status: "passed",
+		Reason: "operator supplied independent completion evidence",
+	}
+	if _, resolved, err := repo.ResolveInterruptedExecutionCAS(&expected, &completed, completionLink, completionEvidence, completionGate); err != nil || !resolved {
+		t.Fatalf("evidence-backed completion resolution = (resolved=%t, err=%v), want accepted", resolved, err)
+	}
+	stored, err := repo.FindItem(item.ID)
+	if err != nil || stored.CurrentState != StateCompleted || stored.VerificationStatus != "human_approved" {
+		t.Fatalf("reconciled completion=%#v err=%v", stored, err)
+	}
+}
+
+func TestPostgresWorkflowApprovalResolutionIsCompareAndSwap(t *testing.T) {
+	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))
+	if dsn == "" {
+		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping Postgres workflow approval race test")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open Postgres: %v", err)
+	}
+	owner := "workflow-approval-race-" + uuid.NewString()
+	repo := NewGormRepository(db)
+	item, err := repo.CreateItem(&models.WorkflowItem{
+		ID: uuid.New(), OwnerIdentity: owner, Title: "Concurrent pending approval",
+		CurrentState: StateNeedsApproval, TaskType: "legal", RiskLevel: "high",
+		AutonomyLevel: "draft_only", RequiresApproval: true, ApprovalStatus: "pending",
+	})
+	if err != nil {
+		t.Fatalf("create pending workflow: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Where("workflow_id = ?", item.ID).Delete(&models.WorkflowEvent{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("workflow_id = ?", item.ID).Delete(&models.WorkflowDecision{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("workflow_id = ?", item.ID).Delete(&models.WorkflowTransition{}).Error; err != nil {
+				return err
+			}
+			return tx.Where("id = ?", item.ID).Delete(&models.WorkflowItem{}).Error
+		}); err != nil {
+			t.Errorf("clean up workflow approval race item: %v", err)
+		}
+	})
+
+	const contenders = 8
+	start := make(chan struct{})
+	type resolutionResult struct {
+		item     *models.WorkflowItem
+		resolved bool
+		err      error
+	}
+	results := make(chan resolutionResult, contenders)
+	var wait sync.WaitGroup
+	for range contenders {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			updated, resolved, resolveErr := repo.ResolvePendingApproval(item.ID, ApprovalResolutionMutation{
+				Approved: true, Actor: owner, DecisionRule: "manual approval gate",
+				RejectionReason: "Concurrent approval test.",
+			})
+			results <- resolutionResult{item: updated, resolved: resolved, err: resolveErr}
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(results)
+	winners := 0
+	for result := range results {
+		if result.err != nil {
+			t.Errorf("resolve concurrent approval: %v", result.err)
+			continue
+		}
+		if result.resolved {
+			winners++
+			if result.item == nil || result.item.CurrentState != StateReady || result.item.ApprovalStatus != "approved" {
+				t.Errorf("winning resolution returned invalid workflow: %#v", result.item)
+			}
+		} else if result.item != nil {
+			t.Errorf("stale resolution returned an item: %#v", result.item)
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("successful compare-and-swap resolutions = %d, want exactly one", winners)
+	}
+	final, err := repo.FindItem(item.ID)
+	if err != nil {
+		t.Fatalf("find resolved workflow: %v", err)
+	}
+	if final.CurrentState != StateReady || final.ApprovalStatus != "approved" {
+		t.Fatalf("final state/status = %q/%q, want ready/approved", final.CurrentState, final.ApprovalStatus)
+	}
+	transitions, err := repo.FindTransitions(item.ID)
+	if err != nil {
+		t.Fatalf("find approval transitions: %v", err)
+	}
+	decisions, err := repo.FindDecisions(item.ID)
+	if err != nil {
+		t.Fatalf("find approval decisions: %v", err)
+	}
+	events, err := repo.FindEvents(item.ID)
+	if err != nil {
+		t.Fatalf("find approval events: %v", err)
+	}
+	if len(transitions) != 1 || transitions[0].Trigger != "approval_resolution" ||
+		len(decisions) != 1 || decisions[0].Decision != "approved" ||
+		len(events) != 1 || events[0].EventType != "workflow.approval" {
+		t.Fatalf("approval lifecycle audit records are incomplete: transitions=%#v decisions=%#v events=%#v", transitions, decisions, events)
+	}
+}
+
+func TestPostgresWorkflowApprovalEventFailureRollsBackResolution(t *testing.T) {
+	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))
+	if dsn == "" {
+		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping Postgres workflow approval atomicity test")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatalf("open Postgres: %v", err)
+	}
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	t.Cleanup(func() { _ = tx.Rollback().Error })
+	workflowID := uuid.New()
+	constraintName := "chk_workflow_approval_event_failure_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	constraint := "CHECK (workflow_id <> '" + workflowID.String() + "'::uuid OR event_type <> 'workflow.approval')"
+	if err := tx.Exec("ALTER TABLE workflow_events ADD CONSTRAINT " + constraintName + " " + constraint).Error; err != nil {
+		t.Fatalf("install transaction-scoped event failure: %v", err)
+	}
+
+	repo := NewGormRepository(tx)
+	owner := "workflow-approval-atomicity-" + uuid.NewString()
+	item, err := repo.CreateItem(&models.WorkflowItem{
+		ID: workflowID, OwnerIdentity: owner, Title: "Approval audit atomicity",
+		CurrentState: StateNeedsApproval, TaskType: "administrative", RiskLevel: "low",
+		AutonomyLevel: "manual", RequiresApproval: true, ApprovalStatus: "pending",
+		SourceURI: "manual://approval-atomicity",
+	})
+	if err != nil {
+		t.Fatalf("create pending workflow: %v", err)
+	}
+
+	updated, resolved, err := repo.ResolvePendingApproval(item.ID, ApprovalResolutionMutation{
+		Approved: true, Actor: owner, DecisionRule: "manual approval gate",
+		RejectionReason: "Approve only after durable audit succeeds.",
+	})
+	if err == nil || resolved || updated != nil {
+		t.Fatalf("resolution = (%#v, %t, %v), want event persistence failure", updated, resolved, err)
+	}
+	persisted, err := repo.FindItem(item.ID)
+	if err != nil {
+		t.Fatalf("reload pending workflow: %v", err)
+	}
+	if persisted.CurrentState != StateNeedsApproval || persisted.ApprovalStatus != "pending" {
+		t.Fatalf("state after event failure = %q/%q, want needs_approval/pending", persisted.CurrentState, persisted.ApprovalStatus)
+	}
+	transitions, err := repo.FindTransitions(item.ID)
+	if err != nil {
+		t.Fatalf("find transitions after rollback: %v", err)
+	}
+	decisions, err := repo.FindDecisions(item.ID)
+	if err != nil {
+		t.Fatalf("find decisions after rollback: %v", err)
+	}
+	events, err := repo.FindEvents(item.ID)
+	if err != nil {
+		t.Fatalf("find events after rollback: %v", err)
+	}
+	if len(transitions) != 0 || len(decisions) != 0 || len(events) != 0 {
+		t.Fatalf("audit records escaped failed approval transaction: transitions=%#v decisions=%#v events=%#v", transitions, decisions, events)
+	}
+}
+
+func TestWorkflowSourceAdvisoryLockKeyUsesUnambiguousPostgresTextEncoding(t *testing.T) {
+	first := workflowSourceAdvisoryLockKey("a", "uri", "", "", "bc")
+	second := workflowSourceAdvisoryLockKey("ab", "uri", "", "", "c")
+
+	if strings.ContainsRune(first, '\x00') || strings.ContainsRune(second, '\x00') {
+		t.Fatal("advisory lock key contains NUL, which PostgreSQL text parameters reject")
+	}
+	if first == second {
+		t.Fatalf("distinct source identity tuples collided: %q", first)
 	}
 }
 

@@ -3,6 +3,7 @@ package config
 import (
 	"automation-hub-idp/internal/app/utils"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -74,6 +75,21 @@ func newAuthenticationConfig() (*authenticationConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, setting := range []struct {
+		name  string
+		value int
+		unit  time.Duration
+	}{
+		{baseBlockDurationMinutes, baseBlockDurationMinutesValue, time.Minute},
+		{minTimeBetweenAttemptsInSeconds, minTimeBetweenAttemptsValue, time.Second},
+		{expirationTimeResetTokenInHours, resetTokenHoursValue, time.Hour},
+		{accessTokenDurationMinutes, accessTokenMinutesValue, time.Minute},
+		{refreshTokenDurationDays, refreshTokenDaysValue, 24 * time.Hour},
+	} {
+		if int64(setting.value) > math.MaxInt64/int64(setting.unit) {
+			return nil, fmt.Errorf("%s exceeds the supported duration range", setting.name)
+		}
+	}
 
 	jwtSecretValue := getEnvString(jwtSecret, "")
 	if strings.TrimSpace(jwtSecretValue) == "" {
@@ -89,7 +105,7 @@ func newAuthenticationConfig() (*authenticationConfig, error) {
 		MinTimeBetweenAttemptsSeconds: time.Duration(minTimeBetweenAttemptsValue),
 		ExpirationTimeResetTokenHours: time.Duration(resetTokenHoursValue),
 		AccessTokenDurationMinutes:    time.Duration(accessTokenMinutesValue),
-		RefreshTokenDurationDays:      time.Duration(24*refreshTokenDaysValue) * time.Hour,
+		RefreshTokenDurationDays:      time.Duration(refreshTokenDaysValue) * (24 * time.Hour),
 		PasswordResetTopic:            passwordResetTopicValue,
 		AccountBlockedTopic:           accountBlockedTopicValue,
 		AccountCreatedTopic:           accountCreatedTopicValue,

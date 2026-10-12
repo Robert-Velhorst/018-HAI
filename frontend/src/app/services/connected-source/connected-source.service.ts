@@ -1,7 +1,8 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { IConnectedSourceService } from '../connected-source.service.interface';
+import { map } from 'rxjs/operators';
+import { IConnectedSourceService, ISourceDestructiveAuthorization } from '../connected-source.service.interface';
 import {
   IConnectedSource,
   ICreateSourceRequest,
@@ -9,12 +10,14 @@ import {
   ISourceAuditLog,
   ISourceConnector,
   ISourceConnectionHealth,
-  ISourceOverview,
   ISourceExtraction,
-	ISourceHistoryPage,
+  ISourceExtractionPage,
   ISourceSearchRequest,
   ISourceSearchResult,
   ISourceSyncJob,
+  ISourceManualSyncJob,
+  ISourceExtractionCorrectionPatch,
+  ISourceExtractionCorrectionView,
   ISourceSyncResult,
   IKnowledgeGraphResult,
   IScheduledSyncRun,
@@ -42,23 +45,16 @@ export class ConnectedSourceService implements IConnectedSourceService {
     return this.http.get<ISourceConnectionHealth>(`${this.apiUrl}/${sourceId}/health`);
   }
 
-  syncJobs(sourceId?: string, limit?: number): Observable<ISourceSyncJob[]> {
+  connectionHealths(): Observable<ISourceConnectionHealth[]> {
+    return this.http.get<ISourceConnectionHealth[]>(`${this.apiUrl}/connection-health`);
+  }
+
+  syncJobs(sourceId?: string): Observable<ISourceSyncJob[]> {
     let params = new HttpParams();
     if (sourceId) {
       params = params.set('sourceId', sourceId);
     }
-    if (limit) {
-      params = params.set('limit', limit);
-    }
     return this.http.get<ISourceSyncJob[]>(`${this.apiUrl}/sync-jobs`, { params });
-  }
-
-  pageSyncJobs(limit: number, offset: number, sourceId?: string): Observable<ISourceHistoryPage<ISourceSyncJob>> {
-    let params = new HttpParams().set('limit', limit).set('offset', offset);
-    if (sourceId) {
-      params = params.set('sourceId', sourceId);
-    }
-    return this.http.get<ISourceHistoryPage<ISourceSyncJob>>(`${this.apiUrl}/sync-jobs`, { params });
   }
 
   createSource(request: ICreateSourceRequest): Observable<IConnectedSource> {
@@ -102,8 +98,10 @@ export class ConnectedSourceService implements IConnectedSourceService {
     return this.http.post<IConnectedSource>(`${this.apiUrl}/${sourceId}/resume`, {});
   }
 
-  revoke(sourceId: string): Observable<IConnectedSource> {
-    return this.http.post<IConnectedSource>(`${this.apiUrl}/${sourceId}/revoke`, {});
+  revoke(sourceId: string, authorization: ISourceDestructiveAuthorization): Observable<IConnectedSource> {
+    return this.http.post<IConnectedSource>(`${this.apiUrl}/${encodeURIComponent(sourceId)}/revoke`, {}, {
+      headers: this.destructiveHeaders(authorization),
+    });
   }
 
   search(request: ISourceSearchRequest): Observable<ISourceSearchResult> {
@@ -123,59 +121,84 @@ export class ConnectedSourceService implements IConnectedSourceService {
     });
   }
 
-  extractions(projectKey: string, includeArchived: boolean, limit?: number): Observable<ISourceExtraction[]> {
-    let params = new HttpParams()
-      .set('projectKey', projectKey || '')
-      .set('includeArchived', includeArchived);
-    if (limit) {
-      params = params.set('limit', limit);
-    }
-    return this.http.get<ISourceExtraction[]>(`${this.apiUrl}/extractions`, { params });
-  }
-
-  pageExtractions(
-    projectKey: string,
-    includeArchived: boolean,
-    limit: number,
-    offset: number
-  ): Observable<ISourceHistoryPage<ISourceExtraction>> {
-    return this.http.get<ISourceHistoryPage<ISourceExtraction>>(`${this.apiUrl}/extractions`, {
+  extractions(projectKey: string, includeArchived: boolean, limit = 100): Observable<ISourceExtractionPage> {
+    return this.http.get<ISourceExtraction[]>(`${this.apiUrl}/extractions`, {
       params: new HttpParams()
         .set('projectKey', projectKey || '')
         .set('includeArchived', includeArchived)
-        .set('limit', limit)
-        .set('offset', offset),
+        .set('limit', limit),
+      observe: 'response',
+    }).pipe(map((response) => {
+      const items = response.body || [];
+      const totalHeader = response.headers.get('X-Total-Count');
+      const total = totalHeader?.trim() ? Number(totalHeader) : NaN;
+      const responseLimit = Number(response.headers.get('X-Result-Limit'));
+      return {
+        items,
+        totalCount: Number.isFinite(total) && total >= 0 ? total : items.length,
+        limit: Number.isFinite(responseLimit) && responseLimit > 0 ? responseLimit : limit,
+      };
+    }));
+  }
+
+  submitManualSync(sourceId: string, request: { projectKey?: string }, idempotencyKey: string): Observable<ISourceManualSyncJob> {
+    return this.http.post<ISourceManualSyncJob>(
+      `${this.apiUrl}/${sourceId}/sync-jobs`,
+      request,
+      { headers: new HttpHeaders({ 'Idempotency-Key': idempotencyKey }) }
+    );
+  }
+
+  manualSyncJob(id: string): Observable<ISourceManualSyncJob> {
+    return this.http.get<ISourceManualSyncJob>(`${this.apiUrl}/sync-jobs/${id}`, {
+      headers: new HttpHeaders({ 'Cache-Control': 'no-cache' }),
     });
   }
 
-  updateExtraction(id: string, extraction: Partial<ISourceExtraction>): Observable<ISourceExtraction> {
-    return this.http.patch<ISourceExtraction>(`${this.apiUrl}/extractions/${id}`, extraction);
+  submitExtractionCorrection(
+    extractionId: string,
+    patch: ISourceExtractionCorrectionPatch,
+    ifMatchRevision: string,
+    idempotencyKey: string,
+  ): Observable<ISourceExtractionCorrectionView> {
+    return this.http.patch<ISourceExtractionCorrectionView>(
+      `${this.apiUrl}/extractions/${encodeURIComponent(extractionId)}`,
+      patch,
+      { headers: new HttpHeaders({ 'If-Match': ifMatchRevision, 'Idempotency-Key': idempotencyKey }) },
+    );
+  }
+
+  extractionCorrection(correctionId: string): Observable<ISourceExtractionCorrectionView> {
+    return this.http.get<ISourceExtractionCorrectionView>(
+      `${this.apiUrl}/extraction-corrections/${encodeURIComponent(correctionId)}`,
+      { headers: new HttpHeaders({ 'Cache-Control': 'no-cache' }) },
+    );
   }
 
   archiveExtraction(id: string): Observable<ISourceExtraction> {
     return this.http.post<ISourceExtraction>(`${this.apiUrl}/extractions/${id}/archive`, {});
   }
 
-  deleteExtraction(id: string): Observable<void> {
-    return this.http.delete<void>(`${this.apiUrl}/extractions/${id}`);
+  deleteExtraction(id: string, authorization: ISourceDestructiveAuthorization): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/extractions/${encodeURIComponent(id)}`, {
+      headers: this.destructiveHeaders(authorization),
+    });
   }
 
-  auditLogs(sourceId?: string, limit?: number): Observable<ISourceAuditLog[]> {
+  private destructiveHeaders(authorization: ISourceDestructiveAuthorization): HttpHeaders {
+    return new HttpHeaders({
+      'X-HAI-Task-ID': authorization.taskId,
+      'X-HAI-Approval-Source-ID': authorization.approvalSourceId,
+      'X-HAI-Approval-Binding-Digest': authorization.approvalBindingDigest,
+      'X-HAI-Idempotency-Key': authorization.idempotencyKey,
+    });
+  }
+
+  auditLogs(sourceId?: string): Observable<ISourceAuditLog[]> {
     let params = new HttpParams();
     if (sourceId) {
       params = params.set('sourceId', sourceId);
     }
-    if (limit) {
-      params = params.set('limit', limit);
-    }
     return this.http.get<ISourceAuditLog[]>(`${this.apiUrl}/audit-logs`, { params });
-  }
-
-  overview(projectKey: string, includeArchived: boolean): Observable<ISourceOverview> {
-    return this.http.get<ISourceOverview>(`${this.apiUrl}/overview`, {
-      params: new HttpParams()
-        .set('projectKey', projectKey || '')
-        .set('includeArchived', includeArchived),
-    });
   }
 }

@@ -48,14 +48,23 @@ type Status struct {
 }
 
 type Run struct {
-	ID          string     `json:"id"`
-	ProfileID   string     `json:"profileId"`
-	Status      string     `json:"status"`
-	FinalPath   string     `json:"finalPath,omitempty"`
-	PageTitle   string     `json:"pageTitle,omitempty"`
-	Summary     string     `json:"summary"`
-	StartedAt   time.Time  `json:"startedAt"`
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	ID                 string     `json:"id"`
+	ProfileID          string     `json:"profileId"`
+	Status             string     `json:"status"`
+	FinalPath          string     `json:"finalPath,omitempty"`
+	PageTitle          string     `json:"pageTitle,omitempty"`
+	Summary            string     `json:"summary"`
+	StartedAt          time.Time  `json:"startedAt"`
+	CompletedAt        *time.Time `json:"completedAt,omitempty"`
+	WorkflowID         string     `json:"workflowId,omitempty"`
+	WorkflowLinkStatus string     `json:"workflowLinkStatus,omitempty"`
+	WorkflowLinkError  string     `json:"workflowLinkError,omitempty"`
+}
+
+// WorkflowLinker attaches a completed local browser check as a review signal.
+// It cannot authorize work or transition a workflow to completion.
+type WorkflowLinker interface {
+	AttachBrowserVerification(ownerIdentity, workflowID, runID, profileID, status, finalPath, pageTitle, summary string) error
 }
 
 type config struct {
@@ -70,16 +79,20 @@ type service struct {
 	repo      Repository
 	client    *http.Client
 	now       func() time.Time
+	workflows WorkflowLinker
 }
 
-func DefaultService() *service {
+func DefaultService(workflows ...WorkflowLinker) *service {
 	profiles, _ := parseProfiles(os.Getenv(profilesEnv))
-	return NewService(DefaultRepository(), strings.EqualFold(strings.TrimSpace(os.Getenv(enabledEnv)), "true"), os.Getenv(runnerEnv), os.Getenv(tokenEnv), profiles)
+	return NewService(DefaultRepository(), strings.EqualFold(strings.TrimSpace(os.Getenv(enabledEnv)), "true"), os.Getenv(runnerEnv), os.Getenv(tokenEnv), profiles, workflows...)
 }
 
-func NewService(repo Repository, enabled bool, runnerURL, token string, profiles []Profile) *service {
+func NewService(repo Repository, enabled bool, runnerURL, token string, profiles []Profile, workflows ...WorkflowLinker) *service {
 	s := &service{config: config{enabled: enabled, runnerURL: strings.TrimRight(strings.TrimSpace(runnerURL), "/"), token: strings.TrimSpace(token), profiles: profiles}, repo: repo, now: time.Now,
 		client: &http.Client{Timeout: 20 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{Proxy: nil}}}
+	if len(workflows) > 0 {
+		s.workflows = workflows[0]
+	}
 	if enabled {
 		s.configErr = validateConfig(s.config)
 	}
@@ -146,6 +159,30 @@ func (s *service) Run(ctx context.Context, owner, profileID string) (*Run, error
 	}
 	out := runFromModel(*stored)
 	return &out, nil
+}
+
+// RunWithWorkflow performs the same read-only check and optionally attaches
+// its bounded result to an owner-authorized workflow. A linkage failure does
+// not hide or change the browser check result.
+func (s *service) RunWithWorkflow(ctx context.Context, owner, profileID, workflowID string) (*Run, error) {
+	run, runErr := s.Run(ctx, owner, profileID)
+	workflowID = strings.TrimSpace(workflowID)
+	if run == nil || workflowID == "" {
+		return run, runErr
+	}
+	run.WorkflowID = workflowID
+	if s.workflows == nil {
+		run.WorkflowLinkStatus = "not_linked"
+		run.WorkflowLinkError = "workflow linkage is unavailable"
+		return run, runErr
+	}
+	if err := s.workflows.AttachBrowserVerification(owner, workflowID, run.ID, run.ProfileID, run.Status, run.FinalPath, run.PageTitle, run.Summary); err != nil {
+		run.WorkflowLinkStatus = "link_failed"
+		run.WorkflowLinkError = "browser verification completed but could not be linked to the requested workflow"
+		return run, runErr
+	}
+	run.WorkflowLinkStatus = "linked_quality_signal"
+	return run, runErr
 }
 
 func (s *service) fail(record *models.BrowserVerificationRun, summary string) (*Run, error) {

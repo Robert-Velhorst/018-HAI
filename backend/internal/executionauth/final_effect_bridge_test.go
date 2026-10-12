@@ -5,12 +5,43 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"automation-hub-backend/internal/agentruntime"
+	"github.com/google/uuid"
 )
+
+type cancelBeforeExerciseRepository struct {
+	Repository
+	cancel context.CancelFunc
+}
+
+func (r cancelBeforeExerciseRepository) ExerciseFinalEffect(
+	ctx context.Context,
+	exercise FinalEffectExercise,
+) error {
+	r.cancel()
+	return r.Repository.ExerciseFinalEffect(ctx, exercise)
+}
+
+type cancelAfterConsumptionReadRepository struct {
+	Repository
+	cancel context.CancelFunc
+}
+
+func (r cancelAfterConsumptionReadRepository) GetConsumption(
+	ctx context.Context,
+	owner string,
+	receiptID uuid.UUID,
+) (Consumption, error) {
+	value, err := r.Repository.GetConsumption(ctx, owner, receiptID)
+	r.cancel()
+	return value, err
+}
 
 func TestFinalEffectBridgeBindsAndAtomicallyExercisesMemoryReceipt(t *testing.T) {
 	repository := NewMemoryRepository()
@@ -100,6 +131,194 @@ func TestFinalEffectBridgeBindsAndAtomicallyExercisesMemoryReceipt(t *testing.T)
 		exercise.EffectDigest != request.EffectDigest ||
 		exercise.ConsumptionTarget != target {
 		t.Fatalf("stored exercise is not exact: %#v", exercise)
+	}
+}
+
+func TestFinalEffectBridgeRejectsStaleConsumedAuthorization(t *testing.T) {
+	repository := NewMemoryRepository()
+	service := newTestService(t, repository, permissiveConstitution(), nil, nil)
+	request, effectRequest := authorizedRuntimeRequest(t, "stale-final-effect")
+	target, err := FinalEffectExecutionTarget(request.EffectDigest)
+	if err != nil {
+		t.Fatalf("FinalEffectExecutionTarget: %v", err)
+	}
+	receipt, err := service.AuthorizeAndConsume(
+		context.Background(),
+		request,
+		"automation-runtime-handoff",
+		target,
+	)
+	if err != nil {
+		t.Fatalf("AuthorizeAndConsume: %v", err)
+	}
+	bridge, err := NewFinalEffectBridge(repository, func() time.Time {
+		return fixedNow().Add(time.Minute)
+	})
+	if err != nil {
+		t.Fatalf("NewFinalEffectBridge: %v", err)
+	}
+	binding, err := bridge.BindConsumedFinalEffect(context.Background(), effectRequest, receipt.ID)
+	if err != nil {
+		t.Fatalf("BindConsumedFinalEffect: %v", err)
+	}
+	proof := proofFromBinding(t, binding, request.EffectDigest)
+	if err := bridge.VerifyFinalEffectProof(context.Background(), effectRequest, proof); !errors.Is(err, ErrFinalEffectExpired) {
+		t.Fatalf("stale consumed authorization error = %v, want ErrFinalEffectExpired", err)
+	}
+	if _, err := repository.GetFinalEffectExercise(context.Background(), request.OwnerIdentity, receipt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale authorization created a final-effect exercise: %v", err)
+	}
+}
+
+func TestFinalEffectBridgeRejectsExpiredApprovalAtEffectBoundary(t *testing.T) {
+	repository := NewMemoryRepository()
+	now := fixedNow()
+	approvalSourceID := "task-review:216967e4-d62e-4a73-ae3f-c62efcbf78f5"
+	approvalBindingDigest := strings.Repeat("a", 64)
+	approval := ResolvedApproval{
+		SourceID:       approvalSourceID,
+		DecisionID:     "216967e4-d62e-4a73-ae3f-c62efcbf78f5",
+		DecisionDigest: strings.Repeat("b", 64),
+		BindingDigest:  approvalBindingDigest,
+		ApprovedBy:     "alice",
+		ApprovedAt:     now.Add(-time.Second),
+		ExpiresAt:      now.Add(2 * time.Second),
+	}
+	service := newTestService(
+		t,
+		repository,
+		permissiveConstitution(),
+		fakeApprovalResolver{values: map[string]ResolvedApproval{
+			"alice\x00" + approvalSourceID: approval,
+		}},
+		nil,
+	)
+	effectRequest, err := BuildAgentRuntimeFinalEffectRequest(
+		"hermes", "task-1", "alice", "project-1", "perform approved work", approvalSourceID, true,
+	)
+	if err != nil {
+		t.Fatalf("BuildAgentRuntimeFinalEffectRequest: %v", err)
+	}
+	effectDigest, err := FinalEffectDigest(effectRequest)
+	if err != nil {
+		t.Fatalf("FinalEffectDigest: %v", err)
+	}
+	request := baseRequest("expired-approval-final-effect")
+	request.Action = AgentRuntimeExecuteAction
+	request.ResourceType = AgentRuntimeResourceType
+	request.ResourceID = effectRequest.TaskID
+	request.ProjectKey = effectRequest.ProjectKey
+	request.RuntimeID = effectRequest.RuntimeID
+	request.EffectDigest = effectDigest
+	request.ApprovalSourceID = approvalSourceID
+	request.ApprovalBindingDigest = approvalBindingDigest
+	target, err := FinalEffectExecutionTarget(effectDigest)
+	if err != nil {
+		t.Fatalf("FinalEffectExecutionTarget: %v", err)
+	}
+	// This test exercises the final-effect expiry boundary after authorization;
+	// production task-review consumption is covered by the PostgreSQL transaction test.
+	receipt, err := service.authorizeAndConsumeCore(
+		context.Background(), request, "automation-runtime-handoff", target,
+	)
+	if err != nil {
+		t.Fatalf("AuthorizeAndConsume: %v", err)
+	}
+	bridge, err := NewFinalEffectBridge(repository, func() time.Time {
+		return now.Add(3 * time.Second)
+	})
+	if err != nil {
+		t.Fatalf("NewFinalEffectBridge: %v", err)
+	}
+	binding, err := bridge.BindConsumedFinalEffect(context.Background(), effectRequest, receipt.ID)
+	if err != nil {
+		t.Fatalf("BindConsumedFinalEffect: %v", err)
+	}
+	proof := proofFromBinding(t, binding, effectDigest)
+	if err := bridge.VerifyFinalEffectProof(context.Background(), effectRequest, proof); !errors.Is(err, ErrFinalEffectExpired) {
+		t.Fatalf("expired approval error = %v, want ErrFinalEffectExpired", err)
+	}
+	if _, err := repository.GetFinalEffectExercise(context.Background(), request.OwnerIdentity, receipt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired approval created a final-effect exercise: %v", err)
+	}
+}
+
+func TestFinalEffectBridgeAndMemoryRepositoryHonorCancellation(t *testing.T) {
+	repository := NewMemoryRepository()
+	service := newTestService(t, repository, permissiveConstitution(), nil, nil)
+	request, effectRequest := authorizedRuntimeRequest(t, "cancelled-final-effect")
+	target, err := FinalEffectExecutionTarget(request.EffectDigest)
+	if err != nil {
+		t.Fatalf("FinalEffectExecutionTarget: %v", err)
+	}
+	receipt, err := service.AuthorizeAndConsume(
+		context.Background(), request, "automation-runtime-handoff", target,
+	)
+	if err != nil {
+		t.Fatalf("AuthorizeAndConsume: %v", err)
+	}
+	bridge, err := NewFinalEffectBridge(repository, fixedNow)
+	if err != nil {
+		t.Fatalf("NewFinalEffectBridge: %v", err)
+	}
+	binding, err := bridge.BindConsumedFinalEffect(context.Background(), effectRequest, receipt.ID)
+	if err != nil {
+		t.Fatalf("BindConsumedFinalEffect: %v", err)
+	}
+	proof := proofFromBinding(t, binding, request.EffectDigest)
+	exercise := finalEffectExercise(effectRequest, proof, fixedNow())
+
+	cancelledContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := repository.ExerciseFinalEffect(cancelledContext, exercise); !errors.Is(err, context.Canceled) {
+		t.Fatalf("MemoryRepository.ExerciseFinalEffect error = %v, want context.Canceled", err)
+	}
+
+	ctx, cancelBeforeWrite := context.WithCancel(context.Background())
+	defer cancelBeforeWrite()
+	cancellingRepository := cancelBeforeExerciseRepository{
+		Repository: repository,
+		cancel:     cancelBeforeWrite,
+	}
+	cancellingBridge, err := NewFinalEffectBridge(cancellingRepository, fixedNow)
+	if err != nil {
+		t.Fatalf("NewFinalEffectBridge with cancellation repository: %v", err)
+	}
+	if err := cancellingBridge.VerifyFinalEffectProof(ctx, effectRequest, proof); !errors.Is(err, context.Canceled) {
+		t.Fatalf("VerifyFinalEffectProof error = %v, want context.Canceled", err)
+	}
+	if _, err := repository.GetFinalEffectExercise(context.Background(), request.OwnerIdentity, receipt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cancelled authorization created an exercise record: %v", err)
+	}
+}
+
+func TestBindConsumedFinalEffectRejectsCancellationDuringLookup(t *testing.T) {
+	repository := NewMemoryRepository()
+	service := newTestService(t, repository, permissiveConstitution(), nil, nil)
+	request, effectRequest := authorizedRuntimeRequest(t, "cancelled-final-effect-binding")
+	target, err := FinalEffectExecutionTarget(request.EffectDigest)
+	if err != nil {
+		t.Fatalf("FinalEffectExecutionTarget: %v", err)
+	}
+	receipt, err := service.AuthorizeAndConsume(
+		context.Background(), request, "automation-runtime-handoff", target,
+	)
+	if err != nil {
+		t.Fatalf("AuthorizeAndConsume: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cancellingRepository := cancelAfterConsumptionReadRepository{
+		Repository: repository,
+		cancel:     cancel,
+	}
+	bridge, err := NewFinalEffectBridge(cancellingRepository, fixedNow)
+	if err != nil {
+		t.Fatalf("NewFinalEffectBridge: %v", err)
+	}
+	if binding, err := bridge.BindConsumedFinalEffect(ctx, effectRequest, receipt.ID); !errors.Is(err, context.Canceled) {
+		t.Fatalf("BindConsumedFinalEffect returned binding %#v and error %v; want context.Canceled", binding, err)
 	}
 }
 

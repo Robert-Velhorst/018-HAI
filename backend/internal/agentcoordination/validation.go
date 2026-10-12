@@ -289,6 +289,10 @@ func ValidateDelegation(policy ValidationPolicy, delegation DelegationEnvelope, 
 }
 
 func ValidateAcknowledgment(message Message, acknowledgment Acknowledgment, now time.Time) error {
+	return validateAcknowledgment(message, acknowledgment, now, true)
+}
+
+func validateAcknowledgment(message Message, acknowledgment Acknowledgment, now time.Time, requireFutureRetry bool) error {
 	if err := requireUUID("acknowledgment ID", acknowledgment.ID); err != nil {
 		return err
 	}
@@ -310,7 +314,9 @@ func ValidateAcknowledgment(message Message, acknowledgment Acknowledgment, now 
 			return fmt.Errorf("rejected acknowledgment requires a reason")
 		}
 	case AcknowledgmentDeferred:
-		if acknowledgment.RetryAfter == nil || !acknowledgment.RetryAfter.After(now.UTC()) {
+		if acknowledgment.RetryAfter == nil ||
+			!acknowledgment.RetryAfter.After(acknowledgment.CreatedAt) ||
+			(requireFutureRetry && !acknowledgment.RetryAfter.After(now.UTC())) {
 			return fmt.Errorf("deferred acknowledgment requires a future retry time")
 		}
 	default:

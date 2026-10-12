@@ -28,7 +28,6 @@ func TestPostgresProbePingsAcquiredServingPool(t *testing.T) {
 		acquisitions++
 		return pinger, nil
 	})
-
 	if err := probe.Run(context.Background()); err != nil {
 		t.Fatalf("probe failed: %v", err)
 	}
@@ -37,15 +36,48 @@ func TestPostgresProbePingsAcquiredServingPool(t *testing.T) {
 	}
 }
 
+func TestProbesIncludeNonCriticalBackgroundSchedulerStatus(t *testing.T) {
+	probes := Probes(config.Configuration{})
+	want := map[string]bool{
+		"scheduler.source":   false,
+		"scheduler.workflow": false,
+		"scheduler.ambient":  false,
+	}
+	for _, probe := range probes {
+		if _, ok := want[probe.Name]; ok {
+			want[probe.Name] = !probe.Critical
+		}
+	}
+	for name, foundNonCritical := range want {
+		if !foundNonCritical {
+			t.Errorf("%s probe is missing or marked critical", name)
+		}
+	}
+}
+
 func TestPostgresProbeReportsServingPoolFailure(t *testing.T) {
 	pinger := &recordingPostgresPinger{err: errors.New("connection reset")}
 	probe := postgresProbe(config.Configuration{DbHost: "postgres", DbPort: 5432, DbName: "hai", DbUser: "hai"}, func() (postgresPinger, error) {
 		return pinger, nil
 	})
-
 	err := probe.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "connection reset") {
 		t.Fatalf("error = %v, want serving-pool failure", err)
+	}
+}
+
+func TestPostgresProbePropagatesCancellationBeforeOpening(t *testing.T) {
+	// No database or DNS is contacted. Invalid pool configuration ensures that
+	// cancellation, not a later constructor failure, is observed first.
+	t.Setenv("DB_MAX_OPEN_CONNS", "0")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := PostgresProbe(config.Configuration{
+		DbUser: "synthetic", DbPassword: "unused", DbName: "synthetic",
+		DbHost: "must-not-resolve.invalid", DbPort: 5432,
+	}).Run(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("probe ignored caller cancellation: %v", err)
 	}
 }
 

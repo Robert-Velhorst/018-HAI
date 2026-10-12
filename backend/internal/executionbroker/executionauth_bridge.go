@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"automation-hub-backend/internal/executionauth"
+	"automation-hub-backend/internal/operations"
 
 	"github.com/google/uuid"
 )
@@ -74,9 +75,33 @@ func (b *DurableAuthorizationBridge) Issue(
 	workspaceRoot string,
 	input SafeWorkerInput,
 ) (SafeWorkerInput, error) {
+	ctx, finish, err := operations.BindExecutionContext(ctx)
+	if err != nil {
+		return SafeWorkerInput{}, err
+	}
+	defer finish()
 	prepared, effect, err := b.prepareInput(workspaceRoot, input)
 	if err != nil {
 		return SafeWorkerInput{}, err
+	}
+	if scope, active := operations.CurrentSafeEffectScope(ctx); active {
+		if scope.OwnerUserID != b.owner || scope.WorkspaceID != b.workspaceID {
+			return SafeWorkerInput{}, ErrAuthorizationMismatch
+		}
+		if err := validateScopedSafeWorkerInput(scope, prepared); err != nil {
+			return SafeWorkerInput{}, err
+		}
+		prepared.Authorization.OperationScope = &scope
+		prepared.Authorization.EffectDigest, err = BindLocalSafeWorkerEffect(workspaceRoot, prepared)
+		if err != nil {
+			return SafeWorkerInput{}, err
+		}
+		effect.OperationScope = &scope
+		effect.ContractVersion = effectContractVersion(&scope)
+		effect.EffectDigest = prepared.Authorization.EffectDigest
+	} else if managedSafeWorkerInput(prepared) {
+		// Direct runtime callers cannot impersonate the managed ledger path.
+		return SafeWorkerInput{}, ErrAuthorizationRequired
 	}
 	request := b.authorizationRequest(effect)
 	receipt, err := b.service.Authorize(ctx, request)
@@ -93,6 +118,9 @@ func (b *DurableAuthorizationBridge) Issue(
 	if err := b.verifyReceipt(receipt, effect); err != nil {
 		return SafeWorkerInput{}, err
 	}
+	if err := validateActiveOperationScope(ctx, effect.OperationScope); err != nil {
+		return SafeWorkerInput{}, err
+	}
 	prepared.Authorization.ReceiptID = receipt.ID.String()
 	prepared.Authorization.ReceiptDigest = receipt.DecisionDigest
 	return prepared, nil
@@ -106,8 +134,16 @@ func (b *DurableAuthorizationBridge) VerifyAndConsume(
 	ctx context.Context,
 	verification AuthorizationVerification,
 ) (VerifiedAuthorization, error) {
+	ctx, finish, err := operations.BindExecutionContext(ctx)
+	if err != nil {
+		return VerifiedAuthorization{}, err
+	}
+	defer finish()
 	effect, err := b.verifyFinalBoundary(verification)
 	if err != nil {
+		return VerifiedAuthorization{}, err
+	}
+	if err := validateActiveOperationScope(ctx, effect.OperationScope); err != nil {
 		return VerifiedAuthorization{}, err
 	}
 	receiptID, err := uuid.Parse(strings.TrimSpace(verification.Binding.ReceiptID))
@@ -131,6 +167,9 @@ func (b *DurableAuthorizationBridge) VerifyAndConsume(
 	if !equalText(persisted.DecisionDigest, verification.Binding.ReceiptDigest) {
 		return VerifiedAuthorization{}, ErrAuthorizationMismatch
 	}
+	if err := validateActiveOperationScope(ctx, effect.OperationScope); err != nil {
+		return VerifiedAuthorization{}, err
+	}
 
 	receipt, err := b.service.AuthorizeAndConsume(
 		ctx,
@@ -144,6 +183,9 @@ func (b *DurableAuthorizationBridge) VerifyAndConsume(
 	if receipt.ID != persisted.ID ||
 		!equalText(receipt.DecisionDigest, persisted.DecisionDigest) {
 		return VerifiedAuthorization{}, ErrAuthorizationMismatch
+	}
+	if err := validateActiveOperationScope(ctx, effect.OperationScope); err != nil {
+		return VerifiedAuthorization{}, err
 	}
 	return VerifiedAuthorization{
 		OwnerIdentity: receipt.OwnerIdentity,
@@ -212,13 +254,19 @@ func (b *DurableAuthorizationBridge) verifyFinalBoundary(
 	verification AuthorizationVerification,
 ) (FinalEffect, error) {
 	effect := verification.Effect
-	if effect.ContractVersion != authorizationContractVersion ||
+	if effect.OperationScope == nil && strings.HasPrefix(effect.ArtifactName, "operation-") {
+		return FinalEffect{}, ErrAuthorizationMismatch
+	}
+	if effect.ContractVersion != effectContractVersion(effect.OperationScope) ||
 		effect.RuntimeID != LocalSafeWorkerID ||
 		effect.Action != LocalSafeWorkerAction ||
 		effect.ResourceType != LocalSafeWorkerResourceType ||
 		effect.OwnerIdentity != b.owner ||
 		verification.Consumer != LocalSafeWorkerID {
 		return FinalEffect{}, ErrAuthorizationMismatch
+	}
+	if err := validateScopedSafeWorkerEffect(effect); err != nil {
+		return FinalEffect{}, err
 	}
 	if err := validateArtifactName(effect.ArtifactName); err != nil {
 		return FinalEffect{}, ErrAuthorizationMismatch
@@ -246,12 +294,21 @@ func (b *DurableAuthorizationBridge) verifyFinalBoundary(
 		!equalText(binding.EffectDigest, effect.EffectDigest) {
 		return FinalEffect{}, ErrAuthorizationMismatch
 	}
+	if !sameOperationScope(binding.OperationScope, effect.OperationScope) {
+		return FinalEffect{}, ErrAuthorizationMismatch
+	}
 	return effect, nil
 }
 
 func (b *DurableAuthorizationBridge) authorizationRequest(
 	effect FinalEffect,
 ) executionauth.Request {
+	references := []string{"phase2:operation-ledger"}
+	if scope := effect.OperationScope; scope != nil {
+		references = append(references,
+			fmt.Sprintf("operation:%s:version:%d", scope.OperationID, scope.Version),
+			fmt.Sprintf("claim:%s:generation:%d", scope.ClaimOwner, scope.ClaimGeneration))
+	}
 	return executionauth.Request{
 		OwnerIdentity:     b.owner,
 		IdempotencyKey:    "safe-worker:" + effect.EffectDigest,
@@ -273,7 +330,7 @@ func (b *DurableAuthorizationBridge) authorizationRequest(
 		Reversible:        true,
 		EstimatedCostEUR:  0,
 		EffectDigest:      effect.EffectDigest,
-		SourceReferences:  []string{"phase2:operation-ledger"},
+		SourceReferences:  references,
 	}
 }
 

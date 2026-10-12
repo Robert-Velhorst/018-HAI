@@ -2,6 +2,7 @@ package frameworkregistry
 
 import (
 	"encoding/json"
+	"os"
 	"reflect"
 	"regexp"
 	"sort"
@@ -99,6 +100,37 @@ func TestBuiltinCatalogHasExactly55UniqueVersionedRecordsInSpecificationOrder(t 
 			t.Errorf("duplicate versioned framework record %q", versionedID)
 		}
 		versionedIDs[versionedID] = struct{}{}
+	}
+}
+
+func TestBuiltinCatalogSectionsExistInImportedTaxonomySource(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("../../../docs/source-material/whole-life-framework-taxonomy.txt")
+	if err != nil {
+		t.Fatalf("read imported taxonomy source: %v", err)
+	}
+
+	headingPattern := regexp.MustCompile(`^##\s+([0-9]+)\.\s+(.+?)\s*$`)
+	sections := make([]int, 0, len(expectedFrameworkIDsBySection))
+	for _, line := range strings.Split(string(source), "\n") {
+		matches := headingPattern.FindStringSubmatch(strings.TrimRight(line, "\r"))
+		if matches == nil {
+			continue
+		}
+		section, parseErr := strconv.Atoi(matches[1])
+		if parseErr != nil || strings.TrimSpace(matches[2]) == "" {
+			t.Fatalf("invalid imported taxonomy heading %q", line)
+		}
+		sections = append(sections, section)
+	}
+	if len(sections) != len(expectedFrameworkIDsBySection) {
+		t.Fatalf("imported taxonomy has %d numbered framework sections, want %d", len(sections), len(expectedFrameworkIDsBySection))
+	}
+	for index, section := range sections {
+		if want := index + 1; section != want {
+			t.Errorf("imported taxonomy section at index %d = %d, want %d", index, section, want)
+		}
 	}
 }
 

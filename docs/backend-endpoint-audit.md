@@ -17,7 +17,7 @@ under `/api/v1` requires `X-HAI-Backend-Key` when configured.
 | Group | Representative routes |
 | --- | --- |
 | `/automation` | verified-operator shared local registry: GET `/`, GET `/:id`, POST `/`, PATCH `/`, DELETE `/:id`, POST `/:id/launch`, health/diagnostics, `/images/:imageName` |
-| `/agent-runtimes` | owner-gated registry/health/skills, runtime stop, and OpenClaw ecosystem set/refresh/upload |
+| `/agent-runtimes` | owner-gated registry/health/skills, runtime stop, and OpenClaw ecosystem set/refresh/upload; `POST /openclaw/ecosystem/approval/set-path`, `/approval/refresh`, and `/approval/upload` prepare a short-lived, single-use owner proof bound to the exact validated mutation before the matching mutation endpoint may run |
 | `/llm` | owner-gated GET `/policy`, `/probes`, `/probes/history`, `/logs`; POST `/route`, `/generate` |
 | `/memory` | owner-gated GET `/`, **GET `/query`**, GET `/:id`, `/export`; POST `/`, `/retrieve`, `/:id/archive|restore`; PATCH/DELETE `/:id` |
 | `/memory-engine` | owner-gated import, dashboard, search, conversations, insights |
@@ -58,9 +58,11 @@ under `/api/v1` requires `X-HAI-Backend-Key` when configured.
   service may create workflow work. Ownerless ambient resolution remains an
   in-process system-worker API only.
 - Runtime task-stop and OpenClaw ecosystem mutation endpoints require a verified
-  owner before reaching a runtime adapter or filesystem operation. Read-only
-  runtime inventory, health, and skill discovery remain available to the
-  authenticated gateway surface.
+  owner before reaching a runtime adapter or filesystem operation. Each OpenClaw
+  mutation additionally consumes a server-issued, effect-bound owner proof; the
+  prepare routes validate the requested path/archive and return no filesystem
+  mutation. Read-only runtime inventory, health, and skill discovery remain
+  available to the authenticated gateway surface.
 - `GET /pursuits/:id/delegation` is owner-scoped through pursuit detail access.
   It compiles only already VA-ready workflow context, checklists, source links,
   delivery expectations, and escalation rules. It creates no assignment, does

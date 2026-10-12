@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/frameworkregistry"
+	"automation-hub-backend/internal/llm"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/source"
 	"automation-hub-backend/internal/sourceevidence"
@@ -63,6 +64,314 @@ func TestCompileFrameworkEvidenceContractsPreservesFrameworkAndDeterministicPhas
 			t.Errorf("contract %q id = %q / %q, want deterministic %q", contract.Requirement, contract.ID, second[i].ID, wantID)
 		}
 	}
+}
+
+func TestCompileFrameworkEvidenceContractsKeepsUnverifiableGuidanceAdvisory(t *testing.T) {
+	decision := &frameworkregistry.SelectionDecision{
+		Selected: []frameworkregistry.SelectedFramework{{
+			ID: "workflow-design",
+			EvidenceRequirements: []string{
+				"active Constitution",
+				"a qualitative operating principle with no machine validator",
+			},
+		}},
+	}
+
+	contracts := compileFrameworkEvidenceContracts(decision)
+	if len(contracts) != 2 {
+		t.Fatalf("contract count = %d, want 2", len(contracts))
+	}
+	byRequirement := map[string]FrameworkEvidenceContract{}
+	for _, contract := range contracts {
+		byRequirement[contract.Requirement] = contract
+	}
+	if !byRequirement["active Constitution"].Required {
+		t.Fatal("active Constitution must remain an enforced pre-authorization requirement")
+	}
+	unsupported := byRequirement["a qualitative operating principle with no machine validator"]
+	if unsupported.Validator != "explicit_evidence" {
+		t.Fatalf("unsupported validator = %q, want explicit_evidence", unsupported.Validator)
+	}
+	if unsupported.Required {
+		t.Fatal("unverifiable qualitative guidance must not block controlled execution")
+	}
+}
+
+func TestReadinessProbeFrameworkRequirementsAreMachineVerifiable(t *testing.T) {
+	selector, err := frameworkregistry.NewService(frameworkregistry.NewMemoryRepository())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	decision, err := selector.PlanSelection(frameworkregistry.SelectionRequest{
+		OwnerIdentity:       "alice",
+		TaskPlanID:          "readiness-probe",
+		Request:             "Run the selected HAI backend readiness probe and record its read-only verification result. Do not send anything externally.",
+		ProjectKey:          "018-hai",
+		TaskType:            "administrative",
+		RiskLevel:           "low",
+		NeedsTools:          true,
+		NeedsLocalExecution: true,
+		ExecuteRequested:    true,
+		HumanApproved:       true,
+	})
+	if err != nil {
+		t.Fatalf("PlanSelection: %v", err)
+	}
+
+	for _, contract := range compileFrameworkEvidenceContracts(decision) {
+		if contract.Required && contract.Phase == EvidencePhasePreAuthorization && contract.Validator == "explicit_evidence" {
+			t.Errorf("unverifiable catalog requirement remained required: %s: %q", contract.FrameworkID, contract.Requirement)
+		}
+		t.Logf("%s: %q phase=%s validator=%s required=%t", contract.FrameworkID, contract.Requirement, contract.Phase, contract.Validator, contract.Required)
+	}
+
+	taskService := NewServiceWithEnginesAndPursuitAttempts(
+		&fakeMemoryService{},
+		newTaskTestLLMService(t),
+		nil,
+		&sequencedVerificationService{},
+		&fakeToolExecutor{result: completedToolResult()},
+		nil,
+		selector,
+	)
+	plan, err := taskService.Plan(IntakeRequest{
+		OwnerIdentity: "alice",
+		Request:       "Run the selected HAI backend readiness probe and record its read-only verification result. Do not send anything externally.",
+		ProjectKey:    "018-hai",
+	})
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	plan.RiskAssessment.ApprovalRequired = false
+	plan.RiskAssessment.ApprovalGranted = false
+	preflight := taskService.(*service).evaluateFrameworkEvidencePreflight(plan, IntakeRequest{OwnerIdentity: "alice"})
+	for _, failure := range preflight.Failures {
+		t.Logf("preflight failure: %s", failure)
+	}
+	if !preflight.Passed {
+		t.Fatalf("read-only readiness preflight without approval requirement = %#v", preflight)
+	}
+
+	approvedAt := time.Now().UTC().Add(-time.Minute)
+	plan.RiskAssessment.ApprovalRequired = true
+	plan.RiskAssessment.ApprovalGranted = true
+	preflight = taskService.(*service).evaluateFrameworkEvidencePreflight(plan, IntakeRequest{
+		OwnerIdentity:         "alice",
+		WorkflowID:            uuid.NewString(),
+		AutomationID:          uuid.NewString(),
+		HumanApproved:         true,
+		ApprovalSourceID:      "workflow-decision:" + uuid.NewString(),
+		ApprovalBindingDigest: strings.Repeat("d", 64),
+		ApprovalActorIdentity: "alice",
+		ApprovalApprovedAt:    &approvedAt,
+	})
+	if !preflight.Passed {
+		t.Fatalf("readiness preflight with a valid workflow approval = %#v", preflight)
+	}
+
+	runPlan, err := taskService.Run(IntakeRequest{
+		OwnerIdentity:         "alice",
+		WorkflowID:            uuid.NewString(),
+		Request:               "Run the selected HAI backend readiness probe and record its read-only verification result. Do not send anything externally.",
+		ProjectKey:            "018-hai",
+		AutomationID:          uuid.NewString(),
+		ExecuteAllowed:        true,
+		HumanApproved:         true,
+		ApprovalSourceID:      "workflow-decision:" + uuid.NewString(),
+		ApprovalBindingDigest: strings.Repeat("d", 64),
+		ApprovalActorIdentity: "alice",
+		ApprovalApprovedAt:    &approvedAt,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if runPlan.FrameworkEvidencePreflight == nil || !runPlan.FrameworkEvidencePreflight.Passed {
+		t.Fatalf("real readiness run failed framework preflight: %#v", runPlan.FrameworkEvidencePreflight)
+	}
+}
+
+func TestReadinessProbeExecutesWithoutConfiguredLLM(t *testing.T) {
+	selector, err := frameworkregistry.NewService(frameworkregistry.NewMemoryRepository())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	approvedAt := time.Now().UTC().Add(-time.Minute)
+	executor := &modelPreflightExecutor{fakeToolExecutor: &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}, readOnly: true}
+	service := NewServiceWithEnginesAndPursuitAttempts(
+		&fakeMemoryService{},
+		newTaskNoProviderLLMService(t),
+		nil,
+		&sequencedVerificationService{},
+		executor,
+		nil,
+		selector,
+	)
+
+	plan, err := service.Run(IntakeRequest{
+		OwnerIdentity:         "alice",
+		WorkflowID:            uuid.NewString(),
+		Request:               "Run the selected HAI backend readiness probe and record its read-only verification result. Do not send anything externally.",
+		ProjectKey:            "018-hai",
+		AutomationID:          executor.result.AutomationID,
+		ExecuteAllowed:        true,
+		HumanApproved:         true,
+		ApprovalSourceID:      "workflow-decision:" + uuid.NewString(),
+		ApprovalBindingDigest: strings.Repeat("d", 64),
+		ApprovalActorIdentity: "alice",
+		ApprovalApprovedAt:    &approvedAt,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("executor calls = %d, want one bounded read-only execution; plan=%#v", executor.calls, plan)
+	}
+	if plan.FrameworkEvidencePreflight == nil || !plan.FrameworkEvidencePreflight.Passed {
+		t.Fatalf("model-free readiness preflight = %#v, want passed", plan.FrameworkEvidencePreflight)
+	}
+	if !plan.ValidationResult.Passed || plan.CompletionStatus != "validated" {
+		t.Fatalf("model-free readiness execution was not validated: status=%s failures=%#v criteria=%#v", plan.CompletionStatus, plan.ValidationResult.Failures, plan.ValidationResult.Criteria)
+	}
+}
+
+func TestLowRiskReadinessProbeExecutesWithoutApproval(t *testing.T) {
+	selector, err := frameworkregistry.NewService(frameworkregistry.NewMemoryRepository())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	executor := &modelPreflightExecutor{fakeToolExecutor: &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}, readOnly: true}
+	service := NewServiceWithEnginesAndPursuitAttempts(
+		&fakeMemoryService{},
+		newTaskNoProviderLLMService(t),
+		nil,
+		&sequencedVerificationService{},
+		executor,
+		nil,
+		selector,
+	)
+
+	plan, err := service.Run(IntakeRequest{
+		OwnerIdentity:  "alice",
+		WorkflowID:     uuid.NewString(),
+		Request:        "Run the selected HAI backend readiness probe-12345 for E2E governed pursuit 12345 (e2e-governed-12345) and record its read-only verification result. Do not send anything externally.",
+		ProjectKey:     "e2e-governed-12345",
+		AutomationID:   executor.result.AutomationID,
+		ExecuteAllowed: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if executor.calls != 1 {
+		t.Fatalf("executor calls = %d, want one bounded read-only execution; risk=%#v plan=%#v", executor.calls, plan.RiskAssessment, plan)
+	}
+	if plan.RiskAssessment.ApprovalRequired || !plan.RiskAssessment.AllowedNow {
+		t.Fatalf("low-risk read-only readiness probe was not eligible without approval: %#v", plan.RiskAssessment)
+	}
+	if plan.FrameworkEvidencePreflight == nil || !plan.FrameworkEvidencePreflight.Passed {
+		t.Fatalf("unapproved readiness preflight = %#v, want passed", plan.FrameworkEvidencePreflight)
+	}
+	if !plan.ValidationResult.Passed || plan.CompletionStatus != "validated" {
+		t.Fatalf("unapproved readiness execution was not validated: status=%s failures=%#v criteria=%#v", plan.CompletionStatus, plan.ValidationResult.Failures, plan.ValidationResult.Criteria)
+	}
+}
+
+func TestUnknownOwnerCapacityCannotOverrideMissingRequiredParticipants(t *testing.T) {
+	selector, err := frameworkregistry.NewService(frameworkregistry.NewMemoryRepository())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	executor := &fakeToolExecutor{result: deterministicReadOnlyToolExecution()}
+	service := NewServiceWithDependenciesAndAgentContext(
+		&fakeMemoryService{},
+		newTaskNoProviderLLMService(t),
+		nil,
+		&sequencedVerificationService{},
+		executor,
+		nil,
+		selector,
+		NewMemoryTaskStateRepository(),
+		&operatingContextProviderStub{capacity: &frameworkregistry.CapacitySnapshot{
+			Status:      "unknown",
+			NeedsReview: true,
+			SourceLabel: "lifeops:no_observation",
+		}},
+		emptyAgentContextProvider{},
+	)
+
+	plan, err := service.Run(IntakeRequest{
+		OwnerIdentity:  "operator@example.test",
+		WorkflowID:     uuid.NewString(),
+		Request:        "Run the selected HAI backend readiness probe-12345 for E2E governed pursuit 12345 (e2e-governed-12345) and record its read-only verification result. Do not send anything externally.",
+		ProjectKey:     "e2e-governed-12345",
+		AutomationID:   executor.result.AutomationID,
+		ExecuteAllowed: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	// Capacity advice cannot discharge missing independent review participants.
+	// The lightweight constructor's positive deterministic-runtime test above
+	// still covers execution separately; this production-like empty inventory
+	// must not turn that path into a specialist-bypass exception.
+	if executor.calls != 0 || plan.RiskAssessment.AllowedNow || len(plan.RiskAssessment.MissingRequiredAgents) == 0 {
+		t.Fatalf("unknown capacity overrode missing participants: calls=%d risk=%#v", executor.calls, plan.RiskAssessment)
+	}
+	if plan.ValidationResult.Passed || plan.CompletionStatus == "validated" || plan.ReviewQueueItem == nil {
+		t.Fatalf("blocked work was passed off as verified: status=%s validation=%t", plan.CompletionStatus, plan.ValidationResult.Passed)
+	}
+}
+
+type emptyAgentContextProvider struct{}
+
+func (emptyAgentContextProvider) LatestAgents(string, time.Time) ([]frameworkregistry.AgentCard, error) {
+	return nil, nil
+}
+
+func TestE2EReadinessProbeSelectionAllowsAutomaticControlledRuntime(t *testing.T) {
+	selector, err := frameworkregistry.NewService(frameworkregistry.NewMemoryRepository())
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	request := "Run the selected HAI backend readiness probe-12345 for E2E governed pursuit 12345 (e2e-governed-12345) and record its read-only verification result. Do not send anything externally."
+	intake := analyzeIntake(IntakeRequest{Request: request, ProjectKey: "e2e-governed-12345"})
+
+	decision, err := selector.PlanSelection(frameworkregistry.SelectionRequest{
+		OwnerIdentity:       "operator@example.com",
+		TaskPlanID:          "e2e-readiness-probe",
+		Request:             request,
+		ProjectKey:          "e2e-governed-12345",
+		PursuitID:           "pursuit-12345",
+		TaskType:            intake.TaskType,
+		RiskLevel:           intake.RiskLevel,
+		Difficulty:          intake.Difficulty,
+		RequiredReasoning:   intake.RequiredReasoning,
+		SuccessCriteria:     intake.SuccessCriteria,
+		NeedsMemory:         intake.NeedsMemory,
+		NeedsTools:          intake.NeedsTools,
+		NeedsDocuments:      intake.NeedsDocuments,
+		NeedsWebAccess:      intake.NeedsWebAccess,
+		NeedsLocalExecution: intake.NeedsLocalExecution,
+		NeedsApproval:       intake.NeedsApproval,
+		ExecuteRequested:    true,
+	})
+	if err != nil {
+		t.Fatalf("PlanSelection: %v", err)
+	}
+	if decision.MaximumAutonomyLevel < 8 || decision.RequiresApproval {
+		t.Fatalf("E2E deterministic readiness selection blocks automatic runtime: intake=%#v autonomy=%d requiresApproval=%t selected=%#v", intake, decision.MaximumAutonomyLevel, decision.RequiresApproval, decision.Selected)
+	}
+}
+
+func newTaskNoProviderLLMService(t *testing.T) *llm.Service {
+	t.Helper()
+	t.Setenv("LLM_PROVIDERS_JSON", "[]")
+	t.Setenv("LLM_POLICY_JSON", "")
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "false")
+	service, err := llm.NewServiceFromEnv()
+	if err != nil {
+		t.Fatalf("NewServiceFromEnv: %v", err)
+	}
+	return service
 }
 
 func TestLegalPrimarySourceRequirementBlocksBeforeExecutorSideEffect(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"automation-hub-backend/internal/executionauth"
 	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/llm"
+	"automation-hub-backend/internal/opscontrol"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -145,6 +146,34 @@ func (a llmExecutionAuthorizer) AuthorizeFinalEffect(
 
 type ecosystemExecutionAuthorizer struct {
 	service *executionauth.Service
+}
+
+// ecosystemMutationApprovalPreparer adapts the existing owner-control signer
+// to the OpenClaw boundary. It prepares a signed, five-minute proof for the
+// digest already derived by agentruntime; it cannot select an effect itself.
+type ecosystemMutationApprovalPreparer struct {
+	issuer opscontrol.OwnerControlApprovalIssuer
+}
+
+func (p ecosystemMutationApprovalPreparer) PrepareEcosystemMutationApproval(
+	ownerIdentity string,
+	taskID string,
+	effectDigest string,
+) (agentruntime.EcosystemMutationAuthorization, error) {
+	if p.issuer == nil {
+		return agentruntime.EcosystemMutationAuthorization{},
+			fmt.Errorf("owner control approval issuer is unavailable")
+	}
+	approval, err := p.issuer.Prepare(ownerIdentity, effectDigest)
+	if err != nil {
+		return agentruntime.EcosystemMutationAuthorization{}, err
+	}
+	return agentruntime.EcosystemMutationAuthorization{
+		IdempotencyKey:        "agent-runtime-openclaw:" + uuid.NewString(),
+		TaskID:                taskID,
+		ApprovalSourceID:      approval.SourceID,
+		ApprovalBindingDigest: approval.BindingDigest,
+	}, nil
 }
 
 func (a ecosystemExecutionAuthorizer) AuthorizeAndConsumeEcosystemMutation(

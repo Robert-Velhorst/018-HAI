@@ -1,0 +1,9 @@
+{"Time":"2026-09-30T21:48:50.898133411Z","Action":"start","Package":"automation-hub-backend/internal/source"}
+{"Time":"2026-09-30T21:48:50.993910303Z","Action":"run","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation"}
+{"Time":"2026-09-30T21:48:50.99403107Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"=== RUN   TestManualWorkerPostgresClaimIsolation\n"}
+{"Time":"2026-09-30T21:48:50.99477563Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"    manual_worker_postgres_test.go:181: refusing destructive PostgreSQL test: database identity \"hai_source_manual_worker_test_shadow\" does not exactly match required \"hai_source_manual_worker_test\"\n"}
+{"Time":"2026-09-30T21:48:50.994825081Z","Action":"output","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Output":"--- FAIL: TestManualWorkerPostgresClaimIsolation (0.00s)\n"}
+{"Time":"2026-09-30T21:48:50.994837616Z","Action":"fail","Package":"automation-hub-backend/internal/source","Test":"TestManualWorkerPostgresClaimIsolation","Elapsed":0}
+{"Time":"2026-09-30T21:48:50.995652902Z","Action":"output","Package":"automation-hub-backend/internal/source","Output":"FAIL\n"}
+{"Time":"2026-09-30T21:48:51.005092539Z","Action":"output","Package":"automation-hub-backend/internal/source","Output":"FAIL\tautomation-hub-backend/internal/source\t0.106s\n"}
+{"Time":"2026-09-30T21:48:51.005182182Z","Action":"fail","Package":"automation-hub-backend/internal/source","Elapsed":0.107}

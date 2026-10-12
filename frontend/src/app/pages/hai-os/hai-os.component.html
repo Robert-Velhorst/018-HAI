@@ -1,221 +1,416 @@
-<section class="os-page">
-  <nz-layout>
-    <nz-header class="header-container">
-      <div class="header-content">
-        <h1 class="header-content__title">HAI Personal AI OS</h1>
-        <div class="header-content__actions">
-          <button nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">
-            <i nz-icon nzType="reload" nzTheme="outline"></i>
-            Refresh
-          </button>
-          <button nz-button nzType="default" (click)="goHome()">
-            <i nz-icon nzType="appstore" nzTheme="outline"></i>
-            Automations
-          </button>
-        </div>
-      </div>
-    </nz-header>
-
-    <nz-content class="content-container" *ngIf="overview as os">
-      <div class="status-strip">
-        <nz-card nzSize="small">
-          <strong>Completion first</strong>
-          <span>{{ os.completionFirst ? 'enabled' : 'disabled' }}</span>
-        </nz-card>
-        <nz-card nzSize="small">
-          <strong>Local first</strong>
-          <span>{{ os.localFirst ? 'enabled' : 'disabled' }}</span>
-        </nz-card>
-        <nz-card nzSize="small">
-          <strong>Paid budget</strong>
-          <span>EUR {{ os.paidBudgetEur }}</span>
-        </nz-card>
-        <nz-card nzSize="small">
-          <strong>Needs review</strong>
-          <span>{{ os.needsReviewTotal }}</span>
-        </nz-card>
-        <nz-card nzSize="small">
-          <strong>Emergency stop</strong>
-          <span>{{ os.emergencyStop ? 'active' : 'clear' }}</span>
-        </nz-card>
-      </div>
-
-      <nz-card
-        nzTitle="Pursuit Operating Layer"
-        class="section-card pursuit-section"
-        *ngIf="os.pursuitOverview as pursuit"
+<section class="os-page" aria-labelledby="os-page-title">
+  <header class="os-page__header">
+    <div>
+      <h1 id="os-page-title">Operating overview</h1>
+      <p class="os-page__description">What needs attention, the next step, and system safeguards.</p>
+    </div>
+    <div class="os-page__actions" role="group" aria-label="HAI OS actions">
+      <button
+        nz-button
+        nzType="default"
+        type="button"
+        (click)="refresh()"
+        [nzLoading]="loading"
+        [disabled]="loading"
+        aria-label="Refresh HAI OS overview"
       >
-        <div class="pursuit-hero">
+        Refresh
+      </button>
+    </div>
+  </header>
+
+  <div class="os-state os-state--loading" *ngIf="loading && !overview" role="status" aria-live="polite">
+    Loading the current HAI OS overview…
+  </div>
+
+  <div class="os-state os-state--loading" *ngIf="loading && overview" role="status" aria-live="polite">
+    Refreshing. Showing the last successfully loaded overview until the update completes.
+  </div>
+
+  <div class="os-state os-state--error" *ngIf="errorMessage">
+    <div class="os-state__message" role="alert" aria-atomic="true">
+      <strong>{{ overview ? 'Refresh failed' : 'HAI OS overview unavailable' }}</strong>
+      <span>{{ errorMessage }}</span>
+    </div>
+    <button
+      nz-button
+      nzType="default"
+      type="button"
+      (click)="refresh()"
+      [nzLoading]="loading"
+      [disabled]="loading"
+      aria-label="Retry loading the HAI OS overview"
+    >
+      Retry
+    </button>
+  </div>
+
+  <div class="os-state" *ngIf="!loading && !errorMessage && !overview" role="status">
+    No HAI OS overview is available yet. Refresh to try again.
+  </div>
+
+  <div class="content-container" *ngIf="overview as os">
+    <section class="os-overview-summary" aria-label="Operational attention">
+      <dl class="status-strip">
+        <div class="status-item status-item--review" [class.status-item--clear]="os.needsReviewTotal === 0">
+          <dt>Needs review</dt>
+          <dd [attr.data-state]="os.needsReviewTotal > 0 ? 'attention' : 'clear'">
+            {{ os.needsReviewTotal > 0 ? os.needsReviewTotal : 'Clear' }}
+          </dd>
+          <small *ngIf="os.needsReviewTotal > 0">Items across sources, workflows, and checks.</small>
+        </div>
+        <div class="status-item status-item--safety">
+          <dt>Emergency stop</dt>
+          <dd [attr.data-state]="os.emergencyStop ? 'attention' : 'clear'">
+            {{ os.emergencyStop ? 'Active' : 'Clear' }}
+          </dd>
+          <small *ngIf="os.emergencyStop">
+            {{ os.emergencyStopReason || os.emergencyStopNote || 'Reason not recorded.' }}
+          </small>
+        </div>
+      </dl>
+      <p class="overview-updated" aria-live="polite">
+        <span>Updated</span>
+        <time *ngIf="hasValidTimestamp(os.generatedAt); else unavailableTimestamp" [attr.datetime]="os.generatedAt">
+          {{ os.generatedAt | date: 'medium' }}
+        </time>
+        <ng-template #unavailableTimestamp><span>Unavailable</span></ng-template>
+      </p>
+    </section>
+
+    <section
+      class="pursuit-section"
+      aria-labelledby="pursuit-focus-title"
+      *ngIf="os.pursuitOverview as pursuit"
+    >
+      <div class="pursuit-focus">
+        <div class="pursuit-focus__copy">
+          <p class="pursuit-focus__label">Next step</p>
+          <h2 id="pursuit-focus-title">
+            {{ !pursuit.enabled
+              ? 'Pursuit information is unavailable.'
+              : pursuit.next || (pursuit.totalActive > 0
+                ? 'Review your open pursuits and choose the next step.'
+                : 'Create a pursuit to get started.') }}
+          </h2>
+          <p class="pursuit-focus__summary" *ngIf="pursuit.enabled && pursuit.summary">{{ pursuit.summary }}</p>
+          <p class="pursuit-focus__summary pursuit-focus__summary--unavailable" *ngIf="!pursuit.enabled">
+            Current pursuit data was not returned. Refresh to check again.
+          </p>
+          <p class="pursuit-focus__meta" aria-label="Pursuit status" *ngIf="pursuit.enabled">
+            <span>{{ pursuit.totalActive }} open {{ pursuit.totalActive === 1 ? 'pursuit' : 'pursuits' }}</span>
+            <span aria-hidden="true">·</span>
+            <span>{{ pursuit.needsRobert }} {{ pursuit.needsRobert === 1 ? 'needs' : 'need' }} your decision</span>
+          </p>
+        </div>
+        <div class="pursuit-focus__action">
           <button
             nz-button
-            nzType="default"
+            nzType="primary"
+            type="button"
             class="pursuit-primary"
-            (click)="openPursuits()"
+            (click)="openPursuits(undefined, pursuit.enabled && pursuit.totalActive === 0)"
+            [attr.aria-label]="!pursuit.enabled
+              ? 'Open pursuits workspace'
+              : pursuit.totalActive === 0 ? 'Create a pursuit' : 'Open pursuit queue'"
           >
-            <span class="pursuit-primary__eyebrow">status</span>
-            <strong>{{ pursuit.status }}</strong>
-            <small>{{ pursuit.summary }}</small>
+            {{ !pursuit.enabled
+              ? 'Open pursuits workspace'
+              : pursuit.totalActive === 0 ? 'Create pursuit' : 'Open pursuit queue' }}
           </button>
-          <div class="pursuit-next">
-            <span>Next operating move</span>
-            <p>{{ pursuit.next }}</p>
-            <small>
-              {{ pursuit.evidenceStatus }} / {{ pursuit.linkedEvidence }} evidence /
-              {{ pursuit.decisionCards }} decisions / {{ pursuit.openLoops }} open loops
-            </small>
-            <small *ngIf="pursuit.ambientLine">
-              Ambient: {{ pursuit.ambientLine }}
-            </small>
-          </div>
+        </div>
+      </div>
+
+      <hai-progressive-section
+        [moduleId]="moduleId"
+        sectionId="pursuit-spotlight"
+        title="Needs attention"
+        summary="Current pursuit items that need a decision or next step."
+        [advancedOnly]="false"
+      >
+        <div class="pursuit-spotlight" *ngIf="pursuit.enabled && visibleSpotlightItems.length; else noPursuitSpotlight">
+          <ng-container *ngFor="let item of visibleSpotlightItems">
+            <button
+              *ngIf="hasPursuitId(item); else pursuitWithoutDetail"
+              nz-button
+              nzType="default"
+              type="button"
+              class="spotlight-item"
+              [title]="item.nextAction || item.currentState || item.evidenceLine || 'Open pursuit detail'"
+              [attr.aria-label]="spotlightAccessibleLabel(item)"
+              (click)="openPursuits(item.id)"
+            >
+              <span class="spotlight-item__copy">
+                <strong>{{ item.title }}</strong>
+                <small class="spotlight-item__status">{{ statusLabel(item.status) }} · {{ statusLabel(item.riskLevel) }} risk</small>
+                <small class="spotlight-item__next">{{ item.nextAction || item.currentState || item.evidenceLine || 'No next action recorded.' }}</small>
+              </span>
+              <span
+                class="spotlight-item__signals"
+                *ngIf="item.needsRobert || item.blocked || item.reviewDue || item.planningNeeded || item.stale || item.riskLevel.toLowerCase() === 'high'"
+              >
+                <span *ngIf="item.needsRobert">Needs your decision</span>
+                <span *ngIf="item.blocked">Blocked</span>
+                <span *ngIf="item.reviewDue">Review due</span>
+                <span *ngIf="item.planningNeeded">Planning needed</span>
+                <span *ngIf="item.riskLevel.toLowerCase() === 'high'">High risk</span>
+                <span *ngIf="item.stale">Stale</span>
+              </span>
+            </button>
+            <ng-template #pursuitWithoutDetail>
+              <div class="spotlight-item spotlight-item--unavailable">
+                <span class="spotlight-item__copy">
+                  <strong>{{ item.title }}</strong>
+                  <small class="spotlight-item__status">{{ statusLabel(item.status) }} · {{ statusLabel(item.riskLevel) }} risk</small>
+                  <small class="spotlight-item__next">{{ item.nextAction || item.currentState || item.evidenceLine || 'No next action recorded.' }}</small>
+                </span>
+                <span class="spotlight-item__signals">Record detail unavailable</span>
+              </div>
+            </ng-template>
+          </ng-container>
         </div>
 
-        <div class="pursuit-queues">
-          <button
-            nz-button
-            nzType="default"
-            class="pursuit-queue"
-            *ngFor="let queue of pursuit.queues"
-            (click)="open(queue.route)"
-            [title]="queue.description"
-          >
-            <strong>{{ queue.count }}</strong>
-            <span>{{ queue.name }}</span>
-            <small>{{ queue.status }}</small>
-          </button>
-        </div>
-
-        <div class="pursuit-spotlight" *ngIf="pursuit.spotlight.length; else noPursuitSpotlight">
-          <button
-            nz-button
-            nzType="default"
-            class="spotlight-item"
-            *ngFor="let item of pursuit.spotlight"
-            (click)="openPursuits(item.id)"
-            [title]="item.evidenceLine || item.currentState || item.nextAction || 'Open pursuit detail'"
-          >
-            <span>
-              <strong>{{ item.title }}</strong>
-              <small>{{ item.status }} / {{ item.riskLevel }} risk</small>
-              <small>{{ item.evidenceLine || item.currentState || item.nextAction }}</small>
-            </span>
-            <em *ngIf="item.needsRobert">{{ item.needsRobert }} Robert</em>
-            <em *ngIf="item.planningNeeded">plan</em>
-            <em *ngIf="item.reviewDue">review</em>
-            <em *ngIf="item.blocked">{{ item.blocked }} blocked</em>
-            <em *ngIf="item.openLoops">{{ item.openLoops }} loops</em>
-            <em *ngIf="item.linkedEvidence">{{ item.linkedEvidence }} evidence</em>
-            <em *ngIf="item.decisionCards">{{ item.decisionCards }} decisions</em>
-            <em *ngIf="item.timelineItems">{{ item.timelineItems }} timeline</em>
-            <em *ngIf="item.stale">stale</em>
-          </button>
-        </div>
+        <button
+          *ngIf="pursuit.enabled && pursuit.spotlight.length > visibleSpotlightItems.length"
+          nz-button
+          nzType="default"
+          type="button"
+          class="pursuit-view-all"
+          (click)="openPursuits()"
+        >
+          Open all pursuits
+        </button>
 
         <ng-template #noPursuitSpotlight>
-          <div class="empty-pursuit-state">
-            <strong>No pursuit needs attention right now</strong>
-            <span>New source intake, memory imports, and workflow events can still create or update pursuits.</span>
-          </div>
+          <p class="empty-pursuit-state" role="status">
+            {{ !pursuit.enabled
+              ? 'Pursuit attention is unavailable.'
+              : pursuit.totalActive === 0 ? 'No open pursuits need attention.' : 'Nothing needs your attention right now.' }}
+          </p>
         </ng-template>
-      </nz-card>
+      </hai-progressive-section>
 
-      <nz-card nzTitle="Product Stack" class="section-card">
-        <p><strong>Canonical:</strong> {{ os.canonicalStack }}</p>
-        <nz-table [nzData]="os.referenceStacks" nzSize="small" [nzPageSize]="5">
+      <hai-progressive-section
+        [moduleId]="moduleId"
+        sectionId="pursuit-queues"
+        title="Operating queues"
+        summary="Counts by state; open the pursuit workspace to act."
+        [advancedOnly]="true"
+      >
+        <ul class="pursuit-queues" *ngIf="pursuit.queues.length">
+          <li class="pursuit-queue" *ngFor="let queue of pursuit.queues">
+            <span class="pursuit-queue__copy">
+              <strong>{{ queue.name }}</strong>
+              <small>{{ queue.description }}</small>
+            </span>
+            <span class="pursuit-queue__count">
+              <strong>{{ queue.count }}</strong>
+              <small>{{ statusLabel(queue.status) }}</small>
+            </span>
+          </li>
+        </ul>
+        <p class="advanced-empty-state" role="status" *ngIf="!pursuit.queues.length">
+          No pursuit queues were returned.
+        </p>
+      </hai-progressive-section>
+
+      <hai-progressive-section
+        [moduleId]="moduleId"
+        sectionId="pursuit-context"
+        title="Evidence and ambient context"
+        summary="Source-linked evidence, open loops, and the latest ambient scan."
+        [advancedOnly]="true"
+      >
+        <dl class="pursuit-context">
+          <div *ngIf="pursuit.summary"><dt>Pursuit summary</dt><dd>{{ pursuit.summary }}</dd></div>
+          <div><dt>Evidence status</dt><dd>{{ pursuit.evidenceStatus }}</dd></div>
+          <div><dt>Linked evidence</dt><dd>{{ pursuit.linkedEvidence }}</dd></div>
+          <div><dt>Decision cards</dt><dd>{{ pursuit.decisionCards }}</dd></div>
+          <div><dt>Open loops</dt><dd>{{ pursuit.openLoops }}</dd></div>
+          <div *ngIf="pursuit.ambientLastScan"><dt>Last ambient scan</dt><dd>{{ pursuit.ambientLastScan | date: 'short' }}</dd></div>
+          <div *ngIf="pursuit.ambientLine"><dt>Ambient status</dt><dd>{{ pursuit.ambientLine }}</dd></div>
+        </dl>
+      </hai-progressive-section>
+    </section>
+
+    <hai-progressive-section
+      [moduleId]="moduleId"
+      sectionId="product-stack"
+      title="Product stack"
+      summary="Canonical implementation and retained reference systems."
+      [advancedOnly]="true"
+    >
+      <p *ngIf="os.canonicalStack"><strong>Canonical:</strong> {{ os.canonicalStack }}</p>
+      <p class="advanced-empty-state" role="status" *ngIf="!os.canonicalStack && !os.referenceStacks.length">
+        No product-stack data was returned.
+      </p>
+      <div
+        class="data-table-scroll"
+        role="region"
+        tabindex="0"
+        aria-label="Reference technology stacks; scroll horizontally for all columns"
+        *ngIf="os.referenceStacks.length"
+      >
+        <nz-table [nzData]="os.referenceStacks" nzSize="small" [nzPageSize]="5" [nzShowPagination]="os.referenceStacks.length > 5">
           <thead>
-            <tr>
-              <th>Reference</th>
-              <th>Status</th>
-              <th>Use</th>
-            </tr>
+            <tr><th>Reference</th><th>Status</th><th>Use</th></tr>
           </thead>
           <tbody>
             <tr *ngFor="let stack of os.referenceStacks">
               <td>{{ stack.name }}</td>
-              <td>{{ stack.status }}</td>
+              <td>{{ statusLabel(stack.status) }}</td>
               <td>{{ stack.use }}</td>
             </tr>
           </tbody>
         </nz-table>
-      </nz-card>
+      </div>
+    </hai-progressive-section>
 
-      <nz-card nzTitle="System Metrics" class="section-card">
-        <div class="metric-grid">
-          <div
-            class="metric-button"
-            *ngFor="let metric of os.metrics"
-          >
-            <span>{{ metric.label }}</span>
+    <hai-progressive-section
+      [moduleId]="moduleId"
+      sectionId="system-metrics"
+      title="System metrics"
+      summary="Backend-reported operational measurements and status."
+      [advancedOnly]="true"
+    >
+      <dl class="metric-list" *ngIf="os.metrics.length">
+        <div class="metric-list__item" *ngFor="let metric of os.metrics">
+          <dt>{{ metric.label }}</dt>
+          <dd>
             <strong>{{ metric.value }}</strong>
-            <small>{{ metric.status }}</small>
-          </div>
+            <small>{{ statusLabel(metric.status) }}</small>
+          </dd>
         </div>
-      </nz-card>
+      </dl>
+      <p class="advanced-empty-state" role="status" *ngIf="!os.metrics.length">
+        No system metrics were returned.
+      </p>
+    </hai-progressive-section>
 
-      <nz-card nzTitle="Operating Planes" class="section-card">
-        <nz-table [nzData]="os.planes" nzSize="small" [nzPageSize]="8">
+    <hai-progressive-section
+      [moduleId]="moduleId"
+      sectionId="operating-planes"
+      title="Operating planes"
+      summary="System areas, their state, and related HAI modules."
+      [advancedOnly]="true"
+    >
+      <div
+        class="data-table-scroll"
+        role="region"
+        tabindex="0"
+        aria-label="HAI operating planes; scroll horizontally for all columns"
+        *ngIf="os.planes.length"
+      >
+        <nz-table [nzData]="os.planes" nzSize="small" [nzPageSize]="8" [nzShowPagination]="os.planes.length > 8">
           <thead>
-            <tr>
-              <th>Plane</th>
-              <th>Status</th>
-              <th>Description</th>
-              <th>Open</th>
-            </tr>
+            <tr><th>Plane</th><th>Status</th><th>Description</th><th>Open</th></tr>
           </thead>
           <tbody>
             <tr *ngFor="let plane of os.planes">
               <td>{{ plane.name }}</td>
-              <td>{{ plane.status }}</td>
+              <td>{{ statusLabel(plane.status) }}</td>
               <td>{{ plane.description }}</td>
               <td>
-                <button
-                  nz-button
-                  nzSize="small"
-                  nzType="default"
-                  *ngFor="let link of plane.links"
-                  (click)="open(link)"
-                >
-                  {{ link }}
-                </button>
+                <ng-container *ngFor="let link of plane.links">
+                  <button
+                    *ngIf="isNavigableRoute(link); else unavailablePlaneLink"
+                    nz-button
+                    nzSize="small"
+                    nzType="default"
+                    type="button"
+                    [attr.aria-label]="'Open ' + navigationLabel(link) + ' for ' + plane.name"
+                    (click)="open(link)"
+                  >
+                    {{ navigationLabel(link) }}
+                  </button>
+                  <ng-template #unavailablePlaneLink>
+                    <span class="unavailable-plane-link">No matching HAI page</span>
+                  </ng-template>
+                </ng-container>
+                <span class="advanced-empty-state" *ngIf="!plane.links.length">No HAI page is linked.</span>
               </td>
             </tr>
           </tbody>
         </nz-table>
-      </nz-card>
+      </div>
+      <p class="advanced-empty-state" role="status" *ngIf="!os.planes.length">
+        No operating planes were returned.
+      </p>
+    </hai-progressive-section>
 
-      <nz-card nzTitle="Real-World Readiness" class="section-card">
-        <nz-table [nzData]="os.readinessGates" nzSize="small" [nzPageSize]="8">
+    <hai-progressive-section
+      [moduleId]="moduleId"
+      sectionId="real-world-readiness"
+      title="Real-world readiness"
+      summary="Readiness checks, evidence, and required next proof."
+      [advancedOnly]="true"
+    >
+      <div
+        class="data-table-scroll"
+        role="region"
+        tabindex="0"
+        aria-label="Real-world readiness gates; scroll horizontally for all columns"
+        *ngIf="os.readinessGates.length"
+      >
+        <nz-table [nzData]="os.readinessGates" nzSize="small" [nzPageSize]="8" [nzShowPagination]="os.readinessGates.length > 8">
           <thead>
-            <tr>
-              <th>Gate</th>
-              <th>Status</th>
-              <th>Evidence</th>
-              <th>Next</th>
-            </tr>
+            <tr><th>Gate</th><th>Status</th><th>Evidence</th><th>Next</th></tr>
           </thead>
           <tbody>
             <tr *ngFor="let gate of os.readinessGates">
               <td>{{ gate.name }}</td>
-              <td>{{ gate.status }}</td>
+              <td>{{ statusLabel(gate.status) }}</td>
               <td>{{ gate.evidence }}</td>
               <td>{{ gate.next }}</td>
             </tr>
           </tbody>
         </nz-table>
-      </nz-card>
+      </div>
+      <p class="advanced-empty-state" role="status" *ngIf="!os.readinessGates.length">
+        No readiness gates were returned.
+      </p>
+    </hai-progressive-section>
 
-      <nz-card nzTitle="Governance" class="section-card">
-        <p>
-          Emergency stop:
-          <strong>{{ os.emergencyStop ? 'active' : 'clear' }}</strong>
-        </p>
-        <p><strong>Stop reason:</strong> {{ os.emergencyStopReason }}</p>
-        <p>{{ os.emergencyStopNote }}</p>
-        <p>
-          Paid usage allowed:
-          <strong>{{ os.paidUsageAllowed ? 'yes' : 'no' }}</strong>
-        </p>
-        <p>Last updated: {{ os.generatedAt | date: 'short' }}</p>
-      </nz-card>
-    </nz-content>
-  </nz-layout>
+    <hai-progressive-section
+      [moduleId]="moduleId"
+      sectionId="governance"
+      title="Governance"
+      summary="Execution safeguards, budget state, and operating priorities."
+      [advancedOnly]="true"
+    >
+      <dl class="governance-list">
+        <div>
+          <dt>Paid budget</dt>
+          <dd>EUR {{ os.paidBudgetEur | number: '1.2-2' }}</dd>
+        </div>
+        <div>
+          <dt>Paid usage allowed</dt>
+          <dd>{{ os.paidUsageAllowed ? 'Yes' : 'No' }}</dd>
+        </div>
+        <div>
+          <dt>Completion first</dt>
+          <dd>{{ os.completionFirst ? 'Enabled' : 'Disabled' }}</dd>
+        </div>
+        <div>
+          <dt>Local first</dt>
+          <dd>{{ os.localFirst ? 'Enabled' : 'Disabled' }}</dd>
+        </div>
+        <div>
+          <dt>Emergency stop</dt>
+          <dd>{{ os.emergencyStop ? 'Active' : 'Clear' }}</dd>
+        </div>
+        <div *ngIf="os.emergencyStopReason || os.emergencyStopNote">
+          <dt>Stop reason</dt>
+          <dd>{{ os.emergencyStopReason || os.emergencyStopNote }}</dd>
+        </div>
+        <div>
+          <dt>Last updated</dt>
+          <dd *ngIf="hasValidTimestamp(os.generatedAt); else unavailableGovernanceTimestamp">
+            {{ os.generatedAt | date: 'short' }}
+          </dd>
+          <ng-template #unavailableGovernanceTimestamp><dd>Unavailable</dd></ng-template>
+        </div>
+      </dl>
+    </hai-progressive-section>
+  </div>
 </section>

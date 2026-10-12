@@ -38,6 +38,7 @@ func TestLAROSyncUsesBearerCredentialAndIncrementalCursor(t *testing.T) {
 		}`))
 	}))
 	defer server.Close()
+	t.Setenv("CONNECTED_SOURCE_HTTP_LOOPBACK_ADDRS", server.Listener.Addr().String())
 
 	t.Setenv("HAI_LARO_ENABLED", "true")
 	t.Setenv("HAI_LARO_BASE_URL", server.URL+"/laro")
@@ -117,6 +118,7 @@ func TestLAROSyncRecoversRejectedLegacyCursorAndClearsIt(t *testing.T) {
 	t.Setenv("HAI_LARO_ENABLED", "true")
 	t.Setenv("HAI_LARO_BASE_URL", server.URL)
 	t.Setenv("HAI_LARO_CONNECTOR_TOKEN", "laro_hai_test-credential")
+	t.Setenv("CONNECTED_SOURCE_HTTP_LOOPBACK_ADDRS", server.Listener.Addr().String())
 
 	sourceID := uuid.New()
 	repo := newFakeSourceRepo(&models.ConnectedSource{

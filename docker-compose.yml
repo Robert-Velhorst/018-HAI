@@ -1,9 +1,9 @@
-# Canonical convenience entrypoint.
+# Compatibility entry point for `docker compose up`.
 #
-# `docker compose up --build` now resolves to the same source-built,
-# loopback-bound stack as docker-compose.local.yml. The Windows initializer
-# creates .env.local; CI can point this wrapper at .env.example by setting
-# HAI_ENV_FILE=.env.example.
+# The canonical Windows/local stack builds HAI from this checkout and keeps
+# optional runtimes profile-gated. Keeping this small wrapper prevents the
+# obsolete prebuilt-image and multi-broker configuration from being started by
+# accident when a developer uses Docker Compose's default filename.
 name: 018-hai
 
 include:

@@ -73,7 +73,13 @@ func completionPlanProjectionRequest(plan *CompletionPlan, request IntakeRequest
 	}
 	verification := lifeontology.VerificationSchemaValidated
 	confidence := 0.7
-	if plan.ValidationResult.Passed {
+	outcomeUncertain := executionOutcomeUncertain(plan.ExecutionResult)
+	completionStatus := plan.CompletionStatus
+	if outcomeUncertain {
+		completionStatus = "review_required"
+		verification = lifeontology.VerificationNeedsReview
+		confidence = 0.6
+	} else if plan.ValidationResult.Passed {
 		verification = lifeontology.VerificationVerified
 		confidence = 1
 	} else if request.HumanApproved {
@@ -87,11 +93,11 @@ func completionPlanProjectionRequest(plan *CompletionPlan, request IntakeRequest
 	projection := lifeontology.OperationalProjectionRequest{
 		OwnerIdentity: plan.OwnerIdentity, Type: lifeontology.EntityTask, RecordID: plan.ID,
 		Domain: domain, Name: boundedText(firstNonEmpty(plan.RealGoal, plan.Request, "HAI task plan"), 256),
-		Summary: compactTaskRequest(plan.Request), Status: completionLifeStatus(plan.CompletionStatus),
+		Summary: compactTaskRequest(plan.Request), Status: completionLifeStatus(completionStatus),
 		Priority: completionLifePriority(plan.RiskAssessment.Level), DueAt: request.Deadline,
 		ObservedAt: plan.CreatedAt.UTC(), Confidence: confidence, VerificationStatus: verification,
 		Attributes: map[string]string{
-			"completion_status": strings.TrimSpace(plan.CompletionStatus),
+			"completion_status": strings.TrimSpace(completionStatus),
 			"mode":              strings.TrimSpace(mode), "risk": strings.TrimSpace(plan.RiskAssessment.Level),
 			"task_type":  strings.TrimSpace(plan.Intake.TaskType),
 			"model_tier": strings.TrimSpace(plan.ModelDecision.Tier),
@@ -102,6 +108,9 @@ func completionPlanProjectionRequest(plan *CompletionPlan, request IntakeRequest
 			Authority:     "hai_task_ledger", CapturedAt: plan.CreatedAt.UTC(), LocalOnly: true,
 		}},
 		Sensitivity: lifeontology.SensitivityInternal, LocalOnly: true,
+	}
+	if outcomeUncertain {
+		projection.Attributes["runtime_outcome"] = "uncertain"
 	}
 	if strings.TrimSpace(plan.ProjectKey) != "" {
 		projection.Links = append(projection.Links, lifeontology.OperationalLinkRequest{
@@ -122,7 +131,7 @@ func completionPlanProjectionRequest(plan *CompletionPlan, request IntakeRequest
 		})
 	}
 	for index, memoryID := range plan.StoredMemoryIDs {
-		if index == maximumProjectedMemories || len(projection.Links) == maximumTaskProjectionLinks {
+		if outcomeUncertain || index == maximumProjectedMemories || len(projection.Links) == maximumTaskProjectionLinks {
 			break
 		}
 		if strings.TrimSpace(memoryID) == "" {
@@ -134,10 +143,14 @@ func completionPlanProjectionRequest(plan *CompletionPlan, request IntakeRequest
 		})
 	}
 	if plan.ExecutionResult != nil && len(projection.Links) < maximumTaskProjectionLinks {
+		output := plan.ExecutionResult.Output
+		if outcomeUncertain {
+			output = "Unverified runtime output; execution may have occurred and requires reconciliation. " + output
+		}
 		projection.Links = append(projection.Links, lifeontology.OperationalLinkRequest{
-			Type: lifeontology.EntityOutcome, RecordID: plan.ID + ":" + firstNonEmpty(plan.CompletionStatus, "executed"),
-			Name:    boundedText("Task outcome: "+firstNonEmpty(plan.CompletionStatus, "executed"), 256),
-			Summary: boundedText(plan.ExecutionResult.Output, 2048), Status: completionLifeStatus(plan.CompletionStatus),
+			Type: lifeontology.EntityOutcome, RecordID: plan.ID + ":" + firstNonEmpty(completionStatus, "executed"),
+			Name:    boundedText("Task outcome: "+firstNonEmpty(completionStatus, "executed"), 256),
+			Summary: boundedText(output, 2048), Status: completionLifeStatus(completionStatus),
 			Relation: lifeontology.RelationProduces,
 		})
 	}
@@ -148,11 +161,13 @@ func completionPlanProjectionDigest(plan *CompletionPlan, request IntakeRequest,
 	payload := struct {
 		PlanID, Owner, PursuitID, WorkflowID, ProjectKey, Completion, Validation, Mode string
 		CreatedAt                                                                      string
+		OutcomeUncertain                                                               bool `json:"outcomeUncertain,omitempty"`
 	}{
 		PlanID: plan.ID, Owner: plan.OwnerIdentity, PursuitID: plan.PursuitID,
 		WorkflowID: request.WorkflowID, ProjectKey: plan.ProjectKey,
 		Completion: plan.CompletionStatus, Validation: plan.ValidationResult.Status,
 		Mode: mode, CreatedAt: plan.CreatedAt.UTC().Format("2006-01-02T15:04:05.999999999Z07:00"),
+		OutcomeUncertain: executionOutcomeUncertain(plan.ExecutionResult),
 	}
 	encoded, _ := json.Marshal(payload)
 	sum := sha256.Sum256(encoded)

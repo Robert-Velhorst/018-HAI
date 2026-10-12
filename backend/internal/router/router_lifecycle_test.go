@@ -26,7 +26,7 @@ func TestServeUntilCancelledStopsHTTPServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- serveUntilCancelled(ctx, server, listener)
+		done <- serveWithContext(ctx, server, listener)
 	}()
 
 	client := &http.Client{Timeout: time.Second}
@@ -45,7 +45,7 @@ func TestServeUntilCancelledStopsHTTPServer(t *testing.T) {
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("serveUntilCancelled: %v", err)
+			t.Fatalf("serveWithContext: %v", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("server did not stop after application context cancellation")
@@ -66,9 +66,9 @@ func TestRoutesDoNotDetachBackgroundWorkers(t *testing.T) {
 	}
 }
 
-func TestServeUntilCancelledRejectsIncompleteLifecycle(t *testing.T) {
-	if err := serveUntilCancelled(nil, &http.Server{}, nil); err == nil {
-		t.Fatal("serveUntilCancelled accepted a nil lifecycle context/listener")
+func TestServeWithContextRejectsMissingServer(t *testing.T) {
+	if err := serveWithContext(nil, nil, nil); err == nil {
+		t.Fatal("serveWithContext accepted a nil server")
 	}
 }
 

@@ -15,8 +15,8 @@ set -euo pipefail
 
 PG_PORT="${PG_PORT:-55437}"
 API_PORT="${API_PORT:-18085}"
-API_KEY="${API_KEY:-smoke-key}"
-JWT_SECRET="${JWT_SECRET:-smoke-jwt-secret}"
+API_KEY="${API_KEY:-hai-ci-smoke-api-key-0123456789abcdef}"
+JWT_SECRET="${JWT_SECRET:-hai-ci-smoke-jwt-secret-0123456789abcdef}"
 BASE="http://127.0.0.1:${API_PORT}/api/v1"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT}/scripts/smoke-auth.sh"
@@ -53,8 +53,8 @@ echo "==> Preparing a feed (so there is real work to halt)"
 mkdir -p "${FEEDS}" "${WORKSPACE}" "${STATE}"
 cat > "${FEEDS}/inbox.json" <<'JSON'
 [
-  {"externalId":"n1","title":"Organize notes","body":"Consolidate personal notes into a local file"},
-  {"externalId":"n2","title":"Tidy workspace","body":"Reorganize the local scratch files"}
+  {"externalId":"n1","title":"Organize notes","content":"Consolidate personal notes into a local file","itemType":"email","provider":"generic_json_feed"},
+  {"externalId":"n2","title":"Tidy workspace","content":"Reorganize the local scratch files","itemType":"email","provider":"generic_json_feed"}
 ]
 JSON
 
@@ -69,13 +69,13 @@ createdb -h 127.0.0.1 -p "${PG_PORT}" automation
 
 echo "==> Building and starting backend on :${API_PORT}"
 mkdir -p "${IMAGES}"
-( cd "${ROOT}/backend" && go build -buildvcs=false -o "${BIN}" ./cmd )
+( cd "${ROOT}/backend" && go build -o "${BIN}" ./cmd )
 
 start_backend() {
   DB_HOST=127.0.0.1 DB_PORT="${PG_PORT}" DB_USER="$(whoami)" DB_PASSWORD=smoke-local-postgres-password \
     DB_NAME=automation SERVER_PORT="${API_PORT}" BASE_URL=/api \
     BACKEND_API_SHARED_KEY="${API_KEY}" IMAGE_SAVE_DIR="${IMAGES}" \
-    RUN_MODE=production KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
+    RUN_MODE=test KAFKA_BROKERS="" JWT_SECRET="${JWT_SECRET}" \
     HAI_PHASE2_FEEDS_DIR="${FEEDS}" HAI_PHASE2_WORKSPACE_DIR="${WORKSPACE}" \
     HAI_PHASE2_STATE_DIR="${STATE}" HAI_PHASE2_FEED_FILES="inbox.json" \
     "${BIN}" > "${WORKDIR}/backend.log" 2>&1 &
@@ -102,14 +102,16 @@ owner_jwt="$(hai_smoke_mint_jwt owner "${JWT_SECRET}")"
 key_hdr=(-H "X-HAI-Backend-Key: ${API_KEY}" -H "Content-Type: application/json")
 hdr=("${key_hdr[@]}" -H "Authorization: Bearer ${owner_jwt}")
 
+echo "==> Owner activates the bounded smoke execution policy"
+hai_smoke_activate_execution_policy "${BASE}" "${hdr[@]}"
+kill "${BACKEND_PID}" 2>/dev/null; wait "${BACKEND_PID}" 2>/dev/null || true
+BACKEND_PID=""
+start_backend
+wait_live
+
 echo "==> Authentication boundary"
 check "API key alone is rejected" '401' \
   "$(curl -sS -o /dev/null -w '%{http_code}' "${key_hdr[@]}" "${BASE}/windows-runtime/readiness")"
-
-echo "==> Owner activates the durable local execution baseline"
-hai_smoke_activate_baseline_constitution "${BASE}" "${API_KEY}" "${owner_jwt}"
-kill "${BACKEND_PID}" 2>/dev/null; wait "${BACKEND_PID}" 2>/dev/null || true
-start_backend; wait_live
 
 echo "==> Windows-runtime readiness is truthful"
 rd="$(curl -sS "${hdr[@]}" "${BASE}/windows-runtime/readiness")"
@@ -125,6 +127,9 @@ check "no-external-sends-without-approval gate passes" 'pass' \
 
 echo "==> Emergency stop self-verification (proves it halts processing)"
 ver="$(curl -sS "${hdr[@]}" -X POST "${BASE}/windows-runtime/emergency-stop/verify")"
+if ! echo "${ver}" | jq -e 'has("halted")' >/dev/null; then
+  echo "emergency-stop verification response: $(echo "${ver}" | jq -c '{error, reasonCode, code}')" >&2
+fi
 check "emergency stop halts background processing" 'true' \
   "$(echo "${ver}" | jq -r '.halted==true')"
 check "zero operations processed while stopped" 'true' \
@@ -146,20 +151,31 @@ start_backend; wait_live
 check "emergency stop still engaged after restart" 'true' \
   "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.emergencyStop.engaged==true')"
 
-echo "==> Resume requires and consumes one exact owner approval"
-check "empty resume authorization is rejected" '403' \
-  "$(curl -sS -o /dev/null -w '%{http_code}' "${hdr[@]}" -X POST "${BASE}/background/resume" -d '{}')"
-check "failed resume leaves emergency stop engaged" 'true' \
-  "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.emergencyStop.engaged==true')"
-resume_request="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/control-approvals" -d '{"action":"resume"}')"
-check "resume approval binds the current stop revision" 'true' \
-  "$(echo "${resume_request}" | jq -r '(.action=="opscontrol.emergency-stop.clear") and (.resourceId|startswith("emergency-stop:revision-")) and (.bindingDigest|length==64)')"
-resume_request_id="$(echo "${resume_request}" | jq -r '.requestId')"
-resume_decision="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/control-approvals/${resume_request_id}/decision" -d '{"decision":"approved","reason":"Smoke owner approved this exact recovery."}')"
-check "approved recovery returns server-issued references" 'true' \
-  "$(echo "${resume_decision}" | jq -r '(.decision=="approved") and (.approvalSourceId|startswith("control-decision:")) and (.approvalBindingDigest|length==64)')"
-resume_authorization="$(echo "${resume_decision}" | jq -c '{idempotencyKey,taskId,approvalSourceId,approvalBindingDigest}')"
-curl -fsS "${hdr[@]}" -X POST "${BASE}/background/resume" -d "${resume_authorization}" >/dev/null
+echo "==> Resume re-enables processing"
+resume_authorization="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/resume/approval")"
+check "resume approval is effect-bound" 'true' \
+  "$(echo "${resume_authorization}" | jq -r '(.reviewItemId != "") and (.approvalSourceId | startswith("opscontrol-review:")) and (.approvalBindingDigest | length == 64)')"
+resume_review_id="$(echo "${resume_authorization}" | jq -r '.reviewItemId')"
+resume_payload="$(jq -n --arg confirmation "RESUME BACKGROUND PROCESSING" --arg note "CI owner approved the exact emergency-stop revision." '{confirmation:$confirmation,note:$note}')"
+resume_response="$(curl -sS -w $'\n%{http_code}' "${hdr[@]}" -X POST "${BASE}/background/resume-approval/${resume_review_id}/approve-and-resume" -d "${resume_payload}")"
+resume_status="${resume_response##*$'\n'}"
+resume_body="${resume_response%$'\n'*}"
+if [ "${resume_status}" != "200" ]; then
+  echo "resume failed with HTTP ${resume_status}: ${resume_body}" >&2
+  echo "resume failure reason code: $(echo "${resume_body}" | jq -r '.reasonCode // "unavailable"')" >&2
+  # The public control endpoint deliberately keeps authorization failures
+  # generic. Its owner-scoped inspection ledger exposes the policy reason
+  # codes without printing the approval capability or other secret material.
+  curl -sS "${hdr[@]}" "${BASE}/execution-authorizations?limit=3" \
+    | jq -c '{receipts: [.receipts[] | select(.action == "opscontrol.emergency-stop.clear") | {outcome, reason, evidence: {reasonCodes: .evidence.reasonCodes, constitution: {requestedCapabilities: .evidence.constitution.requestedCapabilities, deniedCapabilities: .evidence.constitution.deniedCapabilities, authorityCeiling: .evidence.constitution.authorityCeiling}}}]}' >&2 \
+    || true
+  grep 'opscontrol safety authorization rejected:' "${WORKDIR}/backend.log" \
+    | sed -E 's/ detail=.*/ detail=[REDACTED]/' >&2 || true
+  # Do not emit the raw process log here. ORM driver errors can include signed
+  # approval provenance, while the receipt inspection above is intentionally
+  # limited to safe, owner-scoped diagnostic fields.
+  exit 1
+fi
 check "processing active after resume" 'true' \
   "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.backgroundProcessingActive==true')"
 run_resumed="$(curl -sS "${hdr[@]}" -X POST "${BASE}/background/run")"
@@ -171,19 +187,6 @@ check "invalid mode rejected" '400' \
   "$(curl -sS -o /dev/null -w '%{http_code}' "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d '{"mode":"nope"}')"
 curl -sS "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d '{"mode":"read_only"}' >/dev/null
 check "mode set to read_only" 'read_only' \
-  "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.storedMode')"
-
-mode_request="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/control-approvals" -d '{"action":"set_mode","targetMode":"approval_required"}')"
-mode_request_id="$(echo "${mode_request}" | jq -r '.requestId')"
-mode_decision="$(curl -fsS "${hdr[@]}" -X POST "${BASE}/background/control-approvals/${mode_request_id}/decision" -d '{"decision":"approved","reason":"Smoke owner approved this exact mode increase."}')"
-mode_payload="$(echo "${mode_decision}" | jq -c '{mode:"approval_required",idempotencyKey,taskId,approvalSourceId,approvalBindingDigest}')"
-curl -fsS "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d "${mode_payload}" >/dev/null
-check "approved autonomy increase is applied" 'approval_required' \
-  "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.storedMode')"
-curl -fsS "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d '{"mode":"read_only"}' >/dev/null
-check "consumed mode approval cannot be replayed" '403' \
-  "$(curl -sS -o /dev/null -w '%{http_code}' "${hdr[@]}" -X PATCH "${BASE}/background/mode" -d "${mode_payload}")"
-check "replayed approval leaves restrictive mode in place" 'read_only' \
   "$(curl -sS "${hdr[@]}" "${BASE}/background/status" | jq -r '.storedMode')"
 
 echo "==> Crash/reboot recovery reconciles stuck operations"

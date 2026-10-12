@@ -175,7 +175,7 @@ func (r *remoteRuntime) probeProtocol(ctx context.Context, now time.Time) ProbeR
 	base.DurationMs = time.Since(start).Milliseconds()
 	if err != nil {
 		base.Status = executionbroker.RuntimeUnavailable
-		base.Detail = err.Error()
+		base.Detail = "runtime discovery could not reach or validate the configured endpoint; review the local runtime configuration"
 		return base
 	}
 	if status != http.StatusOK {

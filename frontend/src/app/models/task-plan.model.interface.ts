@@ -212,22 +212,26 @@ export interface IExecutionResult {
   actions: IExecutedAction[];
   mcpToolCalls?: IMcpToolCallTrace[];
   blockedReason?: string;
+  outcomeUncertain?: boolean;
 }
 
 export interface IToolExecutionResult {
   automationId: string;
   launchEventId?: string;
+  runtimeTaskId?: string;
+  executionReference?: string;
   runtimeType?: string;
   launchType: string;
   target?: string;
   status: string;
+  outcomeUncertain?: boolean;
   message?: string;
   output?: string;
   runtimeRouteTrace?: IAutomationRuntimeRouteTrace;
   exitCode: number;
   durationMs: number;
   requiresApproval: boolean;
-  auditEvents: string[];
+  auditEvents?: string[];
   executedAt: string;
 }
 
@@ -280,6 +284,7 @@ export interface IRiskAssessment {
   approvalGranted: boolean;
   actionResolution?: 'proceed' | 'clarify' | 'block';
   missingParameters?: string[];
+  missingRequiredAgents?: string[];
   frameworkAutonomyCeiling?: number;
   requiredFrameworkAutonomy?: number;
   reasons: string[];

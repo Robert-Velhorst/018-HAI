@@ -3,6 +3,7 @@ package idempotency
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 )
 
@@ -12,15 +13,15 @@ func sha256Hex(s string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// join builds a stable, delimiter-separated string for hashing. The pipe
-// delimiter plus field labels prevent boundary-collision (e.g. "ab"+"c" vs
-// "a"+"bc").
+// join preserves historical hash encodings. Untrusted pipe characters can make
+// field boundaries ambiguous; changing persisted identities requires migration.
 func join(parts ...string) string {
 	return strings.Join(parts, "|")
 }
 
 // SourceRevisionHash identifies a specific revision of a source item's content
-// + metadata. A changed revision invalidates stale approvals (§8).
+// + metadata. Approval validation must bind to this hash; creating a new
+// revision does not itself revoke an older operation's approval.
 func SourceRevisionHash(content, metadata string) string {
 	return sha256Hex(join("srev", content, metadata))
 }
@@ -28,6 +29,13 @@ func SourceRevisionHash(content, metadata string) string {
 // FeedItemDedupeKey deduplicates the same feed item across repeated syncs.
 func FeedItemDedupeKey(provider, accountLabel, externalID, sourceRevisionHash string) string {
 	return sha256Hex(join("feed", provider, accountLabel, externalID, sourceRevisionHash))
+}
+
+// StructuredFeedItemDedupeKey keeps untrusted field separators unambiguous.
+// Historical v1 rows require explicit reconciliation before a v2 rollout.
+func StructuredFeedItemDedupeKey(provider, accountLabel, externalID, sourceRevisionHash string) string {
+	encoded, _ := json.Marshal([]string{"feed.v2", provider, accountLabel, externalID, sourceRevisionHash})
+	return sha256Hex(string(encoded))
 }
 
 // OperationDedupeKey deduplicates Operations so repeated feed sync does not

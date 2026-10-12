@@ -2,7 +2,7 @@ package accountfeed
 
 import "testing"
 
-func TestTrelloBridgeRequiresBothLiveAdapterCredentials(t *testing.T) {
+func TestTrelloBridgeDoesNotInferLiveConnectionFromCredentials(t *testing.T) {
 	t.Setenv("TRELLO_API_KEY", "")
 	t.Setenv("TRELLO_READ_TOKEN", "")
 
@@ -13,18 +13,18 @@ func TestTrelloBridgeRequiresBothLiveAdapterCredentials(t *testing.T) {
 	if bridge.CredentialEnv != "TRELLO_API_KEY, TRELLO_READ_TOKEN" {
 		t.Fatalf("Trello credential setup=%q", bridge.CredentialEnv)
 	}
-	if status := bridge.ConnectionStatus(); status != ConnCredentialsRequired {
-		t.Fatalf("Trello without credentials status=%q", status)
+	if status := bridge.ConnectionStatus(); status != ConnContractOnly {
+		t.Fatalf("Trello without credentials status=%q, want contract-only", status)
 	}
 
 	t.Setenv("TRELLO_READ_TOKEN", "read-token")
-	if status := bridge.ConnectionStatus(); status != ConnCredentialsRequired {
-		t.Fatalf("Trello without API key status=%q", status)
+	if status := bridge.ConnectionStatus(); status != ConnContractOnly {
+		t.Fatalf("Trello with partial credentials status=%q, want contract-only", status)
 	}
 
 	t.Setenv("TRELLO_API_KEY", "api-key")
-	if status := bridge.ConnectionStatus(); status != ConnCredentialsPresentUnverified {
-		t.Fatalf("Trello with both credentials status=%q", status)
+	if status := bridge.ConnectionStatus(); status != ConnContractOnly {
+		t.Fatalf("Trello with credentials but no provider read status=%q, want contract-only", status)
 	}
 }
 
@@ -60,7 +60,7 @@ func TestGoogleBridgeDoesNotTreatLegacyTokenAsAnOAuthGrant(t *testing.T) {
 	if !ok {
 		t.Fatal("Gmail permission is missing")
 	}
-	if permission.Status != ConnCredentialsRequired {
+	if permission.Status != ConnContractOnly {
 		t.Fatalf("Gmail bootstrap status=%q", permission.Status)
 	}
 	if permission.Granted {
@@ -73,7 +73,7 @@ func TestGoogleBridgeDoesNotTreatLegacyTokenAsAnOAuthGrant(t *testing.T) {
 	if !ok {
 		t.Fatal("Gmail permission is missing after OAuth bootstrap configuration")
 	}
-	if permission.Status != ConnCredentialsPresentUnverified {
+	if permission.Status != ConnContractOnly {
 		t.Fatalf("Gmail bootstrap-configured status=%q", permission.Status)
 	}
 	if permission.Granted {

@@ -17,11 +17,11 @@ type oauthRouteServiceStub struct {
 	source.Service
 }
 
-func (oauthRouteServiceStub) CompleteGoogleOAuth(context.Context, string, string, string) (uuid.UUID, error) {
+func (oauthRouteServiceStub) CompleteGoogleOAuth(context.Context, string, string) (uuid.UUID, error) {
 	return uuid.Nil, errors.New("invalid OAuth state")
 }
 
-func TestGoogleOAuthRoutesRequireAuthorityToStartButAllowSessionlessCallback(t *testing.T) {
+func TestGoogleOAuthRoutesRequireAuthorityToStartAndRejectInvalidCallbackState(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	api := engine.Group("/api/v1")
@@ -35,10 +35,10 @@ func TestGoogleOAuthRoutesRequireAuthorityToStartButAllowSessionlessCallback(t *
 
 	callbackResponse := httptest.NewRecorder()
 	engine.ServeHTTP(callbackResponse, httptest.NewRequest(http.MethodGet, "/api/v1/sources/oauth/google/callback?code=missing&state=invalid", nil))
-	if callbackResponse.Code != http.StatusFound {
-		t.Fatalf("sessionless OAuth callback status = %d, want %d: %s", callbackResponse.Code, http.StatusFound, callbackResponse.Body.String())
+	if callbackResponse.Code != http.StatusBadRequest {
+		t.Fatalf("invalid OAuth callback state status = %d, want %d: %s", callbackResponse.Code, http.StatusBadRequest, callbackResponse.Body.String())
 	}
-	if location := callbackResponse.Header().Get("Location"); location != "/connected-sources?oauth=error" {
-		t.Fatalf("sessionless invalid callback location = %q, want OAuth error route", location)
+	if location := callbackResponse.Header().Get("Location"); location != "" {
+		t.Fatalf("invalid OAuth callback redirected to %q", location)
 	}
 }

@@ -1,4 +1,4 @@
-<main class="quick-capture" role="main" aria-labelledby="qc-title">
+<section class="quick-capture" aria-labelledby="qc-title">
   <nz-card class="quick-capture__card">
     <h1 id="qc-title" class="quick-capture__title">Quick capture</h1>
 
@@ -50,5 +50,18 @@
         <button nz-button nzType="primary" type="submit" [nzLoading]="saving">Save to memory</button>
       </div>
     </form>
+
+    <hai-progressive-section
+      moduleId="quick-capture"
+      sectionId="capture-details"
+      title="Capture details"
+      summary="Draft storage and save behavior."
+    >
+      <div class="quick-capture__advanced-details">
+        <h2>Draft handling</h2>
+        <p>HAI saves the draft in this browser while you type. It is sent to the HAI memory service only when you select “Save to memory”.</p>
+        <p>After a successful save the browser draft is cleared. If saving fails, the form remains available so you can retry.</p>
+      </div>
+    </hai-progressive-section>
   </nz-card>
-</main>
+</section>

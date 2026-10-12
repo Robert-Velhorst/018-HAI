@@ -2,38 +2,50 @@ package executionauth
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 type MemoryRepository struct {
-	mu           sync.RWMutex
-	receipts     map[string]Receipt
-	byID         map[string]string
-	consumptions map[string]Consumption
-	exercises    map[string]FinalEffectExercise
+	mu             sync.RWMutex
+	receipts       map[string]Receipt
+	byID           map[string]string
+	consumptions   map[string]Consumption
+	approvalClaims map[string]uuid.UUID
+	exercises      map[string]FinalEffectExercise
 }
 
 func NewMemoryRepository() *MemoryRepository {
 	return &MemoryRepository{
-		receipts:     map[string]Receipt{},
-		byID:         map[string]string{},
-		consumptions: map[string]Consumption{},
-		exercises:    map[string]FinalEffectExercise{},
+		receipts:       map[string]Receipt{},
+		byID:           map[string]string{},
+		consumptions:   map[string]Consumption{},
+		approvalClaims: map[string]uuid.UUID{},
+		exercises:      map[string]FinalEffectExercise{},
 	}
 }
 
 func (r *MemoryRepository) ExerciseFinalEffect(
-	_ context.Context,
+	ctx context.Context,
 	value FinalEffectExercise,
 ) error {
+	if err := memoryContextError(ctx); err != nil {
+		return err
+	}
 	if err := validateFinalEffectExercise(value); err != nil {
 		return err
 	}
-	r.mu.Lock()
+	if err := r.lockContext(ctx, true); err != nil {
+		return err
+	}
 	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	key := ownerKey(value.OwnerIdentity, value.ReceiptID.String())
 	receiptKey, ok := r.byID[key]
 	if !ok {
@@ -50,16 +62,24 @@ func (r *MemoryRepository) ExerciseFinalEffect(
 	if !finalEffectMatches(receipt, consumption, value) {
 		return ErrFinalEffectMismatch
 	}
+	if !finalEffectAuthorityFresh(receipt, consumption, value.ExercisedAt) {
+		return ErrFinalEffectExpired
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r.exercises[key] = value
 	return nil
 }
 
 func (r *MemoryRepository) GetFinalEffectExercise(
-	_ context.Context,
+	ctx context.Context,
 	owner string,
 	receiptID uuid.UUID,
 ) (FinalEffectExercise, error) {
-	r.mu.RLock()
+	if err := r.lockContext(ctx, false); err != nil {
+		return FinalEffectExercise{}, err
+	}
 	defer r.mu.RUnlock()
 	value, ok := r.exercises[ownerKey(owner, receiptID.String())]
 	if !ok {
@@ -68,11 +88,16 @@ func (r *MemoryRepository) GetFinalEffectExercise(
 	return value, nil
 }
 
-func (r *MemoryRepository) CreateOrGet(_ context.Context, receipt Receipt) (Receipt, bool, error) {
+func (r *MemoryRepository) CreateOrGet(ctx context.Context, receipt Receipt) (Receipt, bool, error) {
+	if err := memoryContextError(ctx); err != nil {
+		return Receipt{}, false, err
+	}
 	if err := validateReceipt(receipt); err != nil {
 		return Receipt{}, false, err
 	}
-	r.mu.Lock()
+	if err := r.lockContext(ctx, true); err != nil {
+		return Receipt{}, false, err
+	}
 	defer r.mu.Unlock()
 	key := ownerKey(receipt.OwnerIdentity, receipt.IdempotencyKey)
 	if existing, ok := r.receipts[key]; ok {
@@ -81,13 +106,18 @@ func (r *MemoryRepository) CreateOrGet(_ context.Context, receipt Receipt) (Rece
 		}
 		return cloneReceipt(existing), false, nil
 	}
+	if err := ctx.Err(); err != nil {
+		return Receipt{}, false, err
+	}
 	r.receipts[key] = cloneReceipt(receipt)
 	r.byID[ownerKey(receipt.OwnerIdentity, receipt.ID.String())] = key
 	return cloneReceipt(receipt), true, nil
 }
 
-func (r *MemoryRepository) Get(_ context.Context, owner string, id uuid.UUID) (Receipt, error) {
-	r.mu.RLock()
+func (r *MemoryRepository) Get(ctx context.Context, owner string, id uuid.UUID) (Receipt, error) {
+	if err := r.lockContext(ctx, false); err != nil {
+		return Receipt{}, err
+	}
 	defer r.mu.RUnlock()
 	key, ok := r.byID[ownerKey(owner, id.String())]
 	if !ok {
@@ -96,11 +126,16 @@ func (r *MemoryRepository) Get(_ context.Context, owner string, id uuid.UUID) (R
 	return cloneReceipt(r.receipts[key]), nil
 }
 
-func (r *MemoryRepository) List(_ context.Context, owner string, limit int) ([]Receipt, error) {
-	r.mu.RLock()
+func (r *MemoryRepository) List(ctx context.Context, owner string, limit int) ([]Receipt, error) {
+	if err := r.lockContext(ctx, false); err != nil {
+		return nil, err
+	}
 	defer r.mu.RUnlock()
 	result := make([]Receipt, 0)
 	for _, receipt := range r.receipts {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if receipt.OwnerIdentity == owner {
 			result = append(result, cloneReceipt(receipt))
 		}
@@ -115,14 +150,22 @@ func (r *MemoryRepository) List(_ context.Context, owner string, limit int) ([]R
 	if len(result) > limit {
 		result = result[:limit]
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
-func (r *MemoryRepository) Consume(_ context.Context, value Consumption) error {
+func (r *MemoryRepository) Consume(ctx context.Context, value Consumption) error {
+	if err := memoryContextError(ctx); err != nil {
+		return err
+	}
 	if err := validateConsumption(value); err != nil {
 		return err
 	}
-	r.mu.Lock()
+	if err := r.lockContext(ctx, true); err != nil {
+		return err
+	}
 	defer r.mu.Unlock()
 	key := ownerKey(value.OwnerIdentity, value.ReceiptID.String())
 	receiptKey, ok := r.byID[key]
@@ -133,19 +176,39 @@ func (r *MemoryRepository) Consume(_ context.Context, value Consumption) error {
 	if receipt.Outcome != OutcomeAuthorized || receipt.DecisionDigest != value.ReceiptDigest {
 		return ErrNotAuthorized
 	}
+	approvalKey := ""
+	if receipt.ApprovalSourceID != "" {
+		approval := receipt.Evidence.Approval
+		if approval.SourceID != receipt.ApprovalSourceID || approval.DecisionID == "" ||
+			approval.ExpiresAt.IsZero() || !value.ConsumedAt.Before(approval.ExpiresAt) {
+			return ErrAuthorizationChanged
+		}
+		approvalKey = approvalClaimKey(receipt.OwnerIdentity, approval.SourceID, approval.DecisionID)
+		if claimedReceipt, exists := r.approvalClaims[approvalKey]; exists && claimedReceipt != receipt.ID {
+			return ErrApprovalAlreadyClaimed
+		}
+	}
 	if _, exists := r.consumptions[key]; exists {
 		return ErrAlreadyConsumed
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if approvalKey != "" {
+		r.approvalClaims[approvalKey] = receipt.ID
 	}
 	r.consumptions[key] = value
 	return nil
 }
 
 func (r *MemoryRepository) GetConsumption(
-	_ context.Context,
+	ctx context.Context,
 	owner string,
 	receiptID uuid.UUID,
 ) (Consumption, error) {
-	r.mu.RLock()
+	if err := r.lockContext(ctx, false); err != nil {
+		return Consumption{}, err
+	}
 	defer r.mu.RUnlock()
 	value, ok := r.consumptions[ownerKey(owner, receiptID.String())]
 	if !ok {
@@ -155,6 +218,52 @@ func (r *MemoryRepository) GetConsumption(
 }
 
 func ownerKey(owner, id string) string { return owner + "\x00" + id }
+
+func memoryContextError(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("execution authorization: context is required")
+	}
+	return ctx.Err()
+}
+
+// Authorization waits must not outlive the operation's effect authority. No
+// helper goroutine is left holding a lock after the caller has canceled.
+func (r *MemoryRepository) lockContext(ctx context.Context, write bool) error {
+	if err := memoryContextError(ctx); err != nil {
+		return err
+	}
+	tryLock, unlock := r.mu.TryRLock, r.mu.RUnlock
+	if write {
+		tryLock, unlock = r.mu.TryLock, r.mu.Unlock
+	}
+	if tryLock() {
+		if err := ctx.Err(); err != nil {
+			unlock()
+			return err
+		}
+		return nil
+	}
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if tryLock() {
+				if err := ctx.Err(); err != nil {
+					unlock()
+					return err
+				}
+				return nil
+			}
+		}
+	}
+}
+
+func approvalClaimKey(owner, sourceID, decisionID string) string {
+	return ownerKey(owner, sourceID+"\x00"+decisionID)
+}
 
 func boundedLimit(value int) int {
 	if value <= 0 {

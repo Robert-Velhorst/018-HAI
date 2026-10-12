@@ -1,18 +1,10 @@
-import { DOCUMENT } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  Inject,
-  OnDestroy,
-  OnInit,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
-import { Subscription, finalize, fromEvent, timeout } from 'rxjs';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
+import { finalize, Subscription, timeout } from 'rxjs';
 import {
-  IA2ABridgeStatus,
-  IEventDeliveryFailure,
-  IEventDeliveryStats,
   ISystemCheck,
+  ISystemInfo,
   ISystemReadiness,
   SystemCheckSeverity,
 } from '../../models/system-status.model.interface';
@@ -26,21 +18,6 @@ interface CheckGroup {
   worst: SystemCheckSeverity;
 }
 
-interface RecommendedAction {
-  checkName: string;
-  detail: string;
-  severity: SystemCheckSeverity;
-  route?: string;
-  actionLabel?: string;
-}
-
-const RECOVERY_ROUTES: Record<string, { route: string; label: string }> = {
-  llm: { route: '/llm-policy', label: 'Open model controls' },
-  runtime: { route: '/runtime-control', label: 'Open runtime controls' },
-  security: { route: '/governance-control', label: 'Review governance' },
-  events: { route: '/system-status#event-delivery', label: 'Inspect delivery' },
-};
-
 // A subsystem prefix ("database.connection" -> "database") mapped to a heading.
 const GROUP_TITLES: Record<string, string> = {
   server: 'Gateway & server',
@@ -51,83 +28,103 @@ const GROUP_TITLES: Record<string, string> = {
   security: 'Secrets & security',
   media: 'Media storage',
   runtime: 'Runtime mode',
-  events: 'Automation delivery',
 };
 
+const MODULE_ID = 'system-status';
 const READY_POLL_MS = 120000;
 const DEGRADED_POLL_MS = 60000;
 const RECOVERY_POLL_MS = 15000;
 const READINESS_TIMEOUT_MS = 10000;
-const EVENT_DELIVERY_TIMEOUT_MS = 10000;
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.Eager,
-  standalone: false,
-  selector: 'app-system-status',
-  templateUrl: './system-status.component.html',
-  styleUrls: ['./system-status.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-system-status',
+    templateUrl: './system-status.component.html',
+    styleUrls: ['./system-status.component.scss'],
+    standalone: false
 })
 export class SystemStatusComponent implements OnInit, OnDestroy {
   readiness?: ISystemReadiness;
+  systemInfo?: ISystemInfo;
   groups: CheckGroup[] = [];
-  recommendedActions: RecommendedAction[] = [];
+  recommendedActions: string[] = [];
   loading = false;
   loadError = false;
   lastUpdated?: Date;
-  eventDelivery?: IEventDeliveryStats;
-  eventDeliveryLoading = false;
-  eventDeliveryError = false;
-  connectorStatus?: IA2ABridgeStatus;
-  connectorStatusLoading = false;
-  connectorStatusError = false;
-  retryingEventId = '';
 
-  private visibilitySub?: Subscription;
   private pollTimer?: ReturnType<typeof setTimeout>;
-  private readinessInFlight = false;
+  private refreshInFlight = false;
+  private systemInfoSubscription?: Subscription;
   private destroyed = false;
+  private readonly onVisibilityChange = (): void => {
+    if (document.hidden) {
+      this.clearPollTimer();
+      return;
+    }
+    this.refresh(true);
+  };
 
   constructor(
     @Inject(SYSTEM_STATUS_SERVICE_TOKEN)
     private systemStatusService: ISystemStatusService,
     private notification: NzNotificationService,
-    @Inject(DOCUMENT) private document: Document
+    private viewPreferences: ModuleViewPreferencesService
   ) {}
 
+  get isAdvanced(): boolean {
+    return this.viewPreferences.get(MODULE_ID).mode === 'advanced';
+  }
+
   ngOnInit(): void {
-    this.visibilitySub = fromEvent(this.document, 'visibilitychange').subscribe(() => {
-      if (this.document.hidden) {
-        this.clearPollTimer();
-        return;
-      }
-      this.refresh(true);
-    });
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.loadSystemInfo();
     this.refresh();
   }
 
   ngOnDestroy(): void {
     this.destroyed = true;
     this.clearPollTimer();
-    this.visibilitySub?.unsubscribe();
+    this.systemInfoSubscription?.unsubscribe();
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+  }
+
+  buildInfoTitle(info: ISystemInfo): string {
+    return [
+      `Build ${info.build.version}`,
+      `Commit ${info.build.commit}`,
+      `Built ${info.build.buildTime}`,
+      `Runtime ${info.build.goVersion}`,
+      `Mode ${info.runMode}`,
+    ].join(' · ');
+  }
+
+  private loadSystemInfo(): void {
+    this.systemInfoSubscription = this.systemStatusService.info().pipe(
+      timeout(READINESS_TIMEOUT_MS)
+    ).subscribe({
+      next: (info) => {
+        if (!this.destroyed) {
+          this.systemInfo = info;
+        }
+      },
+      // Build metadata is supplemental; a failure must not hide readiness.
+      error: () => undefined,
+    });
   }
 
   refresh(silent = false): void {
     this.clearPollTimer();
-    if (!silent) {
-      this.loadEventDelivery();
-      this.loadConnectorStatus();
-    }
-    if (this.readinessInFlight) {
+    if (this.refreshInFlight) {
       return;
     }
-    this.readinessInFlight = true;
     if (!silent) {
       this.loading = true;
     }
+    this.refreshInFlight = true;
     this.systemStatusService.readiness().pipe(
       timeout(READINESS_TIMEOUT_MS),
       finalize(() => {
-        this.readinessInFlight = false;
+        this.refreshInFlight = false;
       })
     ).subscribe({
       next: (readiness) => {
@@ -146,7 +143,7 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         if (!silent) {
           this.notification.error(
             'System status unavailable',
-            'Could not load detailed system readiness. You may need to sign in again.'
+            'Could not reach the readiness probe. You may need to sign in again.'
           );
         }
       },
@@ -154,10 +151,14 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   }
 
   private scheduleNextPoll(): void {
-    if (this.destroyed || this.document.hidden) {
+    if (this.destroyed || document.hidden) {
       return;
     }
-    this.pollTimer = setTimeout(() => this.refresh(true), this.pollDelay());
+    this.clearPollTimer();
+    this.pollTimer = setTimeout(() => {
+      this.pollTimer = undefined;
+      this.refresh(true);
+    }, this.pollDelay());
   }
 
   private pollDelay(): number {
@@ -175,86 +176,6 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
       clearTimeout(this.pollTimer);
       this.pollTimer = undefined;
     }
-  }
-
-  retryEventDelivery(failure: IEventDeliveryFailure): void {
-    if (failure.status !== 'dead_lettered' || this.retryingEventId) {
-      return;
-    }
-    this.retryingEventId = failure.id;
-    this.systemStatusService.retryEventDelivery(failure.id).subscribe({
-      next: () => {
-        this.retryingEventId = '';
-        this.notification.success(
-          'Delivery queued',
-          'HAI reset the bounded retry budget. Delivery still requires a healthy Kafka consumer.'
-        );
-        this.loadEventDelivery();
-        this.refresh(true);
-      },
-      error: () => {
-        this.retryingEventId = '';
-        this.notification.error(
-          'Retry failed',
-          'The delivery was not changed. Refresh its status before trying again.'
-        );
-      },
-    });
-  }
-
-  deliveryStateLabel(): string {
-    if (!this.eventDelivery) return 'Unavailable';
-    if (this.eventDelivery.deadLettered > 0) return 'Action required';
-    if (this.eventDelivery.pending > 0) return 'Delivery pending';
-    return 'Caught up';
-  }
-
-  private loadEventDelivery(): void {
-    this.eventDeliveryLoading = true;
-    this.systemStatusService.eventDelivery().pipe(timeout(EVENT_DELIVERY_TIMEOUT_MS)).subscribe({
-      next: (stats) => {
-        this.eventDelivery = stats;
-        this.eventDeliveryError = false;
-        this.eventDeliveryLoading = false;
-      },
-      error: () => {
-        this.eventDeliveryError = true;
-        this.eventDeliveryLoading = false;
-      },
-    });
-  }
-
-  private loadConnectorStatus(): void {
-    this.connectorStatusLoading = true;
-    this.systemStatusService.connectorStatus().pipe(timeout(EVENT_DELIVERY_TIMEOUT_MS)).subscribe({
-      next: (status) => {
-        this.connectorStatus = status;
-        this.connectorStatusError = false;
-        this.connectorStatusLoading = false;
-      },
-      error: () => {
-        this.connectorStatusError = true;
-        this.connectorStatusLoading = false;
-      },
-    });
-  }
-
-  connectorStateLabel(): string {
-    if (this.connectorStatusError) return 'Status unavailable';
-    if (!this.connectorStatus) return 'Checking connector';
-    if (!this.connectorStatus.enabled) return 'Connector disabled';
-    if (!this.connectorStatus.configured) return 'Configuration required';
-    return this.connectorStatus.transport === 'fixed_ngrok_https'
-      ? 'Governed cloud connector'
-      : 'Local-only connector';
-  }
-
-  connectorStateClass(): string {
-    if (this.connectorStatusError || (this.connectorStatus?.enabled && !this.connectorStatus.configured)) {
-      return 'connector-warn';
-    }
-    if (this.connectorStatus?.configured) return 'connector-ok';
-    return 'connector-off';
   }
 
   statusLabel(): string {
@@ -280,6 +201,25 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         return 'status-fail';
       default:
         return 'status-unknown';
+    }
+  }
+
+  refreshErrorMessage(): string {
+    if (!this.readiness) {
+      return 'Could not reach the readiness probe. If you were redirected to sign in, your session may have expired.'
+    }
+    const updated = this.lastUpdated ? ` Last successful status: ${this.lastUpdated.toLocaleTimeString()}.` : ''
+    return `The latest refresh failed. The displayed status may be out of date.${updated} Refresh to retry.`
+  }
+
+  severityLabel(severity: SystemCheckSeverity): string {
+    switch (severity) {
+      case 'ok':
+        return 'OK'
+      case 'warn':
+        return 'Warning'
+      case 'fail':
+        return 'Fail'
     }
   }
 
@@ -333,22 +273,11 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   // Each non-healthy check already carries a human-readable cause in `detail`;
   // pair it with its subsystem so the operator has a concrete to-do list rather
   // than a wall of green ticks and one buried red one.
-  private buildRecommendedActions(checks: ISystemCheck[]): RecommendedAction[] {
-    const rank: Record<SystemCheckSeverity, number> = { fail: 0, warn: 1, ok: 2 };
+  private buildRecommendedActions(checks: ISystemCheck[]): string[] {
     return checks
       .filter((c) => c.severity !== 'ok')
-      .sort((a, b) => rank[a.severity] - rank[b.severity] || a.name.localeCompare(b.name))
-      .map((check) => {
-        const subsystem = check.name.split('.')[0] || '';
-        const recovery = RECOVERY_ROUTES[subsystem];
-        return {
-          checkName: check.name,
-          detail: check.detail,
-          severity: check.severity,
-          route: recovery?.route,
-          actionLabel: recovery?.label,
-        };
-      });
+      .sort((a, b) => (a.severity === 'fail' ? -1 : 1))
+      .map((c) => `${c.name}: ${c.detail}`);
   }
 
   private worstSeverity(checks: ISystemCheck[]): SystemCheckSeverity {

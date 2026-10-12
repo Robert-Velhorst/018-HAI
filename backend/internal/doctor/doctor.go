@@ -75,6 +75,7 @@ func Diagnose(cfg config.Configuration) Report {
 	add := func(name string, sev Severity, detail string) {
 		checks = append(checks, Check{Name: name, Severity: sev, Detail: detail})
 	}
+	production := demomode.Parse(cfg.RunMode).IsProduction()
 
 	// Server / gateway.
 	if trimmedPort(cfg.ServerPort) == "" {
@@ -104,27 +105,39 @@ func Diagnose(cfg config.Configuration) Report {
 	} else {
 		add("database.name", SeverityOK, cfg.DbName)
 	}
-	if strings.TrimSpace(cfg.DbUser) == "" {
-		add("database.user", SeverityFail, "DB_USER is empty")
-	} else {
+	databaseUser := strings.TrimSpace(cfg.DbUser)
+	switch {
+	case databaseUser == "":
+		add("database.user", SeverityFail, "DB_USER is empty; set an explicit database account")
+	case production && strings.EqualFold(databaseUser, "postgres"):
+		add("database.user", SeverityFail, "DB_USER must not use the default postgres superuser in production; create and configure a dedicated application account")
+	default:
 		add("database.user", SeverityOK, cfg.DbUser)
 	}
-	production := demomode.Parse(cfg.RunMode).IsProduction()
+	databasePassword := strings.TrimSpace(cfg.DbPassword)
 	switch {
-	case strings.TrimSpace(cfg.DbPassword) == "":
-		add("database.password", SeverityWarn, "DB_PASSWORD is empty; acceptable only with local trust authentication")
+	case databasePassword == "":
+		severity := SeverityWarn
+		detail := "DB_PASSWORD is empty; acceptable only with local trust authentication"
+		if production {
+			severity = SeverityFail
+			detail = "DB_PASSWORD is empty; set an explicit production secret of at least 32 bytes (for example, openssl rand -hex 32)"
+		}
+		add("database.password", severity, detail)
 	case strings.EqualFold(strings.TrimSpace(cfg.DbPassword), "postgres"):
 		severity := SeverityWarn
 		if production {
 			severity = SeverityFail
 		}
 		add("database.password", severity, "DB_PASSWORD still holds the shipped default credential; generate a real database password")
-	case IsPlaceholderSecret(cfg.DbPassword):
+	case IsPlaceholderSecret(databasePassword):
 		severity := SeverityWarn
 		if production {
 			severity = SeverityFail
 		}
 		add("database.password", severity, "DB_PASSWORD still holds a shipped placeholder value; generate a real database password")
+	case production && len([]byte(databasePassword)) < 32:
+		add("database.password", SeverityFail, "DB_PASSWORD must contain at least 32 bytes in production; generate one with openssl rand -hex 32")
 	default:
 		add("database.password", SeverityOK, "set")
 	}
@@ -133,15 +146,22 @@ func Diagnose(cfg config.Configuration) Report {
 	// "change-this-..." as OK is how a default credential reaches production,
 	// so it is reported as loudly as an empty one.
 	secretCheck := func(name, envVar, value, emptyDetail string) {
+		value = strings.TrimSpace(value)
 		switch {
-		case strings.TrimSpace(value) == "":
-			add(name, SeverityWarn, emptyDetail)
+		case value == "":
+			severity := SeverityWarn
+			if production {
+				severity = SeverityFail
+			}
+			add(name, severity, emptyDetail)
 		case IsPlaceholderSecret(value):
 			severity := SeverityWarn
 			if production {
 				severity = SeverityFail
 			}
 			add(name, severity, envVar+" still holds a shipped placeholder value; generate a real secret (openssl rand -hex 32)")
+		case production && len(value) < 32:
+			add(name, SeverityFail, envVar+" must contain at least 32 bytes")
 		default:
 			add(name, SeverityOK, "set")
 		}
@@ -149,7 +169,7 @@ func Diagnose(cfg config.Configuration) Report {
 	secretCheck("security.backendApiKey", "BACKEND_API_SHARED_KEY", cfg.BackendAPIKey,
 		"BACKEND_API_SHARED_KEY is empty; the API is unauthenticated and must stay on a trusted local network only")
 	secretCheck("security.memoryEncryptionKey", "HAI_MEMORY_ENCRYPTION_KEY", cfg.MemoryEngineKey,
-		"HAI_MEMORY_ENCRYPTION_KEY is empty; memory-engine falls back to the backend API key")
+		"HAI_MEMORY_ENCRYPTION_KEY is empty; private memory import is unavailable in production")
 	secretCheck("security.jwtSecret", "JWT_SECRET", cfg.JWTSecret,
 		"JWT_SECRET is empty; issued tokens cannot be verified")
 	approvalProofKey := strings.TrimSpace(cfg.ApprovalProofSigningKey)
@@ -173,7 +193,7 @@ func Diagnose(cfg config.Configuration) Report {
 
 	// Event bus.
 	if countNonEmpty(cfg.Brokers) == 0 {
-		add("kafka.brokers", SeverityWarn, "KAFKA_BROKERS is empty; event publishing is disabled")
+		add("kafka.brokers", SeverityWarn, "KAFKA_BROKERS is empty; automation events remain queued in the durable outbox")
 	} else {
 		add("kafka.brokers", SeverityOK, fmt.Sprintf("%d broker(s)", countNonEmpty(cfg.Brokers)))
 	}

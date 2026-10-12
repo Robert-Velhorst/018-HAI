@@ -7,11 +7,11 @@ import { ContextMemoryService } from '../../services/context-memory/context-memo
 const DRAFT_KEY = 'hai_quick_capture_draft';
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.Eager,
-  standalone: false,
-  selector: 'app-quick-capture',
-  templateUrl: './quick-capture.component.html',
-  styleUrls: ['./quick-capture.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-quick-capture',
+    templateUrl: './quick-capture.component.html',
+    styleUrls: ['./quick-capture.component.scss'],
+    standalone: false
 })
 export class QuickCaptureComponent implements OnInit, OnDestroy {
   form: FormGroup;

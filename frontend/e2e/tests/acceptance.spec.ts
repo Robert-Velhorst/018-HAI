@@ -1,116 +1,108 @@
-import { expect, Page, test } from '@playwright/test';
-import type { APIResponse } from '@playwright/test';
+import { expect, Locator, Page, test } from '@playwright/test';
+import { assertIsolatedAcceptanceTarget } from './support/isolated-stack';
 
 /**
  * Real operator acceptance path:
  *
  * login -> local source registration -> bounded sync -> governed workflow
- * intake -> durable human approval -> one exact controlled workflow run.
+ * intake -> exact runtime selection -> fail-closed execution preflight.
  *
  * The source is the owner-scoped, read-only connected-sources mount. This test
  * never authorizes an external provider or requests an irreversible action.
+ * The isolated stack has no verified model/participant/framework evidence, so
+ * this acceptance path must stop at the expected blocked preflight.
  */
 
 const email = process.env.E2E_OPERATOR_EMAIL || 'operator@example.com';
 const password = process.env.E2E_OPERATOR_PASSWORD || '';
 const allowMutation = process.env.E2E_ALLOW_MUTATION === 'true';
 
-interface AcceptanceArtifacts {
-  automationId?: string;
-  sourceId?: string;
-  pursuitId?: string;
-  workflowId?: string;
+function safeConsoleSummary(value: string): string {
+  return value
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/https?:\/\/[^\s"'`]+/gi, '[url]')
+    .replace(/\b[a-f0-9]{32,}\b/gi, '[identifier]')
+    .replace(/\bprobe-\d+\b/gi, 'probe-[run]')
+    .slice(0, 180);
 }
 
-async function requireResponse(response: APIResponse, label: string, expectedStatuses: number[]): Promise<void> {
-  if (expectedStatuses.includes(response.status())) {
-    return;
-  }
-  throw new Error(`${label} failed with HTTP ${response.status()}: ${await response.text()}`);
-}
-
-async function transitionWorkflow(page: Page, workflowId: string, targetState: string, message: string): Promise<void> {
-  const response = await page.request.post(`/api/v1/workflow/${workflowId}/transition`, {
-    data: { targetState, message },
-  });
-  await requireResponse(response, `workflow transition to ${targetState}`, [200]);
-}
-
-async function cleanupWorkflow(page: Page, workflowId: string): Promise<void> {
-  const lookup = await page.request.get(`/api/v1/workflow/${workflowId}`);
-  if (lookup.status() === 404) {
-    return;
-  }
-  await requireResponse(lookup, 'workflow cleanup lookup', [200]);
-  const record = await lookup.json();
-  let state = String(record?.item?.currentState || record?.item?.state || '');
-
-  if (state === 'archived') {
-    return;
-  }
-  if (state === 'needs_approval') {
-    const rejection = await page.request.post(`/api/v1/workflow/${workflowId}/approval`, {
-      data: {
-        approved: false,
-        note: 'Acceptance-test cleanup: reject unfinished test work before archival.',
-      },
-    });
-    await requireResponse(rejection, 'workflow cleanup rejection', [200]);
-    state = 'blocked';
-  }
-  if (state !== 'blocked' && state !== 'completed') {
-    await transitionWorkflow(
-      page,
-      workflowId,
-      'blocked',
-      'Acceptance-test cleanup: stop unfinished test work before archival.'
-    );
-  }
-  await transitionWorkflow(
-    page,
-    workflowId,
-    'archived',
-    'Acceptance-test cleanup: archive the disposable test workflow.'
-  );
-}
-
-async function cleanupAcceptanceArtifacts(page: Page, artifacts: AcceptanceArtifacts): Promise<void> {
-  const failures: string[] = [];
-  const cleanup = async (label: string, action: () => Promise<void>) => {
-    try {
-      await action();
-    } catch (error) {
-      failures.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
+async function safePointerDiagnostics(page: Page, target: Locator) {
+  const targetBox = await target.boundingBox();
+  if (!targetBox) return { target: null, hitStack: [] };
+  return page.evaluate(({ x, y }) => {
+    const hit = document.elementFromPoint(x, y);
+    const describe = (element: Element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        tag: element.tagName.toLowerCase(),
+        classes: typeof element.className === 'string'
+          ? element.className.split(/\s+/).filter(Boolean).slice(0, 8)
+          : [],
+        pointerEvents: style.pointerEvents,
+        inlinePointerEvents: (element as HTMLElement).style?.getPropertyValue('pointer-events') || '',
+        position: style.position,
+        zIndex: style.zIndex,
+        rect: [Math.round(rect.left), Math.round(rect.top), Math.round(rect.width), Math.round(rect.height)],
+      };
+    };
+    const hitStack: Array<ReturnType<typeof describe>> = [];
+    for (let element = hit; element && hitStack.length < 8; element = element.parentElement) {
+      hitStack.push(describe(element));
     }
-  };
-
-  if (artifacts.workflowId) {
-    await cleanup('workflow', () => cleanupWorkflow(page, artifacts.workflowId!));
-  }
-  if (artifacts.pursuitId) {
-    await cleanup('pursuit', async () => {
-      const response = await page.request.post(`/api/v1/pursuits/${artifacts.pursuitId}/archive`, {
-        data: { archived: true },
+    const notifications = [...document.querySelectorAll('nz-notification-container')]
+      .slice(0, 3).map((element) => {
+        const matchingPointerRules: Array<{ selector: string; value: string; priority: string }> = [];
+        const inspectRules = (rules: CSSRuleList) => {
+          for (const rule of [...rules]) {
+            if ('selectorText' in rule && 'style' in rule) {
+              const styleRule = rule as CSSStyleRule;
+              const value = styleRule.style.getPropertyValue('pointer-events');
+              if (value && element.matches(styleRule.selectorText)) {
+                matchingPointerRules.push({
+                  selector: styleRule.selectorText.slice(0, 240),
+                  value,
+                  priority: styleRule.style.getPropertyPriority('pointer-events'),
+                });
+              }
+            }
+            const nestedRules = (rule as CSSGroupingRule).cssRules;
+            if (nestedRules) {
+              try { inspectRules(nestedRules); } catch { /* inaccessible imported rules */ }
+            }
+          }
+        };
+        let readableStylesheets = 0;
+        const stylesheetState: Array<{ source: string; disabled: boolean; media: string; active: boolean }> = [];
+        for (const sheet of [...document.styleSheets]) {
+          try {
+            if (sheet.cssRules) {
+              readableStylesheets += 1;
+              const media = sheet.media.mediaText || 'all';
+              const source = sheet.href
+                ? new URL(sheet.href).pathname.split('/').pop() || 'stylesheet'
+                : (sheet.ownerNode as Element | null)?.tagName.toLowerCase() || 'constructed';
+              stylesheetState.push({ source, disabled: sheet.disabled, media, active: media === 'all' || matchMedia(media).matches });
+              inspectRules(sheet.cssRules);
+            }
+          } catch { /* inaccessible cross-origin stylesheet */ }
+        }
+        return {
+          ...describe(element),
+          rootType: element.getRootNode().constructor.name,
+          activeAnimations: element.getAnimations().length,
+          readableStylesheets,
+          stylesheetState: stylesheetState.slice(0, 10),
+          matchingPointerRules: matchingPointerRules.slice(-12),
+        };
       });
-      await requireResponse(response, 'pursuit cleanup archive', [200]);
-    });
-  }
-  if (artifacts.sourceId) {
-    await cleanup('source', async () => {
-      const response = await page.request.post(`/api/v1/sources/${artifacts.sourceId}/pause`, { data: {} });
-      await requireResponse(response, 'source cleanup pause', [200]);
-    });
-  }
-  if (artifacts.automationId) {
-    await cleanup('automation', async () => {
-      const response = await page.request.delete(`/api/v1/automation/${artifacts.automationId}`);
-      await requireResponse(response, 'automation cleanup delete', [204, 404]);
-    });
-  }
-
-  if (failures.length) {
-    throw new Error(`Acceptance-test cleanup failed:\n${failures.join('\n')}`);
-  }
+    return {
+      point: [Math.round(x), Math.round(y)],
+      hitStack,
+      notifications,
+    };
+  }, { x: targetBox.x + targetBox.width / 2, y: targetBox.y + targetBox.height / 2 });
 }
 
 async function login(page: Page) {
@@ -119,28 +111,33 @@ async function login(page: Page) {
   await page.getByTestId('login-email').fill(email);
   await page.getByTestId('login-password').fill(password);
   await page.getByTestId('login-submit').click();
+  await expect(page).toHaveURL(/\/(?:control-center|onboarding)(?:\?|$)/);
+  if (new URL(page.url()).pathname === '/onboarding') {
+    await expect(page.getByRole('heading', { name: 'Getting started with HAI', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Skip', exact: true }).click();
+  }
   await expect(page).toHaveURL(/\/control-center(?:\?|$)/);
   await expect(page.getByRole('heading', { name: 'Command Center', exact: true }).first()).toBeVisible();
 }
 
 test.describe('HAI operator acceptance flow', () => {
-  let artifacts: AcceptanceArtifacts;
+  test.skip(
+    !password || !allowMutation,
+    'Set E2E_OPERATOR_PASSWORD and E2E_ALLOW_MUTATION=true only for an isolated acceptance stack.',
+  );
 
-  test.skip(!password, 'Set E2E_OPERATOR_PASSWORD and a seeded account to run against a live stack.');
-  test.skip(!allowMutation, 'Set E2E_ALLOW_MUTATION=true to acknowledge that this suite creates temporary records.');
-
-  test.beforeEach(() => {
-    artifacts = {};
+  test.beforeAll(async ({ baseURL }) => {
+    assertIsolatedAcceptanceTarget(baseURL, process.env.E2E_ISOLATED_STACK, email);
   });
 
-  // Hooks receive their own Playwright timeout. Cleanup therefore still runs
-  // when the main UI flow times out or an assertion fails near its deadline.
-  test.afterEach(async ({ page }) => {
-    await cleanupAcceptanceArtifacts(page, artifacts);
-  });
-
-  test('login -> source -> sync -> workflow -> approval -> exact bounded execution', async ({ page }) => {
+  test('login -> source -> sync -> workflow -> fail-closed runtime preflight', async ({ page }) => {
+    test.setTimeout(180_000);
+    const browserConsoleErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') browserConsoleErrors.push(safeConsoleSummary(message.text()));
+    });
     let sourceName = '';
+    let sourceId = '';
     const runId = Date.now();
     const pursuitName = `E2E governed pursuit ${runId}`;
     const projectKey = `e2e-governed-${runId}`;
@@ -159,46 +156,79 @@ test.describe('HAI operator acceptance flow', () => {
           position: '0',
           removeImage: 'false',
           launchType: 'api',
-          launchTarget: 'GET http://backend/readyz',
+		  launchTarget: 'GET http://backend/readyz',
           dependencyNotes: `Read-only HAI backend readiness check for ${capabilityMarker}.`,
           healthCheckType: 'http',
-          healthCheckUrl: 'http://backend/readyz',
+		  healthCheckUrl: 'http://backend/readyz',
           expectedHttpStatus: '200',
         },
       });
       expect(response.status(), await response.text()).toBe(201);
       const automation = await response.json();
       expect(automation.id).toBeTruthy();
-      artifacts.automationId = automation.id;
     });
 
     await test.step('connect a local, read-only source', async () => {
       await page.goto('/connected-sources');
+      await page.getByTestId('configure-source-basic').click();
+      await expect(page.getByRole('button', { name: 'Advanced view for Sources', exact: true }))
+        .toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByTestId('source-connect-form')).toBeVisible();
       sourceName = `E2E local source ${Date.now()}`;
       await page.getByTestId('source-name').fill(sourceName);
-      await page.getByTestId('source-target').fill('e2e-fixture');
-      const createResponse = page.waitForResponse((response) =>
-        response.request().method() === 'POST'
-        && new URL(response.url()).pathname === '/api/v1/sources/'
+      await page.getByTestId('source-target').fill('.');
+      await expect(page.getByTestId('source-connect')).toBeEnabled();
+      const createResponse = page.waitForResponse(
+        (response) => response.url().includes('/api/v1/sources/')
+          && response.request().method() === 'POST'
       );
       await page.getByTestId('source-connect').click();
-      const response = await createResponse;
-      await requireResponse(response, 'source registration', [201]);
-      const source = await response.json();
-      expect(source.id).toBeTruthy();
-      artifacts.sourceId = source.id;
-
+      const createdSource = await (await createResponse).json();
+      expect(createdSource.name).toBe(sourceName);
+      sourceId = createdSource.id;
+      expect(sourceId).toMatch(/^[0-9a-f-]{36}$/i);
+      const sourceListResponse = await page.request.get('/api/v1/sources/?includeDisabled=true');
+      expect(sourceListResponse.status()).toBe(200);
+      const listedSources = await sourceListResponse.json();
+      expect(listedSources.map((source: { name: string }) => source.name)).toContain(sourceName);
       const sourceRow = page.getByTestId('source-row').filter({ hasText: sourceName });
       await expect(sourceRow).toBeVisible();
-      await sourceRow.click();
+      const selectSource = sourceRow.getByRole('button', { name: new RegExp(`^Select ${sourceName},`) });
+      await selectSource.click();
+      await expect(selectSource).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByText(sourceName, { exact: true }).last()).toBeVisible();
     });
 
     await test.step('run a bounded source sync', async () => {
       const sourceRow = page.getByTestId('source-row').filter({ hasText: sourceName });
+      const submittedResponse = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === `/api/v1/sources/${sourceId}/sync-jobs`
+        && response.request().method() === 'POST');
       await sourceRow.getByTestId('source-sync').click();
-      await expect(page.getByText(/source sync/i).first()).toBeVisible();
+      const submitted = await submittedResponse;
+      expect(submitted.status(), await submitted.text()).toBe(202);
+      const job = await submitted.json();
+      expect(job.sourceId).toBe(sourceId);
+      expect(job.mode).toBe('manual_async_sync');
+      expect(job.id).toMatch(/^[0-9a-f-]{36}$/i);
+
+      // Queue acceptance is not evidence of ingestion. Inspect the persisted
+      // job and the exact fixture's owner-scoped extraction before proceeding.
+      await expect.poll(async () => {
+        const response = await page.request.get(`/api/v1/sources/sync-jobs/${job.id}`);
+        expect(response.status()).toBe(200);
+        const current = await response.json();
+        expect(current.id).toBe(job.id);
+        expect(current.sourceId).toBe(sourceId);
+        return current.status;
+      }, { timeout: 120_000, intervals: [1000, 2000, 5000] }).toBe('completed');
+
+      const extractionResponse = await page.request.get('/api/v1/sources/extractions?limit=100');
+      expect(extractionResponse.status()).toBe(200);
+      const extractions = await extractionResponse.json() as Array<{ sourceId: string; text: string; sourceUri?: string }>;
+      const fixture = extractions.find((item) => item.sourceId === sourceId
+        && item.sourceUri?.endsWith('/acceptance.txt'));
+      expect(fixture?.text).toContain('Synthetic HAI acceptance source. No personal records.');
     });
 
     await test.step('create an explicit pursuit for governed work', async () => {
@@ -207,95 +237,135 @@ test.describe('HAI operator acceptance flow', () => {
       await expect(page.getByTestId('pursuit-create-form')).toBeVisible();
       await page.getByTestId('pursuit-title').fill(pursuitName);
       await page.getByTestId('pursuit-project-key').fill(projectKey);
-      const createResponse = page.waitForResponse((response) =>
-        response.request().method() === 'POST'
-        && new URL(response.url()).pathname === '/api/v1/pursuits/'
-      );
       await page.getByTestId('pursuit-create').click();
-      const response = await createResponse;
-      await requireResponse(response, 'pursuit creation', [201]);
-      const pursuit = await response.json();
-      expect(pursuit.id).toBeTruthy();
-      artifacts.pursuitId = pursuit.id;
       await expect(page.getByTestId('pursuit-row').filter({ hasText: pursuitName })).toBeVisible();
     });
 
-    await test.step('create an explicitly approval-gated workflow', async () => {
+    await test.step('create a low-risk workflow for the read-only probe', async () => {
       await page.goto('/workflow-engine');
       await page.locator('#workflow-intake-input').fill(
-        `Run the HAI backend readiness ${capabilityMarker} only after explicit human approval and attach the source-grounded result.`
+        `Run the selected HAI backend readiness ${capabilityMarker} for ${pursuitName} (${projectKey}) and record its read-only verification result. Do not send anything externally.`
       );
       await page.getByTestId('workflow-project-key').fill(projectKey);
-      await page.getByRole('button', { name: /Basic$/ }).click();
-      await expect(page.getByRole('button', { name: /Advanced$/ })).toBeVisible();
-      await page.locator('details.advanced-block > summary').click();
-      await page.getByTestId('workflow-source-id').fill(`e2e-source-${runId}`);
-      await page.getByTestId('workflow-source-uri').fill(`local://e2e/source/${runId}`);
-      await page.getByTestId('workflow-source-label').fill(sourceName);
-      const intakeResponse = page.waitForResponse((response) => {
-        const path = new URL(response.url()).pathname;
-        return response.request().method() === 'POST'
-          && (path === '/api/v1/pursuits/intake' || /^\/api\/v1\/pursuits\/[^/]+\/intake$/.test(path));
-      }, { timeout: 20_000 });
+      const matchResponse = page.waitForResponse(
+        (response) => response.url().includes('/api/v1/pursuits/match')
+          && response.request().method() === 'POST',
+        { timeout: 30_000 },
+      );
+      const matchButton = page.getByTestId('workflow-match-pursuit');
+      await expect(matchButton).toBeEnabled();
+      await matchButton.click();
+      const matches = await (await matchResponse).json() as Array<{ pursuit?: { title?: string } }>;
+      expect(matches.some((match) => match.pursuit?.title === pursuitName)).toBeTruthy();
+      const pursuitMatch = page.locator('.pursuit-match-card').filter({ hasText: pursuitName });
+      await expect(pursuitMatch).toBeVisible();
+      await pursuitMatch.click();
       await page.getByTestId('workflow-create').click();
-      const response = await intakeResponse;
-      await requireResponse(response, 'workflow intake', [200, 201]);
-      const routed = await response.json();
-      const workflows = Array.isArray(routed?.detail?.workflows)
-        ? routed.detail.workflows
-        : Array.isArray(routed?.workflows) ? routed.workflows : [];
-      const workflow = [...workflows].reverse().find((item) => item?.projectKey === projectKey)
-        || workflows[workflows.length - 1];
-      expect(workflow?.id).toBeTruthy();
-      artifacts.workflowId = workflow.id;
-      await expect(
-        page.getByTestId('workflow-approval-controls').or(page.getByTestId('workflow-runtime-selection'))
-      ).toBeVisible();
+      const inspectIntake = page.getByRole('button', { name: 'Inspect intake workflow', exact: true });
+      await expect(inspectIntake).toBeVisible();
+      await inspectIntake.click();
+      await expect(page.getByTestId('workflow-runtime-selection')).toBeVisible();
     });
 
-    await test.step('select the exact runtime and approve through the durable boundary', async () => {
+    await test.step('select the exact runtime through the durable boundary', async () => {
       const runtimeSelection = page.getByTestId('workflow-runtime-selection');
-      if (await runtimeSelection.isVisible()) {
-        const exactRuntime = runtimeSelection.getByRole('button', {
-          name: `E2E backend readiness ${capabilityMarker}`,
-          exact: true,
-        });
-        await expect(exactRuntime).toBeVisible();
-        const proposalResponse = page.waitForResponse((response) =>
-          response.request().method() === 'POST'
-          && /\/api\/v1\/workflow\/[^/]+\/proposals\/[^/]+\/resolve$/.test(new URL(response.url()).pathname)
-        );
-        await exactRuntime.click();
-        const response = await proposalResponse;
-        expect(response.ok(), await response.text()).toBeTruthy();
-      } else {
-        await page.getByTestId('workflow-approve').click();
+      const exactRuntime = runtimeSelection.getByRole('button', {
+        name: `E2E backend readiness ${capabilityMarker}`,
+        exact: true,
+      });
+      await expect(exactRuntime).toBeVisible();
+      await expect(exactRuntime).toBeEnabled();
+      const proposalResponse = page.waitForResponse((response) =>
+        response.request().method() === 'POST'
+        && /\/api\/v1\/workflow\/[^/]+\/proposals\/[^/]+\/resolve$/.test(new URL(response.url()).pathname),
+        { timeout: 15_000 },
+      );
+      try {
+        await exactRuntime.click({ timeout: 5_000 });
+      } catch (error) {
+        const cause = error instanceof Error ? error.message : 'click failed';
+        const pointer = await safePointerDiagnostics(page, exactRuntime).catch(() => null);
+        throw new Error(`Runtime selection click failed (${safeConsoleSummary(cause)}). Pointer diagnostics: ${JSON.stringify(pointer)}`);
       }
-      await expect(page.getByTestId('workflow-approval-controls')).toHaveCount(0);
+      const response = await proposalResponse.catch((error) => {
+        const cause = error instanceof Error ? error.message : 'response wait failed';
+        throw new Error(`Runtime selection dispatched no matching API response (${cause}). Browser console: ${browserConsoleErrors.join(' | ') || 'none'}`);
+      });
+      expect(response.ok(), await response.text()).toBeTruthy();
+      const resolvedRecord = await response.json() as {
+        item?: { id?: string; requiresApproval?: boolean; approvalStatus?: string; currentState?: string };
+      };
+      expect(resolvedRecord.item?.id).toMatch(/^[0-9a-f-]{36}$/i);
       await expect(page.getByTestId('workflow-runtime-selection')).toHaveCount(0);
-      await expect(page.getByText(/approved/i).first()).toBeVisible();
+      const persistedResponse = await page.request.get(`/api/v1/workflow/${resolvedRecord.item!.id}`);
+      expect(persistedResponse.status(), await persistedResponse.text()).toBe(200);
+      const persistedRecord = await persistedResponse.json() as {
+        item?: { requiresApproval?: boolean; approvalStatus?: string; currentState?: string };
+      };
+      if (persistedRecord.item?.requiresApproval === true && persistedRecord.item.approvalStatus === 'pending') {
+        const approveExecution = page.getByTestId('workflow-approve');
+        await expect(approveExecution).toBeVisible();
+        const approvalResponse = page.waitForResponse((approval) =>
+          approval.request().method() === 'POST'
+          && /\/api\/v1\/workflow\/[^/]+\/approval$/.test(new URL(approval.url()).pathname)
+        );
+        await approveExecution.click();
+        const approved = await approvalResponse;
+        expect(approved.ok(), await approved.text()).toBeTruthy();
+        const approvalRecord = await approved.json() as {
+          item?: { id?: string; requiresApproval?: boolean; approvalStatus?: string; currentState?: string };
+        };
+        expect(approvalRecord.item).toMatchObject({
+          id: resolvedRecord.item!.id,
+          requiresApproval: true,
+          approvalStatus: 'approved',
+          currentState: 'ready',
+        });
+      } else {
+        expect(persistedRecord.item?.currentState).toBe('ready');
+        expect(persistedRecord.item?.approvalStatus).toBe(
+          persistedRecord.item?.requiresApproval ? 'approved' : 'not_required',
+        );
+      }
+      const currentResponse = await page.request.get(`/api/v1/workflow/${resolvedRecord.item!.id}`);
+      expect(currentResponse.status(), await currentResponse.text()).toBe(200);
+      const currentRecord = await currentResponse.json() as {
+        item?: { requiresApproval?: boolean; approvalStatus?: string; currentState?: string };
+      };
+      expect(currentRecord.item?.currentState, JSON.stringify(currentRecord.item)).toBe('ready');
+      expect(currentRecord.item?.approvalStatus, JSON.stringify(currentRecord.item)).toBe(
+        currentRecord.item?.requiresApproval ? 'approved' : 'not_required',
+      );
+      await expect(page.getByTestId('workflow-approval-controls')).toHaveCount(0);
+      await expect(page.getByTestId('workflow-selected-state')).toHaveText('ready');
     });
 
-    await test.step('run only the selected safe, approved workflow', async () => {
+    await test.step('preserve the fail-closed block until runtime and governance prerequisites are verified', async () => {
       const exactRun = page.getByTestId('workflow-run-selected');
       await expect(exactRun).toBeVisible();
       await exactRun.click();
       const confirmation = page.getByRole('dialog');
-      await expect(confirmation.getByText('Run this approved workflow?')).toBeVisible();
+      await expect(confirmation.getByText('Run this selected workflow?')).toBeVisible();
       const runResponse = page.waitForResponse((response) =>
         response.request().method() === 'POST'
-        && /\/api\/v1\/workflow\/[^/]+\/run$/.test(new URL(response.url()).pathname)
+        && /\/api\/v1\/workflow\/[^/]+\/run$/.test(new URL(response.url()).pathname),
+        { timeout: 30_000 },
       );
       await confirmation.getByRole('button', { name: 'Run this workflow', exact: true }).click();
       const response = await runResponse;
       expect(response.ok(), await response.text()).toBeTruthy();
       const result = await response.json();
-      expect(result.status).toBe('completed');
-      expect(result.state).toBe('completed');
-      await expect(page.getByText(/workflow completed/i).first()).toBeVisible();
-      await expect(page.getByText(/last operation/i).first()).toBeVisible();
-      await expect(page.getByTestId('workflow-selected-state')).toHaveText('completed');
-      await expect(page.getByTestId('workflow-selected-verification')).not.toHaveText('-');
+      const resultContext = JSON.stringify(result, null, 2);
+      expect(result.status, resultContext).toBe('blocked');
+      expect(result.state, resultContext).toBe('blocked');
+      expect(result.reviewRequired, resultContext).toBe(true);
+      expect(result.message).toContain('assign and verify required participants before execution');
+      expect(result.message).toContain('no capable model was selected');
+      expect(result.message).toContain('framework evidence preconditions were not verified before execution');
+      expect(result.message).toContain('no execution result was produced');
+      await expect(page.getByTestId('workflow-selected-state')).toHaveText('blocked');
+      await expect(page.getByTestId('workflow-approval-controls')).toHaveCount(0);
+      await expect(page.getByTestId('workflow-run-selected-controls')).toHaveCount(0);
     });
   });
 });

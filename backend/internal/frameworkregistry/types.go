@@ -169,11 +169,25 @@ type RetireFrameworkVersionRequest struct {
 }
 
 type PreferencePatch struct {
+	Reason                string   `json:"reason,omitempty"`
 	State                 string   `json:"state"`
 	Pinned                *bool    `json:"pinned,omitempty"`
 	MaximumAutonomyLevel  *int     `json:"maximumAutonomyLevel,omitempty"`
 	ClearAutonomyOverride bool     `json:"clearAutonomyOverride,omitempty"`
 	Adaptations           []string `json:"adaptations,omitempty"`
+}
+
+type PreferenceChangeEvent struct {
+	Sequence            uint64      `json:"sequence"`
+	ID                  string      `json:"id"`
+	FrameworkID         string      `json:"frameworkId"`
+	Actor               string      `json:"actor"`
+	Reason              string      `json:"reason"`
+	Before              *Preference `json:"before,omitempty"`
+	After               Preference  `json:"after"`
+	OccurredAt          time.Time   `json:"occurredAt"`
+	PreviousEventDigest string      `json:"previousEventDigest,omitempty"`
+	EventDigest         string      `json:"eventDigest"`
 }
 
 type SelectionRequest struct {

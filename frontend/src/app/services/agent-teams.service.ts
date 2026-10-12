@@ -4,6 +4,8 @@ import { Observable, map } from 'rxjs'
 import {
   AddTeamMemberRequest,
   AgentCoordinationMessage,
+
+  AgentTeamDecisionOverview,
   AgentTeamAcknowledgment,
   AgentTeamAttention,
   AgentTeamConsensusOutcome,
@@ -61,6 +63,16 @@ export class AgentTeamsService {
   attention(id: string, version: string): Observable<AgentTeamAttention[]> {
     return this.http.get<{ messages?: AgentTeamAttention[] }>(`${this.teamUrl(id, version)}/message-attention`).pipe(
       map((response) => (response.messages || []).map((item) => this.assertAdvisory(item)))
+    )
+  }
+
+  decisionOverview(id: string, version: string): Observable<AgentTeamDecisionOverview> {
+    return this.http.get<AgentTeamDecisionOverview>(`${this.teamUrl(id, version)}/decision-overview`).pipe(
+      map((overview) => ({
+        ...overview,
+        messages: overview.messages || [],
+        attention: (overview.attention || []).map((item) => this.assertAdvisory(item)),
+      }))
     )
   }
 

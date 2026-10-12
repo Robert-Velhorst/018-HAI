@@ -347,13 +347,15 @@ func portfolioSettlementAcceptsVerification(value string) bool {
 	}
 }
 
+type portfolioWorkflowSettlementDigestPayload struct {
+	OwnerIdentity, ProposalItemID, ProposalItemDigest, ApprovalDecisionID, ApprovalDecisionDigest string
+	ReceiptID, ReceiptDigest, ConsumptionDigest, AuthorizationTarget, WorkflowID                  string
+	AttestationID, AttestationDigest, ReservationID                                               string
+	ActualEffortMinutes, ActualCostMicros                                                         int64
+}
+
 func portfolioWorkflowSettlementRequestDigest(value *models.PursuitPortfolioWorkflowSettlementProof) (string, error) {
-	payload := struct {
-		OwnerIdentity, ProposalItemID, ProposalItemDigest, ApprovalDecisionID, ApprovalDecisionDigest string
-		ReceiptID, ReceiptDigest, ConsumptionDigest, AuthorizationTarget, WorkflowID                  string
-		AttestationID, AttestationDigest, ReservationID                                               string
-		ActualEffortMinutes, ActualCostMicros                                                         int64
-	}{
+	payload := portfolioWorkflowSettlementDigestPayload{
 		value.OwnerIdentity, value.ProposalItemID.String(), value.ProposalItemDigest,
 		value.ApprovalDecisionID.String(), value.ApprovalDecisionDigest,
 		value.AuthorizationReceiptID.String(), value.AuthorizationReceiptDigest,

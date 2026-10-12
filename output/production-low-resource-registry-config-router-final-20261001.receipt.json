@@ -1,0 +1,20 @@
+{
+  "startedAt": "2026-10-01T20:36:51.3195194+00:00",
+  "finishedAt": "2026-10-01T20:37:47.2976267+00:00",
+  "packages": [
+    "router"
+  ],
+  "runPattern": "AccountFeed|LegacyControlPlane",
+  "outputMode": "compact-package-results",
+  "integrationTag": true,
+  "deadlineSeconds": 240,
+  "timedOut": false,
+  "exitCode": 0,
+  "completedSuccessfully": true,
+  "goVersion": "go1.25.13 windows/amd64",
+  "dockerStarted": false,
+  "dependencyDownloadsEnabled": false,
+  "destructiveDatabaseTestsEnabled": false,
+  "goWorkers": 1,
+  "heapSoftLimit": "384MiB"
+}

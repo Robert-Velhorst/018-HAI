@@ -6,6 +6,7 @@ const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:0';
 
 export default defineConfig({
   testDir: './tests',
+  globalSetup: './global-setup.ts',
   // These tests exercise a real stack, so keep them serial and generous.
   fullyParallel: false,
   workers: 1,

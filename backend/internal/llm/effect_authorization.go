@@ -212,6 +212,17 @@ func buildFinalEffectAuthorizationRequest(
 	if request.Operation == "" || request.ProviderID == "" || request.ModelID == "" {
 		return FinalEffectAuthorizationRequest{}, fmt.Errorf("effect operation, provider, and model are required")
 	}
+	if request.Operation == EffectOperationModelPull {
+		if request.ProviderID != "ollama" && request.ProviderID != miniSWEOllamaProviderID {
+			return FinalEffectAuthorizationRequest{}, fmt.Errorf("model installation and updates are not implemented for provider %q", request.ProviderID)
+		}
+		if !provider.Local {
+			return FinalEffectAuthorizationRequest{}, fmt.Errorf("model installation and updates require a local Ollama runtime")
+		}
+		if isOllamaCloudModelID(request.ModelID) {
+			return FinalEffectAuthorizationRequest{}, fmt.Errorf("cloud-hosted Ollama model tags cannot be installed as local model binaries")
+		}
+	}
 	if request.EstimatedCostEUR < 0 {
 		return FinalEffectAuthorizationRequest{}, fmt.Errorf("effect estimated cost cannot be negative")
 	}

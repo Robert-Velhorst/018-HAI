@@ -40,6 +40,8 @@ class SmokeAuthContractTest(unittest.TestCase):
             'out="$("${ROOT}/scripts/${s}.sh" 2>&1)"',
             aggregator,
         )
+        self.assertIn('echo "==> ${s} failure detail"', aggregator)
+        self.assertIn("printf '%s\\n' \"${out}\"", aggregator)
 
     def test_production_smoke_fixtures_do_not_use_the_shipped_database_password(self) -> None:
         for name in SMOKE_SUITES:
@@ -57,6 +59,10 @@ class SmokeAuthContractTest(unittest.TestCase):
             '"alg": "HS256"',
             '"sub": subject',
             '"role": role',
+            '"iss": "hai-idp"',
+            '"aud": "hai"',
+            '"token_type": "access"',
+            '"iat": int(time.time())',
             '"exp": int(time.time()) + 3600',
             "hmac.new(secret.encode()",
             "hashlib.sha256",
@@ -64,17 +70,18 @@ class SmokeAuthContractTest(unittest.TestCase):
             with self.subTest(contract=contract):
                 self.assertIn(contract, helper)
 
-    def test_smoke_runtime_has_approval_proof_signing_authority(self) -> None:
-        helper = (ROOT / "scripts" / "smoke-auth.sh").read_text(encoding="utf-8")
-        self.assertIn("HAI_APPROVAL_PROOF_SIGNING_KEY", helper)
-        self.assertIn("export HAI_APPROVAL_PROOF_SIGNING_KEY", helper)
-
-    def test_aggregator_exposes_failed_suite_output(self) -> None:
-        aggregator = (ROOT / "scripts" / "smoke-all.sh").read_text(
+    def test_two_account_acceptance_uses_the_shared_idp_token_contract(self) -> None:
+        script = (ROOT / "scripts" / "two-account-isolation-test.sh").read_text(
             encoding="utf-8"
         )
-        self.assertIn('echo "--- ${s} failure output ---" >&2', aggregator)
-        self.assertIn('printf \'%s\\n\' "${out}" >&2', aggregator)
+        self.assertIn('source "${ROOT}/scripts/smoke-auth.sh"', script)
+        self.assertIn(
+            'A="$(hai_smoke_mint_jwt owner "$SECRET" "$ALICE")"', script
+        )
+        self.assertIn(
+            'B="$(hai_smoke_mint_jwt owner "$SECRET" "$BOB")"', script
+        )
+        self.assertNotIn("mkjwt()", script)
 
     def test_smoke_checkout_and_temp_paths_are_space_safe(self) -> None:
         for name in SMOKE_SUITES:

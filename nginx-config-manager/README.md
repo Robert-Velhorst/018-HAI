@@ -22,6 +22,15 @@ Required configuration:
 - `NGINX_CONFIG_MANAGER_GROUP_ID`
 - `NGINX_CONFIG_MANAGER_INBOX_DIR`
 
-`NGINX_RELOAD_ENABLED=true` deliberately fails closed because this container
-does not receive the Docker socket. Reload the gateway through an approved
-deployment operation instead.
+The local Compose profile supplies a stable consumer group, a persistent inbox
+inside the mounted nginx configuration directory, five delivery attempts, a
+30-day receipt retention period, and health port `8080`. Override the retry
+count with `NGINX_CONFIG_MANAGER_MAX_ATTEMPTS`, retention with
+`NGINX_CONFIG_MANAGER_INBOX_RETENTION` (Go duration syntax), and health port
+with `NGINX_CONFIG_MANAGER_HEALTH_PORT`. The inbox directory must remain on
+persistent storage across restarts so committed Kafka offsets remain replay-safe.
+
+`NGINX_RELOAD_ENABLED=true` is rejected at startup because this container does
+not receive the Docker socket. Reload the gateway through an approved
+deployment operation instead; this prevents partial config writes from being
+treated as completed automation events.

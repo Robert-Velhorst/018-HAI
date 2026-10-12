@@ -10,6 +10,7 @@ import {
   IBrainCatalogRevalidationRun,
   IBrainCatalogResponse,
   IBrainCatalogUpstreamReview,
+  IBrainSkillInventory,
 } from '../models/brain-catalog.model.interface'
 
 @Injectable({ providedIn: 'root' })
@@ -18,6 +19,10 @@ export class BrainCatalogService {
 
   overview(): Observable<IBrainCatalogResponse> {
     return this.http.get<IBrainCatalogResponse>('/api/v1/brain-catalog/')
+  }
+
+  skillInventory(): Observable<IBrainSkillInventory> {
+    return this.http.get<IBrainSkillInventory>('/api/v1/brain-skills/')
   }
 
   adoptionPlan(): Observable<IBrainCatalogAdoptionPlan> {

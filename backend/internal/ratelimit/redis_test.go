@@ -29,7 +29,7 @@ func (f *fakeCounter) IncrementWindow(_ context.Context, key string, _ time.Dura
 }
 
 func redisLimiterWith(c counter, limit int) *RedisLimiter {
-	return &RedisLimiter{counter: c, limit: limit, window: time.Minute, prefix: "ratelimit:", fallback: Memory(limit, time.Minute)}
+	return &RedisLimiter{counter: c, limit: limit, window: time.Minute, prefix: "ratelimit:", fallback: Memory(limit, time.Minute), failOpen: true}
 }
 
 func TestRedisLimiterAllowsUpToLimitThenBlocks(t *testing.T) {
@@ -74,26 +74,30 @@ func TestRedisLimiterCountsPerKey(t *testing.T) {
 	}
 }
 
-// A Redis outage must not make a configured resource ceiling disappear. The
-// local fallback keeps the process available and still bounds each key.
-func TestRedisLimiterUsesBoundedLocalFallbackWhenRedisErrors(t *testing.T) {
+// A Redis outage must not remove rate limiting. The local fallback has a
+// narrower scope than Redis but retains the configured bound without making
+// Redis a single point of failure for the API.
+func TestRedisLimiterUsesBoundedFallbackWhenRedisErrors(t *testing.T) {
 	fc := newFakeCounter()
 	fc.err = errors.New("connection refused")
 	limiter := redisLimiterWith(fc, 1)
 
 	if d := limiter.Allow(context.Background(), "1.2.3.4"); !d.Allowed {
-		t.Fatal("first request blocked while Redis is down")
+		t.Fatal("first request must be allowed through the fallback")
 	}
 	if d := limiter.Allow(context.Background(), "1.2.3.4"); d.Allowed {
-		t.Fatal("second request escaped the local fallback ceiling")
+		t.Fatal("fallback allowed a request above the configured limit")
 	}
 }
 
-func TestRedisLimiterFailsClosedWithoutFallback(t *testing.T) {
+// Fail-closed is available for deployments that prefer rejecting over
+// over-serving when the store is down.
+func TestRedisLimiterFailsClosedWhenConfigured(t *testing.T) {
 	fc := newFakeCounter()
 	fc.err = errors.New("connection refused")
 	limiter := redisLimiterWith(fc, 1)
 	limiter.fallback = nil
+	limiter.failOpen = false
 
 	if d := limiter.Allow(context.Background(), "1.2.3.4"); d.Allowed {
 		t.Fatal("request allowed while Redis is down and fail-closed, want blocked")

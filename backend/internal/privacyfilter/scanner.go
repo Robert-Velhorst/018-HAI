@@ -54,6 +54,7 @@ var (
 		{"private_key", regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----`), true, RiskCritical},
 		{"jwt", regexp.MustCompile(`\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{0,}`), true, RiskCritical},
 		{"bearer_token", regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._-]{12,}`), true, RiskCritical},
+		{"github_token", regexp.MustCompile(`\bgithub_pat_[A-Za-z0-9_]{20,}\b`), true, RiskCritical},
 		{"api_key", regexp.MustCompile(`(?i)(api[_-]?key|secret|token)\s*[:=]\s*['"]?[A-Za-z0-9._-]{12,}`), true, RiskCritical},
 		{"password", regexp.MustCompile(`(?i)password\s*[:=]\s*\S+`), true, RiskCritical},
 		{"iban", regexp.MustCompile(`\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b`), false, RiskHigh},

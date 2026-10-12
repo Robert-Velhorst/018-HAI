@@ -1,48 +1,64 @@
-<main class="onboarding" role="main" aria-labelledby="onboarding-title">
-  <nz-card class="onboarding__card">
-    <h1 id="onboarding-title" class="onboarding__title">Getting started with HAI</h1>
+<div class="onboarding" aria-labelledby="onboarding-title">
+  <div class="onboarding__layout">
+    <header class="onboarding__brand">
+      <span class="onboarding__mark" aria-hidden="true">HAI</span>
+      <span class="onboarding__brand-name">HAI Automation Hub</span>
+    </header>
 
-    <nz-steps [nzCurrent]="current" nzSize="small" aria-label="Onboarding progress">
-      <nz-step *ngFor="let step of steps" [nzTitle]="step.title"></nz-step>
-    </nz-steps>
+    <nz-card class="onboarding__card">
+      <header class="onboarding__header">
+        <div>
+          <h1 id="onboarding-title" class="onboarding__title">Getting started with HAI</h1>
+          <p class="onboarding__intro">A short orientation to how HAI handles your context and actions.</p>
+        </div>
+        <span class="onboarding__step-count">Step {{ current + 1 }} of {{ steps.length }}</span>
+      </header>
 
-    <section class="onboarding__body" aria-live="polite">
-      <h2 class="onboarding__step-title">{{ steps[current].title }}</h2>
-      <p class="onboarding__step-desc">{{ steps[current].description }}</p>
-    </section>
+      <nz-steps [nzCurrent]="current" nzSize="small" aria-label="Onboarding progress">
+        <nz-step *ngFor="let step of steps" [nzTitle]="step.title"></nz-step>
+      </nz-steps>
 
-    <footer class="onboarding__actions">
-      <button nz-button nzType="default" type="button" (click)="skip()">
-        Skip
-      </button>
-      <span class="onboarding__spacer"></span>
-      <button
-        nz-button
-        nzType="default"
-        type="button"
-        [disabled]="current === 0"
-        (click)="prev()"
-      >
-        Back
-      </button>
-      <button
-        *ngIf="!isLastStep"
-        nz-button
-        nzType="primary"
-        type="button"
-        (click)="next()"
-      >
-        Next
-      </button>
-      <button
-        *ngIf="isLastStep"
-        nz-button
-        nzType="primary"
-        type="button"
-        (click)="finish()"
-      >
-        Get started
-      </button>
-    </footer>
-  </nz-card>
-</main>
+      <section class="onboarding__body" aria-live="polite" aria-atomic="true">
+        <h2 class="onboarding__step-title">{{ steps[current].title }}</h2>
+        <p class="onboarding__step-desc">{{ steps[current].description }}</p>
+      </section>
+
+      <footer class="onboarding__actions">
+        <div class="onboarding__actions-secondary">
+          <button nz-button nzType="default" type="button" (click)="skip()">
+            Skip
+          </button>
+        </div>
+        <div class="onboarding__actions-primary">
+          <button
+            nz-button
+            nzType="default"
+            type="button"
+            [disabled]="current === 0"
+            (click)="prev()"
+          >
+            Back
+          </button>
+          <button
+            *ngIf="!isLastStep"
+            nz-button
+            nzType="primary"
+            type="button"
+            (click)="next()"
+          >
+            Next
+          </button>
+          <button
+            *ngIf="isLastStep"
+            nz-button
+            nzType="primary"
+            type="button"
+            (click)="finish()"
+          >
+            Get started
+          </button>
+        </div>
+      </footer>
+    </nz-card>
+  </div>
+</div>

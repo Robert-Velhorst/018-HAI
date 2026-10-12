@@ -49,12 +49,9 @@ func (s *service) projectWorkflowToLifeGraph(ctx context.Context, workflowID uui
 	if owner == "" {
 		return nil
 	}
-	observedAt := item.UpdatedAt.UTC()
-	if observedAt.IsZero() {
-		observedAt = item.CreatedAt.UTC()
-	}
-	if observedAt.IsZero() {
-		return fmt.Errorf("workflow %s has no durable observation timestamp", item.ID)
+	observedAt, err := workflowProjectionObservedAt(item, time.Now().UTC())
+	if err != nil {
+		return err
 	}
 
 	localOnly := workflowProjectionLocalOnly(item)
@@ -112,6 +109,26 @@ func (s *service) projectWorkflowToLifeGraph(ctx context.Context, workflowID uui
 		return fmt.Errorf("project workflow %s: %w", item.ID, err)
 	}
 	return nil
+}
+
+func workflowProjectionObservedAt(item *models.WorkflowItem, now time.Time) (time.Time, error) {
+	if item == nil {
+		return time.Time{}, fmt.Errorf("workflow projection item is required")
+	}
+	observedAt := item.UpdatedAt.UTC()
+	if observedAt.IsZero() {
+		observedAt = item.CreatedAt.UTC()
+	}
+	if observedAt.IsZero() {
+		return time.Time{}, fmt.Errorf("workflow %s has no durable observation timestamp", item.ID)
+	}
+	// UpdatedAt can also be a monotonic CAS revision. Repositories may advance
+	// that revision by a microsecond when the wall clock has not ticked yet.
+	// It is not valid as a future observation time for the advisory graph.
+	if !now.IsZero() && observedAt.After(now.UTC()) {
+		observedAt = now.UTC()
+	}
+	return observedAt, nil
 }
 
 func (s *service) workflowProjectionLinks(item *models.WorkflowItem) []lifeontology.OperationalLinkRequest {

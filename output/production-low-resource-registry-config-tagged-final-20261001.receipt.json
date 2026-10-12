@@ -1,0 +1,21 @@
+{
+  "startedAt": "2026-10-01T20:38:24.0983076+00:00",
+  "finishedAt": "2026-10-01T20:39:16.9353051+00:00",
+  "packages": [
+    "accountfeed",
+    "migrations"
+  ],
+  "runPattern": ".",
+  "outputMode": "compact-package-results",
+  "integrationTag": true,
+  "deadlineSeconds": 240,
+  "timedOut": false,
+  "exitCode": 0,
+  "completedSuccessfully": true,
+  "goVersion": "go1.25.13 windows/amd64",
+  "dockerStarted": false,
+  "dependencyDownloadsEnabled": false,
+  "destructiveDatabaseTestsEnabled": false,
+  "goWorkers": 1,
+  "heapSoftLimit": "384MiB"
+}

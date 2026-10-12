@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { fakeAsync, tick } from '@angular/core/testing';
 import { Subject, of, throwError } from 'rxjs';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
 import { IAuthSession } from '../../models/auth-session.model.interface';
 import {
   IConstitution,
@@ -20,6 +21,7 @@ describe('FrameworkRegistryComponent', () => {
   let authSessionService: jasmine.SpyObj<AuthSessionService>;
   let notification: jasmine.SpyObj<NzNotificationService>;
   let router: jasmine.SpyObj<Router>;
+  let viewPreferences: ModuleViewPreferencesService;
   let component: FrameworkRegistryComponent;
 
   const overview: IFrameworkRegistryOverview = {
@@ -140,6 +142,7 @@ describe('FrameworkRegistryComponent', () => {
 
   beforeEach(() => {
     localStorage.removeItem('hai.module-view.v1.framework-registry');
+    viewPreferences = new ModuleViewPreferencesService(document);
     service = jasmine.createSpyObj<FrameworkRegistryService>('FrameworkRegistryService', [
       'overview',
       'familyTaxonomy',
@@ -147,6 +150,7 @@ describe('FrameworkRegistryComponent', () => {
       'framework',
       'select',
       'updatePreference',
+      'preferenceHistory',
       'selections',
       'constitution',
       'constitutionHistory',
@@ -190,6 +194,7 @@ describe('FrameworkRegistryComponent', () => {
     }));
     service.select.and.returnValue(of(selection));
     service.updatePreference.and.returnValue(of(framework));
+    service.preferenceHistory.and.returnValue(of([]));
     service.createConstitutionDraft.and.returnValue(of({ ...constitution, id: 'draft-2', version: 2, status: 'draft' }));
     service.activateConstitution.and.returnValue(of({ ...constitution, version: 2 }));
 
@@ -197,7 +202,8 @@ describe('FrameworkRegistryComponent', () => {
       service,
       authSessionService,
       notification,
-      router
+      router,
+      viewPreferences,
     );
     component.authSession = ownerSession;
   });
@@ -218,15 +224,63 @@ describe('FrameworkRegistryComponent', () => {
     expect(component.loading).toBeFalse();
   });
 
-  it('remembers Advanced disclosure for only this module', () => {
-    component.setViewMode('advanced');
-    component.toggleSection('selection-history');
+  it('preserves source-backed zero values for every overview counter', () => {
+    component.overview = {
+      ...overview,
+      total: 0,
+      enabled: 0,
+      pinned: 0,
+      experimental: 0,
+    };
 
-    const stored = JSON.parse(
-      localStorage.getItem('hai.module-view.v1.framework-registry') ?? '{}'
-    ) as { mode?: string; openSections?: Record<string, boolean> };
+    expect(component.overviewMetricValue(component.overview.total)).toBe(0);
+    expect(component.overviewMetricValue(component.overview.enabled)).toBe(0);
+    expect(component.overviewMetricValue(component.overview.pinned)).toBe(0);
+    expect(component.overviewMetricValue(component.overview.experimental)).toBe(0);
+    expect(component.isOverviewMetricUnavailable(component.overview.enabled)).toBeFalse();
+    expect(component.overviewMetricValue(undefined)).toBe('Unavailable');
+  });
+
+  it('shows loading and failure states instead of zero before the overview is available', () => {
+    const pendingOverview = new Subject<IFrameworkRegistryOverview>();
+    service.overview.and.returnValue(pendingOverview.asObservable());
+
+    expect(component.overviewMetricValue(undefined)).toBe('Not loaded');
+    component.refresh();
+    expect(component.overviewMetricValue(undefined)).toBe('Loading…');
+    expect(component.isOverviewMetricUnavailable(undefined)).toBeTrue();
+
+    pendingOverview.error(new HttpErrorResponse({ status: 503 }));
+
+    expect(component.loading).toBeFalse();
+    expect(component.overviewMetricValue(undefined)).toBe('Load failed');
+    expect(component.loadErrors['overview']).toBe('Registry overview is unavailable.');
+  });
+
+  it('remembers Advanced disclosure for only this module', () => {
+    viewPreferences.setMode('framework-registry', 'advanced');
+    viewPreferences.setSection('framework-registry', 'selection-history', true);
+
+    const stored = new ModuleViewPreferencesService(document).get('framework-registry');
     expect(stored.mode).toBe('advanced');
     expect(stored.openSections?.['selection-history']).toBeTrue();
+    expect(new ModuleViewPreferencesService(document).get('llm-policy').mode).toBe('basic');
+    expect(component.isAdvanced).toBeTrue();
+  });
+
+  it('loads the immutable taxonomy only when its Advanced section opens', () => {
+    viewPreferences.setMode('framework-registry', 'advanced');
+
+    expect(service.familyTaxonomy).not.toHaveBeenCalled();
+
+    component.onTaxonomyOpen(true);
+
+    expect(service.familyTaxonomy).toHaveBeenCalledTimes(1);
+    expect(component.familyTaxonomy).toEqual(familyTaxonomy);
+
+    component.onTaxonomyOpen(false);
+    component.onTaxonomyOpen(true);
+    expect(service.familyTaxonomy).toHaveBeenCalledTimes(1);
   });
 
   it('loads the immutable taxonomy only when its Advanced section opens', () => {
@@ -246,10 +300,17 @@ describe('FrameworkRegistryComponent', () => {
 
   it('clears an Advanced-only status filter when returning to Basic view', () => {
     component.statusFilter = 'experimental';
-    component.setViewMode('basic');
+    viewPreferences.setMode('framework-registry', 'advanced');
+    viewPreferences.setSection('framework-registry', 'selection-history', true);
+    component.resetView();
 
     expect(component.statusFilter).toBe('all');
-    expect(component.viewMode).toBe('basic');
+    expect(viewPreferences.get('framework-registry').mode).toBe('basic');
+    expect(viewPreferences.get('framework-registry').openSections).toEqual({});
+    expect(router.navigate).toHaveBeenCalledWith(['/framework-registry'], {
+      queryParams: { mode: 'basic' },
+      replaceUrl: true,
+    });
   });
 
   it('filters the catalogue by family and searchable purpose', () => {
@@ -600,6 +661,25 @@ describe('FrameworkRegistryComponent', () => {
     expect(service.framework).toHaveBeenCalledWith(framework.id);
     expect(component.selectedFramework).toBe(framework);
     expect(component.inspectorVisible).toBeTrue();
+    expect(service.preferenceHistory).toHaveBeenCalledWith(framework.id);
+  });
+
+  it('keeps preference-history load errors distinct from an empty history and supports retry', () => {
+    service.preferenceHistory.and.returnValues(
+      throwError(() => new HttpErrorResponse({ status: 503 })),
+      of([])
+    );
+
+    component.openFrameworkById(framework.id);
+
+    expect(component.preferenceHistoryError).toBe('Framework preference history is unavailable.');
+    expect(component.preferenceHistory).toEqual([]);
+
+    component.loadPreferenceHistory();
+
+    expect(component.preferenceHistoryError).toBe('');
+    expect(component.preferenceHistoryLoading).toBeFalse();
+    expect(service.preferenceHistory).toHaveBeenCalledTimes(2);
   });
 
   it('cancels an obsolete inspector request before applying a newer record', () => {

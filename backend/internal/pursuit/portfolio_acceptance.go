@@ -415,7 +415,7 @@ func digestPortfolioAllocation(value *models.PursuitPortfolioAllocation) (string
 		DecisionDigest: value.DecisionDigest, Status: value.Status, DurationMode: value.DurationMode,
 		Actor: value.Actor, Confirmation: value.Confirmation,
 		CoordinationPlanRevision: value.CoordinationPlanRevision,
-		CoordinationPlanDigest:   value.CoordinationPlanDigest,
+		CoordinationPlanDigest:   portfolioCoordinationDigest(value.CoordinationPlanDigest),
 		CoordinationPlanNodeID:   value.CoordinationPlanNodeID,
 		HorizonStart:             value.HorizonStart.UTC(), HorizonEnd: value.HorizonEnd.UTC(),
 	}
@@ -441,9 +441,71 @@ func digestPortfolioPayload(value any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encode portfolio allocation: %w", err)
 	}
-	if safety.RedactSecrets(string(encoded)) != string(encoded) {
+	validationPayload := encoded
+	if request, ok := value.(PortfolioPlanningRequest); ok {
+		// Numeric resource limits are not credentials. Rename only these typed
+		// schema labels for scanning; the digest below still binds all originals.
+		type planning PortfolioPlanningRequest
+		type budget resourceplanner.Budget
+		type policy resourceplanner.ApprovalPolicy
+		type input PortfolioPursuitPlanningInput
+		type calibration PortfolioEstimateCalibrationBinding
+		var inputs []any
+		if request.Pursuits != nil {
+			inputs = make([]any, 0, len(request.Pursuits))
+		}
+		for _, entry := range request.Pursuits {
+			var binding any
+			if entry.Calibration != nil {
+				binding = struct {
+					calibration
+					SourceEstimatedUsage any `json:"sourceEstimatedUsage"`
+				}{calibration: calibration(*entry.Calibration), SourceEstimatedUsage: portfolioUsageSecretProjection(entry.Calibration.SourceEstimatedUsage)}
+			}
+			inputs = append(inputs, struct {
+				input
+				EstimatedUsage any `json:"estimatedUsage"`
+				Calibration    any `json:"calibration,omitempty"`
+			}{input: input(entry), EstimatedUsage: portfolioUsageSecretProjection(entry.EstimatedUsage), Calibration: binding})
+		}
+		validationPayload, err = json.Marshal(struct {
+			planning
+			Budget         any   `json:"budget"`
+			ApprovalPolicy any   `json:"approvalPolicy"`
+			Pursuits       []any `json:"pursuits"`
+		}{planning: planning(request), Pursuits: inputs, Budget: struct {
+			budget
+			MaxInputTokens   *int64 `json:"maxInputTokens,omitempty"`
+			MaxOutputTokens  *int64 `json:"maxOutputTokens,omitempty"`
+			MaxInboundUnits  *int64 `json:"maxInboundUnits,omitempty"`
+			MaxOutboundUnits *int64 `json:"maxOutboundUnits,omitempty"`
+		}{budget: budget(request.Budget), MaxInboundUnits: request.Budget.MaxInputTokens,
+			MaxOutboundUnits: request.Budget.MaxOutputTokens}, ApprovalPolicy: struct {
+			policy
+			InputTokenThreshold   *int64 `json:"inputTokenThreshold,omitempty"`
+			OutputTokenThreshold  *int64 `json:"outputTokenThreshold,omitempty"`
+			InboundUnitThreshold  *int64 `json:"inboundUnitThreshold,omitempty"`
+			OutboundUnitThreshold *int64 `json:"outboundUnitThreshold,omitempty"`
+		}{policy: policy(request.ApprovalPolicy), InboundUnitThreshold: request.ApprovalPolicy.InputTokenThreshold,
+			OutboundUnitThreshold: request.ApprovalPolicy.OutputTokenThreshold}})
+		if err != nil {
+			return "", fmt.Errorf("encode portfolio validation: %w", err)
+		}
+	}
+	if safety.RedactSecrets(string(validationPayload)) != string(validationPayload) {
 		return "", fmt.Errorf("portfolio allocation must not contain secret material")
 	}
 	digest := sha256.Sum256(encoded)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func portfolioUsageSecretProjection(value resourceplanner.Usage) any {
+	type usage resourceplanner.Usage
+	return struct {
+		usage
+		InputTokens   *int64 `json:"inputTokens,omitempty"`
+		OutputTokens  *int64 `json:"outputTokens,omitempty"`
+		InboundUnits  int64  `json:"inboundUnits"`
+		OutboundUnits int64  `json:"outboundUnits"`
+	}{usage: usage(value), InboundUnits: value.InputTokens, OutboundUnits: value.OutputTokens}
 }

@@ -10,9 +10,11 @@ func (s *Service) verifyFrameworkSelection(
 	request Request,
 	receipt *Receipt,
 ) error {
-	if request.Governance == nil ||
-		request.Governance.FrameworkSelectorAlgorithmVersion != frameworkSelectorV5 {
+	if request.Governance == nil || request.Governance.FrameworkSelectionID == "" {
 		return nil
+	}
+	if request.Governance.FrameworkSelectorAlgorithmVersion != frameworkSelectorV5 {
+		return fmt.Errorf("legacy framework selections are read-only; fresh selector-v5 planning is required before execution")
 	}
 	if s.frameworks == nil {
 		return fmt.Errorf("framework selection resolver is unavailable")

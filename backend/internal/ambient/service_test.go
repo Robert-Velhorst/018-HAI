@@ -41,6 +41,28 @@ func TestNeedForWorkflowPrioritizesSafety(t *testing.T) {
 	}
 }
 
+func TestOverviewSummarySkipsOpportunitiesAndBoundsScanHistory(t *testing.T) {
+	repo := &ambientRepositoryStub{needs: defaultNeeds(), opportunity: &models.AmbientOpportunity{OwnerIdentity: "alice"}}
+	for index := 0; index < 8; index++ {
+		repo.scans = append(repo.scans, models.AmbientScan{OwnerIdentity: "alice", Trigger: "scheduled"})
+	}
+	engine := NewService(repo, nil, nil).(*service)
+
+	overview, err := engine.OverviewSummaryForOwner("alice")
+	if err != nil {
+		t.Fatalf("OverviewSummaryForOwner: %v", err)
+	}
+	if repo.opportunitiesForOwnerCalls != 0 {
+		t.Fatalf("summary queried %d opportunity collections, want 0", repo.opportunitiesForOwnerCalls)
+	}
+	if repo.lastScanLimit != 3 || len(overview.Scans) != 3 {
+		t.Fatalf("summary scan limit/count = %d/%d, want 3/3", repo.lastScanLimit, len(overview.Scans))
+	}
+	if overview.Opportunities == nil || len(overview.Opportunities) != 0 {
+		t.Fatalf("summary opportunities = %#v, want empty list", overview.Opportunities)
+	}
+}
+
 func TestBuildCandidatesIncludesPursuitQueues(t *testing.T) {
 	now := time.Now().UTC().Add(-20 * 24 * time.Hour)
 	pursuitID := uuid.New()

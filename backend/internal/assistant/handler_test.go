@@ -1,7 +1,7 @@
 package assistant
 
 import (
-	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,11 +123,9 @@ func TestCommandHandlerAllowsAuthenticatedPersonalCycleForOperator(t *testing.T)
 	}
 }
 
-func TestCommandHandlerStopsCanceledRequestWithoutStartingAssistantWork(t *testing.T) {
+func TestCommandHandlerDoesNotExposeUnexpectedTaskEngineErrors(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	tasks := &contextAwareTaskEngine{}
-	cycle := &contextAwareAgentCycleRunner{}
-	handler := NewHandler(NewService(tasks, cycle))
+	handler := NewHandler(NewService(&fakeTaskEngine{planErr: errors.New(`postgres password=not-for-http at C:\\private`)}, nil))
 	engine := gin.New()
 	engine.Use(func(c *gin.Context) {
 		c.Set(identity.ContextSubjectKey, "alice")
@@ -135,17 +133,20 @@ func TestCommandHandlerStopsCanceledRequestWithoutStartingAssistantWork(t *testi
 	})
 	engine.POST("/assistant/command", handler.Command)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/assistant/command", strings.NewReader(`{"message":"Refresh my operating brief","runCycle":true}`)).WithContext(ctx)
+	request := httptest.NewRequest(http.MethodPost, "/assistant/command", strings.NewReader(`{"message":"Plan a safe next action"}`))
 	request.Header.Set("Content-Type", "application/json")
 	engine.ServeHTTP(recorder, request)
 
-	if recorder.Body.Len() != 0 {
-		t.Fatalf("canceled command wrote a response body: %s", recorder.Body.String())
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusInternalServerError, recorder.Body.String())
 	}
-	if tasks.planCalls != 0 || tasks.runCalls != 0 || cycle.calls != 0 {
-		t.Fatalf("canceled HTTP command started work: plan=%d run=%d cycle=%d", tasks.planCalls, tasks.runCalls, cycle.calls)
+	for _, forbidden := range []string{"password", "not-for-http", "C:\\\\private", "result"} {
+		if strings.Contains(strings.ToLower(recorder.Body.String()), strings.ToLower(forbidden)) {
+			t.Fatalf("response leaked %q: %s", forbidden, recorder.Body.String())
+		}
+	}
+	if !strings.Contains(recorder.Body.String(), "assistant command could not be completed") {
+		t.Fatalf("response lacks stable error: %s", recorder.Body.String())
 	}
 }

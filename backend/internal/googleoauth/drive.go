@@ -3,6 +3,7 @@ package googleoauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,11 @@ const (
 	DefaultDriveBaseURL = "https://www.googleapis.com/drive/v3"
 	maxDriveTextBytes   = 1 << 20
 	driveFileFields     = "id,name,mimeType,modifiedTime,webViewLink,size,md5Checksum,trashed,parents"
+)
+
+var (
+	ErrDriveResourceUnavailable = errors.New("Google Drive resource is unavailable")
+	ErrDriveContentTooLarge     = errors.New("Google Drive content exceeds the extraction safety limit")
 )
 
 // DriveClient is a read-only Google Drive v3 client. It exposes the initial
@@ -199,6 +205,9 @@ func (d DriveClient) FetchText(ctx context.Context, file DriveFile) (string, boo
 	}
 	body, err := d.getBytes(ctx, path, maxDriveTextBytes)
 	if err != nil {
+		if errors.Is(err, ErrDriveContentTooLarge) {
+			return "", false, fmt.Errorf("%w: Drive content exceeded the %d byte safety limit", ErrDriveContentTooLarge, maxDriveTextBytes)
+		}
 		return "", false, err
 	}
 	return strings.TrimSpace(string(body)), true, nil
@@ -225,6 +234,9 @@ func (d DriveClient) getJSON(ctx context.Context, path string, target any) error
 }
 
 func (d DriveClient) getBytes(ctx context.Context, path string, limit int64) ([]byte, error) {
+	if !validGoogleEndpoint(d.baseURL(), "www.googleapis.com", "/drive/v3") {
+		return nil, fmt.Errorf("drive API endpoint must use HTTPS on Google's Drive API host or a loopback test server")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.baseURL()+path, nil)
 	if err != nil {
 		return nil, err
@@ -236,18 +248,19 @@ func (d DriveClient) getBytes(ctx context.Context, path string, limit int64) ([]
 		return nil, fmt.Errorf("drive request failed: %w", err)
 	}
 	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		var cause error
+		if response.StatusCode == http.StatusNotFound {
+			cause = ErrDriveResourceUnavailable
+		}
+		return nil, newProviderAPIError("Google Drive", response, cause)
+	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(body)) > limit {
-		return nil, fmt.Errorf("drive response exceeded the %d byte safety limit", limit)
-	}
-	if response.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("drive returned 401: access token is invalid or expired")
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, fmt.Errorf("drive returned HTTP %d: %s", response.StatusCode, compact(body))
+		return nil, fmt.Errorf("%w: drive response exceeded the %d byte safety limit", ErrDriveContentTooLarge, limit)
 	}
 	return body, nil
 }

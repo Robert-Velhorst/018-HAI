@@ -3,7 +3,7 @@ package repositories
 import (
 	"automation-hub-idp/internal/app/models"
 	"automation-hub-idp/internal/app/repositories/irepository"
-	"errors"
+	"automation-hub-idp/internal/app/utils"
 	"os"
 	"testing"
 	"time"
@@ -31,19 +31,20 @@ func TestGormUserRepositoryConsumesPasswordResetAtomically(t *testing.T) {
 	defer tx.Rollback()
 
 	expiresAt := time.Now().UTC().Add(10 * time.Minute)
+	resetToken := "single-use-token-" + uuid.NewString()
+	now := time.Now().UTC()
 	user := models.User{
-		ID:                 uuid.New(),
-		Email:              "reset-" + uuid.NewString() + "@example.test",
-		Password:           "old-password-hash",
-		FirstAccess:        true,
-		ResetPasswordToken: "single-use-token-" + uuid.NewString(),
-		ResetTokenExpires:  &expiresAt,
-		IsActive:           true,
+		ID:          uuid.New(),
+		Email:       "reset-" + uuid.NewString() + "@example.test",
+		Password:    "old-password-hash",
+		FirstAccess: true,
+		IsActive:    true,
 	}
 	require.NoError(t, tx.Create(&user).Error)
 
 	repository := &GormUserRepository{DB: tx, logger: integrationTestLogger{}}
-	require.NoError(t, repository.ConsumePasswordReset(user.ResetPasswordToken, "new-password-hash"))
+	require.NoError(t, repository.SetPasswordResetToken(user.ID, user.SessionVersion, utils.PasswordResetTokenDigest(resetToken), expiresAt, now))
+	require.NoError(t, repository.ConsumePasswordResetToken(user.ID, resetToken, "new-password-hash", now))
 
 	var stored models.User
 	require.NoError(t, tx.First(&stored, "id = ?", user.ID).Error)
@@ -52,8 +53,8 @@ func TestGormUserRepositoryConsumesPasswordResetAtomically(t *testing.T) {
 	require.Empty(t, stored.ResetPasswordToken)
 	require.Nil(t, stored.ResetTokenExpires)
 
-	err = repository.ConsumePasswordReset(user.ResetPasswordToken, "replayed-password-hash")
-	require.ErrorIs(t, err, irepository.ErrInvalidResetToken)
+	err = repository.ConsumePasswordResetToken(user.ID, resetToken, "replayed-password-hash", now)
+	require.ErrorIs(t, err, irepository.ErrResetTokenNotConsumable)
 	require.NoError(t, tx.First(&stored, "id = ?", user.ID).Error)
 	require.Equal(t, "new-password-hash", stored.Password)
 }
@@ -74,24 +75,25 @@ func TestGormUserRepositoryRejectsExpiredPasswordResetWithoutMutation(t *testing
 	defer tx.Rollback()
 
 	expiredAt := time.Now().UTC().Add(-time.Minute)
+	resetToken := "expired-token-" + uuid.NewString()
+	now := time.Now().UTC()
 	user := models.User{
-		ID:                 uuid.New(),
-		Email:              "expired-reset-" + uuid.NewString() + "@example.test",
-		Password:           "old-password-hash",
-		ResetPasswordToken: "expired-token-" + uuid.NewString(),
-		ResetTokenExpires:  &expiredAt,
-		IsActive:           true,
+		ID:       uuid.New(),
+		Email:    "expired-reset-" + uuid.NewString() + "@example.test",
+		Password: "old-password-hash",
+		IsActive: true,
 	}
 	require.NoError(t, tx.Create(&user).Error)
 
 	repository := &GormUserRepository{DB: tx, logger: integrationTestLogger{}}
-	err = repository.ConsumePasswordReset(user.ResetPasswordToken, "new-password-hash")
-	require.True(t, errors.Is(err, irepository.ErrInvalidResetToken))
+	require.NoError(t, repository.SetPasswordResetToken(user.ID, user.SessionVersion, utils.PasswordResetTokenDigest(resetToken), expiredAt, now.Add(-2*time.Minute)))
+	err = repository.ConsumePasswordResetToken(user.ID, resetToken, "new-password-hash", now)
+	require.ErrorIs(t, err, irepository.ErrResetTokenNotConsumable)
 
 	var stored models.User
 	require.NoError(t, tx.First(&stored, "id = ?", user.ID).Error)
 	require.Equal(t, "old-password-hash", stored.Password)
-	require.Equal(t, user.ResetPasswordToken, stored.ResetPasswordToken)
+	require.Equal(t, utils.PasswordResetTokenDigest(resetToken), stored.ResetPasswordToken)
 }
 
 func TestGormUserRepositoryRollbackDoesNotClearNewerPasswordReset(t *testing.T) {
@@ -118,16 +120,18 @@ func TestGormUserRepositoryRollbackDoesNotClearNewerPasswordReset(t *testing.T) 
 	require.NoError(t, tx.Create(&user).Error)
 
 	repository := &GormUserRepository{DB: tx, logger: integrationTestLogger{}}
+	now := time.Now().UTC()
 	expiresAt := time.Now().UTC().Add(10 * time.Minute)
-	require.NoError(t, repository.StorePasswordReset(user.ID, "newer-token", expiresAt))
-	require.NoError(t, repository.ClearPasswordResetIfToken(user.ID, "older-failed-token"))
+	newerToken := "newer-token-" + uuid.NewString()
+	require.NoError(t, repository.SetPasswordResetToken(user.ID, user.SessionVersion, utils.PasswordResetTokenDigest(newerToken), expiresAt, now))
+	require.NoError(t, repository.ClearPasswordResetToken(user.ID, "older-failed-token"))
 
 	var stored models.User
 	require.NoError(t, tx.First(&stored, "id = ?", user.ID).Error)
-	require.Equal(t, "newer-token", stored.ResetPasswordToken)
+	require.Equal(t, utils.PasswordResetTokenDigest(newerToken), stored.ResetPasswordToken)
 	require.NotNil(t, stored.ResetTokenExpires)
 
-	require.NoError(t, repository.ClearPasswordResetIfToken(user.ID, "newer-token"))
+	require.NoError(t, repository.ClearPasswordResetToken(user.ID, newerToken))
 	var cleared models.User
 	require.NoError(t, tx.First(&cleared, "id = ?", user.ID).Error)
 	require.Empty(t, cleared.ResetPasswordToken)

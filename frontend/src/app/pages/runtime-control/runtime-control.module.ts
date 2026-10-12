@@ -6,10 +6,12 @@ import { NzAlertModule } from 'ng-zorro-antd/alert'
 import { NzButtonModule } from 'ng-zorro-antd/button'
 import { NzCardModule } from 'ng-zorro-antd/card'
 import { NzIconModule } from 'ng-zorro-antd/icon'
+import { NzInputModule } from 'ng-zorro-antd/input'
 import { NzModalModule } from 'ng-zorro-antd/modal'
 import { NzRadioModule } from 'ng-zorro-antd/radio'
 import { NzTableModule } from 'ng-zorro-antd/table'
 import { NzTagModule } from 'ng-zorro-antd/tag'
+import { ControlRoomModule } from '../../control-room/control-room.module'
 import { RuntimeControlComponent } from './runtime-control.component'
 
 const routes: Routes = [{ path: '', component: RuntimeControlComponent }]
@@ -18,11 +20,13 @@ const routes: Routes = [{ path: '', component: RuntimeControlComponent }]
   declarations: [RuntimeControlComponent],
   imports: [
     CommonModule,
+    ControlRoomModule,
     FormsModule,
     RouterModule.forChild(routes),
     NzButtonModule,
     NzCardModule,
     NzIconModule,
+    NzInputModule,
     NzModalModule,
     NzAlertModule,
     NzRadioModule,

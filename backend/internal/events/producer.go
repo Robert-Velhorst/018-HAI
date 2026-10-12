@@ -101,11 +101,11 @@ func (p *Publisher) Close() error {
 	return err
 }
 
-func (p *Publisher) Publish(event *AutomationEvent) error {
+func (p Publisher) Publish(event *AutomationEvent) error {
 	if err := normalizeAutomationEvent(event); err != nil {
 		return err
 	}
-	if p == nil || p.state == nil || len(p.state.brokers) == 0 {
+	if p.state == nil || len(p.state.brokers) == 0 {
 		return fmt.Errorf("%w: no Kafka brokers are configured", ErrUnavailable)
 	}
 	message, err := json.Marshal(event)

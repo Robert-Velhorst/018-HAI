@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/lifeontology"
+	"automation-hub-backend/internal/models"
+
+	"github.com/google/uuid"
 )
 
 func TestWorkflowTransitionsProjectImmutableOwnerScopedLifeGraph(t *testing.T) {
@@ -39,6 +42,9 @@ func TestWorkflowTransitionsProjectImmutableOwnerScopedLifeGraph(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("query projected entities: %v", err)
+	}
+	if len(entities) == 0 {
+		t.Fatalf("workflow intake produced no life-graph entities; projection audit events: %#v", record.Events)
 	}
 	assertWorkflowProjectionEntities(t, entities, record.Item.ID.String())
 
@@ -91,6 +97,23 @@ func TestWorkflowTransitionsProjectImmutableOwnerScopedLifeGraph(t *testing.T) {
 	otherOwner, err := graph.QueryEntities(context.Background(), "owner-2", lifeontology.EntityQuery{AllowLocalOnly: true})
 	if err != nil || len(otherOwner) != 0 {
 		t.Fatalf("owner-scoped graph leaked records: count=%d err=%v", len(otherOwner), err)
+	}
+}
+
+func TestWorkflowProjectionObservationClampsFutureCASRevision(t *testing.T) {
+	now := time.Date(2026, time.September, 26, 17, 20, 0, 0, time.UTC)
+	item := &models.WorkflowItem{
+		ID:        uuid.New(),
+		CreatedAt: now.Add(-time.Minute),
+		UpdatedAt: now.Add(time.Microsecond),
+	}
+
+	observedAt, err := workflowProjectionObservedAt(item, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !observedAt.Equal(now) {
+		t.Fatalf("future CAS revision should be clamped to projection time: got %s want %s", observedAt, now)
 	}
 }
 

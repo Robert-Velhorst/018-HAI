@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/autonomypolicy"
+	"automation-hub-backend/internal/safety"
 )
 
 var ErrAutonomyModeStateChanged = errors.New("autonomy mode changed concurrently")
@@ -54,6 +55,8 @@ func (c *Controller) SeedInitialState(
 }
 
 func (c *Controller) seedModeIfAbsent(mode autonomypolicy.Mode) error {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -148,8 +151,7 @@ func (c *Controller) ModePersistenceStatus() (autonomypolicy.Mode, error) {
 // Control contract).
 func (c *Controller) EmergencyStop() bool { return c.emergency.Engaged() }
 
-// EmergencyStopStatus implements safety.EmergencyStopProvider without
-// importing safety and creating a package cycle.
+// EmergencyStopStatus implements safety.EmergencyStopProvider.
 func (c *Controller) EmergencyStopStatus() (bool, string, error) {
 	state, err := c.emergency.Status()
 	if err != nil {
@@ -158,27 +160,37 @@ func (c *Controller) EmergencyStopStatus() (bool, string, error) {
 	return state.Engaged, state.Reason, nil
 }
 
+// EmergencyStopRevision implements safety.EmergencyStopRevisionProvider.
+func (c *Controller) EmergencyStopRevision() (uint64, error) {
+	state, err := c.emergency.Status()
+	if err != nil {
+		return 0, err
+	}
+	return state.Revision, nil
+}
+
 // SetMode updates + persists the autonomy mode.
 func (c *Controller) SetMode(m autonomypolicy.Mode) (autonomypolicy.Mode, error) {
 	if _, err := autonomypolicy.ParseMode(string(m)); err != nil {
 		return "", err
 	}
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	current := c.mode
-	if c.modeErr != nil {
-		current = autonomypolicy.ModePaused
-	}
 	if err := c.persistMode(m); err != nil {
-		return current, err
+		// A failed write may have truncated the stored mode. The old cached
+		// permission is not evidence that persistent authority remains healthy.
+		c.modeErr = fmt.Errorf("persist autonomy mode: %w", err)
+		return autonomypolicy.ModePaused, c.modeErr
 	}
 	c.mode = m
 	c.modeErr = nil
 	return c.mode, nil
 }
 
-// SetModeIfCurrent updates the mode only if the authorization was derived from
-// the still-current source mode.
+// SetModeIfCurrent updates the mode only if the control decision was derived
+// from the still-current source mode, including restrictions and repairs.
 func (c *Controller) SetModeIfCurrent(
 	expected autonomypolicy.Mode,
 	target autonomypolicy.Mode,
@@ -186,6 +198,8 @@ func (c *Controller) SetModeIfCurrent(
 	if _, err := autonomypolicy.ParseMode(string(target)); err != nil {
 		return "", err
 	}
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	current := c.mode
@@ -196,7 +210,8 @@ func (c *Controller) SetModeIfCurrent(
 		return current, ErrAutonomyModeStateChanged
 	}
 	if err := c.persistMode(target); err != nil {
-		return current, err
+		c.modeErr = fmt.Errorf("persist autonomy mode: %w", err)
+		return autonomypolicy.ModePaused, c.modeErr
 	}
 	c.mode = target
 	c.modeErr = nil

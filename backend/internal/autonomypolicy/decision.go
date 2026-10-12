@@ -14,6 +14,7 @@ type Input struct {
 	Title         string
 	Content       string
 	OperationType string
+	SourceDerived bool
 	Privacy       privacyfilter.ScanResult
 	Mode          Mode
 	Reversible    bool
@@ -57,6 +58,12 @@ func Decide(in Input, now time.Time) Decision {
 	// Draft-only mode: internal drafts allowed, no external execution.
 	if in.Mode == ModeDraftOnly {
 		return draft(risk, "mode_draft_only", "draft-only mode; internal draft prepared")
+	}
+	// Imported source content is untrusted. It may inform planning, but cannot
+	// authorize even a bounded host-side worker effect. The current approval
+	// transition is not bound to a source revision, so review cannot unblock it.
+	if in.SourceDerived {
+		return approval(risk, "source_derived_owner_review_hold", "source-derived work is held for owner review; current approval does not authorize execution", now)
 	}
 
 	lowSafe := risk == operations.RiskLow && in.Reversible

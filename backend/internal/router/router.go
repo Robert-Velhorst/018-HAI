@@ -14,6 +14,8 @@ import (
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/doctor"
 	"automation-hub-backend/internal/idempotency"
+	"automation-hub-backend/internal/infra"
+	"automation-hub-backend/internal/lifecycle"
 	"automation-hub-backend/internal/metrics"
 	"automation-hub-backend/internal/ratelimit"
 
@@ -21,34 +23,52 @@ import (
 )
 
 const (
-	httpShutdownTimeout = 10 * time.Second
-	// The reviewed OpenClaw archive route permits large local uploads. Keep a
-	// finite connection lifetime without imposing a 30-second failure on that
-	// explicitly bounded operation; public traffic is additionally constrained
-	// by the loopback gateway and its client-body timeout.
-	httpReadTimeout    = 5 * time.Minute
-	httpIdleTimeout    = 60 * time.Second
-	httpMaxHeaderBytes = 1 << 20
+	maxRequestReadDuration   = 15 * time.Minute
+	defaultIdleConnectionTTL = 60 * time.Second
+	httpMaxHeaderBytes       = 1 << 20
 )
 
 func Initialize() error {
 	ctx, stop := signal.NotifyContext(context.Background(), shutdownSignals()...)
 	defer stop()
-	return InitializeContext(ctx)
+	return initializeWithContext(ctx)
 }
 
-// InitializeContext starts the HTTP server and background workers under one
-// application lifetime. It is injectable for controlled shutdown tests.
-func InitializeContext(ctx context.Context) error {
+func initializeWithContext(ctx context.Context) (result error) {
 	if ctx == nil {
-		return fmt.Errorf("application context is required")
+		ctx = context.Background()
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	// Startup config guard: refuse to serve with a broken configuration so a
 	// misconfigured deployment fails fast and loudly rather than half-working.
 	// Warnings (e.g. empty optional keys) do not block startup.
 	if report := doctor.Diagnose(config.AppConfig); report.HasFailures() {
 		_, _, fail := report.Counts()
 		return fmt.Errorf("configuration not ready: %d failing check(s); run `backend doctor` for details", fail)
+	}
+	metricsExporter, err := metrics.NewFromEnv()
+	if err != nil {
+		return err
+	}
+	workers := lifecycle.New(ctx)
+	ctx = workers.Context()
+	var limiter ratelimit.Enforcer
+	defer func() {
+		result = errors.Join(result, finishRuntime(workers, func() error {
+			var limiterErr error
+			if closer, ok := limiter.(interface{ Close() error }); ok {
+				limiterErr = closer.Close()
+			}
+			return errors.Join(limiterErr, infra.CloseDefaultDB())
+		}, 20*time.Second))
+	}()
+
+	// Initialize before context-free repository constructors can acquire the
+	// shared pool. Signals now cancel connection acquisition and migration SQL.
+	if _, err := infra.GetDefaultDBContext(ctx); err != nil {
+		return fmt.Errorf("initialize shared database: %w", err)
 	}
 
 	// Keep production startup quiet and efficient. RUN_MODE already controls
@@ -60,22 +80,20 @@ func InitializeContext(ctx context.Context) error {
 
 	// initialize Router
 	router := gin.Default()
+	router.Use(runtimeOwnershipMiddleware(workers))
 	if err := router.SetTrustedProxies(nil); err != nil {
 		return err
 	}
 	router.Use(securityHeadersMiddleware())
-	router.Use(requestBodyLimitMiddleware(maxNonMultipartRequestBytes))
-	router.Use(rateLimitMiddleware(newRateLimitEnforcer()))
+	limiter = newRateLimitEnforcer()
+	router.Use(rateLimitMiddleware(limiter))
 	router.Use(idempotencyMiddleware(idempotency.New(10 * time.Minute)))
+	router.Use(jsonRequestBodyLimitMiddleware(maxJSONAPIRequestBytes))
 	router.Use(localCaptureCORSMiddleware())
-	metricsExporter, err := metrics.NewFromEnv()
-	if err != nil {
-		return err
-	}
 	router.Use(metricsExporter.Middleware())
 
 	// initialize routes
-	err = initializeRoutes(ctx, router, metricsExporter)
+	err = initializeRoutesWithContext(router, ctx)
 	if err != nil {
 		return err
 	}
@@ -84,69 +102,99 @@ func InitializeContext(ctx context.Context) error {
 	}
 
 	server := newHTTPServer(config.AppConfig.ServerPort, router)
-	listener, err := net.Listen("tcp", server.Addr)
-	if err != nil {
+	server.RegisterOnShutdown(workers.Stop)
+	return serveWithContext(ctx, server, nil)
+}
+
+func runtimeOwnershipMiddleware(workers *lifecycle.Group) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		finish, admitted := workers.Enter("http-request")
+		if !admitted {
+			c.AbortWithStatus(http.StatusServiceUnavailable)
+			return
+		}
+		defer finish()
+		c.Request = c.Request.WithContext(workers.WithContext(c.Request.Context()))
+		c.Next()
+	}
+}
+
+func finishRuntime(workers *lifecycle.Group, closePool func() error, timeout time.Duration) error {
+	if workers == nil || closePool == nil || timeout <= 0 {
+		return errors.New("runtime cleanup requires workers, pool closer and positive timeout")
+	}
+	drainCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := workers.StopAndWait(drainCtx); err != nil {
+		// Do not close a shared pool while unfinished handlers still need settlement.
 		return err
 	}
-	return serveUntilCancelled(ctx, server, listener)
+	return closePool()
 }
-func newHTTPServer(address string, handler http.Handler) *http.Server {
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	return &http.Server{
-		Addr:              address,
+		Addr:              addr,
 		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       httpReadTimeout,
-		IdleTimeout:       httpIdleTimeout,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       maxRequestReadDuration,
+		IdleTimeout:       defaultIdleConnectionTTL,
 		MaxHeaderBytes:    httpMaxHeaderBytes,
 	}
 }
 
-func serveUntilCancelled(ctx context.Context, server *http.Server, listener net.Listener) error {
-	if ctx == nil || server == nil || listener == nil {
-		return fmt.Errorf("server lifecycle requires context, server, and listener")
-	}
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- server.Serve(listener)
-	}()
-
-	select {
-	case err := <-errCh:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), httpShutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			_ = server.Close()
-			return fmt.Errorf("graceful HTTP shutdown: %w", err)
-		}
-		err := <-errCh
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-		return nil
-	}
+// serveWithContext gives the API and the schedulers that derive from its
+// lifecycle one termination signal. It supports a listener in tests and uses
+// the configured server address in production.
+func serveWithContext(ctx context.Context, server *http.Server, listener net.Listener) error {
+	return serveWithShutdownTimeout(ctx, server, listener, 20*time.Second)
 }
 
-func serveWithContext(ctx context.Context, server *http.Server, listener net.Listener) error {
+func serveWithShutdownTimeout(ctx context.Context, server *http.Server, listener net.Listener, timeout time.Duration) error {
 	if server == nil {
 		return errors.New("HTTP server is required")
+	}
+	if timeout <= 0 {
+		return errors.New("HTTP shutdown timeout must be positive")
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if listener == nil {
-		var err error
-		listener, err = net.Listen("tcp", server.Addr)
-		if err != nil {
-			return err
+
+	serveDone := make(chan struct{})
+	shutdownResult := make(chan error, 1)
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-serveDone:
 		}
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			// Shutdown closes listeners before draining requests. On timeout,
+			// close the remaining sockets and preserve the failed drain result.
+			shutdownResult <- errors.Join(err, server.Close())
+			return
+		}
+		shutdownResult <- nil
+	}()
+
+	var err error
+	if listener != nil {
+		err = server.Serve(listener)
+	} else {
+		err = server.ListenAndServe()
 	}
-	return serveUntilCancelled(ctx, server, listener)
+	close(serveDone)
+	if errors.Is(err, http.ErrServerClosed) {
+		err = nil
+	}
+	// Serve returns as soon as Shutdown closes the listener, not when the
+	// active requests finish. Join the drain before allowing process exit.
+	if shutdownErr := <-shutdownResult; shutdownErr != nil {
+		return errors.Join(err, shutdownErr)
+	}
+	return err
 }
 
 // newRateLimitEnforcer selects where rate-limit counters live. When REDIS_ADDR

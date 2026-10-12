@@ -12,10 +12,10 @@ import (
 
 // Finding is one record that violates an invariant, with a proposed repair.
 type Finding struct {
-	MemoryID   string                  `json:"memoryId"`
-	Violations []invariants.Violation  `json:"violations"`
-	Repair     string                  `json:"repair"`
-	Repairable bool                    `json:"repairable"`
+	MemoryID   string                 `json:"memoryId"`
+	Violations []invariants.Violation `json:"violations"`
+	Repair     string                 `json:"repair"`
+	Repairable bool                   `json:"repairable"`
 }
 
 // Report summarizes a reconciliation scan.
@@ -32,18 +32,24 @@ func (r Report) Clean() bool { return len(r.Findings) == 0 }
 func ScanMemories(memories []models.ContextMemory) Report {
 	report := Report{Scanned: len(memories)}
 	for _, m := range memories {
-		v := invariants.ValidateMemory(m)
-		if invariants.Valid(v) {
-			continue
+		if finding, found := ScanMemory(m); found {
+			report.Findings = append(report.Findings, finding)
 		}
-		report.Findings = append(report.Findings, Finding{
-			MemoryID:   m.ID.String(),
-			Violations: v,
-			Repair:     proposeRepair(m, v),
-			Repairable: repairable(v),
-		})
 	}
 	return report
+}
+
+// ScanMemory shares the same integrity rules with streaming callers, which
+// need not retain an entire corpus or its findings in memory.
+func ScanMemory(m models.ContextMemory) (Finding, bool) {
+	v := invariants.ValidateMemory(m)
+	if invariants.Valid(v) {
+		return Finding{}, false
+	}
+	return Finding{
+		MemoryID: m.ID.String(), Violations: v,
+		Repair: proposeRepair(m, v), Repairable: repairable(v),
+	}, true
 }
 
 // repairable reports whether every violation has a safe automatic repair.
@@ -52,7 +58,11 @@ func ScanMemories(memories []models.ContextMemory) Report {
 func repairable(violations []invariants.Violation) bool {
 	for _, viol := range violations {
 		switch viol.Field {
-		case "confidence", "tags":
+		case "confidence":
+			if viol.Rule != "range" {
+				return false
+			}
+		case "tags":
 			continue
 		default:
 			return false
@@ -62,8 +72,13 @@ func repairable(violations []invariants.Violation) bool {
 }
 
 func proposeRepair(m models.ContextMemory, violations []invariants.Violation) string {
+	for _, violation := range violations {
+		if violation.Field == "confidence" && violation.Rule == "finite" {
+			return "requires manual input: replace non-finite confidence using verified source information"
+		}
+	}
 	if repairable(violations) {
-		return fmt.Sprintf("clamp confidence to [0,1] and/or truncate tags to 512 chars for memory %s", m.ID)
+		return fmt.Sprintf("clamp confidence to [0,1] and/or truncate tags to 512 bytes without splitting UTF-8 for memory %s", m.ID)
 	}
 	return "requires manual input: fill missing required fields (content/kind)"
 }

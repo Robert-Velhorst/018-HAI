@@ -19,16 +19,19 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"automation-hub-backend/internal/agentguidance"
 )
 
 const (
-	enabledEnv              = "HAI_AGENT_FRAMEWORK_ENABLED"
-	baseURLEnv              = "HAI_AGENT_FRAMEWORK_BASE_URL"
-	timeoutEnv              = "HAI_AGENT_FRAMEWORK_TIMEOUT_SECONDS"
-	maxRequestChars         = 4000
-	maxCriteria             = 8
-	maxCriterionChars       = 240
-	maxResponseBytes  int64 = 64 << 10
+	enabledEnv                  = "HAI_AGENT_FRAMEWORK_ENABLED"
+	baseURLEnv                  = "HAI_AGENT_FRAMEWORK_BASE_URL"
+	timeoutEnv                  = "HAI_AGENT_FRAMEWORK_TIMEOUT_SECONDS"
+	maxRequestChars             = 4000
+	maxCriteria                 = 8
+	maxCriterionChars           = 240
+	maxResponseBytes      int64 = 64 << 10
+	defaultRequestTimeout       = 30 * time.Second
 )
 
 var (
@@ -65,11 +68,37 @@ type Proposal struct {
 }
 
 type Response struct {
-	Engine        string   `json:"engine"`
-	ModelID       string   `json:"modelId"`
-	RequestDigest string   `json:"requestDigest"`
-	Proposal      Proposal `json:"proposal"`
-	Scope         string   `json:"scope"`
+	Status             string              `json:"status"`
+	Engine             string              `json:"engine"`
+	ModelID            string              `json:"modelId"`
+	RequestDigest      string              `json:"requestDigest"`
+	Proposal           Proposal            `json:"proposal"`
+	Scope              string              `json:"scope"`
+	GuidanceStatus     string              `json:"guidanceStatus,omitempty"`
+	AppliedBrainSkills []agentguidance.Pin `json:"appliedBrainSkills,omitempty"`
+}
+
+type runnerRequest struct {
+	Request         string               `json:"request"`
+	SuccessCriteria []string             `json:"successCriteria,omitempty"`
+	Guidance        []agentguidance.Item `json:"guidance,omitempty"`
+}
+
+type runnerProposalResponse struct {
+	Goal             string   `json:"goal"`
+	SuccessCriteria  []string `json:"successCriteria"`
+	NextSteps        []string `json:"nextSteps"`
+	Risk             string   `json:"risk"`
+	RequiresApproval *bool    `json:"requiresApproval"`
+	Reasons          []string `json:"reasons"`
+	Uncertainties    []string `json:"uncertainties"`
+}
+
+type runnerResponse struct {
+	Engine        string                 `json:"engine"`
+	ModelID       string                 `json:"modelId"`
+	RequestDigest string                 `json:"requestDigest"`
+	Proposal      runnerProposalResponse `json:"proposal"`
 }
 
 type ProbeResult struct {
@@ -87,11 +116,10 @@ type Service interface {
 	Propose(context.Context, Request) (*Response, error)
 }
 
-// ModelMaintenanceGate is the narrow policy boundary required by this runner.
-// The canonical LLM service may satisfy it without this package depending on a
-// concrete maintenance implementation.
+// ModelMaintenanceGate is the narrow, request-cancelable policy boundary
+// required by this runner.
 type ModelMaintenanceGate interface {
-	EnsureConfiguredLocalModel(endpointURL, modelID string) error
+	EnsureConfiguredLocalModelWithContext(ctx context.Context, endpointURL, modelID string) error
 }
 
 type service struct {
@@ -99,12 +127,13 @@ type service struct {
 	baseURL         *url.URL
 	configErr       string
 	client          *http.Client
+	requestTimeout  time.Duration
 	now             func() time.Time
 	maintenanceGate ModelMaintenanceGate
 }
 
 func DefaultService() Service {
-	timeout := 30 * time.Second
+	timeout := defaultRequestTimeout
 	if raw := strings.TrimSpace(os.Getenv(timeoutEnv)); raw != "" {
 		if seconds, err := time.ParseDuration(raw + "s"); err == nil && seconds > 0 && seconds <= 90*time.Second {
 			timeout = seconds
@@ -115,12 +144,16 @@ func DefaultService() Service {
 
 func NewService(enabled bool, rawBaseURL string, timeout time.Duration, client *http.Client) Service {
 	if timeout <= 0 || timeout > 90*time.Second {
-		timeout = 30 * time.Second
+		timeout = defaultRequestTimeout
 	}
 	if client == nil {
 		client = &http.Client{Timeout: timeout, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }, Transport: &http.Transport{Proxy: nil}}
+	} else {
+		clientCopy := *client
+		clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+		client = &clientCopy
 	}
-	s := &service{enabled: enabled, client: client, now: time.Now}
+	s := &service{enabled: enabled, client: client, requestTimeout: timeout, now: time.Now}
 	if enabled {
 		s.baseURL, s.configErr = parseLocalBaseURL(rawBaseURL)
 	}
@@ -140,10 +173,12 @@ func WithModelMaintenance(delegate Service, gate ModelMaintenanceGate) Service {
 func (s *service) Status() Status {
 	status := Status{
 		Enabled: s.enabled, Configured: s.configured(), Provider: "Microsoft Agent Framework local planning runner", ConfigError: s.configErr,
-		Capabilities: []string{"one bounded sequential planner/reviewer draft", "fixed local-model reachability probe", "schema-checked proposal artifact"},
+		Capabilities: []string{"one bounded sequential planner/reviewer draft", "fixed local-model reachability probe", "schema-checked proposal artifact", "optional owner-consented HAI catalog summaries as bounded advisory planning context"},
 		Restrictions: []string{
-			"no Agent Framework tools, browser, web search, file access, MCP, skills, memory, sessions, checkpoints, hosted agents, A2A, retries, or delegation",
+			"no Agent Framework tools, executable skill runtimes or upstream skill assets, browser, web search, file access, MCP, memory, sessions, checkpoints, hosted agents, A2A, retries, or delegation",
+			"HAI catalog summaries are bounded non-authoritative text only; they grant no tools, access, approval, or execution capability",
 			"no HAI sources, account data, credentials, policy changes, approval decisions, workflow creation, execution, or completion claim",
+			"model maintenance and planning requests share the caller deadline and cancellation signal",
 			"OpenTelemetry is disabled; HAI keeps routing, validation, audit, approval, emergency-stop, and all side-effect authority",
 		},
 		Scope: "Operator-configured local Microsoft Agent Framework runner. It produces one review-only sequential planning artifact from a short task request; it cannot run or authorize HAI work.",
@@ -155,6 +190,11 @@ func (s *service) Status() Status {
 }
 
 func (s *service) Probe(ctx context.Context) (*ProbeResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
+	defer cancel()
 	if !s.configured() {
 		return nil, ErrNotConfigured
 	}
@@ -166,7 +206,7 @@ func (s *service) Probe(ctx context.Context) (*ProbeResult, error) {
 	req.Header.Set("User-Agent", "HAI-Agent-Framework-Planning/1.0")
 	response, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("local Agent Framework planning runner is unavailable")
+		return nil, requestFailure(ctx, "local Agent Framework planning runner is unavailable", err)
 	}
 	defer response.Body.Close()
 	var body struct {
@@ -175,13 +215,37 @@ func (s *service) Probe(ctx context.Context) (*ProbeResult, error) {
 		Model         string `json:"modelId"`
 		ModelEndpoint string `json:"modelEndpoint"`
 	}
-	if response.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(response.Body, 4097)).Decode(&body) != nil || body.Status != "ok" || !validEngine(body.Engine) || !validBoundedText(body.Model, 160) {
+	if response.StatusCode != http.StatusOK || decodeBoundedJSON(response.Body, 4096, &body) != nil || body.Status != "ok" || !validEngine(body.Engine) || !validBoundedText(body.Model, 160) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("local Agent Framework planning runner did not pass its constrained model probe")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return &ProbeResult{Reachable: true, Engine: body.Engine, ModelID: body.Model, ModelEndpoint: strings.TrimSpace(body.ModelEndpoint), CheckedAt: s.now().UTC(), Scope: "Local runner and fixed local-model reachability only. It does not create an Agent Framework proposal or authorize action."}, nil
 }
 
 func (s *service) Propose(ctx context.Context, input Request) (*Response, error) {
+	return s.propose(ctx, input, nil)
+}
+
+// ProposeWithGuidance adds only current, request-matched HAI catalog guidance
+// resolved from the authenticated owner's stored consent by the router.
+func (s *service) ProposeWithGuidance(ctx context.Context, input Request, guidance []agentguidance.Item) (*Response, error) {
+	if err := agentguidance.Validate("planning", input.Request, guidance); err != nil {
+		return nil, err
+	}
+	return s.propose(ctx, input, guidance)
+}
+
+func (s *service) propose(ctx context.Context, input Request, guidance []agentguidance.Item) (*Response, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.requestTimeout)
+	defer cancel()
 	if !s.configured() {
 		return nil, ErrNotConfigured
 	}
@@ -191,7 +255,10 @@ func (s *service) Propose(ctx context.Context, input Request) (*Response, error)
 	if err := s.ensureMaintainedModel(ctx); err != nil {
 		return nil, err
 	}
-	payload, err := json.Marshal(input)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(runnerRequest{Request: input.Request, SuccessCriteria: input.SuccessCriteria, Guidance: guidance})
 	if err != nil {
 		return nil, fmt.Errorf("could not encode local Agent Framework planning request")
 	}
@@ -204,17 +271,46 @@ func (s *service) Propose(ctx context.Context, input Request) (*Response, error)
 	req.Header.Set("User-Agent", "HAI-Agent-Framework-Planning/1.0")
 	response, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("local Agent Framework planning runner is unavailable")
+		return nil, requestFailure(ctx, "local Agent Framework planning runner is unavailable", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("local Agent Framework planning runner returned an unsuccessful response")
 	}
-	var result Response
-	if json.NewDecoder(io.LimitReader(response.Body, maxResponseBytes)).Decode(&result) != nil || !validResponse(result, input) {
+	var decoded runnerResponse
+	if decodeBoundedJSON(response.Body, maxResponseBytes, &decoded) != nil || decoded.Proposal.RequiresApproval == nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return nil, fmt.Errorf("local Agent Framework planning runner returned an invalid proposal")
 	}
+	result := Response{
+		Status: proposalStatusDraft, Engine: decoded.Engine, ModelID: decoded.ModelID,
+		RequestDigest: decoded.RequestDigest,
+		Proposal: Proposal{
+			Goal: decoded.Proposal.Goal, SuccessCriteria: decoded.Proposal.SuccessCriteria,
+			NextSteps: decoded.Proposal.NextSteps, Risk: decoded.Proposal.Risk,
+			RequiresApproval: *decoded.Proposal.RequiresApproval, Reasons: decoded.Proposal.Reasons,
+			Uncertainties: decoded.Proposal.Uncertainties,
+		},
+	}
+	if !validResponse(result, input) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("local Agent Framework planning runner returned an invalid proposal")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result.Scope = s.Status().Scope
+	if len(guidance) > 0 {
+		result.GuidanceStatus = "applied"
+		result.AppliedBrainSkills = agentguidance.Pins(guidance)
+	}
 	return &result, nil
 }
 
@@ -226,6 +322,12 @@ func (s *service) endpoint(path string) *url.URL {
 }
 
 func (s *service) ensureMaintainedModel(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if s.maintenanceGate == nil {
 		return fmt.Errorf("central daily model maintenance gate is unavailable")
 	}
@@ -237,7 +339,7 @@ func (s *service) ensureMaintainedModel(ctx context.Context) error {
 	req.Header.Set("User-Agent", "HAI-Agent-Framework-Planning/1.0")
 	response, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("local Agent Framework planning runner is unavailable")
+		return requestFailure(ctx, "local Agent Framework planning runner is unavailable", err)
 	}
 	defer response.Body.Close()
 	var body struct {
@@ -246,13 +348,22 @@ func (s *service) ensureMaintainedModel(ctx context.Context) error {
 		Model         string `json:"modelId"`
 		ModelEndpoint string `json:"modelEndpoint"`
 	}
-	if response.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(response.Body, 4097)).Decode(&body) != nil || body.Status != "ok" || !body.Configured || !validBoundedText(body.Model, 160) || !validBoundedText(body.ModelEndpoint, 512) {
+	if response.StatusCode != http.StatusOK || decodeBoundedJSON(response.Body, 4096, &body) != nil || body.Status != "ok" || !body.Configured || !validBoundedText(body.Model, 160) || !validBoundedText(body.ModelEndpoint, 512) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		return fmt.Errorf("local Agent Framework planning runner did not disclose one fixed local model configuration")
 	}
-	if err := s.maintenanceGate.EnsureConfiguredLocalModel(body.ModelEndpoint, body.Model); err != nil {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.maintenanceGate.EnsureConfiguredLocalModelWithContext(ctx, body.ModelEndpoint, body.Model); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("local Agent Framework planning model is not admitted: %w", err)
 	}
-	return nil
+	return ctx.Err()
 }
 
 func parseLocalBaseURL(raw string) (*url.URL, string) {
@@ -285,7 +396,41 @@ func validateRequest(input Request) error {
 
 func validResponse(result Response, input Request) bool {
 	proposal := result.Proposal
-	return validEngine(result.Engine) && validBoundedText(result.ModelID, 160) && result.RequestDigest == requestDigest(input) && validBoundedText(proposal.Goal, 400) && validRisk(proposal.Risk) && validStringList(proposal.SuccessCriteria, 1, 8, 240) && validStringList(proposal.NextSteps, 1, 8, 320) && validStringList(proposal.Reasons, 1, 5, 320) && validStringList(proposal.Uncertainties, 0, 5, 320)
+	return result.Status == proposalStatusDraft && validEngine(result.Engine) && validBoundedText(result.ModelID, 160) && result.RequestDigest == requestDigest(input) && validBoundedText(proposal.Goal, 400) && validRisk(proposal.Risk) && (proposal.Risk != "high" || proposal.RequiresApproval) && validStringList(proposal.SuccessCriteria, 1, 8, 240) && validStringList(proposal.NextSteps, 1, 8, 320) && validStringList(proposal.Reasons, 1, 5, 320) && validStringList(proposal.Uncertainties, 0, 5, 320)
+}
+
+const proposalStatusDraft = "draft"
+
+func requestFailure(ctx context.Context, message string, cause error) error {
+	if ctx != nil && ctx.Err() != nil {
+		return fmt.Errorf("%s: %w", message, ctx.Err())
+	}
+	if errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded) {
+		return fmt.Errorf("%s: %w", message, cause)
+	}
+	return fmt.Errorf("%s", message)
+}
+
+func decodeBoundedJSON(body io.Reader, limit int64, target any) error {
+	data, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(data)) > limit {
+		return fmt.Errorf("JSON response exceeds limit")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("JSON response contains multiple values")
+	}
+	return nil
 }
 
 func validRisk(value string) bool { return value == "low" || value == "medium" || value == "high" }

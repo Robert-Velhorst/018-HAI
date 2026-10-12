@@ -9,9 +9,9 @@ import { NzEmptyModule } from 'ng-zorro-antd/empty';
 import { NzFormModule } from 'ng-zorro-antd/form';
 import { NzIconModule } from 'ng-zorro-antd/icon';
 import { NzInputModule } from 'ng-zorro-antd/input';
-import { NzLayoutModule } from 'ng-zorro-antd/layout';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
+import { ControlRoomModule } from '../../control-room/control-room.module';
 import { GroundedAnswersComponent } from './grounded-answers.component';
 import { VERIFICATION_SERVICE_TOKEN } from '../../services/verification/verification.service.token';
 import { VerificationService } from '../../services/verification/verification.service';
@@ -23,6 +23,7 @@ const routes: Routes = [{ path: '', component: GroundedAnswersComponent }];
   imports: [
     CommonModule,
     RouterModule.forChild(routes),
+    ControlRoomModule,
     ReactiveFormsModule,
     NzButtonModule,
     NzCardModule,
@@ -31,7 +32,6 @@ const routes: Routes = [{ path: '', component: GroundedAnswersComponent }];
     NzFormModule,
     NzIconModule,
     NzInputModule,
-    NzLayoutModule,
     NzSelectModule,
     NzTableModule,
   ],

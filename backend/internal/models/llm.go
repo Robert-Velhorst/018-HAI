@@ -30,26 +30,26 @@ type LLMProviderProbe struct {
 // makes the 24-hour local model refresh gate durable across API restarts while
 // deliberately excluding provider credentials and raw runtime responses.
 type LLMModelMaintenance struct {
-	ID              uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id,omitempty"`
-	ProviderID      string    `gorm:"type:varchar(120);index;not null" json:"providerId"`
-	ProviderName    string    `gorm:"type:varchar(255);not null" json:"providerName"`
-	ModelID         string    `gorm:"type:varchar(255);index;not null" json:"modelId"`
-	ModelName       string    `gorm:"type:varchar(255);not null" json:"modelName"`
-	Status          string    `gorm:"type:varchar(80);index;not null" json:"status"`
-	Reason          string    `gorm:"type:text" json:"reason,omitempty"`
-	PreviousDigest  string    `gorm:"type:varchar(255)" json:"previousDigest,omitempty"`
-	CurrentDigest   string    `gorm:"type:varchar(255)" json:"currentDigest,omitempty"`
+	ID             uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id,omitempty"`
+	ProviderID     string    `gorm:"type:varchar(120);index;not null" json:"providerId"`
+	ProviderName   string    `gorm:"type:varchar(255);not null" json:"providerName"`
+	ModelID        string    `gorm:"type:varchar(255);index;not null" json:"modelId"`
+	ModelName      string    `gorm:"type:varchar(255);not null" json:"modelName"`
+	Status         string    `gorm:"type:varchar(80);index;not null" json:"status"`
+	Reason         string    `gorm:"type:text" json:"reason,omitempty"`
+	PreviousDigest string    `gorm:"type:varchar(255)" json:"previousDigest,omitempty"`
+	CurrentDigest  string    `gorm:"type:varchar(255)" json:"currentDigest,omitempty"`
 	// ConfigurationFingerprint binds this maintenance decision to the
 	// non-secret provider/model configuration that was actually checked. It
 	// prevents a 24-hour result for an old endpoint from authorizing a changed
 	// runtime with the same provider and model IDs.
-	ConfigurationFingerprint string `gorm:"type:char(64);index" json:"-"`
-	ConfigurationChanged     bool   `gorm:"index" json:"configurationChanged"`
-	UpdateAttempted bool      `json:"updateAttempted"`
-	UpdateApplied   bool      `json:"updateApplied"`
-	BlocksExecution bool      `gorm:"index" json:"blocksExecution"`
-	CheckedAt       time.Time `gorm:"index;not null" json:"checkedAt"`
-	CreatedAt       time.Time `json:"createdAt"`
+	ConfigurationFingerprint string    `gorm:"type:char(64);index" json:"-"`
+	ConfigurationChanged     bool      `gorm:"index" json:"configurationChanged"`
+	UpdateAttempted          bool      `json:"updateAttempted"`
+	UpdateApplied            bool      `json:"updateApplied"`
+	BlocksExecution          bool      `gorm:"index" json:"blocksExecution"`
+	CheckedAt                time.Time `gorm:"index;not null" json:"checkedAt"`
+	CreatedAt                time.Time `json:"createdAt"`
 }
 
 // LLMGenerationRecord is the durable, redacted ledger for a model call. It

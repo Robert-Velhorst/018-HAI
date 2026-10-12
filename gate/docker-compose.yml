@@ -1,5 +1,5 @@
-# Compatibility entrypoint for operators who run Compose from gate/.
-# Gateway behavior is defined only by the canonical HAI topology.
+# Compatibility entry point. The gateway is managed by the canonical local
+# HAI topology; this prevents an obsolete standalone gateway image path.
 name: 018-hai
 
 include:

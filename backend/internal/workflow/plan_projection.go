@@ -31,37 +31,121 @@ func WithCoordinationPlanProjector(value Service, projector CoordinationPlanProj
 	return service, nil
 }
 
-// ensureWorkflowCoordinationDraft is deliberately recovery-safe. The workflow
-// receipt is authoritative; a projection outage cannot erase it, but a ready
-// item is blocked until the immutable advisory draft can be stored and bound.
-func (s *service) ensureWorkflowCoordinationDraft(item *models.WorkflowItem, actor string) {
-	if s.coordinationProjector == nil || item == nil || item.ID == uuid.Nil ||
-		item.CoordinationPlanID != nil || item.CoordinationDraftPlanID != nil {
-		return
+// ensureWorkflowCoordinationDraft is the last execution gate as well as a
+// recovery path for older records. A plan is bound with a revision-guarded
+// update, and its audit receipt must be durable before a worker may claim it.
+func (s *service) ensureWorkflowCoordinationDraft(item *models.WorkflowItem, actor string) error {
+	if s.coordinationProjector == nil || item == nil || item.ID == uuid.Nil || item.CoordinationPlanID != nil {
+		return nil
+	}
+	if item.CoordinationDraftPlanID != nil {
+		return s.ensureWorkflowCoordinationDraftAudit(item, actor)
 	}
 	checklist, err := s.repo.FindChecklist(item.ID)
 	if err == nil {
 		var draft *plangraph.Plan
 		draft, err = s.projectWorkflowCoordinationDraft(item, checklist)
 		if err == nil {
-			applyWorkflowCoordinationDraftBinding(item, draft)
-			if strings.HasPrefix(strings.TrimSpace(item.BlockedReason), coordinationProjectionFailurePrefix) {
-				item.BlockedReason = ""
-				if item.RequiresApproval && item.ApprovalStatus != "approved" {
-					item.CurrentState = StateNeedsApproval
+			updated := *item
+			applyWorkflowCoordinationDraftBinding(&updated, draft)
+			if strings.HasPrefix(strings.TrimSpace(updated.BlockedReason), coordinationProjectionFailurePrefix) {
+				updated.BlockedReason = ""
+				if updated.RequiresApproval && updated.ApprovalStatus != "approved" {
+					updated.CurrentState = StateNeedsApproval
 				} else {
-					item.CurrentState = StateReady
+					updated.CurrentState = StateReady
 				}
 			}
-			if _, err = s.repo.UpdateItem(item); err == nil {
-				s.audit(item.ID, "workflow.coordination_draft_projected", "", item.CurrentState,
-					"immutable advisory workflow draft projected; explicit acceptance and separate effect authority remain required",
-					"workflow_intake", "plan graph projection", "", firstNonEmpty(actor, "engine"))
-				return
+			var transition *models.WorkflowTransition
+			if updated.CurrentState != item.CurrentState {
+				transition = &models.WorkflowTransition{
+					WorkflowID: item.ID, FromState: item.CurrentState, ToState: updated.CurrentState,
+					Trigger: "coordination_projection_recovery", Actor: firstNonEmpty(actor, "engine"),
+					Reason: "coordination draft is durable; projection-only execution block was cleared",
+				}
+			}
+			message := workflowCoordinationDraftProjectedMessage(*updated.CoordinationDraftPlanID)
+			persisted, changed, updateErr := s.repo.CommitWorkflowCoordinationProjection(WorkflowCoordinationProjectionFinalization{
+				Expected: item, Updated: &updated, Transition: transition,
+				Decision: models.WorkflowDecision{
+					WorkflowID: item.ID, DecisionType: "coordination_plan", Decision: "drafted",
+					Reason:      "immutable advisory coordination draft linked before workflow execution",
+					RuleApplied: "plan graph projection", Actor: firstNonEmpty(actor, "engine"),
+				},
+				Event: models.WorkflowEvent{
+					WorkflowID: item.ID, EventType: "workflow.coordination_draft_projected",
+					FromState: item.CurrentState, ToState: updated.CurrentState,
+					Message: message, Trigger: "coordination_projection", RuleApplied: "plan graph projection",
+					Actor: firstNonEmpty(actor, "engine"),
+				},
+			})
+			if updateErr != nil {
+				err = fmt.Errorf("persist coordination draft and audit receipt: %w", updateErr)
+			} else if !changed || persisted == nil {
+				err = ErrWorkflowIntakeConcurrentChange
+			} else {
+				*item = *persisted
+				return nil
 			}
 		}
 	}
-	s.recordCoordinationProjectionFailure(item, err, actor)
+	return s.recordCoordinationProjectionFailure(item, err, actor)
+}
+
+func (s *service) ensureWorkflowCoordinationDraftAudit(item *models.WorkflowItem, actor string) error {
+	if item == nil || item.CoordinationDraftPlanID == nil {
+		return workflowPersistenceFailure("workflow coordination draft", fmt.Errorf("draft binding is missing"))
+	}
+	events, err := s.repo.FindEvents(item.ID)
+	if err != nil {
+		return workflowPersistenceFailure("workflow coordination draft audit", err)
+	}
+	decisions, err := s.repo.FindDecisions(item.ID)
+	if err != nil {
+		return workflowPersistenceFailure("workflow coordination draft decision", err)
+	}
+	message := workflowCoordinationDraftProjectedMessage(*item.CoordinationDraftPlanID)
+	eventRecorded := false
+	for _, event := range events {
+		if event.EventType == "workflow.coordination_draft_projected" && event.Message == message {
+			eventRecorded = true
+			break
+		}
+	}
+	decisionRecorded := false
+	for _, decision := range decisions {
+		if decision.DecisionType == "coordination_plan" && decision.Decision == "drafted" &&
+			decision.Reason == "immutable advisory coordination draft linked before workflow execution" &&
+			decision.RuleApplied == "plan graph projection" {
+			decisionRecorded = true
+			break
+		}
+	}
+	if eventRecorded && decisionRecorded {
+		return nil
+	}
+	updated := *item
+	resolvedActor := firstNonEmpty(actor, "engine")
+	_, changed, err := s.repo.CommitWorkflowCoordinationProjection(WorkflowCoordinationProjectionFinalization{
+		Expected: item, Updated: &updated,
+		Decision: models.WorkflowDecision{
+			WorkflowID: item.ID, DecisionType: "coordination_plan", Decision: "drafted",
+			Reason:      "immutable advisory coordination draft linked before workflow execution",
+			RuleApplied: "plan graph projection", Actor: resolvedActor,
+		},
+		Event: models.WorkflowEvent{
+			WorkflowID: item.ID, EventType: "workflow.coordination_draft_projected",
+			FromState: item.CurrentState, ToState: item.CurrentState, Message: message,
+			Trigger: "workflow_intake", RuleApplied: "plan graph projection", Actor: resolvedActor,
+		},
+	})
+	if err != nil {
+		return workflowPersistenceFailure("repair workflow coordination draft audit", err)
+	}
+	if !changed {
+		return ErrWorkflowIntakeConcurrentChange
+	}
+	return nil
 }
 
 func (s *service) projectWorkflowCoordinationDraft(item *models.WorkflowItem, checklist []models.WorkflowChecklistItem) (*plangraph.Plan, error) {
@@ -89,22 +173,55 @@ func (s *service) projectWorkflowCoordinationDraft(item *models.WorkflowItem, ch
 	return draft, nil
 }
 
-func (s *service) recordCoordinationProjectionFailure(item *models.WorkflowItem, projectionErr error, actor string) {
+func (s *service) recordCoordinationProjectionFailure(item *models.WorkflowItem, projectionErr error, actor string) error {
 	if item == nil {
-		return
+		return workflowPersistenceFailure("workflow coordination draft", fmt.Errorf("workflow is required"))
 	}
 	reason := "coordination draft projection failed"
 	if projectionErr != nil {
 		reason = compact(projectionErr.Error(), 420)
 	}
-	if item.CurrentState == StateReady || strings.HasPrefix(strings.TrimSpace(item.BlockedReason), coordinationProjectionFailurePrefix) {
-		item.CurrentState = StateBlocked
-		item.BlockedReason = coordinationProjectionFailurePrefix + reason
-		_, _ = s.repo.UpdateItem(item)
+	updated := *item
+	if updated.CurrentState == StateReady || strings.HasPrefix(strings.TrimSpace(updated.BlockedReason), coordinationProjectionFailurePrefix) {
+		updated.CurrentState = StateBlocked
+		updated.BlockedReason = coordinationProjectionFailurePrefix + reason
+		updated.NextAction = "restore workflow plan projection before execution"
 	}
-	s.audit(item.ID, "workflow.coordination_draft_failed", "", item.CurrentState,
-		"workflow retained but cannot enter execution without its advisory coordination draft",
-		"workflow_intake", reason, "", firstNonEmpty(actor, "engine"))
+	resolvedActor := firstNonEmpty(actor, "engine")
+	var transition *models.WorkflowTransition
+	if updated.CurrentState != item.CurrentState {
+		transition = &models.WorkflowTransition{
+			WorkflowID: item.ID, FromState: item.CurrentState, ToState: updated.CurrentState,
+			Trigger: "coordination_projection_failure", Actor: resolvedActor,
+			Reason: "workflow execution is blocked until an advisory coordination draft is durable",
+		}
+	}
+	persisted, changed, err := s.repo.CommitWorkflowCoordinationFailure(WorkflowCoordinationProjectionFinalization{
+		Expected: item, Updated: &updated, Transition: transition,
+		Decision: models.WorkflowDecision{
+			WorkflowID: item.ID, DecisionType: "coordination_plan", Decision: "unavailable",
+			Reason:      "workflow execution remains gated until an advisory coordination draft is durable",
+			RuleApplied: reason, Actor: resolvedActor,
+		},
+		Event: models.WorkflowEvent{
+			WorkflowID: item.ID, EventType: "workflow.coordination_draft_failed",
+			FromState: item.CurrentState, ToState: updated.CurrentState,
+			Message: "workflow retained; execution requires a durable advisory coordination draft",
+			Trigger: "workflow_intake", RuleApplied: "plan graph projection", Actor: resolvedActor,
+		},
+	})
+	if err != nil {
+		return workflowPersistenceFailure("finalize workflow coordination projection failure", err)
+	}
+	if !changed || persisted == nil {
+		return ErrWorkflowIntakeConcurrentChange
+	}
+	*item = *persisted
+	return workflowPersistenceFailure("workflow coordination draft projection", projectionErr)
+}
+
+func workflowCoordinationDraftProjectedMessage(planID uuid.UUID) string {
+	return fmt.Sprintf("immutable advisory workflow draft %s projected; explicit acceptance and separate effect authority remain required", planID)
 }
 
 func applyWorkflowCoordinationDraftBinding(item *models.WorkflowItem, draft *plangraph.Plan) {

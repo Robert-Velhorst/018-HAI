@@ -3,6 +3,7 @@ import {
   IA2ABridgeStatus,
   IEventDeliveryRetryResult,
   IEventDeliveryStats,
+  ISystemInfo,
   ISystemReadiness,
 } from '../../models/system-status.model.interface';
 
@@ -11,6 +12,7 @@ export interface ISystemStatusService {
   // not_ready backend still returns the report body, and that body is exactly
   // what the operator needs to see. Only a transport failure is an error.
   readiness(): Observable<ISystemReadiness>;
+  info(): Observable<ISystemInfo>;
   eventDelivery(): Observable<IEventDeliveryStats>;
   connectorStatus(): Observable<IA2ABridgeStatus>;
   retryEventDelivery(id: string): Observable<IEventDeliveryRetryResult>;

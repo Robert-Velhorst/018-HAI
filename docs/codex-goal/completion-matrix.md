@@ -4,6 +4,14 @@
 **Date:** 2026-07-06
 **Method:** Broad structural + build-level audit of the existing codebase against the 112-phase Giant Codex Goal Prompt.
 
+**Historical snapshot, not current release acceptance (clarified 2026-10-01):**
+The rows and totals below preserve the July audit. They have not been refreshed
+against every current implementation, live provider or Windows installation.
+Read the [current repository overview](../../README.md) and dated integration
+ledgers for performed checks and remaining production gates. In particular,
+documentation, a package path or a passing build alone cannot establish an
+implemented, end-to-end verified product capability.
+
 ## How to read this
 
 Status values follow the prompt's own vocabulary:
@@ -14,7 +22,11 @@ Status values follow the prompt's own vocabulary:
 - **Blocked** — cannot be truthfully completed without real external credentials, provider approval, or a human account action.
 - **N/A** — process/discipline rule, not a shippable code artifact.
 
-**Honesty note (per the core rule "no false completion"):** statuses here reflect *structural presence and build state*, not a functional test of every phase. Where a phase is marked Partial/Implemented on structural grounds only, the Evidence column names the package or file so any reviewer can confirm. Nothing is marked Implemented on the basis of documentation alone.
+**Evidence limitation:** historical labels below sometimes use structural or
+documentation evidence despite the stricter definition above. Treat such rows
+as scope/implementation leads requiring current verification, not proof of
+working behavior. Preserve direct test/run evidence separately from source
+presence. Do not calculate a current readiness percentage from these labels.
 
 Evidence key: `be=backend/internal`, `fe=frontend/src/app`, `reg=docs/engineering-action-register.md`.
 

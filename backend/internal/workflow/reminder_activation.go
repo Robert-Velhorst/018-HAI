@@ -132,7 +132,11 @@ func (s *service) PrepareReminderActivationForOwner(
 	if err != nil || currentDigest != request.ExpectedReminderDigest {
 		return nil, fmt.Errorf("reminder changed; inspect a fresh reminder snapshot")
 	}
-	now := time.Now().UTC().Truncate(time.Second)
+	preparedAt := time.Now().UTC()
+	if source.Reminder.ReminderAt.After(preparedAt.Add(workflowReminderMaxHorizon)) {
+		return nil, fmt.Errorf("reminder is outside the supported 30-day delivery horizon")
+	}
+	now := preparedAt.Truncate(time.Second)
 	activation := &models.WorkflowReminderActivationRequest{
 		ID: uuid.New(), OwnerIdentity: ownerIdentity, WorkflowID: source.Workflow.ID,
 		ChecklistItemID: source.Reminder.ID, ActivationKind: ReminderActivationKindInternal,
@@ -264,23 +268,23 @@ func (s *service) DecideReminderActivationForOwner(
 	if latest != nil && !now.After(latest.DecidedAt) {
 		now = latest.DecidedAt.Add(time.Microsecond)
 	}
-	if now.After(activation.ExpiresAt) {
-		return nil, fmt.Errorf("reminder activation request expired; prepare a fresh request")
-	}
-	source, err := repository.LoadReminderActivationSourceForOwner(ownerIdentity, activation.ChecklistItemID)
-	if err != nil {
-		return nil, err
-	}
-	if source == nil {
-		return nil, fmt.Errorf("reminder is no longer current")
-	}
-	currentDigest, err := reminderEvidenceDigest(*source)
-	if err != nil || currentDigest != activation.ReminderDigest {
-		return nil, fmt.Errorf("reminder changed; prepare a fresh activation request")
-	}
-	if request.Decision == ReminderActivationDecisionRevoked &&
-		(latest == nil || latest.Decision != ReminderActivationDecisionApproved) {
-		return nil, fmt.Errorf("only the latest approved reminder preparation can be revoked")
+	// Revocation withdraws an existing grant; its preparation window and live
+	// source must not prevent the owner from cancelling a scheduled reminder.
+	if request.Decision != ReminderActivationDecisionRevoked {
+		if now.After(activation.ExpiresAt) {
+			return nil, fmt.Errorf("reminder activation request expired; prepare a fresh request")
+		}
+		source, err := repository.LoadReminderActivationSourceForOwner(ownerIdentity, activation.ChecklistItemID)
+		if err != nil {
+			return nil, err
+		}
+		if source == nil {
+			return nil, fmt.Errorf("reminder is no longer current")
+		}
+		currentDigest, err := reminderEvidenceDigest(*source)
+		if err != nil || currentDigest != activation.ReminderDigest {
+			return nil, fmt.Errorf("reminder changed; prepare a fresh activation request")
+		}
 	}
 	decision := &models.WorkflowReminderActivationDecision{
 		ID: uuid.New(), ActivationRequestID: activation.ID, OwnerIdentity: ownerIdentity,
@@ -301,6 +305,26 @@ func (s *service) DecideReminderActivationForOwner(
 	})
 	if err != nil {
 		return nil, err
+	}
+	if decision.Decision == ReminderActivationDecisionRevoked {
+		if latest == nil {
+			return nil, fmt.Errorf("only the latest approved reminder preparation can be revoked")
+		}
+		if err := validateReminderActivationDecision(activation, latest); err != nil {
+			return nil, err
+		}
+		if latest.Decision == ReminderActivationDecisionRevoked && latest.RequestDigest == decision.RequestDigest {
+			return &ReminderActivationDecisionResult{
+				Decision: *latest, Replayed: true,
+				Authority: ReminderActivationDecisionAuthority, CanExecute: false,
+			}, nil
+		}
+		if latest.Decision != ReminderActivationDecisionApproved {
+			return nil, fmt.Errorf("only the latest approved reminder preparation can be revoked")
+		}
+		if expectedPreviousDecisionID == nil || *expectedPreviousDecisionID != latest.ID {
+			return nil, fmt.Errorf("reminder activation decision chain changed; retry from current history")
+		}
 	}
 	decision.RecordDigest, err = digestReminderActivationDecision(decision)
 	if err != nil {

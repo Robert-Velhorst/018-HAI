@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"automation-hub-backend/internal/agentguidance"
 )
 
 const (
@@ -67,11 +69,19 @@ type Proposal struct {
 }
 
 type Response struct {
-	Engine        string   `json:"engine"`
-	ModelID       string   `json:"modelId"`
-	RequestDigest string   `json:"requestDigest"`
-	Proposal      Proposal `json:"proposal"`
-	Scope         string   `json:"scope"`
+	Engine             string              `json:"engine"`
+	ModelID            string              `json:"modelId"`
+	RequestDigest      string              `json:"requestDigest"`
+	Proposal           Proposal            `json:"proposal"`
+	Scope              string              `json:"scope"`
+	GuidanceStatus     string              `json:"guidanceStatus,omitempty"`
+	AppliedBrainSkills []agentguidance.Pin `json:"appliedBrainSkills,omitempty"`
+}
+
+type runnerRequest struct {
+	Request         string               `json:"request"`
+	SuccessCriteria []string             `json:"successCriteria,omitempty"`
+	Guidance        []agentguidance.Item `json:"guidance,omitempty"`
 }
 
 type ProbeResult struct {
@@ -88,12 +98,19 @@ type Service interface {
 	Propose(context.Context, Request) (*Response, error)
 }
 
+// ModelMaintenanceGate admits one exact local provider/model pair through
+// HAI's canonical daily freshness and execution policy.
+type ModelMaintenanceGate interface {
+	EnsureConfiguredLocalModel(endpointURL, modelID string) error
+}
+
 type service struct {
-	enabled   bool
-	baseURL   *url.URL
-	configErr string
-	client    *http.Client
-	now       func() time.Time
+	enabled         bool
+	baseURL         *url.URL
+	configErr       string
+	client          *http.Client
+	now             func() time.Time
+	maintenanceGate ModelMaintenanceGate
 }
 
 func DefaultService() Service {
@@ -122,6 +139,15 @@ func NewService(enabled bool, rawBaseURL string, timeout time.Duration, client *
 		s.baseURL, s.configErr = parseLocalBaseURL(rawBaseURL)
 	}
 	return s
+}
+
+// WithModelMaintenance prevents this optional runner from generating with a
+// model outside HAI's canonical local model policy.
+func WithModelMaintenance(delegate Service, gate ModelMaintenanceGate) Service {
+	if configured, ok := delegate.(*service); ok {
+		configured.maintenanceGate = gate
+	}
+	return delegate
 }
 
 func (s *service) Status() Status {
@@ -176,13 +202,29 @@ func (s *service) Probe(ctx context.Context) (*ProbeResult, error) {
 }
 
 func (s *service) Propose(ctx context.Context, input Request) (*Response, error) {
+	return s.propose(ctx, input, nil)
+}
+
+// ProposeWithGuidance adds only current, request-matched HAI catalog guidance
+// resolved from the authenticated owner's stored consent by the router.
+func (s *service) ProposeWithGuidance(ctx context.Context, input Request, guidance []agentguidance.Item) (*Response, error) {
+	if err := agentguidance.Validate("planning", input.Request, guidance); err != nil {
+		return nil, err
+	}
+	return s.propose(ctx, input, guidance)
+}
+
+func (s *service) propose(ctx context.Context, input Request, guidance []agentguidance.Item) (*Response, error) {
 	if !s.configured() {
 		return nil, ErrNotConfigured
 	}
 	if err := validateRequest(input); err != nil {
 		return nil, err
 	}
-	payload, err := json.Marshal(input)
+	if err := s.ensureMaintainedModel(ctx); err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(runnerRequest{Request: input.Request, SuccessCriteria: input.SuccessCriteria, Guidance: guidance})
 	if err != nil {
 		return nil, fmt.Errorf("could not encode local PydanticAI proposal request")
 	}
@@ -207,7 +249,42 @@ func (s *service) Propose(ctx context.Context, input Request) (*Response, error)
 		return nil, fmt.Errorf("local PydanticAI proposal runner returned an invalid proposal")
 	}
 	result.Scope = s.Status().Scope
+	if len(guidance) > 0 {
+		result.GuidanceStatus = "applied"
+		result.AppliedBrainSkills = agentguidance.Pins(guidance)
+	}
 	return &result, nil
+}
+
+func (s *service) ensureMaintainedModel(ctx context.Context) error {
+	if s.maintenanceGate == nil {
+		return fmt.Errorf("central daily model maintenance gate is unavailable")
+	}
+	endpoint := s.endpoint("/healthz")
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return fmt.Errorf("could not create local PydanticAI runner status request")
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("User-Agent", "HAI-PydanticAI-Proposal/1.0")
+	response, err := s.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("local PydanticAI proposal runner is unavailable")
+	}
+	defer response.Body.Close()
+	var body struct {
+		Status        string `json:"status"`
+		Configured    bool   `json:"configured"`
+		Model         string `json:"modelId"`
+		ModelEndpoint string `json:"modelEndpoint"`
+	}
+	if response.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(response.Body, 4097)).Decode(&body) != nil || body.Status != "ok" || !body.Configured || !validBoundedText(body.Model, 160) || !validBoundedText(body.ModelEndpoint, 512) {
+		return fmt.Errorf("local PydanticAI runner did not disclose one fixed local model configuration")
+	}
+	if err := s.maintenanceGate.EnsureConfiguredLocalModel(body.ModelEndpoint, body.Model); err != nil {
+		return fmt.Errorf("local PydanticAI planning model is not admitted: %w", err)
+	}
+	return nil
 }
 
 func (s *service) configured() bool { return s.enabled && s.configErr == "" && s.baseURL != nil }

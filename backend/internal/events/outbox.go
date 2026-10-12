@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"automation-hub-backend/internal/safety"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -176,10 +178,7 @@ func (s *OutboxStore) MarkFailed(ctx context.Context, record OutboxRecord, worke
 		status = OutboxDeadLettered
 		nextAttemptAt = now.UTC()
 	}
-	lastError := strings.TrimSpace(failure.Error())
-	if len(lastError) > 1000 {
-		lastError = lastError[:1000]
-	}
+	lastError := safeOutboxFailureMessage(failure)
 	result := s.db.WithContext(ctx).Exec(`
 		UPDATE automation_event_outbox
 		SET status = ?, next_attempt_at = ?, updated_at = ?, last_error = ?,
@@ -261,6 +260,17 @@ func (s *OutboxStore) PrunePublished(ctx context.Context, before time.Time, limi
 		return 0, fmt.Errorf("prune event outbox: %w", result.Error)
 	}
 	return result.RowsAffected, nil
+}
+
+func safeOutboxFailureMessage(failure error) string {
+	if failure == nil {
+		return ""
+	}
+	message := strings.TrimSpace(safety.RedactSecrets(failure.Error()))
+	if len(message) > 1000 {
+		return message[:1000]
+	}
+	return message
 }
 
 func fencedOutboxResult(result *gorm.DB, action string) error {

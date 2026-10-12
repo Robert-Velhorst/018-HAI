@@ -1,0 +1,152 @@
+<section class="skills-page">
+  <header class="skills-page__header">
+    <div>
+      <p class="skills-page__eyebrow">Intelligence</p>
+      <h1 id="skills-heading" tabindex="-1">Skills</h1>
+    </div>
+    <button id="skills-refresh" type="button" nz-button nzType="default" (click)="refresh()" [disabled]="loading || sessionLoading || pendingSkillIds.size > 0" [attr.aria-busy]="loading || sessionLoading ? 'true' : null" aria-label="Refresh Skills inventory" title="Refresh Skills inventory">
+      <i nz-icon nzType="reload" nzTheme="outline" aria-hidden="true"></i>
+      Refresh
+    </button>
+  </header>
+
+  <p class="skills-page__message" *ngIf="loading && !inventory" role="status">Loading Skills inventory...</p>
+  <p class="skills-page__message" *ngIf="loading && inventory" role="status">Refreshing Skills inventory...</p>
+  <p class="skills-page__access" *ngIf="accessMessage" [attr.role]="approvalAccessDenied ? 'alert' : 'status'" [attr.aria-live]="approvalAccessDenied ? 'assertive' : 'polite'">{{ accessMessage }}</p>
+  <div class="skills-page__message skills-page__message--error" *ngIf="unavailable" role="alert">
+    <span>Skills inventory unavailable. Selection controls are hidden until the inventory can be loaded.</span>
+    <button type="button" nz-button nzType="default" (click)="refresh()" [disabled]="loading || sessionLoading || pendingSkillIds.size > 0">Try again</button>
+  </div>
+  <p class="skills-page__policy">Enabling a skill adds only short HAI-authored prompt guidance to matching tasks. It never enables tools, scripts, or additional authority.</p>
+  <p class="skills-page__notice" *ngIf="selectionAnnouncement" role="status" aria-live="polite">{{ selectionAnnouncement }}</p>
+
+  <ng-container *ngIf="inventory as data">
+    <div class="skills-page__summary" *ngIf="data.skills.length">
+      <strong>{{ data.skills.length }} registered</strong>
+      <span>{{ enabledSkills }} enabled</span>
+      <span *ngIf="skillsNeedingReapproval">{{ skillsNeedingReapproval }} need version confirmation</span>
+      <span *ngIf="visibleSkills.length < data.skills.length">Showing {{ visibleSkills.length }} in Basic view</span>
+    </div>
+    <p class="skills-page__message" *ngIf="!data.skills.length" role="status">No Skills are registered on this server.</p>
+
+    <ul class="skills-page__list" *ngIf="data.skills.length" aria-label="Skills overview">
+      <li *ngFor="let skill of visibleSkills">
+        <div>
+          <strong>{{ skill.name }}</strong>
+          <span>{{ skill.description }}</span>
+          <small class="skills-page__source">
+            <span>Source:</span>
+            <a *ngIf="sourceHref(skill) as url; else unavailableOverviewSource" [href]="url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="sourceLinkAriaLabel(skill)">
+              {{ sourceProvenanceLabel(skill) }}
+            </a>
+            <ng-template #unavailableOverviewSource>Unable to verify the pinned source</ng-template>
+          </small>
+        </div>
+        <span class="skills-page__state" [class.skills-page__state--enabled]="isEffectivelyEnabled(skill)" [class.skills-page__state--review]="skill.needsReapproval">
+            {{ skill.needsReapproval ? 'Disabled · version changed' : (skill.enabled ? 'Enabled' : 'Disabled') }}
+        </span>
+        <div class="skills-page__selection" *ngIf="canApprove" [id]="selectionActionsId(skill.id, 'overview')">
+          <button *ngIf="!isEffectivelyEnabled(skill)" type="button" nz-button nzType="default" (click)="reviewGuidance(skill)" [disabled]="isGuidanceReviewDisabled(skill)" [attr.aria-busy]="isGuidancePreviewLoading(skill)" [attr.aria-expanded]="hasCurrentGuidancePreview(skill)" [attr.aria-controls]="hasCurrentGuidancePreview(skill) ? guidancePreviewId(skill.id, 'overview') : null" [attr.aria-label]="(hasCurrentGuidancePreview(skill) ? 'Hide guidance preview for ' : 'Review HAI-authored guidance for ') + skill.name">
+            {{ isGuidancePreviewLoading(skill) ? 'Loading guidance...' : (hasCurrentGuidancePreview(skill) ? 'Hide guidance preview' : (skill.needsReapproval ? 'Review updated guidance' : 'Review HAI guidance')) }}
+          </button>
+          <button *ngIf="skill.needsReapproval && hasCurrentGuidancePreview(skill)" type="button" nz-button nzType="primary" (click)="updateSelection(skill, true, 'overview')" [disabled]="isEnableSelectionDisabled(skill)" [attr.aria-busy]="isPending(skill)" [attr.aria-label]="'Confirm current version and enable ' + skill.name">
+            {{ isPending(skill) ? 'Saving...' : 'Confirm current version and enable' }}
+          </button>
+          <button *ngIf="!skill.needsReapproval && !skill.enabled && hasCurrentGuidancePreview(skill)" type="button" nz-button nzType="primary" (click)="updateSelection(skill, true, 'overview')" [disabled]="isEnableSelectionDisabled(skill)" [attr.aria-busy]="isPending(skill)" [attr.aria-label]="'Enable ' + skill.name">
+            {{ isPending(skill) ? 'Saving...' : 'Enable' }}
+          </button>
+          <button *ngIf="isEffectivelyEnabled(skill)" type="button" nz-button nzType="default" (click)="updateSelection(skill, false, 'overview')" [disabled]="isSelectionDisabled(skill)" [attr.aria-busy]="isPending(skill)" [attr.aria-label]="'Disable ' + skill.name">
+            {{ isPending(skill) ? 'Saving...' : 'Disable' }}
+          </button>
+          <small class="skills-page__guidance-loading" *ngIf="isGuidancePreviewLoading(skill)" role="status" aria-live="polite" aria-atomic="true">Loading and verifying exact HAI-authored guidance for {{ skill.name }}. No selection change is applied until the review finishes.</small>
+          <small *ngIf="skill.needsReapproval">Review the current guidance before confirming this changed version.</small>
+          <small *ngIf="selectionErrors[skill.id]" role="alert">{{ selectionErrors[skill.id] }}</small>
+          <small *ngIf="guidancePreviewErrors[skill.id]" role="alert">{{ guidancePreviewErrors[skill.id] }}</small>
+        </div>
+        <section class="skills-page__guidance-preview" *ngIf="canApprove && hasCurrentGuidancePreview(skill) && guidancePreviews[skill.id] as preview" [id]="guidancePreviewId(skill.id, 'overview')" role="region" aria-live="polite" aria-label="Current HAI-authored guidance">
+          <strong>Exact HAI-authored prompt guidance</strong>
+          <p>{{ preview.currentGuidance }}</p>
+          <p>Catalog/source identity reviewed: <code>{{ preview.catalogFingerprint }}</code></p>
+          <div *ngIf="skill.needsReapproval">
+            <p>Previously approved guidance SHA-256: <code>{{ preview.previousApprovedGuidanceSHA256 }}</code></p>
+            <p>{{ preview.previousGuidanceTextLimitation }}</p>
+          </div>
+        </section>
+      </li>
+    </ul>
+
+    <hai-progressive-section moduleId="skills" sectionId="inventory-provenance" title="Inventory and provenance" summary="Licenses, source pin, exact files, and current selection provenance.">
+      <dl class="skills-page__provenance">
+        <div><dt>Repository</dt><dd>{{ data.sourceRepository }}</dd></div>
+        <div><dt>Pinned commit</dt><dd><code>{{ data.sourceCommit }}</code></dd></div>
+        <div><dt>Upstream commit date</dt><dd>{{ data.sourceCommitDate | date:'medium' }}</dd></div>
+      </dl>
+      <p class="skills-page__message" *ngIf="!data.skills.length">No entries to inspect.</p>
+      <ul class="skills-page__records" *ngIf="data.skills.length" aria-label="Complete Skills inventory">
+        <li *ngFor="let skill of data.skills">
+          <div class="skills-page__record-heading">
+            <strong>{{ skill.name }}</strong>
+            <span [class.skills-page__state--enabled]="isEffectivelyEnabled(skill)" [class.skills-page__state--review]="skill.needsReapproval">
+              {{ skill.needsReapproval ? 'Disabled · version changed' : (skill.enabled ? 'Enabled' : 'Disabled') }}
+            </span>
+          </div>
+          <p>{{ skill.description }}</p>
+          <p class="skills-page__source">
+            <span>Source:</span>
+            <a *ngIf="sourceHref(skill) as url; else unavailableInventorySource" [href]="url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="sourceLinkAriaLabel(skill)">
+              {{ sourceProvenanceLabel(skill) }}
+            </a>
+            <ng-template #unavailableInventorySource>Unable to verify the pinned source</ng-template>
+          </p>
+          <div class="skills-page__selection" *ngIf="canApprove" [id]="selectionActionsId(skill.id, 'inventory')">
+            <button *ngIf="!isEffectivelyEnabled(skill)" type="button" nz-button nzType="default" (click)="reviewGuidance(skill)" [disabled]="isGuidanceReviewDisabled(skill)" [attr.aria-busy]="isGuidancePreviewLoading(skill)" [attr.aria-expanded]="hasCurrentGuidancePreview(skill)" [attr.aria-controls]="hasCurrentGuidancePreview(skill) ? guidancePreviewId(skill.id, 'inventory') : null" [attr.aria-label]="(hasCurrentGuidancePreview(skill) ? 'Hide guidance preview for ' : 'Review HAI-authored guidance for ') + skill.name">
+              {{ isGuidancePreviewLoading(skill) ? 'Loading guidance...' : (hasCurrentGuidancePreview(skill) ? 'Hide guidance preview' : (skill.needsReapproval ? 'Review updated guidance' : 'Review HAI guidance')) }}
+            </button>
+            <button *ngIf="skill.needsReapproval && hasCurrentGuidancePreview(skill)" type="button" nz-button nzType="primary" (click)="updateSelection(skill, true, 'inventory')" [disabled]="isEnableSelectionDisabled(skill)" [attr.aria-busy]="isPending(skill)" [attr.aria-label]="'Confirm current version and enable ' + skill.name">
+              {{ isPending(skill) ? 'Saving...' : 'Confirm current version and enable' }}
+            </button>
+            <button *ngIf="!skill.needsReapproval && !skill.enabled && hasCurrentGuidancePreview(skill)" type="button" nz-button nzType="primary" (click)="updateSelection(skill, true, 'inventory')" [disabled]="isEnableSelectionDisabled(skill)" [attr.aria-busy]="isPending(skill)" [attr.aria-label]="'Enable ' + skill.name">
+              {{ isPending(skill) ? 'Saving...' : 'Enable' }}
+            </button>
+            <button *ngIf="isEffectivelyEnabled(skill)" type="button" nz-button nzType="default" (click)="updateSelection(skill, false, 'inventory')" [disabled]="isSelectionDisabled(skill)" [attr.aria-busy]="isPending(skill)" [attr.aria-label]="'Disable ' + skill.name">
+              {{ isPending(skill) ? 'Saving...' : 'Disable' }}
+            </button>
+            <small class="skills-page__guidance-loading" *ngIf="isGuidancePreviewLoading(skill)" role="status" aria-live="polite" aria-atomic="true">Loading and verifying exact HAI-authored guidance for {{ skill.name }}. No selection change is applied until the review finishes.</small>
+            <small *ngIf="skill.needsReapproval">Review the current guidance before confirming this changed version.</small>
+            <small *ngIf="selectionErrors[skill.id]" role="alert">{{ selectionErrors[skill.id] }}</small>
+            <small *ngIf="guidancePreviewErrors[skill.id]" role="alert">{{ guidancePreviewErrors[skill.id] }}</small>
+          </div>
+          <section class="skills-page__guidance-preview" *ngIf="canApprove && hasCurrentGuidancePreview(skill) && guidancePreviews[skill.id] as preview" [id]="guidancePreviewId(skill.id, 'inventory')" role="region" aria-live="polite" aria-label="Current HAI-authored guidance">
+            <strong>Exact HAI-authored prompt guidance</strong>
+            <p>{{ preview.currentGuidance }}</p>
+            <p>Catalog/source identity reviewed: <code>{{ preview.catalogFingerprint }}</code></p>
+            <div *ngIf="skill.needsReapproval">
+              <p>Previously approved guidance SHA-256: <code>{{ preview.previousApprovedGuidanceSHA256 }}</code></p>
+              <p>{{ preview.previousGuidanceTextLimitation }}</p>
+            </div>
+          </section>
+          <dl>
+            <div><dt>License</dt><dd>
+              <a *ngIf="licenseHref(skill) as url; else licenseText" [href]="url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="skill.license + ' license for ' + skill.name + ' (opens in a new tab)'">{{ skill.license }} license</a>
+              <ng-template #licenseText>{{ skill.license }}</ng-template>
+            </dd></div>
+            <div *ngIf="skill.licensePath"><dt>License file</dt><dd><code>{{ skill.licensePath }}</code></dd></div>
+            <div><dt>License SHA-256</dt><dd><code>{{ skill.licenseSHA256 || 'Not provided' }}</code></dd></div>
+            <div *ngIf="skill.selectionDecision?.id !== undefined"><dt>Selection decision ID</dt><dd><code>{{ skill.selectionDecision.id }}</code></dd></div>
+            <div *ngIf="skill.selectionDecision?.actorIdentity"><dt>Decision actor</dt><dd>{{ skill.selectionDecision.actorIdentity }}</dd></div>
+            <div *ngIf="skill.selectionDecision?.decidedAt"><dt>Decision time</dt><dd><time [attr.datetime]="skill.selectionDecision.decidedAt">{{ skill.selectionDecision.decidedAt | date:'medium' }}</time></dd></div>
+            <div><dt>Scope</dt><dd>{{ skill.scope }}</dd></div>
+            <div><dt>Status</dt><dd>{{ skill.status }}</dd></div>
+            <div><dt>Source file</dt><dd><code>{{ skill.sourcePath }}</code></dd></div>
+            <div><dt>Upstream source</dt><dd>
+              <a *ngIf="sourceHref(skill) as url; else unavailableSource" [href]="url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="sourceLinkAriaLabel(skill)">View pinned source</a>
+              <ng-template #unavailableSource>Secure source link unavailable</ng-template>
+            </dd></div>
+            <div><dt>Source SHA-256</dt><dd><code>{{ skill.sourceSHA256 }}</code></dd></div>
+            <div><dt>Guidance SHA-256</dt><dd><code>{{ skill.guidanceSHA256 }}</code></dd></div>
+          </dl>
+        </li>
+      </ul>
+    </hai-progressive-section>
+  </ng-container>
+</section>

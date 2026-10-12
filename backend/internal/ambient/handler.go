@@ -1,6 +1,7 @@
 package ambient
 
 import (
+	"automation-hub-backend/internal/apierror"
 	"automation-hub-backend/internal/identity"
 	"errors"
 	"io"
@@ -13,6 +14,10 @@ import (
 
 type Handler struct {
 	service Service
+}
+
+type overviewSummaryService interface {
+	OverviewSummaryForOwner(ownerIdentity string) (*Overview, error)
 }
 
 func NewHandler(service Service) *Handler {
@@ -39,20 +44,25 @@ func (h *Handler) Overview(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "an authenticated owner session is required for ambient access"})
 		return
 	}
-	viewMode := strings.TrimSpace(c.Query("view"))
-	if viewMode != "" && viewMode != "full" && viewMode != "summary" {
+	view := strings.ToLower(strings.TrimSpace(c.Query("view")))
+	if view != "" && view != "full" && view != "summary" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "ambient overview view must be full or summary"})
 		return
 	}
 	var result *Overview
 	var err error
-	if viewMode == "summary" {
-		result, err = h.service.OverviewSummaryForOwner(ownerIdentity)
+	if view == "summary" {
+		projector, ok := h.service.(overviewSummaryService)
+		if !ok {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "ambient summary view is unavailable"})
+			return
+		}
+		result, err = projector.OverviewSummaryForOwner(ownerIdentity)
 	} else {
 		result, err = h.service.OverviewForOwner(ownerIdentity)
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "ambient overview is unavailable")})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -67,10 +77,10 @@ func (h *Handler) Scan(c *gin.Context) {
 	result, err := h.service.ScanForOwner(ownerIdentity, "manual")
 	if err != nil {
 		if errors.Is(err, ErrScanInProgress) {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			c.JSON(http.StatusConflict, gin.H{"error": "an ambient scan is already in progress"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "scan": result})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "ambient scan could not be completed"), "scan": result})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -84,12 +94,12 @@ func (h *Handler) UpdateNeed(c *gin.Context) {
 	}
 	var request NeedUpdateRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ambient planning preference request is invalid"})
 		return
 	}
 	result, err := h.service.UpdateNeedForOwner(ownerIdentity, c.Param("key"), request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "ambient planning preference could not be updated")})
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -111,7 +121,7 @@ func (h *Handler) resolve(c *gin.Context, accept bool) {
 	}
 	var request ResolutionRequest
 	if bindErr := c.ShouldBindJSON(&request); bindErr != nil && !errors.Is(bindErr, io.EOF) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": bindErr.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ambient proposal resolution request is invalid"})
 		return
 	}
 	ownerIdentity := verifiedOwner(c)
@@ -130,7 +140,7 @@ func (h *Handler) resolve(c *gin.Context, accept bool) {
 		result, err = h.service.Dismiss(id, request)
 	}
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "ambient proposal could not be resolved")})
 		return
 	}
 	c.JSON(http.StatusOK, result)

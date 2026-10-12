@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"automation-hub-backend/internal/infra"
+	"automation-hub-backend/internal/pgtestguard"
 	"automation-hub-backend/migrations"
 
 	"github.com/google/uuid"
@@ -253,17 +253,22 @@ func TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers(t *test
 
 func TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema(t *testing.T) {
 	_, db := agentRegistryPostgresRepository(t)
-	if err := db.Exec(`
-		DELETE FROM public.schema_migrations
-		WHERE version = 'pre/0013_agent_registry'`).Error; err != nil {
-		t.Fatalf("remove agent registry migration ledger row: %v", err)
-	}
-	count, err := infra.ApplyMigrations(db, migrations.Files, "pre")
+	before, err := infra.Status(db, migrations.Files, "pre")
 	if err != nil {
-		t.Fatalf("replay agent registry migration: %v", err)
+		t.Fatalf("read migration status before replay: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("replayed migration count = %d, want 1", count)
+	// Replay the DDL to prove its idempotence without forging a hole in the
+	// migration ledger, which the runner deliberately rejects.
+	ddl, err := migrations.Files.ReadFile("pre/0013_agent_registry.up.sql")
+	if err != nil {
+		t.Fatalf("read agent registry migration: %v", err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error { return tx.Exec(string(ddl)).Error }); err != nil {
+		t.Fatalf("replay agent registry migration DDL: %v", err)
+	}
+	after, err := infra.Status(db, migrations.Files, "pre")
+	if err != nil || !reflect.DeepEqual(before, after) || len(after.Pending) != 0 {
+		t.Fatalf("DDL replay changed migration status: before=%+v after=%+v err=%v", before, after, err)
 	}
 	var triggerCount int64
 	if err := db.Raw(`
@@ -286,15 +291,19 @@ func TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema(t *testing
 
 func agentRegistryPostgresRepository(t *testing.T) (*PostgresRepository, *gorm.DB) {
 	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping Postgres integration test")
-	}
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_AGENTREGISTRY_TEST_DATABASE_DSN", "hai_agentregistry_test")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
 		t.Fatalf("open Postgres: %v", err)
+	}
+	var databaseName string
+	if err := db.Raw("SELECT current_database()").Scan(&databaseName).Error; err != nil {
+		t.Fatalf("read connected database identity: %v", err)
+	}
+	if databaseName != "hai_agentregistry_test" {
+		t.Fatalf("refusing migrations against unexpected database identity %q", databaseName)
 	}
 	if _, err := infra.ApplyMigrations(db, migrations.Files, "pre"); err != nil {
 		t.Fatalf("apply pre migrations: %v", err)

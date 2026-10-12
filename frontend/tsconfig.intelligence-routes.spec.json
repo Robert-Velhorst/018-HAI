@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.spec.json",
+  "include": [
+    "src/app/pages/brain-catalog/brain-catalog.component.spec.ts",
+    "src/app/pages/skills/skills.component.spec.ts",
+    "src/app/pages/knowledge-claims/knowledge-claims.component.spec.ts",
+    "src/app/pages/agent-teams/agent-teams.component.spec.ts",
+    "src/app/pages/life-ops/life-ops.component.spec.ts"
+  ]
+}

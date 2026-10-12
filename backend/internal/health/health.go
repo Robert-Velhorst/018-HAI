@@ -25,7 +25,6 @@ import (
 
 	"automation-hub-backend/internal/config"
 	"automation-hub-backend/internal/doctor"
-	"automation-hub-backend/internal/events"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/schedulerstatus"
 
@@ -41,8 +40,7 @@ const DefaultTimeout = 3 * time.Second
 //
 // Criticality reflects what the process can actually serve without:
 //   - Postgres is critical: every domain route reads or writes it.
-//   - Kafka is not: committed events remain queued in the transactional outbox
-//     until a configured broker becomes available.
+//   - Kafka is not: the publisher degrades to a no-op when brokers are absent.
 //   - Redis is not: the backend does not connect to it yet (see RedisProbe).
 //   - An LLM provider is not: generation is one capability, not the service.
 func Probes(cfg config.Configuration) []doctor.Probe {
@@ -50,7 +48,6 @@ func Probes(cfg config.Configuration) []doctor.Probe {
 		PostgresProbe(cfg),
 		RedisProbe(cfg),
 		KafkaProbe(cfg),
-		EventOutboxProbe(),
 		LLMProviderProbe(),
 		schedulerstatus.Probe("source"),
 		schedulerstatus.Probe("workflow"),
@@ -58,14 +55,10 @@ func Probes(cfg config.Configuration) []doctor.Probe {
 	}
 }
 
-type postgresPinger interface {
-	PingContext(context.Context) error
-}
-
-// PostgresProbe pings the authenticated pool used by domain routes. A plain TCP
-// dial would prove only that something is listening on the port, while opening
-// a separate pool on every readiness request creates avoidable connection churn
-// and can disagree with the pool that is actually serving requests.
+// PostgresProbe opens a real, authenticated connection and pings it. A plain TCP
+// dial would prove only that something is listening on the port; it would still
+// pass with wrong credentials or a missing database, which are exactly the
+// failures an operator needs readiness to surface.
 func PostgresProbe(cfg config.Configuration) doctor.Probe {
 	return postgresProbe(cfg, func() (postgresPinger, error) {
 		gormDB, err := infra.GetDefaultDB()
@@ -76,11 +69,18 @@ func PostgresProbe(cfg config.Configuration) doctor.Probe {
 	})
 }
 
+type postgresPinger interface {
+	PingContext(context.Context) error
+}
+
 func postgresProbe(cfg config.Configuration, acquire func() (postgresPinger, error)) doctor.Probe {
 	return doctor.Probe{
 		Name:     "database.connection",
 		Critical: true,
 		Run: func(ctx context.Context) error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			pinger, err := acquire()
 			if err != nil {
 				return fmt.Errorf("connect %s:%d/%s as %s: %w", cfg.DbHost, cfg.DbPort, cfg.DbName, cfg.DbUser, err)
@@ -96,11 +96,10 @@ func postgresProbe(cfg config.Configuration, acquire func() (postgresPinger, err
 // RedisProbe checks the Redis declared in the compose stack.
 //
 // Redis backs the optional shared rate limiter. When it is absent or
-// unavailable at startup, the limiter deliberately falls back to in-process
-// counters, so Redis is a degradation rather than a hard availability
-// requirement. The probe still reports it honestly, because an operator needs
-// to distinguish durable shared limits from per-process limits that reset on
-// restart.
+// unavailable, the limiter uses bounded in-process counters. Redis is therefore
+// a degradation rather than a hard availability requirement. The probe still
+// reports it honestly, because an operator needs to distinguish durable shared
+// limits from per-process limits that reset on restart.
 func RedisProbe(cfg config.Configuration) doctor.Probe {
 	addr := strings.TrimSpace(cfg.RedisAddr)
 	return doctor.Probe{
@@ -108,7 +107,7 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 		Critical: false,
 		Run: func(ctx context.Context) error {
 			if addr == "" {
-				return fmt.Errorf("REDIS_ADDR is not set; rate-limit state uses a per-process in-memory fallback and resets on restart")
+				return fmt.Errorf("REDIS_ADDR is not set; quota and rate-limit state stays in per-process in-memory storage and resets on restart")
 			}
 			var dialer net.Dialer
 			conn, err := dialer.DialContext(ctx, "tcp", addr)
@@ -120,8 +119,8 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 			if deadline, ok := ctx.Deadline(); ok {
 				_ = conn.SetDeadline(deadline)
 			}
-			// Inline RESP keeps the readiness probe independent from the
-			// rate-limiter client's lifecycle.
+			// Inline RESP so a liveness check does not pull in a Redis client
+			// the backend has no other use for yet.
 			if _, err := conn.Write([]byte("*1\r\n$4\r\nPING\r\n")); err != nil {
 				return fmt.Errorf("write PING to %s: %w", addr, err)
 			}
@@ -138,8 +137,8 @@ func RedisProbe(cfg config.Configuration) doctor.Probe {
 }
 
 // KafkaProbe connects to the configured brokers. Kafka being down is a
-// degradation rather than an API outage: committed automation events remain in
-// the Postgres outbox and are retried after the broker recovers.
+// degradation rather than an outage: automation changes remain durable in the
+// database outbox and are delivered when the broker becomes available.
 func KafkaProbe(cfg config.Configuration) doctor.Probe {
 	brokers := nonEmpty(cfg.Brokers)
 	return doctor.Probe{
@@ -147,7 +146,7 @@ func KafkaProbe(cfg config.Configuration) doctor.Probe {
 		Critical: false,
 		Run: func(ctx context.Context) error {
 			if len(brokers) == 0 {
-				return fmt.Errorf("KAFKA_BROKERS is empty; committed events remain queued until a broker is configured")
+				return fmt.Errorf("KAFKA_BROKERS is empty; automation events remain queued until a broker is configured")
 			}
 			saramaCfg := sarama.NewConfig()
 			saramaCfg.Net.DialTimeout = DefaultTimeout
@@ -163,33 +162,6 @@ func KafkaProbe(cfg config.Configuration) doctor.Probe {
 
 			if len(client.Brokers()) == 0 {
 				return fmt.Errorf("no reachable brokers among %s", strings.Join(brokers, ","))
-			}
-			return nil
-		},
-	}
-}
-
-// EventOutboxProbe exposes delivery failures separately from broker
-// connectivity. A brief pending row is normal; dead letters or a queue that has
-// made no progress for two minutes require operator attention.
-func EventOutboxProbe() doctor.Probe {
-	return doctor.Probe{
-		Name:     "events.outbox",
-		Critical: false,
-		Run: func(ctx context.Context) error {
-			db, err := infra.GetDefaultDB()
-			if err != nil {
-				return err
-			}
-			stats, err := events.NewOutboxStore(db).Stats(ctx)
-			if err != nil {
-				return err
-			}
-			if stats.DeadLettered > 0 {
-				return fmt.Errorf("%d event deliveries are dead-lettered", stats.DeadLettered)
-			}
-			if stats.Pending > 0 && stats.OldestPendingAt != nil && time.Since(*stats.OldestPendingAt) > 2*time.Minute {
-				return fmt.Errorf("%d event deliveries are pending; oldest is %s old", stats.Pending, time.Since(*stats.OldestPendingAt).Round(time.Second))
 			}
 			return nil
 		},

@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,7 +11,10 @@ import (
 	"automation-hub-backend/internal/proactivity"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
+
+var errReminderDeliveryExpired = errors.New("internal reminder authority expired during signal recording")
 
 const (
 	ReminderDeliveryChannelInApp           = "in_app"
@@ -21,6 +25,7 @@ const (
 	ReminderDeliveryStatusRetryableFailure = "retryable_failure"
 	ReminderDeliveryStatusSuppressed       = "suppressed"
 	ReminderDeliveryStatusDeadLettered     = "dead_lettered"
+	ReminderDeliveryStatusExpired          = "expired"
 	ReminderDeliveryMaxAttempts            = 3
 )
 
@@ -50,6 +55,13 @@ type ReminderDeliverySink interface {
 	DeliverInternalReminder(context.Context, ReminderDeliveryEnvelope) error
 }
 
+// TransactionalReminderDeliverySink may only write internal database effects
+// through tx. External delivery cannot participate in this atomic boundary.
+type TransactionalReminderDeliverySink interface {
+	ReminderDeliverySink
+	DeliverInternalReminderInTransaction(context.Context, *gorm.DB, ReminderDeliveryEnvelope) error
+}
+
 type ReminderDeliveryRunResult struct {
 	AuthorizationID uuid.UUID `json:"authorizationId"`
 	Status          string    `json:"status"`
@@ -62,6 +74,7 @@ type ReminderDeliveryRunSummary struct {
 	Retried      int                         `json:"retried"`
 	Suppressed   int                         `json:"suppressed"`
 	DeadLettered int                         `json:"deadLettered"`
+	Expired      int                         `json:"expired"`
 	Results      []ReminderDeliveryRunResult `json:"results"`
 }
 
@@ -90,6 +103,22 @@ type reminderDeliveryRepository interface {
 	SaveReminderDeliveryAttempt(*models.WorkflowReminderDeliveryAttempt) (*models.WorkflowReminderDeliveryAttempt, bool, error)
 	ListReminderDeliveryAuthorizationsForOwner(string, int) ([]models.WorkflowReminderDeliveryAuthorization, error)
 	ListReminderDeliveryAttemptsForOwner(string, int) ([]models.WorkflowReminderDeliveryAttempt, error)
+}
+
+type reminderDeliveryExecutionRepository interface {
+	reminderActivationRepository
+	reminderDeliveryRepository
+}
+
+type transactionalReminderDeliveryRepository interface {
+	ProcessReminderDelivery(reminderDeliveryCandidate, ReminderDeliverySink) (*ReminderDeliveryRunResult, error)
+}
+
+// Implemented only by explicit in-memory test fixtures, never by a database
+// repository. Unknown repositories must not silently lose the atomic boundary.
+type memoryReminderDeliveryRepository interface {
+	reminderDeliveryExecutionRepository
+	reminderDeliveryMemoryOnly()
 }
 
 func WithReminderDeliverySink(current Service, sink ReminderDeliverySink) (Service, error) {
@@ -135,8 +164,8 @@ func (s *service) AuthorizeReminderDeliveryForOwner(owner, actor string, request
 	if err != nil || currentDigest != activation.ReminderDigest {
 		return nil, fmt.Errorf("reminder changed; prepare and approve it again")
 	}
-	expiresAt := activation.ReminderAt.Add(24 * time.Hour)
-	maximumExpiry := now.Add(30 * 24 * time.Hour)
+	expiresAt := activation.ReminderAt.Add(workflowReminderDeliveryGrace)
+	maximumExpiry := now.Add(workflowReminderMaxAuthorizationLifetime)
 	if expiresAt.After(maximumExpiry) {
 		expiresAt = maximumExpiry
 	}
@@ -180,6 +209,16 @@ func (s *service) RunDueReminderDeliveriesForOwner(owner string, request RunDueR
 }
 
 func (s *service) runDueReminderDeliveries(owner string, request RunDueRequest) (*ReminderDeliveryRunSummary, error) {
+	return s.runDueReminderDeliveriesContext(context.Background(), owner, request)
+}
+
+func (s *service) runDueReminderDeliveriesContext(ctx context.Context, owner string, request RunDueRequest) (*ReminderDeliveryRunSummary, error) {
+	if ctx == nil || s == nil {
+		return nil, ErrReminderDeliveryContextUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if s.reminderDeliverySink == nil {
 		return nil, fmt.Errorf("internal reminder delivery sink is unavailable")
 	}
@@ -204,11 +243,81 @@ func (s *service) runDueReminderDeliveries(owner string, request RunDueRequest) 
 	}
 	result := &ReminderDeliveryRunSummary{Results: []ReminderDeliveryRunResult{}}
 	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return reminderDeliveryPartialResult(result, err)
+		}
+		var outcome *ReminderDeliveryRunResult
+		if durable, ok := repository.(transactionalReminderDeliveryRepository); ok {
+			outcome, err = durable.ProcessReminderDelivery(candidate, s.reminderDeliverySink)
+		} else if _, memoryOnly := repository.(memoryReminderDeliveryRepository); memoryOnly {
+			outcome, err = processReminderDeliveryContext(ctx, repository, candidate, s.reminderDeliverySink)
+		} else {
+			return nil, fmt.Errorf("atomic reminder delivery storage is unavailable")
+		}
+		if err != nil {
+			return reminderDeliveryPartialResult(result, err)
+		}
+		if outcome == nil {
+			continue
+		}
 		result.Checked++
-		authorization := candidate.Authorization
-		status, reason := ReminderDeliveryStatusDelivered, "internal reminder signal recorded"
+		result.Results = append(result.Results, *outcome)
+		switch outcome.Status {
+		case ReminderDeliveryStatusDelivered:
+			result.Delivered++
+		case ReminderDeliveryStatusRetryableFailure:
+			result.Retried++
+		case ReminderDeliveryStatusDeadLettered:
+			result.DeadLettered++
+		case ReminderDeliveryStatusExpired:
+			result.Expired++
+		default:
+			result.Suppressed++
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return reminderDeliveryPartialResult(result, err)
+	}
+	return result, nil
+}
+
+func reminderDeliveryPartialResult(result *ReminderDeliveryRunSummary, err error) (*ReminderDeliveryRunSummary, error) {
+	if result == nil || result.Checked == 0 {
+		return nil, err
+	}
+	return result, err
+}
+
+func processReminderDelivery(repository reminderDeliveryExecutionRepository, candidate reminderDeliveryCandidate, sink ReminderDeliverySink) (*ReminderDeliveryRunResult, error) {
+	return processReminderDeliveryContext(context.Background(), repository, candidate, sink)
+}
+
+func processReminderDeliveryContext(ctx context.Context, repository reminderDeliveryExecutionRepository, candidate reminderDeliveryCandidate, sink ReminderDeliverySink) (*ReminderDeliveryRunResult, error) {
+	if ctx == nil {
+		return nil, ErrReminderDeliveryContextUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	authorization := candidate.Authorization
+	status, reason := ReminderDeliveryStatusDelivered, "internal reminder signal recorded"
+	if !authorization.ExpiresAt.After(time.Now().UTC()) {
+		status, reason = ReminderDeliveryStatusExpired, "delivery authorization expired before the reminder was processed"
+	} else {
 		activation, latest, loadErr := repository.LoadReminderActivationRequestForOwner(authorization.OwnerIdentity, authorization.ActivationRequestID)
+		if err := ctx.Err(); err != nil {
+			return nil, errors.Join(err, loadErr)
+		}
+		if errors.Is(loadErr, context.Canceled) || errors.Is(loadErr, context.DeadlineExceeded) {
+			return nil, loadErr
+		}
 		source, sourceErr := repository.LoadReminderActivationSourceForOwner(authorization.OwnerIdentity, authorization.ChecklistItemID)
+		if err := ctx.Err(); err != nil {
+			return nil, errors.Join(err, sourceErr)
+		}
+		if errors.Is(sourceErr, context.Canceled) || errors.Is(sourceErr, context.DeadlineExceeded) {
+			return nil, sourceErr
+		}
 		if loadErr != nil || sourceErr != nil {
 			status, reason = ReminderDeliveryStatusRetryableFailure, "current reminder authority could not be revalidated"
 		} else if activation == nil || latest == nil || source == nil || latest.ID != authorization.ActivationDecisionID ||
@@ -217,40 +326,47 @@ func (s *service) runDueReminderDeliveries(owner string, request RunDueRequest) 
 			status, reason = ReminderDeliveryStatusSuppressed, "reminder authority was revoked, replaced, or became unavailable"
 		} else if digest, digestErr := reminderEvidenceDigest(*source); digestErr != nil || digest != authorization.ReminderDigest {
 			status, reason = ReminderDeliveryStatusSuppressed, "reminder source changed before delivery"
-		} else if deliverErr := s.reminderDeliverySink.DeliverInternalReminder(context.Background(), ReminderDeliveryEnvelope{Authorization: authorization, Source: *source}); deliverErr != nil {
-			status, reason = ReminderDeliveryStatusRetryableFailure, "internal reminder sink failed"
-		}
-		attemptNumber := candidate.AttemptCount + 1
-		if status == ReminderDeliveryStatusRetryableFailure && attemptNumber >= ReminderDeliveryMaxAttempts {
-			status = ReminderDeliveryStatusDeadLettered
-			reason = fmt.Sprintf("delivery exhausted after %d attempts: %s", ReminderDeliveryMaxAttempts, reason)
-		}
-		attempt := &models.WorkflowReminderDeliveryAttempt{
-			ID: uuid.New(), AuthorizationID: authorization.ID, OwnerIdentity: authorization.OwnerIdentity,
-			AttemptNumber: attemptNumber, Status: status, Reason: reason,
-			ReminderDigest: authorization.ReminderDigest, AuthorizationDigest: authorization.RecordDigest,
-			Authority: ReminderDeliveryAttemptAuthority, AttemptedAt: now,
-		}
-		attempt.RecordDigest, err = digestReminderActivationPayload(attempt)
-		if err != nil {
-			return nil, err
-		}
-		if _, _, err = repository.SaveReminderDeliveryAttempt(attempt); err != nil {
-			return nil, err
-		}
-		result.Results = append(result.Results, ReminderDeliveryRunResult{AuthorizationID: authorization.ID, Status: status, Reason: reason})
-		switch status {
-		case ReminderDeliveryStatusDelivered:
-			result.Delivered++
-		case ReminderDeliveryStatusRetryableFailure:
-			result.Retried++
-		case ReminderDeliveryStatusDeadLettered:
-			result.DeadLettered++
-		default:
-			result.Suppressed++
+		} else if !authorization.ExpiresAt.After(time.Now().UTC()) {
+			status, reason = ReminderDeliveryStatusExpired, "delivery authorization expired during reminder revalidation"
+		} else if deliverErr := sink.DeliverInternalReminder(ctx, ReminderDeliveryEnvelope{Authorization: authorization, Source: *source}); deliverErr != nil {
+			if errors.Is(deliverErr, context.Canceled) || errors.Is(deliverErr, context.DeadlineExceeded) {
+				return nil, deliverErr
+			}
+			if errors.Is(deliverErr, errReminderDeliveryExpired) {
+				status, reason = ReminderDeliveryStatusExpired, "delivery authorization expired during internal signal recording"
+			} else {
+				status, reason = ReminderDeliveryStatusRetryableFailure, "internal reminder sink failed"
+			}
 		}
 	}
-	return result, nil
+	// Cancellation is not a retry receipt. In the durable path this returns an
+	// error to the existing signal-plus-receipt transaction for rollback.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	attemptNumber := candidate.AttemptCount + 1
+	if status == ReminderDeliveryStatusRetryableFailure && attemptNumber >= ReminderDeliveryMaxAttempts {
+		status = ReminderDeliveryStatusDeadLettered
+		reason = fmt.Sprintf("delivery exhausted after %d attempts: %s", ReminderDeliveryMaxAttempts, reason)
+	}
+	attempt := &models.WorkflowReminderDeliveryAttempt{
+		ID: uuid.New(), AuthorizationID: authorization.ID, OwnerIdentity: authorization.OwnerIdentity,
+		AttemptNumber: attemptNumber, Status: status, Reason: reason,
+		ReminderDigest: authorization.ReminderDigest, AuthorizationDigest: authorization.RecordDigest,
+		Authority: ReminderDeliveryAttemptAuthority, AttemptedAt: time.Now().UTC().Truncate(time.Microsecond),
+	}
+	var err error
+	attempt.RecordDigest, err = digestReminderActivationPayload(attempt)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if _, _, err = repository.SaveReminderDeliveryAttempt(attempt); err != nil {
+		return nil, err
+	}
+	return &ReminderDeliveryRunResult{AuthorizationID: authorization.ID, Status: status, Reason: reason}, nil
 }
 
 func (s *service) ReminderDeliveryHistoryForOwner(owner string, limit int) (*ReminderDeliveryHistory, error) {
@@ -277,6 +393,17 @@ func NewProactivityReminderDeliverySink(service *proactivity.Service) ReminderDe
 }
 
 func (s *ProactivityReminderDeliverySink) DeliverInternalReminder(ctx context.Context, envelope ReminderDeliveryEnvelope) error {
+	return s.deliver(ctx, nil, envelope)
+}
+
+func (s *ProactivityReminderDeliverySink) DeliverInternalReminderInTransaction(ctx context.Context, tx *gorm.DB, envelope ReminderDeliveryEnvelope) error {
+	if tx == nil {
+		return fmt.Errorf("internal reminder transaction is required")
+	}
+	return s.deliver(ctx, tx, envelope)
+}
+
+func (s *ProactivityReminderDeliverySink) deliver(ctx context.Context, tx *gorm.DB, envelope ReminderDeliveryEnvelope) error {
 	if s == nil || s.service == nil {
 		return fmt.Errorf("proactivity reminder sink is unavailable")
 	}
@@ -297,7 +424,12 @@ func (s *ProactivityReminderDeliverySink) DeliverInternalReminder(ctx context.Co
 		Deadline: &deadline, StaleAfter: 7 * 24 * time.Hour, Impact: 0.6, Urgency: 0.8, Confidence: 1,
 		Evidence: []proactivity.EvidenceReference{{ID: authorization.ChecklistItemID.String(), Kind: "workflow_reminder", Digest: authorization.ReminderDigest, ObservedAt: observedAt}},
 	}
-	_, _, err := s.service.RecordSignals(ctx, authorization.OwnerIdentity, "workflow-reminder:"+authorization.ID.String(), []proactivity.OpenLoopSignal{signal})
+	key := "workflow-reminder:" + authorization.ID.String()
+	if tx != nil {
+		_, _, err := s.service.RecordSignalsInTransaction(ctx, tx, authorization.OwnerIdentity, key, []proactivity.OpenLoopSignal{signal})
+		return err
+	}
+	_, _, err := s.service.RecordSignals(ctx, authorization.OwnerIdentity, key, []proactivity.OpenLoopSignal{signal})
 	return err
 }
 

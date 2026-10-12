@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"automation-hub-backend/internal/frameworkregistry"
+	"automation-hub-backend/internal/llm"
 	"automation-hub-backend/internal/plangraph"
 	"automation-hub-backend/internal/resourceplanner"
 
@@ -332,6 +333,7 @@ func TestExecuteAllowedStepsRejectsInvalidGovernanceBeforeToolEffect(t *testing.
 		OwnerIdentity: "alice",
 		RealGoal:      "Run a controlled task",
 		Intake:        IntakeAnalysis{NeedsTools: true},
+		ModelDecision: llm.RouteDecision{SelectedModelID: "governance-test-model"},
 		RiskAssessment: RiskAssessment{
 			AllowedNow: true,
 		},

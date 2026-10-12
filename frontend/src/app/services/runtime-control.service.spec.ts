@@ -25,40 +25,36 @@ describe('RuntimeControlService approval transport', () => {
 
   afterEach(() => http.verify())
 
-  it('prepares the exact current emergency-stop recovery', () => {
-    service.prepareControlApproval('resume').subscribe()
+  it('creates a durable owner review without resuming processing', () => {
+    service.requestResumeApproval().subscribe()
 
-    const request = http.expectOne('/api/v1/background/control-approvals')
+    const request = http.expectOne('/api/v1/background/resume-approval')
     expect(request.request.method).toBe('POST')
-    expect(request.request.body).toEqual({ action: 'resume' })
-    request.flush({})
-  })
-
-  it('records the owner decision separately from execution', () => {
-    service.decideControlApproval(
-      '11111111-1111-4111-8111-111111111111',
-      'approved',
-      'Owner approved the exact recovery.'
-    ).subscribe()
-
-    const request = http.expectOne(
-      '/api/v1/background/control-approvals/11111111-1111-4111-8111-111111111111/decision'
-    )
-    expect(request.request.method).toBe('POST')
-    expect(request.request.body).toEqual({
-      decision: 'approved',
-      reason: 'Owner approved the exact recovery.',
+    expect(request.request.body).toEqual({})
+    request.flush({
+      reviewItemId: 'review-1',
+      approvalSourceId: 'opscontrol-review:review-1',
+      approvalBindingDigest: 'a'.repeat(64),
     })
+  })
+
+  it('submits the exact owner confirmation for a specific durable review', () => {
+    const reviewID = '11111111-1111-4111-8111-111111111111'
+    service.approveAndResume(reviewID, 'RESUME BACKGROUND PROCESSING').subscribe()
+
+    const request = http.expectOne(`/api/v1/background/resume-approval/${reviewID}/approve-and-resume`)
+    expect(request.request.method).toBe('POST')
+    expect(request.request.body).toEqual({ confirmation: 'RESUME BACKGROUND PROCESSING' })
     request.flush({})
   })
 
-  it('submits server-issued references to resume processing', () => {
-    service.resume(authorization).subscribe()
+  it('requests approval for a mode escalation without granting it locally', () => {
+    service.prepareModeChange('autonomous_safe').subscribe()
 
-    const request = http.expectOne('/api/v1/background/resume')
+    const request = http.expectOne('/api/v1/background/mode/approval')
     expect(request.request.method).toBe('POST')
-    expect(request.request.body).toEqual(authorization)
-    request.flush({})
+    expect(request.request.body).toEqual({ mode: 'autonomous_safe' })
+    request.flush({ authorizationRequired: true, authorization })
   })
 
   it('includes authorization only for an approved mode escalation', () => {

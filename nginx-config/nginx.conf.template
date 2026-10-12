@@ -1,41 +1,12 @@
-worker_processes 1;
-error_log /dev/stderr warn;
-pid /tmp/nginx.pid;
-
 events {
-    worker_connections 256;
+    worker_connections 1024;
 }
 http {
     server_tokens off;
-    access_log /dev/stdout;
-    client_body_temp_path /tmp/client_temp;
-    proxy_temp_path /tmp/proxy_temp;
-    fastcgi_temp_path /tmp/fastcgi_temp;
-    uwsgi_temp_path /tmp/uwsgi_temp;
-    scgi_temp_path /tmp/scgi_temp;
     resolver 127.0.0.11 valid=10s;
     resolver_timeout 5s;
-    # Fixed-size gateway limits protect unauthenticated public surfaces even if
-    # an application-side store is unavailable. One MiB per zone is ample for
-    # this single-owner deployment and avoids reserving unnecessary memory.
-    limit_req_zone $binary_remote_addr zone=hai_auth:1m rate=30r/m;
-    limit_req_zone $binary_remote_addr zone=hai_a2a_bridge:1m rate=10r/m;
-    # Public A2A is available only on the exact configured ngrok host and
-    # after the second explicit opt-in. The card itself remains local-only.
-    map $host $hai_ngrok_request {
-        default 0;
-        "${HAI_NGROK_HOST}" 1;
-    }
-    map "$host|${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED}" $hai_a2a_ngrok_request {
-        default 0;
-        "${HAI_NGROK_HOST}|false" 1;
-    }
     server {
-        listen 8080;
-        limit_req_status 429;
-        # The gateway owns the public security policy. Hide equivalent
-        # upstream headers so clients receive one unambiguous value instead of
-        # comma-joined backend/frontend policies.
+        listen 80;
         proxy_hide_header Content-Security-Policy;
         proxy_hide_header Cross-Origin-Resource-Policy;
         proxy_hide_header Referrer-Policy;
@@ -56,6 +27,7 @@ http {
         set $backend_upstream backend:80;
         set $idp_upstream idp:8080;
         set $frontend_upstream frontend:8080;
+        set $generic_auto_upstream generic-auto:80;
 
         # Health endpoints are intentionally unauthenticated and must not fall
         # through to the Angular single-page application.
@@ -64,48 +36,39 @@ http {
         }
 
         location = /readyz {
+            proxy_connect_timeout 2s;
+            proxy_read_timeout 3s;
+            proxy_send_timeout 3s;
             proxy_pass http://$backend_upstream;
         }
 
-        # A local A2A peer uses its own bearer token. It must not pass through
-        # browser-session authentication, which would replace that token before
-        # the controlled planning bridge can validate it.
-        location = /api/v1/a2a {
-            limit_req zone=hai_a2a_bridge burst=5 nodelay;
-            limit_except POST { deny all; }
-            client_max_body_size 16k;
-            if ($hai_a2a_ngrok_request) { return 404; }
-            proxy_pass http://$backend_upstream;
-            proxy_set_header X-Original-URI $request_uri;
-            proxy_set_header Authorization $http_authorization;
-            proxy_set_header A2A-Version $http_a2a_version;
-            proxy_set_header Cookie "";
-            proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
-        }
-
-        # The local peer needs the matching Agent Card, but it is not public
-        # discovery metadata when cloud access is enabled.
-        location = /.well-known/agent-card.json {
-            limit_req zone=hai_a2a_bridge burst=10 nodelay;
-            limit_except GET { deny all; }
-            if ($hai_ngrok_request) { return 404; }
-            proxy_pass http://$backend_upstream;
-            proxy_set_header X-Original-URI $request_uri;
-            proxy_set_header Authorization "";
-            proxy_set_header Cookie "";
-            proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
+        # The IDP's readiness handler returns only {status: ready|not_ready};
+        # proxy it directly so Nginx's rewrite-phase `return` cannot bypass an
+        # auth_request check in the later access phase.
+        location = /_hai/idp-readyz {
+            proxy_pass http://$idp_upstream/readyz;
+            proxy_pass_request_body off;
+            proxy_pass_request_headers off;
+            proxy_set_header Content-Length "";
+            proxy_set_header Host idp;
+            proxy_connect_timeout 2s;
+            proxy_read_timeout 3s;
+            proxy_send_timeout 3s;
         }
 
         location = /api/v1/agent-runtimes/openclaw/ecosystem/upload {
             client_max_body_size 752m;
             proxy_request_buffering off;
+            proxy_read_timeout 15m;
+            proxy_send_timeout 15m;
             auth_request /auth-verify;
-            # Propagate a refreshed access token returned by the IDP auth subrequest.
-            # Without this, the backend still receives the expired cookie that
-            # triggered the refresh and rejects the otherwise authenticated request.
-            auth_request_set $hai_refreshed_access_cookie $upstream_http_set_cookie;
+            # Propagate the rotated access/refresh cookie pair returned by the
+            # IDP auth subrequest so later requests use the new refresh token.
+            auth_request_set $hai_refreshed_access_cookie $upstream_http_x_hai_refreshed_access_cookie;
+            auth_request_set $hai_refreshed_refresh_cookie $upstream_http_x_hai_refreshed_refresh_cookie;
             auth_request_set $hai_verified_access_token $upstream_http_x_hai_verified_access_token;
             add_header Set-Cookie $hai_refreshed_access_cookie always;
+            add_header Set-Cookie $hai_refreshed_refresh_cookie always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header X-Frame-Options "DENY" always;
             add_header X-XSS-Protection "0" always;
@@ -121,68 +84,53 @@ http {
             proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
         }
 
-        # Automation image uploads may use the documented 5 MiB image limit.
-        # Keep the gateway ceiling to the backend's image allowance plus one
-        # MiB of multipart metadata, rather than relaxing the generic API.
-        location ^~ /api/v1/automation/ {
-            client_max_body_size 6m;
-            auth_request /auth-verify;
-            auth_request_set $hai_refreshed_access_cookie $upstream_http_set_cookie;
-            auth_request_set $hai_verified_access_token $upstream_http_x_hai_verified_access_token;
-            add_header Set-Cookie $hai_refreshed_access_cookie always;
-            proxy_pass http://$backend_upstream;
-            proxy_set_header X-Original-URI $request_uri;
-            proxy_set_header Authorization "Bearer $hai_verified_access_token";
-            proxy_set_header Cookie $http_cookie;
-            proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
-        }
-
         # Authentication and account-management endpoints belong to the IDP.
         # Keep these explicit so every other product API can use the scalable
         # authenticated backend catch-all below without a route allowlist that
         # silently turns newly added modules into gateway 404s.
-        # Session and capability reads are intentionally outside the mutation
-        # throttle. Angular checks the session while moving between modules;
-        # sharing the login/reset bucket caused valid sessions to receive 429
-        # and be redirected to login during ordinary rapid navigation.
-        location = /api/v1/auth/session {
-            limit_except GET { deny all; }
+        location = /api/v1/auth/local-preview {
             proxy_pass http://$idp_upstream;
             proxy_set_header Host $host;
-            proxy_set_header X-Original-URI $request_uri;
+            proxy_set_header Origin $http_origin;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header Forwarded "";
             proxy_set_header Cookie $http_cookie;
             proxy_set_header X-HAI-Auth-Subrequest "";
+            # Overwrite any browser-supplied value; this credential is never
+            # forwarded to the browser or injected into other IDP routes.
+            proxy_set_header X-HAI-Local-Preview-Gateway-Secret "${LOCAL_PREVIEW_GATEWAY_SECRET}";
             proxy_hide_header X-HAI-Verified-Access-Token;
-        }
-
-        location = /api/v1/auth/capabilities {
-            limit_except GET { deny all; }
-            proxy_pass http://$idp_upstream;
-            proxy_set_header Host $host;
-            proxy_set_header X-Original-URI $request_uri;
-            proxy_set_header Cookie $http_cookie;
-            proxy_set_header X-HAI-Auth-Subrequest "";
-            proxy_hide_header X-HAI-Verified-Access-Token;
+            proxy_hide_header X-HAI-Refreshed-Access-Cookie;
+            proxy_hide_header X-HAI-Refreshed-Refresh-Cookie;
         }
 
         location ^~ /api/v1/auth/ {
-            limit_req zone=hai_auth burst=10 nodelay;
             proxy_pass http://$idp_upstream;
             proxy_set_header Host $host;
             proxy_set_header X-Original-URI $request_uri;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header Forwarded "";
             proxy_set_header Cookie $http_cookie;
             proxy_set_header X-HAI-Auth-Subrequest "";
             proxy_hide_header X-HAI-Verified-Access-Token;
+            proxy_hide_header X-HAI-Refreshed-Access-Cookie;
+            proxy_hide_header X-HAI-Refreshed-Refresh-Cookie;
         }
 
         location ^~ /api/v1/user/ {
-            limit_req zone=hai_auth burst=10 nodelay;
             proxy_pass http://$idp_upstream;
             proxy_set_header Host $host;
             proxy_set_header X-Original-URI $request_uri;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header Forwarded "";
             proxy_set_header Cookie $http_cookie;
             proxy_set_header X-HAI-Auth-Subrequest "";
             proxy_hide_header X-HAI-Verified-Access-Token;
+            proxy_hide_header X-HAI-Refreshed-Access-Cookie;
+            proxy_hide_header X-HAI-Refreshed-Refresh-Cookie;
         }
 
         # OAuth callback: Google redirects the user's browser here after
@@ -193,6 +141,28 @@ http {
             proxy_pass http://$backend_upstream;
             proxy_set_header X-Original-URI $request_uri;
             proxy_set_header X-HAI-Backend-Key ${BACKEND_API_SHARED_KEY};
+        }
+
+        # The Windows host-runtime bridge has its own loopback-only proxy and
+        # dedicated bearer credential. It must never be reachable via this
+        # dashboard gateway, including when the operator opts into ngrok.
+        location ^~ /api/v1/host-runtime/ {
+            return 404;
+        }
+
+        # Agent bridge protocols have their own dedicated local-only entry
+        # points. They must not inherit the dashboard API catch-all: browser
+        # authentication is neither their authority nor their network boundary.
+        location = /api/v1/a2a {
+            return 404;
+        }
+
+        location ^~ /api/v1/a2a/ {
+            return 404;
+        }
+
+        location ^~ /api/v1/mcp-agent/ {
+            return 404;
         }
 
         # All non-IDP APIs are backend APIs. Authentication is checked by the
@@ -206,9 +176,11 @@ http {
             proxy_read_timeout 900s;
             proxy_send_timeout 900s;
             auth_request /auth-verify;
-            auth_request_set $hai_refreshed_access_cookie $upstream_http_set_cookie;
+            auth_request_set $hai_refreshed_access_cookie $upstream_http_x_hai_refreshed_access_cookie;
+            auth_request_set $hai_refreshed_refresh_cookie $upstream_http_x_hai_refreshed_refresh_cookie;
             auth_request_set $hai_verified_access_token $upstream_http_x_hai_verified_access_token;
             add_header Set-Cookie $hai_refreshed_access_cookie always;
+            add_header Set-Cookie $hai_refreshed_refresh_cookie always;
             add_header X-Content-Type-Options "nosniff" always;
             add_header X-Frame-Options "DENY" always;
             add_header X-XSS-Protection "0" always;
@@ -229,6 +201,9 @@ http {
             proxy_pass http://$idp_upstream/api/v1/auth/is-user-authenticated;
             proxy_pass_request_body off;
             proxy_set_header Content-Length "";
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header Forwarded "";
             proxy_set_header X-Original-URI $request_uri;
             proxy_set_header Cookie $http_cookie;
             proxy_set_header X-HAI-Auth-Subrequest "1";
@@ -237,12 +212,6 @@ http {
         error_page 401 /login;
 
         include /etc/nginx/sites-enabled/*.conf;
-
-        # generic-auto is an internal, opt-in compatibility runtime. Keep its
-        # former public path from falling through to the Angular application.
-        location ^~ /generic-auto/ {
-            return 404;
-        }
 
         location / {
             proxy_pass http://$frontend_upstream;

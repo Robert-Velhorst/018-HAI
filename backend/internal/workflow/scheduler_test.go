@@ -1,9 +1,21 @@
 package workflow
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	"automation-hub-backend/internal/schedulerstatus"
 )
+
+func TestStartSchedulerReportsDisabledState(t *testing.T) {
+	t.Setenv("WORKFLOW_SCHEDULER_ENABLED", "false")
+	StartScheduler(context.Background(), nil)
+	state, ok := schedulerstatus.Snapshot("workflow")
+	if !ok || state.Enabled || state.Running {
+		t.Fatalf("disabled scheduler state = %+v, found=%t", state, ok)
+	}
+}
 
 func TestWorkflowSchedulerRunsOpenLoopsBeforeRunnableItems(t *testing.T) {
 	service := &fakeScheduledWorkflowService{
@@ -12,7 +24,7 @@ func TestWorkflowSchedulerRunsOpenLoopsBeforeRunnableItems(t *testing.T) {
 	}
 	scheduler := NewScheduler(service, time.Minute, 3)
 
-	scheduler.runOnce()
+	scheduler.runOnce(context.Background())
 
 	if got := service.calls; len(got) != 3 || got[0] != "recover" || got[1] != "open-loops" || got[2] != "run-due" {
 		t.Fatalf("calls = %#v, want recover, open-loops, then run-due", got)
@@ -27,7 +39,7 @@ func TestWorkflowSchedulerCanDisableOpenLoopPass(t *testing.T) {
 	service := &fakeScheduledWorkflowService{runDueResult: &WorkflowRunSummary{Checked: 1}}
 	scheduler := NewScheduler(service, time.Minute, 2)
 
-	scheduler.runOnce()
+	scheduler.runOnce(context.Background())
 
 	if got := service.calls; len(got) != 2 || got[0] != "recover" || got[1] != "run-due" {
 		t.Fatalf("calls = %#v, want recover then run-due", got)
@@ -38,7 +50,7 @@ func TestWorkflowSchedulerDoesNothingWhenBackgroundIsStopped(t *testing.T) {
 	service := &fakeScheduledWorkflowService{}
 	scheduler := NewScheduler(service, time.Minute, 2, func() bool { return false })
 
-	scheduler.runOnce()
+	scheduler.runOnce(context.Background())
 
 	if len(service.calls) != 0 {
 		t.Fatalf("calls = %#v, want no background work while stopped", service.calls)
@@ -75,6 +87,40 @@ func TestWorkflowClaimLeaseDefaultsAndBounds(t *testing.T) {
 	}
 }
 
+func TestWorkflowPollIntervalUsesSafeBounds(t *testing.T) {
+	for _, value := range []string{"", "1", "14", "3601", "invalid"} {
+		t.Setenv("WORKFLOW_WORKER_POLL_SECONDS", value)
+		if got := workflowPollInterval(); got != defaultPollSecond {
+			t.Fatalf("workflowPollInterval() with %q = %s, want default %s", value, got, defaultPollSecond)
+		}
+	}
+	t.Setenv("WORKFLOW_WORKER_POLL_SECONDS", "15")
+	if got := workflowPollInterval(); got != minPollInterval {
+		t.Fatalf("workflowPollInterval() = %s, want %s", got, minPollInterval)
+	}
+	t.Setenv("WORKFLOW_WORKER_POLL_SECONDS", "3600")
+	if got := workflowPollInterval(); got != maxPollInterval {
+		t.Fatalf("workflowPollInterval() = %s, want %s", got, maxPollInterval)
+	}
+}
+
+func TestWorkflowSchedulerIntervalUsesSafeBounds(t *testing.T) {
+	for _, value := range []string{"", "1", "14", "86401", "invalid"} {
+		t.Setenv("WORKFLOW_SCHEDULER_INTERVAL_SECONDS", value)
+		if got := schedulerInterval("WORKFLOW_SCHEDULER_INTERVAL_SECONDS"); got != defaultSchedulerInterval {
+			t.Fatalf("schedulerInterval() with %q = %s, want default %s", value, got, defaultSchedulerInterval)
+		}
+	}
+	t.Setenv("WORKFLOW_SCHEDULER_INTERVAL_SECONDS", "15")
+	if got := schedulerInterval("WORKFLOW_SCHEDULER_INTERVAL_SECONDS"); got != minSchedulerInterval {
+		t.Fatalf("schedulerInterval() = %s, want %s", got, minSchedulerInterval)
+	}
+	t.Setenv("WORKFLOW_SCHEDULER_INTERVAL_SECONDS", "86400")
+	if got := schedulerInterval("WORKFLOW_SCHEDULER_INTERVAL_SECONDS"); got != maxSchedulerInterval {
+		t.Fatalf("schedulerInterval() = %s, want %s", got, maxSchedulerInterval)
+	}
+}
+
 type fakeScheduledWorkflowService struct {
 	calls          []string
 	openLoopLimit  int
@@ -83,9 +129,30 @@ type fakeScheduledWorkflowService struct {
 	runDueResult   *WorkflowRunSummary
 }
 
+func (s *fakeScheduledWorkflowService) RunDueContext(ctx context.Context, request RunDueRequest) (*WorkflowRunSummary, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.RunDue(request)
+}
+
+func (s *fakeScheduledWorkflowService) RunDueOpenLoopsContext(ctx context.Context, request RunDueRequest) (*OpenLoopRunSummary, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.RunDueOpenLoops(request)
+}
+
 func (s *fakeScheduledWorkflowService) RecoverStaleClaims(request RunDueRequest) (*ClaimRecoverySummary, error) {
 	s.calls = append(s.calls, "recover")
 	return &ClaimRecoverySummary{}, nil
+}
+
+func (s *fakeScheduledWorkflowService) RecoverStaleClaimsContext(ctx context.Context, request RunDueRequest) (*ClaimRecoverySummary, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return s.RecoverStaleClaims(request)
 }
 
 func (s *fakeScheduledWorkflowService) RunDue(request RunDueRequest) (*WorkflowRunSummary, error) {

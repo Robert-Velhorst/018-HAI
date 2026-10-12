@@ -67,10 +67,9 @@ describe('FrameworkRegistryInspectorComponent role rendering', () => {
         NzSelectModule,
         NzSpinModule,
         NzTagModule,
-        NzTooltipModule,
-      ],
-      providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()],
-    }).compileComponents();
+        NzTooltipModule],
+    providers: [provideHttpClient(withInterceptorsFromDi()), provideHttpClientTesting()]
+}).compileComponents();
 
     fixture = TestBed.createComponent(FrameworkRegistryInspectorComponent);
     component = fixture.componentInstance;
@@ -164,30 +163,32 @@ describe('FrameworkRegistryInspectorComponent role rendering', () => {
     expect(root.textContent).toContain('cannot be disabled');
   });
 
-  it('makes experimental and deprecated lifecycle behavior explicit', () => {
-    fixture.componentRef.setInput('framework', {
+  it('makes experimental lifecycle behavior explicit', () => {
+    component.framework = {
       ...framework,
       id: 'agent-development-implementations',
       status: 'experimental',
       effectiveStatus: 'experimental',
       enabled: false,
-    });
+    };
     fixture.detectChanges();
 
     let root = fixture.nativeElement as HTMLElement;
     expect(root.textContent).toContain('Experimental contract');
     expect(root.textContent).toContain('disabled by default');
+  });
 
-    fixture.componentRef.setInput('framework', {
+  it('makes deprecated lifecycle behavior explicit', () => {
+    component.framework = {
       ...framework,
       id: 'legacy-framework',
       status: 'deprecated',
       effectiveStatus: 'deprecated',
       enabled: false,
-    });
+    };
     fixture.detectChanges();
 
-    root = fixture.nativeElement as HTMLElement;
+    const root = fixture.nativeElement as HTMLElement;
     expect(root.textContent).toContain('Deprecated contract');
     expect(root.textContent).toContain('never eligible for new selections');
   });

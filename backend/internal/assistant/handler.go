@@ -1,7 +1,9 @@
 package assistant
 
 import (
+	"automation-hub-backend/internal/apierror"
 	"automation-hub-backend/internal/identity"
+	"automation-hub-backend/internal/task"
 	"context"
 	"errors"
 	"net/http"
@@ -39,7 +41,7 @@ func (h *Handler) Command(c *gin.Context) {
 	}
 	var request CommandRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "assistant command request is invalid"})
 		return
 	}
 	ownerIdentity := verifiedActor(c, "")
@@ -48,21 +50,33 @@ func (h *Handler) Command(c *gin.Context) {
 		return
 	}
 	request.OwnerIdentity = ownerIdentity
+	request.ExecutionContext = c.Request.Context()
 	request.Actor = verifiedActor(c, "operator")
 	if strings.TrimSpace(request.Message) == "" && !request.RunCycle {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
 		return
 	}
-	result, err := h.service.CommandContext(c.Request.Context(), request)
+	result, err := h.service.Command(request)
 	if err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, task.ErrTaskOperationNeedsReview) {
+			c.JSON(http.StatusConflict, gin.H{"error": "task outcome requires review before retrying", "code": "outcome_reconciliation_required"})
+			return
+		}
+		if errors.Is(err, context.Canceled) {
+			c.JSON(http.StatusRequestTimeout, gin.H{"error": "assistant command was cancelled; inspect task history before retrying"})
+			return
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			c.JSON(http.StatusGatewayTimeout, gin.H{"error": "assistant command deadline was exceeded; inspect task history before retrying"})
 			return
 		}
 		if errors.Is(err, ErrInvalidStandingMandateID) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "standing mandate id is invalid"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "result": result})
+		// A partially assembled command result can contain connector or task
+		// diagnostics. Keep it server-side when the operation failed.
+		c.JSON(http.StatusInternalServerError, gin.H{"error": apierror.PublicMessage(err, "assistant command could not be completed")})
 		return
 	}
 	c.JSON(http.StatusOK, result)

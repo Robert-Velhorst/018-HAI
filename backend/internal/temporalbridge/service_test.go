@@ -2,11 +2,13 @@ package temporalbridge
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/testsuite"
 )
 
@@ -29,16 +31,44 @@ func TestLocalConfigRejectsRemoteTemporalEndpoint(t *testing.T) {
 	}
 }
 
+func TestLocalConfigRejectsCredentialBearingRoutingMetadata(t *testing.T) {
+	for _, tc := range []struct{ namespace, queue string }{
+		{"passphrase=synthetic-namespace", "hai-follow-ups"},
+		{"default", "private_key=synthetic-queue"},
+	} {
+		service := NewService(nil, nil, true, "localhost:7233", tc.namespace, tc.queue)
+		status := service.Status()
+		if status.Configured || status.ConfigError == "" {
+			t.Errorf("credential-bearing configuration was accepted: %+v", status)
+		}
+		called := false
+		service.dial = func(context.Context, client.Options) (client.Client, error) {
+			called = true
+			return nil, errors.New("synthetic dial must not be reached")
+		}
+		service.StartWorker()
+		if called {
+			t.Error("invalid credential-bearing configuration reached the SDK dial boundary")
+		}
+	}
+	service := NewService(nil, nil, true, "localhost:7233", "default", "hai-governed-follow-up")
+	if !service.Status().Configured {
+		t.Fatal("ordinary local configuration was rejected")
+	}
+}
+
 func TestGovernedFollowUpWorkflowOnlyInvokesNamedActivity(t *testing.T) {
 	suite := &testsuite.WorkflowTestSuite{}
 	env := suite.NewTestWorkflowEnvironment()
 	started := time.Date(2026, time.July, 19, 10, 0, 0, 0, time.UTC)
 	env.SetStartTime(started)
-	env.RegisterActivityWithOptions(func(_ context.Context, _ FollowUpInput) (FollowUpResult, error) {
+	input := FollowUpInput{RunID: "00000000-0000-0000-0000-000000000001", RunAt: started, Limit: 5}
+	env.RegisterActivityWithOptions(func(_ context.Context, received FollowUpInput) (FollowUpResult, error) {
+		require.Equal(t, input, received)
 		return FollowUpResult{Checked: 2, Triggered: 1, Summary: "proposal-only check completed"}, nil
 	}, activity.RegisterOptions{Name: "Run"})
 
-	env.ExecuteWorkflow(GovernedFollowUpWorkflow, FollowUpInput{RunID: "00000000-0000-0000-0000-000000000001", RunAt: started, Limit: 5})
+	env.ExecuteWorkflow(GovernedFollowUpWorkflow, input)
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	var result FollowUpResult

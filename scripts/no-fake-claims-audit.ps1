@@ -32,6 +32,42 @@ function Get-TrackedFiles {
     return $files
 }
 
+function Resolve-Phase2AuditMergeBase {
+    param([string]$BaseRef)
+
+    if ([string]::IsNullOrWhiteSpace($BaseRef)) {
+        $BaseRef = $env:HAI_AUDIT_BASE_REF
+    }
+    if ([string]::IsNullOrWhiteSpace($BaseRef) -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_BASE_REF)) {
+        $BaseRef = "origin/$($env:GITHUB_BASE_REF)"
+    }
+    if ([string]::IsNullOrWhiteSpace($BaseRef) -and
+        $env:GITHUB_EVENT_BEFORE -match "^[0-9a-fA-F]{40}$" -and
+        $env:GITHUB_EVENT_BEFORE -notmatch "^0{40}$") {
+        $BaseRef = $env:GITHUB_EVENT_BEFORE
+    }
+    if ([string]::IsNullOrWhiteSpace($BaseRef)) {
+        $BaseRef = "origin/main"
+    }
+
+    Push-Location $repositoryRoot
+    try {
+        $baseCommit = & git rev-parse --verify --quiet --end-of-options "$BaseRef^{commit}" 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($baseCommit)) {
+            throw "Unable to resolve audit base ref '$BaseRef'. Fetch the target branch or set HAI_AUDIT_BASE_REF to a valid commit/ref."
+        }
+
+        $mergeBase = & git merge-base HEAD $baseCommit 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($mergeBase)) {
+            throw "Unable to resolve a merge base between HEAD and '$BaseRef'; refusing to classify repository history as newly added files."
+        }
+
+        return $mergeBase.Trim()
+    } finally {
+        Pop-Location
+    }
+}
+
 function Test-Phase2SensitiveAddedFile {
     param([string]$Path)
 
@@ -128,18 +164,8 @@ try {
         $secretFiles | ForEach-Object { Write-Host "        $_" }
     }
 
-    $base = @(& git rev-list --max-parents=0 HEAD | Select-Object -Last 1)[0]
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($base)) {
-        throw "Unable to resolve the Git repository base commit."
-    }
-    $fetchHead = & git rev-parse --verify -q FETCH_HEAD 2>$null
-    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($fetchHead)) {
-        $mergeBase = & git merge-base HEAD FETCH_HEAD 2>$null
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($mergeBase)) {
-            $base = $mergeBase
-        }
-    }
-    $addedFiles = @(& git diff --name-only --diff-filter=A "$base..HEAD")
+    $base = Resolve-Phase2AuditMergeBase
+    $addedFiles = @(& git diff --name-only --diff-filter=A $base --)
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to inspect files added by this Git branch."
     }

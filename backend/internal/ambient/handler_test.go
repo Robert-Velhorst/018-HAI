@@ -1,6 +1,7 @@
 package ambient
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,47 +59,35 @@ func TestOverviewHandlerRequiresVerifiedOwner(t *testing.T) {
 	}
 }
 
-func TestOverviewHandlerUsesBoundedSummaryView(t *testing.T) {
+func TestOverviewHandlerUsesOwnerScopedSummaryProjection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &ambientResolutionService{}
-	handler := NewHandler(service)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(identity.ContextSubjectKey, "alice")
 		c.Next()
 	})
-	router.GET("/ambient/overview", handler.Overview)
-
+	router.GET("/ambient/overview", NewHandler(service).Overview)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ambient/overview?view=summary", nil))
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("summary overview status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
-	}
-	if service.summaryCalls != 1 || service.summaryOwner != "alice" || service.overviewCalls != 0 {
-		t.Fatalf("summary/overview calls = %d/%d owners=%q/%q, want summary alice only", service.summaryCalls, service.overviewCalls, service.summaryOwner, service.overviewOwner)
+	if recorder.Code != http.StatusOK || service.summaryCalls != 1 || service.overviewCalls != 0 || service.summaryOwner != "alice" {
+		t.Fatalf("summary status/calls/owner = %d/%d/%d/%q", recorder.Code, service.summaryCalls, service.overviewCalls, service.summaryOwner)
 	}
 }
 
 func TestOverviewHandlerRejectsUnknownView(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &ambientResolutionService{}
-	handler := NewHandler(service)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(identity.ContextSubjectKey, "alice")
 		c.Next()
 	})
-	router.GET("/ambient/overview", handler.Overview)
-
+	router.GET("/ambient/overview", NewHandler(service).Overview)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ambient/overview?view=everything", nil))
-
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("unknown overview view status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
-	}
-	if service.summaryCalls != 0 || service.overviewCalls != 0 {
-		t.Fatalf("unknown view reached service: summary=%d overview=%d", service.summaryCalls, service.overviewCalls)
+	if recorder.Code != http.StatusBadRequest || service.summaryCalls != 0 || service.overviewCalls != 0 {
+		t.Fatalf("unknown view status/calls = %d/%d/%d", recorder.Code, service.summaryCalls, service.overviewCalls)
 	}
 }
 
@@ -187,6 +176,26 @@ func TestScanHandlerRequiresVerifiedOwner(t *testing.T) {
 
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("scan status = %d, want %d; body=%s", recorder.Code, http.StatusUnauthorized, recorder.Body.String())
+	}
+}
+
+func TestOverviewHandlerDoesNotExposeUnexpectedServiceErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(&ambientResolutionService{overviewErr: errors.New(`database password=do-not-expose at C:\\private`)})
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set(identity.ContextSubjectKey, "alice")
+		c.Next()
+	})
+	engine.GET("/ambient/overview", handler.Overview)
+
+	recorder := httptest.NewRecorder()
+	engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/ambient/overview", nil))
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusInternalServerError, recorder.Body.String())
+	}
+	if body := recorder.Body.String(); strings.Contains(body, "do-not-expose") || strings.Contains(body, `C:\\private`) || !strings.Contains(body, "ambient overview is unavailable") {
+		t.Fatalf("overview response exposed internal error: %s", body)
 	}
 }
 
@@ -320,6 +329,7 @@ type ambientResolutionService struct {
 	dismissRequest ResolutionRequest
 	overviewCalls  int
 	overviewOwner  string
+	overviewErr    error
 	summaryCalls   int
 	summaryOwner   string
 }
@@ -331,13 +341,16 @@ func (s *ambientResolutionService) Overview() (*Overview, error) {
 func (s *ambientResolutionService) OverviewForOwner(ownerIdentity string) (*Overview, error) {
 	s.overviewCalls++
 	s.overviewOwner = ownerIdentity
+	if s.overviewErr != nil {
+		return nil, s.overviewErr
+	}
 	return &Overview{}, nil
 }
 
 func (s *ambientResolutionService) OverviewSummaryForOwner(ownerIdentity string) (*Overview, error) {
 	s.summaryCalls++
 	s.summaryOwner = ownerIdentity
-	return &Overview{Opportunities: []models.AmbientOpportunity{}, Scans: []models.AmbientScan{}}, nil
+	return &Overview{}, s.overviewErr
 }
 
 func (s *ambientResolutionService) Scan(string) (*models.AmbientScan, error) {

@@ -18,6 +18,46 @@ import (
 
 const taskOperationMaximumErrorRunes = 1024
 
+func claimTaskOperationContext(
+	ctx context.Context,
+	repository TaskStateRepository,
+	ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string,
+	now time.Time,
+	leaseDuration time.Duration,
+) (TaskOperationClaim, error) {
+	ctx = normalizedTaskOperationContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return TaskOperationClaim{}, err
+	}
+	if contextual, ok := repository.(ContextTaskOperationClaimer); ok {
+		return contextual.ClaimTaskOperationContext(ctx, ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, now, leaseDuration)
+	}
+	return repository.ClaimTaskOperation(ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, now, leaseDuration)
+}
+
+func cancelTaskOperationContext(
+	ctx context.Context,
+	repository TaskStateRepository,
+	ownerIdentity string,
+	operationID uuid.UUID,
+	leaseOwner string,
+	leaseGeneration int64,
+	reason string,
+	now time.Time,
+) (bool, error) {
+	ctx = normalizedTaskOperationContext(ctx)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if contextual, ok := repository.(ContextTaskOperationCanceler); ok {
+		return contextual.CancelTaskOperationContext(ctx, ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+	}
+	if canceler, ok := repository.(TaskOperationCanceler); ok {
+		return canceler.CancelTaskOperation(ownerIdentity, operationID, leaseOwner, leaseGeneration, reason, now)
+	}
+	return false, fmt.Errorf("task operation cancellation is not supported by the repository")
+}
+
 func normalizedTaskOperationContext(ctx context.Context) context.Context {
 	if ctx == nil {
 		return context.Background()
@@ -264,7 +304,11 @@ func (r *MemoryTaskStateRepository) updateOwnedTaskOperationContext(ctx context.
 }
 
 func (r *PostgresTaskStateRepository) ClaimTaskOperation(ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string, now time.Time, leaseDuration time.Duration) (TaskOperationClaim, error) {
-	return r.ClaimTaskOperationContext(context.Background(), ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, now, leaseDuration)
+	ctx := context.Background()
+	if r != nil && r.DB != nil && r.DB.Statement != nil && r.DB.Statement.Context != nil {
+		ctx = r.DB.Statement.Context
+	}
+	return r.ClaimTaskOperationContext(ctx, ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner, now, leaseDuration)
 }
 
 func (r *PostgresTaskStateRepository) ClaimTaskOperationContext(ctx context.Context, ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string, now time.Time, leaseDuration time.Duration) (TaskOperationClaim, error) {

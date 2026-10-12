@@ -1,58 +1,220 @@
-<main class="exceptions" role="main" aria-labelledby="exceptions-title">
-  <nz-card>
-    <header class="exceptions__header">
+<section class="exceptions" aria-labelledby="exceptions-title">
+  <header class="exceptions__header">
+    <div class="exceptions__heading">
+      <p class="exceptions__eyebrow">Work queue</p>
+      <h1 id="exceptions-title">
+        Exceptions
+        <nz-tag [nzColor]="exceptions.length ? 'red' : 'green'" aria-label="Open exception count">
+          {{ exceptions.length }}
+        </nz-tag>
+      </h1>
+      <p class="exceptions__lede">Human decisions and workflow items that need recovery.</p>
+      <p class="exceptions__freshness" aria-live="polite">
+        <span class="exceptions__freshness-dot" [class.exceptions__freshness-dot--loading]="loading" aria-hidden="true"></span>
+        <ng-container *ngIf="lastRefreshedAt; else notRefreshed">
+          Last successful refresh:
+          <time [attr.datetime]="timestampAttribute(lastRefreshedAt)">{{ formatTimestamp(lastRefreshedAt) }}</time>
+        </ng-container>
+        <ng-template #notRefreshed>
+          {{ loading ? 'Loading the workflow queue' : 'Queue has not been refreshed yet' }}
+        </ng-template>
+      </p>
+    </div>
+
+    <div class="exceptions__actions" aria-label="Exception queue actions">
+      <button
+        type="button"
+        nz-button
+        nzType="primary"
+        (click)="refresh()"
+        [nzLoading]="loading"
+        [disabled]="loading"
+        data-testid="exceptions-refresh"
+      >Refresh</button>
+      <button type="button" nz-button (click)="goBack()" data-testid="exceptions-command-center">
+        Command Center
+      </button>
+    </div>
+  </header>
+
+  <p class="exceptions__error" *ngIf="loadError" role="alert">{{ loadError }}</p>
+
+  <ul class="exceptions__summary" aria-label="Exception summary">
+    <li>
+      <span>Human approval</span>
+      <strong>{{ approvalCount }}</strong>
+    </li>
+    <li>
+      <span>High risk</span>
+      <strong>{{ highRiskCount }}</strong>
+    </li>
+    <li>
+      <span>Recovery needed</span>
+      <strong>{{ recoveryCount }}</strong>
+    </li>
+    <li>
+      <span>Total open</span>
+      <strong>{{ exceptions.length }}</strong>
+    </li>
+  </ul>
+
+  <hai-progressive-section
+    [moduleId]="moduleId"
+    sectionId="filters"
+    title="Queue filters"
+    summary="Filters affect this Advanced view only. Basic keeps every approval and high-risk item visible."
+    [advancedOnly]="true"
+  >
+    <div class="exceptions__filters" data-testid="exceptions-advanced-filters">
+      <label>
+        <span>Search</span>
+        <input
+          type="search"
+          [(ngModel)]="searchQuery"
+          placeholder="Title, project, reason, or next step"
+          aria-label="Search exception items"
+        />
+      </label>
+      <label>
+        <span>State</span>
+        <select [(ngModel)]="stateFilter" aria-label="Filter exceptions by state">
+          <option value="all">All states</option>
+          <option *ngFor="let state of stateOptions" [value]="state">
+            {{ stateLabel(state) }}
+          </option>
+        </select>
+      </label>
+      <label>
+        <span>Risk</span>
+        <select [(ngModel)]="riskFilter" aria-label="Filter exceptions by risk">
+          <option value="all">All risk levels</option>
+          <option *ngFor="let risk of riskOptions" [value]="risk">
+            {{ risk === 'not_recorded' ? 'Not recorded' : riskLabel(risk) }}
+          </option>
+        </select>
+      </label>
+      <button type="button" nz-button (click)="clearFilters()" [disabled]="!hasActiveFilters" data-testid="exceptions-clear-filters">
+        Clear filters
+      </button>
+    </div>
+  </hai-progressive-section>
+
+  <section class="exceptions__queue" aria-labelledby="exceptions-queue-title">
+    <div class="exceptions__queue-heading">
       <div>
-        <h1 id="exceptions-title" class="exceptions__title">
-          Needs your attention
-          <nz-tag class="exceptions__count" [nzColor]="exceptions.length ? 'red' : 'green'">
-            {{ exceptions.length }}
-          </nz-tag>
-        </h1>
-        <p>Only workflow items that require a human decision or recovery appear here.</p>
+        <h2 id="exceptions-queue-title">Needs attention</h2>
+        <p>Approval-gated, high-risk, blocked, failed, or interrupted work stays in this queue.</p>
       </div>
-      <div class="exceptions__actions">
-        <button nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">Refresh</button>
-        <button nz-button nzType="text" (click)="goBack()">Command Center</button>
-      </div>
-    </header>
+      <span class="exceptions__queue-count">{{ displayedExceptions.length }} shown</span>
+    </div>
 
-    <p class="exceptions__error" *ngIf="loadError" role="alert">{{ loadError }}</p>
+    <div class="exceptions__loading" *ngIf="loading && !items.length" role="status">
+      <nz-spin nzSimple></nz-spin>
+      <span>Loading workflow exceptions…</span>
+    </div>
 
-    <nz-table
-      *ngIf="exceptions.length; else allClear"
-      #table
-      [nzData]="exceptions"
-      [nzLoading]="loading"
-      nzSize="small"
-      aria-label="Workflow items needing attention"
+    <div class="exceptions__error-state" *ngIf="loadError && !items.length" role="status">
+      <strong>Queue unavailable</strong>
+      <span>HAI could not confirm whether any exceptions need attention. Use Refresh to try again.</span>
+    </div>
+
+    <div class="exceptions__empty" *ngIf="!loading && !loadError && !exceptions.length" data-testid="exceptions-empty">
+      <nz-empty nzNotFoundContent="No open workflow exceptions need attention."></nz-empty>
+      <p>Completed and archived work is not included in this queue.</p>
+    </div>
+
+    <div
+      class="exceptions__empty exceptions__empty--filtered"
+      *ngIf="exceptions.length && !displayedExceptions.length"
+      data-testid="exceptions-no-matches"
     >
-      <thead>
-        <tr>
-          <th scope="col">Item</th>
-          <th scope="col">State</th>
-          <th scope="col">Updated</th>
-          <th scope="col" class="exceptions__action-column">Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr *ngFor="let item of table.data">
-          <td>{{ item.title }}</td>
-          <td>
-            <nz-tag [nzColor]="tagColor(item.currentState)">{{ item.currentState }}</nz-tag>
-          </td>
-          <td>{{ item.updatedAt || 'Not recorded' }}</td>
-          <td class="exceptions__action-column">
-            <button nz-button nzSize="small" (click)="openWorkflow(item)">Open workflow</button>
-          </td>
-        </tr>
-      </tbody>
-    </nz-table>
+      <strong>No items match these filters.</strong>
+      <span>Clear the Advanced filters to see the full exception queue.</span>
+      <button type="button" nz-button (click)="clearFilters()">Clear filters</button>
+    </div>
 
-    <ng-template #allClear>
-      <nz-spin *ngIf="loading; else emptyState" nzSimple></nz-spin>
-      <ng-template #emptyState>
-        <nz-empty nzNotFoundContent="All clear - nothing needs your attention right now."></nz-empty>
-      </ng-template>
-    </ng-template>
-  </nz-card>
-</main>
+    <div class="exceptions__list" *ngIf="displayedExceptions.length" aria-live="polite">
+      <article
+        class="exceptions__item"
+        *ngFor="let item of displayedExceptions; trackBy: trackById"
+        [class.exceptions__item--approval]="needsHumanApproval(item)"
+        [class.exceptions__item--high-risk]="!needsHumanApproval(item) && isHighRisk(item)"
+        [attr.data-testid]="'exception-' + item.id"
+      >
+        <div class="exceptions__item-title">
+          <span class="exceptions__project">{{ item.projectKey || 'No project linked' }}</span>
+          <h3>{{ item.title || 'Untitled workflow item' }}</h3>
+          <div class="exceptions__tags" aria-label="Workflow status and risk">
+            <nz-tag [nzColor]="tagColor(item.currentState)">{{ stateLabel(item.currentState) }}</nz-tag>
+            <nz-tag *ngIf="needsHumanApproval(item)" nzColor="gold">Human approval</nz-tag>
+            <nz-tag *ngIf="isHighRisk(item)" nzColor="red">High risk</nz-tag>
+          </div>
+        </div>
+
+        <dl class="exceptions__details">
+          <div>
+            <dt>Assignment</dt>
+            <dd>Owner is not recorded in this workflow item.</dd>
+          </div>
+          <div>
+            <dt>Recovery reason</dt>
+            <dd>{{ recoveryReason(item) }}</dd>
+          </div>
+          <div>
+            <dt>Next step</dt>
+            <dd>{{ item.nextAction?.trim() || 'No next step is recorded.' }}</dd>
+          </div>
+        </dl>
+
+        <div class="exceptions__item-footer">
+          <div class="exceptions__updated">
+            <span>Workflow updated</span>
+            <time [attr.datetime]="timestampAttribute(item.updatedAt)">{{ formatTimestamp(item.updatedAt) }}</time>
+          </div>
+          <button
+            type="button"
+            nz-button
+            nzType="primary"
+            nzSize="small"
+            (click)="openWorkflow(item)"
+            [attr.aria-label]="'Open workflow: ' + item.title"
+            [attr.data-testid]="'open-workflow-' + item.id"
+          >Open workflow</button>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <hai-progressive-section
+    *ngIf="displayedExceptions.length"
+    [moduleId]="moduleId"
+    sectionId="diagnostics"
+    title="Technical diagnostics"
+    summary="Execution, verification, retry, source, and recovery fields returned by the workflow queue."
+    [advancedOnly]="true"
+  >
+    <div class="exceptions__diagnostics">
+      <article *ngFor="let item of displayedExceptions; trackBy: trackById" [attr.data-testid]="'diagnostics-' + item.id">
+        <h3>{{ item.title || 'Untitled workflow item' }}</h3>
+        <dl>
+          <div><dt>Workflow ID</dt><dd>{{ item.id }}</dd></div>
+          <div><dt>Task type</dt><dd>{{ item.taskType || 'Not recorded' }}</dd></div>
+          <div><dt>Risk level</dt><dd>{{ riskLabel(item.riskLevel) }}</dd></div>
+          <div><dt>Approval status</dt><dd>{{ item.approvalStatus || (item.requiresApproval ? 'Not recorded' : 'Not required') }}</dd></div>
+          <div><dt>Autonomy level</dt><dd>{{ item.autonomyLevel || 'Not recorded' }}</dd></div>
+          <div><dt>Recovery status</dt><dd>{{ item.recoveryStatus || 'Not recorded' }}</dd></div>
+          <div><dt>Verification status</dt><dd>{{ item.verificationStatus || 'Not recorded' }}</dd></div>
+          <div><dt>Retries</dt><dd>{{ item.retryCount }} of {{ item.maxRetries }}</dd></div>
+          <div><dt>Automation</dt><dd>{{ item.automationId || 'Not linked' }}</dd></div>
+          <div><dt>Source label</dt><dd>{{ item.sourceLabel || 'Not recorded' }}</dd></div>
+          <div><dt>Last run</dt><dd>{{ formatTimestamp(item.lastRunAt) }}</dd></div>
+          <div><dt>Next run</dt><dd>{{ formatTimestamp(item.nextRunAt) }}</dd></div>
+          <div><dt>Worker lease until</dt><dd>{{ formatTimestamp(item.workerLeaseUntil) }}</dd></div>
+          <div class="exceptions__diagnostic-error" *ngIf="item.lastWorkerError">
+            <dt>Last worker error</dt><dd>{{ item.lastWorkerError }}</dd>
+          </div>
+        </dl>
+      </article>
+    </div>
+  </hai-progressive-section>
+</section>

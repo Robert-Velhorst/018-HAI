@@ -1,0 +1,26 @@
+{
+  "startedAt": "2026-10-01T21:57:45.7290008+00:00",
+  "finishedAt": "2026-10-01T21:58:53.3334841+00:00",
+  "packages": [
+    "infra",
+    "operations",
+    "executionauth",
+    "agentregistry",
+    "standingmandate",
+    "lifeontology",
+    "task"
+  ],
+  "runPattern": ".",
+  "outputMode": "compact-package-results",
+  "integrationTag": false,
+  "deadlineSeconds": 300,
+  "timedOut": false,
+  "exitCode": 0,
+  "completedSuccessfully": true,
+  "goVersion": "go1.25.13 windows/amd64",
+  "dockerStarted": false,
+  "dependencyDownloadsEnabled": false,
+  "destructiveDatabaseTestsEnabled": false,
+  "goWorkers": 1,
+  "heapSoftLimit": "384MiB"
+}

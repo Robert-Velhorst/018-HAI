@@ -70,6 +70,8 @@ type Configuration struct {
 var AppConfig Configuration
 
 func Init() {
+	mode := getEnvString(runMode, "production")
+	dbUserDefault, dbPasswordDefault := databaseCredentialDefaults(mode)
 	servNumPort := getEnvInt(serverPort, 80)
 	if err := validatePort(servNumPort); err != nil {
 		panic(err)
@@ -94,8 +96,8 @@ func Init() {
 		DbHost:                  getEnvString(dbHost, "postgres-automation"),
 		DbPort:                  dbNumPort,
 		DbName:                  getEnvString(dbName, "automation"),
-		DbUser:                  getEnvString(dbUser, "postgres"),
-		DbPassword:              getEnvString(dbPassword, "postgres"),
+		DbUser:                  getEnvString(dbUser, dbUserDefault),
+		DbPassword:              getEnvString(dbPassword, dbPasswordDefault),
 		ImageMaxSize:            imageSizeInMb,
 		ImageExtensions:         imageExtensionsList,
 		ImageSaveDir:            getEnvString(imageSaveDir, "images"),
@@ -111,10 +113,20 @@ func Init() {
 		BackendAPIKey:           getEnvString(backendAPIKey, ""),
 		MemoryEngineKey:         getEnvString(memoryEngineKey, ""),
 		RateLimitPerMinute:      getEnvInt(rateLimitPerMin, 0),
-		RunMode:                 getEnvString(runMode, "production"),
+		RunMode:                 mode,
 		JWTSecret:               getEnvString(jwtSecret, ""),
 	}
 	ensureImageDirExists()
+}
+
+func databaseCredentialDefaults(mode string) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "demo", "test":
+		return "postgres", "postgres"
+	default:
+		// Match demomode.Parse: unknown and empty modes fail safe as production.
+		return "", ""
+	}
 }
 
 func ensureImageDirExists() {

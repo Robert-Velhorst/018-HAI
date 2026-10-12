@@ -2,8 +2,6 @@ package accountfeed
 
 import (
 	"fmt"
-	"os"
-	"strings"
 )
 
 // Provider is a supported account-bridge provider contract (§14). Metadata and
@@ -59,10 +57,11 @@ type ConnectionStatus string
 const (
 	// ConnAvailable: a local provider whose reads work now (generic feed, folder).
 	ConnAvailable ConnectionStatus = "available"
-	// ConnCredentialsRequired: an API provider with no credentials configured.
+	// ConnCredentialsRequired remains for API-backed bridge implementations. The
+	// current account-feed registry does not implement any such provider reads.
 	ConnCredentialsRequired ConnectionStatus = "credentials_required"
-	// ConnCredentialsPresentUnverified: credentials are configured but no real
-	// read smoke has proven a live connection — NOT "connected".
+	// ConnCredentialsPresentUnverified remains for API-backed bridge
+	// implementations after a credential is configured but before a real read.
 	ConnCredentialsPresentUnverified ConnectionStatus = "credentials_present_unverified"
 	// ConnContractOnly: an assisted/manual/browser provider with no automated connector.
 	ConnContractOnly ConnectionStatus = "contract_only"
@@ -87,46 +86,28 @@ type BridgeContract struct {
 	SetupRequirements   []SetupRequirement `json:"setupRequirements"`
 }
 
-// ConnectionStatus computes the truthful status from the environment. It never
-// returns "connected" without a real read (none is wired for API providers in
-// this phase).
+// ConnectionStatus describes this registry's capabilities, not the broader HAI
+// source connector catalog. Account feeds only ingest the bounded normalized
+// generic-feed format; they do not use provider credentials or make Gmail,
+// Google, GitHub, or Trello API calls. Provider-native status belongs to the
+// owner-scoped Connected Sources API.
 func (b BridgeContract) ConnectionStatus() ConnectionStatus {
 	switch b.Provider {
 	case ProviderGenericJSONFeed, ProviderLocalFolder:
 		return ConnAvailable
-	case ProviderUpworkAssisted, ProviderChatExport, ProviderBrowserCapture:
-		return ConnContractOnly
 	default:
-		if b.hasConfiguredCredentials() {
-			return ConnCredentialsPresentUnverified
-		}
-		return ConnCredentialsRequired
+		// Provider credentials do not make this normalized-feed registry a live
+		// provider connector. Native health is owned by Connected Sources.
+		return ConnContractOnly
 	}
 }
 
-func (b BridgeContract) hasConfiguredCredentials() bool {
-	values := strings.Split(b.CredentialEnv, ",")
-	if len(values) == 0 {
-		return false
-	}
-	for _, value := range values {
-		name := strings.TrimSpace(value)
-		if name == "" || strings.TrimSpace(os.Getenv(name)) == "" {
-			return false
-		}
-	}
-	return true
-}
-
-// ReportsCredentialGrant is intentionally false for Google OAuth bootstrap
-// variables. A client id and secret enable the owner-scoped consent flow, but
-// do not prove that this owner has granted a read-only source connection.
 func (b BridgeContract) ReportsCredentialGrant() bool {
 	switch b.Provider {
 	case ProviderGmail, ProviderGoogleDrive, ProviderGoogleCalendar:
 		return false
 	default:
-		return true
+		return b.CredentialEnv != ""
 	}
 }
 
@@ -134,11 +115,10 @@ func (b BridgeContract) ReportsCredentialGrant() bool {
 // providers are read-only and require real credentials + a real read smoke for
 // live status; HAI does not fake OAuth or connected status.
 func bridgeContracts() []BridgeContract {
-	apiSetup := func(name, env string) []SetupRequirement {
+	providerImportSetup := func(name string) []SetupRequirement {
 		return []SetupRequirement{
-			{Step: "Provide read-only credentials", Detail: "Set " + env + " to a real read-only " + name + " token/credential; HAI never performs a fake OAuth flow."},
-			{Step: "Run a real read smoke", Detail: "A real read against " + name + " must succeed before status becomes connected; configuration alone never claims connected."},
-			{Step: "Prefer official API or normalized feed", Detail: "Use the official API or a normalized JSON export before any browser-assisted capture."},
+			{Step: "Use Connected Sources for the live provider", Detail: "Provider-native " + name + " health, consent, and sync belong to Connected Sources; this registry never reads provider credentials."},
+			{Step: "Import a normalized read-only export", Detail: "To route " + name + " data here, register a local or explicitly enabled HTTP generic JSON feed."},
 		}
 	}
 	return []BridgeContract{
@@ -147,29 +127,21 @@ func bridgeContracts() []BridgeContract {
 		{Provider: ProviderLocalFolder, DisplayName: "Local Folder", ConnectorPreference: []string{"local_export"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: []SetupRequirement{{Step: "Configure a feeds folder", Detail: "Files must live under the allowlisted feeds root."}}},
 		{Provider: ProviderGmail, DisplayName: "Gmail (read-only)", ConnectorPreference: []string{"official_api", "local_export", "browser_read_only"}, ReadOnly: true,
-			RequiredScopes: []string{"gmail.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemEmail}, SetupRequirements: googleOAuthSetup("Gmail", "gmail.readonly")},
+			RequiredScopes: []string{"gmail.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemEmail}, SetupRequirements: providerImportSetup("Gmail")},
 		{Provider: ProviderGoogleDrive, DisplayName: "Google Drive (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"drive.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: googleOAuthSetup("Google Drive", "drive.readonly")},
+			RequiredScopes: []string{"drive.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemFile, ItemDocument}, SetupRequirements: providerImportSetup("Google Drive")},
 		{Provider: ProviderGoogleCalendar, DisplayName: "Google Calendar (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"calendar.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemCalendarEvent}, SetupRequirements: googleOAuthSetup("Google Calendar", "calendar.readonly")},
+			RequiredScopes: []string{"calendar.readonly"}, CredentialEnv: "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET", ItemTypes: []ItemType{ItemCalendarEvent}, SetupRequirements: providerImportSetup("Google Calendar")},
 		{Provider: ProviderGitHub, DisplayName: "GitHub (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"repo:read"}, CredentialEnv: "GITHUB_SOURCE_TOKEN", ItemTypes: []ItemType{ItemIssue, ItemPullRequest}, SetupRequirements: apiSetup("GitHub", "GITHUB_SOURCE_TOKEN")},
+			RequiredScopes: []string{"repo:read"}, CredentialEnv: "GITHUB_SOURCE_TOKEN", ItemTypes: []ItemType{ItemIssue, ItemPullRequest}, SetupRequirements: providerImportSetup("GitHub")},
 		{Provider: ProviderTrello, DisplayName: "Trello (read-only)", ConnectorPreference: []string{"official_api", "local_export"}, ReadOnly: true,
-			RequiredScopes: []string{"read"}, CredentialEnv: "TRELLO_API_KEY, TRELLO_READ_TOKEN", ItemTypes: []ItemType{ItemCard}, SetupRequirements: apiSetup("Trello", "TRELLO_API_KEY and TRELLO_READ_TOKEN")},
+			RequiredScopes: []string{"read"}, CredentialEnv: "TRELLO_API_KEY, TRELLO_READ_TOKEN", ItemTypes: []ItemType{ItemCard}, SetupRequirements: providerImportSetup("Trello")},
 		{Provider: ProviderUpworkAssisted, DisplayName: "Upwork (assisted)", ConnectorPreference: []string{"human_manual", "browser_read_only"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Assisted only", Detail: "Upwork has no automated connector; items arrive via human/manual export. No fake access."}}},
 		{Provider: ProviderChatExport, DisplayName: "Chat Export", ConnectorPreference: []string{"local_export"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemChat, ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Export a chat log", Detail: "Provide a normalized chat export in the generic feed format."}}},
 		{Provider: ProviderBrowserCapture, DisplayName: "Browser Capture (read-only)", ConnectorPreference: []string{"browser_read_only", "guarded_browser"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemDocument, ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Bounded read-only capture", Detail: "Only allowlisted-domain read-only capture; no state changes. No executor is faked."}}},
-	}
-}
-
-func googleOAuthSetup(name, scope string) []SetupRequirement {
-	return []SetupRequirement{
-		{Step: "Configure the OAuth client", Detail: "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET for the read-only " + name + " connector."},
-		{Step: "Connect this owner account", Detail: "Complete the owner-scoped OAuth consent flow in Connected Sources for the " + scope + " scope. Client bootstrap alone does not grant account access."},
-		{Step: "Run a real read smoke", Detail: "A bounded read against " + name + " must succeed before it is treated as connected."},
 	}
 }
 

@@ -92,7 +92,7 @@ type DecidedControlApproval struct {
 }
 
 func (s *Service) WithControlApprovalRepository(repository ControlApprovalRepository) *Service {
-	s.approvals = repository
+	s.controlApprovals = repository
 	return s
 }
 
@@ -104,7 +104,7 @@ func (s *Service) PrepareControlApproval(
 	operation string,
 	target string,
 ) (PreparedControlApproval, error) {
-	if s == nil || s.approvals == nil {
+	if s == nil || s.controlApprovals == nil {
 		return PreparedControlApproval{}, ErrControlApprovalUnavailable
 	}
 	actor = strings.TrimSpace(actor)
@@ -138,7 +138,7 @@ func (s *Service) PrepareControlApproval(
 	if err := validateControlApprovalRequest(request); err != nil {
 		return PreparedControlApproval{}, err
 	}
-	if err := s.approvals.CreateRequest(ctx, request); err != nil {
+	if err := s.controlApprovals.CreateRequest(ctx, request); err != nil {
 		return PreparedControlApproval{}, fmt.Errorf("persist control approval request: %w", err)
 	}
 	return PreparedControlApproval{
@@ -162,14 +162,14 @@ func (s *Service) DecideControlApproval(
 	decision string,
 	reason string,
 ) (DecidedControlApproval, error) {
-	if s == nil || s.approvals == nil {
+	if s == nil || s.controlApprovals == nil {
 		return DecidedControlApproval{}, ErrControlApprovalUnavailable
 	}
 	actor = strings.TrimSpace(actor)
 	if err := validateControlActor(actor); err != nil {
 		return DecidedControlApproval{}, err
 	}
-	request, err := s.approvals.FindRequest(ctx, actor, requestID)
+	request, err := s.controlApprovals.FindRequest(ctx, actor, requestID)
 	if err != nil {
 		return DecidedControlApproval{}, err
 	}
@@ -211,7 +211,7 @@ func (s *Service) DecideControlApproval(
 	if err := validateControlApprovalDecision(value); err != nil {
 		return DecidedControlApproval{}, err
 	}
-	if err := s.approvals.CreateDecision(ctx, value); err != nil {
+	if err := s.controlApprovals.CreateDecision(ctx, value); err != nil {
 		return DecidedControlApproval{}, fmt.Errorf("persist control approval decision: %w", err)
 	}
 	result := DecidedControlApproval{

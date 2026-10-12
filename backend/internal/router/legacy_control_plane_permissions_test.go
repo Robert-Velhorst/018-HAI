@@ -41,9 +41,8 @@ func TestLegacyControlPlaneRejectsAPIKeyWithoutAuthenticatedOwner(t *testing.T) 
 		{method: http.MethodGet, path: "/api/v1/operations"},
 		{method: http.MethodGet, path: "/api/v1/background/overview"},
 		{method: http.MethodPost, path: "/api/v1/background/run"},
-		{method: http.MethodPost, path: "/api/v1/background/control-approvals", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/background/control-approvals/not-a-uuid/decision", body: `{}`},
 		{method: http.MethodGet, path: "/api/v1/account-feeds"},
+		{method: http.MethodGet, path: "/api/v1/account-feeds/not-a-uuid/identity-preview"},
 		{method: http.MethodPost, path: "/api/v1/model-intelligence/profiles/missing/missing/benchmark"},
 		{method: http.MethodPatch, path: "/api/v1/power/policy", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/privacy/scan", body: `{"content":"private"}`},
@@ -51,7 +50,6 @@ func TestLegacyControlPlaneRejectsAPIKeyWithoutAuthenticatedOwner(t *testing.T) 
 		{method: http.MethodGet, path: "/api/v1/runtime-lab/feature-parity"},
 		{method: http.MethodGet, path: "/api/v1/runtime-lab/capabilities"},
 		{method: http.MethodGet, path: "/api/v1/system/info"},
-		{method: http.MethodGet, path: "/api/v1/system/readiness"},
 		{method: http.MethodGet, path: "/api/v1/flags"},
 	} {
 		recorder := performLegacyControlPlaneRequest(engine, test.method, test.path, test.body, "")
@@ -69,11 +67,7 @@ func TestLegacyControlPlaneViewerCanReadButCannotMutate(t *testing.T) {
 		"/api/v1/background/overview",
 		"/api/v1/model-intelligence/overview",
 		"/api/v1/privacy/scans",
-		"/api/v1/runtime-lab/feature-parity",
-		"/api/v1/runtime-lab/capabilities",
-		"/api/v1/runtime-lab/openclaw/feature-parity",
 		"/api/v1/system/info",
-		"/api/v1/system/readiness",
 		"/api/v1/flags",
 	} {
 		recorder := performLegacyControlPlaneRequest(engine, http.MethodGet, path, "", "viewer")
@@ -101,19 +95,30 @@ func TestLegacyControlPlaneViewerCanReadButCannotMutate(t *testing.T) {
 		{method: http.MethodPatch, path: "/api/v1/power/policy", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/privacy/scan", body: `{"content":"private"}`},
 		{method: http.MethodPost, path: "/api/v1/background/pause", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/background/control-approvals", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/background/control-approvals/not-a-uuid/decision", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/background/resume"},
 		{method: http.MethodPatch, path: "/api/v1/background/mode", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/windows-runtime/recovery"},
 		{method: http.MethodPost, path: "/api/v1/windows-runtime/emergency-stop/verify"},
 		{method: http.MethodPost, path: "/api/v1/runtime-lab/missing/probe"},
 		{method: http.MethodPost, path: "/api/v1/runtime-lab/missing/self-test"},
+		{method: http.MethodGet, path: "/api/v1/runtime-lab/feature-parity"},
+		{method: http.MethodGet, path: "/api/v1/runtime-lab/capabilities"},
+		{method: http.MethodGet, path: "/api/v1/runtime-lab/openclaw/feature-parity"},
 		{method: http.MethodGet, path: "/api/v1/system/support-bundle"},
 	} {
 		recorder := performLegacyControlPlaneRequest(engine, test.method, test.path, test.body, "viewer")
 		if recorder.Code != http.StatusForbidden {
 			t.Errorf("viewer %s %s status = %d, want 403: %s", test.method, test.path, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
+func TestAccountFeedIdentityPreviewUsesRealReadAndOwnerMiddleware(t *testing.T) {
+	engine := newLegacyControlPlanePermissionEngine(t)
+	for _, role := range []string{"viewer", "operator", "owner"} {
+		response := performLegacyControlPlaneRequest(engine, http.MethodGet, "/api/v1/account-feeds/not-a-uuid/identity-preview", "", role)
+		if response.Code != http.StatusBadRequest || response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s cannot reach read-only inspection validation: %d %s", role, response.Code, response.Body.String())
 		}
 	}
 }
@@ -140,10 +145,10 @@ func TestLegacyControlPlaneOperatorGetsOperationalButNotAdministrativeAuthority(
 		{method: http.MethodDelete, path: "/api/v1/model-intelligence/cache/missing", want: http.StatusNotFound},
 		{method: http.MethodPost, path: "/api/v1/hardware/detect", want: http.StatusOK},
 		{method: http.MethodPost, path: "/api/v1/privacy/scan", body: `{"content":"private"}`, want: http.StatusOK},
-		{method: http.MethodPost, path: "/api/v1/background/pause", body: `{}`, want: http.StatusOK},
+		{method: http.MethodPost, path: "/api/v1/background/pause", body: `{}`, want: http.StatusForbidden},
 		{method: http.MethodPost, path: "/api/v1/windows-runtime/recovery", want: http.StatusOK},
-		{method: http.MethodPost, path: "/api/v1/runtime-lab/missing/probe", want: http.StatusNotFound},
-		{method: http.MethodPost, path: "/api/v1/runtime-lab/missing/self-test", want: http.StatusNotFound},
+		{method: http.MethodPost, path: "/api/v1/runtime-lab/missing/probe", want: http.StatusForbidden},
+		{method: http.MethodPost, path: "/api/v1/runtime-lab/missing/self-test", want: http.StatusForbidden},
 	} {
 		recorder := performLegacyControlPlaneRequest(engine, test.method, test.path, test.body, "operator")
 		if recorder.Code != test.want {
@@ -161,8 +166,7 @@ func TestLegacyControlPlaneOperatorGetsOperationalButNotAdministrativeAuthority(
 		{method: http.MethodPatch, path: "/api/v1/model-intelligence/token-budgets", body: `{}`},
 		{method: http.MethodPatch, path: "/api/v1/hardware/profile", body: `{}`},
 		{method: http.MethodPatch, path: "/api/v1/power/policy", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/background/control-approvals", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/background/control-approvals/not-a-uuid/decision", body: `{}`},
+		{method: http.MethodPost, path: "/api/v1/background/pause", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/background/resume"},
 		{method: http.MethodPatch, path: "/api/v1/background/mode", body: `{}`},
 		{method: http.MethodGet, path: "/api/v1/system/support-bundle"},
@@ -186,8 +190,6 @@ func TestLegacyControlPlaneOwnerCanReachAdministrativeHandlers(t *testing.T) {
 		{method: http.MethodPatch, path: "/api/v1/model-intelligence/token-budgets", body: `{}`},
 		{method: http.MethodPatch, path: "/api/v1/hardware/profile", body: `{}`},
 		{method: http.MethodPatch, path: "/api/v1/power/policy", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/background/control-approvals", body: `{}`},
-		{method: http.MethodPost, path: "/api/v1/background/control-approvals/not-a-uuid/decision", body: `{}`},
 		{method: http.MethodPost, path: "/api/v1/background/resume"},
 		{method: http.MethodPatch, path: "/api/v1/background/mode", body: `{}`},
 		{method: http.MethodGet, path: "/api/v1/system/support-bundle"},
@@ -210,9 +212,73 @@ func TestLegacyControlPlaneOwnerCanReachAdministrativeHandlers(t *testing.T) {
 	}
 }
 
+func TestGlobalBackgroundPauseRequiresConfiguredInstallationOwner(t *testing.T) {
+	engine := newLegacyControlPlanePermissionEngine(t)
+
+	operator := performLegacyControlPlaneIdentityRequest(engine, http.MethodPost, "/api/v1/background/pause", `{}`, "operator-user", "operator")
+	if operator.Code != http.StatusForbidden {
+		t.Fatalf("operator pause status = %d, want %d: %s", operator.Code, http.StatusForbidden, operator.Body.String())
+	}
+
+	otherOwner := performLegacyControlPlaneIdentityRequest(engine, http.MethodPost, "/api/v1/background/pause", `{}`, "different-owner", "owner")
+	if otherOwner.Code != http.StatusForbidden {
+		t.Fatalf("non-installation owner pause status = %d, want %d: %s", otherOwner.Code, http.StatusForbidden, otherOwner.Body.String())
+	}
+
+	installationOwner := performLegacyControlPlaneIdentityRequest(engine, http.MethodPost, "/api/v1/background/pause", `{}`, "configured-owner", "owner")
+	if installationOwner.Code != http.StatusMultiStatus {
+		t.Fatalf("installation owner pause status = %d, want %d (owner reached pause handler): %s", installationOwner.Code, http.StatusMultiStatus, installationOwner.Body.String())
+	}
+}
+
+func TestLegacyControlPlaneRuntimeLabRequiresConfiguredIdentityAndRoutePermission(t *testing.T) {
+	engine := newLegacyControlPlanePermissionEngine(t)
+	for _, actor := range []struct {
+		subject string
+		role    string
+	}{
+		{"configured-owner", "viewer"},
+		{"configured-owner", "operator"},
+		{"configured-owner", "owner"},
+		{"different-owner", "viewer"},
+		{"different-owner", "operator"},
+		{"different-owner", "owner"},
+	} {
+		t.Run(actor.subject+"/"+actor.role, func(t *testing.T) {
+			for _, route := range []struct {
+				method string
+				path   string
+			}{
+				{http.MethodGet, "/api/v1/runtime-lab/overview"},
+				{http.MethodGet, "/api/v1/runtime-lab/feature-parity"},
+				{http.MethodGet, "/api/v1/runtime-lab/capabilities"},
+				{http.MethodGet, "/api/v1/runtime-lab/openclaw/feature-parity"},
+				{http.MethodGet, "/api/v1/runtime-lab/openclaw/attempts"},
+				{http.MethodPost, "/api/v1/runtime-lab/missing/probe"},
+				{http.MethodPost, "/api/v1/runtime-lab/missing/self-test"},
+			} {
+				want := http.StatusForbidden
+				if actor.subject == "configured-owner" {
+					if route.method == http.MethodGet {
+						want = http.StatusOK
+					} else if actor.role != "viewer" {
+						// A missing runtime validates dispatch without executing one.
+						want = http.StatusNotFound
+					}
+				}
+				response := performLegacyControlPlaneIdentityRequest(engine, route.method, route.path, "", actor.subject, actor.role)
+				if response.Code != want {
+					t.Errorf("%s %s: got %d want %d: %s", route.method, route.path, response.Code, want, response.Body.String())
+				}
+			}
+		})
+	}
+}
+
 func newLegacyControlPlanePermissionEngine(t *testing.T) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
+	t.Setenv("HAI_PHASE2_OWNER", "configured-owner")
 
 	previousAPIKey := config.AppConfig.BackendAPIKey
 	previousJWTSecret := config.AppConfig.JWTSecret
@@ -265,6 +331,14 @@ func newLegacyControlPlanePermissionEngine(t *testing.T) *gin.Engine {
 }
 
 func performLegacyControlPlaneRequest(engine *gin.Engine, method, path, body, role string) *httptest.ResponseRecorder {
+	return performLegacyControlPlaneIdentityRequest(engine, method, path, body, role+"-user", role)
+}
+
+func performLegacyControlPlaneIdentityRequest(engine *gin.Engine, method, path, body, subject, role string) *httptest.ResponseRecorder {
+	return performLegacyControlPlaneIdentityRequestWithScope(engine, method, path, body, subject, role, "")
+}
+
+func performLegacyControlPlaneIdentityRequestWithScope(engine *gin.Engine, method, path, body, subject, role, scope string) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set(backendAPIKeyHeader, legacyControlPlaneAPIKey)
@@ -273,11 +347,39 @@ func performLegacyControlPlaneRequest(engine *gin.Engine, method, path, body, ro
 	}
 	if role != "" {
 		request.Header.Set("Authorization", "Bearer "+identity.SignToken(identity.Claims{
-			Subject: role + "-user",
-			Role:    role,
-			Expiry:  time.Now().Add(time.Hour).Unix(),
+			Subject:       subject,
+			Role:          role,
+			OperatorScope: scope,
+			Issuer:        "hai-idp",
+			Audience:      "hai",
+			TokenType:     "access",
+			IssuedAt:      time.Now().Unix(),
+			Expiry:        time.Now().Add(time.Hour).Unix(),
 		}, legacyControlPlaneJWTSecret))
 	}
 	engine.ServeHTTP(recorder, request)
 	return recorder
+}
+
+func TestLegacyControlPlaneRuntimeLabAcceptsOnlySignedInstallationScope(t *testing.T) {
+	engine := newLegacyControlPlanePermissionEngine(t)
+	for _, test := range []struct {
+		name    string
+		subject string
+		role    string
+		scope   string
+		want    int
+	}{
+		{"configured scope", "first-run-admin-uuid", "owner", "configured-owner", http.StatusOK},
+		{"wrong scope", "first-run-admin-uuid", "owner", "another-installation", http.StatusForbidden},
+		{"scope on operator role", "operator-user", "operator", "configured-owner", http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := performLegacyControlPlaneIdentityRequestWithScope(engine, http.MethodGet,
+				"/api/v1/runtime-lab/feature-parity", "", test.subject, test.role, test.scope)
+			if response.Code != test.want {
+				t.Fatalf("status = %d, want %d: %s", response.Code, test.want, response.Body.String())
+			}
+		})
+	}
 }

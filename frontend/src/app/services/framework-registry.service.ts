@@ -11,7 +11,9 @@ import {
   FrameworkLifecycleStatus,
   IFrameworkFamilyRecord,
   IFrameworkFamilyTaxonomy,
+  IFrameworkPreference,
   IFrameworkPreferencePatch,
+  IFrameworkPreferenceChange,
   IFrameworkRegistryOverview,
   IFrameworkSelectionDecision,
   IFrameworkSelectionRequest,
@@ -34,6 +36,8 @@ type SelectionResponse =
 type SelectionListResponse =
   | IFrameworkSelectionDecision[]
   | { selections: IFrameworkSelectionDecision[] };
+
+type PreferenceHistoryResponse = IFrameworkPreferenceChange[] | { changes: IFrameworkPreferenceChange[] };
 
 type ActiveConstitutionResponse =
   | IConstitution
@@ -106,14 +110,19 @@ export class FrameworkRegistryService {
     );
   }
 
-  selections(limit = 10): Observable<IFrameworkSelectionDecision[]> {
-    const boundedLimit = Number.isInteger(limit) && limit > 0 && limit <= 100
-      ? limit
-      : 10;
-    return this.http.get<SelectionListResponse>(
-      `${this.apiUrl}/selections`,
+  preferenceHistory(id: string, limit = 50): Observable<IFrameworkPreferenceChange[]> {
+    const boundedLimit = Number.isInteger(limit) && limit > 0 && limit <= 100 ? limit : 50;
+    return this.http.get<PreferenceHistoryResponse>(
+      `${this.apiUrl}/frameworks/${encodeURIComponent(id)}/preference-history`,
       { params: new HttpParams().set('limit', boundedLimit) }
-    ).pipe(
+    ).pipe(map(response => this.normalizePreferenceHistory(response)));
+  }
+
+  selections(limit = 10): Observable<IFrameworkSelectionDecision[]> {
+    const boundedLimit = Number.isInteger(limit) && limit > 0 && limit <= 200 ? limit : 10;
+    return this.http.get<SelectionListResponse>(`${this.apiUrl}/selections`, {
+      params: new HttpParams().set('limit', boundedLimit),
+    }).pipe(
       map((response) => this.normalizeSelectionList(response))
     );
   }
@@ -288,11 +297,7 @@ export class FrameworkRegistryService {
       riskCeiling: this.requireString(record, 'riskCeiling', resource),
       evidenceRequirements: this.requireStringArray(record, 'evidenceRequirements', resource),
       evaluationMethod: this.requireStringArray(record, 'evaluationMethod', resource),
-      conflictsWith: this.requireNullableStringArray(
-        record,
-        'conflictsWith',
-        resource
-      ),
+      conflictsWith: this.requireLegacyEmptyStringArray(record, 'conflictsWith', resource),
       userSpecificAdaptations: this.requireStringArray(
         record,
         'userSpecificAdaptations',
@@ -311,11 +316,7 @@ export class FrameworkRegistryService {
         0,
         10
       ),
-      adaptations: this.requireNullableStringArray(
-        record,
-        'adaptations',
-        resource
-      ),
+      adaptations: this.requireLegacyEmptyStringArray(record, 'adaptations', resource),
     };
     if (record['candidateImplementations'] !== undefined) {
       result.candidateImplementations = this.requireStringArray(
@@ -412,6 +413,50 @@ export class FrameworkRegistryService {
     return payload.map((entry, index) =>
       this.normalizeSelection(entry, `selection history item ${index + 1}`)
     );
+  }
+
+  private normalizePreferenceHistory(value: unknown): IFrameworkPreferenceChange[] {
+    const sanitized = this.sanitizeInbound(value) as unknown;
+    const payload = Array.isArray(sanitized)
+      ? sanitized
+      : this.isRecord(sanitized) ? sanitized['changes'] : undefined;
+    if (!Array.isArray(payload)) throw this.contractError('framework preference history');
+    return payload.map((entry, index) => {
+      const resource = `framework preference history item ${index + 1}`;
+      const record = this.requireRecord(entry, resource);
+      const result: IFrameworkPreferenceChange = {
+        id: this.requireString(record, 'id', resource),
+        sequence: this.requireInteger(record, 'sequence', resource, 1),
+        frameworkId: this.requireString(record, 'frameworkId', resource),
+        actor: this.requireString(record, 'actor', resource),
+        reason: this.requireString(record, 'reason', resource),
+        after: this.normalizePreferenceSnapshot(record['after'], `${resource} after`),
+        occurredAt: this.requireDateString(record, 'occurredAt', resource),
+        eventDigest: this.requireDigest(record, 'eventDigest', resource),
+      };
+      if (record['before'] !== undefined && record['before'] !== null) {
+        result.before = this.normalizePreferenceSnapshot(record['before'], `${resource} before`);
+      }
+      if (record['previousEventDigest'] !== undefined && record['previousEventDigest'] !== '') {
+        result.previousEventDigest = this.requireDigest(record, 'previousEventDigest', resource);
+      }
+      return result;
+    });
+  }
+
+  private normalizePreferenceSnapshot(value: unknown, resource: string): IFrameworkPreference {
+    const record = this.requireRecord(value, resource);
+    const result: IFrameworkPreference = {
+      frameworkId: this.requireString(record, 'frameworkId', resource),
+      state: this.requireEnum(record, 'state', resource, ['default', 'enabled', 'disabled'] as const),
+      pinned: this.requireBoolean(record, 'pinned', resource),
+      adaptations: this.requireStringArray(record, 'adaptations', resource),
+      updatedAt: this.requireDateString(record, 'updatedAt', resource),
+    };
+    if (record['maximumAutonomyLevel'] !== undefined && record['maximumAutonomyLevel'] !== null) {
+      result.maximumAutonomyLevel = this.requireInteger(record, 'maximumAutonomyLevel', resource, 0, 10);
+    }
+    return result;
   }
 
   private normalizeSelection(
@@ -1283,14 +1328,12 @@ export class FrameworkRegistryService {
     return value as string[];
   }
 
-  private requireNullableStringArray(
+  private requireLegacyEmptyStringArray(
     record: Record<string, unknown>,
     key: string,
     resource: string
   ): string[] {
-    if (record[key] === null || record[key] === undefined) {
-      return [];
-    }
+    if (record[key] === null || record[key] === undefined) return [];
     return this.requireStringArray(record, key, resource);
   }
 
@@ -1355,6 +1398,7 @@ export class FrameworkRegistryService {
       'refreshtoken',
       'authorization',
       'cookie',
+      'setcookie',
       'clientsecret',
       'privatekey',
       'token',
@@ -1369,6 +1413,14 @@ export class FrameworkRegistryService {
 
   private redactSensitiveText(value: string): string {
     return value
+      .replace(
+        /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/gi,
+        '[redacted]'
+      )
+      .replace(
+        /(^|[ \t])((?:cookie|set-cookie)\s*[:=]\s*)[^\r\n]*/gim,
+        '$1$2[redacted]'
+      )
       .replace(
         /(\bAuthorization\b\s*:\s*)(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
         '$1[redacted]'

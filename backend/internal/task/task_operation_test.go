@@ -35,6 +35,16 @@ type cancelAfterTaskOperationClaimRepository struct {
 	cancel context.CancelFunc
 }
 
+func (r cancelAfterTaskOperationClaimRepository) WithTaskStateContext(ctx context.Context) (TaskStateRepository, error) {
+	if ctx == nil {
+		return nil, ErrTaskStorageContextUnavailable
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
 func (r cancelAfterTaskOperationClaimRepository) ClaimTaskOperationContext(
 	ctx context.Context,
 	ownerIdentity, idempotencyKey, requestDigest, mode, leaseOwner string,
@@ -291,6 +301,31 @@ func TestTaskServiceReplaysSameIdempotentPlanAndRejectsChangedInput(t *testing.T
 	changed.Request = "Send the connected project notes"
 	if _, err := taskService.Plan(changed); !errors.Is(err, ErrTaskStateConflict) {
 		t.Fatalf("changed input error = %v, want conflict", err)
+	}
+}
+
+func TestTaskOperationIdempotencyBindsStructuredDeadline(t *testing.T) {
+	repository := NewMemoryTaskStateRepository()
+	taskService, ok := newDurableTaskTestService(t, repository, nil).(*service)
+	if !ok {
+		t.Fatal("durable task test service does not expose the concrete operation boundary")
+	}
+	firstDeadline := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Minute)
+	request := IntakeRequest{
+		OwnerIdentity:  "alice",
+		IdempotencyKey: "manual-capture:deadline-binding",
+		Request:        "Prepare a project action plan",
+		ProjectKey:     "018-HAI",
+		Deadline:       &firstDeadline,
+	}
+	if _, err := taskService.Plan(request); err != nil {
+		t.Fatalf("first plan: %v", err)
+	}
+
+	changedDeadline := firstDeadline.Add(24 * time.Hour)
+	request.Deadline = &changedDeadline
+	if _, err := taskService.Plan(request); !errors.Is(err, ErrTaskStateConflict) {
+		t.Fatalf("same idempotency key with a different deadline = %v, want conflict", err)
 	}
 }
 

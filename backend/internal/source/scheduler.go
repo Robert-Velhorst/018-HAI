@@ -2,6 +2,7 @@ package source
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -9,7 +10,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"automation-hub-backend/internal/lifecycle"
+	"automation-hub-backend/internal/safety"
 	"automation-hub-backend/internal/schedulerstatus"
+)
+
+const (
+	defaultSchedulerInterval = 10 * time.Minute
+	minSchedulerInterval     = 15 * time.Second
+	maxSchedulerInterval     = 24 * time.Hour
 )
 
 type Scheduler struct {
@@ -20,55 +29,74 @@ type Scheduler struct {
 }
 
 func NewScheduler(service Service, interval time.Duration, allowed ...func() bool) *Scheduler {
-	if interval < 15*time.Second {
-		interval = 10 * time.Minute
+	if interval < minSchedulerInterval || interval > maxSchedulerInterval {
+		interval = defaultSchedulerInterval
 	}
 	return &Scheduler{service: service, interval: interval, backgroundAllowed: schedulerBackgroundGate(allowed)}
 }
 
-// StartScheduler starts scheduled source syncing.
-//
-// It prefers the durable path: scans and per-source syncs become persisted jobs
-// with backoff retry and crash recovery (see durable_scheduler.go). If the
-// durable queue cannot be reached, the default is to leave the scheduler
-// stopped and make the loss of crash recovery explicit in the logs. Operators
-// may opt into the legacy in-process ticker only for local development. An
-// explicit SOURCE_SCHEDULER_DURABLE=false remains a deliberate legacy choice.
-func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) {
+// StartScheduler starts durable scheduled syncing, or an explicitly enabled
+// volatile fallback. Startup fails closed when durable scheduling is
+// unavailable unless SOURCE_SCHEDULER_VOLATILE_FALLBACK is explicitly enabled.
+func StartScheduler(ctx context.Context, service Service, allowed ...func() bool) error {
+	return startScheduler(ctx, service, startDurableScheduler, startVolatileScheduler, startDurableManualWorker, allowed...)
+}
+
+type manualWorkerStarter func(context.Context, Service, ...func() bool) error
+type durableSchedulerStarter func(context.Context, Service, time.Duration, ...func() bool) error
+type volatileSchedulerStarter func(context.Context, Service, time.Duration, ...func() bool) bool
+
+func startScheduler(ctx context.Context, service Service, startDurable durableSchedulerStarter, startVolatile volatileSchedulerStarter, startManual manualWorkerStarter, allowed ...func() bool) error {
+	if ctx == nil || ctx.Err() != nil {
+		return nil
+	}
+	startManualIfEnabled := func() {
+		if envBool("SOURCE_MANUAL_WORKER_ENABLED") {
+			if err := startManual(ctx, service, allowed...); err != nil {
+				log.Printf("source manual worker unavailable: %v", err)
+			}
+		}
+	}
 	if !schedulerEnabled() {
 		schedulerstatus.Record(schedulerstatus.State{Name: "source", Detail: "disabled by SOURCE_SCHEDULER_ENABLED"})
-		return
+		startManualIfEnabled()
+		return nil
 	}
 	interval := schedulerInterval()
 	backgroundAllowed := schedulerBackgroundGate(allowed)
+	var durableErr error
 	if durableSchedulerEnabled() {
-		if err := startDurableScheduler(ctx, service, interval, backgroundAllowed); err != nil {
-			if !legacyFallbackEnabled() {
-				schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Durable: true, Detail: "durable queue unavailable: " + err.Error()})
-				log.Printf("source scheduler: durable queue unavailable (%v); scheduler not started; set DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED=true only for local development", err)
-				return
-			}
-			schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Detail: "durable queue unavailable; explicitly enabled legacy fallback: " + err.Error()})
-			log.Printf("source scheduler: durable queue unavailable (%v); using the explicitly enabled in-process fallback", err)
-		} else {
+		durableErr = startDurable(ctx, service, interval, backgroundAllowed)
+		if durableErr == nil {
 			schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Durable: true, Running: true, Detail: "durable worker attached"})
-			return
+			return nil
+		}
+		if ctx.Err() != nil {
+			return nil
 		}
 	} else {
-		schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Detail: "legacy scheduler explicitly configured"})
+		durableErr = errors.New("durable source scheduling is disabled")
 	}
-	if !durableSchedulerEnabled() {
-		schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Running: true, Detail: "legacy scheduler explicitly configured"})
-	} else if legacyFallbackEnabled() {
-		schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Running: true, Detail: "explicitly enabled legacy fallback"})
+	if !volatileSchedulerFallbackEnabled() {
+		schedulerstatus.Record(schedulerstatus.State{
+			Name: "source", Enabled: true, Durable: durableSchedulerEnabled(),
+			Detail: "durable scheduler startup failed; volatile fallback is disabled: " + safety.RedactSecrets(durableErr.Error()),
+		})
+		return fmt.Errorf("source scheduler durable startup failed: %w (set SOURCE_SCHEDULER_VOLATILE_FALLBACK=true to explicitly allow degraded in-memory scheduling)", durableErr)
 	}
-	scheduler := NewScheduler(service, interval, backgroundAllowed)
-	go scheduler.Start(ctx)
-}
-
-func legacyFallbackEnabled() bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv("DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED")))
-	return value == "true" || value == "1" || value == "yes"
+	if ctx.Err() != nil {
+		return nil
+	}
+	if !startVolatile(ctx, service, interval, backgroundAllowed) {
+		if ctx.Err() != nil {
+			return nil
+		}
+		schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Detail: "volatile fallback could not start"})
+		return fmt.Errorf("source scheduler durable startup failed: %w; explicitly enabled volatile fallback could not start", durableErr)
+	}
+	schedulerstatus.Record(schedulerstatus.State{Name: "source", Enabled: true, Running: true, Detail: "explicitly enabled volatile fallback; work is not crash-recoverable"})
+	log.Printf("source scheduler DEGRADED: volatile in-memory fallback is active after durable startup failure (%v); scheduled work is not crash-recoverable", durableErr)
+	return nil
 }
 
 func durableSchedulerEnabled() bool {
@@ -80,9 +108,32 @@ func durableSchedulerEnabled() bool {
 	}
 }
 
+func volatileSchedulerFallbackEnabled() bool {
+	if legacyFallbackEnabled() {
+		return true
+	}
+	switch strings.TrimSpace(strings.ToLower(os.Getenv("SOURCE_SCHEDULER_VOLATILE_FALLBACK"))) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func startVolatileScheduler(ctx context.Context, service Service, interval time.Duration, allowed ...func() bool) bool {
+	if ctx == nil || ctx.Err() != nil {
+		return false
+	}
+	scheduler := NewScheduler(service, interval, allowed...)
+	return lifecycle.Go(ctx, "source-scheduler-volatile-degraded", func() { scheduler.Start(ctx) })
+}
+
 func (s *Scheduler) Start(ctx context.Context) {
+	if ctx == nil || ctx.Err() != nil {
+		return
+	}
 	if schedulerRunOnStartup() {
-		s.runOnce()
+		s.runOnce(ctx)
 	}
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
@@ -91,12 +142,18 @@ func (s *Scheduler) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.runOnce()
+			if ctx.Err() != nil {
+				return
+			}
+			s.runOnce(ctx)
 		}
 	}
 }
 
-func (s *Scheduler) runOnce() {
+func (s *Scheduler) runOnce(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
 	if s.backgroundAllowed != nil && !s.backgroundAllowed() {
 		return
 	}
@@ -104,7 +161,7 @@ func (s *Scheduler) runOnce() {
 		return
 	}
 	defer s.running.Store(false)
-	result, err := s.service.RunDueScheduledSyncs(time.Now().UTC())
+	result, err := runScheduledSyncsWithContext(ctx, s.service, time.Now().UTC())
 	if err != nil {
 		log.Printf("source scheduler failed: %v", err)
 		return
@@ -129,11 +186,11 @@ func schedulerEnabled() bool {
 func schedulerInterval() time.Duration {
 	value := strings.TrimSpace(os.Getenv("SOURCE_SCHEDULER_INTERVAL_SECONDS"))
 	if value == "" {
-		return 10 * time.Minute
+		return defaultSchedulerInterval
 	}
 	var seconds int64
-	if _, err := fmt.Sscanf(value, "%d", &seconds); err != nil || seconds < 15 {
-		return 10 * time.Minute
+	if _, err := fmt.Sscanf(value, "%d", &seconds); err != nil || seconds < int64(minSchedulerInterval/time.Second) || seconds > int64(maxSchedulerInterval/time.Second) {
+		return defaultSchedulerInterval
 	}
 	return time.Duration(seconds) * time.Second
 }

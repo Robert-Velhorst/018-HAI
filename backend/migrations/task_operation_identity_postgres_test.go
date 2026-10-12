@@ -90,7 +90,7 @@ func TestTaskOperationIdentityConcurrencyAndFencingInPostgres(t *testing.T) {
 
 func TestTaskOperationCancellationIsTerminalAndRollbackSafeInPostgres(t *testing.T) {
 	db := openIsolatedMigrationDatabase(t)
-	files := migrationFilesThrough(t, "pre/0067_task_operation_cancellation")
+	files := migrationFilesThrough(t, "pre/0126_task_operation_cancellation")
 	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
 		t.Fatalf("apply task operation cancellation migration: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestTaskOperationCancellationIsTerminalAndRollbackSafeInPostgres(t *testing
 		db,
 		migrations.Files,
 		"pre",
-		"pre/0067_task_operation_cancellation",
+		"pre/0126_task_operation_cancellation",
 	); err == nil || !strings.Contains(err.Error(), "canceled audit state") {
 		t.Fatalf("rollback cancellation migration error = %v, want audit-state refusal", err)
 	}
@@ -138,7 +138,7 @@ func TestTaskOperationCancellationIsTerminalAndRollbackSafeInPostgres(t *testing
 
 func TestTaskOperationClaimHonorsContextWhileWaitingForPostgresLock(t *testing.T) {
 	db := openIsolatedMigrationDatabase(t)
-	files := migrationFilesThrough(t, "pre/0067_task_operation_cancellation")
+	files := migrationFilesThrough(t, "pre/0126_task_operation_cancellation")
 	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
 		t.Fatalf("apply task operation cancellation migration: %v", err)
 	}

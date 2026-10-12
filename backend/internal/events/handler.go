@@ -11,11 +11,16 @@ import (
 )
 
 type Handler struct {
-	store *OutboxStore
+	store  *OutboxStore
+	notify func()
 }
 
-func NewHandler(store *OutboxStore) *Handler {
-	return &Handler{store: store}
+func NewHandler(store *OutboxStore, notify ...func()) *Handler {
+	handler := &Handler{store: store}
+	if len(notify) > 0 {
+		handler.notify = notify[0]
+	}
+	return handler
 }
 
 func (h *Handler) Stats(c *gin.Context) {
@@ -40,6 +45,9 @@ func (h *Handler) Retry(c *gin.Context) {
 		}
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Event delivery could not be retried"})
 		return
+	}
+	if h.notify != nil {
+		h.notify()
 	}
 	c.JSON(http.StatusAccepted, gin.H{"status": "queued", "eventId": id})
 }

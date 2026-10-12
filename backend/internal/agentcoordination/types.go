@@ -174,7 +174,9 @@ type DeliveryReceipt struct {
 }
 
 // Transport accepts validated envelopes only. Implementations must not infer
-// permission to execute a task from successful delivery.
+// permission to execute a task from successful delivery. They should wrap
+// ErrDeliveryNotAccepted only when non-acceptance is certain; other errors are
+// treated as ambiguous and block automatic replay.
 type Transport interface {
 	Deliver(ctx context.Context, message Message) (DeliveryReceipt, error)
 }

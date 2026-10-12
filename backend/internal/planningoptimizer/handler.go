@@ -1,6 +1,7 @@
 package planningoptimizer
 
 import (
+	"automation-hub-backend/internal/apierror"
 	"errors"
 	"net/http"
 	"strconv"
@@ -39,15 +40,15 @@ func (h *Handler) Propose(c *gin.Context) {
 	}
 	run, err := h.service.Propose(c.Request.Context(), owner(c), request)
 	if errors.Is(err, ErrNotConfigured) {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "run": run})
+		c.JSON(http.StatusConflict, gin.H{"error": "planning optimizer is not configured", "run": run})
 		return
 	}
 	if errors.Is(err, ErrUnavailable) {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "planning optimizer is unavailable"})
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": apierror.PublicMessage(err, "planning proposal request is invalid")})
 		return
 	}
 	c.JSON(http.StatusCreated, run)

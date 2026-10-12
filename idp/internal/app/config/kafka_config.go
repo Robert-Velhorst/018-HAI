@@ -27,14 +27,22 @@ type kafkaConfig struct {
 // Kafka is an opt-in event stream: authentication and persistence remain local
 // and durable when it is disabled.
 func newOptionalKafkaConfig() (*kafkaConfig, error) {
-	if !getEnvBool(kafkaEnabled, true) {
+	enabled, err := getEnvBool(kafkaEnabled, true)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
 		return nil, nil
 	}
 	return newKafkaConfig()
 }
 
 func newKafkaConfig() (*kafkaConfig, error) {
-	if !getEnvBool(eventBusEnabled, false) {
+	enabled, err := getEnvBool(eventBusEnabled, false)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
 		return &kafkaConfig{}, nil
 	}
 

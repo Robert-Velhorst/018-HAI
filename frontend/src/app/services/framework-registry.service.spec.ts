@@ -5,6 +5,7 @@ import {
   IConstitutionHistoryPage,
   IFrameworkRegistryOverview,
   IFrameworkFamilyTaxonomy,
+  IFrameworkPreferenceChange,
   IFrameworkSelectionDecision,
   IFrameworkSelectionRequest,
   IFrameworkView,
@@ -244,6 +245,30 @@ describe('FrameworkRegistryService', () => {
     });
     expect(request.request.body['ownerIdentity']).toBeUndefined();
     request.flush({ framework });
+  });
+
+  it('loads and validates owner-scoped append-only preference history', () => {
+    const history: IFrameworkPreferenceChange[] = [{
+      id: 'change-1',
+      sequence: 1,
+      frameworkId: 'truth-evidence',
+      actor: 'owner-1',
+      reason: 'Enable with a bounded autonomy ceiling',
+      after: {
+        frameworkId: 'truth-evidence', state: 'enabled', pinned: true,
+        maximumAutonomyLevel: 2, adaptations: [], updatedAt: '2026-10-10T10:00:00Z',
+      },
+      occurredAt: '2026-10-10T10:00:00Z',
+      eventDigest: 'a'.repeat(64),
+    }];
+    service.preferenceHistory('truth-evidence').subscribe(result => expect(result).toEqual(history));
+
+    const request = http.expectOne(candidate =>
+      candidate.url === '/api/v1/framework-registry/frameworks/truth-evidence/preference-history' &&
+      candidate.params.get('limit') === '50'
+    );
+    expect(request.request.method).toBe('GET');
+    request.flush({ changes: history });
   });
 
   it('normalizes selection history', () => {
@@ -577,6 +602,23 @@ describe('FrameworkRegistryService', () => {
     expect(JSON.stringify(result)).not.toContain('plain-secret-without-a-label');
     expect(JSON.stringify(result)).not.toContain('raw-generic-token');
     expect(JSON.stringify(result)).not.toContain('sk-super-secret-credential');
+  });
+
+  it('redacts complete cookies and truncated private keys before inspector records are returned', () => {
+    let result: IFrameworkView | undefined;
+    const record: IFrameworkView = {
+      ...framework,
+      provenance: 'Set-Cookie: session=synthetic-cookie; csrf=synthetic-csrf',
+      source: ['-----BEGIN OPENSSH ', 'PRIVATE KEY-----\nsynthetic-private-body'].join(''),
+    };
+    service.framework('truth-evidence').subscribe(response => result = response);
+    http.expectOne('/api/v1/framework-registry/frameworks/truth-evidence').flush({ framework: record });
+    expect(result?.provenance).toBe('Set-Cookie: [redacted]');
+    expect(result?.source).toBe('[redacted]');
+    expect(result?.enabled).toBeTrue();
+    expect(result?.effectiveAutonomyLevel).toBe(framework.effectiveAutonomyLevel);
+    expect(JSON.stringify(result)).not.toContain('synthetic-');
+    expect(record.provenance).toContain('synthetic-cookie');
   });
 
   it('rejects malformed list envelopes instead of presenting them as empty data', () => {

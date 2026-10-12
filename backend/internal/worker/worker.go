@@ -4,6 +4,9 @@
 package worker
 
 import (
+	"context"
+	"errors"
+
 	"automation-hub-backend/internal/backoff"
 )
 
@@ -22,6 +25,9 @@ func RunWithRetry(maxAttempts int, policy backoff.Policy, sleep SleepFunc, fn fu
 		lastErr = fn(attempt)
 		if lastErr == nil {
 			return attempt, nil
+		}
+		if errors.Is(lastErr, context.Canceled) {
+			return attempt, lastErr
 		}
 		if attempt < maxAttempts {
 			if sleep != nil {

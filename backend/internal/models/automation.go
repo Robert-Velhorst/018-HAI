@@ -1,6 +1,7 @@
 package models
 
 import (
+	"automation-hub-backend/internal/safety"
 	"fmt"
 	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
@@ -26,6 +27,7 @@ type Automation struct {
 	LaunchType                 string     `gorm:"type:varchar(50);default:'browser_url'" json:"launchType,omitempty"`
 	LaunchTarget               string     `gorm:"type:varchar(1024)" json:"launchTarget,omitempty"`
 	RuntimeType                string     `gorm:"type:varchar(50)" json:"runtimeType,omitempty"`
+	RuntimeModel               string     `gorm:"type:varchar(255);default:''" json:"runtimeModel,omitempty"`
 	ServiceName                string     `gorm:"type:varchar(255)" json:"serviceName,omitempty"`
 	RoutePath                  string     `gorm:"type:varchar(255)" json:"routePath,omitempty"`
 	PublicURL                  string     `gorm:"type:varchar(1024)" json:"publicUrl,omitempty"`
@@ -46,6 +48,12 @@ type Automation struct {
 }
 
 func (a *Automation) Validate() error {
+	if err := safety.ValidateRuntimeModel(a.RuntimeType, a.RuntimeModel); err != nil {
+		return err
+	}
+	if a.RuntimeModel != "" && strings.ToLower(strings.TrimSpace(a.LaunchType)) != "agent_runtime" {
+		return fmt.Errorf("runtime model requires agent_runtime launch type")
+	}
 	if a.Name == "" {
 		return fmt.Errorf("name is required")
 	}

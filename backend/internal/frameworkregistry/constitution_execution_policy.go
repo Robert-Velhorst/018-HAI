@@ -1,6 +1,7 @@
 package frameworkregistry
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -61,6 +62,13 @@ type ConstitutionExecutionPolicyDecision struct {
 func (s *Service) EvaluateConstitutionExecutionPolicy(
 	request ConstitutionExecutionPolicyRequest,
 ) (*ConstitutionExecutionPolicyDecision, error) {
+	return s.EvaluateConstitutionExecutionPolicyContext(context.Background(), request)
+}
+
+func (s *Service) EvaluateConstitutionExecutionPolicyContext(
+	ctx context.Context,
+	request ConstitutionExecutionPolicyRequest,
+) (*ConstitutionExecutionPolicyDecision, error) {
 	owner := strings.TrimSpace(request.OwnerIdentity)
 	if owner == "" {
 		return nil, fmt.Errorf("owner identity is required")
@@ -76,7 +84,7 @@ func (s *Service) EvaluateConstitutionExecutionPolicy(
 		return nil, err
 	}
 
-	constitution, source, err := s.ActiveConstitution(owner)
+	constitution, source, err := s.ActiveConstitutionContext(ctx, owner)
 	if err != nil {
 		return nil, err
 	}

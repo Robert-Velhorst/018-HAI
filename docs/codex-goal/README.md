@@ -54,7 +54,9 @@ external runtime is treated as integrated merely because a health URL exists.
 | [`trello-hai-card-source.md`](trello-hai-card-source.md) | Provenance and implementation mapping for Robert's primary `018 - HAI` Trello card and its two attached specifications | Cross-cutting |
 
 **Run mode:** began as a broad audit pass, then implemented across all phases — real, tested code committed phase by phase, without fabricating completion.
-**Final roll-up:** **110 Implemented · 1 Partial (032, full Docker Compose boot — needs a Docker host) · 0 Missing · 0 Blocked · 1 N/A (090, a process rule).**
+**Historical July roll-up (not current production acceptance):** **110 Implemented · 1 Partial (032, full Docker Compose boot — needs a Docker host) · 0 Missing · 0 Blocked · 1 N/A (090, a process rule).** These recorded classifications include structural-only evidence and do not establish current live-provider, autonomous operator or signed Windows readiness.
 **Base:** `main` @ `0f7f12c`; delivered via PR #13 (merged).
 
-Start with the completion matrix for the current state, then the final verification report for exactly what was and was not run.
+Start with the [repository README](../../README.md) and dated integration ledgers
+for the current state. Use this completion matrix and final verification report
+as historical scope and evidence records, not as release sign-off.

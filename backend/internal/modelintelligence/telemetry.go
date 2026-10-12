@@ -1,11 +1,34 @@
 package modelintelligence
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"sync"
 	"time"
 )
 
 type ValidationStatus string
+
+type TokenUsageSource string
+
+const (
+	TokenUsageEstimated               TokenUsageSource = "estimated"
+	TokenUsageProviderReported        TokenUsageSource = "provider_reported"
+	TokenUsageProviderReportedPartial TokenUsageSource = "provider_reported_partial"
+	TokenUsageEstimatedUncertain      TokenUsageSource = "estimated_uncertain"
+	TokenUsageProviderReportInvalid   TokenUsageSource = "provider_report_invalid"
+)
+
+func normalizeTokenUsageSource(source TokenUsageSource) TokenUsageSource {
+	switch source {
+	case TokenUsageProviderReported, TokenUsageProviderReportedPartial, TokenUsageEstimatedUncertain, TokenUsageProviderReportInvalid:
+		return source
+	default:
+		return TokenUsageEstimated
+	}
+}
 
 const (
 	ValidationUnvalidated     ValidationStatus = "unvalidated"
@@ -52,6 +75,7 @@ type ModelRunTelemetry struct {
 	OperationID      string           `json:"operationId,omitempty"`
 	InputTokens      int              `json:"inputTokens"`
 	OutputTokens     int              `json:"outputTokens"`
+	UsageSource      TokenUsageSource `json:"usageSource"`
 	DurationMs       int64            `json:"durationMs"`
 	TokensPerSecond  float64          `json:"tokensPerSecond"`
 	OK               bool             `json:"ok"`
@@ -67,20 +91,39 @@ type ModelRunTelemetry struct {
 // optional durable repository: rows are persisted on Record and seeded on start,
 // so telemetry survives restart while queries stay in-memory-fast.
 type TelemetryStore struct {
-	mu      sync.Mutex
-	records []ModelRunTelemetry
-	seq     int
-	persist func(ModelRunTelemetry) // optional durable sink
+	mu             sync.Mutex
+	records        []ModelRunTelemetry
+	newID          func() (string, error)
+	persist        func(ModelRunTelemetry) // optional legacy durable sink
+	persistChecked func(ModelRunTelemetry) error
 }
 
 // NewTelemetryStore builds an empty store.
-func NewTelemetryStore() *TelemetryStore { return &TelemetryStore{} }
+func NewTelemetryStore() *TelemetryStore { return &TelemetryStore{newID: newTelemetryID} }
+
+func newTelemetryID() (string, error) {
+	var id [16]byte
+	if _, err := io.ReadFull(rand.Reader, id[:]); err != nil {
+		return "", fmt.Errorf("create telemetry ID: %w", err)
+	}
+	return "mrt-" + hex.EncodeToString(id[:]), nil
+}
 
 // SetPersist installs a durable sink called for every recorded row.
 func (s *TelemetryStore) SetPersist(fn func(ModelRunTelemetry)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.persist = fn
+	s.persistChecked = nil
+}
+
+// SetPersistChecked installs a sink whose failures prevent a row from being
+// reported as durably recorded.
+func (s *TelemetryStore) SetPersistChecked(fn func(ModelRunTelemetry) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.persistChecked = fn
+	s.persist = nil
 }
 
 // Seed loads pre-existing (durable) telemetry into the store on startup.
@@ -89,9 +132,9 @@ func (s *TelemetryStore) Seed(rows []ModelRunTelemetry) {
 	defer s.mu.Unlock()
 	for index := range rows {
 		rows[index].ValidationStatus = normalizeValidationStatus(rows[index].ValidationStatus)
+		rows[index].UsageSource = normalizeTokenUsageSource(rows[index].UsageSource)
 	}
 	s.records = append(s.records, rows...)
-	s.seq += len(rows)
 }
 
 // Replace atomically refreshes the in-process view from the durable ledger.
@@ -102,27 +145,49 @@ func (s *TelemetryStore) Replace(rows []ModelRunTelemetry) {
 	defer s.mu.Unlock()
 	for index := range rows {
 		rows[index].ValidationStatus = normalizeValidationStatus(rows[index].ValidationStatus)
+		rows[index].UsageSource = normalizeTokenUsageSource(rows[index].UsageSource)
 	}
 	s.records = append([]ModelRunTelemetry{}, rows...)
-	s.seq = len(rows)
 }
 
 // Record appends a telemetry row (persisting it if a sink is set) and returns it
 // with an assigned id.
 func (s *TelemetryStore) Record(t ModelRunTelemetry) ModelRunTelemetry {
+	recorded, _ := s.RecordChecked(t)
+	return recorded
+}
+
+// RecordChecked persists before publishing the row in the in-process view.
+// Holding the store lock preserves ID/order consistency across concurrent runs.
+func (s *TelemetryStore) RecordChecked(t ModelRunTelemetry) (ModelRunTelemetry, error) {
 	s.mu.Lock()
-	s.seq++
 	if t.ID == "" {
-		t.ID = "mrt-" + itoa(s.seq)
+		newID := s.newID
+		if newID == nil {
+			newID = newTelemetryID
+		}
+		id, err := newID()
+		if err != nil {
+			s.mu.Unlock()
+			return t, err
+		}
+		t.ID = id
 	}
 	t.ValidationStatus = normalizeValidationStatus(t.ValidationStatus)
+	t.UsageSource = normalizeTokenUsageSource(t.UsageSource)
+	if s.persistChecked != nil {
+		if err := s.persistChecked(t); err != nil {
+			s.mu.Unlock()
+			return t, err
+		}
+	}
 	s.records = append(s.records, t)
 	persist := s.persist
 	s.mu.Unlock()
 	if persist != nil {
 		persist(t)
 	}
-	return t
+	return t, nil
 }
 
 // All returns a snapshot of all telemetry.
@@ -136,19 +201,20 @@ func (s *TelemetryStore) All() []ModelRunTelemetry {
 
 // LaneWinner is the best observed model for a lane by tokens/sec.
 type LaneWinner struct {
-	Lane              RoutingLane `json:"lane"`
-	ProviderID        string      `json:"providerId"`
-	ModelID           string      `json:"modelId"`
-	TokensPerSecond   float64     `json:"tokensPerSecond"`
-	Runs              int         `json:"runs"`
-	EvaluatedRuns     int         `json:"evaluatedRuns"`
-	AcceptedOutputs   int         `json:"acceptedOutputs"`
-	AcceptanceRate    float64     `json:"acceptanceRate"`
-	Confidence        string      `json:"confidence"`
-	AverageTokens     float64     `json:"averageTokens"`
-	AverageDurationMs float64     `json:"averageDurationMs"`
-	AverageCostEUR    float64     `json:"averageCostEur"`
-	Reason            string      `json:"reason"`
+	Lane                 RoutingLane `json:"lane"`
+	ProviderID           string      `json:"providerId"`
+	ModelID              string      `json:"modelId"`
+	TokensPerSecond      float64     `json:"tokensPerSecond"`
+	ObservedSpeedSamples int         `json:"observedSpeedSamples"`
+	Runs                 int         `json:"runs"`
+	EvaluatedRuns        int         `json:"evaluatedRuns"`
+	AcceptedOutputs      int         `json:"acceptedOutputs"`
+	AcceptanceRate       float64     `json:"acceptanceRate"`
+	Confidence           string      `json:"confidence"`
+	AverageTokens        float64     `json:"averageTokens"`
+	AverageDurationMs    float64     `json:"averageDurationMs"`
+	AverageCostEUR       float64     `json:"averageCostEur"`
+	Reason               string      `json:"reason"`
 }
 
 // LaneWinners computes the fastest observed model per lane from telemetry only
@@ -156,26 +222,4 @@ type LaneWinner struct {
 // omitted — no winner is invented.
 func (s *TelemetryStore) LaneWinners() []LaneWinner {
 	return s.Calibration().LaneLeaders
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var buf [20]byte
-	i := len(buf)
-	for n > 0 {
-		i--
-		buf[i] = byte('0' + n%10)
-		n /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }

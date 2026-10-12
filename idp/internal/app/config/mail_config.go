@@ -1,9 +1,6 @@
 package config
 
-import (
-	"strings"
-	"time"
-)
+import "strings"
 
 const (
 	smtpHost            = "SMTP_HOST"
@@ -12,10 +9,7 @@ const (
 	smtpPassword        = "SMTP_PASSWORD"
 	smtpFrom            = "SMTP_FROM"
 	smtpRequireStartTLS = "SMTP_REQUIRE_STARTTLS"
-	smtpTimeoutSeconds  = "SMTP_TIMEOUT_SECONDS"
 )
-
-const defaultSMTPTimeoutSeconds = 10
 
 // mailConfig is optional. Password recovery stays unavailable until all
 // required delivery settings are supplied; the IDP must still boot without an
@@ -27,21 +21,19 @@ type mailConfig struct {
 	Password        string
 	From            string
 	RequireStartTLS bool
-	DeliveryTimeout time.Duration
 }
 
-func newMailConfig() *mailConfig {
-	timeoutSeconds := getEnvInt(smtpTimeoutSeconds, defaultSMTPTimeoutSeconds)
-	if timeoutSeconds <= 0 {
-		timeoutSeconds = defaultSMTPTimeoutSeconds
+func newMailConfig() (*mailConfig, error) {
+	requireTLS, err := getEnvBool(smtpRequireStartTLS, true)
+	if err != nil {
+		return nil, err
 	}
 	return &mailConfig{
 		Host:            strings.TrimSpace(getEnvString(smtpHost, "")),
 		Port:            strings.TrimSpace(getEnvString(smtpPort, "")),
 		Username:        strings.TrimSpace(getEnvString(smtpUsername, "")),
-		Password:        strings.TrimSpace(getEnvString(smtpPassword, "")),
+		Password:        getEnvString(smtpPassword, ""),
 		From:            strings.TrimSpace(getEnvString(smtpFrom, "")),
-		RequireStartTLS: getEnvBool(smtpRequireStartTLS, true),
-		DeliveryTimeout: time.Duration(timeoutSeconds) * time.Second,
-	}
+		RequireStartTLS: requireTLS,
+	}, nil
 }

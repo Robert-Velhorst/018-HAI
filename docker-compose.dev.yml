@@ -1,13 +1,4 @@
-# Optional behavior-only development override.
-#
-# Use after generating .env.local:
-#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
-#
-# Ports, databases, networks, and source builds remain owned by the canonical
-# topology. This override does not add duplicate infrastructure or mount source
-# over the static runtime binary.
-services:
-  backend:
-    environment:
-      GIN_MODE: debug
-      RUN_MODE: development
+# Legacy companion file retained for scripts that pass both the default and
+# development Compose filenames. The canonical stack already supplies safe
+# loopback port bindings and source builds in docker-compose.local.yml.
+services: {}

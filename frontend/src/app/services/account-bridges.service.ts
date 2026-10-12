@@ -6,6 +6,7 @@ import {
   IBridgeContract,
   IFeedAudit,
   IFeedHealth,
+  IFeedIdentityPreview,
   ISyncReport,
 } from '../models/account-bridges.model.interface'
 
@@ -37,5 +38,10 @@ export class AccountBridgesService {
 
   audit(id: string): Observable<{ audit: IFeedAudit[] }> {
     return this.http.get<{ audit: IFeedAudit[] }>(`${this.apiUrl}/${id}/audit`)
+  }
+
+  identityPreview(id: string): Observable<IFeedIdentityPreview> {
+    // The backend restricts this GET to local feeds; it is not a provider read or import.
+    return this.http.get<IFeedIdentityPreview>(`${this.apiUrl}/${encodeURIComponent(id)}/identity-preview`)
   }
 }

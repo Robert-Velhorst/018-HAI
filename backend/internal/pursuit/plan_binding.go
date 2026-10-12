@@ -85,13 +85,22 @@ func (s *service) resolveAcceptedCoordinationPlan(
 	return binding, nil
 }
 
+// PostgreSQL CHAR(64) pads an absent digest. Only that absent representation
+// is canonicalized; present or malformed nonempty digests remain exact.
+func portfolioCoordinationDigest(value string) string {
+	if strings.Trim(value, " ") == "" {
+		return ""
+	}
+	return value
+}
+
 func coordinationReferenceForAllocation(allocation *models.PursuitPortfolioAllocation) plangraph.AcceptedRevisionReference {
 	if allocation == nil {
 		return plangraph.AcceptedRevisionReference{}
 	}
 	reference := plangraph.AcceptedRevisionReference{
 		Revision: allocation.CoordinationPlanRevision,
-		Digest:   allocation.CoordinationPlanDigest,
+		Digest:   portfolioCoordinationDigest(allocation.CoordinationPlanDigest),
 		NodeID:   allocation.CoordinationPlanNodeID,
 	}
 	if allocation.CoordinationPlanID != nil {

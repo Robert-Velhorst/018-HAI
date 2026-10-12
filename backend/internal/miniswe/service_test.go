@@ -194,6 +194,24 @@ func TestProposalDoesNotCreateJobWhenMaintenanceCannotAdmitModel(t *testing.T) {
 	}
 }
 
+func TestProposalFailsClosedWithoutMaintenanceGateBeforeRunnerOrPersistence(t *testing.T) {
+	owner := "owner@example.test"
+	record := approvedWorkflow(owner)
+	repo := &repositoryStub{}
+	called := false
+	service := NewService(repo, workflowLookupStub{record: record}, Config{
+		Enabled: true, RunnerURL: "http://miniswe-runner:8080", Token: "a-separate-local-token", Workspaces: []string{"hai-source"}, Timeout: time.Minute,
+	}, &http.Client{Transport: roundTripper(func(*http.Request) (*http.Response, error) {
+		called = true
+		return nil, errors.New("runner must not be contacted without maintenance")
+	})})
+
+	proposal, err := service.ProposePatch(context.Background(), owner, record.Item.ID, "hai-source")
+	if !errors.Is(err, ErrUnavailable) || proposal != nil || called || len(repo.created) != 0 || len(repo.saved) != 0 {
+		t.Fatalf("missing maintenance gate must block before runner and persistence: proposal=%#v err=%v called=%v created=%d saved=%d", proposal, err, called, len(repo.created), len(repo.saved))
+	}
+}
+
 func TestProposalFailsClosedWhenTheRunnerReturnsTruncatedDiff(t *testing.T) {
 	owner := "owner@example.test"
 	record := approvedWorkflow(owner)

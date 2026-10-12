@@ -1,0 +1,15 @@
+{
+  "extends": "../../../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../../../out-tsc/progressive-pages-spec",
+    "types": ["jasmine"]
+  },
+  "include": [
+    "./task-blueprint.component.spec.ts",
+    "./task-blueprint.accessibility.spec.ts",
+    "../pursuits/pursuits.component.spec.ts",
+    "../exceptions/exceptions.component.spec.ts",
+    "../ambient-brain/ambient-brain.component.spec.ts",
+    "../account-bridges/account-bridges.component.spec.ts"
+  ]
+}

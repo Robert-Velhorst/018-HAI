@@ -1,0 +1,30 @@
+{
+  "startedAt": "2026-10-01T21:19:11.3007261+00:00",
+  "finishedAt": "2026-10-01T21:19:50.9485358+00:00",
+  "packages": [
+    "operations",
+    "accountfeed",
+    "background",
+    "migrations",
+    "executionbroker",
+    "executionauth",
+    "frameworkregistry",
+    "phase2",
+    "opscontrol",
+    "runtimelab",
+    "automation"
+  ],
+  "runPattern": ".",
+  "outputMode": "compact-package-results",
+  "integrationTag": false,
+  "deadlineSeconds": 360,
+  "timedOut": false,
+  "exitCode": 0,
+  "completedSuccessfully": true,
+  "goVersion": "go1.25.13 windows/amd64",
+  "dockerStarted": false,
+  "dependencyDownloadsEnabled": false,
+  "destructiveDatabaseTestsEnabled": false,
+  "goWorkers": 1,
+  "heapSoftLimit": "384MiB"
+}

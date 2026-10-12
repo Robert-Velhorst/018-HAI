@@ -1,34 +1,41 @@
-FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS builder
+# Stage 1: Compiling the application
+FROM golang:1.27.2 AS builder
 
+# Set the Current Working Directory inside the container
 WORKDIR /app
+ARG HAI_GO_BUILD_WORKERS=2
 
+# Cache dependencies independently from application source.
 COPY go.mod go.sum ./
 RUN go mod download
 
+# Copy the application after the stable dependency layer.
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath \
-    -tags "netgo,osusergo" \
-    -ldflags "-s -w" \
-    -o /out/idp \
-    ./cmd
+# Navigate to the cmd directory where the main.go file resides
+WORKDIR /app/cmd
 
-# The IDP needs only a CA trust store for OAuth/SMTP TLS and BusyBox wget for
-# its HTTP health probe. Pinning Alpine by digest keeps rebuilds reproducible.
-FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+# Sarama and the IDP are pure Go. Keeping CGO disabled produces a portable
+# Linux binary without a host C toolchain or runtime library dependency.
+RUN case "$HAI_GO_BUILD_WORKERS" in 1|2|4|8) ;; *) exit 1 ;; esac \
+    && GOMAXPROCS="$HAI_GO_BUILD_WORKERS" CGO_ENABLED=0 GOOS=linux \
+    go build -p "$HAI_GO_BUILD_WORKERS" -trimpath -o idp ./main.go
 
-RUN apk add --no-cache ca-certificates \
-    && addgroup -S -g 10001 hai \
-    && adduser -S -D -H -u 10001 -G hai hai
+# Stage 2: Build the runtime image
+FROM ubuntu:24.04
 
+# CA certificates are required for outbound HTTPS (the Google "Sign in with
+# Google" token exchange and userinfo calls); the minimal base ships without them.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates \
+    && groupadd --gid 10001 hai \
+    && useradd --uid 10001 --gid hai --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin hai \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
-COPY --from=builder /out/idp /app/idp
-COPY --from=builder /app/docs /app/docs
-
-ENV HOME=/tmp \
-    TMPDIR=/tmp
+# Copy the pre-built binary from the previous stage
+COPY --from=builder --chown=10001:10001 /app/cmd/idp /app/idp
+COPY --from=builder --chown=10001:10001 /app/docs /app/docs
 
 USER 10001:10001
 

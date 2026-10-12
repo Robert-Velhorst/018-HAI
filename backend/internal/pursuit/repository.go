@@ -52,6 +52,10 @@ type Repository interface {
 	FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launchIDs []uuid.UUID, limit int) ([]models.AutomationLaunchEvent, error)
 }
 
+type taskAttemptReviewRepository interface {
+	FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error)
+}
+
 type GormRepository struct {
 	DB *gorm.DB
 }
@@ -420,6 +424,27 @@ func (r *GormRepository) FindTaskAttempts(pursuitID uuid.UUID, limit int) ([]mod
 	return attempts, nil
 }
 
+func (r *GormRepository) FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error) {
+	var attempts []models.PursuitTaskAttempt
+	query := r.DB.Where(`pursuit_id = ? AND (
+		COALESCE(blocked_reason, '') <> '' OR
+		LOWER(TRIM(COALESCE(status, ''))) LIKE '%review%' OR
+		LOWER(TRIM(COALESCE(status, ''))) IN ('blocked', 'failed', 'error', 'cancelled', 'canceled', 'uncertain', 'indeterminate', 'unsupported', 'conflicting') OR
+		LOWER(TRIM(COALESCE(verification_status, ''))) IN ('needs_review', 'uncertain', 'unsupported', 'conflicting', 'failed', 'fail') OR
+		LOWER(TRIM(COALESCE(mode, ''))) = 'run'
+	)`, pursuitID)
+	if err := query.Order("updated_at DESC, task_plan_id ASC").Find(&attempts).Error; err != nil {
+		return nil, err
+	}
+	result := make([]models.PursuitTaskAttempt, 0, len(attempts))
+	for _, attempt := range attempts {
+		if pursuitTaskAttemptNeedsReview(attempt) {
+			result = append(result, attempt)
+		}
+	}
+	return result, nil
+}
+
 func (r *GormRepository) FindLinkedWorkflows(ids []uuid.UUID) ([]models.WorkflowItem, error) {
 	var items []models.WorkflowItem
 	if len(ids) == 0 {
@@ -653,7 +678,7 @@ func (r *GormRepository) FindLinkedAutomationLaunches(automationIDs []uuid.UUID,
 	if len(automationIDs) == 0 && len(launchIDs) == 0 {
 		return events, nil
 	}
-	if limit <= 0 || limit > 50 {
+	if limit <= 0 || limit > 500 {
 		limit = 20
 	}
 	query := r.DB.Model(&models.AutomationLaunchEvent{})

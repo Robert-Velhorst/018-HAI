@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,11 +55,11 @@ func (r *reminderDeliveryFakeRepo) FindDueReminderDeliveryAuthorizations(owner s
 		values := r.attempts[authorization.ID]
 		terminal := false
 		for _, attempt := range values {
-			if attempt.Status == ReminderDeliveryStatusDelivered || attempt.Status == ReminderDeliveryStatusSuppressed || attempt.Status == ReminderDeliveryStatusDeadLettered {
+			if attempt.Status == ReminderDeliveryStatusDelivered || attempt.Status == ReminderDeliveryStatusSuppressed || attempt.Status == ReminderDeliveryStatusDeadLettered || attempt.Status == ReminderDeliveryStatusExpired {
 				terminal = true
 			}
 		}
-		if !terminal && len(values) < maxAttempts && !authorization.ReminderAt.After(now) && !authorization.ExpiresAt.Before(now) {
+		if !terminal && len(values) < maxAttempts && !authorization.ReminderAt.After(now) {
 			result = append(result, reminderDeliveryCandidate{Authorization: authorization, AttemptCount: len(values)})
 		}
 	}
@@ -183,6 +184,77 @@ func TestReminderDeliveryRequiresSeparateExactAuthorizationAndWritesReceipt(t *t
 	}
 }
 
+func TestReminderDeliveryAuthorizationCoversSupportedHorizon(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		offset        time.Duration
+		wantPrepareOK bool
+	}{
+		{name: "at_maximum_supported_horizon", offset: workflowReminderMaxHorizon, wantPrepareOK: true},
+		{name: "beyond_maximum_supported_horizon", offset: workflowReminderMaxHorizon + time.Minute},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newReminderDeliveryFakeRepo()
+			sink := &reminderDeliverySinkSpy{}
+			workflowID, checklistID := uuid.New(), uuid.New()
+			reminderAt := time.Now().UTC().Add(test.offset).Truncate(time.Second)
+			repo.items[workflowID] = &models.WorkflowItem{
+				ID: workflowID, OwnerIdentity: "alice", Title: "Future reminder",
+				CurrentState: StateReady, RiskLevel: "low",
+			}
+			repo.checklist[workflowID] = []models.WorkflowChecklistItem{{
+				ID: checklistID, WorkflowID: workflowID, Label: "Review at scheduled time",
+				Status: "open", ReminderAt: &reminderAt,
+			}}
+			candidate := WorkflowReminderCandidate{Workflow: *repo.items[workflowID], Reminder: repo.checklist[workflowID][0]}
+			digest, err := reminderEvidenceDigest(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configured, err := WithReminderDeliverySink(NewService(repo), sink)
+			if err != nil {
+				t.Fatal(err)
+			}
+			activationService := configured.(ReminderActivationService)
+			prepared, err := activationService.PrepareReminderActivationForOwner("alice", "alice", checklistID, ReminderActivationPrepareRequest{
+				ExpectedReminderDigest: digest, IdempotencyKey: "delivery:horizon:" + test.name,
+				ActivationKind: ReminderActivationKindInternal, Confirmation: ReminderActivationPrepareConfirmation,
+			})
+			if !test.wantPrepareOK {
+				if err == nil || prepared != nil {
+					t.Fatalf("out-of-horizon reminder preparation = %#v, %v; want rejection", prepared, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("prepare reminder at supported horizon: %v", err)
+			}
+			approved, err := activationService.DecideReminderActivationForOwner("alice", "alice", prepared.Request.ID, ReminderActivationDecisionRequest{
+				Decision: ReminderActivationDecisionApproved, Reason: "Deliver this scheduled internal reminder.",
+				Confirmation:                    ReminderActivationApproveConfirmation,
+				ExpectedActivationRequestDigest: prepared.Request.RecordDigest,
+			})
+			if err != nil {
+				t.Fatalf("approve reminder preparation: %v", err)
+			}
+			deliveryService := configured.(ReminderDeliveryService)
+			authorized, err := deliveryService.AuthorizeReminderDeliveryForOwner("alice", "alice", prepared.Request.ID, ReminderDeliveryAuthorizeRequest{
+				ExpectedActivationRequestDigest:  prepared.Request.RecordDigest,
+				ExpectedActivationDecisionDigest: approved.Decision.RecordDigest,
+				ExpectedReminderDigest:           digest, IdempotencyKey: "delivery:horizon:authorize:" + test.name,
+				Channel: ReminderDeliveryChannelInApp, Confirmation: ReminderDeliveryAuthorizeConfirmation,
+			})
+			if err != nil {
+				t.Fatalf("authorize reminder at supported horizon: %v", err)
+			}
+			minimumExpiry := reminderAt.Add(workflowReminderDeliveryGrace)
+			if authorized.Authorization.ExpiresAt.Before(minimumExpiry) {
+				t.Fatalf("authorization expires at %s before the reminder grace ends at %s", authorized.Authorization.ExpiresAt, minimumExpiry)
+			}
+		})
+	}
+}
+
 func TestReminderDeliverySuppressesRevokedAuthorityAndNeverCallsSink(t *testing.T) {
 	repo := newReminderDeliveryFakeRepo()
 	sink := &reminderDeliverySinkSpy{}
@@ -245,5 +317,37 @@ func TestReminderDeliveryDeadLettersAfterThreeFailedAttempts(t *testing.T) {
 	final, err := delivery.RunDueReminderDeliveriesForOwner("alice", RunDueRequest{Limit: 10})
 	if err != nil || final.Checked != 0 || len(sink.deliveries) != ReminderDeliveryMaxAttempts {
 		t.Fatalf("final=%#v deliveries=%d err=%v", final, len(sink.deliveries), err)
+	}
+}
+
+func TestReminderDeliveryRecordsExpiredAuthorizationWithoutCallingSink(t *testing.T) {
+	repo := newReminderDeliveryFakeRepo()
+	sink := &reminderDeliverySinkSpy{}
+	configured, err := WithReminderDeliverySink(NewService(repo), sink)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delivery := configured.(ReminderDeliveryService)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	authorization := models.WorkflowReminderDeliveryAuthorization{
+		ID: uuid.New(), OwnerIdentity: "alice", ReminderAt: now.Add(-time.Minute), ExpiresAt: now.Add(-time.Second),
+		ReminderDigest: strings.Repeat("a", 64), RecordDigest: strings.Repeat("b", 64),
+	}
+	repo.authorizations[authorization.ID] = authorization
+
+	run, err := delivery.RunDueReminderDeliveriesForOwner("alice", RunDueRequest{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Checked != 1 || run.Expired != 1 || run.Delivered != 0 || len(sink.deliveries) != 0 {
+		t.Fatalf("expired reminder pass = %#v; sink calls=%d", run, len(sink.deliveries))
+	}
+	history, err := delivery.ReminderDeliveryHistoryForOwner("alice", 10)
+	if err != nil || len(history.Attempts) != 1 || history.Attempts[0].Status != ReminderDeliveryStatusExpired {
+		t.Fatalf("expired reminder history = %#v, err=%v", history, err)
+	}
+	second, err := delivery.RunDueReminderDeliveriesForOwner("alice", RunDueRequest{Limit: 10})
+	if err != nil || second.Checked != 0 {
+		t.Fatalf("expired authorization was not terminal: %#v, err=%v", second, err)
 	}
 }

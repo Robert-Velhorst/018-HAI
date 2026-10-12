@@ -7,15 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"automation-hub-backend/internal/task"
-
 	"github.com/gin-gonic/gin"
 )
 
 func TestRequestResumeApprovalHandlerCreatesDurableReview(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := newTestService(t)
-	service.WithControlReviewRepository(task.NewMemoryTaskStateRepository())
+	reviews := newMemoryControlReviews()
+	service.WithControlReviewRepository(reviews)
 	if _, err := service.EngageEmergencyStop("test stop", service.owner); err != nil {
 		t.Fatalf("engage emergency stop: %v", err)
 	}
@@ -30,31 +29,9 @@ func TestRequestResumeApprovalHandlerCreatesDurableReview(t *testing.T) {
 	if recorder.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body.String())
 	}
-	pending := service.reviews.(task.PendingReviewStateRepository)
-	items, err := pending.ListPendingReviewItems(service.owner, 10)
+	items, err := reviews.ListPendingControlReviews(service.owner, 10)
 	if err != nil || len(items) != 1 {
 		t.Fatalf("resume approval was not persisted: %s", recorder.Body.String())
-	}
-}
-
-func TestPauseHandlerRejectsMalformedRequestWithoutEngagingEmergencyStop(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	service := newTestService(t)
-	handler := NewHandler(service)
-	router := gin.New()
-	router.Use(func(c *gin.Context) { c.Set("subject", service.owner) })
-	router.POST("/pause", handler.Pause)
-
-	request := httptest.NewRequest(http.MethodPost, "/pause", strings.NewReader(`{"reason":`))
-	request.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
-	}
-	if service.Control().EmergencyState().Engaged {
-		t.Fatal("malformed request engaged the emergency stop")
 	}
 }
 
@@ -62,7 +39,7 @@ func TestApproveAndResumeHandlerConsumesPreparedReview(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := newTestService(t)
 	service.WithExecutionAuthorizer(allowExactControlAuthorization(service.now))
-	service.WithControlReviewRepository(task.NewMemoryTaskStateRepository())
+	service.WithControlReviewRepository(newMemoryControlReviews())
 	if _, err := service.EngageEmergencyStop("test stop", service.owner); err != nil {
 		t.Fatalf("engage emergency stop: %v", err)
 	}
@@ -94,5 +71,50 @@ func TestApproveAndResumeHandlerConsumesPreparedReview(t *testing.T) {
 	}
 	if response.EmergencyStop.Engaged {
 		t.Fatal("approved review did not resume processing")
+	}
+}
+
+func TestLegacyResumeHandlerRejectsCallerSuppliedAuthorizationProof(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := newTestService(t)
+	service.WithControlReviewRepository(newMemoryControlReviews())
+	if _, err := service.EngageEmergencyStop("test stop", service.owner); err != nil {
+		t.Fatalf("engage emergency stop: %v", err)
+	}
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("subject", service.owner) })
+	router.POST("/resume", NewHandler(service).Resume)
+	request := httptest.NewRequest(http.MethodPost, "/resume", strings.NewReader(
+		`{"idempotencyKey":"forged","taskId":"forged","approvalSourceId":"forged","approvalBindingDigest":"forged"}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("legacy resume status = %d, want %d: %s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+	if !service.Control().EmergencyStop() {
+		t.Fatal("legacy resume cleared the emergency stop")
+	}
+}
+
+func TestPauseHandlerRejectsMalformedRequestWithoutEngagingEmergencyStop(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := newTestService(t)
+	handler := NewHandler(service)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("subject", service.owner) })
+	router.POST("/pause", handler.Pause)
+
+	request := httptest.NewRequest(http.MethodPost, "/pause", strings.NewReader(`{"reason":`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+	if service.Control().EmergencyState().Engaged {
+		t.Fatal("malformed request engaged the emergency stop")
 	}
 }

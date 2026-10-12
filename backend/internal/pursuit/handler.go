@@ -1,6 +1,7 @@
 package pursuit
 
 import (
+	"automation-hub-backend/internal/apierror"
 	"automation-hub-backend/internal/executionauth"
 	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/rbac"
@@ -68,7 +69,7 @@ func (h *Handler) List(c *gin.Context) {
 	includeArchived, _ := strconv.ParseBool(c.Query("includeArchived"))
 	records, err := h.service.ListForOwner(pursuitOwner(c), includeArchived)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, http.StatusInternalServerError, err, "pursuits are unavailable")
 		return
 	}
 	if viewMode == "summary" {
@@ -79,20 +80,52 @@ func (h *Handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, records)
 }
 
+func (h *Handler) ReconcileLifeDomains(c *gin.Context) {
+	reconciler, ok := h.service.(interface {
+		ReconcileLifeDomainsForOwner(ownerIdentity, actor string) (*LifeDomainReconciliationResult, error)
+	})
+	if !ok {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "life-domain reconciliation is unavailable"})
+		return
+	}
+	result, err := reconciler.ReconcileLifeDomainsForOwner(pursuitOwner(c), verifiedActor(c, "operator"))
+	if err != nil {
+		writePursuitServiceError(c, http.StatusServiceUnavailable, err, "life-domain reconciliation is unavailable")
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 func (h *Handler) Dashboard(c *gin.Context) {
-	viewMode := strings.TrimSpace(c.Query("view"))
-	if viewMode != "" && viewMode != "full" && viewMode != "summary" && viewMode != "counts" {
+	view := strings.ToLower(strings.TrimSpace(c.Query("view")))
+	if view != "" && view != "full" && view != "summary" && view != "counts" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "pursuit dashboard view must be full, summary, or counts"})
 		return
 	}
-	record, err := h.service.DashboardForOwner(pursuitOwner(c))
+	ownerIdentity := pursuitOwner(c)
+	var (
+		record *Dashboard
+		err    error
+	)
+	if includePursuits, _ := strconv.ParseBool(c.Query("includePursuits")); includePursuits {
+		provider, ok := h.service.(interface {
+			DashboardWithPursuitsForOwner(string) (*Dashboard, error)
+		})
+		if !ok {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "dashboard pursuit records are unavailable"})
+			return
+		}
+		record, err = provider.DashboardWithPursuitsForOwner(ownerIdentity)
+	} else {
+		record, err = h.service.DashboardForOwner(ownerIdentity)
+	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, http.StatusInternalServerError, err, "pursuit dashboard is unavailable")
 		return
 	}
-	if viewMode == "summary" {
+	if view == "summary" {
 		record = dashboardSummary(record)
-	} else if viewMode == "counts" {
+	} else if view == "counts" {
 		record = dashboardCounts(record)
 	}
 	c.JSON(http.StatusOK, record)
@@ -101,7 +134,7 @@ func (h *Handler) Dashboard(c *gin.Context) {
 func (h *Handler) Brief(c *gin.Context) {
 	record, err := h.service.BriefForOwner(pursuitOwner(c))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, http.StatusInternalServerError, err, "pursuit brief is unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, record)
@@ -119,7 +152,7 @@ func (h *Handler) Overview(c *gin.Context) {
 func (h *Handler) Decisions(c *gin.Context) {
 	decisions, err := h.service.DecisionsForOwner(pursuitOwner(c))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, http.StatusInternalServerError, err, "pursuit decisions are unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, decisions)
@@ -166,7 +199,7 @@ func (h *Handler) AcceptPortfolioAllocation(c *gin.Context) {
 		} else if strings.Contains(message, "storage is unavailable") {
 			status = http.StatusServiceUnavailable
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio allocation acceptance could not be completed")
 		return
 	}
 	status := http.StatusCreated
@@ -201,7 +234,7 @@ func (h *Handler) PortfolioAllocationHistory(c *gin.Context) {
 		} else if strings.Contains(strings.ToLower(err.Error()), "storage is unavailable") {
 			status = http.StatusServiceUnavailable
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio allocation history is unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -241,7 +274,7 @@ func (h *Handler) PreparePortfolioExecutionProposals(c *gin.Context) {
 		} else if strings.Contains(message, "storage is unavailable") {
 			status = http.StatusServiceUnavailable
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio execution proposal preparation could not be completed")
 		return
 	}
 	status := http.StatusCreated
@@ -288,7 +321,7 @@ func (h *Handler) PortfolioExecutionProposalHistory(c *gin.Context) {
 		} else if strings.Contains(message, "crossed") || strings.Contains(message, "digest") || strings.Contains(message, "invalid") {
 			status = http.StatusConflict
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio execution proposal history is unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, results)
@@ -318,7 +351,7 @@ func (h *Handler) PortfolioDispatchCoordination(c *gin.Context) {
 		} else if strings.Contains(message, "changed") || strings.Contains(message, "invalid") {
 			status = http.StatusConflict
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio dispatch coordination is unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -363,7 +396,7 @@ func (h *Handler) PortfolioDispatchCoordinationBatch(c *gin.Context) {
 		} else if strings.Contains(message, "crossed") || strings.Contains(message, "changed") || strings.Contains(message, "invalid") {
 			status = http.StatusConflict
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio dispatch coordination is unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, results)
@@ -407,7 +440,7 @@ func (h *Handler) DispatchPortfolioWorkflows(c *gin.Context) {
 		case strings.Contains(message, "changed"), strings.Contains(message, "different immutable"):
 			status = http.StatusConflict
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio workflow dispatch could not be completed")
 		return
 	}
 	status := http.StatusCreated
@@ -451,7 +484,7 @@ func (h *Handler) DecidePortfolioExecutionProposalItem(c *gin.Context) {
 		} else if strings.Contains(message, "storage is unavailable") {
 			status = http.StatusServiceUnavailable
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio execution proposal decision could not be completed")
 		return
 	}
 	status := http.StatusCreated
@@ -499,7 +532,7 @@ func (h *Handler) AuthorizePortfolioWorkflowEffect(c *gin.Context) {
 			strings.Contains(message, "authorization is unavailable"):
 			status = http.StatusServiceUnavailable
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio workflow authorization could not be completed")
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -549,7 +582,7 @@ func (h *Handler) ExecutePortfolioWorkflowEffect(c *gin.Context) {
 			strings.Contains(message, "intake is unavailable"):
 			status = http.StatusServiceUnavailable
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio workflow execution could not be completed")
 		return
 	}
 	status := http.StatusCreated
@@ -599,7 +632,7 @@ func (h *Handler) SettlePortfolioWorkflow(c *gin.Context) {
 			strings.Contains(message, "not backed by verified completion"):
 			status = http.StatusConflict
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "verified portfolio workflow settlement could not be completed")
 		return
 	}
 	status := http.StatusCreated
@@ -637,7 +670,7 @@ func (h *Handler) PortfolioExecutionProposalDecisionHistory(c *gin.Context) {
 		if strings.Contains(strings.ToLower(err.Error()), "unavailable to this owner") {
 			status = http.StatusNotFound
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, status, err, "portfolio execution proposal decision history is unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -723,11 +756,11 @@ func (h *Handler) AppendResourceEvent(c *gin.Context) {
 	request.Actor = verifiedActor(c, "operator")
 	record, err := h.service.AppendResourceEventForOwner(pursuitOwner(c), id, request)
 	if err != nil {
-		status := http.StatusBadRequest
 		if strings.Contains(strings.ToLower(err.Error()), "idempotency key") {
-			status = http.StatusConflict
+			c.JSON(http.StatusConflict, gin.H{"error": "resource event idempotency key was already used"})
+			return
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "resource event could not be added"})
 		return
 	}
 	c.JSON(http.StatusCreated, record)
@@ -755,11 +788,19 @@ func (h *Handler) ReleaseResourceReservation(c *gin.Context) {
 		pursuitOwner(c), pursuitID, reservationID, request,
 	)
 	if err != nil {
-		status := http.StatusBadRequest
-		if strings.Contains(strings.ToLower(err.Error()), "already settled") {
-			status = http.StatusConflict
+		message := strings.ToLower(err.Error())
+		switch {
+		case strings.Contains(message, "confirmedorphan"):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "confirmedOrphan must be true before releasing a reservation"})
+			return
+		case strings.Contains(message, "release reason"):
+			c.JSON(http.StatusBadRequest, gin.H{"error": "release reason must contain 12 to 1000 characters"})
+			return
+		case strings.Contains(message, "already settled"):
+			c.JSON(http.StatusConflict, gin.H{"error": "resource reservation is already settled"})
+			return
 		}
-		c.JSON(status, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "resource reservation could not be released"})
 		return
 	}
 	c.JSON(http.StatusOK, record)
@@ -827,11 +868,8 @@ func (h *Handler) Reopen(c *gin.Context) {
 	var request struct {
 		Note string `json:"note,omitempty"`
 	}
-	if c.Request.ContentLength != 0 {
-		if err := c.ShouldBindJSON(&request); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pursuit reopen request"})
-			return
-		}
+	if !bindOptionalPursuitJSON(c, &request) {
+		return
 	}
 	record, err := h.service.ReopenForOwner(pursuitOwner(c), id, verifiedActor(c, "operator"), request.Note)
 	if err != nil {
@@ -893,10 +931,21 @@ func (h *Handler) Match(c *gin.Context) {
 	request.OwnerIdentity = pursuitOwner(c)
 	result, err := h.service.Match(request)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writePursuitServiceError(c, http.StatusInternalServerError, err, "pursuit matching is unavailable")
 		return
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// writePursuitServiceError preserves actionable validation responses while
+// preventing unexpected repository, provider, or filesystem diagnostics from
+// crossing the personal pursuit HTTP boundary.
+func writePursuitServiceError(c *gin.Context, status int, err error, fallback string) {
+	message := err.Error()
+	if status >= http.StatusInternalServerError {
+		message = apierror.PublicMessage(err, fallback)
+	}
+	c.JSON(status, gin.H{"error": message})
 }
 
 func (h *Handler) RouteIntake(c *gin.Context) {
@@ -930,12 +979,14 @@ func (h *Handler) Intake(c *gin.Context) {
 	}
 	request.OwnerIdentity = pursuitOwner(c)
 	request.Actor = verifiedActor(c, "operator")
-	_, err := h.service.IntakeForOwner(pursuitOwner(c), id, request)
+	detail, err := h.service.IntakeForOwner(pursuitOwner(c), id, request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	h.respondScopedDetail(c, id, http.StatusCreated)
+	// IntakeWorkflowID is an exact response-only reference. Re-reading the
+	// pursuit here would drop it because it is intentionally not persisted.
+	c.JSON(http.StatusCreated, detail)
 }
 
 func (h *Handler) Plan(c *gin.Context) {
@@ -1044,11 +1095,8 @@ func (h *Handler) RefreshSummary(c *gin.Context) {
 	var request struct {
 		Actor string `json:"actor,omitempty"`
 	}
-	if c.Request.ContentLength != 0 {
-		if err := c.ShouldBindJSON(&request); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid pursuit summary request"})
-			return
-		}
+	if !bindOptionalPursuitJSON(c, &request) {
+		return
 	}
 	request.Actor = verifiedActor(c, "system")
 	_, err := h.service.RefreshSummaryForOwner(pursuitOwner(c), id, request.Actor)

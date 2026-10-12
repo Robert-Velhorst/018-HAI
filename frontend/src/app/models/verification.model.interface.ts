@@ -109,4 +109,5 @@ export interface IVerificationResult {
   unsupportedClaims: IVerificationClaim[];
   researchQuestions: string[];
   logs: string[];
+  auditWarnings?: string[];
 }

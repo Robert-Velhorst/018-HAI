@@ -1,5 +1,4 @@
-# Compatibility entrypoint for operators who run Compose from idp/.
-# The identity provider is part of the one canonical HAI topology.
+# Compatibility entry point. The IDP shares the canonical local HAI topology.
 name: 018-hai
 
 include:

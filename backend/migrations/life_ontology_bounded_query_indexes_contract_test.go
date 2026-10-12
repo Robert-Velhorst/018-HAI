@@ -6,11 +6,11 @@ import (
 )
 
 func TestLifeOntologyBoundedQueryIndexesAreReversible(t *testing.T) {
-	upBytes, err := Files.ReadFile("pre/0063_life_ontology_bounded_query_indexes.up.sql")
+	upBytes, err := Files.ReadFile("pre/0122_life_ontology_bounded_query_indexes.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	downBytes, err := Files.ReadFile("pre/0063_life_ontology_bounded_query_indexes.down.sql")
+	downBytes, err := Files.ReadFile("pre/0122_life_ontology_bounded_query_indexes.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

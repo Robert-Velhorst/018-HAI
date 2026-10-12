@@ -31,6 +31,24 @@ func TestUnifiedExecutionAuthorizationFreshApplyRollbackAndReapply(
 
 	assertUnifiedAuthorizationSchema(t, db)
 	assertGovernanceMigrationTailSchema(t, db, true)
+	for _, version := range []string{
+		"pre/0017_controlled_learning_application",
+		"pre/0016_evidence_packs",
+		"pre/0015_controlled_learning",
+		"pre/0014_unified_execution_authorization",
+	} {
+		if err := infra.RollbackMigration(db, files, "pre", version); err != nil {
+			t.Fatalf("roll back empty migration %s: %v", version, err)
+		}
+	}
+	assertUnifiedAuthorizationRolledBack(t, db)
+	assertGovernanceMigrationTailSchema(t, db, false)
+	emptyReapplied, err := infra.ApplyMigrations(db, files, "pre")
+	if err != nil || emptyReapplied != 4 {
+		t.Fatalf("reapply empty migrations 0014 through 0017 = (%d, %v), want (4, nil)", emptyReapplied, err)
+	}
+	assertUnifiedAuthorizationSchema(t, db)
+	assertGovernanceMigrationTailSchema(t, db, true)
 
 	owner := "migration-owner-" + uuid.NewString() + "@example.com"
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -133,7 +151,6 @@ func TestUnifiedExecutionAuthorizationFreshApplyRollbackAndReapply(
 		"pre/0017_controlled_learning_application",
 		"pre/0016_evidence_packs",
 		"pre/0015_controlled_learning",
-		"pre/0014_unified_execution_authorization",
 	} {
 		if err := infra.RollbackMigration(
 			db,
@@ -145,21 +162,42 @@ func TestUnifiedExecutionAuthorizationFreshApplyRollbackAndReapply(
 		}
 	}
 
-	assertUnifiedAuthorizationRolledBack(
-		t,
-		db,
-		taskDecisionID,
-		workflowID,
-		workflowDecisionID,
-	)
 	assertGovernanceMigrationTailSchema(t, db, false)
+	var appliedAtBefore time.Time
+	if err := db.Raw(`SELECT applied_at FROM public.schema_migrations WHERE version = ?`, "pre/0014_unified_execution_authorization").Row().Scan(&appliedAtBefore); err != nil {
+		t.Fatalf("read authorization migration timestamp before protected rollback: %v", err)
+	}
+	if err := infra.RollbackMigration(db, files, "pre", "pre/0014_unified_execution_authorization"); err == nil || !strings.Contains(err.Error(), "authorization or workflow decision data exists") {
+		t.Fatalf("non-empty authorization rollback error = %v, want retained-data refusal", err)
+	}
+	for table, id := range map[string]uuid.UUID{
+		"task_review_decisions": taskDecisionID,
+		"workflow_items":        workflowID,
+		"workflow_decisions":    workflowDecisionID,
+	} {
+		var count int
+		if err := db.Raw(fmt.Sprintf("SELECT count(*) FROM public.%s WHERE id = ?", table), id).Row().Scan(&count); err != nil {
+			t.Fatalf("read protected provenance %s: %v", table, err)
+		}
+		if count != 1 {
+			t.Errorf("protected provenance %s count = %d, want 1", table, count)
+		}
+	}
+	var receipts int64
+	if err := db.Raw(`SELECT count(*) FROM public.execution_authorization_receipts`).Scan(&receipts).Error; err != nil || receipts != 2 {
+		t.Fatalf("authorization receipts after refused rollback = %d, err = %v; want 2", receipts, err)
+	}
+	var appliedAtAfter time.Time
+	if err := db.Raw(`SELECT applied_at FROM public.schema_migrations WHERE version = ?`, "pre/0014_unified_execution_authorization").Row().Scan(&appliedAtAfter); err != nil || !appliedAtAfter.Equal(appliedAtBefore) {
+		t.Fatalf("authorization ledger timestamp after refused rollback = %s, err = %v; want unchanged %s", appliedAtAfter, err, appliedAtBefore)
+	}
 
 	reapplied, err := infra.ApplyMigrations(db, files, "pre")
 	if err != nil {
-		t.Fatalf("reapply migrations 0014 through 0017: %v", err)
+		t.Fatalf("reapply migrations 0015 through 0017: %v", err)
 	}
-	if reapplied != 4 {
-		t.Fatalf("reapplied migrations = %d, want 4", reapplied)
+	if reapplied != 3 {
+		t.Fatalf("reapplied migrations = %d, want 3", reapplied)
 	}
 	assertUnifiedAuthorizationSchema(t, db)
 	assertGovernanceMigrationTailSchema(t, db, true)
@@ -296,9 +334,6 @@ func assertUnifiedAuthorizationSchema(t *testing.T, db *gorm.DB) {
 func assertUnifiedAuthorizationRolledBack(
 	t *testing.T,
 	db *gorm.DB,
-	taskDecisionID uuid.UUID,
-	workflowID uuid.UUID,
-	workflowDecisionID uuid.UUID,
 ) {
 	t.Helper()
 	var receiptTable *string
@@ -341,18 +376,14 @@ func assertUnifiedAuthorizationRolledBack(
 		t.Fatal("task-review source constraint remains after rollback")
 	}
 
-	for table, id := range map[string]uuid.UUID{
-		"task_review_decisions": taskDecisionID,
-		"workflow_items":        workflowID,
-		"workflow_decisions":    workflowDecisionID,
-	} {
+	for _, table := range []string{"task_review_decisions", "workflow_items", "workflow_decisions"} {
 		var count int
-		query := fmt.Sprintf("SELECT count(*) FROM public.%s WHERE id = ?", table)
-		if err := db.Raw(query, id).Row().Scan(&count); err != nil {
+		query := fmt.Sprintf("SELECT count(*) FROM public.%s", table)
+		if err := db.Raw(query).Row().Scan(&count); err != nil {
 			t.Fatalf("check predecessor row %s: %v", table, err)
 		}
-		if count != 1 {
-			t.Errorf("predecessor row %s count = %d, want 1", table, count)
+		if count != 0 {
+			t.Errorf("predecessor table %s rows = %d after empty rollback, want 0", table, count)
 		}
 	}
 }

@@ -4,6 +4,7 @@
 package invariants
 
 import (
+	"math"
 	"strings"
 
 	"automation-hub-backend/internal/models"
@@ -28,11 +29,13 @@ func ValidateMemory(m models.ContextMemory) []Violation {
 	if strings.TrimSpace(m.Kind) == "" {
 		v = append(v, Violation{Field: "kind", Rule: "required", Detail: "kind must not be empty"})
 	}
-	if m.Confidence < 0 || m.Confidence > 1 {
+	if math.IsNaN(m.Confidence) || math.IsInf(m.Confidence, 0) {
+		v = append(v, Violation{Field: "confidence", Rule: "finite", Detail: "confidence must be finite"})
+	} else if m.Confidence < 0 || m.Confidence > 1 {
 		v = append(v, Violation{Field: "confidence", Rule: "range", Detail: "confidence must be within [0,1]"})
 	}
 	if len(m.Tags) > 512 {
-		v = append(v, Violation{Field: "tags", Rule: "max_length", Detail: "joined tags must not exceed 512 characters"})
+		v = append(v, Violation{Field: "tags", Rule: "max_length", Detail: "joined tags must not exceed 512 bytes"})
 	}
 	return v
 }

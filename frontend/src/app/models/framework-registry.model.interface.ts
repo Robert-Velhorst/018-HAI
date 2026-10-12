@@ -56,6 +56,19 @@ export interface IFrameworkPreference {
   updatedAt: string;
 }
 
+export interface IFrameworkPreferenceChange {
+  id: string;
+  sequence: number;
+  frameworkId: string;
+  actor: string;
+  reason: string;
+  before?: IFrameworkPreference | null;
+  after: IFrameworkPreference;
+  occurredAt: string;
+  previousEventDigest?: string;
+  eventDigest: string;
+}
+
 export interface IFrameworkView extends IFramework {
   effectiveStatus: string;
   enabled: boolean;

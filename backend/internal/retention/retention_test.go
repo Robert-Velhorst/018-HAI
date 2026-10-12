@@ -25,6 +25,17 @@ func TestDueForArchival(t *testing.T) {
 	}
 }
 
+func TestDueForArchivalUsesMostRecentActivity(t *testing.T) {
+	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	memory := mem(false, 200, now)
+	lastUsed := now.AddDate(0, 0, -10)
+	memory.LastUsedAt = &lastUsed
+
+	if due := DueForArchival([]models.ContextMemory{memory}, DefaultPolicy(), now); len(due) != 0 {
+		t.Fatalf("recently used memory was marked for archival: %#v", due)
+	}
+}
+
 func TestDueForDeletion(t *testing.T) {
 	now := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
 	p := DefaultPolicy() // delete archived after 365d

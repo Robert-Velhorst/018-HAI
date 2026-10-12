@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -19,13 +18,14 @@ import (
 	"automation-hub-backend/internal/task"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const (
 	taskReviewPrefix       = "task-review:"
 	taskReviewSource       = "task-review"
-	approvalFreshnessLimit = 15 * time.Minute
-	approvalFutureSkew     = 5 * time.Second
+	approvalFreshnessLimit = executionauth.TaskReviewApprovalFreshnessLimit
+	approvalFutureSkew     = executionauth.TaskReviewApprovalFutureSkew
 	maximumOwnerBytes      = 255
 	maximumTaskPlanRunes   = 160
 	maximumNoteRunes       = 512
@@ -62,6 +62,55 @@ func (r *TaskReviewResolver) Resolve(
 	sourceID string,
 	bindingDigest string,
 ) (executionauth.ResolvedApproval, error) {
+	if r == nil || r.repository == nil {
+		return executionauth.ResolvedApproval{}, fmt.Errorf(
+			"%w: task review resolver is not configured",
+			ErrInvalidRequest,
+		)
+	}
+	return r.resolveUsing(ctx, ownerIdentity, sourceID, bindingDigest, r.repository.FindApprovedReviewDecision)
+}
+
+type taskReviewPostgresTransactionRepository interface {
+	FindApprovedReviewDecisionInPostgresTransaction(
+		*gorm.DB,
+		string,
+		string,
+	) (*task.ReviewDecisionRecord, error)
+}
+
+func (r *TaskReviewResolver) ResolveInPostgresTransaction(
+	ctx context.Context,
+	tx *gorm.DB,
+	ownerIdentity string,
+	sourceID string,
+	bindingDigest string,
+) (executionauth.ResolvedApproval, error) {
+	if r == nil || r.repository == nil || tx == nil {
+		return executionauth.ResolvedApproval{}, fmt.Errorf(
+			"%w: task review resolver and PostgreSQL transaction are required",
+			ErrInvalidRequest,
+		)
+	}
+	repository, ok := r.repository.(taskReviewPostgresTransactionRepository)
+	if !ok || repository == nil {
+		return executionauth.ResolvedApproval{}, fmt.Errorf(
+			"%w: task review repository cannot resolve approvals in the execution transaction",
+			ErrApprovalUnavailable,
+		)
+	}
+	return r.resolveUsing(ctx, ownerIdentity, sourceID, bindingDigest, func(owner, reviewID string) (*task.ReviewDecisionRecord, error) {
+		return repository.FindApprovedReviewDecisionInPostgresTransaction(tx, owner, reviewID)
+	})
+}
+
+func (r *TaskReviewResolver) resolveUsing(
+	ctx context.Context,
+	ownerIdentity string,
+	sourceID string,
+	bindingDigest string,
+	findDecision func(string, string) (*task.ReviewDecisionRecord, error),
+) (executionauth.ResolvedApproval, error) {
 	if r == nil || r.repository == nil || r.now == nil {
 		return executionauth.ResolvedApproval{}, fmt.Errorf(
 			"%w: task review resolver is not configured",
@@ -88,7 +137,7 @@ func (r *TaskReviewResolver) Resolve(
 		)
 	}
 
-	decision, err := r.repository.FindApprovedReviewDecision(ownerIdentity, reviewID.String())
+	decision, err := findDecision(ownerIdentity, reviewID.String())
 	if err != nil {
 		if errors.Is(err, task.ErrTaskStateNotFound) {
 			return executionauth.ResolvedApproval{}, ErrApprovalUnavailable
@@ -234,24 +283,8 @@ func validSHA256Digest(value string) bool {
 	return err == nil && len(decoded) == sha256.Size
 }
 
-type immutableDecisionDigestV1 struct {
-	ContractVersion  int    `json:"contractVersion"`
-	ID               string `json:"id"`
-	ReviewItemID     string `json:"reviewItemId"`
-	ReviewRevision   int    `json:"reviewRevision"`
-	TaskPlanID       string `json:"taskPlanId"`
-	Decision         string `json:"decision"`
-	ResolutionNote   string `json:"resolutionNote"`
-	ResolvedBy       string `json:"resolvedBy"`
-	ApprovalSource   string `json:"approvalSource"`
-	ApprovalSourceID string `json:"approvalSourceId"`
-	RequestDigest    string `json:"requestDigest"`
-	ResolvedAt       string `json:"resolvedAt"`
-}
-
 func digestReviewDecision(decision task.ReviewDecisionRecord) (string, error) {
-	payload, err := json.Marshal(immutableDecisionDigestV1{
-		ContractVersion:  1,
+	return executionauth.DigestTaskReviewDecision(executionauth.TaskReviewDecisionEvidence{
 		ID:               decision.ID,
 		ReviewItemID:     decision.ReviewItemID,
 		ReviewRevision:   decision.ReviewRevision,
@@ -262,11 +295,6 @@ func digestReviewDecision(decision task.ReviewDecisionRecord) (string, error) {
 		ApprovalSource:   decision.ApprovalSource,
 		ApprovalSourceID: decision.ApprovalSourceID,
 		RequestDigest:    decision.RequestDigest,
-		ResolvedAt:       decision.ResolvedAt.UTC().Format(time.RFC3339Nano),
+		ResolvedAt:       decision.ResolvedAt,
 	})
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:]), nil
 }

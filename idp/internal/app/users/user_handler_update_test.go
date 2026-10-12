@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"net/mail"
 	"testing"
 	"time"
 
+	"automation-hub-idp/internal/app/dto"
 	"automation-hub-idp/internal/app/models"
 	"automation-hub-idp/internal/app/utils"
 	"github.com/gin-gonic/gin"
@@ -17,19 +19,21 @@ import (
 func TestUpdatePreservesEmailForPasswordOnlyRequest(t *testing.T) {
 	userID := uuid.New()
 	service := &recordingUserService{user: &models.User{ID: userID, Email: "operator@example.com"}}
-	recorder := performUserUpdate(t, userID, service, `{"password":"a-strong-password"}`)
+	recorder := performUserUpdate(t, userID, service, `{"currentPassword":"current-password","password":"a-strong-password"}`)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Equal(t, "a-strong-password", service.password)
-	require.Nil(t, service.updatedUser)
+	require.NotNil(t, service.updatedUser)
+	require.Equal(t, "operator@example.com", service.updatedUser.Email)
 	require.Contains(t, recorder.Body.String(), "operator@example.com")
 }
 
-func TestUpdateRejectsEmptyRequest(t *testing.T) {
-	service := &recordingUserService{}
-	recorder := performUserUpdate(t, uuid.New(), service, `{}`)
+func TestUpdateAllowsNoopRequestWithoutMutation(t *testing.T) {
+	userID := uuid.New()
+	service := &recordingUserService{user: &models.User{ID: userID, Email: "operator@example.com"}}
+	recorder := performUserUpdate(t, userID, service, `{}`)
 
-	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	require.Equal(t, http.StatusOK, recorder.Code)
 	require.Nil(t, service.updatedUser)
 	require.Empty(t, service.password)
 }
@@ -83,12 +87,13 @@ func TestGetCurrentUserRejectsMissingUser(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, recorder.Code)
 }
 
-func performUserUpdate(t *testing.T, userID uuid.UUID, service UserService, body string) *httptest.ResponseRecorder {
+func performUserUpdate(t *testing.T, userID uuid.UUID, service AccountUpdateService, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set("userID", userID)
+		c.Set("authSession", &dto.AuthSession{Subject: userID.String(), SessionVersion: 1})
 		c.Next()
 	})
 	router.PATCH("/users", NewHandler(service).Update)
@@ -110,6 +115,44 @@ func (s *recordingUserService) CreateUser(models.User) (*models.User, error)    
 func (s *recordingUserService) GetUserByID(uuid.UUID) (*models.User, error)      { return s.user, nil }
 func (s *recordingUserService) GetUserByEmail(string) (*models.User, error)      { return nil, nil }
 func (s *recordingUserService) GetUserByResetToken(string) (*models.User, error) { return nil, nil }
+func (s *recordingUserService) UpdateAccount(id uuid.UUID, _ int64, currentPassword, email, newPassword string) (*models.User, error) {
+	if s.user == nil {
+		s.user = &models.User{ID: id, Email: "operator@example.com"}
+	}
+	if email != "" {
+		parsed, err := mail.ParseAddress(email)
+		if err != nil || parsed.Address != email {
+			return nil, ErrInvalidEmail
+		}
+	}
+	if email == "" && newPassword == "" {
+		return s.user, nil
+	}
+	if newPassword != "" {
+		if err := utils.ValidatePassword(newPassword); err != nil {
+			return nil, err
+		}
+		if currentPassword == "" {
+			return nil, ErrCurrentPasswordRequired
+		}
+	}
+	updated := *s.user
+	if email != "" {
+		updated.Email = email
+	}
+	if newPassword != "" {
+		s.password = newPassword
+	}
+	s.updatedUser = &updated
+	s.user = &updated
+	return &updated, nil
+}
+func (s *recordingUserService) StorePasswordResetToken(uuid.UUID, int64, string, time.Time) error {
+	return nil
+}
+func (s *recordingUserService) CompleteSuccessfulLogin(models.User) (*models.User, error) {
+	return nil, nil
+}
 func (s *recordingUserService) UpdateUser(user models.User) (*models.User, error) {
 	s.updatedUser = &user
 	return &user, nil
@@ -125,3 +168,7 @@ func (s *recordingUserService) UpdatePassword(_ uuid.UUID, password string) erro
 func (s *recordingUserService) StorePasswordReset(uuid.UUID, string, time.Time) error { return nil }
 func (s *recordingUserService) ClearPasswordResetIfToken(uuid.UUID, string) error     { return nil }
 func (s *recordingUserService) CompletePasswordReset(string, string) error            { return nil }
+func (s *recordingUserService) ClearPasswordResetToken(uuid.UUID, string) error       { return nil }
+func (s *recordingUserService) ConsumePasswordResetToken(uuid.UUID, string, string) error {
+	return nil
+}

@@ -2,11 +2,11 @@ package opscontrol
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"automation-hub-backend/internal/executionauth"
-	"automation-hub-backend/internal/task"
 )
 
 func TestResumeApprovalIsBoundToTheCurrentEmergencyStopRevision(t *testing.T) {
@@ -14,7 +14,7 @@ func TestResumeApprovalIsBoundToTheCurrentEmergencyStopRevision(t *testing.T) {
 	now := time.Now().UTC()
 	service.now = func() time.Time { return now }
 	service.WithExecutionAuthorizer(allowExactControlAuthorization(service.now))
-	reviews := task.NewMemoryTaskStateRepository()
+	reviews := newMemoryControlReviews()
 	service.WithControlReviewRepository(reviews)
 
 	if _, err := service.EngageEmergencyStop("test stop", service.owner); err != nil {
@@ -34,10 +34,7 @@ func TestResumeApprovalIsBoundToTheCurrentEmergencyStopRevision(t *testing.T) {
 	if _, err := service.EngageEmergencyStop("new stop revision", service.owner); err != nil {
 		t.Fatalf("re-engage emergency stop: %v", err)
 	}
-	if _, err := reviews.ResolveReviewItem(service.owner, pending.ReviewItemID, task.ReviewResolution{
-		Decision:   "approved",
-		ResolvedAt: now,
-	}); err != nil {
+	if err := reviews.ApproveControlReview(service.owner, pending.ReviewItemID, "", now); err != nil {
 		t.Fatalf("approve durable review: %v", err)
 	}
 
@@ -54,7 +51,7 @@ func TestResumeWithApprovedReviewConsumesExactControlAuthorization(t *testing.T)
 	service := newTestService(t)
 	now := time.Now().UTC()
 	service.now = func() time.Time { return now }
-	reviews := task.NewMemoryTaskStateRepository()
+	reviews := newMemoryControlReviews()
 	service.WithControlReviewRepository(reviews)
 
 	var request executionauth.Request
@@ -74,10 +71,7 @@ func TestResumeWithApprovedReviewConsumesExactControlAuthorization(t *testing.T)
 	if err != nil {
 		t.Fatalf("request resume approval: %v", err)
 	}
-	if _, err := reviews.ResolveReviewItem(service.owner, pending.ReviewItemID, task.ReviewResolution{
-		Decision:   "approved",
-		ResolvedAt: now,
-	}); err != nil {
+	if err := reviews.ApproveControlReview(service.owner, pending.ReviewItemID, "", now); err != nil {
 		t.Fatalf("approve durable review: %v", err)
 	}
 
@@ -96,7 +90,7 @@ func TestResumeWithApprovedReviewConsumesExactControlAuthorization(t *testing.T)
 func TestApproveAndResumeIsIdempotentAfterTheExactOwnerReview(t *testing.T) {
 	service := newTestService(t)
 	service.WithExecutionAuthorizer(allowExactControlAuthorization(service.now))
-	service.WithControlReviewRepository(task.NewMemoryTaskStateRepository())
+	service.WithControlReviewRepository(newMemoryControlReviews())
 	if _, err := service.EngageEmergencyStop("test stop", service.owner); err != nil {
 		t.Fatalf("engage emergency stop: %v", err)
 	}
@@ -118,5 +112,40 @@ func TestApproveAndResumeIsIdempotentAfterTheExactOwnerReview(t *testing.T) {
 	}
 	if state.Engaged {
 		t.Fatal("idempotent retry re-engaged the emergency stop")
+	}
+}
+
+func TestApproveAndResumeDoesNotApproveAnUnrelatedReview(t *testing.T) {
+	service := newTestService(t)
+	reviews := newMemoryControlReviews()
+	service.WithControlReviewRepository(reviews)
+	if _, err := service.EngageEmergencyStop("test stop", service.owner); err != nil {
+		t.Fatalf("engage emergency stop: %v", err)
+	}
+	other, err := reviews.CreateControlReview(service.owner, ControlReviewItem{
+		ID:            "11111111-1111-4111-8111-111111111111",
+		TaskID:        "unrelated-task",
+		OwnerIdentity: service.owner,
+		Request:       "Unrelated review item",
+		Reason:        "An unrelated owner review",
+		Status:        "open",
+		CreatedAt:     service.now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("create unrelated review: %v", err)
+	}
+	_, err = service.ApproveAndResume(context.Background(), service.owner, other.ID, "approve")
+	if !errors.Is(err, ErrAuthorizationMismatch) {
+		t.Fatalf("ApproveAndResume error = %v, want ErrAuthorizationMismatch", err)
+	}
+	stored, err := reviews.FindControlReview(service.owner, other.ID)
+	if err != nil {
+		t.Fatalf("read unrelated review: %v", err)
+	}
+	if stored.Status != "open" {
+		t.Fatalf("unrelated review status = %q, want open", stored.Status)
+	}
+	if !service.Control().EmergencyStop() {
+		t.Fatal("unrelated approval cleared the emergency stop")
 	}
 }

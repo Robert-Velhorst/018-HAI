@@ -48,6 +48,21 @@ func TestWorkflowReminderDeliveryDeadLetterMigrationIsExplicitAndReversible(t *t
 	}
 }
 
+func TestWorkflowReminderDeliveryExpiredStatusIsExplicitAndRollbackPreservesReceipts(t *testing.T) {
+	up, err := Files.ReadFile("pre/0107_workflow_reminder_delivery_expired_status.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	down, err := Files.ReadFile("pre/0107_workflow_reminder_delivery_expired_status.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(up), "'expired'") ||
+		!strings.Contains(string(down), "refusing to remove expired reminder delivery receipts") {
+		t.Fatal("expired delivery migration must add a terminal state and fail closed on rollback")
+	}
+}
+
 func TestWorkflowReminderDeliveryAllowsOneAuthorizationPerApprovedDecision(t *testing.T) {
 	up, err := Files.ReadFile("pre/0057_workflow_reminder_single_delivery_authorization.up.sql")
 	if err != nil {

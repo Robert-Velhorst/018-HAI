@@ -68,18 +68,26 @@ func TestLocalFileReaderRejectsInvalidItem(t *testing.T) {
 	}
 }
 
-func TestLocalFileReaderRejectsOversizedFeedBeforeParsingIt(t *testing.T) {
+func TestLocalFileReaderRejectsOversizedFeed(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "oversized.json"), []byte(strings.Repeat("x", maxFeedBytes+1)), 0o600); err != nil {
+	path := filepath.Join(dir, "feed.json")
+	file, err := os.Create(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := NewLocalFileReader(testFeed("oversized.json"), dir)
+	if err := file.Truncate(int64(maxFeedBytes + 1)); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := NewLocalFileReader(testFeed("feed.json"), dir)
 	if err != nil {
 		t.Fatalf("new reader: %v", err)
 	}
-	_, err = r.Read(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
-		t.Fatalf("oversized reader error=%v", err)
+	if _, err := r.Read(context.Background()); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("Read error = %v, want explicit size-limit rejection", err)
 	}
 }
 
@@ -94,7 +102,7 @@ func TestToOperationInputIsDeterministic(t *testing.T) {
 	if in1.DedupeKey != in2.DedupeKey || in1.SourceRevisionHash != in2.SourceRevisionHash {
 		t.Fatalf("same item must produce a stable dedupe key + revision hash")
 	}
-	// A changed body must change the revision hash (stale approvals invalidated).
+	// Changed content must receive a distinct revision identity.
 	it2 := it
 	it2.Body = "different"
 	in3, _ := f.ToOperationInput(it2)

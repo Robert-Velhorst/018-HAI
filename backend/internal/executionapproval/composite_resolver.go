@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"automation-hub-backend/internal/executionauth"
+	"automation-hub-backend/internal/opscontrol"
+	"gorm.io/gorm"
 )
 
 var ErrUnsupportedApprovalReference = errors.New("unsupported execution approval reference")
@@ -20,36 +22,30 @@ type CompositeResolver struct {
 	taskReview executionauth.ApprovalResolver
 	workflow   executionauth.ApprovalResolver
 	portfolio  executionauth.ApprovalResolver
+	control    executionauth.ApprovalResolver
 	opsControl executionauth.ApprovalResolver
 	additional []ApprovalResolverRegistration
 }
 
-// WithOpsControlReviewResolver adds the dedicated exact-effect resolver used
-// for safety-control changes. It is checked before generic registrations so
-// this namespace cannot be shadowed by a broader prefix.
-func (r *CompositeResolver) WithOpsControlReviewResolver(
-	resolver executionauth.ApprovalResolver,
-) (*CompositeResolver, error) {
-	if r == nil || isNilApprovalResolver(resolver) {
-		return nil, fmt.Errorf("%w: ops-control review resolver is required", ErrInvalidRequest)
-	}
-	r.opsControl = resolver
-	return r, nil
-}
-
-// ApprovalResolverRegistration adds a server-owned approval namespace without
-// weakening the three canonical resolvers. Prefixes must be explicit and
-// disjoint so a reference is always routed to exactly one durable source.
+// ApprovalResolverRegistration adds a server-owned approval namespace. Generic
+// prefixes must not overlap canonical safety-sensitive namespaces.
 type ApprovalResolverRegistration struct {
 	Prefix   string
 	Resolver executionauth.ApprovalResolver
 }
 
-func RegisterApprovalResolver(
-	prefix string,
-	resolver executionauth.ApprovalResolver,
-) ApprovalResolverRegistration {
+func RegisterApprovalResolver(prefix string, resolver executionauth.ApprovalResolver) ApprovalResolverRegistration {
 	return ApprovalResolverRegistration{Prefix: prefix, Resolver: resolver}
+}
+
+// WithOpsControlReviewResolver adds the dedicated exact-effect resolver for
+// runtime safety-control changes without changing existing approval routing.
+func (r *CompositeResolver) WithOpsControlReviewResolver(resolver executionauth.ApprovalResolver) (*CompositeResolver, error) {
+	if r == nil || isNilApprovalResolver(resolver) {
+		return nil, fmt.Errorf("%w: ops-control review resolver is required", ErrInvalidRequest)
+	}
+	r.opsControl = resolver
+	return r, nil
 }
 
 var _ executionauth.ApprovalResolver = (*CompositeResolver)(nil)
@@ -58,6 +54,7 @@ func NewCompositeResolver(
 	taskReview executionauth.ApprovalResolver,
 	workflow executionauth.ApprovalResolver,
 	portfolio executionauth.ApprovalResolver,
+	control executionauth.ApprovalResolver,
 	additional ...ApprovalResolverRegistration,
 ) (*CompositeResolver, error) {
 	if isNilApprovalResolver(taskReview) {
@@ -69,27 +66,32 @@ func NewCompositeResolver(
 	if isNilApprovalResolver(portfolio) {
 		return nil, fmt.Errorf("%w: portfolio approval resolver is required", ErrInvalidRequest)
 	}
-	seen := map[string]struct{}{
-		taskReviewPrefix:        {},
-		workflowDecisionPrefix:  {},
-		portfolioDecisionPrefix: {},
+	if isNilApprovalResolver(control) {
+		return nil, fmt.Errorf("%w: owner control approval resolver is required", ErrInvalidRequest)
 	}
-	for index := range additional {
-		additional[index].Prefix = strings.TrimSpace(additional[index].Prefix)
-		if additional[index].Prefix == "" ||
-			!strings.HasSuffix(additional[index].Prefix, ":") ||
-			isNilApprovalResolver(additional[index].Resolver) {
+	reserved := []string{taskReviewPrefix, workflowDecisionPrefix, portfolioDecisionPrefix, OpsControlReviewPrefix, opscontrol.OwnerControlApprovalPrefix}
+	for i := range additional {
+		additional[i].Prefix = strings.TrimSpace(additional[i].Prefix)
+		if additional[i].Prefix == "" || !strings.HasSuffix(additional[i].Prefix, ":") || isNilApprovalResolver(additional[i].Resolver) {
 			return nil, fmt.Errorf("%w: additional approval resolver is invalid", ErrInvalidRequest)
 		}
-		if _, exists := seen[additional[index].Prefix]; exists {
-			return nil, fmt.Errorf("%w: duplicate approval resolver prefix", ErrInvalidRequest)
+		for _, existing := range reserved {
+			if strings.HasPrefix(existing, additional[i].Prefix) || strings.HasPrefix(additional[i].Prefix, existing) {
+				return nil, fmt.Errorf("%w: additional approval resolver prefix overlaps a reserved namespace", ErrInvalidRequest)
+			}
 		}
-		seen[additional[index].Prefix] = struct{}{}
+		for _, existing := range additional[:i] {
+			if strings.HasPrefix(existing.Prefix, additional[i].Prefix) || strings.HasPrefix(additional[i].Prefix, existing.Prefix) {
+				return nil, fmt.Errorf("%w: additional approval resolver prefixes overlap", ErrInvalidRequest)
+			}
+		}
+		reserved = append(reserved, additional[i].Prefix)
 	}
 	return &CompositeResolver{
 		taskReview: taskReview,
 		workflow:   workflow,
 		portfolio:  portfolio,
+		control:    control,
 		additional: append([]ApprovalResolverRegistration(nil), additional...),
 	}, nil
 }
@@ -103,7 +105,8 @@ func (r *CompositeResolver) Resolve(
 	if r == nil ||
 		isNilApprovalResolver(r.taskReview) ||
 		isNilApprovalResolver(r.workflow) ||
-		isNilApprovalResolver(r.portfolio) {
+		isNilApprovalResolver(r.portfolio) ||
+		isNilApprovalResolver(r.control) {
 		return executionauth.ResolvedApproval{}, fmt.Errorf(
 			"%w: approval resolver composite is not configured",
 			ErrInvalidRequest,
@@ -121,19 +124,42 @@ func (r *CompositeResolver) Resolve(
 			return executionauth.ResolvedApproval{}, ErrUnsupportedApprovalReference
 		}
 		return r.opsControl.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
+	case strings.HasPrefix(sourceID, opscontrol.OwnerControlApprovalPrefix):
+		return r.control.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
 	default:
 		for _, registration := range r.additional {
 			if strings.HasPrefix(sourceID, registration.Prefix) {
-				return registration.Resolver.Resolve(
-					ctx,
-					ownerIdentity,
-					sourceID,
-					bindingDigest,
-				)
+				return registration.Resolver.Resolve(ctx, ownerIdentity, sourceID, bindingDigest)
 			}
 		}
 		return executionauth.ResolvedApproval{}, ErrUnsupportedApprovalReference
 	}
+}
+
+func (r *CompositeResolver) ResolveInPostgresTransaction(
+	ctx context.Context,
+	tx *gorm.DB,
+	ownerIdentity string,
+	sourceID string,
+	bindingDigest string,
+) (executionauth.ResolvedApproval, error) {
+	if r == nil || isNilApprovalResolver(r.taskReview) {
+		return executionauth.ResolvedApproval{}, fmt.Errorf(
+			"%w: task review resolver is unavailable",
+			ErrInvalidRequest,
+		)
+	}
+	if !strings.HasPrefix(sourceID, taskReviewPrefix) {
+		return executionauth.ResolvedApproval{}, ErrUnsupportedApprovalReference
+	}
+	resolver, ok := r.taskReview.(executionauth.PostgresTransactionApprovalResolver)
+	if !ok || resolver == nil {
+		return executionauth.ResolvedApproval{}, fmt.Errorf(
+			"%w: task review resolver cannot lock approval state in the execution transaction",
+			ErrInvalidRequest,
+		)
+	}
+	return resolver.ResolveInPostgresTransaction(ctx, tx, ownerIdentity, sourceID, bindingDigest)
 }
 
 const portfolioDecisionPrefix = "portfolio-decision:"

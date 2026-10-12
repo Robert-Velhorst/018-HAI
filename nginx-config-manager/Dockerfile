@@ -1,31 +1,25 @@
-FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS builder
+# Stage 1: Compiling the application
+FROM golang:1.27.2 AS builder
 
+# Set the Current Working Directory inside the container
 WORKDIR /app
 
-COPY go.mod go.sum ./
-RUN go mod download
-
+# Copy everything from the current directory to the PWD(Present Working Directory) inside the container
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath \
-    -tags "netgo,osusergo" \
-    -ldflags "-s -w" \
-    -o /out/nginx-config-manager \
-    ./cmd
+# Navigate to the cmd directory where the main.go file resides
+WORKDIR /app/cmd
 
-FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+# Build the Go app
+RUN CGO_ENABLED=1 GOOS=linux go build -o app ./main.go
 
-RUN addgroup -S -g 10001 hai \
-    && adduser -S -D -H -u 10001 -G hai hai
+# Stage 2: Build the minimal docker image
+FROM ubuntu:24.04
 
-WORKDIR /app
+WORKDIR /root/
 
-COPY --from=builder /out/nginx-config-manager /app/nginx-config-manager
+# Copy the pre-built binary from the previous stage
+COPY --from=builder /app/cmd/app /root/
 
-ENV HOME=/tmp \
-    TMPDIR=/tmp
-
-USER 10001:10001
-
-ENTRYPOINT ["/app/nginx-config-manager"]
+# Command to run
+CMD ["/root/app"]

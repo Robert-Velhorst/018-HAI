@@ -1,0 +1,11 @@
+ok  	automation-hub-backend/internal/operations	0.541s
+ok  	automation-hub-backend/internal/accountfeed	0.822s
+ok  	automation-hub-backend/internal/background	0.845s
+ok  	automation-hub-backend/migrations	0.155s
+ok  	automation-hub-backend/internal/executionbroker	0.456s
+ok  	automation-hub-backend/internal/executionauth	0.846s
+ok  	automation-hub-backend/internal/frameworkregistry	0.836s
+ok  	automation-hub-backend/internal/phase2	0.684s
+ok  	automation-hub-backend/internal/opscontrol	3.011s
+ok  	automation-hub-backend/internal/runtimelab	0.475s
+ok  	automation-hub-backend/internal/automation	0.619s

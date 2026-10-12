@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/durablejob"
+	"automation-hub-backend/internal/lifecycle"
 )
 
 const (
@@ -16,6 +17,13 @@ const (
 	monitorWorkerID     = "outcome-monitor-scheduler"
 	monitorMaxAttempts  = 3
 )
+
+func monitorSafetyGate(allowed func() bool) func() bool {
+	if allowed == nil {
+		return func() bool { return false }
+	}
+	return allowed
+}
 
 type schedulerService interface {
 	DueScopes(context.Context, time.Time, int) ([]Scope, error)
@@ -25,101 +33,59 @@ type schedulerService interface {
 	ProcessDue(context.Context, ProcessDueRequest) (ProcessDueResult, error)
 }
 
-const (
-	SweepResultCompleted   = "completed"
-	SweepResultFailed      = "failed"
-	SweepResultInterrupted = "interrupted"
-	SweepResultSkipped     = "skipped"
-)
-
-// SweepMetrics is the privacy-safe operational summary of one scheduler pass.
-// Counts are bounded by the configured scope and batch limits; no owner,
-// workspace, target, prompt, source, or failure detail leaves the scheduler.
-type SweepMetrics struct {
-	Duration                   time.Duration
-	Result                     string
-	DueCollectionScopes        int
-	DueCompositionScopes       int
-	CollectionLeasesRecovered  int
-	CompositionLeasesRecovered int
-	CollectionClaimed          int
-	CollectionCompleted        int
-	CollectionFailed           int
-	CompositionClaimed         int
-	CompositionSucceeded       int
-	CompositionRetrying        int
-	CompositionFailed          int
-}
-
-type SweepObserver interface {
-	ObserveOutcomeMonitorSweep(SweepMetrics)
-}
-
 // RegisterDurableScheduling creates a singleton, restart-safe advisory sweep.
 // The safety callback is checked for every run, so emergency stop/read-only
 // control remains authoritative over background processing.
-func RegisterDurableScheduling(runner *durablejob.Runner, service schedulerService, allowed func() bool, interval time.Duration, observer SweepObserver) error {
+func RegisterDurableScheduling(runner *durablejob.Runner, service schedulerService, allowed func() bool, interval time.Duration) error {
 	if runner == nil || service == nil {
 		return fmt.Errorf("ambient outcome scheduling requires a runner and service")
 	}
-	if allowed == nil {
-		allowed = func() bool { return true }
-	}
+	allowed = monitorSafetyGate(allowed)
 	return runner.RegisterRecurring(monitorSweepJobKind, interval, monitorMaxAttempts, func(ctx context.Context) error {
 		if !allowed() {
-			observeSweep(observer, SweepMetrics{Result: SweepResultSkipped})
 			return durablejob.Defer("background processing is paused by safety policy")
 		}
-		return runMonitorSweep(ctx, service, time.Now().UTC(), allowed, observer)
+		return runMonitorSweep(ctx, service, time.Now().UTC(), allowed)
 	})
 }
 
-func runMonitorSweep(ctx context.Context, service schedulerService, now time.Time, allowed func() bool, observer SweepObserver) (sweepErr error) {
-	started := time.Now()
-	observation := SweepMetrics{Result: SweepResultCompleted}
-	defer func() {
-		observation.Duration = time.Since(started)
-		if sweepErr != nil && observation.Result != SweepResultInterrupted {
-			observation.Result = SweepResultFailed
-		}
-		observeSweep(observer, observation)
-	}()
-
+func runMonitorSweep(ctx context.Context, service schedulerService, now time.Time, allowed func() bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dueScopes, err := service.DueScopes(ctx, now, monitorScopeLimit())
 	if err != nil {
 		return fmt.Errorf("discover due monitor scopes: %w", err)
 	}
-	observation.DueCollectionScopes = len(dueScopes)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	compositionScopes, err := service.PendingCompositionScopes(ctx, now, monitorScopeLimit())
 	if err != nil {
 		return fmt.Errorf("discover due composition scopes: %w", err)
 	}
-	observation.DueCompositionScopes = len(compositionScopes)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	scopes := mergeScopes(dueScopes, compositionScopes, monitorScopeLimit())
 	failures := 0
 	for _, scope := range scopes {
 		if ctx.Err() != nil || !allowed() {
-			observation.Result = SweepResultInterrupted
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			return durablejob.Defer("background processing is paused by safety policy")
 		}
-		recovered, err := service.RecoverExpiredLeases(ctx, scope, now)
-		if err != nil {
+		if _, err := service.RecoverExpiredLeases(ctx, scope, now); err != nil {
 			failures++
 			continue
 		}
-		observation.CollectionLeasesRecovered += recovered
-		compositionRecovered, err := service.RecoverExpiredCompositionLeases(ctx, scope, now)
-		if err != nil {
+		if _, err := service.RecoverExpiredCompositionLeases(ctx, scope, now); err != nil {
 			failures++
 			continue
 		}
-		observation.CompositionLeasesRecovered += compositionRecovered
 		for processed := 0; processed < monitorBatchLimit(); processed++ {
 			if ctx.Err() != nil || !allowed() {
-				observation.Result = SweepResultInterrupted
 				if err := ctx.Err(); err != nil {
 					return err
 				}
@@ -134,21 +100,17 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 				failures++
 				break
 			}
-			observation.CollectionClaimed += result.Claimed
-			observation.CollectionCompleted += len(result.Completions)
-			observation.CollectionFailed += len(result.Failures)
-			observation.CompositionClaimed += result.Compositions.Claimed
-			observation.CompositionSucceeded += result.Compositions.Succeeded
-			terminalCompositionFailures := 0
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			terminalCompositionFailure := false
 			for _, failure := range result.Compositions.Failures {
-				if failure.Retrying {
-					observation.CompositionRetrying++
-				} else {
-					terminalCompositionFailures++
+				if !failure.Retrying {
+					terminalCompositionFailure = true
+					break
 				}
 			}
-			observation.CompositionFailed += terminalCompositionFailures
-			if len(result.Failures) > 0 || terminalCompositionFailures > 0 {
+			if len(result.Failures) > 0 || terminalCompositionFailure {
 				failures++
 			}
 			if result.Claimed == 0 && result.Compositions.Claimed == 0 {
@@ -156,16 +118,13 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 			}
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if failures > 0 {
 		return fmt.Errorf("ambient outcome sweep failed for %d scoped batch(es)", failures)
 	}
 	return nil
-}
-
-func observeSweep(observer SweepObserver, observation SweepMetrics) {
-	if observer != nil {
-		observer.ObserveOutcomeMonitorSweep(observation)
-	}
 }
 
 func mergeScopes(groupsA, groupsB []Scope, limit int) []Scope {
@@ -186,16 +145,18 @@ func mergeScopes(groupsA, groupsB []Scope, limit int) []Scope {
 	return result
 }
 
-func StartDurableScheduler(ctx context.Context, service *Service, allowed func() bool, observer SweepObserver) error {
+func StartDurableScheduler(ctx context.Context, service *Service, allowed func() bool) error {
 	repository, err := durablejob.DefaultRepository()
 	if err != nil {
 		return err
 	}
 	runner := durablejob.NewRunner(repository, durablejob.Options{Queue: "outcome-monitor"})
-	if err := RegisterDurableScheduling(runner, service, allowed, monitorSweepInterval(), observer); err != nil {
+	if err := RegisterDurableScheduling(runner, service, allowed, monitorSweepInterval()); err != nil {
 		return err
 	}
-	go runner.Start(ctx, monitorPollInterval())
+	if !lifecycle.Go(ctx, "ambient-monitor-worker", func() { runner.Start(ctx, monitorPollInterval()) }) {
+		return context.Canceled
+	}
 	return nil
 }
 
@@ -209,9 +170,10 @@ func monitorSweepInterval() time.Duration {
 
 func monitorPollInterval() time.Duration {
 	// Outcome monitoring is advisory and queued work is lease-protected. A
-	// 30-second idle poll halves the default database wake-ups while preserving
-	// a bounded recovery delay for the local-first single-node deployment.
-	return envSeconds("OUTCOME_MONITOR_POLL_SECONDS", 30, 1, 300)
+	// Startup executes immediately and recurring work persists its next due
+	// time. A five-minute idle poll therefore removes most empty-installation
+	// database wake-ups while retaining bounded recovery after a worker loss.
+	return envSeconds("OUTCOME_MONITOR_POLL_SECONDS", 300, 1, 300)
 }
 
 func monitorLeaseDuration() time.Duration {

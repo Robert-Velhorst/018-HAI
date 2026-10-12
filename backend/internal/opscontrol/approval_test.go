@@ -15,6 +15,7 @@ import (
 type controlConstitutionStub struct{}
 
 func (controlConstitutionStub) EvaluateExecutionPolicy(
+	_ context.Context,
 	_ string,
 	_ []string,
 	_ int,

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/IBM/sarama/mocks"
@@ -63,6 +64,18 @@ func TestNewKafkaProducerConfiguresDurableIdempotentSyncProducer(t *testing.T) {
 	}
 	if gotConfig.Net.MaxOpenRequests != 1 {
 		t.Fatalf("Net.MaxOpenRequests = %d, want 1 for idempotent production", gotConfig.Net.MaxOpenRequests)
+	}
+	if gotConfig.ChannelBufferSize != 16 || gotConfig.Producer.MaxMessageBytes != 128*1024 {
+		t.Fatal("identity producer buffer/message limits changed")
+	}
+	if gotConfig.Net.DialTimeout != 3*time.Second || gotConfig.Net.ReadTimeout != 10*time.Second || gotConfig.Net.WriteTimeout != 10*time.Second {
+		t.Fatal("identity producer network budgets changed")
+	}
+	if gotConfig.Metadata.Timeout != 10*time.Second || gotConfig.Metadata.Retry.Max != 1 || gotConfig.Metadata.Retry.Backoff != 100*time.Millisecond {
+		t.Fatal("identity producer metadata budgets changed")
+	}
+	if gotConfig.Producer.Timeout != 5*time.Second || gotConfig.Producer.Retry.Max != 1 || gotConfig.Producer.Retry.Backoff != 100*time.Millisecond {
+		t.Fatal("identity producer acknowledgement/retry budgets changed")
 	}
 	if err := gotConfig.Validate(); err != nil {
 		t.Fatalf("producer config should pass Sarama validation: %v", err)

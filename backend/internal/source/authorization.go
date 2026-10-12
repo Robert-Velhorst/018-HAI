@@ -15,6 +15,7 @@ import (
 	"automation-hub-backend/internal/safety"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const (
@@ -27,11 +28,13 @@ const (
 )
 
 var (
-	ErrDestructiveAuthorizationRequired = errors.New("connected-source final-effect authorization is required")
-	ErrDestructiveAuthorizationDenied   = errors.New("connected-source final-effect authorization was denied")
-	ErrDestructiveAuthorizationMismatch = errors.New("connected-source authorization receipt does not match the final effect")
-	ErrDestructiveOwnerMismatch         = errors.New("connected-source resource is not owned by the authenticated actor")
-	ErrSourceEmergencyStopActive        = errors.New("emergency stop blocks connected-source mutation")
+	ErrDestructiveAuthorizationRequired  = errors.New("connected-source final-effect authorization is required")
+	ErrDestructiveAuthorizationDenied    = errors.New("connected-source final-effect authorization was denied")
+	ErrDestructiveAuthorizationMismatch  = errors.New("connected-source authorization receipt does not match the final effect")
+	ErrDestructiveTransactionUnavailable = errors.New("connected-source deletion requires transaction-aware authorization and workflow services")
+	ErrDestructiveOwnerMismatch          = errors.New("connected-source resource is not owned by the authenticated actor")
+	ErrSourceEmergencyStopActive         = errors.New("emergency stop blocks connected-source mutation")
+	ErrSourceRevoked                     = errors.New("revoked connected sources cannot be reactivated")
 )
 
 // FinalEffectAuthorizer atomically authorizes and consumes authority for one
@@ -43,6 +46,16 @@ type FinalEffectAuthorizer interface {
 		string,
 		string,
 	) (executionauth.Receipt, error)
+}
+
+type transactionalFinalEffectAuthorizer interface {
+	AuthorizeAndConsumeInTransaction(
+		context.Context,
+		*gorm.DB,
+		executionauth.Request,
+		string,
+		string,
+	) (executionauth.Receipt, executionauth.AuthorizationPostCommitProjection, error)
 }
 
 // DestructiveEffectService is intentionally separate from Service so read and
@@ -154,6 +167,54 @@ func (s *service) authorizeDestructiveEffect(
 		)
 	}
 	return nil
+}
+
+func (s *service) authorizeDestructiveEffectInTransaction(
+	ctx context.Context,
+	tx *gorm.DB,
+	auth DestructiveEffectAuthorization,
+	source models.ConnectedSource,
+	extraction *models.SourceExtraction,
+) (executionauth.AuthorizationPostCommitProjection, error) {
+	if s == nil || s.finalEffectAuthorizer == nil {
+		return nil, ErrDestructiveAuthorizationRequired
+	}
+	authorizer, ok := s.finalEffectAuthorizer.(transactionalFinalEffectAuthorizer)
+	if !ok {
+		return nil, ErrDestructiveTransactionUnavailable
+	}
+	request, target, err := buildDestructiveAuthorizationRequest(auth, source, extraction)
+	if err != nil {
+		return nil, err
+	}
+	if decision := s.evaluateSourceEmergencyStop(); decision.Active {
+		return nil, fmt.Errorf(
+			"%w: %s",
+			ErrSourceEmergencyStopActive,
+			safety.RedactSecrets(strings.TrimSpace(decision.Reason)),
+		)
+	}
+	receipt, projection, err := authorizer.AuthorizeAndConsumeInTransaction(
+		ctx,
+		tx,
+		request,
+		sourceAuthorizationConsumer,
+		target,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDestructiveAuthorizationDenied, err)
+	}
+	if err := validateSourceAuthorizationReceipt(receipt, request); err != nil {
+		return nil, err
+	}
+	if decision := s.evaluateSourceEmergencyStop(); decision.Active {
+		return nil, fmt.Errorf(
+			"%w: %s",
+			ErrSourceEmergencyStopActive,
+			safety.RedactSecrets(strings.TrimSpace(decision.Reason)),
+		)
+	}
+	return projection, nil
 }
 
 func buildDestructiveAuthorizationRequest(

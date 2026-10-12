@@ -1,3 +1,20 @@
+LOCK TABLE
+    public.task_completion_plan_logs,
+    public.task_review_items,
+    public.task_review_decisions
+    IN ACCESS EXCLUSIVE MODE;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM public.task_completion_plan_logs)
+       OR EXISTS (SELECT 1 FROM public.task_review_items)
+       OR EXISTS (SELECT 1 FROM public.task_review_decisions)
+    THEN
+        RAISE EXCEPTION 'rollback 0004_task_state_storage refused: task state data exists; preserve it before dropping these tables';
+    END IF;
+END
+$$;
+
 DROP TABLE IF EXISTS public.task_review_decisions;
 DROP TABLE IF EXISTS public.task_review_items;
 DROP TABLE IF EXISTS public.task_completion_plan_logs;

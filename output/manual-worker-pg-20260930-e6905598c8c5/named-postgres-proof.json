@@ -1,0 +1,38 @@
+[
+  {
+    "skips": 0,
+    "passes": 3,
+    "failures": 0,
+    "test": "TestManualWorkerPostgresClaimIsolation"
+  },
+  {
+    "skips": 0,
+    "passes": 3,
+    "failures": 0,
+    "test": "TestManualWorkerPostgresConcurrentSingleOwner"
+  },
+  {
+    "skips": 0,
+    "passes": 3,
+    "failures": 0,
+    "test": "TestManualWorkerPostgresSkipLocked"
+  },
+  {
+    "skips": 0,
+    "passes": 3,
+    "failures": 0,
+    "test": "TestManualWorkerPostgresReapIsolationAndAttemptLimit"
+  },
+  {
+    "skips": 0,
+    "passes": 3,
+    "failures": 0,
+    "test": "TestManualWorkerPostgresDurableRetryLimit"
+  },
+  {
+    "skips": 0,
+    "passes": 3,
+    "failures": 0,
+    "test": "TestManualWorkerPostgresExecutionReload"
+  }
+]

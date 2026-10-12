@@ -6,11 +6,11 @@ import (
 )
 
 func TestSourceOAuthStateMigrationIsOwnerBoundSingleUseAndBounded(t *testing.T) {
-	upBytes, err := Files.ReadFile("pre/0065_source_oauth_state.up.sql")
+	upBytes, err := Files.ReadFile("pre/0124_source_oauth_state.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	downBytes, err := Files.ReadFile("pre/0065_source_oauth_state.down.sql")
+	downBytes, err := Files.ReadFile("pre/0124_source_oauth_state.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

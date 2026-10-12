@@ -3,6 +3,7 @@ package modelintelligence
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,6 +26,26 @@ func (m *memTelemetryRepo) UpdateValidation(id string, status ValidationStatus, 
 		}
 	}
 	return fmt.Errorf("telemetry %s not found", id)
+}
+
+type failingTelemetryRepo struct {
+	memTelemetryRepo
+	saveErr error
+	loadErr error
+}
+
+func (r *failingTelemetryRepo) Save(row ModelRunTelemetry) error {
+	if r.saveErr != nil {
+		return r.saveErr
+	}
+	return r.memTelemetryRepo.Save(row)
+}
+
+func (r *failingTelemetryRepo) LoadAll() ([]ModelRunTelemetry, error) {
+	if r.loadErr != nil {
+		return nil, r.loadErr
+	}
+	return r.memTelemetryRepo.LoadAll()
 }
 
 func TestTelemetryIsDurableAcrossRestart(t *testing.T) {
@@ -92,5 +113,70 @@ func TestTelemetryStorePreservesCallerAssignedID(t *testing.T) {
 	recorded := store.Record(ModelRunTelemetry{ID: "external-id", ValidationStatus: ValidationUnvalidated})
 	if recorded.ID != "external-id" {
 		t.Fatalf("record id = %q, want caller-assigned id", recorded.ID)
+	}
+}
+
+func TestTelemetryStoreNormalizesMissingUsageSourceToEstimate(t *testing.T) {
+	store := NewTelemetryStore()
+	got := store.Record(ModelRunTelemetry{ID: "legacy-row"})
+	if got.UsageSource != TokenUsageEstimated {
+		t.Fatalf("missing usage source = %q, want estimated", got.UsageSource)
+	}
+}
+
+func TestProductionStyleServiceBlocksModelCallsWithoutDurableTelemetry(t *testing.T) {
+	provider := &maintainedStaticProvider{
+		profile: ModelProfile{
+			ProviderID: "local-test", ModelID: "qwen-local", DisplayName: "Local model",
+			Lanes: []RoutingLane{LaneFastTriage}, Local: true, EndpointLocal: true,
+			LocalInferenceOperatorAttested: true, BillingStatus: BillingUnmetered,
+			Status: ProviderActive,
+		},
+		endpoint: "http://127.0.0.1:11434", modelID: "qwen-local",
+	}
+	service := NewService(&Registry{providers: []Provider{provider}})
+	service.requireDurableTelemetry = true
+	service.WithModelMaintenance(&modelMaintenanceGateStub{})
+	_, result, err := service.RunLane(context.Background(), LaneFastTriage, LaneInput{SafeForCloud: true}, "classify this", "op-1")
+	if err == nil || !strings.Contains(err.Error(), "durable model-run history is memory_only") || result != nil || provider.calls != 0 {
+		t.Fatalf("result=%#v err=%v provider calls=%d; inference must stop before generation", result, err, provider.calls)
+	}
+	if got := service.Overview().TelemetryPersistence.State; got != TelemetryPersistenceMemoryOnly {
+		t.Fatalf("persistence state = %q, want memory_only", got)
+	}
+}
+
+func TestTelemetrySaveFailureWithholdsModelOutput(t *testing.T) {
+	provider := &maintainedStaticProvider{
+		profile: ModelProfile{
+			ProviderID: "local-test", ModelID: "qwen-local", DisplayName: "Local model",
+			Lanes: []RoutingLane{LaneFastTriage}, Local: true, EndpointLocal: true,
+			LocalInferenceOperatorAttested: true, BillingStatus: BillingUnmetered,
+			Status: ProviderActive,
+		},
+		endpoint: "http://127.0.0.1:11434", modelID: "qwen-local",
+	}
+	repo := &failingTelemetryRepo{saveErr: fmt.Errorf("database credentials must not leak")}
+	service := NewService(&Registry{providers: []Provider{provider}}).
+		WithTelemetryRepository(repo).
+		WithModelMaintenance(&modelMaintenanceGateStub{})
+	_, result, err := service.RunLane(context.Background(), LaneFastTriage, LaneInput{SafeForCloud: true}, "classify this", "op-2")
+	if err == nil || !strings.Contains(err.Error(), "history could not be saved") || strings.Contains(err.Error(), "credentials") || result != nil {
+		t.Fatalf("result=%#v err=%v; output must be withheld with sanitized persistence error", result, err)
+	}
+	if rows := service.Telemetry(); len(rows) != 0 {
+		t.Fatalf("failed telemetry row was exposed as recorded: %#v", rows)
+	}
+	status := service.TelemetryPersistence()
+	if status.State != TelemetryPersistenceDegraded || !strings.Contains(status.Message, "output was withheld") || strings.Contains(status.Message, "credentials") {
+		t.Fatalf("unexpected persistence state: %#v", status)
+	}
+}
+
+func TestTelemetryLoadFailureReportsDegradedPersistence(t *testing.T) {
+	service := NewService(NewRegistryFromEnv()).WithTelemetryRepository(&failingTelemetryRepo{loadErr: fmt.Errorf("private db error")})
+	status := service.Overview().TelemetryPersistence
+	if status.State != TelemetryPersistenceDegraded || !strings.Contains(status.Message, "could not be refreshed") || strings.Contains(status.Message, "private") {
+		t.Fatalf("unexpected persistence state: %#v", status)
 	}
 }

@@ -22,8 +22,8 @@ func DefaultPolicy() Policy {
 	return Policy{ArchiveAfterDays: 180, DeleteAfterDays: 365}
 }
 
-// DueForArchival returns live (non-archived) memories whose last update is older
-// than the archival threshold.
+// DueForArchival returns live (non-archived) memories whose most recent update
+// or use is older than the archival threshold.
 func DueForArchival(memories []models.ContextMemory, policy Policy, now time.Time) []models.ContextMemory {
 	if policy.ArchiveAfterDays <= 0 {
 		return nil
@@ -31,7 +31,11 @@ func DueForArchival(memories []models.ContextMemory, policy Policy, now time.Tim
 	cutoff := now.AddDate(0, 0, -policy.ArchiveAfterDays)
 	var due []models.ContextMemory
 	for _, m := range memories {
-		if !m.Archived && m.UpdatedAt.Before(cutoff) {
+		lastActivity := m.UpdatedAt
+		if m.LastUsedAt != nil && m.LastUsedAt.After(lastActivity) {
+			lastActivity = *m.LastUsedAt
+		}
+		if !m.Archived && lastActivity.Before(cutoff) {
 			due = append(due, m)
 		}
 	}

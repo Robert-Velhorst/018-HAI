@@ -17,6 +17,7 @@ import { NzTableModule } from 'ng-zorro-antd/table';
 import { WorkflowEngineComponent } from './workflow-engine.component';
 import { WORKFLOW_SERVICE_TOKEN } from '../../services/workflow/workflow.service.token';
 import { WorkflowService } from '../../services/workflow/workflow.service';
+import { ControlRoomModule } from '../../control-room/control-room.module';
 
 const routes: Routes = [{ path: '', component: WorkflowEngineComponent }];
 
@@ -39,6 +40,7 @@ const routes: Routes = [{ path: '', component: WorkflowEngineComponent }];
     NzModalModule,
     NzSelectModule,
     NzTableModule,
+    ControlRoomModule,
   ],
   providers: [{ provide: WORKFLOW_SERVICE_TOKEN, useClass: WorkflowService }],
 })

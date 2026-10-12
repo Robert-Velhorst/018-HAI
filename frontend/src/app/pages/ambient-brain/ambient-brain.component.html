@@ -5,36 +5,46 @@
       <p>Actions first. Context appears on hover or in focused detail views.</p>
     </div>
     <div class="header-actions">
-      <button nz-button nzType="primary" (click)="runScan()" [nzLoading]="scanning">
+      <button nz-button nzType="primary" (click)="runScan()" [nzLoading]="scanning" [disabled]="loading || scanning || scanNeedsReview || !!savingNeed || !!resolving">
         <i nz-icon nzType="radar-chart" nzTheme="outline"></i>
         Scan now
       </button>
-      <button nz-button nzType="default" (click)="refresh()" [nzLoading]="loading">
+      <button nz-button nzType="default" (click)="refresh()" [nzLoading]="loading" [disabled]="loading || scanning || !!savingNeed || !!resolving">
         <i nz-icon nzType="reload" nzTheme="outline"></i>
         Refresh
       </button>
-      <button nz-button nzType="default" (click)="goHome()">
-        <i nz-icon nzType="appstore" nzTheme="outline"></i>
+      <button type="button" nz-button nzType="default" aria-label="Open automation registry" title="Open automation registry" (click)="goHome()">
+        <i nz-icon nzType="appstore" nzTheme="outline" aria-hidden="true"></i>
       </button>
     </div>
   </header>
 
-  <main class="brain-content" *ngIf="overview as view">
+  <div class="ambient-error" *ngIf="errorMessage" role="alert" aria-live="assertive">
+    <span>{{ errorMessage }}</span>
+    <button nz-button nzType="default" type="button" (click)="refreshStatus()" [disabled]="loading || scanning || !!savingNeed || !!resolving">Refresh status</button>
+  </div>
+
+  <div class="brain-loading" *ngIf="loading && !overview" role="status" aria-live="polite">
+    Loading proactive priorities and open loops…
+  </div>
+
+  <div class="brain-content" *ngIf="overview as view">
     <section class="action-strip" aria-label="Primary proactive brain actions">
       <button
         type="button"
         class="action-tile action-tile--primary"
         title="Search connected signals for open loops, deduplicate repeated information, and propose next actions."
         (click)="runScan()"
+        [disabled]="loading || scanning || scanNeedsReview || !!savingNeed || !!resolving"
       >
         <span class="action-tile__help">?</span>
         <span><i nz-icon nzType="radar-chart" nzTheme="outline"></i></span>
         <strong>Scan for open loops</strong>
-        <small>{{ view.scans[0] ? ('Last scan ' + (view.scans[0].startedAt | date: 'short')) : 'No scan yet' }}</small>
-        <em>{{ view.scans[0] ? view.scans[0].itemsExamined : 0 }} reviewed</em>
+        <small>{{ scanning ? 'Scan in progress' : view.scans[0] ? ('Last scan ' + (view.scans[0].startedAt | date: 'short')) : 'No scan yet' }}</small>
+        <em>{{ scanReviewSummary() }}</em>
         <span class="action-tile__hover">
-          <strong>{{ view.scans[0] ? view.scans[0].itemsExamined : 0 }} reviewed</strong>
-          <small>{{ view.scans[0] ? view.scans[0].opportunitiesFound + ' opportunities found' : 'Ready for first scan' }}</small>
+          <strong>{{ scanReviewSummary() }}</strong>
+          <small>{{ scanReviewDetail() }}</small>
         </span>
       </button>
 
@@ -72,45 +82,46 @@
           <small>{{ disabledNeedCount() }} disabled ranking targets</small>
         </span>
       </button>
-
-      <button
-        type="button"
-        class="action-tile"
-        title="Run deterministic safety checks. These validate policy guards, not the truth of external provider answers."
-        (click)="runStressSuite()"
-      >
-        <span class="action-tile__help">?</span>
-        <span><i nz-icon nzType="safety-certificate" nzTheme="outline"></i></span>
-        <strong>Test guards</strong>
-        <small *ngIf="autonomyOverview?.recentStressRuns?.[0] as stress">
-          {{ stress.passed }} passed / {{ stress.failed }} failed
-        </small>
-        <small *ngIf="!autonomyOverview?.recentStressRuns?.length">No recent guard run</small>
-        <em>Policy only</em>
-        <span class="action-tile__hover">
-          <strong *ngIf="autonomyOverview?.recentStressRuns?.[0] as stress">{{ stress.passed }} passed</strong>
-          <strong *ngIf="!autonomyOverview?.recentStressRuns?.length">No run yet</strong>
-          <small>Deterministic guard coverage, not provider truth</small>
-        </span>
-      </button>
-
-      <button
-        type="button"
-        class="action-tile"
-        title="Open execution telemetry, completion rates, and YAGNI policy details."
-        (click)="openDetails('autonomy')"
-      >
-        <span class="action-tile__help">?</span>
-        <span><i nz-icon nzType="dashboard" nzTheme="outline"></i></span>
-        <strong>Open metrics</strong>
-        <small>{{ autonomyOverview ? percent(autonomyOverview.metrics.policyCompletionRate) + ' policy completion' : 'Telemetry unavailable' }}</small>
-        <em>Details on demand</em>
-        <span class="action-tile__hover">
-          <strong>{{ autonomyOverview ? percent(autonomyOverview.metrics.policyCompletionRate) : 'No telemetry' }}</strong>
-          <small>{{ autonomyOverview ? percent(autonomyOverview.metrics.interventionRate) + ' intervention' : 'Open after telemetry loads' }}</small>
-        </span>
-      </button>
     </section>
+
+    <hai-progressive-section
+      [moduleId]="moduleId"
+      sectionId="engine-controls"
+      title="Engine controls and metrics"
+      summary="Run deterministic policy checks or inspect execution telemetry; these checks do not validate external facts."
+      [advancedOnly]="true"
+    >
+      <div class="action-strip action-strip--advanced" aria-label="Advanced proactive brain controls">
+        <button
+          type="button"
+          class="action-tile"
+          title="Run deterministic safety checks. These validate policy guards, not the truth of external provider answers."
+          (click)="runStressSuite()"
+          [disabled]="stressTesting"
+        >
+          <span class="action-tile__help">?</span>
+          <span><i nz-icon nzType="safety-certificate" nzTheme="outline"></i></span>
+          <strong>Test guards</strong>
+          <small *ngIf="autonomyOverview?.recentStressRuns?.[0] as stress">{{ stress.passed }} passed / {{ stress.failed }} failed</small>
+          <small *ngIf="!autonomyOverview?.recentStressRuns?.length">No recent guard run</small>
+          <em>{{ stressTesting ? 'Running' : 'Policy only' }}</em>
+        </button>
+
+        <button
+          type="button"
+          class="action-tile"
+          title="Open execution telemetry, completion rates, and YAGNI policy details."
+          (click)="openDetails('autonomy')"
+          [disabled]="!autonomyOverview"
+        >
+          <span class="action-tile__help">?</span>
+          <span><i nz-icon nzType="dashboard" nzTheme="outline"></i></span>
+          <strong>Open metrics</strong>
+          <small>{{ autonomyLoading ? 'Refreshing telemetry' : autonomyErrorMessage ? 'Telemetry stale or unavailable' : autonomyOverview ? (autonomyOverview.metrics.attempts ? percent(autonomyOverview.metrics.policyCompletionRate) + ' policy completion' : 'No evaluated attempts') : 'Telemetry unavailable' }}</small>
+          <em>Details on demand</em>
+        </button>
+      </div>
+    </hai-progressive-section>
 
     <section class="opportunity-panel">
       <div class="section-heading">
@@ -118,14 +129,23 @@
           <h2>Next Best Actions</h2>
           <p>Ranked for verified progress. Accepting creates or advances controlled workflow work.</p>
         </div>
-        <nz-radio-group [(ngModel)]="statusFilter" nzButtonStyle="solid">
+      </div>
+
+      <hai-progressive-section
+        [moduleId]="moduleId"
+        sectionId="opportunity-history"
+        title="Opportunity history filters"
+        summary="Basic shows newly proposed actions. Use Advanced filters to review accepted, completed, or dismissed records."
+        [advancedOnly]="true"
+      >
+        <nz-radio-group [(ngModel)]="statusFilter" nzButtonStyle="solid" aria-label="Filter opportunities by status">
           <label nz-radio-button nzValue="proposed">Proposed</label>
           <label nz-radio-button nzValue="accepted">Accepted</label>
           <label nz-radio-button nzValue="completed">Completed</label>
           <label nz-radio-button nzValue="dismissed">Dismissed</label>
           <label nz-radio-button nzValue="all">All</label>
         </nz-radio-group>
-      </div>
+      </hai-progressive-section>
 
       <div class="opportunity-list">
         <article class="opportunity-row" *ngFor="let item of filteredOpportunities()">
@@ -150,6 +170,7 @@
               *ngIf="item.status === 'proposed'"
               (click)="accept(item)"
               [nzLoading]="resolving === item.id"
+              [disabled]="!!resolving || !!savingNeed || loading || scanning || decisionsNeedRefresh"
             >
               Accept
             </button>
@@ -158,22 +179,23 @@
               nzType="default"
               *ngIf="item.status === 'proposed'"
               (click)="dismiss(item)"
-              [disabled]="resolving === item.id"
+              [disabled]="!!resolving || !!savingNeed || loading || scanning || decisionsNeedRefresh"
             >
               Dismiss
             </button>
             <button nz-button nzType="default" (click)="openOpportunityDetails(item)">Details</button>
-            <button nz-button nzType="text" *ngIf="item.workflowId" (click)="openWorkflow(item.workflowId)">
-              <i nz-icon nzType="branches" nzTheme="outline"></i>
+            <button type="button" nz-button nzType="text" *ngIf="item.workflowId" [attr.aria-label]="'Open workflow for ' + item.title" [attr.title]="'Open workflow for ' + item.title" (click)="openWorkflow(item.workflowId)">
+              <i nz-icon nzType="branches" nzTheme="outline" aria-hidden="true"></i>
             </button>
             <button
               nz-button
               nzType="text"
               *ngIf="canOpenSource(item.sourceUri)"
               (click)="openSource(item.sourceUri)"
-              aria-label="Open source"
+              [attr.aria-label]="'Open source for ' + item.title"
+              [attr.title]="'Open source for ' + item.title"
             >
-              <i nz-icon nzType="link" nzTheme="outline"></i>
+              <i nz-icon nzType="link" nzTheme="outline" aria-hidden="true"></i>
             </button>
           </div>
         </article>
@@ -219,7 +241,7 @@
         </button>
       </div>
     </section>
-  </main>
+  </div>
 </section>
 
 <nz-modal
@@ -227,6 +249,8 @@
   [nzTitle]="selectedNeed?.name || 'Priority'"
   [nzFooter]="needFooter"
   (nzOnCancel)="closeNeed()"
+  [nzClosable]="!selectedNeed || savingNeed !== selectedNeed.key"
+  [nzMaskClosable]="!selectedNeed || savingNeed !== selectedNeed.key"
   nzWidth="640px"
 >
   <ng-container *nzModalContent>
@@ -254,12 +278,13 @@
     </div>
   </ng-container>
   <ng-template #needFooter>
-    <button nz-button nzType="default" (click)="closeNeed()">Cancel</button>
+    <button nz-button nzType="default" [disabled]="!!selectedNeed && savingNeed === selectedNeed.key" (click)="closeNeed()">Cancel</button>
     <button
       nz-button
       nzType="primary"
       *ngIf="selectedNeed as need"
-      (click)="saveNeed(need); closeNeed()"
+      (click)="saveNeed(need)"
+      [disabled]="!!savingNeed || loading || scanning || !!resolving"
       [nzLoading]="savingNeed === need.key"
     >
       Save
@@ -280,7 +305,7 @@
         <span><strong>{{ item.priorityScore }}</strong> priority</span>
         <span><strong>{{ item.urgency }}</strong> urgency</span>
         <span><strong>{{ item.impact }}</strong> impact</span>
-        <span><strong>{{ item.confidence }}</strong> confidence</span>
+        <span><strong>{{ percent(item.confidence) }}</strong> confidence</span>
         <span><strong>{{ item.effort }}</strong> effort</span>
       </div>
       <p>{{ item.rationale }}</p>
@@ -300,6 +325,8 @@
       nzType="primary"
       *ngIf="selectedOpportunity?.status === 'proposed'"
       (click)="acceptSelectedOpportunity()"
+      [nzLoading]="resolving === selectedOpportunity.id"
+      [disabled]="!!resolving || !!savingNeed || loading || scanning || decisionsNeedRefresh"
     >
       Accept
     </button>
@@ -315,6 +342,21 @@
 >
   <ng-container *nzModalContent>
     <div class="detail-panel" *ngIf="detailsMode === 'policy'">
+      <strong>Reported ambient configuration</strong>
+      <span role="status" *ngIf="loading || decisionsNeedRefresh">Configuration needs refresh.</span>
+      <span *ngIf="policySnapshotTime() as snapshot">Snapshot: {{ snapshot | date:'medium' }}</span>
+      <div class="detail-metrics">
+        <span><strong>{{ policyFlag('schedulerEnabled') }}</strong> background scheduler</span>
+        <span><strong>{{ policyFlag('suggestionOnly') }}</strong> suggestions only</span>
+        <span><strong>{{ policyFlag('executionEnabled') }}</strong> configured execution</span>
+        <span><strong>{{ policyValue('minimumScore') }}</strong> minimum priority score / 100</span>
+        <span><strong>{{ policyValue('minimumConfidence') }}</strong> minimum confidence / 100</span>
+        <span><strong>{{ policyValue('opportunityLimit') }}</strong> proposal limit</span>
+        <span><strong>{{ policyValue('executionLimit') }}</strong> execution limit</span>
+        <span><strong>{{ policyValue('cooldownHours') }}</strong> cooldown (hours)</span>
+        <span><strong>{{ policyValue('scanIntervalSeconds') }}</strong> scan interval (seconds)</span>
+      </div>
+      <span>Configuration is not execution authorization or evidence of completed work.</span>
       <strong>YAGNI gatekeeper</strong>
       <span>necessity -> standard_library -> platform_native -> existing_dependency -> small_patch -> minimal_custom</span>
       <span>New dependencies: blocked by default</span>
@@ -322,12 +364,16 @@
       <span>Stress-suite results validate deterministic guards, not external-provider correctness.</span>
     </div>
     <div class="detail-panel" *ngIf="detailsMode === 'autonomy' && autonomyOverview as autonomy">
-      <div class="detail-metrics">
+      <span role="status" *ngIf="autonomyErrorMessage">{{ autonomyErrorMessage }}</span>
+      <span role="status" *ngIf="autonomyLoading">Refreshing telemetry; previous figures are shown.</span>
+      <span>Server telemetry snapshot: {{ autonomy.generatedAt | date:'medium' }}</span>
+      <span *ngIf="!autonomy.metrics.attempts">No evaluated attempts in this snapshot.</span>
+      <div class="detail-metrics" *ngIf="autonomy.metrics.attempts">
         <span><strong>{{ autonomy.metrics.attempts }}</strong> attempts</span>
         <span><strong>{{ percent(autonomy.metrics.rawCompletionRate) }}</strong> raw completion</span>
         <span><strong>{{ percent(autonomy.metrics.policyCompletionRate) }}</strong> under policy</span>
         <span><strong>{{ percent(autonomy.metrics.interventionRate) }}</strong> intervention</span>
-        <span><strong>{{ percent(autonomy.metrics.recoveryRate) }}</strong> recovery</span>
+        <span><strong>{{ autonomy.metrics.recoveryAttempts ? percent(autonomy.metrics.recoveryRate) : 'Not measured' }}</strong> recovery</span>
       </div>
       <div class="detail-panel__warnings">
         <span *ngFor="let warning of autonomy.warnings">{{ warning }}</span>

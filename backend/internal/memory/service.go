@@ -1,16 +1,18 @@
 package memory
 
 import (
-	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/semantic"
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -70,9 +72,30 @@ type SemanticReindexResult struct {
 
 const (
 	memoryHealthStaleAfter           = 90 * 24 * time.Hour
-	memoryLastUsedWriteInterval      = 15 * time.Minute
 	maxMemoryConsolidationCandidates = 25
+	maxMemoryContentBytes            = 32 * 1024
+	maxMemorySummaryInputBytes       = 8 * 1024
+	maxMemoryRequestBytes            = 64 * 1024
+	maxMemoryTags                    = 32
 )
+
+var memoryCreateLocks [128]sync.Mutex
+
+func isReviewManagedMemoryKind(kind string) bool {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	return kind == "source" || kind == "source_supported_fact" || strings.HasPrefix(kind, "correction_")
+}
+
+func requireOwnerIdentity(ownerIdentity string) (string, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return "", errors.New("owner identity is required")
+	}
+	if err := validateMemoryText("owner identity", ownerIdentity, 255); err != nil {
+		return "", err
+	}
+	return ownerIdentity, nil
+}
 
 // MemoryHealthReport is a read-only owner-scoped review. It proposes no
 // mutation; corrections, merges, archival, and deletion use existing paths.
@@ -113,7 +136,9 @@ type Service interface {
 
 // OwnerScopedService is implemented by HAI's native memory service. Keeping it
 // separate preserves the narrow Service contract used by background workers
-// while giving authenticated boundaries a fail-closed owner-aware API.
+// while giving authenticated boundaries a fail-closed owner-aware API. Every
+// owner-scoped method rejects a blank identity; unscoped Service methods are
+// reserved for trusted internal workflows.
 type OwnerScopedService interface {
 	CreateForOwner(ownerIdentity string, request CreateRequest) (*models.ContextMemory, error)
 	UpdateForOwner(ownerIdentity string, id uuid.UUID, request UpdateRequest) (*models.ContextMemory, error)
@@ -124,17 +149,22 @@ type OwnerScopedService interface {
 	RetrieveForOwner(ownerIdentity string, request RetrieveRequest) (*RetrieveResult, error)
 }
 
-// OwnerContextService lets request-bound callers cancel semantic retrieval
-// without widening the established owner-scoped service contract.
-type OwnerContextService interface {
-	RetrieveForOwnerContext(context.Context, string, RetrieveRequest) (*RetrieveResult, error)
+// VerifiedFactProvenance carries identifiers and source strings from the
+// verification workflow. The configured repository must resolve these values
+// against persisted owner-bound run, claim, evidence, and opt-in records before
+// it permits a memory write.
+type VerifiedFactProvenance struct {
+	RunID      uuid.UUID
+	ClaimID    uuid.UUID
+	EvidenceID uuid.UUID
+	SourceURI  string
+	SourceID   string
 }
 
-// OwnerQueryService is an optional extension for bounded owner-scoped query
-// execution. Keeping it separate preserves compatibility with integrations
-// that only need the established OwnerScopedService contract.
-type OwnerQueryService interface {
-	QueryForOwner(context.Context, string, string, bool, QueryParams) (PageResult, error)
+// VerifiedFactWriter is deliberately separate from generic memory writes so
+// callers cannot label arbitrary content as source-verified through Create.
+type VerifiedFactWriter interface {
+	CreateVerifiedFactForOwner(ownerIdentity string, request CreateRequest, provenance VerifiedFactProvenance) (*models.ContextMemory, error)
 }
 
 // SemanticReindexService is intentionally separate from Service so existing
@@ -144,12 +174,22 @@ type SemanticReindexService interface {
 	ReindexSemanticForOwner(ownerIdentity string, limit int) (*SemanticReindexResult, error)
 }
 
-type SemanticReindexContextService interface {
-	ReindexSemanticForOwnerContext(context.Context, string, int) (*SemanticReindexResult, error)
-}
-
 type MemoryHealthService interface {
 	MemoryHealthForOwner(ownerIdentity, projectKey string) (*MemoryHealthReport, error)
+}
+
+// RecentMemoryService is a bounded, chronological listing for operational
+// surfaces. It intentionally has no search or total count semantics.
+type RecentMemoryService interface {
+	RecentForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error)
+}
+
+type OwnerQueryService interface {
+	QueryForOwner(ctx context.Context, ownerIdentity, projectKey string, includeArchived bool, params QueryParams) (PageResult, error)
+}
+
+type OwnerQueryRepository interface {
+	QueryForOwner(ctx context.Context, ownerIdentity, projectKey string, includeArchived bool, params QueryParams) (PageResult, error)
 }
 
 type service struct {
@@ -174,10 +214,17 @@ func DefaultService() Service {
 }
 
 func (s *service) Create(request CreateRequest) (*models.ContextMemory, error) {
+	if isReviewManagedMemoryKind(request.Kind) {
+		return nil, errors.New("review-managed memory must be written by its verification workflow")
+	}
 	return s.createForOwner("", request)
 }
 
 func (s *service) MemoryHealthForOwner(ownerIdentity, projectKey string) (*MemoryHealthReport, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
 	projectKey = strings.TrimSpace(projectKey)
 	memories, err := s.FindAllForOwner(ownerIdentity, projectKey, true)
 	if err != nil {
@@ -251,6 +298,10 @@ func (s *service) MemoryHealthForOwner(ownerIdentity, projectKey string) (*Memor
 }
 
 func HealthForOwner(service Service, ownerIdentity, projectKey string) (*MemoryHealthReport, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
 	health, ok := service.(MemoryHealthService)
 	if !ok {
 		return nil, fmt.Errorf("memory health review is unavailable")
@@ -261,12 +312,74 @@ func HealthForOwner(service Service, ownerIdentity, projectKey string) (*MemoryH
 // CreateForOwner stores a memory under the authenticated owner. It never
 // deduplicates against ownerless legacy records or another owner's records.
 func (s *service) CreateForOwner(ownerIdentity string, request CreateRequest) (*models.ContextMemory, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	if isReviewManagedMemoryKind(request.Kind) {
+		return nil, errors.New("review-managed memory must be written by its review workflow")
+	}
 	return s.createForOwner(ownerIdentity, request)
+}
+
+func (s *service) CreateVerifiedFactForOwner(ownerIdentity string, request CreateRequest, provenance VerifiedFactProvenance) (*models.ContextMemory, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateVerifiedFactRequest(request, provenance); err != nil {
+		return nil, err
+	}
+	request.Kind = "source_supported_fact"
+	if repository, ok := s.repo.(VerifiedFactPromotionRepository); ok {
+		projectKey := strings.TrimSpace(request.ProjectKey)
+		lockKey := memoryCreateLockKey(ownerIdentity, projectKey, request.Kind)
+		lock := memoryCreateLock(lockKey)
+		lock.Lock()
+		defer lock.Unlock()
+		saved, writeErr := repository.WithVerifiedFactPromotion(
+			context.Background(), ownerIdentity, request, provenance,
+			func(txRepository Repository) (*models.ContextMemory, error) {
+				return s.createForOwnerInRepository(txRepository, ownerIdentity, projectKey, request.Kind, strings.TrimSpace(request.Content), request)
+			},
+		)
+		if writeErr != nil {
+			return saved, writeErr
+		}
+		s.indexMemory(saved)
+		return saved, nil
+	}
+	return nil, errors.New("durable verified-fact provenance validation is unavailable")
+}
+
+func validateVerifiedFactRequest(request CreateRequest, provenance VerifiedFactProvenance) error {
+	if strings.TrimSpace(request.Kind) != "source_supported_fact" {
+		return errors.New("verification workflow may only create source-supported facts")
+	}
+	if strings.TrimSpace(request.Content) == "" || math.IsNaN(request.Confidence) || math.IsInf(request.Confidence, 0) || request.Confidence <= 0 || request.Confidence > 1 {
+		return errors.New("verified fact content and confidence are invalid")
+	}
+	if provenance.RunID == uuid.Nil || provenance.ClaimID == uuid.Nil || provenance.EvidenceID == uuid.Nil {
+		return errors.New("verified fact run, claim, and evidence identifiers are required")
+	}
+	if strings.TrimSpace(request.SourceLabel) != "verification-run:"+provenance.RunID.String() {
+		return errors.New("verified fact run label does not match its provenance")
+	}
+	proofSource := strings.TrimSpace(provenance.SourceURI)
+	if proofSource == "" {
+		proofSource = strings.TrimSpace(provenance.SourceID)
+	}
+	if proofSource == "" || strings.TrimSpace(request.SourceURI) != proofSource {
+		return errors.New("verified fact source does not match its evidence provenance")
+	}
+	return nil
 }
 
 func CreateForOwner(service Service, ownerIdentity string, request CreateRequest) (*models.ContextMemory, error) {
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	if ownerIdentity == "" {
+		// Trusted internal workers may explicitly use the legacy unscoped path.
+		// Authenticated HTTP handlers validate identity before calling this helper.
 		return service.Create(request)
 	}
 	scoped, ok := service.(OwnerScopedService)
@@ -276,22 +389,26 @@ func CreateForOwner(service Service, ownerIdentity string, request CreateRequest
 	return scoped.CreateForOwner(ownerIdentity, request)
 }
 
-func RetrieveForOwner(service Service, ownerIdentity string, request RetrieveRequest) (*RetrieveResult, error) {
-	return RetrieveForOwnerContext(service, context.Background(), ownerIdentity, request)
-}
-
-func RetrieveForOwnerContext(service Service, ctx context.Context, ownerIdentity string, request RetrieveRequest) (*RetrieveResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
+// CreateVerifiedFactForOwner is the sole owner-scoped persistence path for
+// source-supported facts. The configured writer must validate durable run,
+// claim, evidence, freshness, and owner opt-in records before persisting.
+func CreateVerifiedFactForOwner(service Service, ownerIdentity string, request CreateRequest, provenance VerifiedFactProvenance) (*models.ContextMemory, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
 		return nil, err
 	}
-	ownerIdentity = strings.TrimSpace(ownerIdentity)
-	if contextual, ok := service.(OwnerContextService); ok {
-		return contextual.RetrieveForOwnerContext(ctx, ownerIdentity, request)
+	writer, ok := service.(VerifiedFactWriter)
+	if !ok {
+		return nil, fmt.Errorf("verified-fact memory writer is unavailable")
 	}
+	return writer.CreateVerifiedFactForOwner(ownerIdentity, request, provenance)
+}
+
+func RetrieveForOwner(service Service, ownerIdentity string, request RetrieveRequest) (*RetrieveResult, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	if ownerIdentity == "" {
+		// Trusted internal workers may explicitly use the legacy unscoped path.
+		// Authenticated HTTP handlers validate identity before calling this helper.
 		return service.Retrieve(request)
 	}
 	scoped, ok := service.(OwnerScopedService)
@@ -303,29 +420,44 @@ func RetrieveForOwnerContext(service Service, ctx context.Context, ownerIdentity
 
 func (s *service) createForOwner(ownerIdentity string, request CreateRequest) (*models.ContextMemory, error) {
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
-	content := strings.TrimSpace(request.Content)
-	if content == "" {
-		return nil, fmt.Errorf("content is required")
+	if err := validateMemoryCreateRequest(ownerIdentity, request); err != nil {
+		return nil, err
 	}
+	content := strings.TrimSpace(request.Content)
 	kind := firstNonEmpty(strings.TrimSpace(request.Kind), "project")
 	projectKey := strings.TrimSpace(request.ProjectKey)
+	lockKey := memoryCreateLockKey(ownerIdentity, projectKey, kind)
+	lock := memoryCreateLock(lockKey)
+	lock.Lock()
+	saved, err := func() (*models.ContextMemory, error) {
+		defer lock.Unlock()
+		if repository, ok := s.repo.(MemoryDeduplicationRepository); ok {
+			return repository.WithMemoryDeduplicationLock(context.Background(), lockKey, func(txRepository Repository) (*models.ContextMemory, error) {
+				return s.createForOwnerInRepository(txRepository, ownerIdentity, projectKey, kind, content, request)
+			})
+		}
+		return s.createForOwnerInRepository(s.repo, ownerIdentity, projectKey, kind, content, request)
+	}()
+	if err != nil {
+		return saved, err
+	}
+	s.indexMemory(saved)
+	return saved, nil
+}
+
+func (s *service) createForOwnerInRepository(repo Repository, ownerIdentity, projectKey, kind, content string, request CreateRequest) (*models.ContextMemory, error) {
+	reviewManaged := isReviewManagedMemoryKind(kind)
 	contentHash := hashContent(projectKey, kind, content)
 
 	if ownerIdentity == "" {
-		if existing, err := s.repo.FindByHash(projectKey, kind, contentHash); err == nil {
-			if provenanceCanMerge(existing.SourceURI, request.SourceURI) {
-				saved, changed, err := s.mergeExact(existing, request)
-				if changed && err == nil {
-					s.indexMemory(saved)
-				}
-				return saved, err
-			}
+		if existing, err := repo.FindByHash(projectKey, kind, contentHash); err == nil {
+			return s.mergeExact(repo, existing, request)
 		} else if err != nil && !isNotFound(err) {
 			return nil, err
 		}
 	}
 
-	memories, err := s.FindAllForOwner(ownerIdentity, projectKey, false)
+	memories, err := findAllReadableFromRepository(repo, ownerIdentity, projectKey, false)
 	if err != nil {
 		return nil, err
 	}
@@ -333,32 +465,20 @@ func (s *service) createForOwner(ownerIdentity string, request CreateRequest) (*
 		if ownerIdentity != "" && candidate.OwnerIdentity != ownerIdentity {
 			continue
 		}
-		if candidate.Kind == kind && sameSourceURI(candidate.SourceURI, request.SourceURI) {
-			copyCandidate := candidate
-			if candidate.ContentHash == contentHash {
-				saved, changed, err := s.mergeExact(&copyCandidate, request)
-				if changed && err == nil {
-					s.indexMemory(saved)
-				}
-				return saved, err
+		if candidate.Kind == kind && candidate.ContentHash == contentHash && normalizeText(candidate.Content) == normalizeText(content) {
+			if reviewManaged &&
+				(strings.TrimSpace(candidate.SourceURI) != strings.TrimSpace(request.SourceURI) ||
+					strings.TrimSpace(candidate.SourceLabel) != strings.TrimSpace(request.SourceLabel)) {
+				continue
 			}
-			saved, err := s.mergeSimilar(&copyCandidate, request)
-			s.indexMemory(saved)
-			return saved, err
-		}
-		if candidate.Kind == kind && candidate.ContentHash == contentHash && provenanceCanMerge(candidate.SourceURI, request.SourceURI) {
 			copyCandidate := candidate
-			saved, changed, err := s.mergeExact(&copyCandidate, request)
-			if changed && err == nil {
-				s.indexMemory(saved)
-			}
-			return saved, err
+			return s.mergeExact(repo, &copyCandidate, request)
 		}
-		if candidate.Kind == kind && provenanceCanMerge(candidate.SourceURI, request.SourceURI) && similarity(candidate.Content, content) >= 0.78 {
+		// Review-managed facts retain their source/run lineage; approximate
+		// deduplication can combine distinct claims and conceal an evidence link.
+		if !reviewManaged && candidate.Kind == kind && similarity(candidate.Content, content) >= 0.78 {
 			copyCandidate := candidate
-			saved, err := s.mergeSimilar(&copyCandidate, request)
-			s.indexMemory(saved)
-			return saved, err
+			return s.mergeSimilar(repo, &copyCandidate, request)
 		}
 	}
 
@@ -374,9 +494,124 @@ func (s *service) createForOwner(ownerIdentity string, request CreateRequest) (*
 		SourceLabel:   strings.TrimSpace(request.SourceLabel),
 		ContentHash:   contentHash,
 	}
-	saved, err := s.repo.Create(memory)
-	s.indexMemory(saved)
-	return saved, err
+	return repo.Create(memory)
+}
+
+func memoryCreateLock(key string) *sync.Mutex {
+	hash := fnv.New64a()
+	_, _ = hash.Write([]byte(key))
+	return &memoryCreateLocks[hash.Sum64()%uint64(len(memoryCreateLocks))]
+}
+
+func memoryCreateLockKey(ownerIdentity, projectKey, kind string) string {
+	return fmt.Sprintf("%d:%s|%d:%s|%d:%s",
+		len(ownerIdentity), ownerIdentity, len(projectKey), projectKey, len(kind), kind)
+}
+
+func validateMemoryCreateRequest(ownerIdentity string, request CreateRequest) error {
+	if ownerIdentity != "" {
+		if err := validateMemoryText("owner identity", ownerIdentity, 255); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(request.Content) == "" {
+		return errors.New("content is required")
+	}
+	if err := validateMemoryText("content", request.Content, maxMemoryContentBytes); err != nil {
+		return err
+	}
+	if err := validateMemoryText("project key", strings.TrimSpace(request.ProjectKey), 255); err != nil {
+		return err
+	}
+	kind := firstNonEmpty(strings.TrimSpace(request.Kind), "project")
+	if err := validateMemoryText("kind", kind, 50); err != nil {
+		return err
+	}
+	if err := validateMemoryText("summary", request.Summary, maxMemorySummaryInputBytes); err != nil {
+		return err
+	}
+	if len(request.Tags) > maxMemoryTags {
+		return fmt.Errorf("tags may contain at most %d entries", maxMemoryTags)
+	}
+	for _, tag := range request.Tags {
+		if err := validateMemoryText("tag", tag, 512); err != nil {
+			return err
+		}
+	}
+	if err := validateMemoryText("tags", joinTags(request.Tags), 512); err != nil {
+		return err
+	}
+	if err := validateMemoryText("source URI", strings.TrimSpace(request.SourceURI), 1024); err != nil {
+		return err
+	}
+	if err := validateMemoryText("source label", strings.TrimSpace(request.SourceLabel), 255); err != nil {
+		return err
+	}
+	if math.IsNaN(request.Confidence) || math.IsInf(request.Confidence, 0) {
+		return errors.New("confidence must be a finite number")
+	}
+	return nil
+}
+
+func validateMemoryUpdateRequest(request UpdateRequest) error {
+	if request.Content != "" {
+		if strings.TrimSpace(request.Content) == "" {
+			return errors.New("content cannot be blank")
+		}
+		if err := validateMemoryText("content", request.Content, maxMemoryContentBytes); err != nil {
+			return err
+		}
+	}
+	if request.ProjectKey != "" {
+		if err := validateMemoryText("project key", strings.TrimSpace(request.ProjectKey), 255); err != nil {
+			return err
+		}
+	}
+	if request.Kind != "" {
+		kind := strings.TrimSpace(request.Kind)
+		if kind == "" {
+			return errors.New("kind cannot be blank")
+		}
+		if err := validateMemoryText("kind", kind, 50); err != nil {
+			return err
+		}
+	}
+	if err := validateMemoryText("summary", request.Summary, maxMemorySummaryInputBytes); err != nil {
+		return err
+	}
+	if len(request.Tags) > maxMemoryTags {
+		return fmt.Errorf("tags may contain at most %d entries", maxMemoryTags)
+	}
+	for _, tag := range request.Tags {
+		if err := validateMemoryText("tag", tag, 512); err != nil {
+			return err
+		}
+	}
+	if request.Tags != nil {
+		if err := validateMemoryText("tags", joinTags(request.Tags), 512); err != nil {
+			return err
+		}
+	}
+	if err := validateMemoryText("source URI", strings.TrimSpace(request.SourceURI), 1024); err != nil {
+		return err
+	}
+	if err := validateMemoryText("source label", strings.TrimSpace(request.SourceLabel), 255); err != nil {
+		return err
+	}
+	if math.IsNaN(request.Confidence) || math.IsInf(request.Confidence, 0) {
+		return errors.New("confidence must be a finite number")
+	}
+	return nil
+}
+
+func validateMemoryText(field, value string, maxBytes int) error {
+	if !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
+		return fmt.Errorf("%s contains invalid text", field)
+	}
+	if len(value) > maxBytes {
+		return fmt.Errorf("%s exceeds the %d-byte limit", field, maxBytes)
+	}
+	return nil
 }
 
 func (s *service) UpdateForOwner(ownerIdentity string, id uuid.UUID, request UpdateRequest) (*models.ContextMemory, error) {
@@ -396,6 +631,14 @@ func (s *service) Update(id uuid.UUID, request UpdateRequest) (*models.ContextMe
 }
 
 func (s *service) update(memory *models.ContextMemory, request UpdateRequest) (*models.ContextMemory, error) {
+	if memory != nil && (isReviewManagedMemoryKind(memory.Kind) || isReviewManagedMemoryKind(request.Kind)) {
+		return nil, errors.New("review-managed memory can only be changed by its verification workflow")
+	}
+	if err := validateMemoryUpdateRequest(request); err != nil {
+		return nil, err
+	}
+	wasArchived := memory.Archived
+	previousProjectKey, previousContent, previousSummary, previousTags := memory.ProjectKey, memory.Content, memory.Summary, memory.Tags
 	if request.ProjectKey != "" {
 		memory.ProjectKey = strings.TrimSpace(request.ProjectKey)
 	}
@@ -426,9 +669,33 @@ func (s *service) update(memory *models.ContextMemory, request UpdateRequest) (*
 		memory.Archived = *request.Archived
 	}
 	memory.ContentHash = hashContent(memory.ProjectKey, memory.Kind, memory.Content)
+	indexInputsChanged := memory.ProjectKey != previousProjectKey || memory.Content != previousContent || memory.Summary != previousSummary || memory.Tags != previousTags
+	rebuildSemanticIndex := !memory.Archived && (wasArchived || request.Archived != nil || indexInputsChanged)
+	removeStaleSemanticIndex := memory.Archived || rebuildSemanticIndex
+	if removeStaleSemanticIndex {
+		if err := s.deleteMemoryIndex(memory.ID); err != nil {
+			return nil, fmt.Errorf("memory update was not persisted because semantic index deletion failed: %w", err)
+		}
+	}
 	saved, err := s.repo.Update(memory)
-	s.indexMemory(saved)
-	return saved, err
+	if err != nil {
+		if removeStaleSemanticIndex {
+			return nil, fmt.Errorf("semantic index entry was deleted before the SQL update; keyword retrieval remains available and the operation is retryable: %w", err)
+		}
+		return nil, err
+	}
+	if saved.Archived {
+		return saved, nil
+	}
+	if rebuildSemanticIndex {
+		if err := s.indexMemoryStrict(saved); err != nil {
+			if wasArchived {
+				return saved, fmt.Errorf("memory is active in SQL but semantic index rebuild failed; retry the unarchive operation: %w", err)
+			}
+			return saved, fmt.Errorf("memory was saved but its semantic index refresh failed; keyword retrieval remains available and reindexing can repair it: %w", err)
+		}
+	}
+	return saved, nil
 }
 
 func (s *service) FindAll(projectKey string, includeArchived bool) ([]models.ContextMemory, error) {
@@ -436,35 +703,48 @@ func (s *service) FindAll(projectKey string, includeArchived bool) ([]models.Con
 }
 
 func (s *service) FindAllForOwner(ownerIdentity, projectKey string, includeArchived bool) ([]models.ContextMemory, error) {
-	ownerIdentity = strings.TrimSpace(ownerIdentity)
-	if ownerIdentity != "" {
-		if scoped, ok := s.repo.(OwnerScopedRepository); ok {
-			return scoped.FindAllForOwner(ownerIdentity, projectKey, includeArchived)
-		}
-	}
-	memories, err := s.repo.FindAll(projectKey, includeArchived)
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
 	if err != nil {
 		return nil, err
 	}
-	return filterReadableMemories(memories, ownerIdentity), nil
+	return s.findAllReadable(ownerIdentity, projectKey, includeArchived)
 }
 
-func (s *service) QueryForOwner(
-	ctx context.Context,
-	ownerIdentity string,
-	projectKey string,
-	includeArchived bool,
-	params QueryParams,
-) (PageResult, error) {
-	ownerIdentity = strings.TrimSpace(ownerIdentity)
-	if queryRepository, ok := s.repo.(OwnerQueryRepository); ok {
-		return queryRepository.QueryForOwner(ctx, ownerIdentity, projectKey, includeArchived, params)
+func (s *service) QueryForOwner(ctx context.Context, ownerIdentity, projectKey string, includeArchived bool, params QueryParams) (PageResult, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return PageResult{}, err
 	}
-	memories, err := s.FindAllForOwner(ownerIdentity, projectKey, includeArchived)
+	repository, ok := s.repo.(OwnerQueryRepository)
+	if ok {
+		return repository.QueryForOwner(ctx, ownerIdentity, projectKey, includeArchived, params)
+	}
+	memories, err := s.findAllReadable(ownerIdentity, projectKey, includeArchived)
 	if err != nil {
 		return PageResult{}, err
 	}
 	return Query(memories, params), nil
+}
+
+func (s *service) RecentForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if scoped, ok := s.repo.(RecentOwnerScopedRepository); ok {
+		return scoped.FindRecentForOwner(ownerIdentity, projectKey, includeArchived, limit)
+	}
+	memories, err := s.findAllReadable(ownerIdentity, projectKey, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+	if len(memories) > limit {
+		return memories[:limit], nil
+	}
+	return memories, nil
 }
 
 func (s *service) FindByID(id uuid.UUID) (*models.ContextMemory, error) {
@@ -472,6 +752,13 @@ func (s *service) FindByID(id uuid.UUID) (*models.ContextMemory, error) {
 }
 
 func (s *service) FindByIDForOwner(ownerIdentity string, id uuid.UUID) (*models.ContextMemory, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	if scoped, ok := s.repo.(OwnerScopedRepository); ok {
+		return scoped.FindByIDForOwner(ownerIdentity, id)
+	}
 	memory, err := s.repo.FindByID(id)
 	if err != nil {
 		return nil, err
@@ -487,10 +774,7 @@ func (s *service) Archive(id uuid.UUID, archived bool) (*models.ContextMemory, e
 	if err != nil {
 		return nil, err
 	}
-	memory.Archived = archived
-	saved, err := s.repo.Update(memory)
-	s.indexMemory(saved)
-	return saved, err
+	return s.saveArchiveState(memory, archived)
 }
 
 func (s *service) ArchiveForOwner(ownerIdentity string, id uuid.UUID, archived bool) (*models.ContextMemory, error) {
@@ -498,52 +782,69 @@ func (s *service) ArchiveForOwner(ownerIdentity string, id uuid.UUID, archived b
 	if err != nil {
 		return nil, err
 	}
+	return s.saveArchiveState(memory, archived)
+}
+
+func (s *service) saveArchiveState(memory *models.ContextMemory, archived bool) (*models.ContextMemory, error) {
 	memory.Archived = archived
+	if archived {
+		if err := s.deleteMemoryIndex(memory.ID); err != nil {
+			return nil, fmt.Errorf("memory was not archived because semantic index deletion failed: %w", err)
+		}
+	}
 	saved, err := s.repo.Update(memory)
-	s.indexMemory(saved)
-	return saved, err
+	if err != nil {
+		if archived {
+			return nil, fmt.Errorf("semantic index entry was deleted but SQL archive update failed; persisted state may be uncertain and the operation is retryable: %w", err)
+		}
+		return nil, err
+	}
+	if !archived {
+		if err := s.indexMemoryStrict(saved); err != nil {
+			return saved, fmt.Errorf("memory is unarchived in SQL but semantic index rebuild failed; retry the unarchive operation: %w", err)
+		}
+	}
+	return saved, nil
 }
 
 func (s *service) Delete(id uuid.UUID) error {
-	err := s.repo.Delete(id)
-	if err == nil {
-		s.deleteMemoryIndex(id)
+	if err := s.deleteMemoryIndex(id); err != nil {
+		return fmt.Errorf("SQL memory was preserved because semantic index deletion failed: %w", err)
 	}
-	return err
+	if err := s.repo.Delete(id); err != nil {
+		return fmt.Errorf("semantic index entry was deleted but SQL memory deletion failed; SQL state may be uncertain and the operation is retryable: %w", err)
+	}
+	return nil
 }
 
 func (s *service) DeleteForOwner(ownerIdentity string, id uuid.UUID) error {
 	if _, err := s.writeableMemoryForOwner(ownerIdentity, id); err != nil {
 		return err
 	}
-	err := s.repo.Delete(id)
-	if err == nil {
-		s.deleteMemoryIndex(id)
+	if err := s.deleteMemoryIndex(id); err != nil {
+		return fmt.Errorf("SQL memory was preserved because semantic index deletion failed: %w", err)
 	}
-	return err
+	if err := s.repo.Delete(id); err != nil {
+		return fmt.Errorf("semantic index entry was deleted but SQL memory deletion failed; SQL state may be uncertain and the operation is retryable: %w", err)
+	}
+	return nil
 }
 
 func (s *service) Retrieve(request RetrieveRequest) (*RetrieveResult, error) {
-	return s.retrieveForOwner(context.Background(), "", request)
+	return s.retrieveForOwner("", request)
 }
 
 func (s *service) RetrieveForOwner(ownerIdentity string, request RetrieveRequest) (*RetrieveResult, error) {
-	return s.retrieveForOwner(context.Background(), ownerIdentity, request)
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	return s.retrieveForOwner(ownerIdentity, request)
 }
 
 func (s *service) ReindexSemanticForOwner(ownerIdentity string, limit int) (*SemanticReindexResult, error) {
-	return s.ReindexSemanticForOwnerContext(context.Background(), ownerIdentity, limit)
-}
-
-func (s *service) RetrieveForOwnerContext(ctx context.Context, ownerIdentity string, request RetrieveRequest) (*RetrieveResult, error) {
-	return s.retrieveForOwner(ctx, ownerIdentity, request)
-}
-
-func (s *service) ReindexSemanticForOwnerContext(ctx context.Context, ownerIdentity string, limit int) (*SemanticReindexResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
 		return nil, err
 	}
 	if s.semanticService == nil || !s.semanticService.Enabled() {
@@ -555,26 +856,19 @@ func (s *service) ReindexSemanticForOwnerContext(ctx context.Context, ownerIdent
 	if limit <= 0 || limit > 100 {
 		limit = 100
 	}
-	memories, err := s.repo.FindAll("", false)
+	memories, err := s.findAllReadable(ownerIdentity, "", false)
 	if err != nil {
 		return nil, err
 	}
-	visible := filterReadableMemories(memories, ownerIdentity)
 	result := &SemanticReindexResult{Enabled: true}
-	for index, item := range visible {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
+	for index, item := range memories {
 		if index >= limit {
-			result.Deferred = len(visible) - index
+			result.Deferred = len(memories) - index
 			break
 		}
 		result.Attempted++
 		copyItem := item
-		if err := s.semanticService.IndexMemory(ctx, &copyItem); err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
-			}
+		if err := s.semanticService.IndexMemory(context.Background(), &copyItem); err != nil {
 			result.Failed++
 			continue
 		}
@@ -587,45 +881,27 @@ func (s *service) ReindexSemanticForOwnerContext(ctx context.Context, ownerIdent
 	return result, nil
 }
 
-func (s *service) retrieveForOwner(ctx context.Context, ownerIdentity string, request RetrieveRequest) (*RetrieveResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+func (s *service) retrieveForOwner(ownerIdentity string, request RetrieveRequest) (*RetrieveResult, error) {
 	limit := request.Limit
 	if limit <= 0 || limit > 20 {
 		limit = 8
 	}
 	projectKey := strings.TrimSpace(request.ProjectKey)
-	memories, err := s.repo.FindAll("", false)
+	memories, err := s.findAllReadable(ownerIdentity, "", false)
 	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	candidates := make([]models.ContextMemory, 0, len(memories))
 	for _, memory := range memories {
-		if !readableByOwner(&memory, ownerIdentity) {
-			continue
-		}
 		if projectKey != "" && memory.ProjectKey != "" && memory.ProjectKey != projectKey {
 			continue
 		}
 		candidates = append(candidates, memory)
 	}
-	semanticScores, semanticState, err := s.semanticScores(ctx, ownerIdentity, request)
-	if err != nil {
-		return nil, err
-	}
+	semanticScores, semanticState := s.semanticScores(ownerIdentity, request)
 
 	ranked := make([]RankedMemory, 0, len(candidates))
 	for _, memory := range candidates {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		score, explanation := scoreMemory(memory, request, semanticScores[memory.ID])
 		if score <= 0.12 {
 			continue
@@ -646,12 +922,6 @@ func (s *service) retrieveForOwner(ctx context.Context, ownerIdentity string, re
 
 	now := time.Now().UTC()
 	for i := range ranked {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if ranked[i].Memory.LastUsedAt != nil && now.Sub(*ranked[i].Memory.LastUsedAt) < memoryLastUsedWriteInterval {
-			continue
-		}
 		ranked[i].Memory.LastUsedAt = &now
 		updated := ranked[i].Memory
 		if writeableByOwner(&updated, ownerIdentity) {
@@ -674,6 +944,13 @@ func (s *service) retrieveForOwner(ctx context.Context, ownerIdentity string, re
 }
 
 func (s *service) writeableMemoryForOwner(ownerIdentity string, id uuid.UUID) (*models.ContextMemory, error) {
+	ownerIdentity, err := requireOwnerIdentity(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	if scoped, ok := s.repo.(OwnerScopedRepository); ok {
+		return scoped.FindByIDForOwner(ownerIdentity, id)
+	}
 	memory, err := s.repo.FindByID(id)
 	if err != nil {
 		return nil, err
@@ -682,6 +959,22 @@ func (s *service) writeableMemoryForOwner(ownerIdentity string, id uuid.UUID) (*
 		return nil, gorm.ErrRecordNotFound
 	}
 	return memory, nil
+}
+
+func (s *service) findAllReadable(ownerIdentity, projectKey string, includeArchived bool) ([]models.ContextMemory, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	return findAllReadableFromRepository(s.repo, ownerIdentity, projectKey, includeArchived)
+}
+
+func findAllReadableFromRepository(repo Repository, ownerIdentity, projectKey string, includeArchived bool) ([]models.ContextMemory, error) {
+	if scoped, ok := repo.(OwnerScopedRepository); ok && ownerIdentity != "" {
+		return scoped.FindAllForOwner(ownerIdentity, projectKey, includeArchived)
+	}
+	memories, err := repo.FindAll(projectKey, includeArchived)
+	if err != nil {
+		return nil, err
+	}
+	return filterReadableMemories(memories, ownerIdentity), nil
 }
 
 func readableByOwner(memory *models.ContextMemory, ownerIdentity string) bool {
@@ -694,8 +987,9 @@ func readableByOwner(memory *models.ContextMemory, ownerIdentity string) bool {
 		// Authenticated handlers always use the owner-scoped methods below.
 		return true
 	}
-	recordOwner := strings.TrimSpace(memory.OwnerIdentity)
-	return recordOwner == ownerIdentity || (recordOwner == "" && identity.CanReadLegacyOwnerlessData(ownerIdentity))
+	// Legacy records without an owner are quarantined. Treating them as global
+	// would expose personal memories to every authenticated account.
+	return memory.OwnerIdentity != "" && memory.OwnerIdentity == ownerIdentity
 }
 
 func writeableByOwner(memory *models.ContextMemory, ownerIdentity string) bool {
@@ -716,56 +1010,25 @@ func filterReadableMemories(memories []models.ContextMemory, ownerIdentity strin
 	return visible
 }
 
-func (s *service) mergeExact(existing *models.ContextMemory, request CreateRequest) (*models.ContextMemory, bool, error) {
-	if existing == nil {
-		return nil, false, fmt.Errorf("existing memory is required")
+func (s *service) mergeExact(repo Repository, existing *models.ContextMemory, request CreateRequest) (*models.ContextMemory, error) {
+	existing.Confidence = math.Max(existing.Confidence, normalizeConfidence(request.Confidence))
+	existing.Tags = joinTags(mergeTags(splitTags(existing.Tags), request.Tags))
+	if existing.SourceURI == "" {
+		existing.SourceURI = request.SourceURI
 	}
-
-	changed := false
-	confidence := math.Max(existing.Confidence, normalizeConfidence(request.Confidence))
-	if confidence != existing.Confidence {
-		existing.Confidence = confidence
-		changed = true
-	}
-	tags := joinTags(mergeTags(splitTags(existing.Tags), request.Tags))
-	if tags != existing.Tags {
-		existing.Tags = tags
-		changed = true
-	}
-	if existing.SourceURI == "" && strings.TrimSpace(request.SourceURI) != "" {
-		existing.SourceURI = strings.TrimSpace(request.SourceURI)
-		changed = true
-	}
-	if existing.SourceLabel == "" && strings.TrimSpace(request.SourceLabel) != "" {
-		existing.SourceLabel = strings.TrimSpace(request.SourceLabel)
-		changed = true
+	if existing.SourceLabel == "" {
+		existing.SourceLabel = request.SourceLabel
 	}
 	if request.Summary != "" {
-		summary := compactSummary(request.Summary)
-		if summary != existing.Summary {
-			existing.Summary = summary
-			changed = true
-		}
+		existing.Summary = compactSummary(request.Summary)
 	}
-	if existing.Archived {
-		existing.Archived = false
-		changed = true
-	}
-	if !changed {
-		return existing, false, nil
-	}
-	saved, err := s.repo.Update(existing)
-	return saved, err == nil, err
+	existing.Archived = false
+	return repo.Update(existing)
 }
 
-func (s *service) mergeSimilar(existing *models.ContextMemory, request CreateRequest) (*models.ContextMemory, error) {
-	if sameSourceURI(existing.SourceURI, request.SourceURI) {
-		existing.Content = strings.TrimSpace(request.Content)
-		existing.Summary = compactSummary(firstNonEmpty(request.Summary, request.Content))
-	} else {
-		existing.Content = compactMergedContent(existing.Content, request.Content)
-		existing.Summary = compactSummary(existing.Content)
-	}
+func (s *service) mergeSimilar(repo Repository, existing *models.ContextMemory, request CreateRequest) (*models.ContextMemory, error) {
+	existing.Content = compactMergedContent(existing.Content, request.Content)
+	existing.Summary = compactSummary(existing.Content)
 	existing.Confidence = math.Max(existing.Confidence, normalizeConfidence(request.Confidence)-0.05)
 	existing.Tags = joinTags(mergeTags(splitTags(existing.Tags), request.Tags))
 	if existing.SourceURI == "" {
@@ -776,19 +1039,7 @@ func (s *service) mergeSimilar(existing *models.ContextMemory, request CreateReq
 	}
 	existing.ContentHash = hashContent(existing.ProjectKey, existing.Kind, existing.Content)
 	existing.Archived = false
-	return s.repo.Update(existing)
-}
-
-func provenanceCanMerge(existingURI, incomingURI string) bool {
-	existingURI = strings.TrimSpace(existingURI)
-	incomingURI = strings.TrimSpace(incomingURI)
-	return existingURI == "" || incomingURI == "" || existingURI == incomingURI
-}
-
-func sameSourceURI(existingURI, incomingURI string) bool {
-	existingURI = strings.TrimSpace(existingURI)
-	incomingURI = strings.TrimSpace(incomingURI)
-	return existingURI != "" && existingURI == incomingURI
+	return repo.Update(existing)
 }
 
 func scoreMemory(memory models.ContextMemory, request RetrieveRequest, semanticSimilarity float64) (float64, string) {
@@ -833,34 +1084,40 @@ func (s *service) indexMemory(memory *models.ContextMemory) {
 	_ = s.semanticService.IndexMemory(context.Background(), memory)
 }
 
-func (s *service) deleteMemoryIndex(id uuid.UUID) {
-	if id == uuid.Nil || s.semanticService == nil || !s.semanticService.Enabled() {
-		return
+func (s *service) indexMemoryStrict(memory *models.ContextMemory) error {
+	if memory == nil || s.semanticService == nil || !s.semanticService.Enabled() {
+		return nil
 	}
-	_ = s.semanticService.DeleteMemory(context.Background(), id)
+	return s.semanticService.IndexMemory(context.Background(), memory)
 }
 
-func (s *service) semanticScores(ctx context.Context, ownerIdentity string, request RetrieveRequest) (map[uuid.UUID]float64, string, error) {
-	if s.semanticService == nil || !s.semanticService.Enabled() {
-		return map[uuid.UUID]float64{}, "", nil
+func (s *service) deleteMemoryIndex(id uuid.UUID) error {
+	if id == uuid.Nil || s.semanticService == nil {
+		return nil
 	}
-	matches, err := s.semanticService.SearchMemory(ctx, semantic.MemorySearchRequest{
+	// Deletion remains available when retrieval is disabled: the semantic
+	// adapter performs database-only cleanup without requesting an embedding.
+	return s.semanticService.DeleteMemory(context.Background(), id)
+}
+
+func (s *service) semanticScores(ownerIdentity string, request RetrieveRequest) (map[uuid.UUID]float64, string) {
+	if s.semanticService == nil || !s.semanticService.Enabled() {
+		return map[uuid.UUID]float64{}, ""
+	}
+	matches, err := s.semanticService.SearchMemory(context.Background(), semantic.MemorySearchRequest{
 		OwnerIdentity: ownerIdentity,
 		Query:         request.Query,
 		ProjectKey:    request.ProjectKey,
 		Limit:         request.Limit,
 	})
 	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, "", ctxErr
-		}
-		return map[uuid.UUID]float64{}, "Local semantic memory enrichment was unavailable; keyword ranking was used.", nil
+		return map[uuid.UUID]float64{}, "Local semantic memory enrichment was unavailable; keyword ranking was used."
 	}
 	scores := make(map[uuid.UUID]float64, len(matches))
 	for _, match := range matches {
 		scores[match.Memory.ID] = match.Similarity
 	}
-	return scores, fmt.Sprintf("Local pgvector semantic enrichment evaluated %d eligible memory matches after owner and project filtering.", len(matches)), nil
+	return scores, fmt.Sprintf("Local pgvector semantic enrichment evaluated %d eligible memory matches after owner and project filtering.", len(matches))
 }
 
 func hashContent(projectKey, kind, content string) string {
@@ -874,7 +1131,7 @@ func compactSummary(value string) string {
 	if len(value) <= 360 {
 		return value
 	}
-	return value[:357] + "..."
+	return truncateAtUTF8Boundary(value, 357) + "..."
 }
 
 func compactMergedContent(existing, incoming string) string {
@@ -891,7 +1148,20 @@ func compactLongText(value string) string {
 	if len(value) <= 1800 {
 		return value
 	}
-	return value[:1797] + "..."
+	return truncateAtUTF8Boundary(value, 1797) + "..."
+}
+
+func truncateAtUTF8Boundary(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	if maxBytes <= 0 {
+		return ""
+	}
+	for maxBytes > 0 && !utf8.RuneStart(value[maxBytes]) {
+		maxBytes--
+	}
+	return value[:maxBytes]
 }
 
 func similarity(left, right string) float64 {

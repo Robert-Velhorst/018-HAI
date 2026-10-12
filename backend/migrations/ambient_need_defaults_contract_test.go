@@ -6,11 +6,11 @@ import (
 )
 
 func TestAmbientNeedDefaultsMigrationIsIdempotentAndRollbackSafe(t *testing.T) {
-	upBytes, err := Files.ReadFile("pre/0062_ambient_need_defaults.up.sql")
+	upBytes, err := Files.ReadFile("pre/0121_ambient_need_defaults.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	downBytes, err := Files.ReadFile("pre/0062_ambient_need_defaults.down.sql")
+	downBytes, err := Files.ReadFile("pre/0121_ambient_need_defaults.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

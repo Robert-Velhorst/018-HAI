@@ -93,6 +93,54 @@ func TestWorkflowSourceRevisionBindsCoordinationPlan(t *testing.T) {
 	}
 }
 
+func TestWorkflowSourceRevisionBindsRoutingContext(t *testing.T) {
+	request := IntakeRequest{SourceType: "trello", SourceID: "card-1", Input: "run the approved task"}
+	base := workflowSourceRevision(request, request.Input, `{"Required":true,"Candidates":[{"ID":"automation-a"}]}`)
+	request.ProjectKeyHint = "project-a"
+	projectChanged := workflowSourceRevision(request, request.Input, `{"Required":true,"Candidates":[{"ID":"automation-a"}]}`)
+	if base == projectChanged {
+		t.Fatal("source revision did not bind the project routing hint")
+	}
+	request.ProjectKeyHint = ""
+	selectionChanged := workflowSourceRevision(request, request.Input, `{"Required":true,"Candidates":[{"ID":"automation-b"}]}`)
+	if base == selectionChanged {
+		t.Fatal("source revision did not bind the automation selection proposal")
+	}
+}
+
+func TestWorkflowSourceRevisionBindsMandate(t *testing.T) {
+	request := IntakeRequest{SourceType: "trello", SourceID: "card-1", Input: "run the approved task"}
+	mandateA := uuid.New()
+	mandateB := uuid.New()
+	request.MandateID = mandateA.String()
+	first := workflowSourceRevision(request, request.Input)
+	request.MandateID = mandateB.String()
+	second := workflowSourceRevision(request, request.Input)
+	if first == second {
+		t.Fatal("source revision did not bind the standing mandate")
+	}
+}
+
+func TestEvidenceClaimsRequireAnAllowedExactStatus(t *testing.T) {
+	for _, test := range []struct {
+		status string
+		want   bool
+	}{
+		{status: "source_linked", want: false},
+		{status: " VERIFIED ", want: false},
+		{status: "human_approved", want: false},
+		{status: "unsupported", want: true},
+		{status: "not_verified", want: true},
+		{status: "source_linked_unverified", want: true},
+		{status: "", want: true},
+	} {
+		claim := models.WorkflowEvidenceClaim{SourceURI: "https://example.test/evidence", Status: test.status}
+		if got := hasEvidenceNeedingReview([]models.WorkflowEvidenceClaim{claim}); got != test.want {
+			t.Errorf("hasEvidenceNeedingReview(%q) = %v, want %v", test.status, got, test.want)
+		}
+	}
+}
+
 func TestAuthorizedEffectRecoveryUsesHistoricalPlanWithoutGrantingExecution(t *testing.T) {
 	reference := workflowPlanReference(strings.Repeat("d", 64))
 	historical := &plangraph.AcceptedRevisionBinding{

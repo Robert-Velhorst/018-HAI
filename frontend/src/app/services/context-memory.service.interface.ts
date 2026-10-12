@@ -10,9 +10,12 @@ import {
   ISemanticMemoryReindexResult,
 } from '../models/context-memory.model.interface';
 
+export type IMemoryQueryRequest = IMemoryQueryParams;
+export type IMemoryQueryResult = IMemoryPageResult;
+
 export interface IContextMemoryService {
-  list(projectKey?: string, includeArchived?: boolean): Observable<IContextMemory[]>;
-  query(params: IMemoryQueryParams): Observable<IMemoryPageResult>;
+  query(request: IMemoryQueryRequest): Observable<IMemoryQueryResult>;
+  list(projectKey?: string, includeArchived?: boolean, limit?: number): Observable<IContextMemory[]>;
   create(request: IContextMemoryRequest): Observable<IContextMemory>;
   update(id: string, request: IContextMemoryRequest): Observable<IContextMemory>;
   archive(id: string): Observable<IContextMemory>;

@@ -35,16 +35,16 @@ type BrainCatalogUpstreamReview struct {
 // index check. It intentionally stores only collection names and counts, never
 // repository source, credentials, package metadata, or runtime configuration.
 type BrainCatalogCollectionReview struct {
-	ID                   uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id,omitempty"`
-	SourceURL            string    `gorm:"type:varchar(1024);not null" json:"sourceUrl"`
-	Available            bool      `gorm:"index" json:"available"`
-	ExpectedTotal        int       `json:"expectedTotal"`
-	CurrentTotal         int       `json:"currentTotal"`
-	NewCollectionsJSON   string    `gorm:"type:text" json:"-"`
-	MissingExpectedJSON  string    `gorm:"type:text" json:"-"`
-	Message              string    `gorm:"type:text" json:"message"`
-	CheckedAt            time.Time `gorm:"index;not null" json:"checkedAt"`
-	CreatedAt            time.Time `json:"createdAt"`
+	ID                  uuid.UUID `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id,omitempty"`
+	SourceURL           string    `gorm:"type:varchar(1024);not null" json:"sourceUrl"`
+	Available           bool      `gorm:"index" json:"available"`
+	ExpectedTotal       int       `json:"expectedTotal"`
+	CurrentTotal        int       `json:"currentTotal"`
+	NewCollectionsJSON  string    `gorm:"type:text" json:"-"`
+	MissingExpectedJSON string    `gorm:"type:text" json:"-"`
+	Message             string    `gorm:"type:text" json:"message"`
+	CheckedAt           time.Time `gorm:"index;not null" json:"checkedAt"`
+	CreatedAt           time.Time `json:"createdAt"`
 }
 
 // BrainCatalogRepositoryDiscoveryReview records a bounded, read-only daily

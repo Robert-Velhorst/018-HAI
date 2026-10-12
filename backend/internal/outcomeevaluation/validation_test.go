@@ -3,9 +3,81 @@ package outcomeevaluation
 import (
 	"errors"
 	"math"
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestNormalizeAndValidateDoesNotMutateInput(t *testing.T) {
+	request := validRequest()
+	request.Outcome.ID = " outcome-1 "
+	request.Outcome.Indicators[0].ID = " indicator-1 "
+	request.Outcome.Indicators[0].Baseline.Sources[0].ID = " baseline-source "
+	request.Observations = []Observation{
+		observation(" obs-b ", 12, testStart.Add(15*24*time.Hour)),
+		observation(" obs-a ", 11, testStart.Add(5*24*time.Hour)),
+	}
+	request.Observations[0].Sources[0].ID = " observation-source "
+	request.Corrections = []UserCorrection{{
+		ID: " correction-1 ", Scope: request.Outcome.Scope, ObservationID: " obs-b ", ActorID: " owner-1 ",
+		UserConfirmed: true, CorrectedValue: 13, CorrectedVerification: VerificationUserConfirmed,
+		Sources: []SourceReference{source(" correction-source ", testStart.Add(6*24*time.Hour))},
+		Reason: " Correction ", CorrectedAt: testStart.Add(17 * 24 * time.Hour),
+	}}
+
+	normalized, err := normalizeAndValidate(request)
+	if err != nil {
+		t.Fatalf("normalizeAndValidate() error = %v", err)
+	}
+	if normalized.Outcome.ID != "outcome-1" || normalized.Outcome.Indicators[0].ID != "indicator-1" ||
+		normalized.Observations[0].ID != "obs-a" || normalized.Observations[1].ID != "obs-b" ||
+		normalized.Observations[1].Sources[0].ID != "observation-source" ||
+		normalized.Corrections[0].ID != "correction-1" || normalized.Corrections[0].Sources[0].ID != "correction-source" {
+		t.Fatalf("request was not normalized: %+v", normalized)
+	}
+	if request.Outcome.ID != " outcome-1 " || request.Outcome.Indicators[0].ID != " indicator-1 " ||
+		request.Outcome.Indicators[0].Baseline.Sources[0].ID != " baseline-source " ||
+		request.Observations[0].ID != " obs-b " || request.Observations[0].Sources[0].ID != " observation-source " ||
+		request.Corrections[0].ID != " correction-1 " || request.Corrections[0].Sources[0].ID != " correction-source " {
+		t.Fatalf("normalization mutated caller-owned request: %+v", request)
+	}
+}
+
+func TestNormalizeAndValidateConcurrentSharedInput(t *testing.T) {
+	request := validRequest()
+	request.Outcome.Indicators[0].ID = " indicator-1 "
+	request.Observations = []Observation{
+		observation(" obs-b ", 12, testStart.Add(15*24*time.Hour)),
+		observation(" obs-a ", 11, testStart.Add(5*24*time.Hour)),
+	}
+	request.Corrections = []UserCorrection{{
+		ID: " correction ", Scope: request.Outcome.Scope, ObservationID: " obs-b ", ActorID: " owner-1 ",
+		UserConfirmed: true, CorrectedValue: 13, CorrectedVerification: VerificationUserConfirmed,
+		Reason: " Corrected ", CorrectedAt: testStart.Add(17 * 24 * time.Hour),
+	}}
+
+	const workers = 32
+	start := make(chan struct{})
+	var wait sync.WaitGroup
+	errs := make(chan error, workers)
+	for range workers {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			<-start
+			_, err := normalizeAndValidate(request)
+			errs <- err
+		}()
+	}
+	close(start)
+	wait.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("normalizeAndValidate() error = %v", err)
+		}
+	}
+}
 
 func TestNormalizeAndValidateOutcomeRequiresSupportedLifeDomain(t *testing.T) {
 	outcome := validRequest().Outcome

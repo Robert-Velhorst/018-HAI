@@ -5,11 +5,11 @@ package pursuit
 import (
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
+	"automation-hub-backend/internal/pgtestguard"
 	"automation-hub-backend/migrations"
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -408,19 +408,21 @@ func TestPostgresPortfolioExecutionProposalDecisionReplayOwnerIsolationAndImmuta
 
 func openPortfolioAllocationPostgresTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping portfolio allocation Postgres integration test")
-	}
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatalf("open portfolio allocation Postgres: %v", err)
 	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatalf("open portfolio test connection pool: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
 	var databaseName string
 	if err := db.Raw("SELECT current_database()").Scan(&databaseName).Error; err != nil {
 		t.Fatalf("read current database: %v", err)
 	}
-	if !strings.HasSuffix(strings.ToLower(databaseName), "_test") {
+	if databaseName != "hai_migration_runner_test" {
 		t.Fatalf("refusing portfolio allocation integration test against database %q", databaseName)
 	}
 	return db

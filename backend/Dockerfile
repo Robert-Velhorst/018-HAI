@@ -1,6 +1,9 @@
-FROM golang:1.26.9-alpine@sha256:3082400e369fa24d5fc60bca20edab3f6d604e0c5a690ec66b295eff4dd87ade AS builder
+# Stage 1: Compiling the application
+FROM golang:1.27.2 AS builder
 
+# Set the Current Working Directory inside the container
 WORKDIR /app
+ARG HAI_GO_BUILD_WORKERS=2
 
 # Cache dependencies independently from application source. A normal code
 # change should rebuild the binary, not redownload the complete module graph.
@@ -10,40 +13,53 @@ RUN go mod download
 # Copy the application after the stable dependency layer.
 COPY . .
 
-# The backend does not require libc. A static, stripped binary lets the runtime
-# image stay small and removes the dynamic-library surface that CGO introduced.
-RUN CGO_ENABLED=0 GOOS=linux go build \
-    -trimpath \
-    -tags "netgo,osusergo" \
-    -ldflags "-s -w" \
-    -o /out/hai-backend \
-    ./cmd
+# The provider fixture is a static, local-only compatibility server used by an
+# opt-in Compose profile. It shares the module cache with the backend build but
+# contains no model runtime or external dependency.
+FROM builder AS provider-fixture-builder
+WORKDIR /app
+RUN case "$HAI_GO_BUILD_WORKERS" in 1|2|4|8) ;; *) exit 1 ;; esac \
+    && GOMAXPROCS="$HAI_GO_BUILD_WORKERS" CGO_ENABLED=0 GOOS=linux \
+    go build -p "$HAI_GO_BUILD_WORKERS" -o /provider-fixture ./cmd/provider-fixture
 
-# Alpine supplies the CA bundle needed by outbound HTTPS and BusyBox wget for
-# the Compose readiness probe. Pin the runtime digest so production rebuilds do
-# not silently pick up a different base image.
-FROM alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+FROM scratch AS provider-fixture
+COPY --from=provider-fixture-builder /provider-fixture /provider-fixture
+USER 65532:65532
+EXPOSE 11434
+ENTRYPOINT ["/provider-fixture"]
 
-RUN addgroup -S -g 10001 hai \
-    && adduser -S -D -H -u 10001 -G hai hai \
-    && mkdir -p /app/docs /root/images /root/automation-scripts \
-        /root/connected-sources /root/agent-workspaces \
-        /var/lib/hai/phase2-state \
-    && chown -R 10001:10001 /root/images /root/agent-workspaces \
-        /var/lib/hai/phase2-state \
-    && chmod 0711 /root \
-    && chmod 0750 /root/images /root/agent-workspaces \
-        /var/lib/hai/phase2-state \
-    && chmod 0550 /root/automation-scripts /root/connected-sources
+# Navigate to the cmd directory where the main.go file resides
+FROM builder AS backend-builder
+WORKDIR /app/cmd
+
+# Build the Go app
+RUN case "$HAI_GO_BUILD_WORKERS" in 1|2|4|8) ;; *) exit 1 ;; esac \
+    && GOMAXPROCS="$HAI_GO_BUILD_WORKERS" CGO_ENABLED=1 GOOS=linux \
+    go build -p "$HAI_GO_BUILD_WORKERS" -o app ./main.go
+
+# Stage 2: Build the minimal docker image
+FROM ubuntu:24.04
+
+# curl backs the container healthcheck, which polls /readyz. It has to live in
+# the runtime image, not just the builder.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates passwd \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid 10001 hai \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin hai \
+    && chmod 0755 /root \
+    && install -d -o 10001 -g 10001 /app /root/images /root/agent-workspaces /root/phase2-control-state
 
 WORKDIR /app
 
-COPY --from=builder /out/hai-backend /app/hai-backend
-COPY --from=builder /app/docs /app/docs
+# Copy the pre-built binary from the previous stage
+COPY --from=backend-builder --chown=10001:10001 /app/cmd/app /app/app
+COPY --from=backend-builder --chown=10001:10001 /app/docs /app/docs
 
-ENV HOME=/tmp \
-    TMPDIR=/tmp
+
 
 USER 10001:10001
 
-ENTRYPOINT ["/app/hai-backend"]
+# Command to run
+CMD ["/app/app"]

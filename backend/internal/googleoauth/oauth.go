@@ -8,10 +8,13 @@ package googleoauth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -56,7 +59,10 @@ type Config struct {
 func (c Config) Configured() bool {
 	return configuredValue(c.ClientID) &&
 		configuredValue(c.ClientSecret) &&
-		configuredValue(c.RedirectURL)
+		configuredValue(c.RedirectURL) &&
+		validOAuthRedirectURI(c.RedirectURL) &&
+		validGoogleEndpoint(c.authEndpoint(), "accounts.google.com", "/o/oauth2/v2/auth") &&
+		validGoogleEndpoint(c.tokenEndpoint(), "oauth2.googleapis.com", "/token")
 }
 
 // configuredValue rejects the sample values commonly copied from .env.example.
@@ -96,6 +102,40 @@ func (c Config) httpClient() *http.Client {
 	return &http.Client{Timeout: 20 * time.Second}
 }
 
+func validGoogleEndpoint(raw, googleHost, googlePath string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Opaque != "" || u.User != nil || u.Fragment != "" || u.RawQuery != "" {
+		return false
+	}
+
+	host := strings.ToLower(u.Hostname())
+	if strings.EqualFold(u.Scheme, "https") && host == googleHost && (u.Port() == "" || u.Port() == "443") {
+		return u.Path == googlePath
+	}
+
+	// HTTP endpoints are allowed only on loopback for in-process OAuth tests.
+	return strings.EqualFold(u.Scheme, "http") && isLoopbackHost(host)
+}
+
+func validOAuthRedirectURI(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || !u.IsAbs() || u.Opaque != "" || u.User != nil || u.Fragment != "" || u.Hostname() == "" {
+		return false
+	}
+	if strings.EqualFold(u.Scheme, "https") {
+		return true
+	}
+	return strings.EqualFold(u.Scheme, "http") && isLoopbackHost(u.Hostname())
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // Token is an OAuth token set. RefreshToken may be empty on a re-consent that
 // Google chose not to re-issue one for; callers must preserve any prior refresh
 // token in that case.
@@ -114,7 +154,7 @@ func (t Token) Valid(now time.Time) bool {
 		return false
 	}
 	if t.Expiry.IsZero() {
-		return true
+		return false
 	}
 	return now.Before(t.Expiry.Add(-30 * time.Second))
 }
@@ -140,6 +180,25 @@ func NewState() (string, error) {
 // a stored grant wider than the documented least-privilege claim is exactly the
 // kind of gap this codebase refuses to paper over.
 func (c Config) AuthorizeURL(state string) string {
+	return c.authorizeURL(state, "")
+}
+
+// AuthorizeURLWithPKCE binds an authorization code to the server-side caller
+// without exposing the verifier in the browser redirect.
+func (c Config) AuthorizeURLWithPKCE(state, verifier string) string {
+	if !validPKCEVerifier(verifier) {
+		return ""
+	}
+	return c.authorizeURL(state, verifier)
+}
+
+func (c Config) authorizeURL(state, verifier string) string {
+	if strings.TrimSpace(state) == "" || !validOAuthRedirectURI(c.RedirectURL) ||
+		!hasSingleSupportedReadOnlyScope(c.Scopes) ||
+		!validGoogleEndpoint(c.authEndpoint(), "accounts.google.com", "/o/oauth2/v2/auth") ||
+		!validGoogleEndpoint(c.tokenEndpoint(), "oauth2.googleapis.com", "/token") {
+		return ""
+	}
 	q := url.Values{}
 	q.Set("client_id", c.ClientID)
 	q.Set("redirect_uri", c.RedirectURL)
@@ -148,7 +207,43 @@ func (c Config) AuthorizeURL(state string) string {
 	q.Set("access_type", "offline")
 	q.Set("prompt", "consent")
 	q.Set("state", state)
+	if verifier != "" {
+		digest := sha256.Sum256([]byte(verifier))
+		q.Set("code_challenge", base64.RawURLEncoding.EncodeToString(digest[:]))
+		q.Set("code_challenge_method", "S256")
+	}
 	return c.authEndpoint() + "?" + q.Encode()
+}
+
+// hasSingleSupportedReadOnlyScope keeps each Google connector consent flow
+// limited to the one read-only capability it needs. In particular, accepting
+// arbitrary Config.Scopes here can silently turn a typo or reused config into
+// write access, identity access, or a combined multi-product grant.
+func hasSingleSupportedReadOnlyScope(scopes []string) bool {
+	if len(scopes) != 1 {
+		return false
+	}
+
+	switch scopes[0] {
+	case GmailReadonlyScope, DriveReadonlyScope, CalendarReadonlyScope, ContactsReadonlyScope:
+		return true
+	default:
+		return false
+	}
+}
+
+func validPKCEVerifier(verifier string) bool {
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return false
+	}
+	for _, char := range verifier {
+		if (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z') ||
+			(char >= '0' && char <= '9') || strings.ContainsRune("-._~", char) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 type tokenResponse struct {
@@ -159,16 +254,80 @@ type tokenResponse struct {
 	ExpiresIn    int64  `json:"expires_in"`
 	Error        string `json:"error"`
 	ErrorDesc    string `json:"error_description"`
+	ErrorSubtype string `json:"error_subtype"`
+}
+
+// ErrReauthorizationRequired matches provider invalid_grant errors that need a
+// fresh authorization flow rather than a blind retry.
+var ErrReauthorizationRequired = errors.New("google oauth authorization must be completed again")
+
+// OAuthProviderError preserves Google's machine-readable OAuth error fields
+// through the refresh flow so callers can distinguish account-state failures
+// such as invalid_grant from transient transport or server errors.
+type OAuthProviderError struct {
+	Code        string
+	Description string
+	Subtype     string
+}
+
+func (e *OAuthProviderError) Error() string {
+	// Provider-controlled text may echo credentials from the token request.
+	// Keep it out of ordinary error logging; callers can inspect the typed fields
+	// when they need machine-readable handling.
+	if code := safeOAuthErrorCode(e.Code); code != "" {
+		return fmt.Sprintf("google oauth error %q", code)
+	}
+	return "google oauth provider rejected the request"
+}
+
+func safeOAuthErrorCode(code string) string {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client",
+		"unsupported_grant_type", "invalid_scope", "access_denied", "temporarily_unavailable",
+		"server_error", "interaction_required", "login_required", "consent_required",
+		"account_selection_required":
+		return strings.ToLower(strings.TrimSpace(code))
+	default:
+		return ""
+	}
+}
+
+// GoString keeps debug formatting from exposing provider-controlled error
+// fields, which may contain values echoed from the credential-bearing request.
+func (e *OAuthProviderError) GoString() string {
+	return "googleoauth.OAuthProviderError{redacted}"
+}
+
+func (e *OAuthProviderError) Is(target error) bool {
+	return target == ErrReauthorizationRequired && strings.EqualFold(strings.TrimSpace(e.Code), "invalid_grant")
 }
 
 // ExchangeCode trades an authorization code for tokens.
 func (c Config) ExchangeCode(ctx context.Context, code string) (*Token, error) {
+	return c.exchangeCode(ctx, code, "")
+}
+
+// ExchangeCodeWithPKCE submits the verifier paired with AuthorizeURLWithPKCE.
+func (c Config) ExchangeCodeWithPKCE(ctx context.Context, code, verifier string) (*Token, error) {
+	if !validPKCEVerifier(verifier) {
+		return nil, errors.New("google oauth PKCE verifier is invalid")
+	}
+	return c.exchangeCode(ctx, code, verifier)
+}
+
+func (c Config) exchangeCode(ctx context.Context, code, verifier string) (*Token, error) {
+	if !validOAuthRedirectURI(c.RedirectURL) {
+		return nil, errors.New("google oauth redirect URI must use HTTPS or a loopback HTTP address")
+	}
 	form := url.Values{}
 	form.Set("code", code)
 	form.Set("client_id", c.ClientID)
 	form.Set("client_secret", c.ClientSecret)
 	form.Set("redirect_uri", c.RedirectURL)
 	form.Set("grant_type", "authorization_code")
+	if verifier != "" {
+		form.Set("code_verifier", verifier)
+	}
 	return c.postToken(ctx, form)
 }
 
@@ -191,6 +350,9 @@ func (c Config) Refresh(ctx context.Context, refreshToken string) (*Token, error
 }
 
 func (c Config) postToken(ctx context.Context, form url.Values) (*Token, error) {
+	if !validGoogleEndpoint(c.tokenEndpoint(), "oauth2.googleapis.com", "/token") {
+		return nil, errors.New("google oauth token endpoint must be HTTPS to Google or a loopback test endpoint")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenEndpoint(), strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
@@ -198,7 +360,14 @@ func (c Config) postToken(ctx context.Context, form url.Values) (*Token, error) 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := c.httpClient().Do(req)
+	// The token request body contains the authorization code and client secret.
+	// Do not follow redirects: 307/308 responses preserve POST bodies and could
+	// disclose those credentials to a different host.
+	client := *c.httpClient()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("token endpoint request failed: %w", err)
 	}
@@ -214,13 +383,26 @@ func (c Config) postToken(ctx context.Context, form url.Values) (*Token, error) 
 		return nil, fmt.Errorf("token endpoint returned unparseable response (HTTP %d)", resp.StatusCode)
 	}
 	if parsed.Error != "" {
-		return nil, fmt.Errorf("google oauth error %q: %s", parsed.Error, parsed.ErrorDesc)
+		return nil, &OAuthProviderError{
+			Code:        parsed.Error,
+			Description: parsed.ErrorDesc,
+			Subtype:     parsed.ErrorSubtype,
+		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("token endpoint returned HTTP %d", resp.StatusCode)
 	}
 	if strings.TrimSpace(parsed.AccessToken) == "" {
 		return nil, fmt.Errorf("token endpoint returned no access token")
+	}
+	if !strings.EqualFold(strings.TrimSpace(parsed.TokenType), "bearer") {
+		return nil, fmt.Errorf("token endpoint returned an unsupported token type")
+	}
+	if parsed.ExpiresIn <= 0 {
+		return nil, fmt.Errorf("token endpoint returned no valid access token lifetime")
+	}
+	if parsed.ExpiresIn > int64((1<<63-1)/int64(time.Second)) {
+		return nil, fmt.Errorf("token endpoint returned an invalid access token lifetime")
 	}
 
 	tok := &Token{
@@ -229,8 +411,6 @@ func (c Config) postToken(ctx context.Context, form url.Values) (*Token, error) 
 		TokenType:    parsed.TokenType,
 		Scope:        parsed.Scope,
 	}
-	if parsed.ExpiresIn > 0 {
-		tok.Expiry = time.Now().Add(time.Duration(parsed.ExpiresIn) * time.Second)
-	}
+	tok.Expiry = time.Now().Add(time.Duration(parsed.ExpiresIn) * time.Second)
 	return tok, nil
 }

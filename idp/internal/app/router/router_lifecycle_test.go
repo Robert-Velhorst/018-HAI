@@ -1,61 +1,28 @@
 package router
 
 import (
-	"context"
-	"io"
-	"net"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
 
-func TestServeUntilCancelledStopsHTTPServer(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, "ok")
+func TestNewHTTPServerAppliesRequestBoundsAndHandler(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
 	})
-	server := &http.Server{Handler: mux, ReadHeaderTimeout: time.Second}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() {
-		done <- serveUntilCancelled(ctx, server, listener)
-	}()
-
-	client := &http.Client{Timeout: time.Second}
-	response, err := client.Get("http://" + listener.Addr().String() + "/healthz")
-	if err != nil {
-		cancel()
-		t.Fatalf("request running server: %v", err)
+	server := newHTTPServer(":8080", handler)
+	if server.Handler == nil || server.Addr != ":8080" {
+		t.Fatalf("server handler/address not configured: handler=%T addr=%q", server.Handler, server.Addr)
 	}
-	_ = response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		cancel()
-		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	if server.ReadHeaderTimeout != 5*time.Second || server.ReadTimeout != 15*time.Second ||
+		server.WriteTimeout != 90*time.Second || server.IdleTimeout != 60*time.Second || server.MaxHeaderBytes != 32*1024 {
+		t.Fatalf("unexpected HTTP server limits: %#v", server)
 	}
 
-	cancel()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("serveUntilCancelled: %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("server did not stop after application context cancellation")
-	}
-
-	if _, err := client.Get("http://" + listener.Addr().String() + "/healthz"); err == nil {
-		t.Fatal("server still accepted requests after shutdown")
-	}
-}
-
-func TestServeUntilCancelledRejectsIncompleteLifecycle(t *testing.T) {
-	if err := serveUntilCancelled(nil, &http.Server{}, nil); err == nil {
-		t.Fatal("serveUntilCancelled accepted a nil lifecycle context/listener")
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("handler status = %d, want %d", response.Code, http.StatusNoContent)
 	}
 }

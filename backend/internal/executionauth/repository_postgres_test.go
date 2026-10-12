@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"automation-hub-backend/internal/agentruntime"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/migrations"
 
@@ -56,6 +57,18 @@ func TestPostgresRepositoryFailsClosedWithoutDatabase(t *testing.T) {
 		receipt.ID,
 	); err == nil {
 		t.Fatal("GetFinalEffectExercise with nil database succeeded")
+	}
+}
+
+func TestApprovalClaimLockIdentityIsTextSafeAndUnambiguous(t *testing.T) {
+	first := approvalClaimLockIdentity("a", "b\x00c", "d")
+	second := approvalClaimLockIdentity("a\x00b", "c", "d")
+
+	if strings.ContainsRune(first, '\x00') || strings.ContainsRune(second, '\x00') {
+		t.Fatal("PostgreSQL advisory-lock identity contains a NUL byte")
+	}
+	if first == second {
+		t.Fatal("distinct approval claims produced the same advisory-lock identity")
 	}
 }
 
@@ -419,10 +432,205 @@ func TestPostgresRepositoryAtomicSingleUseConsumption(t *testing.T) {
 	}
 }
 
-func TestPostgresFinalEffectExerciseIsAtomicAndOwnerScoped(t *testing.T) {
+func TestPostgresRepositoryRejectsExpiredApprovalAtConsumption(t *testing.T) {
+	repository, _ := executionAuthorizationPostgresRepository(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	owner := "expired-approval-claim-" + uuid.NewString() + "@example.com"
+	receipt := postgresTestReceipt(owner, OutcomeAuthorized, now.Add(-time.Second))
+	receipt.ApprovalSourceID = ownerControlApprovalSourcePrefix + "expired-at-claim"
+	receipt.Evidence.Approval = ApprovalEvidence{
+		SourceID:       receipt.ApprovalSourceID,
+		DecisionID:     postgresDigest("expired-approval-" + uuid.NewString()),
+		DecisionDigest: postgresDigest("expired-approval-decision"),
+		ApprovedBy:     owner,
+		ApprovedAt:     now.Add(-2 * time.Minute),
+		ExpiresAt:      now.Add(-time.Second),
+	}
+	if _, created, err := repository.CreateOrGet(ctx, receipt); err != nil || !created {
+		t.Fatalf("create expired-approval receipt = (%t, %v)", created, err)
+	}
+
+	consumption := postgresTestConsumption(receipt)
+	consumption.ConsumedAt = now
+	if err := repository.Consume(ctx, consumption); !errors.Is(err, ErrAuthorizationChanged) {
+		t.Fatalf("Consume error = %v, want ErrAuthorizationChanged", err)
+	}
+	if _, err := repository.GetConsumption(ctx, owner, receipt.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired receipt has consumption record: err=%v", err)
+	}
+}
+
+func TestPostgresRepositoryClaimsTaskReviewDecisionAcrossReceiptsAtomically(t *testing.T) {
 	repository, db := executionAuthorizationPostgresRepository(t)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	owner := "task-review-claim-owner-" + uuid.NewString() + "@example.com"
+	decisionID, sourceID := createTaskReviewDecisionFixture(t, db, owner, now)
+
+	receipts := []Receipt{
+		postgresTestReceipt(owner, OutcomeAuthorized, now.Add(2*time.Second)),
+		postgresTestReceipt(owner, OutcomeAuthorized, now.Add(3*time.Second)),
+	}
+	for index := range receipts {
+		bindReceiptApproval(&receipts[index], sourceID, decisionID, owner, now)
+		if _, created, err := repository.CreateOrGet(ctx, receipts[index]); err != nil || !created {
+			t.Fatalf("create task-approved receipt %d = (%t, %v)", index, created, err)
+		}
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, len(receipts))
+	for index := range receipts {
+		index := index
+		go func() {
+			consumption := postgresTestConsumption(receipts[index])
+			consumption.Consumer = fmt.Sprintf("task-review-worker-%d", index)
+			<-start
+			results <- repository.Consume(ctx, consumption)
+		}()
+	}
+	close(start)
+
+	successes, claimed := 0, 0
+	for range receipts {
+		err := <-results
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrApprovalAlreadyClaimed):
+			claimed++
+		default:
+			t.Fatalf("unexpected concurrent task-review consumption result: %v", err)
+		}
+	}
+	if successes != 1 || claimed != 1 {
+		t.Fatalf("consumption successes=%d approval-claimed=%d, want 1 and 1", successes, claimed)
+	}
+}
+
+func TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts(t *testing.T) {
+	repository, _ := executionAuthorizationPostgresRepository(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	owner := "owner-control-claim-" + uuid.NewString() + "@example.com"
+	sourceID := "opscontrol-owner:nonce:" + uuid.NewString()
+	decisionID := postgresDigest("owner-control-decision:" + uuid.NewString())
+	receipts := []Receipt{
+		postgresTestReceipt(owner, OutcomeAuthorized, now.Add(time.Second)),
+		postgresTestReceipt(owner, OutcomeAuthorized, now.Add(2*time.Second)),
+	}
+	for index := range receipts {
+		receipts[index].ApprovalSourceID = sourceID
+		receipts[index].Evidence.Approval = ApprovalEvidence{
+			SourceID: sourceID, DecisionID: decisionID,
+			DecisionDigest: postgresDigest("decision-digest:" + uuid.NewString()),
+			ApprovedBy:     owner, ApprovedAt: now, ExpiresAt: now.Add(10 * time.Minute),
+		}
+		if _, created, err := repository.CreateOrGet(ctx, receipts[index]); err != nil || !created {
+			t.Fatalf("create owner-control receipt %d = (%t, %v)", index, created, err)
+		}
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, len(receipts))
+	for index := range receipts {
+		index := index
+		go func() {
+			consumption := postgresTestConsumption(receipts[index])
+			consumption.Consumer = fmt.Sprintf("owner-control-worker-%d", index)
+			<-start
+			results <- repository.Consume(ctx, consumption)
+		}()
+	}
+	close(start)
+
+	successes, claimed := 0, 0
+	for range receipts {
+		err := <-results
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrApprovalAlreadyClaimed):
+			claimed++
+		default:
+			t.Fatalf("unexpected owner-control consumption result: %v", err)
+		}
+	}
+	if successes != 1 || claimed != 1 {
+		t.Fatalf("consumption successes=%d approval-claimed=%d, want one each", successes, claimed)
+	}
+}
+
+func TestPostgresConsumptionTriggerClaimsTaskReviewForLegacyWriters(t *testing.T) {
+	repository, db := executionAuthorizationPostgresRepository(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	owner := "task-review-legacy-writer-" + uuid.NewString() + "@example.com"
+	decisionID, sourceID := createTaskReviewDecisionFixture(t, db, owner, now)
+
+	receipts := []Receipt{
+		postgresTestReceipt(owner, OutcomeAuthorized, now.Add(2*time.Second)),
+		postgresTestReceipt(owner, OutcomeAuthorized, now.Add(3*time.Second)),
+	}
+	for index := range receipts {
+		bindReceiptApproval(&receipts[index], sourceID, decisionID, owner, now)
+		if _, created, err := repository.CreateOrGet(ctx, receipts[index]); err != nil || !created {
+			t.Fatalf("create legacy-writer receipt %d = (%t, %v)", index, created, err)
+		}
+	}
+
+	first := postgresTestConsumption(receipts[0])
+	if err := db.Exec(`
+		INSERT INTO public.execution_authorization_consumptions (
+			owner_identity, receipt_id, consumer, execution_target,
+			receipt_digest, consumed_at
+		) VALUES (?, ?, ?, ?, ?, ?)`,
+		first.OwnerIdentity,
+		first.ReceiptID,
+		first.Consumer,
+		first.ExecutionTarget,
+		first.ReceiptDigest,
+		first.ConsumedAt,
+	).Error; err != nil {
+		t.Fatalf("direct legacy-style consumption insert: %v", err)
+	}
+
+	var claimCount int64
+	if err := db.Table("execution_authorization_task_review_claims").
+		Where("owner_identity = ? AND task_review_decision_id = ?", owner, decisionID).
+		Count(&claimCount).Error; err != nil || claimCount != 1 {
+		t.Fatalf("trigger claim count = %d, err=%v; want one", claimCount, err)
+	}
+
+	second := postgresTestConsumption(receipts[1])
+	err := db.Exec(`
+		INSERT INTO public.execution_authorization_consumptions (
+			owner_identity, receipt_id, consumer, execution_target,
+			receipt_digest, consumed_at
+		) VALUES (?, ?, ?, ?, ?, ?)`,
+		second.OwnerIdentity,
+		second.ReceiptID,
+		second.Consumer,
+		second.ExecutionTarget,
+		second.ReceiptDigest,
+		second.ConsumedAt,
+	).Error
+	if err == nil || !strings.Contains(err.Error(), "uq_execution_authorization_task_review_claim_decision") {
+		t.Fatalf("second direct insert error = %v; want task-review claim uniqueness violation", err)
+	}
+	var secondConsumptionCount int64
+	if err := db.Table("execution_authorization_consumptions").
+		Where("owner_identity = ? AND receipt_id = ?", owner, second.ReceiptID).
+		Count(&secondConsumptionCount).Error; err != nil || secondConsumptionCount != 0 {
+		t.Fatalf("rejected legacy consumption count = %d, err=%v; want zero", secondConsumptionCount, err)
+	}
+}
+
+func TestPostgresFinalEffectExerciseIsAtomicAndOwnerScoped(t *testing.T) {
+	repository, db := executionAuthorizationPostgresRepository(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-5 * time.Second)
 	owner := "effect-owner-" + uuid.NewString() + "@example.com"
 	finalRequest, err := BuildAgentRuntimeFinalEffectRequest(
 		"hermes",
@@ -540,6 +748,121 @@ func TestPostgresFinalEffectExerciseIsAtomicAndOwnerScoped(t *testing.T) {
 	}
 }
 
+func TestPostgresFinalEffectExerciseRejectsStaleAuthority(t *testing.T) {
+	repository, db := executionAuthorizationPostgresRepository(t)
+	ctx := context.Background()
+	tests := []struct {
+		name             string
+		staleConsumption bool
+		approvalLifetime time.Duration
+	}{
+		{
+			name:             "database time rejects stale consumption despite backdated caller time",
+			staleConsumption: true,
+		},
+		{
+			name:             "approval expires within freshness window",
+			approvalLifetime: time.Second,
+		},
+		{
+			name:             "approval expires immediately before effect boundary",
+			approvalLifetime: time.Second,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			consumedAt := time.Now().UTC().Truncate(time.Microsecond)
+			if test.staleConsumption {
+				consumedAt = consumedAt.Add(-finalEffectFreshnessWindow - time.Second)
+			}
+			approvalExpiry := time.Time{}
+			if test.approvalLifetime > 0 {
+				approvalExpiry = time.Now().UTC().Add(test.approvalLifetime)
+			}
+			owner := "stale-effect-owner-" + uuid.NewString() + "@example.com"
+			approvalSource := ""
+			approvalDecisionID := uuid.Nil
+			if test.approvalLifetime > 0 {
+				approvalDecisionID, approvalSource = createTaskReviewDecisionFixture(
+					t,
+					db,
+					owner,
+					consumedAt.Add(-10*time.Second),
+				)
+			}
+			finalRequest, err := BuildAgentRuntimeFinalEffectRequest(
+				"hermes",
+				"task-"+uuid.NewString(),
+				owner,
+				"project-stale-final-effect",
+				"perform the bounded runtime task",
+				approvalSource,
+				approvalSource != "",
+			)
+			if err != nil {
+				t.Fatalf("BuildAgentRuntimeFinalEffectRequest: %v", err)
+			}
+			effectDigest, err := FinalEffectDigest(finalRequest)
+			if err != nil {
+				t.Fatalf("FinalEffectDigest: %v", err)
+			}
+			receipt := postgresTestReceipt(owner, OutcomeAuthorized, consumedAt.Add(-time.Second))
+			receipt.TaskID = finalRequest.TaskID
+			receipt.Action = AgentRuntimeExecuteAction
+			receipt.ResourceType = AgentRuntimeResourceType
+			receipt.ResourceID = finalRequest.TaskID
+			receipt.ProjectKey = finalRequest.ProjectKey
+			receipt.RuntimeID = finalRequest.RuntimeID
+			receipt.ApprovalSourceID = approvalSource
+			receipt.EffectDigest = effectDigest
+			receipt.RequestDigest = postgresDigest(receipt.ID.String() + "-stale-request")
+			receipt.DecisionDigest = postgresDigest(receipt.ID.String() + "-stale-decision")
+			if approvalSource != "" {
+				receipt.Evidence.Approval = ApprovalEvidence{
+					SourceID:       approvalSource,
+					DecisionID:     approvalDecisionID.String(),
+					DecisionDigest: postgresDigest("stale-effect-approval"),
+					ApprovedBy:     owner,
+					ApprovedAt:     consumedAt.Add(-time.Second),
+					ExpiresAt:      approvalExpiry,
+				}
+			}
+			if _, created, err := repository.CreateOrGet(ctx, receipt); err != nil || !created {
+				t.Fatalf("create runtime receipt = (%t, %v)", created, err)
+			}
+			target, err := FinalEffectExecutionTarget(effectDigest)
+			if err != nil {
+				t.Fatalf("FinalEffectExecutionTarget: %v", err)
+			}
+			consumption := postgresTestConsumption(receipt)
+			consumption.ExecutionTarget = target
+			consumption.ConsumedAt = consumedAt
+			if err := repository.Consume(ctx, consumption); err != nil {
+				t.Fatalf("Consume: %v", err)
+			}
+			if !approvalExpiry.IsZero() {
+				if wait := time.Until(approvalExpiry); wait > 0 {
+					time.Sleep(wait + 10*time.Millisecond)
+				}
+			}
+			proof := agentruntime.FinalEffectAuthorizationProof{
+				ReceiptID:                  receipt.ID.String(),
+				AuthorizationRequestDigest: receipt.RequestDigest,
+				DecisionDigest:             receipt.DecisionDigest,
+				RuntimeRequestDigest:       effectDigest,
+				RuntimeProof:               effectDigest,
+			}
+			exercise := finalEffectExercise(finalRequest, proof, time.Now().UTC())
+			if err := repository.ExerciseFinalEffect(ctx, exercise); !errors.Is(err, ErrFinalEffectExpired) {
+				t.Fatalf("ExerciseFinalEffect error = %v, want ErrFinalEffectExpired", err)
+			}
+			if _, err := repository.GetFinalEffectExercise(ctx, owner, receipt.ID); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("stale authority created an exercise record: %v", err)
+			}
+		})
+	}
+}
+
 func TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals(t *testing.T) {
 	repository, db := executionAuthorizationPostgresRepository(t)
 	ctx := context.Background()
@@ -585,28 +908,23 @@ func TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals(t *testing.T) {
 		t.Fatalf("workflow approval source = %q", storedWorkflow.ApprovalSourceID)
 	}
 
-	controlDecisionID := createControlDecisionFixture(t, db, owner, now)
-	controlSourceID := "control-decision:" + controlDecisionID.String()
 	controlReceipt := postgresTestReceipt(owner, OutcomeAuthorized, now.Add(7*time.Second))
-	bindReceiptApproval(
-		&controlReceipt,
-		controlSourceID,
-		controlDecisionID,
-		owner,
-		now,
-	)
+	controlReceipt.ApprovalSourceID = "opscontrol-owner:test-signed-approval"
+	controlReceipt.Evidence.Approval = ApprovalEvidence{
+		SourceID:       controlReceipt.ApprovalSourceID,
+		DecisionID:     postgresDigest("owner-control-decision"),
+		DecisionDigest: postgresDigest("owner-control-receipt"),
+		ApprovedBy:     owner,
+		ApprovedAt:     now,
+		ExpiresAt:      now.Add(time.Minute),
+	}
 	storedControl, created, err := repository.CreateOrGet(ctx, controlReceipt)
 	if err != nil || !created {
-		t.Fatalf("create control-approved receipt = (%t, %v)", created, err)
+		t.Fatalf("create owner-control-approved receipt = (%t, %v)", created, err)
 	}
-	if storedControl.ApprovalSourceID != controlSourceID {
-		t.Fatalf("control approval source = %q", storedControl.ApprovalSourceID)
-	}
-
-	replay := postgresTestReceipt(owner, OutcomeAuthorized, now.Add(8*time.Second))
-	bindReceiptApproval(&replay, controlSourceID, controlDecisionID, owner, now)
-	if _, _, err := repository.CreateOrGet(ctx, replay); err == nil {
-		t.Fatal("database allowed one control decision to authorize two receipts")
+	if storedControl.ApprovalSourceID != controlReceipt.ApprovalSourceID ||
+		storedControl.Evidence.Approval.DecisionID != controlReceipt.Evidence.Approval.DecisionID {
+		t.Fatalf("owner control approval evidence = %#v", storedControl.Evidence.Approval)
 	}
 
 	crossOwner := workflowReceipt
@@ -635,6 +953,65 @@ func TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals(t *testing.T) {
 		now,
 	).Error; err == nil {
 		t.Fatal("database accepted workflow decision with mismatched owner")
+	}
+}
+
+func TestPostgresReceiptPersistsOpsControlReviewProvenance(t *testing.T) {
+	repository, db := executionAuthorizationPostgresRepository(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(-time.Minute)
+	owner := "opscontrol-review-provenance-" + uuid.NewString() + "@example.com"
+	decisionID, taskReviewSource := createTaskReviewDecisionFixture(t, db, owner, now)
+	itemID := strings.TrimPrefix(taskReviewSource, "task-review:")
+	receipt := postgresTestReceipt(owner, OutcomeAuthorized, now.Add(time.Second))
+	receipt.ApprovalSourceID = "opscontrol-review:" + itemID
+	receipt.Evidence.Approval = ApprovalEvidence{
+		SourceID:       receipt.ApprovalSourceID,
+		DecisionID:     decisionID.String(),
+		DecisionDigest: postgresDigest("opscontrol-review-decision:" + decisionID.String()),
+		ApprovedBy:     owner,
+		ApprovedAt:     now,
+		ExpiresAt:      now.Add(10 * time.Minute),
+	}
+
+	stored, created, err := repository.CreateOrGet(ctx, receipt)
+	if err != nil || !created {
+		t.Fatalf("create opscontrol-review receipt = (%t, %v)", created, err)
+	}
+	if stored.ApprovalSourceID != receipt.ApprovalSourceID ||
+		stored.Evidence.Approval.DecisionID != decisionID.String() {
+		t.Fatalf("stored opscontrol-review provenance = %#v", stored.Evidence.Approval)
+	}
+
+	reloaded, err := repository.Get(ctx, owner, receipt.ID)
+	if err != nil {
+		t.Fatalf("reload opscontrol-review receipt: %v", err)
+	}
+	if reloaded.ApprovalSourceID != receipt.ApprovalSourceID ||
+		reloaded.Evidence.Approval.DecisionID != decisionID.String() {
+		t.Fatalf("reloaded opscontrol-review provenance = %#v", reloaded.Evidence.Approval)
+	}
+}
+
+func TestReceiptReferencesAcceptSignedOwnerControlApproval(t *testing.T) {
+	evidence := DecisionEvidence{Approval: ApprovalEvidence{
+		SourceID:       "opscontrol-owner:fixture",
+		DecisionID:     postgresDigest("owner-control-decision"),
+		DecisionDigest: postgresDigest("owner-control-receipt"),
+	}}
+	references, err := receiptReferencesFromEvidence(evidence)
+	if err != nil {
+		t.Fatalf("signed owner-control approval reference: %v", err)
+	}
+	if references.taskReviewDecisionID != nil ||
+		references.workflowDecisionID != nil ||
+		references.portfolioProposalDecisionID != nil {
+		t.Fatalf("owner-control approval must not create an unrelated foreign key: %#v", references)
+	}
+
+	evidence.Approval.DecisionID = "not-a-sha256-digest"
+	if _, err := receiptReferencesFromEvidence(evidence); err == nil {
+		t.Fatal("malformed signed owner-control approval was accepted")
 	}
 }
 
@@ -818,51 +1195,6 @@ func createWorkflowDecisionFixture(
 		t.Fatalf("create workflow decision fixture: %v", err)
 	}
 	return workflowID, decisionID
-}
-
-func createControlDecisionFixture(
-	t *testing.T,
-	db *gorm.DB,
-	owner string,
-	now time.Time,
-) uuid.UUID {
-	t.Helper()
-	requestID := uuid.New()
-	decisionID := uuid.New()
-	bindingDigest := postgresDigest("opscontrol-" + requestID.String())
-	if err := db.Exec(`
-		INSERT INTO public.opscontrol_approval_requests (
-			id, owner_identity, idempotency_key, task_id, action,
-			resource_type, resource_id, target, binding_digest,
-			created_by, created_at, expires_at
-		) VALUES (?, ?, ?, ?, 'opscontrol.emergency-stop.clear',
-			'opscontrol-emergency-stop', 'emergency-stop:revision-1',
-			'disengaged', ?, ?, ?, ?)`,
-		requestID,
-		owner,
-		"opscontrol:"+requestID.String(),
-		"opscontrol:"+requestID.String(),
-		bindingDigest,
-		owner,
-		now,
-		now.Add(5*time.Minute),
-	).Error; err != nil {
-		t.Fatalf("create control approval request fixture: %v", err)
-	}
-	if err := db.Exec(`
-		INSERT INTO public.opscontrol_approval_decisions (
-			id, request_id, owner_identity, decision, reason, actor, created_at
-		) VALUES (?, ?, ?, 'approved', ?, ?, ?)`,
-		decisionID,
-		requestID,
-		owner,
-		"approved exact emergency-stop recovery",
-		owner,
-		now.Add(time.Second),
-	).Error; err != nil {
-		t.Fatalf("create control approval decision fixture: %v", err)
-	}
-	return decisionID
 }
 
 func bindReceiptApproval(

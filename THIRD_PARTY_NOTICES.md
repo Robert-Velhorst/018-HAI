@@ -1,22 +1,5 @@
 # Third-Party Notices
 
-## Redpanda Community Edition
-
-HAI's local Compose topology uses the unmodified Redpanda Community Edition
-container as a Kafka-compatible event broker. It is not linked into HAI and is
-not exposed as a streaming or queuing service.
-
-- Project: https://github.com/redpanda-data/redpanda
-- Copyright: Redpanda Data, Inc.
-- License: Redpanda Business Source License 1.1
-- License text: https://github.com/redpanda-data/redpanda/blob/dev/licenses/bsl.md
-- Pinned release: v26.2.1
-- Change license: Apache License 2.0 on the release-specific change date
-
-The Additional Use Grant does not permit offering Redpanda as a commercial
-streaming or queuing service. Review the linked license before changing HAI's
-distribution or service model.
-
 ## BooBoo
 
 HAI's Operational Brain uses concepts adapted from the BooBoo graph specification and organization boot-slice design. The integration is a native Go/PostgreSQL/Angular implementation and does not ship BooBoo's Node.js server, React viewer, journal, or container.

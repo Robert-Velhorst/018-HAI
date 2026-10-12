@@ -15,11 +15,11 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/auth/confirm-password-reset/{reset-token}": {
+        "/auth/confirm-password-reset": {
             "post": {
                 "description": "ConfirmPasswordReset",
                 "consumes": [
-                    "application/x-www-form-urlencoded"
+                    "application/json"
                 ],
                 "produces": [
                     "application/json"
@@ -30,18 +30,13 @@ const docTemplate = `{
                 "summary": "ConfirmPasswordReset",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "reset-token",
-                        "name": "reset-token",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "newPassword",
-                        "name": "newPassword",
-                        "in": "formData",
-                        "required": true
+                        "description": "One-time reset token and new password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ConfirmPasswordResetDTO"
+                        }
                     }
                 ],
                 "responses": {
@@ -121,7 +116,7 @@ const docTemplate = `{
             }
         },
         "/auth/logout": {
-            "get": {
+            "post": {
                 "description": "Logout",
                 "tags": [
                     "Authentication"
@@ -177,6 +172,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/dto.ErrorResponse"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ErrorResponse"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -215,14 +216,8 @@ const docTemplate = `{
                             "type": "string"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/dto.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
+                    "429": {
+                        "description": "Too Many Requests",
                         "schema": {
                             "$ref": "#/definitions/dto.ErrorResponse"
                         }
@@ -260,46 +255,7 @@ const docTemplate = `{
                         }
                     }
                 }
-            }
-        },
-        "/user/change-password": {
-            "patch": {
-                "description": "ChangePassword",
-                "consumes": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Users"
-                ],
-                "summary": "ChangePassword",
-                "parameters": [
-                    {
-                        "description": "User object",
-                        "name": "user",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/dto.UserRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successfully changed password"
-                    },
-                    "400": {
-                        "description": "Bad Request"
-                    },
-                    "401": {
-                        "description": "Unauthorized"
-                    },
-                    "500": {
-                        "description": "Internal Server Error"
-                    }
-                }
-            }
-        },
-        "/users": {
+            },
             "patch": {
                 "description": "Update a user",
                 "consumes": [
@@ -353,6 +309,21 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "dto.ConfirmPasswordResetDTO": {
+            "type": "object",
+            "required": [
+                "newPassword",
+                "token"
+            ],
+            "properties": {
+                "newPassword": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.ErrorResponse": {
             "type": "object",
             "properties": {
@@ -390,12 +361,18 @@ const docTemplate = `{
                 },
                 "password": {
                     "type": "string"
+                },
+                "rememberMe": {
+                    "type": "boolean"
                 }
             }
         },
         "dto.UserRequest": {
             "type": "object",
             "properties": {
+                "currentPassword": {
+                    "type": "string"
+                },
                 "email": {
                     "type": "string"
                 },

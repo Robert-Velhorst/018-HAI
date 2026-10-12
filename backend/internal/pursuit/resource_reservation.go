@@ -310,7 +310,20 @@ func digestReservationPayload(value any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encode pursuit resource reservation: %w", err)
 	}
-	if safety.RedactSecrets(string(encoded)) != string(encoded) {
+	validationPayload := encoded
+	if payload, ok := value.(portfolioWorkflowSettlementDigestPayload); ok {
+		// This is an execution destination, not an Authorization credential.
+		// Its string value remains scanned; original bytes remain digest-bound.
+		validationPayload, err = json.Marshal(struct {
+			portfolioWorkflowSettlementDigestPayload
+			AuthorizationTarget  *string `json:"AuthorizationTarget,omitempty"`
+			ExecutionDestination string
+		}{portfolioWorkflowSettlementDigestPayload: payload, ExecutionDestination: payload.AuthorizationTarget})
+		if err != nil {
+			return "", fmt.Errorf("encode resource validation: %w", err)
+		}
+	}
+	if safety.RedactSecrets(string(validationPayload)) != string(validationPayload) {
 		return "", fmt.Errorf("resource reservation must not contain secret material")
 	}
 	digest := sha256.Sum256(encoded)

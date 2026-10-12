@@ -67,6 +67,30 @@ func frameworkRegistryLifecycleMigrations(t *testing.T) fstest.MapFS {
 			files[path] = &fstest.MapFile{Data: data}
 		}
 	}
+	files["post/.keep"] = &fstest.MapFile{Data: []byte("test fixture")}
+	return files
+}
+
+func migrationFilesThrough(t *testing.T, lastVersion string) fs.FS {
+	t.Helper()
+	files := fstest.MapFS{}
+	entries, err := fs.ReadDir(migrations.Files, "pre")
+	if err != nil {
+		t.Fatalf("read pre-migration directory: %v", err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		base := strings.TrimSuffix(strings.TrimSuffix(name, ".up.sql"), ".down.sql")
+		if entry.IsDir() || (!strings.HasSuffix(name, ".up.sql") && !strings.HasSuffix(name, ".down.sql")) || strings.Compare(base, lastVersion) > 0 {
+			continue
+		}
+		content, err := migrations.Files.ReadFile("pre/" + name)
+		if err != nil {
+			t.Fatalf("read migration fixture %s: %v", name, err)
+		}
+		files["pre/"+name] = &fstest.MapFile{Data: content}
+	}
+	files["post/.keep"] = &fstest.MapFile{Data: []byte("test fixture")}
 	return files
 }
 
@@ -97,6 +121,26 @@ func openFrameworkRegistryPostgresTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("reset schema: %v", err)
 	}
 	return db
+}
+
+func TestHostRuntimeStartIntentMigrationRollbackIsRefused(t *testing.T) {
+	db := openFrameworkRegistryPostgresTestDB(t)
+	files := migrationFilesThrough(t, "0108_host_runtime_start_intent")
+	if _, err := infra.ApplyMigrations(db, files, "pre"); err != nil {
+		t.Fatalf("apply pre migrations: %v", err)
+	}
+	const version = "pre/0108_host_runtime_start_intent"
+	err := infra.RollbackMigration(db, files, "pre", version)
+	if err == nil || !strings.Contains(err.Error(), "rollback refused: removing host-runtime start intents") {
+		t.Fatalf("rollback error = %v, want host-runtime start-intent safety rejection", err)
+	}
+	var stillApplied bool
+	if err := db.Raw("SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)", version).Scan(&stillApplied).Error; err != nil {
+		t.Fatalf("check protected migration ledger row: %v", err)
+	}
+	if !stillApplied {
+		t.Fatal("refused rollback removed the protected migration ledger row")
+	}
 }
 
 func executeEmbeddedMigration(t *testing.T, db *gorm.DB, path string) {

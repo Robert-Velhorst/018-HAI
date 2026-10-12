@@ -63,7 +63,11 @@ func (s *service) fetchContactsSource(ctx context.Context, source *models.Connec
 	if err != nil {
 		return nil, "", err
 	}
-	return fetchContactsSourceWithClient(ctx, googleoauth.PeopleClient{AccessToken: access}, source)
+	client := googleoauth.PeopleClient{
+		AccessToken: access,
+		HTTPClient:  s.googleOAuthReadHTTPClient(source.ID, contactsConnectorKey, access),
+	}
+	return fetchContactsSourceWithClient(ctx, client, source)
 }
 
 func fetchContactsSourceWithClient(
@@ -71,6 +75,18 @@ func fetchContactsSourceWithClient(
 	client googleoauth.PeopleClient,
 	source *models.ConnectedSource,
 ) ([]ImportItem, string, error) {
+	return fetchContactsSourceWithClientRecovery(ctx, client, source, true)
+}
+
+func fetchContactsSourceWithClientRecovery(
+	ctx context.Context,
+	client googleoauth.PeopleClient,
+	source *models.ConnectedSource,
+	allowExpiredTokenRecovery bool,
+) ([]ImportItem, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
 	cursor, err := decodeContactsCursor(source.Cursor)
 	if err != nil {
 		return nil, "", err
@@ -81,9 +97,12 @@ func fetchContactsSourceWithClient(
 	}
 	page, err := client.ListConnectionsPage(ctx, cursor.PageToken, syncToken, contactsFetchLimit)
 	if errors.Is(err, googleoauth.ErrPeopleSyncTokenExpired) {
+		if !allowExpiredTokenRecovery {
+			return nil, "", err
+		}
 		reset := *source
 		reset.Cursor = ""
-		return fetchContactsSourceWithClient(ctx, client, &reset)
+		return fetchContactsSourceWithClientRecovery(ctx, client, &reset, false)
 	}
 	if err != nil {
 		return nil, "", err
@@ -91,10 +110,18 @@ func fetchContactsSourceWithClient(
 	projectKey := firstNonEmpty(source.DefaultProjectKey, "Robert-life-os")
 	items := make([]ImportItem, 0, len(page.Connections))
 	for _, person := range page.Connections {
-		if strings.TrimSpace(person.ResourceName) == "" {
-			continue
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
 		}
+		resourceName := strings.TrimSpace(person.ResourceName)
+		if !strings.HasPrefix(resourceName, "people/") || strings.TrimSpace(strings.TrimPrefix(resourceName, "people/")) == "" {
+			return nil, "", fmt.Errorf("Google Contacts person is missing a valid resource name")
+		}
+		person.ResourceName = resourceName
 		items = append(items, contactToImportItem(person, projectKey))
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
 	}
 	if page.NextPageToken != "" {
 		cursor.PageToken = page.NextPageToken

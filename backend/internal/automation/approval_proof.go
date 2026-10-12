@@ -32,6 +32,8 @@ const (
 type ApprovalScope string
 
 const (
+	// APIRead is retained as the approval scope for GET/HEAD for wire compatibility;
+	// it is not a declaration that the configured remote endpoint is side-effect-free.
 	ApprovalScopeAPIRead      ApprovalScope = "automation.api.read"
 	ApprovalScopeAPIMutate    ApprovalScope = "automation.api.mutate"
 	ApprovalScopeScript       ApprovalScope = "automation.script.execute"
@@ -89,8 +91,8 @@ type ApprovalDecisionRecord struct {
 }
 
 // TaskApprovalDecisionRequest is accepted only from the task package after it
-// has verified an owner-scoped queued review decision. The automation service
-// derives the digest from the current stored automation configuration.
+// has verified an owner-scoped queued review decision, including the historical
+// configuration snapshot in its immutable request digest.
 type TaskApprovalDecisionRequest struct {
 	OwnerIdentity         string
 	Task                  string
@@ -98,7 +100,51 @@ type TaskApprovalDecisionRequest struct {
 	MandateID             string
 	ApprovalSourceID      string
 	ApprovalBindingDigest string
+	ReviewConfiguration   *ReviewConfigurationSnapshot `json:"-"`
 	ApprovedAt            time.Time
+}
+
+const reviewConfigurationSnapshotVersion = "automation-review-configuration.v1"
+
+// ReviewConfigurationSnapshot is captured before task review, independently of
+// the task's inferred execution goal. Only its digest, not secrets, is retained.
+type ReviewConfigurationSnapshot struct {
+	Version             string        `json:"version"`
+	AutomationID        uuid.UUID     `json:"automationId"`
+	Scope               ApprovalScope `json:"scope"`
+	ConfigurationDigest string        `json:"configurationDigest"`
+}
+
+// ReviewConfigurationInspector reads configuration without recording approval
+// or issuing authority. Task review persists the returned value before approval.
+type ReviewConfigurationInspector interface {
+	InspectReviewConfiguration(id uuid.UUID) (*ReviewConfigurationSnapshot, error)
+}
+
+type ContextualReviewConfigurationInspector interface {
+	InspectReviewConfigurationContext(context.Context, uuid.UUID) (*ReviewConfigurationSnapshot, error)
+}
+
+var ErrReviewConfigurationContextUnavailable = errors.New("owned review configuration inspection is unavailable")
+
+func ValidateReviewConfigurationSnapshot(snapshot *ReviewConfigurationSnapshot, id uuid.UUID) error {
+	if snapshot == nil {
+		return fmt.Errorf("pre-review automation configuration snapshot is missing; create a new review")
+	}
+	if snapshot.Version != reviewConfigurationSnapshotVersion {
+		return fmt.Errorf("pre-review automation configuration snapshot version is unsupported; create a new review")
+	}
+	if id == uuid.Nil || snapshot.AutomationID != id {
+		return fmt.Errorf("pre-review automation configuration snapshot target does not match")
+	}
+	if !snapshot.Scope.valid() {
+		return fmt.Errorf("pre-review automation configuration snapshot scope is invalid")
+	}
+	digest, err := hex.DecodeString(snapshot.ConfigurationDigest)
+	if err != nil || len(digest) != sha256.Size || snapshot.ConfigurationDigest != strings.ToLower(snapshot.ConfigurationDigest) {
+		return fmt.Errorf("pre-review automation configuration snapshot digest is invalid")
+	}
+	return nil
 }
 
 // ValidateTaskApprovalDecisionRequest applies the same freshness and digest
@@ -181,6 +227,10 @@ type ApprovalProofService interface {
 }
 
 const approvalProofConsumptionContractVersion = "automation-approval-proof-consumption.v1"
+
+const approvalProofConsumptionTimeout = 30 * time.Second
+
+var ErrApprovalProofConsumptionUnconfirmed = errors.New("approval proof consumption requires reconciliation")
 
 type ApprovalProofConsumption struct {
 	ContractVersion  string
@@ -306,6 +356,11 @@ func (s *approvalProofService) VerifyAndConsume(
 	if ctx == nil {
 		return fmt.Errorf("%w: verification context is required", ErrApprovalProofInvalid)
 	}
+	ctx, cancel := context.WithTimeout(ctx, approvalProofConsumptionTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if proof == nil {
 		return ErrApprovalProofRequired
 	}
@@ -380,21 +435,40 @@ func (s *approvalProofService) VerifyAndConsume(
 		ConsumedAt:       now,
 	}
 	consumption.RecordDigest = approvalProofConsumptionDigest(consumption)
-	if err := s.store.Consume(ctx, consumption); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
+	}
+	err = s.store.Consume(ctx, consumption)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return errors.Join(ErrApprovalProofConsumptionUnconfirmed, err, contextErr)
+	}
+	if err != nil {
+		if errors.Is(err, ErrApprovalProofConsumed) {
+			return err
+		}
+		return errors.Join(ErrApprovalProofConsumptionUnconfirmed, err)
 	}
 	return nil
 }
 
 func (s *memoryApprovalProofConsumptionStore) Consume(
-	_ context.Context,
+	ctx context.Context,
 	consumption ApprovalProofConsumption,
 ) error {
+	if ctx == nil {
+		return fmt.Errorf("approval proof consumption context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := validateApprovalProofConsumption(consumption); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	for id, expiresAt := range s.consumed {
 		if !consumption.ConsumedAt.Before(expiresAt) {
 			delete(s.consumed, id)
@@ -615,7 +689,10 @@ func approvalScopeForAutomation(automation *models.Automation) (ApprovalScope, b
 		method, _ := parseLaunchMethodTarget(automation.LaunchTarget, http.MethodPost)
 		switch method {
 		case http.MethodGet, http.MethodHead:
-			return ApprovalScopeAPIRead, false
+			// The HTTP verb does not establish that a remote endpoint is read-only.
+			// No digest-bound immutable read-only declaration exists on Automation,
+			// so GET and HEAD require the same owner approval proof as other effects.
+			return ApprovalScopeAPIRead, true
 		case http.MethodPost:
 			return ApprovalScopeAPIMutate, true
 		default:
@@ -728,12 +805,17 @@ func parseWorkflowApprovalBinding(value string) (ApprovalScope, string, error) {
 }
 
 func automationActionDigest(automation *models.Automation, request TaskLaunchRequest) string {
+	return automationActionDigestWithPolicy(automation, request, approvalPolicySnapshot())
+}
+
+func automationActionDigestWithPolicy(automation *models.Automation, request TaskLaunchRequest, policySnapshot []string) string {
 	type actionIdentity struct {
 		AutomationID       string   `json:"automationId"`
 		Name               string   `json:"name"`
 		LaunchType         string   `json:"launchType"`
 		LaunchTarget       string   `json:"launchTarget"`
 		RuntimeType        string   `json:"runtimeType"`
+		RuntimeModel       string   `json:"runtimeModel,omitempty"`
 		ServiceName        string   `json:"serviceName"`
 		RoutePath          string   `json:"routePath"`
 		PublicURL          string   `json:"publicUrl"`
@@ -752,6 +834,7 @@ func automationActionDigest(automation *models.Automation, request TaskLaunchReq
 		LaunchType:         strings.ToLower(strings.TrimSpace(automation.LaunchType)),
 		LaunchTarget:       strings.TrimSpace(automation.LaunchTarget),
 		RuntimeType:        strings.ToLower(strings.TrimSpace(automation.RuntimeType)),
+		RuntimeModel:       automation.RuntimeModel,
 		ServiceName:        strings.TrimSpace(automation.ServiceName),
 		RoutePath:          strings.TrimSpace(automation.RoutePath),
 		PublicURL:          strings.TrimSpace(automation.PublicURL),
@@ -762,7 +845,7 @@ func automationActionDigest(automation *models.Automation, request TaskLaunchReq
 		Task:               strings.TrimSpace(request.Task),
 		ProjectKey:         strings.TrimSpace(request.ProjectKey),
 		MandateID:          strings.TrimSpace(request.MandateID),
-		PolicySnapshot:     approvalPolicySnapshot(),
+		PolicySnapshot:     policySnapshot,
 	}
 	encoded, _ := json.Marshal(identity)
 	digest := sha256.Sum256(encoded)
@@ -854,6 +937,8 @@ func approvalPolicySnapshot() []string {
 		"OPENCLAW_EXEC_APPROVALS_ENABLED",
 		"OPENCLAW_EXECUTABLE",
 		"OPENCLAW_GATEWAY_ENABLED",
+		"OPENCLAW_GATEWAY_AUTH_DISCOVERY_ENABLED",
+		"OPENCLAW_GATEWAY_ALLOWED_MODELS",
 		"OPENCLAW_GATEWAY_TOKEN",
 		"OPENCLAW_GATEWAY_URL",
 		"OPENCLAW_HOST_TOOLS_ENABLED",

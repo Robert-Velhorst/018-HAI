@@ -9,6 +9,7 @@ import (
 func buildMultiProjectHandler(t *testing.T) *Handler {
 	t.Helper()
 	service := NewService(newFakeRepository())
+	scoped := service.(OwnerScopedService)
 	seed := []CreateRequest{
 		{ProjectKey: "project-a", Kind: "note", Content: "alpha one"},
 		{ProjectKey: "project-a", Kind: "note", Content: "alpha two"},
@@ -17,7 +18,7 @@ func buildMultiProjectHandler(t *testing.T) *Handler {
 		{ProjectKey: "project-b", Kind: "note", Content: "bravo two"},
 	}
 	for _, req := range seed {
-		if _, err := service.Create(req); err != nil {
+		if _, err := scoped.CreateForOwner("test-owner", req); err != nil {
 			t.Fatalf("seed: %v", err)
 		}
 	}

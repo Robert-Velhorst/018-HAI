@@ -3,14 +3,18 @@ package ambient
 import (
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
+	"automation-hub-backend/internal/safety"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Repository interface {
+	EnsureNeeds(needs []models.AmbientNeed) error
 	Needs() ([]models.AmbientNeed, error)
 	NeedOverridesForOwner(ownerIdentity string) ([]models.AmbientNeedOverride, error)
 	FindNeedOverride(ownerIdentity, needKey string) (*models.AmbientNeedOverride, error)
@@ -45,6 +49,18 @@ func DefaultRepository() Repository {
 		panic(err)
 	}
 	return NewGormRepository(db)
+}
+
+func (r *GormRepository) EnsureNeeds(needs []models.AmbientNeed) error {
+	for index := range needs {
+		if err := r.db.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "key"}},
+			DoNothing: true,
+		}).Create(&needs[index]).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *GormRepository) Needs() ([]models.AmbientNeed, error) {
@@ -99,27 +115,12 @@ func (r *GormRepository) FindOpportunityByFingerprint(fingerprint string) (*mode
 }
 
 func (r *GormRepository) FindOpportunitiesByFingerprints(fingerprints []string) ([]models.AmbientOpportunity, error) {
-	unique := make([]string, 0, len(fingerprints))
-	seen := make(map[string]struct{}, len(fingerprints))
-	for _, fingerprint := range fingerprints {
-		fingerprint = strings.TrimSpace(fingerprint)
-		if fingerprint == "" {
-			continue
-		}
-		if _, exists := seen[fingerprint]; exists {
-			continue
-		}
-		seen[fingerprint] = struct{}{}
-		unique = append(unique, fingerprint)
-	}
-	if len(unique) == 0 {
+	if len(fingerprints) == 0 {
 		return []models.AmbientOpportunity{}, nil
 	}
 	var items []models.AmbientOpportunity
-	if err := r.db.Where("fingerprint IN ?", unique).Find(&items).Error; err != nil {
-		return nil, err
-	}
-	return items, nil
+	err := r.db.Where("fingerprint IN ?", fingerprints).Find(&items).Error
+	return items, err
 }
 
 func (r *GormRepository) SaveOpportunity(item *models.AmbientOpportunity) (*models.AmbientOpportunity, error) {
@@ -160,6 +161,10 @@ func (r *GormRepository) opportunities(ownerIdentity, status string, limit int) 
 }
 
 func (r *GormRepository) CreateScan(scan *models.AmbientScan) (*models.AmbientScan, error) {
+	if scan == nil {
+		return nil, ErrScanOutcomeUnconfirmed
+	}
+	scan.StartedAt = scan.StartedAt.UTC().Truncate(time.Microsecond)
 	if err := r.db.Create(scan).Error; err != nil {
 		return nil, err
 	}
@@ -167,8 +172,30 @@ func (r *GormRepository) CreateScan(scan *models.AmbientScan) (*models.AmbientSc
 }
 
 func (r *GormRepository) UpdateScan(scan *models.AmbientScan) (*models.AmbientScan, error) {
-	if err := r.db.Save(scan).Error; err != nil {
-		return nil, err
+	if scan == nil || scan.ID == uuid.Nil || scan.StartedAt.IsZero() || scan.CompletedAt == nil ||
+		(scan.Status != "completed" && scan.Status != "failed") {
+		return nil, ErrScanOutcomeUnconfirmed
+	}
+	if r == nil || r.db == nil || r.db.Config == nil || r.db.Statement == nil {
+		return nil, ErrScanContextUnavailable
+	}
+	// A terminal update may acknowledge only this still-running scan; no Save
+	// fallback may recreate deleted rows or overwrite a newer terminal outcome.
+	result := r.db.Model(&models.AmbientScan{}).
+		Where("id = ? AND owner_identity = ? AND started_at = ? AND status = ?", scan.ID, scan.OwnerIdentity, scan.StartedAt.UTC().Truncate(time.Microsecond), "running").
+		Updates(map[string]interface{}{
+			"status": scan.Status, "completed_at": scan.CompletedAt,
+			"items_examined": scan.ItemsExamined, "opportunities_found": scan.OpportunitiesFound,
+			"created": scan.Created, "updated": scan.Updated, "deduplicated": scan.Deduplicated,
+			"advanced": scan.Advanced, "filtered": scan.Filtered, "skipped": scan.Skipped, "blocked": scan.Blocked,
+			"manifest_bytes": scan.ManifestBytes, "deduplicated_bytes": scan.DeduplicatedBytes,
+			"error_message": safety.RedactSecrets(scan.ErrorMessage), "updated_at": time.Now().UTC(),
+		})
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, ErrScanOutcomeUnconfirmed
 	}
 	return scan, nil
 }
@@ -195,18 +222,40 @@ func (r *GormRepository) scans(ownerIdentity string, limit int) ([]models.Ambien
 }
 
 func (r *GormRepository) PruneScans(keep int) error {
+	return r.pruneScans("", keep)
+}
+
+type ownerScanRetentionRepository interface{ PruneScansForOwner(string, int) error }
+
+func (r *GormRepository) PruneScansForOwner(owner string, keep int) error {
+	owner = strings.TrimSpace(owner)
+	if owner == "" {
+		return ErrScanContextUnavailable
+	}
+	return r.pruneScans(owner, keep)
+}
+
+func (r *GormRepository) pruneScans(owner string, keep int) error {
 	if keep < 10 {
 		keep = 10
 	}
 	var cutoff models.AmbientScan
-	err := r.db.Order("started_at desc, id desc").Offset(keep - 1).Limit(1).Take(&cutoff).Error
+	query := r.db.Where("status IN ?", []string{"completed", "failed"})
+	if owner != "" {
+		query = query.Where("owner_identity = ?", owner)
+	}
+	err := query.Order("started_at desc, id desc").Offset(keep - 1).Limit(1).Take(&cutoff).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	return r.db.
+	query = r.db.Where("status IN ?", []string{"completed", "failed"})
+	if owner != "" {
+		query = query.Where("owner_identity = ?", owner)
+	}
+	return query.
 		Where("started_at < ? OR (started_at = ? AND id < ?)", cutoff.StartedAt, cutoff.StartedAt, cutoff.ID).
 		Delete(&models.AmbientScan{}).Error
 }

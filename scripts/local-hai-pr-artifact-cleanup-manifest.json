@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "purpose": "Exact local CI diagnostic and Gitleaks download artifacts observed in the isolated HAI PR worktree. This allowlist is not deletion authorization.",
+  "repository": "Robert-Velhorst/018-HAI",
+  "pullRequest": 36,
+  "worktreeRoot": "D:\\codex-temp\\hai-pr-update-018-20261009",
+  "artifacts": [
+    { "path": "ci-113991681379.log", "bytes": 45034, "sha256": "dc4fe11e49609ee2359dc6f861b30c451ecffd93e6e58eb4c486d1e5e62ab802" },
+    { "path": "ci-113991681677.log", "bytes": 41396, "sha256": "b9aef567bbc99fc64650aa91c3045be68562ea82ae2d2bfa1bf023342639a587" },
+    { "path": "ci-113991681724.log", "bytes": 29533, "sha256": "639fbb093c755541b3671ed6bca3ed06e34054dc5311ee3fd327aa84401506db" },
+    { "path": "ci-113991681733.log", "bytes": 48006, "sha256": "808106c462bb09b0c05bcdac36f3774a30b2412a65a8f1c56e911ab539e3c221" },
+    { "path": "ci-113991681798.log", "bytes": 29007, "sha256": "4ebd4ea37034771c4093e838e61b5e5f06a26c56bdb87b493e848b1fc234e2ff" },
+    { "path": "ci-113991681876.log", "bytes": 21441, "sha256": "8c76e143d75d9f2e14e97136b7f39768d52532f7db63ae3d87af5c1f78184c77" },
+    { "path": "ci-113991681884.log", "bytes": 18381, "sha256": "0ac344386aea3bccf0cd4236f62d8e1744749a0d47afc1c29eb9ae0e2750eecc" },
+    { "path": "ci-113991681896.log", "bytes": 24806, "sha256": "89e17f84bbfe3ea08fb610ec9704f703d125ab212021cf69735cb4dc20551120" },
+    { "path": "ci-113991682018.log", "bytes": 53185, "sha256": "9a9c2742644162786997fb5fa5a34fab44c01afb3660063b7e332b4cc8a1091f" },
+    { "path": "ci-113991682031.log", "bytes": 107318, "sha256": "9e6986f472b14ab7068874459d06df260944138dae06ddd8c5e8b9fa58189bd8" },
+    { "path": "ci-113991682127.log", "bytes": 17879, "sha256": "cef5e8048393c0865c6155b22f2b14eb629d828c156f7bb8ad3331e90010bb81" },
+    { "path": "ci-113991682189.log", "bytes": 18481, "sha256": "c166cf09164d1874aa8d44a5bce84b305c17dea6e5c40f992bcbb922ae8a3769" },
+    { "path": "ci-frontend-job.zip", "bytes": 37430, "sha256": "e925cc27ddc2f0f086dcf7c08b7c45f8c1d41130a62cb6dc687bd396373983fb" },
+    { "path": "gitleaks.exe", "bytes": 22575104, "sha256": "17157e2ee8b76fc8b1d8bee607a250e34b8a8023c8bc81822d4b5ee4d78fcb7c" },
+    { "path": "gitleaks_8.30.1_windows_x64.zip", "bytes": 8438883, "sha256": "d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e" }
+  ]
+}

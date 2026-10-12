@@ -16,6 +16,7 @@ export interface IDockerStatus {
 export interface IBackgroundStatus {
   mode: string
   storedMode: string
+  modeStateError?: string
   emergencyStop: IEmergencyStopState
   backgroundProcessingActive: boolean
   docker: IDockerStatus
@@ -47,6 +48,12 @@ export interface IEmergencyStopVerification {
   halted: boolean
   restoredEngagedState: boolean
   detail: string
+}
+
+export interface IResumeApprovalRequest {
+  reviewItemId: string
+  approvalSourceId: string
+  approvalBindingDigest: string
 }
 
 export interface IResumeApprovalRequest {

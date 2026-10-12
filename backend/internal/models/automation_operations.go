@@ -26,6 +26,8 @@ type AutomationLaunchEvent struct {
 	RuntimeType          string                       `gorm:"type:varchar(50);index" json:"runtimeType,omitempty"`
 	LaunchType           string                       `gorm:"type:varchar(50);index" json:"launchType"`
 	RuntimeTaskID        string                       `gorm:"type:varchar(120);index" json:"runtimeTaskId,omitempty"`
+	ExecutionReference   string                       `gorm:"type:varchar(120);index" json:"executionReference,omitempty"`
+	EventKey             string                       `gorm:"type:varchar(120);index" json:"-"`
 	Target               string                       `gorm:"type:varchar(1024)" json:"target,omitempty"`
 	Status               string                       `gorm:"type:varchar(30);index" json:"status"`
 	Message              string                       `gorm:"type:text" json:"message,omitempty"`
@@ -36,6 +38,7 @@ type AutomationLaunchEvent struct {
 	RuntimeRouteTrace    *AutomationRuntimeRouteTrace `gorm:"-" json:"runtimeRouteTrace,omitempty"`
 	ExitCode             int                          `gorm:"default:0" json:"exitCode"`
 	DurationMs           int64                        `gorm:"default:0" json:"durationMs"`
+	RequiresApproval     bool                         `gorm:"not null;default:false" json:"requiresApproval"`
 	StartedAt            time.Time                    `gorm:"index" json:"startedAt"`
 	CompletedAt          time.Time                    `gorm:"index" json:"completedAt"`
 }

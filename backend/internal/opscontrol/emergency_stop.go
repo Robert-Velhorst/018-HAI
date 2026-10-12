@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"automation-hub-backend/internal/safety"
 )
 
 var ErrEmergencyStopStateChanged = errors.New("emergency-stop state changed concurrently")
@@ -128,6 +130,8 @@ func (s *EmergencyStopStore) SeedIfAbsent(
 	actor string,
 	now time.Time,
 ) error {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -164,6 +168,8 @@ func (s *EmergencyStopStore) SeedIfAbsent(
 
 // Engage activates the emergency stop and persists it.
 func (s *EmergencyStopStore) Engage(reason, actor string, now time.Time) (EmergencyStopState, error) {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	t := now.UTC()
@@ -199,6 +205,8 @@ func (s *EmergencyStopStore) DisengageIfRevision(
 	actor string,
 	now time.Time,
 ) (EmergencyStopState, error) {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state.Revision != expectedRevision {
@@ -226,6 +234,8 @@ func (s *EmergencyStopStore) RestoreIfRevision(
 	previous EmergencyStopState,
 	now time.Time,
 ) (EmergencyStopState, error) {
+	releaseFence := safety.AcquireEmergencyStopMutationFence()
+	defer releaseFence()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state.Revision != expectedRevision {

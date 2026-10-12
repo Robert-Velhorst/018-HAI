@@ -14,6 +14,7 @@ import { NzPaginationModule } from 'ng-zorro-antd/pagination';
 import { NzSelectModule } from 'ng-zorro-antd/select';
 import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
+import { ControlRoomModule } from '../../control-room/control-room.module';
 import { MemoryComponent } from './memory.component';
 import { CONTEXT_MEMORY_SERVICE_TOKEN } from '../../services/context-memory/context-memory.service.token';
 import { ContextMemoryService } from '../../services/context-memory/context-memory.service';
@@ -27,6 +28,7 @@ const routes: Routes = [{ path: '', component: MemoryComponent }];
   imports: [
     CommonModule,
     RouterModule.forChild(routes),
+    ControlRoomModule,
     FormsModule,
     ReactiveFormsModule,
     NzButtonModule,

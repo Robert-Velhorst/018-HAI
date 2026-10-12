@@ -1,34 +1,61 @@
 package infra
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestConfiguredFirstRunAdminRejectsMissingOrSamplePassword(t *testing.T) {
-	tests := []struct {
-		name     string
-		email    string
-		password string
-	}{
-		{name: "missing password", email: "owner@example.com"},
-		{name: "legacy default", email: "owner@example.com", password: "ChangeMe123!"},
-		{name: "template placeholder", email: "owner@example.com", password: "change-this-owner-password"},
-		{name: "too short", email: "owner@example.com", password: "short-pass"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if _, _, err := configuredFirstRunAdmin(test.email, test.password); err == nil {
-				t.Fatal("expected unsafe first-run admin configuration to be rejected")
+func TestConfiguredFirstRunAdminPasswordRejectsMissingAndPlaceholderValues(t *testing.T) {
+	for _, password := range []string{
+		"", "ChangeMe123!", "change-this-local-admin-password", "short",
+		strings.Repeat("é", 6), strings.Repeat("a", 73),
+	} {
+		t.Run(password, func(t *testing.T) {
+			t.Setenv("FIRST_RUN_ADMIN_PASSWORD", password)
+			_, err := configuredFirstRunAdminPassword()
+			if err == nil {
+				t.Fatalf("password %q unexpectedly accepted", password)
 			}
 		})
 	}
 }
 
-func TestConfiguredFirstRunAdminAcceptsExplicitStrongPassword(t *testing.T) {
-	email, password, err := configuredFirstRunAdmin("owner@example.com", "long-unique-owner-password")
-	if err != nil {
-		t.Fatalf("configuredFirstRunAdmin returned error: %v", err)
+func TestConfiguredFirstRunAdminPasswordUsesCharacterAndBcryptByteBounds(t *testing.T) {
+	for _, password := range []string{
+		"Abcdef12!xyz", // 12 ASCII characters
+		strings.Repeat("é", 12),
+		strings.Repeat("é", 36), // 72 bytes at the bcrypt boundary
+	} {
+		t.Run(password, func(t *testing.T) {
+			t.Setenv("FIRST_RUN_ADMIN_PASSWORD", password)
+			got, err := configuredFirstRunAdminPassword()
+			if err != nil {
+				t.Fatalf("valid first-run password rejected: %v", err)
+			}
+			if got != password {
+				t.Fatalf("configured password changed during validation")
+			}
+		})
 	}
-	if email != "owner@example.com" || password != "long-unique-owner-password" {
-		t.Fatalf("unexpected configured owner: %q / %q", email, password)
+}
+
+func TestConfiguredFirstRunAdminPasswordAcceptsStrongOperatorValue(t *testing.T) {
+	operatorPassword := strings.Join([]string{"valid", "-operator", "-passphrase", "-2026"}, "")
+	t.Setenv("FIRST_RUN_ADMIN_PASSWORD", operatorPassword)
+	password, err := configuredFirstRunAdminPassword()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if password != operatorPassword {
+		t.Fatalf("password = %q", password)
+	}
+}
+
+func TestConfiguredFirstRunAdminPasswordDoesNotExposeConfiguredValueInError(t *testing.T) {
+	const secret = "ChangeMe123!"
+	t.Setenv("FIRST_RUN_ADMIN_PASSWORD", secret)
+	_, err := configuredFirstRunAdminPassword()
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("error = %v, must not expose configured password", err)
 	}
 }

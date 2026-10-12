@@ -6,7 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/plangraph"
+
+	"github.com/google/uuid"
 )
 
 type recordingWorkflowCoordinationProjector struct {
@@ -158,5 +161,140 @@ func TestWorkflowCoordinationProjectionFailureBlocksAndReplayRecovers(t *testing
 	}
 	if projector.calls != 2 {
 		t.Fatalf("unexpected projection attempts: %d", projector.calls)
+	}
+}
+
+func TestWorkerCannotClaimReadyWorkflowUntilCoordinationDraftAndReceiptAreDurable(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	item, err := repo.CreateItem(&models.WorkflowItem{
+		ID: uuid.New(), OwnerIdentity: "owner-a", Title: "Legacy ready workflow",
+		CurrentState: StateReady, ApprovalStatus: "not_required", RiskLevel: "low",
+	})
+	if err != nil {
+		t.Fatalf("create legacy workflow: %v", err)
+	}
+	projector := &recordingWorkflowCoordinationProjector{
+		service: plangraph.NewService(plangraph.NewMemoryRepository(), nil),
+		err:     errors.New("plan storage unavailable"),
+	}
+	configured, err := WithCoordinationPlanProjector(NewService(repo), projector)
+	if err != nil {
+		t.Fatalf("configure projector: %v", err)
+	}
+
+	result, err := configured.RunOneForOwner("owner-a", item.ID)
+	if err != nil {
+		t.Fatalf("run one: %v", err)
+	}
+	if result == nil || result.Status != "blocked" {
+		t.Fatalf("run result = %+v, want blocked", result)
+	}
+	stored, err := repo.FindItem(item.ID)
+	if err != nil {
+		t.Fatalf("reload workflow: %v", err)
+	}
+	if stored.CurrentState != StateBlocked || stored.WorkerClaimID != "" || stored.CoordinationDraftPlanID != nil {
+		t.Fatalf("workflow was not durably held before claim: %+v", stored)
+	}
+	transitions, err := repo.FindTransitions(item.ID)
+	if err != nil || len(transitions) != 1 || transitions[0].FromState != StateReady || transitions[0].ToState != StateBlocked {
+		t.Fatalf("projection failure transition = %+v err=%v, want ready->blocked audit", transitions, err)
+	}
+	decisions, err := repo.FindDecisions(item.ID)
+	if err != nil {
+		t.Fatalf("load projection failure decisions: %v", err)
+	}
+	decisionRecorded := false
+	for _, decision := range decisions {
+		if decision.DecisionType == "coordination_plan" && decision.Decision == "unavailable" {
+			decisionRecorded = true
+			break
+		}
+	}
+	if !decisionRecorded {
+		t.Fatalf("projection failure decision was not recorded: %+v", decisions)
+	}
+}
+
+func TestCoordinationProjectionRejectsStateChangeWithoutTransition(t *testing.T) {
+	workflowID := uuid.New()
+	expected := &models.WorkflowItem{ID: workflowID, CurrentState: StateBlocked}
+	updated := *expected
+	updated.CurrentState = StateReady
+	planID := uuid.New()
+	updated.CoordinationDraftPlanID = &planID
+	repository := NewGormRepository(nil)
+
+	_, _, err := repository.CommitWorkflowCoordinationProjection(WorkflowCoordinationProjectionFinalization{
+		Expected: expected,
+		Updated:  &updated,
+		Decision: models.WorkflowDecision{WorkflowID: workflowID, DecisionType: "coordination_plan"},
+		Event: models.WorkflowEvent{
+			WorkflowID: workflowID, EventType: "workflow.coordination_draft_projected",
+			FromState: StateBlocked, ToState: StateReady,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "state changes require exactly one matching transition") {
+		t.Fatalf("commit error = %v, want transition integrity rejection before database access", err)
+	}
+}
+
+func TestCoordinationFailureRejectsStateChangeWithoutTransition(t *testing.T) {
+	workflowID := uuid.New()
+	expected := &models.WorkflowItem{ID: workflowID, CurrentState: StateReady}
+	updated := *expected
+	updated.CurrentState = StateBlocked
+	repository := NewGormRepository(nil)
+
+	_, _, err := repository.CommitWorkflowCoordinationFailure(WorkflowCoordinationProjectionFinalization{
+		Expected: expected,
+		Updated:  &updated,
+		Decision: models.WorkflowDecision{WorkflowID: workflowID, DecisionType: "coordination_plan", Decision: "unavailable"},
+		Event: models.WorkflowEvent{
+			WorkflowID: workflowID, EventType: "workflow.coordination_draft_failed",
+			FromState: StateReady, ToState: StateBlocked,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "state changes require exactly one matching transition") {
+		t.Fatalf("commit error = %v, want transition integrity rejection before database access", err)
+	}
+}
+
+func TestWorkflowCoordinationDraftAuditRepairsMissingDecisionWithoutDuplicatingReceipt(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	planID := uuid.New()
+	item, err := repo.CreateItem(&models.WorkflowItem{
+		ID: uuid.New(), OwnerIdentity: "owner-a", Title: "Previously projected workflow",
+		CurrentState: StateReady, ApprovalStatus: "not_required", RiskLevel: "low",
+		CoordinationDraftPlanID: &planID, CoordinationDraftRevision: 1,
+		CoordinationDraftDigest: strings.Repeat("a", 64), CoordinationDraftNodeID: "workflow",
+	})
+	if err != nil {
+		t.Fatalf("create workflow: %v", err)
+	}
+	message := workflowCoordinationDraftProjectedMessage(planID)
+	if _, err := repo.CreateEvent(&models.WorkflowEvent{
+		WorkflowID: item.ID, EventType: "workflow.coordination_draft_projected",
+		FromState: StateReady, ToState: StateReady, Message: message,
+	}); err != nil {
+		t.Fatalf("create preexisting receipt: %v", err)
+	}
+	configured, err := WithCoordinationPlanProjector(NewService(repo), &recordingWorkflowCoordinationProjector{
+		service: plangraph.NewService(plangraph.NewMemoryRepository(), nil),
+	})
+	if err != nil {
+		t.Fatalf("configure projector: %v", err)
+	}
+	service := configured.(*service)
+	if err := service.ensureWorkflowCoordinationDraft(item, "engine"); err != nil {
+		t.Fatalf("repair workflow coordination audit: %v", err)
+	}
+	events, err := repo.FindEvents(item.ID)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("events=%+v err=%v, want one existing projection receipt", events, err)
+	}
+	decisions, err := repo.FindDecisions(item.ID)
+	if err != nil || len(decisions) != 1 || decisions[0].DecisionType != "coordination_plan" || decisions[0].Decision != "drafted" {
+		t.Fatalf("decisions=%+v err=%v, want repaired durable draft decision", decisions, err)
 	}
 }

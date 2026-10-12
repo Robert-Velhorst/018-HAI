@@ -264,9 +264,29 @@ func (r *MemoryRepository) AppendEvaluation(ctx context.Context, ownerID, worksp
 	if state == nil || len(state.revisions) == 0 {
 		return EvaluationRecord{}, false, ErrNotFound
 	}
+	if token.OutcomeAuditDigest != "" {
+		if err := validateOutcomeRevisionSelector(record.OutcomeRevision, token.OutcomeAuditDigest); err != nil {
+			return EvaluationRecord{}, false, err
+		}
+		revision, ok := state.exactRevisions[record.OutcomeRevision]
+		if !ok {
+			return EvaluationRecord{}, false, ErrNotFound
+		}
+		if err := verifyOutcomeRevisionScope(revision, ownerID, workspaceID, outcomeID); err != nil {
+			return EvaluationRecord{}, false, err
+		}
+		if revision.Revision != record.OutcomeRevision || !equalSHA256(revision.AuditDigest, token.OutcomeAuditDigest) {
+			return EvaluationRecord{}, false, ErrNotFound
+		}
+	}
 	if entry, ok := state.evaluationIdempotency[token.Key]; ok {
 		if entry.digest != token.RequestDigest {
 			return EvaluationRecord{}, false, ErrIdempotencyConflict
+		}
+		if token.OutcomeAuditDigest != "" {
+			if err := verifyPinnedEvaluationResult(entry.record, record); err != nil {
+				return EvaluationRecord{}, false, err
+			}
 		}
 		value, err := cloneValue(entry.record)
 		return value, false, err
@@ -274,17 +294,6 @@ func (r *MemoryRepository) AppendEvaluation(ctx context.Context, ownerID, worksp
 	if token.OutcomeAuditDigest == "" {
 		if state.revisions[len(state.revisions)-1].Revision != record.OutcomeRevision {
 			return EvaluationRecord{}, false, ErrRevisionConflict
-		}
-	} else {
-		if err := validateOutcomeRevisionSelector(record.OutcomeRevision, token.OutcomeAuditDigest); err != nil {
-			return EvaluationRecord{}, false, err
-		}
-		revision, ok := state.exactRevisions[record.OutcomeRevision]
-		if !ok || !equalSHA256(revision.AuditDigest, token.OutcomeAuditDigest) {
-			return EvaluationRecord{}, false, ErrNotFound
-		}
-		if err := VerifyOutcomeRevisionDigest(revision); err != nil {
-			return EvaluationRecord{}, false, err
 		}
 	}
 	stored, err := cloneValue(record)

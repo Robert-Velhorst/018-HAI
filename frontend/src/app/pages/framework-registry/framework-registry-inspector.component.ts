@@ -14,11 +14,11 @@ export interface IFrameworkPreferenceEditor {
 }
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.Eager,
-  standalone: false,
-  selector: 'app-framework-registry-inspector',
-  templateUrl: './framework-registry-inspector.component.html',
-  styleUrls: ['./framework-registry-inspector.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-framework-registry-inspector',
+    templateUrl: './framework-registry-inspector.component.html',
+    styleUrls: ['./framework-registry-inspector.component.scss'],
+    standalone: false
 })
 export class FrameworkRegistryInspectorComponent {
   @Input() loading = false;

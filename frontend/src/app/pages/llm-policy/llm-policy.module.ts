@@ -15,6 +15,7 @@ import { NzTableModule } from 'ng-zorro-antd/table';
 import { NzTagModule } from 'ng-zorro-antd/tag';
 import { NzTimelineModule } from 'ng-zorro-antd/timeline';
 import { NzTooltipModule } from 'ng-zorro-antd/tooltip';
+import { ControlRoomModule } from '../../control-room/control-room.module';
 import { LLMPolicyComponent } from './llm-policy.component';
 import { LLM_POLICY_SERVICE_TOKEN } from '../../services/llm-policy/llm-policy.service.token';
 import { LLMPolicyService } from '../../services/llm-policy/llm-policy.service';
@@ -25,6 +26,7 @@ const routes: Routes = [{ path: '', component: LLMPolicyComponent }];
   declarations: [LLMPolicyComponent],
   imports: [
     CommonModule,
+    ControlRoomModule,
     RouterModule.forChild(routes),
     ReactiveFormsModule,
     NzAlertModule,

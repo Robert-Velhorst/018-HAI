@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"automation-hub-backend/internal/lifecycle"
 )
 
 // ProbeFunc performs a live connectivity check against one dependency. It must
@@ -53,11 +55,13 @@ func runProbe(ctx context.Context, timeout time.Duration, p Probe) Check {
 	probeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Buffered so an unresponsive probe that ignores ctx cannot leak this
-	// goroutine: the send always completes even after we have stopped waiting.
+	// Buffer the result so a timed-out caller cannot block completion. API
+	// ownership still tracks a probe that ignores cancellation through its return.
 	done := make(chan error, 1)
 	started := time.Now()
-	go func() { done <- p.Run(probeCtx) }()
+	if !lifecycle.Go(probeCtx, "readiness-probe", func() { done <- p.Run(probeCtx) }) {
+		return Check{Name: p.Name, Severity: SeverityFail, Detail: "dependency probe canceled during runtime shutdown"}
+	}
 
 	var err error
 	select {

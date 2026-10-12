@@ -23,11 +23,16 @@ type TaskEngine interface {
 	Run(request task.IntakeRequest) (*task.CompletionPlan, error)
 }
 
+type ContextTaskEngine interface {
+	PlanContext(context.Context, task.IntakeRequest) (*task.CompletionPlan, error)
+	RunContext(context.Context, task.IntakeRequest) (*task.CompletionPlan, error)
+}
+
 type AgentCycleRunner interface {
 	Run(request agentcycle.RunRequest) *agentcycle.RunResult
 }
 
-type AgentCycleContextRunner interface {
+type ContextAgentCycleRunner interface {
 	RunContext(context.Context, agentcycle.RunRequest) (*agentcycle.RunResult, error)
 }
 
@@ -42,18 +47,19 @@ type PursuitCommandRouter interface {
 }
 
 type CommandRequest struct {
-	Message         string   `json:"message"`
-	ProjectKey      string   `json:"projectKey,omitempty"`
-	PursuitID       string   `json:"pursuitId,omitempty"`
-	AutomationID    string   `json:"automationId,omitempty"`
-	MandateID       string   `json:"mandateId,omitempty"`
-	SuccessCriteria []string `json:"successCriteria,omitempty"`
-	ExecuteAllowed  bool     `json:"executeAllowed,omitempty"`
-	RunCycle        bool     `json:"runCycle,omitempty"`
-	SkipSourceSync  bool     `json:"skipSourceSync,omitempty"`
-	SkipAmbient     bool     `json:"skipAmbient,omitempty"`
-	OwnerIdentity   string   `json:"-"`
-	Actor           string   `json:"-"`
+	ExecutionContext context.Context `json:"-"`
+	Message          string          `json:"message"`
+	ProjectKey       string          `json:"projectKey,omitempty"`
+	PursuitID        string          `json:"pursuitId,omitempty"`
+	AutomationID     string          `json:"automationId,omitempty"`
+	MandateID        string          `json:"mandateId,omitempty"`
+	SuccessCriteria  []string        `json:"successCriteria,omitempty"`
+	ExecuteAllowed   bool            `json:"executeAllowed,omitempty"`
+	RunCycle         bool            `json:"runCycle,omitempty"`
+	SkipSourceSync   bool            `json:"skipSourceSync,omitempty"`
+	SkipAmbient      bool            `json:"skipAmbient,omitempty"`
+	OwnerIdentity    string          `json:"-"`
+	Actor            string          `json:"-"`
 }
 
 type CommandAction struct {
@@ -108,16 +114,7 @@ func NewService(tasks TaskEngine, cycle AgentCycleRunner, pursuitRouters ...Purs
 }
 
 func (s *Service) Command(request CommandRequest) (*CommandResult, error) {
-	return s.CommandContext(context.Background(), request)
-}
-
-// CommandContext binds interactive assistant work to the caller lifecycle.
-// Durable in-process callers retain Command, while HTTP requests can cancel
-// planning and autonomous cycles when the client disconnects or times out.
-func (s *Service) CommandContext(ctx context.Context, request CommandRequest) (*CommandResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx := commandExecutionContext(request)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -141,22 +138,27 @@ func (s *Service) CommandContext(ctx context.Context, request CommandRequest) (*
 	}
 
 	taskRequest := task.IntakeRequest{
-		OwnerIdentity:   request.OwnerIdentity,
-		Request:         message,
-		ProjectKey:      request.ProjectKey,
-		AutomationID:    request.AutomationID,
-		MandateID:       request.MandateID,
-		SuccessCriteria: request.SuccessCriteria,
-		ExecuteAllowed:  request.ExecuteAllowed,
+		ExecutionContext: ctx,
+		OwnerIdentity:    request.OwnerIdentity,
+		Request:          message,
+		ProjectKey:       request.ProjectKey,
+		AutomationID:     request.AutomationID,
+		MandateID:        request.MandateID,
+		SuccessCriteria:  request.SuccessCriteria,
+		ExecuteAllowed:   request.ExecuteAllowed,
 	}
 
 	if s.pursuits != nil && shouldTrackCommand(message, request, intent) {
-		pursuitContext, err := s.routePursuit(ctx, message, request)
+		pursuitContext, err := s.routePursuit(message, request)
+		result.Pursuit = pursuitContext
 		if err != nil {
 			result.record("pursuit intake", err, "could not persist the command in the governed workflow path")
 			return result, err
 		}
-		result.Pursuit = pursuitContext
+		if err := ctx.Err(); err != nil {
+			result.ReviewRequired = true
+			return result, err
+		}
 		if pursuitContext != nil {
 			if pursuitContext.AwaitingAcceptance {
 				// A candidate is durable context, not active work. Do not turn a
@@ -181,40 +183,39 @@ func (s *Service) CommandContext(ctx context.Context, request CommandRequest) (*
 
 	var plan *task.CompletionPlan
 	var err error
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
 	if workflowQueued {
 		// Pursuit intake already created or reused the governed workflow. Its
 		// worker passes WorkflowID into the task engine, which keeps task-run
 		// evidence on the workflow ledger and avoids a duplicate direct plan.
 		result.record("pursuit workflow", nil, "created or reused governed workflow work; the workflow worker owns planning, execution, retries, and verification")
 	} else if request.ExecuteAllowed {
-		if contextual, ok := s.tasks.(task.ContextService); ok {
-			plan, err = contextual.RunContext(ctx, taskRequest)
-		} else if err = ctx.Err(); err == nil {
-			plan, err = s.tasks.Run(taskRequest)
-		}
+		plan, err = runTask(ctx, s.tasks, taskRequest)
 		result.record("task success engine", err, "ran safe allowed task steps")
 	} else {
-		if contextual, ok := s.tasks.(task.PlanningContextService); ok {
-			plan, err = contextual.PlanContext(ctx, taskRequest)
-		} else if err = ctx.Err(); err == nil {
-			plan, err = s.tasks.Plan(taskRequest)
-		}
+		plan, err = planTask(ctx, s.tasks, taskRequest)
 		result.record("task planner", err, "created completion-first plan")
-	}
-	if err != nil {
-		return result, err
-	}
-	if err := ctx.Err(); err != nil {
-		return result, err
 	}
 	if plan != nil {
 		result.Plan = plan
+	}
+	if cancelErr := ctx.Err(); cancelErr != nil {
+		err = errors.Join(err, cancelErr)
+	}
+	if err != nil {
+		result.ReviewRequired = true
+		return result, err
 	}
 
 	if shouldRunCycle(message, request, intent) {
 		if s.cycle == nil {
 			result.record("agent cycle", fmt.Errorf("agent cycle service is not configured"), "agent cycle unavailable")
 		} else {
+			if err := ctx.Err(); err != nil {
+				return result, err
+			}
 			cycleRequest := agentcycle.RunRequest{
 				OwnerIdentity:  request.OwnerIdentity,
 				Trigger:        "assistant." + intent,
@@ -223,14 +224,19 @@ func (s *Service) CommandContext(ctx context.Context, request CommandRequest) (*
 				SkipAmbient:    request.SkipAmbient,
 			}
 			var cycle *agentcycle.RunResult
-			if contextual, ok := s.cycle.(AgentCycleContextRunner); ok {
+			if contextual, ok := s.cycle.(ContextAgentCycleRunner); ok {
 				cycle, err = contextual.RunContext(ctx, cycleRequest)
-			} else if err = ctx.Err(); err == nil {
+			} else {
 				cycle = s.cycle.Run(cycleRequest)
 			}
 			result.AgentCycle = cycle
 			result.record("agent cycle", err, cycleSummary(cycle))
 			if err != nil {
+				result.ReviewRequired = true
+				return result, err
+			}
+			if err := ctx.Err(); err != nil {
+				result.ReviewRequired = true
 				return result, err
 			}
 		}
@@ -247,6 +253,37 @@ func (s *Service) CommandContext(ctx context.Context, request CommandRequest) (*
 	return result, nil
 }
 
+func planTask(ctx context.Context, engine TaskEngine, request task.IntakeRequest) (*task.CompletionPlan, error) {
+	if contextual, ok := engine.(ContextTaskEngine); ok {
+		return contextual.PlanContext(ctx, request)
+	}
+	return engine.Plan(request)
+}
+
+func runTask(ctx context.Context, engine TaskEngine, request task.IntakeRequest) (*task.CompletionPlan, error) {
+	if contextual, ok := engine.(ContextTaskEngine); ok {
+		return contextual.RunContext(ctx, request)
+	}
+	return engine.Run(request)
+}
+
+// CommandContext binds the command and every context-aware engine it invokes
+// to the caller's lifetime. It does not grant additional execution authority.
+func (s *Service) CommandContext(ctx context.Context, request CommandRequest) (*CommandResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	request.ExecutionContext = ctx
+	return s.Command(request)
+}
+
+func commandExecutionContext(request CommandRequest) context.Context {
+	if request.ExecutionContext != nil {
+		return request.ExecutionContext
+	}
+	return context.Background()
+}
+
 func validateStandingMandateID(raw string) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -259,7 +296,8 @@ func validateStandingMandateID(raw string) error {
 	return nil
 }
 
-func (s *Service) routePursuit(ctx context.Context, message string, request CommandRequest) (*CommandPursuitContext, error) {
+func (s *Service) routePursuit(message string, request CommandRequest) (*CommandPursuitContext, error) {
+	ctx := commandExecutionContext(request)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -288,11 +326,11 @@ func (s *Service) routePursuit(ctx context.Context, message string, request Comm
 		if err != nil {
 			return nil, err
 		}
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		if detail == nil {
 			return nil, fmt.Errorf("selected pursuit was not found")
+		}
+		if err := ctx.Err(); err != nil {
+			return pursuitContextFromDetail(detail, "selected", false), err
 		}
 		if pursuit.IsCandidate(detail.Pursuit) {
 			return candidatePursuitContext(detail, "selected_candidate"), nil
@@ -304,9 +342,6 @@ func (s *Service) routePursuit(ctx context.Context, message string, request Comm
 		}
 		detail, err = s.pursuits.Intake(id, input)
 		if err != nil {
-			return nil, err
-		}
-		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		return pursuitContextFromDetail(detail, "selected", true), nil
@@ -325,9 +360,6 @@ func (s *Service) routePursuit(ctx context.Context, message string, request Comm
 		if err != nil {
 			return nil, err
 		}
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		return &CommandPursuitContext{
 			Mode:    "suggested",
 			Matches: matches,
@@ -337,9 +369,6 @@ func (s *Service) routePursuit(ctx context.Context, message string, request Comm
 
 	routed, err := s.pursuits.RouteIntake(input)
 	if err != nil {
-		return nil, err
-	}
-	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	candidatePending := routed.CreatedCandidate || strings.EqualFold(strings.TrimSpace(routed.Mode), "matched_candidate")
@@ -518,6 +547,9 @@ func deriveSummary(result *CommandResult) string {
 	if result == nil {
 		return ""
 	}
+	if result.Plan != nil && task.ExecutionOutcomeUncertain(result.Plan.ExecutionResult) {
+		return "HAI cannot verify the runtime outcome. Execution may have occurred; automatic retry is disabled pending reconciliation of the audit and possible effects."
+	}
 	if result.Plan != nil && result.AgentCycle != nil {
 		if len(result.AgentCycle.PursuitDecisions) > 0 {
 			first := result.AgentCycle.PursuitDecisions[0]
@@ -555,6 +587,9 @@ func deriveNextAction(result *CommandResult) string {
 	if result == nil {
 		return ""
 	}
+	if result.Plan != nil && task.ExecutionOutcomeUncertain(result.Plan.ExecutionResult) {
+		return "reconcile the runtime audit and possible effects before a separately authorized attempt; workflow-owned tasks must use workflow recovery"
+	}
 	if result.AgentCycle != nil && strings.TrimSpace(result.AgentCycle.NextAction) != "" && result.AgentCycle.NextAction != "no immediate human action; continue scheduled monitoring" {
 		return result.AgentCycle.NextAction
 	}
@@ -576,7 +611,8 @@ func planRequiresReview(plan *task.CompletionPlan) bool {
 	if plan == nil {
 		return false
 	}
-	return plan.RiskAssessment.ApprovalRequired ||
+	return task.ExecutionOutcomeUncertain(plan.ExecutionResult) ||
+		plan.RiskAssessment.ApprovalRequired ||
 		plan.ReviewQueueItem != nil ||
 		strings.Contains(strings.ToLower(plan.CompletionStatus), "review")
 }

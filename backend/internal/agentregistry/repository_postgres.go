@@ -94,8 +94,13 @@ func (r *PostgresRepository) Get(ctx context.Context, owner, id string) (Agent, 
 	if err := validateLookup(owner, id); err != nil {
 		return Agent{}, err
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Agent{}, err
+	}
+	defer finish()
 	var payload []byte
-	err := r.DB.WithContext(ctx).Raw(`
+	err = db.Raw(`
 		SELECT payload
 		FROM public.agent_registry_agents
 		WHERE owner_identity = ? AND id = ?`,
@@ -452,8 +457,13 @@ func (r *PostgresRepository) GetAssignment(
 	if err := validateLookup(owner, id); err != nil {
 		return Assignment{}, err
 	}
+	db, finish, err := infra.PostgresExecutionDB(ctx, r.DB)
+	if err != nil {
+		return Assignment{}, err
+	}
+	defer finish()
 	var payload []byte
-	err := r.DB.WithContext(ctx).Raw(`
+	err = db.Raw(`
 		SELECT payload
 		FROM public.agent_registry_assignments
 		WHERE owner_identity = ? AND id = ?`,

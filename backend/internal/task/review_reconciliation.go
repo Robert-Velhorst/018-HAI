@@ -163,6 +163,7 @@ func approvedReviewReconciliationDecision(review ReviewQueueItem, plan *Completi
 	if plan.CompletionStatus == "validated" &&
 		plan.ValidationResult.Passed &&
 		plan.ExecutionResult != nil &&
+		!executionOutcomeUncertain(plan.ExecutionResult) &&
 		verificationStatusAcceptsCompletion(plan.ExecutionResult.VerificationStatus) {
 		item.Disposition = "complete"
 		item.Reason = "linked durable task evidence proves execution completed and passed validation"

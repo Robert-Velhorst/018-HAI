@@ -79,6 +79,7 @@ func TestRouteUsesAcceptedOutcomeEvidenceBeforePrice(t *testing.T) {
 }
 
 func TestGenerateRecordsUnvalidatedRunThenTrustedValidation(t *testing.T) {
+	disableModelMaintenanceForTest(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{"message": map[string]string{"content": "source-backed draft"}}},
@@ -125,6 +126,77 @@ func TestGenerateRecordsUnvalidatedRunThenTrustedValidation(t *testing.T) {
 	if entries[0].ValidationStatus != string(modelintelligence.ValidationSourceSupported) || entries[0].ValidationMethod == "" {
 		t.Fatalf("generation history did not join calibration outcome: %#v", entries[0])
 	}
+}
+
+func TestGenerateWithholdsCompletedOutputWhenCalibrationCannotPersist(t *testing.T) {
+	disableModelMaintenanceForTest(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{"message": map[string]string{"content": "unrecorded result"}}},
+			"usage":   map[string]int{"prompt_tokens": 12, "completion_tokens": 4},
+		})
+	}))
+	defer server.Close()
+
+	policy := calibrationTestPolicy(server.URL, server.URL)
+	policy.Providers = []Provider{{
+		ID: "lm-studio", Name: "LM Studio", Local: true, Enabled: true, EndpointURL: server.URL,
+		Models: []Model{{ID: "local-model", Name: "Local model", Tier: TierLocal, Enabled: true, MaxDifficulty: 5, MaxReasoning: "high", Capabilities: []string{"general"}}},
+	}}
+	history := &fakeGenerationHistoryRepository{}
+	telemetry := &failingModelTelemetryRepository{err: fmt.Errorf("durable telemetry unavailable")}
+	service := withTrustedTestFinalEffects(t, (&Service{policy: policy, generationHistory: history}).WithModelTelemetryRepository(telemetry))
+
+	result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+		Task: "Draft a project update",
+		RouteDecision: &RouteDecision{
+			SelectedProviderID: "lm-studio", SelectedModelID: "local-model", SelectedModelName: "Local model", Tier: TierLocal,
+			Classification: TaskClassification{TaskType: "general", Difficulty: 2, RequiredReasoning: "low", RequiredCapabilities: []string{"general"}},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Status != "failed" || result.Output != "" || result.CalibrationAudit != "record_failed" || !strings.Contains(result.Reason, "output was withheld") {
+		t.Fatalf("result after telemetry failure = %#v, want failed with no output and explicit audit state", result)
+	}
+	if len(history.records) != 1 || history.records[0].Status != "failed" {
+		t.Fatalf("generation audit after telemetry failure = %#v, want failed audit record", history.records)
+	}
+}
+
+func TestGenerationTelemetryDoesNotLabelEstimatedTokensPerSecondObserved(t *testing.T) {
+	repo := &fakeModelTelemetryRepository{}
+	service := (&Service{}).WithModelTelemetryRepository(repo)
+	for _, test := range []struct {
+		generationID string
+		usageSource  string
+		wantTPS      float64
+	}{
+		{generationID: "estimated-run", usageSource: "estimated", wantTPS: 0},
+		{generationID: "reported-run", usageSource: "provider_reported", wantTPS: 20},
+	} {
+		service.recordGeneration(&GenerationResult{
+			GenerationID: test.generationID, ProviderID: "lm-studio", ModelID: "local-model",
+			Status: "completed", InputTokens: 10, OutputTokens: 20, UsageSource: test.usageSource,
+			DurationMs: 1000, LoggedAt: time.Now().UTC(),
+		}, GenerateRequest{})
+	}
+	if len(repo.rows) != 2 || repo.rows[0].TokensPerSecond != 0 || repo.rows[1].TokensPerSecond != 20 {
+		t.Fatalf("throughput telemetry = %#v, want estimated=0 and reported=20", repo.rows)
+	}
+}
+
+type failingModelTelemetryRepository struct{ err error }
+
+func (r *failingModelTelemetryRepository) Save(modelintelligence.ModelRunTelemetry) error {
+	return r.err
+}
+func (*failingModelTelemetryRepository) LoadAll() ([]modelintelligence.ModelRunTelemetry, error) {
+	return nil, nil
+}
+func (*failingModelTelemetryRepository) UpdateValidation(string, modelintelligence.ValidationStatus, string) error {
+	return nil
 }
 
 func calibrationTestPolicy(cheapEndpoint, capableEndpoint string) Policy {

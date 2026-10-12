@@ -262,6 +262,40 @@ func (r *MemoryAgentTeamRepository) ListCoordinationMessages(owner, teamID, vers
 	return result, nil
 }
 
+// ListCoordinationMessagesForTeams reads the requested team versions under one
+// lock for overview views. The map is keyed by the owner-scoped team version
+// key, so messages cannot be associated with another team's attention state.
+func (r *MemoryAgentTeamRepository) ListCoordinationMessagesForTeams(owner string, teams []AgentTeamContract) (map[string][]agentcoordination.Message, error) {
+	owner, err := normalizeOwner(owner)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]agentcoordination.Message, len(teams))
+	r.mu.RLock()
+	for _, team := range teams {
+		key := teamVersionKey(owner, team.ID, team.Version)
+		if _, exists := result[key]; exists {
+			continue
+		}
+		stored := r.messages[key]
+		messages := make([]agentcoordination.Message, len(stored))
+		for index := range stored {
+			messages[index] = cloneCoordinationMessage(stored[index])
+		}
+		result[key] = messages
+	}
+	r.mu.RUnlock()
+	for key := range result {
+		sort.SliceStable(result[key], func(i, j int) bool {
+			if result[key][i].CreatedAt.Equal(result[key][j].CreatedAt) {
+				return result[key][i].ID < result[key][j].ID
+			}
+			return result[key][i].CreatedAt.Before(result[key][j].CreatedAt)
+		})
+	}
+	return result, nil
+}
+
 func (r *MemoryAgentTeamRepository) GetCoordinationMessage(owner, teamID, version, messageID string) (agentcoordination.Message, error) {
 	owner, err := normalizeOwner(owner)
 	if err != nil {
@@ -334,6 +368,42 @@ func (r *MemoryAgentTeamRepository) ListMessageAcknowledgments(owner, teamID, ve
 		}
 		return result[i].CreatedAt.Before(result[j].CreatedAt)
 	})
+	return result, nil
+}
+
+// ListMessageAcknowledgmentsForMessages reads a team-version's acknowledgments
+// in one repository operation for attention views. It keeps the result keyed by
+// message ID so callers never infer acknowledgement ownership across messages.
+func (r *MemoryAgentTeamRepository) ListMessageAcknowledgmentsForMessages(owner, teamID, version string, messageIDs []string) (map[string][]agentcoordination.Acknowledgment, error) {
+	owner, err := normalizeOwner(owner)
+	if err != nil {
+		return nil, err
+	}
+	teamID = strings.TrimSpace(teamID)
+	version = strings.TrimSpace(version)
+	result := make(map[string][]agentcoordination.Acknowledgment, len(messageIDs))
+	r.mu.RLock()
+	for _, messageID := range messageIDs {
+		messageID = strings.TrimSpace(messageID)
+		if messageID == "" {
+			continue
+		}
+		stored := r.acknowledgments[teamMessageKey(owner, teamID, version, messageID)]
+		acknowledgments := make([]agentcoordination.Acknowledgment, len(stored))
+		for index := range stored {
+			acknowledgments[index] = cloneAcknowledgment(stored[index])
+		}
+		result[messageID] = acknowledgments
+	}
+	r.mu.RUnlock()
+	for messageID := range result {
+		sort.SliceStable(result[messageID], func(i, j int) bool {
+			if result[messageID][i].CreatedAt.Equal(result[messageID][j].CreatedAt) {
+				return result[messageID][i].ID < result[messageID][j].ID
+			}
+			return result[messageID][i].CreatedAt.Before(result[messageID][j].CreatedAt)
+		})
+	}
 	return result, nil
 }
 

@@ -246,27 +246,27 @@ func requestedConstitutionCapabilities(
 	if request.ExecuteRequested {
 		add(capabilityExecution)
 	}
-	if containsAnyPhrase(taskText, []string{"send", "file with", "submit", "publish", "post publicly", "sign"}) ||
+	if containsRequestedConsequentialAction(taskText, []string{"send", "file with", "submit", "publish", "post publicly", "sign"}) ||
 		(request.ExecuteRequested && containsAnyPhrase(taskText, []string{"email", "message", "reply", "communication"})) {
 		add(capabilityExternalCommunication)
 	}
 	if lifeDomain == "legal_government" {
 		add(capabilityLegalGovernmentAction)
 	}
-	if containsAnyPhrase(taskText, []string{
+	if containsRequestedConsequentialAction(taskText, []string{
 		"pay", "purchase", "transfer money", "accept price", "financial commitment",
 	}) || (lifeDomain == "financial" && request.ExecuteRequested) {
 		add(capabilityFinancialAction)
 	}
-	if containsAnyPhrase(taskText, []string{
+	if containsRequestedConsequentialAction(taskText, []string{
 		"account change", "change account", "reset account", "close account",
 	}) {
 		add(capabilityAccountChange)
 	}
-	if containsAnyPhrase(taskText, []string{"delete", "remove permanently", "destroy", "overwrite"}) {
+	if containsRequestedConsequentialAction(taskText, []string{"delete", "remove permanently", "destroy", "overwrite"}) {
 		add(capabilityDestructiveAction)
 	}
-	if containsAnyPhrase(taskText, []string{"publish", "post publicly", "public post", "public accusation"}) {
+	if containsRequestedConsequentialAction(taskText, []string{"publish", "post publicly", "public post", "public accusation"}) {
 		add(capabilityPublicPosting)
 	}
 	if highRisk || hasAnyCapability(result,

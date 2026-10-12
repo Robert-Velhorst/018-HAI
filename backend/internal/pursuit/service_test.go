@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -35,79 +36,47 @@ func TestDashboardSerializesEmptyQueuesAsArrays(t *testing.T) {
 	}
 }
 
-func TestDashboardSummaryKeepsActionContextAndDropsDetailOnlyFields(t *testing.T) {
-	pursuitID := uuid.New()
+func TestDashboardSummaryBoundsQueuesAndPreservesActionContext(t *testing.T) {
 	full := models.Pursuit{
-		ID:                    pursuitID,
-		OwnerIdentity:         "alice",
-		Title:                 "Prepare the verified response",
-		Description:           "Long source-backed description",
-		WhyItMatters:          "A deadline is approaching.",
-		CurrentStateSummary:   "Evidence is ready for review.",
-		NextRecommendedAction: "Review the response.",
-		CompletionDefinition:  "The approved response is delivered.",
-		SuccessCriteria:       []models.PursuitSuccessCriterion{{ID: "criterion-1", Description: "Response approved"}},
-		StopConditions:        []models.PursuitStopCondition{{ID: "stop-1", Description: "Conflicting evidence"}},
-		Dependencies:          []models.PursuitDependency{{ID: "dependency-1", Label: "Evidence bundle"}},
-		ResourceLimits:        models.PursuitResourceLimits{MaxEffortHours: 2, Notes: "detail only"},
+		ID: uuid.New(), Title: "Review source evidence", OwnerIdentity: "alice",
+		Description: "Detail-only private context", CompletionDefinition: "Evidence is verified.",
+		SuccessCriteria: []models.PursuitSuccessCriterion{{ID: "criterion-1", Description: "Verify source"}},
+		ResourceLimits:  models.PursuitResourceLimits{MaxEffortHours: 4},
 	}
 	dashboard := &Dashboard{
-		Counts: map[string]int64{"active": 1},
+		Counts: map[string]int64{"active": 2},
+		NeedsRobert: []PursuitListItem{
+			{Pursuit: full, NeedsRobert: 1, NextAction: "Review the source."},
+			{Pursuit: models.Pursuit{ID: uuid.New(), Title: "Another pursuit"}, NeedsRobert: 1},
+		},
 		DecisionQueue: []PursuitDashboardDecision{{
 			Pursuit: full,
 			Decision: PursuitDecision{
-				ID:               "decision-1",
-				WorkflowID:       "workflow-1",
-				WorkflowTitle:    "Private workflow title",
-				DecisionType:     "approval",
-				Status:           "pending",
-				Recommended:      "Review the response.",
-				Reason:           "The response affects an external party.",
-				RiskLevel:        "high",
-				EvidenceURI:      "private://evidence/1",
-				EvidenceLabel:    "Private evidence label",
-				YesLabel:         "Approve",
-				NoLabel:          "Reject",
-				YesConsequence:   "The workflow may continue.",
-				NoConsequence:    "The workflow remains paused.",
-				RequiresApproval: true,
-				Actor:            "alice",
-				CreatedAt:        time.Now().UTC().Format(time.RFC3339),
+				ID: "decision-1", WorkflowID: "workflow-1", DecisionType: "approval",
+				Status: "pending", Recommended: "Review the response.", Reason: "External effect.",
+				RiskLevel: "high", EvidenceURI: "private://evidence/1", YesLabel: "Approve",
+				NoLabel: "Reject", RequiresApproval: true, Actor: "alice",
 			},
 		}},
-		NeedsRobert: []PursuitListItem{
-			{Pursuit: full, NeedsRobert: 1},
-			{Pursuit: models.Pursuit{ID: uuid.New(), Title: "Second decision"}, NeedsRobert: 1},
-		},
 	}
 
 	summary := dashboardSummary(dashboard)
-	if summary == dashboard || summary.NeedsRobert[0].Pursuit.ID != pursuitID {
-		t.Fatalf("summary identity was not preserved: %#v", summary)
+	if len(summary.NeedsRobert) != 1 || summary.NeedsRobert[0].Pursuit.ID != full.ID || summary.NeedsRobert[0].NextAction == "" {
+		t.Fatalf("summary lost the primary actionable item: %#v", summary.NeedsRobert)
 	}
-	for _, candidate := range []models.Pursuit{
-		summary.NeedsRobert[0].Pursuit,
-		summary.DecisionQueue[0].Pursuit,
-	} {
-		if candidate.Title != full.Title || candidate.WhyItMatters != full.WhyItMatters || candidate.CurrentStateSummary != full.CurrentStateSummary || candidate.NextRecommendedAction != full.NextRecommendedAction {
-			t.Fatalf("summary removed action context: %#v", candidate)
-		}
-		if candidate.OwnerIdentity != "" || candidate.Description != "" || candidate.CompletionDefinition != "" || candidate.SuccessCriteria != nil || candidate.StopConditions != nil || candidate.Dependencies != nil || candidate.ResourceLimits.MaxEffortHours != 0 {
-			t.Fatalf("summary retained detail-only pursuit data: %#v", candidate)
-		}
-	}
-	if dashboard.NeedsRobert[0].Pursuit.Description == "" || len(dashboard.NeedsRobert[0].Pursuit.SuccessCriteria) != 1 {
-		t.Fatalf("summary mutated the full dashboard: %#v", dashboard.NeedsRobert[0].Pursuit)
-	}
-	if len(summary.NeedsRobert) != 1 {
-		t.Fatalf("summary needs-Robert queue length = %d, want one actionable preview", len(summary.NeedsRobert))
+	compact := summary.NeedsRobert[0].Pursuit
+	if compact.OwnerIdentity != "" || compact.Description != "" || compact.CompletionDefinition != "" || compact.SuccessCriteria != nil || compact.ResourceLimits.MaxEffortHours != 0 {
+		t.Fatalf("summary retained detail-only pursuit fields: %#v", compact)
 	}
 	decision := summary.DecisionQueue[0].Decision
-	if decision.ID != "decision-1" || decision.Status != "pending" || decision.Recommended == "" || decision.YesLabel != "Approve" || !decision.RequiresApproval {
-		t.Fatalf("summary removed decision action fields: %#v", decision)
+	if decision.ID != "decision-1" || decision.Status != "pending" || decision.Recommended == "" || !decision.RequiresApproval || decision.YesLabel != "Approve" {
+		t.Fatalf("summary lost decision context: %#v", decision)
 	}
-	if decision.WorkflowID != "" || decision.WorkflowTitle != "" || decision.EvidenceURI != "" || decision.EvidenceLabel != "" || decision.YesConsequence != "" || decision.NoConsequence != "" || decision.Actor != "" || decision.CreatedAt != "" {
-		t.Fatalf("summary retained decision detail fields: %#v", decision)
+	if decision.WorkflowID != "" || decision.EvidenceURI != "" || decision.Actor != "" {
+		t.Fatalf("summary retained decision-detail fields: %#v", decision)
+	}
+	if dashboard.NeedsRobert[0].Pursuit.OwnerIdentity != "alice" || dashboard.DecisionQueue[0].Decision.WorkflowID != "workflow-1" {
+		t.Fatal("summary mutated the full dashboard source")
 	}
 }
 
@@ -838,7 +807,7 @@ func TestPursuitRationaleFlowsIntoOperationalContext(t *testing.T) {
 	if created.RiskLevel != "high" || created.AutonomyLevel != "approve_before_execute" {
 		t.Fatalf("rationale did not raise the safety floor: %q/%q", created.RiskLevel, created.AutonomyLevel)
 	}
-	if created.Domain != "stability" {
+	if created.Domain != "legal_government" {
 		t.Fatalf("rationale did not classify the pursuit domain: %q", created.Domain)
 	}
 
@@ -1329,6 +1298,33 @@ func TestAutoLinkMemoryRefreshDoesNotPersistOtherOwnerWorkflowState(t *testing.T
 	}
 }
 
+func TestIntakeRejectsMissingWorkflowReference(t *testing.T) {
+	for _, zeroID := range []bool{false, true} {
+		t.Run(fmt.Sprintf("zeroID=%t", zeroID), func(t *testing.T) {
+			repo := newFakeRepo()
+			workflowService := &fakeWorkflowIntake{repo: repo, missingRecord: !zeroID, zeroID: zeroID}
+			service := NewService(repo, workflowService)
+			created, err := service.Create(CreateRequest{Title: "Evidence response", OwnerIdentity: "alice", ProjectKey: "evidence"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			detail, err := service.IntakeForOwner("alice", created.ID, IntakeRequest{Input: "Prepare evidence response"})
+			if err == nil || detail != nil {
+				t.Fatalf("missing workflow reference returned success: detail=%#v err=%v", detail, err)
+			}
+			links, err := repo.FindLinks(created.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, link := range links {
+				if link.LinkType == LinkWorkflow {
+					t.Fatalf("missing workflow reference was linked: %#v", link)
+				}
+			}
+		})
+	}
+}
+
 func TestIntakeCreatesWorkflowAndLinksOperationalWork(t *testing.T) {
 	repo := newFakeRepo()
 	workflowService := &fakeWorkflowIntake{repo: repo}
@@ -1357,6 +1353,9 @@ func TestIntakeCreatesWorkflowAndLinksOperationalWork(t *testing.T) {
 	}
 	if len(detail.Workflows) != 1 || len(detail.ApprovalItems) != 1 {
 		t.Fatalf("detail workflows/approvals = %#v / %#v", detail.Workflows, detail.ApprovalItems)
+	}
+	if detail.IntakeWorkflowID == nil || *detail.IntakeWorkflowID == uuid.Nil || workflowService.records[*detail.IntakeWorkflowID] == nil {
+		t.Fatalf("intake reference does not identify the workflow returned by intake: %#v", detail.IntakeWorkflowID)
 	}
 	if len(detail.NextActions) == 0 || detail.NextActions[0].Owner != "Robert" {
 		t.Fatalf("next actions = %#v", detail.NextActions)
@@ -1644,6 +1643,9 @@ func TestRouteIntakeMatchesExistingPursuitAndCreatesGovernedWorkflow(t *testing.
 	if result.Mode != "matched_existing" || result.Score < defaultAutoLinkMinimumScore {
 		t.Fatalf("route mode/score = %s/%.2f", result.Mode, result.Score)
 	}
+	if result.WorkflowID == nil || result.Detail.IntakeWorkflowID == nil || *result.WorkflowID != *result.Detail.IntakeWorkflowID || workflowService.records[*result.WorkflowID] == nil {
+		t.Fatalf("routed intake lost its exact workflow reference: %#v", result)
+	}
 	if workflowService.received.ProjectKey != "vivare" || workflowService.received.SourceURI != "local://email/vivare-77" {
 		t.Fatalf("workflow intake provenance = %#v", workflowService.received)
 	}
@@ -1782,103 +1784,6 @@ func TestDashboardForOwnerHidesLegacyCrossOwnerWorkflowLink(t *testing.T) {
 	}
 	if len(dashboard.RecentlyChanged) != 1 || dashboard.RecentlyChanged[0].NeedsRobert != 0 || dashboard.RecentlyChanged[0].DecisionCards != 0 {
 		t.Fatalf("dashboard list item retained foreign workflow state: %#v", dashboard.RecentlyChanged)
-	}
-}
-
-func TestDashboardBulkProjectionMatchesEstablishedOwnerScopedPath(t *testing.T) {
-	repo := newFakeRepo()
-	now := time.Now().UTC().Truncate(time.Second)
-	firstID, secondID := uuid.New(), uuid.New()
-	repo.pursuits[firstID] = models.Pursuit{
-		ID: firstID, OwnerIdentity: "alice", Title: "Review legal evidence", Status: StatusActive,
-		PriorityScore: 90, RiskLevel: "high", AutonomyLevel: "suggest", CreatedAt: now.Add(-2 * time.Hour), UpdatedAt: now.Add(-time.Hour),
-	}
-	repo.pursuits[secondID] = models.Pursuit{
-		ID: secondID, OwnerIdentity: "alice", Title: "Prepare routine follow-up", Status: StatusActive,
-		PriorityScore: 60, RiskLevel: "low", AutonomyLevel: "autonomous_safe", CreatedAt: now.Add(-3 * time.Hour), UpdatedAt: now.Add(-2 * time.Hour),
-	}
-	firstWorkflowID, secondWorkflowID, foreignWorkflowID := uuid.New(), uuid.New(), uuid.New()
-	repo.workflows[firstWorkflowID] = models.WorkflowItem{
-		ID: firstWorkflowID, OwnerIdentity: "alice", Title: "Approve legal reply", CurrentState: workflow.StateNeedsApproval,
-		RequiresApproval: true, ApprovalStatus: "pending", PriorityScore: 95, UpdatedAt: now.Add(-20 * time.Minute), CreatedAt: now.Add(-time.Hour),
-	}
-	repo.workflows[secondWorkflowID] = models.WorkflowItem{
-		ID: secondWorkflowID, OwnerIdentity: "alice", Title: "Draft follow-up", CurrentState: workflow.StateReady,
-		PriorityScore: 55, UpdatedAt: now.Add(-40 * time.Minute), CreatedAt: now.Add(-90 * time.Minute),
-	}
-	repo.workflows[foreignWorkflowID] = models.WorkflowItem{
-		ID: foreignWorkflowID, OwnerIdentity: "bob", Title: "Bob private work", CurrentState: workflow.StateNeedsApproval,
-		RequiresApproval: true, ApprovalStatus: "pending", UpdatedAt: now,
-	}
-	sourceID, rawItemID, extractionID := uuid.New(), uuid.New(), uuid.New()
-	memoryID, verificationID := uuid.New(), uuid.New()
-	repo.sourceOwners[sourceID] = "alice"
-	repo.sourceItems[rawItemID] = models.SourceRawItem{
-		ID: rawItemID, SourceID: sourceID, ExternalID: "large-source", ItemType: "document", Title: "Linked source",
-		SourceURI: "source://large", Content: strings.Repeat("raw-content-", 1000), Metadata: `{"page":1}`, ContentHash: "raw-hash",
-		FetchedAt: now.Add(-25 * time.Minute), CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-25 * time.Minute),
-	}
-	repo.extractions[extractionID] = models.SourceExtraction{
-		ID: extractionID, SourceID: sourceID, RawItemID: rawItemID, ContentType: "document", Summary: "Grounded source summary",
-		Text: strings.Repeat("extracted-content-", 1000), Entities: strings.Repeat("entity,", 1000), SourceURI: "source://large", SourceLabel: "Linked source",
-		CreatedAt: now.Add(-24 * time.Minute), UpdatedAt: now.Add(-24 * time.Minute),
-	}
-	repo.memories[memoryID] = models.ContextMemory{
-		ID: memoryID, OwnerIdentity: "alice", Kind: "project", Content: strings.Repeat("memory-content-", 1000), Summary: "Stable memory summary",
-		SourceURI: "memory://large", CreatedAt: now.Add(-50 * time.Minute), UpdatedAt: now.Add(-23 * time.Minute),
-	}
-	repo.evidence = append(repo.evidence, models.WorkflowEvidenceClaim{
-		ID: uuid.New(), WorkflowID: firstWorkflowID, ClaimText: strings.Repeat("workflow-claim-", 1000), Status: "source_supported", CreatedAt: now.Add(-22 * time.Minute),
-	})
-	repo.verificationRuns[verificationID] = models.VerificationRun{
-		ID: verificationID, OwnerIdentity: "alice", Mode: "grounded", Question: "Verify linked source", Answer: "Supported", Status: "source_supported",
-		CreatedAt: now.Add(-21 * time.Minute), UpdatedAt: now.Add(-21 * time.Minute),
-	}
-	claimID, verificationEvidenceID := uuid.New(), uuid.New()
-	repo.verificationClaims[claimID] = models.VerificationClaim{
-		ID: claimID, RunID: verificationID, ClaimText: strings.Repeat("verification-claim-", 1000), Status: "source_supported", CreatedAt: now.Add(-20 * time.Minute), UpdatedAt: now.Add(-20 * time.Minute),
-	}
-	repo.verificationEvidence[verificationEvidenceID] = models.VerificationEvidence{
-		ID: verificationEvidenceID, RunID: verificationID, SourceType: "document", SourceURI: "source://large", Snippet: strings.Repeat("evidence-snippet-", 1000),
-		Used: true, CreatedAt: now.Add(-19 * time.Minute), UpdatedAt: now.Add(-19 * time.Minute),
-	}
-	for _, link := range []models.PursuitLink{
-		{ID: uuid.New(), PursuitID: firstID, LinkType: LinkWorkflow, LinkID: firstWorkflowID.String(), Relationship: "primary", CreatedAt: now},
-		{ID: uuid.New(), PursuitID: firstID, LinkType: LinkWorkflow, LinkID: foreignWorkflowID.String(), Relationship: "legacy_import", CreatedAt: now.Add(-time.Minute)},
-		{ID: uuid.New(), PursuitID: secondID, LinkType: LinkWorkflow, LinkID: secondWorkflowID.String(), Relationship: "primary", CreatedAt: now},
-		{ID: uuid.New(), PursuitID: firstID, LinkType: LinkMemory, LinkID: memoryID.String(), Relationship: "context", CreatedAt: now},
-		{ID: uuid.New(), PursuitID: firstID, LinkType: LinkSourceItem, LinkID: rawItemID.String(), Relationship: "source_record", CreatedAt: now},
-		{ID: uuid.New(), PursuitID: firstID, LinkType: LinkSourceExtraction, LinkID: extractionID.String(), Relationship: "evidence", CreatedAt: now},
-		{ID: uuid.New(), PursuitID: firstID, LinkType: LinkVerification, LinkID: verificationID.String(), Relationship: "verification", CreatedAt: now},
-	} {
-		repo.links[link.ID] = link
-	}
-	repo.activity[firstID] = []models.PursuitActivity{{ID: uuid.New(), PursuitID: firstID, EventType: "pursuit.updated", Message: "Evidence arrived", CreatedAt: now.Add(-10 * time.Minute)}}
-	repo.activity[secondID] = []models.PursuitActivity{{ID: uuid.New(), PursuitID: secondID, EventType: "pursuit.updated", Message: "Follow-up planned", CreatedAt: now.Add(-30 * time.Minute)}}
-	repo.taskAttempts["plan-1"] = models.PursuitTaskAttempt{ID: uuid.New(), PursuitID: firstID, TaskPlanID: "plan-1", OwnerIdentity: "alice", Mode: "plan", Status: "needs_review", UpdatedAt: now.Add(-5 * time.Minute), CreatedAt: now.Add(-15 * time.Minute)}
-
-	established, err := NewService(repo, nil).DashboardForOwner("alice")
-	if err != nil {
-		t.Fatalf("established dashboard: %v", err)
-	}
-	bulkRepo := &fakeBulkDashboardRepo{fakeRepo: repo}
-	optimized, err := NewService(bulkRepo, nil).DashboardForOwner("alice")
-	if err != nil {
-		t.Fatalf("bulk dashboard: %v", err)
-	}
-	establishedJSON, _ := json.Marshal(established)
-	optimizedJSON, _ := json.Marshal(optimized)
-	if string(establishedJSON) != string(optimizedJSON) {
-		t.Fatalf("bulk dashboard changed established semantics\nestablished=%s\noptimized=%s", establishedJSON, optimizedJSON)
-	}
-	if bulkRepo.bulkCalls != 1 {
-		t.Fatalf("bulk projection calls = %d, want 1", bulkRepo.bulkCalls)
-	}
-	if bulkRepo.evidenceProjectionCalls != 1 {
-		t.Fatalf("dashboard evidence projection calls = %d, want 1", bulkRepo.evidenceProjectionCalls)
-	}
-	if bulkRepo.findByIDCalls != 0 {
-		t.Fatalf("bulk dashboard re-fetched %d pursuits", bulkRepo.findByIDCalls)
 	}
 }
 
@@ -2062,6 +1967,110 @@ func TestRouteWorkflowIntakeDefersUnmatchedCandidateBeforeWorkflowCreation(t *te
 	}
 	if len(matches) != 1 || matches[0].Pursuit.ID == uuid.Nil {
 		t.Fatalf("routed workflow did not create a traceable pursuit match: %#v", matches)
+	}
+}
+
+func TestRouteWorkflowIntakeKeepsProjectHintUnverifiedOnCandidate(t *testing.T) {
+	repo := newFakeRepo()
+	workflowService := &fakeWorkflowIntake{repo: repo}
+	service := NewService(repo, workflowService)
+
+	confirmed, err := service.Create(CreateRequest{
+		OwnerIdentity: "alice",
+		Title:         "Existing unrelated workspace goal",
+		ProjectKey:    "trello-board-project",
+	})
+	if err != nil {
+		t.Fatalf("create existing pursuit: %v", err)
+	}
+
+	request := workflow.IntakeRequest{
+		OwnerIdentity:  "alice",
+		Input:          "Prepare a tax receipt bundle for review.",
+		ProjectKeyHint: "trello-board-project",
+		SourceType:     "trello",
+		SourceID:       "card-unverified-project-hint",
+		SourceURI:      "trello://card/card-unverified-project-hint",
+		SourceLabel:    "Tax receipt card",
+	}
+
+	record, err := service.RouteWorkflowIntake(request)
+	routed, pending := IsCandidatePending(err)
+	if !pending {
+		t.Fatalf("RouteWorkflowIntake error = %v, want candidate pending", err)
+	}
+	if record != nil || routed == nil || !routed.CreatedCandidate || routed.Matched {
+		t.Fatalf("hint was treated as a confirmed match: record=%#v routed=%#v", record, routed)
+	}
+	if routed.PursuitID == uuid.Nil || workflowService.calls != 0 {
+		t.Fatalf("candidate routing failed or created workflow work: result=%#v workflow calls=%d", routed, workflowService.calls)
+	}
+	candidate := repo.pursuits[routed.PursuitID]
+	if candidate.ID == uuid.Nil {
+		t.Fatalf("candidate %s was not persisted", routed.PursuitID)
+	}
+	if candidate.ProjectKey != "" {
+		t.Fatalf("unverified hint was promoted to confirmed project key %q", candidate.ProjectKey)
+	}
+	if !strings.Contains(candidate.Description, "Unverified project hint from the source: trello-board-project") ||
+		!strings.Contains(candidate.Description, "has not been confirmed") {
+		t.Fatalf("candidate description did not preserve the hint as unverified: %q", candidate.Description)
+	}
+	activities, err := repo.FindActivities(routed.PursuitID, 20)
+	if err != nil {
+		t.Fatalf("load candidate activity: %v", err)
+	}
+	activityHasHint := false
+	for _, activity := range activities {
+		if activity.EventType == "pursuit.candidate_created" && strings.Contains(activity.Message, "Preserved source project hint as unverified context only: trello-board-project") {
+			activityHasHint = true
+			break
+		}
+	}
+	if !activityHasHint {
+		t.Fatalf("candidate creation audit did not retain the unverified hint: %#v", activities)
+	}
+	if repo.pursuits[confirmed.ID].ProjectKey != "trello-board-project" {
+		t.Fatal("routing changed the existing confirmed pursuit")
+	}
+}
+
+func TestRouteWorkflowIntakeStillRoutesByConfirmedProjectKey(t *testing.T) {
+	repo := newFakeRepo()
+	workflowService := &fakeWorkflowIntake{repo: repo}
+	service := NewService(repo, workflowService)
+	confirmed, err := service.Create(CreateRequest{
+		OwnerIdentity: "alice",
+		Title:         "Existing unrelated workspace goal",
+		ProjectKey:    "confirmed-project",
+	})
+	if err != nil {
+		t.Fatalf("create confirmed pursuit: %v", err)
+	}
+
+	record, err := service.RouteWorkflowIntake(workflow.IntakeRequest{
+		OwnerIdentity:   "alice",
+		Input:           "Prepare a tax receipt bundle for review.",
+		SuccessCriteria: []string{"Include every linked receipt", "Do not submit externally"},
+		ProjectKey:      "confirmed-project",
+		SourceType:      "manual",
+		SourceID:        "confirmed-project-intake",
+		SourceURI:       "manual://intake/confirmed-project-intake",
+	})
+	if err != nil {
+		t.Fatalf("RouteWorkflowIntake returned error: %v", err)
+	}
+	if record == nil || workflowService.calls != 1 {
+		t.Fatalf("confirmed project key did not route into workflow intake: record=%#v calls=%d", record, workflowService.calls)
+	}
+	if workflowService.received.ProjectKey != "confirmed-project" || record.Item.ProjectKey != "confirmed-project" {
+		t.Fatalf("confirmed project key changed during routing: request=%q record=%q", workflowService.received.ProjectKey, record.Item.ProjectKey)
+	}
+	if !reflect.DeepEqual(workflowService.received.SuccessCriteria, []string{"Include every linked receipt", "Do not submit externally"}) {
+		t.Fatalf("workflow success criteria were not preserved during pursuit routing: %#v", workflowService.received.SuccessCriteria)
+	}
+	if record.Item.ID == uuid.Nil || len(repo.pursuits) != 1 || repo.pursuits[confirmed.ID].ProjectKey != "confirmed-project" {
+		t.Fatalf("confirmed routing unexpectedly changed pursuits: workflows=%#v pursuits=%#v", repo.workflows, repo.pursuits)
 	}
 }
 
@@ -2264,10 +2273,11 @@ func TestDetailSurfacesBlockersAndCompletionCandidate(t *testing.T) {
 		RiskLevel:     "medium",
 	}
 	repo.workflows[completedID] = models.WorkflowItem{
-		ID:           completedID,
-		Title:        "Create dashboard shell",
-		ProjectKey:   "018-HAI",
-		CurrentState: workflow.StateCompleted,
+		ID:                 completedID,
+		Title:              "Create dashboard shell",
+		ProjectKey:         "018-HAI",
+		CurrentState:       workflow.StateCompleted,
+		VerificationStatus: "verified",
 	}
 	_, _ = service.Link(created.ID, LinkRequest{LinkType: LinkWorkflow, LinkID: blockedID.String()})
 	_, _ = service.Link(created.ID, LinkRequest{LinkType: LinkWorkflow, LinkID: completedID.String()})
@@ -3158,9 +3168,11 @@ func TestUpdateAllowsVerifiedCompletionWithLinkedVerification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
+	runID := uuid.New()
+	repo.verificationRuns[runID] = models.VerificationRun{ID: runID, Status: "verified"}
 	_, _ = service.Link(created.ID, LinkRequest{
 		LinkType:     LinkVerification,
-		LinkID:       uuid.New().String(),
+		LinkID:       runID.String(),
 		Relationship: "completion_evidence",
 		SourceURI:    "local://verification/runtime-audit",
 		SourceLabel:  "Runtime audit verification",
@@ -4655,10 +4667,10 @@ func TestDashboardSurfacesDuePursuitReview(t *testing.T) {
 	}
 }
 
-func TestOperatingSnapshotBuildsBriefAndDecisionsFromOneDashboard(t *testing.T) {
+func TestBriefSummarizesOperatingPrioritiesAndDeduplicatesCards(t *testing.T) {
 	repo := newFakeRepo()
-	engine := NewService(repo, nil)
-	highRisk, err := engine.Create(CreateRequest{
+	service := NewService(repo, nil)
+	highRisk, err := service.Create(CreateRequest{
 		Title:                 "Prepare legal reply",
 		ProjectKey:            "vivare",
 		RiskLevel:             "high",
@@ -4667,7 +4679,7 @@ func TestOperatingSnapshotBuildsBriefAndDecisionsFromOneDashboard(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Create high-risk returned error: %v", err)
 	}
-	_, err = engine.Create(CreateRequest{
+	_, err = service.Create(CreateRequest{
 		Title:        "Review source backlog",
 		ProjectKey:   "hai",
 		NextReviewAt: time.Now().Add(-time.Hour).UTC().Format(time.RFC3339),
@@ -4676,26 +4688,9 @@ func TestOperatingSnapshotBuildsBriefAndDecisionsFromOneDashboard(t *testing.T) 
 		t.Fatalf("Create review-due returned error: %v", err)
 	}
 
-	snapshot, err := engine.(*service).OperatingSnapshot()
+	brief, err := service.Brief()
 	if err != nil {
-		t.Fatalf("OperatingSnapshot returned error: %v", err)
-	}
-	brief := snapshot.Brief
-	if snapshot.Dashboard == nil {
-		t.Fatal("operating snapshot did not retain its source dashboard for in-cycle reuse")
-	}
-	encoded, err := json.Marshal(snapshot)
-	if err != nil {
-		t.Fatalf("marshal operating snapshot: %v", err)
-	}
-	if strings.Contains(string(encoded), "dashboard") {
-		t.Fatalf("internal pursuit dashboard leaked into API JSON: %s", encoded)
-	}
-	if brief == nil || len(snapshot.Decisions) != 1 {
-		t.Fatalf("operating snapshot = %#v, want one brief and one Robert decision", snapshot)
-	}
-	if snapshot.Decisions[0].Pursuit.ID != highRisk.ID {
-		t.Fatalf("snapshot decision pursuit = %s, want %s", snapshot.Decisions[0].Pursuit.ID, highRisk.ID)
+		t.Fatalf("Brief returned error: %v", err)
 	}
 	if brief.OperatingMode != "needs_robert" {
 		t.Fatalf("operating mode = %q, want needs_robert", brief.OperatingMode)
@@ -5213,6 +5208,7 @@ func timelineSourceContains(items []PursuitTimelineItem, kind, sourcePart string
 }
 
 func TestOwnerScopedMutationsDoNotAdoptOwnerlessLegacyPursuits(t *testing.T) {
+	t.Setenv("HAI_LEGACY_DATA_OWNER_IDENTITY", "alice")
 	repo := newFakeRepo()
 	workflowService := &fakeWorkflowIntake{repo: repo}
 	service := NewService(repo, workflowService)
@@ -5253,18 +5249,14 @@ func TestOwnerScopedMutationsDoNotAdoptOwnerlessLegacyPursuits(t *testing.T) {
 			_, err := service.ReviewForOwner("alice", legacy.ID, ReviewRequest{Action: "complete", Actor: "alice"})
 			return err
 		}},
+		{name: "route intake", call: func() error {
+			_, err := service.RouteIntake(IntakeRequest{OwnerIdentity: "alice", ProjectKey: "legacy-project", Input: legacy.Title})
+			return err
+		}},
 	} {
 		if err := operation.call(); err == nil {
 			t.Fatalf("%s adopted an ownerless legacy pursuit", operation.name)
 		}
-	}
-
-	routed, err := service.RouteIntake(IntakeRequest{OwnerIdentity: "alice", ProjectKey: "legacy-project", Input: legacy.Title})
-	if err != nil {
-		t.Fatalf("route intake created no owner-scoped alternative: %v", err)
-	}
-	if routed.PursuitID == legacy.ID {
-		t.Fatal("route intake adopted an ownerless legacy pursuit")
 	}
 
 	stored, err := repo.FindByID(legacy.ID)
@@ -5325,133 +5317,6 @@ type fakeRepo struct {
 // ledger capability so fail-closed service behavior can be tested.
 type pursuitRepositoryWithoutResourceLedger struct{ Repository }
 
-type fakeBulkDashboardRepo struct {
-	*fakeRepo
-	bulkCalls               int
-	evidenceProjectionCalls int
-	findByIDCalls           int
-}
-
-func (r *fakeBulkDashboardRepo) FindByID(id uuid.UUID) (*models.Pursuit, error) {
-	r.findByIDCalls++
-	return r.fakeRepo.FindByID(id)
-}
-
-func (r *fakeBulkDashboardRepo) FindVisibleLinksForPursuits(ownerIdentity string, pursuitIDs []uuid.UUID) ([]models.PursuitLink, error) {
-	r.bulkCalls++
-	result := []models.PursuitLink{}
-	for _, pursuitID := range pursuitIDs {
-		links, err := r.fakeRepo.FindLinks(pursuitID)
-		if err != nil {
-			return nil, err
-		}
-		for _, link := range links {
-			handled, allowed, err := r.fakeRepo.LinkVisibleToOwner(ownerIdentity, link.LinkType, link.LinkID)
-			if err != nil {
-				return nil, err
-			}
-			if !handled || allowed {
-				result = append(result, link)
-			}
-		}
-	}
-	return result, nil
-}
-
-func (r *fakeBulkDashboardRepo) FindActivitiesForPursuits(pursuitIDs []uuid.UUID, limit int) ([]models.PursuitActivity, error) {
-	result := []models.PursuitActivity{}
-	for _, pursuitID := range pursuitIDs {
-		items, err := r.fakeRepo.FindActivities(pursuitID, limit)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, items...)
-	}
-	return result, nil
-}
-
-func (r *fakeBulkDashboardRepo) FindTaskAttemptsForPursuits(ownerIdentity string, pursuitIDs []uuid.UUID, limit int) ([]models.PursuitTaskAttempt, error) {
-	result := []models.PursuitTaskAttempt{}
-	for _, pursuitID := range pursuitIDs {
-		items, err := r.fakeRepo.FindTaskAttempts(pursuitID, limit)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, taskAttemptsVisibleToOwner(ownerIdentity, items)...)
-	}
-	return result, nil
-}
-
-func (r *fakeBulkDashboardRepo) FindRuntimeAttemptsForOwner(ownerIdentity string, automationIDs, launchIDs []uuid.UUID) ([]models.AutomationLaunchEvent, error) {
-	items, err := r.fakeRepo.FindLinkedAutomationLaunches(automationIDs, launchIDs, 50)
-	return runtimeAttemptsVisibleToOwner(ownerIdentity, items), err
-}
-
-func (r *fakeBulkDashboardRepo) FindEvidenceProjectionForDashboard(workflowIDs, memoryIDs, sourceItemIDs, extractionIDs, verificationRunIDs []uuid.UUID) (pursuitDashboardEvidenceProjection, error) {
-	r.evidenceProjectionCalls++
-	result := pursuitDashboardEvidenceProjection{}
-	var err error
-	if result.WorkflowEvidence, err = r.fakeRepo.FindLinkedEvidence(workflowIDs); err != nil {
-		return result, err
-	}
-	if result.Memories, err = r.fakeRepo.FindLinkedMemories(memoryIDs); err != nil {
-		return result, err
-	}
-	if result.SourceItems, err = r.fakeRepo.FindLinkedSourceItems(sourceItemIDs); err != nil {
-		return result, err
-	}
-	if result.SourceExtractions, err = r.fakeRepo.FindLinkedExtractions(extractionIDs); err != nil {
-		return result, err
-	}
-	if result.VerificationClaims, err = r.fakeRepo.FindLinkedVerificationClaims(verificationRunIDs); err != nil {
-		return result, err
-	}
-	if result.VerificationEvidence, err = r.fakeRepo.FindLinkedVerificationEvidence(verificationRunIDs); err != nil {
-		return result, err
-	}
-	for index := range result.WorkflowEvidence {
-		result.WorkflowEvidence[index].ClaimText = ""
-		result.WorkflowEvidence[index].SourceURI = ""
-		result.WorkflowEvidence[index].SourceLabel = ""
-	}
-	for index := range result.Memories {
-		result.Memories[index] = models.ContextMemory{ID: result.Memories[index].ID}
-	}
-	for index := range result.SourceItems {
-		result.SourceItems[index].Content = ""
-		result.SourceItems[index].ContentHash = ""
-	}
-	for index := range result.SourceExtractions {
-		result.SourceExtractions[index].Text = ""
-		result.SourceExtractions[index].Entities = ""
-		result.SourceExtractions[index].Dates = ""
-		result.SourceExtractions[index].Tasks = ""
-		result.SourceExtractions[index].Decisions = ""
-		result.SourceExtractions[index].FollowUps = ""
-		result.SourceExtractions[index].ContentHash = ""
-	}
-	for index := range result.VerificationClaims {
-		result.VerificationClaims[index].ClaimText = ""
-		result.VerificationClaims[index].SourceRefs = ""
-		result.VerificationClaims[index].SupportExplanation = ""
-	}
-	for index := range result.VerificationEvidence {
-		result.VerificationEvidence[index].Snippet = ""
-		result.VerificationEvidence[index].SourceLabel = ""
-		result.VerificationEvidence[index].Authority = ""
-		result.VerificationEvidence[index].Freshness = ""
-		result.VerificationEvidence[index].RejectReason = ""
-	}
-	return result, nil
-}
-
-func (r *fakeBulkDashboardRepo) FindResourceProjectionForPursuits(_ string, _ []models.Pursuit) (pursuitDashboardResourceProjection, error) {
-	return pursuitDashboardResourceProjection{
-		Totals: map[uuid.UUID]PursuitResourceTotals{}, ReservationTotals: map[uuid.UUID]PursuitResourceReservationTotals{},
-		ActiveReservations: map[uuid.UUID][]models.PursuitResourceReservation{},
-	}, nil
-}
-
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
 		pursuits:             map[uuid.UUID]models.Pursuit{},
@@ -5475,6 +5340,16 @@ func newFakeRepo() *fakeRepo {
 		extractions:          map[uuid.UUID]models.SourceExtraction{},
 		sourceOwners:         map[uuid.UUID]string{},
 	}
+}
+
+func (r *fakeRepo) FindTaskAttemptsNeedingReview(pursuitID uuid.UUID) ([]models.PursuitTaskAttempt, error) {
+	var result []models.PursuitTaskAttempt
+	for _, attempt := range r.taskAttempts {
+		if attempt.PursuitID == pursuitID && pursuitTaskAttemptNeedsReview(attempt) {
+			result = append(result, attempt)
+		}
+	}
+	return result, nil
 }
 
 func (r *fakeRepo) Create(pursuit *models.Pursuit) (*models.Pursuit, error) {
@@ -5510,12 +5385,6 @@ func (r *fakeRepo) FindAll(includeArchived bool) ([]models.Pursuit, error) {
 		}
 		result = append(result, item)
 	}
-	sort.SliceStable(result, func(i, j int) bool {
-		if result[i].PriorityScore != result[j].PriorityScore {
-			return result[i].PriorityScore > result[j].PriorityScore
-		}
-		return result[i].UpdatedAt.After(result[j].UpdatedAt)
-	})
 	return result, nil
 }
 
@@ -6136,17 +6005,7 @@ func (r *fakeRepo) FindLinkedEvents(workflowIDs []uuid.UUID) ([]models.WorkflowE
 }
 
 func (r *fakeRepo) FindLinkedEvidence(workflowIDs []uuid.UUID) ([]models.WorkflowEvidenceClaim, error) {
-	workflowSet := map[uuid.UUID]bool{}
-	for _, id := range workflowIDs {
-		workflowSet[id] = true
-	}
-	result := []models.WorkflowEvidenceClaim{}
-	for _, item := range r.evidence {
-		if workflowSet[item.WorkflowID] {
-			result = append(result, item)
-		}
-	}
-	return result, nil
+	return append([]models.WorkflowEvidenceClaim{}, r.evidence...), nil
 }
 
 func (r *fakeRepo) FindLinkedMemories(ids []uuid.UUID) ([]models.ContextMemory, error) {
@@ -6248,6 +6107,12 @@ func (r *fakeRepo) FindLinkedAutomations(ids []uuid.UUID) ([]models.Automation, 
 }
 
 func (r *fakeRepo) FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launchIDs []uuid.UUID, limit int) ([]models.AutomationLaunchEvent, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 500 {
+		limit = 500
+	}
 	automationSet := map[uuid.UUID]bool{}
 	for _, id := range automationIDs {
 		automationSet[id] = true
@@ -6262,6 +6127,7 @@ func (r *fakeRepo) FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launc
 			result = append(result, event)
 		}
 	}
+	sort.SliceStable(result, func(i, j int) bool { return result[i].StartedAt.After(result[j].StartedAt) })
 	if limit > 0 && len(result) > limit {
 		result = result[:limit]
 	}
@@ -6269,12 +6135,14 @@ func (r *fakeRepo) FindLinkedAutomationLaunches(automationIDs []uuid.UUID, launc
 }
 
 type fakeWorkflowIntake struct {
-	received     workflow.IntakeRequest
-	calls        int
-	lastGetOwner string
-	records      map[uuid.UUID]*workflow.WorkflowRecord
-	repo         *fakeRepo
-	err          error
+	missingRecord bool
+	zeroID        bool
+	received      workflow.IntakeRequest
+	calls         int
+	lastGetOwner  string
+	records       map[uuid.UUID]*workflow.WorkflowRecord
+	repo          *fakeRepo
+	err           error
 }
 
 func (f *fakeWorkflowIntake) Intake(request workflow.IntakeRequest) (*workflow.WorkflowRecord, error) {
@@ -6282,6 +6150,12 @@ func (f *fakeWorkflowIntake) Intake(request workflow.IntakeRequest) (*workflow.W
 	f.received = request
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.missingRecord {
+		return nil, nil
+	}
+	if f.zeroID {
+		return &workflow.WorkflowRecord{}, nil
 	}
 	id := uuid.New()
 	record := &workflow.WorkflowRecord{

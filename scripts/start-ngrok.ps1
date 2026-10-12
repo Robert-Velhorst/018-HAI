@@ -2,472 +2,134 @@
 param(
     [Parameter(ParameterSetName = 'Start')]
     [switch]$ValidateOnly,
-
     [Parameter(ParameterSetName = 'Stop', Mandatory = $true)]
     [switch]$Stop,
-
     [string]$EnvFile = '.env.local',
     [string]$ComposeFile = 'docker-compose.local.yml'
 )
 
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Net.Http
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$repoRoot = Split-Path -Parent $PSScriptRoot
 
-function Resolve-RepoFile([string]$PathValue) {
-    $candidate = if ([IO.Path]::IsPathRooted($PathValue)) {
-        $PathValue
-    } else {
-        Join-Path $repoRoot $PathValue
-    }
-    $resolved = [IO.Path]::GetFullPath($candidate)
-    if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
-        throw "Required file not found: $resolved"
-    }
-    return $resolved
+function Resolve-RepoFile([string]$Path) {
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    return Join-Path $repoRoot $Path
 }
 
-function Read-DotEnv([string]$PathValue) {
+function Read-DotEnv([string]$Path) {
     $values = @{}
-    foreach ($line in Get-Content -LiteralPath $PathValue) {
-        if ($line -notmatch '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
-            continue
-        }
-        $name = $Matches[1]
-        $value = $Matches[2].Trim()
-        if (($value.StartsWith('"') -and $value.EndsWith('"')) -or
-            ($value.StartsWith("'") -and $value.EndsWith("'"))) {
-            $value = $value.Substring(1, $value.Length - 2)
-        }
-        $values[$name] = $value
+    foreach ($line in Get-Content -LiteralPath $Path) {
+        $trimmed = $line.Trim()
+        if (!$trimmed -or $trimmed.StartsWith('#') -or !$trimmed.Contains('=')) { continue }
+        $key, $value = $trimmed.Split('=', 2)
+        $values[$key.Trim()] = $value.Trim().Trim('"').Trim("'")
     }
     return $values
 }
 
-function Get-Setting([hashtable]$Values, [string]$Name, [string]$Default = '') {
-    if ($Values.ContainsKey($Name)) {
-        return [string]$Values[$Name]
+function Require-Setting($Values, [string]$Name, [int]$MinimumLength = 1) {
+    $value = [string]$Values[$Name]
+    if ($value.Length -lt $MinimumLength -or $value -match '(?i)change-this|changeme|example|placeholder') {
+        throw "$Name must be configured with a non-placeholder value."
     }
-    return $Default
+    return $value
 }
 
-function Require-Secret([hashtable]$Values, [string]$Name, [int]$MinimumLength) {
-    $value = Get-Setting $Values $Name
-    if ($value.Length -lt $MinimumLength -or $value -match '(?i)change[-_ ]?this|changeme|example|placeholder') {
-        throw "$Name must be a non-placeholder secret of at least $MinimumLength characters before public access."
-    }
+function Require-Value($Values, [string]$Name, [string]$Expected) {
+    if ([string]$Values[$Name] -ne $Expected) { throw "$Name must be '$Expected' before public access can start." }
 }
 
-function Test-NgrokHostname([string]$HostName) {
-    $normalized = $HostName.Trim().ToLowerInvariant()
-    foreach ($suffix in @('.ngrok.app', '.ngrok.dev', '.ngrok-free.app', '.ngrok-free.dev')) {
-        if ($normalized.Length -gt $suffix.Length -and $normalized.EndsWith($suffix)) {
-            return $true
+function Require-PositiveInteger($Values, [string]$Name) {
+    $raw = ([string]$Values[$Name]).Trim()
+    $parsed = 0
+    if (![int]::TryParse($raw, [ref]$parsed) -or $parsed -lt 1) {
+        throw "$Name must be a positive integer before public access can start."
+    }
+    return $parsed
+}
+
+function Assert-HaiComposeOwnership([string]$ProjectName) {
+    if ($ProjectName -notmatch '^[a-z0-9][a-z0-9_-]*$') {
+        throw 'COMPOSE_PROJECT_NAME must contain only lowercase letters, numbers, hyphens, or underscores before public access can start.'
+    }
+
+    $ids = @(docker ps -aq --filter "label=com.docker.compose.project=$ProjectName")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect existing Docker Compose containers for '$ProjectName'. Refusing to manage cloud access until ownership can be verified."
+    }
+    if (!$ids.Count) { return }
+    # Query labels only. Passing a template with nested quoted keys breaks in
+    # Windows PowerShell's legacy native-command argument mode, and full
+    # container inspection could expose environment values unnecessarily.
+    $inspection = @(docker inspect @ids --format '{{json .Config.Labels}}' 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect existing Docker Compose container ownership for '$ProjectName'. Refusing to manage cloud access until ownership can be verified."
+    }
+    $workingDirs = @()
+    foreach ($labelJson in $inspection) {
+        try {
+            $labels = $labelJson | ConvertFrom-Json -ErrorAction Stop
+        } catch {
+            throw "Unable to parse existing Docker Compose ownership labels for '$ProjectName'. Refusing to manage cloud access until ownership can be verified."
+        }
+        $workingDirectory = [string]$labels.'com.docker.compose.project.working_dir'
+        if (![string]::IsNullOrWhiteSpace($workingDirectory)) {
+            $workingDirs += $workingDirectory
         }
     }
-    return $false
+    $workingDirs = @($workingDirs | Select-Object -Unique)
+    foreach ($workingDir in $workingDirs) {
+        if (([System.IO.Path]::GetFullPath($workingDir)).TrimEnd('\\') -ne $repoRoot.TrimEnd('\\')) {
+            throw "Refusing to manage Docker project '$ProjectName' owned by $workingDir. Use that checkout instead."
+        }
+    }
 }
 
 $envPath = Resolve-RepoFile $EnvFile
 $composePath = Resolve-RepoFile $ComposeFile
-
-if ($Stop) {
-    Assert-HaiComposeOwnership (Split-Path -Parent $composePath)
-    & docker compose --env-file $envPath --profile cloud-tunnel -f $composePath stop ngrok
-    if ($LASTEXITCODE -ne 0) {
-        throw 'Failed to stop the ngrok service.'
-    }
-    return
-}
+if (!(Test-Path -LiteralPath $envPath)) { throw "Environment file not found: $envPath" }
+if (!(Test-Path -LiteralPath $composePath)) { throw "Compose file not found: $composePath" }
 
 $settings = Read-DotEnv $envPath
-if ((Get-Setting $settings 'RUN_MODE' 'production').ToLowerInvariant() -ne 'production') {
-    throw 'RUN_MODE must be production before public access is enabled.'
-}
-if ((Get-Setting $settings 'LOCAL_LOGIN_BYPASS_ENABLED' 'false').ToLowerInvariant() -ne 'false') {
-    throw 'LOCAL_LOGIN_BYPASS_ENABLED must be false before public access is enabled.'
-}
-if ((Get-Setting $settings 'IDP_COOKIE_SECURE' 'false').ToLowerInvariant() -ne 'true') {
-    throw 'IDP_COOKIE_SECURE must be true before public access is enabled.'
-}
-if ((Get-Setting $settings 'GATEWAY_HOST_BIND' '127.0.0.1') -ne '127.0.0.1') {
-    throw 'GATEWAY_HOST_BIND must remain 127.0.0.1; ngrok reaches nginx on the private Docker network.'
-}
-$rateLimit = 0
-if (-not [int]::TryParse((Get-Setting $settings 'RATE_LIMIT_PER_MINUTE' '0'), [ref]$rateLimit) -or $rateLimit -le 0) {
-    throw 'RATE_LIMIT_PER_MINUTE must be a positive integer before public access is enabled.'
+$composeProjectName = ([string]$settings['COMPOSE_PROJECT_NAME']).Trim()
+Assert-HaiComposeOwnership -ProjectName $composeProjectName
+if ($Stop) {
+    docker compose --env-file $envPath --profile cloud-tunnel -f $composePath stop ngrok
+    exit $LASTEXITCODE
 }
 
-Require-Secret $settings 'NGROK_AUTHTOKEN' 20
-Require-Secret $settings 'JWT_SECRET' 32
-Require-Secret $settings 'BACKEND_API_SHARED_KEY' 32
-Require-Secret $settings 'HAI_MEMORY_ENCRYPTION_KEY' 32
-Require-Secret $settings 'HAI_APPROVAL_PROOF_SIGNING_KEY' 32
-Require-Secret $settings 'DB_PASSWORD' 32
-Require-Secret $settings 'DB_RUNTIME_PASSWORD' 32
-
-$publicUrlText = (Get-Setting $settings 'HAI_NGROK_URL').TrimEnd('/')
-$publicUri = $null
-if (-not [Uri]::TryCreate($publicUrlText, [UriKind]::Absolute, [ref]$publicUri) -or
-    $publicUri.Scheme -ne 'https' -or
-    -not [string]::IsNullOrEmpty($publicUri.UserInfo) -or
-    $publicUri.AbsolutePath -ne '/' -or
-    -not [string]::IsNullOrEmpty($publicUri.Query) -or
-    -not [string]::IsNullOrEmpty($publicUri.Fragment) -or
-    -not $publicUri.IsDefaultPort -or
-    -not (Test-NgrokHostname $publicUri.DnsSafeHost) -or
-    $publicUri.Host -eq 'your-reserved-domain.ngrok.app') {
-    throw 'HAI_NGROK_URL must be a fixed ngrok HTTPS origin without credentials, port, path, query, or fragment.'
+Require-Value $settings 'RUN_MODE' 'production'
+Require-Value $settings 'LOCAL_LOGIN_BYPASS_ENABLED' 'false'
+Require-Value $settings 'IDP_COOKIE_SECURE' 'true'
+Require-Value $settings 'GATEWAY_HOST_BIND' '127.0.0.1'
+Require-Value $settings 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED' 'false'
+Require-PositiveInteger $settings 'RATE_LIMIT_PER_MINUTE' | Out-Null
+$ngrokUrl = Require-Setting $settings 'HAI_NGROK_URL'
+Require-Setting $settings 'NGROK_AUTHTOKEN' 20 | Out-Null
+foreach ($secret in 'JWT_SECRET', 'BACKEND_API_SHARED_KEY', 'HAI_MEMORY_ENCRYPTION_KEY', 'HAI_APPROVAL_PROOF_SIGNING_KEY', 'DB_PASSWORD') {
+    Require-Setting $settings $secret 32 | Out-Null
+}
+Require-Setting $settings 'FIRST_RUN_ADMIN_PASSWORD' 12 | Out-Null
+if ($ngrokUrl -notmatch '^https://[^/@?#]+\.(ngrok\.app|ngrok\.dev|ngrok-free\.app|ngrok-free\.dev)$') {
+    throw 'HAI_NGROK_URL must be a reserved HTTPS ngrok origin without path, query, fragment, or credentials.'
 }
 
-$publicA2A = (Get-Setting $settings 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED' 'false').ToLowerInvariant() -eq 'true'
-if ($publicA2A) {
-    if ((Get-Setting $settings 'HAI_A2A_BRIDGE_ENABLED' 'false').ToLowerInvariant() -ne 'true') {
-        throw 'HAI_A2A_BRIDGE_ENABLED must be true when the public ngrok bridge is enabled.'
-    }
-    Require-Secret $settings 'HAI_A2A_BRIDGE_TOKEN' 32
-    if ([string]::IsNullOrWhiteSpace((Get-Setting $settings 'HAI_A2A_BRIDGE_OWNER_ID'))) {
-        throw 'HAI_A2A_BRIDGE_OWNER_ID is required when the public ngrok bridge is enabled.'
-    }
-    if ((Get-Setting $settings 'HAI_A2A_BRIDGE_URL').TrimEnd('/') -ne ($publicUrlText + '/api/v1/a2a')) {
-        throw "HAI_A2A_BRIDGE_URL must equal $publicUrlText/api/v1/a2a when the public ngrok bridge is enabled."
+# Google sends the browser to its registered callback after consent. A localhost
+# callback would strand a remote user behind this public tunnel, so reject a
+# stale local callback instead of starting a partly functional cloud session.
+$expectedGoogleLoginRedirect = "$ngrokUrl/api/v1/auth/google/callback"
+$expectedGoogleSourceRedirect = "$ngrokUrl/api/v1/sources/oauth/google/callback"
+foreach ($redirect in @(
+    @{ Name = 'GOOGLE_LOGIN_REDIRECT_URL'; Expected = $expectedGoogleLoginRedirect },
+    @{ Name = 'GOOGLE_OAUTH_REDIRECT_URL'; Expected = $expectedGoogleSourceRedirect }
+)) {
+    $configured = ([string]$settings[$redirect.Name]).Trim()
+    if ($configured -and $configured -ne $redirect.Expected) {
+        throw "$($redirect.Name) must be '$($redirect.Expected)' while public ngrok access is enabled, or be empty to disable that optional Google flow."
     }
 }
 
-$callbackPaths = @{
-    GOOGLE_LOGIN_REDIRECT_URL = '/api/v1/auth/google/callback'
-    GOOGLE_OAUTH_REDIRECT_URL = '/api/v1/sources/oauth/google/callback'
-}
-foreach ($entry in $callbackPaths.GetEnumerator()) {
-    $configured = Get-Setting $settings $entry.Key
-    if ($configured -and $configured -ne ($publicUrlText + $entry.Value)) {
-        throw "$($entry.Key) must equal $publicUrlText$($entry.Value) when configured."
-    }
-}
-
-# Reject unsafe cloud configuration before touching Docker. This keeps
-# validation deterministic on developer machines and CI hosts without a daemon,
-# while the ownership check still runs before any Compose operation.
-Assert-HaiComposeOwnership (Split-Path -Parent $composePath)
-
-& docker compose --env-file $envPath --profile cloud-tunnel -f $composePath config --quiet
-if ($LASTEXITCODE -ne 0) {
-    throw 'Docker Compose validation failed.'
-}
-
-Write-Host "Cloud-tunnel preflight passed for $publicUrlText"
-if ($ValidateOnly) {
-    return
-}
-
-function Wait-ForHealthyContainer([string]$ContainerName, [int]$Attempts = 45) {
-    for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
-        $state = & docker inspect --format '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' $ContainerName 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            $parts = $state -split '\|', 2
-            if ($parts[0] -eq 'running' -and $parts[1] -eq 'healthy') {
-                return
-            }
-            if ($parts[0] -eq 'exited' -or $parts[1] -eq 'unhealthy') {
-                & docker logs --tail 40 $ContainerName
-                throw "$ContainerName entered state $state."
-            }
-        }
-        Start-Sleep -Seconds 2
-    }
-    & docker logs --tail 40 $ContainerName
-    throw "$ContainerName did not become healthy within $($Attempts * 2) seconds."
-}
-
-function Invoke-PublicRequest(
-    [System.Net.Http.HttpClient]$Client,
-    [System.Net.Http.HttpMethod]$Method,
-    [string]$Url,
-    [int]$ExpectedStatus,
-    [int]$Attempts = 1
-) {
-    $lastStatus = 0
-    $lastError = ''
-    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
-        $request = [System.Net.Http.HttpRequestMessage]::new($Method, $Url)
-        try {
-            # The header suppresses the free-tier HTML interstitial for this
-            # machine probe. It is not an authentication or authorization
-            # credential and is never forwarded as HAI identity.
-            $request.Headers.TryAddWithoutValidation('ngrok-skip-browser-warning', 'hai-cloud-readiness') | Out-Null
-            $response = $Client.SendAsync($request).GetAwaiter().GetResult()
-            try {
-                $lastStatus = [int]$response.StatusCode
-                $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-                if ($lastStatus -eq $ExpectedStatus) {
-                    $selectedHeaders = @{}
-                    foreach ($headerName in @(
-                        'Strict-Transport-Security',
-                        'Cache-Control',
-                        'Content-Security-Policy',
-                        'X-Content-Type-Options',
-                        'X-Frame-Options'
-                    )) {
-                        $selectedHeaders[$headerName] = ''
-                        if ($response.Headers.Contains($headerName)) {
-                            $selectedHeaders[$headerName] = $response.Headers.GetValues($headerName) -join ','
-                        } elseif ($response.Content.Headers.Contains($headerName)) {
-                            $selectedHeaders[$headerName] = $response.Content.Headers.GetValues($headerName) -join ','
-                        }
-                    }
-                    return [pscustomobject]@{
-                        Status = $lastStatus
-                        Body = $body
-                        Headers = $selectedHeaders
-                    }
-                }
-                $lastError = "HTTP $lastStatus"
-            } finally {
-                $response.Dispose()
-            }
-        } catch {
-            $lastError = $_.Exception.Message
-        } finally {
-            $request.Dispose()
-        }
-        if ($attempt -lt $Attempts) {
-            Start-Sleep -Seconds 2
-        }
-    }
-    throw "$Url did not return HTTP $ExpectedStatus after $Attempts attempt(s); last result: $lastError."
-}
-
-function Read-BoundedResponseBody(
-    [System.Net.Http.HttpResponseMessage]$Response,
-    [int]$MaximumBytes = 8192
-) {
-    $stream = $Response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
-    try {
-        $buffer = [byte[]]::new($MaximumBytes)
-        $total = 0
-        while ($total -lt $MaximumBytes) {
-            $read = $stream.Read($buffer, $total, $MaximumBytes - $total)
-            if ($read -le 0) { break }
-            $total += $read
-        }
-        return [Text.Encoding]::UTF8.GetString($buffer, 0, $total)
-    } finally {
-        $stream.Dispose()
-    }
-}
-
-function Invoke-PublicOwnershipProbe(
-    [System.Net.Http.HttpClient]$Client,
-    [string]$Url
-) {
-    $request = [System.Net.Http.HttpRequestMessage]::new(
-        [System.Net.Http.HttpMethod]::Get,
-        $Url
-    )
-    try {
-        $request.Headers.TryAddWithoutValidation(
-            'ngrok-skip-browser-warning',
-            'hai-endpoint-ownership'
-        ) | Out-Null
-        $response = $Client.SendAsync(
-            $request,
-            [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
-        ).GetAwaiter().GetResult()
-        try {
-            return [pscustomobject]@{
-                Status = [int]$response.StatusCode
-                Body = Read-BoundedResponseBody $response
-            }
-        } finally {
-            $response.Dispose()
-        }
-    } finally {
-        $request.Dispose()
-    }
-}
-
-function Test-PublicEndpointOwnership(
-    [string]$BaseUrl,
-    [bool]$CurrentProjectTunnelRunning
-) {
-    $handler = [System.Net.Http.HttpClientHandler]::new()
-    $handler.AllowAutoRedirect = $false
-    $client = [System.Net.Http.HttpClient]::new($handler)
-    $client.Timeout = [TimeSpan]::FromSeconds(5)
-    try {
-        try {
-            $health = Invoke-PublicOwnershipProbe $client "$BaseUrl/healthz"
-        } catch {
-            Write-Host 'The fixed endpoint is not currently reachable; startup acceptance will verify ownership.'
-            return
-        }
-
-        if ($health.Status -eq 200) {
-            $payload = $null
-            try { $payload = $health.Body | ConvertFrom-Json } catch { }
-            $isHAI = $null -ne $payload -and
-                $payload.service -eq 'backend' -and
-                $payload.status -eq 'ok'
-            if ($isHAI -and $CurrentProjectTunnelRunning) {
-                Write-Host 'The fixed endpoint already serves this running HAI tunnel; startup will reconcile and re-verify it.'
-                return
-            }
-            if ($isHAI) {
-                throw 'The fixed endpoint already serves a different HAI tunnel. Stop its owning agent during an approved maintenance window or reserve a separate HAI domain.'
-            }
-            throw 'The fixed endpoint is already serving a non-HAI application. HAI will not attempt to take over another application endpoint.'
-        }
-
-        if ($health.Body -match 'ERR_NGROK_[0-9]+') {
-            return
-        }
-
-        try {
-            $root = Invoke-PublicOwnershipProbe $client "$BaseUrl/"
-        } catch {
-            return
-        }
-        if ($root.Body -match 'ERR_NGROK_[0-9]+') {
-            return
-        }
-        if ($root.Status -ge 200 -and $root.Status -lt 500) {
-            throw "The fixed endpoint already responds with HTTP $($root.Status) but does not identify HAI. HAI will not attempt to take over another application endpoint."
-        }
-    } finally {
-        $client.Dispose()
-        $handler.Dispose()
-    }
-}
-
-function Wait-ForPublicGateway([string]$PublicUrl, [int]$TimeoutSeconds = 60) {
-    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
-    $lastFailure = 'the public readiness endpoint has not responded yet'
-    do {
-        try {
-            $response = Invoke-WebRequest -Uri "$PublicUrl/readyz" -UseBasicParsing -TimeoutSec 5
-            $payload = $response.Content | ConvertFrom-Json
-            if ($response.StatusCode -eq 200 -and
-                $payload.service -eq 'backend' -and
-                $payload.status -in @('ready', 'degraded') -and
-                $response.Headers['Cache-Control'] -match 'no-store') {
-                return
-            }
-            $lastFailure = 'the readiness response did not identify a no-store HAI backend'
-        } catch {
-            $lastFailure = $_.Exception.Message
-        }
-        Start-Sleep -Seconds 2
-    } while ([DateTimeOffset]::UtcNow -lt $deadline)
-
-    throw "The public ngrok gateway did not become ready within $TimeoutSeconds seconds. $lastFailure"
-}
-
-function Test-PublicOrigin([string]$BaseUrl, [bool]$PublicA2A) {
-    $handler = [System.Net.Http.HttpClientHandler]::new()
-    $handler.AllowAutoRedirect = $false
-    $client = [System.Net.Http.HttpClient]::new($handler)
-    $client.Timeout = [TimeSpan]::FromSeconds(10)
-    try {
-        $health = Invoke-PublicRequest $client ([System.Net.Http.HttpMethod]::Get) "$BaseUrl/healthz" 200 30
-        $healthPayload = $health.Body | ConvertFrom-Json
-        if ($healthPayload.status -ne 'ok' -or $healthPayload.service -ne 'backend') {
-            throw 'The public health response did not identify a healthy HAI backend.'
-        }
-        if ($health.Headers['Strict-Transport-Security'] -notmatch 'max-age=31536000') {
-            throw 'The public origin did not return the required HSTS policy.'
-        }
-
-        $readiness = Invoke-PublicRequest $client ([System.Net.Http.HttpMethod]::Get) "$BaseUrl/readyz" 200
-        $readinessPayload = $readiness.Body | ConvertFrom-Json
-        if ($readinessPayload.service -ne 'backend' -or
-            $readinessPayload.status -notin @('ready', 'degraded')) {
-            throw 'The public readiness response did not identify a serving HAI backend.'
-        }
-        if ($null -ne $readinessPayload.PSObject.Properties['checks']) {
-            throw 'The public readiness response exposed internal dependency checks.'
-        }
-        if ($readiness.Headers['Cache-Control'] -notmatch 'no-store') {
-            throw 'The public readiness response was not marked no-store.'
-        }
-
-        $session = Invoke-PublicRequest $client ([System.Net.Http.HttpMethod]::Get) "$BaseUrl/api/v1/auth/session" 200
-        $sessionPayload = $session.Body | ConvertFrom-Json
-        if ($sessionPayload.authenticated -ne $false -or $sessionPayload.permissions.canRead -ne $false) {
-            throw 'The unauthenticated public session check returned an unsafe identity state.'
-        }
-        if ($session.Headers['Cache-Control'] -notmatch 'no-store') {
-            throw 'The anonymous session response was not marked no-store.'
-        }
-
-        $page = Invoke-PublicRequest $client ([System.Net.Http.HttpMethod]::Get) "$BaseUrl/" 200
-        if ($page.Body -notmatch '<app-root') {
-            throw 'The public origin did not return the HAI frontend shell.'
-        }
-        if ($page.Headers['X-Content-Type-Options'] -notmatch 'nosniff' -or
-            $page.Headers['X-Frame-Options'] -notmatch 'DENY' -or
-            $page.Headers['Content-Security-Policy'] -notmatch "frame-ancestors 'none'") {
-            throw 'The public frontend shell did not return the required browser security headers.'
-        }
-
-        if (-not $PublicA2A) {
-            Invoke-PublicRequest $client ([System.Net.Http.HttpMethod]::Get) "$BaseUrl/.well-known/agent-card.json" 404 | Out-Null
-            Invoke-PublicRequest $client ([System.Net.Http.HttpMethod]::Post) "$BaseUrl/api/v1/a2a" 404 | Out-Null
-        }
-    } finally {
-        $client.Dispose()
-        $handler.Dispose()
-    }
-}
-
-$ngrokContainerState = & docker inspect --format '{{.State.Status}}' '018-hai-ngrok' 2>$null
-$currentProjectTunnelRunning = $LASTEXITCODE -eq 0 -and $ngrokContainerState -eq 'running'
-Test-PublicEndpointOwnership $publicUrlText $currentProjectTunnelRunning
-
-# Reconcile the security-sensitive base services before creating any public
-# endpoint. This applies secure-cookie and OAuth callback changes to the actual
-# running IDP rather than trusting only the env file.
-& docker compose --env-file $envPath --profile cloud-tunnel -f $composePath up -d --no-build idp backend frontend nginx
-if ($LASTEXITCODE -ne 0) {
-    throw 'Failed to reconcile the secured HAI gateway services. Build the base stack first.'
-}
-foreach ($container in @('018-hai-idp', '018-hai-backend', '018-hai-frontend', 'gateway')) {
-    Wait-ForHealthyContainer $container
-}
-
-$gatewayPort = Get-Setting $settings 'GATEWAY_HOST_PORT' '8088'
-try {
-    $ready = Invoke-WebRequest -Uri "http://127.0.0.1:$gatewayPort/readyz" -UseBasicParsing -TimeoutSec 5
-    if ($ready.StatusCode -ne 200) {
-        throw "unexpected HTTP $($ready.StatusCode)"
-    }
-    $readyPayload = $ready.Content | ConvertFrom-Json
-    if ($readyPayload.service -ne 'backend' -or
-        $readyPayload.status -notin @('ready', 'degraded')) {
-        throw 'the local readiness response did not identify a serving HAI backend'
-    }
-    if ($null -ne $readyPayload.PSObject.Properties['checks']) {
-        throw 'the local readiness response exposed internal dependency checks'
-    }
-    if ($ready.Headers['Cache-Control'] -notmatch 'no-store') {
-        throw 'the local readiness response was not marked no-store'
-    }
-} catch {
-    throw "The reconciled local HAI gateway is not ready on port $gatewayPort. $($_.Exception.Message)"
-}
-
-& docker compose --env-file $envPath --profile cloud-tunnel -f $composePath up -d --no-build ngrok
-if ($LASTEXITCODE -ne 0) {
-    throw 'Failed to start the ngrok service.'
-}
-Wait-ForHealthyContainer '018-hai-ngrok' 30
-try {
-    Wait-ForPublicGateway $publicUrlText
-    Test-PublicOrigin $publicUrlText $publicA2A
-    if ($publicA2A) {
-        & (Join-Path $repoRoot 'scripts/smoke-a2a-bridge.ps1') -EnvFile $envPath -Public
-    }
-} catch {
-    & docker compose --env-file $envPath --profile cloud-tunnel -f $composePath stop ngrok | Out-Null
-    throw "The public HAI acceptance probe failed and the tunnel was stopped. $($_.Exception.Message)"
-}
-Write-Host "HAI is available through $publicUrlText"
+docker compose --env-file $envPath --profile cloud-tunnel -f $composePath config --quiet
+if ($LASTEXITCODE -ne 0 -or $ValidateOnly) { exit $LASTEXITCODE }
+docker compose --env-file $envPath --profile cloud-tunnel -f $composePath up -d ngrok
+exit $LASTEXITCODE

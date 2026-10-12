@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http'
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core'
 import { NzModalService } from 'ng-zorro-antd/modal'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
-import { catchError, forkJoin, map, of, Subscription, switchMap, throwError } from 'rxjs'
+import { catchError, forkJoin, of, Subscription, throwError } from 'rxjs'
 import {
   AgentAssignment,
   AgentLifecycleState,
@@ -132,11 +132,11 @@ interface MonitorCompositionProvenanceDetail {
 }
 
 @Component({
-  changeDetection: ChangeDetectionStrategy.Eager,
-  standalone: false,
-  selector: 'app-governance-control',
-  templateUrl: './governance-control.component.html',
-  styleUrls: ['./governance-control.component.scss'],
+    changeDetection: ChangeDetectionStrategy.Eager,
+    selector: 'app-governance-control',
+    templateUrl: './governance-control.component.html',
+    styleUrls: ['./governance-control.component.scss'],
+    standalone: false
 })
 export class GovernanceControlComponent implements OnInit, OnDestroy {
   readonly moduleId = 'governance-control'
@@ -156,6 +156,12 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
   learningOutcomes: LearningOutcomeRecord[] = []
   agents: AgentRecord[] = []
   domainPacks: DomainPackSummaryView[] = []
+  executionFullLoading = false
+  executionFullLoaded = false
+  executionFullError = ''
+  learningHistoryLoading = false
+  learningHistoryLoaded = false
+  learningHistoryError = ''
   catalogVersion = ''
   catalogDigest = ''
 
@@ -413,13 +419,12 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
   }
 
   refresh(): void {
-    const openSections = this.preferences.get(this.moduleId).openSections
-    this.loadExecution(openSections['execution-receipts'] === true)
+    this.loadExecution()
     this.loadMandates()
-    this.loadLearning(openSections['controlled-learning'] === true)
+    this.loadLearning()
     this.loadAgents()
     this.loadDomains()
-
+    const openSections = this.preferences.get(this.moduleId).openSections
     if (openSections['agent-teams']) this.loadAgentTeams(true, true)
     if (openSections['whole-life-context']) this.loadLifeContext(true, true)
     if (openSections['life-ledger-overview']) this.loadLifeLedger(true, true)
@@ -427,29 +432,41 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     if (openSections['resilience-status'] && this.advisoryScope.workspaceId.trim()) {
       this.loadResilienceStatus(true, true)
     }
-    if (
-      openSections['outcome-evaluations'] &&
-      this.advisoryScope.workspaceId.trim() &&
-      this.advisoryScope.outcomeId.trim()
-    ) {
+    if (openSections['outcome-evaluations'] && this.advisoryScope.workspaceId.trim() && this.advisoryScope.outcomeId.trim()) {
       this.loadOutcomeEvidence(true, true)
     }
-    if (this.mandateDecisionState.loaded || openSections['standing-mandates']) {
+    if (this.mandateDecisionState.loaded || this.preferences.get(this.moduleId).openSections['standing-mandates']) {
       this.loadMandateDecisions(true, true)
     }
   }
 
-  loadExecution(full = false): void {
+  loadExecution(): void {
     this.beginLoad('execution')
     this.surfaceSubscriptions.execution?.unsubscribe()
-    this.surfaceSubscriptions.execution = this.service
-      .listExecutionReceipts(50, full ? 'full' : 'summary')
-      .subscribe({
+    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50, 'summary').subscribe({
       next: (response) => {
         this.receipts = response.receipts || []
         this.finishLoad('execution')
       },
       error: (error) => this.failLoad('execution', error, 'Authorization receipts are unavailable.'),
+    })
+  }
+
+  loadExecutionSection(open: boolean): void {
+    if (!open || this.executionFullLoading || this.executionFullLoaded) return
+    this.executionFullLoading = true
+    this.executionFullError = ''
+    this.surfaceSubscriptions.execution?.unsubscribe()
+    this.surfaceSubscriptions.execution = this.service.listExecutionReceipts(50, 'full').subscribe({
+      next: (response) => {
+        this.receipts = response.receipts || []
+        this.executionFullLoading = false
+        this.executionFullLoaded = true
+      },
+      error: (error) => {
+        this.executionFullLoading = false
+        this.executionFullError = this.describeError(error, 'Full authorization evidence is unavailable.')
+      },
     })
   }
 
@@ -465,30 +482,34 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     })
   }
 
-  loadLearning(includeOutcomeHistory = false): void {
+  loadLearning(): void {
     this.beginLoad('learning')
     this.surfaceSubscriptions.learning?.unsubscribe()
-    this.surfaceSubscriptions.learning = forkJoin({
-      proposals: this.service.listLearningProposals(100),
-      outcomes: includeOutcomeHistory
-        ? this.service.listLearningOutcomes(100)
-        : of({ outcomes: this.learningOutcomes }),
-    }).subscribe({
+    this.surfaceSubscriptions.learning = this.service.listLearningProposals(100).subscribe({
       next: (response) => {
-        this.proposals = response.proposals.proposals || []
-        this.learningOutcomes = response.outcomes.outcomes || []
+        this.proposals = response.proposals || []
         this.finishLoad('learning')
       },
       error: (error) => this.failLoad('learning', error, 'Learning evidence and proposals are unavailable.'),
     })
   }
 
-  loadExecutionSection(open: boolean): void {
-    if (open) this.loadExecution(true)
-  }
-
   loadLearningSection(open: boolean): void {
-    if (open) this.loadLearning(true)
+    if (!open || this.learningHistoryLoading || this.learningHistoryLoaded) return
+    this.learningHistoryLoading = true
+    this.learningHistoryError = ''
+    this.surfaceSubscriptions.learning?.unsubscribe()
+    this.surfaceSubscriptions.learning = this.service.listLearningOutcomes(100).subscribe({
+      next: (response) => {
+        this.learningOutcomes = response.outcomes || []
+        this.learningHistoryLoading = false
+        this.learningHistoryLoaded = true
+      },
+      error: (error) => {
+        this.learningHistoryLoading = false
+        this.learningHistoryError = this.describeError(error, 'Verified learning history is unavailable.')
+      },
+    })
   }
 
   loadAgents(): void {
@@ -521,24 +542,13 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
     if (!open || !this.shouldLoadAdvisory('teams', force)) return
     this.beginAdvisoryLoad('teams')
     this.advisorySubscriptions.teams?.unsubscribe()
-    this.advisorySubscriptions.teams = this.service.listAgentTeams().pipe(
-      switchMap((response) => {
-        const teams = response.teams || []
-        if (!teams.length) return of({ teams, attention: [] as Array<{ key: string; page: AgentTeamMessageAttentionPage }> })
-        return forkJoin(teams.map((team) =>
-          this.service.agentTeamMessageAttention(team.id, team.version).pipe(
-            map((page) => ({ key: this.agentTeamAttentionKey(team), page })),
-            catchError(() => of({
-              key: this.agentTeamAttentionKey(team),
-              page: { generatedAt: '', messages: [] } as AgentTeamMessageAttentionPage,
-            }))
-          )
-        )).pipe(map((attention) => ({ teams, attention })))
-      })
-    ).subscribe({
-      next: ({ teams, attention }) => {
-        this.agentTeams = teams
-        this.agentTeamAttention = Object.fromEntries(attention.map((item) => [item.key, item.page]))
+    this.advisorySubscriptions.teams = this.service.agentTeamMessageAttentionIndex().subscribe({
+      next: (attention) => {
+        this.agentTeams = attention.contracts || []
+        this.agentTeamAttention = Object.fromEntries((attention.teams || []).map((item) => [
+          this.agentTeamAttentionKey({ id: item.teamId, version: item.teamVersion } as AgentTeamContract),
+          { generatedAt: attention.generatedAt, messages: item.messages || [] } as AgentTeamMessageAttentionPage,
+        ]))
         this.finishAdvisoryLoad('teams', this.agentTeams.length)
       },
       error: (error) => this.failAdvisoryLoad('teams', error, 'Agent-team records could not be loaded.'),
@@ -1183,23 +1193,26 @@ export class GovernanceControlComponent implements OnInit, OnDestroy {
   recoverAmbientMonitors(): void {
     if (this.monitorMutating) return
     const workspaceId = this.advisoryScope.workspaceId.trim()
-    if (!workspaceId || !this.monitorTargets.length) return
+    if (!workspaceId) {
+      this.notification.warning('Choose a workspace', 'Expired monitor work can only be recovered for a configured workspace.')
+      return
+    }
 
     this.monitorMutating = true
     this.ambientMonitor.recover(workspaceId, new Date().toISOString()).subscribe({
       next: (result) => {
         this.monitorMutating = false
-        if (result.recovered > 0) {
-          this.notification.success(
-            'Expired monitor work recovered',
-            `${result.collectionRecovered} collection lease${result.collectionRecovered === 1 ? '' : 's'} and ${result.compositionRecovered} advisory handoff lease${result.compositionRecovered === 1 ? '' : 's'} returned to their durable queues.`
-          )
-        } else {
+        if (result.recovered === 0) {
           this.notification.info(
             'No expired monitor work',
-            'No expired collection or advisory handoff leases needed recovery.'
+            'There are no expired collection or advisory handoff leases to recover.'
           )
+          return
         }
+        this.notification.success(
+          'Expired monitor work recovered',
+          `${result.collectionRecovered} collection lease${result.collectionRecovered === 1 ? '' : 's'} and ${result.compositionRecovered} advisory handoff lease${result.compositionRecovered === 1 ? '' : 's'} returned to the bounded queue. No work was executed or delivered.`
+        )
         this.loadAmbientMonitor(true)
       },
       error: (error) => this.failMonitorMutation(error, 'Expired monitor work could not be recovered.'),

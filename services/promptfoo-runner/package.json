@@ -1,0 +1,17 @@
+{
+  "name": "hai-promptfoo-runner",
+  "private": true,
+  "packageManager": "npm@10.9.8",
+  "engines": {
+    "node": "^24.15.0"
+  },
+  "dependencies": {
+    "@libsql/linux-x64-gnu": "0.5.29",
+    "promptfoo": "0.124.1"
+  },
+  "overrides": {
+    "get-uri": {
+      "basic-ftp": "6.2.1"
+    }
+  }
+}

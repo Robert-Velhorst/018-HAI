@@ -80,9 +80,8 @@ try {
     }
 }
 
-$output | ForEach-Object { Write-Host $_ }
 if ($exitCode -ne 0) {
-    throw "Trello live acceptance tests failed. No Trello data was changed."
+    throw "Trello live acceptance process failed with exit code $exitCode. Raw provider/test output was suppressed. No Trello data was changed."
 }
 foreach ($testName in @(
     "TestLiveTrelloSyncAgainstRealBoard",
@@ -92,6 +91,7 @@ foreach ($testName in @(
     if (-not ($output -match "--- PASS: $testName")) {
         throw "$testName did not pass. A skipped or incomplete run is not live-connector evidence."
     }
+    Write-Host "  PASS: $testName"
 }
 
 Write-Host "Trello live acceptance passed: board sync, incremental cursor, and read-only token scope verified."
