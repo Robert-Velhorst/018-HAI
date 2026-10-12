@@ -5285,3 +5285,12 @@ would also initiate detail loading and replace route query state. Treat this
 as an intentional interaction contract, not missing functionality; do not
 port the staged behavior. These are focused UI-path decisions, not a complete
 review of the 67 differing frontend paths.
+
+The System Status page also retains the PR's resource-aware polling behavior:
+two-minute polling when healthy, one-minute polling when degraded, a 15-second
+recovery interval, visibility pausing, and a 10-second readiness timeout. The
+staged snapshot instead polls on a fixed 15-second interval, including while
+hidden, and does not apply the readiness timeout. The PR tests exercise
+backoff, hidden-page suspension/resume, and stalled-request recovery. Keep the
+PR implementation; the staged version would add unnecessary background load
+and allow a stalled request to remain unresolved.
