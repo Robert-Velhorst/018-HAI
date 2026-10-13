@@ -9180,3 +9180,28 @@ not prove that the 667 tracked targets contain the transcript changes. Two
 oversized JSONL records were skipped at the 10 MiB record bound, so
 `patch_event_scan_complete` is false. The transcript source remains
 unmodified, and the result does not authorize cleanup.
+
+## Retained child-task outcome cross-reference (2026-10-13)
+
+The first user task messages in the two smaller retained transcripts identify
+bounded work in the separate `work/018-hai-port-engine-control` checkout:
+
+- Child `019fb296-75ae-7943-913c-32d41f5de2d6` targeted task validation for
+  contradictory values, negation, and generic provenance. Current `main`
+  contains the matching guards in `backend/internal/task/validation.go` and
+  regression cases in `validation_test.go` for conflicting numeric/date/
+  version values, a negated claim, and unrelated generic provenance.
+- Child `019fb296-9d1a-7301-901c-c35d99ccf3da` targeted Constitution version
+  history in the Framework Registry. Current `main` contains the owner-scoped
+  bounded history service/handler/repository, `GET /constitution/history`,
+  frontend service/model and history view, and corresponding tests.
+
+The matching implementation and test additions are present in commit
+`a97ff6e1930c16d9b04fc2f4bb12e4c470a3b2e6` (`feat: add governed framework
+registry and durable approvals`, 2026-07-30), which is an ancestor of the
+current `main`. The commit's presence establishes that these requested
+capabilities are integrated; it does not prove that either aborted transcript
+was the source of that commit or that its patch payloads are identical. These
+two task outcomes need no code port based on current evidence. The remaining
+nine broad child sessions and the two oversized records still need
+task/content-level reconciliation; the archive remains retained.
