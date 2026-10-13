@@ -9209,10 +9209,15 @@ task/content-level reconciliation; the archive remains retained.
 ## Direct-main cleanup screen (2026-10-13)
 
 In the stale primary checkout on `codex/hai-runtime-release`, the read-only
-screen found 1,585 untracked, non-ignored paths. Seventy-six share a path with
-the current `origin/main` tree; none has an identical Git blob. This screen
-identified zero untracked files eligible for the user's direct-main cleanup
-rule. It does not assess ignored files, runtime data, or other local archives.
+screen found 692 modified tracked paths and 1,585 untracked, non-ignored paths
+(2,277 status entries). A same-day fresh `git status --porcelain=v1
+--untracked-files=all` count is the source of this measurement; it supersedes
+the earlier 682/1,594 inventory in this ledger. The reason those two earlier
+counts changed between snapshots is unknown. Seventy-six untracked paths share
+a path with the current `origin/main` tree; none has an identical Git blob.
+This screen identified zero untracked files eligible for the user's direct-
+main cleanup rule. It does not assess ignored files, runtime data, or other
+local archives.
 
 The registered worktree inventory found that the three HAI audit worktrees
 and the six October 11 PR-resolution worktrees have tracked changes, so they
