@@ -8367,3 +8367,43 @@ and remover are now expected to fail closed because the candidate source paths
 are missing; they were not run in apply mode. Preserve all 13 remaining
 transcripts, including duplicate-ID and nonterminal rows, and do not revise
 their dispositions from this inventory alone.
+
+## Operations, memory, and framework-registry review (2026-10-13)
+
+The local overlay changes 72 files across `operations`, `memory`,
+`braincatalog`, and `frameworkregistry`, removing 16,430 lines compared with
+`main`. This batch removes provenance and owner-safety contracts rather than
+offering an equivalent implementation:
+
+- `operations/service.go` removes context-bound source-observation intake,
+  validation of evidence JSON and owner/workspace/source identity, source-head
+  publication, legacy-dedupe migration detection, and raw-evidence digest
+  comparison. Duplicate evidence is now compared as a trimmed JSON string and
+  the source-evidence digest is not refreshed. Create/update and audit-event
+  persistence are split into separate calls, and event append errors are
+  discarded; the atomic mutation and execution-claim/fencing interfaces are
+  removed.
+- `memory/handler.go` removes request-body size bounds, review-managed memory
+  write restrictions, explicit authenticated-owner validation, and response
+  redaction of internal `SourceExtractionID`. A missing owner-scoped service
+  now panics instead of returning a controlled unavailable response. Memory
+  query also changes from the owner-aware query service to loading all records
+  then filtering in memory, which loses database-side pagination and request
+  cancellation.
+- `frameworkregistry/operating_context.go` removes the health-vs-infrastructure
+  disambiguation, so phrases such as “runtime health check” can be interpreted
+  as a personal health signal. It also removes verification that required
+  agent roles are backed by verified available agents or an explicitly
+  registered embedded task-engine dependency.
+- `braincatalog/catalog.go` removes the bounded, read-only ChatGPT/Codex history
+  MCP integration entry and weakens the Ollama inference attestation text: a
+  loopback URL and model-list response are again described as enough for local
+  selection even though neither proves the inference path or billing behavior.
+  The Promptfoo verification date/version note is also moved backward from
+  `2026-09-27`/`v0.123.1` to `2026-07-20`/`v0.121.19`; this is stale evidence,
+  not a new verification.
+
+No implementation from this batch was ported. These regressions are concrete
+reasons to preserve the canonical `main` versions and reject the local overlay
+as a replacement. The Go test suite was not run because Go is unavailable on
+this shell's `PATH`; this review is a source diff audit, not runtime proof.
