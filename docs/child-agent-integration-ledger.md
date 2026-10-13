@@ -7969,3 +7969,35 @@ unresolved marker in `backend/internal/background/worker.go` and a variant
 that removes the canonical secret-redaction path. These snapshots cannot be
 published or treated as resolved code. They remain preserved for file-by-file
 recovery against current `main`.
+
+## Live integration checkpoint (2026-10-13)
+
+This addendum records a fresh remote-state check. It does not replace the
+historical inventory above or claim that the full local/archive review is done.
+
+- Repository remote: `Robert-Velhorst/018-HAI`.
+- Remote `main` observed at `e7305ccadc84ef9647fe4d05245eb05813021e8d`.
+- PR #36 is merged at `c31cec1ba2a25fcfd280b1f2f499297e54d96aa4`.
+- PR #41 is merged at `71102fd40a960b59b70e56f902cb4b3dc91f1390`.
+- PR #42 is merged at `b1caa0b074793e794ea8bc340cba9ac562924ff7`.
+- PR #46 is merged and its merge commit is the observed `main` head above.
+- PR #112 (`security: refresh agent runner dependencies`) remains open at
+  `34b16209c2c7344e9f38bf2d19e1d6b58384d7f2`; its 40 reported checks were
+  queued at observation time.
+- PR #116 (`test: cover Angular worker parser fallback limits`) remains open
+  at `472eb9e4b204454a9d31e5e96a222a549702f5fa`; its 40 reported checks were
+  queued at observation time.
+- The primary local checkout remains on `codex/hai-runtime-release` at
+  `e07b9daeb3ba2630ecbe12a64d948f791203c241`, divergent from current `main`.
+  Its last measured inventory was 692 tracked changes plus 1,594 untracked
+  paths (2,286 total). This is not an approved or safe-to-publish aggregate.
+- The semantic review of local variants, the 310-path staged reconciliation
+  candidate, historical worktrees, and the 20.7 GB transcript archive remains
+  incomplete. Transcript crosswalk and archive-integrity gaps remain open.
+- No local HAI source, worktree, transcript, or archive data was removed in
+  this checkpoint. The cleanup-readiness gate was not rerun or declared passed.
+
+The queued PR checks are not evidence of successful CI. Merged PRs establish
+that their recorded changes are on `main`; they do not establish that similarly
+named local copies are safe to delete. Any later cleanup requires a fresh,
+path-specific content comparison and independent safety review.
