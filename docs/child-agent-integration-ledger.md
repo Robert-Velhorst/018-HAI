@@ -8595,3 +8595,29 @@ ambient fallback behavior, and removal of context and owner boundaries must be
 resolved before considering any of these files for a release. `git diff
 --check` passed for these paths; Go tests and live database/provider behavior
 were not verified.
+
+## Local release-branch reconciliation snapshot (2026-10-13)
+
+The currently inspected checkout is on `codex/hai-runtime-release` at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`; GitHub `main` was independently
+confirmed at `e7305ccadc84ef9647fe4d05245eb05813021e8d`. The merge base is
+`91c8620c557229f1da4ed15fcbb7088c6a6947a7`, with 292 commits unique to the
+local branch and 16 commits unique to `main`. Its working tree has 692 tracked
+changes and 1,594 untracked paths. Comparing the local worktree to current
+`main` reports 1,628 paths: 1,192 deletions, 430 modifications, two exact
+renames, and four additions. This is not a reviewable release diff and must
+not be pushed as one unfiltered branch.
+
+The four added paths include `.env-backend`, `.env-gateway`, and `.env-idp`
+from the local branch tree, plus `nginx-config/nginx.conf`. The environment
+files are absent from the materialized working tree, and their values were
+not read or disclosed. They are not approved for publication: their secret
+status and historical exposure have not been verified. The added Nginx config
+also contains a hard-coded backend-key placeholder (`change-this-local-backend-key`);
+it needs a secure configuration contract before any deployment use. None of
+these paths was pushed by this audit.
+
+The 1,594 untracked paths are not represented in the committed-diff counts.
+They remain in place pending path/content-level classification; a matching
+filename or a test result does not establish that a local file is redundant
+or safe to delete. No local file was deleted during this reconciliation.
