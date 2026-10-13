@@ -8407,3 +8407,29 @@ No implementation from this batch was ported. These regressions are concrete
 reasons to preserve the canonical `main` versions and reject the local overlay
 as a replacement. The Go test suite was not run because Go is unavailable on
 this shell's `PATH`; this review is a source diff audit, not runtime proof.
+
+## Untracked-file candidate screen (2026-10-13)
+
+A read-only inventory excluded generated `output/`, agent/swarm state, log
+files, and test-evidence payloads, leaving 74 untracked source, test, script,
+package, and documentation paths in the primary checkout. All 74 paths also
+exist in the freshly confirmed `origin/main` tree, but none is text-identical
+after normalizing CRLF/LF line endings. Four representative operations files
+(`ingest_atomicity_regression_test.go`, `source_approval.go`,
+`source_approval_test.go`, and `repository_ordering_test.go`) are smaller local
+variants than their corresponding `main` versions. This is not proof that all
+74 variants lack unique useful lines; each still needs a semantic diff review
+before either import or deletion. No candidate was ported or deleted.
+
+The local-only `nginx-config/nginx.conf` is not mounted by
+`docker-compose.local.yml`, which renders `nginx-config/nginx.conf.template`
+with `envsubst` and the configured backend key. The static file contains the
+literal `change-this-local-backend-key`, so it is not a safe deployment
+artifact to add as-is. The local `kafka/docker-compose.yaml` already has a path
+in `main`; its local variant uses mutable `latest` images, PLAINTEXT listeners, and
+host-published broker/control-center ports, so it is not a suitable new HAI
+deployment capability without a separate threat and configuration review.
+
+The untracked screen therefore produced no exact-match cleanup candidates and
+no immediately safe code import. No files, logs, evidence, worktrees, or
+archives were removed.
