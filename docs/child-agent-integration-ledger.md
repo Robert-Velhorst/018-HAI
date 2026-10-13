@@ -8296,3 +8296,21 @@ This batch was not ported or locally tested. Until the complete set of
 approval, transactional, cancellation, process-launch, and recovery contracts
 is restored or independently replaced and verified, no part of this overlay
 should be used to replace the current `main` implementation.
+
+## Database migration and rollback review (2026-10-13)
+
+The local overlay changes 193 files under `backend/migrations` and removes
+14,629 lines. It deletes migrations and their contract/integration tests for
+Trello resumable sync and signed webhook intake, source cursor/idempotency and
+evidence identity, approval provenance/review receipts, execution
+confirmation/cancellation fences, OpenClaw artifact ownership/recovery, and
+task/workflow history. The migration-chain contract test is also modified,
+while rollback preflight, guarded rollback, and dedicated test-database safety
+checks are removed.
+
+Because these migrations define persistent schema and sequence compatibility,
+restoring or cherry-picking individual SQL files without the matching code,
+rollback path, and migration-chain proof could corrupt an existing database.
+No migration was ported or executed from this overlay. The local schema tree
+is not a safe replacement for `main`; migration tests were not run because the
+Go executable is unavailable on this shell's `PATH`.
