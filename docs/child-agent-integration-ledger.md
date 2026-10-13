@@ -9536,3 +9536,21 @@ mergeable at head `12572f1a8c9697e88ce0b0bc3075724fd431fd01`, based on
 endpoint returned no status entries; the workflow-runs endpoint showed one
 queued CI run (`38485702783`) and is not a complete check inventory. No
 CI-green claim is made. No merge or local cleanup occurred in this check.
+
+## October 14, 2026: runtime metadata and outcome-consumer dispositions
+
+Two additional primary-only reports were checked against `main` at
+`345cf356c3f4ab497568713dc994820b4ba22b10`:
+
+| Report | Current source disposition | Remaining verification or boundary |
+| --- | --- | --- |
+| `read-only-runtime-metadata-20261001.md` | The optional `ReadOnlyRuntimeInspector` and `AutomationToolExecutor.IsReadOnlyRuntime` are present in `backend/internal/task/read_only_runtime.go`; `model_execution_preflight.go` consumes the interface before permitting the relevant fallback path. Focused tests cover stored-target classification, invalid IDs, identity mismatch, redacted lookup failure, unavailable readers, and fresh configuration reads. | The current audit did not execute Go tests. This classifies configured HTTP metadata only; it is not execution permission, proof of side-effect-free endpoints, or live provider/runtime acceptance. |
+| `runtime-outcome-independent-review-20261001.md` | The reported uncertain-outcome promotions are source-resolved: life-graph projection gives uncertainty precedence and binds it into the digest (`life_ontology_projection.go`, with `TestLifeProjectionCannotPromoteUncertainExecution`); assistant `planRequiresReview` calls the shared uncertainty helper (`assistant/service.go`, with `TestAssistantRequiresReviewForUncertainExecution`); workflow-owned operation retry is rejected before decision mutation and has a no-execution regression; missing prior plans become `ErrTaskOutcomeReconciliationRequired`, with the handler returning 409. | No Go tests ran in this audit. Existing tests cover uncertainty projections, assistant signaling, and workflow-owned retries. A narrow service regression isolating the missing-prior-plan lookup branch was not found in the searched test sources; treat that branch's targeted coverage as outstanding. Source presence is not runtime acceptance. |
+
+This raises the number of primary-only reports with a semantic disposition from
+eight to ten, leaving 19 of the 29 primary-only reports to review. The 23
+PR-worktree-only reports remain a separate unreviewed set. The live metadata
+inspection reports PR #117 at head `12572f1a8c9697e88ce0b0bc3075724fd431fd01`;
+the ledger update following that observation is now committed and pushed as
+`1f1a1840`, so that PR head value is historical for this section. No report,
+archive, source file, or worktree was deleted.
