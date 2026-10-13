@@ -9259,3 +9259,32 @@ Three bounded source reviews compared the primary checkout with current
 
 These reviews are scoped to the named paths. They do not complete the
 remaining local file-by-file audit, and no local files were removed.
+
+## Windows CI and retained patch-artifact review (2026-10-13)
+
+The local Windows-native runtime/build scripts and isolated acceptance-stack
+helpers already exist on `main`; local variants downgrade the Go version,
+shorten test deadlines, or omit gateway-readiness behavior. The local CI
+workflow removes existing release/safety gates, including cleanup-readiness,
+A2A race, Docling-boundary, Windows no-fake-claims, and Trello-launcher checks.
+No workflow or helper change was ported. The bounded static PowerShell parser
+checks and `git diff --check` passed; no builds, installers, or acceptance
+stacks were run.
+
+Two retained patch files under `D:\codex-temp` were inventoried without
+applying or modifying them:
+
+- `hai-c-worktree-20261010.patch`: 682 paths, 199,137 additions, and 74,020
+  deletions; file size 14,169,378 bytes.
+- `hai-c-worktree-clean-20261010.patch`: 493 paths, 98,461 additions, and
+  10,054 deletions; file size 6,442,729 bytes.
+
+For the 493-path patch, an index-header-only crosswalk found 339 post-image
+hash prefixes matching same-path Git blobs in current `main`; 154 paths did
+not match those prefixes, including `nginx-config/nginx.conf`, which is absent
+from `main`. These are abbreviated index hashes and path-level triage only,
+not full-blob or semantic verification. The corresponding broader patch had
+339 matching prefixes, 342 nonmatching existing paths, and one path absent
+from `main`. The earlier semantic review of the staged snapshot found safety,
+compile, and configuration regressions. Neither patch is safe to apply or
+delete as a whole; both remain preserved for path-level reconciliation.
