@@ -13,6 +13,6 @@ nltk==3.10.3
 numpy==2.5.1
 pyyaml==6.0.3
 requests==2.34.2
-stdlibs==2026.2.26
+stdlibs==2026.9.3
 tqdm==4.69.0
 xdg-base-dirs==6.0.2
