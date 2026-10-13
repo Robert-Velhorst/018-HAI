@@ -9581,6 +9581,22 @@ This is the fourteenth disposition among the 29 primary-only reports; 15 remain.
 The 23 PR-worktree-only reports remain a separate unreviewed set. No local data
 was removed.
 
+## October 14, 2026: frontend build worker-limit report disposition
+
+`frontend-build-resource-limit-20261001.md` is source-resolved in current
+`main`. `frontend/Dockerfile` pins Node 24.15.0, defines
+`HAI_FRONTEND_BUILD_WORKERS=2` after the dependency-install layer, rejects any
+value outside `1|2|4|8`, and passes the accepted value only to
+`npm run build` as `NG_BUILD_MAX_WORKERS`. The Nginx runtime stage has no worker
+setting. `scripts/test-frontend-build-resource-limit.cjs` is present. This
+audit did not run that Node test, perform a Docker build, measure cache reuse,
+or quantify CPU/memory/build-time savings; the report's historical five-test
+pass is not a fresh run here.
+
+This is the fifteenth disposition among the 29 primary-only reports; 14 remain.
+The separate 23 PR-worktree-only set remains unreviewed. No local data was
+removed.
+
 ## October 14, 2026: source disposition of the framework-health fixture report
 
 The primary-only report `framework-health-contract-review-20261001.md`
