@@ -8952,3 +8952,34 @@ canonical test file has ten cases, including valid/malformed report handling;
 the local copy had three tests and no unique test case. Both canonical blobs
 remain available on `main`. No CI run or scanner execution was performed in
 this cleanup step.
+
+## Retained July archive full scan (2026-10-13)
+
+The committed read-only transcript auditor was run from the PR #117 worktree
+against the exact source root `D:\codex-temp\hai-completed-agent-sessions`,
+with output kept outside the repository at
+`D:\codex-temp\hai-retained-transcript-audit-20261013`. It completed a full
+file scan of all 13 files (17,559,729,527 logical bytes). Results: 11 unique
+child IDs, two duplicated IDs, zero completed transcripts, zero deletion
+candidates, five unattributed transcripts, two transcripts with oversized
+records, and zero malformed candidate records. All 13 remained classified
+for retention; `deletion_performed` was false. No cleanup/removal tool was
+run.
+
+This scan did not hash retained transcripts (`candidate_hashing_requested`
+was false), and it skipped two oversized records under the configured 10 MiB
+record bound. The five older candidate paths were already absent. Their
+absence does not establish who removed them or prove full semantic
+integration. The prior committed manifest and final reports were not
+regenerated or changed from this reduced source tree.
+
+A path-level cross-check covered 51 candidate target paths surfaced while
+reviewing the retained patch-bearing sessions; every checked path exists in
+current `origin/main`. Target areas include IDP authentication/Kafka,
+automation approval proofs and runtime handlers, task validation,
+framework-registry history/routes, and automation forms. This is not proof
+that every interrupted patch is semantically equivalent to `main`: raw
+transcript search also finds echoed commands and prompt text, and interrupted
+sessions have no complete final reports. Exact patch-to-commit attribution for
+those retained sessions remains unresolved. Preserve the 13 transcripts and
+their existing manifest dispositions until that attribution is complete.
