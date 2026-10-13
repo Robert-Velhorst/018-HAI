@@ -9078,3 +9078,30 @@ path is absent, it is no longer registered, and its local branch ref remains.
 This removes the duplicate checkout while preserving the repository history
 and branch reference. It does not remove the separate 17.5 GB transcript
 archive, which remains unintegrated and retained.
+
+## Reconciliation continuation checkpoint (2026-10-13)
+
+The live repository is `Robert-Velhorst/018-HAI`. A fresh read-only fetch
+updated the local audit ref to `main` at `345cf356c3f4ab497568713dc994820b4ba22b10`.
+GitHub confirms PRs #41 and #42 are merged, with merge commits
+`71102fd40a960b59b70e56f902cb4b3dc91f1390` and
+`b1caa0b074793e794ea8bc340cba9ac562924ff7`. Their PR-head GitHub Actions runs
+completed successfully (runs 1154 and 1152, respectively). These are historical
+PR-head checks, not a claim that the complete local reconciliation candidate
+passes CI.
+
+The primary checkout remains on its stale `codex/hai-runtime-release` branch,
+440 commits behind `origin/main`, with 692 modified tracked paths and 1,585
+untracked paths (2,277 status entries). It is not a publishable aggregate
+patch. The separate model-maintenance audit worktree remains at the same old
+base; its 95 untracked paths include 89 names also present on `main`, but a
+worktree-scoped Git blob comparison found zero exact matches. No deletion is
+authorized by that content screen, and the worktree remains intact.
+
+PR #117 remains open and mergeable at head `00bab9f2c1c7fca5a0c5252782b0321b13f3c8e8`.
+Its latest GitHub Actions run (1316) is queued, so its checks are not yet
+passing. The ledger PR remains documentation-only; the staged source snapshot
+has not been pushed because prior review found compile blockers, removed safety
+tests and protections, and hard-coded configuration. No local files were
+deleted in this checkpoint. Continue semantic review by file and only publish
+isolated, verified improvements against current `main`.
