@@ -9153,3 +9153,30 @@ port; the canonical tests enforce stronger or updated contracts:
 This focused assertion review found no safe source/test delta to import from
 these four local variants. It is not a full body-level review of the remaining
 untracked files. No local files were removed.
+
+## Retained July transcript path crosswalk (2026-10-13)
+
+The read-only `scripts/audit-hai-transcript-patch-paths.ps1` utility was run
+against the current 13-file retained archive at
+`D:\codex-temp\hai-completed-agent-sessions`, comparing absolute patch targets
+from the primary checkout with the current PR worktree based on `main`
+`345cf356c3f4ab497568713dc994820b4ba22b10`. It scanned 17,559,729,527 logical
+bytes and observed 37,824 patch events (37,783 marked successful and 41
+failed), 58,960 path references, and 760 unique target paths. Of these, 674
+unique paths reference the primary checkout; 667 are tracked in the current
+repository tree and seven are absent from that tree:
+
+- `.codex-preview-server.mjs`
+- `.env.local`
+- `.git\\info\\exclude`
+- `.tmp-ai-code-review.json`
+- `frontend\\mock-preview-server.js`
+- `frontend\\proxy.preview.json`
+- `nginx-config\\nginx.conf`
+
+No content from these seven paths was read or restored by this scan. The
+crosswalk does not compare patch contents to current source and therefore does
+not prove that the 667 tracked targets contain the transcript changes. Two
+oversized JSONL records were skipped at the 10 MiB record bound, so
+`patch_event_scan_complete` is false. The transcript source remains
+unmodified, and the result does not authorize cleanup.
