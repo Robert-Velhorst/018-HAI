@@ -9389,3 +9389,28 @@ logical-byte total is 3,179,439,595, exactly the difference from the manifest's
 filenames. This supersedes the older archive-verification result as evidence
 of current source availability: the remaining archive cannot pass the
 source-archive gate from this root, and no retained transcript was removed.
+
+## October 14, 2026: hidden transcript scan and output-report crosswalk
+
+The transcript patch-path audit script previously enumerated only visible,
+top-level `*.jsonl` files. On this Windows checkout, the 82 JSONL files under
+`output/` are hidden, so the old default scan incorrectly returned zero files.
+The scanner now includes hidden files and accepts `-Recurse`; its regression
+fixture covers visible, hidden, and nested JSONL files plus an oversized record
+followed by valid records. The focused test passed. A recursive scan of
+`output/` then read all 82 files (120,845,323 bytes), reported no patch events,
+parse errors, or oversized records, and marked the scan complete. Sampled
+records are Go test JSON logs (`Time`, `Action`, `Package`), not Codex patch
+transcripts. No output file was modified or removed.
+
+The hidden `output/` directory contains 40 Markdown review/handoff reports.
+A path-only crosswalk extracted 203 unique repository path references: 195
+exist in live `main`; eight do not. Of the 195 paths present in `main`, 126
+also exist in the legacy primary checkout; 63 of those local files have the
+same Git blob as `main` and 63 differ. These path/blob comparisons do not
+establish that each report's proposed behavior was implemented, tested, or
+accepted: the reports are historical evidence, and some contain unresolved
+findings or tests that were authored but not run. Only five of the 40 report
+filenames are currently named in this ledger. The remaining report-by-report
+semantic disposition is still open; none of the reports or source files was
+deleted or treated as fully integrated based solely on path overlap.
