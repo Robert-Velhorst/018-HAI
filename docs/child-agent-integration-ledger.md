@@ -7923,3 +7923,39 @@ This expands, but does not complete, the staged-snapshot review. The 310-file
 candidate, 692 tracked primary-checkout changes, and dirty historical worktrees
 remain unclassified. Green checks on PRs #41 and #42 validate only those PR
 heads; they do not validate or authorize publishing the staged candidate.
+
+### October 13, 2026: post-merge local inventory refresh
+
+PR #41 and PR #42 are now merged. GitHub reports `main` at
+`71102fd40a960b59b70e56f902cb4b3dc91f1390`. Their two clean PR worktrees were
+removed only after verifying their contents against `main`; other dirty
+worktrees and transcript archives remain preserved.
+
+The primary checkout remains on legacy commit
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`. Its current status has 682 tracked
+changes and 1,594 untracked paths. Comparing its working files with the exact
+`main` tree found 446 tracked-file contents that match a same-path `main` blob
+and 236 tracked-file variants that do not. This is not permission to remove
+those 446 files from the active checkout: they are mixed into a dirty working
+tree that remains on an old, divergent base. A direct working-tree comparison
+against current `main` spans 1,626 paths, so the checkout must not be published
+wholesale.
+
+Of the 1,594 untracked paths, 1,504 are under `output/`. The other 90 paths
+include 74 whose path already exists on `main` but whose local content differs,
+and 16 paths absent from the `main` tree. Those 16 are four local orchestration
+state files, ten PostgreSQL/race-test evidence files, and two acceptance log
+files; they are not product-source additions. No untracked source file was an
+exact same-path blob match. Test evidence, orchestration state, and output logs
+remain local and have not been published or deleted.
+
+The existing `backend/internal/openclawmaintenance` implementation on `main`
+already persists a 24-hour check deadline and schedules against that deadline;
+the local untracked `worker.go` and `pull_client.go` are divergent copies of
+files already present on `main`, not missing product modules. The local variants
+were not copied over the canonical implementation.
+
+This is a bounded inventory update, not a full semantic review of the 236
+tracked variants, the 74 differing same-path untracked files, the 310-file
+staged source-reconciliation candidate, or the ten remaining dirty historical
+worktrees. No additional local files were deleted in this pass.
