@@ -7974,11 +7974,13 @@ recovery against current `main`.
 
 Refreshed `origin/main` is `549e97012e8e8b52efebf7521ff83611a36bdeb1`.
 PRs #41 and #42 are merged and their merge commits are ancestors of this main
-revision. PR #56 is open at `19627f334294743301dc2a7ed5021265c7a995f6` and
+revision. PR #56 is open at `fdfe7bbf8fc548a090f3407640bfd91f48c5d6bb` and
 contains two focused regression-test additions: guarded Ambient Monitor
 PostgreSQL release-acceptance coverage and pursuit dashboard projection
-coverage. Its 40 hosted checks were still queued at this audit; no hosted test
-pass is claimed and the PR is not eligible for cleanup as main-matched source.
+coverage. GitHub currently reports all 40 checks as pending, including the
+browser acceptance, backend, frontend, IDP, migration, runtime, and Python
+runner jobs. No hosted test pass is claimed and the PR is not eligible for
+cleanup as main-matched source.
 
 The primary legacy checkout currently reports 2,286 status entries: 692
 tracked changes and 1,594 untracked paths. A bounded path comparison of its
@@ -8001,6 +8003,11 @@ Test-only differences sampled from the primary checkout were also compared
 against current `main`. The local worker-starvation regression is already
 covered by the current `backend/internal/background/worker_reliability_test.go`;
 the local source-approval tests are a shorter variant of the current test
-suite. These stale copies were not reintroduced. The two tests in PR #56 are
-distinct gaps and remain the only new source files published from this audit
-batch so far.
+suite. `TestUnknownOwnerCapacityCannotOverrideMissingRequiredParticipants` is
+also already present in the legacy checkout and current `main`; both versions
+assert fail-closed behavior when required review participants are missing.
+An earlier candidate description of a unique test that allowed unknown owner
+capacity to execute without approval was not reproduced in the live file and
+is withdrawn. These stale or already-covered copies were not reintroduced. The
+two tests in PR #56 are distinct gaps and remain the only new source files
+published from this audit batch so far.
