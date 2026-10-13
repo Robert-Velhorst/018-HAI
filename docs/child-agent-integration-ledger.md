@@ -9455,3 +9455,38 @@ inventory, not a verified crosswalk for these 33 currently present reports.
 The seven-report count discrepancy has not been reconciled against other
 artifact roots or a manifest. All 67 files remain untouched; report-by-report
 semantic disposition and any archive cleanup remain open.
+
+## October 14, 2026: filename-set and historical-binding correction
+
+The earlier "seven-report count discrepancy" wording is inaccurate and is
+superseded by this exact relative-path comparison. The primary checkout's
+`output/` contains 40 Markdown files; this PR worktree's checked-in `output/`
+contains 34 Markdown files (33 dated reports and `README.md`). Only 11 relative
+paths overlap: 29 files exist only in the primary output root and 23 only in
+the PR worktree. Therefore the six-file difference in raw Markdown counts is
+not a seven-report discrepancy, and neither root is a complete filename-level
+proxy for the other. The 29 primary-only reports remain unclassified; the
+crosswalk for the 34 PR-worktree Markdown files must be handled as a separate
+set. No report or source file was deleted based on this comparison.
+
+The historical automation launch-binding concern in
+`automation-launch-binding-20261001.md` is implemented on current `main`, not
+still open as the original worker handoff described. Live `main` includes
+`ReviewConfigurationSnapshot` in the durable task review request, incorporates
+it into `ReviewRequestDigest`, verifies the stored snapshot before approval
+registration, and fails closed on missing or changed snapshots. The source
+also contains dedicated regression tests in
+`backend/internal/task/historical_automation_review_test.go` and
+`backend/internal/automation/historical_review_binding_test.go`. This is a
+source/test-presence confirmation only; it is not a fresh local test run or
+live-provider acceptance.
+
+Live GitHub recheck: `main` is `345cf356c3f4ab497568713dc994820b4ba22b10`.
+GitHub commit comparison confirms both approved merges are ancestors of that
+head: PR #41 at `71102fd40a960b59b70e56f902cb4b3dc91f1390` and PR #42 at
+`b1caa0b074793e794ea8bc340cba9ac562924ff7`. PR #117 remains open and
+mergeable at `01950020753fc4ebc7093c7a056f834b89a70f9a`; its exact-head CI has
+41 completed checks: 38 successful and three failed (`Gateway and local
+Compose validation`, `Windows CI and smoke path contract`, and `IDP build and
+tests`). It is not CI-green. No PR was merged and no local data was deleted in
+this checkpoint.
