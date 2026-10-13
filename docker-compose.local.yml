@@ -1804,7 +1804,7 @@ services:
       - service-hub
 
   temporal:
-    image: temporalio/server:1.31.2
+    image: temporalio/server:1.32.0
     profiles: ["durability"]
     restart: unless-stopped
     mem_limit: 1g
