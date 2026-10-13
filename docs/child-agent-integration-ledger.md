@@ -9548,6 +9548,23 @@ This is the twelfth disposition among the 29 primary-only reports; 17 remain.
 The PR-worktree-only report set remains a separate 23 files and is unreviewed.
 No local data was removed.
 
+## October 14, 2026: container build hygiene report disposition
+
+`container-build-hygiene-20261001.md` is represented in current `main`.
+`backend/.dockerignore`, `idp/.dockerignore`, and `frontend/.dockerignore`
+contain the reported scoped credential/certificate, local-binary, cache, and
+test-output exclusions; the frontend retains explicit `.crt`/`.cer` public
+asset exceptions. The IDP Dockerfile also copies module manifests and downloads
+dependencies before copying source. No unrelated production source, docs,
+migrations, or frontend test source is excluded by the report's described
+patterns. This audit checked committed source only; it did not execute Docker
+builds, confirm every build-context match, inspect secret contents, or verify
+runtime behavior.
+
+This is the thirteenth disposition among the 29 primary-only reports; 16 remain.
+The 23-report PR-worktree-only set remains unreviewed. No local data was
+removed.
+
 ## October 14, 2026: source disposition of the framework-health fixture report
 
 The primary-only report `framework-health-contract-review-20261001.md`
