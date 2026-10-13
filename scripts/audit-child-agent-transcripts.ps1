@@ -284,12 +284,13 @@ foreach ($file in $sessionFiles) {
 
     $relativePath = $file.FullName.Substring($relativeBase.Length).TrimStart('\').Replace('\', '/')
     $allocatedBytes = [HaiTranscriptAllocation]::GetAllocatedBytes($file.FullName)
+    $finalReportPreserved = $terminalStatus -eq 'completed' -and -not [string]::IsNullOrWhiteSpace($finalMessage)
     $disposition = if ($changedDuringScan) {
         'retain_changed_during_audit'
     } elseif ($oversizedRecordCount -gt 0 -or $script:malformedCandidateCount -gt 0) {
         'retain_unparsed_candidate_record'
     } elseif ($terminalStatus -eq 'completed') {
-        'candidate_after_ledger_commit'
+        if ($finalReportPreserved) { 'candidate_after_ledger_commit' } else { 'retain_missing_final_report' }
     } else {
         'retain'
     }
@@ -315,7 +316,7 @@ foreach ($file in $sessionFiles) {
         logical_bytes = [int64]$file.Length
         allocated_bytes = [uint64]$allocatedBytes
         final_message_sha256 = Get-Sha256 -Text $finalMessage
-        final_report_preserved = ($terminalStatus -eq 'completed')
+        final_report_preserved = $finalReportPreserved
         disposition = $disposition
         duplicate_id_file_count = 1
         transcript_sha256 = ''
