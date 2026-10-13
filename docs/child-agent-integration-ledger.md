@@ -7959,3 +7959,13 @@ This is a bounded inventory update, not a full semantic review of the 236
 tracked variants, the 74 differing same-path untracked files, the 310-file
 staged source-reconciliation candidate, or the ten remaining dirty historical
 worktrees. No additional local files were deleted in this pass.
+
+A conflict-marker scan of the current worktrees found unresolved merge content
+in four historical resolution snapshots: `hai-pr34-conflict-fix` has 95 files
+with 280 `<<<<<<<` markers; `hai-pr36-integration` has 254 files with 860;
+`hai-pr36-local-delta` has 59 files with 183; and `hai-resolve-pr35` has 199
+files with 1,208. The smaller PR #36 local-delta snapshot also contains an
+unresolved marker in `backend/internal/background/worker.go` and a variant
+that removes the canonical secret-redaction path. These snapshots cannot be
+published or treated as resolved code. They remain preserved for file-by-file
+recovery against current `main`.
