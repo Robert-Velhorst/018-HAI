@@ -8983,3 +8983,24 @@ transcript search also finds echoed commands and prompt text, and interrupted
 sessions have no complete final reports. Exact patch-to-commit attribution for
 those retained sessions remains unresolved. Preserve the 13 transcripts and
 their existing manifest dispositions until that attribution is complete.
+
+## Untracked Go test snapshot comparison (2026-10-13)
+
+The primary checkout's current untracked-Go inventory contains 36 files, all
+test files; no untracked production Go file appears in this inventory. Every
+path has a corresponding blob in current `origin/main`. Comparing declared
+`Test`, `Example`, `Fuzz`, and `Benchmark` function names found no local-only
+test function. `main` has five additional test functions across
+`backend/internal/ambient/scheduler_test.go`,
+`backend/internal/operations/source_approval_test.go`, and
+`backend/internal/pursuit/completion_outcome_integrity_test.go`.
+
+Focused line comparisons found current-main expansions in the source-approval
+tests (raw-evidence digest and same-version mutation coverage, plus explicit
+approval overriding a future review reminder) and pursuit completion tests
+(additional receipt/cap and verification-parity cases). The local files are
+not byte-identical to their main counterparts, and this test-name/targeted
+diff review is not a complete semantic equivalence proof. No test files were
+deleted or copied into the PR in this pass; keep them until any remaining
+body-level differences are accounted for. This inventory covers only these
+36 Go tests, not the full dirty checkout or other file types.
