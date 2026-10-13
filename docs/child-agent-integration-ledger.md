@@ -8006,20 +8006,30 @@ path-specific content comparison and independent safety review.
 
 A fresh local inventory confirms 692 tracked paths reported modified and 1,594
 untracked paths. The 1,504 paths under `output/` remain outside this source
-review. Among the 90 non-output untracked paths, 74 have a same-path file on
-`main` but different content, and 16 are absent from `main`; none of those 90
-was an exact same-path blob match. The 16 absent paths are four local
+review. Using Git's configured clean filters, among the 90 non-output
+untracked paths, 74 have a same-path file on `main` but different content,
+and 16 are absent from `main`; none of those 90 was an exact same-path blob
+match. The 16 absent paths are four local
 orchestration state files, ten test-evidence logs/JSON artifacts, and two
 browser acceptance logs, not product-source additions.
 
-For a separate content comparison, 682 tracked paths appeared in the diff
-against the old local `HEAD` with `core.autocrlf=false`. Compared with current
-`origin/main`, 343 of those paths match the main-tree content, 338 differ, and
-one path is local-only: `nginx-config/nginx.conf`. Ten additional tracked
-status entries did not appear in that normalized content diff; their index and
-line-ending state still needs reconciliation. The local-only Nginx file is
-withheld from publication pending review of whether it is a generated/runtime
-configuration rather than source; its contents were not copied to a PR.
+Correction: the initial comparison with `core.autocrlf=false` did not apply
+Git's configured clean filters consistently and overstated the differing-file
+count. It is superseded by a normalized comparison using the repository's
+configured filters. Of the 682 tracked content-diff paths against the old
+local `HEAD`, 446 match current `origin/main`, 235 differ, and one path is
+local-only: `nginx-config/nginx.conf`. Ten additional tracked status entries
+did not appear in the normalized content diff; their index/status discrepancy
+still needs reconciliation. The local-only Nginx file is withheld from
+publication pending review of whether it is generated/runtime configuration
+rather than source; its contents were not copied to a PR.
+
+The 235 normalized differing paths are concentrated in `backend/internal`
+(120), `frontend/src` (65), and `idp/internal` (16); two are in
+`frontend/e2e`, two in `services/promptfoo-runner`, two in `backend/migrations`,
+and the remaining 28 are distributed across other source, tests, scripts,
+configuration, and documentation paths. This is a review-priority inventory,
+not evidence that a local variant is newer or should be ported.
 
 One candidate was reviewed semantically: the local untracked
 `backend/internal/background/worker_reliability_test.go` differs from the
@@ -8028,8 +8038,8 @@ failure-reporting, and approval checks, and more strongly verifies that fresh
 source-derived work remains approval-gated and feed errors are sanitized. The
 local variant is not a safe improvement and was not ported.
 
-These counts are inventory evidence, not a cleanup authorization. The 338
-tracked variants, the ten normalization-sensitive status entries, all 74
+These counts are inventory evidence, not a cleanup authorization. The 235
+tracked variants, the ten status-only entries, all 74
 untracked same-path variants, and the Nginx configuration remain subject to
 file-level review. No source, worktree, transcript, or archive data was
 removed.
@@ -8048,8 +8058,16 @@ that current `main` is stricter than the local copies:
 - `backend/internal/infra/database_pool.go`: current `main` configures bounded,
   parameterized GORM logging and validates the log-level setting; the local
   variant omits that configuration.
+- `backend/internal/source/trello.go`: current `main` includes a quiet-board
+  cursor to skip full reconciliation when the action feed proves there is no
+  card activity; the local copy lacks that optimization.
+- `backend/internal/agentruntime/handler.go`: current `main` rejects cancelled
+  ecosystem uploads; the local handler lacks that cancellation guard.
+- `frontend/src/app/control-room/app-shell.component.ts`: current `main` adds
+  page-title updates and restores keyboard focus around mobile navigation;
+  those behaviors are absent from the local variant.
 
-These are examples from the ongoing review, not a complete audit of the 338
+These are examples from the ongoing review, not a complete audit of the 235
 different tracked paths. They provide additional reasons not to publish the
 dirty checkout as a whole; any remaining local change must be compared to the
 current implementation and its safety contracts before porting.
