@@ -7814,11 +7814,11 @@ legacy-only commits or the full 2,071-path tree difference.
 
 ## 2026-10-13 staged-source reconciliation
 
-The current `codex/hai-local-source-reconciliation` worktree is based on the
-same commit as `main` (`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`) and has 310
-staged tracked-file changes: 7,138 insertions and 12,453 deletions. The staged
-diff remains local and is not included in this PR. It is a candidate source
-snapshot, not a validated integration checkpoint.
+The `codex/hai-local-source-reconciliation` worktree is based on
+`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`, an ancestor of refreshed `main`,
+and has 310 staged tracked-file changes: 7,138 insertions and 12,453 deletions.
+The staged diff remains local and is not included in this PR. It is a candidate
+source snapshot, not a validated integration checkpoint.
 
 A bounded review of representative diffs found behavior changes that must be
 resolved before publication:
@@ -7842,3 +7842,84 @@ been accounted for and the accepted changes are preserved in GitHub.
 At this audit point PR #40 remains open at `01d4d3285cfc16c802b151ea963b97c12d6d4b7d`.
 The latest observed hosted run had 34 checks passed and two still pending
 (backend tests and the whispercpp runner); this is not a final green result.
+
+### October 13, 2026: PR #40 merge and source-connector reconciliation
+
+The earlier status above is superseded. GitHub now reports PR #40 merged at
+2026-10-13 07:16:39 UTC as merge commit
+`59245962d2526351e3820237f3dbaf95d5e91740`; all 36 reported checks concluded
+success. The merge includes verification source-snapshot linkage and its
+regression test, the runtime-control model update, and this ledger. The local
+`origin/main` ref was refreshed to that exact merge commit.
+
+The primary checkout still points at legacy commit
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`. Relative to refreshed `main`, its
+branch has 292 unique commits while `main` has 10 unique commits; this is
+ancestry, not a count of missing features. The direct committed-tree diff is
+2,074 paths (6 added, 1,192 deleted, 876 modified), with 20,646 insertions and
+395,190 deletions. The six branch-only paths are three local environment files,
+two older-numbered migration files, and an Nginx configuration. Environment
+file contents were not opened. The active-dedupe index represented by the
+older migration is already present on `main` as migration 0006; the Nginx file
+needs comparison with the canonical template before any reuse. This confirms
+that neither the legacy commit history nor its checkout is a safe wholesale
+integration source.
+
+A bounded review of `backend/internal/source` in the 310-file staged candidate
+found changes that should not be ported as written:
+
+- It removes the Trello quiet-board activity cursor and its regression cases;
+  several fixtures now return an empty action list even for activity queries.
+- It removes handling that retires queued work after a source is paused or
+  unavailable, and removes terminal scheduled-sync failure reporting into a
+  review workflow, along with tests for both behaviors.
+- It removes the owner-scoped source overview and connection-health summary
+  handlers.
+- It logs the number of due sources rather than the number of newly enqueued
+  jobs, which can overstate work when jobs already exist. It also changes the
+  default poll interval from one minute to five minutes; this latency tradeoff
+  needs a product decision rather than being accepted incidentally.
+
+This is a static, package-scoped review; no tests were run against the staged
+candidate, and no candidate source files were copied or deleted. The complete
+310-file diff and the other dirty worktrees remain unclassified. In the primary
+checkout, none of the 1,594 untracked files was an exact same-path blob match
+for refreshed `main`; 85 paths share a name with a main file but have different
+contents. The 692 tracked changes and all other dirty worktrees remain
+preserved. No additional local cleanup is justified by this pass.
+
+## 2026-10-13 resumed audit and PR gate
+
+The current remote `main` remains `59245962d2526351e3820237f3dbaf95d5e91740`.
+PR #41 (this ledger update) and PR #42 (pursuit completion HTTP-status test)
+each passed all 36 CI checks and are reported cleanly mergeable, but both remain
+open. Their branch contents are not yet on `main`; neither corresponding local
+worktree qualifies for cleanup under the exact-main-match rule.
+
+The refreshed worktree inventory contains 13 registered worktrees. The primary
+checkout has 2,286 changed or untracked status entries. The source-reconciliation
+worktree has 310 staged changes (7,138 insertions and 12,453 deletions); its
+base commit is an ancestor of current `main`, not the current `main` commit.
+Ten historical/source worktrees remain dirty. No files were deleted.
+
+A further static review of the staged candidate found more reasons not to
+publish it wholesale:
+
+- `backend/internal/task/service.go` deletes 254 lines and
+  `state_repository.go` deletes 164 lines; task operation tests lose 154
+  lines, while the phase-two module deletes 57 lines and workflow handler tests
+  lose 87 lines. These broad removals have not been mapped to replacement
+  behavior or validated against current `main`.
+- `backend/internal/verification/service.go` replaces the caller context with
+  `context.Background()` for source-evidence resolution and semantic memory
+  projection, and removes cancellation-error propagation at those boundaries.
+  Current `main` contains a cancellation regression test for blocked evidence
+  search; the staged candidate has not been run through tests.
+- Authentication changes include removal of context preconditions from token
+  and password-reset service paths. They need a focused contract-by-contract
+  comparison before any port; no IDP candidate files were copied.
+
+This expands, but does not complete, the staged-snapshot review. The 310-file
+candidate, 692 tracked primary-checkout changes, and dirty historical worktrees
+remain unclassified. Green checks on PRs #41 and #42 validate only those PR
+heads; they do not validate or authorize publishing the staged candidate.
