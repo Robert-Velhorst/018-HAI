@@ -8188,3 +8188,33 @@ The `D:\hai-transcript-report-retention-gate` worktree is clean and tied to
 merged PR #46. Its two changed script files were compared with current `main`
 and are exact content matches; the broader worktree and transcript archive
 were not deleted or declared safe to remove.
+
+## Backend governance and replay review (2026-10-13)
+
+The next primary-checkout backend batch also does not qualify for publication
+as-is:
+
+- `backend/internal/a2abridge/handler.go` removes the process-local bounded
+  replay cache keyed by `messageId`, so retries can create fresh planning
+  drafts instead of reusing the first response. It also stops using the
+  strict decoder that rejects unknown request fields and removes the separate
+  JSON-RPC ID validation. The reduced handler still caps the body and rejects
+  trailing JSON, but that does not preserve the prior replay/validation
+  contract.
+- `backend/internal/a2abridge/service.go` reduces the bridge service
+  implementation and tests; the removed coverage needs semantic review before
+  any extraction is considered.
+- `backend/internal/agentguidance/guidance.go` and its tests are deleted. This
+  removes catalog-matched, consent-pinned guidance validation and safe
+  provenance pins from the proposal-runner enrichment path.
+- `backend/internal/agentcycle/service.go` removes `RunContext`, cooperative
+  cancellation checkpoints, and owner-scoped source/workflow/ambient
+  contracts. The replacement operator path explicitly limits itself to
+  owner-scoped context and pursuit refreshes, while the prior path ran the
+  authorized owner-scoped operating phases. This is a material capability
+  and contract change, not a safe mechanical port.
+
+No code from this batch was published. Focused Go package tests were attempted
+for `a2abridge`, `agentcycle`, and `agentguidance`, but could not start because
+the `go` executable is not available on this shell's `PATH`; this batch has
+therefore not been locally compiled or tested.
