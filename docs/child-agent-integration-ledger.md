@@ -9688,3 +9688,34 @@ current audit did not run PowerShell suites or build binaries. This is the
 seventeenth disposition among the 29 primary-only reports; 12 remain. The 23
 PR-worktree-only reports remain a separate unreviewed set. No installer,
 certificate, archive, or worktree data was changed or deleted.
+
+## October 14, 2026: disposition of the remaining primary-only reports
+
+The following 12 report files were source-compared with `origin/main` at
+`345cf356c3f4ab497568713dc994820b4ba22b10`. Each report is now explicitly
+dispositioned; this does not mean that its authored tests were executed during
+this audit.
+
+| Report | Evidence present on `main` | Verification boundary |
+| --- | --- | --- |
+| `installer-uninstaller-signing-20261001.md` | The build script retains and independently checks the compiler-generated uninstaller; `HAI.iss` separates signed production from unsigned preview. | No current PowerShell run, real signing identity/timestamp, compiler run, or install/upgrade/uninstall acceptance. Earlier report-recorded double tests are not a fresh run. |
+| `local-safe-worker-partial-outcome-20261001.md` | `SafeWorkerProgress` is serialized by the local safe worker; the background classifier treats nonzero progress as effect evidence. Worker partial-outcome regressions and the parent classifier are present. | No Go suite, race test, OS filesystem fault-injection run, cross-process identity recovery, or operator acceptance in this audit. Progress is observation, not retry authority. |
+| `mobile-source-toolbar-20261001.md` | The shared shell subtitle selectors target the title subtitle rather than all header spans; Connected Sources and Memory have scoped aligned button rules. The report records a later parent browser check at 375/768/1024/1440px. | This audit did not rerun the browser. The report's captured screenshots and earlier parent check are historical evidence, not a fresh rendered pass. |
+| `redaction-compatibility-independent-review-20261001.md` | Final source uses `strconv.Unquote` fallback and fail-closed `[REDACTED_URL_ERROR]` handling for malformed URL-shaped values; malformed/Go-escaped URL regression cases are present. Typed framework and portfolio projections preserve schema metadata without weakening generic secret-key handling. | The report's earlier P1s were subsequently addressed in its final bounded review. This audit did not execute focused/full tests; the report itself states it is not an exhaustive sanitizer guarantee. |
+| `runtime-outcome-final-consumer-review-20261001.md` | Shared uncertainty checks are present in task, assistant, life-graph projection, and workflow retry/reconciliation paths; uncertainty blocks optimistic completion and workflow retry. | No Go tests were run here. The report notes the missing-prior-plan branch lacks an isolated targeted service regression in the reviewed test sources; retain that coverage gap. |
+| `safe-intent-source-review-20261001.md` | The pre-dispatch cancellation regression exists; the persisted running intent remains an uncertain replay barrier before dispatch. | Regression source is present, but this audit did not execute it or establish PostgreSQL transaction, process-restart, crash-durability, or live dispatch guarantees. |
+| `structured-redaction-compatibility-20261001.md` | `containsAgentTeamSecret` uses a typed projection for noncredential identity/policy fields while still scanning values; portfolio acceptance uses typed neutral labels for token-count metadata and hashes the original encoded payload. Compatibility regressions remain in `main`. | The report records historical package failures before follow-up fixes and successful focused runs on an earlier dirty snapshot. No current-snapshot tests were run here; do not treat its prior failures or passes as current CI evidence. |
+| `task-fallback-final-review-fixes-20261001.md` | Fallback reservation blockers preserve prior receipts/actions and override optimistic validation/retry; regression cases cover reservation denials and full-run fallback behavior. | Tests are present but were not executed in this audit. The report explicitly leaves workflow persistence/reconciliation and live runtime acceptance outside its proof. |
+| `task-ui-outcome-uncertainty-20261001.md` | Task Blueprint exposes uncertainty in Basic view, qualifies completed receipts, preserves lost-response restrictions, and gates run/retry/approval actions; component and accessibility regressions are present. | No frontend tests, build, browser run, or accessibility acceptance was performed in this audit. Frontend session state is not a backend security boundary. |
+| `workflow-adapter-final-review-fixes-20261001.md` | Adapter approval-only routing requires safe pre-execution conditions; uncertain task results are not routed as approval-only. Failure reasons are redacted, normalized, deduplicated, and bounded; regression source is present. | No Go formatting/build/test run in this audit. Adapter fixtures do not establish full workflow persistence or runtime integration. |
+| `workflow-outcome-recovery-20261001.md` | Workflow consumer handles explicit uncertainty before success/approval, persists review evidence, blocks scheduling/retry pending reconciliation, and redacts failure details; uncertainty tests are present. | No Go tests or PostgreSQL integration ran in this audit. Historical handoff says task-to-workflow mapping was parent-owned; current `workflowtask.RunWorkflowTask` now maps through the shared task uncertainty helper. |
+| `workflowtask-outcome-uncertainty-20261001.md` | Workflow-task adapter maps shared task uncertainty, preserves partial receipts/routes on errors, forces review instead of approval or passed status, and retains adapter regressions. | Tests were not run in this audit. This confirms source integration, not task/workflow/database/runtime acceptance; broader handoff concerns remain bounded by the current consumer and reconciliation gates. |
+
+This completes source dispositions for all 29 of 29 primary-only report files in
+the audited comparison; zero primary-only reports remain without a ledger
+disposition. The 23 reports present only in the PR worktree are still
+unreviewed, so the ledger is not a complete reconciliation of all report files
+across both locations. No transcript/archive content was processed or deleted,
+and no local data cleanup was performed. This section is a source-level
+integration inventory, not proof of a passing current-head CI run or live
+acceptance.
