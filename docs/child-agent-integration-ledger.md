@@ -8703,3 +8703,101 @@ runtime database passwords be present and distinct. Although identifiers and
 password literals are escaped in the local script, this is a security- and
 operations-boundary change that needs an isolated migration/provisioning test
 before consideration. No database was started or modified.
+### October 13, 2026: current-main source cross-check
+
+Refreshed `origin/main` is `549e97012e8e8b52efebf7521ff83611a36bdeb1`.
+PRs #41 and #42 are merged and their merge commits are ancestors of this main
+revision. PR #56 is open and contains two focused regression-test additions:
+guarded Ambient Monitor
+PostgreSQL release-acceptance coverage and pursuit dashboard projection
+coverage. When queried before this ledger-only update, GitHub reported all 40
+checks pending for its then-current head, including browser acceptance,
+backend, frontend, IDP, migration, runtime, and Python runner jobs. No hosted
+test pass is claimed; the ledger update triggers a new check run and the PR is
+not eligible for cleanup as main-matched source.
+
+The primary legacy checkout currently reports 2,286 status entries: 692
+tracked changes and 1,594 untracked paths. A bounded path comparison of its
+non-output, non-orchestration untracked files found 86 product/test/document
+paths, of which 12 paths are absent from `main`; all 12 are test-evidence
+records or acceptance logs, not missing product source. The 1,504 `output/`
+paths and the 692 tracked changes remain unclassified at file-content level in
+this pass, and nothing was deleted.
+
+Two untracked post-migration files in the old PR #34 resolution checkout use
+the name `0005_durable_jobs_queue_lease_index`; current `main` has the same
+queue/lease index as post migration 0007, and its durable-job contract tests
+also read 0007. The old files are stale numbering, not missing schema work.
+The runtime-safety scratch checkout likewise has no untracked source paths
+absent from `main`. Its OpenClaw artifact URL implementation is an older
+variant: current `main` includes additional NAT64-address policy and isolated
+test-only loopback controls. It was not copied over the canonical code.
+
+Test-only differences sampled from the primary checkout were also compared
+against current `main`. The local worker-starvation regression is already
+covered by the current `backend/internal/background/worker_reliability_test.go`;
+the local source-approval tests are a shorter variant of the current test
+suite. `TestUnknownOwnerCapacityCannotOverrideMissingRequiredParticipants` is
+also already present in the legacy checkout and current `main`; both versions
+assert fail-closed behavior when required review participants are missing.
+An earlier candidate description of a unique test that allowed unknown owner
+capacity to execute without approval was not reproduced in the live file and
+is withdrawn. These stale or already-covered copies were not reintroduced. The
+two tests in PR #56 are distinct gaps and remain the only new source files
+published from this audit batch so far.
+
+### Staged candidate: ambient and verification package review
+
+A further bounded comparison of the staged `codex/hai-local-source-reconciliation`
+snapshot with current `main` covered the five changed `backend/internal/ambient`
+files and five changed `backend/internal/verification` files. No candidate files
+were copied. The differences include:
+
+- Ambient scan removes the explicit nil-service guard, so a nil receiver can
+  panic instead of returning the established unavailable-context error.
+- Ambient scheduler removes health-state reporting and the second explicit
+  opt-in for legacy in-process fallback. Its changed behavior would permit
+  fallback on the durable-scheduler opt-out alone, weakening the current
+  fail-closed operator gate.
+- Ambient candidate removes batched fingerprint lookup and resolves existing
+  opportunities one at a time, increasing database round trips as candidate
+  volume grows. It also removes the last-seen write interval and changes the
+  default poll from one minute to five minutes; those are storage and latency
+  tradeoffs, not safe incidental cleanup.
+- Verification candidate removes the context-aware answer API and uses the
+  non-contextual source-search path, losing caller cancellation propagation.
+  It also removes the source-snapshot mutation regression test, removes the
+  bounded run-history limit, and lowers memory-promotion confidence/evidence
+  quality thresholds from 0.75 to 0.70/0.55. These changes reduce cancellation,
+  resource, provenance, and evidence-quality safeguards.
+
+These diffs do not establish that every staged file is wrong; they establish
+that this candidate cannot be integrated as a package or wholesale. Any future
+port must isolate a specific desired behavior, preserve the current safety and
+resource contracts, and add focused tests against the current `main` baseline.
+
+## Reconciliation continuation checkpoint (2026-10-13)
+
+The current remote `main` head is `752c1424009f5eb519a0a578c2ee830c25199130`.
+PR #41 is merged at `71102fd40a960b59b70e56f902cb4b3dc91f1390` and PR #42 is
+merged at `b1caa0b074793e794ea8bc340cba9ac562924ff7`; each PR reports 36
+successful checks. The exact corresponding paths in the primary local checkout
+are not byte-identical to `main`: the ledger copy has a different Git blob, and
+the pursuit integrity test is an untracked file with a different Git blob. They
+were not deleted.
+
+The integration-ledger PR #117 is still open at head
+`672b576a2af6b2bc4f440c0a2a249c25dc58c235`. GitHub currently reports it
+conflicting with `main`. A local merge of the current `origin/main` is in
+progress in its dedicated worktree. The ledger conflict contained distinct
+dated audit snapshots; the conflict markers were removed while retaining the
+content from both sides. This merge resolution is not yet committed, pushed,
+or validated by CI.
+
+The primary checkout remains on `codex/hai-runtime-release` at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`, with 692 tracked changes and
+1,594 untracked paths at this checkpoint. That aggregate is not suitable for
+publication or cleanup. No HAI-related local files, archives, or worktrees
+were deleted. Continue file-level source review, only port behavior that is
+not already present on `main`, and verify exact content and recoverability
+before any local cleanup.
