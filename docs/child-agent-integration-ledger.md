@@ -9531,6 +9531,23 @@ This is the eleventh disposition among the 29 primary-only reports; 18 remain.
 The separate 23-report PR-worktree-only set remains unreviewed. No local data
 was removed.
 
+## October 14, 2026: automation executor outcome report disposition
+
+`automation-executor-outcome-20261001.md` is represented in current `main`.
+`AutomationToolExecutor.Execute` retains a non-nil launch receipt alongside an
+error, marks post-invocation outcomes uncertain, and emits a non-authoritative
+indeterminate result when the launcher provides no receipt. The task service
+stores the returned tool result before branching on the error and routes
+uncertain outcomes to reconciliation rather than completion. Focused executor
+tests cover result-plus-error, missing receipts, status and malformed-receipt
+uncertainty, HTTP/process exit semantics, and pre-dispatch failures. These
+checks confirm source and test presence only; this audit did not run Go tests
+or validate persisted replay against a live runtime/provider.
+
+This is the twelfth disposition among the 29 primary-only reports; 17 remain.
+The PR-worktree-only report set remains a separate 23 files and is unreviewed.
+No local data was removed.
+
 ## October 14, 2026: source disposition of the framework-health fixture report
 
 The primary-only report `framework-health-contract-review-20261001.md`
