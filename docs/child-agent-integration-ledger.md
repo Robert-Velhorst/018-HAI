@@ -8498,3 +8498,34 @@ No LLM implementation was ported. The main implementation is the stronger
 baseline for cost control, outbound network boundaries, and daily model
 maintenance. This was a source-diff review only: no provider was contacted,
 no model was updated, and Go tests were unavailable on this shell's `PATH`.
+
+## Agent skills and coordination review (2026-10-13)
+
+The local overlay deletes the `brainskills` catalog/HTTP surface and the
+`brain_skill_selection` service, owner-scoped persistence adapter, and their
+tests. Those are HAI's catalog-backed, consent-scoped guidance and skill
+selection paths; removing them is a capability loss, not an alternate
+implementation to port.
+
+The remaining agent changes also reduce reliability boundaries:
+
+- `agentcoordination.Coordinator.Dispatch` drops the message-expiry deadline
+  and the distinction between confirmed-not-delivered and outcome-unknown
+  transport errors. The local code abandons the idempotency claim on any
+  delivery error, including an ambiguous outcome, allowing a retry to
+  duplicate a message that the remote agent may already have accepted.
+- `agentcoordination.EvaluateMessageTimeout` removes acknowledgement
+  validation and no longer waits for the next reminder interval before
+  returning `TimeoutRemind`.
+- `agentframework` and `crewai` remove owner-consented brain-skill guidance,
+  request-scoped timeouts, bounded response decoding, and redirect rejection.
+  The framework response path also drops the explicit high-risk approval
+  requirement validation.
+- `agentregistry` replaces `infra.PostgresExecutionDB` with plain
+  `r.DB.WithContext(ctx)` for registry reads. The helper validates and binds
+  the reserved execution/authorization connection, transaction scope, and
+  deadline; the local query path bypasses those checks.
+
+No agent/skill code was ported. The checks above are source-level findings
+against `main`; runtime delivery behavior and Go tests were not exercised in
+this environment.
