@@ -8529,3 +8529,29 @@ The remaining agent changes also reduce reliability boundaries:
 No agent/skill code was ported. The checks above are source-level findings
 against `main`; runtime delivery behavior and Go tests were not exercised in
 this environment.
+
+## Background worker and durable-job review (2026-10-13)
+
+The background worker diff removes the cross-process execution protocol:
+
+- `background/lease.go` replaces the service/owner/workspace keyed run lease
+  and ownership token with a mutex attached to one `Worker` instance. It cannot
+  prevent two service instances or backend replicas from processing the same
+  operation.
+- `background/worker.go` removes durable claim acquisition, claim heartbeat,
+  claim-fenced transitions, expired-claim recovery, and reporting for
+  unleased running/verifying operations. The local worker no longer has the
+  durable recovery/diagnostic path present on `main`.
+- `background/execute.go` removes the claimed-execution, bound source
+  approval, live final-effect-policy, and uncertain-outcome/reconciliation
+  checks around safe worker effects. A failed response is no longer equivalent
+  to evidence that no external effect occurred, so retrying from this simpler
+  path can duplicate an effect.
+- The `durablejob` diff removes durable review-settlement implementations and
+  their migration, repository, and integration contracts. This reduces the
+  persistence boundary for jobs awaiting human review and terminal settlement.
+
+No worker or durable-job code was ported. These local implementations are not
+safe substitutes for the canonical claim, approval, settlement, and recovery
+contracts. Review was limited to source diffs; no multi-process execution or
+database-backed job test ran here.
