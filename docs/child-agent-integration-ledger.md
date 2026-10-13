@@ -9565,6 +9565,22 @@ This is the thirteenth disposition among the 29 primary-only reports; 16 remain.
 The 23-report PR-worktree-only set remains unreviewed. No local data was
 removed.
 
+## October 14, 2026: durable-session CI integration disposition
+
+`durable-session-ci-integration-20261001.md` is represented in current `main`.
+The IDP CI job defines a disposable PostgreSQL 17 service bound to loopback,
+uses the dedicated synthetic test database, and runs the named durable-session
+PostgreSQL/Redis race suite with skip/failure rejection and an explicit PASS
+requirement for all 13 real-store tests. The source contract in
+`scripts/test_ci_contract.py` checks this wiring against the test names in the
+IDP authentication sources. This is committed workflow/test-contract presence;
+the current audit did not run the contract test, the Go suite, or the hosted
+workflow, so no CI or real-store success is claimed.
+
+This is the fourteenth disposition among the 29 primary-only reports; 15 remain.
+The 23 PR-worktree-only reports remain a separate unreviewed set. No local data
+was removed.
+
 ## October 14, 2026: source disposition of the framework-health fixture report
 
 The primary-only report `framework-health-contract-review-20261001.md`
