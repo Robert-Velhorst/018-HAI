@@ -8272,3 +8272,27 @@ database-configuration, password-reset, and account-isolation tests could not
 be run locally because the Go executable is unavailable on this shell's
 `PATH`; remote CI status for PR #117 is still queued and does not verify this
 local overlay.
+
+## Automation and execution-control review (2026-10-13)
+
+The local overlay changes 145 files across `backend/internal/automation`,
+`executionauth`, `opscontrol`, and `task`, with 16,900 deleted lines. The
+removed files and tests include several active safety boundaries:
+
+- `opscontrol/approval.go`, its repositories/resolver, and `resume_review.go`
+  are absent locally, removing the durable approval and reviewed-resume
+  implementations present on `main`.
+- `executionauth/transactional.go` and its tests are removed, as are task
+  cancellation, tool-outcome persistence, review acknowledgement,
+  required-participant admission, and read-only runtime contracts.
+- The automation overlay removes stop-request/replay/recovery bindings,
+  emergency-stop admission tests, launch-admission/context bindings, and
+  platform-specific process-launch implementations and identity tests.
+- `opscontrol/handler.go`, `task/handler.go`, `task/service.go`, and state
+  repositories are modified alongside those deletions, so this is not merely
+  removal of obsolete tests; it changes the live execution and recovery path.
+
+This batch was not ported or locally tested. Until the complete set of
+approval, transactional, cancellation, process-launch, and recovery contracts
+is restored or independently replaced and verified, no part of this overlay
+should be used to replace the current `main` implementation.
