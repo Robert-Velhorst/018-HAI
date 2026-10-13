@@ -8833,3 +8833,35 @@ progress, and 27 queued. The failed job reported only that scanner output was
 not valid JSON; no finding details were returned, so it is not yet known
 whether the cause is a finding or a scanner/report failure. The PR remains open
 and is not represented as CI-green.
+
+## Post-merge local-copy reconciliation (2026-10-13)
+
+GitHub confirms PR #56 (`test: add guarded runtime lifecycle and projection
+regressions`) merged with merge commit
+`3182a1e34bd24ae034f51cc74c1bdb2766b9ab59`; PR #112 (agent-runner dependency
+security refresh) merged at current `main` `752c1424009f5eb519a0a578c2ee830c25199130`.
+The corresponding local branch heads were exact PR heads. Their worktrees had
+no untracked data, ignored state, or environment files in #56; the #112
+worktree's only ignored files were eight Python `__pycache__` bytecode files.
+Both merged worktrees were removed using Git's worktree mechanism after
+checking repository origin and head. PR #56's checkout contained 37,873,552
+bytes; PR #112's checkout contained 37,938,666 bytes including generated
+bytecode. GitHub retains both merged histories and the current `main` source.
+
+The clean `codex/frontend-worker-guard-test` branch has one local commit,
+`472eb9e4b204454a9d31e5e96a222a549702f5fa`. Its only changed file is
+`scripts/test-frontend-build-resource-limit.cjs`, whose Git blob exactly
+matches current `main`; its 78 tracked `output/` files also match `main`.
+No duplicate PR was opened. Its sole ignored path was a `frontend/node_modules`
+junction to the primary checkout's dependency directory. The managed worktree
+was archived; its checkout path is gone and the shared dependency target
+remains present.
+
+Current `main` remains `752c1424009f5eb519a0a578c2ee830c25199130`. PR #117 is
+still open at `de967033238a954ae6033a7ba2ce658a30217f5a`; GitHub currently
+reports it mergeable. The primary legacy checkout is still unclassified at
+2,286 status entries, and the `output/` directory alone contains 1,510 files
+(126,545,497 bytes). No files from that output directory or the primary
+checkout were deleted in this checkpoint. Source reconciliation continues;
+these cleanup steps do not imply the remaining checkout, historical worktrees,
+or archives have been fully audited.
