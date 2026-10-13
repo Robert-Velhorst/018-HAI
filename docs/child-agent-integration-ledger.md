@@ -8801,3 +8801,35 @@ publication or cleanup. No HAI-related local files, archives, or worktrees
 were deleted. Continue file-level source review, only port behavior that is
 not already present on `main`, and verify exact content and recoverability
 before any local cleanup.
+
+## Staged source-reconciliation refresh (2026-10-13)
+
+A current staged-tree comparison in `D:/hai-source-reconciliation` against
+`origin/main` covers 333 paths: 327 modifications, five deletions, and one
+addition. The only added path is `nginx-config/nginx.conf`, a static config
+that duplicates the canonical template/configuration surface and contains a
+placeholder secret; it is not a missing HAI capability. The deletions include
+existing regression/acceptance tests. The modified paths span backend,
+frontend, IDP, migrations, scripts, deployment files, and dependency locks; no
+whole-tree import is justified by the path count or build status alone.
+
+One frontend difference proposed to select the first pursuit automatically
+after list loading was tested in an isolated worktree against current `main`.
+It failed the existing `keeps the basic pursuit list compact until the user
+selects a pursuit` regression test (1 of 69 failed), which documents the
+intentional on-demand detail behavior. That candidate was withdrawn without
+changing the test contract. After reverting the scratch patch, the focused
+Pursuits suite passed all 69 tests. The staged source-reconciliation tree and
+primary checkout remain unchanged by this experiment.
+
+## PR #117 merge-base and CI refresh (2026-10-13)
+
+The local conflict resolution was committed as
+`3436fde440bdee3d2f37af08d0f831b037e30ce8` and pushed to the existing PR #117
+branch. Its diff against the refreshed `main` is confined to this audit ledger,
+and GitHub reports the PR mergeable. At the time of this check, the new-head
+run had one failed repository secret scan, 11 successful checks, two in
+progress, and 27 queued. The failed job reported only that scanner output was
+not valid JSON; no finding details were returned, so it is not yet known
+whether the cause is a finding or a scanner/report failure. The PR remains open
+and is not represented as CI-green.
