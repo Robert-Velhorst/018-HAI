@@ -9126,3 +9126,30 @@ this checkpoint. No unique product-code change was identified in this bounded
 test-only scan; no test file was copied, deleted, or declared safe to remove.
 The remaining Go test bodies and all other local file categories still
 require semantic comparison.
+
+## Follow-up assertion review (2026-10-13)
+
+Four local-only assertion strings in the untracked Go tests were compared with
+their corresponding `main` tests. They do not identify a missing behavior to
+port; the canonical tests enforce stronger or updated contracts:
+
+- `backend/internal/background/worker_reliability_test.go`: the local feed
+  failure check accepts an error containing the fixture's `test-feed` name;
+  `main` explicitly rejects that value to enforce sanitized reporting. Its
+  source-operation assertion also requires the new operation to remain
+  approval-gated rather than merely counted as verified.
+- `backend/internal/task/operation_transition_context_test.go`: the local
+  post-claim cancellation case expects uncertain-outcome review. `main`
+  verifies that a cancellation known to precede the effect is durably marked
+  cancelled without creating uncertain-outcome review work, and separately
+  checks replay/readback cancellation semantics.
+- `backend/internal/operations/source_approval_test.go`: `main` additionally
+  checks the status/version mismatch diagnostic on a stale lifecycle receipt.
+- `backend/migrations/source_head_postgres_test.go`: `main` tests populated
+  rollback protection in an isolated pre-phase database and verifies that
+  refusal preserves the ledger and authority rows; it also exercises a
+  separate later-phase rollback refusal.
+
+This focused assertion review found no safe source/test delta to import from
+these four local variants. It is not a full body-level review of the remaining
+untracked files. No local files were removed.
