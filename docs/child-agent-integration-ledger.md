@@ -8658,3 +8658,28 @@ This was a source comparison only. The Go toolchain is unavailable locally,
 so neither variant was compiled or tested in this checkout. No files were
 deleted; the remaining 84 same-path candidates and all non-colliding untracked
 source/artifact paths still require classification.
+
+## Branch-only deployment and runtime candidates (2026-10-13)
+
+Two representative features from the local branch history were checked against
+the current `main` tree and are already superseded by stricter canonical code:
+
+- The branch commit `fe65fd9f` exempts an admitted automatic runtime from
+  uncertain personal-capacity review. Current `main` already contains that
+  behavior and its test, but additionally requires
+  `request.AutomatedExecution` before applying the exemption. The local branch
+  checks only `admittedAutomaticRuntime(request.Risk)`, which can grant the
+  exemption outside an explicitly automated execution request. Do not port
+  this older variant.
+- The local `kafka/docker-compose.yaml` restores a three-broker
+  ZooKeeper-backed stack using floating `latest` images and multiple published
+  ports. Current `main` deliberately makes this path a compatibility wrapper
+  around `docker-compose.local.yml`, documenting that the retired stack must
+  not be started separately. The local version would reintroduce substantial
+  container resource use and deployment drift; it is not a missing HAI
+  capability.
+
+These comparisons reinforce that branch commit history is not a safe import
+list: the target tree already contains selected behavior with later authority,
+resource, or compatibility constraints. No runtime code or Compose change was
+ported. Compose was not started and the runtime planner was not executed.
