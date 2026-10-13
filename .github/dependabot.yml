@@ -1,0 +1,267 @@
+version: 2
+updates:
+- package-ecosystem: docker
+  directory: /backend
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /frontend
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /idp
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /nginx-config-manager
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/agent-framework-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/browser-verifier
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/crewai-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/deepeval-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/deepteam-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/docling-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/evidently-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/fastmcp-bridge
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/garak-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/gitleaks-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/gosec-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/grype-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/guardrails-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/lm-eval-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/miniswe-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/ortools-solver
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/promptfoo-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/pydantic-ai-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/syft-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/trivy-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/wasi-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker
+  directory: /services/whispercpp-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker-compose
+  directory: /
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker-compose
+  directory: /backend
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker-compose
+  directory: /gate
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker-compose
+  directory: /idp
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: docker-compose
+  directory: /kafka
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: gomod
+  directory: /backend
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: gomod
+  directory: /generic-auto
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: gomod
+  directory: /idp
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: gomod
+  directory: /nginx-config-manager
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: npm
+  directory: /frontend
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: npm
+  directory: /frontend/e2e
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: npm
+  directory: /services/browser-verifier
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: npm
+  directory: /services/promptfoo-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/agent-framework-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/crewai-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/deepeval-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/deepteam-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/docling-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/evidently-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/fastmcp-bridge
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/garak-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/guardrails-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/lm-eval-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/miniswe-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/ortools-solver
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: pip
+  directory: /services/pydantic-ai-runner
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
+- package-ecosystem: github-actions
+  directory: /
+  schedule:
+    interval: weekly
+  open-pull-requests-limit: 5
