@@ -9433,3 +9433,25 @@ findings or tests that were authored but not run. Only five of the 40 report
 filenames are currently named in this ledger. The remaining report-by-report
 semantic disposition is still open; none of the reports or source files was
 deleted or treated as fully integrated based solely on path overlap.
+
+## October 14, 2026: live PR and artifact inventory recheck
+
+PR #117 remains open and mergeable at head
+`d91e8b76b8013c7c485d46bd8fbc5aaa54df4b1d`. GitHub Actions run
+`38483307519` is still in progress for that exact head. At the time of this
+check, `Windows CI and smoke path contract` had failed; other jobs were still
+running or queued, so this head is not CI-green and no final conclusion is
+claimed. The earlier failures recorded above belong to the prior head and run
+`38480175434`; they must not be attributed to the current run without its
+completed logs. PRs #119 and #120 remain open and mergeable; #120 overlaps the
+IDP test change in #119. Neither PR was merged in this check.
+
+A fresh inventory of the current hidden `output/` directory returned 67 files:
+33 dated Markdown reports, one README, 19 JSON files, 13 log files, and one
+PowerShell script (916,679 bytes total). This differs from the earlier
+crosswalk's stated set of 40 Markdown reports. The earlier 203-path crosswalk
+and report dispositions therefore remain historical evidence for that earlier
+inventory, not a verified crosswalk for these 33 currently present reports.
+The seven-report count discrepancy has not been reconciled against other
+artifact roots or a manifest. All 67 files remain untouched; report-by-report
+semantic disposition and any archive cleanup remain open.
