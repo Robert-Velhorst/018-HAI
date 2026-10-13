@@ -7814,11 +7814,11 @@ legacy-only commits or the full 2,071-path tree difference.
 
 ## 2026-10-13 staged-source reconciliation
 
-The current `codex/hai-local-source-reconciliation` worktree is based on the
-same commit as `main` (`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`) and has 310
-staged tracked-file changes: 7,138 insertions and 12,453 deletions. The staged
-diff remains local and is not included in this PR. It is a candidate source
-snapshot, not a validated integration checkpoint.
+The `codex/hai-local-source-reconciliation` worktree is based on
+`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`, an ancestor of refreshed `main`,
+and has 310 staged tracked-file changes: 7,138 insertions and 12,453 deletions.
+The staged diff remains local and is not included in this PR. It is a candidate
+source snapshot, not a validated integration checkpoint.
 
 A bounded review of representative diffs found behavior changes that must be
 resolved before publication:
