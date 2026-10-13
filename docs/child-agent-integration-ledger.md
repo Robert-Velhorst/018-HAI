@@ -234,6 +234,146 @@ commit and the worktree was clean. This satisfies cleanup gates 1 and 2. The
 generated manifest and terminal-report archive satisfy gates 3 through 5 for
 the audited allowlist; those gates remain mandatory for every future batch.
 
+## Tracked documentation variant audit (2026-10-13)
+
+Compared the remaining seven content-divergent tracked documentation files in
+the stale local checkout against `origin/main`, ignoring line-ending-only
+differences. None is suitable to copy over the canonical version:
+
+- `docs/backup-restore.md`: the local variant removes the explicit inventory
+  and fail-closed refusal for unaccounted `018-hai-*` Docker volumes, and
+  describes the older v1 manifest contract instead of the canonical v2
+  declaration. Keep the canonical volume-coverage checks.
+- `docs/codex-goal/completion-matrix.md`: the local variant downgrades the
+  verified-JWT authorization and Compose evidence, changes Go/test counts,
+  and replaces the evidence-based roll-up with a different gap summary. These
+  assertions conflict with the canonical implementation/evidence and must not
+  be restored from the stale copy.
+- `docs/completion-matrix.md`: the local commands pin Go 1.25.13 while the
+  canonical instructions use Go 1.27.2. Do not downgrade the documented test
+  toolchain.
+- `docs/external-provider-reality-review.md`: the local copy omits the
+  Autofever row and replaces the dated Trello evidence qualification with a
+  blanket no-current-acceptance statement. Preserve the canonical distinction
+  between historical evidence and current-account acceptance.
+- `docs/optional-runtime-profiles.md`: the local copy omits the Compose-profile
+  framing, one profile, network-overlap guidance, SearXNG and local-model
+  activation procedures, and the retained one-model acceptance claim. It also
+  adds an explicit warning that Compose syntax validation alone proves no
+  runtime behavior. Do not replace the canonical guide wholesale; independently
+  revalidate the historical model evidence before changing that claim.
+- `docs/ossinsight-screening-ledger.md`: the local copy drops the governed,
+  optional fixed-ngrok A2A transport boundary and describes only local use.
+  Keep the canonical scope and explicit controls.
+- `docs/provider-credential-checklist.md`: the local copy removes the
+  read-only Trello live-acceptance procedure, leaving operators without its
+  credential and verification checklist. Keep the canonical procedure.
+
+Seven other modified tracked documents in this audit were line-ending-only
+after normalization (`docs/acceptance-test-matrix.md`,
+`docs/codex-goal/README.md`, `docs/migrations.md`,
+`docs/operator-runbook.md`, `docs/release-process.md`, `docs/roadmap.md`, and
+`docs/windows-installer.md`). No documentation variant was ported. This is a
+source comparison only; it does not validate the truth of historical runtime,
+provider, or release claims beyond the repository evidence cited by each
+canonical document.
+
+## Frontend shell and deployment boundary audit (2026-10-13)
+
+The stale local checkout has 201 changed frontend paths relative to the
+verified remote `main` head. This pass reviewed the shared route/shell and
+deployment boundary, not all 201 page and service changes:
+
+- The local route and module registries omit the `/operational-brain` route
+  and navigation entry that exist on `main`; the local shell also removes
+  module-specific document-title updates and the associated helper/tests.
+- Local mobile-navigation focus handling focuses the first navigation entry
+  whenever the drawer remains open. The canonical implementation checks the
+  invoking/focused element before moving focus, avoiding focus theft while the
+  user is already interacting inside the drawer.
+- The local `nginx-config/nginx.conf` is absent from `main`. It contains a
+  literal `change-this-local-backend-key` header value and a 752 MB upload
+  limit. It was not copied into the PR; route, body-size, and secret handling
+  require a separate review against the canonical gateway configuration.
+- `.env-backend`, `.env-gateway`, and `.env-idp` are tracked in the stale local
+  branch and absent from `main`. Their contents were not opened, copied,
+  scanned into this ledger, or added to the PR. Treat them as sensitive local
+  configuration, not cleanup candidates, until an owner-approved secret
+  inventory and retention decision exists. The old PR #36 branch later removed
+  these paths in commit `5815eeb5`, but that commit is not an ancestor of
+  `main`; the current `main` tree already lacks the files and ignores all three
+  names. The removal commit also weakens `.gitignore` protections for backups
+  and personal fixtures and deletes CI assertions for redacted startup logs,
+  frontend healthchecks, private subnet defaults, and Compose entrypoint
+  contracts. Do not cherry-pick it wholesale. Its prior Git history may still
+  contain the old blobs; this audit did not inspect their values or establish
+  whether any were live credentials.
+- The two owner/workspace deduplication migration pairs are identical in
+  content but locally renamed from canonical sequence `0006` to `0004`.
+  Preserve `main`'s migration numbering to avoid sequence collisions.
+
+No frontend, gateway, environment, or migration variant from this batch was
+ported. The remaining frontend page/service diffs still need focused review;
+the 201-path count is not a full frontend audit or evidence that all relevant
+local work has been integrated.
+
+The tracked-tree diff also reports deletions for some paths whose exact
+`main`-identical content exists as untracked local files. Blob-hash checks
+confirmed this for the safe-return-URL helper, Skills page/service, and
+Not-found page. These are duplicate copies, not missing physical files in the
+working tree. By contrast, the Operational Brain component file is physically
+absent locally, and its route/navigation entries are also absent. Continue to
+use the tracked plus untracked hash inventory together when reconciling files.
+
+### Frontend service contract batch
+
+Compared the locally modified service implementations with their `main`
+counterparts and the canonical frontend contract tests:
+
+- `SystemStatusService` locally redirects detailed readiness from the
+  authenticated `/api/v1/system/readiness` endpoint to public `/readyz`, and
+  drops build/system information, event-delivery controls, and connector
+  status. The canonical spec explicitly asserts the authenticated route and
+  the related status methods; keep the `main` implementation.
+- `TaskPlanService.logs()` locally removes the `limit=10` default and returns
+  completion-plan values instead of task-history items. The canonical service
+  spec asserts the bounded request; restore neither the unbounded read nor the
+  mismatched response type.
+- `AmbientService.overview()` locally removes its `full | summary` selector.
+  The Control Center calls the summary mode and the canonical service spec
+  covers it, so the local variant can force an unnecessarily large response.
+- `GovernanceControlService` locally removes the domain-pack summary
+  normalization that validates identity and sanitizes `methodCount`; the
+  canonical service keeps that guard.
+- The tracked local branch omits several main-only service files and tests
+  (including view-refresh, Skills, OpenClaw artifact operations, and
+  operational-graph paths). Some exact files are present as untracked copies;
+  for example, the safe return-URL helper is imported by the local guards.
+  Reconcile the complete tracked-plus-untracked import graph before treating a
+  tracked deletion as a missing physical capability.
+
+This was a bounded interface/contract audit, not a full test run of the stale
+frontend. No service implementation or test was ported from this batch.
+
+## Non-ignored untracked-file size inventory (2026-10-13)
+
+Confirmed remote `main` remains `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`.
+The primary checkout reports 2,475 non-ignored untracked files, all confirmed
+present with .NET filesystem metadata, totaling 137,007,708 bytes. The largest
+area is generated `output/` evidence: 1,570 files, 126,970,727 bytes. Other
+largest areas are backend (670 files, 5,404,455 bytes), services (33,
+2,671,972 bytes), frontend (87, 727,294 bytes), scripts (39, 536,150 bytes),
+IDP (58, 273,498 bytes), `.claude-flow` (3, 227,553 bytes), and docs (8,
+151,013 bytes). This pass read file metadata only; raw output logs and local
+agent state were not uploaded to the code PR.
+
+The existing exact-blob comparison separately identifies 852 untracked files
+already byte-identical to `main` and 351 modified tracked files with exact
+`main` blobs, totaling 13,584,997 bytes. Those counts are not an authorization
+to remove files: the local-cleanup contract remains read-only and reports
+`cleanup_authorized=false`. No untracked file, environment file, output log, or
+agent state was deleted.
+
 ## 2026-10-10 PR update
 
 The existing PR #36 was updated by a fast-forward only. Immediately before the
@@ -586,10 +726,9 @@ checkouts, or diagnostic artifacts were removed.
 
 ## Full Primary-Worktree Reconciliation (2026-10-10)
 
-The primary checkout at
-`C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`
-is the same repository and branch lineage as PR #36, not a separate product
-repository. Its `HEAD` is `e07b9daeb3ba2630ecbe12a64d948f791203c241`, which is
+The primary local checkout (absolute path omitted) is the same repository and
+branch lineage as PR #36, not a separate product repository. Its `HEAD` is
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`, which is
 the merge base of the PR worktree's current `HEAD` (`00b84408ecfcc3562b59234aa5c918e6b06fa695`).
 The PR contains 120 commits after that base. A read-only inventory of the
 primary checkout found 3,167 status entries: 682 modified tracked files and
@@ -1093,9 +1232,8 @@ uncertainty cases without the required existing owner-scoped workflow/task
 fixtures. The missing fixtures remain failures, not passes. This run is not
 acceptance evidence and PR #36 remains open and unmerged.
 
-The secondary checkout at
-`C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk`
-is the same repository and its `e07b9dae` HEAD is an ancestor of the PR head.
+The secondary local checkout (absolute path omitted) is the same repository
+and its `e07b9dae` HEAD is an ancestor of the PR head.
 Its status contains 692 tracked modifications; after normalizing Windows line
 endings, 608 match the current PR files and 74 contain real content differences.
 It also has 2,475 untracked files (about 137 MB): 1,570 under `output` (about
@@ -1898,8 +2036,9 @@ candidate hashes. The verifier reports `source_archive_verified=true`,
 `cleanup_gate_ready=false`, and `deletion_performed=false`. No archive content
 was changed.
 
-Inventoried the 26 files under `C:\Users\NO\.codex\archived_sessions` by
-session metadata and searched for the canonical HAI repository identifiers.
+Inventoried 26 files in the local Codex archived-session area (absolute path
+omitted) by session metadata and searched for the canonical HAI repository
+identifiers.
 Eight session files contain HAI-related identifiers, but their recorded
 working directories are other projects. The matching records are injected
 developer/memory context or sidebar/project-list metadata; none is a
@@ -1917,8 +2056,8 @@ pass.
 ### October 11, 2026: August transcript retention-size drift
 
 Performed a read-only path and length check for the 114 August entries in
-`docs/child-agent-transcript-manifest.csv` under
-`C:\Users\NO\.codex\sessions\2026`. All 104 previously deleted candidate
+`docs/child-agent-transcript-manifest.csv` under the local Codex session area
+(absolute path omitted). All 104 previously deleted candidate
 paths remain absent, and all ten `retain` paths still exist. However, only one
 of the ten retained files currently matches its recorded `logical_bytes`;
 nine differ. Their combined current file lengths total `3,207,933,505` bytes,
@@ -1928,10 +2067,9 @@ rewrite, or normalize these retained files; the 2026-08-09 receipt is
 historical evidence of its then-current post-delete check, not proof of their
 current lengths or contents.
 
-The pinned HAI parent-session log
-`C:\Users\NO\.codex\sessions\2026\05\30\rollout-2026-05-30T23-31-07-019e7acc-44f2-7c90-a04e-253f6d43df28.jsonl`
-currently measures `14,826,950,232` bytes and contains references to each of
-the ten retained child IDs (234-336 occurrences per ID). These matches include
+The pinned HAI parent-session log (absolute path omitted) currently measures
+`14,826,950,232` bytes and contains references to each of the ten retained
+child IDs (234-336 occurrences per ID). These matches include
 repeated session-state references and do not prove that the parent log contains
 the complete child transcripts or recovers the nine size discrepancies. Keep
 the parent log and all ten retained child files intact pending a content-level
@@ -6309,3 +6447,1398 @@ These checks update repository and candidate status only. The full transcript
 semantic/provenance reconciliation, exact-main cleanup gate, and local cleanup
 remain incomplete. All archives, source checkouts, and branch worktrees remain
 unchanged.
+
+### October 13, 2026: current main and local-source disposition
+
+The previous section records the October 12 checkpoint and its then-current
+PR #37 status. Live GitHub CLI and `git ls-remote` checks on October 13
+supersede that status: PR #37 merged at `daee223cd41f0a7847b80ab9533e7fc175023115`
+at 2026-10-12 21:09:28 UTC; PR #38 merged at
+`76477e5a313e13fd5bcfc4e4e341bdc1e3038fe8` at 21:20:49 UTC; and PR #39
+merged at `3b15fe4a08b10bb2e15afe15640bd6488cebff5d` at 21:27:33 UTC.
+Remote `main` and the clean comparison worktree both resolve to the PR #39
+merge commit. No open pull requests were returned by GitHub CLI at the audit
+time.
+
+A read-only inventory enumerated 17 registered HAI worktrees. In the primary
+dirty checkout, 815 ordinary untracked source/documentation files (7,719,027
+logical bytes) matched files on `main` after normalizing Windows line endings.
+The primary checkout also contained 74 untracked non-log/evidence paths that
+differed from the corresponding `main` files; none was established as a safe
+new production implementation. Among modified tracked files, many local
+copies matched `main`, while the reviewed differences were older variants or
+removed controls. The byte count is not a claim about physical disk blocks
+reclaimed.
+
+Independent backend, frontend/IDP, and documentation/runtime reviews found no
+independently safe, unique source change cleared for porting. Examples of
+rejected differences include removal of execution approval and source-receipt
+bindings, loss of context cancellation and transactional event-outbox paths,
+weaker nginx security headers, removal of cleanup preconditions, and a
+Promptfoo version/security-override downgrade. These findings are targeted
+examples, not a line-by-line approval of every local diff. No local source was
+copied, staged, committed, or deleted during this audit, and no tests or builds
+were run.
+
+The remote `codex/hai-runtime-release` head was also compared with `main`.
+Although its PR #36 is merged, its later tree delta still changes eight files
+and removes 286 lines while adding 9. It weakens the merged-PR cleanup gate
+and removes other cleanup safeguards, so it is not a safe branch to reopen as
+a PR. PR #32 through #39 remain the historical merge records; their merged
+code is represented by current `main`.
+
+The source comparison is not a complete semantic/provenance review of every
+archive, ignored file, runtime database, or local artifact. The transcript
+archive review and cleanup remain incomplete. No local files were removed;
+the attempted duplicate-file cleanup was blocked by the execution policy.
+Keep source/worktree data intact until a permitted, verified cleanup can be
+performed after preservation requirements are met.
+
+### October 13, 2026: PR #40 and post-checkpoint preservation audit
+
+Live `gh` verification confirms PR #40, `fix: validate verification source
+snapshot linkage`, remains open and mergeable against `main` at
+`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`. Its head is
+`3a1a22e49629cfb9307e7e4fc5ee5e4c6634d92e`; all 36 checks on that exact head
+passed, including backend/frontend/IDP tests, Postgres migration integration,
+browser acceptance, Windows installer guards, secret scan, and cleanup safety
+contracts. The PR contains the source-snapshot verification hardening and this
+ledger's reconciliation updates; it does not contain the primary checkout's
+unreviewed working-tree changes.
+
+A refreshed read-only inventory of the primary checkout found 692 modified
+tracked paths and 2,475 untracked paths. Its branch `HEAD` is 292 commits ahead
+and 9 behind `origin/main`; the committed tree differs from `origin/main` in
+503 paths (28,323 insertions and 6,216 deletions). This divergence plus
+unreviewed working-tree edits makes a wholesale push unsafe. Of the scoped,
+ordinary untracked source/document files, 815 still match `main` exactly and
+total 7,719,027 logical bytes. The prior cleanup attempt was rejected before
+execution; a follow-up read-only check confirmed all 815 remain present and
+unchanged. No fallback deletion mechanism was used.
+
+The checkout also has 1,576 files under `output/`, occupying 126,970,802
+logical bytes. These are local test/output artifacts and have not been
+included in a PR or deleted. Their contents require separate classification
+before any preservation or cleanup decision. The remaining implementation
+audit is in progress; no claim is made that every branch commit or local
+change has been reviewed or integrated.
+
+Independent review of the frontend/IDP and operations slices found additional
+reasons not to copy the local variants as-is. The frontend shell drops the
+route-based document-title update present on `main`. Local IDP handlers use
+unchecked request-context UUID assertions; several auth/reset paths no longer
+propagate request cancellation; and password-reset digest validation accepts
+non-hex 64-character strings. These need regression tests if a future port
+reintroduces the local implementations; the current `main` versions retain
+the stronger guards.
+
+The local runner/CI additions are not a self-contained patch against this
+checkout's `HEAD`: the workflow depends on lockfiles and scripts that are
+untracked here but already exist on `main`. Runner payloads validate the
+skill-guidance hash and consent ID format but need explicit backend-to-trusted
+catalog/consent binding and tampering tests. Python runner dependency license
+coverage also remains unverified. Review did confirm loopback gateway binds
+and several `no-new-privileges` settings in the inspected Compose config; this
+is not a full runtime acceptance result.
+
+These reviews did not clear any of the dirty source variants for immediate
+porting. They were bounded reviews, not line-by-line approval of the 503
+committed-tree differences or 692 tracked working-tree edits. The backend
+review did not complete within its bounded audit window; no backend-wide
+clearance is claimed. PR #40 ledger commits `95b7fda89f4cae3ef5dc0a0c649373de053743f9`,
+`a96664d6a7685b5060011044bdd97cf64e74151b`, and
+`495dd0c1d6f1a4e0824689b24c9a8d616098bb60` are all pushed. Each exact-head CI
+run passed all 36 checks; the current open PR head is `495dd0c1`.
+
+### October 13, 2026: linked-worktree and runtime-safety audit
+
+`git worktree list --porcelain` reports 17 linked HAI worktrees. The canonical
+`main` worktree is clean at `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`; PR
+#40's worktree is clean at `a96664d6a7685b5060011044bdd97cf64e74151b`. Eleven
+other worktrees have dirty files. The primary checkout has 692 tracked edits
+and 2,475 untracked paths; the model-maintenance, OpenClaw-artifact, and
+runtime-safety worktrees have respectively 425/345, 150/255, and 14/25 tracked
+edits/untracked paths. Windows-installer has 1/2; PR34 conflict-fix 528/0;
+PR36 integration 521/0; PR36 local-delta 59/0; PR36 resolution 264/0;
+PR34 resolution 516/2; and PR35 resolution 216/0. Per-worktree counts overlap
+and are not unique-file totals. No worktree was removed. Most dirty worktrees
+are based on older commits; their contents must be reconciled individually.
+
+Focused reviews of the model-maintenance and runtime-safety worktrees found no
+local changes cleared for direct porting. They identified regressions
+relative to `main`: account deletion no longer revokes sessions; user-context
+UUID assertions can panic; reset digests accept non-hex strings; runtime stop
+receipts lose task/owner/execution identity validation; the host start
+intent/acknowledgement and approval-digest protocol is absent; artifact URL
+validation weakens loopback/NAT64 protections; ZIP ratio multiplication can
+overflow; workspace link checks and upload durability/recovery are reduced.
+Production host execution remains fail-closed/disabled. The OpenClaw-artifact
+review likewise found weaker migration rollback guards and stale-claim upsert
+fencing; no local OpenClaw variant was safe to copy over current `main`.
+
+Credential review found `.env-backend`, `.env-gateway`, and `.env-idp` in the
+older local branch history. A live `git cat-file` check confirms none is
+present in `origin/main` or PR #40; `.env.example` is the only one of these
+paths on `main`. The credential-shaped local files were not opened or copied.
+The remote `codex/ambient-composition-control` branch also contains these
+`.env-*` files, and the repository is public. A redacted field check found
+short DB password/JWT-secret values matching common development-placeholder
+patterns, but did not establish that they are safe. GitHub secret scanning is
+disabled on this repository, and no local `gitleaks`, `trufflehog`, or
+`detect-secrets` executable is available. No values were printed. If any of
+these values were ever live credentials, rotate them; do not copy these files
+into a PR. The ignored local `.env.ollama.local` exists in the ambient
+worktree at 38,215 bytes; its contents were not read or uploaded.
+
+The runtime and OpenClaw audits were focused static reviews, not full
+line-by-line reviews or runtime tests. The backend-wide primary-checkout audit
+did not complete. Generated output, agent logs, browser diagnostic data, and
+remaining worktree contents are not classified. Immediately before this note,
+PR #40 was at `a96664d6a7685b5060011044bdd97cf64e74151b`; that exact head's
+36-check CI run passed. This worktree/security note was subsequently pushed as
+`495dd0c1d6f1a4e0824689b24c9a8d616098bb60`, whose exact-head CI also passed
+all 36 checks.
+
+### October 13, 2026: merged-PR worktrees and public-branch review
+
+Live GitHub checks confirm PR #34 merged at `4f24b449`, PR #35 at `7efe1183`,
+and PR #36 at `c31cec1b`. Their installer, model-directed logs, runtime, and
+release changes are already represented in `main`; no re-port is needed.
+Three PR35/36 integration snapshots remain conflict-heavy: `hai-pr36-integration`
+has 256 unmerged paths, `hai-pr36-local-delta` has 59, and `hai-resolve-pr35`
+has 199. `hai-pr36-resolution` has no index conflicts but its additions are
+the unverified Autofever adapter; do not treat a simulated feed as a live
+integration. Its outbox files match `main`.
+
+The `codex/ambient-composition-control`, `codex/hai-post-pr36-audit`, and
+`codex/fix-hai-transcript-merged-state` branch heads are still present remotely
+at `7fabfe75`, `38b52d3c`, and `9ec3a326`. Commit `57e46c55` is reachable from
+the remote Windows-installer branch. These snapshots are clean in Git but have
+tree differences from `main`; clean status does not account for ignored local
+configuration, dependencies, diagnostics, releases, or build output. Focused
+reviews found no unique code safe to port as-is. Older Trello sync and dashboard
+payload ideas remain candidates for isolated reimplementation with current
+pagination, reconciliation, and safety contracts.
+
+The Windows-installer worktree has two untracked backend executables totaling
+166,467,072 bytes. They are unsigned and have August 22 timestamps; the local
+Go CLI is unavailable, so their precise source/build provenance and
+reproducibility were not verified. They were not pushed or removed. No worktree,
+binary, ignored configuration, or other local data was deleted in this audit.
+The local deletion operation remains blocked by execution policy; no alternate
+deletion path was used.
+
+### October 13, 2026: primary-checkout backend regression audit
+
+Four bounded read-only audits compared the remaining dirty primary-checkout
+backend areas with live `origin/main` (`3b15fe4a`) and PR #40 (`f65ad3ba`).
+They found no divergent production change cleared for porting as-is. Many
+untracked files are exact copies of files already on `main`; exact path/content
+matches are not unique implementation work.
+
+The reviewed local variants contain material regressions relative to `main`,
+including weakened owner scoping for legacy pursuits; non-durable scheduler
+fallback; automation writes without a durable outbox; missing cancellation
+propagation; weakened approval/source-evidence revision binding and receipt
+handling; dropped approval/review endpoints; public readiness detail exposure;
+changed migration gates and migration-owned schema handling; lost framework
+preference audit history; unbounded memory/verification reads; weaker provider
+URL validation; omitted account-grant verification; and cancelled uploads that
+may continue. Review also identified weakened stop-recovery invariants, dropped
+source-search cancellation/error escalation, loss of several task-engine model
+policies, and inconsistent approval queue filtering. These are audit findings,
+not claims that each path was exercised at runtime; do not port the local
+variants to replace `main`.
+
+One focused execution review did not establish that the observed stop-recovery
+change bypasses the separate global environment-stop checks. Likewise, the
+phase-2 source-approval precheck removal was not shown to bypass the independent
+receipt validation at the background execution boundary. These are bounded
+negative findings, not a complete safety certification.
+
+No tests were run for these local variants. The audits did not cover every
+changed file, every backend package, ignored files, all linked worktrees, or
+live provider/runtime behavior. In particular, the primary backend review
+explicitly left numerous packages and adjacent integrations unaudited. The
+exact-match cleanup candidate set was separately measured at 815 untracked
+source/documentation files (7,719,027 logical bytes) in the primary checkout;
+the deletion command was rejected before execution, so no local data was
+removed. Larger output trees, ignored data, and unsigned executables remain
+unclassified and must not be deleted on the basis of this audit.
+
+At this note, PR #40 remains open and based on `main`. Exact-head CI for
+`f65ad3ba` passed all observed jobs except the `whispercpp-runner` job, which
+was still in progress; do not record the head as fully green until the check
+finishes.
+
+### October 13, 2026: refreshed archive integrity and August source-path mismatch
+
+Read-only cleanup verification was rerun from a clean checkout of canonical
+`main` at `3b15fe4a`, which matched live `origin/main`. The July 30 archive
+verifier checked all 18 manifest paths and 20,739,169,122 logical bytes; it
+verified five candidate hashes totaling 3,179,439,595 bytes and retained 13
+files. It reported `cleanup_gate_ready=true`, but `cleanup_authorized=false` and
+`deletion_performed=false`. The supplemental verifier checked all nine source
+files across the two supplemental roots and 14,013,737,298 logical bytes; both
+candidate hashes matched (3,113,294,358 bytes) and seven files remain retained.
+It likewise performed no deletion and reported `cleanup_authorized=false`.
+These are distinct July 30 archive sets; do not add their counts to the August
+manifest.
+
+The August manifest has 114 entries (10 for August 1, 5 for August 3, 48 for
+August 4, 49 for August 5, and 2 for August 8). A fresh metadata comparison
+against its recorded source root, `C:\Users\NO\.codex\sessions\2026`, found
+104 entries missing at their manifest paths and all ten present entries with
+file lengths different from the manifest. Specifically, the 48 August 4
+entries are absent; 40 of 49 August 5 entries are absent and the nine present
+files differ in size; one August 8 entry is absent and the other differs in
+size; August 1 and August 3 entries are absent. This check did not hash the
+present mismatched files and does not establish whether missing items were
+moved, compacted, or otherwise preserved.
+
+The current `C:\Users\NO\.codex\sessions\2026\08` directory contains 113
+JSONL files totaling 19,395,151,209 logical bytes, but it is not a verified
+match for the August manifest. Targeted filename searches for a sample missing
+August ID found no match in `.codex`, `D:\codex-temp`, `D:\CodexTemp`,
+`D:\CodexTempBackup`, `D:\Temp`, `D:\Codex-evidence`, Downloads, or Desktop.
+The profile-wide search was stopped before completion to avoid an unbounded
+resource scan. Therefore the previously reported 222.485 GiB completed August
+4-5 set is a historical manifest value, not a verified current removable set.
+Do not delete or regenerate any August source from these observations. Locate
+and reconcile the original files, or document their authoritative preservation
+elsewhere, before closing that archive's integration or cleanup gate.
+
+The new PR #40 audit note is at `fcc0f71c5b605502b1e1cbd5fff5f1e78935d8bb`;
+its exact-head GitHub Actions run `38324315532` completed successfully. The
+environment rejected the requested local deletion operation before execution;
+no alternate deletion mechanism was used. No archive, worktree, or local file
+was removed.
+
+## 2026-10-13 local checkout comparison
+
+A fresh read-only comparison was run from the primary HAI checkout at
+`codex/hai-runtime-release` (`e07b9dae`) against current `origin/main`
+(`3b15fe4a`) and the checkout's remote feature branch. The local feature
+checkout is 440 commits behind `origin/codex/hai-runtime-release`; it has 692
+unstaged tracked modifications and 2,475 untracked paths. It must not be
+treated as a current branch snapshot or copied wholesale into a PR.
+
+For the 692 modified tracked files, comparing Git blob IDs against current
+`origin/main` found 351 already identical, 340 different, and one path absent
+from `main`. For the 2,475 untracked, non-ignored paths, 852 have a same-path,
+byte-identical blob in `main` (2,230,351 filesystem bytes total), 114 share a
+path but differ in content, and 1,509 have no same path in `main`. These are
+identity comparisons only; the non-matching files were not individually
+reviewed for correctness or relevance. The exact-match subset is only about
+2.13 MiB using a filesystem character-count estimate. A fresh byte-accurate
+Git blob scan on 2026-10-13 against `origin/main` `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`
+recounted the 351 exact tracked paths as 5,628,406 bytes and the 852 exact
+untracked paths as 7,956,591 bytes: 13,584,997 bytes total (about 12.95 MiB).
+The earlier 2,230,351-byte figure was not a byte-accurate measurement and is
+superseded. This is the maximum content-identical candidate set from those
+status groups, not proof that removing tracked files would leave this stale
+checkout usable. A direct local deletion attempt was blocked by the environment;
+no local files were removed and no alternate deletion method was used.
+
+At the same recheck, PR #40 remained open at head
+`4066f46ae6ff972a230bc92be715b799370f93ea`, with 19 checks successful, 8 in
+progress, and 9 queued. GitHub reported the merge state as `UNSTABLE`; these
+checks are not yet a completed integration gate.
+
+Additional bounded source/test spot checks found no further local-only change
+cleared for import. The local `source_approval.go` removes the reviewed owner
+type from approval receipts and narrows revision matching; the local task
+execution-context helper drops the private context fallback; and the local
+database-pool file removes the configured parameterized-query logger. The
+local Trello reopen test replaces action-history responses with an empty list,
+and the local readiness test removes verified agent-card evidence. Those
+variants reduce binding, cancellation, privacy, or regression-test coverage
+relative to `main`; they were not ported. These checks are examples only, not
+a complete semantic review of all 340 differing tracked paths or 114
+same-path/different-content untracked paths.
+
+A byte-accurate root-level grouping of the same current status snapshot found
+the 340 tracked divergences in frontend (156 paths), backend (129), IDP (17),
+docs (14), scripts (8), installer (5), and seven other root/config areas. The
+114 different untracked paths are backend (33), scripts (20), IDP (10),
+frontend (6), services (4), docs (1), and output evidence (40). Of the 1,509
+untracked paths with no main-tree path, 1,493 are under `output/`; the ten
+backend paths are outcome-evaluation test evidence logs/JSON, with the
+remaining six in agent-state directories or root logs. This narrows the
+unreviewed product-source inventory but does not replace semantic review of
+the 340 tracked or 114 same-path/different-content paths.
+
+### Deployment/configuration spot check
+
+Comparison of local deployment files with the same `main` commit also found no
+safe config to port as-is. The local Nginx template removes the Content
+Security Policy and other response security headers, changes the frontend
+upstream from the canonical container port, and drops the extended API proxy
+timeout used by long-running task execution. The local backend and IDP Docker
+build files and Windows installer script downgrade the pinned Go builder from
+the current `main` version. The local `.env.example` also removes current
+controls/documentation for legacy data ownership, private-source HTTP
+destinations, Trello board connector configuration, and durable-scheduler
+fallback. These are configuration-level comparisons; no live deployment was
+changed or tested, and the local variants were not ported.
+
+### IDP authentication spot check
+
+The local `idp/internal/app/authentication/auth_service.go` also uses older
+context-free signatures for logout, refresh, authentication checks, and
+password-reset requests. Canonical `main` accepts request contexts and checks
+cancellation before session work; local tests were changed to call the
+context-free API. Replacing the canonical IDP implementation with this local
+variant would reduce cancellation propagation. The local password-reset and
+public-auth rate-limit source and tests are byte-identical to `main`, so those
+untracked copies are duplicates rather than unintegrated functionality. No
+local IDP code was ported from this sample.
+
+### Verification repository spot check
+
+The local `backend/internal/verification/repository.go` removes the canonical
+200-run history limit and the narrow opt-in legacy-owner query in favor of
+unbounded exact-owner reads. The canonical repository tests explicitly assert
+the bounded history SQL and the designated legacy-owner boundary. Although
+the local exact-owner query is stricter for ownerless records, importing it
+would also remove the reviewed migration path and allow unbounded history
+loads; preserve the canonical implementation unless those behaviors are
+deliberately redesigned with pagination and migration coverage.
+
+### CI and migration-contract spot check
+
+The local `.github/workflows/ci.yml` removes cleanup-readiness and transcript
+safety contract invocations and pins Windows installer CI to Go `1.25.13`
+instead of canonical `1.27.2`. The local migration-chain contract removes the
+expected tail migrations `0116` through `0127`. The local `scripts/test_ci_contract.py`
+also removes assertions for startup-log secret redaction, optional production
+dependency auditing, and the frontend's listening health endpoint. These
+changes weaken release, cleanup, migration-order, and secret-handling gates;
+none were ported.
+
+At the time of this comparison, PR #40 was open against `main`, mergeable, and
+headed at `e0670e870ccf381bbd5bb298adc67dc4dc1918f1`. That checkpoint contained
+three files (the verification-service fix, its regression test, and this
+ledger); all 36 checks for that exact head reported success. This inventory was
+then pushed as `1fa6e72532b40511575046d46c4728d89ad2fc01`; its checks were still
+running when observed (11 successful, 11 in progress, 14 queued). The GitHub
+connector required reauthentication during this audit, so PR metadata was
+independently checked through GitHub's public REST API. This does not establish
+that the remaining local modifications are safe or ready to publish.
+
+## 2026-10-13 local frontend validation
+
+On the same primary checkout snapshot (`codex/hai-runtime-release`,
+`e07b9dae`), `npm.cmd test -- --watch=false` completed successfully: 174 focused
+Node tests and 1,325 Chrome/Karma tests passed. A production build initially
+stopped at the repository's runtime guard because the shell default was Node
+25.2.1 while the project requires Node `^24.15.0`. Rerunning with the bundled
+Node 24.19.0 runtime passed and generated the production bundle (908.88 kB
+initial raw total). It emitted four SCSS component-budget warnings: workflow
+engine, app shell, task blueprint, and pursuits; pursuits was 24.15 kB over its
+20 kB budget. These results validate local compilation and tests only; they do
+not establish that the divergent local frontend should be copied to `main`.
+
+## 2026-10-13 fresh archive verification and workspace footprint
+
+Both committed readiness verifiers were rerun from the clean canonical `main`
+checkout at `3b15fe4a`; its tracked and untracked worktree remained clean.
+The primary July archive still contains 18 files and 20,739,169,122 logical
+bytes. Five candidates (3,179,439,595 bytes) passed source-hash and ID-crosswalk
+checks; 13 files remain retained. The committed-ledger and PR #36 merged gates
+passed, and the script reported `cleanup_gate_ready=true`,
+`cleanup_authorized=false`, and `deletion_performed=false`.
+
+The distinct supplemental roots still contain nine files and 14,013,737,298
+logical bytes. Two candidates (3,113,294,358 bytes) passed hash verification;
+seven remain retained. Its verifier likewise reported
+`cleanup_authorized=false` and `deletion_performed=false`. Together, the
+verified candidate sets total 6,292,733,953 bytes (about 5.86 GiB), but neither
+verifier performed cleanup.
+
+The August directory `C:\Users\NO\.codex\sessions\2026\08` currently contains
+113 files totaling 19,395,151,209 bytes recursively. It still does not match
+the historical 114-row manifest: prior metadata checks found 104 listed paths
+missing and ten present files with different sizes. No content hashes were
+checked for those mismatches, so do not infer that the remaining 19.4 GB is
+fully integrated or removable.
+
+The primary checkout footprint was also measured: `frontend/dist` 387,064,530
+bytes, `frontend/node_modules` 280,611,707 bytes, `output` 126,970,802 bytes
+(1,576 files), and `.git` 127,144,128 bytes. `frontend/dist` was generated by
+the successful production build recorded above; service dependencies on these
+paths were not audited here. No local files or archives were removed.
+
+## Frontend parity audit: regressions in the stale local snapshot
+
+Comparison of the local `e07b9dae` frontend against canonical `main` found
+changes that should not be imported as-is:
+
+- The local route table and module registry remove `/operational-brain`, while
+  canonical `main` still registers the route and its three progressive
+  sections. The local registry test also removes that route's expected IDs.
+- The local workflow-engine template and registry remove
+  `intake-outcome-criteria`; canonical `main` still renders and registers it.
+- The local framework-registry template and registry remove
+  `framework-preference-history`; canonical `main` still renders and registers
+  it.
+- The local app shell removes `Title` injection and its per-module document
+  title update, leaving the browser title stale during navigation.
+- The local app shell now always focuses a navigation entry after opening the
+  mobile navigation. It also deletes the existing test that verifies focus is
+  not stolen after the user moves it before the scheduled callback.
+
+The local suite's green result must be interpreted with these test edits in
+view: the local registry expectations were reduced and the focus regression
+test was deleted. These are concrete reasons not to copy the divergent local
+frontend wholesale. The canonical `main` versions retain the routes, sections,
+document-title behavior, and focus regression test; no fix was needed on `main`
+for these findings.
+
+## Local backend test boundary
+
+`go test -p 1 ./...` was attempted from the primary local checkout but did not
+start: no Go executable is installed in the checked standard locations or on
+the shell `PATH`. No local backend or IDP Go tests are claimed for the divergent
+snapshot. PR #40's remote CI does not validate those unported local edits.
+
+## 2026-10-13 branch and cleanup boundary refresh
+
+The primary checkout still points at `codex/hai-runtime-release` commit
+`e07b9dae`, while the remote `main` ref is `3b15fe4a`. The local Git graph
+reports nine commits on `main` and 292 on the stale local branch since their
+merge base; this is not evidence that 292 changes are missing. PR #36 from the
+same remote branch was already merged at `c31cec1` from head `e62b5684`, so
+history may have been squash-integrated. A direct tree comparison between the
+current local HEAD and `main` reports 2,071 path changes (4 additions, 1,189
+deletions, 876 modifications, and 2 exact renames), with 393,575 removed lines.
+Do not bulk-push or remove this checkout based on ancestry or path counts;
+reconcile file content against current `main` first. The ordinary `git fetch`
+refresh was denied because this checkout could not open `.git/FETCH_HEAD`; no
+permission or filesystem workaround was attempted.
+
+The exact-blob inventory of the dirty portion remains a separate result: 351
+modified tracked files and 852 untracked files match current `main` exactly,
+totalling 13,584,997 bytes. This is only about 13 MiB of recoverable checkout
+content and is not the larger transcript-archive inventory. No local files were
+deleted. The cleanup-readiness verifier previously reported
+`cleanup_authorized=false` and `deletion_performed=false`; user approval does
+not change that verifier result or establish that unmatched material is
+published. Keep unmatched archives and working-tree data until the applicable
+cleanup gate and content-level integration checks pass.
+
+### Service dependency batch: `services/`
+
+Compared every currently untracked, non-ignored service path against
+`origin/main` by Git blob ID. Twenty-nine files are byte-identical and already
+exist on `main`. The four differing paths are the DeepTeam
+`requirements.in`/lock pair and Promptfoo `package.json`/lock pair. The local
+DeepTeam input removes `sentry-sdk` from the canonical requirements; its
+runtime/telemetry effect is not established, so retain the canonical dependency
+until that behavior is tested. The local Promptfoo manifest and lock resolve
+`promptfoo` `0.123.1`, while `main` has `0.124.1`, the `@libsql/linux-x64-gnu`
+`0.5.29` dependency, and a `get-uri` override pinning `basic-ftp` to `6.2.1`.
+The local pair is therefore not an update and must not replace `main`. No
+service file from this batch needs porting.
+
+### IDP untracked authentication tests
+
+Compared the 38 currently untracked IDP paths against `origin/main` by Git
+blob ID: 28 are exact matches and ten differ. The ten differences are
+authentication tests, not new production implementations. Their changes remove
+request contexts from reset, refresh, logout, and authentication calls, matching
+the stale local context-free service API; the canonical `main` service and its
+tests propagate `context.Context` through those operations. The test diffs do
+not add coverage that can be ported independently without first restoring the
+canonical signatures, and several are broad call-site rewrites only. Keep the
+`main` tests and context-aware API; do not copy these stale variants.
+
+### IDP tracked authentication/configuration deltas
+
+Compared all 17 content-different tracked IDP paths from the local status
+snapshot with `origin/main`. The context-free API changes also remove the
+canonical canceled-context regression test and its SMTP cancellation test, and
+delete owner-scope claim generation/tests. Other production differences
+weaken reset-token persistence validation (`IsPasswordResetTokenDigest` is
+replaced by a length-only check), restore unchecked Gin-context type
+assertions and a possible nil-user dereference, and replace configurable
+database pool settings with hard-coded values. The IDP Dockerfile downgrades
+the Go builder from `1.27.2` to `1.25.13`. Kafka configuration also removes
+the optional broker compatibility setting; this behavior was not separately
+qualified. These changes either remove proven safety/error handling or change
+runtime configuration without acceptance evidence. No IDP delta from this
+local snapshot is eligible for import as-is.
+
+### Backend untracked path batch
+
+Compared all 670 untracked backend paths with `origin/main` using Git blob
+IDs: 627 are byte-identical, 33 are same-path content variants, and ten
+outcome-evaluation PostgreSQL/test-evidence logs have no main-tree path. The
+different source/test variants include operation-claim and source-approval
+logic, task context propagation, worker reliability, scheduler state,
+verification freshness, pursuit receipt binding, emergency-stop request
+validation, and migration rollback contracts. Review against canonical tests
+shows the local variants drop or weaken exact revision/receipt binding,
+approval-required routing, cancellation, error-detail redaction, or rollback
+protection. Six migration-test variants also omit later raw-evidence migration
+and phase-order/data-protection assertions present on `main`. The ten logs are
+test evidence, not product source, and remain local pending the separate
+archive cleanup gate. No backend path from this batch is eligible for import
+as-is; the existing verification-service fix in PR #40 is the only backend
+source change currently selected for integration.
+
+### Untracked script/test batch: `scripts/`
+
+Compared all 39 untracked script paths against `origin/main` by Git blob ID:
+19 already match; 20 are older or otherwise divergent copies of files already
+on `main`. The differences remove CI secret-scan base-revision validation and
+redacted finding summaries, optional-dependency audit coverage, isolated-stack
+cleanup provenance/readiness checks, installer runner-profile and Docker-state
+guards, migration-payload exclusion fixtures, and preservation of operator
+Docker network settings. Several Windows runtime tests also pin Go `1.25.13`
+instead of `1.27.2`. The runner lock test's CRLF normalization is already in
+`main`, not a missing local improvement. A proposed extra Angular-worker parser
+test was checked and rejected: it failed against the installed parser (2 of 5
+tests failed; the parser returned a CPU-derived default and did not return
+`NaN` for invalid input). No script delta from this batch is eligible for
+porting as-is. These findings are static comparison plus that focused local
+test result; no Windows installer or disposable-stack execution is claimed.
+
+### Untracked frontend/docs batch
+
+Compared all 87 untracked frontend paths and eight untracked docs paths with
+`origin/main`: 81 frontend files and seven docs files are exact matches; six
+frontend test/support files and `docs/isolated-acceptance.md` differ. The local
+browser matrix switches from canonical run-scoped storage-state refresh to
+direct password login and removes the canonical sanitized diagnostic
+categories/bundle locations and expired-session refresh flow. Local
+control-room tests omit canonical review/readback cases; the local release
+cache test drops inline-critical-style and restrictive-CSP theme-bootstrap
+assertions; and the local secret-boundary fixture uses a literal key-shaped
+value where `main` constructs the synthetic value. The local handoff note is
+superseded by the canonical note, which correctly leaves the full persisted
+history browser scenario as an unrun acceptance gate rather than claiming it
+passed. These are test/support/documentation variants, not missing production
+frontend code. No frontend or docs path from this batch is eligible for import
+as-is.
+
+### Tracked service/runtime files
+
+The four content-different tracked service files are `deepteam-runner`'s
+requirements lock, Promptfoo's Dockerfile and runner, and the Pydantic-AI
+runner. The DeepTeam lock removes `sentry-sdk`; the Promptfoo runner and lock
+downgrade `0.124.1` to `0.123.1`, while its Dockerfile also omits optional
+dependencies that canonical `main` installs. The Pydantic-AI file differs by
+line endings only after normalized comparison. No service runtime change from
+this tracked batch should replace canonical `main`.
+
+### October 13, 2026: runtime-control, workflow-selection, and pursuit service contracts
+
+Compared the three remaining tracked service variants in the stale C: checkout
+against the verified `main` tree at `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`:
+`runtime-control.service.ts`, `workflow/workflow.service.ts`, and
+`pursuit.service.ts`. None is a candidate to port as-is; each is behind the
+canonical service contract:
+
+- The stale runtime-control client replaces canonical `main`'s two-step
+  durable review flow with a different resume endpoint/payload. Canonical
+  `main` creates a durable owner review, then submits the exact confirmation
+  for that specific review; route smoke tests cover both canonical calls. The
+  stale client does not exercise the current durable review/confirmation
+  boundary.
+- Workflow selection fetches a collection with `limit=200` and searches it in
+  the browser. Canonical `main` fetches the exact selection by encoded ID,
+  treats only an exact-record 404 as unavailable, and validates selector-v5
+  risk/autonomy/approval history. Its service tests cover the exact lookup,
+  not-found behavior, and invalid policy records. The stale list request both
+  increases unnecessary data transfer and bypasses these exact-record checks.
+- Pursuit dashboard requests omit the canonical `view=summary` option and the
+  compact `dashboardSummary()` method. The API supports `full`, `summary`, and
+  `counts`; canonical tests verify that summary consumers omit the large
+  pursuit collection and that incomplete responses are rejected rather than
+  represented as a false empty state.
+
+These findings are based on local-vs-main blob comparison, current backend
+handlers/routes, and the canonical frontend service tests. No live authenticated
+provider call or browser acceptance is claimed. Keep all three canonical
+`main` implementations; do not replace them with the stale C: copies.
+
+### October 13, 2026: LLM maintenance and model-calibration deltas
+
+Compared all 28 modified tracked files under `backend/internal/llm` and
+`backend/internal/modelintelligence` with the same verified `main` tree. Nineteen
+are identical after normalizing line endings. The nine substantive differences
+are older local variants, not unintegrated improvements:
+
+- LLM provider readiness and model-intelligence endpoint validation in the
+  local copies no longer reject embedded URL credentials, query parameters,
+  or fragments. Canonical `main` rejects these components; its provider tests
+  cover unsafe URL components and cancellation. Do not import the local
+  variants, which could admit credential-bearing endpoint configuration.
+- Local LLM model-maintenance endpoint identity accepts only the host root or
+  `/v1`, while canonical `main` supports a bounded mount prefix, preserves it
+  in the endpoint identity, and rejects credentials/query/fragment data and
+  route-like paths. The canonical maintenance tests cover endpoint-key
+  normalization and rejection cases; the local change is both less capable
+  for mounted providers and weaker at preserving endpoint identity.
+- The local maintenance scheduler omits the canonical check for eligible
+  configured model work before starting. Canonical `main` avoids starting an
+  idle background maintenance loop when no enabled, ready, policy-eligible
+  model exists.
+- Local provider catalog probing caps response reads at 256 KiB, whereas
+  canonical `main` uses the named 4 MiB bound and corresponding parser path.
+  This is a compatibility reduction for larger provider catalogs, not a
+  reason to remove the canonical bounded-read contract.
+- Local model calibration removes the canonical explicit zero-success branch
+  and its regression test, which guarantees a stable positive zero for the
+  Wilson lower bound instead of floating-point negative-zero noise.
+
+The canonical LLM/model-intelligence test source covers the endpoint,
+eligibility, and calibration behaviors described above. A local Go toolchain is
+not installed, so no local Go test run is claimed; hosted PR checks for the
+current head are still the authoritative pending verification. No source from
+this stale batch was ported.
+
+### October 13, 2026: normalized account-feed permission boundary
+
+Compared all 11 modified tracked files under `backend/internal/accountfeed`
+with current `main`. Nine are identical after line-ending normalization. The
+two substantive local variants are `bridge.go` and `permission_registry.go`:
+the local registry removes `ReportsCredentialGrant` and reports `Granted` from
+credential-presence status alone. That can conflate Google OAuth client
+bootstrap configuration with an owner's actual provider grant. Canonical
+`main` explicitly treats Google client ID/secret as bootstrap configuration,
+keeps these bridges `contract_only` until a real provider-native flow grants
+access, and its regression test verifies that even configured OAuth client
+credentials do not set `Granted`. Canonical bridge contracts also retain the
+credential-setup metadata needed to direct operators to the actual connector.
+
+The account-feed reader, normalization, fetcher, handler, and registry service
+copies in this modified-file batch are otherwise byte-identical after line
+ending normalization. The canonical implementation and its tests remain the
+correct versions; no account-feed source delta from the stale checkout was
+ported. This was a static local-vs-main comparison with direct source/test
+inspection, not a live Google/Trello integration acceptance test.
+
+### October 13, 2026: frontend service reconciliation
+
+Correction to the tracked-only path comparison: some files marked deleted by
+Git were actually present as untracked files. Compared the complete on-disk
+service tree (tracked and untracked) with current `origin/main` at
+`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`, normalizing line endings. Of 117
+canonical paths, 110 are present locally: 88 match, 22 same-path files differ,
+seven canonical service/test paths are absent, and there are no local-only
+paths. The seven absent paths are the Operational Graph service and its test,
+the HTTP view-refresh interceptor and its test, and the ambient, runtime
+control, and system-status service tests.
+
+The actual same-path variants are not unintegrated improvements to import:
+
+- The local system-status service reduces the authenticated status surface to
+  the public `/readyz` probe. Canonical `main` retains owner-scoped readiness,
+  system information, connector status, durable event-delivery status, and an
+  explicit retry operation; canonical service tests exercise those routes.
+- The local framework-registry client removes preference-history retrieval
+  and bounded selection listing. The local governance client also removes
+  summary projections and instead fetches full domain-pack records. Canonical
+  `main` keeps those bounded/read-optimized paths and tests the summary query.
+- The local ambient client drops the `full|summary` projection parameter;
+  the local workflow and runtime-control clients use list-based selection and
+  alternate resume calls. Canonical exact-record selection and the
+  durable-review/exact-confirmation flow are covered by the current service
+  contracts. Those two workflow/runtime differences are detailed above.
+- Other local variants weaken response typing for login, ambient-monitor
+  recovery, and task history. The canonical clients keep explicit response
+  types, bounded task-log requests, and recovery metadata; their service tests
+  assert the parameters and response shapes.
+
+This is a working-tree-to-current-main contract comparison plus direct
+inspection of canonical service tests, not a live authenticated-provider
+acceptance run. The seven absent files are already present in `main`; the
+22 differing paths are not all independently covered by this semantic review.
+No service code from this stale local batch is eligible to replace `main`, and
+the wider checkout still contains unreconciled content and local state.
+
+### October 13, 2026: frontend page-tree reconciliation
+
+Correction to the earlier tracked-only comparison: `git diff` excluded the
+untracked frontend paths and therefore did not represent the actual on-disk
+page tree. Re-enumerated every file under `frontend/src/app/pages` and compared
+the actual contents with the verified `origin/main` tree, normalizing line
+endings. `main` has 187 page paths; 182 are present on disk, 142 match, 40
+same-path files differ, five canonical Operational Brain paths are absent,
+and there are no local-only page paths.
+
+The changed page implementations include the API-contract divergences
+described in the service/runtime entries above, and canonical `main` contains
+its current page and accessibility test set. The 40 same-path differences
+have not all received semantic review. No page content is being ported or
+treated as cleanup-eligible on the basis of this inventory alone. Exact-head
+PR CI remains pending and no live browser acceptance is claimed.
+
+### October 13, 2026: frontend model reconciliation
+
+Correction to the tracked-only model comparison: `safe-outcome` and Skills
+model files reported as deleted by Git are present on disk as untracked files.
+Compared the actual model directory (tracked and untracked) with current
+`origin/main`, normalizing line endings. Of 55 canonical model paths, 54 are
+present locally: 44 match, ten same-path model files differ, and
+`operational-graph.model.ts` is absent. There are no local-only model paths.
+The untracked safe-outcome parser and its regression test match the canonical
+files after normalization and are not missing local work.
+
+The ten differing model paths remove or alter typed ambient recovery authority,
+source overview data, framework preference history, authenticated
+system/event-delivery/A2A state, task-history/MCP trace fields, workflow
+success criteria, and runtime approval contracts; the memory-query types are
+also moved from the shared model into the service interface. Canonical
+background-operation and runtime-lab pages consume the safe-outcome contracts,
+and canonical service tests assert related recovery, summary, and approval
+response shapes. No model changes from the stale tree were imported.
+
+This audit also found a duplicate identical `IResumeApprovalRequest`
+declaration in the canonical runtime-control model. The PR removes only the
+redundant second declaration; the approval types and behavior are unchanged.
+The PR worktree has no installed frontend dependencies, so local Angular
+compilation was not available; exact-head GitHub CI is pending for this
+change.
+
+### October 13, 2026: complete frontend filesystem comparison
+
+Enumerated all non-ignored files under `frontend` from the working filesystem,
+including untracked files, and compared them by same path with current
+`origin/main`. The canonical tree has 463 files; 441 are present locally. On
+raw Git blob bytes, 189 files (1,347,981 bytes) are exact matches, 252 same-path
+files differ, 22 canonical paths are absent locally, and no local-only paths
+were found. Raw-byte differences can include line-ending changes; the
+page/service/model entries above provide normalized counts for those narrower
+subtrees. The 22 absent canonical paths and 252 differing files have not all
+received semantic review. This inventory is not permission to remove the
+checkout or to treat every matching file as already integrated into the
+current PR; those matching contents are already present on `main`.
+
+### October 13, 2026: refreshed full primary-checkout path and byte inventory
+
+Recomputed the primary checkout's complete non-ignored changed/untracked path
+set against the verified `origin/main` commit
+`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`, hashing actual on-disk bytes and
+including untracked files. The 3,157 paths comprise 682 tracked modifications
+and 2,475 untracked paths. Of these, 1,195 files (13,561,852 logical bytes)
+are byte-for-byte identical to a same-path file on `main` (343 tracked and 852
+untracked); 452 same-path files (12,481,144 bytes) differ (338 tracked and 114
+untracked); and 1,510 paths (126,596,435 bytes) have no same-path file on
+`main`. The last group is 1,509 untracked `output/` artifacts plus the legacy
+tracked `nginx-config/nginx.conf`. Counts and bytes describe logical file
+contents, not physical disk blocks or recoverable disk capacity.
+
+This raw-byte inventory is distinct from the earlier CRLF/LF-normalized
+subtree comparisons and does not certify semantic quality. The broad tracked
+diff was checked against a clean `main` worktree with `git apply --3way
+--check`; the check reported conflicts and a legacy path absent from the
+target index, and applied no files. Focused spot reviews of still-divergent
+local source reconfirmed that `operations/execution_claim.go` uses a database
+column name absent from the canonical migration (`payload` instead of
+`payload_json`), local source-approval variants omit owner-type/raw-evidence
+revision binding, and a local OpenClaw maintenance change reintroduces the
+signing key as a key-shaped literal that the canonical source deliberately
+encodes to satisfy secret scanning. These are examples, not a complete review
+of all 452 differing paths; no broad source import is justified by this
+inventory.
+
+Of the 852 untracked byte-exact copies of current `main`, a path-by-path
+deletion preflight revalidated the exact main blob, checkout containment,
+regular-file status, and absence of reparse points; it excluded credential,
+agent-state, and settings paths. The preflight identified 7,956,591 logical
+bytes. The subsequent file-removal command was rejected by the execution
+policy before it ran. No file was deleted, and no alternate deletion path was
+used. The explicit user approval is recorded, but these files remain on disk;
+the full local-source, generated-output, transcript, and worktree review is
+still incomplete.
+
+### October 13, 2026: Control Center, Pursuits, and Workflow Engine review
+
+Reviewed the divergent primary-checkout implementations and tests for these
+three operational pages against the current `main` contracts. No local page
+change is safe to copy as-is:
+
+- `pursuits.component.ts` locally auto-selects the first item when there is no
+  explicit selection. The canonical spec explicitly requires the Basic list to
+  remain compact until the user selects a pursuit, so the local behavior
+  conflicts with the accepted interaction contract and is not ported.
+- The local Control Center switches from the bounded `overview('summary')` and
+  `dashboardSummary()` calls to broader/default endpoints, removes validation
+  that summary counts are present and finite, and derives attention counts from
+  list lengths instead of the canonical summary counters. Keep the canonical
+  response contract and tests.
+- The local Workflow Engine removes the success-criteria input and request
+  mapping, removes `workflowActionsDisabled()` from the pursuit-match control,
+  and replaces the `reviewRequired` pause/reload/recovery path with a generic
+  uncertain result. The local diff also removes most of the page's spec file.
+  These changes reduce completion criteria, policy gating, and operator
+  recovery; retain the canonical implementation.
+- The local checkout deletes the 709-line HAI OS component spec and removes
+  119 lines from the Workflow Engine spec. Those deletions reduce coverage and
+  are not ported.
+
+This is a focused semantic audit of these page paths, not completion of the
+remaining frontend or repository-wide reconciliation. No local files were
+removed.
+
+### October 13, 2026: Brain Catalog backend review
+
+Compared the local `backend/internal/braincatalog` implementation and tests
+with current `main`. The local catalog deletes the integrated, opt-in
+ChatGPT/Codex conversation-history MCP entry, including its documented
+read-only tool bounds and provenance behavior. It also removes request-context
+variants from upstream review, collection review, repository discovery,
+maintenance, and their handler call sites. The canonical handlers pass
+`c.Request.Context()` through to these network operations and return
+cancellation/deadline outcomes; the local version drops that cancellation path
+and deletes its context tests. The local Agent Card catalog wording changes
+from authenticated peer capability to local-only capability, which does not
+match the canonical A2A bridge contract.
+
+These changes remove an already integrated HAI capability and weaken request
+cancellation and contract coverage. No Brain Catalog implementation or test
+change from the local snapshot is eligible to replace `main`. This review is
+limited to `backend/internal/braincatalog`; it does not certify the remaining
+backend deltas. No local files were removed.
+
+### October 13, 2026: Ambient scan and source-monitor review
+
+Reviewed the local `backend/internal/ambient`, `backend/internal/ambientmonitor`,
+and `backend/internal/proactivity` deltas against current `main`. The local
+Ambient tree removes the canonical `scan_context.go` contract and its
+acknowledgement, repository, and service tests; the canonical service exposes
+context-bound scans, cancellation checkpoints, scan outcome/record matching,
+and unconfirmed-outcome handling. The local service also removes the bounded
+summary overview and pursuit-dashboard validation path. These are durable
+workflow, recovery, and data-boundary behaviors, so the shortened local
+implementation is not a safe replacement.
+
+In `ambientmonitor/collectors.go`, the local implementation removes
+`withCollectorSnapshot`; current `main` runs the count and record reads in a
+read-only PostgreSQL `REPEATABLE READ` transaction. Replacing that with
+independent queries can produce a count/sample pair from different database
+states. The local diff also removes the corresponding PostgreSQL fixture and
+collector tests. No ambient or source-monitor implementation or test change
+from this snapshot is eligible to replace `main`.
+
+This review is limited to the named backend packages and their changed tests;
+it does not complete the remaining backend reconciliation. No local files
+were removed.
+
+### October 13, 2026: agent coordination and framework handler tests
+
+Compared `backend/internal/agentcoordination` and `backend/internal/agentframework`
+with current `main`. The coordination package has no semantic source delta
+after line-ending normalization. The local checkout deletes
+`backend/internal/agentframework/handler_test.go`, which currently covers
+request cancellation/deadline error truthfulness, immediate cancellation,
+bounded nil-result failure handling, oversized request bodies/suffixes,
+multiple JSON values, and valid trailing whitespace. No replacement tests or
+production changes accompany the deletion. The canonical tests remain
+necessary regression coverage; no local agent-framework change is eligible
+for import.
+
+This review covers these two packages only. No local files were removed.
+
+### October 13, 2026: HAI skill-selection and guidance packages
+
+The local snapshot deletes 14 paths (4,969 lines) under
+`backend/internal/brain_skill_selection`, `backend/internal/brainskills`, and
+`backend/internal/agentguidance`. Current `main` contains the HAI-authored
+skill catalog and HTTP inventory/selection/guidance-preview handlers, an
+owner-scoped selection service and Postgres repository, catalog-fingerprint
+validation, and task-scoped guidance resolution with catalog matching. The
+removed tests cover owner isolation, selection persistence, catalog changes,
+request integration, and guidance validation. These are existing brain
+capabilities and their safety boundary, not unintegrated local additions.
+Retain the canonical implementation; do not copy the local deletions.
+
+This is a path-scoped audit of the deleted skill/guidance packages, not a
+complete review of all backend source. No local files were removed.
+
+### October 13, 2026: Life Ontology, Operational Graph, and outcomes
+
+The local snapshot deletes the `lifeontology` repository/service/types and the
+entire `operationalgraph` handler/service/types package (including its tests).
+Current `main` still imports Life Ontology types and projection contracts from
+execution authorization, ambient monitoring, and outcome-evaluation paths;
+these packages are shared product interfaces, not orphaned build output. Their
+removal is incompatible with the canonical backend and is not ported.
+
+The local `outcomeevaluation` changes also delete
+`snapshot_binding_test.go` coverage for pinned-revision retries, incompatible
+repository replays, and historical owner/scope validation. Production changes
+remove the two-microsecond monotonic-clock allowance and controlled-clock
+constructor, and stop copying caller-owned observation/correction/indicator
+slices before normalization. That can make a valid immediate handoff sensitive
+to clock advancement and lets normalization mutate the caller's backing
+arrays. Keep the current `main` safeguards and tests.
+
+This audit covers the named packages and cross-imports only; repository-wide
+backend reconciliation remains incomplete. No local files were removed.
+
+### October 13, 2026: rate limits, privacy fixture, and Google retry metadata
+
+The local `ratelimit` implementation removes `defaultMaxEntries`, the
+expired-entry pruning/oldest-entry eviction path, and both tests for the
+memory ceiling. Its per-key map can therefore grow without bound under
+high-cardinality keys. Keep the bounded canonical limiter.
+
+The local `privacyfilter/scanner_test.go` replaces its constructed synthetic
+key with a hard-coded key-shaped placeholder, creating an unnecessary
+secret-scan finding without behavioral change. Retain the canonical non-secret
+fixture construction. The local snapshot also deletes
+`googleoauth/api_error.go`, which in current `main` carries only safe provider,
+HTTP status, and `Retry-After` metadata; canonical Gmail/Calendar handling and
+the Google Drive/Calendar retry classifier use that typed error. No local
+change from these packages is eligible for import.
+
+This is a focused audit of three backend concerns, not full repository
+reconciliation. No local files were removed.
+
+The local `lmeval/handler.go` changes its empty-body check from
+`ContentLength != 0` to `ContentLength > 0`. An unknown content length (`-1`)
+with a caller-provided run payload would then bypass the fixed-suite
+payload-rejection rule. Its test also drops the explicit unknown-length
+request case. Keep the canonical fail-closed check and regression test.
+
+### October 13, 2026: MCP preflight, domain-pack summaries, and worker safety
+
+The local `mcppreflight` implementation removes the ChatGPT/Codex history MCP
+catalog entry, secret-safe per-server bearer-token configuration, explicit
+HTTPS-only opt-in for remote endpoints, and JSON-RPC decoding from
+`text/event-stream` responses. Current `main` keeps remote access disabled by
+default and requires explicit configuration plus TLS/token validation when it
+is enabled; the local implementation's reduced feature set is not a safer
+drop-in for that reviewed contract.
+
+The local `domainpack` handler/types remove the bounded `view=summary` response
+and its validation path, forcing callers to use the full catalog response.
+The local snapshot also deletes host-runtime cancellation, repository-context,
+and emergency-stop tests, plus workflow-task approval-preflight, execution
+context, and tool-outcome-uncertainty tests. `workflowtask/runner.go` also
+removes the defensive copy of success-criteria slices when building the task
+request. These deltas reduce bounded API behavior, safety regression coverage,
+or ownership isolation; no local implementation or test change from these
+packages is eligible for import.
+
+This review is limited to the named packages and their direct test paths. No
+local files were removed.
+
+### October 13, 2026: OpenClaw reconciliation package presence
+
+The local checkout deletes all 22 current `backend/internal/openclawreconcile`
+paths (5,225 lines). `main` contains the terminal-receipt reconciler,
+emergency-stop fan-out and pending-cancellation recovery, owner-scoped
+operator reconciliation, artifact archive/retention/read/forget/recovery
+paths, usage recovery/views, and their repositories and tests. The router's
+OpenClaw artifact permission tests also import this package. This is already
+integrated product code on `main`, not work to re-create from the stale local
+tree; the local deletion set must not be applied. The associated cancellation,
+artifact-binding, retention, and recovery tests are part of the safety
+contract.
+
+This finding reconciles package presence and route/test references; it is not
+a fresh runtime acceptance of OpenClaw operations. No local files were
+removed.
+
+### October 13, 2026: conversation MCP, durable jobs, and runtime bridges
+
+The local checkout deletes `backend/internal/chatgptlogs/service.go` and its
+tests (1,003 lines total). Current `main` contains the opt-in, bounded
+read-only ChatGPT/Codex-history MCP client, including endpoint policy,
+allowlisted tool normalization, context-bounded search/calls, and HTTP/SSE
+JSON-RPC handling. The earlier catalog/preflight review is therefore backed
+by a real canonical service, not only registry metadata. No local replacement
+is present.
+
+In `durablejob`, the local snapshot deletes `review_settlement.go` and the
+review/settlement/reaper/lifecycle tests, and removes the queue-lease
+migration-contract assertion. These contracts cover review outcomes,
+recurring-job settlement, stale-worker fencing, and queue-scoped recovery;
+the local changes do not provide a verified replacement. In
+`executionbroker`, local removes `operation_scope.go` and the tests for
+operation identity, execution context, observation digests, and partial
+outcomes. It also raises `maxSafeArtifactBytes` from 8 KiB to 64 KiB without
+the accompanying bound/partial-outcome tests. Do not import this unqualified
+resource and scope change.
+
+The local `temporalbridge` tree deletes its activity/workflow boundary,
+repository transition, startup, lifecycle, follow-up-context, and schedule
+truth suites. The absence of a production diff here does not make these
+regression-contract deletions safe. No code or test deletion from these
+packages is ported.
+
+This review covers the named runtime and persistence packages only; it does
+not complete remaining product or archive reconciliation. No local files
+were removed.
+
+### October 13, 2026: canonical-main object comparison checkpoint
+
+Against the cached canonical `origin/main` snapshot (`3b15fe4`), the primary
+checkout has 692 tracked working-tree modifications relative to its own `HEAD`
+(`e07b9da`). Git blob comparison found 454 of those tracked files already
+identical to a same-path `main` file (7,302,804 bytes), 237 with different
+content, and one path absent from `main`.
+
+The same checkout has 2,475 untracked, non-ignored files: 881 are byte-identical
+same-path `main` blobs (8,142,393 bytes), 85 differ from a same-path `main`
+blob, and 1,509 have no same-path `main` file. Of the latter set, 1,493 are
+under `output`; the backend test-evidence files are generated acceptance data,
+not product source. Exact matches are inventory results, not deletion
+authorization or proof that a whole checkout can be removed.
+
+Comparing the working tree to `main` reports 1,728 tracked path differences,
+with 71,804 insertions and 319,625 deletions. This includes broad stale-tree
+deletions and must not be applied as an overlay. A focused review of the seven
+non-identical untracked backend implementation files found no safe code to
+port in that batch: the variants remove or weaken established database-log,
+source-approval, execution-context, or signing-key handling. The broader
+237-file tracked-content review and archive reconciliation remain incomplete.
+No local files were removed.
+
+### October 13, 2026: follow-up source and blob audit
+
+A fresh Git-object comparison of all 2,475 non-ignored untracked paths against
+the same cached `origin/main` tree found 881 exact blobs (8,144,332 bytes), 85
+different same-path blobs, and 1,509 paths absent from `main`. Of the absent
+paths, 1,493 are under `output`; the remaining 16 are local agent/router state,
+acceptance logs, or generated Postgres test-evidence records. None is source
+code suitable for import. Among non-output paths, 74 same-path variants differ
+from `main`; reviewed implementation variants weaken approval, strict-decoding,
+replay, or cancellation guarantees.
+
+Review of the local A2A bridge also found it removes message replay protection,
+strict JSON decoding, and private caching from the agent card; canonical `main`
+retains those controls. The local control-center variant removes validation of
+required pursuit counts, and the workflow UI variant weakens the pre-execution
+approval recheck by using a captured selection. These are not safe imports.
+This is a targeted delta review, not exhaustive semantic review of all 237
+tracked local content changes; archive reconciliation remains incomplete.
+No local files were removed.
+
+### October 13, 2026: tracked-delta recheck
+
+A later same-day recheck found 682 modified tracked paths relative to the
+primary checkout's `HEAD`: 446 are byte-identical to same-path `origin/main`
+files (7,297,951 bytes), 235 differ, and one path is absent from `main`. The
+counts are a fresh snapshot and supersede the earlier checkpoint for current
+inventory purposes. Combined with the current untracked exact matches, the
+same-path exact-match inventory is 15,442,283 bytes; this is not a reclaimable
+space estimate because local deletion is not permitted by the active execution
+environment and the original checkout contains other non-matching work.
+
+The source/task/workflow comparison further confirms that the old primary tree
+is behind the canonical implementation: its local variants omit substantial
+current tests and implementation files. No whole-directory overlay is safe.
+Review of the modified tracked paths remains partial, including the 64 frontend
+and 120 backend-internal differing files identified in the current comparison.
+Archive reconciliation and complete code-by-code import review remain open.
+
+### October 13, 2026: local-patch provenance clarification
+
+The primary checkout is 440 commits behind its remote tracking ref. Therefore
+a `working tree` versus `origin/main` diff describes the final local file
+contents but does not by itself attribute each difference to local edits.
+Comparing the actual worktree patch against its own `HEAD` shows substantial
+local additions in source, task, workflow, and control-room code. Those additions
+must not be dismissed based on the main-branch diff alone, and line counts do
+not prove that they are net-new behavior: some may already exist in newer form
+on `main`. Each candidate requires a three-way review of old `HEAD`, current
+local content, and canonical `main`, followed by focused tests before import.
+The prior safety findings describe differences in the current local files
+against `main`; they are not claims that every such behavior was introduced by
+the uncommitted patch. No import or deletion is implied by this clarification.
+
+### October 13, 2026: live Trello connector three-way check
+
+For `backend/internal/source/trello.go`, declaration comparison found 46 local
+declarations added relative to the primary checkout's old `HEAD`; all 46 are
+also present in canonical `origin/main`. The canonical file additionally has
+`trelloQuietBoardCursor`, which is absent from the local file. This confirms
+the local live-Trello implementation is already represented on `main`, while
+the canonical version has an additional cursor optimization; no code from the
+local Trello file needs to be imported. This is a symbol-level coverage check,
+not proof that every behavioral branch or external Trello API interaction has
+been accepted against a live account.
+
+### October 13, 2026: Go symbol-delta triage
+
+A structural scan of 1,022 local Go files reported 13 function/test names not
+found in the same canonical file. The names were individually checked for
+current equivalents before treating them as import candidates. Main uses a
+bounded `ExtractionPageForOwner` instead of the local in-memory extraction
+filter, a separate pursuit dashboard projection instead of
+`dashboardForPursuits`, context-aware route initialization, and transactional
+verification finalization that also validates persisted IDs. Canonical
+verification freshness tests cover stale evidence. The local TLS readiness
+test is superseded by a broader canonical unsafe-URL test, and the local
+constitution-fallback test by the canonical trusted-baseline/durable-active
+test. The local ownerless emergency-stop test encodes a different owner
+contract than `main`, which authorizes against the authenticated actor; it must
+not be copied unchanged. This heuristic scan and triage are not a substitute
+for full semantic review of the remaining source and frontend deltas.
+
+The one modified tracked path absent from `main`, `nginx-config/nginx.conf`, is
+a rendered runtime file. Canonical `docker-compose.local.yml` mounts
+`nginx.conf.template` and generates the container config with `envsubst`; the
+local rendered file is not an appropriate source artifact to import.
+
+### October 13, 2026: live PR, inventory, and verification checkpoint
+
+The remote `main` ref was rechecked with `git ls-remote` and remains
+`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`. The primary checkout remains at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`, 440 commits behind its tracking
+branch. A fresh status/diff count reports 682 tracked worktree paths and 2,475
+non-ignored untracked paths; these counts do not mean all paths contain
+independent or importable HAI behavior.
+
+PR #40 remains open at `201c8255b6574196a7a25b5fb50e053710adafc1`, based on
+the current `main`. Its product changes are the verification source-snapshot
+identity check and regression tests, plus removal of a duplicate TypeScript
+interface declaration. The latest check rollup has 35 successful checks and
+one failing `Repository secret scan (redacted output)` check. The workflow
+invokes `scripts/run-secret-scan.py` with a base-to-HEAD Git history range;
+therefore a later removal of a candidate string is not evidence that the PR
+commit range is clean. The report is redacted, and no finding value was
+retrieved. PR history has not been rewritten or force-pushed pending explicit
+authorization.
+
+The focused Go test command could not run on this Windows host because no Go
+executable is installed or on `PATH`. The exact-head GitHub backend test check
+is successful, but this is remote CI evidence, not a local rerun. No additional
+local code was imported in this checkpoint. The semantic review of all local
+tracked/untracked deltas and archive reconciliation remain incomplete; no local
+files were deleted.
+
+### October 13, 2026: exact-head secret-scan provenance
+
+The CI run for head `41407265591faff48f6ccc8f20793c0936680bd8` completed with
+35 successful checks and one failed secret-scan check. Its sanitized report
+identified two `generic-api-key` candidates at
+`docs/child-agent-integration-ledger.md:7391`, in commits `03d4351d1bf7` and
+`df381e1d8c45`; the scanner withheld candidate values. The finding is in the
+PR commit range even though the current file no longer contains the candidate
+text. Resolving it requires removing those historical commits from the PR
+range or otherwise reviewing the candidate safely; no branch history was
+changed in this checkpoint.
+
+### October 13, 2026: conflict-worktree preservation recheck
+
+Read-only inspection of six registered PR-resolution worktrees found 96
+unmerged index paths in `hai-pr34-conflict-fix`, 256 in
+`hai-pr36-integration`, 59 in `hai-pr36-local-delta`, and 199 in
+`hai-resolve-pr35`. `hai-pr36-resolution` and `hai-resolve-pr34` had no
+unmerged index paths but still reported 264 and 518 dirty status entries,
+respectively. These counts are per-worktree and overlap; none establishes that
+its content is unique or safe to publish. PRs #34-#39 are already merged, so
+candidate work from these stale conflict snapshots must be checked against
+current `main` before any import. No scratch tree was staged, reset, moved, or
+removed.
+
+### October 13, 2026: refreshed linked-worktree count
+
+A fresh read-only status pass still finds 17 registered worktrees. Eleven are
+dirty in total, including the primary checkout; the canonical `main` worktree
+and PR #40 worktree are clean. PR #40 is now at
+`41407265591faff48f6ccc8f20793c0936680bd8`. The dirty counts are snapshots,
+overlap across worktrees, and are not a list of unique changes or permission
+to discard data.
+
+### October 13, 2026: Windows-installer artifact provenance recheck
+
+In `hai-windows-installer`, the only tracked path reported modified is
+`idp/internal/app/authentication/auth_service_test.go`; its current worktree
+diff against its own `HEAD` is empty and the indexed/worktree Git blob IDs
+match. The status flag is therefore not evidence of a code change to import.
+The two untracked files, `backend/cmd.exe` and `backend/main.exe`, total
+166,467,072 bytes. Both are unsigned and have no embedded product/version
+metadata. Their build provenance and reproducibility remain unverified; they
+were not executed, published, or removed.
+
+### October 13, 2026: Autofever upstream contract verification
+
+The `028-autofever` sibling repository was checked directly through GitHub at
+its live `main` commit `4709163f005f4068cd4c94b81a1f207d51fb94c0`. Its README
+describes an incomplete illness-notification prototype, and its current Flask
+route declarations cover state, illness/recovery notification, contacts,
+templates, settings, statistics, resource use, acknowledgement, voice, and
+sync status. There is no vehicle-review or `/api/integrations/hai/feed`
+endpoint in the current application source. The HAI adapter in the stale PR36
+resolution worktree therefore targets a nonexistent upstream contract and
+must not be imported or enabled. Revisit only after the sibling project ships
+and documents an owner-scoped feed contract; no live-account acceptance is
+claimed.
+
+### October 13, 2026: exact-match cleanup and PR #40 secret-scan repair
+
+The live `origin/main` ref remained `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`.
+In the primary checkout, 29 untracked regular files were revalidated against
+same-path main blobs immediately before removal; the files were all generated
+output/evidence copies, totaling 187,741 bytes. No source, configuration,
+agent-state, or non-identical file was removed. A follow-up scan of all
+registered HAI worktrees found no other exact same-path untracked copies.
+
+The temporary `D:\hai-progress-integration` worktree was clean at the exact
+live-main commit and had no ignored or untracked files. It and its temporary
+branch were removed, returning about 0.86 GiB on D:. The earlier cleanup of 37
+exact duplicate reports freed about 232 KiB. Other dirty/conflict worktrees
+and the ignored release payload remain preserved.
+
+PR #40's previous history contained two redacted `generic-api-key` findings in
+historical ledger text. The final PR tree already described the synthetic
+fixture without its key-shaped literal. The owner-authored history was
+collapsed to one commit without changing the four-file final diff, then pushed
+with an exact-head `--force-with-lease` from `a36c915e` to `64793c4b`. The
+pinned local secret-scan wrapper passed over `3b15fe4..64793c4b`; GitHub had
+not yet reported checks for the new head at this checkpoint. This scan result
+does not establish that the original value was a live credential, and no
+candidate value was displayed.
+
+The broad local-source reconciliation remains incomplete. No remaining local
+worktree or transcript/archive data has been deleted unless independently
+verified as an exact, recoverable duplicate.
+
+### October 13, 2026: July 30 candidate finding cross-check
+
+At canonical `main` commit `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`, the
+five July 30 final reports for Copernicus, Aristotle, Banach, Euler, and Pascal
+were compared against current backend and frontend source. This is a bounded
+cross-check of the findings described in those reports, not a claim that every
+message or patch event in their transcripts has been semantically reconciled.
+
+- **Copernicus:** the pursuit handler suite contains explicit non-approver
+  rejection coverage, and its successful approval paths use an approver role.
+- **Aristotle:** the current Framework Registry implementation and regression
+  tests cover Constitution provenance/history and registry invariants.
+- **Banach:** approved reviews have a separate fail-closed reconciliation path
+  that does not retry work; automation launches carry stable task-scoped
+  idempotency keys. The task, workflow, and workflow-task packages passed the
+  focused test run below.
+- **Euler:** owner-scoped preference history and Constitution-history service
+  APIs are present; the Framework Registry package tests passed.
+- **Pascal:** selection-history failures render an unavailable/error state;
+  the workflow model and inspector include framework conflicts, context
+  requirements, and learning-plan details. Frontend source was inspected, but
+  browser or Angular tests were not run in this pass.
+
+Verification at that exact canonical commit:
+`go test ./internal/task ./internal/workflow ./internal/workflowtask ./internal/frameworkregistry ./internal/pursuit`
+passed on the clean `main` worktree. This does not prove live-provider,
+PostgreSQL runtime, or browser behavior. The July 30 archive remains retained:
+the Aristotle and Descartes transcripts still contain reported malformed JSONL
+records, and the full transcript-to-source crosswalk remains incomplete.
+
+### October 13, 2026: July 30 archive parse and duplicate correction
+
+This corrects the October 10 wording above that called Aristotle and Descartes
+"two candidates" and treated both as cleanup candidates. The canonical July 30
+manifest marks Aristotle completed with `candidate_after_ledger_commit` and
+`scan_malformed_candidate_records=0`; Descartes is aborted with disposition
+`retain`, and has no candidate transcript hash. Descartes is not a cleanup
+candidate.
+
+A read-only UTF-8 line scan plus `System.Text.Json` parse of the exact archived
+files found 42,634 records and 4 invalid JSON records in Aristotle, and 42,191
+records and 14 invalid JSON records in Descartes. Aristotle's four failing
+records had no detectable `019fb220` child-turn prefix in their truncated line
+bytes, which explains why the candidate-only audit field remains zero; it does
+not establish that those records contain no relevant work. Keep Aristotle
+retained until those un-attributed records are explained. Descartes remains
+retained by its aborted status. Neither transcript is deleted.
+
+The two `.duplicate-*` files in `D:\codex-temp\hai-completed-agent-sessions`
+were also checked against their same-ID non-duplicate filenames using a
+fixed-buffer streaming byte comparator. Meitner differed within the first
+590,348,288 bytes; Volta differed within the first 699,400,192 bytes. Equal
+file lengths therefore did not indicate duplicate contents. Both files remain
+untouched; neither is safe to remove as an exact duplicate.
+
+### October 13, 2026: tracked worktree exact-match refresh
+
+The current local inventory contains 11 registered HAI worktrees. The primary
+checkout has 692 tracked changes and 1,594 untracked paths; the other dirty
+worktrees also contain outstanding changes. These counts are per checkout and
+overlap, not unique source changes. The canonical remote `main` ref remained
+`3b15fe4a08b10bb2e15afe15640bd6488cebff5d` during this pass.
+
+A same-path Git-blob comparison against `origin/main` found 537 tracked-file
+copies across the worktrees whose checked-out bytes exactly match a blob on
+`main`, totaling 8,445,255 bytes (about 8.1 MiB across copies; paths may repeat
+between worktrees). No exact same-path untracked files matched, and no
+byte-identical tracked match was at least 1 MiB. These exact copies are
+recoverable from `main`, but deleting tracked files would leave their already
+dirty worktrees with missing checkout files for only about 8.1 MiB of space.
+No files were removed in this pass; the active checkout, all worktree state,
+transcript archives, databases, ignored files, and user data remain untouched.
+
+The exact-match scan does not reconcile the 692 tracked changes or 1,594
+untracked paths in the primary checkout, nor the unique changes in the other
+worktrees. Those remain the main integration task and must be reviewed and
+validated before publication or local cleanup.
+
+### October 13, 2026: legacy branch net-tree comparison correction
+
+The primary checkout is on `codex/hai-runtime-release` at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`; `origin/main` remains
+`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`. `git rev-list --left-right
+--count origin/main...HEAD` reports 9 commits unique to `main` and 292 unique to
+the legacy branch since their merge base. This describes commit ancestry, not
+which source behaviors are missing.
+
+This corrects earlier ledger wording that described 503 paths as the committed
+tree difference. That count came from `git diff origin/main...HEAD`, which
+compares the merge base to `HEAD`; it is not a direct comparison of the two
+current trees. The correct two-tree command, `git diff origin/main HEAD`,
+reports 2,071 changed paths: 4 added, 1,189 deleted, 876 modified, and 2
+renamed, with 20,637 insertions and 393,575 deletions. This committed-tree
+comparison is separate from the primary checkout's 692 tracked modifications
+and 1,594 untracked paths. It confirms that neither the old branch nor its
+dirty checkout can be pushed wholesale without losing current `main` content.
+
+The legacy branch also tracks `.env-backend`, `.env-gateway`, and `.env-idp`,
+which are absent from canonical `main`. Their contents were not opened, copied,
+or published; these paths remain explicitly excluded from any integration or
+cleanup based solely on branch ancestry.
+
+A bounded crosswalk of commit `2fd29807` (`feat: add governed agent team
+operations`) found all 22 touched paths in both final trees: 9 have identical
+Git blobs and 13 differ. The backend agent-team service is present in current
+`main`; the differing validator, documentation, routing, progressive-section,
+and agent-team UI/test files remain competing versions and were not copied.
+This one-commit check is not a complete semantic audit of the remaining 291
+legacy-only commits or the full 2,071-path tree difference.
+
+## 2026-10-13 staged-source reconciliation
+
+The current `codex/hai-local-source-reconciliation` worktree is based on the
+same commit as `main` (`3b15fe4a08b10bb2e15afe15640bd6488cebff5d`) and has 310
+staged tracked-file changes: 7,138 insertions and 12,453 deletions. The staged
+diff remains local and is not included in this PR. It is a candidate source
+snapshot, not a validated integration checkpoint.
+
+A bounded review of representative diffs found behavior changes that must be
+resolved before publication:
+
+- `backend/internal/ambient/scheduler.go` removes several scheduler status
+  updates, removes the explicit legacy-fallback gate, and no longer records
+  lifecycle launch rejection. This changes observability and startup policy.
+- `backend/internal/operations/service.go` replaces raw-evidence SHA-256
+  comparison and digest updates with direct JSON-string comparison, removing
+  the digest helper and its linkage from this path.
+- `idp/internal/app/authentication/auth_service.go` removes request contexts
+  and their cancellation checks from logout, refresh, and authentication
+  methods.
+
+These examples are sufficient to reject a wholesale push, but are not a full
+review of all 310 paths. The remaining staged changes must be classified and
+validated individually or in coherent, testable groups. Do not delete this
+worktree or related source until its full diff and any local-only data have
+been accounted for and the accepted changes are preserved in GitHub.
+
+At this audit point PR #40 remains open at `01d4d3285cfc16c802b151ea963b97c12d6d4b7d`.
+The latest observed hosted run had 34 checks passed and two still pending
+(backend tests and the whispercpp runner); this is not a final green result.
