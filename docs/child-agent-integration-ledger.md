@@ -8218,3 +8218,28 @@ No code from this batch was published. Focused Go package tests were attempted
 for `a2abridge`, `agentcycle`, and `agentguidance`, but could not start because
 the `go` executable is not available on this shell's `PATH`; this batch has
 therefore not been locally compiled or tested.
+
+## Account-feed and Trello connector review (2026-10-13)
+
+The source-ingestion comparison confirms that the local checkout is missing
+substantial behavior already present on `main`:
+
+- The diff removes 25,522 lines across 102 `backend/internal/source` and
+  `backend/internal/accountfeed` files. Among the deleted implementations are
+  Trello durable sync, sync repositories, webhook ingestion/reconciliation,
+  extraction correction/patch workflows, Google OAuth retry/lifecycle logic,
+  and their persistence, security, cancellation, and integration tests. The
+  checkout cannot be treated as a source of a complete live Trello connector.
+- `backend/internal/accountfeed/permission_registry.go` now marks
+  `Granted=true` whenever credentials are present. `main` additionally
+  requires the bridge's `ReportsCredentialGrant()` signal, keeping credential
+  availability distinct from the provider's declared grant. The local change
+  weakens that consent distinction and must not be published.
+- The local `backend/internal/source/trello.go` removes the quiet-board cursor
+  optimization, but that isolated deletion does not restore the durable
+  sync/webhook infrastructure removed elsewhere in the same package.
+
+No source-ingestion code was ported in this batch. Live Trello behavior,
+provider OAuth flows, and the deleted persistence/reconciliation contracts
+remain unverified from this checkout; the Go toolchain limitation recorded
+above still applies.
