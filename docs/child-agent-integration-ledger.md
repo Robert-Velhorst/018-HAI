@@ -9231,3 +9231,31 @@ GitHub issue #3, “Make 018-HAI operational with Claw-compatible agent runtime
 and $0 LLM routing,” is closed with reason `completed` (2026-07-09). This is
 issue metadata, not independent acceptance evidence for every operational
 requirement listed in its body.
+
+## Installer, runtime, and dependency-audit overlay review (2026-10-13)
+
+Three bounded source reviews compared the primary checkout with current
+`origin/main`; none identified a safe code delta to port from these areas:
+
+- The local `backend/internal/agentruntime/handler.go` removes request
+  cancellation checks around ecosystem-upload inspection and persistence, and
+  its local test drops the cancellation regression case. `main` retains the
+  fail-closed behavior. The local checkout has no `backend/internal/openclawmaintenance`
+  source files; that package is already present on `main`.
+- Local Windows installer smoke/payload-selection scripts are stale relative
+  to `main`. The smoke-test copy drops hosted-runner argument compatibility,
+  temporary-path/reparse-point checks, and the isolated local-app-data
+  profile. The payload selector removes the versioned SQL migration exception,
+  which can exclude installer-required migrations. Local runtime tests also
+  pin an older Go toolchain or drop existing Docker-network-preservation
+  assertions. Current `main` contains safer equivalents; none were run against
+  an installer or runtime in this audit.
+- The untracked primary-checkout copy of
+  `scripts/audit-npm-production-dependencies.sh` is older than the tracked
+  `main` implementation: it ignores the second `omit-optional` argument even
+  though the Promptfoo CI job supplies it and `scripts/test_ci_contract.py`
+  asserts the optional-dependency behavior. Keep the canonical `main` copy;
+  do not port the local overlay.
+
+These reviews are scoped to the named paths. They do not complete the
+remaining local file-by-file audit, and no local files were removed.
