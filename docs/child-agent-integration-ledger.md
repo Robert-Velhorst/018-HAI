@@ -8143,3 +8143,48 @@ published wholesale. They do not complete the semantic review: the remaining
 reconciliation worktree, historical worktrees, and transcript archive still
 require path-level disposition. No additional product-code candidate was
 identified in this review batch.
+
+## Untracked-overlay and staged-snapshot review (2026-10-13)
+
+The primary checkout's non-output untracked set was re-enumerated against
+current `main`: 74 paths overlap a `main` path with different content, and 16
+paths are absent from `main`. A Git numstat comparison of the 74 variants
+showed no distinct product-source addition that is ready to publish. Specific
+variants reviewed include:
+
+- `services/promptfoo-runner/package.json` selects Promptfoo `0.123.1` instead
+  of `main`'s `0.124.1`, and removes the explicit `@libsql/linux-x64-gnu` pin
+  and `get-uri`/`basic-ftp` override. Its larger lockfile is not evidence of a
+  newer or safer dependency graph; neither file should be imported.
+- `scripts/test-frontend-build-resource-limit.cjs` only proves that Angular's
+  parser accepts invalid numeric values. PR #116 contains the stronger
+  fallback assertions (including `hasCustomMaxWorkers=false`) and passes its
+  five focused Node tests locally, so the untracked version is not an
+  additional candidate.
+- `scripts/test-hai-phase2-state-permissions-contract.ps1` expects a local
+  ownership-migration variant that adds `DAC_READ_SEARCH`. The surrounding
+  local Compose file also removes unrelated source-discovery and environment
+  configuration. This paired local variant is not being split or published
+  without an independent security and runtime validation.
+- `backend/internal/runtimelab/owner_gate_handler_test.go` differs only by one
+  explanatory comment; it has no functional delta to port.
+
+The 16 paths absent from `main` are local orchestration state, test-evidence
+artifacts, and browser-acceptance logs. The 1,504 `output/` paths were not
+content-reviewed and remain explicitly outside this source batch. None of
+these files was removed.
+
+The `D:\hai-source-reconciliation` worktree was rechecked with a
+per-command-only Git ownership exception. It has 310 staged paths and no
+untracked paths; its `HEAD` is seven commits behind current `main`, with no
+unique committed path ahead. Comparing the staged snapshot directly with
+current `main` reports 316 path changes (148 `backend/internal`, 65
+`frontend/src`, 26 `idp/internal`, plus migrations, services, scripts, and
+configuration). This is not a merge-ready PR: it contains the previously
+reviewed approval, evidence, scheduler, and authorization regressions, and no
+wholesale cherry-pick or staged commit was made.
+
+The `D:\hai-transcript-report-retention-gate` worktree is clean and tied to
+merged PR #46. Its two changed script files were compared with current `main`
+and are exact content matches; the broader worktree and transcript archive
+were not deleted or declared safe to remove.
