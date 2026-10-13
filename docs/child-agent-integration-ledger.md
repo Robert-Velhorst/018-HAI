@@ -8906,3 +8906,39 @@ A filename-focused search found no HAI-named files in Downloads, Desktop, or
 `.codex/attachments`; this does not establish that those locations contain no
 HAI-relevant files under unrelated names. The Documents/Codex path scan is a
 candidate inventory, not a full-content review of all 719 returned paths.
+
+Seven untracked backend source copies were then reviewed against their current
+`origin/main` implementations and removed from the primary checkout after
+confirming their behavior was superseded there (115,383 local bytes):
+
+- `backend/internal/infra/database_pool.go`: `main` adds parameterized,
+  configurable GORM logging and validates the log-level setting.
+- `backend/internal/operations/execution_claim.go` and
+  `execution_claim_memory.go`: `main` binds approval queries to `payload_json`,
+  permits a fresh exact-revision approval to supersede a prior review hold,
+  and preserves lifecycle timestamps during fenced updates.
+- `backend/internal/operations/source_approval.go`: `main` binds the reviewed
+  owner type into the receipt and returns more precise stale/duplicate-receipt
+  errors.
+- `backend/internal/task/execution_context.go`: `main` also propagates the
+  private execution context and uses it when selecting cancellation-aware
+  storage.
+- `backend/internal/openclawmaintenance/pull_client.go`: the local hex check
+  is replaced by an equivalent but explicit lowercase-hex predicate in `main`.
+- `backend/internal/openclawmaintenance/worker.go`: the only local delta was
+  byte-encoding the same pinned public key; `main` retains the readable key.
+
+Before removal, each path was untracked, a regular file inside the primary
+checkout, and had a corresponding blob in `origin/main`. After removal, all
+seven local paths were absent and all seven canonical blobs remained
+readable. This is source-level comparison, not a Go test run.
+
+Additional Go-test name comparisons reinforce that the untracked snapshot is
+not additive: the local source-approval test file lacks the main-only
+future-review-reminder regression; the local pursuit completion file lacks
+main's batch/incomplete-receipt and beyond-cap receipt tests; and the local
+control-room test snapshot lacks main's uncapped attention-count regression
+and uses a stale framework-selection URL. The inspected ingest-atomicity and
+required-participant test-name sets are present on `main` as well. These
+checks do not substitute for line-by-line semantic review of the remaining
+untracked test files.
