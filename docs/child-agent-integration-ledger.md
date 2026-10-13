@@ -8071,3 +8071,34 @@ These are examples from the ongoing review, not a complete audit of the 235
 different tracked paths. They provide additional reasons not to publish the
 dirty checkout as a whole; any remaining local change must be compared to the
 current implementation and its safety contracts before porting.
+
+## Refreshed local-to-main path comparison (2026-10-13)
+
+The primary checkout was rechecked against the current `main` commit
+`e7305ccadc84ef9647fe4d05245eb05813021e8d`. Its inventory remains 692 tracked
+status paths and 1,594 untracked paths. Restricting the comparison to those 692
+tracked paths, Git's configured filters report 238 paths whose working-tree
+content differs from current `main`. This fresh path-scoped result supersedes
+the earlier 235-path count above; it is not a whole-tree equivalence result.
+
+The 238 differing paths group as follows: `backend/internal` (122),
+`frontend/src` (65), `idp/internal` (16), `frontend/e2e` (2),
+`services/promptfoo-runner` (2), `backend/migrations` (2), and 29 paths across
+scripts, documentation, configuration, and other service/build files. This
+classification is for review prioritization only and does not imply that a
+local version is newer or suitable to publish.
+
+The latest review of the shared frontend shell and Control Center found local
+changes that should not replace current `main`: the root app title is changed
+to the generic literal `app`; the root module drops the `ControlRoomModule`
+registration; the module registry removes route/Advanced-section entries; the
+progressive-section template drops its `data-hai-section` marker; and the
+Control Center switches away from summary endpoints while weakening required
+count validation. These are regressions or behavior changes requiring a
+separate intentional design decision, not safe integration candidates.
+
+The existing PR #116 is a separate focused candidate: its Angular worker
+parser contract test was run from the PR worktree on 2026-10-13 and passed all
+5 tests. This is local test evidence only; the PR's hosted checks were pending
+at the time of inspection. No source, test, worktree, transcript, diagnostic,
+or archive files were deleted during this checkpoint.
