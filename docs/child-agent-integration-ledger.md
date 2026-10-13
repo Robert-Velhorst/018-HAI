@@ -9347,3 +9347,26 @@ not full-blob or semantic verification. The corresponding broader patch had
 from `main`. The earlier semantic review of the staged snapshot found safety,
 compile, and configuration regressions. Neither patch is safe to apply or
 delete as a whole; both remain preserved for path-level reconciliation.
+
+## October 14, 2026: direct-match cleanup check
+
+The live `main` ref was read from GitHub as
+`345cf356c3f4ab497568713dc994820b4ba22b10`. A recursive tree query returned
+3,182 blob paths. The primary legacy checkout remains at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241` with 682 modified tracked files and
+1,585 untracked files. Of the untracked files, 76 share a path with a blob on
+`main`; each was hashed as a Git blob and none matched the `main` blob at that
+path. Therefore, no untracked file in this comparison is a verified direct
+duplicate eligible for cleanup. The tracked modifications remain untouched
+because they are part of a dirty checkout and have not been reconciled
+file-by-file.
+
+PRs #41 and #42 are merged, and both merge commits are ancestors of live
+`main`; no local worktree for either PR branch is registered in the primary
+checkout. The clean local worktrees for open PRs #117, #119, and #121 each
+exactly match their pushed PR head, but they are not yet integrated into
+`main`, so they remain in place under the main-match cleanup rule. No local
+files were deleted in this check. A `git fetch origin main` attempt could not
+write `.git/FETCH_HEAD` due to an access-denied error; live refs were checked
+read-only through GitHub instead. The separate `D:\hai-source-reconciliation`
+checkout was not modified.
