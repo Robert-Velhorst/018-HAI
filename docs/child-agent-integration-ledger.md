@@ -8314,3 +8314,16 @@ rollback path, and migration-chain proof could corrupt an existing database.
 No migration was ported or executed from this overlay. The local schema tree
 is not a safe replacement for `main`; migration tests were not run because the
 Go executable is unavailable on this shell's `PATH`.
+
+## Frontend route and workflow review (2026-10-13)
+
+An exact route extraction from `frontend/src/app/app-routing.module.ts`
+confirms that the local overlay has 31 route declarations versus 32 on
+`main`; `/operational-brain` is the one removed route. This is a user-facing
+module loss, not a cosmetic redesign. Existing review also found local page
+changes that remove preference-history behavior, eagerly load advanced
+governance/runtime data, shorten bounded task execution timeouts, discard
+guarded MCP result-to-context mapping, and remove workflow success-criteria
+intake and review-required state handling. These behavioral changes need
+targeted UI/API acceptance checks before any frontend extraction; none was
+ported in this batch.
