@@ -8683,3 +8683,23 @@ These comparisons reinforce that branch commit history is not a safe import
 list: the target tree already contains selected behavior with later authority,
 resource, or compatibility constraints. No runtime code or Compose change was
 ported. Compose was not started and the runtime planner was not executed.
+
+## Database safety and provisioning candidate review (2026-10-13)
+
+The local branch weakens destructive PostgreSQL test isolation in
+`backend/internal/evaluation/repository_postgres_test.go` and
+`backend/internal/resilience/repository_postgres_test.go`. Current `main`
+uses `pgtestguard` to require an exact dedicated test database identity and
+explicit destructive-test authorization. The local variants instead accept
+database names merely containing `test` (or `ci` in one case); the evaluation
+variant then drops and recreates the entire `public` schema. A database name
+substring is not an adequate safeguard against destructive test execution.
+These changes must not be ported.
+
+The local `scripts/provision-runtime-db-role.ps1` also replaces the canonical
+containerized `backend-runtime-role` provisioning path with inline generated
+SQL piped directly to `psql`, and drops the prior requirement that owner and
+runtime database passwords be present and distinct. Although identifiers and
+password literals are escaped in the local script, this is a security- and
+operations-boundary change that needs an isolated migration/provisioning test
+before consideration. No database was started or modified.
