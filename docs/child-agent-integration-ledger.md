@@ -9029,3 +9029,18 @@ modifications). `git diff --cached --check` passed, but the patch is broad and
 includes substantial deletions. Go is not installed in this environment, so
 the backend changes could not be locally tested. The patch was not committed,
 published, or cleaned up; preserve it for file-by-file review.
+
+## Merged transcript-gate worktree cleanup (2026-10-13)
+
+PR #46 (`fix: retain completed transcripts without final reports`) is merged
+into `main`. Before removing its dedicated local worktree at
+`D:\hai-transcript-report-retention-gate`, the checkout had no tracked,
+untracked, or ignored changes. Its only PR-touched files,
+`scripts/audit-child-agent-transcripts.ps1` and
+`scripts/test-child-agent-transcript-audit.ps1`, had Git blob hashes identical
+to current `main`. The clean worktree contained 3,179 files totaling
+37,830,285 logical bytes. Git's non-forced `worktree remove` completed; the
+path is absent, it is no longer registered, and its local branch ref remains.
+This removes the duplicate checkout while preserving the repository history
+and branch reference. It does not remove the separate 17.5 GB transcript
+archive, which remains unintegrated and retained.
