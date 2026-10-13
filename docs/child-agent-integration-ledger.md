@@ -9004,3 +9004,28 @@ diff review is not a complete semantic equivalence proof. No test files were
 deleted or copied into the PR in this pass; keep them until any remaining
 body-level differences are accounted for. This inventory covers only these
 36 Go tests, not the full dirty checkout or other file types.
+
+## Primary checkout exact-content comparison (2026-10-13)
+
+The primary checkout was compared with the live GitHub `main` tree at
+`345cf356c3f4ab497568713dc994820b4ba22b10`. The complete recursive tree was
+returned without truncation. Among 692 tracked paths reported modified by Git,
+448 working files have the exact Git blob hash on `main` (6,818,815 logical
+bytes), 243 differ from `main`, and one path is absent from the current main
+tree. These counts identify content equality, not whether a file is disposable:
+the 448 matching files are source files in the active checkout, so deleting
+them would leave that checkout incomplete and was not done.
+
+The checkout also contains 1,585 non-ignored untracked files. None whose path
+exists in the main tree has an identical Git blob hash. No untracked file was
+deleted. This is a byte-equality inventory only; the 243 divergent tracked
+files, the path absent from main, and all untracked files still require
+classification and semantic review before any integration or cleanup.
+
+The separate `D:` source-reconciliation worktree has staged changes affecting
+310 paths relative to its branch `HEAD`; its resulting working tree differs
+from current `main` in 346 paths (one addition, five deletions, and 340
+modifications). `git diff --cached --check` passed, but the patch is broad and
+includes substantial deletions. Go is not installed in this environment, so
+the backend changes could not be locally tested. The patch was not committed,
+published, or cleaned up; preserve it for file-by-file review.
