@@ -8433,3 +8433,34 @@ deployment capability without a separate threat and configuration review.
 The untracked screen therefore produced no exact-match cleanup candidates and
 no immediately safe code import. No files, logs, evidence, worktrees, or
 archives were removed.
+
+## Small additive-diff review (2026-10-13)
+
+The most additive tracked changes were checked against `main` and their
+consumers before treating them as candidate improvements:
+
+- `backend/internal/verification/repository.go` drops the 200-run history cap
+  and changes owner lookup to include ownerless legacy rows for any non-empty
+  owner. `main` permits those rows only for the explicitly authorized migration
+  owner, so the local variant weakens account isolation and can load unbounded
+  history.
+- `frontend/src/app/control-room/module-registry.ts` removes progressive
+  section ancestry/prefix validation, direct-section resolution, and module
+  metadata used by the shared control-room shell. The local registry is a
+  contraction of the shipped navigation/disclosure contract, not a compatible
+  extension.
+- `frontend/src/app/services/context-memory.service.interface.ts` removes the
+  query API and page/query result types. `runtime-control.service.ts` changes
+  resume to `/background/resume/approval`, while `main` registers
+  `/background/resume-approval` and the corresponding approve-and-resume
+  route; the local call does not match the current approval workflow.
+- `scripts/two-account-isolation-test.sh` replaces the shared
+  `smoke-auth.sh` token helper with an inline JWT implementation. `main` has a
+  contract test requiring both this script and other smoke tests to use the
+  shared helper, so the local change breaks the established test contract.
+
+These candidate diffs were not ported. Their main-side contract evidence was
+checked with `git grep` and direct source comparison; no live API calls or Go
+test execution were performed. The GitHub workflow lookup returned no run for
+commit `412b5836`; CI for this latest documentation commit is therefore
+unverified, not passed.
