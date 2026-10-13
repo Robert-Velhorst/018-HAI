@@ -9049,6 +9049,21 @@ references remain. This is a compile blocker in addition to the safety and
 configuration issues above; no Go test run was possible because `go` is not
 installed.
 
+Further comparison of key staged files against current `main` confirms these
+are substantive regressions, not formatting-only changes. The candidate
+`backend/internal/infra/database.go` drops the `DB_RUN_MIGRATIONS` gate and
+adds migration-owned workflow/pursuit proof tables to GORM AutoMigrate;
+`backend/internal/operations/service.go` replaces the raw-evidence digest
+comparison and digest update with a direct JSON-string comparison;
+`backend/internal/identity/jwt.go` removes the operator-scope claim and context
+key; and `scripts/backup-windows.ps1` removes bounded Docker process handling
+and recovery-asset coverage. For five representative core paths
+(`database.go`, ambient service, LLM maintenance, operations service, and JWT),
+the primary checkout and staged D: worktree have identical file hashes, while
+all five differ from current `main`. Treat the corresponding local changes as
+one shared candidate set, not independent implementations, and preserve them
+until each is reconciled against the canonical safety behavior.
+
 ## Merged transcript-gate worktree cleanup (2026-10-13)
 
 PR #46 (`fix: retain completed transcripts without final reports`) is merged
