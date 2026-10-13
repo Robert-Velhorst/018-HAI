@@ -8555,3 +8555,43 @@ No worker or durable-job code was ported. These local implementations are not
 safe substitutes for the canonical claim, approval, settlement, and recovery
 contracts. Review was limited to source diffs; no multi-process execution or
 database-backed job test ran here.
+
+## Ambient, autonomy, assistant, and life-ontology review (2026-10-13)
+
+Compared the local HAI checkout with the fetched `origin/main` ref at
+`e7305ccadc84ef9647fe4d05245eb05813021e8d`. This is a source-level review;
+the local checkout has no Go toolchain available for package validation.
+
+- The local ambient overlay deletes `scan_context.go` and its context,
+  repository, service, acknowledgement, and scheduler tests. The canonical
+  path checks request cancellation and the current background-execution
+  policy at operation boundaries, scopes retained scan history by owner, and
+  verifies terminal scan persistence before reporting completion. The local
+  simplified path does not preserve those guarantees.
+- The local ambient scheduler removes the second explicit opt-in for legacy
+  in-process scheduling and its scheduler-health records. If durable startup
+  fails, the code now falls through to the in-process scheduler without the
+  canonical `DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED` gate. It also changes
+  the default poll interval from one to five minutes. No scheduler was run.
+- The local autonomy overlay deletes `public_projection.go` and its tests.
+  The remaining `autonomy/handler.go` still calls `publicOverview`, while no
+  definition remains in the local autonomy package. This is a statically
+  evident compile blocker. The deleted projection also redacted secrets and
+  removed raw action payloads, world-state snapshots, and stress results from
+  public telemetry responses; those protections must remain when repairing
+  the compile break.
+- The local assistant service removes context-aware task and agent-cycle
+  execution. It also stops propagating agent-cycle errors into the result's
+  review-required state. This weakens cancellation and error visibility for
+  long-running or failed operations.
+- The local life-ontology PostgreSQL adapter deletes bounded query methods for
+  entities, relations, and merge proposals, including owner normalization,
+  query validation, local-only filtering, temporal filtering, and result
+  limits. The adapter is therefore not a safe replacement for the canonical
+  query surface.
+
+No code from this overlay was imported or pushed. The autonomy compile blocker,
+ambient fallback behavior, and removal of context and owner boundaries must be
+resolved before considering any of these files for a release. `git diff
+--check` passed for these paths; Go tests and live database/provider behavior
+were not verified.
