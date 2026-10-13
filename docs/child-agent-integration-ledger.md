@@ -8865,3 +8865,31 @@ reports it mergeable. The primary legacy checkout is still unclassified at
 checkout were deleted in this checkpoint. Source reconciliation continues;
 these cleanup steps do not imply the remaining checkout, historical worktrees,
 or archives have been fully audited.
+
+## Local source and patch audit (2026-10-13)
+
+PRs #41 and #42 are confirmed merged. Their merge commits
+`71102fd40a960b59b70e56f902cb4b3dc91f1390` and
+`b1caa0b074793e794ea8bc340cba9ac562924ff7` are ancestors of the local
+`origin/main` ref. No registered local worktree is checked out at either PR
+head, so there is no dedicated #41/#42 checkout to remove.
+
+The primary checkout reports 2,286 changed or untracked entries. A bounded
+review found 43 untracked Go files (seven production files and 36 tests). Each
+has a corresponding path in `main`, but the local bytes differ; this path and
+blob screen does not prove semantic redundancy, so none was deleted.
+
+The local `hai-local-progress.patch` is 4,052,586 bytes and describes 232
+paths (+52,952/-9,154). A read-only `git apply --check` against the clean PR
+#117 checkout at `fbd69da4938548c8edf4a3387ceab900b3fbbded` failed with 461
+diagnostic lines. It is not safe to apply wholesale; it requires file-level
+semantic reconciliation against current `main`.
+
+A filename/path inventory found no HAI-specific hits in Downloads, Desktop,
+or `.codex/attachments`; it found 719 candidate paths under Documents/Codex.
+That set includes multiple HAI worktrees and integrations embedded in other
+projects, so it is not a verified complete content inventory. The three
+detached model-maintenance, OpenClaw-artifact, and runtime-safety audit
+worktrees each have tracked changes (425, 150, and 14 status entries); they
+remain intact pending confirmation that their work is integrated. No files or
+worktrees were deleted in this audit pass.
