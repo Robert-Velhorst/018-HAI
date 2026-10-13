@@ -9105,3 +9105,24 @@ has not been pushed because prior review found compile blockers, removed safety
 tests and protections, and hard-coded configuration. No local files were
 deleted in this checkpoint. Continue semantic review by file and only publish
 isolated, verified improvements against current `main`.
+
+## Go test-overlay reconciliation follow-up (2026-10-13)
+
+After PRs #41 and #42 merged, a fresh scan of the primary checkout found 36
+untracked Go test files under `backend` and `idp`. All 36 have same-path files
+on `main`. Comparing declared `Test...` function names found no local-only
+test function. The local Trello reopen test is an example of a non-additive
+variant: `main` uses a richer `/actions?filter=all` fixture that emits card
+activity records, while the local fixture returns an empty action list. Other
+main-side test files also contain additional cases beyond these local
+variants. This screen identifies likely superseded snapshots, but does not
+prove body-level equivalence or safe deletion for all 36 files.
+
+The PR merge status was checked directly on GitHub: #41 merged at
+`71102fd40a960b59b70e56f902cb4b3dc91f1390`, and #42 merged at
+`b1caa0b074793e794ea8bc340cba9ac562924ff7`. Local `audit/main` and the live
+`main` ref both resolve to `345cf356c3f4ab497568713dc994820b4ba22b10` at
+this checkpoint. No unique product-code change was identified in this bounded
+test-only scan; no test file was copied, deleted, or declared safe to remove.
+The remaining Go test bodies and all other local file categories still
+require semantic comparison.
