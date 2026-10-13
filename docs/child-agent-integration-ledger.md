@@ -9361,6 +9361,14 @@ duplicate eligible for cleanup. The tracked modifications remain untouched
 because they are part of a dirty checkout and have not been reconciled
 file-by-file.
 
+A content-hash crosswalk of the 692 modified tracked working-tree files against
+the same live `main` tree found 448 exact same-path blobs totaling 6,818,815
+bytes, 243 different blobs at existing paths, and one modified path absent
+from `main`. The largest exact match is 252,009 bytes; no individual exact
+match is at least 1 MiB. Removing those tracked files would leave the already
+dirty legacy checkout incomplete for less than 7 MiB of space, so they remain
+in place. No environment values were read or published.
+
 PRs #41 and #42 are merged, and both merge commits are ancestors of live
 `main`; no local worktree for either PR branch is registered in the primary
 checkout. The clean local worktrees for open PRs #117, #119, and #121 each
