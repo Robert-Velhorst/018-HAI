@@ -9597,6 +9597,34 @@ This is the fifteenth disposition among the 29 primary-only reports; 14 remain.
 The separate 23 PR-worktree-only set remains unreviewed. No local data was
 removed.
 
+## October 14, 2026: account-feed cleanup follow-up disposition
+
+The primary-only report `hai-resource-cleanup-followup-20261001.md` contained
+three related implementation threads. Current `main` contains the read-only,
+bounded local-feed identity preview (`backend/internal/accountfeed/identity_preview.go`)
+and handler tests that distinguish a busy sync from an unsupported HTTP feed
+and a changed-feed conflict. The account-bridge UI maps those response codes
+separately rather than treating every 409 as an unsupported feed. Context-aware
+source intake is also present through `operations.ContextIntakeRepository` and
+its repository implementations/tests.
+
+The report's source-revision safety concern is addressed in the current source:
+source-derived operations retain observation IDs/generations, and
+`WithClaimedSafeEffect` locks the feed origin and source head, validates the
+operation's observation reference and executable head, then checks the current
+execution claim before invoking the effect. This is the final-effect admission
+path, not merely an earlier timestamp lookup. Tests for changed observations,
+stale revisions, lock order, and rejected claimed effects are present. These
+are source and test-presence findings only; this audit did not execute the Go
+or frontend suites, run PostgreSQL/Redis integration tests, or establish live
+runtime acceptance. The report is therefore source-resolved on `main`, with
+execution verification still outstanding. No source files, archives, or
+worktrees were changed or deleted.
+
+This is the sixteenth disposition among the 29 primary-only reports; 13 remain.
+The separate 23 PR-worktree-only reports remain unreviewed. No local data was
+removed.
+
 ## October 14, 2026: source disposition of the framework-health fixture report
 
 The primary-only report `framework-health-contract-review-20261001.md`
