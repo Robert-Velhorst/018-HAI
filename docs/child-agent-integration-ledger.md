@@ -9039,6 +9039,16 @@ hard-coded backend-key placeholder instead of a generated/configured secret.
 Do not publish or merge this bulk snapshot; review and port individual changes
 only after restoring required safety coverage and configuration boundaries.
 
+The same staged ambient patch is statically incomplete: it removes
+`OverviewSummaryForOwner` while the ambient handler interface and service tests
+still reference it; removes `ScanForOwnerWithPursuitDashboard` while the
+agent-cycle scanner interface, production caller, and fake scanner still
+reference it; and removes `validatePursuitDashboardOwner` while service tests
+still call it. A recursive symbol search in that worktree confirmed these
+references remain. This is a compile blocker in addition to the safety and
+configuration issues above; no Go test run was possible because `go` is not
+installed.
+
 ## Merged transcript-gate worktree cleanup (2026-10-13)
 
 PR #46 (`fix: retain completed transcripts without final reports`) is merged
