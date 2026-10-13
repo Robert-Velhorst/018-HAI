@@ -9667,3 +9667,24 @@ inspection reports PR #117 at head `12572f1a8c9697e88ce0b0bc3075724fd431fd01`;
 the ledger update following that observation is now committed and pushed as
 `1f1a1840`, so that PR head value is historical for this section. No report,
 archive, source file, or worktree was deleted.
+
+## October 14, 2026: Windows installer signing-gate disposition
+
+`installer-signing-gate-20261001.md` describes a bounded production Authenticode
+gate and explicitly leaves successful production signing and native install
+acceptance unverified. Current `main` contains the explicit `-Production`
+preflight, pinned certificate/SignTool/timestamp checks, independent signature
+verification for bundled workers and Setup, and the production-only Inno
+callback for signing and verifying the generated uninstaller. `HAI.iss` keeps
+unsigned preview and signed-production branches distinct. CI runs the signing
+contract suite on both PowerShell engines and builds only the unsigned preview;
+no production signing identity or release-signing workflow was found in the
+checked workflows.
+
+This report is source-resolved for the originally missing uninstaller hook,
+but production signing, recipient trust/revocation, successful timestamping,
+and actual Windows install/upgrade/uninstall acceptance remain unverified. The
+current audit did not run PowerShell suites or build binaries. This is the
+seventeenth disposition among the 29 primary-only reports; 12 remain. The 23
+PR-worktree-only reports remain a separate unreviewed set. No installer,
+certificate, archive, or worktree data was changed or deleted.
