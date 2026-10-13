@@ -8461,6 +8461,40 @@ consumers before treating them as candidate improvements:
 
 These candidate diffs were not ported. Their main-side contract evidence was
 checked with `git grep` and direct source comparison; no live API calls or Go
-test execution were performed. The GitHub workflow lookup returned no run for
-commit `412b5836`; CI for this latest documentation commit is therefore
-unverified, not passed.
+test execution were performed. At this screen's check, GitHub had not returned
+a workflow run for the audit PR; CI was not counted as passed.
+
+## LLM provider and model-maintenance review (2026-10-13)
+
+The local overlay changes 31 files under `backend/internal/llm`, deleting
+9,919 lines. This removes runtime safety and the provider-maintenance controls
+needed for the requested daily freshness check:
+
+- `paid_budget.go` and its repository/tests are removed. `main` reserves
+  estimated input/output cost in durable storage before dispatch and fails
+  closed when paid calls, pricing, or the budget repository are unavailable.
+  The local policy path does not retain that pre-dispatch reservation gate.
+- `outbound_transport.go` and protocol tests are removed. `main` disables
+  redirects and environment proxies for provider calls, pins resolved IPs for
+  dialing, blocks remote providers resolving to private/local addresses, and
+  restricts local provider DNS to an approved address scope. Without this
+  transport, configured provider URLs no longer receive these SSRF and
+  redirect protections.
+- `model_maintenance_admission.go`, cooldown policy, provider-probe scheduler,
+  and their database/integration tests are removed. The durable admission uses
+  a lease and fencing token before local model network I/O. Local scheduling
+  no longer preserves those admission, cooldown, or probe guarantees.
+- Maintenance changes remove context propagation/cancellation, provider-managed
+  version handling, verification of prior local-version evidence, and special
+  handling for cloud-backed Ollama models. The local code can treat a recent
+  stored record as reusable without the provider-specific evidence checks in
+  `main`; a refresh result can therefore be trusted without proving the model
+  is current or locally billed.
+- The local LLM handler removes request-context error handling around provider
+  probes, routing, and generation. This can leave provider work running after
+  the initiating request is cancelled or times out.
+
+No LLM implementation was ported. The main implementation is the stronger
+baseline for cost control, outbound network boundaries, and daily model
+maintenance. This was a source-diff review only: no provider was contacted,
+no model was updated, and Go tests were unavailable on this shell's `PATH`.
