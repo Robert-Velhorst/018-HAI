@@ -9260,6 +9260,35 @@ Three bounded source reviews compared the primary checkout with current
 These reviews are scoped to the named paths. They do not complete the
 remaining local file-by-file audit, and no local files were removed.
 
+## July archive source discrepancy (2026-10-13)
+
+A fresh read-only comparison of the cleanup manifest with
+`D:\codex-temp\hai-completed-agent-sessions` found 13 files totaling
+17,559,729,527 bytes, rather than the 18 files and 20,739,169,122 bytes in the
+manifest. All 13 present files match retained manifest rows by filename and
+byte count; there are no extra files or retained-file size mismatches. The
+five missing paths are every row marked `candidate_after_ledger_commit`,
+totaling 3,179,439,595 bytes. The source verifier correctly failed closed at
+the first missing candidate; it did not validate the full archive or authorize
+cleanup. No file was deleted or changed during this audit.
+
+Targeted filename searches found no copies of those five transcripts under
+`D:\codex-temp`, `C:\Users\NO\.codex`, `C:\Users\NO\Documents\Codex`,
+`C:\Users\NO\Downloads`, `C:\Users\NO\Desktop`, or
+`C:\Users\NO\AppData\Local\Temp`. These searches do not prove whether the
+files were deleted, moved elsewhere, or remain outside the searched roots; the
+time and actor are unknown. The candidate SHA-256 values remain in the
+manifest, but cannot be rechecked without the source bytes.
+
+The recorded candidate implementation paths are present in current `main`.
+PR #36 is merged into `main`; its head `e62b56843eb8bbbf9a566aff5e883f9adf375429`
+has a successful GitHub Actions run (#1079), and its merge commit
+`c31cec1ba2a25fcfd280b1f2f499297e54d96aa4` is an ancestor of current
+`origin/main` (`345cf356c3f4ab497568713dc994820b4ba22b10`). This establishes
+the repository integration and CI status, but does not recover or re-verify
+the absent transcripts. Preserve the 13 retained files and do not represent
+the source-archive cleanup gate as passed.
+
 ## Windows CI and retained patch-artifact review (2026-10-13)
 
 The local Windows-native runtime/build scripts and isolated acceptance-stack
