@@ -9512,6 +9512,25 @@ semantic review. The 23 report files present only in the PR worktree are a
 separate set and are not counted as reviewed by this checkpoint. No report,
 archive, source file, or worktree was deleted.
 
+## October 14, 2026: atomic mutation report source disposition
+
+`atomic-mutation-source-review-20261001.md` is source-resolved on the same
+`main` snapshot. `backend/internal/operations/repository.go` validates a
+status-change event's `BeforeStatus` against the locked current row and runs
+the transition check from that authoritative status before writing. The
+memory mutation path also validates against current state. Both the memory and
+Gorm update paths restore `CreatedAt` from the authoritative record rather
+than accepting a caller rewrite. Regression coverage is present in
+`mutation_atomicity_regression_test.go` for forged before-status and in
+`mutation_authoritative_state_test.go` for claimed/unclaimed guards and
+creation-time preservation. This audit did not run the Go suite. The source
+check does not prove PostgreSQL transaction durability, lock behavior, crash
+recovery, or concurrency acceptance.
+
+This is the eleventh disposition among the 29 primary-only reports; 18 remain.
+The separate 23-report PR-worktree-only set remains unreviewed. No local data
+was removed.
+
 ## October 14, 2026: source disposition of the framework-health fixture report
 
 The primary-only report `framework-health-contract-review-20261001.md`
