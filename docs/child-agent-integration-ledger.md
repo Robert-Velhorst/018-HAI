@@ -9370,3 +9370,14 @@ files were deleted in this check. A `git fetch origin main` attempt could not
 write `.git/FETCH_HEAD` due to an access-denied error; live refs were checked
 read-only through GitHub instead. The separate `D:\hai-source-reconciliation`
 checkout was not modified.
+
+The July 30 archive root was also re-inventoried by filename and file length:
+`D:\codex-temp\hai-completed-agent-sessions` currently contains 13 files
+totaling 17,559,729,527 bytes. All five manifest entries marked
+`candidate_after_ledger_commit` are absent from that root; their recorded
+logical-byte total is 3,179,439,595, exactly the difference from the manifest's
+20,739,169,122-byte total. The expected date-based session directory under
+`C:\Users\NO\.codex\sessions\2026\07\30` also does not contain those five
+filenames. This supersedes the older archive-verification result as evidence
+of current source availability: the remaining archive cannot pass the
+source-archive gate from this root, and no retained transcript was removed.
