@@ -392,10 +392,10 @@ dynaconf==3.3.5 \
     --hash=sha256:a08f6ab44025034ef3c9f86b32548ab01efd4039094a74bd9f028a43c63d016f \
     --hash=sha256:b3b4a753d5c866fc85466b65fc58d4954f6ed7dc8aa67f2b15bcbfd85d184687
     # via evidently
-evidently==0.7.21 \
-    --hash=sha256:04e247de0ce8eabe618687770568ca06162e64a39ebf10e33ef6ea3aeda31187 \
-    --hash=sha256:f13c415d749dd73825bd1ec485136eaf9261b3794d765d2844718b7ffe167998
-    # via -r services/evidently-runner/requirements.txt
+evidently==0.7.23 \
+    --hash=sha256:90ed736a85581c46410647dd3c1c957531c77231bb415e1021512238b12d5870 \
+    --hash=sha256:dbba5537a644f3401b8a393008cd126e304bcf939a070a7c4399bcc5b97061f6
+    # via -r requirements.in
 faker==40.41.0 \
     --hash=sha256:35a7f66282990698c20c3e6dd57180900206b760c2f777112c085cc217e7de92 \
     --hash=sha256:5383e4ebba7061491530ae5952a33dcf8f161a250c89717fa0ac856602dcfaf3
@@ -756,7 +756,7 @@ packaging==26.3 \
     #   patsy
     #   plotly
     #   statsmodels
-pandas==2.2.3 \
+pandas[parquet]==2.2.3 \
     --hash=sha256:062309c1b9ea12a50e8ce661145c6aab431b1e99530d3cd60640e255778bd43a \
     --hash=sha256:15c0e1e02e93116177d29ff83e8b1619c93ddc9c49083f237d4312337a61165d \
     --hash=sha256:1948ddde24197a0f7add2bdc4ca83bf2b1ef84a1bc8ccffd95eda17fd836ecb5 \
@@ -800,7 +800,7 @@ pandas==2.2.3 \
     --hash=sha256:f3a255b2c19987fbbe62a9dfd6cff7ff2aa9ccab3fc75218fd4b7530f01efa24 \
     --hash=sha256:fffb8ae78d8af97f849404f21411c95062db1496aeb3e56f146f0355c9989319
     # via
-    #   -r services/evidently-runner/requirements.txt
+    #   -r requirements.in
     #   evidently
     #   formulaic
     #   statsmodels
@@ -1621,7 +1621,7 @@ uuid6==2025.0.1 \
     --hash=sha256:80530ce4d02a93cdf82e7122ca0da3ebbbc269790ec1cb902481fa3e9cc9ff99 \
     --hash=sha256:cd0af94fa428675a44e32c5319ec5a3485225ba2179eefcf4c3f205ae30a81bd
     # via evidently
-uvicorn==0.54.0 \
+uvicorn[standard]==0.54.0 \
     --hash=sha256:505bdb0f318731d45f1f712071fc781a8981f6847a31c902c9f5e652d4f67faf \
     --hash=sha256:a2e33cbfaa0306f8e6b0c13e0cb89d7d7a2da3e62b90c66e18c33d9807b28620
     # via evidently
