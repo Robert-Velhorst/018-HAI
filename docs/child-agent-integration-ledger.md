@@ -8635,3 +8635,26 @@ placeholder backend key and omits the canonical envsubst-based key injection
 and associated gateway contract. It is an older/insecure duplicate, not a
 missing capability to port. The template/tests are on `main`; no local gateway
 file or secret material was pushed.
+
+## Untracked same-path source review (2026-10-13)
+
+The 85 untracked paths that collide with paths in the current `main` tree are
+not byte-identical copies. A targeted comparison of the highest-risk
+operations files confirms that path overlap does not mean missing code on
+`main`: `execution_claim.go`, `execution_claim_memory.go`, `source_approval.go`,
+and their tests all already exist on `main` with the same exported/internal
+claim APIs. No copy was imported.
+
+The local `execution_claim.go` variant uses the older `payload` event field in
+its source-approval query; current `main` uses `payload_json`. More
+importantly, `main` validates the durable exact-revision approval receipt at
+claim time and documents that `OwnerType` is not authorization proof. The
+local variant adds an `OwnerType == OwnerRobert` gate instead. That is not a
+safe substitute for the durable receipt contract and may not match the current
+database schema. This representative mismatch supports keeping the local
+candidate unported until each colliding path is individually reviewed.
+
+This was a source comparison only. The Go toolchain is unavailable locally,
+so neither variant was compiled or tested in this checkout. No files were
+deleted; the remaining 84 same-path candidates and all non-colliding untracked
+source/artifact paths still require classification.
