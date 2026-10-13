@@ -9490,3 +9490,24 @@ mergeable at `01950020753fc4ebc7093c7a056f834b89a70f9a`; its exact-head CI has
 Compose validation`, `Windows CI and smoke path contract`, and `IDP build and
 tests`). It is not CI-green. No PR was merged and no local data was deleted in
 this checkpoint.
+
+## October 14, 2026: bounded source disposition of seven primary-only reports
+
+The following seven primary-only reports were semantically checked against the
+current `origin/main` source at `345cf356c3f4ab497568713dc994820b4ba22b10`.
+These are source/test-presence dispositions, not claims that every test passed
+or that HAI is production-accepted.
+
+| Report(s) | Current source disposition | Remaining verification or boundary |
+| --- | --- | --- |
+| `automation-launch-binding-20261001.md`; `task-automation-review-snapshot-20261001.md` | The review-time automation configuration snapshot is stored in the durable task request, bound by `ReviewRequestDigest`, verified before approval registration, and rejected when absent or changed. Dedicated task and automation regression files are present. | Go tests were not run in this audit. Process-wide policy mutation/ABA interleavings and atomicity between external effects and durable audit writes remain outside this binding. |
+| `approved-embedded-runtime-review-20261001.md` | `main` no longer contains the reported whole-loop `usesAdmittedEmbeddedRuntime` exemption. Required participants remain explicit admission gates; tests cover automatic and approved paths, readiness probes, and ready participants. | Test source is present; no local Go test execution or live agent/runtime acceptance was performed. |
+| `production-safety-followup-20260930.md` | Structured/nested JSON redaction is implemented before output truncation. Public automation reads and diagnostics use redacted projections; tests assert viewer responses and launch output/history do not expose synthetic credentials while stored execution configuration remains unchanged. | Go tests and live provider flows were not run. The durable manual source worker's PostgreSQL/browser/provider acceptance remains distinct and unverified. |
+| `production-configuration-review-20260930.md` | The browser CI path prepares, starts, and stops an owner-scoped disposable stack; cleanup validates labels and refuses persistent volumes. The guard rejects service `env_file`, service/top-level secrets/configs, and related external configuration sources. Production secret checks enforce a 32-byte minimum. Current main includes focused contract tests for these controls. | `pwsh -NoProfile -File scripts/test-isolated-acceptance-stack.ps1` passed in the PR worktree. It used synthetic fixtures and reported that no containers were started; generated evidence was retained outside the repository. This does not prove hosted CI, real Docker, or deployment behavior. |
+| `workflow-preflight-independent-review-20261001.md`; `workflow-preflight-followup-review-20261001.md` | The main branch carries explicit task/tool outcome-uncertainty state through the workflow adapter and routes it to `needs_review`/reconciliation rather than approval-only routing or retry. Tests exist for task-service errors, uncertain effects, lost leases, post-action review, and workflow recovery; the follow-up's first four findings are recorded as addressed in its own final review. | No Go suite or persisted PostgreSQL/browser workflow was run here. Existing limits around live effects, cross-system atomicity, and deployment acceptance remain. |
+
+This closes the reviewed dispositions for seven of the 29 files found only in the
+primary checkout's `output/`; the other 22 primary-only reports still need
+semantic review. The 23 report files present only in the PR worktree are a
+separate set and are not counted as reviewed by this checkpoint. No report,
+archive, source file, or worktree was deleted.
