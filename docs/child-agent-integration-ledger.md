@@ -8942,3 +8942,13 @@ and uses a stale framework-selection URL. The inspected ingest-atomicity and
 required-participant test-name sets are present on `main` as well. These
 checks do not substitute for line-by-line semantic review of the remaining
 untracked test files.
+
+The local `scripts/run-secret-scan.py` and
+`scripts/test_secret_scan_output.py` snapshots were also removed after
+comparison with `origin/main` (3,711 local bytes). The canonical scanner
+requires and validates the CI comparison SHA, limits the scanned history,
+parses reports defensively, and emits only bounded redacted metadata. Its
+canonical test file has ten cases, including valid/malformed report handling;
+the local copy had three tests and no unique test case. Both canonical blobs
+remain available on `main`. No CI run or scanner execution was performed in
+this cleanup step.
