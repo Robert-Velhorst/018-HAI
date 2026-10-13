@@ -7842,3 +7842,48 @@ been accounted for and the accepted changes are preserved in GitHub.
 At this audit point PR #40 remains open at `01d4d3285cfc16c802b151ea963b97c12d6d4b7d`.
 The latest observed hosted run had 34 checks passed and two still pending
 (backend tests and the whispercpp runner); this is not a final green result.
+
+### October 13, 2026: PR #40 merge and source-connector reconciliation
+
+The earlier status above is superseded. GitHub now reports PR #40 merged at
+2026-10-13 07:16:39 UTC as merge commit
+`59245962d2526351e3820237f3dbaf95d5e91740`; all 36 reported checks concluded
+success. The merge includes verification source-snapshot linkage and its
+regression test, the runtime-control model update, and this ledger. The local
+`origin/main` ref was refreshed to that exact merge commit.
+
+The primary checkout still points at legacy commit
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`. Relative to refreshed `main`, its
+branch has 292 unique commits while `main` has 10 unique commits; this is
+ancestry, not a count of missing features. The direct committed-tree diff is
+2,074 paths (6 added, 1,192 deleted, 876 modified), with 20,646 insertions and
+395,190 deletions. The six branch-only paths are three local environment files,
+two older-numbered migration files, and an Nginx configuration. Environment
+file contents were not opened. The active-dedupe index represented by the
+older migration is already present on `main` as migration 0006; the Nginx file
+needs comparison with the canonical template before any reuse. This confirms
+that neither the legacy commit history nor its checkout is a safe wholesale
+integration source.
+
+A bounded review of `backend/internal/source` in the 310-file staged candidate
+found changes that should not be ported as written:
+
+- It removes the Trello quiet-board activity cursor and its regression cases;
+  several fixtures now return an empty action list even for activity queries.
+- It removes handling that retires queued work after a source is paused or
+  unavailable, and removes terminal scheduled-sync failure reporting into a
+  review workflow, along with tests for both behaviors.
+- It removes the owner-scoped source overview and connection-health summary
+  handlers.
+- It logs the number of due sources rather than the number of newly enqueued
+  jobs, which can overstate work when jobs already exist. It also changes the
+  default poll interval from one minute to five minutes; this latency tradeoff
+  needs a product decision rather than being accepted incidentally.
+
+This is a static, package-scoped review; no tests were run against the staged
+candidate, and no candidate source files were copied or deleted. The complete
+310-file diff and the other dirty worktrees remain unclassified. In the primary
+checkout, none of the 1,594 untracked files was an exact same-path blob match
+for refreshed `main`; 85 paths share a name with a main file but have different
+contents. The 692 tracked changes and all other dirty worktrees remain
+preserved. No additional local cleanup is justified by this pass.
