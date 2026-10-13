@@ -9403,6 +9403,25 @@ parse errors, or oversized records, and marked the scan complete. Sampled
 records are Go test JSON logs (`Time`, `Action`, `Package`), not Codex patch
 transcripts. No output file was modified or removed.
 
+A content-level scan of the 13 retained July archive files (17,559,729,527
+bytes) was attempted with the corrected PowerShell scanner and two streaming
+alternatives. The PowerShell pass and alternatives exceeded the bounded runtime
+without a complete result; they were stopped, and no authoritative patch-event
+count or source-path crosswalk is claimed for those archive bytes. Ripgrep
+filename matches alone are not counted as valid `patch_apply_end` events. The
+archive files remain untouched. A faster bounded scanner is needed before this
+archive can be semantically reconciled.
+
+PR #117's current head `de8c373c7c42b9bc32a67e866f919f9b32696a85` is open and
+not CI-green. Workflow run 38480175434 fails two checks: the Python runner
+contract reports that the Agent Framework and Garak lockfile contents do not
+match their Docker-installed hash-lock inputs, and the IDP suite fails
+`TestAutomaticGormPingFailureRequiresCallerCleanup`. PR #119 contains the
+lockfile/contract changes and removes that obsolete automatic-ping assertion;
+it remains open and unmerged. PR #120 independently changes the same IDP test
+file and overlaps that portion of #119. No CI failure was concealed or treated
+as a result of the transcript-scanner edits without proof of causality.
+
 The hidden `output/` directory contains 40 Markdown review/handoff reports.
 A path-only crosswalk extracted 203 unique repository path references: 195
 exist in live `main`; eight do not. Of the 195 paths present in `main`, 126
