@@ -8001,3 +8001,35 @@ The queued PR checks are not evidence of successful CI. Merged PRs establish
 that their recorded changes are on `main`; they do not establish that similarly
 named local copies are safe to delete. Any later cleanup requires a fresh,
 path-specific content comparison and independent safety review.
+
+## Path-level review update (2026-10-13)
+
+A fresh local inventory confirms 692 tracked paths reported modified and 1,594
+untracked paths. The 1,504 paths under `output/` remain outside this source
+review. Among the 90 non-output untracked paths, 74 have a same-path file on
+`main` but different content, and 16 are absent from `main`; none of those 90
+was an exact same-path blob match. The 16 absent paths are four local
+orchestration state files, ten test-evidence logs/JSON artifacts, and two
+browser acceptance logs, not product-source additions.
+
+For a separate content comparison, 682 tracked paths appeared in the diff
+against the old local `HEAD` with `core.autocrlf=false`. Compared with current
+`origin/main`, 343 of those paths match the main-tree content, 338 differ, and
+one path is local-only: `nginx-config/nginx.conf`. Ten additional tracked
+status entries did not appear in that normalized content diff; their index and
+line-ending state still needs reconciliation. The local-only Nginx file is
+withheld from publication pending review of whether it is a generated/runtime
+configuration rather than source; its contents were not copied to a PR.
+
+One candidate was reviewed semantically: the local untracked
+`backend/internal/background/worker_reliability_test.go` differs from the
+same-path test on `main`. The main version already includes the worker policy,
+failure-reporting, and approval checks, and more strongly verifies that fresh
+source-derived work remains approval-gated and feed errors are sanitized. The
+local variant is not a safe improvement and was not ported.
+
+These counts are inventory evidence, not a cleanup authorization. The 338
+tracked variants, the ten normalization-sensitive status entries, all 74
+untracked same-path variants, and the Nginx configuration remain subject to
+file-level review. No source, worktree, transcript, or archive data was
+removed.
