@@ -8893,3 +8893,16 @@ detached model-maintenance, OpenClaw-artifact, and runtime-safety audit
 worktrees each have tracked changes (425, 150, and 14 status entries); they
 remain intact pending confirmation that their work is integrated. No files or
 worktrees were deleted in this audit pass.
+
+The primary checkout's current untracked-file inventory contains 1,594 paths.
+By pathname, 85 already exist in `main` and 1,509 do not. The latter break down
+into 1,493 `output/` artifacts, ten outcome-evaluation test-evidence files,
+four `.claude-flow`/`.swarm` state files, and two Compose logs. These are path
+counts, not content identity or retention decisions. The 85 path matches
+remain subject to content review; the untracked Go sample above has differing
+bytes. No generated evidence or agent state was staged or deleted.
+
+A filename-focused search found no HAI-named files in Downloads, Desktop, or
+`.codex/attachments`; this does not establish that those locations contain no
+HAI-relevant files under unrelated names. The Documents/Codex path scan is a
+candidate inventory, not a full-content review of all 719 returned paths.
