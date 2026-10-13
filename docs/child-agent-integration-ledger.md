@@ -9205,3 +9205,24 @@ was the source of that commit or that its patch payloads are identical. These
 two task outcomes need no code port based on current evidence. The remaining
 nine broad child sessions and the two oversized records still need
 task/content-level reconciliation; the archive remains retained.
+
+## Direct-main cleanup screen (2026-10-13)
+
+In the stale primary checkout on `codex/hai-runtime-release`, the read-only
+screen found 1,585 untracked, non-ignored paths. Seventy-six share a path with
+the current `origin/main` tree; none has an identical Git blob. This screen
+identified zero untracked files eligible for the user's direct-main cleanup
+rule. It does not assess ignored files, runtime data, or other local archives.
+
+The registered worktree inventory found that the three HAI audit worktrees
+and the six October 11 PR-resolution worktrees have tracked changes, so they
+were preserved. One clean sparse-review checkout is exactly at current `main`
+and contains 264 working files totaling 4,188,581 logical bytes; it was also
+preserved because it is a small, purpose-specific review checkout. The
+registered `D:\hai-source-reconciliation` path was not present when checked.
+No worktree or local file was removed.
+
+GitHub issue #3, “Make 018-HAI operational with Claw-compatible agent runtime
+and $0 LLM routing,” is closed with reason `completed` (2026-07-09). This is
+issue metadata, not independent acceptance evidence for every operational
+requirement listed in its body.
