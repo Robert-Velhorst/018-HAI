@@ -8102,3 +8102,44 @@ parser contract test was run from the PR worktree on 2026-10-13 and passed all
 5 tests. This is local test evidence only; the PR's hosted checks were pending
 at the time of inspection. No source, test, worktree, transcript, diagnostic,
 or archive files were deleted during this checkpoint.
+
+Additional high-risk/backend and workflow UI comparisons against the same
+`main` commit found more local variants that must not be imported as-is:
+
+- `backend/internal/agentruntime/handler.go` removes request-cancellation
+  checks around managed OpenClaw ecosystem upload inspection and persistence.
+- `backend/internal/ambient/scheduler.go` removes scheduler status reporting
+  and the explicit legacy-fallback opt-in gate.
+- `backend/internal/executionapproval/composite_resolver.go` removes the
+  dedicated ops-control review resolver and validated registration of
+  additional approval namespaces.
+- `backend/internal/operations/service.go` replaces the persisted raw-evidence
+  digest comparison with direct JSON-string equality and stops refreshing the
+  evidence digest.
+- `backend/internal/router/identity.go` stops propagating the validated
+  operator scope needed by owner-control authorization.
+- `backend/internal/source/trello.go` removes the action-feed quiet-board
+  cursor optimization already present on `main`.
+- `frontend/src/app/pages/governance-control/governance-control.component.ts`
+  removes summary/lazy loading for execution and learning records and loads
+  several advanced panels on every refresh.
+- `frontend/src/app/pages/runtime-lab/runtime-lab.component.ts` eagerly loads
+  feature-parity and capability diagnostics instead of deferring them until
+  requested.
+- `frontend/src/app/pages/task-blueprint/task-blueprint.component.ts` reduces
+  bounded long-running execution and approval timeouts to 20 seconds and
+  removes the guarded mapping from completed MCP calls to their returned
+  context records.
+- `frontend/src/app/pages/workflow-engine/workflow-engine.component.ts`
+  removes success-criteria intake, weakens the pre-dispatch selected-item
+  check, and turns a review-required result into a generic uncertain outcome
+  instead of pausing and refreshing the governed work item.
+- `frontend/src/app/pages/framework-registry/framework-registry.component.ts`
+  removes preference-history loading and its view-mode/section handlers.
+
+These examples increase confidence that the divergent working tree cannot be
+published wholesale. They do not complete the semantic review: the remaining
+238 tracked differences, 74 same-path untracked variants, staged
+reconciliation worktree, historical worktrees, and transcript archive still
+require path-level disposition. No additional product-code candidate was
+identified in this review batch.
