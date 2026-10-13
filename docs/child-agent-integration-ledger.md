@@ -9511,3 +9511,28 @@ primary checkout's `output/`; the other 22 primary-only reports still need
 semantic review. The 23 report files present only in the PR worktree are a
 separate set and are not counted as reviewed by this checkpoint. No report,
 archive, source file, or worktree was deleted.
+
+## October 14, 2026: source disposition of the framework-health fixture report
+
+The primary-only report `framework-health-contract-review-20261001.md`
+described a deterministic test-fixture mismatch: a positive health-evidence
+case used five-minute-old evidence against a 60-second contract, making its
+expected result impossible and weakening several negative assertions. Current
+`main` at `345cf356c3f4ab497568713dc994820b4ba22b10` already contains the
+report's test-only repair in
+`backend/internal/task/framework_health_contract_test.go`: the baseline is
+30 seconds old, while the explicit `expired contract` case remains five minutes
+old (lines 73-100). The production evidence gate was not relaxed. This report's
+source finding is therefore represented on `main`; this audit did not run the
+Go test, so executable verification remains unclaimed. This is the eighth
+disposition among the 29 primary-only reports; 21 remain. The 23 PR-worktree-
+only reports remain a separate, unreviewed set. No files were deleted.
+
+Live GitHub recheck: PR #41 and PR #42 are already closed and merged to `main`
+at `71102fd40a960b59b70e56f902cb4b3dc91f1390` and
+`b1caa0b074793e794ea8bc340cba9ac562924ff7`. PR #117 remains open and
+mergeable at head `12572f1a8c9697e88ce0b0bc3075724fd431fd01`, based on
+`main` `345cf356c3f4ab497568713dc994820b4ba22b10`. The combined commit-status
+endpoint returned no status entries; the workflow-runs endpoint showed one
+queued CI run (`38485702783`) and is not a complete check inventory. No
+CI-green claim is made. No merge or local cleanup occurred in this check.
