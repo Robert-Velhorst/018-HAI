@@ -9030,6 +9030,15 @@ includes substantial deletions. Go is not installed in this environment, so
 the backend changes could not be locally tested. The patch was not committed,
 published, or cleaned up; preserve it for file-by-file review.
 
+Targeted review of the staged snapshot found additional release blockers:
+relative to current `main`, it deletes
+`backend/internal/verification/source_snapshot_validation_test.go` and other
+health/release/pursuit tests, as well as `DEPLOYMENT_TARGET.md` and
+`.github/dependabot.yml`. Its added `nginx-config/nginx.conf` contains a
+hard-coded backend-key placeholder instead of a generated/configured secret.
+Do not publish or merge this bulk snapshot; review and port individual changes
+only after restoring required safety coverage and configuration boundaries.
+
 ## Merged transcript-gate worktree cleanup (2026-10-13)
 
 PR #46 (`fix: retain completed transcripts without final reports`) is merged
