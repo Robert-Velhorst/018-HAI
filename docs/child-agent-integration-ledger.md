@@ -8243,3 +8243,32 @@ No source-ingestion code was ported in this batch. Live Trello behavior,
 provider OAuth flows, and the deleted persistence/reconciliation contracts
 remain unverified from this checkout; the Go toolchain limitation recorded
 above still applies.
+
+## Identity-provider and authentication review (2026-10-13)
+
+The local `idp/internal/app` overlay is not safe to publish as a group. The
+comparison removes 7,472 lines across 75 files, including critical controls
+and the tests that enforce them:
+
+- It deletes `public_auth_rate_limit.go`, `password_reset_rate_limit.go`,
+  refresh-token rotation/family receipts, durable session repositories, and
+  extensive Redis/Postgres/session recovery integration tests.
+- `authentication/auth_service.go` removes request-context cancellation from
+  logout, authentication checks, refresh, and password-reset delivery. It
+  also removes configured owner-scope claims from issued access tokens, which
+  breaks the owner-scoped authorization contract used by HAI.
+- `services/smtp_password_reset_sender.go` detaches SMTP delivery from the
+  request context, so cancellation no longer closes an in-flight connection.
+- `config/postgres_config.go` removes required username/password checks and
+  production placeholder/weak-password validation; its port condition also
+  permits `0`, which the main implementation rejects.
+- `users/user_handler.go` replaces checked context type assertions with
+  unchecked assertions and removes a nil-result guard before dereferencing an
+  updated user, creating panic paths where the main implementation returns a
+  controlled error.
+
+No IDP files were ported from this overlay. The relevant authentication,
+database-configuration, password-reset, and account-isolation tests could not
+be run locally because the Go executable is unavailable on this shell's
+`PATH`; remote CI status for PR #117 is still queued and does not verify this
+local overlay.
