@@ -56,12 +56,6 @@ export interface IResumeApprovalRequest {
   approvalBindingDigest: string
 }
 
-export interface IResumeApprovalRequest {
-  reviewItemId: string
-  approvalSourceId: string
-  approvalBindingDigest: string
-}
-
 export interface IRecoveryReport {
   scannedRunning: number
   scannedVerifying: number

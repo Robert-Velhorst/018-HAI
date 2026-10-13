@@ -548,11 +548,7 @@ func (s *service) collectEvidence(ctx context.Context, runID uuid.UUID, request 
 							return nil, firstVerificationContextError(ctx, resolveErr)
 						}
 						payloadDigest := sourceevidence.ExtractionPayloadDigest(ranked.Extraction)
-						if resolveErr != nil || strings.TrimSpace(snapshot.OwnerIdentity) != strings.TrimSpace(request.OwnerIdentity) ||
-							snapshot.SnapshotDigest == "" || snapshot.SnapshotDigest != sourceevidence.SnapshotDigest(snapshot) ||
-							snapshot.SourceID != ranked.Extraction.SourceID.String() ||
-							snapshot.RawItemID != ranked.Extraction.RawItemID.String() ||
-							snapshot.ExtractionPayloadDigest != payloadDigest {
+						if resolveErr != nil || !sourceSnapshotMatches(request.OwnerIdentity, ranked.Extraction, snapshot, payloadDigest) {
 							item.Authority = authorityConnectedUnverified
 							item.Rejected = true
 							item.RejectReason = "connected-source extraction could not be matched to exact durable raw provenance"
@@ -608,6 +604,25 @@ func (s *service) collectEvidence(ctx context.Context, runID uuid.UUID, request 
 		return evidence[i].QualityScore > evidence[j].QualityScore
 	})
 	return evidence, nil
+}
+
+func sourceSnapshotMatches(ownerIdentity string, extraction models.SourceExtraction, snapshot sourceevidence.Snapshot, payloadDigest string) bool {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	return ownerIdentity != "" &&
+		snapshot.OwnerIdentity == ownerIdentity &&
+		snapshot.ExtractionID == extraction.ID.String() &&
+		snapshot.SourceID == extraction.SourceID.String() &&
+		snapshot.RawItemID == extraction.RawItemID.String() &&
+		snapshot.ProjectKey == strings.TrimSpace(extraction.ProjectKey) &&
+		snapshot.ProjectKey == snapshot.RawProjectKey &&
+		snapshot.ExtractionURI == strings.TrimSpace(extraction.SourceURI) &&
+		snapshot.ExtractionURI != "" && snapshot.ExtractionURI == snapshot.RawItemURI &&
+		snapshot.ExtractionHash == strings.TrimSpace(extraction.ContentHash) &&
+		snapshot.ExtractionHash != "" && snapshot.ExtractionHash == snapshot.RawItemHash &&
+		snapshot.ExtractionPayloadDigest == payloadDigest &&
+		!snapshot.FetchedAt.IsZero() && !snapshot.ExtractionAt.IsZero() &&
+		strings.TrimSpace(snapshot.ConnectorKey) != "" &&
+		snapshot.SnapshotDigest != "" && snapshot.SnapshotDigest == sourceevidence.SnapshotDigest(snapshot)
 }
 
 func deduplicateEvidence(values []models.VerificationEvidence) []models.VerificationEvidence {
