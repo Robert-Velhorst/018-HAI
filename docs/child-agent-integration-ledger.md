@@ -8627,3 +8627,11 @@ the current `main` tree. Eighty-five paths share a path with a tracked file on
 `main`; zero had the same Git blob hash. This exact-byte check found no
 untracked file eligible for removal under the direct-match cleanup rule. It
 does not prove that any unmatched file is disposable; those remain preserved.
+
+The added local `nginx-config/nginx.conf` was compared with the existing
+canonical `nginx-config/nginx.conf.template`, `sites-enabled` configuration,
+and `test_gateway_contract.py` on `main`. The local static file hard-codes the
+placeholder backend key and omits the canonical envsubst-based key injection
+and associated gateway contract. It is an older/insecure duplicate, not a
+missing capability to port. The template/tests are on `main`; no local gateway
+file or secret material was pushed.
