@@ -7974,13 +7974,14 @@ recovery against current `main`.
 
 Refreshed `origin/main` is `549e97012e8e8b52efebf7521ff83611a36bdeb1`.
 PRs #41 and #42 are merged and their merge commits are ancestors of this main
-revision. PR #56 is open at `fdfe7bbf8fc548a090f3407640bfd91f48c5d6bb` and
-contains two focused regression-test additions: guarded Ambient Monitor
+revision. PR #56 is open and contains two focused regression-test additions:
+guarded Ambient Monitor
 PostgreSQL release-acceptance coverage and pursuit dashboard projection
-coverage. GitHub currently reports all 40 checks as pending, including the
-browser acceptance, backend, frontend, IDP, migration, runtime, and Python
-runner jobs. No hosted test pass is claimed and the PR is not eligible for
-cleanup as main-matched source.
+coverage. When queried before this ledger-only update, GitHub reported all 40
+checks pending for its then-current head, including browser acceptance,
+backend, frontend, IDP, migration, runtime, and Python runner jobs. No hosted
+test pass is claimed; the ledger update triggers a new check run and the PR is
+not eligible for cleanup as main-matched source.
 
 The primary legacy checkout currently reports 2,286 status entries: 692
 tracked changes and 1,594 untracked paths. A bounded path comparison of its
@@ -8011,3 +8012,33 @@ capacity to execute without approval was not reproduced in the live file and
 is withdrawn. These stale or already-covered copies were not reintroduced. The
 two tests in PR #56 are distinct gaps and remain the only new source files
 published from this audit batch so far.
+
+### Staged candidate: ambient and verification package review
+
+A further bounded comparison of the staged `codex/hai-local-source-reconciliation`
+snapshot with current `main` covered the five changed `backend/internal/ambient`
+files and five changed `backend/internal/verification` files. No candidate files
+were copied. The differences include:
+
+- Ambient scan removes the explicit nil-service guard, so a nil receiver can
+  panic instead of returning the established unavailable-context error.
+- Ambient scheduler removes health-state reporting and the second explicit
+  opt-in for legacy in-process fallback. Its changed behavior would permit
+  fallback on the durable-scheduler opt-out alone, weakening the current
+  fail-closed operator gate.
+- Ambient candidate removes batched fingerprint lookup and resolves existing
+  opportunities one at a time, increasing database round trips as candidate
+  volume grows. It also removes the last-seen write interval and changes the
+  default poll from one minute to five minutes; those are storage and latency
+  tradeoffs, not safe incidental cleanup.
+- Verification candidate removes the context-aware answer API and uses the
+  non-contextual source-search path, losing caller cancellation propagation.
+  It also removes the source-snapshot mutation regression test, removes the
+  bounded run-history limit, and lowers memory-promotion confidence/evidence
+  quality thresholds from 0.75 to 0.70/0.55. These changes reduce cancellation,
+  resource, provenance, and evidence-quality safeguards.
+
+These diffs do not establish that every staged file is wrong; they establish
+that this candidate cannot be integrated as a package or wholesale. Any future
+port must isolate a specific desired behavior, preserve the current safety and
+resource contracts, and add focused tests against the current `main` baseline.
