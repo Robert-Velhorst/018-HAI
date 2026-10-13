@@ -9527,7 +9527,7 @@ creation-time preservation. This audit did not run the Go suite. The source
 check does not prove PostgreSQL transaction durability, lock behavior, crash
 recovery, or concurrency acceptance.
 
-This is the eleventh disposition among the 29 primary-only reports; 18 remain.
+This is the eighth disposition among the 29 primary-only reports; 21 remain.
 The separate 23-report PR-worktree-only set remains unreviewed. No local data
 was removed.
 
@@ -9544,7 +9544,7 @@ uncertainty, HTTP/process exit semantics, and pre-dispatch failures. These
 checks confirm source and test presence only; this audit did not run Go tests
 or validate persisted replay against a live runtime/provider.
 
-This is the twelfth disposition among the 29 primary-only reports; 17 remain.
+This is the ninth disposition among the 29 primary-only reports; 20 remain.
 The PR-worktree-only report set remains a separate 23 files and is unreviewed.
 No local data was removed.
 
@@ -9561,7 +9561,7 @@ patterns. This audit checked committed source only; it did not execute Docker
 builds, confirm every build-context match, inspect secret contents, or verify
 runtime behavior.
 
-This is the thirteenth disposition among the 29 primary-only reports; 16 remain.
+This is the tenth disposition among the 29 primary-only reports; 19 remain.
 The 23-report PR-worktree-only set remains unreviewed. No local data was
 removed.
 
@@ -9577,7 +9577,7 @@ IDP authentication sources. This is committed workflow/test-contract presence;
 the current audit did not run the contract test, the Go suite, or the hosted
 workflow, so no CI or real-store success is claimed.
 
-This is the fourteenth disposition among the 29 primary-only reports; 15 remain.
+This is the eleventh disposition among the 29 primary-only reports; 18 remain.
 The 23 PR-worktree-only reports remain a separate unreviewed set. No local data
 was removed.
 
@@ -9593,7 +9593,7 @@ audit did not run that Node test, perform a Docker build, measure cache reuse,
 or quantify CPU/memory/build-time savings; the report's historical five-test
 pass is not a fresh run here.
 
-This is the fifteenth disposition among the 29 primary-only reports; 14 remain.
+This is the twelfth disposition among the 29 primary-only reports; 17 remain.
 The separate 23 PR-worktree-only set remains unreviewed. No local data was
 removed.
 
@@ -9621,7 +9621,7 @@ runtime acceptance. The report is therefore source-resolved on `main`, with
 execution verification still outstanding. No source files, archives, or
 worktrees were changed or deleted.
 
-This is the sixteenth disposition among the 29 primary-only reports; 13 remain.
+This is the thirteenth disposition among the 29 primary-only reports; 16 remain.
 The separate 23 PR-worktree-only reports remain unreviewed. No local data was
 removed.
 
@@ -9637,8 +9637,8 @@ report's test-only repair in
 30 seconds old, while the explicit `expired contract` case remains five minutes
 old (lines 73-100). The production evidence gate was not relaxed. This report's
 source finding is therefore represented on `main`; this audit did not run the
-Go test, so executable verification remains unclaimed. This is the eighth
-disposition among the 29 primary-only reports; 21 remain. The 23 PR-worktree-
+Go test, so executable verification remains unclaimed. This is the fourteenth
+disposition among the 29 primary-only reports; 15 remain. The 23 PR-worktree-
 only reports remain a separate, unreviewed set. No files were deleted.
 
 Live GitHub recheck: PR #41 and PR #42 are already closed and merged to `main`
@@ -9661,7 +9661,7 @@ Two additional primary-only reports were checked against `main` at
 | `runtime-outcome-independent-review-20261001.md` | The reported uncertain-outcome promotions are source-resolved: life-graph projection gives uncertainty precedence and binds it into the digest (`life_ontology_projection.go`, with `TestLifeProjectionCannotPromoteUncertainExecution`); assistant `planRequiresReview` calls the shared uncertainty helper (`assistant/service.go`, with `TestAssistantRequiresReviewForUncertainExecution`); workflow-owned operation retry is rejected before decision mutation and has a no-execution regression; missing prior plans become `ErrTaskOutcomeReconciliationRequired`, with the handler returning 409. | No Go tests ran in this audit. Existing tests cover uncertainty projections, assistant signaling, and workflow-owned retries. A narrow service regression isolating the missing-prior-plan lookup branch was not found in the searched test sources; treat that branch's targeted coverage as outstanding. Source presence is not runtime acceptance. |
 
 This raises the number of primary-only reports with a semantic disposition from
-eight to ten, leaving 19 of the 29 primary-only reports to review. The 23
+fourteen to sixteen, leaving 13 of the 29 primary-only reports to review. The 23
 PR-worktree-only reports remain a separate unreviewed set. The live metadata
 inspection reports PR #117 at head `12572f1a8c9697e88ce0b0bc3075724fd431fd01`;
 the ledger update following that observation is now committed and pushed as
