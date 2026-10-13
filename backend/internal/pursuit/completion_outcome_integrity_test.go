@@ -273,7 +273,7 @@ func TestPursuitCompletedReceiptUsesLaunchSpecificCodes(t *testing.T) {
 		kind     string
 		code     int
 		accepted bool
-	}{{"api", 200, true}, {"api", 204, true}, {"api", 404, true}, {"api", 0, false}, {"docker_service", 204, true}, {"docker_service", 304, true}, {"docker_service", 200, false}, {"script", 0, true}, {"script", 1, false}} {
+	}{{"api", 200, true}, {"api", 204, true}, {"api", 404, true}, {"api", 0, false}, {"api", 302, false}, {"api", 500, false}, {"api", 599, false}, {"docker_service", 204, true}, {"docker_service", 304, true}, {"docker_service", 200, false}, {"script", 0, true}, {"script", 1, false}} {
 		t.Run(fmt.Sprintf("%s-%d", test.kind, test.code), func(t *testing.T) {
 			intent := models.AutomationLaunchEvent{ID: uuid.New(), Status: "pending", LaunchType: test.kind + "_intent"}
 			outcome := models.AutomationLaunchEvent{ID: uuid.New(), Status: "completed", LaunchType: test.kind, ExitCode: test.code}
