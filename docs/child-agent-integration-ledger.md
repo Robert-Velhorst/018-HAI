@@ -8327,3 +8327,19 @@ guarded MCP result-to-context mapping, and remove workflow success-criteria
 intake and review-required state handling. These behavioral changes need
 targeted UI/API acceptance checks before any frontend extraction; none was
 ported in this batch.
+
+## Current July archive state check (2026-10-13)
+
+A fresh read-only inventory of `D:\codex-temp\hai-completed-agent-sessions`
+now finds 13 files totaling 17,559,729,527 bytes, rather than the 18 files
+and 20,739,169,122 bytes in the prior checkpoint. All five manifest rows
+marked `candidate_after_ledger_commit` are absent. The other 13 paths match
+the manifest's retained path and byte-length set exactly; their full contents
+were not re-hashed in this check.
+
+No deletion was performed by this audit. The observed absence does not prove
+who removed the five candidates or when. The existing 18-file source verifier
+and remover are now expected to fail closed because the candidate source paths
+are missing; they were not run in apply mode. Preserve all 13 remaining
+transcripts, including duplicate-ID and nonterminal rows, and do not revise
+their dispositions from this inventory alone.
