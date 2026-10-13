@@ -7969,3 +7969,38 @@ unresolved marker in `backend/internal/background/worker.go` and a variant
 that removes the canonical secret-redaction path. These snapshots cannot be
 published or treated as resolved code. They remain preserved for file-by-file
 recovery against current `main`.
+
+### October 13, 2026: current-main source cross-check
+
+Refreshed `origin/main` is `549e97012e8e8b52efebf7521ff83611a36bdeb1`.
+PRs #41 and #42 are merged and their merge commits are ancestors of this main
+revision. PR #56 is open at `19627f334294743301dc2a7ed5021265c7a995f6` and
+contains two focused regression-test additions: guarded Ambient Monitor
+PostgreSQL release-acceptance coverage and pursuit dashboard projection
+coverage. Its 40 hosted checks were still queued at this audit; no hosted test
+pass is claimed and the PR is not eligible for cleanup as main-matched source.
+
+The primary legacy checkout currently reports 2,286 status entries: 692
+tracked changes and 1,594 untracked paths. A bounded path comparison of its
+non-output, non-orchestration untracked files found 86 product/test/document
+paths, of which 12 paths are absent from `main`; all 12 are test-evidence
+records or acceptance logs, not missing product source. The 1,504 `output/`
+paths and the 692 tracked changes remain unclassified at file-content level in
+this pass, and nothing was deleted.
+
+Two untracked post-migration files in the old PR #34 resolution checkout use
+the name `0005_durable_jobs_queue_lease_index`; current `main` has the same
+queue/lease index as post migration 0007, and its durable-job contract tests
+also read 0007. The old files are stale numbering, not missing schema work.
+The runtime-safety scratch checkout likewise has no untracked source paths
+absent from `main`. Its OpenClaw artifact URL implementation is an older
+variant: current `main` includes additional NAT64-address policy and isolated
+test-only loopback controls. It was not copied over the canonical code.
+
+Test-only differences sampled from the primary checkout were also compared
+against current `main`. The local worker-starvation regression is already
+covered by the current `backend/internal/background/worker_reliability_test.go`;
+the local source-approval tests are a shorter variant of the current test
+suite. These stale copies were not reintroduced. The two tests in PR #56 are
+distinct gaps and remain the only new source files published from this audit
+batch so far.
