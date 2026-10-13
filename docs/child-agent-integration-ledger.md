@@ -8328,6 +8328,30 @@ intake and review-required state handling. These behavioral changes need
 targeted UI/API acceptance checks before any frontend extraction; none was
 ported in this batch.
 
+## OpenClaw and runtime boundary review (2026-10-13)
+
+The local overlay removes 17,895 lines across 82 files in
+`agentruntime`, `openclawmaintenance`, and `openclawreconcile`:
+
+- It deletes the OpenClaw maintenance service/worker, version-pull lifecycle,
+  installer lock, trusted-command policy, and Windows process-containment
+  implementation. The requested daily freshness/update behavior is therefore
+  not present in this local overlay.
+- It deletes managed-archive import/download validation, artifact URL and
+  ownership checks, gateway-frame handling, and artifact retain/recover/forget
+  reconciliation, including usage recovery and their tests.
+- It deletes execution-admission code and DeepSeek harness stop, cancellation,
+  and workspace-symlink security tests.
+- The remaining `agentruntime/handler.go` removes request-cancellation checks
+  after upload inspection and immediately before managed archive persistence;
+  related tests asserting that canceled uploads do not consume authorization
+  or mutate runtime state are deleted.
+
+This is a major loss of updateability, artifact safety, and runtime control,
+not an alternative harness implementation. No runtime code was ported from the
+overlay. Local tests could not be run because Go is unavailable on this shell's
+`PATH`; no claim of live OpenClaw installation or update verification is made.
+
 ## Current July archive state check (2026-10-13)
 
 A fresh read-only inventory of `D:\codex-temp\hai-completed-agent-sessions`
