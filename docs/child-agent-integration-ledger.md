@@ -7887,3 +7887,39 @@ checkout, none of the 1,594 untracked files was an exact same-path blob match
 for refreshed `main`; 85 paths share a name with a main file but have different
 contents. The 692 tracked changes and all other dirty worktrees remain
 preserved. No additional local cleanup is justified by this pass.
+
+## 2026-10-13 resumed audit and PR gate
+
+The current remote `main` remains `59245962d2526351e3820237f3dbaf95d5e91740`.
+PR #41 (this ledger update) and PR #42 (pursuit completion HTTP-status test)
+each passed all 36 CI checks and are reported cleanly mergeable, but both remain
+open. Their branch contents are not yet on `main`; neither corresponding local
+worktree qualifies for cleanup under the exact-main-match rule.
+
+The refreshed worktree inventory contains 13 registered worktrees. The primary
+checkout has 2,286 changed or untracked status entries. The source-reconciliation
+worktree has 310 staged changes (7,138 insertions and 12,453 deletions); its
+base commit is an ancestor of current `main`, not the current `main` commit.
+Ten historical/source worktrees remain dirty. No files were deleted.
+
+A further static review of the staged candidate found more reasons not to
+publish it wholesale:
+
+- `backend/internal/task/service.go` deletes 254 lines and
+  `state_repository.go` deletes 164 lines; task operation tests lose 154
+  lines, while the phase-two module deletes 57 lines and workflow handler tests
+  lose 87 lines. These broad removals have not been mapped to replacement
+  behavior or validated against current `main`.
+- `backend/internal/verification/service.go` replaces the caller context with
+  `context.Background()` for source-evidence resolution and semantic memory
+  projection, and removes cancellation-error propagation at those boundaries.
+  Current `main` contains a cancellation regression test for blocked evidence
+  search; the staged candidate has not been run through tests.
+- Authentication changes include removal of context preconditions from token
+  and password-reset service paths. They need a focused contract-by-contract
+  comparison before any port; no IDP candidate files were copied.
+
+This expands, but does not complete, the staged-snapshot review. The 310-file
+candidate, 692 tracked primary-checkout changes, and dirty historical worktrees
+remain unclassified. Green checks on PRs #41 and #42 validate only those PR
+heads; they do not validate or authorize publishing the staged candidate.
