@@ -8033,3 +8033,23 @@ tracked variants, the ten normalization-sensitive status entries, all 74
 untracked same-path variants, and the Nginx configuration remain subject to
 file-level review. No source, worktree, transcript, or archive data was
 removed.
+
+Representative semantic comparisons of same-path local variants also found
+that current `main` is stricter than the local copies:
+
+- `backend/internal/operations/source_approval.go`: current `main` binds the
+  reviewed owner type and source-evidence hash in its approval receipt and
+  validates receipt history more explicitly; the local variant lacks those
+  bindings. Do not replace the canonical implementation with the local copy.
+- `backend/internal/operations/execution_claim.go`: current `main` uses the
+  persisted `payload_json` field, preserves operation/event timestamp binding,
+  and does not treat owner type alone as approval proof. The local variant has
+  weaker receipt/eligibility checks.
+- `backend/internal/infra/database_pool.go`: current `main` configures bounded,
+  parameterized GORM logging and validates the log-level setting; the local
+  variant omits that configuration.
+
+These are examples from the ongoing review, not a complete audit of the 338
+different tracked paths. They provide additional reasons not to publish the
+dirty checkout as a whole; any remaining local change must be compared to the
+current implementation and its safety contracts before porting.
