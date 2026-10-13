@@ -8621,3 +8621,9 @@ The 1,594 untracked paths are not represented in the committed-diff counts.
 They remain in place pending path/content-level classification; a matching
 filename or a test result does not establish that a local file is redundant
 or safe to delete. No local file was deleted during this reconciliation.
+
+An exact blob comparison screened all 1,594 non-ignored untracked paths against
+the current `main` tree. Eighty-five paths share a path with a tracked file on
+`main`; zero had the same Git blob hash. This exact-byte check found no
+untracked file eligible for removal under the direct-match cleanup rule. It
+does not prove that any unmatched file is disposable; those remain preserved.
