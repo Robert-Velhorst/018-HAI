@@ -626,7 +626,7 @@ frozenlist==1.8.0 \
     # via
     #   aiohttp
     #   aiosignal
-fsspec==2026.7.0 \
+fsspec[http]==2026.7.0 \
     --hash=sha256:b57ddbafedfaef7018c1ecab32aa200a9d7ca26b77965f64e48b70061249d279 \
     --hash=sha256:c803c40f4cf860b49dea58ee3e1c33cb9c790520e233537e1340049f89b82a88
     # via
@@ -667,7 +667,7 @@ httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
     # via httpx
-httpx==0.28.1 \
+httpx[http2]==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via
@@ -852,7 +852,7 @@ litellm==1.104.2 \
     --hash=sha256:f6b8550508b9e0f67b3d64bafad245641fa3049d4c5b85c26a6b8e175e00a3cd \
     --hash=sha256:f766de3dd38b977ca70f17f409df04c0a9a3e90aed82582a965d348b6e2fe399
     # via mini-swe-agent
-markdown-it-py==4.2.0 \
+markdown-it-py[linkify]==4.2.0 \
     --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
     --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
     # via
@@ -1020,10 +1020,10 @@ mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
     --hash=sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba
     # via markdown-it-py
-mini-swe-agent==2.4.5 \
-    --hash=sha256:1437340a549b604b4ac86cb858287713312177536c3feb5461114c6624ac590d \
-    --hash=sha256:25eeaaade8e246d0c3247a5efe15e56ff37ec428819d62fb6bc3d2c81fa9d999
-    # via -r services/miniswe-runner/requirements.in
+mini-swe-agent==2.4.6 \
+    --hash=sha256:0532c8193a763409fa52bb2b5a5d7ac9052dcb1c2cae43945b14b1b7f6ba869a \
+    --hash=sha256:a35463c553ac825c7773b03cfa69cd44958e3af20155dcc5711fdf9e4c67cd54
+    # via -r requirements.in
 multidict==6.9.1 \
     --hash=sha256:006c4478de0a1876f4834e14255776286f09b9846b505fe63f67f9d173a9487c \
     --hash=sha256:024123f0ab402ab33828e24eb80fa8f25167d0d3783ba5f287e39ed741e6abf9 \
@@ -2227,14 +2227,11 @@ typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
     # via
-    #   aiohttp
-    #   aiosignal
     #   anyio
     #   huggingface-hub
     #   openai
     #   pydantic
     #   pydantic-core
-    #   referencing
     #   textual
     #   typing-inspection
 typing-inspection==0.4.4 \
