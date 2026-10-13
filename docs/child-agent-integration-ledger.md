@@ -9289,6 +9289,36 @@ the repository integration and CI status, but does not recover or re-verify
 the absent transcripts. Preserve the 13 retained files and do not represent
 the source-archive cleanup gate as passed.
 
+## Supplemental archive verification (2026-10-13)
+
+The separate roots `D:\codex-temp\completed-agent-sessions` and
+`D:\codex-temp\session-log-relief` were checked with the committed supplemental
+readiness verifier. All 9 manifest entries match the source inventory:
+14,013,737,298 bytes across both roots. Two completed candidates totaling
+3,113,294,358 bytes passed exact SHA-256 verification; the other 7 transcripts
+remain retained. The verifier reported
+`result=supplemental_source_archive_verified`,
+`deletion_performed=false`, and `cleanup_authorized=false`.
+
+The candidate reports are Hubble (Framework Registry review/read-only/authority
+guard work) and Popper (icon registration and Model Routing cleanup). Their
+report-linked implementation paths are tracked in `main`; PR #36 is merged,
+its exact-head CI run #1079 succeeded, and its merge commit is in `main`. The
+cleanup-gate correction PR #37 is also merged; its exact-head CI run #1081
+succeeded, and merge commit `daee223cd41f0a7847b80ab9533e7fc175023115` is in
+`main`. These records and checks establish integration evidence, not permission
+from the read-only verifier to delete data.
+
+The purpose-built `remove-hai-supplemental-completed-session-transcripts.ps1`
+exists for these two roots. Its preflight requires a clean canonical `main`
+worktree at the current remote commit, the merged-PR-#37 primary cleanup gate,
+and a passing primary source-archive verification before it resolves any
+supplemental candidate. The primary archive has the five missing candidates
+recorded above, so this required gate currently blocks supplemental cleanup.
+The supplemental verifier itself is read-only; no supplemental files were
+removed. Keep all 7 retained transcripts and do not bypass the primary gate or
+use the primary-archive remover to target either supplemental root.
+
 ## Windows CI and retained patch-artifact review (2026-10-13)
 
 The local Windows-native runtime/build scripts and isolated acceptance-stack
