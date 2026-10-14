@@ -409,3 +409,11 @@ the local request omits the JSON `reason` body and `Content-Type` header that
 the canonical test supplies. The remaining test function matched in the
 bounded comparison. The local variant therefore is not a stronger replacement
 and is not an exact-main cleanup candidate; no source was copied or removed.
+
+The separately reviewed
+`backend/internal/runtimelab/owner_gate_handler_test.go` differs only by the
+security-clarifying comment `Even an administrative role does not grant
+another operator's scope.` The comment is now included in PR #117. The updated
+PR-worktree blob is `7333d2da`, matching the local candidate's Git blob; current
+`main` remains at `2324a9c0` until merge. The local copy remains in place and
+will not be removed before a post-merge main-blob equality check.
