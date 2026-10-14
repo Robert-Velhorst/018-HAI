@@ -10326,3 +10326,13 @@ After confirming the remote SHA before and after, the 124 direct copies were
 removed from that worktree. They are local unstaged deletions only; no source
 or archive was committed or pushed by this cleanup. The worktree still has
 its 300 differing tracked files and 95 untracked files, which remain intact.
+
+### October 14, 2026: runtime-safety worktree exact-main cleanup
+
+The runtime-safety audit worktree at `e07b9da` had one tracked regular file,
+`backend/internal/agentruntime/final_effect_authorization.go` (5,453 bytes),
+whose Git-cleaned blob exactly matched the same path on live `main`. The other
+13 modified tracked files and four untracked files differed. After confirming
+the remote `main` SHA and rechecking the file's blob immediately before
+removal, that single direct copy was deleted from the worktree. The canonical
+file remains on `main`; no differing or untracked files were changed.
