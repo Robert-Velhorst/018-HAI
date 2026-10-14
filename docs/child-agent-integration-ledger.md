@@ -9946,3 +9946,17 @@ cancellation, and atomic durable verification finalization. The local
 Verification snapshot also lowers the memory-promotion confidence/evidence
 thresholds. These are stale or weaker variants, not safe additions to port.
 The canonical Pursuit domain validation itself is already present in `main`.
+
+### October 14, 2026: historical environment-file exposure
+
+The stale primary checkout tracks `.env-backend`, `.env-gateway`, and
+`.env-idp`, none of which exists in the current `main` tree. The backend and
+IDP files contain non-placeholder values assigned to credential-bearing
+variables, including database-password and JWT-signing-secret names. Their
+introducing commit `e4c84a7b157a4e7b3a82e630c8af62d7bb350a53` is reachable
+from `origin/main`, and the repository is public. No values were printed,
+copied into this ledger, or added to the PR. Treat credentials from those
+historical blobs as exposed and rotate them through their owning systems;
+deleting the current files alone cannot remove Git history. The GitHub
+secret-scanning API returned no alert records to this caller, which does not
+establish that the values are harmless or that every secret type was scanned.
