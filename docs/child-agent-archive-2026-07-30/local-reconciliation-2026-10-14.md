@@ -165,3 +165,42 @@ base do not prove integration with current `main` (`12246bd28820f892a48e04b528ff
 Treat the source as published for review, not yet preserved on current `main`.
 The sparse-review worktree remains intact; no cleanup is authorized by this
 finding.
+
+### October 14, 2026: focused review of the dirty runtime-release checkout
+
+The dirty checkout at `2026-05-30/.../github-plugin-github-openai-curated-noodzakelijk`
+is `codex/hai-runtime-release` at `e07b9dae`, compared with current `main`
+`12246bd28820f892a48e04b528ff8e28b102b7d4`. It has 2,274 status entries,
+including about 1,500 generated `output/` entries; its committed history is
+diverged from current `main` (the scoped reviews report 292 commits ahead and
+36 behind). No bulk port or cleanup is justified by this checkout.
+
+Three disjoint, read-only reviews found no complete product change ready to
+port:
+
+- Backend: 404 dirty backend entries (243 deletions, 125 modifications, 36
+  untracked); targeted review found weakened provider URL validation, removed
+  source-approval/execution-policy checks, and removed emergency-stop approval
+  wiring. It was not a full review of all 404 entries.
+- Frontend and IDP: 259 dirty tracked paths and 16 untracked paths; reviewed
+  examples remove request contexts, authentication rate limits, session
+  rotation/authority, shell templates, lazy route modules, and browser-state
+  safeguards. Those are regressions or already-covered behavior, not port
+  candidates. The slice was not line-by-line reviewed in full.
+- CI, installer, Compose, gateway, scripts, services, and docs: targeted review
+  found missing files still required by CI/installer/Compose, removed gateway
+  security headers, an unsafe placeholder-key nginx config, a transcript audit
+  that can classify a partial tail as complete, and several runtime/dependency
+  downgrades without supporting evidence. These are blockers, not improvements
+  to import. The 259-path slice was not line-by-line reviewed in full.
+
+Generated-output inventory, read without dumping log contents: 1,507 physical
+files occupy 126,491,186 bytes; 82 JSONL files occupy 120,845,323 bytes and 884
+log files occupy 3,308,520 bytes. Of the 78 `output/` paths tracked by current
+`main`, 70 are already absent from this checkout. The eight local copies that
+exist are not byte-identical; after normalizing checkout/temp paths and
+Markdown link syntax, each has zero semantic line differences from `main`.
+They do not contain new report findings, and none qualifies for exact-match
+local cleanup. The remaining untracked output and all dirty source files stay
+preserved pending broader review. No environment file or raw log was opened;
+no local files, worktrees, or Git refs were changed by these audits.
