@@ -150,3 +150,18 @@ three environment files remain unopened and unpublished, and seven oversized
 July records remain retained and unparsed. No local source checkout, worktree,
 environment file, log, or transcript was deleted. No local file is certified
 for cleanup by this checkpoint.
+
+### October 14, 2026: duplicate frontend engine declaration candidate
+
+The clean `2026-10-13/hai-main-sparse-review` worktree contains one candidate
+change: remove the first of two `engines` keys from `frontend/package.json`.
+Current `main` still contains both keys; the later key sets Node to
+`^24.15.0`, which JSON parsing uses in practice. The exact change is already
+published in open PR #121 (`codex/deduplicate-frontend-engines`, head
+`9a5fe676ebba14fede67b5567e32a2adf478206b`), so it was not duplicated into
+PR #117. GitHub currently reports PR #121 mergeable, but its base is the older
+`345cf356c3f4ab497568713dc994820b4ba22b10`; its current checks against that
+base do not prove integration with current `main` (`12246bd28820f892a48e04b528ff8e28b102b7d4`).
+Treat the source as published for review, not yet preserved on current `main`.
+The sparse-review worktree remains intact; no cleanup is authorized by this
+finding.
