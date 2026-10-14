@@ -9902,7 +9902,7 @@ superseded by the stronger canonical baseline-versus-durable Constitution
 test; and the missing-owner test conflicts with the canonical behavior that
 binds authorization to the authenticated actor when no configured owner is
 present. None of these local test snapshots was copied over `main`. This is a
-targeted safety comparison, not a review of all 692 modified tracked files.
+targeted safety comparison, not a review of all modified tracked files.
 
 ### October 14, 2026: untracked source-path comparison
 
@@ -9916,3 +9916,33 @@ paths to copy over `main`; it does not prove that each assertion is equivalent.
 The six untracked JSON evidence files under the backend test-evidence folder
 have no corresponding `main` path and remain unclassified. No source snapshot,
 test evidence, or output artifact was deleted or ported in this comparison.
+
+### October 14, 2026: primary checkout tracked-delta inventory
+
+Compared the primary checkout's tracked worktree edits with its `HEAD` and
+with the fetched `origin/main` snapshot `345cf356c3f4ab497568713dc994820b4ba22b10`.
+The checkout has 682 tracked paths changed in the worktree; 339 of those paths
+have content matching `main`, while 343 differ from `main`. The latter scoped
+diff is approximately 61,815 added and 69,696 removed lines. The largest
+groups are frontend (156 paths), backend (127), IDP (17), docs (14), scripts
+(8), services (8), and installer (5), with smaller root, CI, and Nginx changes.
+This is an inventory, not a semantic review or approval to copy/delete these
+paths. Several files contain security/runtime behavior and require individual
+review; the backend safety cases above are examples of local changes that
+must not be ported as-is.
+
+At this snapshot, the primary checkout's `HEAD` also has 292 commits not
+reachable from `main`, while `main` has 35 commits not reachable from that
+`HEAD`. This divergent history plus 1,585 untracked paths means the checkout
+cannot be removed as a single cleanup unit. No tracked or untracked local data
+was deleted by this inventory.
+
+Ignoring whitespace in the same 343-path comparison leaves 241 paths with
+content-level differences (about 2,248 added and 10,129 removed lines); the
+other 102 path differences are whitespace-only. A focused read of the large
+Pursuits and Verification service diffs found the local snapshots omit current
+`main`'s owner-scoped overview/operating-snapshot paths, context-aware
+cancellation, and atomic durable verification finalization. The local
+Verification snapshot also lowers the memory-promotion confidence/evidence
+thresholds. These are stale or weaker variants, not safe additions to port.
+The canonical Pursuit domain validation itself is already present in `main`.
