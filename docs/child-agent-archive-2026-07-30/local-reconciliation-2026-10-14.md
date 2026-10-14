@@ -39,6 +39,23 @@ Across the 22 files, the scan counted 766,103 JSONL records and found:
 
 The event scan is incomplete because seven records were skipped. The matching parent-thread metadata and repeated histories mean the event and path counts are not counts of unique child changes. They do not prove that a patch was accepted in the final tree, identify which transcript uniquely authored it, or establish integration into current `main`. The existing path-audit script's prior missing-path conclusion must not be generalized to these extra files or to the skipped records.
 
+## Tracked local source delta review
+
+A bounded comparison of 223 modified tracked text files against current `main` found nine with a greater local line count. Line count alone is not evidence that a local version is newer or better. Semantic spot review found no whole-file replacement safe to port:
+
+| Local path | Review |
+| --- | --- |
+| `frontend/package-lock.json` and `frontend/e2e/package-lock.json` | Dependency graphs differ from canonical locks. Do not transplant lockfiles without matching manifests and a clean dependency-resolution verification. |
+| `frontend/src/app/services/context-memory.service.interface.ts` | Local code duplicates query contracts; `main` aliases the shared `IMemoryQueryParams` and `IMemoryPageResult` models. No local consumer references the duplicate declarations. Keep the canonical shared types. |
+| `frontend/src/app/services/workflow/workflow.service.spec.ts` | Local tests expect the older list-based selection lookup; the canonical service contract tests direct selection lookup. Do not restore stale API expectations. |
+| `frontend/src/app/app.module.ts` | Local inline icon registration removes the canonical `ControlRoomModule` import/export arrangement. Do not replace the module wiring. |
+| `backend/internal/verification/repository.go` | Local repository contract omits canonical owner-scoped run lookup and has a different transaction abstraction. Review transaction behavior separately; do not copy the file over the current ownership boundary. |
+| `frontend/src/app/pages/pursuits/pursuits.component.ts` | Local code auto-selects the first pursuit after refresh. This changes the explicit-selection/inspector behavior and lacks a focused acceptance test; deferred, not silently ported. |
+| `frontend/src/app/control-room/module-registry.ts` | Local registry lacks the current `operational-brain` module and `intake-outcome-criteria` disclosure metadata. Keep the newer canonical registry. |
+| `frontend/src/app/pages/control-center/control-center.component.ts` | Local version calls older ambient/pursuit APIs and removes validation of non-negative, finite count fields. Keep the current API and validation path. |
+
+This is a line-count triage plus the listed semantic checks, not a proof that every local changed file has been fully reviewed. No local source variant was copied in this pass.
+
 ## Disposition
 
 No files are cleanup candidates on this evidence. Keep all 13 present retained transcripts, all nine out-of-manifest files, and any other unresolved HAI evidence. The five absent manifest entries need external backup/path reconciliation; they cannot be reconstructed from the manifest's report hashes alone. A future cleanup review requires a complete, reproducible per-file scan, child-specific attribution, source-to-current-main crosswalk, and verified preservation of every needed report and patch.
