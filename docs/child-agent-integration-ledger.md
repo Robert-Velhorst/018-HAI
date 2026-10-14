@@ -11073,3 +11073,40 @@ working-tree content. Non-force `git worktree remove` succeeded; afterward the
 path was absent and no longer appeared in `git worktree list`. This is the
 checkout's measured logical size, not a measurement of the volume's free-space
 increase. All dirty worktrees and unmatched local files remain preserved.
+
+### October 14, 2026: audit-worktree crosswalk refresh
+
+Rechecked three HAI audit worktrees against current `origin/main`
+`12246bd28820f892a48e04b528ff8e28b102b7d4`:
+
+| Worktree | Git status entries | Changed test files / test functions inventoried | Exact byte matches on `main` |
+| --- | ---: | ---: | ---: |
+| `hai-model-maintenance-audit` | 520 | 104 / 1,538 | 0 |
+| `hai-openclaw-artifact-audit` | 247 | 97 / 1,240 | 0 |
+| `hai-runtime-safety-audit` | 18 | 9 / 162 | 0 |
+
+Status entries can overlap between worktrees, and test-function inventories
+include all functions in changed test files. These counts are not unique source
+file counts or semantic integration proof. The exact-byte scan was read-only;
+none of these changed or untracked files qualifies for deletion under the
+current-main exact-match rule.
+
+Focused source checks show that several apparent differences are already
+represented by newer code on `main`: owner-scoped host-runtime cancellation and
+emergency-stop regression tests, provider-managed model catalog checks with
+24-hour reuse/expiry, session role projection from the current stored user,
+SGLang's loopback-only OpenAI-compatible provider, and SMTP implicit-TLS
+support on port 465. A test-name difference alone is not evidence that the
+behavior is missing. The larger worktree diffs have not been fully reviewed.
+
+Two runtime-safety worktree tests expect automatic deletion of the previous
+HAI-managed OpenClaw archive. That behavior is not ported: the inspected upload
+approval digest does not identify deletion of the previous archive, so the
+mutation would need an explicit, user-visible, approval-bound deletion effect
+before it could be considered. The local artifact-URL downloader is also not
+treated as integrated; its URL-fetch path and tests need a complete production
+integration and security review. The source and worktrees remain intact.
+
+No Go tests were run for these audit worktrees because `go` is unavailable in
+this Windows environment. This is a bounded crosswalk, not completion of the
+remaining file-by-file semantic review, and it authorizes no further cleanup.
