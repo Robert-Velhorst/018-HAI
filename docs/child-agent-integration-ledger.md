@@ -11440,3 +11440,66 @@ surface. The same slice reduces workflow/reminder tests and alters scheduler
 behavior, so it needs independent contract review before any selective port.
 This was a read-only diff review; the D: worktree/index was not changed, and no
 part of this slice was copied.
+
+### October 14, 2026: primary checkout source-like untracked crosswalk
+
+Re-read the primary checkout's current Git inventory and compared every
+untracked source-like file under `backend/`, `frontend/`, `idp/`, `scripts/`,
+`services/`, `nginx-config/`, `nginx-config-manager/`, `.github/`, and `docs/`
+with the corresponding blob in current `origin/main` at
+`b7e3ad2086c23313a0355101498bee82cda62d4e`. This excludes generated `output/`
+and test-evidence trees. All 65 candidate paths exist on `main`, but all 65
+have different Git-normalized content; none is a direct byte/object match
+eligible for the direct-match cleanup rule. This is a path/content crosswalk,
+not a semantic acceptance review, so the local copies remain preserved.
+
+Forty-seven of these paths had no exact path mention in this ledger before
+this crosswalk: `backend/internal/automation/public_projection_test.go`,
+`backend/internal/executionauth/transactional_test.go`,
+`backend/internal/llm/outbound_transport_test.go`,
+`backend/internal/operations/ingest_atomicity_regression_test.go`,
+`backend/internal/operations/repository_ordering_test.go`,
+`backend/internal/opscontrol/emergency_stop_fanout_test.go`,
+`backend/internal/phase2/execution_claim_postgres_integration_test.go`,
+`backend/internal/pursuit/completion_outcome_postgres_test.go`,
+`backend/internal/router/opscontrol_emergency_stop_permissions_test.go`,
+`backend/internal/task/required_participant_admission_test.go`,
+`backend/internal/verification/freshness_test.go`,
+`backend/internal/workflow/project_dossier_test.go`,
+`backend/internal/workflow/reminder_context_boundaries_test.go`,
+`backend/migrations/runtime_db_role_provisioning_contract_test.go`,
+`backend/migrations/source_configuration_postgres_test.go`,
+`backend/migrations/source_observation_postgres_test.go`,
+`backend/migrations/trello_webhook_reconciliation_generations_integration_test.go`,
+`frontend/e2e/tests/support/owned-browser-matrix-handoff.md`,
+`frontend/e2e/tests/support/owned-browser-matrix.ts`,
+`frontend/scripts/control-room-logic.test.mjs`,
+`frontend/scripts/deep-link-focus.test.mjs`,
+`frontend/scripts/framework-secret-boundary.test.mjs`,
+`frontend/scripts/release-cache.test.mjs`,
+`idp/internal/app/authentication/auth_password_reset_integration_test.go`,
+`idp/internal/app/authentication/durable_session_authority_test.go`,
+`idp/internal/app/authentication/durable_session_postgres_redis_test.go`,
+`idp/internal/app/authentication/http_session_redis_test.go`,
+`idp/internal/app/authentication/login_interleaving_integration_test.go`,
+`idp/internal/app/authentication/password_reset_log_privacy_test.go`,
+`idp/internal/app/authentication/refresh_rotation_redis_test.go`,
+`idp/internal/app/authentication/refresh_rotation_test.go`,
+`idp/internal/app/authentication/session_authority_test.go`,
+`idp/internal/app/authentication/session_store_loss_redis_test.go`,
+`scripts/python_runner_container_smoke.py`,
+`scripts/test-native-compile-deadline.ps1`,
+`scripts/test-native-go-discovery.ps1`,
+`scripts/test-openclaw-maintenance-migration.ps1`,
+`scripts/test-windows-installer-install.ps1`,
+`scripts/test-windows-installer-source-selection.ps1`,
+`scripts/test-windows-native-runtime.ps1`,
+`scripts/test-windows-process-containment.ps1`,
+`scripts/test-windows-runtime-lifecycle.ps1`,
+`scripts/test_python_runner_container_smoke.py`,
+`scripts/windows-installer-payload-selection.ps1`,
+`services/deepteam-runner/requirements.in`,
+`services/deepteam-runner/requirements.lock`,
+`services/promptfoo-runner/package-lock.json`, and
+`services/promptfoo-runner/package.json`. These paths need semantic review
+before any selected behavior is ported; no file was copied or removed.
