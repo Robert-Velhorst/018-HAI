@@ -253,3 +253,40 @@ Afterward the path was absent and `git worktree list` no longer contained it.
 This removes one reproducible checkout; it does not claim that all remaining
 local HAI data is reconciled or that the same number of bytes was returned to
 the volume's free-space counter.
+
+### October 14, 2026: archive source recheck and scratch runtime audit
+
+The transcript cleanup-readiness verifier was rerun against
+`D:\codex-temp\hai-completed-agent-sessions` with source-archive verification
+required. It failed closed because the manifest-listed Copernicus source file
+`rollout-2026-07-30T10-02-49-019fb20c-2b95-7550-8304-1117de872148.jsonl` was
+missing. Targeted filename checks in the expected transcript root, the general
+completed-session root, the retained/archive-audit roots, the quarantined
+roots, the integration snapshot, and bounded Codex evidence/temp backup roots
+found no copy. The exhaustive home-session search was stopped after reporting
+system resource exhaustion; therefore this is not proof that no copy exists
+anywhere on the device. No transcript deletion was attempted. The five main
+archive candidates remain ineligible for cleanup until the source manifest and
+hash gates pass again.
+
+The uncommitted `hai-runtime-safety-audit` worktree was inspected without
+modifying it. Its agent-runtime and host-runtime changes do not compile under
+the available Go 1.25.13 toolchain: both focused packages fail because the
+changed host-runtime code references missing safety APIs
+`AcquireExecutionCommitFenceContext`, `EvaluateEmergencyStopForExecution`, and
+`CurrentEmergencyStopRevision`. The diff also deletes
+`final_effect_authorization.go`. No changes from this worktree were ported.
+
+The uncommitted `hai-openclaw-artifact-audit` worktree has 247 status entries,
+including 42 tracked deletions, and `hai-model-maintenance-audit` has 520,
+including 124 tracked deletions. Their broad mixed diffs were not reviewed
+line-by-line or tested in this pass. They remain untouched and are not
+certified for porting or cleanup.
+
+The pushed branch ref `codex/integration-ledger-live-checkpoint` is at
+`768b6b173c613c73481ebb9a54f808aa9871bc88`, while the GitHub PR API and
+`refs/pull/117/head` still report `0742ddc61c5c4718ef05642c545264d65720b960`.
+The latest listed workflow run is queued on `0742ddc6`; no exact-head CI run
+for `768b6b17` is visible. The PR description was corrected to disclose this
+state; no close/reopen, force-push, duplicate PR, or additional local cleanup
+was performed.
