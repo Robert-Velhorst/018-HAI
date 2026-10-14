@@ -11134,3 +11134,24 @@ local files were removed.
 No Go tests were run for these audit worktrees because `go` is unavailable in
 this Windows environment. This is a bounded crosswalk, not completion of the
 remaining file-by-file semantic review, and it authorizes no further cleanup.
+
+### October 14, 2026: primary-checkout operational package cross-check
+
+Compared the dirty primary checkout's `task`, `source`, `workflow`, and
+`verification` packages directly with refreshed `origin/main`
+`12246bd28820f892a48e04b528ff8e28b102b7d4`. These local variants are not
+missing additions to port wholesale. The task diff removes canonical execution,
+validation, framework-evidence, outcome, approval-boundary, and cancellation
+paths, and retries validation failures without the current evidence-aware
+retry decision. The source diff removes owner authorization and security tests,
+incremental/resumable Trello and webhook synchronization, manual-sync and
+provider-retry paths, and context-aware search; it also loses LARO cursor-reset
+and terminal-failure handling. The workflow diff removes completion
+attestation, approval/outcome uncertainty, atomic follow-up and reminder
+delivery/revocation, recovery context, plan projection/binding, and project
+dossier paths. The verification variant drops context cancellation and lowers
+memory-promotion thresholds from 0.75/0.75 to 0.70/0.55; current `main` retains
+the higher evidence bar and caller-context propagation. These are behavior and
+safety regressions relative to `main`, not candidates to reintroduce. This
+comparison covers the identified package diffs, not every changed file in the
+primary checkout. No local files were deleted.
