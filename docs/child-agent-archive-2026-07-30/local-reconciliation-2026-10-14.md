@@ -400,3 +400,12 @@ The primary checkout's `origin/main` still points at `b7e3ad2` because its
 for cleanup decisions. PR #117 remains open at
 `3446479107cd81074ea5e1b655e84090f0f38c96`; exact-head CI run `38634361913`
 was queued when checked. No local candidate has been removed in this pass.
+
+The local untracked
+`backend/internal/router/opscontrol_emergency_stop_permissions_test.go` also
+differs from current `main` (local blob `39370be9`; main blob
+`0458af7e`). In `TestGlobalEmergencyStopUsesVerifiedAdminRoleNotWorkerOwnerScope`,
+the local request omits the JSON `reason` body and `Content-Type` header that
+the canonical test supplies. The remaining test function matched in the
+bounded comparison. The local variant therefore is not a stronger replacement
+and is not an exact-main cleanup candidate; no source was copied or removed.
