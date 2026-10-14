@@ -10336,3 +10336,13 @@ whose Git-cleaned blob exactly matched the same path on live `main`. The other
 the remote `main` SHA and rechecking the file's blob immediately before
 removal, that single direct copy was deleted from the worktree. The canonical
 file remains on `main`; no differing or untracked files were changed.
+
+### October 14, 2026: OpenClaw worktree exact-main cleanup
+
+Rechecked the OpenClaw artifact worktree at `e07b9da` against live `main`.
+Of 150 modified tracked files, 42 unstaged regular files had exact same-path
+Git-cleaned blobs on `main`, totalling 428,867 bytes; 108 differed. None of
+the 97 untracked files matched a same-path `main` blob. After checking the
+remote SHA before and after and revalidating each candidate hash, those 42
+direct copies were removed from the local worktree. They remain on `main`;
+the 108 differing tracked files and all 97 untracked files were left intact.
