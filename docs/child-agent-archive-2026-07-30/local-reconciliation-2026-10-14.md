@@ -487,3 +487,19 @@ redundant scratch copies. No files were deleted. This count establishes
 eligibility for later cleanup only if an independently verified disposable
 copy is identified; it does not justify removing source files from this
 working tree or deleting the checkout.
+
+The same snapshot compared each status path to the live `main` tree by path:
+all 448 locally deleted tracked paths still exist on `main`; 243 of 244
+modified paths exist there; 73 of 1,582 untracked paths collide with a path on
+`main`; and 1,509 untracked paths are absent from that tree. These are path
+existence counts, not content-equivalence or quality judgments. In particular,
+the 448 deletions are not candidates for porting as deletions. The 73
+untracked path collisions require blob comparison before any integration.
+
+The checkout's untracked `output/` contains 1,507 files (126,491,186 bytes;
+about 0.118 GiB): 884 `.log`, 420 `.json`, 82 `.jsonl`, 60 `.exit`, 37 `.md`,
+and smaller script, archive, dump, and binary groups. This is generated output,
+not a GitHub source snapshot; its contents have not been fully classified or
+integrated, so it remains untouched. The local `.claude-flow/` and `.swarm/`
+state (four files, 235,446 bytes combined) is likewise retained pending
+provenance and usefulness review. No local files were deleted in this pass.
