@@ -10741,3 +10741,32 @@ supplemental transcript roots remain ineligible for cleanup under the existing
 gates: child-local semantic reconciliation is incomplete, one manifest source
 file is missing, and no merged-main cleanup receipt exists. No transcript,
 diagnostic, database, container, or recovery data was deleted.
+
+### October 14, 2026: untracked-file crosswalk and supplemental archive check
+
+Compared the primary C: checkout's non-`output/` untracked files against the
+current PR tree by repository-relative path and Git blob hash. Of 75 files,
+65 share a path with a PR-tree file, but none is byte-identical; ten paths are
+local agent state, test-evidence files, or browser-acceptance logs absent from
+the PR tree. This is a path/content inventory, not semantic approval of all 65
+alternates. They remain untouched pending individual review.
+
+The local `backend/internal/source/trello_reopen_test.go` variant is not a new
+test to port: the PR tree already contains the reopen/archive cases and the
+live Trello code they exercise. The local variant removes the fixture's
+`updateCard` actions for the `/actions?filter=all` request, so the stronger PR
+fixture remains canonical. No Trello source or test change was imported from
+that checkout. The two follow-up commits on this PR restore the exact original
+test-file blob; their net diff to that file is empty.
+
+The read-only supplemental archive verifier was run against both inventoried
+roots on 2026-10-14. It returned `supplemental_source_archive_verified`,
+`cleanup_authorized=false`, and `deletion_performed=false`. The July archive
+verifier still fails closed on its missing manifest source file. No untracked
+file, transcript, or diagnostic was removed.
+
+At the time of this audit, PR #117 was open at
+`d56a049b4726d646266de1e4db2396429ec01740`; all 41 reported checks were
+successful and GitHub reported it cleanly mergeable. The PR was not merged.
+These checks do not semantically reconcile the 65 local alternatives or prove
+live Trello-provider behavior.
