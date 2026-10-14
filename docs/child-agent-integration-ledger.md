@@ -11155,3 +11155,21 @@ the higher evidence bar and caller-context propagation. These are behavior and
 safety regressions relative to `main`, not candidates to reintroduce. This
 comparison covers the identified package diffs, not every changed file in the
 primary checkout. No local files were deleted.
+
+### October 14, 2026: model routing and authentication cross-check
+
+Compared the primary checkout's LLM, model-intelligence, identity, and IDP
+authentication paths with current `main`. The local tree removes the
+provider-managed model maintenance gate and its admission, lease, cooldown,
+provider-probe, paid-budget, and outbound-transport controls; current `main`
+retains daily-check scheduling with the enabled/eligible-work gate and
+provider-managed model catalog freshness. The local LLM policy also drops the
+current effect-authorization and paid-capacity boundaries. Local IDP changes
+remove durable session/cookie and refresh-rotation paths, public-auth and
+password-reset rate limits, Google OAuth, and the dedicated database-test
+guard. The local identity claims also omit the current operator-scope contract;
+current `main` separately resolves session roles from the stored user record.
+These are superseded or weaker implementations, not missing work to copy. This
+review is limited to those diffs and does not close the remaining frontend,
+installer, service-runner, migration, and other backend-package audits. No
+local files were deleted.
