@@ -1920,7 +1920,7 @@ services:
       - automation-hub-network
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.10.2-alpine
     container_name: 018-hai-redis
     hostname: redis
     restart: unless-stopped
