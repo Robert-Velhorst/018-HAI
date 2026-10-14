@@ -10360,3 +10360,23 @@ have working-tree edits and remain untouched. No files were removed: the host
 rejected the deletion command before execution. The PR-resolution worktrees
 remain intact, and this result identifies candidates only; it does not claim
 space was reclaimed.
+
+### October 14, 2026: conflict-free PR 34 resolution snapshot review
+
+The `hai-resolve-pr34` worktree has 452 staged paths and no unresolved index
+stages. Comparing staged blobs with current `main` found 154 exact same-path
+blobs and 295 differing or absent paths; one staged deletion is also present.
+A bounded review of high-impact deltas found regressions rather than safe
+forward ports: `llm/maintenance.go` removes request-context cancellation,
+supported API mount prefixes, and provider read-only catalog checks; the
+outbox change removes secret redaction before persisting failure text; and the
+ops-control delta removes emergency-stop, owner-control approval, resume
+review, authorization, and related security/regression tests. The IDP delta
+removes roughly 7,699 lines, including public-auth/password-reset rate limits,
+refresh rotation, durable session authority and corresponding tests. Do not
+port this snapshot wholesale. The staged migration names `0060`-`0067` are
+superseded by the current `0119`-`0126` migration chain on `main`, whose
+migration-chain and contract tests cover those concepts; do not add duplicate
+old-numbered migrations. No code was ported and no worktree file was changed.
+This is a targeted static review, not a semantic review of all 295 differing
+paths or a test run.
