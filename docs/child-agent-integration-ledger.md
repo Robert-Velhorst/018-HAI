@@ -11191,3 +11191,16 @@ current-main capabilities were not replaced by the local variants and are not
 safe to overwrite. This comparison does not complete review of the other
 primary-checkout packages or all 2,274 status entries. No local files were
 deleted.
+
+### October 14, 2026: control-room shell comparison
+
+A focused comparison of the primary checkout's control-room shell and module
+registry with current `main` found the local variant is not a newer redesign
+to transplant wholesale. It removes the authenticated `/operational-brain`
+route and registry entry, stops updating the browser document title on module
+navigation, and removes the progressive-section `data-hai-section` marker.
+Current `main` retains these alongside the shared shell and per-module view
+preferences. The focus-management change in the local shell is not assessed as
+a complete keyboard interaction path here. The broader 336-path frontend diff,
+including feature modules, routes, services, styles, and tests, remains
+unreviewed at behavior level. No frontend files were copied or deleted.
