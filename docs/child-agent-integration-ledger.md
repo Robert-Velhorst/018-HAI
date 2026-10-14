@@ -5462,6 +5462,13 @@ checks request-context cancellation after contextual execution and avoids
 writing a response to a canceled request; the staged snapshot lacks that
 guard. Retain the PR versions; neither staged file is an improvement to port.
 
+The current staged scheduler diff also removes the explicit
+`DURABLE_SCHEDULER_LEGACY_FALLBACK_ENABLED` opt-in. It now starts the
+non-crash-recoverable in-process scheduler whenever the durable scheduler is
+disabled or cannot start, rather than remaining stopped unless the operator
+explicitly authorizes fallback. That can run workflow work under a weaker
+recovery guarantee than configured. Keep the `main` fail-closed/opt-in policy.
+
 This is a source-path review of these two workflow files, not an acceptance
 claim for the remaining workflow, frontend, IDP, or backend differences.
 
