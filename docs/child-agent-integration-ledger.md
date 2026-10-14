@@ -10859,3 +10859,23 @@ from the reduced session tree. No transcript or other local data was deleted in
 this audit. The safe cleanup candidate count from this retained set remains
 zero until the size/provenance discrepancy and incomplete child work are
 resolved.
+
+### October 14, 2026: D: staged-patch safety spot check
+
+A targeted semantic review of the staged patch in `D:\hai-source-reconciliation`
+found safety-sensitive regressions in representative execution paths. The
+patch removes `SourceEvidenceRawSHA256` from the source-approval revision
+digest and removes the reviewed-owner binding from approval receipts. It also
+removes the durable control-review repository from emergency-stop resume
+authorization. In `DisengageEmergencyStop`, an already-disengaged state changes
+from the explicit `ErrControlChangeNotRequired` outcome to success. These are
+behavior changes, not formatting-only reductions; together with the patch's
+310-file scope they require a full independent review and focused tests before
+any port or merge.
+
+The patch also replaces the pinned OpenClaw signing key's byte-encoded source
+representation with a base64 literal and removes the comment documenting the
+secret-scanner rationale. The key is public, but this representation change can
+reintroduce secret-scanner noise and does not improve trust validation. No
+portion of the D: staged patch was imported, committed, or deleted. The
+worktree and staged index remain preserved for later file-by-file review.
