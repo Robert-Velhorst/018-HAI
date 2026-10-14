@@ -693,3 +693,32 @@ same-path `main` versions:
 These local test snapshots are not candidates to port over current `main`.
 The comparisons were not test executions, and all five files remain
 unmodified pending the wider audit.
+
+### Local acceptance evidence and handoff artifacts
+
+`docs/isolated-acceptance.md` (local blob `19ec516a`; main
+`99554a12`) differs only in how it spells the synthetic
+`E2E_OPERATOR_PASSWORD` variable: the local note contains the complete
+environment-variable name, while `main` constructs the string from fragments
+to avoid secret-scanner false positives. No local-only acceptance procedure
+was found.
+
+The untracked `backend/internal/outcomeevaluation/test-evidence/20260930-pg-snapshot/`
+contains ten local artifacts. `pass-summary.json` reports 15 passes, zero
+failures, zero skips, across five named PostgreSQL repository test groups.
+Its declared SHA-256 for `go-test-race-count3-passing.jsonl`
+(`a81594e7d3d827ae1b25865393dc0d9d2a465a910734bc29e0e9b1b35c935037`)
+matches the file's computed SHA-256. This authenticates consistency between
+that summary and that local log only; it does not prove the source hash
+corresponds to current `main`, reproduce the run, or establish current runtime
+correctness. The separate full-run JSONL contains error-related tokens whose
+meaning has not been classified; it is not equivalent to the passing artifact.
+Logs were only scanned for a limited
+set of common credential patterns; no raw log content was copied into this
+ledger. The evidence set is not an exact-main match and remains untouched.
+
+The remaining local `.claude-flow/` and `.swarm/` JSON files are agent/runtime
+state, not application source. Their provenance and downstream usefulness
+have not been fully traced; preserve them. The output directory and root
+browser-acceptance logs also remain unclassified, so they are not eligible for
+deletion. No cleanup action was taken on these artifacts.
