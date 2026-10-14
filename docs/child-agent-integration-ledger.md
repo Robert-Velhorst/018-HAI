@@ -10206,3 +10206,19 @@ path. This is a verified event/path inventory, not proof that every patch's
 final behavior is in `main`: the full per-path semantic reconciliation and the
 missing five source archives remain unresolved. No source or transcript file
 was changed or removed.
+
+### October 14, 2026: runtime-safety worktree comparison
+
+Compared the retained runtime-safety audit worktree at `e07b9da` with current
+`main` at `345cf356c3f4ab497568713dc994820b4ba22b10`. Across the agent-runtime
+and host-runtime packages the worktree differs in 50 paths and removes 8,168
+lines relative to `main`, including canonical artifact-download, execution-
+admission, gateway-frame, maintenance, and host-runtime cancellation and
+integration-test files. Its OpenClaw artifact URL helper also already exists
+on `main`, where the canonical implementation includes additional address and
+transport protections absent from the worktree copy. This snapshot does not
+contain a safe source port; keep `main`'s implementations. Go is unavailable in
+this environment, so no Go tests were run against the worktree. The separate
+four untracked files remain unclassified and were not removed. This finding is
+limited to these runtime packages and this worktree, not a full audit of all
+local artifacts.
