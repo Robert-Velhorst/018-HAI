@@ -10624,3 +10624,57 @@ must use bracket notation). Fixed that assertion and pushed commit
 head; hosted checks must finish for `7333aec7` before the corrected head is
 considered verified. Local frontend dependencies are absent, so no frontend
 test or build is claimed from this checkout.
+
+### October 14, 2026: full read-only archive and worktree checkpoint
+
+Re-ran `scripts/get-hai-local-cleanup-readiness.ps1 -VerifyTranscriptArchive`
+from its inventoried D: PR worktree. The report is explicitly
+`read_only_inventory`, with `cleanup_authorized=false` and
+`deletion_performed=false`. The July archive reports eight possible completed
+transcript candidates (7,939,888,699 logical bytes), but its source-integrity
+gate fails because
+`hai-completed-agent-sessions/rollout-2026-07-30T10-02-49-019fb20c-2b95-7550-8304-1117de872148.jsonl`
+is missing. A filename-only search of `D:\codex-temp` and
+`C:\Users\NO\.codex\sessions` found no copy. Candidate classification is
+not proof of integration or deletion eligibility; no transcript was removed.
+
+The supplemental manifests still verify three completed candidates
+(4,651,926,405 bytes, with all three candidate hashes verified), six retained
+transcripts, and nine source-archive rows (14,013,737,298 logical bytes).
+Their gate remains `verified_retain_until_pr_merge`; the source reconciliation
+and cleanup receipt are not complete. No supplemental transcript was removed.
+
+The same report found 22 HAI acceptance directories under the current user's
+Temp folder, totaling 1,457,021 bytes. The read-only fixture verifier reports
+zero candidates and 22 retained/unverified directories. I fixed its
+locale-dependent timestamp parsing by accepting only exact invariant UTC ISO
+and known legacy US timestamp formats. A focused PowerShell contract passed
+for both supported samples and rejection of an unsupported day/month value.
+The subsequent full Temp scan still found content/layout and synthetic-value
+mismatches; no directory became deletion-eligible and none was removed.
+
+Docker volume enumeration timed out, so volume/recovery-archive state remains
+unverified. The diagnostic manifest identifies 15 files (31,505,884 bytes),
+but the removal preflight is blocked because the D: checkout is at
+`8bad1c14c1a9d4c8496e11f1aac32f47c83b6f42`, not the exact merged PR #36 head
+`e62b56843eb8bbbf9a566aff5e883f9adf375429`. That checkout has zero modified
+tracked files and 22 untracked files; it remains preserved. Its active-PR
+label does not make these files disposable.
+
+Current local state was also rechecked without modifying it: the primary C:
+checkout has 692 modified tracked files and 1,585 untracked files; the model,
+OpenClaw, and runtime-safety audit worktrees have respectively 425/95, 150/97,
+and 14/4 modified/untracked files. The PR-resolution worktrees have 528, 521,
+59, 264, 516, and 216 modified tracked files (one also has two untracked
+files). `D:\hai-source-reconciliation` has 310 modified tracked files. The
+integration snapshot records 1,794 modified paths and local environment-file
+names; merge scratch has 189 unmerged paths. These remain preserved; no
+environment values were read into this report.
+
+GitHub confirms PRs #41 and #42 are merged; `main` is still
+`345cf356c3f4ab497568713dc994820b4ba22b10`. PR #117 remains open at
+`56024bf3c3e3b212af6f30a1f49961853d0a3939`; all checks passed on that exact
+head. This checkpoint's timestamp-parser and ledger changes are newer and
+require a fresh exact-head CI run before they are considered verified. No
+local HAI source, checkout, archive, database, container, or recovery data was
+deleted.
