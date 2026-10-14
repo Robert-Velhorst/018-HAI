@@ -391,3 +391,12 @@ canonical versions in this bounded function-level comparison. Do not port or
 delete the differing local file; it is neither a correct improvement nor an
 exact-main match. The local test was not run because this environment lacks
 the required Go toolchain/database acceptance setup.
+
+### Live remote checkpoint (2026-10-14)
+
+`git ls-remote origin refs/heads/main` returned `c7657c9e2ab198a3a2a1db076619344d07ef7d60`.
+The primary checkout's `origin/main` still points at `b7e3ad2` because its
+`FETCH_HEAD` could not be written, so that local ref is stale and is not used
+for cleanup decisions. PR #117 remains open at
+`3446479107cd81074ea5e1b655e84090f0f38c96`; exact-head CI run `38634361913`
+was queued when checked. No local candidate has been removed in this pass.
