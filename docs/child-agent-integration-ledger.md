@@ -10829,3 +10829,33 @@ IDP, CI, scripts, and documentation, so the insertion/deletion counts alone
 cannot establish that it is an improvement. Git required a per-command
 `safe.directory` override to read the D: checkout; no global Git setting was
 changed. All staged files remain untouched pending semantic reconciliation.
+
+### October 14, 2026: retained transcript size reconciliation
+
+Rechecked the ten transcript paths marked `retain` in
+`docs/child-agent-transcript-manifest.csv` against
+`C:\Users\NO\.codex\sessions\2026`. All ten paths currently exist. Their
+current logical and allocated size, measured from the filesystem, totals
+3,207,933,505 bytes. The manifest generated on 2026-08-08 records
+21,882,851,783 bytes for the same paths, a difference of 18,674,918,278 bytes.
+Nine of the ten current file lengths differ from their manifest values; only
+`019fd0df-32c2-79b0-aae3-a9d3c566575b` matches. Current file timestamps remain
+on 2026-08-05 or 2026-08-08, so this check does not establish when or why the
+size changes occurred.
+
+The HAI parent rollout at
+`sessions/2026/08/05/rollout-2026-08-05T09-41-56-019fd0df-32c2-79b0-aae3-a9d3c566575b.jsonl`
+currently measures 3,136,089,650 bytes. A bounded text scan found 282
+`agent_path` string occurrences in that file; repeated session-state references
+mean this is not a unique-child count and does not prove that full child logs
+are embedded. MemoryLayer identifies the file as the synced HAI parent session,
+but its indexed records are not a byte-for-byte backup of all transcript data.
+
+Therefore the August manifest's retained-byte total is stale relative to the
+current filesystem. The discrepancy is not evidence that the missing bytes
+were safely integrated, nor a deletion receipt. Preserve all ten remaining
+transcript files and the parent log; do not regenerate the historical manifest
+from the reduced session tree. No transcript or other local data was deleted in
+this audit. The safe cleanup candidate count from this retained set remains
+zero until the size/provenance discrepancy and incomplete child work are
+resolved.
