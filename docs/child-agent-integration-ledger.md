@@ -9848,3 +9848,22 @@ source. Its staged state and all files remain intact.
 No local files, transcripts, archives, or worktrees were deleted. PR #41 and
 PR #42 are already merged and their merge commits remain ancestors of `main`;
 the user's merge authorization did not require another mutation.
+
+## October 14, 2026: report-copy equivalence and bounded cleanup
+
+The eight report paths listed above were checked directly in the legacy
+checkout against the corresponding `origin/main` blobs. The local copies are
+untracked in that checkout, and their raw hashes differ from `main`. For each
+pair, a full-text comparison became equal after normalizing only local
+workspace/temp paths, Markdown link-target syntax, and trailing newline. This
+includes the 5,953-line production-durability report; its 24 differing lines
+are path/reference variants, with no remaining narrative differences after
+normalization. The frontend outcome report's evidence and conclusions also
+match after reference normalization. The canonical versions on `main` retain
+the substantive report content while avoiding local absolute paths.
+
+This evidence authorizes cleanup of only those eight local report copies; it
+does not authorize deleting their canonical `main` files, raw test evidence,
+other output files, source variants, or worktrees. Their combined local size is
+621,289 bytes. Cleanup is performed only after this disposition is pushed to
+the existing PR branch. No transcript or archive is covered by this cleanup.
