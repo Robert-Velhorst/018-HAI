@@ -77,3 +77,76 @@ The generated local checkout also contains approximately 369 MiB in `frontend/di
 ## Disposition
 
 No files are cleanup candidates on this evidence. Keep all 13 present retained transcripts, all nine out-of-manifest files, and any other unresolved HAI evidence. The five absent manifest entries need external backup/path reconciliation; they cannot be reconstructed from the manifest's report hashes alone. A future cleanup review requires a complete, reproducible per-file scan, child-specific attribution, source-to-current-main crosswalk, and verified preservation of every needed report and patch.
+
+## Reconciliation checkpoint after PR #41/#42 (2026-10-14)
+
+The canonical repository remains `Robert-Velhorst/018-HAI`; current `main` is
+`12246bd28820f892a48e04b528ff8e28b102b7d4`. PR #40 is merged (merge commit
+`59245962`); PR #41 is merged at `71102fd4`; PR #42 is merged at `b1caa0b0`.
+The current integration PR is [#117](https://github.com/Robert-Velhorst/018-HAI/pull/117),
+based on that `main`. Its head now includes commit `5698b7e2`, which corrects
+the transcript scanner's `full_file_scan` result and the two generated
+summaries. At the time of this checkpoint, all 40 exact-head checks were
+queued; merge and cleanup are not authorized by this report.
+
+The scanner previously defined `full_file_scan` using only skipped metadata
+records, even though candidate transcript records could also be skipped. The
+supplemental summary consequently said `full_file_scan: true` while reporting
+five oversized records skipped. The result now becomes false if any metadata
+record or candidate transcript record is skipped/malformed, or any file changes
+during scanning. Both generated summaries now truthfully report false. The
+synthetic scanner contract passed, and the supplemental readiness contract
+passed after the commit: nine source files and their manifest sizes matched,
+two candidate hashes were verified (3,113,294,358 bytes total), seven files
+remained retained, and the check performed no deletion.
+
+### Local worktree inventory
+
+The current shared Git repository has 14 registered HAI worktrees. Status
+counts below include staged, unstaged, deleted, conflicted, and non-ignored
+untracked entries; they are not counts of unique source files. These snapshots
+are an inventory, not approval to discard or bulk-copy any worktree.
+
+| Worktree | HEAD | Status entries | Review state |
+| --- | --- | ---: | --- |
+| `2026-05-30/.../github-plugin-github-openai-curated-noodzakelijk` | `e07b9dae` | 2,274 | 244 modified, 448 deleted, 1,582 untracked; preserve; source review incomplete |
+| `.codex/worktrees/hai-model-maintenance-audit/...` | `e07b9dae` | 520 | 301 modified, 124 deleted, 95 untracked; candidate tests reviewed, other deltas incomplete |
+| `.codex/worktrees/hai-openclaw-artifact-audit/...` | `e07b9dae` | 247 | 108 modified, 42 deleted, 97 untracked; candidate tests reviewed, other deltas incomplete |
+| `.codex/worktrees/hai-runtime-safety-audit/...` | `e07b9dae` | 18 | 13 modified, one deleted, four untracked; do not port weakened URL/environment/symlink/host-runtime safeguards |
+| `.codex/worktrees/pursuit-default-selection/...` | `b76881c1` | 0 | Clean ancestor of PR #117; no unique commits |
+| `2026-10-11/hai-pr34-conflict-fix` | `f0dc3fda` | 528 | Conflicted; preserve, do not copy conflicted files |
+| `2026-10-11/hai-pr36-integration` | `ed9b379c` | 521 | Conflicted; Autofever lacks a verified upstream feed contract |
+| `2026-10-11/hai-pr36-local-delta` | `ed9b379c` | 59 | Unresolved `UU` conflicts; preserve |
+| `2026-10-11/hai-pr36-resolution` | `6b971af7` | 264 | Alternate resolution; per-file review incomplete |
+| `2026-10-11/hai-resolve-pr34` | `f0dc3fda` | 518 | Conflicted; preserve |
+| `2026-10-11/hai-resolve-pr35` | `ed9b379c` | 216 | Uncommitted source delta; per-file semantic review incomplete |
+| `2026-10-13/hai-main-sparse-review` | `9a5fe676` | 0 | Clean; associated with open PR #121 |
+| `2026-10-14/hai-pr117-review` | `5698b7e2` | 0 | Clean; current PR #117 head |
+| `D:/hai-source-reconciliation` | `3b15fe4a` | 310 | Staged delta; no untracked files; read-only review found no unique high-value port |
+
+The D: review found that its only path absent from both `main` and PR #117,
+`nginx-config/nginx.conf`, duplicates the current template with a placeholder
+key and missing routes/protections; it is not to be ported. Its alternate
+approval, OAuth, task-state and scheduler variants remove controls present in
+the reference trees. The unresolved PR #36 worktree also contains alternate
+migration filenames already represented in the current migration chain; do
+not revive older migration numbers.
+
+The six local test candidates identified during the model-maintenance and
+OpenClaw-artifact review were checked against current behavior. Process-start
+revalidation and artifact-forget authorization already have stronger canonical
+tests; durable-job cancellation already has a canonical test for the current
+single-claim behavior; the canonical OpenClaw policy intentionally preserves
+previous archive files; and the local SMTP test assumes a STARTTLS-only
+implementation while canonical SMTP also supports implicit TLS. The local
+background-operation 503 test would incorrectly claim that work was unchanged
+when a timeout/503 can leave execution outcome uncertain; canonical tests
+instead require reconciliation before retry. None of these six tests was
+ported.
+
+This checkpoint advances the earlier worktree audit but does not complete it:
+hundreds of same-path alternate source files remain to be adjudicated, the
+three environment files remain unopened and unpublished, and seven oversized
+July records remain retained and unparsed. No local source checkout, worktree,
+environment file, log, or transcript was deleted. No local file is certified
+for cleanup by this checkpoint.
