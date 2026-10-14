@@ -10380,3 +10380,17 @@ migration-chain and contract tests cover those concepts; do not add duplicate
 old-numbered migrations. No code was ported and no worktree file was changed.
 This is a targeted static review, not a semantic review of all 295 differing
 paths or a test run.
+
+### October 14, 2026: local PR-resolution commit crosswalk
+
+The `hai-pr34-conflict-fix` and `hai-resolve-pr34` worktrees share commit
+`f0dc3fd` (`feat: show running build provenance`). Its seven original file
+blobs differ from current `main`, but the behavior is integrated: `main` has
+the `/api/v1/system/info` route, the `ISystemInfo` model and client call, the
+system-status component display, and backend/frontend coverage for the
+provenance response. The `hai-pr36-integration` worktree's `ed9b379` commit
+adds PostgreSQL startup-log output to `scripts/smoke-account-bridges.sh`; the
+same recovery output is present on `main`, which additionally retries startup
+and reports attempt count. Neither commit needs a code port. This verifies
+these two commit-level features only; it does not establish that the staged or
+conflicted worktree state is fully integrated. No local file was removed.
