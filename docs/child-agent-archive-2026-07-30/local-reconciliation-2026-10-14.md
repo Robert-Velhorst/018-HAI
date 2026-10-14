@@ -802,3 +802,28 @@ reports 41 checks and merge state `UNKNOWN`, so it is not treated as merged or
 green. The broader dirty legacy worktrees and D: candidate remain unclassified;
 no cleanup beyond the separately documented disposable audit checkout is
 justified by this review.
+
+### 2026-10-14 staged candidate: model-maintenance regression and cleanup check
+
+The staged `backend/internal/llm` maintenance changes are not a safe port:
+
+- The candidate removes support and tests for bounded API mount prefixes in
+  provider endpoint roots. In particular, a configured `https://.../api/v1`
+  endpoint accepted by current main is rejected as an unsupported path.
+- It removes both `modelMaintenanceEnabled()` and
+  `hasEligibleModelMaintenanceWork()` from the scheduler startup gate. The
+  scheduler can consequently start when model maintenance is explicitly
+  disabled or no eligible configured model exists; current main avoids that
+  unnecessary background work and retains the eligibility regression test.
+
+The D: candidate's 34 unstaged deletions are dated Markdown reports under
+`output/`. Each corresponding path exists in main, but none of those files
+exists in the primary checkout, so there were zero eligible primary-checkout
+copies to remove. They were not recreated in the D: candidate or deleted by
+this audit. The candidate worktree remains staged/dirty and untouched.
+
+PR #117's latest inspected head before this ledger addition was
+`59c2bfce4b5b36a7ec62e26747eeeef31eb44066`, with 40 checks queued. The current
+PR branch is still an open review branch, not proof of a passing integration.
+Go is unavailable in this Windows shell, so the model-maintenance comparison
+was static and no Go tests were run locally.
