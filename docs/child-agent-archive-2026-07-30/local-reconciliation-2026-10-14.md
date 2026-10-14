@@ -417,3 +417,29 @@ another operator's scope.` The comment is now included in PR #117. The updated
 PR-worktree blob is `7333d2da`, matching the local candidate's Git blob; current
 `main` remains at `2324a9c0` until merge. The local copy remains in place and
 will not be removed before a post-merge main-blob equality check.
+
+### Additional task-test cross-checks
+
+The local untracked
+`backend/internal/task/operation_transition_context_test.go` differs from
+current `main` (local blob `b47eab63`; main blob
+`3a86b47d`). In
+`TestTaskOperationTransitionCancellationAndEmptyReplay`, the local test treats
+a cancellation before any executor call as `ErrTaskOperationNeedsReview` and
+expects the claimed operation to be surfaced without its canceled execution
+context. Current `main` instead requires the cancellation to be durably
+recorded as `TaskOperationCanceled` and explicitly rejects an uncertain-outcome
+review for pre-execution cancellation. The local variant encodes the weaker
+and contradictory outcome; do not port or delete it.
+
+The local untracked
+`backend/internal/task/required_participant_admission_test.go` differs from
+current `main` (local blob `8bb4b593`; main blob
+`37078ded`). In
+`TestReadyRequiredParticipantsRemainEligible`, the canonical fixture includes a
+verified, healthy, provenance-bearing `evidence_reviewer` AgentCard with a
+verification timestamp; the local fixture omits that participant evidence.
+The local test therefore does not establish admission under the current
+required-participant contract. Do not port or delete the non-identical local
+file. These were bounded test-function comparisons; neither local Go test was
+run.
