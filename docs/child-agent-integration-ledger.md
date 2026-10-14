@@ -10408,3 +10408,26 @@ The conflict worktrees also contain staged and unstaged changes beyond those
 paths. These are not merge-ready source snapshots; no conflict was resolved,
 no configuration was published, and no file was removed. Preserve both
 worktrees until their complete non-conflict content is reconciled with `main`.
+
+### October 14, 2026: retained transcript path crosswalk
+
+The bounded PowerShell crosswalk processed all 13 retained transcript files
+(17,559,729,527 bytes) and found 37,824 exact `patch_apply_end` events: 37,783
+successful and 41 failed. It skipped two oversized records and therefore
+reports its own scan as incomplete. The earlier independent streaming byte
+scan recorded above checked those two records and found no patch marker; taken
+together, the available evidence covers the patch-event inventory, while the
+PowerShell result alone must not be described as complete.
+
+The crosswalk found 760 unique target paths, 674 under the primary checkout.
+Of those 674 paths, 667 are tracked in the canonical comparison checkout and
+none is present there only as an untracked file. The seven unresolved path
+references are `.codex-preview-server.mjs`, `.env.local`, `.git/info/exclude`,
+`.tmp-ai-code-review.json`, `frontend/mock-preview-server.js`,
+`frontend/proxy.preview.json`, and `nginx-config/nginx.conf`. Four are not
+present in the primary checkout; `.env.local` and `.git/info/exclude` are
+machine-local state; and `nginx-config/nginx.conf` is instance configuration,
+not the canonical template, and contains a placeholder backend key. None is
+a missing product source file to port. This is path coverage, not semantic
+proof that every historical patch's behavior is integrated. No source,
+configuration, transcript, or output file was changed or removed by the scan.
