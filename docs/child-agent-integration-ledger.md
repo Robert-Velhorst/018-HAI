@@ -11441,6 +11441,21 @@ behavior, so it needs independent contract review before any selective port.
 This was a read-only diff review; the D: worktree/index was not changed, and no
 part of this slice was copied.
 
+### October 14, 2026: primary checkout authentication-route cross-check
+
+Compared the primary checkout's Angular authentication and route files with
+the verified `origin/main` tree at
+`b7e3ad2086c23313a0355101498bee82cda62d4e`. The local variant removes the
+authenticated route guard's login/onboarding flow and retryable service-error
+route handling, removes the login guard's post-authentication return routing,
+and drops the safe same-origin return-URL validator. It also removes the
+authenticated `/operational-brain` route and changes the app title back to the
+placeholder `app`; its login service loses the explicit `Observable<void>`
+contract. Current `main` retains the route guards, safe return-URL checks,
+operational-brain route, product title, and typed login contract. No local
+authentication or routing files were copied or deleted; frontend behavioral
+review remains incomplete.
+
 ### October 14, 2026: primary checkout source-like untracked crosswalk
 
 Re-read the primary checkout's current Git inventory and compared every
