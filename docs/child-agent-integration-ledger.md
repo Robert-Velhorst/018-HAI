@@ -11204,3 +11204,45 @@ preferences. The focus-management change in the local shell is not assessed as
 a complete keyboard interaction path here. The broader 336-path frontend diff,
 including feature modules, routes, services, styles, and tests, remains
 unreviewed at behavior level. No frontend files were copied or deleted.
+
+### October 14, 2026: primary checkout and staged source refresh
+
+Refreshed GitHub `main` is `b7e3ad2086c23313a0355101498bee82cda62d4e`.
+The primary checkout remains on legacy commit
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`; its worktree has 692 tracked
+changes (448 deletions and 244 modifications) plus 1,582 untracked paths. A
+direct working-tree comparison to `origin/main` spans 2,090 paths and reports
+4,397 insertions and 416,341 deletions. Because that comparison includes the
+old divergent checkout baseline, it is not a reviewable patch and must not be
+published as a single PR.
+
+Among the 77 non-output, non-orchestration untracked paths, 65 share a path
+with `main` but have different content, and 12 are absent from `main`. The 12
+absent paths are ten PostgreSQL/race-test evidence records and two acceptance
+logs; none is product source. A name-level comparison of untracked Go test
+files found no test function names absent from the same-path current-main
+files. This is not semantic equivalence evidence; the differing variants
+remain unreviewed and no files were removed.
+
+The staged source-reconciliation checkout at
+`D:\hai-source-reconciliation` is still based on `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`
+and is 29 commits behind `main`. Its working-tree comparison for task,
+pursuit, workflow, operations, and phase-two code spans 48 paths with 445
+insertions and 2,500 deletions. The deltas remove current task-state and
+transition coverage, phase-two module/claim behavior, workflow handler tests,
+and pursuit dashboard/completion integrity. This review is bounded to those
+packages; it does not classify the remaining staged source or frontend/IDP
+changes. The checkout remains untouched.
+
+The July 30 main and supplemental transcript roots still contain 27 files
+totalling 34,752,906,420 bytes: seven hashed candidates totalling
+6,292,733,953 bytes and 20 retained files totalling 28,460,172,467 bytes.
+The candidate hashes and report crosswalk do not prove complete semantic
+integration. The recorded cleanup gates remain false; no transcript, worktree,
+database, evidence file, or local source was deleted.
+
+The separate PR #125 runner redirect hardening is at head
+`2dde9ec82b4093c4611d8de5f41d52e7ea8ee765`. Its focused local runner suite
+passed seven tests; at this checkpoint hosted CI had 35 jobs complete, one
+queued, and no reported failures. This is a live status observation, not a
+completed CI result or permission to merge.
