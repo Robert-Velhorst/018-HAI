@@ -120,6 +120,10 @@
         </nz-tag>
       </div>
 
+      <p *ngIf="latestProbes[r.info.id]?.evidencePersistenceStatus === 'failed'" class="rl__warning" role="alert">
+        Protocol discovery completed, but durable evidence was not saved. Runtime execution remains blocked; retry the probe or inspect the operation ledger.
+      </p>
+
       <div class="rl__setup" *ngIf="r.info.id !== 'deepseek-harness' && r.setupRequirements?.length">
         <div class="rl__label">Setup required</div>
         <ol>

@@ -5491,6 +5491,51 @@ into PR #36; the merge is already present in `main`. The CI and merge evidence
 establish repository integration, not production deployment or live-provider
 acceptance.
 
+## October 14, 2026: disposition of PR-worktree-only reports
+
+Rechecked the report inventories against primary `output/` and the PR worktree:
+22 Markdown handoff/review reports are tracked only in the PR worktree, and
+`output/README.md` is an additional index file, not a report. The report
+dispositions below are based on source comparison with `origin/main` at
+`345cf356c3f4ab497568713dc994820b4ba22b10` plus the historical evidence
+explicitly cited by each handoff. They do not represent fresh execution of the
+historical commands.
+
+| Report | Integration disposition | Remaining boundary or finding |
+| --- | --- | --- |
+| `ambient-monitor-production-20260930.md` | The isolated `pgtestguard` fixtures and ambient monitor PostgreSQL tests are in `main`; the report records three successful real-PostgreSQL race runs. | Historical bounded DB evidence only. Pinned policy/composer snapshots, shared CI wiring, concurrent production writes, and live operator acceptance remain unestablished. |
+| `atomic-ingest-safety-review-20261001.md` | Current source and report amendment show both findings resolved: race losers use atomic creation/evidence refresh, and the rejected legacy uncertainty fixture was adapted. | This ledger audit did not rerun Go or database tests. |
+| `atomic-ingest-tests-source-20261001.md` | Atomic creation, duplicate evidence refresh, owner/workspace scoping, and concurrent dedupe regression sources are present on `main`. | Source/test presence only in this audit; no current execution result. |
+| `atomic-ingest-wrapper-source-20261001.md` | Atomic repository capability, fail-closed unsupported behavior, wrapper forwarding, account-feed last-success/cursor handling, and explicit OpenClaw evidence-persistence status are represented in the current PR worktree. The probe distinguishes protocol success from durable evidence success and does not expose the storage error. | This correction is uncommitted and not yet merged. Go and Angular tests/build were not run in this environment, so source presence is not execution evidence. |
+| `auth-recovery-production-20261001.md` | The IDP auth/user repository changes and dedicated PostgreSQL guard/tests are present in the repository. | No current Go/Redis/DB execution. Real Redis lockout/session behavior, provider email delivery, deployment, and cross-store durability remain unverified. |
+| `automation-public-projection-20260930.md` | Public projection, URL/secret redaction, upload-pointer omission, edit preservation, and bounded script-capture source are present on `main`. | No current API/browser run or real configuration acceptance. |
+| `background-outcome-production-20261001.md` | Background safe-worker receipts, uncertain-outcome replay barriers, and partial-result preservation have corresponding current source and regression files. | No current Go/race/DB execution. Failed first-ledger-write crash durability and effects the worker itself cannot observe remain explicit limitations. |
+| `ci-isolation-production-20260930.md` | The isolated browser/CI contract and evidence-directory behavior are represented in source. | Hosted CI execution is explicitly unverified by the report; this audit did not run hosted or local CI. |
+| `doctor-production-secrets-20260930.md` | The doctor secret-minimum fix and its focused source/tests are present. | Does not establish whole-backend/router/image/installed-configuration or live-provider behavior; no current tests/build were run. |
+| `hai-container-cleanup-validation-20261001.md` | Historical cleanup receipt and owner-filtered container evidence remain preserved as an artifact. | This is dated device-state evidence, not current Docker inventory. No container, volume, or local data cleanup was performed in this audit. |
+| `manual-source-worker-20260930.md` | The manual-only source worker implementation and its fail-closed startup contract are present. | No current browser/PostgreSQL/provider or deployment acceptance. |
+| `manual-worker-postgres-20260930.md` | The report retains evidence of 18 successful real PostgreSQL invocations across six named tests, with zero skips/failures. The implementation and dedicated DB guard are in `main`. | Historical isolated-database evidence only; no fresh database was started or queried here. |
+| `model-production-health-20261001.md` | Nil-error/provider-health and related model routing guards have corresponding implementation and regression sources on `main`. | No current model provider calls, tests, or deployment acceptance; prior worker validation is not fresh evidence. |
+| `portfolio-postgres-integrity-review-20261001.md` | The absent optional `CHAR(64)` digest is canonicalized for hashing without mutating the loaded evidence; integration tests now cover empty/present bindings, save/reload, replay, tampering, owner isolation, and non-authority history. | The historical review's production defect is source-resolved in `main`; the fourth local PostgreSQL run is recorded in `production-integration-20261001.md`, but this audit did not rerun it. |
+| `production-integration-20261001.md` | This report is the dated parent integration record and preserves failed runs, corrective changes, final bounded backend/frontend/DB evidence, and explicit release gates. | Do not promote its historical results to current CI, deployment, provider, browser, or operator acceptance. Its own final section says full product readiness remains incomplete. |
+| `pursuit-outcome-review-second-20261001.md` | All three reported findings have source-level fixes on `main`: exact linked runtime receipts are fetched in bounded batches; terminal direct runs require accepted verification; and the uncapped review query selects `mode='run'` before Go applies whitespace-normalized policy. Matching fake and PostgreSQL regression sources exist. | Historical PostgreSQL runs are recorded elsewhere; no tests or DB ran in this audit. Current source presence is not a fresh DB pass. |
+| `restore-production-integrity-20261001.md` | Guarded recovery/restore scripts and source-contract regressions are present. | No actual backup restore, personal installation test, or production ACL-equivalence acceptance; the report explicitly forbids using the shared personal installation as the rehearsal target. |
+| `runtime-outcome-integration-20261001.md` | The shared uncertain-outcome state, reconciliation gates, task/workflow consumers, and bounded integration evidence have corresponding source and report entries. | No live paid/provider/runtime behavior or fresh integration test in this audit; historical failures and gates remain part of the record. |
+| `safe-outcome-consumers-production-20261001.md` | The report's consumer fixes and regression sources are present in background, task, workflow, and Runtime Lab source. | Its tests were marked parent-owned/not run in the handoff; no current race/integration run or crash-durability proof here. |
+| `structured-redaction-20260930.md` | The structured JSON traversal, duplicate-value protections, URL policy, and redaction regression sources are present in `main`. | Its historical test evidence is snapshot-specific. No current sanitizer suite was run; the later independent report's documented non-exhaustiveness still applies. |
+| `trello-postgres-guard-review-20261001.md` | Trello integration tests now route through the shared dedicated-database guard; current source confirms explicit invalid targets fail rather than silently skip. | No current PostgreSQL test or live Trello/provider sync was performed. The report leaves a broader audit of all test helpers outside its scope. |
+| `workflow-installer-integration-20261001.md` | Workflow outcome consumers, installer signing contract changes, and associated local CI/source tests are represented on `main`. | Production signing, clean-machine Windows install/upgrade/uninstall, hosted CI, populated Advanced/browser acceptance, and external-provider acceptance remain open. |
+
+`output/README.md` is a navigation index for dated evidence and is not a
+separate implementation report. With this section, all 22 PR-worktree-only
+reports now have explicit source/acceptance dispositions. Together with the 29
+primary-only reports and 11 reports shared by both inventories, the comparison
+contains 62 distinct report files plus the one index file. The OpenClaw
+discovery evidence-persistence reporting defect has a source-level correction
+in the current PR worktree, pending commit, CI, and merge. No transcript
+archive was scanned to completion or deleted; this ledger work does not
+establish that the archived transcripts themselves are safe to remove.
+
 ### October 12, 2026: progressive disclosure and pursuit selection review
 
 Compared the staged snapshot's Angular page variants with the PR for the
@@ -9711,11 +9756,11 @@ this audit.
 | `workflow-outcome-recovery-20261001.md` | Workflow consumer handles explicit uncertainty before success/approval, persists review evidence, blocks scheduling/retry pending reconciliation, and redacts failure details; uncertainty tests are present. | No Go tests or PostgreSQL integration ran in this audit. Historical handoff says task-to-workflow mapping was parent-owned; current `workflowtask.RunWorkflowTask` now maps through the shared task uncertainty helper. |
 | `workflowtask-outcome-uncertainty-20261001.md` | Workflow-task adapter maps shared task uncertainty, preserves partial receipts/routes on errors, forces review instead of approval or passed status, and retains adapter regressions. | Tests were not run in this audit. This confirms source integration, not task/workflow/database/runtime acceptance; broader handoff concerns remain bounded by the current consumer and reconciliation gates. |
 
-This completes source dispositions for all 29 of 29 primary-only report files in
-the audited comparison; zero primary-only reports remain without a ledger
-disposition. The 23 reports present only in the PR worktree are still
-unreviewed, so the ledger is not a complete reconciliation of all report files
-across both locations. No transcript/archive content was processed or deleted,
-and no local data cleanup was performed. This section is a source-level
-integration inventory, not proof of a passing current-head CI run or live
-acceptance.
+This completes source dispositions for all 29 of 29 primary-only report files
+in the audited comparison; zero primary-only reports remain without a ledger
+disposition. The 22 PR-worktree-only reports are dispositioned in the earlier
+October 14 section. Its OpenClaw evidence-persistence correction is now present
+in this PR worktree, pending commit, CI, and merge. No transcript/archive
+content was processed or deleted, and no local data cleanup was performed.
+This section is a source-level integration inventory, not proof of a passing
+current-head CI run or live acceptance.

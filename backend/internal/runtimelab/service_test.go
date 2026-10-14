@@ -3,6 +3,7 @@ package runtimelab
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,10 +15,23 @@ import (
 	"automation-hub-backend/internal/executionauth"
 	"automation-hub-backend/internal/executionbroker"
 	"automation-hub-backend/internal/frameworkregistry"
+	"automation-hub-backend/internal/models"
 	"automation-hub-backend/internal/operations"
 
 	"github.com/google/uuid"
 )
+
+type openClawDiscoveryWriteFailureRepository struct {
+	*operations.MemoryRepository
+}
+
+func (r *openClawDiscoveryWriteFailureRepository) CreateWithEventContext(
+	context.Context,
+	*models.Operation,
+	*models.OperationEvent,
+) (*models.Operation, error) {
+	return nil, errors.New("synthetic persistence failure")
+}
 
 func newTestService(t *testing.T) *Service {
 	t.Helper()
@@ -750,7 +764,8 @@ func TestOpenClawProtocolDiscoveryPersistsRedactedEvidenceAndRecoversIt(t *testi
 	service.now = func() time.Time { return time.Date(2026, 9, 4, 10, 0, 0, 0, time.UTC) }
 
 	probe, ok := service.Probe(context.Background(), "openclaw")
-	if !ok || !probe.ProtocolValid || !probe.Authenticated || !probe.EvidencePersisted || probe.EvidenceSHA256 == "" {
+	if !ok || !probe.ProtocolValid || !probe.Authenticated || !probe.EvidencePersisted ||
+		probe.EvidencePersistenceStatus != EvidencePersistenceSucceeded || probe.EvidenceSHA256 == "" {
 		t.Fatalf("expected persisted protocol-validated OpenClaw discovery, got (%#v, %t)", probe, ok)
 	}
 	if probe.EndpointSHA256 != "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" || probe.EvidenceSchema != "openclaw-gateway-protocol-v4" {
@@ -800,6 +815,34 @@ func TestOpenClawProtocolDiscoveryPersistsRedactedEvidenceAndRecoversIt(t *testi
 		if !found || !card.CanInvoke || card.LatestDiscovery == nil || !card.LatestDiscovery.EvidencePersisted {
 			t.Fatalf("OpenClaw card %s did not recover durable discovery: %#v", cardID, card)
 		}
+	}
+}
+
+func TestOpenClawDiscoveryReportsDurableEvidenceWriteFailure(t *testing.T) {
+	broker := newAuthorizedRuntimeLabTestBroker(t, t.TempDir(), "local-operator", "local")
+	canonical := agentruntime.NewRegistry(&runtimeLabAgentAdapter{
+		info: agentruntime.Info{ID: "openclaw", Name: "OpenClaw", Enabled: true, Configured: true, ReadOnlyDefault: true},
+		health: agentruntime.Health{
+			RuntimeID: "openclaw", Status: "available", GatewayProtocolValidated: true,
+			GatewayAuthenticated: true, GatewayScope: "operator.read",
+			GatewayEndpointSHA256: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			GatewayEvidenceSchema: openClawDiscoverySchema,
+		},
+	})
+	failedRepo := &openClawDiscoveryWriteFailureRepository{MemoryRepository: operations.NewMemoryRepository()}
+	service := NewServiceWithAgentRuntimeRegistry(
+		broker, operations.NewService(failedRepo), "local-operator", "local", canonical,
+	)
+
+	probe, ok := service.Probe(context.Background(), "openclaw")
+	if !ok || !probe.ProtocolValid || !probe.Authenticated {
+		t.Fatalf("protocol probe should remain truthfully successful: (%#v, %t)", probe, ok)
+	}
+	if probe.EvidencePersisted || probe.EvidencePersistenceStatus != EvidencePersistenceFailed {
+		t.Fatalf("persistence failure was not projected: %#v", probe)
+	}
+	if strings.Contains(strings.ToLower(probe.Detail), "synthetic persistence failure") {
+		t.Fatalf("raw persistence error leaked in probe detail: %q", probe.Detail)
 	}
 }
 
