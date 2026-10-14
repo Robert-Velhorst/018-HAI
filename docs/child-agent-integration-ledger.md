@@ -10936,3 +10936,14 @@ It found 376 exact matches (374 `.log`, 2 `.jsonl`), all zero-byte files; their
 combined reclaimable content is 0 bytes. They were left in place because
 removing empty diagnostic markers would not provide disk relief. No substantive
 output report or non-empty log was an exact blob match anywhere in `main`.
+
+The 77 non-generated rows in `docs/local-hai-import-manifest-2026-10-11.csv`
+were also revalidated against the primary checkout and current `origin/main`.
+Eight local source files still match their recorded `source_sha256`, but none
+of those eight current destination blobs matches its recorded
+`destination_sha256`; all eight remain preserved. Sixty-nine expected
+destination hashes still match current `main`; the three source files already
+removed have their preserved destinations among these. No row proved both a
+present local source and its complete current-main destination, so this pass
+authorized zero additional deletions. The manifest remains a historical
+transfer record; stale destination hashes are not silently rewritten.
