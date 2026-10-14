@@ -10807,3 +10807,25 @@ Git because Windows reported dubious ownership; no global safe-directory
 setting was changed. No checkout, file, transcript, database, or recovery
 artifact was removed. The full semantic crosswalk and transcript reconciliation
 remain incomplete, so no cleanup receipt is authorized by this checkpoint.
+
+### October 14, 2026: D: source-reconciliation worktree disposition
+
+The D: checkout at `D:\hai-source-reconciliation` is a linked HAI worktree at
+commit `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`, the merge commit for PR #39.
+That commit is an ancestor of current `main`. The worktree has a separate
+staged patch: 310 staged paths (one added and 309 modified), with 7,138
+insertions and 12,453 deletions relative to its HEAD. There are no unstaged or
+untracked paths at this checkpoint.
+
+The staged index was compared by Git blob ID to the current `main` tree: zero
+of the 310 staged paths matched byte-for-byte, and one staged path is absent
+from `main`. A byte-hash crosscheck against the PR #117 worktree likewise
+found zero identical files among 309 shared paths, with one path absent from
+that tree. This state is not a local duplicate and is not eligible for
+cleanup. The broad patch was not imported: its behavior, safety implications,
+and relationship to the primary checkout have not been reviewed file by file.
+Initial diff profiling shows substantial removals across backend, frontend,
+IDP, CI, scripts, and documentation, so the insertion/deletion counts alone
+cannot establish that it is an improvement. Git required a per-command
+`safe.directory` override to read the D: checkout; no global Git setting was
+changed. All staged files remain untouched pending semantic reconciliation.
