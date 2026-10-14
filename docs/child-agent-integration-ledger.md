@@ -10559,3 +10559,27 @@ regression test now checks the capability overview after a synthetic durable
 write failure and rejects any invocable OpenClaw card. `git diff --check`
 passed before commit. This shell has no Go executable, so the test/build must
 be verified by the exact-head hosted checks; no passing result is claimed.
+
+### October 14, 2026: local Compose integration and healthcheck delta
+
+Compared the primary checkout's root and local Compose files with current
+`main`. The local root compatibility entrypoint drops the explicit
+`COMPOSE_PROJECT_NAME` and `.env.local` include, making project identity and
+configuration depend on invocation context. Its local stack removes the
+profile-gated SearXNG service/network/volume and stops passing configuration
+for ChatGPT Logs MCP, MCP preflight credentials/remote policy, the operational
+graph, the phase-two owner, and the Nginx configuration manager's durable
+inbox/health settings, even though those settings and integrations remain
+present in current `main`'s `.env.example` and Compose wiring. It downgrades
+Temporal images from 1.32.0 to 1.31.2 and changes the frontend healthcheck from
+the explicit `/healthz` endpoint to `/`, which reports only that the static
+shell is served. The canonical Nginx config defines `/healthz` explicitly.
+
+The local `backend-state-permissions` service also replaces the tested
+networkless backend-image `chown` helper with a Postgres image and a
+`find`/`stat`/conditional recursive-`chown` shell command, adding
+`DAC_READ_SEARCH`. Existing main-based contracts expect the bounded helper;
+the alternate traversal has no current test evidence and is not a verified
+resource or safety improvement. Retain the canonical Compose contract. This
+was a source comparison only; Compose rendering, image pulls, container
+startup, and health behavior were not run in this audit.
