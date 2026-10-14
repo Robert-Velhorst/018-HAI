@@ -453,3 +453,13 @@ constructs its AWS-shaped fixture dynamically with `"AKIA" + strings.Repeat(...)
 and checks redaction against that value. The canonical test preserves the
 security assertion without adding a scanner-triggering literal. The local
 variant is not a better port and is not an exact-main cleanup candidate.
+
+The local untracked
+`backend/internal/workflow/reminder_context_boundaries_test.go` differs from
+current `main` (local blob `325d8282`; main blob `e46ae2c8`). In
+`TestReminderContextStopsBetweenStorageStepsAndRetainsConfirmedResults`, the
+local test requires a non-nil zero-count result when `count == 0`; the canonical
+test requires a nil result for that empty case and checks the result fields
+only for positive counts. This is a stale contract mismatch, not a missing
+enhancement to port. The local file is not an exact-main match and remains
+preserved.
