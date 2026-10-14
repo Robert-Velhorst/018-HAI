@@ -11017,3 +11017,19 @@ These are stale/weaker alternatives, not missing improvements to port. Current
 local alternatives are not byte-identical duplicates and remain untouched;
 this review does not authorize deleting non-matching files or resolve the
 remaining semantic audit of tracked modifications.
+
+### October 14, 2026: reject non-finite verification promotion scores
+
+While comparing the stale local verification service with current `main`, the
+local variant exposed a fail-open edge in the canonical memory-promotion
+thresholds: IEEE NaN compares false to `< minimum`, and positive infinity
+passes the same check. Both persisted claim confidence and evidence quality
+are externally derived floating-point values. The canonical service now
+rejects NaN, either infinity, and values above the documented `[0, 1]` scale
+before promoting a source-supported fact. Six table cases cover non-finite
+and above-range claim/evidence values; existing ownership, provenance,
+extractive-match, and audit-write behavior is unchanged. `git diff --check`
+passed. A local Go test could not run because neither `go` nor `gofmt` is
+available on `PATH` or in the checked configured Windows toolchain locations;
+the exact-head hosted backend test is required for verification. This targeted
+fix is in PR #117; no local source or diagnostic files were removed.

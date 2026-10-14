@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -69,8 +70,26 @@ func TestMemoryPromotionRequiresOwnerBoundRunAndStrongSourceProof(t *testing.T) 
 		{name: "evidence quality is too low", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, _ *models.VerificationClaim, evidence *models.VerificationEvidence) {
 			evidence.QualityScore = minimumMemoryEvidenceQuality - 0.01
 		}},
+		{name: "evidence quality is NaN", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, _ *models.VerificationClaim, evidence *models.VerificationEvidence) {
+			evidence.QualityScore = math.NaN()
+		}},
+		{name: "evidence quality is infinite", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, _ *models.VerificationClaim, evidence *models.VerificationEvidence) {
+			evidence.QualityScore = math.Inf(1)
+		}},
+		{name: "evidence quality exceeds its scale", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, _ *models.VerificationClaim, evidence *models.VerificationEvidence) {
+			evidence.QualityScore = 1.01
+		}},
 		{name: "claim confidence is too low", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, claim *models.VerificationClaim, _ *models.VerificationEvidence) {
 			claim.Confidence = minimumMemoryPromotionConfidence - 0.01
+		}},
+		{name: "claim confidence is NaN", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, claim *models.VerificationClaim, _ *models.VerificationEvidence) {
+			claim.Confidence = math.NaN()
+		}},
+		{name: "claim confidence is infinite", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, claim *models.VerificationClaim, _ *models.VerificationEvidence) {
+			claim.Confidence = math.Inf(1)
+		}},
+		{name: "claim confidence exceeds its scale", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, claim *models.VerificationClaim, _ *models.VerificationEvidence) {
+			claim.Confidence = 1.01
 		}},
 		{name: "claim still needs review", mutate: func(_ *AnswerRequest, _ *models.VerificationRun, claim *models.VerificationClaim, _ *models.VerificationEvidence) {
 			claim.NeedsReview = true
