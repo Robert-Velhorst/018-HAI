@@ -11173,3 +11173,21 @@ These are superseded or weaker implementations, not missing work to copy. This
 review is limited to those diffs and does not close the remaining frontend,
 installer, service-runner, migration, and other backend-package audits. No
 local files were deleted.
+
+### October 14, 2026: source intake and operational-control cross-check
+
+The primary-checkout comparison of `accountfeed`, `executionauth`, `opscontrol`,
+and `pursuit` also shows the local tree is not a newer superset. It removes
+persisted source configuration/observation and fetch-security paths, and drops
+credential-environment metadata from provider setup; it removes the
+final-effect authorization bridge, transactional receipts, and system-workload
+policy, while bypassing current receipt projection on owner reads. It also
+removes emergency-stop fanout, approval-backed resume/review persistence, and
+control authorization tests; the local redundant-disengage behavior returns
+success where current `main` reports a not-required transition. Pursuit changes
+remove portfolio dispatch/acceptance, resource reservations, completion
+integrity, dashboard projections, and several owner-scope checks. These
+current-main capabilities were not replaced by the local variants and are not
+safe to overwrite. This comparison does not complete review of the other
+primary-checkout packages or all 2,274 status entries. No local files were
+deleted.
