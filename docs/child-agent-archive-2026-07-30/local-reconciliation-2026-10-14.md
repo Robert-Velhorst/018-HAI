@@ -326,3 +326,40 @@ at `b5b09be01aeb0bb472a358eea7abd76c1efa9146`. Exact-head workflow run
 `38587326456` is still active: 4 of 36 jobs completed, none failed, none was in
 progress, and 32 were queued at the last status check. No merge or additional
 local cleanup was performed.
+
+### October 14, 2026: primary branch and cleanup-gate refresh
+
+The primary checkout remains at `e07b9dae` on `codex/hai-runtime-release`.
+Current status is 2,274 entries: 244 modified tracked files, 448 tracked
+deletions, and 1,582 expanded untracked files. Its local branch is 292 commits
+ahead of `origin/main` at `12246bd` and 36 behind it. The local commit is an
+ancestor of remote `codex/hai-runtime-release` at `e62b568`, so the local branch
+has no commits absent from that remote ref; this does not publish or preserve
+the uncommitted worktree contents by itself.
+
+PR #36 is merged. Its recorded merge commit is `c31cec1`, and current `main` is
+30 commits ahead of that merge. A three-dot comparison of the older local
+`e07b9dae` tree with current `main` lists 503 paths: 111 have the same blob in
+both trees, 389 differ at the same path, and three exist only in the old
+branch tree. One branch-only migration path, `post/0004_operations_owner_workspace_dedupe_active`,
+has equivalent index behavior in the canonical `post/0006` migration on `main`.
+This is a tree-level triage, not semantic review of all 503 paths; it does not
+justify transplanting or deleting the remaining branch/worktree content.
+
+A fresh exact-byte check examined 2,272 modified or untracked file paths in the
+primary checkout. Of those, 314 paths also exist on current `main`; none had
+identical bytes to its same-path `main` blob. No file met the direct-match
+cleanup gate. The separate `D:\hai-source-reconciliation` checkout remains
+staged/dirty with 310 entries and was inspected read-only using a one-command
+`safe.directory` override; it was not altered.
+
+The `hai-model-maintenance-audit` scratch worktree still has 520 status entries.
+Its LLM maintenance diff against current `main` removes about 2,187 lines across
+eight paths, including cooldown and lease/admission tests; it is not safe to
+port as a whole. No changes were copied from that worktree. Other dirty scratch
+worktrees remain preserved as listed above.
+
+PR #117 remains open at `f5c37f5c060ff359731132489e38034d7d082627`. Exact-head
+Actions run `38588676552` is queued with 4 of 36 jobs completed successfully,
+32 queued, and no failures at this check. The local PR checkout is clean. No
+additional local files were removed in this refresh.
