@@ -463,3 +463,27 @@ test requires a nil result for that empty case and checks the result fields
 only for positive counts. This is a stale contract mismatch, not a missing
 enhancement to port. The local file is not an exact-main match and remains
 preserved.
+
+The local untracked
+`backend/internal/verification/freshness_test.go` differs from current `main`
+(local blob `3f9f5f41`; main blob `0796a733`). In
+`TestStaleEvidenceCannotMarkClaimSourceSupported`, the local assertion calls
+`runStatus(claims)` while `main` supplies the grounded answer mode and request
+context: `runStatus(claims, ModeGrounded, AnswerRequest{})`. The local test
+therefore uses an obsolete contract and is not a stronger case to port. It is
+preserved because its content does not exactly match `main`.
+
+### 2026-10-14 exact-content inventory
+
+The current local primary checkout is `codex/hai-runtime-release` at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241`; it has 2,274 status entries and
+is 440 commits behind its remote branch. GitHub's live `main` ref was
+`c7657c9e2ab198a3a2a1db076619344d07ef7d60`. A content-hash comparison of all
+3,126 existing, non-ignored local tracked/untracked paths against the complete
+3,182-blob recursive `main` tree found 780 exact path-and-blob matches. The
+remaining local paths are not exact matches and require individual integration
+review; identical files are source files inside the active checkout, not
+redundant scratch copies. No files were deleted. This count establishes
+eligibility for later cleanup only if an independently verified disposable
+copy is identified; it does not justify removing source files from this
+working tree or deleting the checkout.
