@@ -240,3 +240,16 @@ tests/docs remove or weaken behavior present in the canonical tree. This was a
 targeted security-sensitive review, not a line-by-line audit of all 310 paths;
 no tests were run. The staged state and the D: worktree remain unchanged and
 preserved. No local cleanup is certified by this review.
+
+### October 14, 2026: clean pursuit worktree removal
+
+The managed worktree `C:\Users\NO\.codex\worktrees\pursuit-default-selection\github-plugin-github-openai-curated-noodzakelijk`
+was rechecked immediately before removal. It was at `b76881c1`, had zero
+tracked, untracked, or ignored status entries, and occupied 38,096,373 bytes.
+The PR #117 checkout confirmed that commit is an ancestor of pushed head
+`0742ddc61c5c4718ef05642c545264d65720b960`; the checkout therefore contained no
+unique worktree changes. The non-force `git worktree remove` command succeeded.
+Afterward the path was absent and `git worktree list` no longer contained it.
+This removes one reproducible checkout; it does not claim that all remaining
+local HAI data is reconciled or that the same number of bytes was returned to
+the volume's free-space counter.

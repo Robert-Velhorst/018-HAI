@@ -11060,3 +11060,16 @@ the difference to specific additions/removals. The tracked count is a Git
 status-path count, not a measure of unique code or of files eligible for
 cleanup. The checkout remains divergent and dirty; no path was deleted or
 reclassified by this count refresh.
+
+### October 14, 2026: clean pursuit worktree removal
+
+The managed worktree
+`C:\Users\NO\.codex\worktrees\pursuit-default-selection\github-plugin-github-openai-curated-noodzakelijk`
+was rechecked before removal: commit `b76881c1e20dccfeb3c41ae35dc27bed6b0233d9`,
+zero tracked/untracked/ignored status entries, and 38,096,373 bytes on disk.
+That commit is an ancestor of pushed PR #117 head
+`0742ddc61c5c4718ef05642c545264d65720b960`, so the clean checkout had no unique
+working-tree content. Non-force `git worktree remove` succeeded; afterward the
+path was absent and no longer appeared in `git worktree list`. This is the
+checkout's measured logical size, not a measurement of the volume's free-space
+increase. All dirty worktrees and unmatched local files remain preserved.
