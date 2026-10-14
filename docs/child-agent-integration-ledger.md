@@ -10285,3 +10285,24 @@ five-minute poll default versus `main`'s one-minute default may reduce wakeups
 but changes queue latency and was not benchmarked or integration-tested, so it
 was not adopted. Go is unavailable in this environment; this was a static
 review of the named source paths, not a live Trello-account acceptance test.
+
+### October 14, 2026: separate D-drive reconciliation checkout
+
+Inspected `D:\hai-source-reconciliation` with a command-scoped Git trust
+override; no global Git configuration was changed. The checkout is on
+`codex/hai-local-source-reconciliation` at `3b15fe4a`, an ancestor of live
+`main`, with 310 staged paths and no untracked paths. Its staged delta is
+7,138 additions and 12,453 deletions; compared with current `main`, the
+working-tree view differs in 346 paths with 8,093 additions and 16,189
+deletions. No open PR exists for this branch. The sole staged addition is
+`nginx-config/nginx.conf`, which is instance-specific configuration and is
+not a candidate for publication as product source.
+
+A focused comparison of the staged automation, ambient scheduler, and
+OpenClaw upload paths found that this snapshot removes transactional
+automation-plus-event persistence, upload-cancellation checks, and scheduler
+status/fallback controls retained by `main`. Publishing it wholesale risks
+partial writes and loss of operator visibility. No source was ported or
+pushed from this checkout; all 310 staged paths remain intact. This was a
+bounded review, not a semantic audit of all 310 files, and Go tests were not
+run because Go is unavailable in this environment.
