@@ -10899,3 +10899,33 @@ was confirmed absent locally and its destination blob remained present on
 bytes to 1,507 files / 126,491,186 bytes. No other output, source, transcript,
 worktree, database, or recovery data was deleted. The remaining output tree is
 still not reconciled and is not cleanup-authorized by this receipt.
+
+### October 14, 2026: remaining output and untracked-source recheck
+
+Rechecked the primary checkout against `origin/main` at
+`12246bd28820f892a48e04b528ff8e28b102b7d4`; the GitHub API reports the same
+`main` SHA. The output directory contains 1,507 files totaling 126,491,186
+bytes. Of 1,501 currently untracked output paths, eight share a path with a
+blob in `main`; all eight local Git blob IDs differ. Those eight reports remain
+local and were not deleted because same-path presence is not proof of a
+preserved copy.
+
+The primary checkout has 81 untracked non-output files. Sixty-five have a
+same-path file in `main`, but none is byte-identical; 16 are absent from `main`
+and consist of local agent state or generated acceptance/test evidence. A
+targeted identifier comparison of the same-path Go tests, JavaScript tests,
+and PowerShell functions found no local-only Go test or PowerShell function
+identifier. The one local-only JavaScript test title asserts that the installed
+Angular parser accepts unsafe numeric values; the current `main` test instead
+verifies those values fall back to a bounded host-concurrency policy. This is
+evidence that this local test variant is stale, not a candidate improvement.
+The scan is a source triage aid, not exhaustive semantic proof of all 65 files.
+
+The staged D: patch still has no reviewed, isolated change ready for import.
+Its sole added Nginx configuration hard-codes a placeholder backend key in an
+authorization-sensitive proxy route, so it must not be copied into the product.
+The broader staged patch remains preserved and unmodified. No additional local
+files were deleted in this recheck; the 1,507-file output tree, the 16
+untracked state/evidence files, and all other unmatched worktree data remain
+unreconciled. The full local-source integration and cleanup objective is still
+incomplete.
