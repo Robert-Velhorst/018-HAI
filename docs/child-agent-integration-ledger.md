@@ -10456,6 +10456,28 @@ stale or weaker variants; retain the canonical router, route guards, bounded
 configuration, and migration coverage. This targeted static comparison did
 not run Go tests and does not disposition every backend file.
 
+### October 14, 2026: task-operation, resource-planning, and evidence model delta
+
+Compared additional primary-checkout task and evidence files with current
+`main`. The local task-operation implementation removes request-context-aware
+claim, heartbeat, completion, cancellation, and review repository interfaces,
+plus cancellation-before-execution handling and its regression tests. It also
+removes the completion-history summary contract and the PostgreSQL `jsonb`
+number normalization used to keep task payload digests stable across writes
+and reads. The local resource planner drops the explicit `AutomatedExecution`
+condition when deciding whether to schedule automatic runtime work; preserve
+the canonical combined automation-mode and risk-admission check.
+
+The local connected-source model removes the durable, single-use OAuth state
+record (owner binding, state digest, expiry, and consumption timestamp), while
+the operation model drops the raw-source-evidence SHA-256 integrity field.
+The local outcome evaluator also removes the bounded two-microsecond clock
+allowance used for immediate monitor-to-completion handoffs, replacing it with
+a strict future-time rejection. These local deltas weaken cancellation,
+idempotency, integrity, or real-time handoff behavior; no portion was ported.
+This is a targeted static comparison, not a test run or complete review of
+the task, source, operation, and outcome packages.
+
 ### October 14, 2026: retained transcript path crosswalk
 
 The bounded PowerShell crosswalk processed all 13 retained transcript files
