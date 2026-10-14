@@ -10065,3 +10065,29 @@ also replaces ambient candidate persistence with per-item saves instead of the
 current context-aware storage path. I found no safe standalone production
 change to port from this cluster; keep the primary and scratch copies intact
 until the remaining path-by-path review is complete.
+
+### October 14, 2026: runtime resume, local infrastructure, and report portability
+
+Reviewed additional high-delta candidates from the primary checkout against
+`origin/main`. Its Runtime Control component removes the separate durable
+resume-review and typed-confirmation sequence and instead prepares a resume
+authorization and submits it immediately. Current `main` retains the review
+item, stop-revision binding, explicit `RESUME BACKGROUND PROCESSING` text
+confirmation, and component tests proving that preparation alone does not
+resume processing. Do not port the local UI flow without restoring the full
+human-confirmation boundary.
+
+The local `kafka/docker-compose.yaml` replaces `main`'s compatibility entry
+point (which delegates to the single local Compose stack) with a retired
+ZooKeeper/three-broker stack using `latest` images and plaintext listeners.
+The local-only `nginx-config/nginx.conf` also embeds a placeholder backend key;
+it is not a safe replacement for the canonical configuration templates. Both
+were excluded from integration.
+
+The changed local `docs/child-agent-final-reports.md` converts repository-
+relative links into machine-specific absolute paths and removes the historical
+scope disclaimer. Current `main` preserves portable links and warns that
+reports are historical checkpoints rather than current runtime acceptance.
+The local variant was not ported. The local connector contract test also drops
+the `Assert-HaiSingleInstallation` check present in `main`; retain the stronger
+canonical test. No infrastructure or source files were changed by this review.
