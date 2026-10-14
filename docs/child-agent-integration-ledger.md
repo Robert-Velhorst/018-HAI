@@ -10879,3 +10879,23 @@ secret-scanner rationale. The key is public, but this representation change can
 reintroduce secret-scanner noise and does not improve trust validation. No
 portion of the D: staged patch was imported, committed, or deleted. The
 worktree and staged index remain preserved for later file-by-file review.
+
+### October 14, 2026: verified report-source deduplication
+
+Removed three local source copies from the primary checkout's `output/` after
+checking each file's SHA-256 against its `source_sha256` in
+`docs/local-hai-import-manifest-2026-10-11.csv`, then recomputing the
+`destination_sha256` from the current `origin/main` Git blob. The remote
+`main` SHA returned by GitHub matched `origin/main` at
+`12246bd28820f892a48e04b528ff8e28b102b7d4` at verification time.
+
+Removed paths and source bytes: `output/account-bridges-source-review-20261001.md`
+(12,934), `output/claimed-effect-source-head-audit-20261001.md` (28,293), and
+`output/feed-sync-production-review-20261001.md` (13,084), totaling 54,311
+bytes. Before removal, all three were regular files inside the primary
+checkout's `output/` directory, not reparse points. After removal, each path
+was confirmed absent locally and its destination blob remained present on
+`main`. The local output inventory decreased from 1,510 files / 126,545,497
+bytes to 1,507 files / 126,491,186 bytes. No other output, source, transcript,
+worktree, database, or recovery data was deleted. The remaining output tree is
+still not reconciled and is not cleanup-authorized by this receipt.
