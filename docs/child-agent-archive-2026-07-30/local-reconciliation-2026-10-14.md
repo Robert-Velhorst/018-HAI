@@ -609,3 +609,56 @@ Six more local frontend candidates were compared to their live `main` paths:
 These candidates did not yield an unimplemented frontend code change. The
 temporary clean worktree used to inspect current `main` was removed after
 verification; no primary checkout or source file was changed or deleted.
+
+### Build, acceptance, and Windows-runtime script snapshot review
+
+Eighteen untracked HAI scripts were compared against their same-path `main`
+versions. The local files are not exact duplicates and were not executed from
+the legacy checkout. Their local-only/main-only differing-line counts are
+inventory data, not a quality score:
+
+| Path | Local-only lines | Main-only lines |
+| --- | ---: | ---: |
+| `audit-npm-production-dependencies.sh` | 1 | 9 |
+| `isolated-acceptance-stack.ps1` | 3 | 47 |
+| `isolated-recovery-rehearsal.ps1` | 1 | 1 |
+| `python_runner_container_smoke.py` | 0 | 10 |
+| `test-frontend-build-resource-limit.cjs` | 9 | 13 |
+| `test-hai-phase2-state-permissions-contract.ps1` | 7 | 7 |
+| `test-isolated-acceptance-stack.ps1` | 1 | 56 |
+| `test-native-compile-deadline.ps1` | 5 | 5 |
+| `test-native-go-discovery.ps1` | 1 | 1 |
+| `test-openclaw-maintenance-migration.ps1` | 2 | 3 |
+| `test-windows-installer-install.ps1` | 26 | 69 |
+| `test-windows-installer-source-selection.ps1` | 1 | 9 |
+| `test-windows-native-runtime.ps1` | 8 | 8 |
+| `test-windows-process-containment.ps1` | 2 | 2 |
+| `test-windows-runtime-lifecycle.ps1` | 5 | 8 |
+| `test_python_runner_ci.py` | 3 | 13 |
+| `test_python_runner_container_smoke.py` | 0 | 10 |
+| `windows-installer-payload-selection.ps1` | 1 | 3 |
+
+Spot review of the high-risk differences confirmed that `main` has the newer
+or stricter behavior: the npm audit script has an optional-dependency mode;
+acceptance startup retries gateway readiness; the phase-2 permission contract
+uses the utility-image migration fixture; OpenClaw maintenance compares the
+existing file DACL; installer tests support an explicit hosted-runner Docker
+availability mode; and the installer source-selection and lifecycle checks
+have additional assertions. The local line-ending-sensitive installer checks
+also lack the canonical CRLF-tolerant expressions. No local script behavior
+was selected to port in this batch.
+
+Two dependency-manifest candidates were also compared to `main`:
+
+- `services/deepteam-runner/requirements.in` and `.lock` locally omit
+  `sentry-sdk`; the current main input and lock include it. Do not replace the
+  canonical dependency set with the local snapshot.
+- `services/promptfoo-runner/package.json` and `package-lock.json` locally pin
+  Promptfoo `0.123.1` and omit `@libsql/linux-x64-gnu`; current `main` pins
+  `0.124.1` and declares `@libsql/linux-x64-gnu` `0.5.29`. Preserve the main
+  manifest/lock pair.
+
+No script, dependency install, or Windows runtime was executed in this source
+comparison. The local candidates remain unmodified and are not cleanup-safe
+until the remaining untracked evidence and primary checkout changes have been
+reviewed.
