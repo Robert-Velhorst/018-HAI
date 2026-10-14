@@ -11518,3 +11518,17 @@ this crosswalk: `backend/internal/automation/public_projection_test.go`,
 `services/promptfoo-runner/package-lock.json`, and
 `services/promptfoo-runner/package.json`. These paths need semantic review
 before any selected behavior is ported; no file was copied or removed.
+
+### October 14, 2026: primary checkout source-service cross-check
+
+Compared the primary checkout's connected-source and account-bridge frontend
+contracts with current `origin/main` at
+`b7e3ad2086c23313a0355101498bee82cda62d4e`. The local tree lacks the source
+overview contract, the typed connected-source service interface and
+implementation, and the Account Bridges component/service. Current `main`
+retains bounded extraction pagination, manual-sync idempotency, safe
+source-revocation/deletion authorization headers, identity-preview request
+cancellation/owner-binding checks, and independent feed/bridge error states.
+These are missing from the stale local snapshot, not unintegrated local
+additions; the current-main files must be preserved. No files were copied or
+deleted, and this focused comparison does not establish full frontend parity.
