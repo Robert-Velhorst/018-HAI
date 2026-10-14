@@ -11103,9 +11103,33 @@ Two runtime-safety worktree tests expect automatic deletion of the previous
 HAI-managed OpenClaw archive. That behavior is not ported: the inspected upload
 approval digest does not identify deletion of the previous archive, so the
 mutation would need an explicit, user-visible, approval-bound deletion effect
-before it could be considered. The local artifact-URL downloader is also not
-treated as integrated; its URL-fetch path and tests need a complete production
-integration and security review. The source and worktrees remain intact.
+before it could be considered. A refreshed source trace also corrects the
+earlier artifact-URL note: current `main` already wires the OpenClaw artifact
+URL fetcher through `DownloadOpenClawGatewayArtifact` and terminally verified
+artifact import. The current-main path validates approved origins and resolved
+addresses, rejects redirects and proxy use, bounds body size and time, and
+checks receipt/run ownership; dedicated fetch and import contracts are present.
+The retained scratch implementation is therefore not a separate missing
+feature to port. The source and worktrees remain intact.
+
+### October 14, 2026: test-difference semantic cross-check
+
+Name-only comparison of changed tests in the three audit worktrees surfaced
+several additional apparent gaps. Source and current-main tests show these are
+stale, weaker, or already covered: the old owner-scoped agent-cycle test omits
+the owner-scoped operating phases that current `main` now runs; the missing
+durable-job cancellation test is covered by current pre-handler cancellation
+and claim-release logic; the unauthenticated background-worker test is covered
+by current execution-authorization gates; and the process-resume recheck is
+covered by current stop-ordering regression tests. Current approval tests bind
+API read-only scope, reject proof issuance for read-only/unsupported actions,
+and reject target changes before network access. The scratch no-op publisher
+test conflicts with current fail-closed behavior for an unconfigured event
+publisher and was not ported. The two automatic OpenClaw archive-deletion tests
+remain excluded pending an explicit approval-bound deletion effect. Test-name
+absence alone was not used as evidence of a missing behavior. This focused
+cross-check does not complete semantic review of every divergent file; no
+local files were removed.
 
 No Go tests were run for these audit worktrees because `go` is unavailable in
 this Windows environment. This is a bounded crosswalk, not completion of the
