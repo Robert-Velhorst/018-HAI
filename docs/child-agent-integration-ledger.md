@@ -8226,6 +8226,18 @@ artifacts, and browser-acceptance logs. The 1,504 `output/` paths were not
 content-reviewed and remain explicitly outside this source batch. None of
 these files was removed.
 
+### October 14, 2026: primary-checkout untracked script match check
+
+Rechecked the 18 untracked `scripts/` files in the primary HAI checkout against
+the verified `origin/main` tree at
+`b7e3ad2086c23313a0355101498bee82cda62d4e`. All 18 paths exist on `main`, but
+none is an exact text match after normalizing CRLF/LF line endings. This means
+none is eligible for removal under the direct-match cleanup rule, and path
+identity alone is not enough to port or delete the local variant. The broader
+ledger already records focused dispositions for several of these scripts;
+remaining content differences require individual semantic review. This was a
+read-only comparison; the primary checkout and all script files remain intact.
+
 The `D:\hai-source-reconciliation` worktree was rechecked with a
 per-command-only Git ownership exception. It has 310 staged paths and no
 untracked paths; its `HEAD` is seven commits behind current `main`, with no
