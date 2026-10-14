@@ -112,6 +112,21 @@ try {
         (Get-Content -LiteralPath $reportsPath -Raw) -match '(?i)[A-Z]:[\\/]+Users[\\/]+[^\\/\s]+[\\/]+Documents[\\/]+Codex') {
         throw 'Synthetic transcript was not classified and reported as expected.'
     }
+
+    $recordOnlySessions = Join-Path $scratch 'record-only\source\sessions\2026\08'
+    $recordOnlyOutput = Join-Path $scratch 'record-only\output'
+    [IO.Directory]::CreateDirectory($recordOnlySessions) | Out-Null
+    $recordOnlyTranscript = Join-Path $recordOnlySessions 'rollout-2026-08-01T00-06-00-019fb2cc-53a5-78a0-9387-b23f05eb6aef.jsonl'
+    $recordOnlyMetadata = New-SyntheticTranscriptLine 'session_meta' @{ id = $oversizedChildId; agent_nickname = 'oversized-record-only'; root_session_id = $rootSessionId }
+    [IO.File]::WriteAllLines($recordOnlyTranscript, [string[]]@($recordOnlyMetadata, $oversizedRecord, $laterCompletion), [Text.UTF8Encoding]::new($false))
+    & $audit -RootSessionId $rootSessionId -SessionsRoot $recordOnlySessions -OutputDirectory $recordOnlyOutput -MaxRecordCharacters 256KB | Out-Null
+    $recordOnlySummary = Get-Content -LiteralPath (Join-Path $recordOnlyOutput 'child-agent-transcript-summary.json') -Raw | ConvertFrom-Json
+    if ($recordOnlySummary.oversized_metadata_records_skipped -ne 0 -or
+        $recordOnlySummary.oversized_records_skipped -ne 1 -or
+        $recordOnlySummary.full_file_scan -ne $false) {
+        throw "Oversized transcript records must make the file scan incomplete: $($recordOnlySummary | ConvertTo-Json -Compress)"
+    }
+
     $sourceTranscripts = @($transcript, $abortedTranscript, $ambiguousTranscript, $oversizedTranscript, $oversizedMetadataTranscript, $missingReportTranscript)
     if (@($sourceTranscripts | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -gt 0) {
         throw 'Transcript audit unexpectedly removed its source file.'
