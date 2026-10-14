@@ -9815,3 +9815,36 @@ queued, and one was in progress. No current-head CI pass is claimed. The live
 hash, worktree, and archive findings above are an audit checkpoint, not proof
 that the remaining local source variants have all been integrated or that
 archive cleanup is safe.
+
+## October 14, 2026: follow-up audit after ledger push
+
+The preceding PR #117 status is superseded. The current branch head is
+`f1aa514ad16208e727b24adf422d1d90eb099964`; the GitHub checks endpoint returned
+40 checks, all queued, for this exact head. No current-head CI pass is claimed.
+The remote `main` remains `345cf356c3f4ab497568713dc994820b4ba22b10`.
+
+The previously unlisted primary report
+`output/account-bridges-source-review-20261001.md` was source-compared with
+that `main` revision. All five reported fixes are present in the Account
+Bridges component, template, and regression tests: unknown feed counts are not
+rendered as zero; refresh and bulk-sync controls respect loading/error guards;
+accessible names identify feed actions; failed refresh retains prior data;
+and timestamps are explicitly UTC with machine-readable `datetime` values.
+The source report records a historical focused run of 30 Angular tests and
+PR #36's 36 successful checks; neither is a fresh test run in this audit.
+Current local dependency trees are absent, so no frontend test rerun was
+attempted. This is an integration disposition, not browser or live-provider
+acceptance.
+
+The separate `D:\hai-source-reconciliation` staged candidate was reviewed
+without modifying its index or working tree. It is 26 commits behind current
+`main`, with zero commits ahead and 346 staged paths (340 modified, five
+deleted, one added; +8,093/-16,189 lines). The changes include broad removal of
+task, pursuit, framework, verification, and ambient-monitor behavior and tests;
+the single added Nginx file duplicates canonical configuration and contains a
+placeholder secret. The candidate is not safe to publish or use as a cleanup
+source. Its staged state and all files remain intact.
+
+No local files, transcripts, archives, or worktrees were deleted. PR #41 and
+PR #42 are already merged and their merge commits remain ancestors of `main`;
+the user's merge authorization did not require another mutation.
