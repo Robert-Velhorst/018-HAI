@@ -10346,3 +10346,17 @@ the 97 untracked files matched a same-path `main` blob. After checking the
 remote SHA before and after and revalidating each candidate hash, those 42
 direct copies were removed from the local worktree. They remain on `main`;
 the 108 differing tracked files and all 97 untracked files were left intact.
+
+### October 14, 2026: PR 34/36 resolution-worktree staged-copy audit
+
+PRs #32 through #36 are already merged. A separate staged-index comparison
+against live `main` `345cf356c3f4ab497568713dc994820b4ba22b10` found 157
+same-path staged blobs in `hai-pr34-conflict-fix`, 185 in
+`hai-pr36-integration`, and 154 in `hai-resolve-pr34` that exactly match
+`main` and have no unstaged working-tree change. These 496 regular files total
+4,332,467 bytes. Secret/local-state paths, logs, test evidence, and Playwright
+diagnostics were excluded. The other staged paths differ from `main` or also
+have working-tree edits and remain untouched. No files were removed: the host
+rejected the deletion command before execution. The PR-resolution worktrees
+remain intact, and this result identifies candidates only; it does not claim
+space was reclaimed.
