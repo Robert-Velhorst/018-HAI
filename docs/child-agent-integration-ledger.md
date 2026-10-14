@@ -10160,3 +10160,21 @@ path, scoped/versioned session claims, password policy, token digest helpers,
 and durable reset/session tests. These local changes are regressions; do not
 port them. The review covered the authentication, user, password-reset, and
 token helper paths, not every IDP file.
+
+### October 14, 2026: A2A, MCP preflight, task context, and LARO comparison
+
+The primary checkout's A2A bridge removes the bounded replay/idempotency cache,
+strict unknown-field decoding for nested request payloads, and JSON-RPC ID type
+validation that current `main` retains. Its MCP preflight copy drops separate
+bearer-token configuration, authenticated remote endpoint support, SSE
+responses, and the ChatGPT/Codex logs MCP profile. The task-service copy also
+removes the bounded conversation-history context and MCP call-trace fields
+already present on `main`.
+
+The local Phase 2 handler replaces the operation-aware effect-policy check
+with a title/description/type-only check; current `main` evaluates the complete
+operation before execution. The local LARO connector removes the bounded
+cursor-reset recovery path used when an old provider-owned cursor is rejected.
+These local versions are reduced, stale, or less constrained than current
+`main`; the canonical A2A/MCP/task/Phase 2/LARO implementations remain the
+integrated versions. No source change was ported from this cluster.
