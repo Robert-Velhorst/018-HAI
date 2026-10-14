@@ -25,8 +25,7 @@ type openClawDiscoveryWriteFailureRepository struct {
 	*operations.MemoryRepository
 }
 
-func (r *openClawDiscoveryWriteFailureRepository) CreateWithEventContext(
-	context.Context,
+func (r *openClawDiscoveryWriteFailureRepository) CreateWithEvent(
 	*models.Operation,
 	*models.OperationEvent,
 ) (*models.Operation, error) {
