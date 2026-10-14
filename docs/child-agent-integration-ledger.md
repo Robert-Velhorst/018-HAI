@@ -10314,3 +10314,15 @@ and the remaining path (`nginx-config/nginx.conf`) is absent from `main`. No
 staged file is an exact direct duplicate; no D-drive file was removed. This
 hash result does not establish semantic equivalence for the 309 differing
 files.
+
+### October 14, 2026: model-worktree exact-main cleanup
+
+Rechecked the model-maintenance worktree at `e07b9da` against live `main`
+`345cf356c3f4ab497568713dc994820b4ba22b10`. Of 425 modified tracked files,
+124 unstaged regular files had exact same-path Git-cleaned blobs on `main`,
+totalling 1,056,216 bytes; 300 differed and one path was absent from `main`.
+None of the 95 untracked files was byte-identical to a same-path `main` blob.
+After confirming the remote SHA before and after, the 124 direct copies were
+removed from that worktree. They are local unstaged deletions only; no source
+or archive was committed or pushed by this cleanup. The worktree still has
+its 300 differing tracked files and 95 untracked files, which remain intact.
