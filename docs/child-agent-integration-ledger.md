@@ -10929,3 +10929,10 @@ files were deleted in this recheck; the 1,507-file output tree, the 16
 untracked state/evidence files, and all other unmatched worktree data remain
 unreconciled. The full local-source integration and cleanup objective is still
 incomplete.
+
+A second content-addressed pass compared every output file's Git blob ID
+against every blob reachable from `origin/main`, not only same-path entries.
+It found 376 exact matches (374 `.log`, 2 `.jsonl`), all zero-byte files; their
+combined reclaimable content is 0 bytes. They were left in place because
+removing empty diagnostic markers would not provide disk relief. No substantive
+output report or non-empty log was an exact blob match anywhere in `main`.
