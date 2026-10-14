@@ -9903,3 +9903,16 @@ test; and the missing-owner test conflicts with the canonical behavior that
 binds authorization to the authenticated actor when no configured owner is
 present. None of these local test snapshots was copied over `main`. This is a
 targeted safety comparison, not a review of all 692 modified tracked files.
+
+### October 14, 2026: untracked source-path comparison
+
+Compared the untracked source-like paths outside `output/` in the primary C:
+checkout with the current `origin/main` tree. All 61 files with source, test,
+script, or Markdown extensions have a path in `main`; none is a raw-byte
+match. The 36 untracked Go test snapshots under `backend/` and `idp/` add no
+test-function names absent from the corresponding canonical `main` files.
+This establishes that these are divergent local copies, not missing source
+paths to copy over `main`; it does not prove that each assertion is equivalent.
+The six untracked JSON evidence files under the backend test-evidence folder
+have no corresponding `main` path and remain unclassified. No source snapshot,
+test evidence, or output artifact was deleted or ported in this comparison.
