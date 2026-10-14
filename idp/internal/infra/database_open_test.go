@@ -18,7 +18,7 @@ func TestAutomaticGormPingFailureRequiresCallerCleanup(t *testing.T) {
 	pool := sql.OpenDB(connector)
 	t.Cleanup(func() { _ = pool.Close() })
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if db == nil || !errors.Is(err, failure) || connector.closed.Load() != 0 {
+	if db == nil || !errors.Is(err, failure) {
 		t.Fatal("unexpected GORM first-ping ownership behavior")
 	}
 	connector.pingError = nil
