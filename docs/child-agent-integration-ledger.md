@@ -11033,3 +11033,13 @@ passed. A local Go test could not run because neither `go` nor `gofmt` is
 available on `PATH` or in the checked configured Windows toolchain locations;
 the exact-head hosted backend test is required for verification. This targeted
 fix is in PR #117; no local source or diagnostic files were removed.
+
+The same numeric-boundary review also found `NaN` could bypass comparison-only
+confidence checks in life-operations request validation, life-ontology evidence
+and operational-link validation, framework-registry operating context, and the
+generic action resolver. Those boundaries now reject non-finite/out-of-range
+values; invalid confidence blocks destructive resolutions and requires
+clarification for other actions. Added regressions cover each package. The
+proactive signal validators already reject non-finite values and were left
+unchanged. These changes are included in the same PR; local Go execution remains
+unavailable, so hosted CI is still the required code-test gate.

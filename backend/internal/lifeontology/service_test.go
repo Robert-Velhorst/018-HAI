@@ -3,11 +3,22 @@ package lifeontology
 import (
 	"context"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestEvidenceConfidenceRejectsNonFiniteAndOutOfRangeValues(t *testing.T) {
+	now := fixedNow()
+	for _, confidence := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -0.01, 1.01} {
+		if err := validateEvidenceEnvelope(confidence, VerificationSourceSupported, SensitivityInternal,
+			now.Add(-time.Hour), nil, now.Add(-time.Minute), []Provenance{source("confidence")}, now); err == nil {
+			t.Errorf("validateEvidenceEnvelope accepted confidence %v", confidence)
+		}
+	}
+}
 
 func TestRecordsEveryWholeLifeEntityTypeWithDeterministicIdentity(t *testing.T) {
 	types := []EntityType{
