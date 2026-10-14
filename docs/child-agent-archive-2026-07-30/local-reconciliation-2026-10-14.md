@@ -577,3 +577,35 @@ additive:
 These are content and named-test comparisons, not executions. The local
 versions were not run; no local candidate in this group should replace or be
 ported over its canonical `main` test.
+
+### Frontend test and acceptance harness cross-check
+
+Six more local frontend candidates were compared to their live `main` paths:
+
+- `frontend/scripts/control-room-logic.test.mjs` (local `cbebf688`, main
+  `ec5fd9a8`): main adds the `refreshed` selection scenario. The local-only
+  `id_changed` mode is covered by main's `selection` mode, which changes both
+  the selected record and its ID; the production confirmation handler also
+  rechecks the ID. Do not copy the older test file.
+- `frontend/scripts/deep-link-focus.test.mjs` (local `1acbbc1f`, main
+  `325c1ad0`): no local-only source lines; main routes module URL loading
+  through its shared test helper. No missing behavior identified.
+- `frontend/scripts/framework-secret-boundary.test.mjs` (local `1c9c5378`,
+  main `9da9aa5a`): main constructs the synthetic private-key marker from
+  fragments so secret scanners do not mistake the fixture for a credential.
+  Keep the canonical fixture.
+- `frontend/scripts/release-cache.test.mjs` (local `291822e2`, main
+  `a1833f2e`): main additionally checks disabled critical-style inlining and
+  same-origin theme bootstrap behavior under the restrictive script policy.
+- `frontend/e2e/tests/support/owned-browser-matrix.ts` (local `d5196ef4`, main
+  `a7faa6f6`): main uses a validated isolated storage-state path and requires
+  `E2E_ALLOW_MUTATION=true` before synthetic setup. The local version instead
+  accepts email/password fields; do not port it over the safer canonical
+  harness.
+- `owned-browser-matrix-handoff.md` (local `a5942980`, main `5b8cf20b`): main
+  includes an October 11 session-refresh follow-up; the local handoff snapshot
+  is older. It is not a source-code change to port.
+
+These candidates did not yield an unimplemented frontend code change. The
+temporary clean worktree used to inspect current `main` was removed after
+verification; no primary checkout or source file was changed or deleted.
