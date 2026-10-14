@@ -693,6 +693,8 @@ jobs:
           persist-credentials: false
       - name: CI workflow contract
         run: python3 scripts/test_ci_contract.py
+      - name: Docker build-context ignore contracts
+        run: python3 scripts/test_docker_build_context.py
       - name: No-fake claims and tracked-artifact audit
         run: bash scripts/no-fake-claims-audit.sh
       - name: Gateway authentication contract
