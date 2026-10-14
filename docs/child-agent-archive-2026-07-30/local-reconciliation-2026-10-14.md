@@ -443,3 +443,13 @@ The local test therefore does not establish admission under the current
 required-participant contract. Do not port or delete the non-identical local
 file. These were bounded test-function comparisons; neither local Go test was
 run.
+
+The local untracked
+`backend/internal/workflow/project_dossier_test.go` differs from current `main`
+(local blob `867365ef`; main blob `62a22d40`). In
+`TestProjectDossierBoundsNestedContextAndRedactsCredentials`, the local test
+embeds the credential-shaped literal `AKIAABCDEFGHIJKLMNOP`; current `main`
+constructs its AWS-shaped fixture dynamically with `"AKIA" + strings.Repeat(...)`
+and checks redaction against that value. The canonical test preserves the
+security assertion without adding a scanner-triggering literal. The local
+variant is not a better port and is not an exact-main cleanup candidate.
