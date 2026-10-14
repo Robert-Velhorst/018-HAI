@@ -10178,3 +10178,16 @@ cursor-reset recovery path used when an old provider-owned cursor is rejected.
 These local versions are reduced, stale, or less constrained than current
 `main`; the canonical A2A/MCP/task/Phase 2/LARO implementations remain the
 integrated versions. No source change was ported from this cluster.
+
+### October 14, 2026: frontend tracked-tree comparison
+
+At `origin/main` `345cf356c3f4ab497568713dc994820b4ba22b10`, the primary
+checkout's tracked frontend snapshot differs across 203 paths: 109 paths are
+absent locally and 94 are modified. The aggregate tracked diff is 491 additions
+and 17,344 removals relative to `main`. Spot checks confirmed that main-only
+paths include build-budget enforcement, launch-request safety tests, the owned
+isolated-stack browser suite, OpenClaw maintenance controls, and launch-recovery
+helpers. These are already present in canonical `main`; the primary snapshot is
+not a source to copy forward. This is a tracked-tree comparison only and does
+not classify untracked artifacts or establish that every removed line is a
+behavioral regression.
