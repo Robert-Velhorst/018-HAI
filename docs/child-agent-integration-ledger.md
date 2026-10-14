@@ -10947,3 +10947,20 @@ removed have their preserved destinations among these. No row proved both a
 present local source and its complete current-main destination, so this pass
 authorized zero additional deletions. The manifest remains a historical
 transfer record; stale destination hashes are not silently rewritten.
+
+### October 14, 2026: blank verification-owner guard
+
+Reviewing the stale primary-checkout verification repository exposed a fail-open
+edge in current `main`: the shared owner-query helper intentionally omits its
+owner predicate for an empty identity so internal/global reads remain
+available, while the two public `Find*ForOwner` repository methods did not
+reject an empty identity before calling that helper. The HTTP handler already
+rejects missing authenticated subjects, but direct service/repository callers
+could otherwise receive an unscoped read. The fix now trims and rejects blank
+identities in both owner-scoped repository methods while preserving the
+separate internal query helper, bounded 200-row listing, and explicitly
+configured legacy-owner policy. `TestOwnerScopedReadsRejectBlankIdentityBeforeQuery`
+proves both methods fail before touching the repository handle. The focused
+`go test ./internal/verification` passed with the cached Go 1.27.2 toolchain;
+hosted CI for PR #117 remains the broader integration gate. No additional
+local source files were removed.
