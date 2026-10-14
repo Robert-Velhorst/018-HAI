@@ -10222,3 +10222,18 @@ this environment, so no Go tests were run against the worktree. The separate
 four untracked files remain unclassified and were not removed. This finding is
 limited to these runtime packages and this worktree, not a full audit of all
 local artifacts.
+
+### October 14, 2026: model-maintenance worktree comparison
+
+Compared the retained model-maintenance worktree at `e07b9da` with current
+`main`. The local `braincatalog` scheduler drops the lifecycle-managed,
+context-cancelled goroutine used on `main`. The local LLM maintenance variant
+removes support for bounded API mount prefixes, removes cloud-provider
+read-only catalog probes, and changes maintenance result accounting; `main`
+keeps hosted-model checks explicitly read-only and does not claim it can update
+provider-controlled model weights. The local copy also removes maintenance
+eligibility logic present on `main`. These are not safe missing features to
+port. Go is unavailable in this environment, so no package tests were run.
+This is a bounded comparison of the maintenance files, not the full 425-file
+tracked delta or 95 untracked artifacts in that worktree; those remain
+unclassified and untouched.
