@@ -10252,3 +10252,21 @@ found that all 97 paths exist in `main`, but none is byte-identical to its
 current-main blob. Therefore this pass found no direct-match deletion
 candidates and did not port or delete these files. Their semantic differences
 remain unreviewed; Go is unavailable here, so runtime behavior was not tested.
+
+### October 14, 2026: authorized removal of exact `main` copies
+
+After the user authorized cleanup of content already present on `main`, the
+primary legacy checkout was rechecked against live `main`
+`345cf356c3f4ab497568713dc994820b4ba22b10`. Of 692 modified tracked files,
+448 unstaged regular files had Git-cleaned blob hashes exactly matching the
+same-path blob on `main`, totaling 6,818,815 bytes. No staged paths were
+included; 243 files differed and one path did not exist on `main`. The remote
+`main` SHA was checked immediately before and after removal and did not move.
+All 448 exact-match files were removed from the primary working tree without
+error. These are local unstaged deletions only: no deletion was committed or
+pushed, and the canonical files remain on `main`. The checkout is now
+intentionally incomplete at those paths; the deleted-path list remains
+recoverable from Git's index, and the files can be restored from the recorded
+`main` commit if needed. Untracked files, differing tracked files, ignored
+data, and transcript archives were not touched. Space reclaimed was about
+6.5 MiB, so this was a limited cleanup, not a material recovery of disk space.
