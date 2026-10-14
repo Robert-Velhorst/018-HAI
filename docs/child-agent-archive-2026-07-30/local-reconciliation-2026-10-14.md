@@ -202,5 +202,7 @@ exist are not byte-identical; after normalizing checkout/temp paths and
 Markdown link syntax, each has zero semantic line differences from `main`.
 They do not contain new report findings, and none qualifies for exact-match
 local cleanup. The remaining untracked output and all dirty source files stay
-preserved pending broader review. No environment file or raw log was opened;
-no local files, worktrees, or Git refs were changed by these audits.
+preserved pending broader review. No environment file or raw log was opened.
+The reviews did not edit files in the dirty runtime-release checkout, change
+worktrees, or move Git refs. Their findings were recorded separately in PR
+#117's reconciliation ledger.
