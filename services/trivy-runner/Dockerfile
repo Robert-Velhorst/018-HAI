@@ -1,6 +1,6 @@
 FROM aquasec/trivy:0.72.0 AS trivy
 
-FROM python:3.14-alpine
+FROM python:3.15-alpine
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY app.py /app/app.py
 RUN addgroup -g 10005 -S hai && adduser -S -D -H -u 10005 -G hai hai
