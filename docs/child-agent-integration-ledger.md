@@ -10994,3 +10994,26 @@ The local PostgreSQL evidence summary reports 15 passes, zero skips, and zero
 failures, but its historical source hash is not mapped to a current canonical
 source version, so it is not current acceptance evidence. All these files
 remain preserved. No additional local content was removed.
+
+### October 14, 2026: security-sensitive local-variant review
+
+Compared additional non-identical primary-checkout variants with the same
+paths on current `main`. The local `backend/internal/operations/source_approval_test.go`
+removes the digest-mutation case for `SourceEvidenceRawSHA256`, a same-version
+mutation regression, and the explicit-approval/future-review case; local
+`backend/internal/pursuit/completion_outcome_integrity_test.go` removes 82
+lines of completion-integrity cases already present on `main`. The local
+background-worker test expects a fresh operation to be verified without the
+main-branch approval assertions and exposes the feed name in an error where
+`main` requires sanitized output. The local Windows installer test removes
+hosted-Docker-unavailable and `RUNNER_TEMP` reparse-point/isolation checks.
+Local migration-source tests remove migration-phase-order and isolated
+rollback-data guards. The local emergency-stop fixture omits its JSON request
+body, and its TLS test configures `Config.TLSConfig` instead of the `httptest`
+server's `TLS` configuration used by `main`.
+
+These are stale/weaker alternatives, not missing improvements to port. Current
+`main` has the stronger test and release contracts at the reviewed paths. The
+local alternatives are not byte-identical duplicates and remain untouched;
+this review does not authorize deleting non-matching files or resolve the
+remaining semantic audit of tracked modifications.
