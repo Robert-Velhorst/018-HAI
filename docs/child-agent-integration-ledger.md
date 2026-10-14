@@ -10704,8 +10704,11 @@ eligible for cleanup.
 
 The five other retained transcripts were each scanned across the full file
 for the union of tool-call and patch markers; each produced six matching
-lines. That count does not distinguish tool calls from patch-bearing calls,
-and their payloads have not been semantically crosswalked. They remain
-unresolved and retained. The supplemental archive is still outside the
-canonical cleanup verifier. No transcript, worktree, fixture, database,
-container, or recovery data was deleted or changed during this pass.
+lines. A separate full-file literal tool-name scan found zero `apply_patch`
+records in those five files. This does not rule out file writes through shell
+or other tools; their payloads have not been semantically crosswalked. They
+remain unresolved and retained. The supplemental archive has a read-only
+verifier, but its cleanup status remains blocked until the complete source
+reconciliation is merged and an approved cleanup receipt is recorded. No
+transcript, worktree, fixture, database, container, or recovery data was
+deleted or changed during this pass.
