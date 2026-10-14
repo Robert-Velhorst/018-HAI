@@ -10428,6 +10428,34 @@ bounded and verified behavior. No local code was ported or removed by this
 review. This is a targeted static comparison, not a test run or a review of
 every remaining modified path.
 
+### October 14, 2026: primary checkout router, runtime, and configuration delta
+
+Compared the primary checkout's backend router, configuration, doctor, and
+database tests with live `main` at
+`345cf356c3f4ab497568713dc994820b4ba22b10`. The local router replaces the
+1 MiB request-header cap with a 15-minute write timeout, allowing unbounded
+header sizes while imposing a finite write deadline on long responses. Its
+route composition removes the durable automation-event outbox dispatcher and
+delivery administration endpoints, operational-graph routes, ChatGPT-log MCP
+context, approval resolvers and control-approval endpoints, source overview
+and health, background overview, pursuit overview, and framework-selection
+history/detail routes. It also accepts a nil lifecycle context by substituting
+`context.Background()`, weakening the explicit server-lifecycle contract, and
+registers browser verification without the workflow linker available in the
+canonical composition. The local ops-control route maps approval preparation
+to `PrepareResume` and omits the durable resume-approval/decision routes.
+
+The local `validatePort` accepts `0` and deletes the tests rejecting zero and
+out-of-range values. The doctor delta relaxes its local default-password
+warning and reports an empty broker list as "event publishing is disabled"
+instead of describing durable outbox queuing; the router change removes that
+outbox path, making the report incomplete. Its Dockerfile also downgrades the
+Go builder from the current `1.27.2` to `1.25.13`. A migration rollback test
+no longer asserts that the lease-index migration is rolled back. These are
+stale or weaker variants; retain the canonical router, route guards, bounded
+configuration, and migration coverage. This targeted static comparison did
+not run Go tests and does not disposition every backend file.
+
 ### October 14, 2026: retained transcript path crosswalk
 
 The bounded PowerShell crosswalk processed all 13 retained transcript files
