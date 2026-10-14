@@ -87,6 +87,100 @@ class LocalPlannerTests(unittest.TestCase):
         self.assertEqual(ModelHandler.seen["body"]["temperature"], 0)
         self.assertEqual(ModelHandler.seen["body"]["stream"], False)
 
+    def test_chat_completion_does_not_follow_redirects(self):
+        class RedirectTargetHandler(BaseHTTPRequestHandler):
+            requests_seen = 0
+
+            def do_POST(self):
+                self.__class__.requests_seen += 1
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                return
+
+        target = ThreadingHTTPServer(("127.0.0.1", 0), RedirectTargetHandler)
+        target_thread = threading.Thread(target=target.serve_forever, daemon=True)
+        target_thread.start()
+
+        class RedirectHandler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.send_response(307)
+                self.send_header("Location", f"http://127.0.0.1:{target.server_port}/collect")
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                return
+
+        source = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+        source_thread = threading.Thread(target=source.serve_forever, daemon=True)
+        source_thread.start()
+        try:
+            with self.assertRaises(app.RequestError):
+                app.chat_completion(
+                    f"http://127.0.0.1:{source.server_port}/v1",
+                    "local-model",
+                    "secret-value",
+                    [{"role": "user", "content": "private planning input"}],
+                )
+        finally:
+            source.shutdown()
+            source_thread.join(timeout=2)
+            source.server_close()
+            target.shutdown()
+            target_thread.join(timeout=2)
+            target.server_close()
+
+        self.assertEqual(RedirectTargetHandler.requests_seen, 0)
+
+    def test_probe_does_not_follow_redirects(self):
+        class RedirectTargetHandler(BaseHTTPRequestHandler):
+            requests_seen = 0
+
+            def do_GET(self):
+                self.__class__.requests_seen += 1
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                return
+
+        target = ThreadingHTTPServer(("127.0.0.1", 0), RedirectTargetHandler)
+        target_thread = threading.Thread(target=target.serve_forever, daemon=True)
+        target_thread.start()
+
+        class RedirectHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{target.server_port}/models")
+                self.end_headers()
+
+            def log_message(self, _format, *_args):
+                return
+
+        source = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+        source_thread = threading.Thread(target=source.serve_forever, daemon=True)
+        source_thread.start()
+        try:
+            with (
+                patch.object(
+                    app,
+                    "configured",
+                    return_value=(f"http://127.0.0.1:{source.server_port}/v1", "local-model", "secret-value"),
+                ),
+                self.assertRaises(app.RequestError),
+            ):
+                app.probe()
+        finally:
+            source.shutdown()
+            source_thread.join(timeout=2)
+            source.server_close()
+            target.shutdown()
+            target_thread.join(timeout=2)
+            target.server_close()
+
+        self.assertEqual(RedirectTargetHandler.requests_seen, 0)
+
     def test_guidance_is_bounded_pin_checked_and_labeled_as_advisory(self):
         summary = "For an MCP integration, define the smallest useful tool contract."
         item = {

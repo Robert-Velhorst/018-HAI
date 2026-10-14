@@ -8,7 +8,8 @@ import json
 import os
 import re
 from urllib.parse import urlparse
-from urllib.request import Request as URLRequest, urlopen
+from urllib.error import HTTPError
+from urllib.request import HTTPRedirectHandler, Request as URLRequest, build_opener
 
 import aiohttp
 
@@ -45,6 +46,11 @@ PROPOSAL_SCHEMA = """{"goal":"short string","successCriteria":["string"],"nextSt
 
 class RequestError(ValueError):
     """Raised when a request or model response crosses the narrow runner boundary."""
+
+
+class RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, _request, _response, _code, _message, _headers, _new_url):
+        return None
 
 
 def compact_text(value: object, limit: int) -> str:
@@ -177,7 +183,9 @@ async def _post_chat_completion(base_url: str, model_id: str, api_key: str, mess
     headers = {"Accept": "application/json", "Authorization": f"Bearer {api_key}"}
     body = {"model": model_id, "messages": messages, "temperature": 0, "max_tokens": 2048, "stream": False}
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.post(base_url + "/chat/completions", json=body, headers=headers) as response:
+        async with session.post(
+            base_url + "/chat/completions", json=body, headers=headers, allow_redirects=False
+        ) as response:
             if response.status < 200 or response.status >= 300:
                 raise RequestError("local model endpoint rejected the planning request")
             raw = await response.content.read(MAX_MODEL_RESPONSE_BYTES + 1)
@@ -231,8 +239,13 @@ def propose(payload: object) -> dict:
 def probe() -> dict:
     base_url, model_id, api_key = configured()
     request = URLRequest(base_url + "/models", headers={"Accept": "application/json", "Authorization": f"Bearer {api_key}"})
-    with urlopen(request, timeout=5) as response:  # nosec B310: base URL is local-only and validated above.
-        data = json.loads(response.read(32 * 1024))
+    try:
+        with build_opener(RejectRedirects).open(request, timeout=5) as response:
+            data = json.loads(response.read(32 * 1024))
+    except HTTPError as exc:
+        if 300 <= exc.code < 400:
+            raise RequestError("local model endpoint redirects are not allowed") from None
+        raise
     models = data.get("data", []) if isinstance(data, dict) else []
     if not any(isinstance(item, dict) and item.get("id") == model_id for item in models):
         raise RequestError("configured local model is not reported by its endpoint")
