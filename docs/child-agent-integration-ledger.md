@@ -10545,3 +10545,17 @@ and removes the hosted-runner allowance used by the installer smoke test.
 These changes reduce build provenance and release/safety coverage. No part of
 this installer or recovery delta was ported. This was a targeted static
 comparison; Windows behavioral tests were not run in this audit.
+
+### October 14, 2026: OpenClaw persistence-failure readiness regression
+
+Reviewing the current PR #117 diff found that `Service.Probe` returned the
+failed-persistence status, but the runtime adapter retained its pre-persistence
+probe in memory. `CapabilityCards` could then fall back to that transient probe
+when no durable ledger record existed and set `CanInvoke=true` for OpenClaw.
+This contradicted the PR's fail-closed readiness claim. The current PR worktree
+now requires durable discovery evidence for OpenClaw capability-card
+invocability; non-OpenClaw in-process discovery behavior is unchanged. The
+regression test now checks the capability overview after a synthetic durable
+write failure and rejects any invocable OpenClaw card. `git diff --check`
+passed before commit. This shell has no Go executable, so the test/build must
+be verified by the exact-head hosted checks; no passing result is claimed.

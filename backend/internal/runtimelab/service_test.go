@@ -844,6 +844,15 @@ func TestOpenClawDiscoveryReportsDurableEvidenceWriteFailure(t *testing.T) {
 	if strings.Contains(strings.ToLower(probe.Detail), "synthetic persistence failure") {
 		t.Fatalf("raw persistence error leaked in probe detail: %q", probe.Detail)
 	}
+	cards, err := service.CapabilityCards(context.Background())
+	if err != nil {
+		t.Fatalf("capability cards after evidence persistence failure: %v", err)
+	}
+	for _, card := range cards.Cards {
+		if card.RuntimeID == "openclaw" && card.CanInvoke {
+			t.Fatalf("in-memory discovery enabled OpenClaw card without durable evidence: %#v", card)
+		}
+	}
 }
 
 func TestOpenClawExpiredDiscoveryCannotRestoreReadiness(t *testing.T) {
