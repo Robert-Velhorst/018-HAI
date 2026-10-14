@@ -10237,3 +10237,18 @@ port. Go is unavailable in this environment, so no package tests were run.
 This is a bounded comparison of the maintenance files, not the full 425-file
 tracked delta or 95 untracked artifacts in that worktree; those remain
 unclassified and untouched.
+
+### October 14, 2026: OpenClaw artifact worktree comparison
+
+Compared the retained OpenClaw artifact audit worktree at `e07b9da` with
+current `main`. The tracked working tree lacks 7,418 lines across 26 paths in
+`openclawmaintenance`, 5,225 lines across 22 paths in `openclawreconcile`,
+6,765 lines across 39 paths in `agentruntime`, and 2,182 lines across four
+OpenClaw frontend component paths. For example, the worktree lacks the
+canonical Windows contained-process implementation. These are main-to-local
+tracked-tree differences; the worktree also has 97 untracked source, test,
+migration, installer, and documentation paths. A Git-cleaned blob-hash check
+found that all 97 paths exist in `main`, but none is byte-identical to its
+current-main blob. Therefore this pass found no direct-match deletion
+candidates and did not port or delete these files. Their semantic differences
+remain unreviewed; Go is unavailable here, so runtime behavior was not tested.
