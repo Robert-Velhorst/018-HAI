@@ -9960,3 +9960,20 @@ historical blobs as exposed and rotate them through their owning systems;
 deleting the current files alone cannot remove Git history. The GitHub
 secret-scanning API returned no alert records to this caller, which does not
 establish that the values are harmless or that every secret type was scanned.
+
+### October 14, 2026: stale checkout and generated-output sizing
+
+The previously merged PR #36 head (`e62b56843eb8bbbf9a566aff5e883f9adf375429`)
+and merge commit (`c31cec1ba2a25fcfd280b1f2f499297e54d96aa4`) have the same
+Git tree (`a0fb513e86132362f323b66bdff2fb36f3784753`). This confirms that the
+full PR #36 snapshot was present in `main` at merge time. The primary local
+branch is 440 commits behind that branch head, and its current `HEAD` is not
+the merged tree; its stale source must not be treated as an unmerged copy of
+PR #36.
+
+The primary checkout's untracked `output/` directory contains 1,510 generated
+files totaling 126,545,497 bytes (about 120.7 MiB). These are test/review
+artifacts, not source files, and were not added to the PR. Their inventory
+does not authorize deletion; retain them until their evidence is either
+captured in the ledger or explicitly deemed disposable through an allowed
+cleanup path.
