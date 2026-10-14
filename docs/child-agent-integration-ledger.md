@@ -10678,3 +10678,34 @@ head. This checkpoint's timestamp-parser and ledger changes are newer and
 require a fresh exact-head CI run before they are considered verified. No
 local HAI source, checkout, archive, database, container, or recovery data was
 deleted.
+
+### October 14, 2026: exact-head CI and retained transcript patch crosswalk
+
+GitHub reports PR #117 open at head
+`e54994ecd5877632fdb4384b1ff159039ffbef25`, cleanly mergeable, with all 41
+reported checks successful. This verifies the current PR head only; it has
+not been merged. PRs #41 and #42 remain merged, and remote `main` remains at
+`345cf356c3f4ab497568713dc994820b4ba22b10`.
+
+A full-file metadata pass over aborted child Maxwell's 1,602,767,769-byte
+transcript found eight `apply_patch` calls touching eight task-state files:
+the task-state model, repository interface, in-memory and Postgres
+repositories, their tests, and the `0004_task_state_storage` migrations. All
+eight target files exist in `main`. Added-line comparison found the large
+majority of the patch additions in those current files; the declaration
+crosswalk found all model, repository-interface, test, and migration
+declarations present. The memory/Postgres helper-name differences correspond
+to the current normalized outcome/decision helpers, including
+`normalizeReviewOutcome`, `applyNormalizedReviewOutcome`,
+`latestDecisionFromRows`, and `latestDecisionWithDB`. This supports that the
+work was incorporated and later evolved, but is not a complete semantic
+comparison of every hunk. The aborted transcript remains retained and is not
+eligible for cleanup.
+
+The five other retained transcripts were each scanned across the full file
+for the union of tool-call and patch markers; each produced six matching
+lines. That count does not distinguish tool calls from patch-bearing calls,
+and their payloads have not been semantically crosswalked. They remain
+unresolved and retained. The supplemental archive is still outside the
+canonical cleanup verifier. No transcript, worktree, fixture, database,
+container, or recovery data was deleted or changed during this pass.
