@@ -10712,3 +10712,32 @@ verifier, but its cleanup status remains blocked until the complete source
 reconciliation is merged and an approved cleanup receipt is recorded. No
 transcript, worktree, fixture, database, container, or recovery data was
 deleted or changed during this pass.
+
+### October 14, 2026: current PR and primary-checkout cleanup checkpoint
+
+PR #117 is open at `fd817689f79fe8888eee5f9f901083cbe1afff27`, cleanly
+mergeable, with all 41 reported checks successful (36 CI jobs and five
+CodeQL checks). Its latest change merges current `main` at
+`12246bd28820f892a48e04b528ff8e28b102b7d4`; the PR itself has not been
+merged. PRs #41 and #42 are merged at `71102fd40a960b59b70e56f902cb4b3dc91f1390`
+and `b1caa0b074793e794ea8bc340cba9ac562924ff7`, respectively.
+
+The primary C: checkout is still on `codex/hai-runtime-release` at
+`e07b9daeeb3ba2630ecbe12a64d948f791203c241`, 440 commits behind its recorded
+upstream tracking ref. Its current status has 448 tracked deletions, 244 modifications,
+and 1,585 untracked files. Against the `origin/main` tree at
+`12246bd28820f892a48e04b528ff8e28b102b7d4`, 319 existing modified or
+untracked files shared a path with a main-tree file; Git blob hashing found
+zero byte-identical copies. This comparison does not classify unchanged
+checkout files or any files absent from `main`, so it is not a whole-device
+cleanup authorization. No local source or generated file was removed.
+
+The checkout's hidden `output/` directory contains 1,510 files totaling
+126,545,497 bytes; 82 JSONL files account for 120,845,323 bytes. These are
+local diagnostics/evidence, not verified duplicates of tracked repository
+files. Their content has not been fully crosswalked to the PR, so the directory
+and its files remain preserved. The 20.7 GB July transcript archive and the
+supplemental transcript roots remain ineligible for cleanup under the existing
+gates: child-local semantic reconciliation is incomplete, one manifest source
+file is missing, and no merged-main cleanup receipt exists. No transcript,
+diagnostic, database, container, or recovery data was deleted.
