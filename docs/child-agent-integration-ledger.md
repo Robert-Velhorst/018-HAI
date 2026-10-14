@@ -10019,3 +10019,24 @@ handling, and validated-address dial path. The copied snapshot is weaker and
 was not ported. Four untracked local-state/log paths in the model-maintenance
 worktree have no `main` path and remain unclassified. No scratch-worktree
 files were staged, committed, or removed by this review.
+
+### October 14, 2026: account-feed permission and identity comparison
+
+Compared the primary checkout's account-feed files with current `main` at
+`345cf356c3f4ab497568713dc994820b4ba22b10`. The local `bridge.go` removes
+`ReportsCredentialGrant` and its exception for Gmail, Google Drive, and Google
+Calendar OAuth client-bootstrap credentials; the local permission registry
+then marks any `credentials_present_unverified` provider as `Granted`. Current
+`main` explicitly distinguishes OAuth client bootstrap from an owner-granted
+provider credential, and only reports a grant for eligible direct credentials.
+The local change would therefore weaken permission reporting and must not be
+ported.
+
+The local account-feed snapshot also lacks current `main`'s identity-preview,
+public-redaction, generic-feed identity/boundary, source-configuration,
+observation, registry-persistence, and cancellation suites (31 paths differ,
+with 5,888 lines removed in the local comparison). Current `main` contains
+focused tests for credential non-inference, identity conflicts and cancellation,
+secret redaction, URL credential rejection, stable source identity, and
+non-mutating previews. The reviewed local snapshot is stale or weaker in this
+area; no account-feed code or tests were ported.
