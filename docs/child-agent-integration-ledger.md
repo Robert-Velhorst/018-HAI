@@ -11365,3 +11365,21 @@ dependencies; no compatibility rationale or replacement verification was
 present in the staged diff. This was a read-only review; no backend files were
 copied and the D: worktree/index remains untouched. The staged build/dependency
 files are rejected as-is.
+
+### October 14, 2026: D: staged source-connector disposition
+
+Compared the 16-file staged `backend/internal/source/` patch with
+`origin/main` at `b7e3ad2086c23313a0355101498bee82cda62d4e` (57 additions,
+896 deletions). It is not a safe transplant. The patch deletes persisted,
+owner-bound, expiring, one-time OAuth state save/consume handling and no longer
+clears those states on source revocation. It removes the terminal scheduled-sync
+dead-letter workflow path, and changes semantic search from request-context
+cancellation to `context.Background()`. The extractions endpoint loses its
+bounded repository page/count path and instead loads owner extractions before
+filtering and truncating in memory; the repository page query also loses its
+stable ID tie-breaker. The patch additionally removes the explicit disabled
+Autofever sync refusal while removing the corresponding disabled catalog entry.
+These current-main behaviors are safety, resource-bound, determinism, and
+operational-recovery protections. This was a read-only staged-diff review; no
+source code was copied, and `D:\hai-source-reconciliation` remains unchanged.
+The source package is rejected as-is.
