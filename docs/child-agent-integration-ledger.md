@@ -11383,3 +11383,23 @@ These current-main behaviors are safety, resource-bound, determinism, and
 operational-recovery protections. This was a read-only staged-diff review; no
 source code was copied, and `D:\hai-source-reconciliation` remains unchanged.
 The source package is rejected as-is.
+
+### October 14, 2026: D: staged task-runtime disposition
+
+Compared the 16-file staged `backend/internal/task/` patch with
+`origin/main` at `b7e3ad2086c23313a0355101498bee82cda62d4e` (74 additions,
+962 deletions). The patch is not a safe transplant. It removes the compact,
+owner-scoped task-history projection and limit validation, making the default
+history handler load and return full completion plans without a page limit.
+It removes request-context propagation and cancellation from task operation
+storage/search paths and removes the canceled task-operation state and its
+interfaces. It also removes PostgreSQL-stable JSON-number normalization used
+when persisting and validating task-state digests; the deleted implementation
+specifically addressed JSONB numeric rendering differences. Separately, the
+retry gate now retries every available retry policy instead of avoiding a
+second model run when all claims have untrusted provenance, and retry results
+no longer carry forward prior MCP call traces. Current `main` retains these
+bounded-history, cancellation, integrity, cost-control, and audit-provenance
+behaviors. This was a read-only diff review; the D: source was not changed and
+the staged task patch is rejected as-is. Local Go tests are unavailable in
+this environment because `go.exe` is missing.
