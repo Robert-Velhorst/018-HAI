@@ -526,3 +526,54 @@ equivalent or stronger ports:
 
 These were source comparisons only; no local Go test was run. They add no
 unique behavior warranting a code change or cleanup eligibility.
+
+### IDP and migration test snapshot review
+
+The ten untracked `idp/internal/app/authentication/*_test.go` candidates were
+compared with their same-path `main` versions. All ten have the same named test
+functions as `main`, and the sampled differing service calls in the local
+versions omit the `context.Context` parameter now required by the auth API.
+The canonical tests use `context.Background()` and must remain authoritative;
+the local files are stale snapshots, not additional test cases. Local/main
+blob pairs:
+
+| File | Local blob | Main blob |
+| --- | --- | --- |
+| `auth_password_reset_integration_test.go` | `3835926e` | `c54c07bd` |
+| `durable_session_authority_test.go` | `9fd400b7` | `eb7b5848` |
+| `durable_session_postgres_redis_test.go` | `eefb3d43` | `3562765f` |
+| `http_session_redis_test.go` | `7d9c8cd7` | `771d9ce4` |
+| `login_interleaving_integration_test.go` | `424cc1d6` | `fbb9ab21` |
+| `password_reset_log_privacy_test.go` | `683b181c` | `ecb8d763` |
+| `refresh_rotation_redis_test.go` | `4030ea74` | `97f04702` |
+| `refresh_rotation_test.go` | `d9201dab` | `671bb5dc` |
+| `session_authority_test.go` | `42f668f8` | `ab009ecb` |
+| `session_store_loss_redis_test.go` | `37fd37a1` | `43f0464f` |
+
+Seven further untracked migration/phase-2 test snapshots are likewise not
+additive:
+
+- `backend/migrations/protected_data_rollback_postgres_integration_test.go`
+  has the same three test names; `main` adds a rollback assertion (local blob
+  `16fd03ad`, main `b692001f`).
+- `backend/migrations/runtime_db_role_provisioning_contract_test.go` has the
+  same single contract test but differs in one line each way (local
+  `28bb8bce`, main `c1ec097e`); no distinct local test case was found.
+- `source_configuration_postgres_test.go`, `source_head_postgres_test.go`,
+  and `source_observation_postgres_test.go` locally stop at migration
+  `pre/0114_operation_source_configuration`; `main` advances the fixtures to
+  `pre/0118_operation_source_evidence_raw_digest` and includes the later
+  rollback-boundary checks (local blobs `469e5c7b`, `e981a869`, `af517e63`;
+  main `2f458563`, `df4ec9e9`, `2119768a`).
+- `trello_webhook_reconciliation_generations_integration_test.go` locally
+  applies the full pre-phase migration set rather than isolating migration
+  `pre/0109_trello_webhook_reconciliation_generations` as `main` does (local
+  `9b1267ff`, main `69b608d9`).
+- `backend/internal/phase2/execution_claim_postgres_integration_test.go` has
+  the same test name, but its 55-line difference is not an additive second
+  scenario; `main` includes explicit owner and source-derived-operation
+  assertions (local `8cd6120f`, main `623b3131`).
+
+These are content and named-test comparisons, not executions. The local
+versions were not run; no local candidate in this group should replace or be
+ported over its canonical `main` test.
