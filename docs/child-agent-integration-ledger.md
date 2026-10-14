@@ -10409,6 +10409,25 @@ paths. These are not merge-ready source snapshots; no conflict was resolved,
 no configuration was published, and no file was removed. Preserve both
 worktrees until their complete non-conflict content is reconciled with `main`.
 
+### October 14, 2026: primary-checkout memory and task-service delta review
+
+Compared the primary checkout's current `backend/internal/memory/handler.go`,
+`backend/internal/memory/service.go`, `backend/internal/task/handler.go`, and
+`backend/internal/task/service.go` directly with live `main` at
+`345cf356c3f4ab497568713dc994820b4ba22b10`. These older local deltas are not
+safe forward ports. Memory query handling removes the repository-backed,
+owner-scoped query path and loads all readable owner memories before filtering
+and pagination in process; its owner-service guard also changes a recoverable
+503 into a panic. Task history removes the validated 1-50 limit and summary
+projection, returning complete execution plans by default. The task service
+also removes stable JSON number normalization used for PostgreSQL `jsonb`
+state digests, read-only ChatGPT-log context support, and the requirement for
+fresh verified framework participants before execution. These changes risk
+unbounded work/data exposure and weaken execution gates; retain `main`'s
+bounded and verified behavior. No local code was ported or removed by this
+review. This is a targeted static comparison, not a test run or a review of
+every remaining modified path.
+
 ### October 14, 2026: retained transcript path crosswalk
 
 The bounded PowerShell crosswalk processed all 13 retained transcript files
