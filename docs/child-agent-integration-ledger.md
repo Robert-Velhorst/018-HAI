@@ -11268,3 +11268,37 @@ history remain unknown. Consequently the full primary archive count/hash
 comparison remains unverified; no primary candidate hash result is inferred
 from the partial run. No transcript was changed or deleted by either check,
 and the failed primary gate means the archive set is not eligible for cleanup.
+
+### October 14, 2026: crosswalk of the five absent primary candidates
+
+The five missing files' preserved final reports are present in
+`docs/child-agent-archive-2026-07-30/child-agent-final-reports.md`. Compared
+the code paths named by those reports with `origin/main`
+(`b7e3ad2086c23313a0355101498bee82cda62d4e`); the reviewed tracked files were
+unchanged between `origin/main` and this ledger worktree:
+
+- Copernicus's three pursuit approval-test role corrections are present in
+  `backend/internal/pursuit/handler_test.go`; the source-reconciliation copy of
+  that file matches the main version.
+- Aristotle's registry findings have corresponding `baseVersion` provenance,
+  stale-draft checks, deferred active-Constitution invariants, and catalog
+  digest tests. The current main catalog is v2 and pins digest
+  `aaaab649a81eb8a3c55a3b43b63a954dc0e4f6ccd4c3ffed9508bf4de5575473`; the
+  v1 digest in the old final report is not the current expected value.
+- Banach's task/workflow findings have corresponding approved-review
+  reconciliation, protected-value evidence tests, workflow `SuccessCriteria`
+  propagation, and runner tests.
+- Euler's registry-history findings have owner-scoped Constitution and
+  preference-history surfaces, digest validation, append-only persistence, and
+  frontend `baseVersion` contracts.
+- Pascal's UI findings have an explicit selection-history unavailable state
+  and workflow decision fields for conflicts, context requirements, and the
+  learning plan.
+
+These checks establish that the final-report findings have corresponding
+current-main implementation and regression-test artifacts; they do not
+reconstruct or prove that every intermediate patch/event in the five absent
+raw transcripts was preserved. The raw-file integrity gate therefore remains
+failed. The focused local Go test command could not run because `go.exe` is
+not installed or available on `PATH`; this is a local environment limitation,
+not a passing test result. No source files were copied or deleted.
