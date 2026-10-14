@@ -10040,3 +10040,28 @@ focused tests for credential non-inference, identity conflicts and cancellation,
 secret redaction, URL credential rejection, stable source identity, and
 non-mutating previews. The reviewed local snapshot is stale or weaker in this
 area; no account-feed code or tests were ported.
+
+### October 14, 2026: agent runtime, ambient, and automation comparison
+
+Compared the primary checkout's agent-runtime, ambient, and automation
+worktree state with `origin/main` at the same verified SHA. The selected
+cluster diff covers 105 paths and removes 13,764 lines net in the local
+comparison. It removes `agentruntime/execution_admission.go` and its tests,
+DeepSeek stop-binding/context/state tests, and OpenClaw artifact URL handling
+and its tests. Current `main` retains explicit checks for stop/preflight races,
+DNS address policy, pinned validated-address dialing, NAT64 blocking, signed-URL
+redaction, bounded transport, and cancellation.
+
+The same local snapshot removes the ambient scan-context service and its
+approval/gate/settlement tests, plus automation approval-issuance context,
+network-target validation, launch/stop binding, idempotency, and public
+projection coverage. Current `main` retains these files and focused contracts,
+including `TestAmbientContextServiceRechecksGateBeforeMoreEffects`,
+`TestApprovalIssuanceOwnsDecisionReads`,
+`TestResolveAutomationTargetAddressesFailsClosedOnResolverErrors`, and
+`TestDeepSeekHostAdmissionRejectsStopCommittedDuringPreflight`. These are
+material fail-closed and execution-boundary protections. The local snapshot
+also replaces ambient candidate persistence with per-item saves instead of the
+current context-aware storage path. I found no safe standalone production
+change to port from this cluster; keep the primary and scratch copies intact
+until the remaining path-by-path review is complete.
