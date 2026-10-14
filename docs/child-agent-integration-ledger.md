@@ -10142,3 +10142,21 @@ operation to be automatically verified instead. The canonical `main` test
 already covers the approval boundary, while the local worker snapshot removes
 the surrounding autonomy and error-safety controls. Keep the canonical worker
 and test; neither local variant is a missing feature to port.
+
+### October 14, 2026: IDP authentication and recovery comparison
+
+Compared the primary checkout's IDP/authentication changes with current
+`main`. The local service removes request contexts from logout, refresh,
+authentication checks, and password-reset delivery; its SMTP sender therefore
+cannot stop the session when the originating request is cancelled. It also
+removes the configured owner-scope claim from issued sessions and deletes the
+canonical password-policy and password-reset-token helpers and their tests.
+
+The local user handler replaces checked authentication-context extraction with
+unchecked `uuid.UUID` type assertions and removes the nil-user response guard,
+creating panic paths for malformed middleware state or unexpected service
+results. Current `main` retains the checked handlers, context-aware reset/SMTP
+path, scoped/versioned session claims, password policy, token digest helpers,
+and durable reset/session tests. These local changes are regressions; do not
+port them. The review covered the authentication, user, password-reset, and
+token helper paths, not every IDP file.
