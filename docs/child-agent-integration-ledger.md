@@ -10125,3 +10125,20 @@ process boundary, forwards caller cancellation to outbound review calls, and
 serves an authorization-varying cache validator. The local copy is therefore
 not a missing feature to import; it is a reduced/stale catalog and control
 surface. No brain-catalog or A2A changes were ported.
+
+### October 14, 2026: background worker and approval-test mismatch
+
+Compared the primary checkout's background worker with current `main`. The
+local worker removes the autonomy-mode gate and paused-mode deferral, so it no
+longer stops processing for paused/read-only/draft-only modes; it also removes
+secret redaction and the maximum public error count, placing raw connector and
+operation errors into the report. Current `main` retains the mode gate,
+approved-safe deferral behavior, redacted operator diagnostics, and bounded
+public error messages.
+
+The local untracked reliability-test variant additionally expects fresh source
+work to remain in `awaiting_approval`, but the accompanying local worker still
+calls the existing processing path and the local diff does not implement that
+state transition. This is an unimplemented test expectation, not an integrated
+approval feature. Do not port the worker or test variant; keep the canonical
+main implementation and continue checking other local-only deltas.
