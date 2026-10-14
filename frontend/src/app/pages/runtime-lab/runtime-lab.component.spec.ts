@@ -211,7 +211,7 @@ describe('RuntimeLabComponent MCP readiness', () => {
 
     component.probe(runtime)
 
-    expect(component.latestProbes.openclaw.evidencePersistenceStatus).toBe('failed')
+    expect(component.latestProbes['openclaw'].evidencePersistenceStatus).toBe('failed')
     expect(notification.warning).toHaveBeenCalledOnceWith(
       'Discovery evidence was not saved',
       jasmine.stringMatching(/protocol discovery completed, but durable evidence could not be recorded/i),
