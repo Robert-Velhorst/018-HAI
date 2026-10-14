@@ -10516,3 +10516,32 @@ not the canonical template, and contains a placeholder backend key. None is
 a missing product source file to port. This is path coverage, not semantic
 proof that every historical patch's behavior is integrated. No source,
 configuration, transcript, or output file was changed or removed by the scan.
+
+### October 14, 2026: Windows backup, recovery, initialization, and CI safety delta
+
+Compared the primary checkout's Windows backup/restore and installer paths
+with `main` at `345cf356c3f4ab497568713dc994820b4ba22b10`. The local backup
+script removes bounded Docker subprocess execution and directly runs
+`docker context inspect`, losing timeout/process-tree containment. It also
+downgrades the recovery manifest from v2 to v1, removes inventory of HAI
+container volume mounts, and drops the exact coverage contract for the
+automation, IDP, and phase-two control-state volumes. Consequently it can no
+longer fail closed when a new or anonymous persistent volume is outside the
+backup set, and its preflight text no longer claims that persistent-volume
+coverage was checked. The restore contract tests also delete the corresponding
+volume-coverage, anonymous-mount, and bounded-context assertions.
+
+The local environment migration removes verification that replacement bytes
+and the original DACL were retained, together with verified rollback and
+preservation of rollback data when verification fails. Initialization also
+stops preserving configured A2A and host-runtime Docker subnet values while
+regenerating `.env.local`. These are recovery-integrity and operator-data
+regressions; retain the canonical backup/restore and initialization logic.
+
+The same local delta downgrades the pinned Go builder from 1.27.2 to 1.25.13
+in the installer and CI, removes the cleanup-readiness CI job and several
+Windows cleanup contract invocations, drops the A2A bridge race-test step,
+and removes the hosted-runner allowance used by the installer smoke test.
+These changes reduce build provenance and release/safety coverage. No part of
+this installer or recovery delta was ported. This was a targeted static
+comparison; Windows behavioral tests were not run in this audit.
