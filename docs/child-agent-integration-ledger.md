@@ -10270,3 +10270,18 @@ recoverable from Git's index, and the files can be restored from the recorded
 `main` commit if needed. Untracked files, differing tracked files, ignored
 data, and transcript archives were not touched. Space reclaimed was about
 6.5 MiB, so this was a limited cleanup, not a material recovery of disk space.
+
+### October 14, 2026: connected-source and Trello reconciliation
+
+Reviewed the primary checkout's source-service delta against current `main`,
+with focus on the live Trello path. The local Trello adapter removes the quiet-
+board activity/cursor check and its regression tests, forcing full board
+reconciliation on unchanged scheduled runs. The local durable scheduler also
+removes terminal-failure workflow reporting and explicit handling for paused
+or revoked source jobs; the source service removes owner-scoped listing and
+LARO rejected-cursor recovery. These protections and corresponding tests are
+present on `main`; no Trello/source code was ported. The local scheduler's
+five-minute poll default versus `main`'s one-minute default may reduce wakeups
+but changes queue latency and was not benchmarked or integration-tested, so it
+was not adopted. Go is unavailable in this environment; this was a static
+review of the named source paths, not a live Trello-account acceptance test.
