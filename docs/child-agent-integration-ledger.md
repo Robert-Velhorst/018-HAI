@@ -10964,3 +10964,33 @@ proves both methods fail before touching the repository handle. The focused
 `go test ./internal/verification` passed with the cached Go 1.27.2 toolchain;
 hosted CI for PR #117 remains the broader integration gate. No additional
 local source files were removed.
+
+### October 14, 2026: diagnostic-output exact-content pass
+
+Rehashed all 1,507 files under the primary checkout's untracked `output/`
+directory against the complete Git blob set for current `main`
+(`12246bd28820f892a48e04b528ff8e28b102b7d4`). Their combined size was
+126,491,186 bytes, including 82 JSONL files totaling 120,845,323 bytes. The
+before/after file metadata was unchanged during hashing. There were 377 exact
+blob matches: 376 zero-byte logs/JSONL files and one 22,952-byte
+`gofmt-output.log`, whose complete content is already present as
+`backend/internal/source/manual_worker_postgres_test.go` on `main` (blob
+`f3396c07ad83dfa05f0c42c3b561edc96599fa3b`). The generated output was last
+modified on September 30, 2026, and no other live process referenced its run
+path. A single-file deletion was attempted after this verification, but Windows
+denied access to the hidden file; it remains on disk and no space is claimed as
+reclaimed. Do not bypass the local access-control failure. Empty files reclaim
+no space, and all non-matching logs and transcripts remain preserved. This
+pass does not claim semantic review of all diagnostic output.
+
+The output-tree inventory has 1,501 Git-reported untracked files plus six
+ignored fixture inputs (three 20-byte `first.txt` files and three 5-byte
+`second.bin` files); all six ignored files were included in the content scan.
+A refreshed non-output inventory found 81 untracked paths: 65 have a path on
+`main` but none is byte-identical, and 16 have no `main` path. Those 16 are
+local agent state, PostgreSQL test-evidence files, and two browser-acceptance
+logs; no untracked production source or test path was missing from `main`.
+The local PostgreSQL evidence summary reports 15 passes, zero skips, and zero
+failures, but its historical source hash is not mapped to a current canonical
+source version, so it is not current acceptance evidence. All these files
+remain preserved. No additional local content was removed.
