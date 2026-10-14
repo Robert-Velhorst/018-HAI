@@ -11048,3 +11048,15 @@ The same scan found agent-registry assignments rejected scores below zero or
 above one but allowed NaN through those comparisons. Assignment persistence
 now rejects NaN and infinities, with a validation test that exercises all three
 non-finite cases before storage.
+
+### October 14, 2026: refreshed primary-checkout status count
+
+A fresh `git status --porcelain=v1 --untracked-files=all` in the primary
+`codex/hai-runtime-release` checkout at `e07b9dae` returned 2,274 status
+entries: 692 tracked paths and 1,582 untracked paths. This is the latest
+measured count and supersedes the earlier 682/1,594 (2,276 total) snapshot;
+the inventory changed between observations, and this check does not attribute
+the difference to specific additions/removals. The tracked count is a Git
+status-path count, not a measure of unique code or of files eligible for
+cleanup. The checkout remains divergent and dirty; no path was deleted or
+reclassified by this count refresh.
