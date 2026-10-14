@@ -11302,3 +11302,19 @@ raw transcripts was preserved. The raw-file integrity gate therefore remains
 failed. The focused local Go test command could not run because `go.exe` is
 not installed or available on `PATH`; this is a local environment limitation,
 not a passing test result. No source files were copied or deleted.
+
+### October 14, 2026: D: staged IDP security disposition
+
+Compared the staged `idp/` patch in `D:\hai-source-reconciliation` with its
+`origin/main` at `b7e3ad2086c23313a0355101498bee82cda62d4e`. The staged delta
+covers 30 files (+184/-408) and is not a safe transplant. It removes request
+context and cancellation handling from logout, refresh, authentication checks,
+and password-reset delivery; SMTP then substitutes `context.Background()` for
+the caller context. It also removes the configured first-run owner-scope token
+claim and replaces guarded user-ID type/nil checks with unchecked assertions,
+while dropping nil-user response guards. The same diff removes the optional
+IDP Kafka configuration path and reduces several auth/SMTP regression tests.
+Current `main` retains these safety and compatibility behaviors, so this
+staged variant is rejected as a source to port. This was a read-only diff
+review; the D: worktree/index was not changed. Local Go tests remain
+unavailable because `go.exe` is not installed or on `PATH`.
