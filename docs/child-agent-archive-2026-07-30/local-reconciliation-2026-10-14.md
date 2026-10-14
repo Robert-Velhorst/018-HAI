@@ -258,16 +258,54 @@ the volume's free-space counter.
 
 The transcript cleanup-readiness verifier was rerun against
 `D:\codex-temp\hai-completed-agent-sessions` with source-archive verification
-required. It failed closed because the manifest-listed Copernicus source file
-`rollout-2026-07-30T10-02-49-019fb20c-2b95-7550-8304-1117de872148.jsonl` was
-missing. Targeted filename checks in the expected transcript root, the general
-completed-session root, the retained/archive-audit roots, the quarantined
-roots, the integration snapshot, and bounded Codex evidence/temp backup roots
-found no copy. The exhaustive home-session search was stopped after reporting
-system resource exhaustion; therefore this is not proof that no copy exists
-anywhere on the device. No transcript deletion was attempted. The five main
-archive candidates remain ineligible for cleanup until the source manifest and
-hash gates pass again.
+required. The source directory exists but is empty. All five manifest-listed
+cleanup candidates were checked individually and are absent at their expected
+paths, including the 1.58 GB Copernicus and 1.60 GB Aristotle files. Targeted
+filename checks for Copernicus in the expected transcript root, the general
+completed-session root, retained/archive-audit roots, quarantined roots, the
+integration snapshot, and bounded Codex evidence/temp backup roots found no
+copy. The exhaustive home-session search was stopped after reporting system
+resource exhaustion; therefore this is not proof that no copies exist anywhere
+on the device. No deletion was performed in this pass. Missing source files do
+not pass the manifest byte-count/SHA-256 gate and cannot be certified as
+integrated-and-safe-to-remove.
+
+Read-only MemoryLayer records from the parent Codex session expose bounded
+reports for the five candidates (`message_id`s `21642`, `21644`, `21646`,
+`21658`, `21659`, and `21660`); these messages are secondary evidence, not the
+original transcripts or their bytes. Their reported findings were checked
+against current `main`:
+
+- Copernicus: workflow selection provenance normalization, `Reason` decoding
+  with legacy `RuleApplied` fallback, conflicting immutable-event rejection,
+  failure-result propagation, and owner-role pursuit approval tests are
+  present. Focused tests cover the persistence round-trip, conflicting
+  idempotent writes, legacy decoding, and normalization.
+- Aristotle: Constitution base-version provenance, stale-activation rejection,
+  first-owner draft selection, deferred active-Constitution invariant, and
+  deterministic catalog digest are represented in the framework registry,
+  migrations, and tests. Prior live PostgreSQL assertions were environment
+  blocked.
+- Banach: approved-task recovery is fail-closed and never retries uncertain
+  external work; criterion matching rejects conflicting values and negation;
+  workflow success criteria are carried through the runner. Current tests
+  cover review reconciliation, amount/date/version conflicts, negation, and
+  runner delegation.
+- Euler: immutable preference-change history, owner-scoped Constitution
+  history, and frontend `baseVersion` contracts are present in services,
+  routes, migrations, and frontend interfaces.
+- Pascal: history-load failures render as unavailable rather than empty, and
+  workflow framework audit detail includes conflicts, context requirements,
+  and learning plan fields.
+
+Focused Go tests passed locally with Go 1.25.13 for `internal/frameworkregistry`,
+`internal/task`, `internal/workflow`, and `internal/workflowtask`. The frontend
+`framework-registry-history-state` contract test also passed (1/1). The indexed
+Copernicus report records a prior backend test/vet pass for 70 packages; that
+historical result was not rerun here. These cross-checks establish selected
+findings in current source, not full transcript integration or archive
+integrity. No candidate can be removed under the exact-hash cleanup gate while
+its source file is absent.
 
 The uncommitted `hai-runtime-safety-audit` worktree was inspected without
 modifying it. Its agent-runtime and host-runtime changes do not compile under
@@ -283,10 +321,8 @@ including 124 tracked deletions. Their broad mixed diffs were not reviewed
 line-by-line or tested in this pass. They remain untouched and are not
 certified for porting or cleanup.
 
-The pushed branch ref `codex/integration-ledger-live-checkpoint` is at
-`768b6b173c613c73481ebb9a54f808aa9871bc88`, while the GitHub PR API and
-`refs/pull/117/head` still report `0742ddc61c5c4718ef05642c545264d65720b960`.
-The latest listed workflow run is queued on `0742ddc6`; no exact-head CI run
-for `768b6b17` is visible. The PR description was corrected to disclose this
-state; no close/reopen, force-push, duplicate PR, or additional local cleanup
-was performed.
+The pushed branch ref, GitHub PR API, and `refs/pull/117/head` were resynchronized
+at `b5b09be01aeb0bb472a358eea7abd76c1efa9146`. Exact-head workflow run
+`38587326456` is still active: 4 of 36 jobs completed, none failed, none was in
+progress, and 32 were queued at the last status check. No merge or additional
+local cleanup was performed.
