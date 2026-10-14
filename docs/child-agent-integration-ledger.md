@@ -9979,3 +9979,43 @@ artifacts, not source files, and were not added to the PR. Their inventory
 does not authorize deletion; retain them until their evidence is either
 captured in the ledger or explicitly deemed disposable through an allowed
 cleanup path.
+
+### October 14, 2026: detached runtime-audit worktree comparison
+
+Inspected the three detached audit worktrees at `e07b9dae` without changing
+them: `hai-model-maintenance-audit`, `hai-openclaw-artifact-audit`, and
+`hai-runtime-safety-audit`. Their worktree-relative dirty counts were 425, 150,
+and 14 tracked paths respectively, plus 95, 97, and 4 untracked paths. Each
+base is substantially stale against current `main`; diffing the snapshots to
+`main` shows broad deletions, so the worktrees are not safe checkout or branch
+cleanup units.
+
+The untracked code/test files in these worktrees all point to paths already
+present in `main`, but none of the checked untracked files is byte-identical.
+The first broad test-name comparison was incomplete because it did not
+distinguish Go tests from frontend specs. A targeted comparison of the model
+maintenance frontend specs against current `main` found equivalent or stronger
+coverage for the reviewed behaviors: the Ambient Brain scan is routed through
+`AmbientService` and refreshes its verified record; a guard-run failure remains
+visible with a usable status-refresh path; and HAI OS Basic mode focuses on
+attention, limits the list to three records with a full-queue route, and keeps
+primary/queue/record actions routed to their intended destinations. These
+assertions are already covered by the current `main` specs, so the stale copies
+do not represent missing functionality and were not imported. In the OpenClaw
+artifact snapshot, `TestRunContainedProcessReconfirmsImmediatelyBeforeResume`
+duplicates the stronger main test
+`TestRunContainedProcessRevalidatesBeforeResumeWithoutAtomicStopOrdering`,
+which exercises the stop-after-check race. The artifact-forget test requests
+write permission, while current `main` correctly requires admin permission;
+that local assertion must not be ported.
+
+Compared 35 untracked non-test source files in the model-maintenance snapshot,
+37 in the OpenClaw-artifact snapshot, and one in the runtime-safety snapshot
+against their `main` declarations. The review found no production behavior
+missing from `main` that could be safely ported from these stale snapshots. A
+targeted review of the runtime-safety artifact-URL copy confirms it
+omits current `main`'s isolated-test policy wrappers, NAT64 blocked-address
+handling, and validated-address dial path. The copied snapshot is weaker and
+was not ported. Four untracked local-state/log paths in the model-maintenance
+worktree have no `main` path and remain unclassified. No scratch-worktree
+files were staged, committed, or removed by this review.
