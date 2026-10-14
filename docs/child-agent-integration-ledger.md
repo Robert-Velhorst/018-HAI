@@ -11246,3 +11246,24 @@ The separate PR #125 runner redirect hardening is at head
 passed seven tests; at this checkpoint hosted CI had 35 jobs complete, one
 queued, and no reported failures. This is a live status observation, not a
 completed CI result or permission to merge.
+
+### October 14, 2026: direct transcript source-integrity recheck
+
+Ran the two transcript source verifiers from the inventoried PR worktree. The
+supplemental verifier completed successfully: all nine manifest paths and
+their aggregate logical size (14,013,737,298 bytes) matched the two source
+roots; all three candidate transcript SHA-256 values matched (4,651,926,405
+bytes), and six retained files accounted for 9,361,810,893 bytes. The verifier
+reported 21 source paths referenced by completed reports, with
+`deletion_performed=false` and `cleanup_authorized=false`. This supersedes the
+older candidate count and byte total recorded above for the supplemental set.
+
+The primary archive verifier did not pass. It stopped because the manifest
+lists
+`hai-completed-agent-sessions/rollout-2026-07-30T10-02-49-019fb20c-2b95-7550-8304-1117de872148.jsonl`,
+but that file is absent under `D:\codex-temp\hai-completed-agent-sessions`.
+Consequently the full primary
+archive count/hash comparison remains unverified; no primary candidate hash
+result is inferred from the partial run. The missing file's cause is unknown.
+No transcript was changed or deleted by either check, and the failed primary
+gate means the archive set is not eligible for cleanup.
