@@ -376,3 +376,18 @@ cases added by PR #42. The canonical main version is therefore stronger; the
 local file contributes no additional justification to port as written and is
 not eligible for deletion under the exact-main-match rule. This is a focused
 test-file comparison, not a broader semantic audit of the pursuit package.
+
+The local untracked
+`backend/internal/pursuit/completion_outcome_postgres_test.go` is also not an
+exact copy of current `main` (local Git blob `2d01cdbe`; main blob
+`973b316b`). Its `TestPostgresPursuitExactRuntimeQueryBatchesAllLinkedReceipts`
+passes `len(ids)` (51) to `FindLinkedAutomationLaunches` while asserting that
+the result is capped at 20. The canonical repository implementation honors
+positive limits through 500; only zero, negative, or over-500 limits become
+the default 20. Therefore the local test does not exercise the display cap it
+claims to cover and can return all 51 rows. Current `main` passes zero, which
+exercises the default cap. The other two local test bodies matched the
+canonical versions in this bounded function-level comparison. Do not port or
+delete the differing local file; it is neither a correct improvement nor an
+exact-main match. The local test was not run because this environment lacks
+the required Go toolchain/database acceptance setup.
