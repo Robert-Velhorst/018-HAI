@@ -503,3 +503,26 @@ not a GitHub source snapshot; its contents have not been fully classified or
 integrated, so it remains untouched. The local `.claude-flow/` and `.swarm/`
 state (four files, 235,446 bytes combined) is likewise retained pending
 provenance and usefulness review. No local files were deleted in this pass.
+
+### Additional operations-test comparisons
+
+Three more untracked test files collide with paths on `main`, but are not
+equivalent or stronger ports:
+
+- `backend/internal/operations/repository_ordering_test.go` (local blob
+  `e109b7f4`; main `a68026ca`): both define three tests, but `main` has 13
+  additional distinct lines covering deterministic SQL ordering. The lone
+  local-only line makes a fake transaction return `driver.ErrSkip`; do not
+  replace the canonical test with it.
+- `backend/internal/operations/source_approval_test.go` (local blob
+  `ab5102ff`; main `b99253b8`): `main` has 13 tests versus 12 locally, including
+  explicit approval despite a future-review reminder. Its existing cases also
+  assert status/version binding diagnostics and reject same-version mutation;
+  local variants omit those checks. Do not port the weaker snapshot.
+- `backend/internal/operations/ingest_atomicity_regression_test.go` (local blob
+  `b0836d80`; main `0b535964`): both have 14 test names, but the local expected
+  records omit `SourceEvidenceRawSHA256` updates/assertions present in `main`.
+  Keep the canonical digest-persistence assertions; do not port the snapshot.
+
+These were source comparisons only; no local Go test was run. They add no
+unique behavior warranting a code change or cleanup eligibility.
