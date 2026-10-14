@@ -11334,3 +11334,21 @@ contracts and corresponding behavior exist in current `main`; importing the
 staged version would regress observability, acceptance criteria, and test
 coverage. This was a staged diff review only; the D: index/worktree was left
 unchanged. Full browser acceptance of this staged snapshot was not attempted.
+
+### October 14, 2026: D: staged migration-test disposition
+
+Compared the staged `backend/migrations/` patch in
+`D:\hai-source-reconciliation` with `origin/main` at
+`b7e3ad2086c23313a0355101498bee82cda62d4e`. The eight-file test-only delta
+removes 94 lines and adds 19; no migration SQL or production migration code is
+changed in this slice. It is not a safe transplant because it weakens multiple
+migration contracts: the migration-tail ordering test stops asserting versions
+0116 through 0127; the source-configuration tests drop the later-phase rollback
+refusal and the isolated populated-registry rollback guard; and the source-head
+test drops its explicit later-phase refusal check and isolated seeded-origin
+data-loss guard. Other edits reduce migration fixtures or normalize error-text
+matching, but do not compensate for the removed safety assertions. Current
+`main` retains the stronger tests. This was a read-only diff review; the D:
+worktree and index were not changed. No code from this staged patch should be
+ported as-is. Local Go tests remain unavailable because `go.exe` is not
+installed or on `PATH`.
