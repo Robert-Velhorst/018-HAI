@@ -9764,3 +9764,54 @@ in this PR worktree, pending commit, CI, and merge. No transcript/archive
 content was processed or deleted, and no local data cleanup was performed.
 This section is a source-level integration inventory, not proof of a passing
 current-head CI run or live acceptance.
+
+## October 14, 2026: live hash and worktree revalidation
+
+The live GitHub API and `git ls-remote` both report `main` at
+`345cf356c3f4ab497568713dc994820b4ba22b10`. The merge commits for PR #41
+(`71102fd40a960b59b70e56f902cb4b3dc91f1390`) and PR #42
+(`b1caa0b074793e794ea8bc340cba9ac562924ff7`) are ancestors of that revision.
+
+The primary legacy checkout remains at `e07b9daeb3ba2630ecbe12a64d948f791203c241`
+and has 692 tracked status entries plus 1,585 untracked entries. Ignoring
+end-of-line-only changes still leaves 682 tracked working-tree changes. Its
+`output/` directory contains 1,510 files totaling 126,545,497 bytes. A direct
+working-tree diff against `main` spans 1,641 paths, including 1,194 paths
+present on `main` but absent from this old checkout. This mixed, divergent
+tree is not a safe bulk-PR or bulk-delete candidate.
+
+The 14 registered worktrees were re-enumerated: 11 have dirty status, including
+multiple historical snapshots at the same legacy commit and old PR-resolution
+trees. They remain unclassified at full-file semantic scope and were not
+removed. The dedicated main-based PR worktree now carries only this ledger
+update on the existing PR #117 branch.
+
+The local import manifest contains 79 rows. Its recorded destination SHA-256
+was recomputed from each blob currently stored at that path on `main`: 71 rows
+match and 8 do not. The mismatch paths are
+`output/dashboard-style-budgets-20261001.md`,
+`output/frontend-safe-outcome-review-20261001.md`,
+`output/installer-production-audit-20260930.md`,
+`output/integrated-safety-checkpoint-20261001.md`,
+`output/operation-audit-atomicity-20261001.md`,
+`output/production-durability-integration-20261001.md`,
+`output/trello-production-sync-20261001.md`, and
+`output/windows-lifecycle-production-20261001.md`. The manifest therefore is
+not sufficient by itself to authorize deleting the corresponding local files.
+The seven locally present files checked against it also differ from their
+current `main` blob contents; none was deleted. The output-tree comparison
+found 376 byte-identical empty files at unrelated paths, which would recover
+zero bytes and does not justify cleanup.
+
+The primary transcript readiness check remains blocked: the manifest-listed
+1,579,407,127-byte transcript
+`hai-completed-agent-sessions/rollout-2026-07-30T10-02-49-019fb20c-2b95-7550-8304-1117de872148.jsonl`
+was not present at its expected path and was not found by exact child ID in
+the other audited transcript roots. No archive file was modified or removed.
+
+At this observation, PR #117 is still open at
+`c9949c059682df9b9c0d9489f4647fae9651ca52`; six checks succeeded, 34 were
+queued, and one was in progress. No current-head CI pass is claimed. The live
+hash, worktree, and archive findings above are an audit checkpoint, not proof
+that the remaining local source variants have all been integrated or that
+archive cleanup is safe.
