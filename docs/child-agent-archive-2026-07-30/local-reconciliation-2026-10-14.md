@@ -363,3 +363,16 @@ PR #117 remains open at `f5c37f5c060ff359731132489e38034d7d082627`. Exact-head
 Actions run `38588676552` is queued with 4 of 36 jobs completed successfully,
 32 queued, and no failures at this check. The local PR checkout is clean. No
 additional local files were removed in this refresh.
+
+### Local pursuit completion test cross-check
+
+GitHub reports PR #42 merged at `b1caa0b074793e794ea8bc340cba9ac562924ff7`.
+The corresponding local untracked file,
+`backend/internal/pursuit/completion_outcome_integrity_test.go`, is not an
+exact copy of the current-main file (local Git blob `2bde5557`; current-main
+blob `e3d606b4`). In the shared `TestPursuitCompletedReceiptUsesLaunchSpecificCodes`
+case matrix, the local copy still lacks the HTTP 302, 500, and 599 rejection
+cases added by PR #42. The canonical main version is therefore stronger; the
+local file contributes no additional justification to port as written and is
+not eligible for deletion under the exact-main-match rule. This is a focused
+test-file comparison, not a broader semantic audit of the pursuit package.
