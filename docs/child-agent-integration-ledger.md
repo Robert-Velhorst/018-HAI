@@ -10394,3 +10394,17 @@ same recovery output is present on `main`, which additionally retries startup
 and reports attempt count. Neither commit needs a code port. This verifies
 these two commit-level features only; it does not establish that the staged or
 conflicted worktree state is fully integrated. No local file was removed.
+
+### October 14, 2026: PR 34/36 conflict-worktree content audit
+
+Inspected the actual unmerged index paths and checked-out text in the two
+conflict-resolution worktrees. `hai-pr34-conflict-fix` has 96 unmerged paths;
+95 of its 96 present working files contain unresolved Git conflict markers.
+The remaining marker-free unmerged path is `nginx-config/nginx.conf`.
+`hai-pr36-integration` has 256 unmerged paths; 254 of its 256 present working
+files contain unresolved conflict markers. Its two marker-free paths are
+`nginx-config/nginx.conf` and `nginx-config/sites-enabled/generic-auto.conf`.
+The conflict worktrees also contain staged and unstaged changes beyond those
+paths. These are not merge-ready source snapshots; no conflict was resolved,
+no configuration was published, and no file was removed. Preserve both
+worktrees until their complete non-conflict content is reconciled with `main`.
