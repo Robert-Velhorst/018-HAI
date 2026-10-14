@@ -10136,9 +10136,9 @@ operation errors into the report. Current `main` retains the mode gate,
 approved-safe deferral behavior, redacted operator diagnostics, and bounded
 public error messages.
 
-The local untracked reliability-test variant additionally expects fresh source
-work to remain in `awaiting_approval`, but the accompanying local worker still
-calls the existing processing path and the local diff does not implement that
-state transition. This is an unimplemented test expectation, not an integrated
-approval feature. Do not port the worker or test variant; keep the canonical
-main implementation and continue checking other local-only deltas.
+The local untracked reliability-test variant weakens `main`'s assertion that
+fresh source work remains in `awaiting_approval`; its version expects the
+operation to be automatically verified instead. The canonical `main` test
+already covers the approval boundary, while the local worker snapshot removes
+the surrounding autonomy and error-safety controls. Keep the canonical worker
+and test; neither local variant is a missing feature to port.
