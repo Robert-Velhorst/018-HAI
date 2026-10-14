@@ -11318,3 +11318,19 @@ Current `main` retains these safety and compatibility behaviors, so this
 staged variant is rejected as a source to port. This was a read-only diff
 review; the D: worktree/index was not changed. Local Go tests remain
 unavailable because `go.exe` is not installed or on `PATH`.
+
+### October 14, 2026: D: staged frontend contract disposition
+
+Compared the staged frontend patch in `D:\hai-source-reconciliation` with
+current `origin/main` at `b7e3ad2086c23313a0355101498bee82cda62d4e`. The 79-file
+delta removes 2,534 lines while adding 491 and is not a safe transplant. In
+Task Blueprint it removes task-plan history and MCP tool-call/result
+provenance, including the UI that labels returned content untrusted and the
+tests for matching each call to its own result. In Workflow it removes
+`successCriteria` from client request/record contracts. The wider patch also
+removes runtime-control model fields and substantially reduces Task Blueprint,
+Workflow Engine, Runtime Control, and System Status tests and behavior. These
+contracts and corresponding behavior exist in current `main`; importing the
+staged version would regress observability, acceptance criteria, and test
+coverage. This was a staged diff review only; the D: index/worktree was left
+unchanged. Full browser acceptance of this staged snapshot was not attempted.
