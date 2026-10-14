@@ -722,3 +722,40 @@ state, not application source. Their provenance and downstream usefulness
 have not been fully traced; preserve them. The output directory and root
 browser-acceptance logs also remain unclassified, so they are not eligible for
 deletion. No cleanup action was taken on these artifacts.
+
+### 2026-10-14 resumed audit: merged PRs and documentation/configuration sweep
+
+The live `main` ref is `c7657c9e2ab198a3a2a1db076619344d07ef7d60`. GitHub
+reports PR #41 merged at `71102fd40a960b59b70e56f902cb4b3dc91f1390` and PR #42
+merged at `b1caa0b074793e794ea8bc340cba9ac562924ff7`. Comparing each merge
+commit against the refreshed main head reports zero commits ahead, confirming
+both are already ancestors of current `main`.
+
+A targeted documentation/configuration/UI pass compared the primary legacy
+checkout to that main snapshot:
+
+- The local README has no headings absent from main. Main has additional
+  selected-folder extraction and architecture/operations sections, and the
+  local identity and Nginx service headings still state Go 1.25.13 while main
+  states Go 1.27.2. No local-only README content was identified for porting.
+- The local `.env.example` has no variable names absent from main. Main has
+  twelve additional variable declarations; only names were compared, not
+  values, and no environment-file contents were copied to this ledger.
+- The local `frontend/src/app/pages/pursuits/pursuits.component.html` is
+  absent/deleted relative to the local commit, while current main retains the
+  template. There is no local template content to port; the canonical main
+  implementation remains intact.
+
+The disposable detached audit worktree created at
+`C:\Users\NO\Documents\Codex\2026-10-14\hai-main-audit` was confirmed clean
+at the exact current main commit and removed. This removed only that
+audit-created working copy; no files in the primary checkout or other
+registered worktrees were changed or deleted. The primary checkout remains at
+`e07b9daeb3ba2630ecbe12a64d948f791203c241` with 2,274 modified/deleted/
+untracked status entries, and the live-main comparison ref remains
+`c7657c9e2ab198a3a2a1db076619344d07ef7d60`.
+
+PR #117 remains open at `730d428f412d2ad52a6283b865d3c97f4b91e05c`. Its
+latest observed checks are queued, and GitHub reports the merge state as
+unstable; this is not a passing or mergeable result. No merge was performed
+by this audit. No product tests were run in this pass.
