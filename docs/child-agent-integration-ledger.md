@@ -9867,3 +9867,39 @@ does not authorize deleting their canonical `main` files, raw test evidence,
 other output files, source variants, or worktrees. Their combined local size is
 621,289 bytes. Cleanup is performed only after this disposition is pushed to
 the existing PR branch. No transcript or archive is covered by this cleanup.
+
+### October 14, 2026: primary C: backend safety delta
+
+Compared the current modified C: checkout against its `origin/main` tree for
+the high-risk LLM, operations-control, and Phase 2 paths. These local variants
+are not port candidates:
+
+- `backend/internal/phase2/module.go` removes the source-derived operation
+  approval check and final effect-policy gate. Current `main` keeps source
+  work behind exact-revision approval and revalidates the consumed approval at
+  the effect boundary.
+- `backend/internal/opscontrol/service.go` drops the durable control-review
+  repository hook and changes an already-disengaged emergency stop from an
+  explicit no-op result to success. Current `main` retains review-backed
+  resume and distinguishes no-op transitions.
+- `backend/internal/modelintelligence/http_openai.go` removes rejection of URL
+  userinfo, query parameters, and fragments, and drops the provider-specific
+  `ollama-local` host allowance. The first change weakens endpoint validation;
+  the second also removes a supported local configuration.
+- `backend/internal/llm/policy.go` still rejects embedded credentials, but its
+  local variant accepts endpoint query parameters and fragments and replaces
+  the named 4 MiB response cap with an inline 256 KiB cap. Current `main`
+  rejects all three URL components and uses the named cap; the smaller inline
+  limit is not adopted because it can truncate larger provider catalogues.
+- `backend/internal/llm/maintenance.go` removes bounded API mount-prefix
+  support and the eligible-model-work check used to avoid starting an idle
+  maintenance loop. Current `main` preserves both behaviors.
+
+Three local-only test names were also checked against current tests and their
+production contracts. The provider-TLS test duplicates endpoint cases already
+covered under a different canonical test; the Constitution fallback test is
+superseded by the stronger canonical baseline-versus-durable Constitution
+test; and the missing-owner test conflicts with the canonical behavior that
+binds authorization to the authenticated actor when no configured owner is
+present. None of these local test snapshots was copied over `main`. This is a
+targeted safety comparison, not a review of all 692 modified tracked files.
