@@ -784,7 +784,7 @@ services:
   # Runs after migrations so grants cover every current table, and records
   # default privileges for all future tables created by the schema owner.
   backend-runtime-role:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine
     restart: "no"
     mem_limit: ${BACKEND_RUNTIME_ROLE_MEMORY_LIMIT:-64m}
     cpus: ${BACKEND_RUNTIME_ROLE_CPU_LIMIT:-0.1}
@@ -1756,7 +1756,7 @@ services:
   # from HAI's primary Postgres instance and is enabled only with
   # `--profile durability`. No Temporal port is exposed to the host.
   temporal-postgres:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine
     profiles: ["durability"]
     restart: unless-stopped
     mem_limit: 512m
@@ -1862,7 +1862,7 @@ services:
       - service-hub
 
   postgres-idp:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine
     container_name: 018-hai-postgres-idp
     hostname: postgres-idp
     restart: unless-stopped
