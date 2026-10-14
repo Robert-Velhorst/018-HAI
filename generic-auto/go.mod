@@ -1,5 +1,5 @@
 module hai-generic-auto
 
-go 1.25.0
+go 1.27.0
 
-toolchain go1.26.9
+toolchain go1.27.2
