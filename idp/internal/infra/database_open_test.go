@@ -12,18 +12,19 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func TestAutomaticGormPingFailureClosesProvidedPool(t *testing.T) {
+func TestAutomaticGormPingFailureClosesCallerPool(t *testing.T) {
 	failure := errors.New("synthetic ping failure")
 	connector := &startupTestConnector{pingError: failure}
 	pool := sql.OpenDB(connector)
 	t.Cleanup(func() { _ = pool.Close() })
+	// gorm.Open closes the underlying sql.DB when its automatic first ping fails.
 	db, err := gorm.Open(postgres.New(postgres.Config{Conn: pool}), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if db == nil || !errors.Is(err, failure) {
+	if db == nil || !errors.Is(err, failure) || connector.closed.Load() != 1 {
 		t.Fatal("unexpected GORM first-ping ownership behavior")
 	}
 	connector.pingError = nil
 	if err := pool.PingContext(context.Background()); err == nil {
-		t.Fatal("failed automatic GORM ping left the provided pool open")
+		t.Fatal("failed GORM open left the caller's pool usable")
 	}
 }
 
