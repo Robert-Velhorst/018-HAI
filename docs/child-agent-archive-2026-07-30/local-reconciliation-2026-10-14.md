@@ -54,7 +54,25 @@ A bounded comparison of 223 modified tracked text files against current `main` f
 | `frontend/src/app/control-room/module-registry.ts` | Local registry lacks the current `operational-brain` module and `intake-outcome-criteria` disclosure metadata. Keep the newer canonical registry. |
 | `frontend/src/app/pages/control-center/control-center.component.ts` | Local version calls older ambient/pursuit APIs and removes validation of non-negative, finite count fields. Keep the current API and validation path. |
 
-This is a line-count triage plus the listed semantic checks, not a proof that every local changed file has been fully reviewed. No local source variant was copied in this pass.
+This is a line-count triage plus the listed semantic checks, not a proof that every local changed file has been fully reviewed. No local source variant was copied in that earlier bounded pass; the later regression addition is documented below.
+
+## Broader checkout reconciliation (2026-10-14)
+
+The source checkout at `C:\Users\NO\Documents\Codex\2026-05-30\github-plugin-github-openai-curated-noodzakelijk` is on `codex/hai-runtime-release` at `e07b9da`. Its current worktree reports 244 modified tracked files, 448 tracked deletions, and 1,582 untracked files. The untracked set is 1,501 files under `output/` (126,491,111 bytes) plus 81 elsewhere (2,198,860 bytes). These are not all product source: the latter include regression tests, historical test-evidence logs, environment state, and browser logs.
+
+The checkout's committed `e07b9da` is an ancestor of the remote `codex/hai-runtime-release` branch (`e62b568`), which is PR #36's merged branch; the local branch has zero commits not reachable from that remote branch. This proves the committed history is remotely reachable, not that the current uncommitted worktree has been published.
+
+Against current `main` `12246bd`:
+
+- 241 of the 244 modified tracked files were comparable by path; none matched the `main` blob after Git path filters.
+- The 448 files absent from the worktree all have paths on `main`; eight historical `HEAD` blobs are exact matches to `main`, while 440 differ. Those 448 files are already absent from disk, so deleting them cannot reclaim additional space.
+- Of the 81 non-`output/` untracked paths, 65 are already tracked at the same paths in PR #117, but none has identical content. The remaining 16 are four local agent-state files, ten PostgreSQL/test-evidence files, and two browser/Compose logs. None was copied to the PR.
+- The local and PR versions of the 63 comparable text files contained 272 local-only line occurrences versus 720 PR-only occurrences. This line-set comparison is triage, not semantic proof; targeted review found the PR versions generally preserve stronger ownership, sanitization, timeout, CI, and error-handling contracts.
+- Three local environment files (`.env-backend`, `.env-gateway`, `.env-idp`) are absent from the PR. Their contents were not opened and must not be published without a separate secret review.
+
+Targeted review found one useful regression not directly asserted in the PR: the durable execution-constitution gate must reject the non-persisted built-in fallback while accepting a valid active ID and rejecting a draft. Added `TestDurableConstitutionAvailabilityRejectsBuiltinFallback` alongside the existing broader constitution test in `backend/internal/phase2/module_test.go`. `git diff --check` passed; local `go` is unavailable, so this test is not locally verified and exact-head CI remains required.
+
+The generated local checkout also contains approximately 369 MiB in `frontend/dist`, 73 MiB in `frontend/node_modules`, 6 MiB in `.angular`, 0.8 MiB in `.npm-cache`, 35 MiB in `installer/release`, and 0.3 MiB in `scripts/__pycache__`. No cache, release artifact, worktree, environment file, output log, or transcript was removed. The 13 additional worktrees in the shared Git repository have not yet received a per-file content reconciliation; several are dirty and remain out of cleanup scope until that review is complete.
 
 ## Disposition
 
