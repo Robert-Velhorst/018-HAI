@@ -10478,6 +10478,22 @@ idempotency, integrity, or real-time handoff behavior; no portion was ported.
 This is a targeted static comparison, not a test run or complete review of
 the task, source, operation, and outcome packages.
 
+### October 14, 2026: frontend shell and global-module composition delta
+
+Reviewed the local frontend root/module composition against current `main`.
+The canonical `AppModule` imports `ControlRoomModule` so the shell wraps all
+authenticated routes. The primary checkout removes that root import, while
+adding the module only to the lazy Control Center feature module; its
+`AppComponent` also changes the product title to the generic `app`. The local
+tracked tree is missing the shell template/styles and several shell registry
+and progressive-disclosure files that are present on `main`. It therefore
+cannot provide the shared navigation/theme/basic-advanced contract across all
+routes. The local global stylesheet also carries an earlier, broader
+notification-overlay pointer-event rule; preserve the canonical shell and
+current overlay targeting rather than copying the partial local composition.
+This review confirms main contains the shared-shell implementation; it is a
+targeted architecture review, not a test of every frontend delta.
+
 ### October 14, 2026: retained transcript path crosswalk
 
 The bounded PowerShell crosswalk processed all 13 retained transcript files
