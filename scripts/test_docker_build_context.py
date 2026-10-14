@@ -35,7 +35,7 @@ SERVICE_FIXTURES = {
     "idp": {
         "included": (
             "go.mod",
-            "cmd/idp/fixture.go",
+            "cmd/main.go",
             "migrations/001_fixture.sql",
             "docs/fixture.md",
         ),
