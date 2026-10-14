@@ -10112,3 +10112,16 @@ and platform-specific tests. Current `main` has focused tests for whole-tree
 termination, stop acknowledgment ordering, timeouts, unverified termination,
 and Windows descendant processes. No replacement implementation from the
 stale local snapshot was found to port.
+
+### October 14, 2026: brain-catalog capability and cancellation comparison
+
+The primary checkout's brain-catalog snapshot removes the integrated
+ChatGPT/Codex conversation-history MCP catalog entry that is present on
+`main`, along with its bounded read-only tool-loop description. It also drops
+request-context propagation for upstream and collection revalidation, removes
+request-cancellation handling, and removes the private 5-minute ETag response
+cache. Current `main` retains the catalog entry and its explicit no-write/no-
+process boundary, forwards caller cancellation to outbound review calls, and
+serves an authorization-varying cache validator. The local copy is therefore
+not a missing feature to import; it is a reduced/stale catalog and control
+surface. No brain-catalog or A2A changes were ported.
