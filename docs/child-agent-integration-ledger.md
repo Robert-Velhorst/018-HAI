@@ -11043,3 +11043,8 @@ clarification for other actions. Added regressions cover each package. The
 proactive signal validators already reject non-finite values and were left
 unchanged. These changes are included in the same PR; local Go execution remains
 unavailable, so hosted CI is still the required code-test gate.
+
+The same scan found agent-registry assignments rejected scores below zero or
+above one but allowed NaN through those comparisons. Assignment persistence
+now rejects NaN and infinities, with a validation test that exercises all three
+non-finite cases before storage.
