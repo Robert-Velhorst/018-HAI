@@ -10091,3 +10091,24 @@ reports are historical checkpoints rather than current runtime acceptance.
 The local variant was not ported. The local connector contract test also drops
 the `Assert-HaiSingleInstallation` check present in `main`; retain the stronger
 canonical test. No infrastructure or source files were changed by this review.
+
+### October 14, 2026: transcript auditor and DeepSeek bridge comparison
+
+Reviewed the primary checkout's transcript-audit script against `origin/main`.
+The local variant replaces bounded JSONL record parsing and per-turn lifecycle
+attribution with a fixed 16 MiB tail scan and a regex for terminal-event names.
+It removes oversized/malformed-record accounting, turn-ID correlation,
+scan-mutation detection, patch-call attribution, and the opt-in
+`HashCleanupCandidates` output. Current `main` retains those checks, including
+fail-closed dispositions for unattributed or changing transcripts. Because
+incorrectly associating a terminal marker could misclassify an incomplete
+transcript, the local rewrite is not safe to port; continue using the canonical
+auditor and preserve all transcript source files.
+
+The primary checkout also omits the current `main` DeepSeek bridge's
+process-supervisor and start-protocol implementation, including its Windows
+job-object process-tree containment, stop/lease revalidation, output limits,
+and platform-specific tests. Current `main` has focused tests for whole-tree
+termination, stop acknowledgment ordering, timeouts, unverified termination,
+and Windows descendant processes. No replacement implementation from the
+stale local snapshot was found to port.
