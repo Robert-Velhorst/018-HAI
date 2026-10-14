@@ -662,3 +662,34 @@ No script, dependency install, or Windows runtime was executed in this source
 comparison. The local candidates remain unmodified and are not cleanup-safe
 until the remaining untracked evidence and primary checkout changes have been
 reviewed.
+
+### Remaining backend worker and source-test comparisons
+
+Five remaining untracked backend test snapshots were compared with their
+same-path `main` versions:
+
+- `backend/internal/ambient/scheduler_test.go` (local
+  `6a26fd4f`; main `acc30517`): main adds
+  `TestStartSchedulerReportsPolicyDisabledState`; local lacks this explicit
+  policy-disabled behavior.
+- `backend/internal/automation/public_projection_test.go` (local
+  `4a93dd5e`; main `dea54351`): the ten test names match, while main injects
+  an accepting event publisher in the service fixture instead of relying on
+  the zero-value publisher. No extra local case was identified.
+- `backend/internal/background/worker_reliability_test.go` (local
+  `c757d928`; main `9b6f5b10`): both have six test names, but the local
+  reliability case expects fresh ingested work to be verified immediately.
+  Main instead asserts it is routed to `awaiting_approval` and not executed
+  without approval. Preserve the safer canonical contract.
+- `backend/internal/opscontrol/emergency_stop_fanout_test.go` (local
+  `d90a6bbd`; main `353b07a7`): main sends a JSON reason and sets
+  `Content-Type: application/json`; the local request omits the body and
+  content type, so it does not exercise the actual request contract.
+- `backend/internal/source/trello_reopen_test.go` (local
+  `6bc283d6`; main `1902f7cb`): main validates the all-actions filter and
+  decodes an action fixture before testing reopening; local returns an empty
+  array and omits that source-response validation.
+
+These local test snapshots are not candidates to port over current `main`.
+The comparisons were not test executions, and all five files remain
+unmodified pending the wider audit.
