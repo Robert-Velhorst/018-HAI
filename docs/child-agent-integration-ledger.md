@@ -10603,3 +10603,24 @@ and `git diff --check` passed. This resolves the reported source-level cause,
 but the previous hosted check is still a failure for its immutable head. The
 new PR head must complete hosted CI before any pass is claimed. Container
 image builds and runner smoke tests were not run locally.
+
+### October 14, 2026: post-merge local exact-match checkpoint
+
+GitHub reports PRs #41 and #42 as merged. A fresh `git ls-remote` confirmed
+`main` remains at `345cf356c3f4ab497568713dc994820b4ba22b10` during this
+checkpoint. Recomputed Git-cleaned blob IDs against that exact tree in the
+primary checkout: zero of 1,585 untracked files match a same-path blob in
+`main`; zero of 692 remaining modified tracked files match a same-path blob
+in `main`. Thus no additional file qualifies for removal under the
+main-exact-match cleanup rule. The earlier 448 exact-main tracked copies had
+already been removed from the primary working tree; their measured aggregate
+was about 6.5 MiB. No untracked output, source, agent state, database, logs,
+or test-evidence files were removed.
+
+The exact-head frontend CI job for PR #117 then exposed a strict TypeScript
+error in `runtime-lab.component.spec.ts` (`TS4111`, index-signature access
+must use bracket notation). Fixed that assertion and pushed commit
+`7333aec7`. The previous CI run is immutable and remains failed for its old
+head; hosted checks must finish for `7333aec7` before the corrected head is
+considered verified. Local frontend dependencies are absent, so no frontend
+test or build is claimed from this checkout.
