@@ -206,3 +206,20 @@ preserved pending broader review. No environment file or raw log was opened.
 The reviews did not edit files in the dirty runtime-release checkout, change
 worktrees, or move Git refs. Their findings were recorded separately in PR
 #117's reconciliation ledger.
+
+### October 14, 2026: effective Docker build-context regression contract
+
+Added `scripts/test_docker_build_context.py` to exercise each backend,
+frontend, and IDP `.dockerignore` using Docker Buildx's local output exporter
+and synthetic files only. It asserts that service source, manifests, SQL
+migrations, and docs stay present; credential-like files, test fixtures,
+coverage/build outputs, and dependency caches stay out; and the frontend's
+public CA certificate exception remains included. The contract is wired into
+the existing hosted Compose-validation job and guarded by a CI workflow
+contract assertion. No local Docker build was run in this audit. The Python CI
+contract suite passed locally (111 tests), and `git diff --check` passed.
+
+This verifies source-level wiring locally, not the Buildx execution itself;
+that check still requires the hosted CI job. It is a preventive regression
+test, not a finding that a current service build context leaked credentials.
+No source checkout, worktree, environment file, log, or transcript was deleted.

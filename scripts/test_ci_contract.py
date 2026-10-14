@@ -133,6 +133,13 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_compose_job_checks_effective_docker_build_contexts(self) -> None:
+        compose = job_block("compose")
+        self.assertIn(
+            "run: python3 scripts/test_docker_build_context.py",
+            compose,
+        )
+
     def test_workflow_token_is_read_only_for_current_ci_jobs(self) -> None:
         self.assertRegex(WORKFLOW, r"(?m)^permissions:\n  contents: read$")
         self.assertNotRegex(WORKFLOW, r"(?m)^  (?:actions|contents|packages): write$")
