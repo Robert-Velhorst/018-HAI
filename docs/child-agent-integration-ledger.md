@@ -11403,3 +11403,21 @@ bounded-history, cancellation, integrity, cost-control, and audit-provenance
 behaviors. This was a read-only diff review; the D: source was not changed and
 the staged task patch is rejected as-is. Local Go tests are unavailable in
 this environment because `go.exe` is missing.
+
+### October 14, 2026: D: staged router/control-plane disposition
+
+Reviewed the staged `backend/internal/router/`, `workflow/`, and
+`operations/` diffs against `origin/main` at
+`b7e3ad2086c23313a0355101498bee82cda62d4e` (27 files, 71 additions, 595
+deletions). The route/composition changes are not a safe transplant: identity
+middleware stops propagating the validated owner operator-scope claim; route
+composition removes operational-graph wiring, OpsControl review/approval
+resolvers, and automation event outbox delivery/retry registration. It also
+removes source overview/health, background overview, pursuit overview,
+framework preference/selection history, and OpsControl control-approval and
+resume-approval endpoints. These are currently registered capabilities on
+`main`; deleting them would break clients and weaken the approval/control
+surface. The same slice reduces workflow/reminder tests and alters scheduler
+behavior, so it needs independent contract review before any selective port.
+This was a read-only diff review; the D: worktree/index was not changed, and no
+part of this slice was copied.
