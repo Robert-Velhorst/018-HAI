@@ -10191,3 +10191,18 @@ helpers. These are already present in canonical `main`; the primary snapshot is
 not a source to copy forward. This is a tracked-tree comparison only and does
 not classify untracked artifacts or establish that every removed line is a
 behavioral regression.
+
+### October 14, 2026: retained transcript patch-event scan
+
+A bounded Node streaming pass read all 13 currently retained transcript files
+(17,559,729,527 bytes, 442,443 JSONL records). It found 37,825 lines containing
+the marker text; 37,824 parsed as exact `event_msg` / `patch_apply_end` events
+(37,783 successful and 41 failed), one was a non-event mention, and no marker
+candidate was malformed. Two records exceeded the 10 MiB normal-record cap
+(1,016,062,444 and 904,740,623 bytes); a separate streaming byte scan confirmed
+neither contained the patch marker, so no patch event was skipped. The scan
+identified 760 unique changed paths, including 674 under the primary checkout
+path. This is a verified event/path inventory, not proof that every patch's
+final behavior is in `main`: the full per-path semantic reconciliation and the
+missing five source archives remain unresolved. No source or transcript file
+was changed or removed.
