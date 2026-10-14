@@ -11352,3 +11352,16 @@ matching, but do not compensate for the removed safety assertions. Current
 worktree and index were not changed. No code from this staged patch should be
 ported as-is. Local Go tests remain unavailable because `go.exe` is not
 installed or on `PATH`.
+
+### October 14, 2026: D: staged backend build/dependency disposition
+
+Compared the staged backend `Dockerfile`, `go.mod`, and `go.sum` with
+`origin/main` at `b7e3ad2086c23313a0355101498bee82cda62d4e`. The staged Docker
+builder downgrades from Go 1.27.2 to 1.25.13, while the current module declares
+`go 1.27.0` and `toolchain go1.27.2`. This creates a direct toolchain/module
+version mismatch and is not a buildable replacement for the current image
+builder. The same patch downgrades protobuf, gRPC, and OpenTelemetry
+dependencies; no compatibility rationale or replacement verification was
+present in the staged diff. This was a read-only review; no backend files were
+copied and the D: worktree/index remains untouched. The staged build/dependency
+files are rejected as-is.
