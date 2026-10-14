@@ -10306,3 +10306,11 @@ partial writes and loss of operator visibility. No source was ported or
 pushed from this checkout; all 310 staged paths remain intact. This was a
 bounded review, not a semantic audit of all 310 files, and Go tests were not
 run because Go is unavailable in this environment.
+
+The staged D-drive files were also checked for direct cleanup eligibility by
+Git-cleaned blob hash against same-path blobs on live `main`: all 310 staged
+paths were present locally, 309 had a same-path blob on `main` but differed,
+and the remaining path (`nginx-config/nginx.conf`) is absent from `main`. No
+staged file is an exact direct duplicate; no D-drive file was removed. This
+hash result does not establish semantic equivalence for the 309 differing
+files.
