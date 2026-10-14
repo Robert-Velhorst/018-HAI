@@ -10770,3 +10770,40 @@ At the time of this audit, PR #117 was open at
 successful and GitHub reported it cleanly mergeable. The PR was not merged.
 These checks do not semantically reconcile the 65 local alternatives or prove
 live Trello-provider behavior.
+
+### October 14, 2026: post-merge local source crosswalk
+
+GitHub reports PRs #41 and #42 merged into `main`, with merge commits
+`71102fd40a960b59b70e56f902cb4b3dc91f1390` and
+`b1caa0b074793e794ea8bc340cba9ac562924ff7`. The current remote `main` remains
+`12246bd28820f892a48e04b528ff8e28b102b7d4`; both merge commits are ancestors
+of that commit. PR #117 remains open at `656d49e977b92f6f4117a0f154df2237e95ee118`.
+
+A fresh primary-checkout inventory reports 448 tracked deletions, 244 tracked
+modifications, and 1,585 untracked files. The comparison covered 2,275 unique
+changed/untracked path candidates. For the 317 existing files that also have
+the same path in `main`, Git blob hashes found zero byte-identical files. This
+is not permission to discard files that are absent from `main` or to infer
+semantic equivalence from matching paths.
+
+A read-only comparison against the PR #117 worktree covered 771 non-`output/`
+candidate paths; 306 existing regular files were available on both sides.
+`git diff --no-index --numstat` reported local-only lines in 224 files (7,404
+lines total). This is a syntactic difference count, not a semantic review or
+proof that those local lines are valuable. The reviewed examples are older or
+less complete than the PR versions: the local verification service lacks
+request-context cancellation present in the PR, the local pursuit service
+lacks the PR's compact overview and success-criteria behavior, and the local
+Promptfoo package pins 0.123.1 while the PR uses 0.124.1 plus its dependency
+override. The local Trello reopen test is also a weaker fixture, as recorded
+above. No source, dependency, or test patch was imported from these examples.
+
+The primary checkout still contains substantial unmatched local state,
+including its `output/` diagnostics. The read-only worktree inventory also
+found several older HAI audit and PR-resolution worktrees with uncommitted
+changes; the active PR #117 worktree is clean and occupies about 38 MB. The
+separate `D:\hai-source-reconciliation` checkout could not be inspected by
+Git because Windows reported dubious ownership; no global safe-directory
+setting was changed. No checkout, file, transcript, database, or recovery
+artifact was removed. The full semantic crosswalk and transcript reconciliation
+remain incomplete, so no cleanup receipt is authorized by this checkpoint.
