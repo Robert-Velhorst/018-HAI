@@ -223,3 +223,20 @@ This verifies source-level wiring locally, not the Buildx execution itself;
 that check still requires the hosted CI job. It is a preventive regression
 test, not a finding that a current service build context leaked credentials.
 No source checkout, worktree, environment file, log, or transcript was deleted.
+
+### October 14, 2026: D: source-reconciliation snapshot review
+
+A read-only comparison of the D: worktree at `3b15fe4` found 310 changed
+tracked paths and no untracked files. That commit is an ancestor of current
+`main`; the path-difference counts against `main` and PR #117 are not counts of
+unique functionality. The targeted review found no high-value change absent
+from the canonical source that should be ported.
+
+Do not port the worktree's added `nginx-config/nginx.conf`: it duplicates the
+canonical template with a placeholder backend-key value and lacks current
+routes/protections. Reviewed changes to approval and OAuth state handling,
+task-history bounds, scheduler failure behavior, task-state JSON bounds, and
+tests/docs remove or weaken behavior present in the canonical tree. This was a
+targeted security-sensitive review, not a line-by-line audit of all 310 paths;
+no tests were run. The staged state and the D: worktree remain unchanged and
+preserved. No local cleanup is certified by this review.
