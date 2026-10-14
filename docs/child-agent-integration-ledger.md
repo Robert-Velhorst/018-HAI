@@ -10583,3 +10583,23 @@ the alternate traversal has no current test evidence and is not a verified
 resource or safety improvement. Retain the canonical Compose contract. This
 was a source comparison only; Compose rendering, image pulls, container
 startup, and health behavior were not run in this audit.
+
+### October 14, 2026: repair Python runner lock parity exposed by CI
+
+The exact-head Windows CI/smoke contract job for PR #117 failed in
+`scripts/test_python_runner_ci.py`: the checked-in Docker `requirements.txt`
+did not match the hash-locked CI `requirements.lock` for
+`agent-framework-runner` and `garak-runner`. The Agent Framework lock pinned
+`agent-framework-openai` at 1.10.1 although `requirements.in` pins 1.11.0;
+the Garak lock also retained an older `stdlibs` resolution than its declared
+input. Regenerated both locks with uv for Python 3.12/Linux x86_64 from their
+checked-in `requirements.in` files, and made each Docker-installed
+`requirements.txt` an exact copy of the resulting lock. Hash enforcement in
+the existing CI job and its parity assertion were not weakened.
+
+Local verification: `python scripts/test_python_runner_ci.py` passed all four
+tests; the two `requirements.txt`/`requirements.lock` SHA-256 pairs are equal;
+and `git diff --check` passed. This resolves the reported source-level cause,
+but the previous hosted check is still a failure for its immutable head. The
+new PR head must complete hosted CI before any pass is claimed. Container
+image builds and runner smoke tests were not run locally.
