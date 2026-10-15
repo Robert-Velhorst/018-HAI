@@ -113,3 +113,13 @@ No local files, environment files, logs, agent state, or generated outputs were 
 A targeted comparison of the primary checkout's modified `backend/internal/llm/policy.go` against canonical `main` found no safe upgrade to port. Both versions bound provider response reads, but `main` uses the named `providerProbeResponseLimitBytes` and rejects provider endpoints containing credentials, query parameters, or fragments. The local variant uses a literal response limit and permits query/fragment forms; canonical policy is stricter.
 
 The local verification, pursuit, and ambient service files also expose older/different helper and owner-scoped API surfaces than canonical `main`. Their local diffs are not drop-in replacements; no whole-file port was made from these snapshots.
+
+
+## Primary-checkout deployment, workflow, and build-artifact review
+
+A focused review compared the primary checkout's current changes in `.github/workflows/ci.yml`, `backend/Dockerfile`, `docker-compose.local.yml`, and `README.md` with canonical `main`. This is a scoped review of these files, not a complete semantic audit of all 692 tracked changes.
+
+The reviewed deltas are not safe to port as a batch. The local CI workflow changes Go setup from 1.27.2 to 1.25.13, removes the HAI cleanup-readiness contract job and several contract/race tests, and drops other build-context, runner, and integration checks present on `main`. The local Compose diff removes configured variables and the optional SearXNG research-discovery service, changes the backend state-permission helper to a PostgreSQL image with a different shell command and capabilities, and changes a gateway health check. The local README removes current routes and documentation references and describes the older Go version. These observations indicate divergence/regression risk; they do not establish that each individual edit is harmful in every environment. No changes from this sample were ported.
+
+A read-only filesystem inventory measured generated/build-oriented directories: `output/` contains 1,507 files (120.6 MiB), `frontend/dist/` contains 17,549 files (369.1 MiB), and `installer/release/` contains 1,975 files (35.4 MiB). The latter includes an installer and payload. Contents and rebuildability were not fully validated, and this census does not authorize removal; all remain preserved. Other large state such as PostgreSQL WAL and the backend deployment artifact was also left untouched.
+
