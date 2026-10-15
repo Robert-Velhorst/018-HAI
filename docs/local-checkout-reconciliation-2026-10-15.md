@@ -171,3 +171,22 @@ PR #152 was extended to cover both cancellation during Ollama inspection and can
 ## CI status correction for PR #152 (2026-10-15)
 
 The earlier PR #152 status paragraphs above are historical and must not be read as the status of its current head. The branch was revised after an earlier backend test timed out while waiting for a simulated accepted Ollama pull request to finish. The latest inspected head is `479bfb5b11d13aa16ff3bc64cb7c6e2425066d74`; its associated GitHub Actions run is #38766874375. At the time of this correction, several jobs had passed (including repository secret scan, Go/Nginx manager build, local provider fixture, Windows contract checks, Compose validation, and multiple runner-image contracts), while frontend/browser, migration, IDP, Windows installer, backend, authenticated smoke, and further runner jobs were still in progress or queued. Therefore the current PR head is **not yet fully verified**. Recheck the exact head and all required checks before calling it green or merge-ready. This is CI over repository fixtures, not acceptance against an external Ollama provider. No local source or worktree was changed or deleted.
+
+
+## Transcript source and completed-report recheck (2026-10-15)
+
+A fresh read-only inventory of the three known transcript roots under `D:\\codex-temp` found 22 files totaling 31,573,466,825 bytes. The supplemental verifier completed successfully for the two supplemental roots: nine files totaling 14,013,737,298 bytes exactly match the supplemental manifest; all three completed-candidate hashes (4,651,926,405 bytes total) verified; six files remain retained; and 21 source links in the preserved reports resolve to tracked files. The report explicitly recorded `deletion_performed=false` and `cleanup_authorized=false`. This proves source-integrity and link coverage for that supplemental cohort, not full event-by-event semantic integration or permission to delete.
+
+The primary 18-row transcript manifest does not match the currently available declared source root. Running its read-only integrity verifier against `D:\\codex-temp\\hai-completed-agent-sessions` failed because the manifest-listed completed transcript `rollout-2026-07-30T10-02-49-019fb20c-2b95-7550-8304-1117de872148.jsonl` is missing. A name-and-size cross-check found 13 of the 18 manifest entries in the declared root and five missing across the three inventoried transcript roots. A bounded filename search across `D:\\codex-temp` and `C:\\Users\\NO` found no matching files for:
+
+- `rollout-2026-07-30T10-02-49-019fb20c-2b95-7550-8304-1117de872148.jsonl` (1,579,407,127 expected bytes)
+- `rollout-2026-07-30T10-25-20-019fb220-c797-77d1-8060-0f220cd733e1.jsonl` (1,598,388,291 expected bytes)
+- `rollout-2026-07-30T12-17-45-019fb287-b2e4-7251-8f1b-bc8fa9febc07.jsonl` (602,755 expected bytes)
+- `rollout-2026-07-30T12-17-53-019fb287-d1ed-75f0-99a8-8cd09c1ef9f2.jsonl` (632,204 expected bytes)
+- `rollout-2026-07-30T12-18-02-019fb287-f3be-7860-ba1f-e6b05088db73.jsonl` (409,218 expected bytes)
+
+The corresponding completed reports are present in the committed archive ledger, but their absent source transcripts mean the 18-file source-integrity gate is currently false. Preserve the remaining transcript files and reports; do not infer that missing source records were fully processed from the reports alone.
+
+The three supplemental completed reports were cross-checked against current `origin/main` at `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`. Source and focused-test coverage is present for the Framework Registry behavior and access/accessibility states, the registered `BulbOutline`/`StarOutline` theme icons, and CI evidence/timeout/non-cache safeguards. This is a bounded source/test-presence check; the historical child test runs were not repeated. No additional code change was identified from these three reports in this pass. This does not close attribution or semantic review for other transcripts, untracked worktrees, or local code variants.
+
+PR #152 head `fe9db8a0d16a77972675a2a773cfd6604725d3a3` completed all 30 workflow jobs successfully (run `38767277741`), including the repaired cancellation-fixture test. PR #151 head `535d6e5f22c153ba6f09b7c0b0fd9e4adbcc6ba7` also completed all 30 jobs successfully (run `38767138192`). The ledger update in this commit creates a new PR #151 head and requires its own checks; the prior green result does not transfer. No transcript, worktree, or other local file was deleted or changed by this recheck.
