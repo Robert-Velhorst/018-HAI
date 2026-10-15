@@ -208,3 +208,15 @@ A read-only size inventory found `D:/hai-toolchains` at 5,461,319,620 bytes: `go
 
 No local data was deleted in this follow-up. The full local-device audit remains open.
 
+
+
+## Fresh primary-checkout exact-content census (2026-10-15)
+
+Against refreshed GitHub `main` at `32e4d48e4c2dbb0ff35f13fe8f3dd22769864b64`, a fresh porcelain-status-driven Git blob comparison covered every present modified tracked file except the environment example and every present untracked non-generated/non-agent-state/non-log file:
+
+- The checkout has 692 tracked status entries (448 deleted, 244 modified) and 1,582 untracked entries (1,501 under generated `output/`). The deleted tracked paths have no local file to reclaim.
+- Of the 243 present modified tracked files hashed, 242 differ from the blob at the same `main` path and one is the machine-specific `nginx-config/nginx.conf`, whose path is absent from `main`. The earlier bounded review found a placeholder backend key in that Nginx file; it remains excluded.
+- Of 73 present untracked files after excluding `output/`, `.claude-flow/`, `.swarm/`, and log files, one is an exact `main` blob, 64 differ at a path already in `main`, and eight paths are absent from `main`. The eight absent paths are dated PostgreSQL/race-test evidence JSON/JSONL under `backend/internal/outcomeevaluation/test-evidence/20260930-pg-snapshot/`, not missing product implementation.
+- The sole exact untracked match remains `backend/internal/runtimelab/owner_gate_handler_test.go`. Its attempted deletion was policy-blocked and it remains on disk.
+
+This is an exact-content census, not semantic proof that the differing code should replace `main`. A fresh spot review found the local Trello connector's test file has no test function absent from `main`; current `main` has the additional quiet-board-metadata cursor regression case. The local CrewAI/Garak dependency snapshots are older for key `aiohttp` pins (local 3.14.4 and 3.14.1 respectively; current `main` 3.14.5); they are not dependency upgrades. These samples add no safe source changes to port. The remaining 242 changed same-path files are still not all semantically reviewed; no local source or evidence was changed or deleted.
