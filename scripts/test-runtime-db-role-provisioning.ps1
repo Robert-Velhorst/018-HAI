@@ -94,14 +94,14 @@ try {
         "--env", "POSTGRES_PASSWORD=$ownerPassword",
         "--env", "POSTGRES_DB=$databaseName",
         "--env", "POSTGRES_HOST_AUTH_METHOD=scram-sha-256",
-        "postgres:17-alpine"
+        "postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873"
     )
     # Set before launch so the finally block also checks for a partially
     # created container if Docker reports a startup error.
     $containerStarted = $true
     $output = @(& docker @dockerArguments 2>&1)
     if ($LASTEXITCODE -ne 0) {
-        throw "Could not start the isolated PostgreSQL 17 test instance: $($output -join "`n")"
+        throw "Could not start the isolated PostgreSQL 18.6 test instance: $($output -join "`n")"
     }
     $output = @(& docker cp $provisionerPath "${containerName}:/tmp/provision-runtime-role.sh" 2>&1)
     if ($LASTEXITCODE -ne 0) {
