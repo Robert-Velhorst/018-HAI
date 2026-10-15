@@ -62,3 +62,14 @@ The local versions of the 13 changed runtime/host-runtime files measured in this
 
 This is a focused safety comparison, not a semantic audit of all 14 tracked changes or a complete verification of runtime safety.
 
+
+## Source-reconciliation worktree
+
+Worktree: `D:/hai-source-reconciliation`
+
+Git inspection used a command-scoped `safe.directory` exception because the D: volume does not preserve ownership metadata; no global Git configuration was changed. The worktree reported 344 changed paths. Comparing those paths with the canonical `main` tree found one path absent from `main`: `nginx-config/nginx.conf`. The other changed paths have same-path entries in `main`; this path check does not establish that their local contents are equivalent or safe to port.
+
+The 127-line Nginx candidate was inspected without printing credential-like values. It contains a hard-coded placeholder `X-HAI-Backend-Key change-this-local-backend-key` directive. This file was not ported; it needs a separately designed, secret-safe configuration if a current deployment requirement exists.
+
+No local source files or worktree data were modified or deleted. The 343 same-path changes remain outside this bounded semantic review.
+
