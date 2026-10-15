@@ -213,3 +213,17 @@ The remote `main` ref was refreshed and verified at `86fb1d9c53a69e1edb2fb098832
 - The HAI model-maintenance-ledger and hai-ledger-update task directories inspected in this pass contained no files. Their parent directories were left untouched.
 
 This remains a bounded audit, not proof that every HAI-related device file or transcript payload is integrated. Previously identified missing child transcripts remain missing, dirty worktrees and archives remain preserved, and no local cleanup was performed.
+
+
+## Staged merge-scratch semantic check and cursor CI correction (2026-10-15)
+
+The 17 staged non-conflict paths in `D:\\codex-temp\\hai-merge-scratch-20261010` were compared with current `main` after normalizing CRLF differences. Most paths have no semantic delta. The remaining differences are not safe to port as written:
+
+- `frontend/e2e/package.json` downgrades Playwright from the current version to `^1.47.0`.
+- `frontend/nginx-custom.conf` changes the listener from 8080 to 80 and removes the `/healthz` endpoint.
+- `frontend/src/app/pages/runtime-lab/runtime-lab.component.scss` duplicates runtime-policy styles already present on current `main`.
+- `frontend/src/app/services/workflow/workflow.service.spec.ts` tests a historical list endpoint, while current `workflow.service.ts` calls the dedicated `/framework-registry/selections/:id` endpoint. The staged test should not replace the current contract.
+
+No changes were ported from this staged set; the unresolved merge worktree and index remain intact.
+
+PR #153's first exact-head CI run exposed an integration fixture mismatch: the source-configuration PostgreSQL acceptance test applied migrations only through `0118`, while the updated model expected the `sync_cursor` column from `0128`. The focused correction now applies through `0128` and rolls back the empty cursor migration before exercising the independent `0114` data-protection guard. The correction is commit `285dae186ddaf4ed8e1e1a5d1a07b4999bbaea79`; a new exact-head CI run was queued after the push. Its checks were pending at this ledger update, so PR #153 is not yet marked green. The earlier failure belongs to the superseded head `616372e` and must not be treated as the result for the corrected head.
