@@ -87,3 +87,12 @@ A path-level comparison of six PR-resolution worktrees found 22 distinct changed
 
 This path and migration comparison does not semantically review the many same-path source changes in those dirty worktrees. No conflict was resolved and no local data was changed or deleted.
 
+
+## Primary checkout untracked source screen
+
+A fresh status in the primary checkout reported 692 tracked changes and 1,582 untracked paths; 1,501 untracked paths are under generated `output/`. These counts are a point-in-time inventory, not a complete classification of every HAI-related local artifact.
+
+Among the non-generated, non-agent-state, non-log, non-environment untracked source/support candidates, 65 paths exactly match a path in canonical `main`. Git blob IDs were compared for those 65: one file is byte-identical and 64 differ in content. The exact match is `backend/internal/runtimelab/owner_gate_handler_test.go` (12,495 bytes, measured from the identical canonical blob). The other 64 files cannot be treated as safe duplicates based on path alone.
+
+No local files were deleted. The exact match is only a cleanup candidate; the repository cleanup gate and the existing local cleanup restriction still apply.
+
