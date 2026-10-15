@@ -850,7 +850,9 @@ func (s *service) storeVerifiedMemory(request AnswerRequest, run *models.Verific
 	}
 	for _, claim := range claims {
 		proof, eligible := memoryPromotionEvidence(claim, run.ID, evidence)
-		if !eligible || claim.Status != StatusSourceSupported || claim.NeedsReview || claim.HighRisk || claim.Confidence < minimumMemoryPromotionConfidence {
+		if !eligible || claim.Status != StatusSourceSupported || claim.NeedsReview || claim.HighRisk ||
+			math.IsNaN(claim.Confidence) || math.IsInf(claim.Confidence, 0) ||
+			claim.Confidence < minimumMemoryPromotionConfidence || claim.Confidence > 1 {
 			outcome.Skipped++
 			continue
 		}
@@ -889,7 +891,10 @@ func countPromotableClaims(claims []models.VerificationClaim) int {
 
 func memoryPromotionEvidence(claim models.VerificationClaim, runID uuid.UUID, evidence []models.VerificationEvidence) (models.VerificationEvidence, bool) {
 	for _, item := range evidence {
-		if item.RunID != runID || item.ID == uuid.Nil || item.Rejected || !item.Used || item.QualityScore < minimumMemoryEvidenceQuality || !isSourceSupportedEvidence(item.Authority) {
+		if item.RunID != runID || item.ID == uuid.Nil || item.Rejected || !item.Used ||
+			math.IsNaN(item.QualityScore) || math.IsInf(item.QualityScore, 0) ||
+			item.QualityScore < minimumMemoryEvidenceQuality || item.QualityScore > 1 ||
+			!isSourceSupportedEvidence(item.Authority) {
 			continue
 		}
 		if claim.RunID != runID || !matchesEvidenceSource(claim.SourceRefs, item) || !matchesEvidenceSentence(claim.ClaimText, item.Snippet) || hasConflictingSingleWeekday(claim.ClaimText, item.Snippet) {

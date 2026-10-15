@@ -42,9 +42,14 @@ type openClawDiscoveryEvidence struct {
 }
 
 func (s *Service) persistOpenClawDiscovery(result ProbeResult) ProbeResult {
-	if s.ops == nil || normalizeRuntimeID(result.RuntimeID) != "openclaw" || !result.ProtocolValid {
+	if normalizeRuntimeID(result.RuntimeID) != "openclaw" {
 		return result
 	}
+	result.EvidencePersistenceStatus = EvidencePersistenceNotAttempted
+	if s.ops == nil || !result.ProtocolValid {
+		return result
+	}
+	result.EvidencePersistenceStatus = EvidencePersistenceFailed
 	evidence, err := newOpenClawDiscoveryEvidence(result, s.now().UTC())
 	if err != nil {
 		return result
@@ -206,6 +211,7 @@ func resultWithPersistedOpenClawEvidence(result ProbeResult, evidence openClawDi
 	result.GatewayAgentRoster = cloneGatewayAgentRosterSummary(evidence.GatewayAgentRoster)
 	result.EvidenceExpiresAt = &expiresAt
 	result.EvidencePersisted = true
+	result.EvidencePersistenceStatus = EvidencePersistenceSucceeded
 	return result
 }
 
@@ -293,9 +299,17 @@ func probeResultFromOpenClawDiscoveryEvidence(evidence openClawDiscoveryEvidence
 		GatewayAgentRoster:          cloneGatewayAgentRosterSummary(evidence.GatewayAgentRoster),
 		EvidenceExpiresAt:           &expiresAt,
 		EvidencePersisted:           persisted,
+		EvidencePersistenceStatus:   evidencePersistenceStatus(persisted),
 		Detail:                      "durable, read-only OpenClaw protocol discovery is available; it grants no execution authority",
 		CheckedAt:                   evidence.CheckedAt,
 	}
+}
+
+func evidencePersistenceStatus(persisted bool) string {
+	if persisted {
+		return EvidencePersistenceSucceeded
+	}
+	return EvidencePersistenceNotAttempted
 }
 
 func openClawDiscoveryEvidenceSHA256(evidence openClawDiscoveryEvidence) string {
