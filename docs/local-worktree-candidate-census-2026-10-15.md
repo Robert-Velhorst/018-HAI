@@ -196,4 +196,15 @@ Two clean public source checkouts were found outside the HAI Git worktrees:
 
 HAI's current `main` already contains the integration boundary: `backend/internal/runtimelab/registry.go` registers Hermes and Odysseus as remote runtimes; `remote_runtime.go` validates their health/capability contracts; and `backend/internal/agentruntime/runtime.go` keeps task execution blocked until per-tool authorization and audit mediation are available. The upstream applications are not vendored into HAI, intentionally: HAI uses governed adapters and remains the higher-level control plane.
 
-These two directories are unmodified public reference clones rather than unique HAI source or local development state. Their exact commits are remotely recoverable, so they can be removed locally without losing HAI changes. No upstream code was copied during this pass because the corresponding guarded adapter work is already present in canonical `main`.
+These two directories are unmodified public reference clones rather than unique HAI source or local development state. Their exact commits remain available from the public remotes. The attempted local removal was blocked by execution policy; no files were removed and no alternate deletion method was attempted. No upstream code was copied during this pass because the corresponding guarded adapter work is already present in canonical `main`.
+
+## Follow-up: external directories and deletion status (2026-10-15)
+
+This section supersedes the prior sentence in the public-upstream section that said the Hermes and Odysseus clones "can be removed locally." A recursive removal request for those paths was blocked by the local execution policy before any file was removed. No alternate deletion method was attempted. Both clean public reference clones remain present; their exact commits are recoverable from upstream, but that alone does not satisfy the local deletion gate.
+
+A separate non-Git validation copy at `D:/hai-governance-frontend-verify` contains 307 files (2,333,570 bytes). Each local file was compared by Git blob SHA-1 against the corresponding `frontend/` path in the refreshed GitHub `main` tree (`32e4d48e4c2dbb0ff35f13fe8f3dd22769864b64)): 43 are exact matches, 263 differ, and one local path (`frontend/karma.conf.js`) is absent from `main`. This is not a duplicate checkout suitable for cleanup; the differing and absent files have not been semantically reviewed, so they remain preserved and unported.
+
+A read-only size inventory found `D:/hai-toolchains` at 5,461,319,620 bytes: `gocache` 4,058,176,314 bytes, `gomodcache` 1,125,598,965 bytes, Go toolchain files 209,318,904 bytes, and its ZIP 67,590,465 bytes, plus two small npm lock-refresh directories. `D:/hai-go-cache` contains 518 files totaling 625,304 bytes. No persistent Go cache/toolchain environment variables were set at process, user, or machine scope, and no non-audit process command line referenced those D: paths during this observation. These are potentially recreatable build artifacts, but their producer/consumer scope and any command-scoped use are not fully established; none was changed or removed.
+
+No local data was deleted in this follow-up. The full local-device audit remains open.
+
