@@ -23,7 +23,7 @@ MAX_GUIDANCE_CHARS = 1024
 MAX_GUIDANCE_BYTES = 4096
 MAX_RESPONSE_CHARS = 12 * 1024
 MAX_MODEL_RESPONSE_BYTES = 32 * 1024
-MODEL_ENGINE = "crewai-compatible local planner v1"
+MODEL_ENGINE = "crewai compatible local planner v1"
 ALLOWED_HOSTS = {
     "localhost",
     "host.docker.internal",
