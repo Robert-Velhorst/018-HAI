@@ -102,6 +102,19 @@ func TestOutcomeMonitorMetricsNormalizeUnknownResult(t *testing.T) {
 	}
 }
 
+func TestSkippedOutcomeMonitorSweepDoesNotPolluteDurationHistogram(t *testing.T) {
+	exporter, err := New(true, "metrics-secret")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	exporter.ObserveOutcomeMonitorSweep(ambientmonitor.SweepMetrics{Result: ambientmonitor.SweepResultSkipped})
+	metrics := httptest.NewRecorder()
+	exporter.Handler().ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(metrics.Body.String(), "hai_outcome_monitor_sweep_duration_seconds_count 0") {
+		t.Fatalf("skipped sweep was counted as a zero-duration observation: %s", metrics.Body.String())
+	}
+}
+
 func TestEnabledOutcomeMonitorMetricsExposeStableZeroSeries(t *testing.T) {
 	exporter, err := New(true, "metrics-secret")
 	if err != nil {

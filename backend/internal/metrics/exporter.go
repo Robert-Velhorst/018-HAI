@@ -142,7 +142,9 @@ func (e *Exporter) ObserveOutcomeMonitorSweep(observation ambientmonitor.SweepMe
 	default:
 		result = ambientmonitor.SweepResultFailed
 	}
-	e.monitorSweepDuration.Observe(max(0, observation.Duration.Seconds()))
+	if observation.Duration > 0 {
+		e.monitorSweepDuration.Observe(observation.Duration.Seconds())
+	}
 	e.monitorSweeps.WithLabelValues(result).Inc()
 	e.monitorDueScopes.WithLabelValues("collection").Set(float64(max(0, observation.DueCollectionScopes)))
 	e.monitorDueScopes.WithLabelValues("composition").Set(float64(max(0, observation.DueCompositionScopes)))
