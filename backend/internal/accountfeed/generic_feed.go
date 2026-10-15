@@ -36,8 +36,9 @@ type GenericItem struct {
 
 // GenericFeed is the generic feed response envelope (§10.11).
 type GenericFeed struct {
-	Cursor string        `json:"cursor,omitempty"`
-	Items  []GenericItem `json:"items"`
+	Cursor        string        `json:"cursor,omitempty"`
+	CursorPresent bool          `json:"-"`
+	Items         []GenericItem `json:"items"`
 }
 
 // sourceURISecret flags secret-looking content that must not appear in a sourceUri.
@@ -147,6 +148,8 @@ func decodeItems(data []byte, feed *GenericFeed, envelope bool) error {
 			return fmt.Errorf("accountfeed: feed cursor must be a string")
 		} else if err := json.Unmarshal(raw.Cursor, &feed.Cursor); err != nil {
 			return fmt.Errorf("accountfeed: invalid feed cursor: %w", err)
+		} else {
+			feed.CursorPresent = true
 		}
 		if len(feed.Cursor) > maxGenericFeedCursor {
 			return fmt.Errorf("accountfeed: feed cursor exceeds %d bytes", maxGenericFeedCursor)

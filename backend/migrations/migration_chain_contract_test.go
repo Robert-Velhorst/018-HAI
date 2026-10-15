@@ -203,6 +203,7 @@ func TestGovernanceMigrationTailPreservesSemanticUpgradeOrder(t *testing.T) {
 		"0125_workflow_rule_defaults",
 		"0126_task_operation_cancellation",
 		"0127_opscontrol_review_receipt_provenance",
+		"0128_account_feed_sync_cursor",
 	}
 	entries, err := fs.ReadDir(Files, "pre")
 	if err != nil {

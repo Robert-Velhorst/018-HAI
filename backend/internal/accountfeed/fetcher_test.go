@@ -2,12 +2,39 @@ package accountfeed
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestFetchHTTPFeedAddsOpaqueCursorAndKeepsExistingQuery(t *testing.T) {
+	var gotQuery map[string][]string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		gotQuery = request.URL.Query()
+		_, _ = writer.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	feed := testFeed("")
+	feed.SourceType = SourceHTTPJSONFeed
+	feed.URL = server.URL + "/feed?limit=100&cursor=stale"
+	feed.SyncCursor = "opaque +/= checkpoint"
+	body, err := fetchFeedBytes(t.Context(), feed, FetchOptions{AllowHTTP: true, AllowLoopbackURL: feed.URL})
+	if err != nil || string(body) != `[]` {
+		t.Fatalf("HTTP fetch body=%q err=%v", body, err)
+	}
+	if len(gotQuery["limit"]) != 1 || gotQuery["limit"][0] != "100" ||
+		len(gotQuery["cursor"]) != 1 || gotQuery["cursor"][0] != feed.SyncCursor {
+		t.Fatalf("query parameters=%v; cursor should replace only its prior value", gotQuery)
+	}
+	encoded, err := json.Marshal(feed)
+	if err != nil || strings.Contains(string(encoded), feed.SyncCursor) || strings.Contains(string(encoded), "syncCursor") {
+		t.Fatalf("internal checkpoint leaked through feed JSON: %s err=%v", encoded, err)
+	}
+}
 
 func TestFetchHTTPFeedRejectsOversizedBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

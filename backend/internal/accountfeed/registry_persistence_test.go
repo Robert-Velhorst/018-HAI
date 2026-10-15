@@ -3,6 +3,8 @@ package accountfeed
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -370,7 +372,7 @@ func TestRegistrySharedRepositoryBusyAndStaleTokenFence(t *testing.T) {
 	if _, err := store.BeginSync(ctx, scope, feed.ID, uuid.New(), future); !errors.Is(err, ErrFeedSyncBusy) {
 		t.Fatalf("old token expired automatically: %v", err)
 	}
-	outcome := SyncOutcome{ItemsRead: 2, Event: persistenceEvent(feed, "synced", future)}
+	outcome := SyncOutcome{ItemsRead: 2, Cursor: "next-42", CursorPresent: true, Event: persistenceEvent(feed, "synced", future)}
 	if err := store.FinishSync(ctx, scope, feed.ID, uuid.New(), outcome); !errors.Is(err, ErrFeedSyncBusy) {
 		t.Fatalf("wrong finish token was accepted: %v", err)
 	}
@@ -391,7 +393,7 @@ func TestRegistrySharedRepositoryBusyAndStaleTokenFence(t *testing.T) {
 	}
 	finished := persistenceRecord(t, store, feed)
 	audit = persistenceAudit(t, store, feed)
-	if finished.SyncToken != nil || finished.SyncStartedAt != nil || finished.LastItemsRead != 2 ||
+	if finished.SyncToken != nil || finished.SyncStartedAt != nil || finished.LastItemsRead != 2 || finished.Feed.SyncCursor != "next-42" ||
 		finished.LastSuccessAt == nil || !finished.LastSuccessAt.Equal(future) ||
 		finished.LastAttemptAt == nil || !finished.LastAttemptAt.Equal(started) || len(audit) != 3 || audit[0] != outcome.Event {
 		t.Fatalf("matching finish did not atomically publish outcome: row=%+v audit=%+v", finished, audit)
@@ -412,17 +414,63 @@ func TestRegistrySharedRepositoryBusyAndStaleTokenFence(t *testing.T) {
 			t.Fatalf("stale token cleared a newer attempt: %v", err)
 		}
 		persistenceUnchanged(t, store, feed, before, audit)
-		failed := SyncOutcome{ItemsRead: 1, Event: persistenceEvent(feed, kind, future)}
+		failed := SyncOutcome{ItemsRead: 1, Cursor: "must-not-advance", CursorPresent: true, Event: persistenceEvent(feed, kind, future)}
 		if err := store.FinishSync(ctx, scope, feed.ID, active, failed); err != nil {
 			t.Fatal(err)
 		}
 		row := persistenceRecord(t, store, feed)
 		events := persistenceAudit(t, store, feed)
-		if row.SyncToken != nil || row.SyncStartedAt != nil || row.LastItemsRead != 1 ||
+		if row.SyncToken != nil || row.SyncStartedAt != nil || row.LastItemsRead != 1 || row.Feed.SyncCursor != "next-42" ||
 			row.LastSuccessAt == nil || !row.LastSuccessAt.Equal(*finished.LastSuccessAt) ||
 			row.LastAttemptAt == nil || !row.LastAttemptAt.Equal(future) || len(events) != len(audit)+1 || events[0] != failed.Event {
 			t.Fatalf("failed finish lost previous success or outcome: row=%+v audit=%+v", row, events)
 		}
+	}
+}
+
+func TestRegistryHTTPFeedPersistsAndClearsCommittedCursor(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests = append(requests, request.URL.Query().Get("cursor"))
+		switch len(requests) {
+		case 1:
+			_, _ = writer.Write([]byte(`{"cursor":"next-42","items":[]}`))
+		case 2:
+			_, _ = writer.Write([]byte(`{"items":[]}`))
+		default:
+			_, _ = writer.Write([]byte(`{"cursor":"","items":[]}`))
+		}
+	}))
+	defer server.Close()
+
+	store := NewMemoryRegistryRepository()
+	ledger := operations.NewMemoryRepository()
+	reg, err := NewRegistryWithRepository(store, operations.NewService(ledger), privacyfilter.NewService(), FetchOptions{
+		AllowHTTP: true, AllowLoopbackURL: server.URL + "/feed?limit=100",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed := persistenceSeed()
+	feed.SourceType = SourceHTTPJSONFeed
+	feed.Path = ""
+	feed.URL = server.URL + "/feed?limit=100"
+	registered, err := reg.RegisterContext(t.Context(), feed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, wantStored := range []string{"next-42", "next-42", ""} {
+		report, err := reg.SyncContext(t.Context(), persistenceScope(registered), registered.ID)
+		if err != nil || !report.Recorded {
+			t.Fatalf("sync %d report=%+v err=%v", i+1, report, err)
+		}
+		stored := persistenceRecord(t, store, registered)
+		if stored.Feed.SyncCursor != wantStored {
+			t.Fatalf("sync %d persisted cursor=%q want %q", i+1, stored.Feed.SyncCursor, wantStored)
+		}
+	}
+	if len(requests) != 3 || requests[0] != "" || requests[1] != "next-42" || requests[2] != "next-42" {
+		t.Fatalf("server saw cursors %v; omitted cursor must preserve the checkpoint and explicit empty must clear it", requests)
 	}
 }
 
