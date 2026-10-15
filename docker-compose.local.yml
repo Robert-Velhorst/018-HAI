@@ -1892,7 +1892,7 @@ services:
   postgres-automation:
     # Pinned upstream pgvector Postgres 17 image. Existing data stays in the
     # named volume; take a backup before changing a live database image.
-    image: pgvector/pgvector:0.8.5-pg17-bookworm
+    image: pgvector/pgvector:0.8.7-pg17-bookworm
     container_name: 018-hai-postgres-automation
     hostname: postgres-automation
     restart: unless-stopped
