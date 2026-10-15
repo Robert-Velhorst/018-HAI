@@ -227,3 +227,14 @@ The 17 staged non-conflict paths in `D:\\codex-temp\\hai-merge-scratch-20261010`
 No changes were ported from this staged set; the unresolved merge worktree and index remain intact.
 
 PR #153's first exact-head CI run exposed an integration fixture mismatch: the source-configuration PostgreSQL acceptance test applied migrations only through `0118`, while the updated model expected the `sync_cursor` column from `0128`. The focused correction now applies through `0128` and rolls back the empty cursor migration before exercising the independent `0114` data-protection guard. The correction is commit `285dae186ddaf4ed8e1e1a5d1a07b4999bbaea79`; a new exact-head CI run was queued after the push. Its checks were pending at this ledger update, so PR #153 is not yet marked green. The earlier failure belongs to the superseded head `616372e` and must not be treated as the result for the corrected head.
+
+
+## Exact-head CI and cursor correction recheck (2026-10-15)
+
+A fresh GitHub check read was performed against each PR's exact current head. GitHub reports the PR base at `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`.
+
+- PR #153 remains open at `46feef0568bb4fb4d6601d4df59caf97e14cb600`. Local verification in its isolated worktree passed: `go test ./migrations` (Go 1.27.2, `automation-hub-backend/migrations`, 2.312s) and `git diff --check`. The package test did not run the dedicated DSN-gated PostgreSQL acceptance test; hosted migration integration remains required. Exact-head GitHub check counts at this read: {"total":41,"success":13,"failed":0,"queued":16,"inProgress":12,"neutral":0}. Checks remain pending; this head is not yet fully CI-verified. CodeQL returned a neutral configuration warning because the PR head does not contain the Go default setup present on main, so it is not a Go CodeQL pass.
+- PR #151 remains open at `722082de0cc3e84a28131b64a523b8b0377f7a5b`. Exact-head GitHub check counts at this read: {"total":41,"success":32,"failed":0,"queued":5,"inProgress":4,"neutral":0}. Checks remain pending. The cleanup-readiness safety contract check passed, but it neither authorizes deletion nor proves the broad local inventory complete.
+- The preceding ledger paragraph describes PR #153 head `285dae1...` as awaiting checks. That head was superseded by `46feef0...`; the source-configuration fixture now migrates through `0128`, and the rollback-only fixture isolates `0114` from later migrations. The focused migrations package test passed on this newer source. Re-evaluate CI only against `46feef0...`; earlier head results do not transfer.
+
+This recheck does not establish that every HAI-related local file has been reviewed. Local worktrees and transcript archives remain intact; no cleanup was performed.
