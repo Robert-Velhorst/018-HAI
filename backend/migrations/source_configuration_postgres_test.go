@@ -34,7 +34,7 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	if _, err := infra.ApplyMigrations(db, configFiles, "pre"); err != nil {
 		t.Fatal(err)
 	}
-	currentFiles := migrationFilesThrough(t, "pre/0118_operation_source_evidence_raw_digest")
+	currentFiles := migrationFilesThrough(t, "pre/0128_account_feed_sync_cursor")
 	if _, err := infra.ApplyMigrations(db, currentFiles, "pre"); err != nil {
 		t.Fatal(err)
 	}
@@ -102,10 +102,10 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	}
 
 	// Exercise the migration's registry-data guard independently of the runner's
-	// earlier phase-order guard. This database has only the pre migrations needed
-	// for a real managed feed, so rollback reaches the 0114 down-SQL preflight.
+	// earlier phase-order guard. Remove the empty cursor column after registration
+	// so rollback reaches the 0114 down-SQL preflight with the managed feed intact.
 	rollbackDB := openIsolatedMigrationDatabase(t).WithContext(ctx)
-	rollbackFiles := migrationFilesThrough(t, "pre/0114_operation_source_configuration")
+	rollbackFiles := migrationFilesThrough(t, "pre/0128_account_feed_sync_cursor")
 	if _, err := infra.ApplyMigrations(rollbackDB, rollbackFiles, "pre"); err != nil {
 		t.Fatalf("apply isolated pre-phase migrations: %v", err)
 	}
@@ -128,6 +128,9 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	})
 	if err != nil {
 		t.Fatalf("register isolated rollback feed: %v", err)
+	}
+	if err := infra.RollbackMigration(rollbackDB, rollbackFiles, "pre", "pre/0128_account_feed_sync_cursor"); err != nil {
+		t.Fatalf("roll back empty sync cursor before testing the source-configuration guard: %v", err)
 	}
 	// Registration alone creates the managed origin that the 0114 down
 	// migration must protect. Syncing would write operations using the current
