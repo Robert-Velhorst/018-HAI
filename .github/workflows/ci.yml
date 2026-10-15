@@ -345,7 +345,7 @@ jobs:
     services:
       # Synthetic public credentials, only for this disposable hosted-runner service.
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -806,10 +806,10 @@ jobs:
           grep -qx '==> ALL PHASE 2 SMOKE SUITES PASSED' "$smoke_log"
 
   # Runs the versioned migration runner and Framework Registry persistence tests
-  # against a real Postgres 17 service. Integration-tagged checks do not run as
+  # against a real PostgreSQL 18.6 service. Integration-tagged checks do not run as
   # part of the default backend unit-test job.
   migrations-integration:
-    name: Migration integration (real Postgres 17)
+    name: Migration integration (real PostgreSQL 18.6)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -817,7 +817,7 @@ jobs:
         working-directory: backend
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -1148,7 +1148,7 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: hai-ci-two-account-db-password-0123456789abcdef

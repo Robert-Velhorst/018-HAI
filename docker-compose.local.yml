@@ -784,7 +784,7 @@ services:
   # Runs after migrations so grants cover every current table, and records
   # default privileges for all future tables created by the schema owner.
   backend-runtime-role:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     restart: "no"
     mem_limit: ${BACKEND_RUNTIME_ROLE_MEMORY_LIMIT:-64m}
     cpus: ${BACKEND_RUNTIME_ROLE_CPU_LIMIT:-0.1}
@@ -1756,7 +1756,7 @@ services:
   # from HAI's primary Postgres instance and is enabled only with
   # `--profile durability`. No Temporal port is exposed to the host.
   temporal-postgres:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     profiles: ["durability"]
     restart: unless-stopped
     mem_limit: 512m
@@ -1766,8 +1766,11 @@ services:
       POSTGRES_USER: temporal
       POSTGRES_PASSWORD: "${HAI_TEMPORAL_POSTGRES_PASSWORD:-}"
       POSTGRES_DB: temporal
+      HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
+    entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
     volumes:
-      - temporal-postgres-data:/var/lib/postgresql/data
+      - temporal-postgres-data:/var/lib/postgresql
+      - ./scripts/postgres18-volume-preflight.sh:/scripts/postgres18-volume-preflight.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
       interval: 10s
@@ -1862,7 +1865,7 @@ services:
       - service-hub
 
   postgres-idp:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     container_name: 018-hai-postgres-idp
     hostname: postgres-idp
     restart: unless-stopped
@@ -1875,10 +1878,13 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${IDP_DB_NAME}
+      HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
     ports:
       - "127.0.0.1:${IDP_DB_HOST_PORT:-5433}:5432"
+    entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
     volumes:
-      - postgres-idp-data:/var/lib/postgresql/data
+      - postgres-idp-data:/var/lib/postgresql
+      - ./scripts/postgres18-volume-preflight.sh:/scripts/postgres18-volume-preflight.sh:ro
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${IDP_DB_NAME}"]
@@ -1890,9 +1896,9 @@ services:
       - idp-network
 
   postgres-automation:
-    # Pinned upstream pgvector Postgres 17 image. Existing data stays in the
-    # named volume; take a backup before changing a live database image.
-    image: pgvector/pgvector:0.8.5-pg17-bookworm
+    # Pinned PostgreSQL 18 + pgvector 0.8.7. The preflight refuses to create
+    # an empty cluster beside an unconverted PostgreSQL 17 data directory.
+    image: pgvector/pgvector:0.8.7-pg18-bookworm@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
     container_name: 018-hai-postgres-automation
     hostname: postgres-automation
     restart: unless-stopped
@@ -1905,10 +1911,13 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${AUTOMATION_DB_NAME}
+      HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
     ports:
       - "127.0.0.1:${AUTOMATION_DB_HOST_PORT:-5434}:5432"
+    entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
     volumes:
-      - postgres-automation-data:/var/lib/postgresql/data
+      - postgres-automation-data:/var/lib/postgresql
+      - ./scripts/postgres18-volume-preflight.sh:/scripts/postgres18-volume-preflight.sh:ro
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${AUTOMATION_DB_NAME}"]
