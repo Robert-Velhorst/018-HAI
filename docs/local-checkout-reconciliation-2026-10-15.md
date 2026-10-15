@@ -251,3 +251,12 @@ The latest verified GitHub `main` ref is `86fb1d9c53a69e1edb2fb098832aa6cb35d38e
 For every path, `origin/main:<path>` exists and `git diff --numstat origin/main -- <path>` showed zero added local lines (some were exact matches; others were older/subset text). This supports that the local file text is represented in current main, but does not mean the old versions were ported or that the whole local checkout is integrated. Agent-state files, test-evidence fixtures, logs, output, tracked modifications/deletions, and all other worktrees were excluded from this cohort.
 
 No files were removed. The attempted local cleanup command was rejected before execution; all source files remain intact. The audit objective remains open, and this bounded preflight is not a whole-device scan or cleanup completion claim.
+
+
+## Cursor hardening and latest PR state (2026-10-15)
+
+PR #153 was extended at head `dc980f8e5e2033d76e6280f909151a4088a38767` to reject cursor strings containing NUL before request URL construction or persistence. JSON allows escaped NUL, while PostgreSQL text cannot store NUL. Regression tests cover parser and request-URL rejection. Local Go 1.27.2 tests passed for `./internal/accountfeed` and `./migrations`; `git diff --check` passed. The dedicated DSN-gated PostgreSQL test was not run locally.
+
+At the latest exact-head GitHub check read, PR #153 had 41 reported checks: nine successful, nine running, 22 queued, no failures, and one neutral CodeQL result. CodeQL's neutral result says it cannot determine PR-introduced alerts because the PR head lacks the Go default setup on main; do not describe it as a Go code-scan pass. The hosted suite is incomplete. PR #153 remains a draft, open, and unmerged.
+
+No local data was deleted. The primary-checkout content crosswalk is bounded to the 65 files described above; it does not resolve the broader tracked diff, sensitive local environment files, staged snapshots, worktrees, or transcript archives.
