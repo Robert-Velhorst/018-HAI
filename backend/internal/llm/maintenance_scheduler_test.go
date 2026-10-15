@@ -164,6 +164,75 @@ func TestRunDueModelMaintenanceReturnsWithoutWorkWhenAlreadyCancelled(t *testing
 	}
 }
 
+func TestEnsureModelFreshCancelsDuringOllamaInspectionWithoutFailureRecord(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
+	requestStarted := make(chan struct{})
+	requestCancelled := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			t.Errorf("inspection path = %q, want /api/tags", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		close(requestStarted)
+		<-r.Context().Done()
+		close(requestCancelled)
+	}))
+	defer server.Close()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.LocalModelsAllowed = true
+	index := providerIndex(t, policy, "ollama")
+	provider := policy.Providers[index]
+	provider.Enabled = true
+	provider.Local = true
+	provider.EndpointURL = server.URL
+	if len(provider.Models) == 0 {
+		t.Fatal("Ollama test policy has no configured models")
+	}
+	model := provider.Models[0]
+	model.Enabled = true
+	provider.Models[0] = model
+	policy.Providers[index] = provider
+
+	history := &fakeModelMaintenanceRepository{}
+	service := &Service{
+		policy:             policy,
+		maintenanceHistory: history,
+		maintenanceRunning: map[string]*sync.Mutex{},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultChannel := make(chan ModelMaintenanceResult, 1)
+	go func() {
+		resultChannel <- service.ensureModelFreshWithContext(ctx, provider, model)
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("maintenance did not reach the Ollama model inspection request")
+	}
+	cancel()
+
+	select {
+	case result := <-resultChannel:
+		if result.Status != "cancelled" {
+			t.Fatalf("maintenance result = %#v, want cancelled", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("maintenance did not return after inspection cancellation")
+	}
+	select {
+	case <-requestCancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ollama inspection request did not observe context cancellation")
+	}
+	if len(history.records) != 0 {
+		t.Fatalf("cancelled inspection wrote maintenance history: %#v", history.records)
+	}
+}
+
 func TestEnsureModelFreshReleasesLeaseWhenContextCancelsDuringAcquisition(t *testing.T) {
 	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
 	policy := testPolicyWithoutEndpoints()
