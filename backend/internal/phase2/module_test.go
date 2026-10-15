@@ -171,7 +171,7 @@ func TestExecutionConstitutionAvailabilityAcceptsOnlyTrustedBaselineOrDurableAct
 	}
 }
 
-func TestDurableActiveConstitutionRequiresPersistedActiveUUID(t *testing.T) {
+func TestDurableConstitutionAvailabilityRejectsBuiltinFallback(t *testing.T) {
 	if hasDurableActiveConstitution(frameworkregistry.DefaultConstitution()) {
 		t.Fatal("non-persisted built-in fallback must not enable execution")
 	}
@@ -179,19 +179,22 @@ func TestDurableActiveConstitutionRequiresPersistedActiveUUID(t *testing.T) {
 		ID:     "8c508c67-691f-4d35-9487-fcd173f755d4",
 		Status: frameworkregistry.ConstitutionActive,
 	}) {
-		t.Fatal("active persisted Constitution should enable execution")
-	}
-	if hasDurableActiveConstitution(frameworkregistry.Constitution{
-		ID:     "not-a-persisted-id",
-		Status: frameworkregistry.ConstitutionActive,
-	}) {
-		t.Fatal("active Constitution with an invalid ID must not enable execution")
+		t.Fatal("active Constitution with a durable ID should enable composition")
 	}
 	if hasDurableActiveConstitution(frameworkregistry.Constitution{
 		ID:     "8c508c67-691f-4d35-9487-fcd173f755d4",
 		Status: frameworkregistry.ConstitutionDraft,
 	}) {
 		t.Fatal("draft Constitution must not enable execution")
+	}
+}
+
+func TestDurableActiveConstitutionRejectsMalformedUUID(t *testing.T) {
+	if hasDurableActiveConstitution(frameworkregistry.Constitution{
+		ID:     "not-a-persisted-id",
+		Status: frameworkregistry.ConstitutionActive,
+	}) {
+		t.Fatal("active Constitution with a malformed ID must not enable execution")
 	}
 }
 
