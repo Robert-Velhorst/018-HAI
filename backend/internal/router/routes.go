@@ -120,9 +120,13 @@ import (
 
 // initializeRoutesWithContext registers routes and starts background services
 // against the server lifecycle. Callers must provide the application context.
-func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context) error {
+func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context, observers ...ambientmonitor.SweepObserver) error {
 	if runtimeCtx == nil {
 		return fmt.Errorf("application runtime context is required")
+	}
+	var monitorObserver ambientmonitor.SweepObserver
+	if len(observers) > 0 {
+		monitorObserver = observers[0]
 	}
 	router.GET("/healthz", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "backend"})
@@ -430,7 +434,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			return err
 		}
 		if ambientmonitor.DurableSchedulerEnabled() {
-			if err := ambientmonitor.StartDurableScheduler(runtimeCtx, ambientMonitorService, backgroundAllowed); err != nil {
+			if err := ambientmonitor.StartDurableScheduler(runtimeCtx, ambientMonitorService, backgroundAllowed, monitorObserver); err != nil {
 				return err
 			}
 		}
