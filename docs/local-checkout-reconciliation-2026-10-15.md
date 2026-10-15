@@ -27,6 +27,10 @@ The untracked Go test variants examined here use paths already present on `main`
 
 ## Other registered worktrees
 
+### Review-report file comparison
+
+A read-only inventory found 37 local Markdown review reports under `output/`, totaling 966,731 bytes. Comparing each relative path and Git blob with current main found 29 paths absent from main and eight same-path files with different bytes; none is byte-identical. Three of the eight become text-identical after normalizing only the expanded local temp-root prefix to `%TEMP%\` (the installer-production, integrated-safety, and production-durability reports). Five still differ after that normalization. This is a file-level comparison, not a finding-by-finding integration audit: absent or differing reports remain retained, and no report is marked safe to delete on this evidence alone.
+
 A fresh `git worktree list` inspection found eleven registered paths in addition to the primary checkout. Three dirty HAI audit worktrees based at `e07b9dae` contain 425, 150, and 13 tracked paths changed, plus 95, 97, and four untracked files respectively. A separate clean managed worktree for PR #147 is also registered. The dirty audit worktree deltas have not yet been semantically compared or matched to PRs.
 
 Five historical PR-resolution worktrees under the October 11 Codex directory also contain distinct working-tree changes (527, 519, 59, 264, and 216 paths respectively, with two untracked files in one). Their contents must be compared with current `main` and the corresponding PR histories before archiving. They were not removed.
