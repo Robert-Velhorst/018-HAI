@@ -29,3 +29,9 @@ Eight local report paths also exist in `main`. Six compare byte-for-byte after s
 - Draft PR #158 was closed unmerged after its diff was found to replace newer Trello regression coverage on `main` with an older fixture.
 - No local files, environment files, databases, logs, agent state, or generated output were deleted or modified.
 - The 244 tracked modifications, 64 differing untracked source/support files, and raw output artifacts remain unresolved. This addendum is not a completion claim or authorization to clean them up.
+
+## Materialized gateway configuration candidate
+
+The local checkout also contains a modified `nginx-config/nginx.conf`, a path absent from current `main`. It is not mounted by current Compose. Current `docker-compose.local.yml` mounts `nginx.conf.template` and renders it with `envsubst` from environment-provided backend and preview secrets. Current `nginx.conf.template` includes the local file's reviewed changes (server-token suppression, refresh-cookie forwarding, and forwarded-header handling) plus additional routes and protections. The local materialized file instead contains a hard-coded placeholder backend key, so it is not safe to port or use as the canonical runtime config.
+
+Deleting this obsolete local file was attempted after confirming the replacement path and behavior, but Windows denied the operation for insufficient access rights. No alternate deletion method was used; the local file remains unchanged. Its prior committed version remains recoverable from the local Git object database.
