@@ -448,7 +448,7 @@ The local untracked
 `backend/internal/workflow/project_dossier_test.go` differs from current `main`
 (local blob `867365ef`; main blob `62a22d40`). In
 `TestProjectDossierBoundsNestedContextAndRedactsCredentials`, the local test
-embeds the credential-shaped literal `AKIAABCDEFGHIJKLMNOP`; current `main`
+embeds a hard-coded AWS access-key-shaped fixture; current `main`
 constructs its AWS-shaped fixture dynamically with `"AKIA" + strings.Repeat(...)`
 and checks redaction against that value. The canonical test preserves the
 security assertion without adding a scanner-triggering literal. The local
