@@ -4,7 +4,7 @@
 
 This is a bounded checkpoint for one HAI repository checkout, not a complete audit of every HAI-related file on the device. The canonical repository is `Robert-Velhorst/018-HAI`; the verified `main` commit was `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`.
 
-The local checkout under review was on `codex/hai-runtime-release` at `e07b9dae`. Its Git refs were refreshed before comparison. No local source, logs, transcripts, databases, or worktrees were changed by this audit.
+The primary local checkout under review was on `codex/hai-runtime-release` at `e07b9dae`. Its Git refs were refreshed before comparison. No local source, logs, transcripts, databases, or worktrees were changed by this audit.
 
 ## Why the local branch must not be merged wholesale
 
@@ -25,11 +25,23 @@ A content-hash comparison against the refreshed `origin/main` tree found 1,091 p
 
 The untracked Go test variants examined here use paths already present on `main`, and their named test functions are also present in the corresponding main files. That is not proof their assertions are equivalent. Their bodies still need a semantic comparison before any port or cleanup. The Go toolchain was not available in the PowerShell environment used for this checkpoint, so no local Go test result is claimed.
 
+## Other registered worktrees
+
+A fresh `git worktree list` inspection found eleven registered paths in addition to the primary checkout. Four HAI audit worktrees based at `e07b9dae` each contain local changes (425, 150, and 13 tracked paths changed, plus 95, 97, and four untracked files in three of them); their deltas have not yet been semantically compared or matched to PRs.
+
+Five historical PR-resolution worktrees under the October 11 Codex directory also contain distinct working-tree changes (527, 519, 59, 264, and 216 paths respectively, with two untracked files in one). Their contents must be compared with current `main` and the corresponding PR histories before archiving. They were not removed.
+
+The `D:\hai-source-reconciliation` worktree is based on `3b15fe4a`, 33 commits behind current `origin/main`, and has 310 staged paths (7,138 insertions and 12,453 deletions) plus 34 unstaged deletions. A bounded blob comparison of its staged index against current `main` found 308 changed existing files, one exact match, and one new path. Representative review found security-sensitive regressions in the candidate: it removes upload cancellation checks, omits source-evidence hash material from a source-approval digest, and removes the HTTP max-header limit. Therefore this staged batch is not safe to publish wholesale. The remaining files need semantic review and selective porting; no part of this worktree was deleted.
+
+Physical checkout sizes are not equivalent to reclaimable disk space: Git object storage may be shared, dependencies and generated outputs may be present, and uncommitted changes remain in several worktrees. No storage recovery is claimed.
+
 ## Related published work
 
 PRs #41 and #42 are already merged. Their merge commits are `71102fd40a960b59b70e56f902cb4b3dc91f1390` and `b1caa0b074793e794ea8bc340cba9ac562924ff7`. They required no action in this checkpoint.
 
 PR #147 is open and contains the published redaction change. Its managed worktree was clean at head `2cfcffaf901a93577c41367127f4181287f3f5ab`, occupied 38,217,382 bytes, and contained 21,454 bytes of ignored files. A recoverable archive request was queued, but the worktree still existed at the last verification. No archive completion or local space recovery is claimed.
+
+PR #151 is this draft checkpoint. Other open HAI PRs were observed, including #143-#150 and earlier PRs. Their scope and current checks must be reviewed before treating any matching local work as integrated.
 
 ## Remaining reconciliation work
 
