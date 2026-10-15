@@ -161,3 +161,12 @@ A function-declaration inventory compared 141 present modified Go files with sam
 
 The measured source delta remains open for semantic review: 243 present modified tracked files hash-checked (excluding `.env.example`) yielded four blobs equal to the PR #36 merge tree, zero equal to current `main`, and 239 equal to neither. This supports neither wholesale copying nor deletion; files differing from both remain preserved until individually reviewed.
 
+## E2E matrix and cleanup-script follow-up
+
+A focused review of the primary checkout's untracked browser-matrix artifacts found that canonical `main` already contains `frontend/e2e/tests/owned-browser-matrix.spec.ts`, its support fixture, and its handoff document. The local untracked fixture is an older variation: it permits one synthetic login POST and lacks the canonical fixture's authenticated-session refresh and structured, redacted console diagnostics. Canonical `main` rejects every browser-origin write and retains the fuller route/state/keyboard matrix. The local handoff describes a matrix spec, but that spec is not present in the old primary checkout; the current canonical spec is present. No browser-matrix code needs porting from this local snapshot.
+
+Two generated `output/` scripts were reviewed. `cleanup-unused-hai-test-containers-20261001.ps1` targets exited HAI Go test/build runners, but saves raw container logs to a temporary evidence directory and is not connected to canonical cleanup contracts. It was not ported as a destructive operator utility. `cleanup-aged-successful-test-containers-20261002.ps1` targets CoFounder containers and is outside HAI scope. Neither file was executed.
+
+A fresh extension/size inventory of `output/` found 1,507 files: 884 logs, 420 JSON, 82 JSONL, 60 exit markers, 37 Markdown, 11 PowerShell, and a small number of other files. JSONL accounts for approximately 115.25 MiB. This classifies the directory as run evidence and scripts, not a bulk of product source; individual evidence and provenance have not been reconciled, and no deletion is authorized by this review.
+
+PR #157's new hosted CI run `38786365450` completed all 30 jobs successfully after the stale router-call contract was corrected. This verifies that PR head's hosted test suite only; it does not complete the local-file reconciliation or authorize deletion.
