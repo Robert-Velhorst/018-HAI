@@ -102,6 +102,27 @@ func TestOutcomeMonitorMetricsNormalizeUnknownResult(t *testing.T) {
 	}
 }
 
+func TestEnabledOutcomeMonitorMetricsExposeStableZeroSeries(t *testing.T) {
+	exporter, err := New(true, "metrics-secret")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	metrics := httptest.NewRecorder()
+	exporter.Handler().ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := metrics.Body.String()
+	for _, expected := range []string{
+		`hai_outcome_monitor_sweeps_total{result="completed"} 0`,
+		`hai_outcome_monitor_sweeps_total{result="interrupted"} 0`,
+		`hai_outcome_monitor_due_scopes_discovered{kind="collection"} 0`,
+		`hai_outcome_monitor_leases_recovered_total{kind="composition"} 0`,
+		`hai_outcome_monitor_items_total{result="claimed",stage="collection"} 0`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Errorf("metrics did not expose stable zero series %q: %s", expected, body)
+		}
+	}
+}
+
 func TestDisabledExporterDoesNotCollectRequests(t *testing.T) {
 	exporter, err := New(false, "")
 	if err != nil {
