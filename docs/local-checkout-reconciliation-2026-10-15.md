@@ -166,3 +166,8 @@ I cross-checked the concrete findings in the preserved Copernicus/Aristotle/Bana
 This was a targeted source/test crosswalk for the listed advisory findings, not an exhaustive review of every historical transcript or every file under the local archive roots. It does not change transcript eligibility for cleanup.
 
 PR #152 was extended to cover both cancellation during Ollama inspection and cancellation during the end-to-end local pull before inference/fallback. The latest observed PR head is `44a7275fdf973c7511fe7c4d9aa008b70490d190`; its full CI suite was still running at this ledger update. Earlier green checks apply to the prior PR head only.
+
+
+## CI status correction for PR #152 (2026-10-15)
+
+The earlier PR #152 status paragraphs above are historical and must not be read as the status of its current head. The branch was revised after an earlier backend test timed out while waiting for a simulated accepted Ollama pull request to finish. The latest inspected head is `479bfb5b11d13aa16ff3bc64cb7c6e2425066d74`; its associated GitHub Actions run is #38766874375. At the time of this correction, several jobs had passed (including repository secret scan, Go/Nginx manager build, local provider fixture, Windows contract checks, Compose validation, and multiple runner-image contracts), while frontend/browser, migration, IDP, Windows installer, backend, authenticated smoke, and further runner jobs were still in progress or queued. Therefore the current PR head is **not yet fully verified**. Recheck the exact head and all required checks before calling it green or merge-ready. This is CI over repository fixtures, not acceptance against an external Ollama provider. No local source or worktree was changed or deleted.
