@@ -225,3 +225,8 @@ This is an exact-content census, not semantic proof that the differing code shou
 ## Windows runtime/installer test snapshot spot check
 
 A named-function/test inventory compared five local untracked Windows runtime and installer scripts with the corresponding current `main` files: native runtime, process containment, runtime lifecycle, installer install, and installer source selection. None contains a local-only named test/function. The local runtime-lifecycle script has seven named entries in this inventory while current `main` has seventeen, including additional coverage for verified process termination, ACL-protected files, and startup/readiness failure paths. The process-containment script also has one additional named helper in `main`. This is a structural test inventory, not proof of assertion equivalence, but it offers no reason to port the local scripts; canonical coverage is broader in the lifecycle sample. No files were changed or deleted.
+
+
+## Migration-test snapshot inventory
+
+Six local untracked migration test files with same-path entries in current `main` were compared by named test declarations: protected-data rollback, runtime database-role provisioning, source configuration, source head, source observation, and Trello webhook reconciliation generations. All six have the same named test functions in local and current `main`; none adds a new named test case locally. This is a declaration-level inventory, not assertion-by-assertion equivalence. No migration test was ported based on this check, and the local copies remain preserved until semantic review is complete.
