@@ -68,8 +68,8 @@ func (f Feed) Validate() error {
 	if strings.TrimSpace(f.Name) == "" {
 		return fmt.Errorf("accountfeed: name required")
 	}
-	if len(f.SyncCursor) > maxGenericFeedCursor {
-		return fmt.Errorf("accountfeed: stored feed cursor exceeds %d bytes", maxGenericFeedCursor)
+	if err := validateGenericFeedCursor(f.SyncCursor); err != nil {
+		return fmt.Errorf("accountfeed: stored %w", err)
 	}
 	if strings.TrimSpace(f.OwnerUserID) == "" {
 		return fmt.Errorf("accountfeed: ownerUserId required")

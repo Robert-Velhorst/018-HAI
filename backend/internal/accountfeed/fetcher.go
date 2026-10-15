@@ -72,8 +72,8 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 }
 
 func feedRequestURL(raw, cursor string) (string, error) {
-	if len(cursor) > maxGenericFeedCursor {
-		return "", fmt.Errorf("accountfeed: stored feed cursor exceeds %d bytes", maxGenericFeedCursor)
+	if err := validateGenericFeedCursor(cursor); err != nil {
+		return "", fmt.Errorf("accountfeed: stored %w", err)
 	}
 	if cursor == "" {
 		return raw, nil

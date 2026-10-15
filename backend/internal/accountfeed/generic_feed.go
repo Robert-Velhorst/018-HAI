@@ -133,7 +133,7 @@ func ParseGenericFeed(data []byte, maxContentBytes, maxMetadataBytes int) (Gener
 func decodeItems(data []byte, feed *GenericFeed, envelope bool) error {
 	if envelope {
 		var raw struct {
-			Cursor json.RawMessage `json:"cursor"`
+			Cursor json.RawMessage   `json:"cursor"`
 			Items  []json.RawMessage `json:"items"`
 		}
 		if err := json.Unmarshal(data, &raw); err != nil {
@@ -151,8 +151,8 @@ func decodeItems(data []byte, feed *GenericFeed, envelope bool) error {
 		} else {
 			feed.CursorPresent = true
 		}
-		if len(feed.Cursor) > maxGenericFeedCursor {
-			return fmt.Errorf("accountfeed: feed cursor exceeds %d bytes", maxGenericFeedCursor)
+		if err := validateGenericFeedCursor(feed.Cursor); err != nil {
+			return fmt.Errorf("accountfeed: %w", err)
 		}
 		return appendRawItems(feed, raw.Items)
 	}
@@ -161,6 +161,16 @@ func decodeItems(data []byte, feed *GenericFeed, envelope bool) error {
 		return fmt.Errorf("accountfeed: invalid feed array: %w", err)
 	}
 	return appendRawItems(feed, items)
+}
+
+func validateGenericFeedCursor(cursor string) error {
+	if strings.IndexByte(cursor, 0) >= 0 {
+		return fmt.Errorf("feed cursor contains an unsupported NUL byte")
+	}
+	if len(cursor) > maxGenericFeedCursor {
+		return fmt.Errorf("feed cursor exceeds %d bytes", maxGenericFeedCursor)
+	}
+	return nil
 }
 
 // encoding/json matches struct fields case-insensitively when no exact match

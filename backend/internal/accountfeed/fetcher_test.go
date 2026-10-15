@@ -36,6 +36,12 @@ func TestFetchHTTPFeedAddsOpaqueCursorAndKeepsExistingQuery(t *testing.T) {
 	}
 }
 
+func TestFeedRequestURLRejectsNULCursor(t *testing.T) {
+	if got, err := feedRequestURL("https://example.test/feed", "bad\x00cursor"); err == nil || got != "" {
+		t.Fatalf("NUL cursor URL=%q err=%v, want rejection", got, err)
+	}
+}
+
 func TestFetchHTTPFeedRejectsOversizedBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
