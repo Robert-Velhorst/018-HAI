@@ -135,3 +135,9 @@ Ten untracked files under `idp/internal/app/authentication/` were screened again
 
 A test-declaration comparison covered the 26 untracked Go test files under `backend/` that also have a path in canonical `main`. It found no test functions unique to the local snapshots. Canonical `main` contains additional test functions absent from the local copies in three files: `ambient/scheduler_test.go` (scheduler policy-disabled state), `operations/source_approval_test.go` (explicit approval overriding a future review reminder), and `pursuit/completion_outcome_integrity_test.go` (three receipt/timeline cases). The local pursuit and source-approval variants are shorter and omit coverage present in `main`; the already-reviewed worker reliability variant also omits an approval-gate assertion. This inventory compares test declarations and selected assertions; it does not prove every assertion in all 26 files equivalent. No local test was ported.
 
+
+
+## Frontend and runner-script test snapshot review
+
+A test-name comparison of local untracked frontend/script tests against their same-path canonical files found no additional safe behavior to port. The local `frontend/scripts/control-room-logic.test.mjs` lacks the canonical uncapped-pursuit-count metric case; `release-cache.test.mjs` lacks the restrictive-script-policy same-origin theme case; and `scripts/test_python_runner_container_smoke.py` lacks the canonical Grype liveness smoke case. The local `scripts/test-frontend-build-resource-limit.cjs` has a differently named case that documents invalid worker values passing through the installed parser; canonical `main` instead tests that invalid custom values fall back to host concurrency. These differences are consistent with an older test snapshot, not a safe additive patch. This review compares the identified test declarations and the relevant resource-limit case only.
+
