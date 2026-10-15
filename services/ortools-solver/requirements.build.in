@@ -1,0 +1,4 @@
+# Build-time Python packaging tools for the official OR-Tools v9.15 source build.
+setuptools
+wheel
+typing-extensions>=4.12.0
