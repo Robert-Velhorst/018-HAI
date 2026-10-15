@@ -2135,11 +2135,11 @@ networks:
 
 volumes:
   postgres-idp-data:
-    name: 018-hai-postgres-idp-data
+    name: 018-hai-postgres-idp-data-v18
   postgres-automation-data:
-    name: 018-hai-postgres-automation-data
+    name: 018-hai-postgres-automation-data-v18
   temporal-postgres-data:
-    name: 018-hai-temporal-postgres-data
+    name: 018-hai-temporal-postgres-data-v18
   runner-ollama-data:
     name: 018-hai-runner-ollama-data
   redpanda-data:

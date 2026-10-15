@@ -4,24 +4,24 @@ The local Compose stack now targets PostgreSQL 18.6, pgvector 0.8.7 on PostgreSQ
 
 ## Persistent PostgreSQL data
 
-Three services use durable named volumes:
+Three services use durable named volumes. The updated Compose file assigns new physical volume names ending in `-v18`; the PostgreSQL 17 volumes with the original names remain unmounted and available for rollback:
 
-| Service | Existing volume |
-| --- | --- |
-| `postgres-idp` | `018-hai-postgres-idp-data` |
-| `postgres-automation` | `018-hai-postgres-automation-data` |
-| `temporal-postgres` (durability profile) | `018-hai-temporal-postgres-data` |
+| Service | Existing PostgreSQL 17 volume | New PostgreSQL 18 volume |
+| --- | --- | --- |
+| `postgres-idp` | `018-hai-postgres-idp-data` | `018-hai-postgres-idp-data-v18` |
+| `postgres-automation` | `018-hai-postgres-automation-data` | `018-hai-postgres-automation-data-v18` |
+| `temporal-postgres` (durability profile) | `018-hai-temporal-postgres-data` | `018-hai-temporal-postgres-data-v18` |
 
-PostgreSQL 17 stored cluster files at the root of the mounted data directory. The official PostgreSQL 18 images use `/var/lib/postgresql/18/docker` and mount `/var/lib/postgresql`. The Compose mappings now use the PostgreSQL 18 mount location. A PostgreSQL 17 cluster cannot be opened by PostgreSQL 18; changing the image tag alone is not a migration. The image entrypoint detects older cluster files and refuses to start them.
+PostgreSQL 17 stored cluster files at the root of the mounted data directory. The official PostgreSQL 18 images use `/var/lib/postgresql/18/docker` and mount `/var/lib/postgresql`. A PostgreSQL 17 cluster cannot be opened by PostgreSQL 18; changing the image tag alone is not a migration. The image entrypoint detects older cluster files and refuses to start them.
 
 Before applying the PostgreSQL 18 Compose file to a host with existing volumes:
 
-1. Stop application writers and take a separate, verified full-cluster backup from each PostgreSQL 17 service. Store backups outside the Compose volumes in approved encrypted storage. The dump must include roles, databases, schema, and data.
-2. Restore each dump into a fresh PostgreSQL 18 cluster and a new volume. Keep the original PostgreSQL 17 named volumes intact and offline for rollback.
-3. Restore the automation database with the PostgreSQL 18 pgvector image so the `vector` extension is available. Check extension state, schema migrations, role grants, database names, and application connectivity before starting writers.
+1. Stop application writers and take verified backups from each PostgreSQL 17 service. Preserve cluster roles and passwords with a `pg_dumpall --globals-only` export, and create a separate `pg_dump -Fc` archive for every database. Store these files outside the Compose volumes in approved encrypted storage; treat them as sensitive.
+2. Start only the PostgreSQL 18 database services with application writers stopped. Restore each cluster into its new `-v18` volume. Initialize the new cluster with a temporary migration superuser whose name is not present in the source roles, then restore global roles and each database archive. This avoids collisions with the image's bootstrap role and database.
+3. Restore the automation database with the PostgreSQL 18 pgvector image so the `vector` extension is available. Update the extension to 0.8.7, then check extension state, schema migrations, role grants, database names, and application connectivity before starting writers.
 4. Keep the old volumes and verified backups until the new deployment has passed the agreed observation period. Do not run `docker compose down -v` or remove the old volumes as part of this upgrade.
 
-The three volumes are independent clusters and must be upgraded separately. `redis` has no persistent volume in this Compose file; its cache/session state is ephemeral and is recreated by the service.
+The three volumes are independent clusters and must be upgraded separately. The versioned volume names are declared at the end of `docker-compose.local.yml`; do not switch app services to the new clusters until all restores and validation have succeeded. `redis` has no persistent volume in this Compose file; its cache/session state is ephemeral and is recreated by the service.
 
 This repository change updates the target images and test fixtures only. It does not copy, migrate, or delete any existing database data, and it does not change a running deployment.
 
