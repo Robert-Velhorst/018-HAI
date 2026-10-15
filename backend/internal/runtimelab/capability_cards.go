@@ -223,7 +223,9 @@ func (s *Service) CapabilityCards(ctx context.Context) (RuntimeCapabilityOvervie
 			if discovery, found := reader.LastDiscovery(); found {
 				copyDiscovery := discovery
 				card.LatestDiscovery = &copyDiscovery
-				if discovery.ProtocolValid && s.discoveryIsCurrent(card.RuntimeID, discovery) && cardDiscoveryAvailable(card.ID, discovery) {
+				// OpenClaw capability readiness must be backed by owner-scoped durable evidence.
+				// The adapter's in-memory probe cannot prove that persistence succeeded.
+				if normalizeRuntimeID(card.RuntimeID) != "openclaw" && discovery.ProtocolValid && s.discoveryIsCurrent(card.RuntimeID, discovery) && cardDiscoveryAvailable(card.ID, discovery) {
 					card.ReadinessLevel = discovery.ReadinessLevel
 					card.ReadinessReason = discovery.Detail
 					card.CanInvoke = true
