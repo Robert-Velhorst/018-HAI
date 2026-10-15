@@ -143,3 +143,11 @@ A read-only refresh of the six October 11 PR-resolution worktrees confirms that 
 - `hai-pr34-conflict-fix`, `hai-pr36-integration`, and `hai-resolve-pr35` remain conflict-heavy: respectively 94, 252, and 198 files contain conflict markers, with 274, 739, and 597 unmerged index records. Their status counts are 528, 521, and 216. They remain intact and are not safe to publish or clean based on path overlap alone.
 
 No local data was deleted and no code was ported from these worktrees. This is bounded evidence; semantic review of the remaining changed files and every other HAI-related local root remains open.
+
+## Follow-up: cancellation regression coverage
+
+A focused test-only change was added separately as [PR #152](https://github.com/Robert-Velhorst/018-HAI/pull/152), based on the current `main`. It covers cancellation while a local test Ollama server is handling `GET /api/tags`, and asserts the handler observes cancellation, the maintenance result is `cancelled`, and no failure-history record is written. It does not contact an external provider.
+
+GitHub Actions completed all 40 listed checks successfully for PR #152, including backend build/tests, local provider-fixture HTTP contract, and the repository safety checks. This verifies the test suite and workflow for this patch; it is not live acceptance against a real Ollama installation.
+
+PR #152 remains open and unmerged. Its source branch/worktree is retained. No local source files were deleted and no disk space was reclaimed. The repository-wide local-file reconciliation remains incomplete; this test does not make the other historical worktrees, transcript archives, or local data eligible for cleanup.
