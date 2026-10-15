@@ -107,3 +107,9 @@ The non-generated, non-agent-state, non-log, non-environment untracked source/su
 A read-only disk inventory found 1,507 files under local `output/` totaling 126,491,186 bytes. The directory contains mostly logs, JSON/JSONL reports, exit markers, and a small number of archives/dumps. It appears to be generated run evidence rather than product source, but its contents have not been semantically reviewed or matched to canonical evidence; none is approved for port or cleanup by this census. Agent-state files under `.claude-flow/` and `.swarm/` were also preserved and not inspected for content.
 
 No local files, environment files, logs, agent state, or generated outputs were changed, moved, or deleted.
+
+### Additional security and API spot checks
+
+A targeted comparison of the primary checkout's modified `backend/internal/llm/policy.go` against canonical `main` found no safe upgrade to port. Both versions bound provider response reads, but `main` uses the named `providerProbeResponseLimitBytes` and rejects provider endpoints containing credentials, query parameters, or fragments. The local variant uses a literal response limit and permits query/fragment forms; canonical policy is stricter.
+
+The local verification, pursuit, and ambient service files also expose older/different helper and owner-scoped API surfaces than canonical `main`. Their local diffs are not drop-in replacements; no whole-file port was made from these snapshots.
