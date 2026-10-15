@@ -82,3 +82,10 @@ A source-only comparison of `output/runtime-outcome-independent-review-20261001.
 - This pass did not execute Go tests, so the listed tests are present, not newly passing. The report's historical test failures remain historical and are not evidence of current-main failure or acceptance.
 
 These reviewed historical findings do not presently justify porting the corresponding old candidate patches as new PRs: current main already contains the identified controls and regression source. Other retained reports, differing test bodies, and worktree changes remain unreviewed, so the complete reconciliation is still open.
+
+
+## Transcript oversized-record count cross-check (2026-10-15)
+
+The current-main transcript summaries account for seven skipped records across the 22-file inventory: the main manifest reports two and the supplemental manifest reports five. PR #149's documented byte-stream scan also reports seven records over 10 MiB. The counts agree numerically, but the summary scanner's configured bound is in characters while PR #149 describes a byte threshold; this is cross-artifact consistency, not proof that the scanners classified identical records.
+
+Both published summary files correctly report `full_file_scan: false` because oversized records were skipped. PR #149 reports that its scan found no literal `patch_apply_end` marker in the seven oversized records, but that does not establish lifecycle attribution or that those records contain no other useful work. A separate local full-volume rescan was attempted and stopped without producing results, so it adds no independent confirmation. Keep all transcript files retained until the oversized records' content and attribution are fully reconciled; no cleanup is justified by this count comparison.
