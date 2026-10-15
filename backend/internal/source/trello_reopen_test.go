@@ -1,7 +1,6 @@
 package source
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -35,30 +34,7 @@ func newTrelloReopenHarness(t *testing.T) (Service, *atomic.Value, *fakeSourceRe
 		case strings.HasSuffix(r.URL.Path, "/lists"):
 			_, _ = w.Write([]byte(`[{"id":"list-1","name":"Doing"}]`))
 		case strings.HasSuffix(r.URL.Path, "/actions"):
-			if r.URL.Query().Get("filter") != "all" {
-				_, _ = w.Write([]byte(`[]`))
-				return
-			}
-			var cards []trelloCard
-			if err := json.Unmarshal([]byte(cardResponse.Load().(string)), &cards); err != nil {
-				t.Errorf("decode action fixture cards: %v", err)
-				_, _ = w.Write([]byte(`[]`))
-				return
-			}
-			actions := make([]trelloAction, 0, len(cards))
-			for index, card := range cards {
-				actions = append(actions, trelloAction{
-					ID: testTrelloMongoID(8000 + index), Type: "updateCard", Date: card.DateLastActivity,
-					Data: trelloActionData{Card: trelloActionCard{ID: card.ID, Name: card.Name}},
-				})
-			}
-			payload, err := json.Marshal(actions)
-			if err != nil {
-				t.Errorf("encode action fixture: %v", err)
-				_, _ = w.Write([]byte(`[]`))
-				return
-			}
-			_, _ = w.Write(payload)
+			_, _ = w.Write([]byte(`[]`))
 		case strings.HasSuffix(r.URL.Path, "/cards"):
 			_, _ = w.Write(trelloTestCardPayload([]byte(cardResponse.Load().(string))))
 		default:
@@ -153,3 +129,4 @@ func TestSyncTrelloReopenPreservesOperatorArchive(t *testing.T) {
 		}
 	})
 }
+
