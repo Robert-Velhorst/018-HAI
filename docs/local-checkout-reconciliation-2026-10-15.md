@@ -10,7 +10,7 @@ The primary local checkout under review was on `codex/hai-runtime-release` at `e
 
 The local branch and current `main` have divergent history: `git rev-list --left-right --count HEAD...origin/main` returned 292 local-only commits and 42 main-only commits. This is commit ancestry, not a count of missing features.
 
-The committed tree comparison (`origin/main` to local `HEAD`) reported 2,092 changed paths, 20,789 insertions, and 401,467 deletions. It included 1,198 deleted paths, 888 modified paths, four added paths, and two renames. This stale tree is not a safe PR candidate: applying it as a merge or snapshot would remove substantial content from current `main`. Any local work worth preserving must be reviewed and ported as narrowly scoped changes based on current `main`.
+The committed tree comparison (`origin/main` to local `HEAD`) reported 2,092 changed paths, 20,789 insertions, and 401,467 deletions. It included 1,198 deleted paths, 888 modified paths, four added paths, and two renames. This stale tree is not a safe PR candidate: applying it as a merge or snapshot would remove substantial content from current `main`. Any local work worth preserving must be reviewed and ported as narrowly scoped changes based on current `main`. A direct comparison of the primary working tree against current `origin/main` also confirmed that it is not a safe code PR: it removes the entire 531-line `backend/internal/operations/source_approval.go`, removes OpenClaw upload-cancellation checks and the Trello quiet-board cursor safeguards, and drops the router's 1 MiB `MaxHeaderBytes` limit. The separate reconciliation index exhibits the same classes of regression. These are observed candidate diffs, not proposed changes.
 
 ## Working-tree inventory
 
