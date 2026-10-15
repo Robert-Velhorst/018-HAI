@@ -129,3 +129,9 @@ A read-only filesystem inventory measured generated/build-oriented directories: 
 
 Ten untracked files under `idp/internal/app/authentication/` were screened against the same-path files in canonical `main`. Their named test functions match the canonical test set in the sampled files, but the local snapshots remove `context.Context` parameters from calls such as `RefreshToken`, `Logout`, `IsUserAuthenticated`, and password-reset methods. Canonical tests call the context-aware APIs, so the local test copies are incompatible with the current canonical API and are not safe to port. This comparison is limited to those ten files; it is not a full behavioral review of every assertion.
 
+
+
+## Backend untracked-test inventory
+
+A test-declaration comparison covered the 26 untracked Go test files under `backend/` that also have a path in canonical `main`. It found no test functions unique to the local snapshots. Canonical `main` contains additional test functions absent from the local copies in three files: `ambient/scheduler_test.go` (scheduler policy-disabled state), `operations/source_approval_test.go` (explicit approval overriding a future review reminder), and `pursuit/completion_outcome_integrity_test.go` (three receipt/timeline cases). The local pursuit and source-approval variants are shorter and omit coverage present in `main`; the already-reviewed worker reliability variant also omits an approval-gate assertion. This inventory compares test declarations and selected assertions; it does not prove every assertion in all 26 files equivalent. No local test was ported.
+
