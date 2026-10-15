@@ -67,7 +67,8 @@ type AnswerRequest struct {
 	DraftAnswer            string          `json:"draftAnswer,omitempty"`
 	ExternalEvidence       []EvidenceInput `json:"externalEvidence,omitempty"`
 	IncludeSensitive       bool            `json:"includeSensitive,omitempty"`
-	HumanApproved          bool            `json:"humanApproved,omitempty"`
+	// Human approval is server-owned and cannot be asserted by a JSON client.
+	HumanApproved          bool            `json:"-"`
 	HumanApprovalReference string          `json:"-"`
 	AllowMemoryUpdate      bool            `json:"allowMemoryUpdate,omitempty"`
 }
