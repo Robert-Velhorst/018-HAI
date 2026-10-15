@@ -51,3 +51,14 @@ This does not prove that every tracked local change is obsolete. The 150 tracked
 - No local files, worktrees, logs, or generated `output/` artifacts were modified, moved, or deleted.
 - The worktrees remain preserved for further path-level and semantic review.
 - A cleanup candidate requires a separate exact-content/provenance check and the repository's canonical cleanup gate. This census alone is not sufficient evidence for deletion.
+
+## Runtime-safety audit worktree
+
+Worktree: `hai-runtime-safety-audit`
+
+At inspection, `git status --short --untracked-files=all` reported 18 entries: 14 tracked changes and 4 untracked paths, with no unmerged index entries. All four untracked paths already exist at the same path in canonical `main`.
+
+The local versions of the 13 changed runtime/host-runtime files measured in this pass were shorter than their canonical counterparts. One local artifact-download test file was three lines longer than `main`; both versions contain the same seven named test modes. The local test permits the allowlisted `url` mode, whereas canonical `main` rejects URL-mode artifacts along with denied, expired, metadata-changed, and size-changed cases. The canonical policy is stricter; the local variation is not a safe change to port.
+
+This is a focused safety comparison, not a semantic audit of all 14 tracked changes or a complete verification of runtime safety.
+
