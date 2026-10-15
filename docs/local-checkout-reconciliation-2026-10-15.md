@@ -27,7 +27,7 @@ The untracked Go test variants examined here use paths already present on `main`
 
 ## Other registered worktrees
 
-A fresh `git worktree list` inspection found eleven registered paths in addition to the primary checkout. Four HAI audit worktrees based at `e07b9dae` each contain local changes (425, 150, and 13 tracked paths changed, plus 95, 97, and four untracked files in three of them); their deltas have not yet been semantically compared or matched to PRs.
+A fresh `git worktree list` inspection found eleven registered paths in addition to the primary checkout. Three dirty HAI audit worktrees based at `e07b9dae` contain 425, 150, and 13 tracked paths changed, plus 95, 97, and four untracked files respectively. A separate clean managed worktree for PR #147 is also registered. The dirty audit worktree deltas have not yet been semantically compared or matched to PRs.
 
 Five historical PR-resolution worktrees under the October 11 Codex directory also contain distinct working-tree changes (527, 519, 59, 264, and 216 paths respectively, with two untracked files in one). Their contents must be compared with current `main` and the corresponding PR histories before archiving. They were not removed.
 
