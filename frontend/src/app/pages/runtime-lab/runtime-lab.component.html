@@ -84,6 +84,10 @@
 
       <p class="rl__desc">{{ r.info.description }}</p>
 
+      <p *ngIf="latestProbes[r.info.id]?.evidencePersistenceStatus === 'failed'" class="rl__warning" role="alert">
+        Protocol discovery completed, but durable evidence was not saved. Runtime execution remains blocked; retry the probe or inspect the operation ledger.
+      </p>
+
       <section *ngIf="r.info.id === 'deepseek-harness'" class="rl__deepseek-policy" aria-labelledby="deepseek-policy-title">
         <h3 id="deepseek-policy-title">DeepSeek Harness runtime policy</h3>
         <p class="rl__muted">Configured state and authoritative readiness details.</p>
