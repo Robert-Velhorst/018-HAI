@@ -1,5 +1,5 @@
 # Keep the isolated runner aligned with the frontend's verified Node/npm toolchain.
-FROM node:26.11.1-bookworm-slim
+FROM node:26.12.0-bookworm-slim
 
 WORKDIR /app
 
