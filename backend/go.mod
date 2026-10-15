@@ -14,7 +14,7 @@ require (
 	github.com/redis/go-redis/v9 v9.6.3
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/files v1.0.1
-	github.com/swaggo/gin-swagger v1.6.0
+	github.com/swaggo/gin-swagger v1.6.1
 	github.com/swaggo/swag v1.16.2
 	go.temporal.io/api v1.63.7
 	go.temporal.io/sdk v1.49.0
