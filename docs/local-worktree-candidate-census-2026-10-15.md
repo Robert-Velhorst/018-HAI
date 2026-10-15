@@ -96,3 +96,14 @@ Among the non-generated, non-agent-state, non-log, non-environment untracked sou
 
 No local files were deleted. The exact match is only a cleanup candidate; the repository cleanup gate and the existing local cleanup restriction still apply.
 
+## Primary-checkout reconciliation
+
+A fresh status of the primary checkout reports 692 tracked changes (448 deletions and 244 modifications) and 1,582 untracked paths. Its branch, `codex/hai-runtime-release`, is 440 commits behind `main`; the local HEAD is `e07b9daeb3ba2630b3e3a9f92cf875ecbc3560b6d`. The canonical `main` ref was independently confirmed at `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`.
+
+Comparing the current working tree to canonical `main` yields 2,100 path entries, with roughly 421,294 removed lines versus 4,400 added lines in the text diff. This is dominated by branch divergence and must not be treated as a ready-to-port change set. The local `.env-backend`, `.env-gateway`, and `.env-idp` are intentionally excluded from any port; their values were not inspected or exposed.
+
+The non-generated, non-agent-state, non-log, non-environment untracked source/support screen covers 65 paths. All 65 paths exist in `main`; blob IDs show one exact match and 64 content differences. The identical file is `backend/internal/runtimelab/owner_gate_handler_test.go` (12,495 bytes). Reviewed differences in local test copies are not safe upgrades: for example, the local worker reliability test drops the approval-gate assertion, and the local source-approval test drops revision-digest and reminder-override cases. The local Promptfoo manifest is also older (`0.123.1`) than canonical `main` (`0.124.1`); its larger lockfile does not indicate a newer implementation.
+
+A read-only disk inventory found 1,507 files under local `output/` totaling 126,491,186 bytes. The directory contains mostly logs, JSON/JSONL reports, exit markers, and a small number of archives/dumps. It appears to be generated run evidence rather than product source, but its contents have not been semantically reviewed or matched to canonical evidence; none is approved for port or cleanup by this census. Agent-state files under `.claude-flow/` and `.swarm/` were also preserved and not inspected for content.
+
+No local files, environment files, logs, agent state, or generated outputs were changed, moved, or deleted.
