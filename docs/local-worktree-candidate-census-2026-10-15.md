@@ -151,3 +151,13 @@ GitHub reports PR #36 as merged, with branch head `e62b56843eb8bbbf9a566aff5e883
 
 The remaining review target is the dirty working tree, not the merged commit history. At this check it still had 692 tracked status entries and 1,582 untracked entries. Among 243 present modified tracked files hash-checked (excluding `.env.example`), four match the PR #36 merged tree, none match current `main`, and 239 differ from both. A separate review is required before any of those differences can be ported. The four matches are historical copies, not current-main duplicates. No local files were changed or deleted.
 
+
+
+## Tracked source-delta inventory
+
+A fresh path comparison confirms all 448 tracked paths currently marked deleted in the primary checkout still exist in canonical `main`; none is a missing upstream file to recreate. The local working tree has no copy at those paths, so there is nothing at those paths to reclaim locally.
+
+A function-declaration inventory compared 141 present modified Go files with same-path files in `main`: 89 files have function names present only in `main`, while six have at least one name present only in the local snapshot. This is structural evidence, not a behavior-equivalence proof. The previously reviewed local-only names include old helper/API variants in source, pursuit, router, and verification code; test-name coverage and policy comparisons show canonical `main` contains stricter or additional behavior in the sampled areas. No local implementation was accepted for port from name differences alone.
+
+The measured source delta remains open for semantic review: 243 present modified tracked files hash-checked (excluding `.env.example`) yielded four blobs equal to the PR #36 merge tree, zero equal to current `main`, and 239 equal to neither. This supports neither wholesale copying nor deletion; files differing from both remain preserved until individually reviewed.
+
