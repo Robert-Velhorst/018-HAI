@@ -179,10 +179,6 @@ func TestEnsureModelFreshCancelsDuringOllamaInspectionWithoutFailureRecord(t *te
 		close(requestCancelled)
 	}))
 	defer server.Close()
-	defer func() {
-		releaseAcceptedPull()
-		server.CloseClientConnections()
-	}()
 
 	policy := testPolicyWithoutEndpoints()
 	policy.LocalModelsAllowed = true
@@ -263,7 +259,11 @@ func TestGenerateContextCancelsOllamaPullBeforeInferenceOrFallback(t *testing.T)
 			http.NotFound(w, r)
 		}
 	}))
-	defer server.Close()
+	defer func() {
+		releaseAcceptedPull()
+		server.CloseClientConnections()
+		server.Close()
+	}()
 
 	policy := testPolicyWithoutEndpoints()
 	policy.LocalModelsAllowed = true
