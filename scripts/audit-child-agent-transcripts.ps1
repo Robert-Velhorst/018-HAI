@@ -284,12 +284,13 @@ foreach ($file in $sessionFiles) {
 
     $relativePath = $file.FullName.Substring($relativeBase.Length).TrimStart('\').Replace('\', '/')
     $allocatedBytes = [HaiTranscriptAllocation]::GetAllocatedBytes($file.FullName)
+    $finalReportPreserved = $terminalStatus -eq 'completed' -and -not [string]::IsNullOrWhiteSpace($finalMessage)
     $disposition = if ($changedDuringScan) {
         'retain_changed_during_audit'
     } elseif ($oversizedRecordCount -gt 0 -or $script:malformedCandidateCount -gt 0) {
         'retain_unparsed_candidate_record'
     } elseif ($terminalStatus -eq 'completed') {
-        'candidate_after_ledger_commit'
+        if ($finalReportPreserved) { 'candidate_after_ledger_commit' } else { 'retain_missing_final_report' }
     } else {
         'retain'
     }
@@ -315,7 +316,7 @@ foreach ($file in $sessionFiles) {
         logical_bytes = [int64]$file.Length
         allocated_bytes = [uint64]$allocatedBytes
         final_message_sha256 = Get-Sha256 -Text $finalMessage
-        final_report_preserved = ($terminalStatus -eq 'completed')
+        final_report_preserved = $finalReportPreserved
         disposition = $disposition
         duplicate_id_file_count = 1
         transcript_sha256 = ''
@@ -352,6 +353,11 @@ if ($HashCleanupCandidates) {
 $completed = @($records | Where-Object terminal_status -eq 'completed')
 $candidates = @($records | Where-Object disposition -eq 'candidate_after_ledger_commit')
 $retained = @($records | Where-Object disposition -ne 'candidate_after_ledger_commit')
+$fullFileScan = $oversizedMetadataRecordsSkipped -eq 0 -and @($records | Where-Object {
+    $_.scan_changed_during_audit -or
+    [long]$_.scan_oversized_records -gt 0 -or
+    [long]$_.scan_malformed_candidate_records -gt 0
+}).Count -eq 0
 
 $csvHeader = @(
     'child_id', 'session_date', 'nickname', 'terminal_status', 'observed_terminal_status', 'terminal_reason', 'child_turn_id', 'turn_attribution',
@@ -418,7 +424,7 @@ $summary = [ordered]@{
     generated_at_utc = [DateTime]::UtcNow.ToString('o')
     root_session_id = $RootSessionId
     audited_transcripts = $records.Count
-    full_file_scan = ($oversizedMetadataRecordsSkipped -eq 0)
+    full_file_scan = $fullFileScan
     oversized_metadata_records_skipped = $oversizedMetadataRecordsSkipped
     logical_bytes_scanned = $bytesScanned
     max_jsonl_record_characters = $maxRecordCharacters

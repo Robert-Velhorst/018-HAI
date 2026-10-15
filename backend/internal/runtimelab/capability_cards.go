@@ -217,9 +217,11 @@ func (s *Service) CapabilityCards(ctx context.Context) (RuntimeCapabilityOvervie
 					card.AuthenticationState = "protocol_validated_identity_unverified"
 				}
 			}
+		// OpenClaw readiness must come from its durable evidence ledger; its
+		// in-process probe can remain valid-looking after a failed ledger write.
 		} else if reader, ok := adapter.(interface {
 			LastDiscovery() (ProbeResult, bool)
-		}); ok {
+		}); ok && normalizeRuntimeID(card.RuntimeID) != "openclaw" {
 			if discovery, found := reader.LastDiscovery(); found {
 				copyDiscovery := discovery
 				card.LatestDiscovery = &copyDiscovery

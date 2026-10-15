@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory)][string]$TranscriptRoot,
     [Parameter(Mandatory)][string]$SourceCheckoutRoot,
     [Parameter(Mandatory)][string]$RepositoryRoot,
+    [switch]$Recurse,
     [int]$MaxMissingPaths = 100,
     [ValidateRange(1, 10485760)][int]$MaxRecordCharacters = 10485760
 )
@@ -46,7 +47,7 @@ foreach ($trackedPath in $trackedFileList) {
     [void]$trackedPaths.Add($trackedPath.Replace('/', '\'))
 }
 
-$files = @(Get-ChildItem -LiteralPath $transcriptPath -File -Filter '*.jsonl' | Sort-Object Name)
+$files = @(Get-ChildItem -LiteralPath $transcriptPath -File -Filter '*.jsonl' -Force -Recurse:$Recurse | Sort-Object FullName)
 foreach ($file in $files) {
     $stream = [IO.FileStream]::new($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite, 1048576, [IO.FileOptions]::SequentialScan)
     $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8, $true, 1048576)

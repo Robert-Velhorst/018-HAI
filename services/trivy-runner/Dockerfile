@@ -1,4 +1,4 @@
-FROM aquasec/trivy:0.72.0 AS trivy
+FROM aquasec/trivy:0.75.0 AS trivy
 
 FROM python:3.13-alpine
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
