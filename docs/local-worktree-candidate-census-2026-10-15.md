@@ -170,3 +170,16 @@ Two generated `output/` scripts were reviewed. `cleanup-unused-hai-test-containe
 A fresh extension/size inventory of `output/` found 1,507 files: 884 logs, 420 JSON, 82 JSONL, 60 exit markers, 37 Markdown, 11 PowerShell, and a small number of other files. JSONL accounts for approximately 115.25 MiB. This classifies the directory as run evidence and scripts, not a bulk of product source; individual evidence and provenance have not been reconciled, and no deletion is authorized by this review.
 
 PR #157's new hosted CI run `38786365450` completed all 30 jobs successfully after the stale router-call contract was corrected. This verifies that PR head's hosted test suite only; it does not complete the local-file reconciliation or authorize deletion.
+
+
+## Current registered-worktree inventory (2026-10-15 follow-up)
+
+The canonical GitHub `main` head was refreshed to `32e4d48e4c2dbb0ff35f13fe8f3dd22769864b64`. A read-only status/hash census covered all 13 worktrees registered by Git for this checkout. It examined 4,850 existing modified or untracked file instances; duplicate paths across separate worktrees can be counted more than once. One file instance had a blob exactly equal to the refreshed `main` tree, 3,277 had a same-path but different blob, and 1,572 had no same-path file in `main`. Deleted paths were not counted as reclaimable local files.
+
+The sole exact-content match is the hidden local test file `backend/internal/runtimelab/owner_gate_handler_test.go`. Removing it was blocked by the execution policy; it remains present, and no alternate deletion method was attempted. No disk space was freed by this pass.
+
+After excluding generated `output/` evidence, 36 distinct present paths across the worktrees were absent by name from current `main`. They comprise local `.claude-flow/` and `.swarm/` state, dated test-evidence/log files, one obsolete maintenance-context test, historical migration filenames superseded by renumbered canonical migrations, and `nginx-config/nginx.conf`. The Nginx file is machine-specific and contains a placeholder backend key; it was not published. The evidence, logs, state, and configuration are not product source to copy into the repository.
+
+The staged changes in `D:/hai-source-reconciliation` contain 310 paths (7,138 insertions and 12,453 deletions) on a commit already behind current `main`. Inspection of the pursuit and ambient service diffs showed removals of current API fields and summary behavior, not a safe additive fix. The patch was not ported. The clean PR #147 worktree also was not removed: its commit tree differs from both the squash-merge tree and current `main`, so a clean Git status alone is not enough to establish full content identity.
+
+Disposition remains conservative: no source from these reviewed candidates was copied, no uncertain artifact/worktree was deleted, and the hidden exact-match file remains due to the policy block. The complete-device audit and remaining semantic review are still open.
