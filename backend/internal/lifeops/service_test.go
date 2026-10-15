@@ -2,12 +2,26 @@ package lifeops
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+func TestValidUnitConfidenceRejectsNonFiniteAndOutOfRangeValues(t *testing.T) {
+	for _, value := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -0.01, 1.01} {
+		if validUnitConfidence(value) {
+			t.Errorf("validUnitConfidence(%v) = true, want false", value)
+		}
+	}
+	for _, value := range []float64{0, 0.5, 1} {
+		if !validUnitConfidence(value) {
+			t.Errorf("validUnitConfidence(%v) = false, want true", value)
+		}
+	}
+}
 
 func TestCanonicalLifeDomainsAreStableAndUnique(t *testing.T) {
 	domains := CanonicalLifeDomains()

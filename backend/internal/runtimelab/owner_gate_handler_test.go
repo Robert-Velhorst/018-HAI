@@ -154,6 +154,7 @@ func runtimeLabOwnerRequest(endpoint runtimeLabOwnerEndpoint, subject any, prese
 		if present {
 			c.Set(identity.ContextSubjectKey, subject)
 		}
+		// Even an administrative role does not grant another operator's scope.
 		c.Set(identity.ContextRoleKey, "admin")
 		c.Next()
 	})

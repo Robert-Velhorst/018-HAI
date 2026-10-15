@@ -353,6 +353,11 @@ if ($HashCleanupCandidates) {
 $completed = @($records | Where-Object terminal_status -eq 'completed')
 $candidates = @($records | Where-Object disposition -eq 'candidate_after_ledger_commit')
 $retained = @($records | Where-Object disposition -ne 'candidate_after_ledger_commit')
+$fullFileScan = $oversizedMetadataRecordsSkipped -eq 0 -and @($records | Where-Object {
+    $_.scan_changed_during_audit -or
+    [long]$_.scan_oversized_records -gt 0 -or
+    [long]$_.scan_malformed_candidate_records -gt 0
+}).Count -eq 0
 
 $csvHeader = @(
     'child_id', 'session_date', 'nickname', 'terminal_status', 'observed_terminal_status', 'terminal_reason', 'child_turn_id', 'turn_attribution',
@@ -419,7 +424,7 @@ $summary = [ordered]@{
     generated_at_utc = [DateTime]::UtcNow.ToString('o')
     root_session_id = $RootSessionId
     audited_transcripts = $records.Count
-    full_file_scan = ($oversizedMetadataRecordsSkipped -eq 0)
+    full_file_scan = $fullFileScan
     oversized_metadata_records_skipped = $oversizedMetadataRecordsSkipped
     logical_bytes_scanned = $bytesScanned
     max_jsonl_record_characters = $maxRecordCharacters
