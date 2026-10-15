@@ -73,3 +73,17 @@ The 127-line Nginx candidate was inspected without printing credential-like valu
 
 No local source files or worktree data were modified or deleted. The 343 same-path changes remain outside this bounded semantic review.
 
+
+## PR-resolution worktrees
+
+The PR-resolution worktrees for PRs #34 and #36 are divergent, dirty snapshots. At inspection, the #34 conflict-fix worktree had 528 status entries and 274 unmerged index-stage entries; the #36 integration worktree had 521 status entries and 739 unmerged index-stage entries. The #36 local-delta worktree retains unresolved file conflicts. These snapshots are not safe to push or copy wholesale.
+
+A path-level comparison of six PR-resolution worktrees found 22 distinct changed paths absent by name from canonical `main`. The SQL paths are historical migration renumberings, not missing schema work:
+
+- The 16 local `pre/0060` through `pre/0067` up/down files correspond to canonical `pre/0119` through `pre/0126`. After whitespace normalization, 15 of 16 local SQL files match canonical content. The old task-completion history up migration does not: it omits `NULLIF(..., 'null'::jsonb)` before `COALESCE` for `successCriteria`. Canonical `pre/0123` includes that JSON-null handling; the older SQL is not safe to port.
+- The old durable-job queue lease index migration corresponds to canonical `post/0007_durable_jobs_queue_lease_index`; both up/down SQL files match after whitespace normalization.
+- `backend/internal/llm/maintenance_context_test.go` uses older, incompatible method names. Canonical `main` has its own context-aware maintenance, cancellation, and lease tests under the current API; this file was not copied.
+- The only other absent product path found was the Nginx config already described above, which contains a placeholder backend key and remains excluded.
+
+This path and migration comparison does not semantically review the many same-path source changes in those dirty worktrees. No conflict was resolved and no local data was changed or deleted.
+
