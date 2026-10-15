@@ -183,3 +183,17 @@ After excluding generated `output/` evidence, 36 distinct present paths across t
 The staged changes in `D:/hai-source-reconciliation` contain 310 paths (7,138 insertions and 12,453 deletions) on a commit already behind current `main`. Inspection of the pursuit and ambient service diffs showed removals of current API fields and summary behavior, not a safe additive fix. The patch was not ported. The clean PR #147 worktree also was not removed: its commit tree differs from both the squash-merge tree and current `main`, so a clean Git status alone is not enough to establish full content identity.
 
 Disposition remains conservative: no source from these reviewed candidates was copied, no uncertain artifact/worktree was deleted, and the hidden exact-match file remains due to the policy block. The complete-device audit and remaining semantic review are still open.
+
+
+## Public upstream reference checkouts (2026-10-15)
+
+Two clean public source checkouts were found outside the HAI Git worktrees:
+
+| Local checkout | Public source | Local commit | Verified upstream state | Local state |
+| --- | --- | --- | --- | --- |
+| `C:/Users/NO/Documents/Codex/upstream-hermes-agent` | `NousResearch/hermes-agent` | `404b06ac4fc307d868ea51ac656387641ef16b39` | Exact local commit remains available; current upstream `main` is `60f56a6b13c8eb9a9e088c6fc1165257c92f7e11` | Clean; no ignored/untracked files, stashes, or unreachable Git objects |
+| `C:/Users/NO/Documents/Codex/upstream-odysseus` | `odysseus-dev/odysseus` | `dd055ee6e36581ad8c9c539e02b5b9963fbac2a1` | Exact local commit remains available; current upstream `dev` is `c74f4756796a48780f02b2ca913528c013d9c60a` | Clean; no ignored/untracked files, stashes, or unreachable Git objects |
+
+HAI's current `main` already contains the integration boundary: `backend/internal/runtimelab/registry.go` registers Hermes and Odysseus as remote runtimes; `remote_runtime.go` validates their health/capability contracts; and `backend/internal/agentruntime/runtime.go` keeps task execution blocked until per-tool authorization and audit mediation are available. The upstream applications are not vendored into HAI, intentionally: HAI uses governed adapters and remains the higher-level control plane.
+
+These two directories are unmodified public reference clones rather than unique HAI source or local development state. Their exact commits are remotely recoverable, so they can be removed locally without losing HAI changes. No upstream code was copied during this pass because the corresponding guarded adapter work is already present in canonical `main`.
