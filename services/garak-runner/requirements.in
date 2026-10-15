@@ -10,7 +10,7 @@ langdetect==1.0.9
 lorem==0.1.1
 markdown==3.10
 nltk==3.10.3
-numpy==2.5.1
+numpy==2.5.4
 pyyaml==6.0.3
 requests==2.34.2
 stdlibs==2026.9.3
