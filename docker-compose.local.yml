@@ -1008,7 +1008,7 @@ services:
   # publishes no host port. Model tags are pulled by HAI's dedicated mini-SWE
   # maintenance gate before use; image upgrades remain an operator action.
   ollama-miniswe:
-    image: ${HAI_RUNNER_OLLAMA_IMAGE:-ollama/ollama:0.11.10}
+    image: ${HAI_RUNNER_OLLAMA_IMAGE:-ollama/ollama:0.40.3}
     profiles: ["patch-proposals"]
     restart: unless-stopped
     expose: ["11434"]
