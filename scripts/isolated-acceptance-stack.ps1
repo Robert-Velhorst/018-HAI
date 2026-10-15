@@ -124,8 +124,8 @@ function Assert-IsolatedConfiguration($Config, $Manifest) {
             $s.devices -or $s.cap_add -or $s.extra_hosts -or $s.volumes_from) { throw 'Host access is forbidden in acceptance.' }
         $expectedNetworks = if ($entry.Name -eq 'nginx') { 'ingress,isolated' } else { 'isolated' }
         if (((@(Get-PropertyNames $s.networks) | Sort-Object) -join ',') -ne $expectedNetworks) { throw 'Only the gateway may attach to ingress; every service requires isolated attachment.' }
-        if ($entry.Name -match '^postgres-' -or $entry.Name -eq 'backend-runtime-role') {
-            if (-not @($s.tmpfs | Where-Object { $_ -like '/var/lib/postgresql/data:rw,*' }).Count) {
+        if ($entry.Name -match '(^postgres-|^temporal-postgres$|^backend-runtime-role$)') {
+            if (-not @($s.tmpfs | Where-Object { $_ -like '/var/lib/postgresql:rw,*' }).Count) {
                 throw 'Image-declared PostgreSQL storage must be covered by tmpfs.'
             }
         }
@@ -303,7 +303,7 @@ if ($Action -eq 'Prepare') {
         }
         if ($name -eq 'redis') { $s | Add-Member -Force NoteProperty tmpfs @('/data:rw,nosuid,size=32m,mode=1777') }
         if ($name -eq 'backend-runtime-role') {
-            $s.tmpfs += '/var/lib/postgresql/data:rw,nosuid,size=8m'
+            $s.tmpfs += '/var/lib/postgresql:rw,nosuid,size=8m'
             $mounts = @(@{ type = 'bind'; source = (Join-Path $EvidenceDirectory 'provision-runtime-role.sh'); target = '/scripts/provision-runtime-role.sh'; read_only = $true })
         }
         if ($name -eq 'nginx') {
