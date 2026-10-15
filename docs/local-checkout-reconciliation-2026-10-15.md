@@ -243,3 +243,11 @@ This recheck does not establish that every HAI-related local file has been revie
 ### Follow-up status snapshot
 
 A later check read reported PR #153 at `46feef0568bb4fb4d6601d4df59caf97e14cb600` with 15 checks successful, ten in progress, 16 queued, and none failed; CodeQL was successful at that read. The earlier count in the preceding paragraph is an earlier snapshot, not the latest CI state. Updating this ledger produced PR #151 head `1570533b72d078c7725736165e2a41d5ac9bfa85`; its 40 checks were queued at the next exact-head read. Do not transfer results from the prior PR #151 head.
+
+## Primary-checkout untracked file content crosswalk (2026-10-15)
+
+The latest verified GitHub `main` ref is `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`, matching the local `origin/main` comparison object. A read-only path-level comparison identified 65 untracked regular text files in the primary checkout, totaling 1,477,559 bytes: 26 backend tests, ten IDP tests, three acceptance/support documents, four frontend test scripts, 18 scripts, and four runner dependency manifests.
+
+For every path, `origin/main:<path>` exists and `git diff --numstat origin/main -- <path>` showed zero added local lines (some were exact matches; others were older/subset text). This supports that the local file text is represented in current main, but does not mean the old versions were ported or that the whole local checkout is integrated. Agent-state files, test-evidence fixtures, logs, output, tracked modifications/deletions, and all other worktrees were excluded from this cohort.
+
+No files were removed. The attempted local cleanup command was rejected before execution; all source files remain intact. The audit objective remains open, and this bounded preflight is not a whole-device scan or cleanup completion claim.
