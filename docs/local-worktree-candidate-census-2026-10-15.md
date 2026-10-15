@@ -98,7 +98,7 @@ No local files were deleted. The exact match is only a cleanup candidate; the re
 
 ## Primary-checkout reconciliation
 
-A fresh status of the primary checkout reports 692 tracked changes (448 deletions and 244 modifications) and 1,582 untracked paths. Its branch, `codex/hai-runtime-release`, is 440 commits behind `main`; the local HEAD is `e07b9daeb3ba2630b3e3a9f92cf875ecbc3560b6d`. The canonical `main` ref was independently confirmed at `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`.
+A fresh status of the primary checkout reports 692 tracked changes (448 deletions and 244 modifications) and 1,582 untracked paths. Its branch, `codex/hai-runtime-release`, was 440 commits behind its configured upstream `origin/codex/hai-runtime-release` at inspection; that is not a count of commits behind `main`. The local HEAD is `e07b9daeb3ba2630ecbe12a64d948f791203c241`. The canonical `main` ref was independently confirmed at `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`.
 
 Comparing the current working tree to canonical `main` yields 2,100 path entries, with roughly 421,294 removed lines versus 4,400 added lines in the text diff. This is dominated by branch divergence and must not be treated as a ready-to-port change set. The local `.env-backend`, `.env-gateway`, and `.env-idp` are intentionally excluded from any port; their values were not inspected or exposed.
 
@@ -140,4 +140,14 @@ A test-declaration comparison covered the 26 untracked Go test files under `back
 ## Frontend and runner-script test snapshot review
 
 A test-name comparison of local untracked frontend/script tests against their same-path canonical files found no additional safe behavior to port. The local `frontend/scripts/control-room-logic.test.mjs` lacks the canonical uncapped-pursuit-count metric case; `release-cache.test.mjs` lacks the restrictive-script-policy same-origin theme case; and `scripts/test_python_runner_container_smoke.py` lacks the canonical Grype liveness smoke case. The local `scripts/test-frontend-build-resource-limit.cjs` has a differently named case that documents invalid worker values passing through the installed parser; canonical `main` instead tests that invalid custom values fall back to host concurrency. These differences are consistent with an older test snapshot, not a safe additive patch. This review compares the identified test declarations and the relevant resource-limit case only.
+
+
+
+## Commit-history and PR #36 reconciliation
+
+The earlier census wording conflated the branch's upstream lag with its relationship to `main`; this correction supersedes that interpretation. Current Git evidence shows `origin/codex/hai-runtime-release` is 440 commits ahead of local `HEAD` (zero commits behind it), while the graph comparison `origin/main...HEAD` is 42 main-only commits and 292 local-only commits. Commit counts alone do not establish that code is missing from `main` because the historical PR was squash-merged.
+
+GitHub reports PR #36 as merged, with branch head `e62b56843eb8bbbf9a566aff5e883f9adf375429` and squash-merge commit `c31cec1ba2a25fcfd280b1f2f499297e54d96aa4`. The local `HEAD` is an ancestor of that PR head; the PR head tree and merge-commit tree have zero changed paths; and the merge commit is an ancestor of current `main`. PR #36 recorded 727 commits and 1,976 changed files. Therefore, the committed tree through PR #36 is already represented in `main`; those commits must not be replayed as new work.
+
+The remaining review target is the dirty working tree, not the merged commit history. At this check it still had 692 tracked status entries and 1,582 untracked entries. Among 243 present modified tracked files hash-checked (excluding `.env.example`), four match the PR #36 merged tree, none match current `main`, and 239 differ from both. A separate review is required before any of those differences can be ported. The four matches are historical copies, not current-main duplicates. No local files were changed or deleted.
 
