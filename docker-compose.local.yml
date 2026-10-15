@@ -784,7 +784,7 @@ services:
   # Runs after migrations so grants cover every current table, and records
   # default privileges for all future tables created by the schema owner.
   backend-runtime-role:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine
     restart: "no"
     mem_limit: ${BACKEND_RUNTIME_ROLE_MEMORY_LIMIT:-64m}
     cpus: ${BACKEND_RUNTIME_ROLE_CPU_LIMIT:-0.1}
@@ -1756,7 +1756,7 @@ services:
   # from HAI's primary Postgres instance and is enabled only with
   # `--profile durability`. No Temporal port is exposed to the host.
   temporal-postgres:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine
     profiles: ["durability"]
     restart: unless-stopped
     mem_limit: 512m
@@ -1767,7 +1767,7 @@ services:
       POSTGRES_PASSWORD: "${HAI_TEMPORAL_POSTGRES_PASSWORD:-}"
       POSTGRES_DB: temporal
     volumes:
-      - temporal-postgres-data:/var/lib/postgresql/data
+      - temporal-postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
       interval: 10s
@@ -1862,7 +1862,7 @@ services:
       - service-hub
 
   postgres-idp:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine
     container_name: 018-hai-postgres-idp
     hostname: postgres-idp
     restart: unless-stopped
@@ -1878,7 +1878,7 @@ services:
     ports:
       - "127.0.0.1:${IDP_DB_HOST_PORT:-5433}:5432"
     volumes:
-      - postgres-idp-data:/var/lib/postgresql/data
+      - postgres-idp-data:/var/lib/postgresql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${IDP_DB_NAME}"]
@@ -1890,9 +1890,9 @@ services:
       - idp-network
 
   postgres-automation:
-    # Pinned upstream pgvector Postgres 17 image. Existing data stays in the
-    # named volume; take a backup before changing a live database image.
-    image: pgvector/pgvector:0.8.5-pg17-bookworm
+    # PostgreSQL 18.6 with pgvector 0.8.7. A PostgreSQL 17 data volume
+    # requires the documented dump/restore upgrade before this service can start.
+    image: pgvector/pgvector:0.8.7-pg18-bookworm
     container_name: 018-hai-postgres-automation
     hostname: postgres-automation
     restart: unless-stopped
@@ -1908,7 +1908,7 @@ services:
     ports:
       - "127.0.0.1:${AUTOMATION_DB_HOST_PORT:-5434}:5432"
     volumes:
-      - postgres-automation-data:/var/lib/postgresql/data
+      - postgres-automation-data:/var/lib/postgresql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${AUTOMATION_DB_NAME}"]
@@ -1920,7 +1920,7 @@ services:
       - automation-hub-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.10.2-alpine
     container_name: 018-hai-redis
     hostname: redis
     restart: unless-stopped

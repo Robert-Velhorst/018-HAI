@@ -1726,7 +1726,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
 
     def test_idp_rotation_races_require_marked_real_redis_and_pass_markers(self) -> None:
         identity = job_block("idp")
-        for contract in ("redis:7-alpine", "HAI_TEST_REDIS_ADDR: 127.0.0.1:6379",
+        for contract in ("redis:8.10.2-alpine", "HAI_TEST_REDIS_ADDR: 127.0.0.1:6379",
                          "HAI_TEST_REDIS_INSTANCE:", "hai-disposable-test-instance",
                          "set -euo pipefail", "go test -count=3 -race -run '^TestRedis'",
                          "TestRedisSessionRefreshConcurrentCookiesAndLogout",
@@ -1754,7 +1754,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         )
         self.assertIsNotNone(service)
         for contract in (
-            "image: postgres:17-alpine",
+            "image: postgres:18.6-alpine",
             "POSTGRES_USER: postgres",
             "POSTGRES_PASSWORD: postgres",
             "POSTGRES_DB: hai_idp_auth_test",

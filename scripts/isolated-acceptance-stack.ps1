@@ -125,7 +125,7 @@ function Assert-IsolatedConfiguration($Config, $Manifest) {
         $expectedNetworks = if ($entry.Name -eq 'nginx') { 'ingress,isolated' } else { 'isolated' }
         if (((@(Get-PropertyNames $s.networks) | Sort-Object) -join ',') -ne $expectedNetworks) { throw 'Only the gateway may attach to ingress; every service requires isolated attachment.' }
         if ($entry.Name -match '^postgres-' -or $entry.Name -eq 'backend-runtime-role') {
-            if (-not @($s.tmpfs | Where-Object { $_ -like '/var/lib/postgresql/data:rw,*' }).Count) {
+            if (-not @($s.tmpfs | Where-Object { $_ -like '/var/lib/postgresql:rw,*' }).Count) {
                 throw 'Image-declared PostgreSQL storage must be covered by tmpfs.'
             }
         }
@@ -296,13 +296,13 @@ if ($Action -eq 'Prepare') {
             $s.depends_on.PSObject.Properties.Remove('backend-state-permissions')
         }
         if ($name -match '^postgres-') {
-            $s.image = 'postgres:17-alpine'
-            $s | Add-Member -Force NoteProperty tmpfs @('/var/lib/postgresql/data:rw,nosuid,size=512m')
+            $s.image = 'postgres:18.6-alpine'
+            $s | Add-Member -Force NoteProperty tmpfs @('/var/lib/postgresql:rw,nosuid,size=512m')
             $mounts = @(@{ type = 'bind'; source = (Join-Path $EvidenceDirectory 'init.sql'); target = '/docker-entrypoint-initdb.d/init.sql'; read_only = $true })
         }
         if ($name -eq 'redis') { $s | Add-Member -Force NoteProperty tmpfs @('/data:rw,nosuid,size=32m,mode=1777') }
         if ($name -eq 'backend-runtime-role') {
-            $s.tmpfs += '/var/lib/postgresql/data:rw,nosuid,size=8m'
+            $s.tmpfs += '/var/lib/postgresql:rw,nosuid,size=8m'
             $mounts = @(@{ type = 'bind'; source = (Join-Path $EvidenceDirectory 'provision-runtime-role.sh'); target = '/scripts/provision-runtime-role.sh'; read_only = $true })
         }
         if ($name -eq 'nginx') {
