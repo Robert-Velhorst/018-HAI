@@ -123,3 +123,9 @@ The reviewed deltas are not safe to port as a batch. The local CI workflow chang
 
 A read-only filesystem inventory measured generated/build-oriented directories: `output/` contains 1,507 files (120.6 MiB), `frontend/dist/` contains 17,549 files (369.1 MiB), and `installer/release/` contains 1,975 files (35.4 MiB). The latter includes an installer and payload. Contents and rebuildability were not fully validated, and this census does not authorize removal; all remain preserved. Other large state such as PostgreSQL WAL and the backend deployment artifact was also left untouched.
 
+
+
+## IDP authentication-test snapshot review
+
+Ten untracked files under `idp/internal/app/authentication/` were screened against the same-path files in canonical `main`. Their named test functions match the canonical test set in the sampled files, but the local snapshots remove `context.Context` parameters from calls such as `RefreshToken`, `Logout`, `IsUserAuthenticated`, and password-reset methods. Canonical tests call the context-aware APIs, so the local test copies are incompatible with the current canonical API and are not safe to port. This comparison is limited to those ten files; it is not a full behavioral review of every assertion.
+
