@@ -151,3 +151,18 @@ A focused test-only change was added separately as [PR #152](https://github.com/
 GitHub Actions completed all 40 listed checks successfully for PR #152, including backend build/tests, local provider-fixture HTTP contract, and the repository safety checks. This verifies the test suite and workflow for this patch; it is not live acceptance against a real Ollama installation.
 
 PR #152 remains open and unmerged. Its source branch/worktree is retained. No local source files were deleted and no disk space was reclaimed. The repository-wide local-file reconciliation remains incomplete; this test does not make the other historical worktrees, transcript archives, or local data eligible for cleanup.
+
+### 2026-10-15: archived advisory findings checked against current main
+
+I cross-checked the concrete findings in the preserved Copernicus/Aristotle/Banach/Euler/Pascal child reports against the live `origin/main` source and its focused tests. These are already represented in current main; do not reapply the historical changes as duplicate patches:
+
+- Pursuit approval test roles distinguish successful owner actions from viewer-denied actions in `backend/internal/pursuit/handler_test.go`.
+- Task evidence matching now checks protected numeric/currency/date/version values and negation; focused cases include `TestCriterionEvidenceMatchesRejectsConflictingProtectedValues` and `TestValidatePlanAcceptsMatchingValueAndPolarityEvidence`.
+- Workflow success criteria are persisted and included in the workflow-task adapter contract; `TestRunnerPassesPursuitAndWorkflowContextToTaskEngine` asserts criteria forwarding.
+- Stale approved-review reconciliation is implemented with bounded age and explicit apply confirmation (`backend/internal/task/review_reconciliation.go`; tests cover durable evidence without retry and exact confirmation).
+- Framework preference history, owner-scoped Constitution history, and frontend `baseVersion` contracts are present. Tests cover altered history digests and bounded/stable owner-scoped Constitution history.
+- Framework selection-history load errors render as unavailable with retry instead of an empty-history state. Workflow inspectors include `conflicts`, `contextRequirements`, and `learningPlan`.
+
+This was a targeted source/test crosswalk for the listed advisory findings, not an exhaustive review of every historical transcript or every file under the local archive roots. It does not change transcript eligibility for cleanup.
+
+PR #152 was extended to cover both cancellation during Ollama inspection and cancellation during the end-to-end local pull before inference/fallback. The latest observed PR head is `44a7275fdf973c7511fe7c4d9aa008b70490d190`; its full CI suite was still running at this ledger update. Earlier green checks apply to the prior PR head only.
