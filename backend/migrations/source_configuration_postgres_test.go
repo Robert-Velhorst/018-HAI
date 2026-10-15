@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"automation-hub-backend/internal/accountfeed"
@@ -105,7 +106,21 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	// earlier phase-order guard. Remove the empty cursor column after registration
 	// so rollback reaches the 0114 down-SQL preflight with the managed feed intact.
 	rollbackDB := openIsolatedMigrationDatabase(t).WithContext(ctx)
-	rollbackFiles := migrationFilesThrough(t, "pre/0128_account_feed_sync_cursor")
+	allRollbackFiles := migrationFilesThrough(t, "pre/0128_account_feed_sync_cursor")
+	allRollbackMap, ok := allRollbackFiles.(fstest.MapFS)
+	if !ok {
+		t.Fatal("isolated migration fixture is not a MapFS")
+	}
+	rollbackFiles := fstest.MapFS{
+		"pre":  allRollbackMap["pre"],
+		"post": allRollbackMap["post"],
+	}
+	for path, file := range allRollbackMap {
+		if strings.HasPrefix(path, "pre/0114_operation_source_configuration.") ||
+			strings.HasPrefix(path, "pre/0128_account_feed_sync_cursor.") {
+			rollbackFiles[path] = file
+		}
+	}
 	if _, err := infra.ApplyMigrations(rollbackDB, rollbackFiles, "pre"); err != nil {
 		t.Fatalf("apply isolated pre-phase migrations: %v", err)
 	}
