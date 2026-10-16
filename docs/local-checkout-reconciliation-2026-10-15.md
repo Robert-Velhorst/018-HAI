@@ -504,3 +504,10 @@ A follow-up direct comparison against the current `main` commit found that the s
 The local variants of `worker_reliability_test.go`, `public_projection_test.go`, `transactional_test.go`, `emergency_stop_fanout_test.go`, `project_dossier_test.go`, `required_participant_admission_test.go`, and `outbound_transport_test.go` also contain no test names absent from their current-main counterparts. These sampled local files are shorter snapshots and were not ported as replacements. This is a targeted name/size screen, not proof that every assertion is equivalent.
 
 At the last exact-head check, PR #165 head `89e03281252d85b17e71e7bf49f6119b3c0771b2`, CI run 38926620939, remained queued. No Go tests were run locally because the Go toolchain is unavailable. The dirty checkout and worktrees remain untouched; no local files were removed and no storage recovery is claimed.
+
+
+## Windows installer smoke-test local variant and CI progress (2026-10-16)
+
+Compared the local `scripts/test-windows-installer-install.ps1` (378 lines) with current `main` (421 lines). The local file has the same function set and does not introduce a distinct installer workflow. Current `main` adds checks for the explicitly allowed hosted-runner Docker-unavailable case, runner-owned isolation boundaries, process and Start Menu shortcut targets, and resets the global PowerShell exit-code state at the end. The local version is therefore a shorter stale variant, not a safe replacement; it was not ported.
+
+PR #165 run 38926620939 is still in progress. The PostgreSQL migration integration, frontend build/tests, gateway/local-Compose validation, authenticated control-plane smoke, and several runner/build checks have completed successfully. Backend `go test ./...` and `go vet ./...` have completed successfully, while execution-boundary race tests and backend build/vulnerability steps remain active or pending. Browser acceptance, IDP checks, Windows installer/recovery checks, and some Python runner jobs are also still active or queued. This is partial CI evidence only; the PR is not yet fully green and has not been merged. No local test suite or cleanup was run.
