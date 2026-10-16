@@ -668,3 +668,14 @@ Compared the primary checkout's `services/crewai-runner` working-tree delta with
 Re-scanned the primary checkout's untracked files against current `main` (`1e18f90cfccf525781c4e3c7c819a26fceba2edb`) by Git blob SHA. The scan found 1,582 physical untracked files totaling 128,691,399 bytes. Seventy-three relative paths also exist on main; exactly one has an identical blob: `backend/internal/runtimelab/owner_gate_handler_test.go` (12,495 bytes, blob `7333d2daecfef82ae7a42b882c92f58901173165`). The other 72 same-path files differ, and 1,509 untracked paths are absent from main. This is a path/content inventory, not permission to remove all non-matches or a whole-device scan.
 
 A narrowly scoped removal attempt for the one verified exact copy was rejected by the command execution policy before running. The file remains present. No alternate deletion mechanism was used; the other 1,581 untracked files remain untouched.
+
+
+## Primary-checkout brain, LLM-maintenance, and Trello source screen (2026-10-16)
+
+Compared selected modified tracked files in the primary checkout against current `main`:
+
+- `backend/internal/braincatalog/catalog.go` and `integration_boundary.go` remove the integrated ChatGPT/Codex conversation-history entry and its implementation-boundary registry mapping. Current main retains the opt-in, bounded, read-only adapter; the local delta removes capability metadata rather than adding a missing integration.
+- `backend/internal/llm/maintenance.go` removes support for bounded API mount prefixes in endpoint identity and deletes the eligible-model-work predicate. `maintenance_scheduler.go` then loses its disabled/no-eligible-work early return, so the local variant may start recurring maintenance work when it is disabled or has nothing eligible. Current main retains both the endpoint validation and the start guard.
+- `backend/internal/source/trello.go` removes the quiet-board activity cursor check and helper, causing scheduled syncs to fetch lists/cards/comments even when the board has no relevant card activity. Current main retains that bounded optimization with a conservative full-sync fallback.
+
+These are focused source diffs, not runtime tests. They identify no safe local feature to port; the local variants are stale or regressive in these areas. No source files were changed or staged.
