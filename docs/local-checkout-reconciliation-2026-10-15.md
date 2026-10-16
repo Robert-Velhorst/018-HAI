@@ -802,3 +802,15 @@ The refreshed primary-checkout status remains 448 tracked deletions and 244 trac
 A bounded top-level declaration scan of modified Python, PowerShell, and shell files found one local-only function name: `test_direct_nginx_config_retains_the_safe_gateway_contract` in `nginx-config/test_gateway_contract.py`. It reads the local `nginx-config/nginx.conf`, which is not in current `main`'s Nginx file tree, so the test cannot be ported as written. Current main already has template-level gateway contract tests.
 
 The local Nginx template also removes the security-header policy present on main (including CSP, frame, content-type, referrer, and permissions headers) and changes the dashboard upstream from `frontend:8080` to `frontend:80`, contrary to current main's frontend-listening-port contract. The local direct-config test does not assert restoration of those removed security headers. These configuration changes are rejected as a batch; no Nginx file or test was ported, no test/build was run, and no local file was changed or deleted.
+
+
+## Primary-checkout IDP/authentication regression screen (2026-10-16)
+
+Compared the local IDP/authentication and database-configuration deltas with current `main` at `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. The local tree deletes many authentication components and their integration/security tests; selected live code changes also weaken existing contracts:
+
+- `auth_handler.go`, `auth_service.go`, and `auth_service_interface.go` remove request-context parameters from logout, token refresh, authentication checks, and password-reset request/delivery. The prior cancellation/deadline propagation is therefore not retained.
+- `postgres_config.go` removes non-empty database username/password checks and the production-mode weak/placeholder password guard. Current main defines and tests these validations.
+- `user_repository.go` replaces `utils.IsPasswordResetTokenDigest(tokenDigest)` with a length-only check. Current main's helper validates the digest format as well as its expected length.
+- The checkout deletes, among others, password-reset integration, recovery production, refresh-rotation, session-authority, and database-guard tests. A test suite reduced by deletion cannot be treated as equivalent acceptance.
+
+These changes are rejected as a port: they remove cancellation and production-authentication safeguards rather than adding a compatible improvement. This was focused source inspection only; no IDP tests, database acceptance, or live auth flow was run. No IDP code was ported or locally changed.
