@@ -1059,3 +1059,8 @@ GitHub Actions workflow runs were checked by exact commit SHA:
 - PR #151 head `7168b777e39a9d9dea126c5d5f6b7cd7d9ffcd90`, run `38976073626`: the first-page jobs query returned 30 jobs, all still queued at the time of this check.
 
 The Windows shell has no Go toolchain, and no database connection environment variables were present, so no local Go tests were claimed or run. PR #162 and #170 managed worktrees were each rechecked clean at the exact remote PR head before this CI refresh; their local copies remain present. Their remote PR branches and green CI provide recoverable copies, but the managed archive requests are still only queued: the attachments remain active and the directories still exist. No local disk space recovery is claimed.
+
+
+## Verified exact-match cleanup (2026-10-17)
+
+The local untracked copy of `backend/internal/runtimelab/owner_gate_handler_test.go` was removed only after a final path/hash check showed 12,495 bytes and exact Git blob `7333d2daecfef82ae7a42b882c92f58901173165`, matching the same path in current main. After removal, the local path was confirmed absent and the `origin/main` blob remained available at the same SHA. This was the only local file removed in this checkpoint. The logical file length was 12,495 bytes; no drive-level before/after measurement was captured, so no physical-space amount is claimed.
