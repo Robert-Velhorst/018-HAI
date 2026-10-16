@@ -76,3 +76,14 @@ No implementation or documentation from the reviewed linked worktrees was copied
 No local files, worktrees, environment files, databases, logs, agent state, or generated output were deleted, moved, archived, or rewritten by this audit. This inventory does not prove that all HAI-related files elsewhere on the device were found, nor does it prove semantic integration of transcript archives. Preserve all unresolved worktree history and local-only data. Cleanup remains limited to separately verified exact-main candidates under the existing cleanup gate; this report itself is not deletion authorization.
 
 The current audit PR is documentation-only. Its checks must be rerun for this added commit; passing CI is not evidence that local files are safe to delete.
+
+
+## Transcript archive verification recheck (2026-10-16)
+
+Read-only verifiers were run from a temporary clean checkout of current `main` at `df42ab2475b0814bacfc0f5989af85f855a64e14`. No removal script was invoked.
+
+- Main transcript-root readiness verification stopped because the manifest-listed source file `rollout-2026-07-30T10-02-49-019fb20c-2b95-7550-8304-1117de872148.jsonl` is missing under `D:\\codex-temp\\hai-completed-agent-sessions`. The exact filename was searched under `D:\\codex-temp`, `C:\\Users\\NO\\.codex`, `C:\\Users\\NO\\Documents\\Codex`, and then `C:\\Users\\NO`; no matching file was found. This search establishes only that the filename was not found in those enumerated trees, not that no backup exists elsewhere.
+- The supplemental read-only verifier completed successfully: 9 files, 14,013,737,298 logical bytes, 2 candidate hashes verified, 7 retained files, 19 report-source links verified. It returned `cleanup_authorized=false` and `deletion_performed=false`.
+- Since the main-root source verifier failed, the combined archive cleanup gate remains unsatisfied. All transcript roots and files remain untouched. Recovering or formally reconciling the missing source record and rerunning the full gate are required before candidate deletion can be considered.
+
+PR #37 was freshly verified as merged into `main` with successful checks, but that does not override the missing main-root source file or the supplemental verifier's explicit no-authorization result. The current audit PR #156 has a new head commit from this report update; its checks must complete before it can be considered merge-ready.
