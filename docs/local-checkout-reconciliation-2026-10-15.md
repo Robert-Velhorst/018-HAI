@@ -769,3 +769,15 @@ This source comparison identifies no safe service implementation to port. It was
 ### PR #162 exact-head validation refresh (2026-10-16)
 
 Rechecked PR #162 after the pursuit optimization comparison. GitHub reports head `087a89a3868cb9d59397589c35df1d067d2ae7ce` as mergeable, with all 41 reported checks completed successfully. The change remains open and unmerged. This supports preservation of the one-list dashboard optimization as a PR, but does not make the primary checkout's whole `backend/internal/pursuit/service.go` file an exact copy of the PR or of current main.
+
+
+### Verification helper equivalence check (2026-10-16)
+
+The local-only verification helper names were checked against their current-main call paths:
+
+- Local `persistFinalization` has a transactional path, but its evidence/claim inserts do not validate returned durable IDs. Current-main `persistCompletedVerification` already performs the completion audit and run update in the transaction and rejects missing persisted IDs.
+- Local `runForOwner` can fall back to loading and scanning an owner list. Current main uses the owner-scoped `FindRunForOwner` repository operation.
+- Local `isStaleEvidence` and `singleWeekday` express checks that current main already performs inline or through its weekday-conflict helper.
+- Local `normalizedEvidenceSentence` and current-main `normalizeEvidenceSentence` have different normalization semantics; no demonstrated regression or isolated improvement from the local version was established.
+
+This closes the 11-symbol local-only Go declaration screen recorded above: two changed test names and nine production symbols have been individually classified. It does not finish the semantic review of all modified Go files, frontend/IDP/configuration changes, or local worktrees.
