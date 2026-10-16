@@ -324,3 +324,12 @@ The `hai-pr36-integration` and `hai-resolve-pr35` worktrees share the older `ed9
 The `hai-resolve-pr34` commit (`f0dc3fda`) differs from current `main` at 2,207 paths (+28,916/−416,720), with 1,275 current-main paths absent and 925 modified. Its five branch-only files include three `.env-*` files that were not opened or copied, the older IDP `defaults.go` implementation, and generated Nginx output. Current `main` already has a later event-bus fallback in `idp/internal/app/services/event_bus.go`; the older branch also removes newer authentication safeguards and tests. The previously reviewed Windows-installer conflict candidates likewise reduce current installer behavior. Nothing from this stale tree was ported or deleted.
 
 These branch and conflict snapshots remain preserved for any future targeted review. Their current-main gaps, sensitive environment files, and unresolved edits make whole-tree merge or removal unsafe.
+
+
+## PR #160 synchronization and verification (2026-10-16)
+
+After PR #153 merged, the open draft PR #160 (`codex/autoposter-registry-port`) was synchronized with current `main` at `1e18f90cfccf525781c4e3c7c819a26fceba2edb` using a regular merge commit (`92494b6c`). The single conflict in `backend/internal/accountfeed/registry_service.go` was resolved by retaining both PR #160 pagination/tombstone fields and `main`'s internal cursor-presence field. No force-push was used.
+
+CI found that the migration-chain test listed `0128_account_feed_sync_cursor` unconditionally and also appended it when its migration file existed. The redundant unconditional entry was removed; the conditional file check and strict ordering/rollback assertions remain. The fix was pushed as `231cd719` to PR #160. All 41 GitHub checks passed on that exact head, including the full backend test/build job, real PostgreSQL 17 migration integration, frontend build/tests, Windows checks, and browser acceptance.
+
+PR #160 remains open and draft, and has not been merged into `main`. Live Autoposter/PostgreSQL provider acceptance was not performed; the connector remains opt-in and disabled unless explicitly configured. The temporary clean checkouts used for this merge/fix were removed only after verifying their committed heads were present on the remote PR branch. No unrelated or unmatched worktree data was removed.
