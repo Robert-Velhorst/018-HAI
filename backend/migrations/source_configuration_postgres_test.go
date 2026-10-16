@@ -3,6 +3,7 @@ package migrations_test
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"automation-hub-backend/internal/pgtestguard"
 	"automation-hub-backend/migrations"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // This defines actual SQL acceptance, but skips before any database creation
@@ -102,8 +104,9 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 	}
 
 	// Exercise the migration's registry-data guard independently of the runner's
-	// earlier phase-order guard. Remove the empty cursor column after registration
-	// so rollback reaches the 0114 down-SQL preflight with the managed feed intact.
+	// earlier phase-order guard. Rolling back 0114 through the runner is correctly
+	// refused while 0115-0127 remain applied, so execute its down-SQL preflight in
+	// a transaction that rolls back when the managed-origin guard rejects it.
 	rollbackDB := openIsolatedMigrationDatabase(t).WithContext(ctx)
 	rollbackFiles := migrationFilesThrough(t, "pre/0128_account_feed_sync_cursor")
 	if _, err := infra.ApplyMigrations(rollbackDB, rollbackFiles, "pre"); err != nil {
@@ -133,10 +136,13 @@ func TestSourceConfigurationPostgresCanonicalRevocationAndRawMutationRefusal(t *
 		t.Fatalf("roll back empty sync cursor before testing the source-configuration guard: %v", err)
 	}
 	// Registration alone creates the managed origin that the 0114 down
-	// migration must protect. Syncing would write operations using the current
-	// model against this intentionally pre-0118 schema fixture.
+	// migration must protect; no sync or source-data mutation is needed.
+	downSQL, err := fs.ReadFile(rollbackFiles, "pre/0114_operation_source_configuration.down.sql")
+	if err != nil {
+		t.Fatalf("read source-configuration down migration: %v", err)
+	}
 	assertSourceObservationSQLState(t,
-		infra.RollbackMigration(rollbackDB, rollbackFiles, "pre", "pre/0114_operation_source_configuration"),
+		rollbackDB.Transaction(func(tx *gorm.DB) error { return tx.Exec(string(downSQL)).Error }),
 		"55000",
 	)
 }
