@@ -84,7 +84,7 @@ A fresh read-only measurement found:
 - `installer/release/`: 1,975 files, 37,126,164 bytes (35.4 MiB).
 - `.git/`: approximately 147.1 MiB; `db_data_automation/` and `db_data_idp/`: approximately 46.0 MiB and 45.9 MiB.
 
-Generated outputs, installer artifacts, databases, Git history, agent state, logs, and all divergent working files remain untouched. No HAI container or local frontend/API listener was active at the time of the read-only process check; no runtime was stopped. This is point-in-time evidence only.
+Generated outputs, installer artifacts, databases, Git history, agent state, logs, and all divergent working files remain untouched. No HAI-named container appeared in `docker ps`. No listener was found on ports 4200, 4201, 8088, 5173, or 8080; this is a scoped check, not a complete host-process audit. No runtime was stopped.
 
 ### Outcome and limits
 
