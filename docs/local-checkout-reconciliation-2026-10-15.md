@@ -611,3 +611,10 @@ Targeted review of the staged backend service diffs against current `main` found
 - `ambient/service.go` removes the summary overview projection and changes owner-scoped need retrieval; its scan-candidate update path is a distinct implementation and still requires transaction/race/owner-isolation review before it could be considered.
 
 The staged Go inventory has 194 changed `.go` paths; none has positive net line growth relative to current `main` in the numstat screen. This is only a prioritization signal: it does not prove every replacement is inferior. The reviewed services are rejected as a batch, and the remaining Go paths have not yet received full semantic review. No backend code was ported.
+
+
+## Child-agent integration-ledger snapshot comparison (2026-10-16)
+
+Compared the staged `docs/child-agent-integration-ledger.md` in `D:/hai-source-reconciliation` with the same current-main file. Current main contains 11,534 lines and 418 Markdown headings; the staged snapshot contains 6,311 lines and 214 headings. No heading present in the staged snapshot is absent from current main. Its 15 exact trimmed lines not found on main are historical machine-specific checkout/session paths and file-size/count statements, not HAI product implementation. No content from this older ledger snapshot was ported.
+
+This comparison does not reconcile the underlying child transcripts or prove every item is integrated. The ledger itself continues to identify transcript semantic/provenance reconciliation as incomplete. Transcript archives and session data remain untouched.
