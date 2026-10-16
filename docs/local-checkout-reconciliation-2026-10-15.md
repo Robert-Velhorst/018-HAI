@@ -679,3 +679,15 @@ Compared selected modified tracked files in the primary checkout against current
 - `backend/internal/source/trello.go` removes the quiet-board activity cursor check and helper, causing scheduled syncs to fetch lists/cards/comments even when the board has no relevant card activity. Current main retains that bounded optimization with a conservative full-sync fallback.
 
 These are focused source diffs, not runtime tests. They identify no safe local feature to port; the local variants are stale or regressive in these areas. No source files were changed or staged.
+
+
+## Primary-checkout frontend service and theme screen (2026-10-16)
+
+Compared selected changed frontend files in the primary checkout with current `main`:
+
+- The local `context-memory.service.interface.ts` duplicates request/result interfaces already centralized in `context-memory.model.interface.ts`; it changes typed sort/order fields to plain `string`, weakening the shared contract rather than adding a backend capability.
+- The local workflow selection test replaces the exact owner-scoped `/selections/{id}` contract with a scan of up to 200 records. This can miss older valid records and tests a broader, less exact lookup than current main.
+- The local `index.html` embeds theme initialization that duplicates the existing `assets/theme-init.js` behavior. The tracked initializer remains present on current main, so the inline copy adds no distinct behavior and creates another place for theme bootstrap to drift.
+- The local `app.module.ts` removes the shared `ControlRoomModule` import and re-declares a subset of HAI icons inline; it does not establish a complete replacement for the shared module.
+
+This was a focused source comparison only, not a browser/build test. No frontend code was ported.
