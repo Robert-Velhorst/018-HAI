@@ -46,6 +46,7 @@ type Feed struct {
 	OperationType string     `json:"operationType"` // default op type for items lacking one
 	Enabled       bool       `json:"enabled"`
 	ConfigVersion int64      `json:"configVersion"`
+	SyncCursor    string     `json:"-" gorm:"column:sync_cursor"`
 }
 
 // Bind the pre-read ticket to the exact configuration without exposing paths
@@ -68,6 +69,9 @@ func (f Feed) SourceObservationStart() operations.SourceObservationStart {
 func (f Feed) Validate() error {
 	if strings.TrimSpace(f.Name) == "" {
 		return fmt.Errorf("accountfeed: name required")
+	}
+	if err := validateGenericFeedCursor(f.SyncCursor); err != nil {
+		return fmt.Errorf("accountfeed: stored %w", err)
 	}
 	if strings.TrimSpace(f.OwnerUserID) == "" {
 		return fmt.Errorf("accountfeed: ownerUserId required")

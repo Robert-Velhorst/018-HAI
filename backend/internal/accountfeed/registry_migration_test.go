@@ -18,6 +18,34 @@ func accountFeedRegistryMigrationSQL(t *testing.T, direction string) string {
 	return strings.Join(strings.Fields(string(body)), " ")
 }
 
+func accountFeedSyncCursorMigrationSQL(t *testing.T, direction string) string {
+	t.Helper()
+	path := "pre/0128_account_feed_sync_cursor." + direction + ".sql"
+	body, err := migrations.Files.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read embedded account feed sync cursor migration %s: %v", direction, err)
+	}
+	return strings.Join(strings.Fields(string(body)), " ")
+}
+
+func TestAccountFeedSyncCursorMigrationIsBoundedAndRollbackSafe(t *testing.T) {
+	t.Parallel()
+	up := accountFeedSyncCursorMigrationSQL(t, "up")
+	requireAccountFeedMigrationFragments(t, up,
+		"ALTER TABLE public.account_feeds ADD COLUMN sync_cursor text NOT NULL DEFAULT ''",
+		"octet_length(sync_cursor) <= 4096",
+	)
+	if strings.Contains(strings.ToUpper(up), "DROP ") {
+		t.Fatal("cursor migration must be additive")
+	}
+	down := accountFeedSyncCursorMigrationSQL(t, "down")
+	requireAccountFeedMigrationFragments(t, down,
+		"WHERE sync_cursor <> ''",
+		"rollback refused: account feed cursor exists",
+		"DROP COLUMN sync_cursor",
+	)
+}
+
 func requireAccountFeedMigrationFragments(t *testing.T, sql string, fragments ...string) {
 	t.Helper()
 	for _, fragment := range fragments {
