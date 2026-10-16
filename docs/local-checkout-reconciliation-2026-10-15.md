@@ -1152,3 +1152,15 @@ A focused line-ending-insensitive diff compared four modified primary-checkout G
 - `backend/internal/llm/policy.go` removes rejection of provider endpoint query strings and fragments; it also replaces the named 4 MiB probe-response bound with a 256 KiB literal. The latter is a behavior change requiring its own compatibility review, not a validated optimization.
 
 These sampled local variants are stale or weaken persisted audit, cancellation, validation, or endpoint constraints; they are not candidates for a PR as written. This is a four-file targeted review only. The remaining modified primary-checkout source files and other worktrees still require semantic review. No code was ported, staged, or removed.
+
+
+## Primary-checkout installer, CI, and gateway crosswalk (2026-10-17)
+
+Line-ending-insensitive diffs of the dirty primary checkout against its local `origin/main` ref identify further changes that should not be ported as written:
+
+- `.github/workflows/ci.yml` downgrades the Go toolchain from 1.27.2 to 1.25.13 and removes the cleanup-readiness contract job, multiple cleanup contracts, A2A race tests, Docker build-context checks, Docling runner tests, PostgreSQL regression jobs, redacted startup diagnostics, and the broader uncertainty browser-test scope. These are removed verification gates, not a validated CI optimization.
+- `scripts/initialize-windows.ps1` deletes the existing-environment backup immediately after replacement, before verifying the replacement ACL and bytes; it also stops preserving configured A2A/runtime network subnets. This weakens rollback and user configuration preservation.
+- `nginx-config/nginx.conf.template` removes CSP and other security response headers, points the frontend upstream to port 80 instead of 8080, and removes the 900-second API proxy timeouts used by long task runs.
+- `docker-compose.local.yml` downgrades PostgreSQL/pgvector and Redis images (including Redis 8 to Redis 7) and removes the SearXNG network/volume configuration. `scripts/build-windows-installer.ps1` also downgrades its pinned Go builder from 1.27.2 to 1.25.13.
+
+These are focused config/deployment diffs, not a full review of all changed scripts or Compose services. No local changes were staged, committed, or removed, and no code from this snapshot was ported.
