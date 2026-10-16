@@ -31,6 +31,7 @@ type SyncReport struct {
 	Errors            []string `json:"errors,omitempty"`
 	Recorded          bool     `json:"recorded"`
 	ReadCompleted     bool     `json:"readCompleted"`
+	CursorPresent     bool     `json:"-"`
 }
 
 type FeedHealth struct {
@@ -190,9 +191,10 @@ func (r *Registry) syncContext(ctx context.Context, scope FeedScope, id uuid.UUI
 		finishCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		message := fmt.Sprintf("read %d items, %d new operations, %d existing operations, %d rejected, %d privacy-flagged", rep.ItemsRead, rep.OperationsCreated, rep.OperationsRefresh, len(rep.Errors), rep.PrivacyFlagged)
-		outcome := SyncOutcome{ItemsRead: rep.ItemsRead, Event: newFeedAudit(id, eventType, message, r.now())}
+		outcome := SyncOutcome{ItemsRead: rep.ItemsRead, Cursor: rep.Cursor, CursorPresent: rep.CursorPresent, Event: newFeedAudit(id, eventType, message, r.now())}
 		if err := r.repo.FinishSync(finishCtx, scope, id, token, outcome); err != nil {
 			rep.Cursor = ""
+			rep.CursorPresent = false
 			rep.Errors = append(rep.Errors, "feed sync result could not be recorded; operator review is required")
 			resultErr = storageError(err)
 			return
@@ -229,6 +231,7 @@ func (r *Registry) syncContext(ctx context.Context, scope FeedScope, id uuid.UUI
 			eventType = "sync_partial"
 		}
 		rep.Cursor = ""
+		rep.CursorPresent = false
 	}
 	return rep, nil
 }
@@ -245,6 +248,7 @@ func (r *Registry) ingestObservedFeed(ctx context.Context, feed Feed, rep *SyncR
 		return
 	}
 	rep.Cursor = parsed.Cursor
+	rep.CursorPresent = parsed.CursorPresent
 	rep.ReadCompleted = true
 	for _, item := range parsed.Items {
 		if ctx.Err() != nil {

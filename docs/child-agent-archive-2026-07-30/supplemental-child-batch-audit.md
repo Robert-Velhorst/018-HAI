@@ -1,30 +1,42 @@
 # Supplemental child-batch audit (2026-07-30)
 
-## Current bounded-scan disposition (2026-10-12)
+## Current bounded-scan disposition (2026-10-15)
 
-This section supersedes cleanup classifications in the historical scan notes
-below. The bounded parser processes JSONL records up to 8 MiB; any file with
-an oversized or malformed candidate record remains unattributed and retained,
-even when an earlier full-file scan observed a completion event.
+This section reflects the committed 10 MiB bounded-scan manifests and summary
+files. Records larger than the configured bound are skipped by the parser and
+their transcripts remain retained; an earlier completion observation does not
+override the current bounded scan.
 
-| Scope | Files | Logical bytes | Cleanup candidates | Retained | Oversized records |
+| Scope | Files | Logical bytes | Cleanup candidates | Retained | Oversized records skipped |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Supplemental roots | 9 | 14,013,737,298 | 0 | 9 | 783 |
-| Main archive root | 18 | 20,739,169,122 | 3 | 15 | 1,630 |
-| **Combined known inventory** | **27** | **34,752,906,420** | **3** | **24** | **2,413** |
+| Supplemental roots | 9 | 14,013,737,298 | 2 | 7 | 5 |
+| Main archive root | 18 | 20,739,169,122 | 5 | 13 | 2 |
+| **Combined known inventory** | **27** | **34,752,906,420** | **7** | **20** | **7** |
 
-The supplemental scan found an oversized record in every file. Hubble and
-Popper have completion reports observed in a prior full-file pass, but both
-files are currently `unattributed` with disposition
-`retain_unparsed_candidate_record`; these observations do not qualify them for
-cleanup. The three main-root candidates are the only files that currently pass
-bounded attribution and hashing, and remain candidates only. No transcript
-was removed. This is still not a complete inventory of every HAI-related local
-file, and transcript deletion is not authorized by this ledger alone.
+The counts above match the current machine-readable manifests and summary
+files. Hubble and Popper are the two supplemental candidates; their reports
+map to source paths recorded in the audit below. The other seven supplemental
+transcripts remain retained, including five marked
+`retain_unparsed_candidate_record`. The main archive manifest has five
+candidate rows, but their source paths were not present during the 2026-10-15
+read-only reconciliation: 13 retained/duplicate-ID paths matched their
+recorded lengths, while the five candidate paths (3,179,439,595 bytes in
+total) had no file or same-name copy under the checked audit temp root. This is
+a source-integrity mismatch, not evidence that those files were safely
+integrated or intentionally removed. Preserve the remaining source files and
+resolve the missing-path discrepancy before changing dispositions.
 
-Machine-readable current results are in
+The supplemental source paths and lengths matched all nine manifest entries
+during the same check. The five skipped oversized records and incomplete
+supplemental-root cleanup coverage still prevent treating this scan as a
+deletion receipt. No transcript was removed. This is not a complete inventory
+of every HAI-related local file, and candidates are not blanket deletion
+authorization.
+
+Machine-readable results are in
 `supplemental-child-transcript-summary.json` and
-`supplemental-child-transcript-manifest.csv`.
+`supplemental-child-transcript-manifest.csv`. Main-archive results are in
+`child-agent-transcript-summary.json` and `child-agent-transcript-manifest.csv`.
 
 ## Scope and inventory
 
@@ -117,3 +129,31 @@ The current manifest and summary record the 10 MiB bound, candidate hashes,
 and `deletion_performed: false`. No transcript was removed. These are
 source-integration facts only; cleanup still requires the canonical-main gate
 and tooling that verifies both supplemental roots.
+
+## Verified local cleanup update (2026-10-16)
+
+After the 2026-10-12 scan, the Hubble and Popper source crosswalks were checked
+against current `main` at `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. All 19
+report-named source paths exist in that tree; current Framework Registry tests
+cover owner authorization, empty-request focus, duplicate-submit handling,
+and keyboard access. The theme service selects registered icons centrally and
+the LLM Policy uses that shared icon. The CI workflow and contract test retain
+the reported liveness, uncached race, migration-test matching, and timeout
+checks.
+
+The two corresponding local transcript files were SHA-256 verified against
+the supplemental manifest before removal:
+
+| Child | Transcript SHA-256 | Bytes removed |
+| --- | --- | ---: |
+| `019fb087-5a29-7983-bc56-3f8956867155` (Hubble) | `a9a2dc0a6fd91c539b5819b91dbf75c54463e91902b0942ccd219cf857345df7` | 1,528,358,289 |
+| `019fb090-112e-7741-8c8b-1f78cafa14d6` (Popper) | `cc6f2e5766d97c5a3a0f3cad3b0803e938c4389b39825ad4ba9950d527076506` | 1,584,936,069 |
+| **Total** |  | **3,113,294,358** |
+
+The Anscombe transcript (`019fb09c-e5bb-7c31-b6c4-59479eaca1e6`) remains
+because it is still unattributed and has no verified terminal report. The
+separate 17,559,729,527-byte retained archive and all other retained
+supplemental transcripts were not modified. This is a verified per-file
+cleanup, not completion of the broader transcript cleanup gate; oversized or
+unattributed history remains protected, and the cleanup tool has not been
+changed to authorize either supplemental root.

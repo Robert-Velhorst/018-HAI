@@ -918,7 +918,7 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("infra.CloseDefaultDB()", router)
         self.assertIn("infra.GetDefaultDBContext(ctx)", router)
         self.assertLess(router.index("metrics.NewFromEnv()"), router.index("infra.GetDefaultDBContext(ctx)"))
-        self.assertLess(router.index("infra.GetDefaultDBContext(ctx)"), router.index("initializeRoutesWithContext(router, ctx)"))
+        self.assertLess(router.index("infra.GetDefaultDBContext(ctx)"), router.index("initializeRoutesWithContext(router, ctx, metricsExporter)"))
         self.assertIn("DB_STARTUP_TIMEOUT: ${DB_STARTUP_TIMEOUT:-5m}", compose_service_block(compose, "backend"))
         self.assertIn("source.WithRuntimeContext(sourceService, runtimeCtx)", routes)
         # Published activities use host lifetime, not an HTTP/probe deadline.
