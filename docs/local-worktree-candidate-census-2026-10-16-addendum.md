@@ -47,3 +47,45 @@ Across 40 untracked Go tests and four untracked frontend script-test suites, no 
 The hidden `output/` tree still contains 1,507 files (126,491,186 bytes); eight paths exist in main and none of the local output blobs match main. The dated PostgreSQL/race-test evidence, `.claude-flow`/`.swarm` state, all non-identical outputs, and the materialized `nginx-config/nginx.conf` remain untouched. Windows denied deletion of the exact-match owner-gate test and the obsolete Nginx file in prior attempts; this audit did not retry either deletion or use an alternate method.
 
 No source code was ported in this refresh because the candidates examined were already represented by newer `main` behavior or were run-specific evidence/state. PR checks remain pending; this addendum does not claim a complete semantic audit or authorize deletion of divergent files.
+
+## Complete current-worktree reconciliation (2026-10-16)
+
+### Authoritative refs and status
+
+A fresh fetch updated local `origin/main` to `df42ab2475b0814bacfc0f5989af85f855a64e14`. The checkout remains at `e07b9daeb3ba2630ecbe12a64d948f791203c241` on `codex/hai-runtime-release`. PR #41 merge commit `71102fd40a960b59b70e56f902cb4b3dc91f1390` and PR #42 merge commit `b1caa0b074793e794ea8bc340cba9ac562924ff7` are both ancestors of current `main`.
+
+A fresh `git status --porcelain=v1 --untracked-files=all` contains 448 tracked deletions, 244 tracked modifications, and 1,582 untracked files. The counts reconcile to 2,274 status entries.
+
+### Blob-level reconciliation against current main
+
+The current main tree was loaded locally from the refreshed ref and compared against working-file Git blobs:
+
+- All 448 locally deleted tracked paths exist on current `main`. Their local file content is already absent, so this checkout has no remaining bytes at those paths to reclaim.
+- Of 244 modified tracked files, none is an exact blob match. 243 paths exist on main but contain different content; `nginx-config/nginx.conf` is absent from main.
+- Of 1,582 untracked files, 73 paths also exist on main. One is byte-identical: `backend/internal/runtimelab/owner_gate_handler_test.go` (12,495 bytes); 72 same-path files differ. The other 1,509 untracked paths are absent from main.
+- The earlier 65-path untracked source/support screen was narrower; this full status-path comparison supersedes that count. Path overlap alone does not establish that a differing local file is newer or safe to port.
+
+### Subsystem review disposition
+
+Independent read-only reviews covered backend; frontend and IDP; operations, CI, documentation, installer and gateway configuration; and service runners plus untracked test/source candidates. No reviewed local implementation or test was recommended for port as-is.
+
+The specific differences reviewed are predominantly regressions relative to current main: removal of request cancellation and owner scope in authentication, weaker endpoint/config validation and rate-limit bounds, loss of durable approval/confirmation behavior for emergency-stop and runtime-resume actions, non-atomic automation-event publication, exposure of detailed readiness checks, weaker pause/error-redaction behavior in background work, reduced CI/backup/recovery safeguards, and older runtime/dependency inputs. Current main also contains later owner-scoped source retrieval, workflow and dashboard implementations, runner files, and test coverage that are absent from this checkout.
+
+The local CrewAI Dockerfile additionally sets `CREWAI_DISABLE_TELEMETRY=true`. CrewAI's current documentation says either that variable or `OTEL_SDK_DISABLED=true` disables CrewAI telemetry; current main already sets the latter. The local variable therefore does not change the present behavior and was not ported as a standalone change. [CrewAI telemetry documentation](https://github.com/crewAIInc/crewAI/blob/main/docs/v1.12.2/en/telemetry.mdx)
+
+The test-name scan found 162 extracted untracked test names already present on main. This is a coverage/name comparison, not proof that every local assertion is equivalent; no local-only test was identified as a safe port candidate in the reviewed files.
+
+### Local storage inventory and preservation
+
+A fresh read-only measurement found:
+
+- `output/`: 1,507 files, 126,491,186 bytes (120.6 MiB).
+- `frontend/dist/`: 17,549 files, 387,064,530 bytes (369.1 MiB).
+- `installer/release/`: 1,975 files, 37,126,164 bytes (35.4 MiB).
+- `.git/`: approximately 147.1 MiB; `db_data_automation/` and `db_data_idp/`: approximately 46.0 MiB and 45.9 MiB.
+
+Generated outputs, installer artifacts, databases, Git history, agent state, logs, and all divergent working files remain untouched. No HAI container or local frontend/API listener was active at the time of the read-only process check; no runtime was stopped. This is point-in-time evidence only.
+
+### Outcome and limits
+
+No source code was copied into a PR in this audit because the reviewed local versions were superseded or weaker than current main, and the one exact-match untracked test had already been identified as a deletion candidate in the earlier audit. No local file was deleted, moved, compressed, or rewritten. The local source audit is substantially broader, but raw generated evidence was not semantically reviewed and is preserved. This addendum is not a claim that every HAI-related file on the device has been examined, nor does it authorize deletion of divergent content.
