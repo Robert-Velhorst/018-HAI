@@ -742,3 +742,13 @@ These local changes are rejected as a batch; the additional test name does not j
 A static declaration-name screen across 141 modified tracked Go files found 11 local-only function names compared with their current-main same-path files. This is a candidate-discovery heuristic, not semantic equivalence evidence. Focused inspection of `backend/internal/source/handler.go` found that the local `Extractions` handler loads the owner's extraction collection, filters it in memory, then truncates the result. Current main instead requires `ExtractionPageService.ExtractionPageForOwner` and returns the bounded page and total count. The local path is not a safe performance or data-access improvement and was not ported.
 
 The other local-only declarations span pursuit, routing, and verification service files; some of those packages have already had separate regression findings recorded above, but this declaration scan does not classify all nine remaining production symbols. The modified-file audit is therefore still incomplete. No local source was edited or removed, and no tests were run.
+
+
+## Pursuit-dashboard and route-lifecycle local-delta screen (2026-10-16)
+
+Two more local-only declarations were checked against current `main`:
+
+- The local pursuit helper reuses one owner-scoped list to create the dashboard and expanded pursuit list. The same narrowly scoped optimization is already proposed in open PR #162 (`codex/hai-pursuit-dashboard-list-dedupe`), which changes `DashboardWithPursuitsForOwner` to reuse the existing list and adds a one-call regression test. PR #162 is the preservation candidate; the stale local `service.go` is not itself safe to replace or remove because its surrounding file differs from current main. PR #162 remains open and unmerged.
+- The local route file adds `initializeRoutes` as a wrapper around `context.Background()`. Current main instead requires the application lifecycle context and rejects nil, preventing background workers from escaping server cancellation. The surrounding local route diff also removes current-main durable automation outbox wiring, operations-control approval resolvers/review persistence, the operational-graph routes, and the ChatGPT task-log adapter. It is a broad regression snapshot, not a route feature to port.
+
+This was source-level comparison only; no Go tests or server lifecycle/runtime acceptance were run. No route or pursuit files were changed.
