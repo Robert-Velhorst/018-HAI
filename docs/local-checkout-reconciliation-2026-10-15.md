@@ -599,3 +599,15 @@ These are targeted source/configuration comparisons, not a frontend build or bro
 ## Reconciliation scripts local-delta screen (2026-10-16)
 
 A path/numstat inventory of the staged script group compared with current `main` found 34 changed script files, all existing files with net deletions, plus one staged deletion: `scripts/test_docker_build_context.py`. Large deletions include the Windows backup/recovery harness, isolated acceptance/recovery scripts, installer tests, and secret-scan handling. This screen does not prove every deleted assertion is safety-critical, but it identifies no additive script implementation to port and confirms the staged script snapshot is materially reduced relative to main. No script was ported or changed locally.
+
+
+## Backend service local-delta review (2026-10-16)
+
+Targeted review of the staged backend service diffs against current `main` found several older/less complete contracts:
+
+- `pursuit/service.go` removes the bounded dashboard summary/count projections and the combined overview type used by current API callers. This reverts the smaller summary-payload path rather than adding a new safe capability.
+- `verification/service.go` removes the context-aware answer entry point and source-search cancellation interface, lowers memory-promotion confidence/evidence-quality thresholds (0.75/0.75 to 0.70/0.55), and replaces the explicit untrusted-provenance explanation contract. These differences weaken cancellation and evidence promotion policy.
+- `frameworkregistry/repository.go` removes the transactional preference-change event write and history lookup/validation, including actor/reason requirements and digest chaining.
+- `ambient/service.go` removes the summary overview projection and changes owner-scoped need retrieval; its scan-candidate update path is a distinct implementation and still requires transaction/race/owner-isolation review before it could be considered.
+
+The staged Go inventory has 194 changed `.go` paths; none has positive net line growth relative to current `main` in the numstat screen. This is only a prioritization signal: it does not prove every replacement is inferior. The reviewed services are rejected as a batch, and the remaining Go paths have not yet received full semantic review. No backend code was ported.
