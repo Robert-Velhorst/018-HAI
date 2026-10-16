@@ -260,3 +260,14 @@ PR #153 was extended at head `dc980f8e5e2033d76e6280f909151a4088a38767` to rejec
 At the latest exact-head GitHub check read, PR #153 had 41 reported checks: nine successful, nine running, 22 queued, no failures, and one neutral CodeQL result. CodeQL's neutral result says it cannot determine PR-introduced alerts because the PR head lacks the Go default setup on main; do not describe it as a Go code-scan pass. The hosted suite is incomplete. PR #153 remains a draft, open, and unmerged.
 
 No local data was deleted. The primary-checkout content crosswalk is bounded to the 65 files described above; it does not resolve the broader tracked diff, sensitive local environment files, staged snapshots, worktrees, or transcript archives.
+
+
+## Reconciliation state refresh (2026-10-16)
+
+The verified GitHub `main` commit is now `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`; PR #153 was merged at this commit. The primary checkout on `codex/hai-runtime-release` remains heavily modified: a fresh `git status --porcelain=v1 --untracked-files=all` count is 2,274 entries. The count includes tracked modifications/deletions and untracked files; it is not a count of independent features.
+
+The separate `D:` reconciliation checkout is at `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`, 71 commits behind current `origin/main`. Its index contains 310 staged paths relative to its own `HEAD`. Comparing that staged tree directly with current `origin/main` yields 419 changed paths, 14,245 additions, and 22,861 deletions. Separately, its unstaged worktree has 34 deletions under `output/`. This is not a reviewed product patch: the source changes combine broad deletions and edits across backend, frontend, IDP, CI, scripts, and runner dependencies. Do not push or remove this checkout as a unit; keep it intact for file-level semantic reconciliation.
+
+The clean evidence update for the specifically verified Hubble and Popper transcript removals is recorded separately in [PR #161](https://github.com/Robert-Velhorst/018-HAI/pull/161). It does not change this checkout assessment or authorize removing the retained 17.56 GB transcript archive.
+
+This refresh is a measured snapshot, not completion of the device-wide inventory. The remaining dirty worktrees, local snapshots, staged source changes, retained transcripts, and HAI-related files outside the scanned roots remain to be reviewed. No additional local files were deleted during this refresh.
