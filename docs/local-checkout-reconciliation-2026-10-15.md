@@ -656,3 +656,8 @@ Compared two untracked primary-checkout Go test files with their same-path files
 - `backend/internal/llm/outbound_transport_test.go`: the six test names and function bodies match after line-ending normalization, but the local blob SHA `bb9e19b8dd9ce658c34890b73b9e6cbafc98361c` does not match main's `145d1218d3547060e323c7d5d9ddddcf6bf13483`. The local copy is therefore not an exact-content cleanup match despite matching test functions; it was not treated as a replacement.
 
 This was a focused source comparison, not a Go test run. No files were staged, edited, or removed. The broader working tree and remaining candidate files are still under review.
+
+
+## Primary-checkout CrewAI runner delta (2026-10-16)
+
+Compared the primary checkout's `services/crewai-runner` working-tree delta with current `main`. The local variant deletes `app.py`, `test_app.py`, `requirements.in`, and `requirements.lock`; its `requirements.txt` diff adds 3,157 lines and removes 166, while the Dockerfile adds only a CrewAI telemetry-disable environment flag. The executable bounded planner and its tests are absent from this working tree state, so the larger dependency manifest is not a usable feature port. No CrewAI implementation or dependencies were ported, and no service tests were run.
