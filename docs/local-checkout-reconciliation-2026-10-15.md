@@ -1140,3 +1140,15 @@ Read-only Git inspection of `D:/hai-source-reconciliation` used a command-scoped
 The checkout has 310 staged paths and 34 unstaged deletions of historical output reports. Relative to its local `origin/main`, the staged index adds one path (`nginx-config/nginx.conf`) and deletes 23 paths, including the 0128 cursor migration and rollback tests. The added Nginx file was previously inspected and is not deployable: it has a placeholder backend key, routes frontend traffic to port 80 rather than the maintained port 8080, and omits current proxy security/readiness controls. The maintained template remains authoritative.
 
 A line-ending-insensitive targeted diff against the checkout's `origin/main` confirms substantive regressions in the staged version: `backend/internal/source/trello.go` removes quiet-board cursor probing and its bounded scheduled-sync fast path; `backend/internal/operations/source_approval.go` removes the reviewed-owner-type receipt binding and falls back to a fixed owner when checking the approved revision; `backend/internal/router/router.go` removes the 1 MiB `MaxHeaderBytes` cap while adding a write timeout. These paths are therefore not safe to publish from this staged batch. This is a targeted risk review, not a semantic approval of all 310 staged paths; no code was ported and the worktree remains unchanged.
+
+
+## Primary-checkout service crosswalk (2026-10-17)
+
+A focused line-ending-insensitive diff compared four modified primary-checkout Go services with the local `origin/main` ref at `76148882e6d9c7badcd81dc8a80830181c90a860`. The current `main` commit `80fdeabd16efda6d9328fa0c89a4ab813f087908` changes only the migration runner and its tests, so these sampled service paths are unchanged between those refs.
+
+- `backend/internal/automation/automation_service.go` replaces the durable repository `CreateWithEvent`/`UpdateWithEvent`/`DeleteWithEvent` path with separate repository mutations followed by event publication. This removes atomic persistence of the automation state and audit event.
+- `backend/internal/source/service.go` drops the fail-closed Autofever-not-implemented rejection, removes context propagation/cancellation from semantic search, and removes pagination metadata and the owner-scoped source service API.
+- `backend/internal/workflow/service.go` removes success-criteria validation and carries those criteria out of workflow records, task-run requests, and the source-revision digest.
+- `backend/internal/llm/policy.go` removes rejection of provider endpoint query strings and fragments; it also replaces the named 4 MiB probe-response bound with a 256 KiB literal. The latter is a behavior change requiring its own compatibility review, not a validated optimization.
+
+These sampled local variants are stale or weaken persisted audit, cancellation, validation, or endpoint constraints; they are not candidates for a PR as written. This is a four-file targeted review only. The remaining modified primary-checkout source files and other worktrees still require semantic review. No code was ported, staged, or removed.
