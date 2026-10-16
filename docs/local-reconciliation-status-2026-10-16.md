@@ -6,7 +6,7 @@ This dated addendum supersedes earlier inventory counts and PR-state notes where
 
 - `main` is at `df42ab2475b0814bacfc0f5989af85f855a64e14`.
 - PR #41 merged as `71102fd40a960b59b70e56f902cb4b3dc91f1390`; PR #42 merged as `b1caa0b074793e794ea8bc340cba9ac562924ff7`. Both merge commits are ancestors of `main`.
-- PR #156 remains open at head `6383f1e66c6ccb76b8a345d308b5e5d851af71ad`. Its diff contains four documentation files. Against current `main`, its comparison reports 29 head-only and 35 base-only commits, with merge base `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`. All checks passed at the previous head `e608467ed4f4bce4bd04505773bea7ae61d18dc2`; checks for the current head were still pending at this snapshot. Refresh the branch onto current `main` and rerun CI before considering a merge.
+- PR #156 remains open, with a four-file documentation-only diff. Its merge base with current `main` is `86fb1d9c53a69e1edb2fb098832aa6cb35d38eee`; it is 35 commits behind `main`. The previous PR head `e608467ed4f4bce4bd04505773bea7ae61d18dc2` passed all reported checks. The latest documentation commits require their own CI result; verify that result and refresh the branch onto current `main` before considering a merge.
 
 ## Local checkout inventory
 
