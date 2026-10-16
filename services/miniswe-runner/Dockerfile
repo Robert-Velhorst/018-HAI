@@ -2,7 +2,11 @@ FROM python:3.15-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir mini-swe-agent==2.4.5
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential cargo \
+    && pip install --no-cache-dir mini-swe-agent==2.4.5 \
+    && apt-get purge -y --auto-remove build-essential cargo rustc \
+    && rm -rf /var/lib/apt/lists/* /root/.cargo
 
 COPY app.py ./
 
