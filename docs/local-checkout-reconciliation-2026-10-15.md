@@ -475,3 +475,15 @@ A targeted comparison of the primary checkout's remaining `generic-auto`, Nginx 
 ## Task-execution service local-delta review (2026-10-16)
 
 A focused comparison of the primary checkout's `backend/internal/task/service.go` against current `main` (`1e18f90cfccf525781c4e3c7c819a26fceba2edb`) confirms the local orchestration code is not a safe port. It removes the fresh verified-agent-card gate for framework-required participants, the compact owner-scoped task-history projection, and the read-only conversation-history MCP tool loop with action/evidence trace retention and approval-data sanitization. It also retries even when the failed claims all depend on the same untrusted provenance, whereas main limits retries to cases where a retry can change the outcome. Several request-context checks use a different signal locally; this snapshot is incomplete alongside deleted workflow/agent-runtime code. These are source-diff findings only; no task or workflow tests were run. No orchestration code was ported.
+
+## Historical PR-resolution worktree screening (2026-10-16)
+
+A read-only screen of `C:\\Users\\NO\\Documents\\Codex\\2026-10-11\\hai-pr36-local-delta` found a clean checkout at `ed9b379c`, with 493 commits not in current `main` and 81 commits in `main` not in that checkout. Its tree differs from current `main` at 666 paths (485 modified, 176 deleted, five added). This is a stale, divergent snapshot, not a replayable branch. The 485 modified paths were not exhaustively reviewed semantically.
+
+The five added paths were screened individually:
+- `autofever.go` and its tests propose an authenticated feed at `/api/integrations/hai/feed`. The current `Robert-Velhorst/028-autofever` repository search found no such route or feed implementation; its backend README describes a notification/help/recovery service and does not establish this vehicle-review feed contract. The local connector's endpoint claim is therefore unverified and was not ported.
+- The active-dedupe migration is present in current `main` under version `0006`; the old branch's version `0004` is not a new migration to port.
+- The standalone `nginx-config/nginx.conf` differs from the current canonical template and drops security headers/timeouts/readiness behavior, changes the frontend upstream, and includes an example backend key. It was rejected.
+
+No local files or worktrees were changed or deleted. The divergent worktree remains retained; this targeted screen does not classify all 485 modified paths or prove that checkout can be removed.
+
