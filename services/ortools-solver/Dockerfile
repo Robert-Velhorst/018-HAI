@@ -46,9 +46,11 @@ FROM python:3.15-slim AS runtime
 WORKDIR /app
 COPY requirements.runtime.lock ./
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements.runtime.lock
-COPY --from=ortools-build /opt/or-tools/build/python/dist/ortools-*.whl /tmp/ortools.whl
-RUN python -m pip install --no-cache-dir --no-deps /tmp/ortools.whl \
-    && rm /tmp/ortools.whl
+COPY --from=ortools-build /opt/or-tools/build/python/dist/ortools-*.whl /tmp/
+RUN wheel="$(find /tmp -maxdepth 1 -type f -name 'ortools-*.whl' -print -quit)" \
+    && test -n "$wheel" \
+    && python -m pip install --no-cache-dir --no-deps "$wheel" \
+    && rm "$wheel"
 COPY app.py ./
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
