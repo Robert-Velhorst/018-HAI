@@ -429,3 +429,14 @@ A declaration-level comparison covered 119 modified local implementation files a
 A test-identifier comparison covered 80 modified test files. Six local labels were absent verbatim in the first pass; targeted review found their behavior equivalent to current tests, obsolete after API changes, or conflicting with current authenticated-owner fallback semantics. No test was ported from a name-only match. The local TLS/readiness test is covered by the current unsafe-URL/TLS test; the local direct-Nginx-config test targets a file absent from main, whose active gateway contract is tested through the current template. This is identifier and targeted-contract screening, not a line-by-line semantic proof of all 80 tests. No local suite was run.
 
 The comparison produced no validated source/test change to push from this batch. Continue a line-level review of the remaining modified files and inspect configuration/documentation changes separately. Do not publish the broad local diff or treat a declaration-name match as proof of behavioral equivalence.
+
+
+## October 11 progress patch blob reconciliation (2026-10-16)
+
+A read-only comparison reviewed the local `C:\Users\NO\Documents\Codex\2026-10-11\hai-local-progress.patch` (4,052,586 bytes; 232 file diffs). The patch's base blob for `.env.example` resolves to the primary checkout's `HEAD` at `e07b9daeb3ba2630ecbe12a64d948f791203c241`. Its index target blob IDs were compared with current remote `main` at `1e18f90cfccf525781c4e3c7c819a26fceba2edb`:
+
+- 100 patch target blobs are exact matches on current `main`.
+- 131 patch target blobs differ from current `main`; a byte difference alone does not establish that local behavior is missing or better.
+- One patch target, `nginx-config/nginx.conf`, is absent from current `main`. The canonical gateway configuration is maintained through `nginx-config/nginx.conf.template`; the standalone local file was not ported.
+
+A local Git-blob comparison found that 131 patch target versions are present in the primary worktree; the other 101 target versions are absent there. Of those 101, 100 are already exact copies on current `main`, and the remaining path is the standalone Nginx config above. A reverse-apply check failed on absent worktree paths, so the patch is not a safely replayable unit. No code was ported and no local files were changed or deleted by this comparison. The 131 differing versions remain candidates only for targeted semantic review; they must not be discarded based on path overlap or blob mismatch.
