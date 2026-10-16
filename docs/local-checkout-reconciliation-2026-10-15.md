@@ -962,3 +962,12 @@ Among 81 non-output untracked files, 65 have same-path current-main entries: one
 PR #168 remains an open draft. Its focused `.env.example` change adds `generic-auto` to `AUTOMATION_API_ALLOWED_HOSTS`, which is absent from the current-main value; the current-main health-host allowlist already includes it. The change is already proposed in PR #168, so no duplicate change was created in this pass.
 
 This is a refreshed bounded checkout audit, not a whole-device audit or proof that any of the 2,274 entries is dispensable. Test output, transcript material, worktrees, and other local evidence remain retained.
+
+
+## Follow-up on focused ports (2026-10-17)
+
+PR #169, which adapts the explicit 51-row linked-receipt limit regression from a local test idea, is merged. GitHub reports merge commit `76148882e6d9c7badcd81dc8a80830181c90a860`, which is current `main`. This port is now preserved in the canonical repository; this confirms the PR, not the equivalence or cleanup eligibility of other local test variants.
+
+A targeted review of the remaining zero-deletion local diffs found two unsuitable presentation/config candidates: the Pursuits auto-select change reverses the intentional selection-before-detail behavior already documented above; the local Nginx configuration includes placeholder backend secrets and does not match the current managed configuration layout. The CrewAI Dockerfile adds `CREWAI_DISABLE_TELEMETRY=true`, but current `main` already sets `OTEL_SDK_DISABLED=true`; the additional variable is redundant in this shipped configuration and was not ported as a standalone change. Current upstream CrewAI documentation recognizes the specific variable, but this does not make the duplicate setting a necessary product change.
+
+The current focused-port state is therefore: PR #168 remains open/draft for the generic-auto sample allowlist; PR #169 is merged; no new source PR was justified by this bounded pass. The 2,274-entry working tree and local evidence remain untouched. This does not complete the full per-file/worktree/device reconciliation.
