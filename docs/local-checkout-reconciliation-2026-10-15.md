@@ -821,3 +821,10 @@ These changes are rejected as a port: they remove cancellation and production-au
 Compared untracked `scripts/test-windows-installer-install.ps1` with the same-path current-main file. The local variant is shorter (378 versus 421 lines) and is not a safe replacement. Main-only coverage includes the explicit hosted-runner/no-Docker path, runner-temp ownership and reparse-point checks, and cleanup ownership assertions. The local variant adds a runner-temp containment requirement under the workspace; GitHub-hosted runners normally place runner temp outside the workspace, so this condition is incompatible with that execution model. It also adds a pre-existing local HAI profile refusal and Docker project/volume checks, but these do not compensate for the removed current-main cases and are not independently validated.
 
 This was a source comparison only; the installer was not run, no Windows installation acceptance was performed, and no script change was ported. The differing untracked file remains retained.
+
+
+## PR #165 review-finding remediation and exact-head status (2026-10-16)
+
+The two earlier PR #165 review findings were rechecked against its updated branch. The migration rollback now takes an access-exclusive table lock and refuses to drop the checkpoint column when either a cursor is present or `sync_token` indicates an active claim. A new isolated-PostgreSQL integration test seeds an active claim with an empty cursor and verifies rollback refusal without changing the row. The account-feed sync path now marks successful non-HTTP feeds' cursor as explicitly present and empty, clearing any legacy checkpoint; its regression test seeds a stale local-feed cursor before sync and asserts it is cleared.
+
+These updates are on PR #165 head `299d3265adcf86b85a1949218148a025aceb06d7`. GitHub reports the PR open and mergeable; exact-head CI run `38935412046` is queued. The remediation is not considered verified until that run completes successfully, and the PR remains unmerged. No local checkout files were changed for this port.
