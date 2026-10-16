@@ -1088,3 +1088,11 @@ This supersedes the earlier note that the PR #153 findings remained unresolved: 
 The earlier statement that removal of `backend/internal/runtimelab/owner_gate_handler_test.go` was rejected and the file remained is stale. A later authorized cleanup removed the local exact-match copy. A fresh check confirms the local path is absent and the same repository path remains present in `origin/main`. This verifies that one local exact duplicate was removed; it does not authorize deletion of the remaining dirty checkout, source files, worktrees, logs, databases, or generated artifacts.
 
 A fresh primary-checkout status inventory reports 448 tracked deletions, 244 tracked modifications, and 1,581 physical untracked files. The broad reconciliation remains incomplete; counts are inventory only and do not establish that the remaining material is safe to publish or remove.
+
+
+## Untracked test and dependency crosswalk (2026-10-17)
+
+A fresh read-only comparison covered 35 untracked Go test files whose paths all exist on current `main`. The local-only test-function-name set is empty; current `main` contains newer additional named cases in three files (`ambient/scheduler_test.go`, `operations/source_approval_test.go`, and `pursuit/completion_outcome_integrity_test.go`). This is a name-level comparison only, not proof that every assertion is semantically equivalent. The local snapshots are not additive test ports based on this evidence, and none was copied or deleted.
+
+The untracked Promptfoo runner lockfile is not a newer dependency update: it resolves Promptfoo `0.123.1`, while current `main`'s manifest and lockfile resolve `0.124.1`; the main manifest also contains an additional libsql dependency and a `get-uri/basic-ftp` override missing locally. The local lock has 941 package entries versus 704 on main, reflecting a different/stale resolution, not a justified implementation to port. It remains unmodified and unuploaded.
+
