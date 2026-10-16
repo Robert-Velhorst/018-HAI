@@ -814,3 +814,10 @@ Compared the local IDP/authentication and database-configuration deltas with cur
 - The checkout deletes, among others, password-reset integration, recovery production, refresh-rotation, session-authority, and database-guard tests. A test suite reduced by deletion cannot be treated as equivalent acceptance.
 
 These changes are rejected as a port: they remove cancellation and production-authentication safeguards rather than adding a compatible improvement. This was focused source inspection only; no IDP tests, database acceptance, or live auth flow was run. No IDP code was ported or locally changed.
+
+
+## Untracked Windows-installer smoke-test comparison (2026-10-16)
+
+Compared untracked `scripts/test-windows-installer-install.ps1` with the same-path current-main file. The local variant is shorter (378 versus 421 lines) and is not a safe replacement. Main-only coverage includes the explicit hosted-runner/no-Docker path, runner-temp ownership and reparse-point checks, and cleanup ownership assertions. The local variant adds a runner-temp containment requirement under the workspace; GitHub-hosted runners normally place runner temp outside the workspace, so this condition is incompatible with that execution model. It also adds a pre-existing local HAI profile refusal and Docker project/volume checks, but these do not compensate for the removed current-main cases and are not independently validated.
+
+This was a source comparison only; the installer was not run, no Windows installation acceptance was performed, and no script change was ported. The differing untracked file remains retained.
