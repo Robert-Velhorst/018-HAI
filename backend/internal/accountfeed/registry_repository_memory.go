@@ -242,7 +242,7 @@ func (m *MemoryRegistryRepository) beginSync(ctx context.Context, scope FeedScop
 }
 
 func (m *MemoryRegistryRepository) FinishSync(ctx context.Context, scope FeedScope, id, token uuid.UUID, outcome SyncOutcome) error {
-	if outcome.ItemsRead < 0 || token == uuid.Nil {
+	if outcome.ItemsRead < 0 || len(outcome.Cursor) > maxGenericFeedCursor || token == uuid.Nil {
 		return ErrFeedInvalid
 	}
 	if err := m.lockContext(ctx); err != nil {
@@ -262,6 +262,9 @@ func (m *MemoryRegistryRepository) FinishSync(ctx context.Context, scope FeedSco
 	if outcome.Event.EventType == "synced" {
 		at := outcome.Event.CreatedAt.UTC()
 		row.LastSuccessAt = &at
+		if outcome.CursorPresent || outcome.Cursor != "" {
+			row.Feed.SyncCursor = outcome.Cursor
+		}
 	}
 	m.feeds[id] = row
 	m.audits[id] = append(m.audits[id], outcome.Event)
