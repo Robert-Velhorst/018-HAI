@@ -486,6 +486,25 @@ func TestRegistryHTTPFeedPersistsCommittedCursorPresence(t *testing.T) {
 	}
 }
 
+func TestRegistryLocalFeedDoesNotPersistHTTPOnlyCursor(t *testing.T) {
+	root := persistenceFixture(t)
+	repo := NewMemoryRegistryRepository()
+	reg := persistenceRegistry(t, repo, operations.NewMemoryRepository(), root)
+	feed, err := reg.RegisterContext(t.Context(), persistenceSeed())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := reg.SyncContext(t.Context(), persistenceScope(feed), feed.ID)
+	if err != nil || !report.Recorded {
+		t.Fatalf("local feed sync report=%+v err=%v", report, err)
+	}
+	stored := persistenceRecord(t, repo, feed)
+	if stored.Feed.SyncCursor != "" {
+		t.Fatalf("local feed persisted HTTP-only cursor %q", stored.Feed.SyncCursor)
+	}
+}
+
 type persistenceFailingRepository struct {
 	RegistryRepository
 	failMethod  string
