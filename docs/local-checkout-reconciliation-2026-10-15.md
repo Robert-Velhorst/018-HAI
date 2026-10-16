@@ -271,3 +271,12 @@ The separate `D:` reconciliation checkout is at `3b15fe4a08b10bb2e15afe15640bd64
 The clean evidence update for the specifically verified Hubble and Popper transcript removals is recorded separately in [PR #161](https://github.com/Robert-Velhorst/018-HAI/pull/161). It does not change this checkout assessment or authorize removing the retained 17.56 GB transcript archive.
 
 This refresh is a measured snapshot, not completion of the device-wide inventory. The remaining dirty worktrees, local snapshots, staged source changes, retained transcripts, and HAI-related files outside the scanned roots remain to be reviewed. No additional local files were deleted during this refresh.
+
+
+## Runtime-safety worktree comparison and exact duplicate check (2026-10-16)
+
+A read-only comparison of the local runtime-safety audit worktree at its `e07b9dae` base against current `main` found 18 changed paths in agent-runtime and host-runtime code/tests. This is not a port candidate: the local worktree deletes `backend/internal/agentruntime/final_effect_authorization.go`, while current `main` retains it; current `main` also has host-runtime start-intent persistence methods absent from the local repository version. Its artifact URL implementation lacks current-main policy paths for isolated loopback testing, NAT64-aware address validation, and validated-address dialing. The local snapshot therefore risks reverting security and execution-safety behavior. It remains untouched pending a per-change semantic review.
+
+A fresh content-hash crosswalk checked all 1,582 untracked paths in the primary checkout against the Git tree for current `main`. Exactly one file was byte-identical: `backend/internal/runtimelab/owner_gate_handler_test.go` (12,495 bytes). The local deletion command was denied by the environment policy; a follow-up check confirmed the file remains. No permissions or attributes were changed, and no alternate deletion mechanism was attempted.
+
+These checks narrow the safe cleanup set; they do not complete reconciliation. The large stale branch, staged reconciliation snapshot, other dirty worktrees, and retained archives still require file-level review.
