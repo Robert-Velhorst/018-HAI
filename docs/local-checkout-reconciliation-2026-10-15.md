@@ -708,3 +708,18 @@ This was source-diff review only; no Go tests, database tests, or runtime accept
 ## PR36-integration conflict worktree inventory (2026-10-16)
 
 A read-only refresh of `C:/Users/NO/Documents/Codex/2026-10-11/hai-pr36-integration` found 256 unmerged paths. Its branch commit graph is 493 commits ahead and 81 behind current `main`; this count is ancestry only, not missing-feature count. Representative unresolved files include CI, README, third-party notices, Docker, account-feed, A2A, and runtime code. The worktree is conflicted and must not be merged or reset as a bulk snapshot. This pass did not resolve conflicts or alter the index/worktree.
+
+
+## Primary-checkout source-test inventory refresh (2026-10-16)
+
+A fresh local read-only check compared the working checkout against `origin/main` at `1e18f90cfccf525781c4e3c7c819a26fceba2edb`:
+
+- Current `HEAD...origin/main` ancestry is 292 local-only commits and 81 main-only commits. The checkout's configured upstream is `origin/codex/hai-runtime-release`, which reports a separate 440-commit lag; these are different comparisons and must not be conflated.
+- The working tree still has 448 tracked deletions, 244 tracked modifications, and 1,582 physical untracked files. No working-tree changes were made in this pass.
+- Of 66 untracked source-like files, one is an exact blob match on main, 59 share a path but differ in content, and six paths are absent from main. The exact match is `backend/internal/runtimelab/owner_gate_handler_test.go`; the earlier policy-rejected removal remains incomplete.
+- The 36 untracked Go test files whose paths exist on main add zero test function names absent from their current-main counterparts. This is only a test-name comparison; it does not establish assertion equivalence or make differing copies eligible for cleanup.
+- The local `frontend/src/app/control-room/app-shell.component.spec.ts` has 51 test case names, all present on main; the current-main version has 52. No local-only named test case was found.
+
+PR #165 remains open at `89e03281252d85b17e71e7bf49f6119b3c0771b2`. Its exact-head CI run `38926620939` still has queued Python runner jobs; completed checks are not a full green run. The two previously recorded review findings remain unresolved. It is not treated as integrated or cleanup evidence.
+
+This refresh is an inventory and naming-level screen, not a complete semantic review of the 59 differing files or of every HAI-related file/worktree on the device. No local deletion or product-code port is claimed.
