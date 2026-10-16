@@ -414,3 +414,18 @@ For the 448 tracked files absent from the worktree, eight have the same Git blob
 The HAI-related untracked source, test, documentation, and build-script inventory contained 68 candidate files. Sixty-two paths exist on current main; one is an exact normalized blob match and 61 differ. Six untracked JSON files under `backend/internal/outcomeevaluation/test-evidence/20260930-pg-snapshot/` are environment-specific PostgreSQL cleanup/ownership evidence, not product source. They remain local and were not uploaded. Previously reviewed untracked regression tests are not ported where current main already has the test or a stronger variant.
 
 No local files were staged, changed, or deleted in this audit. No source changes were pushed from the dirty checkout, and no local test suite was run. Continue auditing the differing files individually; only port demonstrably useful non-regressive changes into a clean PR branch. Local deletion remains a separate preservation gate requiring verified remote coverage and a successful permitted cleanup operation.
+
+
+## 2026-10-16 implementation and test-surface screening
+
+A declaration-level comparison covered 119 modified local implementation files against same-path current-main files. Seven files exposed local declaration names not found verbatim on main; targeted source review found no safe standalone port among them:
+
+- Pursuit dashboard assembly now uses the current dashboard/service contract; local helper names and whitespace handling do not establish a unique requirement. The separate open PR #162 addresses dashboard list-query reuse against current main.
+- Source extraction reads on local main use the bounded owner-scoped `ExtractionPageForOwner` path. The local filter helper is a stale implementation detail; it does not justify replacing the current pagination and owner scoping.
+- Verification has moved to owner-scoped run reads and transactional completed-verification persistence. The local persistence helper does not preserve the current transaction/returned-ID/audit guarantees.
+- Brain-catalog OSS Insight disclosure loading exists on main under `onOSSInsightScreeningOpen`; the local name is an older rename.
+- Workflow framework-selection loading on main uses the exact owner-scoped selection endpoint rather than the local list-history response type.
+
+A test-identifier comparison covered 80 modified test files. Six local labels were absent verbatim in the first pass; targeted review found their behavior equivalent to current tests, obsolete after API changes, or conflicting with current authenticated-owner fallback semantics. No test was ported from a name-only match. The local TLS/readiness test is covered by the current unsafe-URL/TLS test; the local direct-Nginx-config test targets a file absent from main, whose active gateway contract is tested through the current template. This is identifier and targeted-contract screening, not a line-by-line semantic proof of all 80 tests. No local suite was run.
+
+The comparison produced no validated source/test change to push from this batch. Continue a line-level review of the remaining modified files and inspect configuration/documentation changes separately. Do not publish the broad local diff or treat a declaration-name match as proof of behavioral equivalence.
