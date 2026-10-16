@@ -646,3 +646,13 @@ This was source and upstream-documentation review only; no CrewAI install, provi
 ## PR #165 current review findings (2026-10-16)
 
 A fresh GitHub review read for PR #165 at head `89e03281252d85b17e71e7bf49f6119b3c0771b2` found two unresolved code-review findings: the migration rollback preflight can race with an already-active sync claim because that claim's external fetch runs outside a table-locking transaction; and successful local-feed syncs may leave a pre-existing persisted cursor unchanged when the repository interprets an absent cursor as “do not update.” The review recommends rejecting rollback while active claims exist and explicitly clearing legacy local-feed checkpoints. Exact-head CI run `38926620939` is still queued. PR #165 remains open and unmerged; these findings and the queued check mean it is not ready to be treated as integrated or cleanup evidence. No local files were changed.
+
+
+## Primary-checkout source-approval and outbound-transport test comparison (2026-10-16)
+
+Compared two untracked primary-checkout Go test files with their same-path files at current `main` (`1e18f90cfccf525781c4e3c7c819a26fceba2edb`):
+
+- `backend/internal/operations/source_approval_test.go`: all local test names also exist on main, and main has an additional explicit-reminder case. The local digest mutation table omits the `SourceEvidenceRawSHA256` binding case present on main. Main's same-version mutation test also asserts the specific revision-digest mismatch diagnostic, while the local copy does not include that case; other local assertions omit current-main diagnostic checks. This local file is a weaker stale variant, not a port or replacement.
+- `backend/internal/llm/outbound_transport_test.go`: the six test names and function bodies match after line-ending normalization, but the local blob SHA `bb9e19b8dd9ce658c34890b73b9e6cbafc98361c` does not match main's `145d1218d3547060e323c7d5d9ddddcf6bf13483`. The local copy is therefore not an exact-content cleanup match despite matching test functions; it was not treated as a replacement.
+
+This was a focused source comparison, not a Go test run. No files were staged, edited, or removed. The broader working tree and remaining candidate files are still under review.
