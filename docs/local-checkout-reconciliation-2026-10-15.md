@@ -1115,3 +1115,14 @@ The Git worktree registry lists nine non-primary local checkouts. A read-only st
 
 A separate D: checkout, `D:/hai-source-reconciliation`, is registered but Git refuses repository operations because Windows reports dubious ownership on that filesystem. No global `safe.directory` exception was added. Its contents and commit inclusion therefore remain unverified, so it is preserved. This is a deliberate evidence gap, not a cleanup candidate.
 
+
+
+## Reconciliation refresh (2026-10-17, after PR #170)
+
+The authoritative GitHub API reports current `main` at `80fdeabd16efda6d9328fa0c89a4ab813f087908` (commit `fix(accountfeed): guard cursor persistence and rollback (#170)`, parent `76148882e6d9c7badcd81dc8a80830181c90a860`). PR #153 is closed and merged at `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`; PR #165 is closed and merged at `d9a0b7d2e69eee89b58fec934f19048bec8776c1`. PR #170 is also represented by the current `main` commit. These states were rechecked directly through the GitHub integration; no merge action remains for PR #153.
+
+The open documentation PR #151 is still a draft at head `7cd7852c16422da05c368624fb338580a024b8b5`. Its reported base SHA is `1e18f90cfccf525781c4e3c7c819a26fceba2edb`, older than current `main`; it must be refreshed against the current base before merge. This update only records the refreshed evidence and does not claim the broad reconciliation is complete.
+
+The primary Windows checkout was rechecked at branch `codex/hai-runtime-release`, HEAD `e07b9daeb3ba2630ecbe12a64d948f791203c241`; `git` reports it is 440 commits behind its tracking branch. The working tree still includes a very large set of tracked deletions and modifications plus untracked artifacts. The local `services/crewai-runner/requirements.txt` remains modified and is not a direct match for current `main`; it is an older generated dependency lock and was not overwritten or deleted. A prior attempt to align it to `main` stopped because Git found a pre-existing `.git/index.lock`. A subsequent inspection observed the lock state changing during the check and found no running `git.exe`; because the lock's ownership/lifecycle was not established, it was not removed and no local write was retried. No source files or lock files were deleted in this refresh.
+
+The earlier exact-main-blob scan covered untracked files against the then-current `76148882` ref. That result is historical evidence and is not sufficient authorization for deletion after `main` advanced; exact matches must be recomputed against `80fdeabd16efda6d9328fa0c89a4ab813f087908` before any further cleanup. The broader requirement to semantically review all HAI-related local files, port any validated missing progress through focused PRs, and only then remove verified preserved copies remains open.
