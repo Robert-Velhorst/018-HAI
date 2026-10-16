@@ -1164,3 +1164,12 @@ Line-ending-insensitive diffs of the dirty primary checkout against its local `o
 - `docker-compose.local.yml` downgrades PostgreSQL/pgvector and Redis images (including Redis 8 to Redis 7) and removes the SearXNG network/volume configuration. `scripts/build-windows-installer.ps1` also downgrades its pinned Go builder from 1.27.2 to 1.25.13.
 
 These are focused config/deployment diffs, not a full review of all changed scripts or Compose services. No local changes were staged, committed, or removed, and no code from this snapshot was ported.
+
+
+## Cross-worktree exact-match refresh and merge-tree audit (2026-10-17)
+
+A fresh GitHub API tree comparison used current `main` at `80fdeabd16efda6d9328fa0c89a4ab813f087908` and the merged PR #36 snapshot at `e62b56843eb8bbbf9a566aff5e883f9adf375429`. The commit histories are not ancestrally connected in the current repository graph, so the historical PR merge state alone does not prove present-day integration. The complete tree comparison found 3,200 blob paths on current main and 3,175 on the PR #36 snapshot: 3,029 same-path blobs are byte-identical, 121 same-path blobs differ, and 25 paths exist only on current main; no path exists only on the PR #36 snapshot. This is strong path/content overlap evidence, not semantic equivalence for the 121 changed files or proof of every historical behavior.
+
+A fresh read-only scan covered all 10 registered C: HAI worktrees (1,779 untracked files total) and the registered D: source-reconciliation checkout (zero untracked files). No untracked file matched the same-path blob in the worktree's local `origin/main` snapshot. Because those local refs were at `76148882e6d9c7badcd81dc8a80830181c90a860`, a stale-ref guard then checked all four paths changed by current main commit #170 directly against their current GitHub blob SHAs across every registered worktree; no untracked exact match was found. These scans cover untracked, non-ignored files only; they do not establish exact-match status for tracked or ignored files, other local folders, archives, databases, or device-wide content. No file was deleted.
+
+The D: source-reconciliation checkout remains dirty and its staged batch remains unsuitable for bulk publication based on the previously documented Trello cursor, approval-receipt binding, and HTTP header-limit regressions. No code was ported from it. Primary and audit worktrees remain preserved; no storage recovery is claimed.
