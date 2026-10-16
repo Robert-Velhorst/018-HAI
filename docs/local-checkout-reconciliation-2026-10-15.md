@@ -892,3 +892,8 @@ Compared the untracked local `backend/internal/workflow/reminder_context_boundar
 ## Trello reopen test harness comparison (2026-10-16)
 
 Compared the untracked local `backend/internal/source/trello_reopen_test.go` with the same-path current-main file. Both local test names already exist on main. The local harness returns an empty response for every Trello `/actions` request; current main exercises the `filter=all` action history and synthesizes `updateCard` events from the card fixture. Thus the local file is not additive and would remove action-history coverage if used as a replacement. No source/test was changed and no test was run.
+
+
+## Background worker reliability test comparison (2026-10-16)
+
+Compared the untracked local `backend/internal/background/worker_reliability_test.go` with current `main`. The local variant drops the assertion that a newly ingested operation remains `AwaitingApproval` (and instead expects it to be verified), and expects the feed identifier to appear in the worker error. Current main tests both the approval boundary and a sanitized error that does not expose that source identifier. The local test variant is therefore weaker on execution safety and privacy; it is not a safe replacement or additive port. No source/test was changed and no test was run.
