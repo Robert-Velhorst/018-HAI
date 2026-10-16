@@ -1064,3 +1064,12 @@ The Windows shell has no Go toolchain, and no database connection environment va
 ## Verified exact-match cleanup (2026-10-17)
 
 The local untracked copy of `backend/internal/runtimelab/owner_gate_handler_test.go` was removed only after a final path/hash check showed 12,495 bytes and exact Git blob `7333d2daecfef82ae7a42b882c92f58901173165`, matching the same path in current main. After removal, the local path was confirmed absent and the `origin/main` blob remained available at the same SHA. This was the only local file removed in this checkpoint. The logical file length was 12,495 bytes; no drive-level before/after measurement was captured, so no physical-space amount is claimed.
+
+
+## Managed PR worktree removal (2026-10-17)
+
+After confirming the PR branches remained remotely available at their exact heads, their first-page GitHub Actions job sets were 30/30 successful, and each local worktree had zero tracked/untracked changes, zero ignored entries, and zero submodule entries, the two local checkout directories were removed with `git worktree remove`:
+- PR #162, head `087a89a3868cb9d59397589c35df1d067d2ae7ce`: 37,847,899 logical file bytes.
+- PR #170, head `e4f16a36f0b9e9d3749f5e28e9c7886ce48bb4b7`: 37,855,718 logical file bytes.
+
+Post-removal checks confirmed both paths are absent and neither appears in `git worktree list`. The PRs remain open at those same heads. The combined logical file length removed is 75,703,617 bytes; no before/after drive free-space reading was captured, so this is not stated as physical disk savings. The Codex attachment listing still reports both worktrees as active metadata entries despite the absent directories; no archive completion is claimed, and no local uncommitted data was present to snapshot.
