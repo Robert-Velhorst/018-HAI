@@ -305,3 +305,9 @@ PR #153 (`codex/account-feed-cursor-20261015`) was merged into the canonical `Ro
 A byte-level comparison checked those 17 paths across the primary checkout and ten registered HAI worktrees against the merged `main` blobs. No exact local copies were found. Some paths are absent locally, while existing copies are modified or conflict-state versions; none qualify for deletion under the exact-match cleanup rule. No files or worktrees were removed or changed during this check.
 
 This is limited to the named PR files and the 11 audited checkouts. It does not establish that all HAI-related files elsewhere on the device have been reconciled. Dirty and conflicted worktrees remain preserved.
+
+### Dedicated PR #153 checkout follow-up
+
+The separate `C:\Users\NO\Documents\Codex\2026-10-14\018-HAI-cursor-local` checkout was outside the 11-worktree scan above and was checked separately. Of the 17 merged PR paths, two local files were byte-identical to current `main`: `backend/internal/accountfeed/registry_repository_postgres_test.go` (4,678 bytes) and `backend/migrations/migration_chain_contract_test.go` (13,155 bytes). After confirming their local SHA-256 values and main-tree blob identities, those two copies were removed under the user's explicit cleanup authorization (17,833 logical bytes total). Both paths were confirmed absent afterward.
+
+Thirteen other paths present in that checkout differ from current `main`; two merged migration paths are absent locally. Those files and the checkout were preserved. The checkout remains on a local `main` that is 42 commits behind `origin/main`, with 12 modified/deleted account-feed and migration paths; it is not safe to remove as a whole. This follow-up corrects the limited scope of the preceding 11-checkout statement and does not complete the device-wide reconciliation.
