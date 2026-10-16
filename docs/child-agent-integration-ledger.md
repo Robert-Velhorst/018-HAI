@@ -11532,3 +11532,29 @@ cancellation/owner-binding checks, and independent feed/bridge error states.
 These are missing from the stale local snapshot, not unintegrated local
 additions; the current-main files must be preserved. No files were copied or
 deleted, and this focused comparison does not establish full frontend parity.
+
+### October 16, 2026: merged feed-cursor review follow-up
+
+PR #153 (`ad8a72ea4c744a3bd8adf83907be87d92ae7351a`) is merged and included in
+`main` at `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. Its review identified two
+remaining defects: the 0128 cursor rollback checked for live cursor values
+before obtaining a lock that excludes concurrent feed updates, and the sync
+service persisted cursor values from local JSON files even though only HTTP
+feeds consume them.
+
+Follow-up PR #170 (`codex/accountfeed-cursor-rollback-guard-20261016`, head
+`fc41eaa1e1083f999391d0e11a4ffffe1b6cdceb`) adds an `ACCESS EXCLUSIVE` lock
+before the rollback preflight, limits durable cursor updates to HTTP feeds, and
+adds regression coverage for both behaviors. The migration runner executes
+each rollback in a transaction, so the table lock remains held through the
+guard and DDL. `git diff --check` passed. Local Go tests were not run because
+`go.exe` is not installed in this environment. Exact-head Actions run
+`38964634716` was queued at this checkpoint; its results must be rechecked
+before treating the patch as verified. The safety correction is pending review
+and merge; the current `main` still contains the two reviewed defects.
+
+No local cursor artifacts, source files, or transcript archives were deleted.
+The 18-file July 30 transcript manifest still has an incomplete semantic patch
+crosswalk and unresolved malformed/truncated candidate records; those archives
+are not safe cleanup candidates. This checkpoint does not close the broader
+source reconciliation or transcript integration objective.
