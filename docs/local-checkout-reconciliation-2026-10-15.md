@@ -791,3 +791,14 @@ A static top-level declaration scan of 49 modified TypeScript files found two lo
 - `WorkflowFrameworkSelectionListResponse` supports a local lookup that downloads up to 200 selections and searches client-side. Current main uses the exact owner-scoped `/framework-registry/selections/{id}` API. The local scan can miss older records and is less precise; it was rejected.
 
 This screen found no additive frontend declaration to port. It is a declaration/path comparison, not a complete semantic review of every modified Angular file or a browser/build run.
+
+
+## PR #153 merge and Nginx/script delta refresh (2026-10-16)
+
+A current GitHub read confirms PR #153 is closed and merged. Its exact head was `0615d096ccfa6af9f813a02537be816a9649033c`, and GitHub records merge commit `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. The current remote `main` ref is `1e18f90cfccf525781c4e3c7c819a26fceba2edb`; the merge commit is an ancestor of the refreshed local `origin/main` ref. PR #153 is therefore integrated, but this does not change the broader checkout audit or make unrelated local feed files safe to delete.
+
+The refreshed primary-checkout status remains 448 tracked deletions and 244 tracked modifications. Git reports 67 untracked status entries because it collapses directories; `git ls-files --others --exclude-standard` expands these to 1,582 untracked files totaling 128,691,399 bytes. A forced recursive filesystem comparison matched all 1,582 Git-untracked paths to physical files. Six additional hidden/ignored files exist under those directories and are excluded from Git's untracked-file count. This reconciles the earlier count; it is not a cleanup authorization.
+
+A bounded top-level declaration scan of modified Python, PowerShell, and shell files found one local-only function name: `test_direct_nginx_config_retains_the_safe_gateway_contract` in `nginx-config/test_gateway_contract.py`. It reads the local `nginx-config/nginx.conf`, which is not in current `main`'s Nginx file tree, so the test cannot be ported as written. Current main already has template-level gateway contract tests.
+
+The local Nginx template also removes the security-header policy present on main (including CSP, frame, content-type, referrer, and permissions headers) and changes the dashboard upstream from `frontend:8080` to `frontend:80`, contrary to current main's frontend-listening-port contract. The local direct-config test does not assert restoration of those removed security headers. These configuration changes are rejected as a batch; no Nginx file or test was ported, no test/build was run, and no local file was changed or deleted.
