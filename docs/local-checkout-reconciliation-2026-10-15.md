@@ -582,3 +582,15 @@ A targeted comparison of the staged Control Center component against current `ma
 - The staged result could increase dashboard response work while accepting incomplete count data. No change was ported.
 
 This is a focused source comparison only; no dashboard/API runtime test was run. It does not classify the remaining changed frontend paths.
+
+
+## Runtime-control and frontend dependency local-delta review (2026-10-16)
+
+A targeted screen of the staged frontend index found safety and build-contract regressions:
+
+- The staged Runtime Control template removes the separate “Prepare resume review” and “Confirm and resume” actions, the exact stop-revision digest disclosure, and the typed `RESUME BACKGROUND PROCESSING` confirmation. It leaves a single “Resume” action. The staged component also calls `prepareResume()`, but its staged `RuntimeControlService` exposes `requestResumeApproval()` and `approveAndResume()`, not `prepareResume()`. Current main retains the explicit review/confirmation flow. This candidate was rejected; no emergency-stop UI change was ported.
+- The staged frontend package configuration downgrades several dependencies from current main (including NG-Zorro, Angular CDK, Zone.js, and Jasmine types), drops the explicit `less` dependency, and removes two current test scripts from the aggregate `npm test` command. The lockfile changes were not treated as upgrades or ported.
+- The staged `angular.json` replaces the current NG-Zorro stylesheet with `src/theme.less` while also removing the production critical-style optimization override. No complete build/render validation supports this replacement.
+- The staged `app.module.ts` removes the shared Control Room module import and inlines an icon list, while several staged route/component/spec files delete significant current-main content. No coherent, tested replacement was established.
+
+These are targeted source/configuration comparisons, not a frontend build or browser acceptance run. No code or configuration was ported.
