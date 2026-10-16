@@ -629,3 +629,20 @@ Compared key staged IDP/authentication files with current `main`:
 - IDP database initialization replaces validated/configurable pool settings with hard-coded values, bypassing the current settings validation path.
 - The staged automatic-GORM-ping test does not exercise application cleanup and was previously removed as an obsolete contract; current main explicitly disables automatic ping and owns the bounded first ping.
 - These changes are source-level regression evidence only. No local IDP tests or live authentication acceptance was run. No IDP changes were ported.
+
+
+
+## CrewAI staged-runner safety review (2026-10-16)
+
+Reviewed the staged `services/crewai-runner` implementation in the retained `D:/hai-source-reconciliation` snapshot against current `main` and the upstream CrewAI documentation. The staged variant introduces two-role sequential planning/review, but it is not a safe drop-in replacement for the current bounded local HTTP planner:
+
+- The current-main direct OpenAI-compatible transport enforces a provider response-byte cap, an explicit generation-token cap, and redirect rejection for the local model probe. The staged CrewAI LLM setup sets a timeout and disables retries but does not supply an output-token limit; its model probe uses `urlopen` without the redirect blocker.
+- CrewAI's documented max-iteration behavior may make a final LLM call to extract an answer after the iteration limit, so a step limit alone is not a hard call/token budget. A thread-pool timeout also does not prove the provider request has been cancelled.
+- The staged dependency changes expand `requirements.in` from the single `aiohttp` dependency to `crewai==1.15.5` and a much larger transitive lock. Its tests are substantially reduced from the current-main runner tests, including transport redirect coverage.
+- The idea of a separate planner/reviewer remains a possible architecture, but it needs an explicitly bounded provider transport, a pinned/audited dependency set, preserved HTTP safety tests, and current-main CI before it can be proposed. No CrewAI code or dependencies were ported.
+
+This was source and upstream-documentation review only; no CrewAI install, provider call, or live-model validation was performed.
+
+## PR #165 current review findings (2026-10-16)
+
+A fresh GitHub review read for PR #165 at head `89e03281252d85b17e71e7bf49f6119b3c0771b2` found two unresolved code-review findings: the migration rollback preflight can race with an already-active sync claim because that claim's external fetch runs outside a table-locking transaction; and successful local-feed syncs may leave a pre-existing persisted cursor unchanged when the repository interprets an absent cursor as “do not update.” The review recommends rejecting rollback while active claims exist and explicitly clearing legacy local-feed checkpoints. Exact-head CI run `38926620939` is still queued. PR #165 remains open and unmerged; these findings and the queued check mean it is not ready to be treated as integrated or cleanup evidence. No local files were changed.
