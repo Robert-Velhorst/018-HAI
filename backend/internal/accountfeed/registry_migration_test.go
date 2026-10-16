@@ -40,8 +40,8 @@ func TestAccountFeedSyncCursorMigrationIsBoundedAndRollbackSafe(t *testing.T) {
 	}
 	down := accountFeedSyncCursorMigrationSQL(t, "down")
 	requireAccountFeedMigrationFragments(t, down,
-		"WHERE sync_cursor <> ''",
-		"rollback refused: account feed cursor exists",
+		"WHERE sync_cursor <> '' OR sync_token IS NOT NULL",
+		"rollback refused: account feed cursor or active sync claim exists",
 		"DROP COLUMN sync_cursor",
 	)
 }
