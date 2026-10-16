@@ -497,14 +497,10 @@ A separate PR-resolution checkout, `C:\\Users\\NO\\Documents\\Codex\\2026-10-11\
 
 
 
-## Source-approval history regression and fresh CI state (2026-10-16)
+## Local regression-test comparison correction (2026-10-16)
 
-A bounded comparison of local untracked test variants against current `main` found that the operations approval test file contains a useful history-pagination/replay assertion not present in the main version, but wholesale replacement would remove or weaken existing main coverage. Only that isolated test was ported as a new file in [PR #167](https://github.com/Robert-Velhorst/018-HAI/pull/167): it adds 125 older audit events, then verifies the exact source-approval receipt can be consumed and validated, replay is rejected, and exactly one consumption event retains worker provenance. The PR is based on current `main` and leaves the existing test file unchanged.
+A follow-up direct comparison against the current `main` commit found that the source-approval test selected for PR #167 was already present there, including the 125 older audit events, successful receipt consumption, replay rejection, and single consumption-event provenance assertions. PR #167 was closed without merging because it added no unique regression coverage; its branch was left intact. The earlier note describing that test as absent from `main` was incorrect.
 
-The local variants of `worker_reliability_test.go`, `public_projection_test.go`, `transactional_test.go`, `emergency_stop_fanout_test.go`, `project_dossier_test.go`, `required_participant_admission_test.go`, and `outbound_transport_test.go` have no test names absent from their current-main counterparts and are shorter snapshots; none was ported as a replacement. This is a test-name and file-size screen for those seven files, not proof that every assertion is equivalent.
+The local variants of `worker_reliability_test.go`, `public_projection_test.go`, `transactional_test.go`, `emergency_stop_fanout_test.go`, `project_dossier_test.go`, `required_participant_admission_test.go`, and `outbound_transport_test.go` also contain no test names absent from their current-main counterparts. These sampled local files are shorter snapshots and were not ported as replacements. This is a targeted name/size screen, not proof that every assertion is equivalent.
 
-Current exact-head CI evidence:
-- PR #165 head `89e03281252d85b17e71e7bf49f6119b3c0771b2`, run 38926620939: queued at the last poll.
-- PR #167 head `4741fa4876a40f481887c267e23f3f10fea7e2d8`, run 38928106226: queued at the last poll.
-
-The local PowerShell environment still has no Go toolchain; no local Go test result is claimed. The dirty checkout and worktrees remain untouched. No local files were removed, and no storage recovery is claimed.
+At the last exact-head check, PR #165 head `89e03281252d85b17e71e7bf49f6119b3c0771b2`, CI run 38926620939, remained queued. No Go tests were run locally because the Go toolchain is unavailable. The dirty checkout and worktrees remain untouched; no local files were removed and no storage recovery is claimed.
