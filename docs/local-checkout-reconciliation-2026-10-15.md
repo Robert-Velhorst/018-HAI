@@ -691,3 +691,15 @@ Compared selected changed frontend files in the primary checkout with current `m
 - The local `app.module.ts` removes the shared `ControlRoomModule` import and re-declares a subset of HAI icons inline; it does not establish a complete replacement for the shared module.
 
 This was a focused source comparison only, not a browser/build test. No frontend code was ported.
+
+
+## PR36-resolution worktree automation and worker screen (2026-10-16)
+
+Inspected the retained `C:/Users/NO/Documents/Codex/2026-10-11/hai-pr36-resolution` working tree against current `main`. Its selected automation/background-worker deltas are not safe ports:
+
+- `automation_repository.go` removes `CreateWithEvent`, `UpdateWithEvent`, and `DeleteWithEvent`, which committed the automation mutation and durable event intent in the same database transaction. `automation_service.go` now commits the primary row and then publishes separately, so a publish failure can leave persisted state without its event.
+- `background/worker.go` removes the `autonomypolicy.ModePaused` gate and paused-mode handling. In this selected path only emergency-stop remains as a processing guard, so pausing no longer reliably prevents or defers background work.
+- The worker also removes the capped, secret-redacting error projection and appends raw error details directly to report slices, increasing both secret exposure and unbounded error accumulation risk.
+- The local image request-limit edits are a separate implementation and were not validated against current configuration/tests in this pass.
+
+This was source-diff review only; no Go tests, database tests, or runtime acceptance were run. No changes from this worktree were ported; the conflicted checkout remains untouched.
