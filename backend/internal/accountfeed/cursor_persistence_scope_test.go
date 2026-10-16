@@ -1,8 +1,9 @@
 package accountfeed
 
 import (
-	"automation-hub-backend/internal/operations"
 	"testing"
+
+	"automation-hub-backend/internal/operations"
 )
 
 func TestLocalJSONCursorIsNotPersistedAsHTTPCheckpoint(t *testing.T) {
