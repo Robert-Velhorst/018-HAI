@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"automation-hub-backend/migrations"
 
@@ -184,6 +185,88 @@ func TestConcurrentMigrationRunnersSerializeAndRecheck(t *testing.T) {
 	}
 	if len(status.Pending) != 0 {
 		t.Fatalf("pending migrations after concurrent apply: %#v", status.Pending)
+	}
+}
+
+func TestFeedCursorRollbackWaitsForConcurrentSyncBeforePreflight(t *testing.T) {
+	db := integrationDB(t)
+	if _, err := ApplyMigrations(db, migrations.Files, "pre"); err != nil {
+		t.Fatalf("apply pre migrations: %v", err)
+	}
+	feedID := uuid.New()
+	if err := db.Exec(`INSERT INTO public.account_feeds
+		(id, owner_user_id, workspace_id, name, provider, source_type, enabled)
+		VALUES (?, 'cursor-lock-test', 'local', 'feed', 'generic_json_feed', 'http_json_feed', true)`, feedID).Error; err != nil {
+		t.Fatalf("insert feed fixture: %v", err)
+	}
+
+	writer := db.Begin()
+	if writer.Error != nil {
+		t.Fatal(writer.Error)
+	}
+	defer writer.Rollback()
+	if err := writer.Exec("UPDATE public.account_feeds SET sync_cursor = ? WHERE id = ?", "next-page", feedID).Error; err != nil {
+		t.Fatalf("stage concurrent feed checkpoint: %v", err)
+	}
+
+	rollbackDone := make(chan error, 1)
+	rollbackResultReceived := false
+	defer func() {
+		_ = writer.Rollback()
+		if !rollbackResultReceived {
+			select {
+			case <-rollbackDone:
+			case <-time.After(5 * time.Second):
+			}
+		}
+	}()
+	go func() {
+		rollbackDone <- RollbackMigration(db, migrations.Files, "pre", "pre/0128_account_feed_sync_cursor")
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	lockPending := false
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-rollbackDone:
+			rollbackResultReceived = true
+			t.Fatalf("rollback finished before the feed update committed: %v", err)
+		default:
+		}
+		var pending int64
+		if err := db.Raw(`SELECT count(*)
+			FROM pg_locks l
+			JOIN pg_class c ON c.oid = l.relation
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = 'public' AND c.relname = 'account_feeds'
+			  AND l.mode = 'AccessExclusiveLock' AND NOT l.granted`).Row().Scan(&pending); err != nil {
+			t.Fatalf("inspect pending table lock: %v", err)
+		}
+		if pending > 0 {
+			lockPending = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !lockPending {
+		t.Fatalf("rollback did not wait for the active feed update")
+	}
+	if err := writer.Commit().Error; err != nil {
+		t.Fatalf("commit feed checkpoint: %v", err)
+	}
+	err := <-rollbackDone
+	rollbackResultReceived = true
+	if err == nil || !strings.Contains(err.Error(), "rollback refused: account feed cursor or active sync claim exists") {
+		t.Fatalf("rollback result = %v, want populated-cursor refusal after sync commits", err)
+	}
+
+	var cursor string
+	if err := db.Raw("SELECT sync_cursor FROM public.account_feeds WHERE id = ?", feedID).Row().Scan(&cursor); err != nil || cursor != "next-page" {
+		t.Fatalf("checkpoint after refused rollback = %q, err=%v", cursor, err)
+	}
+	var migrationCount int64
+	if err := db.Raw("SELECT count(*) FROM schema_migrations WHERE version = ?", "pre/0128_account_feed_sync_cursor").Row().Scan(&migrationCount); err != nil || migrationCount != 1 {
+		t.Fatalf("migration ledger row count = %d, err=%v", migrationCount, err)
 	}
 }
 
