@@ -1,3 +1,6 @@
+-- Serialize sync writes before checking that no live checkpoint would be lost.
+LOCK TABLE public.account_feeds IN ACCESS EXCLUSIVE MODE;
+
 -- Refuse to discard a live checkpoint: replaying a bounded first page may not
 -- reach older feed records. Reset or export state explicitly before rollback.
 DO $$
