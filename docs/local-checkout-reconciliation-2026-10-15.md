@@ -909,3 +909,8 @@ PR #165 exact-head CI run `38935412046` failed only in backend `go test ./...`: 
 ## Source approval test variant comparison (2026-10-16)
 
 Compared untracked `backend/internal/operations/source_approval_test.go` against the current-main test. The local variant removes cases asserting that an approval receipt is invalidated when `SourceEvidenceRawSHA256` changes or when an approved operation mutates without a version bump, and it omits the regression that an explicit approval can override a future review reminder. Current main retains those authorization and revision-binding cases. The local file is not a safe replacement; no source/test was changed and no test was run.
+
+
+## Pursuit completion test variant comparison (2026-10-16)
+
+Compared untracked `backend/internal/pursuit/completion_outcome_integrity_test.go` with current main. The local variant lacks main's regressions for review-required/uncertain task-attempt timeline projection, batched lookup and completeness validation for more than 50 runtime receipts, and all 501 explicitly linked receipts beyond repository limits. The local file is not an additive coverage port and must not replace the stronger current-main test. Static comparison only; no tests were run and no files were changed locally.
