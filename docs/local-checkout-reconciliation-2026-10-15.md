@@ -280,3 +280,12 @@ A read-only comparison of the local runtime-safety audit worktree at its `e07b9d
 A fresh content-hash crosswalk checked all 1,582 untracked paths in the primary checkout against the Git tree for current `main`. Exactly one file was byte-identical: `backend/internal/runtimelab/owner_gate_handler_test.go` (12,495 bytes). The local deletion command was denied by the environment policy; a follow-up check confirmed the file remains. No permissions or attributes were changed, and no alternate deletion mechanism was attempted.
 
 These checks narrow the safe cleanup set; they do not complete reconciliation. The large stale branch, staged reconciliation snapshot, other dirty worktrees, and retained archives still require file-level review.
+
+
+## Model-maintenance and artifact worktree review (2026-10-16)
+
+The model-maintenance audit worktree has 502 changed paths under HAI source roots when compared with current `main`: 378 existing local files differ, 123 paths deleted locally still exist on `main`, and one local-only path is `nginx-config/nginx.conf`. Current `main` implements the model-maintenance scheduler with a fixed 24-hour interval and tests for the exact 24-hour due boundary. Routing only reads durable maintenance evidence; the due check/update is enforced later during generation before model use. The relevant OpenClaw maintenance packages and cooldown code from the local audit also exist on `main`. The local-only Nginx file is generated output: `docker-compose.local.yml` expands the tracked `nginx.conf.template` into the runtime `/etc/nginx/nginx.conf` with `envsubst`. It was not copied into the repository or removed from the dirty worktree.
+
+The OpenClaw-artifact audit worktree has 246 changed paths under HAI source roots; no present source path is missing from current `main`, while 42 paths deleted in that worktree remain on `main`. Current `main` contains the artifact download, reader, URL validation, and associated test files, with additional safety checks compared with the runtime-safety snapshot described above. These worktree changes were not ported wholesale because path existence alone does not establish semantic equivalence and the diffs include broad deletions.
+
+Neither worktree was modified or removed. This review confirms that the requested daily model check and the OpenClaw artifact code are already represented in current `main`; it does not prove every local change is redundant or safe to discard.
