@@ -882,3 +882,8 @@ Compared four physically present, untracked test files against their same-path c
 - `backend/internal/executionauth/transactional_test.go`: differences only simplify repeated fixed-time expressions; no additional assertion or behavior was identified.
 
 These four test files provide no safe code/test port from the local variants; preserve the current-main versions. This is a focused comparison, not closure of the remaining unreviewed test inventory. No tests were run because this pass was static, no local files were changed, and no cleanup was performed.
+
+
+## Reminder zero-work result contract comparison (2026-10-16)
+
+Compared the untracked local `backend/internal/workflow/reminder_context_boundaries_test.go` with the current-main version. Its cancellation-boundary assertion requires a non-nil summary even when `count == 0`. Current `backend/internal/workflow/reminder_delivery.go` deliberately returns `nil, err` from `reminderDeliveryPartialResult` when no candidate has been checked; the zero-work contract is also reflected by the main test's conditional assertion. Therefore the local test would contradict the implemented API and is not a safe test-only port. No workflow code or test was changed, and no test was run in this comparison.
