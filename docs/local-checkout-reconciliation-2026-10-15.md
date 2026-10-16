@@ -1096,3 +1096,9 @@ A fresh read-only comparison covered 35 untracked Go test files whose paths all 
 
 The untracked Promptfoo runner lockfile is not a newer dependency update: it resolves Promptfoo `0.123.1`, while current `main`'s manifest and lockfile resolve `0.124.1`; the main manifest also contains an additional libsql dependency and a `get-uri/basic-ftp` override missing locally. The local lock has 941 package entries versus 704 on main, reflecting a different/stale resolution, not a justified implementation to port. It remains unmodified and unuploaded.
 
+
+
+## Modified Go source crosswalk (2026-10-17)
+
+A symbol-level crosswalk compared 81 modified Go production files in the primary working tree with the same paths on current `origin/main`. Four helper names present locally were absent from their same-path main files: pursuit `dashboardForPursuits`, router `initializeRoutes`, source `filterExtractionsForSources`, and verification helpers for evidence normalization, weekdays, and staleness. Targeted current-main inspection found newer or safer equivalents: pursuit dashboard projection and `DashboardForOwner`, lifecycle-context route initialization, owner-scoped ranked-extraction filtering, and verification sentence/freshness/conflict logic. These local names therefore do not establish missing behavior to port. This was a symbol crosswalk plus targeted code inspection, not a semantic review of every changed hunk across all 81 files; it does not clear those files for bulk upload or deletion.
+
