@@ -195,7 +195,8 @@ func (r *Registry) syncContext(ctx context.Context, scope FeedScope, id uuid.UUI
 		outcomeCursorPresent := rep.CursorPresent
 		if feed.SourceType != SourceHTTPJSONFeed {
 			outcomeCursor = ""
-			outcomeCursorPresent = false
+			// A successful local-feed sync clears any legacy HTTP checkpoint.
+			outcomeCursorPresent = true
 		}
 		outcome := SyncOutcome{ItemsRead: rep.ItemsRead, Cursor: outcomeCursor, CursorPresent: outcomeCursorPresent, Event: newFeedAudit(id, eventType, message, r.now())}
 		if err := r.repo.FinishSync(finishCtx, scope, id, token, outcome); err != nil {
