@@ -1033,3 +1033,10 @@ Focused comparisons of four high-impact pairs show the local snapshots are older
 - `operations/ingest_atomicity_regression_test.go`: all 14 sampled local test names exist on main. No local-only case was found by function-name comparison.
 
 These samples reject those local files as safe additive test ports. They do not establish semantic equivalence for the remaining untracked tests or review all 59 source/test/script/document files. No test file was copied or deleted, and no local Go test was run.
+
+
+## Current committed-tree comparison (2026-10-17)
+
+Using the local `origin/main` ref (whose SHA matched the live `git ls-remote` result), the primary branch commit `e07b9daeb3ba2630ecbe12a64d948f791203c241` differs from current main `76148882e6d9c7badcd81dc8a80830181c90a860` by 2,116 changed paths: 1,212 deletions, 898 modifications, four additions, and two renames. The comparison is especially broad in backend (1,252 paths), frontend (336), IDP (129), scripts (111), docs (70), services (69), and generated/output material (78). Commit ancestry reports 83 main-only and 292 branch-only commits. These are raw tree/history counts, not counts of missing features or safe-to-port changes.
+
+The first 35 branch-only commit subjects include OpenClaw gateway discovery/identity, task-ledger discovery, health probing, authorization and cancellation behavior, plus workflow execution and UI fixes. They were not treated as proof that those behaviors are missing from main. The sampled worktree and historical reviews already found that multiple local variants remove newer safety controls. Every candidate still requires path-level comparison against the current main implementation, tests, and related open/merged PRs. No merge, branch rewrite, or file replacement was performed.
