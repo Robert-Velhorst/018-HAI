@@ -256,7 +256,7 @@ func TestFeedCursorRollbackWaitsForConcurrentSyncBeforePreflight(t *testing.T) {
 	}
 	err := <-rollbackDone
 	rollbackResultReceived = true
-	if err == nil || !strings.Contains(err.Error(), "rollback refused: account feed cursor exists") {
+	if err == nil || !strings.Contains(err.Error(), "rollback refused: account feed cursor or active sync claim exists") {
 		t.Fatalf("rollback result = %v, want populated-cursor refusal after sync commits", err)
 	}
 

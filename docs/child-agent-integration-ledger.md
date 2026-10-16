@@ -11533,28 +11533,27 @@ These are missing from the stale local snapshot, not unintegrated local
 additions; the current-main files must be preserved. No files were copied or
 deleted, and this focused comparison does not establish full frontend parity.
 
-### October 16, 2026: merged feed-cursor review follow-up
+### October 16, 2026: feed-cursor rollback follow-up
 
-PR #153 (`ad8a72ea4c744a3bd8adf83907be87d92ae7351a`) is merged and included in
-`main` at `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. Its review identified two
-remaining defects: the 0128 cursor rollback checked for live cursor values
-before obtaining a lock that excludes concurrent feed updates, and the sync
-service persisted cursor values from local JSON files even though only HTTP
-feeds consume them.
+PR #153 (`ad8a72ea4c744a3bd8adf83907be87d92ae7351a`) is merged. PR #165
+(`d9a0b7d2e69eee89b58fec934f19048bec8776c1`) subsequently closed its two review
+findings: local-feed syncs clear HTTP-only cursor state, and migration 0128
+locks the feed table before refusing rollback when a cursor or sync claim is
+present. The 0128 down script changed during that hardening, but the migration
+runner hashes both up and down SQL. Databases that applied the original script
+therefore retain the old checksum (`6660b907490fb479b2959704b90a2566cf6c5b5b274cd5b30425786f61960f1c`).
 
-Follow-up PR #170 (`codex/accountfeed-cursor-rollback-guard-20261016`) acquires
-an `ACCESS EXCLUSIVE` lock in the transactional migration runner before the
-0128 rollback preflight, limits durable cursor updates to HTTP feeds, and adds
-unit and real-Postgres concurrency regression coverage. The already-applied
-0128 up/down migration source remains unchanged, preserving its stored
-checksum. `git diff --check` passed. Local Go tests were not run because
-`go.exe` is not installed in this environment; exact-head GitHub Actions checks
-are required before treating the patch as verified. The safety correction is
-pending review and merge; the current `main` still contains the two reviewed
-defects.
+PR #170 (`codex/accountfeed-cursor-rollback-guard-20261016`) is being updated
+against current `main` to preserve strict checksum validation while allowing
+only that exact prior checksum for migration 0128, and to add a real-Postgres
+race regression test for a concurrent cursor write. It no longer duplicates
+the local-feed fix or the SQL lock. The source-only compatibility and test
+changes are not yet verified: local Go is unavailable, `git diff --check`
+must pass, and exact-head CI must complete before merge.
 
-No local cursor artifacts, source files, or transcript archives were deleted.
-The 18-file July 30 transcript manifest still has an incomplete semantic patch
-crosswalk and unresolved malformed/truncated candidate records; those archives
-are not safe cleanup candidates. This checkpoint does not close the broader
-source reconciliation or transcript integration objective.
+The broader local-source reconciliation remains incomplete. The primary
+checkout is substantially divergent and dirty; several scratch snapshots
+contain secret-bearing environment files and unresolved conflicts. The July
+30 transcript archives still lack a complete semantic patch crosswalk and
+contain unresolved nonterminal or oversized records. No source archives,
+checkouts, evidence, or transcript files were deleted.
