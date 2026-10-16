@@ -991,3 +991,10 @@ Correction to the preceding worktree inventory: its first status counter omitted
 PRs #34, #35, and #36 are merged, but the associated local conflict-resolution snapshots cannot be equated with their merged PR content. Their index/worktree state remains unreviewed file-by-file and is preserved. The separate `D:/hai-source-reconciliation` worktree could not be inspected: Git returned its dubious-ownership safety error because that volume does not preserve ownership metadata. No global safe-directory exception was added and no inspection or cleanup was forced.
 
 The previous section's counts of 17, 432, 264, 264, and 478 did not include all unmerged statuses and should not be used for cleanup decisions. This correction supersedes those counts. None of these worktrees was modified, staged, archived, or deleted.
+
+
+## PR #34 resolution snapshot: migration crosswalk (2026-10-17)
+
+A targeted review of the staged migration additions in `C:/Users/NO/Documents/Codex/2026-10-11/hai-resolve-pr34` found that their apparent absence by filename was caused by later migration renumbering on current `main`. The eight local pre-migrations numbered 0060-0067 map by migration purpose to current-main versions 0119-0126; the post migration 0005 durable-job lease index maps to current-main post migration 0007. Nineteen of the 20 added local SQL files are text-identical to their current-main counterparts after normalizing Windows versus Unix line endings. The remaining file, local 0064 task-completion-history projection, uses `COALESCE` alone for `successCriteria`; current main's 0123 explicitly converts JSON `null` to an empty array with `NULLIF`, which is safer and must not be replaced by the older form.
+
+The six added migration contract-test paths also exist on current main. This crosswalk rejects these staged files as missing implementation and does not justify copying or deleting them. It is limited to migration SQL and test path presence; the other hundreds of changed paths in this historical worktree remain unreviewed.
