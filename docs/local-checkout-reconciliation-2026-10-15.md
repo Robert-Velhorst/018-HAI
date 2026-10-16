@@ -296,3 +296,12 @@ Neither worktree was modified or removed. This review confirms that the requeste
 The local `hai-pr36-local-delta` worktree is on detached `ed9b379c` and has 59 unmerged paths represented by 177 index-stage entries. It has no active `MERGE_HEAD`, so this is a retained conflict state rather than a merge that can simply be continued. PR #36 itself is already merged at `c31cec1`; the current `main` base is `ad8a72e`.
 
 All 59 conflicted paths exist on current `main`. For 32 paths, index stage 2 exactly matches the current-main blob. The remaining 27 stage-3 candidates differ from current `main` by a combined +533/−2,368 lines; the largest reductions are in pursuit logic and its tests, execution-auth storage/tests, workflow and operation tests, router wiring, migration checks, and CI contracts. This broad reduction may discard newer behavior, so it is not safe to resolve or push as a batch. The conflicted worktree and its index stages remain unchanged for semantic review.
+
+
+## PR #153 merge and local cursor-copy check (2026-10-16)
+
+PR #153 (`codex/account-feed-cursor-20261015`) was merged into the canonical `Robert-Velhorst/018-HAI` repository's `main` with merge commit `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`, following the user's explicit approval. The merge includes 17 account-feed and migration files.
+
+A byte-level comparison checked those 17 paths across the primary checkout and ten registered HAI worktrees against the merged `main` blobs. No exact local copies were found. Some paths are absent locally, while existing copies are modified or conflict-state versions; none qualify for deletion under the exact-match cleanup rule. No files or worktrees were removed or changed during this check.
+
+This is limited to the named PR files and the 11 audited checkouts. It does not establish that all HAI-related files elsewhere on the device have been reconciled. Dirty and conflicted worktrees remain preserved.
