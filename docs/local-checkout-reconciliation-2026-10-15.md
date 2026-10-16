@@ -1020,3 +1020,16 @@ The exact-match file was rechecked for its repository-relative path and blob ide
 PR #162 (`codex/hai-pursuit-dashboard-list-dedupe`) remains open at `087a89a3868cb9d59397589c35df1d067d2ae7ce`. Its attached managed worktree is clean at that exact head and occupies 37,847,899 bytes as measured by recursive file lengths. PR #170 (`codex/accountfeed-cursor-rollback-guard-20261016`) remains open at `e4f16a36f0b9e9d3749f5e28e9c7886ce48bb4b7`; its attached managed worktree is clean at that exact head and occupies 37,855,718 bytes. Because neither change is yet on main, both worktrees are preserved. Prior archive requests did not archive either checkout; both still appear as active worktree attachments and exist on disk. No space recovery is claimed.
 
 This refresh does not certify every HAI-related path on the local device. The dirty primary checkout, historical resolution worktrees, three audit worktrees, transcript archives, and the D: source-reconciliation checkout remain separate review scopes. No branch-wide merge, bulk upload, archive, or removal was performed.
+
+
+## Targeted test-snapshot semantic review (2026-10-17)
+
+A fresh inventory found 36 untracked Go test files in the primary checkout. All 36 paths exist on current `origin/main`, and their local test-function names are all also present in the corresponding main files. This is a name-level crosswalk, not proof of equivalent assertions; the test variants must not be uploaded as new tests based on filenames or matching names.
+
+Focused comparisons of four high-impact pairs show the local snapshots are older or weaker than main:
+- `source/trello_reopen_test.go`: the local fixture returns an empty Trello action history for every request. Current main includes a history-aware fixture and exercises action reconciliation, and its file is 7,345 bytes versus the local 725-byte file. The local test case names match main, but the fixture behavior is materially less complete.
+- `operations/source_approval_test.go`: local and main share the sampled test names, but current main also includes `TestExplicitSourceApprovalOverridesFutureReviewReminder`, which is absent from the local file, alongside newer approval-boundary cases in the current file.
+- `opscontrol/emergency_stop_fanout_test.go`: both sampled local test names exist on main. The current main version includes request-body parsing in the HTTP test path; no local-only case was found.
+- `operations/ingest_atomicity_regression_test.go`: all 14 sampled local test names exist on main. No local-only case was found by function-name comparison.
+
+These samples reject those local files as safe additive test ports. They do not establish semantic equivalence for the remaining untracked tests or review all 59 source/test/script/document files. No test file was copied or deleted, and no local Go test was run.
