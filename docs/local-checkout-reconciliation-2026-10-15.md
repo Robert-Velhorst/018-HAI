@@ -931,3 +931,8 @@ Reconciled the filesystem-level count with Git's directory-collapsed status disp
 ## Untracked workspace size inventory (2026-10-16)
 
 Measured all 1,582 currently untracked, non-ignored files in this checkout using filesystem logical lengths. All 1,582 paths existed at measurement time and total 128,691,399 bytes. The `output/` directory accounts for 1,501 files / 126,491,111 bytes; the largest individual JSONL logs are about 7.17 MB each. This is a workspace-only inventory, not allocated disk usage or a whole-device scan. Most output files are absent from `main`, and the log/evidence contents have not all been semantically reviewed or summarized; no files were removed. This inventory therefore identifies a future review area, not an approved cleanup set, and does not validate the larger retained transcript archive totals.
+
+
+## Exact duplicate output-log hash screen (2026-10-16)
+
+SHA-256 hashed all 1,501 untracked `output/` files (126,491,111 logical bytes). There are 32 duplicate-content groups spanning 517 files, including 376 zero-byte files. For non-empty duplicate groups, 141 files occupy 568,425 excess logical bytes beyond one copy per hash; the largest repeated group is a 345,029-byte Go test log present twice. Identical hashes establish byte duplication, not that the evidence was semantically incorporated or that any copy is dispensable. No outputs were deleted, and this potential saving is under 1 MiB.
