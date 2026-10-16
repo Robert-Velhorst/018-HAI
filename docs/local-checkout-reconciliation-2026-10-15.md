@@ -1107,3 +1107,11 @@ A symbol-level crosswalk compared 81 modified Go production files in the primary
 ## Exact untracked-file recheck (2026-10-17)
 
 A fresh read-only scan inventoried all 1,581 physical untracked files in the primary checkout. Of these, 72 had a same-path blob in current `origin/main`; Git blob SHA-1 was computed from each local file as a stream and compared with the main tree object. No remaining untracked file was an exact content match. Therefore this scan authorized no additional deletion. Files with different content, ignored files, tracked checkout files, and generated evidence remain preserved pending their own review.
+
+
+## Local worktree preservation preflight (2026-10-17)
+
+The Git worktree registry lists nine non-primary local checkouts. A read-only status and ancestry preflight found that all nine have tracked or untracked changes and none of their current HEAD commits is an ancestor of the verified `origin/main` ref. Two also contain ignored content (932 and 45,225 entries). None is eligible for removal under the exact-main-match rule; these checkouts remain untouched.
+
+A separate D: checkout, `D:/hai-source-reconciliation`, is registered but Git refuses repository operations because Windows reports dubious ownership on that filesystem. No global `safe.directory` exception was added. Its contents and commit inclusion therefore remain unverified, so it is preserved. This is a deliberate evidence gap, not a cleanup candidate.
+
