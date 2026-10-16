@@ -851,3 +851,10 @@ A refreshed `git ls-remote` confirms `origin/main` is still `1e18f90cfccf525781c
 A targeted DSH execution-path comparison also rejects stale local runtime code as a port. Current main's `deepseek_harness.go` fails closed with `dshExecutionIsolationUnavailable` unless TLS peer pinning, verified OS-enforced least-privilege isolation, and an acknowledged server-to-Windows process-start protocol ordering Resume against emergency stop are available. The stale local branch's corresponding adapter lacks that execution-unavailable gate. This is source inspection only, not a runtime security test; retain current main's guard and do not replace it with the older branch implementation.
 
 No local files were changed or deleted by this audit. The broad checkout reconciliation remains incomplete, and no disk-space recovery is claimed.
+
+
+## PR #153 cursor-file local-presence check (2026-10-16)
+
+After PR #153 was confirmed merged, checked all 17 PR-changed paths against the current local filesystem and refreshed `origin/main` at `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. All 17 paths are present in the main tree. Fifteen are already absent from this checkout, so they offer no remaining local space to reclaim. Two paths remain present: `backend/migrations/migration_chain_contract_test.go` and `backend/migrations/source_configuration_postgres_test.go`; both have local blob contents different from `origin/main`. They are not direct matches and remain untouched. No local deletion was attempted.
+
+This is limited to the files changed by PR #153; it does not establish that the rest of the HAI-related checkout has been fully reconciled.
