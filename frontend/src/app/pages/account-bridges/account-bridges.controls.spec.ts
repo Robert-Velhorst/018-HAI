@@ -47,6 +47,7 @@ describe('Account Bridges rendered source controls', () => {
     http = TestBed.inject(HttpTestingController)
     viewPreferences = TestBed.inject(ModuleViewPreferencesService)
     viewPreferences.setMode('account-bridges', 'advanced')
+    viewPreferences.setSection('account-bridges', 'registered-feeds', true)
     fixture = TestBed.createComponent(AccountBridgesComponent)
     fixture.detectChanges()
     await flushRefresh(true)
