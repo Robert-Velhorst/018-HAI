@@ -354,3 +354,8 @@ The broader local `backend/internal/verification/service.go` variant is not a sa
 A separate older report hypothesis about composition-attempt receipts being only syntactically digest-checked is also already addressed on current main. `decodePostgresCompositionAttempt` calls `validateCompositionAttempt`; that validator recomputes and compares both the request digest and record digest before accepting the stored attempt. This conclusion is based on source inspection, not a database tamper-injection test executed in this pass.
 
 These checks reject the reviewed local variants as port candidates and confirm specific report claims as already represented on main. They do not resolve the remaining tracked-file diffs, report deltas, other worktrees, local archives, or the complete device-wide cleanup objective. No local files or worktrees were changed or deleted.
+
+
+## Local verification delta mapped to open PR (2026-10-16)
+
+The primary checkout's verification-engine diff includes Dutch stop-word handling. The focused equivalent is already on an open branch as PR #154, `fix(verification): ignore Dutch function words in evidence overlap`, head `b319e091416e1af55883e4e2ab3b8fb2fe6e7098`. Its regression covers unrelated Dutch snippets sharing only function words and ensures `niet` remains meaningful for negation. Exact-head GitHub checks were re-read: all 41 completed successfully. PR #154 remains a draft and is not merged, so this records remote PR preservation, not integration into `main`; no duplicate patch was opened and no local source was deleted.
