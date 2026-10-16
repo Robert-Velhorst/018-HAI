@@ -618,3 +618,14 @@ The staged Go inventory has 194 changed `.go` paths; none has positive net line 
 Compared the staged `docs/child-agent-integration-ledger.md` in `D:/hai-source-reconciliation` with the same current-main file. Current main contains 11,534 lines and 418 Markdown headings; the staged snapshot contains 6,311 lines and 214 headings. No heading present in the staged snapshot is absent from current main. Its 15 exact trimmed lines not found on main are historical machine-specific checkout/session paths and file-size/count statements, not HAI product implementation. No content from this older ledger snapshot was ported.
 
 This comparison does not reconcile the underlying child transcripts or prove every item is integrated. The ledger itself continues to identify transcript semantic/provenance reconciliation as incomplete. Transcript archives and session data remain untouched.
+
+
+## Staged IDP/authentication security screen (2026-10-16)
+
+Compared key staged IDP/authentication files with current `main`:
+
+- Authentication and password-reset service methods remove caller-context propagation and cancellation checks; SMTP dialing switches to a fresh background context.
+- User handlers remove defensive checks for malformed/missing user IDs and nil user/service results.
+- IDP database initialization replaces validated/configurable pool settings with hard-coded values, bypassing the current settings validation path.
+- The staged automatic-GORM-ping test does not exercise application cleanup and was previously removed as an obsolete contract; current main explicitly disables automatic ping and owns the bounded first ping.
+- These changes are source-level regression evidence only. No local IDP tests or live authentication acceptance was run. No IDP changes were ported.
