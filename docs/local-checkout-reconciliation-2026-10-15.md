@@ -511,3 +511,14 @@ At the last exact-head check, PR #165 head `89e03281252d85b17e71e7bf49f6119b3c07
 Compared the local `scripts/test-windows-installer-install.ps1` (378 lines) with current `main` (421 lines). The local file has the same function set and does not introduce a distinct installer workflow. Current `main` adds checks for the explicitly allowed hosted-runner Docker-unavailable case, runner-owned isolation boundaries, process and Start Menu shortcut targets, and resets the global PowerShell exit-code state at the end. The local version is therefore a shorter stale variant, not a safe replacement; it was not ported.
 
 PR #165 run 38926620939 is still in progress. The PostgreSQL migration integration, frontend build/tests, gateway/local-Compose validation, authenticated control-plane smoke, and several runner/build checks have completed successfully. Backend `go test ./...` and `go vet ./...` have completed successfully, while execution-boundary race tests and backend build/vulnerability steps remain active or pending. Browser acceptance, IDP checks, Windows installer/recovery checks, and some Python runner jobs are also still active or queued. This is partial CI evidence only; the PR is not yet fully green and has not been merged. No local test suite or cleanup was run.
+
+
+## Primary-checkout Go test candidate inventory (2026-10-16)
+
+A path and test-name inventory of the 35 untracked Go test files under the primary local checkout found that all 35 relative paths already exist in current `main`. Every locally declared `Test*` function name is also present in the corresponding current-main file; several main files declare additional tests. This inventory identifies no test file that can be ported solely as a new-path or new-test-name addition.
+
+This is not assertion-level equivalence, compile validation, or a test run. Local file bodies may differ or be stale; each substantive difference still requires semantic review before it can be considered for a focused PR. The sampled `operations/ingest_atomicity_regression_test.go` local variant is shorter than current main and omits the main implementation's `SourceEvidenceRawSHA256` initialization in the stored fixture, so it is not a replacement candidate. No test files were edited or removed.
+
+## PR #165 CI status refresh (2026-10-16)
+
+A later poll of exact-head run 38926620939 found 20 jobs completed, ten Python-runner jobs queued, zero failed jobs, and no jobs currently in progress. The run is not terminal while those jobs remain queued, so the required check suite is still unverified as a whole. This supersedes the earlier progress snapshot in this ledger; no complete-green claim is made.
