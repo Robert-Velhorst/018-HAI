@@ -451,15 +451,23 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
         const created = reports.reduce((total, report) => total + (report.operationsCreated ?? 0), 0)
         const refreshed = reports.reduce((total, report) => total + (report.operationsRefreshed ?? 0), 0)
         const privacyFlagged = reports.reduce((total, report) => total + (report.privacyFlagged ?? 0), 0)
-        const failedReports = reports.filter((report) => (report.errors?.length ?? 0) > 0 || report.recorded !== true)
-        const failureDetails = failedReports.map((report) => {
+        const reportsNeedingReview = reports.filter((report) =>
+          (report.errors?.length ?? 0) > 0 || report.recorded !== true || report.hasMore === true)
+        const reviewDetails = reportsNeedingReview.map((report) => {
           const name = this.feeds.find((feed) => feed.feed.id === report.feedId)?.feed.name ?? 'An unlisted feed'
-          return `${name}: ${this.reportErrorSummary(report)}`
+          const details = []
+          if ((report.errors?.length ?? 0) > 0 || report.recorded !== true) {
+            details.push(this.reportErrorSummary(report))
+          }
+          if (report.hasMore === true) {
+            details.push('More source pages remain; run Sync again to continue.')
+          }
+          return `${name}: ${details.join(' ')}`
         })
         const text = reports.length === 0
           ? 'No enabled feed was synced. Feed settings may have changed; refresh status before retrying.'
-          : `${reports.length} feeds: ${read} items read, ${created} new operations, ${refreshed} refreshed, ${privacyFlagged} privacy-flagged.${failedReports.length ? ` ${failedReports.length} feed${failedReports.length === 1 ? '' : 's'} reported sync issues: ${failureDetails.join(' ')}` : ''}`
-        const kind: FeedbackKind = failedReports.length || reports.length === 0 ? 'warning' : 'success'
+          : `${reports.length} feeds: ${read} items read, ${created} new operations, ${refreshed} refreshed, ${privacyFlagged} privacy-flagged.${reportsNeedingReview.length ? ` ${reportsNeedingReview.length} feed${reportsNeedingReview.length === 1 ? '' : 's'} incomplete or need review: ${reviewDetails.join(' ')}` : ''}`
+        const kind: FeedbackKind = reportsNeedingReview.length || reports.length === 0 ? 'warning' : 'success'
         this.feedback = { kind, text }
         if (kind === 'warning') this.notification.warning('Sync needs review', text)
         else this.notification.success('Sync complete', text)
