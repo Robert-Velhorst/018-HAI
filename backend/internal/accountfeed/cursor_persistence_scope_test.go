@@ -9,7 +9,9 @@ import (
 func TestLocalJSONCursorIsNotPersistedAsHTTPCheckpoint(t *testing.T) {
 	store := NewMemoryRegistryRepository()
 	reg := persistenceRegistry(t, store, operations.NewMemoryRepository(), persistenceFixture(t))
-	feed, err := reg.RegisterContext(t.Context(), persistenceSeed())
+	seed := persistenceSeed()
+	seed.SyncCursor = "legacy-local-checkpoint"
+	feed, err := reg.RegisterContext(t.Context(), seed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,6 +22,6 @@ func TestLocalJSONCursorIsNotPersistedAsHTTPCheckpoint(t *testing.T) {
 	}
 	stored := persistenceRecord(t, store, feed)
 	if stored.Feed.SyncCursor != "" {
-		t.Fatalf("local feed cursor was persisted as an HTTP checkpoint: %q", stored.Feed.SyncCursor)
+		t.Fatalf("successful local sync did not clear its legacy checkpoint: %q", stored.Feed.SyncCursor)
 	}
 }
