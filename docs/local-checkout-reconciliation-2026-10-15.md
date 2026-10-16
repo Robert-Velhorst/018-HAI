@@ -858,3 +858,15 @@ No local files were changed or deleted by this audit. The broad checkout reconci
 After PR #153 was confirmed merged, checked all 17 PR-changed paths against the current local filesystem and refreshed `origin/main` at `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. All 17 paths are present in the main tree. Fifteen are already absent from this checkout, so they offer no remaining local space to reclaim. Two paths remain present: `backend/migrations/migration_chain_contract_test.go` and `backend/migrations/source_configuration_postgres_test.go`; both have local blob contents different from `origin/main`. They are not direct matches and remain untouched. No local deletion was attempted.
 
 This is limited to the files changed by PR #153; it does not establish that the rest of the HAI-related checkout has been fully reconciled.
+
+
+## Retained transcript hash comparison (2026-10-16)
+
+Refreshed the three known transcript roots. `hai-completed-agent-sessions` contains 13 files (17,559,729,527 bytes), `completed-agent-sessions` contains one (1,538,632,047 bytes), and `session-log-relief` contains six (9,361,810,893 bytes). The 13-row retained manifest classifies its sessions as aborted or unattributed/nonterminal; it contains no completed cleanup candidates.
+
+Two pairs have equal file lengths and duplicate-suffixed names. SHA-256 confirms neither pair is byte-identical:
+
+- Meitner pair (1,603,851,727 bytes each): `84e07b24a3acaed044a1f52db04de1cbc69c635f4d111d6f86fbb243cdc bc89c` versus `a7b0bb14fbffa7571f436b023ed5316c9ab07fed6142874eb1fc6e4d53228ce9`.
+- Volta pair (1,603,399,243 bytes each): `85da9f27d10a60112b327f9c4e478ecdf78dcd6db5ac8a0b8c96e24415bc3a65` versus `961fb8ff7619f95ef70a7b32c1737605fc61d14d0b3ffe79f5e410a5b6e94500`.
+
+The duplicate filename suffixes therefore do not establish redundant content. These archives remain retained; this pass did not parse their full event contents, integrate any embedded work, or delete files. The archive totals also remain separate from the primary and supplemental audit manifests, so totals must not be combined without path-level reconciliation.
