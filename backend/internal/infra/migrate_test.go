@@ -27,6 +27,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_new ON t (a, b);
 	}
 }
 
+func TestRollbackTableLockStatements(t *testing.T) {
+	got := rollbackTableLockStatements("pre/0128_account_feed_sync_cursor")
+	if len(got) != 1 || got[0] != "LOCK TABLE public.account_feeds IN ACCESS EXCLUSIVE MODE" {
+		t.Fatalf("cursor rollback locks = %#v", got)
+	}
+	if got := rollbackTableLockStatements("pre/0127_other_migration"); len(got) != 0 {
+		t.Fatalf("unrelated rollback locks = %#v", got)
+	}
+}
+
 func TestSplitSQLStatementsKeepsDollarQuotedBlocksIntact(t *testing.T) {
 	// A guarded constraint uses DO $$ ... $$ and contains semicolons that must
 	// NOT split the statement.

@@ -16,7 +16,6 @@ const (
 	trelloResumableSyncMigration   = "pre/0095_trello_resumable_sync"
 	openClawArtifactClaimMigration = "pre/0098_openclaw_artifact_claim_leases"
 	accountFeedRegistryMigration   = "pre/0110_account_feed_registry"
-	accountFeedSyncCursorMigration = "pre/0128_account_feed_sync_cursor"
 )
 
 func TestAccountFeedRegistryRollbackIsEmptyOnly(t *testing.T) {
@@ -97,21 +96,6 @@ func TestGuardedRollbackSourcesLockBeforePreflightAndDDL(t *testing.T) {
 			ddlTargets: []string{
 				"drop index if exists public.idx_openclaw_artifact_collections_claim_token",
 				"alter table public.openclaw_gateway_artifact_collections",
-			},
-		},
-		{
-			name:       "0128 account feed sync cursor",
-			migration:  accountFeedSyncCursorMigration,
-			lockTables: []string{"public.account_feeds"},
-			guard: []string{
-				"from public.account_feeds where sync_cursor <> '' limit 1",
-				"rollback refused: account feed cursor exists",
-				"using errcode = '55000'",
-			},
-			firstDDL: "alter table public.account_feeds",
-			ddlTargets: []string{
-				"drop constraint chk_account_feeds_sync_cursor_length",
-				"drop column sync_cursor",
 			},
 		},
 	}

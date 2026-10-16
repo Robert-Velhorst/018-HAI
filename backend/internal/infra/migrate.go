@@ -27,6 +27,15 @@ const (
 	migrationAdvisoryLockKey = int64(0x4841494d494752)
 )
 
+func rollbackTableLockStatements(version string) []string {
+	switch version {
+	case "pre/0128_account_feed_sync_cursor":
+		return []string{"LOCK TABLE public.account_feeds IN ACCESS EXCLUSIVE MODE"}
+	default:
+		return nil
+	}
+}
+
 // Migration is one versioned change loaded from an embedded directory.
 type Migration struct {
 	Version string // e.g. "post/0001_conversation_owner_identity"
@@ -664,6 +673,11 @@ func RollbackMigration(db *gorm.DB, fsys fs.FS, dir, version string) error {
 					version,
 					all[i].Version,
 				)
+			}
+		}
+		for _, statement := range rollbackTableLockStatements(version) {
+			if err := tx.Exec(statement).Error; err != nil {
+				return fmt.Errorf("lock tables before rolling back %s: %w", version, err)
 			}
 		}
 		for _, statement := range splitSQLStatements(target.DownSQL) {
