@@ -19,3 +19,14 @@ The raw child-session source for a 152,530-byte workflow-service snapshot could 
 ## Remaining status
 
 No additional source files were copied from the local candidates in this pass. The remaining tracked changes, untracked files, linked worktrees, and transcript/archive contents still require item-level review before integration or deletion.
+## Follow-up audit — 2026-10-16
+
+The live GitHub ref was checked again: main remains df42ab2475b0814bacfc0f5989af85f855a64e14. PR #36 (runtime/release work) is merged; PRs #40, #41, and #42 are also already merged. These states do not by themselves prove that every file currently in this older checkout has the same content as the merged trees.
+
+The local checkout is on codex/hai-runtime-release at e07b9daeb3ba2630ecbe12a64d948f791203c241. Its cached remote-tracking branch is e62b56843eb8bbbf9a566aff5e883f9adf375429 (440 commits ahead of this checkout); local HEAD is also 77 commits behind and 292 commits ahead of cached origin/main (left/right count from git rev-list --left-right --count origin/main...HEAD). A fetch was attempted but failed because Git could not open .git/FETCH_HEAD (permission denied). The cached origin/main hash does match the live GitHub main hash, so comparisons below use that verified tree; local branch refs were not refreshed.
+
+Current local inventory still reports 692 tracked changes (448 deletions, 244 modifications) and 1,582 untracked paths. The hidden output/ tree contains 1,507 files totaling 126,491,186 bytes (about 120.6 MiB). These are test/recovery/run evidence and remain unreviewed as a complete set; they were not deleted. Other untracked paths include candidate tests, scripts, agent state, and logs.
+
+A bounded same-path review covered the untracked source/test/document candidates. backend/internal/runtimelab/owner_gate_handler_test.go remains the only confirmed exact same-path blob match found in the previously inventoried set. The other reviewed copies are not exact matches. Current main versions generally contain additional cases or stronger assertions; examples include pursuit completion/receipt coverage, runtime acceptance retries, protected Docker network-range preservation in scripts/test-windows-runtime-lifecycle.ps1, and broader test fixture/error-path coverage. The local Promptfoo package snapshot is also older (0.123.1 versus 0.124.1 on main) and omits dependency/security configuration present on main. No source/test changes were ported in this bounded pass because no reviewed local delta was demonstrably an improvement over the canonical version.
+
+This is not a complete file-by-file reconciliation. The 692 tracked changes, remaining untracked source candidates, all 1,507 output artifacts, external archive/transcript roots, and linked worktrees still need item-level classification. No local files were removed.
