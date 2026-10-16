@@ -11542,16 +11542,16 @@ before obtaining a lock that excludes concurrent feed updates, and the sync
 service persisted cursor values from local JSON files even though only HTTP
 feeds consume them.
 
-Follow-up PR #170 (`codex/accountfeed-cursor-rollback-guard-20261016`, head
-`fc41eaa1e1083f999391d0e11a4ffffe1b6cdceb`) adds an `ACCESS EXCLUSIVE` lock
-before the rollback preflight, limits durable cursor updates to HTTP feeds, and
-adds regression coverage for both behaviors. The migration runner executes
-each rollback in a transaction, so the table lock remains held through the
-guard and DDL. `git diff --check` passed. Local Go tests were not run because
-`go.exe` is not installed in this environment. Exact-head Actions run
-`38964634716` was queued at this checkpoint; its results must be rechecked
-before treating the patch as verified. The safety correction is pending review
-and merge; the current `main` still contains the two reviewed defects.
+Follow-up PR #170 (`codex/accountfeed-cursor-rollback-guard-20261016`) acquires
+an `ACCESS EXCLUSIVE` lock in the transactional migration runner before the
+0128 rollback preflight, limits durable cursor updates to HTTP feeds, and adds
+unit and real-Postgres concurrency regression coverage. The already-applied
+0128 up/down migration source remains unchanged, preserving its stored
+checksum. `git diff --check` passed. Local Go tests were not run because
+`go.exe` is not installed in this environment; exact-head GitHub Actions checks
+are required before treating the patch as verified. The safety correction is
+pending review and merge; the current `main` still contains the two reviewed
+defects.
 
 No local cursor artifacts, source files, or transcript archives were deleted.
 The 18-file July 30 transcript manifest still has an incomplete semantic patch
