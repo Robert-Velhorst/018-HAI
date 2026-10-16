@@ -93,7 +93,7 @@ func initializeWithContext(ctx context.Context) (result error) {
 	router.Use(metricsExporter.Middleware())
 
 	// initialize routes
-	err = initializeRoutesWithContext(router, ctx)
+	err = initializeRoutesWithContext(router, ctx, metricsExporter)
 	if err != nil {
 		return err
 	}

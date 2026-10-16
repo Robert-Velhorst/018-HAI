@@ -189,6 +189,15 @@ func TestDurableConstitutionAvailabilityRejectsBuiltinFallback(t *testing.T) {
 	}
 }
 
+func TestDurableActiveConstitutionRejectsMalformedUUID(t *testing.T) {
+	if hasDurableActiveConstitution(frameworkregistry.Constitution{
+		ID:     "not-a-persisted-id",
+		Status: frameworkregistry.ConstitutionActive,
+	}) {
+		t.Fatal("active Constitution with a malformed ID must not enable execution")
+	}
+}
+
 func newTestExecutionAuthorizationService(t *testing.T) *executionauth.Service {
 	t.Helper()
 	service, err := executionauth.NewService(
