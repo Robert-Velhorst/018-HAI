@@ -555,3 +555,19 @@ The separate `D:/hai-source-reconciliation` worktree remains based on `3b15fe4a`
 - `backend/internal/openclawmaintenance/worker.go`: staged and current versions differ in release-metadata validation and public-key representation; this targeted diff did not establish a beneficial staged-only change.
 
 This is a four-file source sample, not a semantic audit of the 310 staged paths. The whole staged batch remains unsuitable for publication; other paths require individual review. The worktree and staged index were left untouched.
+
+
+## Staged reconciliation candidate screen (2026-10-16)
+
+A focused semantic screen of the small source-level deltas in the 310-path staged index at `D:/hai-source-reconciliation` found no safe standalone port:
+
+- The staged `frontend/src/app/pages/pursuits/pursuits.component.ts` auto-selects the first pursuit after load. Current-main `pursuits.component.spec.ts` explicitly verifies that the compact list remains unselected until the user chooses an item, so this change conflicts with current behavior and was rejected.
+- The staged `idp/internal/infra/database_open_test.go` adds a direct GORM automatic-ping ownership contract. Git history shows the related contract was deliberately removed as obsolete; current `initializeIDPPostgresPool` disables automatic ping and explicitly owns the bounded first ping and failed-pool cleanup. The test was not reintroduced.
+- The staged workflow-service tests replace an exact owner-scoped selection lookup with a 200-record list scan; this is not a safer or narrower lookup and was rejected.
+- The staged module-registry change drops current-main module metadata and the document-title helper while adding a URL helper; no current-main call-site or net behavior improvement was established.
+- The added standalone Nginx configuration is not suitable for publication: the current canonical template/configuration carries controls and deployment routing that this older snapshot does not establish.
+- Other sampled service/runtime deltas in this snapshot remove scheduler status reporting, lifecycle rejection reporting, query-ordering assertions, or current validation behavior. These are regressions or obsolete tests, not missing improvements.
+
+This is a targeted screen of candidate small/source additions, not an exhaustive semantic review of all 310 staged paths. The staged index and worktree were not changed. No code was ported.
+
+PR #165 exact-head run 38926620939 is currently queued; no check result is claimed. PR #153 is already merged as `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`, and current `main` contains it as an ancestor. No local copy was removed.
