@@ -529,3 +529,10 @@ A later poll of exact-head run 38926620939 found 20 jobs completed, ten Python-r
 Compared 29 untracked, non-output files in the primary checkout against same-path files on current `main` by Git blob SHA. All 29 differ, but the local copies are shorter than current main in 27 cases; two are nearly line-count-equal. The local Promptfoo lockfile is larger than main, which is not evidence of a safe or beneficial update. No local file was selected for port by path or size alone.
 
 Targeted semantic screens found that the local phase-2 permission contract uses a shell/find ownership migration with additional container capabilities, while current main uses the backend image's narrow `chown` entrypoint and only the required `CHOWN` capability. Local Windows runtime scripts pin Go 1.25.13 while current main pins Go 1.27.2. The local Windows process-containment test also lacks current-main post-root-exit descendant draining and bounded cleanup verification. These local variants are stale/regressive candidates, not improvements to port. Remaining content differences have not all been semantically inspected; no equivalence or full audit claim is made.
+
+
+## Account-feed provider grant cross-check (2026-10-16)
+
+A targeted comparison of the local modified `backend/internal/accountfeed/bridge.go` and `permission_registry.go` against current `main` initially appeared to expose a provider-grant distinction. Direction was verified against both complete files: current `main` already defines `ReportsCredentialGrant()`, excludes Google OAuth client bootstrap credentials from owner grants, and gates the `Granted` projection on that predicate. The local checkout is the older variant and lacks this protection; there is no missing change to port from these files. This correction supersedes any tentative interpretation that the local variant introduced the guard.
+
+Current GitHub main remains `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. PR #165 exact-head CI run 38926620939 was still nonterminal at the last poll: 20 jobs completed, one in progress, nine queued, and no failed jobs. No full-green claim is made.
