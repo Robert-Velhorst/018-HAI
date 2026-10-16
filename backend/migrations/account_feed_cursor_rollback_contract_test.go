@@ -12,14 +12,13 @@ func TestAccountFeedCursorRollbackLocksBeforeCheckingAndDropping(t *testing.T) {
 	}
 	sql := strings.ToUpper(string(down))
 	lock := strings.Index(sql, "LOCK TABLE PUBLIC.ACCOUNT_FEEDS IN ACCESS EXCLUSIVE MODE")
-	for _, guard := range []string{"SYNC_CURSOR <> ''", "SYNC_TOKEN IS NOT NULL"} {
-		if !strings.Contains(sql, guard) {
-			t.Fatalf("rollback guard is missing %q", guard)
-		}
+	guard := strings.Index(sql, "WHERE SYNC_CURSOR <> '' OR SYNC_TOKEN IS NOT NULL")
+	if guard < 0 {
+		t.Fatal("rollback must refuse nonempty cursors and active sync claims")
 	}
 	check := strings.Index(sql, "IF EXISTS")
 	drop := strings.Index(sql, "ALTER TABLE PUBLIC.ACCOUNT_FEEDS")
-	if lock < 0 || check < 0 || drop < 0 || !(lock < check && check < drop) {
+	if lock < 0 || check < 0 || guard < check || drop < 0 || !(lock < check && check < guard && guard < drop) {
 		t.Fatalf("rollback order lock=%d check=%d drop=%d; want lock before presence check and drop", lock, check, drop)
 	}
 }
