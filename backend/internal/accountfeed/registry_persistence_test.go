@@ -428,7 +428,7 @@ func TestRegistrySharedRepositoryBusyAndStaleTokenFence(t *testing.T) {
 	}
 }
 
-func TestRegistryHTTPFeedPersistsAndClearsCommittedCursor(t *testing.T) {
+func TestRegistryHTTPFeedPersistsCommittedCursorPresence(t *testing.T) {
 	var requests []string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		requests = append(requests, request.URL.Query().Get("cursor"))
@@ -436,6 +436,8 @@ func TestRegistryHTTPFeedPersistsAndClearsCommittedCursor(t *testing.T) {
 		case 1:
 			_, _ = writer.Write([]byte(`{"cursor":"next-42","items":[]}`))
 		case 2:
+			_, _ = writer.Write([]byte(`{"cursor":"next-43","items":[]}`))
+		case 3:
 			_, _ = writer.Write([]byte(`{"items":[]}`))
 		default:
 			_, _ = writer.Write([]byte(`{"cursor":"","items":[]}`))
@@ -459,18 +461,28 @@ func TestRegistryHTTPFeedPersistsAndClearsCommittedCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, wantStored := range []string{"next-42", "next-42", ""} {
+	wants := []struct {
+		cursor        string
+		cursorPresent bool
+		storedCursor  string
+	}{
+		{cursor: "next-42", cursorPresent: true, storedCursor: "next-42"},
+		{cursor: "next-43", cursorPresent: true, storedCursor: "next-43"},
+		{storedCursor: "next-43"},
+		{cursorPresent: true},
+	}
+	for i, want := range wants {
 		report, err := reg.SyncContext(t.Context(), persistenceScope(registered), registered.ID)
-		if err != nil || !report.Recorded {
+		if err != nil || !report.Recorded || report.Cursor != want.cursor || report.CursorPresent != want.cursorPresent {
 			t.Fatalf("sync %d report=%+v err=%v", i+1, report, err)
 		}
 		stored := persistenceRecord(t, store, registered)
-		if stored.Feed.SyncCursor != wantStored {
-			t.Fatalf("sync %d persisted cursor=%q want %q", i+1, stored.Feed.SyncCursor, wantStored)
+		if stored.Feed.SyncCursor != want.storedCursor {
+			t.Fatalf("sync %d persisted cursor=%q want %q", i+1, stored.Feed.SyncCursor, want.storedCursor)
 		}
 	}
-	if len(requests) != 3 || requests[0] != "" || requests[1] != "next-42" || requests[2] != "next-42" {
-		t.Fatalf("server saw cursors %v; omitted cursor must preserve the checkpoint and explicit empty must clear it", requests)
+	if len(requests) != 4 || requests[0] != "" || requests[1] != "next-42" || requests[2] != "next-43" || requests[3] != "next-43" {
+		t.Fatalf("server saw cursors %v; absent cursor must preserve the checkpoint and explicit empty must clear it", requests)
 	}
 }
 
