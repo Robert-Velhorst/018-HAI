@@ -703,3 +703,8 @@ Inspected the retained `C:/Users/NO/Documents/Codex/2026-10-11/hai-pr36-resoluti
 - The local image request-limit edits are a separate implementation and were not validated against current configuration/tests in this pass.
 
 This was source-diff review only; no Go tests, database tests, or runtime acceptance were run. No changes from this worktree were ported; the conflicted checkout remains untouched.
+
+
+## PR36-integration conflict worktree inventory (2026-10-16)
+
+A read-only refresh of `C:/Users/NO/Documents/Codex/2026-10-11/hai-pr36-integration` found 256 unmerged paths. Its branch commit graph is 493 commits ahead and 81 behind current `main`; this count is ancestry only, not missing-feature count. Representative unresolved files include CI, README, third-party notices, Docker, account-feed, A2A, and runtime code. The worktree is conflicted and must not be merged or reset as a bulk snapshot. This pass did not resolve conflicts or alter the index/worktree.
