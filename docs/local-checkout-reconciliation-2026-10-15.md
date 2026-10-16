@@ -571,3 +571,14 @@ A focused semantic screen of the small source-level deltas in the 310-path stage
 This is a targeted screen of candidate small/source additions, not an exhaustive semantic review of all 310 staged paths. The staged index and worktree were not changed. No code was ported.
 
 PR #165 exact-head run 38926620939 is currently queued; no check result is claimed. PR #153 is already merged as `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`, and current `main` contains it as an ancestor. No local copy was removed.
+
+
+## Dashboard payload and validation local-delta review (2026-10-16)
+
+A targeted comparison of the staged Control Center component against current `main` found a resource and data-integrity regression rather than a port candidate:
+
+- The staged component calls `ambientService.overview()` and `pursuitService.dashboard()`, whose defaults request full payloads. Current main deliberately calls `overview('summary')` and `dashboardSummary()` for this dashboard.
+- The staged pursuit response check no longer requires finite, non-negative `needsRobert`, `blocked`, and `stale` counts, and its attention count is recomputed from optional lists. Current main's service normalizer validates the required count and list contract before the dashboard accepts the response.
+- The staged result could increase dashboard response work while accepting incomplete count data. No change was ported.
+
+This is a focused source comparison only; no dashboard/API runtime test was run. It does not classify the remaining changed frontend paths.
