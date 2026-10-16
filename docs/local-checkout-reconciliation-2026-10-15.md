@@ -914,3 +914,10 @@ Compared untracked `backend/internal/operations/source_approval_test.go` against
 ## Pursuit completion test variant comparison (2026-10-16)
 
 Compared untracked `backend/internal/pursuit/completion_outcome_integrity_test.go` with current main. The local variant lacks main's regressions for review-required/uncertain task-attempt timeline projection, batched lookup and completeness validation for more than 50 runtime receipts, and all 501 explicitly linked receipts beyond repository limits. The local file is not an additive coverage port and must not replace the stronger current-main test. Static comparison only; no tests were run and no files were changed locally.
+
+
+## PR #153 merge and cursor-copy recheck (2026-10-16)
+
+GitHub confirms PR #153 is merged at `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. The refreshed `origin/main` tip is `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. Rechecked the 17 PR paths against that main tree and this checkout: all 17 exist on main; 15 are absent locally, and the two local copies of `backend/migrations/migration_chain_contract_test.go` and `backend/migrations/source_configuration_postgres_test.go` remain different from main. Thus none of PR #153's paths is a verified exact-copy cleanup candidate.
+
+The current local branch is `codex/hai-runtime-release` at `e07b9daeb3ba2630ecbe12a64d948f791203c241`. The bounded current status reports 692 tracked changes and 67 untracked paths; this is not a semantic review of all those files. No local files were deleted. A fresh job read for PR #165 run `38960911553` reports 30/30 jobs completed successfully at the then-current PR head `f627cfbce2dd9f67015759d3eb0876d91de4aecf`; PR #165 remains open and unmerged. This CI result is not evidence that the remaining checkout has been reconciled.
