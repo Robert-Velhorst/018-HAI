@@ -191,7 +191,13 @@ func (r *Registry) syncContext(ctx context.Context, scope FeedScope, id uuid.UUI
 		finishCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		message := fmt.Sprintf("read %d items, %d new operations, %d existing operations, %d rejected, %d privacy-flagged", rep.ItemsRead, rep.OperationsCreated, rep.OperationsRefresh, len(rep.Errors), rep.PrivacyFlagged)
-		outcome := SyncOutcome{ItemsRead: rep.ItemsRead, Cursor: rep.Cursor, CursorPresent: rep.CursorPresent, Event: newFeedAudit(id, eventType, message, r.now())}
+		outcomeCursor := rep.Cursor
+		outcomeCursorPresent := rep.CursorPresent
+		if feed.SourceType != SourceHTTPJSONFeed {
+			outcomeCursor = ""
+			outcomeCursorPresent = false
+		}
+		outcome := SyncOutcome{ItemsRead: rep.ItemsRead, Cursor: outcomeCursor, CursorPresent: outcomeCursorPresent, Event: newFeedAudit(id, eventType, message, r.now())}
 		if err := r.repo.FinishSync(finishCtx, scope, id, token, outcome); err != nil {
 			rep.Cursor = ""
 			rep.CursorPresent = false
