@@ -764,3 +764,8 @@ The local `backend/internal/verification/service.go` differs from current `main`
 - Its local-only helper names reflect an older service decomposition; they do not establish additional behavior beyond current-main equivalents.
 
 This source comparison identifies no safe service implementation to port. It was not runtime- or test-validated in this pass. No verification code was changed.
+
+
+### PR #162 exact-head validation refresh (2026-10-16)
+
+Rechecked PR #162 after the pursuit optimization comparison. GitHub reports head `087a89a3868cb9d59397589c35df1d067d2ae7ce` as mergeable, with all 41 reported checks completed successfully. The change remains open and unmerged. This supports preservation of the one-list dashboard optimization as a PR, but does not make the primary checkout's whole `backend/internal/pursuit/service.go` file an exact copy of the PR or of current main.
