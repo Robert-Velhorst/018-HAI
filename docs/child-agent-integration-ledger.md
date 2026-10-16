@@ -11532,3 +11532,28 @@ cancellation/owner-binding checks, and independent feed/bridge error states.
 These are missing from the stale local snapshot, not unintegrated local
 additions; the current-main files must be preserved. No files were copied or
 deleted, and this focused comparison does not establish full frontend parity.
+
+### October 16, 2026: feed-cursor rollback follow-up
+
+PR #153 (`ad8a72ea4c744a3bd8adf83907be87d92ae7351a`) is merged. PR #165
+(`d9a0b7d2e69eee89b58fec934f19048bec8776c1`) subsequently closed its two review
+findings: local-feed syncs clear HTTP-only cursor state, and migration 0128
+locks the feed table before refusing rollback when a cursor or sync claim is
+present. The 0128 down script changed during that hardening, but the migration
+runner hashes both up and down SQL. Databases that applied the original script
+therefore retain the old checksum (`6660b907490fb479b2959704b90a2566cf6c5b5b274cd5b30425786f61960f1c`).
+
+PR #170 (`codex/accountfeed-cursor-rollback-guard-20261016`) is being updated
+against current `main` to preserve strict checksum validation while allowing
+only that exact prior checksum for migration 0128, and to add a real-Postgres
+race regression test for a concurrent cursor write. It no longer duplicates
+the local-feed fix or the SQL lock. The source-only compatibility and test
+changes are not yet verified: local Go is unavailable, `git diff --check`
+must pass, and exact-head CI must complete before merge.
+
+The broader local-source reconciliation remains incomplete. The primary
+checkout is substantially divergent and dirty; several scratch snapshots
+contain secret-bearing environment files and unresolved conflicts. The July
+30 transcript archives still lack a complete semantic patch crosswalk and
+contain unresolved nonterminal or oversized records. No source archives,
+checkouts, evidence, or transcript files were deleted.
