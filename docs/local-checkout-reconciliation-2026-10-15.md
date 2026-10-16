@@ -391,3 +391,8 @@ The primary checkout's remaining `backend/internal/llm` modifications are not sa
 ## Workflow local-delta review (2026-10-16)
 
 The inspected workflow snapshot is older than current `main` and is not suitable for wholesale porting. The local durable scheduler uses a five-minute default poll interval, whereas main uses one minute and includes an explicit legacy-fallback gate; local variants of reminder delivery and HTTP handler do not contain the current partial-result and optional-body validation paths. Two untracked workflow tests also differ from main: the local project-dossier test embeds an AWS-shaped dummy key literal that current main constructs dynamically to avoid secret-scanner false positives, and the local reminder-context test expects a non-nil empty result for a zero-item run where main explicitly expects nil. No workflow changes were ported or deleted; tests were not run in this review.
+
+
+## Brain catalog local-delta review (2026-10-16)
+
+The primary checkout's `backend/internal/braincatalog/catalog.go` and `integration_boundary.go` are stale relative to current `main`. The local catalog does not contain the ChatGPT/Codex conversation-history MCP entry present on main, and its A2A metadata omits the current explicitly governed fixed-ngrok opt-in policy. The local braincatalog snapshot also marks `collection_screening.go` and maintenance-scheduler files deleted while current main retains its broader integration-screening and maintenance paths. No isolated local catalog addition was established as an improvement over main; nothing was ported or deleted. This was a targeted source/status review only; braincatalog tests were not run.
