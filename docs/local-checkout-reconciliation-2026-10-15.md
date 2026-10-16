@@ -936,3 +936,12 @@ Measured all 1,582 currently untracked, non-ignored files in this checkout using
 ## Exact duplicate output-log hash screen (2026-10-16)
 
 SHA-256 hashed all 1,501 untracked `output/` files (126,491,111 logical bytes). There are 32 duplicate-content groups spanning 517 files, including 376 zero-byte files. For non-empty duplicate groups, 141 files occupy 568,425 excess logical bytes beyond one copy per hash; the largest repeated group is a 345,029-byte Go test log present twice. Identical hashes establish byte duplication, not that the evidence was semantically incorporated or that any copy is dispensable. No outputs were deleted, and this potential saving is under 1 MiB.
+
+
+## Same-path untracked source review summary (2026-10-16)
+
+A read-only, file-by-file review of the 64 differing same-path non-output files found no confirmed production behavior to port. The variants mainly remove assertions or safety coverage, use stale APIs/toolchain versions, weaken source/redaction/approval tests, or contain machine-specific paths. The eight differing output reports already exist on `main`; their local differences substitute absolute machine paths for portable placeholders, so retain the canonical main copies. Sixteen non-output paths absent from main are captured local test evidence/logs; they were not treated as source changes.
+
+One local PostgreSQL test idea was worth adapting: separately exercise the explicit 51-row limit while preserving the existing default-limit assertion. The local variant incorrectly expected an explicit limit of 51 to remain capped at 20, which contradicts the current repository implementation (limits 1–500 are honored; zero or out-of-range values fall back to 20). The corrected additive regression is in PR #169 at head `adf550e4c9bd72d0a99a6fc2e8c6ad45116a169c`; its 30 exact-head checks were queued in run `38963702968` at this checkpoint. No local tests were run for this port.
+
+An unused `sentry-sdk` dependency removal in the local DeepTeam requirements remains unverified because telemetry ownership was not established; it was not ported. The local authentication tests, scripts, service locks, and evidence variants remain untouched. This review covers the enumerated 64 same-path differences, not the remaining tracked checkout diff or every output log. No local files were deleted.
