@@ -210,6 +210,16 @@ func TestFeedCursorRollbackWaitsForConcurrentSyncBeforePreflight(t *testing.T) {
 	}
 
 	rollbackDone := make(chan error, 1)
+	rollbackResultReceived := false
+	defer func() {
+		_ = writer.Rollback()
+		if !rollbackResultReceived {
+			select {
+			case <-rollbackDone:
+			case <-time.After(5 * time.Second):
+			}
+		}
+	}()
 	go func() {
 		rollbackDone <- RollbackMigration(db, migrations.Files, "pre", "pre/0128_account_feed_sync_cursor")
 	}()
@@ -219,6 +229,7 @@ func TestFeedCursorRollbackWaitsForConcurrentSyncBeforePreflight(t *testing.T) {
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-rollbackDone:
+			rollbackResultReceived = true
 			t.Fatalf("rollback finished before the feed update committed: %v", err)
 		default:
 		}
@@ -243,7 +254,9 @@ func TestFeedCursorRollbackWaitsForConcurrentSyncBeforePreflight(t *testing.T) {
 	if err := writer.Commit().Error; err != nil {
 		t.Fatalf("commit feed checkpoint: %v", err)
 	}
-	if err := <-rollbackDone; err == nil || !strings.Contains(err.Error(), "rollback refused: account feed cursor exists") {
+	err := <-rollbackDone
+	rollbackResultReceived = true
+	if err == nil || !strings.Contains(err.Error(), "rollback refused: account feed cursor exists") {
 		t.Fatalf("rollback result = %v, want populated-cursor refusal after sync commits", err)
 	}
 
