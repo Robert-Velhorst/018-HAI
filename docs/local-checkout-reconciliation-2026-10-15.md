@@ -661,3 +661,10 @@ This was a focused source comparison, not a Go test run. No files were staged, e
 ## Primary-checkout CrewAI runner delta (2026-10-16)
 
 Compared the primary checkout's `services/crewai-runner` working-tree delta with current `main`. The local variant deletes `app.py`, `test_app.py`, `requirements.in`, and `requirements.lock`; its `requirements.txt` diff adds 3,157 lines and removes 166, while the Dockerfile adds only a CrewAI telemetry-disable environment flag. The executable bounded planner and its tests are absent from this working tree state, so the larger dependency manifest is not a usable feature port. No CrewAI implementation or dependencies were ported, and no service tests were run.
+
+
+## Current untracked exact-main hash inventory (2026-10-16)
+
+Re-scanned the primary checkout's untracked files against current `main` (`1e18f90cfccf525781c4e3c7c819a26fceba2edb`) by Git blob SHA. The scan found 1,582 physical untracked files totaling 128,691,399 bytes. Seventy-three relative paths also exist on main; exactly one has an identical blob: `backend/internal/runtimelab/owner_gate_handler_test.go` (12,495 bytes, blob `7333d2daecfef82ae7a42b882c92f58901173165`). The other 72 same-path files differ, and 1,509 untracked paths are absent from main. This is a path/content inventory, not permission to remove all non-matches or a whole-device scan.
+
+A narrowly scoped removal attempt for the one verified exact copy was rejected by the command execution policy before running. The file remains present. No alternate deletion mechanism was used; the other 1,581 untracked files remain untouched.
