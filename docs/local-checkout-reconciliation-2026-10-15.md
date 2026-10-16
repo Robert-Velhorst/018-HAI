@@ -1049,3 +1049,13 @@ A second comparison of the actual primary working tree (including its tracked de
 The four paths appearing as additions relative to main are `.env-backend`, `.env-gateway`, `.env-idp`, and `nginx-config/nginx.conf`. The three environment files are excluded from publication and remain local because environment files can contain credentials or installation-specific values. The standalone Nginx config is not a new product implementation to port: prior inspection found a placeholder backend key, frontend routing to port 80 instead of the maintained port 8080, and missing current security/readiness proxy controls. The maintained `nginx-config/nginx.conf.template` remains authoritative. No values from the environment files were printed or uploaded.
 
 Thus the primary working tree currently yields no validated product-source batch that can be added to a PR: its large tracked delta contains removals of current-main safeguards, its four apparent additions are configuration/private files, and the 58 differing untracked source/test/script/doc files remain under semantic review. Existing focused code PRs (#162 and #170) remain separate and preserve their own implementation deltas. No tracked file was staged, committed, overwritten, or removed in this pass.
+
+
+## Exact-head PR CI refresh (2026-10-17)
+
+GitHub Actions workflow runs were checked by exact commit SHA:
+- PR #162 head `087a89a3868cb9d59397589c35df1d067d2ae7ce`, run `38917197931`: first-page jobs query returned 30 jobs, all completed successfully. This includes backend Go vet/test/build, Windows installer/process containment, and other repository jobs.
+- PR #170 head `e4f16a36f0b9e9d3749f5e28e9c7886ce48bb4b7`, run `38967169594`: first-page jobs query returned 30 jobs, all completed successfully. This includes backend Go vet/test/build, frontend, secret scan, cleanup-readiness contracts, and native Windows runtime regression jobs.
+- PR #151 head `7168b777e39a9d9dea126c5d5f6b7cd7d9ffcd90`, run `38976073626`: the first-page jobs query returned 30 jobs, all still queued at the time of this check.
+
+The Windows shell has no Go toolchain, and no database connection environment variables were present, so no local Go tests were claimed or run. PR #162 and #170 managed worktrees were each rechecked clean at the exact remote PR head before this CI refresh; their local copies remain present. Their remote PR branches and green CI provide recoverable copies, but the managed archive requests are still only queued: the attachments remain active and the directories still exist. No local disk space recovery is claimed.
