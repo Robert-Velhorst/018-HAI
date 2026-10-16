@@ -781,3 +781,13 @@ The local-only verification helper names were checked against their current-main
 - Local `normalizedEvidenceSentence` and current-main `normalizeEvidenceSentence` have different normalization semantics; no demonstrated regression or isolated improvement from the local version was established.
 
 This closes the 11-symbol local-only Go declaration screen recorded above: two changed test names and nine production symbols have been individually classified. It does not finish the semantic review of all modified Go files, frontend/IDP/configuration changes, or local worktrees.
+
+
+## Primary-checkout frontend declaration and lookup screen (2026-10-16)
+
+A static top-level declaration scan of 49 modified TypeScript files found two local-only declaration names:
+
+- `moduleForUrl` replaces current-main `moduleDocumentTitle` in the local module registry. The surrounding local diff also removes the `operational-brain` module and `framework-preference-history` section metadata, so this is not an additive registry improvement.
+- `WorkflowFrameworkSelectionListResponse` supports a local lookup that downloads up to 200 selections and searches client-side. Current main uses the exact owner-scoped `/framework-registry/selections/{id}` API. The local scan can miss older records and is less precise; it was rejected.
+
+This screen found no additive frontend declaration to port. It is a declaration/path comparison, not a complete semantic review of every modified Angular file or a browser/build run.
