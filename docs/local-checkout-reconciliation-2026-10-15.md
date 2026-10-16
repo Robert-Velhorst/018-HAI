@@ -543,3 +543,15 @@ Current GitHub main remains `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. PR #165 
 Compared the primary checkout's local `backend/internal/operations/service.go` and `domain.go` with current `main`. The local service compares raw evidence strings directly and does not update the raw-evidence SHA-256; local operation construction also omits that digest. Current main derives and persists `SourceEvidenceRawSHA256` and uses it when deciding whether an incoming evidence revision changed. This is an existing main-side safeguard, not a missing local improvement to port.
 
 The primary checkout reports `backend/internal/operations/repository.go` and `memory_repository.go` as deleted from its working tree, while those files exist on current main. Their absence is a local working-tree deletion state, not an instruction or cleanup recommendation; no restore or deletion was attempted. Other operation-related path differences still require review.
+
+
+## Reconciliation worktree staged-source safety sample (2026-10-16)
+
+The separate `D:/hai-source-reconciliation` worktree remains based on `3b15fe4a`, 72 commits behind current main, with its staged 310-path snapshot unchanged. A targeted comparison of four staged files with current main found the staged versions older in safety/runtime behavior:
+
+- `backend/internal/llm/maintenance_scheduler.go`: current main avoids starting the maintenance scheduler when the feature is disabled or there is no eligible work.
+- `backend/internal/operations/source_approval.go`: current main includes stronger reviewed-owner binding and execution-receipt checks than the staged snapshot.
+- `backend/internal/background/execute.go`: current main retains the locked, claimed safe-effect boundary and records uncertainty around execution outcomes.
+- `backend/internal/openclawmaintenance/worker.go`: staged and current versions differ in release-metadata validation and public-key representation; this targeted diff did not establish a beneficial staged-only change.
+
+This is a four-file source sample, not a semantic audit of the 310 staged paths. The whole staged batch remains unsuitable for publication; other paths require individual review. The worktree and staged index were left untouched.
