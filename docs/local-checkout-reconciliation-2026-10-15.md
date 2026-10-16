@@ -870,3 +870,15 @@ Two pairs have equal file lengths and duplicate-suffixed names. SHA-256 confirms
 - Volta pair (1,603,399,243 bytes each): `85da9f27d10a60112b327f9c4e478ecdf78dcd6db5ac8a0b8c96e24415bc3a65` versus `961fb8ff7619f95ef70a7b32c1737605fc61d14d0b3ffe79f5e410a5b6e94500`.
 
 The duplicate filename suffixes therefore do not establish redundant content. These archives remain retained; this pass did not parse their full event contents, integrate any embedded work, or delete files. The archive totals also remain separate from the primary and supplemental audit manifests, so totals must not be combined without path-level reconciliation.
+
+
+## Additional untracked regression-test semantic screen (2026-10-16)
+
+Compared four physically present, untracked test files against their same-path current-`main` versions using exact file diffs:
+
+- `backend/internal/operations/ingest_atomicity_regression_test.go`: the local variant removes expected `SourceEvidenceRawSHA256` values from seeded rows and expected results. Current main's assertions cover evidence-digest refresh integrity more strongly; do not port the local variant.
+- `backend/internal/operations/repository_ordering_test.go`: the local variant removes the `ClaimNext` deterministic ordering assertion and the receipt-backed approval predicate assertion. Current main retains both.
+- `backend/internal/opscontrol/emergency_stop_fanout_test.go`: the local variant drops the JSON request body and content-type setup from the pause-handler test. Current main retains the fuller request path.
+- `backend/internal/executionauth/transactional_test.go`: differences only simplify repeated fixed-time expressions; no additional assertion or behavior was identified.
+
+These four test files provide no safe code/test port from the local variants; preserve the current-main versions. This is a focused comparison, not closure of the remaining unreviewed test inventory. No tests were run because this pass was static, no local files were changed, and no cleanup was performed.
