@@ -487,3 +487,11 @@ The five added paths were screened individually:
 
 No local files or worktrees were changed or deleted. The divergent worktree remains retained; this targeted screen does not classify all 485 modified paths or prove that checkout can be removed.
 
+## Account-feed cursor follow-up and retained conflict worktree (2026-10-16)
+
+PR #153 was merged as `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`; current `main` is `1e18f90cfccf525781c4e3c7c819a26fceba2edb`, one documentation commit ahead. Review of the merged cursor diff identified two unresolved safety issues: the rollback presence check could race with a cursor write before the table lock, and local-file feed cursors could be persisted despite only HTTP feeds consuming the checkpoint. A focused fix is now proposed in [PR #165](https://github.com/Robert-Velhorst/018-HAI/pull/165), based directly on current `main`. It adds the rollback table lock and restricts durable cursor updates to HTTP feeds, with regression tests. GitHub Actions run 38926620939 was still queued at the last check; no test pass is claimed.
+
+The local cursor checkout `C:\\Users\\NO\\Documents\\Codex\\2026-10-14\\018-HAI-cursor-local` remains at `b7e3ad20` with ten modified account-feed files and two deleted files. The local snapshot is not a direct copy of current `main`; it was left untouched and is not considered eligible for cleanup.
+
+A separate PR-resolution checkout, `C:\\Users\\NO\\Documents\\Codex\\2026-10-11\\hai-pr36-integration`, currently reports 521 unresolved Git conflict entries. It was not edited, staged, or cleaned. Its unresolved state requires per-path review before any reconciliation or cleanup decision.
+
