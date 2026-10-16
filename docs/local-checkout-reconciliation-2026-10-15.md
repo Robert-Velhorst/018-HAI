@@ -1102,3 +1102,8 @@ The untracked Promptfoo runner lockfile is not a newer dependency update: it res
 
 A symbol-level crosswalk compared 81 modified Go production files in the primary working tree with the same paths on current `origin/main`. Four helper names present locally were absent from their same-path main files: pursuit `dashboardForPursuits`, router `initializeRoutes`, source `filterExtractionsForSources`, and verification helpers for evidence normalization, weekdays, and staleness. Targeted current-main inspection found newer or safer equivalents: pursuit dashboard projection and `DashboardForOwner`, lifecycle-context route initialization, owner-scoped ranked-extraction filtering, and verification sentence/freshness/conflict logic. These local names therefore do not establish missing behavior to port. This was a symbol crosswalk plus targeted code inspection, not a semantic review of every changed hunk across all 81 files; it does not clear those files for bulk upload or deletion.
 
+
+
+## Exact untracked-file recheck (2026-10-17)
+
+A fresh read-only scan inventoried all 1,581 physical untracked files in the primary checkout. Of these, 72 had a same-path blob in current `origin/main`; Git blob SHA-1 was computed from each local file as a stream and compared with the main tree object. No remaining untracked file was an exact content match. Therefore this scan authorized no additional deletion. Files with different content, ignored files, tracked checkout files, and generated evidence remain preserved pending their own review.
