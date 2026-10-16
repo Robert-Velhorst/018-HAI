@@ -945,3 +945,20 @@ A read-only, file-by-file review of the 64 differing same-path non-output files 
 One local PostgreSQL test idea was worth adapting: separately exercise the explicit 51-row limit while preserving the existing default-limit assertion. The local variant incorrectly expected an explicit limit of 51 to remain capped at 20, which contradicts the current repository implementation (limits 1–500 are honored; zero or out-of-range values fall back to 20). The corrected additive regression is in PR #169 at head `adf550e4c9bd72d0a99a6fc2e8c6ad45116a169c`; its 30 exact-head checks were queued in run `38963702968` at this checkpoint. No local tests were run for this port.
 
 An unused `sentry-sdk` dependency removal in the local DeepTeam requirements remains unverified because telemetry ownership was not established; it was not ported. The local authentication tests, scripts, service locks, and evidence variants remain untouched. This review covers the enumerated 64 same-path differences, not the remaining tracked checkout diff or every output log. No local files were deleted.
+
+
+## Primary checkout refresh (2026-10-17)
+
+GitHub confirms PR #153 is already merged. Its merge commit is `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`; current `main` remains at `76148882e6d9c7badcd81dc8a80830181c90a860`. No additional merge action was needed.
+
+The primary local checkout remains on `codex/hai-runtime-release` at `e07b9daeb3ba2630ecbe12a64d948f791203c241`, 440 commits behind its remote tracking branch and divergent from current `main`. Its working tree has 244 tracked modifications, 448 tracked deletions, and 1,582 untracked entries (2,274 total). The aggregate checkout is not suitable for a wholesale push.
+
+All 448 locally deleted tracked paths have same-path entries on current `main`. A blob comparison of the local HEAD versions with current `main` found eight identical blobs and 440 different blobs. Those paths are already absent from the working tree. Same-path presence does not prove that the historical local contents are semantically represented by `main`, and this pass made no additional deletion.
+
+The bounded comparison of 244 modified tracked files did not establish any exact working-tree-content duplicate on `main`; one compared path has no current-main counterpart. The source review already recorded in this report identifies local variants that remove newer durability, ownership, retry, endpoint-validation, or focus safeguards. No files were staged or pushed from the aggregate checkout.
+
+Among 81 non-output untracked files, 65 have same-path current-main entries: one has an identical blob and 64 differ. The remaining 16 absent paths are retained local evidence, logs, or state. The one exact untracked duplicate, `backend/internal/runtimelab/owner_gate_handler_test.go`, remains present because its prior deletion attempt was blocked by the local safeguard; it was not retried. No local files were changed or deleted during this refresh.
+
+PR #168 remains an open draft. Its focused `.env.example` change adds `generic-auto` to `AUTOMATION_API_ALLOWED_HOSTS`, which is absent from the current-main value; the current-main health-host allowlist already includes it. The change is already proposed in PR #168, so no duplicate change was created in this pass.
+
+This is a refreshed bounded checkout audit, not a whole-device audit or proof that any of the 2,274 entries is dispensable. Test output, transcript material, worktrees, and other local evidence remain retained.
