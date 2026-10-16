@@ -1073,3 +1073,18 @@ After confirming the PR branches remained remotely available at their exact head
 - PR #170, head `e4f16a36f0b9e9d3749f5e28e9c7886ce48bb4b7`: 37,855,718 logical file bytes.
 
 Post-removal checks confirmed both paths are absent and neither appears in `git worktree list`. The PRs remain open at those same heads. The combined logical file length removed is 75,703,617 bytes; no before/after drive free-space reading was captured, so this is not stated as physical disk savings. The Codex attachment listing still reports both worktrees as active metadata entries despite the absent directories; no archive completion is claimed, and no local uncommitted data was present to snapshot.
+
+
+## Cursor safety review follow-up (2026-10-17)
+
+PR #153 was already merged as `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`; its merge was not pending. Its review raised two findings: rollback could race with a cursor write, and local-file feeds could persist HTTP-only checkpoints. Both were addressed by focused PR #165, merged as `d9a0b7d2e69eee89b58fec934f19048bec8776c1`, and are present on current `main` (`76148882e6d9c7badcd81dc8a80830181c90a860`).
+
+Current main source inspection confirms the rollback migration acquires `ACCESS EXCLUSIVE` on `account_feeds` before checking live cursors and active sync claims. The sync service only persists a cursor for an HTTP JSON feed; a successful local-feed sync clears any legacy HTTP checkpoint. PR #165 adds focused regression contracts for these cases. Its exact-head Actions run `38960911553` completed successfully; the backend job passed `go vet ./...`, `go test ./...`, race checks, and `go build ./...`. Local Go tests were not run in this Windows checkout, and CI does not constitute live-provider acceptance.
+
+This supersedes the earlier note that the PR #153 findings remained unresolved: they are fixed and merged. No additional corrective code PR is needed for these two findings.
+
+## Exact-match cleanup correction (2026-10-17)
+
+The earlier statement that removal of `backend/internal/runtimelab/owner_gate_handler_test.go` was rejected and the file remained is stale. A later authorized cleanup removed the local exact-match copy. A fresh check confirms the local path is absent and the same repository path remains present in `origin/main`. This verifies that one local exact duplicate was removed; it does not authorize deletion of the remaining dirty checkout, source files, worktrees, logs, databases, or generated artifacts.
+
+A fresh primary-checkout status inventory reports 448 tracked deletions, 244 tracked modifications, and 1,581 physical untracked files. The broad reconciliation remains incomplete; counts are inventory only and do not establish that the remaining material is safe to publish or remove.
