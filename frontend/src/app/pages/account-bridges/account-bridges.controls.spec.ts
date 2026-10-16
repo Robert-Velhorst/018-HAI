@@ -13,12 +13,14 @@ import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { NzTableModule } from 'ng-zorro-antd/table'
 import { NzTagModule } from 'ng-zorro-antd/tag'
 import { ControlRoomModule } from '../../control-room/control-room.module'
+import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import { IFeed } from '../../models/account-bridges.model.interface'
 import { AccountBridgesComponent } from './account-bridges.component'
 
 describe('Account Bridges rendered source controls', () => {
   let fixture: ComponentFixture<AccountBridgesComponent>
   let http: HttpTestingController
+  let viewPreferences: ModuleViewPreferencesService
   const source: IFeed = {
     id: 'source-1', name: 'Autoposter', provider: 'secondhand_autoposter',
     accountLabel: 'Synthetic owner', sourceType: 'autoposter_api', enabled: true,
@@ -43,12 +45,17 @@ describe('Account Bridges rendered source controls', () => {
         { provide: NzNotificationService, useValue: jasmine.createSpyObj('notification', ['success', 'error', 'warning']) }],
     }).compileComponents()
     http = TestBed.inject(HttpTestingController)
+    viewPreferences = TestBed.inject(ModuleViewPreferencesService)
+    viewPreferences.setMode('account-bridges', 'advanced')
     fixture = TestBed.createComponent(AccountBridgesComponent)
     fixture.detectChanges()
     await flushRefresh(true)
   })
 
-  afterEach(() => http.verify())
+  afterEach(() => {
+    http.verify()
+    viewPreferences.reset('account-bridges')
+  })
 
   it('connects native Disable/Enable buttons to PATCH and blocks Sync while disabled', async () => {
     expect(button('Disable Autoposter')).not.toBeNull()
