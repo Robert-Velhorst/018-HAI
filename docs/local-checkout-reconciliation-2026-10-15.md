@@ -289,3 +289,10 @@ The model-maintenance audit worktree has 502 changed paths under HAI source root
 The OpenClaw-artifact audit worktree has 246 changed paths under HAI source roots; no present source path is missing from current `main`, while 42 paths deleted in that worktree remain on `main`. Current `main` contains the artifact download, reader, URL validation, and associated test files, with additional safety checks compared with the runtime-safety snapshot described above. These worktree changes were not ported wholesale because path existence alone does not establish semantic equivalence and the diffs include broad deletions.
 
 Neither worktree was modified or removed. This review confirms that the requested daily model check and the OpenClaw artifact code are already represented in current `main`; it does not prove every local change is redundant or safe to discard.
+
+
+## PR #36 local-delta conflict-state review (2026-10-16)
+
+The local `hai-pr36-local-delta` worktree is on detached `ed9b379c` and has 59 unmerged paths represented by 177 index-stage entries. It has no active `MERGE_HEAD`, so this is a retained conflict state rather than a merge that can simply be continued. PR #36 itself is already merged at `c31cec1`; the current `main` base is `ad8a72e`.
+
+All 59 conflicted paths exist on current `main`. For 32 paths, index stage 2 exactly matches the current-main blob. The remaining 27 stage-3 candidates differ from current `main` by a combined +533/−2,368 lines; the largest reductions are in pursuit logic and its tests, execution-auth storage/tests, workflow and operation tests, router wiring, migration checks, and CI contracts. This broad reduction may discard newer behavior, so it is not safe to resolve or push as a batch. The conflicted worktree and its index stages remain unchanged for semantic review.
