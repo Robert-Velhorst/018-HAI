@@ -842,3 +842,12 @@ The surrounding local configuration and Compose snapshot was not ported: it dele
 Rechecked the primary checkout's non-output untracked files against the refreshed `origin/main` tree. Of 81 non-output untracked paths, 65 have a same-path entry on `main`; blob hashing found only one exact content match: `backend/internal/runtimelab/owner_gate_handler_test.go` (12,495 bytes). The other 64 same-path Go test files differ in content. A bounded function-name comparison found no test function names in those local variants that are absent from their current-main counterparts. This does not prove their assertions or fixtures are equivalent, so the differing files are not declared safe to discard based on that comparison.
 
 The remaining 16 non-output paths absent from `main` are local state or captured test evidence/logs, not candidate source ports. All 81 files remain untouched. No cleanup was performed: the environment's deletion safeguard rejected the exact-match-file removal, and this record does not bypass that control. This is a bounded file/test-name comparison, not a semantic review of every test or a full disk inventory.
+
+
+## Main-versus-worktree physical-path and runtime safety refresh (2026-10-16)
+
+A refreshed `git ls-remote` confirms `origin/main` is still `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. Against the primary checkout's current filesystem, 1,657 paths tracked on main are marked deleted; a path-existence check found 1,580 already absent and 77 still present as untracked/local files. Thus the large deletion count is not equivalent to reclaimable workspace bytes. The exact blob comparison above remains the only confirmed identical content among those reviewed same-path test candidates; mismatching files and logs remain untouched.
+
+A targeted DSH execution-path comparison also rejects stale local runtime code as a port. Current main's `deepseek_harness.go` fails closed with `dshExecutionIsolationUnavailable` unless TLS peer pinning, verified OS-enforced least-privilege isolation, and an acknowledged server-to-Windows process-start protocol ordering Resume against emergency stop are available. The stale local branch's corresponding adapter lacks that execution-unavailable gate. This is source inspection only, not a runtime security test; retain current main's guard and do not replace it with the older branch implementation.
+
+No local files were changed or deleted by this audit. The broad checkout reconciliation remains incomplete, and no disk-space recovery is claimed.
