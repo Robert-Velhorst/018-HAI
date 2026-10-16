@@ -11,7 +11,9 @@ func TestAccountFeedCursorRollbackLocksBeforeCheckingAndDropping(t *testing.T) {
 		t.Fatalf("read account-feed cursor rollback: %v", err)
 	}
 	sql := strings.ToUpper(string(down))
-	lock := strings.Index(sql, "LOCK TABLE PUBLIC.ACCOUNT_FEEDS IN ACCESS EXCLUSIVE MODE")
+	lock := strings.Index(sql, "LOCK TABLE PUBLIC.ACCOUNT_FEEDS IN ACCESS EXCLUSIVE MODE",
+		"SYNC_CURSOR <> ''",
+		"SYNC_TOKEN IS NOT NULL")
 	check := strings.Index(sql, "IF EXISTS")
 	drop := strings.Index(sql, "ALTER TABLE PUBLIC.ACCOUNT_FEEDS")
 	if lock < 0 || check < 0 || drop < 0 || !(lock < check && check < drop) {
