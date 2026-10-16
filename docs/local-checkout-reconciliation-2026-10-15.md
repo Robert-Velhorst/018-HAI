@@ -594,3 +594,8 @@ A targeted screen of the staged frontend index found safety and build-contract r
 - The staged `app.module.ts` removes the shared Control Room module import and inlines an icon list, while several staged route/component/spec files delete significant current-main content. No coherent, tested replacement was established.
 
 These are targeted source/configuration comparisons, not a frontend build or browser acceptance run. No code or configuration was ported.
+
+
+## Reconciliation scripts local-delta screen (2026-10-16)
+
+A path/numstat inventory of the staged script group compared with current `main` found 34 changed script files, all existing files with net deletions, plus one staged deletion: `scripts/test_docker_build_context.py`. Large deletions include the Windows backup/recovery harness, isolated acceptance/recovery scripts, installer tests, and secret-scan handling. This screen does not prove every deleted assertion is safety-critical, but it identifies no additive script implementation to port and confirms the staged script snapshot is materially reduced relative to main. No script was ported or changed locally.
