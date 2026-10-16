@@ -926,3 +926,8 @@ The current local branch is `codex/hai-runtime-release` at `e07b9daeb3ba2630ecbe
 ## Full untracked-path blob screen (2026-10-16)
 
 Reconciled the filesystem-level count with Git's directory-collapsed status display. `git status --short` shows 67 untracked status entries because directories can be collapsed; `git ls-files --others --exclude-standard` enumerates 1,582 untracked files. Of these, 73 have same-path entries in the current `origin/main` tree. Hashing those 73 local files against their main blobs found one exact match, `backend/internal/runtimelab/owner_gate_handler_test.go`; the other 72 differ. The remaining 1,509 untracked paths are not present in the main tree and were not classified as safe-to-remove by this comparison. The exact match remains untouched because the local deletion safeguard previously rejected removal. This hash screen does not semantically review the differing files or classify every absent path; no local files were changed or deleted.
+
+
+## Untracked workspace size inventory (2026-10-16)
+
+Measured all 1,582 currently untracked, non-ignored files in this checkout using filesystem logical lengths. All 1,582 paths existed at measurement time and total 128,691,399 bytes. The `output/` directory accounts for 1,501 files / 126,491,111 bytes; the largest individual JSONL logs are about 7.17 MB each. This is a workspace-only inventory, not allocated disk usage or a whole-device scan. Most output files are absent from `main`, and the log/evidence contents have not all been semantically reviewed or summarized; no files were removed. This inventory therefore identifies a future review area, not an approved cleanup set, and does not validate the larger retained transcript archive totals.
