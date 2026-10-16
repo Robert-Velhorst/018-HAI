@@ -56,6 +56,8 @@ export interface ISyncReport {
   cursor?: string
   errors?: string[]
   recorded?: boolean
+  hasMore?: boolean
+  tombstonesApplied?: number
 }
 
 export interface IFeedAudit {

@@ -27,6 +27,8 @@ const (
 	SourceLocalJSONFile SourceType = "local_json_file"
 	// SourceHTTPJSONFeed reads items from an HTTP JSON feed URL (only if enabled).
 	SourceHTTPJSONFeed SourceType = "http_json_feed"
+	// SourceAutoposterAPI reads explicitly enabled, owner-bound reference records.
+	SourceAutoposterAPI SourceType = "autoposter_api"
 )
 
 // Feed is a registered account feed configuration.
@@ -78,6 +80,13 @@ func (f Feed) Validate() error {
 	case SourceHTTPJSONFeed:
 		if strings.TrimSpace(f.URL) == "" {
 			return fmt.Errorf("accountfeed: url required for %s", f.SourceType)
+		}
+		if err := validateFeedURL(f.URL); err != nil {
+			return err
+		}
+	case SourceAutoposterAPI:
+		if strings.TrimSpace(f.URL) == "" || strings.TrimSpace(f.AccountLabel) == "" {
+			return fmt.Errorf("accountfeed: Autoposter endpoint and remote owner required")
 		}
 		if err := validateFeedURL(f.URL); err != nil {
 			return err

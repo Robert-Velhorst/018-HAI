@@ -40,6 +40,7 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
   bridgeLoadError = ''
   lastLoadedAt?: Date
   syncing: Record<string, boolean> = {}
+  changing: Record<string, boolean> = {}
   syncingAll = false
   feedback?: ActionFeedback
   selectedFeedId?: string
@@ -366,7 +367,8 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
 
   sync(feedHealth: IFeedHealth): void {
     const feedId = feedHealth.feed.id
-    if (this.loading || this.feedLoadError || !this.isFeedSyncable(feedHealth) || this.syncing[feedId] || this.syncingAll) return
+    if (!feedHealth.feed.enabled || this.loading || this.feedLoadError || !this.isFeedSyncable(feedHealth) ||
+      this.syncing[feedId] || this.syncingAll || this.changing[feedId]) return
 
     this.feedback = undefined
     this.syncing[feedId] = true
@@ -389,6 +391,45 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
         const text = `${feedHealth.feed.name}: sync could not be confirmed. Refresh feed status; an interrupted import needs operator review before retrying.`
         this.feedback = { kind: 'error', text }
         this.notification.error('Sync failed', text)
+        this.refresh()
+      },
+    })
+  }
+
+  setEnabled(feedHealth: IFeedHealth, enabled: boolean): void {
+    const feed = feedHealth.feed
+    if (this.pageDestroyed || feed.sourceType !== 'autoposter_api' || this.changing[feed.id]) return
+
+    this.feedback = undefined
+    this.loadSubscription?.unsubscribe()
+    this.loading = false
+    this.changing[feed.id] = true
+    this.service.setEnabled(feed.id, enabled).pipe(
+      timeout(this.operationTimeoutMs),
+      takeUntil(this.destroyed$),
+      finalize(() => { this.changing[feed.id] = false }),
+    ).subscribe({
+      next: (saved) => {
+        if (saved?.id !== feed.id || saved.enabled !== enabled) {
+          const text = `${feed.name}: HAI did not confirm the requested source state. Refresh before trying again.`
+          this.feedback = { kind: 'error', text }
+          this.notification.error('State not confirmed', text)
+        } else {
+          this.feeds = this.feeds.map((entry) => entry.feed.id === feed.id
+            ? { ...entry, feed: saved }
+            : entry)
+          const text = enabled
+            ? `${feed.name}: enabled for manual sync. Enabling did not start a source read.`
+            : `${feed.name}: disabled. New syncs and uncommitted pages are blocked; imported references are retained.`
+          this.feedback = { kind: 'success', text }
+          this.notification.success(enabled ? 'Source enabled' : 'Source disabled', text)
+        }
+        this.refresh()
+      },
+      error: () => {
+        const text = `${feed.name}: source state could not be confirmed. Refresh status before retrying; do not assume the change was saved.`
+        this.feedback = { kind: 'error', text }
+        this.notification.error('State not confirmed', text)
         this.refresh()
       },
     })
@@ -565,9 +606,15 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
     const created = Number.isFinite(report.operationsCreated) ? report.operationsCreated : 0
     const privacyFlagged = Number.isFinite(report.privacyFlagged) ? report.privacyFlagged : 0
     const errors = Array.isArray(report.errors) ? report.errors.length : 0
-    const detail = errors || report.recorded !== true ? ` ${errors ? `HAI reported ${errors} sync issue${errors === 1 ? '' : 's'}: ` : ''}${this.reportErrorSummary(report)} Review before relying on the import.` : ''
-    const text = `${feed.feed.name}: ${read} items read, ${created} new operations, ${privacyFlagged} privacy-flagged.${detail}`
-    return { kind: errors || report.recorded !== true ? 'warning' : 'success', text }
+    const references = feed.feed.sourceType === 'autoposter_api'
+    const newEntries = references ? 'reference revisions' : 'operations'
+    const deleted = Number.isFinite(report.tombstonesApplied) ? report.tombstonesApplied ?? 0 : 0
+    const incomplete = report.hasMore === true
+    const detail = errors || report.recorded !== true || incomplete
+      ? ` ${errors ? `HAI reported ${errors} sync issue${errors === 1 ? '' : 's'}: ` : ''}${report.recorded !== true || errors ? `${this.reportErrorSummary(report)} ` : ''}${incomplete ? 'More source pages remain; run Sync again to continue.' : ''}Review before relying on the import.`
+      : ''
+    const text = `${feed.feed.name}: ${read} items read, ${created} new ${newEntries}, ${deleted} deletion markers processed, ${privacyFlagged} privacy-flagged.${detail}`
+    return { kind: errors || report.recorded !== true || incomplete ? 'warning' : 'success', text }
   }
 
   private reportErrorSummary(report: ISyncReport): string {
