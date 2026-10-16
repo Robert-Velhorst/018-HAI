@@ -164,6 +164,195 @@ func TestRunDueModelMaintenanceReturnsWithoutWorkWhenAlreadyCancelled(t *testing
 	}
 }
 
+func TestEnsureModelFreshCancelsDuringOllamaInspectionWithoutFailureRecord(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
+	requestStarted := make(chan struct{})
+	requestCancelled := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			t.Errorf("inspection path = %q, want /api/tags", r.URL.Path)
+			http.Error(w, "unexpected path", http.StatusNotFound)
+			return
+		}
+		close(requestStarted)
+		<-r.Context().Done()
+		close(requestCancelled)
+	}))
+	defer server.Close()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.LocalModelsAllowed = true
+	index := providerIndex(t, policy, "ollama")
+	provider := policy.Providers[index]
+	provider.Enabled = true
+	provider.Local = true
+	provider.EndpointURL = server.URL
+	if len(provider.Models) == 0 {
+		t.Fatal("Ollama test policy has no configured models")
+	}
+	model := provider.Models[0]
+	model.Enabled = true
+	provider.Models[0] = model
+	policy.Providers[index] = provider
+
+	history := &fakeModelMaintenanceRepository{}
+	service := &Service{
+		policy:             policy,
+		maintenanceHistory: history,
+		maintenanceRunning: map[string]*sync.Mutex{},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultChannel := make(chan ModelMaintenanceResult, 1)
+	go func() {
+		resultChannel <- service.ensureModelFreshWithContext(ctx, provider, model)
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("maintenance did not reach the Ollama model inspection request")
+	}
+	cancel()
+
+	select {
+	case result := <-resultChannel:
+		if result.Status != "cancelled" {
+			t.Fatalf("maintenance result = %#v, want cancelled", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("maintenance did not return after inspection cancellation")
+	}
+	select {
+	case <-requestCancelled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Ollama inspection request did not observe context cancellation")
+	}
+	if len(history.records) != 0 {
+		t.Fatalf("cancelled inspection wrote maintenance history: %#v", history.records)
+	}
+}
+
+func TestGenerateContextCancelsOllamaPullBeforeInferenceOrFallback(t *testing.T) {
+	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
+	pullStarted := make(chan struct{})
+	releasePull := make(chan struct{})
+	pullHandlerDone := make(chan struct{})
+	var releasePullOnce sync.Once
+	releaseAcceptedPull := func() { releasePullOnce.Do(func() { close(releasePull) }) }
+	var generationCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"models": []map[string]string{{"name": "phi3:mini", "digest": "sha256:current"}},
+			})
+		case "/api/pull":
+			defer close(pullHandlerDone)
+			close(pullStarted)
+			<-releasePull
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+		case "/api/generate", "/v1/chat/completions":
+			generationCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]string{"response": "must not run"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer func() {
+		releaseAcceptedPull()
+		server.CloseClientConnections()
+		server.Close()
+	}()
+
+	policy := testPolicyWithoutEndpoints()
+	policy.LocalModelsAllowed = true
+	index := providerIndex(t, policy, "ollama")
+	provider := policy.Providers[index]
+	provider.Enabled = true
+	provider.Local = true
+	provider.EndpointURL = server.URL
+	if len(provider.Models) == 0 {
+		t.Fatal("Ollama test policy has no configured models")
+	}
+	model := provider.Models[0]
+	model.Enabled = true
+	provider.Models[0] = model
+	policy.Providers[index] = provider
+
+	maintenanceHistory := &fakeModelMaintenanceRepository{}
+	generationHistory := &fakeGenerationHistoryRepository{}
+	service := withTrustedTestFinalEffects(t, &Service{
+		policy:             policy,
+		usage:              map[string]UsageCounter{},
+		maintenanceHistory: maintenanceHistory,
+		generationHistory:  generationHistory,
+		maintenanceRunning: map[string]*sync.Mutex{},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	resultChannel := make(chan *GenerationResult, 1)
+	errorChannel := make(chan error, 1)
+	go func() {
+		result, err := service.Generate(withTrustedTestEffect(GenerateRequest{
+			Task:                "Summarize this note",
+			CancellationContext: ctx,
+			RouteDecision: &RouteDecision{
+				SelectedProviderID: provider.ID,
+				SelectedModelID:    model.ID,
+				SelectedModelName:  model.Name,
+				Tier:               model.Tier,
+				FallbackPath: []FallbackOption{{
+					ProviderID: "unused-fallback",
+					ModelID:    "unused-model",
+				}},
+			},
+		}))
+		resultChannel <- result
+		errorChannel <- err
+	}()
+
+	select {
+	case <-pullStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("generation did not reach the local Ollama pull")
+	}
+	cancel()
+
+	select {
+	case result := <-resultChannel:
+		if err := <-errorChannel; err != nil {
+			t.Fatalf("Generate returned error after cancellation: %v", err)
+		}
+		if result == nil || result.Status != "cancelled" {
+			t.Fatalf("cancelled generation = %#v, want cancelled", result)
+		}
+		if result.InputTokens != 0 || result.OutputTokens != 0 || result.EstimatedCostEUR != 0 {
+			t.Fatalf("cancelled generation recorded usage before inference: %#v", result)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("generation did not stop after maintenance cancellation")
+	}
+	// A pull accepted by Ollama may continue remotely after the caller stops
+	// waiting. Release the fixture response so cleanup is deterministic; the
+	// important boundary is that HAI does not continue to inference or fallback.
+	releaseAcceptedPull()
+	select {
+	case <-pullHandlerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("local Ollama pull fixture did not finish after release")
+	}
+	if got := generationCalls.Load(); got != 0 {
+		t.Fatalf("cancelled maintenance continued to inference or fallback: %d provider calls", got)
+	}
+	if len(service.usage) != 0 {
+		t.Fatalf("cancelled maintenance recorded generation usage: %#v", service.usage)
+	}
+	if len(generationHistory.records) != 1 || generationHistory.records[0].Status != "cancelled" {
+		t.Fatalf("generation history = %#v, want one cancelled record", generationHistory.records)
+	}
+}
+
 func TestEnsureModelFreshReleasesLeaseWhenContextCancelsDuringAcquisition(t *testing.T) {
 	t.Setenv("LLM_MODEL_MAINTENANCE_ENABLED", "true")
 	policy := testPolicyWithoutEndpoints()

@@ -22,6 +22,12 @@ type schedulerStub struct {
 	processError         error
 }
 
+type sweepObserverStub struct{ observations []SweepMetrics }
+
+func (s *sweepObserverStub) ObserveOutcomeMonitorSweep(observation SweepMetrics) {
+	s.observations = append(s.observations, observation)
+}
+
 type cancelingDiscoveryScheduler struct {
 	*schedulerStub
 	cancel   context.CancelFunc
@@ -135,6 +141,33 @@ func TestRunMonitorSweepProcessesEveryDueScope(t *testing.T) {
 	}
 }
 
+func TestRunMonitorSweepObservesBoundedSummary(t *testing.T) {
+	stub := &schedulerStub{scopes: []Scope{{OwnerID: "owner-a", WorkspaceID: "workspace-a"}, {OwnerID: "owner-b", WorkspaceID: "workspace-b"}}}
+	observer := &sweepObserverStub{}
+	if err := runMonitorSweep(t.Context(), stub, time.Now().UTC(), func() bool { return true }, observer); err != nil {
+		t.Fatal(err)
+	}
+	if len(observer.observations) != 1 {
+		t.Fatalf("observations = %d, want 1", len(observer.observations))
+	}
+	got := observer.observations[0]
+	if got.Result != SweepResultCompleted || got.DueCollectionScopes != 2 || got.DueCompositionScopes != 0 {
+		t.Fatalf("observation = %+v, want completed with two collection scopes", got)
+	}
+}
+
+func TestRunMonitorSweepObservesCancellationAsInterrupted(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	observer := &sweepObserverStub{}
+	if err := runMonitorSweep(ctx, &schedulerStub{}, time.Now().UTC(), func() bool { return true }, observer); !errors.Is(err, context.Canceled) {
+		t.Fatalf("runMonitorSweep error = %v, want context.Canceled", err)
+	}
+	if len(observer.observations) != 1 || observer.observations[0].Result != SweepResultInterrupted {
+		t.Fatalf("observations = %+v, want one interrupted sweep", observer.observations)
+	}
+}
+
 func TestRunMonitorSweepReturnsSanitizedAggregateFailure(t *testing.T) {
 	stub := &schedulerStub{scopes: []Scope{{OwnerID: "owner-a", WorkspaceID: "workspace-a"}}, processError: errors.New("Authorization: Bearer secret")}
 	err := runMonitorSweep(t.Context(), stub, time.Date(2026, time.August, 5, 9, 0, 0, 0, time.UTC), func() bool { return true })
@@ -213,7 +246,8 @@ func TestRegisterDurableSchedulingDefersWithoutSafetyGate(t *testing.T) {
 		WorkerID: "outcome-monitor-test", Queue: "outcome-monitor", Now: func() time.Time { return now },
 	})
 	service := &schedulerStub{scopes: []Scope{{OwnerID: "owner-a", WorkspaceID: "workspace-a"}}}
-	if err := RegisterDurableScheduling(runner, service, nil, time.Hour); err != nil {
+	observer := &sweepObserverStub{}
+	if err := RegisterDurableScheduling(runner, service, nil, time.Hour, observer); err != nil {
 		t.Fatalf("RegisterDurableScheduling: %v", err)
 	}
 	if processed, err := runner.RunOnce(t.Context()); err != nil || processed != 1 {
@@ -224,6 +258,9 @@ func TestRegisterDurableSchedulingDefersWithoutSafetyGate(t *testing.T) {
 	}
 	if len(repository.jobs) != 1 {
 		t.Fatalf("durable jobs = %d, want the deferred occurrence retained", len(repository.jobs))
+	}
+	if len(observer.observations) != 1 || observer.observations[0].Result != SweepResultSkipped {
+		t.Fatalf("observations = %+v, want one skipped sweep", observer.observations)
 	}
 	for _, job := range repository.jobs {
 		if job.Status != models.DurableJobPending || job.Attempts != 0 || !job.RunAt.Equal(now.Add(durablejob.DefaultDeferDelay)) {
