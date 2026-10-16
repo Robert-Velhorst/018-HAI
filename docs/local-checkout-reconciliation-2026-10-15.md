@@ -536,3 +536,10 @@ Targeted semantic screens found that the local phase-2 permission contract uses 
 A targeted comparison of the local modified `backend/internal/accountfeed/bridge.go` and `permission_registry.go` against current `main` initially appeared to expose a provider-grant distinction. Direction was verified against both complete files: current `main` already defines `ReportsCredentialGrant()`, excludes Google OAuth client bootstrap credentials from owner grants, and gates the `Granted` projection on that predicate. The local checkout is the older variant and lacks this protection; there is no missing change to port from these files. This correction supersedes any tentative interpretation that the local variant introduced the guard.
 
 Current GitHub main remains `1e18f90cfccf525781c4e3c7c819a26fceba2edb`. PR #165 exact-head CI run 38926620939 was still nonterminal at the last poll: 20 jobs completed, one in progress, nine queued, and no failed jobs. No full-green claim is made.
+
+
+## Operations ledger source cross-check (2026-10-16)
+
+Compared the primary checkout's local `backend/internal/operations/service.go` and `domain.go` with current `main`. The local service compares raw evidence strings directly and does not update the raw-evidence SHA-256; local operation construction also omits that digest. Current main derives and persists `SourceEvidenceRawSHA256` and uses it when deciding whether an incoming evidence revision changed. This is an existing main-side safeguard, not a missing local improvement to port.
+
+The primary checkout reports `backend/internal/operations/repository.go` and `memory_repository.go` as deleted from its working tree, while those files exist on current main. Their absence is a local working-tree deletion state, not an instruction or cleanup recommendation; no restore or deletion was attempted. Other operation-related path differences still require review.
