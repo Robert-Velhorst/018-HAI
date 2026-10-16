@@ -752,3 +752,15 @@ Two more local-only declarations were checked against current `main`:
 - The local route file adds `initializeRoutes` as a wrapper around `context.Background()`. Current main instead requires the application lifecycle context and rejects nil, preventing background workers from escaping server cancellation. The surrounding local route diff also removes current-main durable automation outbox wiring, operations-control approval resolvers/review persistence, the operational-graph routes, and the ChatGPT task-log adapter. It is a broad regression snapshot, not a route feature to port.
 
 This was source-level comparison only; no Go tests or server lifecycle/runtime acceptance were run. No route or pursuit files were changed.
+
+
+## Primary-checkout verification-service screen (2026-10-16)
+
+The local `backend/internal/verification/service.go` differs from current `main` by reverting several operational and evidence controls:
+
+- It removes `AnswerContext` and `AnswerWithContext`, so verification and connected-source search are no longer bound to the caller's cancellation context.
+- It lowers durable-memory promotion thresholds from 0.75 confidence and 0.75 evidence quality to 0.70 and 0.55.
+- It removes the named untrusted-provenance explanation contract and changes verification status evaluation to omit request/mode context.
+- Its local-only helper names reflect an older service decomposition; they do not establish additional behavior beyond current-main equivalents.
+
+This source comparison identifies no safe service implementation to port. It was not runtime- or test-validated in this pass. No verification code was changed.
