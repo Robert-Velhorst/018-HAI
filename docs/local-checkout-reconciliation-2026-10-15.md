@@ -887,3 +887,8 @@ These four test files provide no safe code/test port from the local variants; pr
 ## Reminder zero-work result contract comparison (2026-10-16)
 
 Compared the untracked local `backend/internal/workflow/reminder_context_boundaries_test.go` with the current-main version. Its cancellation-boundary assertion requires a non-nil summary even when `count == 0`. Current `backend/internal/workflow/reminder_delivery.go` deliberately returns `nil, err` from `reminderDeliveryPartialResult` when no candidate has been checked; the zero-work contract is also reflected by the main test's conditional assertion. Therefore the local test would contradict the implemented API and is not a safe test-only port. No workflow code or test was changed, and no test was run in this comparison.
+
+
+## Trello reopen test harness comparison (2026-10-16)
+
+Compared the untracked local `backend/internal/source/trello_reopen_test.go` with the same-path current-main file. Both local test names already exist on main. The local harness returns an empty response for every Trello `/actions` request; current main exercises the `filter=all` action history and synthesizes `updateCard` events from the card fixture. Thus the local file is not additive and would remove action-history coverage if used as a replacement. No source/test was changed and no test was run.
