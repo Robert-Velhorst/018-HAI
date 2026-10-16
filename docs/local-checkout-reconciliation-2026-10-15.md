@@ -735,3 +735,10 @@ Compared the working checkout's ops-control authorization and service changes wi
 - A nearby local LLM-policy test rename also drops current-main query-parameter and URL-fragment rejection cases while retaining only TLS and embedded-credential checks.
 
 These local changes are rejected as a batch; the additional test name does not justify porting them independently without a deliberate policy change and a complete test of the surrounding contracts. This was source-diff review only; no Go tests or runtime emergency-stop acceptance were run. No code was ported and no local files were changed.
+
+
+## Primary-checkout Go declaration and source-pagination screen (2026-10-16)
+
+A static declaration-name screen across 141 modified tracked Go files found 11 local-only function names compared with their current-main same-path files. This is a candidate-discovery heuristic, not semantic equivalence evidence. Focused inspection of `backend/internal/source/handler.go` found that the local `Extractions` handler loads the owner's extraction collection, filters it in memory, then truncates the result. Current main instead requires `ExtractionPageService.ExtractionPageForOwner` and returns the bounded page and total count. The local path is not a safe performance or data-access improvement and was not ported.
+
+The other local-only declarations span pursuit, routing, and verification service files; some of those packages have already had separate regression findings recorded above, but this declaration scan does not classify all nine remaining production symbols. The modified-file audit is therefore still incomplete. No local source was edited or removed, and no tests were run.
