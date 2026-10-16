@@ -6,7 +6,7 @@ LOCK TABLE public.account_feeds IN ACCESS EXCLUSIVE MODE;
 DO $$
 BEGIN
     IF EXISTS (
-        SELECT 1 FROM public.account_feeds WHERE sync_cursor <> '' LIMIT 1
+        SELECT 1 FROM public.account_feeds WHERE sync_cursor <> '' OR sync_token IS NOT NULL LIMIT 1
     ) THEN
         RAISE EXCEPTION 'rollback refused: account feed cursor exists; preserve or explicitly reset the checkpoint first'
             USING ERRCODE = '55000';
