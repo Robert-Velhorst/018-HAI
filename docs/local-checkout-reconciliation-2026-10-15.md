@@ -723,3 +723,15 @@ A fresh local read-only check compared the working checkout against `origin/main
 PR #165 remains open at `89e03281252d85b17e71e7bf49f6119b3c0771b2`. Its exact-head CI run `38926620939` still has queued Python runner jobs; completed checks are not a full green run. The two previously recorded review findings remain unresolved. It is not treated as integrated or cleanup evidence.
 
 This refresh is an inventory and naming-level screen, not a complete semantic review of the 59 differing files or of every HAI-related file/worktree on the device. No local deletion or product-code port is claimed.
+
+
+## Primary-checkout emergency-stop authorization screen (2026-10-16)
+
+Compared the working checkout's ops-control authorization and service changes with current `main`:
+
+- The local `authorizeSafetyChange` change removes the guard that rejects clearing an emergency stop whose source is immutable and not `persisted_control`. This weakens the provenance boundary for emergency-stop recovery.
+- The local service removes `WithControlReviewRepository` and changes an already-disengaged stop from `ErrControlChangeNotRequired` to success. These are contract changes, not isolated test cleanup.
+- The local test renamed to `TestSafetyWeakeningRejectsMissingOwnerIdentity` replaces the current-main test that exercises recovery when the configured owner is empty and a valid authenticated actor is present. It therefore asserts a different policy, not additional coverage of the existing behavior.
+- A nearby local LLM-policy test rename also drops current-main query-parameter and URL-fragment rejection cases while retaining only TLS and embedded-credential checks.
+
+These local changes are rejected as a batch; the additional test name does not justify porting them independently without a deliberate policy change and a complete test of the surrounding contracts. This was source-diff review only; no Go tests or runtime emergency-stop acceptance were run. No code was ported and no local files were changed.
