@@ -522,3 +522,10 @@ This is not assertion-level equivalence, compile validation, or a test run. Loca
 ## PR #165 CI status refresh (2026-10-16)
 
 A later poll of exact-head run 38926620939 found 20 jobs completed, ten Python-runner jobs queued, zero failed jobs, and no jobs currently in progress. The run is not terminal while those jobs remain queued, so the required check suite is still unverified as a whole. This supersedes the earlier progress snapshot in this ledger; no complete-green claim is made.
+
+
+## Remaining untracked support-file content comparison (2026-10-16)
+
+Compared 29 untracked, non-output files in the primary checkout against same-path files on current `main` by Git blob SHA. All 29 differ, but the local copies are shorter than current main in 27 cases; two are nearly line-count-equal. The local Promptfoo lockfile is larger than main, which is not evidence of a safe or beneficial update. No local file was selected for port by path or size alone.
+
+Targeted semantic screens found that the local phase-2 permission contract uses a shell/find ownership migration with additional container capabilities, while current main uses the backend image's narrow `chown` entrypoint and only the required `CHOWN` capability. Local Windows runtime scripts pin Go 1.25.13 while current main pins Go 1.27.2. The local Windows process-containment test also lacks current-main post-root-exit descendant draining and bounded cleanup verification. These local variants are stale/regressive candidates, not improvements to port. Remaining content differences have not all been semantically inspected; no equivalence or full audit claim is made.
