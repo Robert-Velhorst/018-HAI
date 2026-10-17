@@ -131,3 +131,17 @@ The current cached `origin/main` tree contains regression coverage matching the 
 The related uncommitted account-feed cursor work in `C:\\Users\\NO\\Documents\\Codex\\2026-07-26\\f\\work\\018-HAI-cursor-prototype` is based on that checkout's stale 2026-10-13 `origin/main`, not today's main. Current main already contains a more complete implementation and regression coverage for cursor presence, explicit clearing, failed/partial sync retention, query preservation, NUL rejection, and migration rollback safety. The exact PR #153 head `0615d096ccfa6af9f813a02537be816a9649033c` has GitHub Actions CI run 1707 completed successfully; the PR is merged. The leftover workspace also has two unrelated test-only edits not present on current main; they were not ported because this review found no current failure demonstrating they are needed. The workspace still has local changes and was not removed.
 
 The documentation gap around committed cursor semantics is being addressed separately in PR #176. No archived transcript, checkout, source file, or worktree was deleted by this review.
+
+
+## Historical workflow and framework gap check (2026-10-17)
+
+The final note in transcript `019fb1d3-1ebf-7b63-897a-a4fa0fbf1f10` lists six then-open workflow/framework issues. A read-only check against the current cached `origin/main` tree at `498dcf7800f86be8c2e799f44d27ff649413881a` found the following:
+
+- Exact `automation-action:<scope>:<digest>` approval binding exists in `backend/internal/automation/approval_proof.go` and `automation_service.go`, with binding/consumption tests.
+- Task validation now builds separate per-criterion results for task success, framework evidence, framework completion, and framework assurance in `backend/internal/task/validation.go`.
+- The Framework Registry page template is present and 37,387 bytes; it is not empty.
+- Approved-review recovery now has an owner-scoped backend service and POST route at `/api/v1/tasks/review-queue/reconcile`, plus frontend preview/apply controls and regression tests.
+- Constitution history has service, handler, route, and frontend integration.
+- Framework preference changes have append-only persistence, query/history APIs, integrity checks, and migration contract tests.
+
+The transcript's historical gaps therefore do not identify source changes to port into current main. This is source/test presence evidence, not a claim that all affected runtime paths were freshly executed in this audit. No source or archive file was deleted.
