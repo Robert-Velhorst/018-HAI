@@ -266,6 +266,7 @@ if ($Action -eq 'Prepare') {
     }
     Copy-Item -LiteralPath (Join-Path $repo 'nginx-config/nginx.conf.template') -Destination (Join-Path $EvidenceDirectory 'nginx.conf.template')
     Copy-Item -LiteralPath (Join-Path $repo 'services/postgres-runtime-role/provision-runtime-role.sh') -Destination (Join-Path $EvidenceDirectory 'provision-runtime-role.sh')
+    Copy-Item -LiteralPath (Join-Path $repo 'scripts/postgres18-volume-preflight.sh') -Destination (Join-Path $EvidenceDirectory 'postgres18-volume-preflight.sh')
     Copy-Item -LiteralPath (Join-Path $repo 'init.sql') -Destination (Join-Path $EvidenceDirectory 'init.sql')
     New-Item -ItemType Directory -Path (Join-Path $EvidenceDirectory 'sources'), (Join-Path $EvidenceDirectory 'sites-enabled') | Out-Null
     [IO.File]::WriteAllText((Join-Path $EvidenceDirectory 'sources/acceptance.txt'), 'Synthetic HAI acceptance source. No personal records.', [Text.UTF8Encoding]::new($false))
@@ -298,7 +299,10 @@ if ($Action -eq 'Prepare') {
         if ($name -match '^postgres-') {
             $s.image = 'postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873'
             $s | Add-Member -Force NoteProperty tmpfs @('/var/lib/postgresql:rw,nosuid,size=512m')
-            $mounts = @(@{ type = 'bind'; source = (Join-Path $EvidenceDirectory 'init.sql'); target = '/docker-entrypoint-initdb.d/init.sql'; read_only = $true })
+            $mounts = @(
+                @{ type = 'bind'; source = (Join-Path $EvidenceDirectory 'init.sql'); target = '/docker-entrypoint-initdb.d/init.sql'; read_only = $true },
+                @{ type = 'bind'; source = (Join-Path $EvidenceDirectory 'postgres18-volume-preflight.sh'); target = '/scripts/postgres18-volume-preflight.sh'; read_only = $true }
+            )
         }
         if ($name -eq 'redis') { $s | Add-Member -Force NoteProperty tmpfs @('/data:rw,nosuid,size=32m,mode=1777') }
         if ($name -eq 'backend-runtime-role') {
