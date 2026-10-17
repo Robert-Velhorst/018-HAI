@@ -22,6 +22,7 @@ type FetchOptions struct {
 	FeedsRoot        string // allowlisted root for local file feeds
 	AllowHTTP        bool   // HTTP feeds only fetched when enabled
 	AllowLoopbackURL string // exact feed URL allowed to target loopback for local development
+	Autoposter       *AutoposterConnection
 }
 
 // fetchFeedBytes reads the raw feed bytes for a feed, confining local files to
@@ -66,6 +67,8 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 			return nil, fmt.Errorf("accountfeed: HTTP feed exceeds %d bytes", maxFeedBytes)
 		}
 		return body, nil
+	case SourceAutoposterAPI:
+		return nil, fmt.Errorf("accountfeed: Autoposter requires its governed paginated reader")
 	default:
 		return nil, fmt.Errorf("accountfeed: unsupported sourceType %q", feed.SourceType)
 	}

@@ -206,6 +206,9 @@ func TestGovernanceMigrationTailPreservesSemanticUpgradeOrder(t *testing.T) {
 		"0128_account_feed_sync_cursor",
 		"0129_automation_approval_proof_issuances",
 		"0130_automation_approval_proof_api_read_scope",
+		"0131_account_feed_reference_checkpoints",
+		"0132_account_feed_reference_controls",
+		"0133_account_feed_autoposter_source_type",
 	}
 	entries, err := fs.ReadDir(Files, "pre")
 	if err != nil {
