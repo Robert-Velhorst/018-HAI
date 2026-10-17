@@ -14,7 +14,7 @@ WORKDIR /app/cmd
 RUN CGO_ENABLED=1 GOOS=linux go build -o app ./main.go
 
 # Stage 2: Build the minimal docker image
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 
 WORKDIR /root/
 
