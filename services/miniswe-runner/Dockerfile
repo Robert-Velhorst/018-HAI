@@ -1,10 +1,11 @@
 FROM python:3.15-slim
 
 WORKDIR /app
+COPY requirements.lock ./
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential cargo \
-    && pip install --no-cache-dir mini-swe-agent==2.4.6 \
+    && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 pip install --no-cache-dir --require-hashes -r requirements.lock \
     && apt-get purge -y --auto-remove build-essential cargo rustc \
     && rm -rf /var/lib/apt/lists/* /root/.cargo
 
