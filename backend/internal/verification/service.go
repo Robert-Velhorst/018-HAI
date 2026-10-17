@@ -67,7 +67,8 @@ type AnswerRequest struct {
 	DraftAnswer            string          `json:"draftAnswer,omitempty"`
 	ExternalEvidence       []EvidenceInput `json:"externalEvidence,omitempty"`
 	IncludeSensitive       bool            `json:"includeSensitive,omitempty"`
-	HumanApproved          bool            `json:"humanApproved,omitempty"`
+	// Human approval is server-owned and cannot be asserted by a JSON client.
+	HumanApproved          bool            `json:"-"`
 	HumanApprovalReference string          `json:"-"`
 	AllowMemoryUpdate      bool            `json:"allowMemoryUpdate,omitempty"`
 }
@@ -1283,6 +1284,9 @@ func overlapCount(left, right map[string]bool) int {
 		"out": true, "all": true, "any": true, "some": true, "more": true, "most": true,
 		"one": true, "two": true, "also": true, "its": true, "it's": true, "been": true,
 		"being": true, "here": true, "each": true, "per": true, "via": true,
+		"de": true, "het": true, "een": true, "van": true, "voor": true, "met": true,
+		"dat": true, "dit": true, "die": true, "aan": true, "zijn": true, "waren": true,
+		"als": true, "bij": true, "naar": true, "door": true, "er": true,
 	}
 	count := 0
 	for token := range left {
