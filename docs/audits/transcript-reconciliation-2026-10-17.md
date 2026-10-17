@@ -182,3 +182,19 @@ The two staged-only test names were inspected:
 - `SafetyWeakeningRejectsMissingOwnerIdentity` expects failure when configured owner identity is empty. Current main explicitly tests and implements `TestSafetyWeakeningUsesAuthenticatedActorWhenConfiguredOwnerIsEmpty`; the verified authenticated actor is the authorization basis. The staged test is inconsistent with that current contract and should not be copied without a policy change.
 
 No test code was ported from this snapshot. The two staged-only cases do not establish a current-main coverage gap, while the 74 omitted test names strengthen the decision not to import the staged set wholesale. Individual assertion-level review remains incomplete; the local checkout stays preserved.
+
+
+## Runtime and connector implementation comparison (2026-10-17)
+
+Read-only diffs of seven high-risk implementation files in the staged source-reconciliation checkout against cached current `origin/main` confirmed these behavior removals:
+
+- OpenClaw ecosystem upload handlers lose request-cancellation checks before multipart parsing/authorization.
+- OpenClaw discovery drops persisted-evidence status reporting and persistence-state transitions.
+- Trello sync loses the quiet-board cursor check and refetches the full snapshot path.
+- HTTP account-feed fetching stops sending the persisted opaque cursor and removes request-URL/NUL validation.
+- Provider maintenance endpoint identity drops support for safe API mount prefixes.
+- OpenClaw maintenance changes the pinned public signing key from a byte-encoded constant back to a literal base64 string.
+
+These comparisons are against the working snapshot in `D:\\hai-source-reconciliation` and current cached main `498dcf7800f86be8c2e799f44d27ff649413881a`; no code was copied. The staged-only IDP test `TestAutomaticGormPingFailureRequiresCallerCleanup` was also checked: production `initializeIDPPostgresPool` explicitly sets `DisableAutomaticPing: true` and performs its own bounded `PingContext`, so the proposed test covers a GORM path production intentionally does not use. Existing production cleanup tests cover the actual path.
+
+This focused source review rejects the staged snapshot as a safe aggregate. It does not yet examine every implementation file in that 310-path index, the primary checkout's 758-entry state, or the remaining worktrees and output reports.
