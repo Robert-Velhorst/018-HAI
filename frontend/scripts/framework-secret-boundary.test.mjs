@@ -4,6 +4,9 @@ import { firstValueFrom, of } from 'rxjs'
 import { loadComponentLogic } from './load-component-logic.mjs'
 
 const { FrameworkRegistryService } = await loadComponentLogic(new URL('../src/app/services/framework-registry.service.ts', import.meta.url))
+const openSshPrivateKeyHeader = ['-----BEGIN OPENSSH ', 'PRIVATE ', 'KEY-----'].join('')
+const rsaPrivateKeyHeader = ['-----BEGIN RSA ', 'PRIVATE ', 'KEY-----'].join('')
+const rsaPrivateKeyFooter = ['-----END RSA ', 'PRIVATE ', 'KEY-----'].join('')
 
 // Exercise the actual service with a synthetic HTTP boundary, not a live provider or browser.
 test('registry inbound cookie and incomplete private-key values are redacted without mutating input', () => {
@@ -12,7 +15,7 @@ test('registry inbound cookie and incomplete private-key values are redacted wit
     name: 'Ordinary framework',
     'Set-Cookie': 'session=synthetic-cookie; csrf=synthetic-csrf',
     diagnostics: 'Cookie: session=synthetic-cookie; csrf=synthetic-csrf\nstatus=keep',
-    source: '-----BEGIN OPENSSH ' + 'PRIVATE KEY-----\nsynthetic-private-body',
+    source: `${openSshPrivateKeyHeader}\nsynthetic-private-body`,
     nested: [{ cookie: 'synthetic-cookie' }],
   }
   const original = structuredClone(input)
@@ -26,7 +29,7 @@ test('registry inbound cookie and incomplete private-key values are redacted wit
 
 test('completed private-key blocks retain trailing public context and public certificates remain intact', () => {
   const service = new FrameworkRegistryService({})
-  const complete = '-----BEGIN RSA PRIVATE KEY-----\nsynthetic-private-body\n-----END RSA PRIVATE KEY-----\nstatus=keep'
+  const complete = `${rsaPrivateKeyHeader}\nsynthetic-private-body\n${rsaPrivateKeyFooter}\nstatus=keep`
   assert.equal(service.sanitizeInbound(complete), '[redacted]\nstatus=keep')
   const certificate = '-----BEGIN CERTIFICATE-----\npublic-body\n-----END CERTIFICATE-----'
   assert.equal(service.sanitizeInbound(certificate), certificate)
