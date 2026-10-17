@@ -1,11 +1,11 @@
-FROM python:3.15-slim
+FROM python:3.14-slim
 
 WORKDIR /app
 COPY requirements.lock ./
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential cargo \
-    && PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 pip install --no-cache-dir --require-hashes -r requirements.lock \
+    && pip install --no-cache-dir --require-hashes -r requirements.lock \
     && apt-get purge -y --auto-remove build-essential cargo rustc \
     && rm -rf /var/lib/apt/lists/* /root/.cargo
 
