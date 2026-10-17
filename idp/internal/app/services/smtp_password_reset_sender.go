@@ -167,7 +167,8 @@ func (s *SMTPPasswordResetSender) SendPasswordReset(ctx context.Context, email, 
 	if err != nil {
 		return NewPasswordResetDeliveryError("submission", err)
 	}
-	message := fmt.Sprintf("To: %s\r\nFrom: %s\r\nSubject: HAI password reset code\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nYour one-time HAI password reset code is:\r\n\r\n%s\r\n\r\nIt expires at %s. If you did not request this reset, you can ignore this email.\r\n", parsedRecipient.Address, parsedFrom.String(), resetToken, expiresAt.UTC().Format(time.RFC1123))
+	// The SMTP envelope already contains the recipient. Keep request input out of message headers.
+message := fmt.Sprintf("To: undisclosed-recipients:;\r\nFrom: %s\r\nSubject: HAI password reset code\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nYour one-time HAI password reset code is:\r\n\r\n%s\r\n\r\nIt expires at %s. If you did not request this reset, you can ignore this email.\r\n", parsedFrom.String(), resetToken, expiresAt.UTC().Format(time.RFC1123))
 	if _, err := writer.Write([]byte(message)); err != nil {
 		_ = writer.Close()
 		return NewPasswordResetDeliveryError("submission", err)
