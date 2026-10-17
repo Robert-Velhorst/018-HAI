@@ -1409,3 +1409,15 @@ trigger graph writes. The same local diff removes
 to keep emergency-stop recovery from mutating the shared authorizer. Neither
 change is a safe port as-is. A focused Go test run could not start because the
 Go executable is unavailable in this session; no local test result is claimed.
+
+
+
+## 2026-10-17 PR #153 merge and local cursor-copy audit
+
+GitHub reports PR #153 ("feat(accountfeed): persist HTTP feed pagination cursors") merged on 2026-10-16 as merge commit `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. Live `main` is `80fdeabd16efda6d9328fa0c89a4ab813f087908`, and the merge commit is an ancestor of that ref.
+
+Compared the PR's 17 changed paths against current `main` using Git blob hashes in every one of the 11 registered local HAI worktrees. No existing local file examined was an exact current-`main` blob match. The copies found are older or otherwise divergent; the primary checkout lacks several of the PR paths and has two dirty migration-test paths. No cursor-related local files were deleted.
+
+The primary checkout is at `e07b9daeb3ba2630ecbe12a64d948f791203c241`, with 292 commits not reachable from current `main` and 84 commits of current `main` not reachable from that local HEAD. Its uncommitted tracked delta is 690 files (72,730 insertions, 108,946 deletions); the separate status inventory reports 244 modified tracked paths, 448 deleted tracked paths, 1,581 untracked paths, and 34,613 ignored entries. This is not a safe wholesale PR or deletion candidate. All 11 registered worktrees have tracked changes, untracked files, ignored entries, or a combination; none qualifies as a clean disposable copy based on the current inventory.
+
+This is a bounded comparison of the registered Git worktrees and the PR's changed paths, not a full-device inventory. Local files outside those worktrees and imported archives remain to be reviewed. No source or worktree data was removed.
