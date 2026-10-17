@@ -1305,3 +1305,50 @@ also contains 244 modified paths, 448 deleted paths, and 1,581 untracked paths
 (1,501 under generated `output/`). No stale branch snapshot or mass deletion
 was pushed. Continue reviewing any potentially newer same-path behavior against
 current `main` before porting or cleaning it.
+
+### Reconciliation worktree and open-PR audit (2026-10-17)
+
+A read-only inventory found ten Git worktrees registered to this HAI repository.
+The primary checkout and all nine secondary worktrees have non-default or
+uncommitted state; none was established as a clean full-tree copy of current
+`main`. The separate D: reconciliation checkout is staged/modified and has
+`HEAD` `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`; it has 458 paths different
+from the current `main` tree (400 modified, 57 deleted, 1 added) and no
+untracked files. Do not remove or wholesale-merge any of these worktrees.
+
+The primary checkout's current status is 244 modified tracked paths, 448
+deleted tracked paths, and 1,581 untracked paths (1,501 under `output/`). In
+a bounded untracked source/evidence comparison, 64 files shared a path with
+`main` but had different content; 12 evidence/log files were absent from
+`main`; no exact-copy candidate was found. The changed tracked-file check
+also found no exact current-`main` copy. Generated output and state folders
+were excluded from source-port eligibility. No deletion or source-tree write
+was performed.
+
+Targeted comparison of the D: worktree against current `main` rejected at
+least these changes as regressions:
+- `backend/internal/background/worker.go` removes paused-mode and emergency
+  processing gates and reports raw internal errors rather than bounded,
+  redacted operator messages.
+- `backend/internal/operations/execution_claim.go` queries the wrong event
+  JSON column (`payload` instead of `payload_json`), removes exact-revision
+  approval/review-time safeguards, and changes timestamp-preserving CAS updates.
+- `backend/internal/operations/source_approval.go` removes reviewed-owner and
+  raw-evidence-digest binding from approval receipts.
+- `backend/internal/executionauth/repository_postgres.go` restores a NUL-
+  delimited PostgreSQL text lock key and drops newer receipt-reference columns.
+- The D: variant deletes the merged PR #153 feed-cursor rollback migration and
+  its refusal to drop live cursor/claim state.
+
+These are sampled high-impact findings, not a full review of the 458 paths.
+They demonstrate why the local snapshot cannot be ported or discarded as one
+unit. The remaining paths still need a current-main semantic comparison and
+targeted tests before any code is imported.
+
+Current open PR snapshots checked directly: #160 is open/draft at head
+`835a06d` based on current `main` `80fdeab`; #163 (`774ecb1`), #164
+(`e288dc7`), and #168 (`b68a037`) are open/draft and were based on older
+`main` `1e18f90`. Their remote branches preserve their proposed changes, but
+they are not merged-main evidence and do not qualify local copies for removal.
+PR #151 remains a draft audit ledger. No local worktree, transcript, source
+file, test evidence, or generated artifact was deleted.
