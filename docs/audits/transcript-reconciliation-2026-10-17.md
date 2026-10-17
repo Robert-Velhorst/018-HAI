@@ -98,3 +98,8 @@ A second read-only scan compared the changed and untracked file contents in all 
 The remote `codex/hai-runtime-release` tip `e62b56843eb8bbbf9a566aff5e883f9adf375429` was compared directly with the same `main` tree. Its tree has no added paths, 30 paths deleted relative to `main`, and 148 differing paths. The deleted paths include current-main account-feed cursor and approval-proof migrations/tests, so the branch is stale and is not a safe bulk source for a PR. This tree comparison does not imply that all working-tree changes or archived transcript content have been reconciled.
 
 These checks identify no exact-match local source copies eligible for deletion under the exact-content rule. They do not cover ignored build caches, all device directories, supplemental transcript roots, or the content of the retained archive. All unmatched or unreviewed work remains preserved.
+
+
+## Missing candidate filename search (2026-10-17)
+
+The five candidate paths in the July 30 manifest could not be found in either `D:\\codex-temp` or `C:\\Users\\NO\\.codex` during a filename-only search by their recorded child IDs. The manifest lists these five files at 3,179,439,595 bytes total and records SHA-256 values; because the files were not found, this pass could not re-hash them or establish what happened to them. This search did not cover the entire device or other disks and is not evidence that the files were deleted, safely integrated, or absent elsewhere. Preserve the mismatch as unresolved; do not claim reclaimed space or delete any substitute based on filename alone.
