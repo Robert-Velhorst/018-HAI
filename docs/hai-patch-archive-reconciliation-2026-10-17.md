@@ -58,3 +58,29 @@ No source patch was committed or pushed by this review, and no local source, arc
 ## Next decision
 
 Continue semantic, module-by-module reconciliation from the archived blobs against current `main`. Only port a change when its intended behavior is still absent, it preserves current safeguards, and its tests pass on a clean branch based on the refreshed `main`. Keep both patch archives until every unique delta is either integrated and remotely verified or explicitly rejected with evidence.
+
+## Current-state follow-up (2026-10-17)
+
+Live GitHub API recheck confirms `main` is still `80fdeabd16efda6d9328fa0c89a4ab813f087908`. PR #153 is already merged as `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`; no further merge action is needed. The fetch failure in the local checkout was a `.git/FETCH_HEAD` permission error, not evidence of a remote change.
+
+The primary checkout is on `codex/hai-runtime-release` at `e07b9da`. A fresh porcelain inventory reports 244 modified tracked files, 448 tracked deletions, and 1,581 untracked paths. The remote branch tip is `e62b568`, while PR #36 is merged to `main` as `c31cec1`. The local checkout compared with the remote branch tip differs at 2,071 paths (3,905 insertions and 412,782 deletions); it is not a safe wholesale push or deletion candidate.
+
+All 11 registered worktrees were rechecked. Status counts below are raw porcelain XY states, preserving staged/unstaged distinctions; `UU` and `UD` entries are unresolved merge conflicts and must remain untouched.
+
+| Worktree | Current changes (XY: count) |
+| --- | --- |
+| Primary checkout | ` D:448, M :244, ??:1,581` |
+| Model-maintenance audit | ` D:124, M :301, ??:95` |
+| OpenClaw-artifact audit | ` D:42, M :108, ??:97` |
+| Runtime-safety audit | ` D:1, M :13, ??:4` |
+| PR #34 conflict-fix | ` A :122, AA:13, D :1, M :309, UD:1, UU:82` |
+| PR #36 integration | ` A :99, AA:27, M :165, MD:1, UD:2, UU:227` |
+| PR #36 local-delta | ` UU:59` |
+| PR #36 resolution | ` M :264` |
+| PR #34 resolution | ` D :4, M :60, ??:2, A :122, D :1, M :291, MM:38` |
+| PR #35 resolution | ` M :17, UU:199` |
+| D-drive source reconciliation | ` D :34, A :1, M :309` |
+
+The D-drive index contains 3,178 paths versus 3,200 in `main`, with 424 differing paths. Its staged delta is 310 files (+7,138/-12,453); a separate unstaged layer deletes 34 `output/` audit/evidence files (-9,490). The previously identified clean patch has 493 file deltas, of which 476 result blobs match that staged index and 324 match current `main`. This confirms the patch is not an independent clean change set; the 152 staged non-main blobs need semantic review and overlap checks against open PRs.
+
+No files or worktrees were removed. No source changes were pushed from these local snapshots. Keep the archives, unresolved worktrees, and output evidence until each item is either integrated and verified remotely or explicitly classified as reproducible and unnecessary.
