@@ -1242,3 +1242,10 @@ A separate same-path comparison of the local untracked `backend/internal/llm/mai
 ## Brain catalog and provider-registry sample (2026-10-17)
 
 Four additional modified files in the same registered worktree were compared with current `main`: `backend/internal/braincatalog/catalog.go`, `backend/internal/braincatalog/integration_boundary.go`, `backend/internal/modelintelligence/provider_registry.go`, and `backend/internal/modelintelligence/service.go`. The local catalog entry predates current `main`'s bounded, read-only conversation-history MCP integration and its explicit A2A planning boundary. The local provider registry returns raw provider configuration errors where current `main` applies structured secret redaction, and the local variant lacks the current 15-minute live-probe freshness bound. These are concrete reasons not to port the local snapshots as written. This four-file sample was source inspection only; no tests were run and the worktree was left unchanged.
+
+
+## OpenClaw artifact download worktree sample (2026-10-17)
+
+A targeted comparison of four untracked files in the registered `hai-openclaw-artifact-audit` worktree against current `main` (`80fdeabd16efda6d9328fa0c89a4ab813f087908`) found that the local artifact downloader is an older, weaker variant. Its JSON duplicate-key check detects only exact spellings, while current `main` also rejects case-folded key collisions that can be interpreted differently by validation and JSON decoding. The local flow lacks current `main`'s post-collection size/metadata revalidation cases, including size appearing after collection. Its URL helper lacks the current NAT64-aware address policy and the explicit test-only boundary for loopback origins. Current `main` contains the stricter implementation and regression tests; the local variant was not ported or deleted.
+
+This is a four-file source/test sample, not a review of the worktree's 247 status paths or a live gateway acceptance test. The worktree remains unchanged.
