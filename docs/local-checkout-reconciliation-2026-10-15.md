@@ -1249,3 +1249,10 @@ Four additional modified files in the same registered worktree were compared wit
 A targeted comparison of four untracked files in the registered `hai-openclaw-artifact-audit` worktree against current `main` (`80fdeabd16efda6d9328fa0c89a4ab813f087908`) found that the local artifact downloader is an older, weaker variant. Its JSON duplicate-key check detects only exact spellings, while current `main` also rejects case-folded key collisions that can be interpreted differently by validation and JSON decoding. The local flow lacks current `main`'s post-collection size/metadata revalidation cases, including size appearing after collection. Its URL helper lacks the current NAT64-aware address policy and the explicit test-only boundary for loopback origins. Current `main` contains the stricter implementation and regression tests; the local variant was not ported or deleted.
 
 This is a four-file source/test sample, not a review of the worktree's 247 status paths or a live gateway acceptance test. The worktree remains unchanged.
+
+
+## OpenClaw artifact retention and recovery sample (2026-10-17)
+
+Four artifact-retention files from the same worktree were compared with current `main`. The local archive/read variants do not scope every retained-artifact lookup by source event ID; current `main` binds the query to owner, execution reference, and exact event. The local Forget path lacks current `main`'s full launch-receipt, runtime-task, event, digest, and retained-content binding checks before removal. The local recovery scheduler also lacks the current explicit lease, bounded collection batch, and read-timeout controls. These are safety and cross-record isolation gaps, not additive behavior to port. The current-main versions remain authoritative; no local artifact data or code was deleted.
+
+This is a four-file source inspection within a 247-path worktree, not a full retention lifecycle test or review of every changed path.
