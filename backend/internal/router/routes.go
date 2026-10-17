@@ -120,9 +120,13 @@ import (
 
 // initializeRoutesWithContext registers routes and starts background services
 // against the server lifecycle. Callers must provide the application context.
-func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context) error {
+func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context, observers ...ambientmonitor.SweepObserver) error {
 	if runtimeCtx == nil {
 		return fmt.Errorf("application runtime context is required")
+	}
+	var monitorObserver ambientmonitor.SweepObserver
+	if len(observers) > 0 {
+		monitorObserver = observers[0]
 	}
 	router.GET("/healthz", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "backend"})
@@ -430,7 +434,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			return err
 		}
 		if ambientmonitor.DurableSchedulerEnabled() {
-			if err := ambientmonitor.StartDurableScheduler(runtimeCtx, ambientMonitorService, backgroundAllowed); err != nil {
+			if err := ambientmonitor.StartDurableScheduler(runtimeCtx, ambientMonitorService, backgroundAllowed, monitorObserver); err != nil {
 				return err
 			}
 		}
@@ -1001,12 +1005,19 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context)
 			runtimeRegistry,
 		).WithSafeExecutionPolicy(phase2Module.SafeExecutionPolicyAllows)
 		initializeRuntimeLabRoutes(v1, runtimelab.NewHandler(runtimeLabService))
+		autoposter := accountfeed.AutoposterFromEnv(phase2Module.OwnerUserID(), phase2Module.WorkspaceID())
 		feedRegistry, err := accountfeed.NewPostgresRegistry(runtimeCtx, phase2Module.Service(), privacyService, accountfeed.FetchOptions{
 			FeedsRoot: phase2Module.FeedsDir(),
 			AllowHTTP: strings.EqualFold(strings.TrimSpace(os.Getenv("HAI_PHASE2_ALLOW_HTTP_FEEDS")), "true"),
+			Autoposter: autoposter,
 		})
 		if err != nil {
 			return fmt.Errorf("initialize durable account feeds: %w", err)
+		}
+		if autoposter != nil {
+			if _, err := feedRegistry.ConfigureAutoposter(runtimeCtx); err != nil {
+				return fmt.Errorf("configure read-only Autoposter source: %w", err)
+			}
 		}
 		if err := seedAccountFeeds(runtimeCtx, feedRegistry, phase2Module); err != nil {
 			return fmt.Errorf("seed durable account feeds: %w", err)

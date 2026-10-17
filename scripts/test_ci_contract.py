@@ -918,7 +918,7 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("infra.CloseDefaultDB()", router)
         self.assertIn("infra.GetDefaultDBContext(ctx)", router)
         self.assertLess(router.index("metrics.NewFromEnv()"), router.index("infra.GetDefaultDBContext(ctx)"))
-        self.assertLess(router.index("infra.GetDefaultDBContext(ctx)"), router.index("initializeRoutesWithContext(router, ctx)"))
+        self.assertLess(router.index("infra.GetDefaultDBContext(ctx)"), router.index("initializeRoutesWithContext(router, ctx, metricsExporter)"))
         self.assertIn("DB_STARTUP_TIMEOUT: ${DB_STARTUP_TIMEOUT:-5m}", compose_service_block(compose, "backend"))
         self.assertIn("source.WithRuntimeContext(sourceService, runtimeCtx)", routes)
         # Published activities use host lifetime, not an HTTP/probe deadline.
@@ -1726,7 +1726,8 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
 
     def test_idp_rotation_races_require_marked_real_redis_and_pass_markers(self) -> None:
         identity = job_block("idp")
-        for contract in ("redis:7-alpine", "HAI_TEST_REDIS_ADDR: 127.0.0.1:6379",
+        self.assertRegex(identity, r"image:\s+redis:\d+\.\d+\.\d+-alpine@sha256:[0-9a-f]{64}")
+        for contract in ("HAI_TEST_REDIS_ADDR: 127.0.0.1:6379",
                          "HAI_TEST_REDIS_INSTANCE:", "hai-disposable-test-instance",
                          "set -euo pipefail", "go test -count=3 -race -run '^TestRedis'",
                          "TestRedisSessionRefreshConcurrentCookiesAndLogout",
