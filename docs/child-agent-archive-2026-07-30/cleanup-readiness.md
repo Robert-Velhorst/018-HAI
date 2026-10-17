@@ -1352,3 +1352,47 @@ Current open PR snapshots checked directly: #160 is open/draft at head
 they are not merged-main evidence and do not qualify local copies for removal.
 PR #151 remains a draft audit ledger. No local worktree, transcript, source
 file, test evidence, or generated artifact was deleted.
+
+
+## 2026-10-17 local reconciliation follow-up
+
+This update supersedes the earlier statement that no local worktree had been
+removed; it describes a later, separately verified cleanup pass.
+
+- PR #153 was already merged to `main` as `ad8a72e`; its cursor migration and
+  rollback protections are present in the current `main` ref.
+- Two clean duplicate worktrees were removed after confirming their contents
+  were represented by remote PRs: the Autoposter checkout exactly matched PR
+  #160 head `835a06d`, and the reconciliation checkout was an ancestor of PR
+  #151 head `3c93f61`. Their working directories totaled 76,023,663 bytes.
+  Shared Git history, remote branches, PRs, and the archived Autoposter
+  worktree were retained.
+- PR #160 exact-head Actions run `38981873284` completed with 30/30 jobs
+  successful, including backend/frontend tests, browser acceptance, real
+  PostgreSQL migration integration, two-account isolation, and secret scan.
+  This is CI evidence, not live Autoposter account acceptance.
+- The primary checkout remains on stale branch `codex/hai-runtime-release`
+  at `e07b9da`, while `origin/main` is `80fdeab`. Its current working tree
+  has 244 tracked modifications, 448 tracked deletions, 1,581 untracked paths,
+  and 34,613 ignored entries. The 1,501 untracked `output/` files total
+  126,491,186 bytes.
+- No exact-content matches were found between untracked non-output files and
+  `origin/main`. Most have a path counterpart on `main` but different
+  contents, so they are alternate/stale copies, not safe deletion candidates.
+- Focused review found the local background-worker variant removes pause and
+  emergency-stop processing gates and secret-redacted bounded error reporting;
+  the local operations source-approval implementation is deleted. These
+  changes were not published. The local tree is not safe to push wholesale.
+- The separate older Autoposter draft contains unsafe defaults and omits
+  owner/source bindings that are present in the reviewed PR #160 version. No
+  code from that older copy was added to the PR.
+- A separate stale checkout contains about 299 MB of ignored frontend and
+  Python build/dependency caches. Recursive cache removal was rejected by the
+  local tool policy; a follow-up inspection confirmed the directories remain.
+  No source, environment files, test evidence, or cache directories were
+  removed in that attempt.
+
+The remaining primary and D: snapshots have uncommitted or divergent content.
+They require per-file comparison and targeted validation before any source
+port or local deletion. This entry is an inventory checkpoint, not a claim that
+the full HAI local-device audit is complete.
