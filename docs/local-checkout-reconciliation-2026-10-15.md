@@ -1256,3 +1256,10 @@ This is a four-file source/test sample, not a review of the worktree's 247 statu
 Four artifact-retention files from the same worktree were compared with current `main`. The local archive/read variants do not scope every retained-artifact lookup by source event ID; current `main` binds the query to owner, execution reference, and exact event. The local Forget path lacks current `main`'s full launch-receipt, runtime-task, event, digest, and retained-content binding checks before removal. The local recovery scheduler also lacks the current explicit lease, bounded collection batch, and read-timeout controls. These are safety and cross-record isolation gaps, not additive behavior to port. The current-main versions remain authoritative; no local artifact data or code was deleted.
 
 This is a four-file source inspection within a 247-path worktree, not a full retention lifecycle test or review of every changed path.
+
+
+## Host-runtime and DeepSeek safety sample (2026-10-17)
+
+Five additional modified files in `hai-openclaw-artifact-audit` were compared with current `main`: host-runtime service, repository, and handler, plus the DeepSeek harness and final-effect authorization. The local host-runtime snapshot lacks current start-intent, actual-start acknowledgment, and unknown-outcome reconciliation routes; its repository path also lacks the current context-bounded, approval-digest/lease protocol. The local DeepSeek harness reports the bridge ready and permits queueing based on weaker conditions, while current `main` fails closed because verified OS isolation, TLS peer pinning, and the acknowledged Windows process-start protocol are not all available. These are safety-critical regressions in the local candidate, not missing work to port.
+
+This is a five-file source sample only. No host execution was run, no code was ported, and the worktree remains unchanged.
