@@ -11,6 +11,12 @@ Archives reviewed in place under `D:\\codex-temp`:
 
 Both archives remain on the local device. Their Git result blobs are present in the local object database, so source content is recoverable without expanding either patch into the checkout.
 
+## Merged work and local-copy check
+
+PR #153 (`feat(accountfeed): persist HTTP feed pagination cursors`) is closed and merged as `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. A live GitHub ancestry comparison confirmed current `main` contains that merge and is four commits ahead of it.
+
+I checked the 17 files changed by PR #153 across all 11 registered HAI worktrees. No existing copy of those files in those worktrees was an exact blob match for current `main`; therefore, this scan found no safe direct-match file deletion from those registered worktrees. It did not search every directory on the device.
+
 ## File-level comparison
 
 The 493-file clean patch represents 98,461 additions and 10,054 deletions relative to its historical base. Compared with current `main`:
