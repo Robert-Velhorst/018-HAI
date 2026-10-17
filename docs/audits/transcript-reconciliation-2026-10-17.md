@@ -103,3 +103,8 @@ These checks identify no exact-match local source copies eligible for deletion u
 ## Missing candidate filename search (2026-10-17)
 
 The five candidate paths in the July 30 manifest could not be found in either `D:\\codex-temp` or `C:\\Users\\NO\\.codex` during a filename-only search by their recorded child IDs. The manifest lists these five files at 3,179,439,595 bytes total and records SHA-256 values; because the files were not found, this pass could not re-hash them or establish what happened to them. This search did not cover the entire device or other disks and is not evidence that the files were deleted, safely integrated, or absent elsewhere. Preserve the mismatch as unresolved; do not claim reclaimed space or delete any substitute based on filename alone.
+
+
+### Additional filename-search roots (2026-10-17)
+
+A follow-up exact-filename search also found no matches under `C:\\Users\\NO\\Documents\\Codex`, `C:\\Users\\NO\\Downloads`, `C:\\Users\\NO\\Desktop`, or `C:\\Users\\NO\\AppData\\Local\\Temp`. The `.codex` search was repeated including ignored files while excluding Git object stores, dependency/plugin caches, and worktree directories. This extends the bounded filename search, but still does not cover every drive, user profile, backup, or storage location; the five manifest files remain unresolved and unverified.
