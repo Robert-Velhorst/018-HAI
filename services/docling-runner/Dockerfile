@@ -10,7 +10,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 # Without it, a plain PyPI resolution can pull multi-gigabyte CUDA libraries
 # even though this runner has no GPU device or GPU execution path.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
+    && apt-get install -y --no-install-recommends build-essential git \
     && pip install --no-cache-dir "docling==${DOCLING_VERSION}" \
         --extra-index-url https://download.pytorch.org/whl/cpu \
     && apt-get purge -y --auto-remove build-essential \
