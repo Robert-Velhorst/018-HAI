@@ -27,6 +27,7 @@ const (
 	maximumApprovalProofTTL           = 15 * time.Minute
 	maximumApprovalDecisionAge        = 15 * time.Minute
 	maximumApprovalDecisionFutureSkew = 5 * time.Second
+	approvalProofTimestampPrecision   = time.Microsecond
 )
 
 type ApprovalScope string
@@ -360,14 +361,18 @@ func (s *approvalProofService) IssueContext(ctx context.Context, request Approva
 	if ttl == 0 {
 		ttl = defaultApprovalProofTTL
 	}
-	if ttl <= 0 || ttl > maximumApprovalProofTTL {
-		return nil, fmt.Errorf("approval proof TTL must be between 1ns and %s", maximumApprovalProofTTL)
+	if ttl < approvalProofTimestampPrecision || ttl > maximumApprovalProofTTL {
+		return nil, fmt.Errorf("approval proof TTL must be between %s and %s", approvalProofTimestampPrecision, maximumApprovalProofTTL)
 	}
 	nonceBytes := make([]byte, 24)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		return nil, fmt.Errorf("generate approval proof nonce: %w", err)
 	}
-	now := s.now().UTC()
+	now := normalizeApprovalProofTimestamp(s.now())
+	expiresAt := normalizeApprovalProofTimestamp(now.Add(ttl))
+	if !expiresAt.After(now) {
+		return nil, fmt.Errorf("approval proof TTL must be at least %s at database precision", approvalProofTimestampPrecision)
+	}
 	proof := &ApprovalProof{
 		ID:               uuid.NewString(),
 		OwnerIdentity:    request.OwnerIdentity,
@@ -376,7 +381,7 @@ func (s *approvalProofService) IssueContext(ctx context.Context, request Approva
 		Scope:            request.Scope,
 		ApprovalSourceID: request.ApprovalSourceID,
 		IssuedAt:         now,
-		ExpiresAt:        now.Add(ttl),
+		ExpiresAt:        expiresAt,
 		Nonce:            base64.RawURLEncoding.EncodeToString(nonceBytes),
 	}
 	proof.Signature = s.sign(proof)
@@ -497,7 +502,7 @@ func (s *approvalProofService) VerifyAndConsume(
 		SignatureDigest:  sha256Hex(proof.Signature),
 		IssuedAt:         proof.IssuedAt.UTC(),
 		ExpiresAt:        proof.ExpiresAt.UTC(),
-		ConsumedAt:       now,
+		ConsumedAt:       normalizeApprovalProofTimestamp(now),
 	}
 	consumption.RecordDigest = approvalProofConsumptionDigest(consumption)
 	if err := ctx.Err(); err != nil {
@@ -663,6 +668,10 @@ func sha256Hex(value string) string {
 	return hex.EncodeToString(digest[:])
 }
 
+func normalizeApprovalProofTimestamp(value time.Time) time.Time {
+	return value.UTC().Truncate(approvalProofTimestampPrecision)
+}
+
 func approvalProofConsumptionDigest(value ApprovalProofConsumption) string {
 	payload := struct {
 		ContractVersion  string        `json:"contractVersion"`
@@ -687,9 +696,9 @@ func approvalProofConsumptionDigest(value ApprovalProofConsumption) string {
 		ApprovalSourceID: value.ApprovalSourceID,
 		NonceDigest:      value.NonceDigest,
 		SignatureDigest:  value.SignatureDigest,
-		IssuedAt:         value.IssuedAt.UTC().Format(time.RFC3339Nano),
-		ExpiresAt:        value.ExpiresAt.UTC().Format(time.RFC3339Nano),
-		ConsumedAt:       value.ConsumedAt.UTC().Format(time.RFC3339Nano),
+		IssuedAt:         normalizeApprovalProofTimestamp(value.IssuedAt).Format(time.RFC3339Nano),
+		ExpiresAt:        normalizeApprovalProofTimestamp(value.ExpiresAt).Format(time.RFC3339Nano),
+		ConsumedAt:       normalizeApprovalProofTimestamp(value.ConsumedAt).Format(time.RFC3339Nano),
 	}
 	encoded, _ := json.Marshal(payload)
 	digest := sha256.Sum256(encoded)
@@ -719,8 +728,8 @@ func approvalProofIssuanceDigest(value ApprovalProofIssuance) string {
 		Scope:            value.Scope,
 		NonceDigest:      value.NonceDigest,
 		SignatureDigest:  value.SignatureDigest,
-		IssuedAt:         value.IssuedAt.UTC().Format(time.RFC3339Nano),
-		ExpiresAt:        value.ExpiresAt.UTC().Format(time.RFC3339Nano),
+		IssuedAt:         normalizeApprovalProofTimestamp(value.IssuedAt).Format(time.RFC3339Nano),
+		ExpiresAt:        normalizeApprovalProofTimestamp(value.ExpiresAt).Format(time.RFC3339Nano),
 	}
 	encoded, _ := json.Marshal(payload)
 	digest := sha256.Sum256(encoded)

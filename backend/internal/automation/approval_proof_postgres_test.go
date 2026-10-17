@@ -23,7 +23,10 @@ func TestPostgresApprovalProofConsumptionSurvivesRestartAndIsAtomic(t *testing.T
 	db := approvalProofPostgresDB(t)
 	store := NewPostgresApprovalProofConsumptionStore(db)
 	secret := []byte("0123456789abcdef0123456789abcdef")
-	now := time.Now().UTC().Truncate(time.Microsecond)
+	// Exercise the production clock's sub-microsecond precision. PostgreSQL
+	// stores timestamps at microsecond precision, so proof digests must normalize
+	// before they are signed and persisted.
+	now := time.Now().UTC().Truncate(time.Microsecond).Add(789 * time.Nanosecond)
 	issuer, err := NewApprovalProofService(secret, store, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
