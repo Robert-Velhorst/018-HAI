@@ -38,8 +38,10 @@ type FeedPatch struct {
 }
 
 type SyncOutcome struct {
-	ItemsRead int
-	Event     AuditEvent
+	ItemsRead     int
+	Cursor        string
+	CursorPresent bool
+	Event         AuditEvent
 }
 
 // Mutations include their audit record in the same transaction. A sync token

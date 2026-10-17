@@ -296,7 +296,7 @@ if ($Action -eq 'Prepare') {
             $s.depends_on.PSObject.Properties.Remove('backend-state-permissions')
         }
         if ($name -match '^postgres-') {
-            $s.image = 'postgres:18.6-alpine'
+            $s.image = 'postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873'
             $s | Add-Member -Force NoteProperty tmpfs @('/var/lib/postgresql:rw,nosuid,size=512m')
             $mounts = @(@{ type = 'bind'; source = (Join-Path $EvidenceDirectory 'init.sql'); target = '/docker-entrypoint-initdb.d/init.sql'; read_only = $true })
         }

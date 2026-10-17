@@ -1,34 +1,71 @@
-# PostgreSQL 18 database upgrade gate
+# PostgreSQL 17 to 18 migration
 
-The local Compose stack now targets PostgreSQL 18.6, pgvector 0.8.7 on PostgreSQL 18, and Redis 8.10.2. The image tags exist in the upstream registries as checked on 2026-10-15.
+This guide applies only to the PostgreSQL services in `docker-compose.local.yml`: the IDP database, automation database with pgvector, and optional Temporal database. The upgrade changes PostgreSQL's data directory. PostgreSQL 17 files remain in the existing named volumes under `/var/lib/postgresql/data`; PostgreSQL 18 uses `/var/lib/postgresql/18/docker`. Compose keeps the existing volume names, and the startup preflight plus health checks prevent application services from using an unverified PostgreSQL 18 cluster beside PostgreSQL 17 data.
 
-## Persistent PostgreSQL data
+This is an offline logical migration for the local Compose stack. It does not migrate a production or Hetzner database. Do not run `docker compose down --volumes` during this work.
 
-Three services use durable named volumes. The updated Compose file assigns new physical volume names ending in `-v18`; the PostgreSQL 17 volumes with the original names remain unmounted and available for rollback:
+## Before switching the Compose image
 
-| Service | Existing PostgreSQL 17 volume | New PostgreSQL 18 volume |
-| --- | --- | --- |
-| `postgres-idp` | `018-hai-postgres-idp-data` | `018-hai-postgres-idp-data-v18` |
-| `postgres-automation` | `018-hai-postgres-automation-data` | `018-hai-postgres-automation-data-v18` |
-| `temporal-postgres` (durability profile) | `018-hai-temporal-postgres-data` | `018-hai-temporal-postgres-data-v18` |
+1. Stop writes to the local databases and take a recoverable backup. Create one custom-format dump per database while PostgreSQL 17 is still running:
 
-PostgreSQL 17 stored cluster files at the root of the mounted data directory. The official PostgreSQL 18 images use `/var/lib/postgresql/18/docker` and mount `/var/lib/postgresql`. A PostgreSQL 17 cluster cannot be opened by PostgreSQL 18; changing the image tag alone is not a migration. The image entrypoint detects older cluster files and refuses to start them.
+   ```sh
+   docker compose exec -T postgres-idp sh -ec 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > idp.pg17.dump
+   docker compose exec -T postgres-automation sh -ec 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > automation.pg17.dump
+   docker compose --profile durability exec -T temporal-postgres sh -ec 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > temporal.pg17.dump
+   ```
 
-Before applying the PostgreSQL 18 Compose file to a host with existing volumes:
+   Run the Temporal command only if that service is enabled. Confirm each dump is non-empty, verify a second copy, and store both copies outside the repository. Treat the dumps as sensitive. Retain the existing recovery bundle.
+2. Stop the application services and PostgreSQL 17 containers. Keep all named volumes. Switch to the reviewed PostgreSQL 18 Compose configuration.
 
-1. Stop application writers and take verified backups from each PostgreSQL 17 service. Preserve cluster roles and passwords with a `pg_dumpall --globals-only` export, and create a separate `pg_dump -Fc` archive for every database. Store these files outside the Compose volumes in approved encrypted storage; treat them as sensitive.
-2. Start only the PostgreSQL 18 database services with application writers stopped. Restore each cluster into its new `-v18` volume. Initialize the new cluster with a temporary migration superuser whose name is not present in the source roles, then restore global roles and each database archive. This avoids collisions with the image's bootstrap role and database.
-3. Restore the automation database with the PostgreSQL 18 pgvector image so the `vector` extension is available. Update the extension to 0.8.7, then check extension state, schema migrations, role grants, database names, and application connectivity before starting writers.
-4. Keep the old volumes and verified backups until the new deployment has passed the agreed observation period. Do not run `docker compose down -v` or remove the old volumes as part of this upgrade.
+## Initialize and restore PostgreSQL 18
 
-The three volumes are independent clusters and must be upgraded separately. The versioned volume names are declared at the end of `docker-compose.local.yml`; do not switch app services to the new clusters until all restores and validation have succeeded. `redis` has no persistent volume in this Compose file; its cache/session state is ephemeral and is recreated by the service.
+For each existing volume that contains a PostgreSQL 17 `PG_VERSION`, start only that database once with `HAI_POSTGRES18_ALLOW_EMPTY_TARGET=1`. The one-time setting lets PostgreSQL 18 initialize its new data directory beside the untouched PostgreSQL 17 files. In PowerShell, set it only for this database-only startup, then remove it:
 
-This repository change updates the target images and test fixtures only. It does not copy, migrate, or delete any existing database data, and it does not change a running deployment.
+```powershell
+$env:HAI_POSTGRES18_ALLOW_EMPTY_TARGET = '1'
+docker compose up -d postgres-idp postgres-automation
+Remove-Item Env:HAI_POSTGRES18_ALLOW_EMPTY_TARGET
+```
 
-## Sources
+Include `--profile durability` and `temporal-postgres` only if Temporal was enabled. Do not start application services during initialization. The databases may accept local `docker compose exec` commands while their health checks remain unhealthy; dependent applications stay blocked until each migration marker is created.
 
-- [PostgreSQL 18.6 release](https://www.postgresql.org/about/news/postgresql-186-1711-1615-1519-1424-and-19-beta-3-released-3365/)
-- [PostgreSQL versioning and supported branches](https://www.postgresql.org/support/versioning/)
+The new PostgreSQL cluster runs the configured `init.sql`, so recreate its initially seeded database before restoring the old dump. Run this separately for each database:
+
+```sh
+docker compose exec -T postgres-idp sh -ec 'dropdb --if-exists -U "$POSTGRES_USER" "$POSTGRES_DB"; createdb -U "$POSTGRES_USER" -T template0 "$POSTGRES_DB"'
+docker compose exec -T postgres-automation sh -ec 'dropdb --if-exists -U "$POSTGRES_USER" "$POSTGRES_DB"; createdb -U "$POSTGRES_USER" -T template0 "$POSTGRES_DB"'
+docker compose --profile durability exec -T temporal-postgres sh -ec 'dropdb --if-exists -U "$POSTGRES_USER" "$POSTGRES_DB"; createdb -U "$POSTGRES_USER" -T template0 "$POSTGRES_DB"'
+```
+
+Skip the Temporal command when it was not enabled. Restore each dump into its matching empty database, stopping at the first error:
+
+```sh
+docker compose exec -T postgres-idp sh -ec 'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < idp.pg17.dump
+docker compose exec -T postgres-automation sh -ec 'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < automation.pg17.dump
+docker compose --profile durability exec -T temporal-postgres sh -ec 'pg_restore --exit-on-error --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < temporal.pg17.dump
+```
+
+Skip the Temporal restore when it was not enabled. Verify application-specific row counts, representative records, required roles, and grants against the backups. For automation, confirm the `vector` extension version and run `ALTER EXTENSION vector UPDATE;` if an update is needed. Re-run the repository migrations and database-role provisioning before restoring application writers.
+
+Only after each database passes its checks, create the completion marker as root in that container:
+
+```sh
+docker compose exec -T -u 0 postgres-idp sh -ec 'touch "$PGDATA/.hai-postgres18-migration-complete"'
+docker compose exec -T -u 0 postgres-automation sh -ec 'touch "$PGDATA/.hai-postgres18-migration-complete"'
+docker compose --profile durability exec -T -u 0 temporal-postgres sh -ec 'touch "$PGDATA/.hai-postgres18-migration-complete"'
+```
+
+Skip the Temporal command when it was not enabled. The marker records that the operator completed restore and verification; it is not a substitute for either. After all applicable markers exist, confirm the databases become healthy, then start the application services and verify readiness and authentication paths.
+
+Keep the dumps and original PostgreSQL 17 data directories until the upgraded applications have been accepted and a fresh PostgreSQL 18 recovery bundle has been verified. The old cluster files remain in their named volumes; do not delete them as cleanup.
+
+## Recovery
+
+If restore or verification fails, stop the PostgreSQL 18 and application containers. Remove no volumes. Preserve the dumps and logs, then use a separate PostgreSQL 17 Compose checkout against the unchanged volume or restore the verified recovery bundle. Do not point PostgreSQL 17 at the PostgreSQL 18 data directory.
+
+## References
+
+- [PostgreSQL versioning policy and supported releases](https://www.postgresql.org/support/versioning/)
+- [PostgreSQL 18 release notes](https://www.postgresql.org/docs/18/release.html)
 - [Official PostgreSQL Docker image: data directory change in 18+](https://github.com/docker-library/docs/blob/master/postgres/README.md#pgdata)
-- [pgvector changelog](https://github.com/pgvector/pgvector/blob/master/CHANGELOG.md)
-- [Redis release index](https://download.redis.io/releases/)
+- [pgvector supported Docker tags](https://github.com/pgvector/pgvector#docker)

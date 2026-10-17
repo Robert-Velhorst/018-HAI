@@ -129,3 +129,31 @@ The current manifest and summary record the 10 MiB bound, candidate hashes,
 and `deletion_performed: false`. No transcript was removed. These are
 source-integration facts only; cleanup still requires the canonical-main gate
 and tooling that verifies both supplemental roots.
+
+## Verified local cleanup update (2026-10-16)
+
+After the 2026-10-12 scan, the Hubble and Popper source crosswalks were checked
+against current `main` at `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. All 19
+report-named source paths exist in that tree; current Framework Registry tests
+cover owner authorization, empty-request focus, duplicate-submit handling,
+and keyboard access. The theme service selects registered icons centrally and
+the LLM Policy uses that shared icon. The CI workflow and contract test retain
+the reported liveness, uncached race, migration-test matching, and timeout
+checks.
+
+The two corresponding local transcript files were SHA-256 verified against
+the supplemental manifest before removal:
+
+| Child | Transcript SHA-256 | Bytes removed |
+| --- | --- | ---: |
+| `019fb087-5a29-7983-bc56-3f8956867155` (Hubble) | `a9a2dc0a6fd91c539b5819b91dbf75c54463e91902b0942ccd219cf857345df7` | 1,528,358,289 |
+| `019fb090-112e-7741-8c8b-1f78cafa14d6` (Popper) | `cc6f2e5766d97c5a3a0f3cad3b0803e938c4389b39825ad4ba9950d527076506` | 1,584,936,069 |
+| **Total** |  | **3,113,294,358** |
+
+The Anscombe transcript (`019fb09c-e5bb-7c31-b6c4-59479eaca1e6`) remains
+because it is still unattributed and has no verified terminal report. The
+separate 17,559,729,527-byte retained archive and all other retained
+supplemental transcripts were not modified. This is a verified per-file
+cleanup, not completion of the broader transcript cleanup gate; oversized or
+unattributed history remains protected, and the cleanup tool has not been
+changed to authorize either supplemental root.
