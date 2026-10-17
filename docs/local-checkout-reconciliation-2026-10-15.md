@@ -1211,3 +1211,10 @@ Three additional untracked same-path variants were compared with live `origin/ma
 - `services/deepteam-runner/requirements.lock`: the local lock differs from main's resolved dependency set; current main includes a pinned `sentry-sdk==2.71.0` absent locally. No dependency update is justified from this stale lock.
 
 All three local files remain unchanged and were not uploaded or deleted. This closes only these three file-level comparisons; the remaining differing files and other HAI-related local roots still require review.
+## Registered-worktree exact-content scan (2026-10-17)
+
+GitHub API confirmed canonical `main` at `80fdeabd16efda6d9328fa0c89a4ab813f087908`. A local `git fetch origin main` could not update `FETCH_HEAD` because of a permission error, so the scan used the locally available `origin/main` tree only after confirming its SHA against the live GitHub API.
+
+Across all 11 registered HAI worktrees, 2,699 existing files reported as tracked working-tree changes were hashed using Git blob encoding and compared with same-path blobs on `main`; zero matched. The scan also checked 262 untracked files whose paths exist on `main`; zero matched. It enumerated 80,770 untracked or ignored paths and hashed the four existing regular files whose paths also exist on `main`; three exact matches (1,193 bytes total) were found in the primary checkout and removed individually: `security-snapshots/README.md`, `security-snapshots/.gitignore`, and `mini-swe-workspaces/.gitignore`. All three paths were verified absent after removal. Their surrounding directories and other data were left intact.
+
+This is a content-identity cleanup only. It does not establish that every HAI-related file, archive, ignored artifact, unchanged tracked file, or source transcript on the device has been semantically reviewed. No divergent source, worktree, database, transcript, generated output, or patch file was deleted. No source-code change was selected for port in this pass; the sampled local variants were stale or weaker than current `main`. The broader reconciliation and focused PR work remain open.
