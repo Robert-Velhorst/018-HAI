@@ -67,7 +67,7 @@ func TestOpsControlReviewProvenanceMigrationKeepsOwnerAndDecisionBinding(t *test
 		"opscontrol_review_item_id uuid",
 		"opscontrol_review_decision_id uuid",
 		"FOREIGN KEY (",
-		"owner_identity,\n            id,\n            review_item_id",
+		"UNIQUE (owner_identity, id, review_item_id)",
 		"'opscontrol-review:' || opscontrol_review_item_id::text",
 		"evidence_json #>> '{approval,decisionId}' = opscontrol_review_decision_id::text",
 		"approval_source_id LIKE 'opscontrol-owner:%'",
