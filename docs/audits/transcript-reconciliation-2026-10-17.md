@@ -145,3 +145,19 @@ The final note in transcript `019fb1d3-1ebf-7b63-897a-a4fa0fbf1f10` lists six th
 - Framework preference changes have append-only persistence, query/history APIs, integrity checks, and migration contract tests.
 
 The transcript's historical gaps therefore do not identify source changes to port into current main. This is source/test presence evidence, not a claim that all affected runtime paths were freshly executed in this audit. No source or archive file was deleted.
+
+
+## Staged source-reconciliation checkout review (2026-10-17)
+
+A fresh inventory of registered worktrees found that `D:\\hai-source-reconciliation` is not clean despite its earlier Git-status pipeline appearing empty. With a command-scoped safe-directory override (no persistent Git configuration change), its branch is `codex/hai-local-source-reconciliation` at `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`, 80 commits behind the locally cached current-main ref `498dcf7800f86be8c2e799f44d27ff649413881a`. It contains 310 staged modified/added paths and 34 unstaged deletions under `output/`, for 344 changed paths total. The staged patch reports 7,138 insertions and 12,453 deletions.
+
+A blob-ID comparison of its staged index against the current-main tree found 1 identical staged file, 308 staged files with different blobs, and 1 staged path absent from main; no staged file deletions were present. These counts establish only content differences, not whether those differences are improvements or already represented semantically.
+
+Spot checks show material regression risk, so the staged set was not promoted as one PR:
+
+- `backend/internal/openclawmaintenance/worker.go` changes the pinned public signing key from a byte-encoded representation back to a literal base64 string, undoing the current-main scanner-avoidance treatment.
+- `backend/internal/operations/service.go` removes raw-evidence SHA-256 comparison and updates by direct string equality.
+- `backend/internal/pursuit/service.go` removes current request fields and dashboard summary behavior, including `ProjectKeyHint` and `SuccessCriteria`.
+- `backend/internal/llm/maintenance.go` removes endpoint mount-path handling and a maintenance eligibility check.
+
+These are representative examples only, not a full review of the 310 staged paths. The 34 deleted output reports were not staged and were not deleted by this audit. No local change, report, checkout, or worktree was removed. The entire staged set remains unreviewed for semantic conflicts and regression risks; it is not ready to push as a whole. Exact duplicate-content deletion eligibility has not been established for this checkout.
