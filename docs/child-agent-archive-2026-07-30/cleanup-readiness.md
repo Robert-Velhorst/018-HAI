@@ -1279,3 +1279,29 @@ no oversized or malformed candidate records, but its child turn could not be
 uniquely attributed. These results do not establish that all child changes are
 integrated, and they do not authorize cleanup. All 20 files remain required
 for the unresolved attribution and code crosswalk; no transcript was deleted.
+
+
+### Stale committed-checkout tree comparison (2026-10-17)
+
+Compared the primary local checkout's committed `HEAD` tree (commit
+`e07b9dae`, dated 2026-09-04) with the live `origin/main` ref
+(`80fdeabd`, dated 2026-10-17). The local tree has 1,992 paths versus 3,200
+on `main`: 1,088 blob-identical paths, 898 same-path but different-blob paths,
+6 local-only paths, and 1,214 paths present only on `main`.
+
+The six local-only paths are three local environment files, an environment-
+specific `nginx-config/nginx.conf`, and two older operation-index migration
+files. The operation-index migration is already present in current `main` as
+`backend/migrations/post/0006_operations_owner_workspace_dedupe_active.*`; the
+local `0004` files are duplicate filenames/content and are not candidates to
+port. Environment files and host-specific Nginx configuration are excluded
+from publication. The 292 local-only commit count is not an integration gap by
+itself: PR #36 was squash-merged, so its original commit ancestry is not
+preserved on `main`.
+
+This comparison does **not** prove the 898 divergent same-path files are
+redundant. They remain an explicit source-review gap, and the dirty checkout
+also contains 244 modified paths, 448 deleted paths, and 1,581 untracked paths
+(1,501 under generated `output/`). No stale branch snapshot or mass deletion
+was pushed. Continue reviewing any potentially newer same-path behavior against
+current `main` before porting or cleaning it.
