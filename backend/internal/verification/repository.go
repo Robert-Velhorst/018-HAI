@@ -1,6 +1,9 @@
 package verification
 
 import (
+	"errors"
+	"strings"
+
 	"automation-hub-backend/internal/identity"
 	"automation-hub-backend/internal/infra"
 	"automation-hub-backend/internal/models"
@@ -36,6 +39,8 @@ func (r *GormRepository) WithinTransaction(action func(Repository) error) error 
 }
 
 const verificationRunHistoryLimit = 200
+
+var errVerificationOwnerRequired = errors.New("verification owner identity is required")
 
 func NewGormRepository(db *gorm.DB) Repository {
 	return &GormRepository{DB: db}
@@ -94,6 +99,10 @@ func (r *GormRepository) FindRuns() ([]models.VerificationRun, error) {
 // explicitly configured migration owner may additionally inspect ownerless
 // legacy rows; those records never become shared data for every local account.
 func (r *GormRepository) FindRunsForOwner(ownerIdentity string) ([]models.VerificationRun, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, errVerificationOwnerRequired
+	}
 	var runs []models.VerificationRun
 	query := verificationRunsForOwnerQuery(r.DB, ownerIdentity)
 	err := query.Limit(verificationRunHistoryLimit).Find(&runs).Error
@@ -101,6 +110,10 @@ func (r *GormRepository) FindRunsForOwner(ownerIdentity string) ([]models.Verifi
 }
 
 func (r *GormRepository) FindRunForOwner(ownerIdentity string, id uuid.UUID) (*models.VerificationRun, error) {
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	if ownerIdentity == "" {
+		return nil, errVerificationOwnerRequired
+	}
 	var run models.VerificationRun
 	if err := verificationRunsForOwnerQuery(r.DB, ownerIdentity).
 		Where("id = ?", id).

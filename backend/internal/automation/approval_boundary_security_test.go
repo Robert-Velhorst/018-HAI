@@ -247,6 +247,8 @@ func TestApprovalProofExpiryAndConcurrentReplayFailClosed(t *testing.T) {
 	}
 
 	now = now.Add(time.Second)
+	request.ApprovalSourceID = "task-review:" + uuid.NewString()
+	expected.ApprovalSourceID = request.ApprovalSourceID
 	proof, err := service.Issue(request)
 	if err != nil {
 		t.Fatalf("issue replay proof: %v", err)

@@ -23,6 +23,67 @@ func NewPostgresApprovalProofConsumptionStore(db *gorm.DB) *PostgresApprovalProo
 	return &PostgresApprovalProofConsumptionStore{DB: db}
 }
 
+func (s *PostgresApprovalProofConsumptionStore) ReserveIssuance(
+	ctx context.Context,
+	value ApprovalProofIssuance,
+) error {
+	if s == nil || s.DB == nil {
+		return fmt.Errorf("approval proof issuance database is required")
+	}
+	if ctx == nil {
+		return fmt.Errorf("approval proof issuance context is required")
+	}
+	ctx, cancel := context.WithTimeout(ctx, approvalProofIssuanceTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := validateApprovalProofIssuance(value); err != nil {
+		return err
+	}
+	scoped, err := (&GormUserRepository{DB: s.DB}).WithAutomationRepositoryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("scope approval proof issuance database: %w", err)
+	}
+	db := scoped.(*GormUserRepository).DB
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	result := db.Exec(`
+		INSERT INTO public.automation_approval_proof_issuances (
+			contract_version, owner_identity, approval_source_id, proof_id,
+			automation_id, action_digest, scope, nonce_digest,
+			signature_digest, record_digest, issued_at, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (owner_identity, approval_source_id) DO NOTHING`,
+		value.ContractVersion,
+		value.OwnerIdentity,
+		value.ApprovalSourceID,
+		value.ProofID,
+		value.AutomationID,
+		value.ActionDigest,
+		string(value.Scope),
+		value.NonceDigest,
+		value.SignatureDigest,
+		value.RecordDigest,
+		value.IssuedAt.UTC(),
+		value.ExpiresAt.UTC(),
+	)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return errors.Join(ErrApprovalProofIssuanceUnconfirmed, result.Error, contextErr)
+	}
+	if result.Error != nil {
+		return errors.Join(ErrApprovalProofIssuanceUnconfirmed, fmt.Errorf("reserve approval proof issuance: %w", result.Error))
+	}
+	if result.RowsAffected == 0 {
+		return ErrApprovalProofAlreadyIssued
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("%w: unexpected approval issuance row count", ErrApprovalProofIssuanceUnconfirmed)
+	}
+	return nil
+}
+
 func DefaultDurableApprovalProofService(
 	secret []byte,
 ) (ApprovalProofService, error) {

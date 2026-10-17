@@ -70,3 +70,25 @@ box plus honest bridge contracts describing what the provider side must provide.
   contain secrets.
 
 Proven by `scripts/smoke-account-bridges.sh` (16/16).
+
+
+
+## HTTP cursor continuation
+
+HTTP JSON feeds may return an opaque, top-level `cursor` checkpoint. After a
+complete read and successful ingestion, HAI persists that checkpoint on the
+account-feed record. The next HTTP request sends it as the `cursor` query
+parameter while preserving the feed's configured query parameters.
+
+Cursor presence is significant: a successful envelope that omits `cursor`, or
+a bare-array response, leaves the prior checkpoint unchanged. A successful
+envelope that explicitly returns an empty cursor clears it. Failed or partial
+syncs never advance the checkpoint, so the next attempt retries from the last
+committed position; item identity/revision handling keeps that replay
+idempotent.
+
+The checkpoint is internal state: it is excluded from public feed
+configuration and sync-report JSON. It is limited to 4,096 bytes, and NUL
+characters are rejected before persistence or URL construction. Migration
+`0128_account_feed_sync_cursor` adds the column with a size constraint; its
+rollback refuses to discard a non-empty checkpoint or an active sync token.

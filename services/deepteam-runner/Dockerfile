@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+# deepteam 1.0.10 currently declares Python <3.14 on PyPI; use Python 3.13 until upstream supports 3.15.
+FROM python:3.13-slim
 
 WORKDIR /app
 

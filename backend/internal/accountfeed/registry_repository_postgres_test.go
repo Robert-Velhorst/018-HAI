@@ -18,7 +18,7 @@ func TestRegistryPostgresModelColumnsMatchMigration(t *testing.T) {
 		table   string
 		columns []string
 	}{
-		{&accountFeedRow{}, "account_feeds", []string{"id", "owner_user_id", "workspace_id", "name", "provider", "account_label", "source_type", "path", "url", "project_key", "operation_type", "enabled", "config_version", "last_attempt_at", "last_success_at", "last_items_read", "sync_token", "sync_started_at"}},
+		{&accountFeedRow{}, "account_feeds", []string{"id", "owner_user_id", "workspace_id", "name", "provider", "account_label", "source_type", "path", "url", "project_key", "operation_type", "enabled", "config_version", "sync_cursor", "last_attempt_at", "last_success_at", "last_items_read", "sync_token", "sync_started_at"}},
 		{&accountFeedAuditRow{}, "account_feed_audits", []string{"id", "feed_id", "owner_user_id", "workspace_id", "event_type", "message", "created_at"}},
 	} {
 		model, err := schema.Parse(tc.model, &sync.Map{}, schema.NamingStrategy{})

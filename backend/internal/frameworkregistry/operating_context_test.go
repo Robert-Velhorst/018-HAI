@@ -2,11 +2,25 @@ package frameworkregistry
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestOperatingContextRejectsNonFiniteConfidenceAndScore(t *testing.T) {
+	now := time.Date(2026, time.July, 30, 12, 0, 0, 0, time.UTC)
+	if _, err := normalizeNeedState(NeedStateAssessment{ID: "need", Level: "safety", State: "active", Source: "operator", Confidence: math.NaN()}); err == nil {
+		t.Fatal("need assessment with NaN confidence was accepted")
+	}
+	if _, err := normalizeCapacitySnapshot(&CapacitySnapshot{Status: "available", Confidence: math.NaN()}, now); err == nil {
+		t.Fatal("capacity snapshot with NaN confidence was accepted")
+	}
+	if _, err := normalizeAvailableAgentCard(AgentCard{ID: "agent", Name: "Agent", Role: "reviewer", Provenance: "verified", EvaluationScore: math.NaN()}, 10, now); err == nil {
+		t.Fatal("agent card with NaN evaluation score was accepted")
+	}
+}
 
 func TestBuildSelectionCreatesMultiDomainWholeLifeContract(t *testing.T) {
 	decision, err := BuildSelection(
