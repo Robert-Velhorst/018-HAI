@@ -1223,3 +1223,12 @@ This is a content-identity cleanup only. It does not establish that every HAI-re
 ## PR #153 post-merge exact-copy check (2026-10-17)
 
 GitHub confirms PR #153 was already merged at `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`; live `main` remains at `80fdeabd16efda6d9328fa0c89a4ab813f087908`. The merge changed 16 account-feed/migration paths. A fresh exact Git-blob comparison of those paths across all 11 registered HAI worktrees found zero local files identical to the corresponding current-main blobs. No deletion was eligible from this merge, and no local file was changed by this check.
+
+
+## Model-maintenance worktree semantic sample (2026-10-17)
+
+The registered `hai-model-maintenance-audit` worktree is at the same local `origin/main` SHA (`80fdeabd16efda6d9328fa0c89a4ab813f087908`) used for this comparison. Its current status has 520 paths: 301 modified, 124 deleted, and 95 untracked. A targeted semantic sample covered ten model/OpenClaw-maintenance source, test, launcher, and documentation files; the remaining paths were not reviewed in this pass.
+
+The sampled local variants are not safe additions as written. The local LLM maintenance service/scheduler omits current `main`'s shared background-processing gate, provider-managed versus local-health distinctions, and cross-process lease/durable-history controls. The local model-intelligence path accepts only a model ID where current `main` also validates provider and selected-model metadata and explicitly avoids sending provider-hosted models through the local artifact updater. The local OpenClaw worker path differs in lifecycle/cancellation and credential-format handling; its service omits the background-policy gate. The local Windows launcher does not include current `main`'s validated-payload preflight and uses an immediate mutex check instead of the bounded, shared-lock helper. Current `main` retains these controls and corresponding tests.
+
+This is a targeted source comparison, not execution of these local variants or a review of all 520 paths. No code was ported, and the worktree was not changed or cleaned up.
