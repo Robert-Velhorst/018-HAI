@@ -1237,3 +1237,8 @@ This is a targeted source comparison, not execution of these local variants or a
 ## Model-maintenance fail-closed status check (2026-10-17)
 
 A separate same-path comparison of the local untracked `backend/internal/llm/maintenance_cooldown.go` found a concrete fail-open difference. The local `maintenanceStatusBlocksExecution` returns false for unknown or empty maintenance statuses; current `main` returns true unless the status is explicitly one of the verified/non-blocking values. An unknown state could therefore be treated as safe by the local variant. Current `main` already has the safer behavior, so the local variant was not ported or deleted.
+
+
+## Brain catalog and provider-registry sample (2026-10-17)
+
+Four additional modified files in the same registered worktree were compared with current `main`: `backend/internal/braincatalog/catalog.go`, `backend/internal/braincatalog/integration_boundary.go`, `backend/internal/modelintelligence/provider_registry.go`, and `backend/internal/modelintelligence/service.go`. The local catalog entry predates current `main`'s bounded, read-only conversation-history MCP integration and its explicit A2A planning boundary. The local provider registry returns raw provider configuration errors where current `main` applies structured secret redaction, and the local variant lacks the current 15-minute live-probe freshness bound. These are concrete reasons not to port the local snapshots as written. This four-file sample was source inspection only; no tests were run and the worktree was left unchanged.
