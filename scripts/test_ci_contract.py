@@ -1536,9 +1536,9 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn('status in {"ready", "degraded"}', program)
         self.assertEqual(acceptance.count("'manifest.json'"), 1)
         self.assertIn("'manifest.json'", program)
-        self.assertIn('node-version: "24"', acceptance)
-        self.assertIn("npm install --global npm@10.9.8 --no-audit --no-fund", acceptance)
-        self.assertIn('test "$(npm --version)" = "10.9.8"', acceptance)
+        self.assertIn('node-version: "26"', acceptance)
+        self.assertIn("npm install --global npm@12.2.0 --no-audit --no-fund", acceptance)
+        self.assertIn('test "$(npm --version)" = "12.2.0"', acceptance)
         dependencies = browser_step("Install browser acceptance dependencies")
         for command in ("npm ci", "npm run typecheck", "npx playwright install --with-deps chromium"):
             self.assertRegex(dependencies, rf"(?m)^          {re.escape(command)}$")
