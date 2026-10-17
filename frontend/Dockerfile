@@ -1,6 +1,6 @@
-# Angular 22.1.1 supports Node 22.22.3+ or 24.15.0+. Pin the active LTS
-# toolchain so a floating Alpine tag cannot move builds to an unsupported release.
-FROM node:24.15.0-alpine AS build
+# Angular 22.1.x supports Node ^22.22.3, ^24.15.0, or ^26.0.0. Pin the current stable
+# release for reproducible builds.
+FROM node:26.12.0-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 
