@@ -198,3 +198,12 @@ Read-only diffs of seven high-risk implementation files in the staged source-rec
 These comparisons are against the working snapshot in `D:\\hai-source-reconciliation` and current cached main `498dcf7800f86be8c2e799f44d27ff649413881a`; no code was copied. The staged-only IDP test `TestAutomaticGormPingFailureRequiresCallerCleanup` was also checked: production `initializeIDPPostgresPool` explicitly sets `DisableAutomaticPing: true` and performs its own bounded `PingContext`, so the proposed test covers a GORM path production intentionally does not use. Existing production cleanup tests cover the actual path.
 
 This focused source review rejects the staged snapshot as a safe aggregate. It does not yet examine every implementation file in that 310-path index, the primary checkout's 758-entry state, or the remaining worktrees and output reports.
+
+
+## Fresh checkout and merged cursor work, 2026-10-17
+
+- Rechecked PR #170 (account-feed cursor persistence and rollback guard): GitHub records it merged at `80fdeabd16efda6d9328fa0c89a4ab813f087908`. Its exact-head CI run #1822 completed successfully.
+- GitHub compare confirms current `main` descends from that merge commit (five later commits at the time of this check). The current default-branch fetcher still builds HTTP requests from the persisted cursor, and migration `0128_account_feed_sync_cursor` is present.
+- The local branch `codex/accountfeed-cursor-rollback-guard-20261016` matches the merged PR head, but `git worktree list` has no separate checkout for it. The local branch ref is retained; deleting a Git ref would not materially reclaim the source copy or establish cleanup safety for the dirty primary checkout.
+- Recounted the primary checkout without modifying it: branch `codex/hai-runtime-release` at `e07b9daeb3ba2630ecbe12a64d948f791203c241`, cached `origin/main` at `498dcf7800f86be8c2e799f44d27ff649413881a`, divergence 89 commits only on main and 292 only on the local branch. The checkout has 692 changed/deleted tracked paths and 1,578 untracked files, 1,498 under `output/` (~126 MB). This is not a safe wholesale PR or deletion candidate.
+- No local source, worktree, transcript, output, or branch data was removed. Current-main exact-match cleanup is still unproven for these files; the bounded match check found no byte-identical content among colliding untracked paths.
