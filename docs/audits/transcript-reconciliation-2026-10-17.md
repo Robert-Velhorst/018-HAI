@@ -161,3 +161,12 @@ Spot checks show material regression risk, so the staged set was not promoted as
 - `backend/internal/llm/maintenance.go` removes endpoint mount-path handling and a maintenance eligibility check.
 
 These are representative examples only, not a full review of the 310 staged paths. The 34 deleted output reports were not staged and were not deleted by this audit. No local change, report, checkout, or worktree was removed. The entire staged set remains unreviewed for semantic conflicts and regression risks; it is not ready to push as a whole. Exact duplicate-content deletion eligibility has not been established for this checkout.
+
+
+## Primary checkout untracked inventory (2026-10-17)
+
+A fresh inventory of the primary checkout found 1,578 paths from `git ls-files --others --exclude-standard`. Sixty-nine of those paths exist in the cached current-main tree; a batch Git blob-hash comparison found zero byte-identical copies. These files are not eligible for exact-match cleanup.
+
+The untracked `output/` tree contains 1,498 files (884 `.log`, 420 `.json`, 82 `.jsonl`, 60 `.exit`, 34 `.md`, and 18 other extensions). Windows `dir /s` reported 125,926,957 bytes total for that directory. This consists of generated test/recovery/audit output rather than a reviewed source patch. It has not been uploaded or deleted; the archive/evidence subset remains unreviewed for unique findings. Other untracked paths include local agent state and test/support files and are also preserved.
+
+This count is limited to the primary checkout and does not cover ignored files, caches, all registered worktrees, or other device locations. No local data was removed and no reclaimed-space claim is made.
