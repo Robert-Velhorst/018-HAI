@@ -182,7 +182,7 @@
             nz-button
             nzSize="small"
             (click)="sync(f)"
-            [disabled]="loading || !!feedLoadError || !isFeedSyncable(f) || !!syncing[f.feed.id] || syncingAll"
+            [disabled]="loading || !!feedLoadError || !f.feed.enabled || !isFeedSyncable(f) || !!syncing[f.feed.id] || syncingAll || !!changing[f.feed.id]"
             [nzLoading]="!!syncing[f.feed.id]"
             [attr.aria-busy]="syncing[f.feed.id] ? 'true' : null"
             [attr.aria-label]="'Sync now: ' + f.feed.name"
@@ -190,6 +190,18 @@
           >
             Sync now
           </button>
+          <button
+            *ngIf="f.feed.sourceType === 'autoposter_api'"
+            nz-button
+            nzSize="small"
+            (click)="setEnabled(f, !f.feed.enabled)"
+            [disabled]="!!changing[f.feed.id]"
+            [nzLoading]="!!changing[f.feed.id]"
+            [attr.aria-busy]="changing[f.feed.id] ? 'true' : null"
+            [attr.aria-label]="(f.feed.enabled ? 'Disable ' : 'Enable ') + f.feed.name"
+            [attr.title]="f.feed.enabled ? 'Stop future reads; imported references remain' : 'Allow manual Sync; this does not start a read'"
+          >{{ f.feed.enabled ? 'Disable' : 'Enable' }}</button>
+          <span *ngIf="changing[f.feed.id]" class="ab__action-hint" role="status">Saving source state…</span>
           <span *ngIf="!isFeedSyncable(f)" class="ab__action-hint">{{ feedSyncDescription(f) }}</span>
           <span *ngIf="syncing[f.feed.id]" class="ab__action-hint" role="status">Feed sync in progress</span>
         </div>

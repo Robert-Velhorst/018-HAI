@@ -177,6 +177,17 @@ func TestGenericStopwordOverlapIsNotEvidenceRelevance(t *testing.T) {
 	}
 }
 
+func TestDutchStopwordOverlapIsNotEvidenceRelevance(t *testing.T) {
+	claim := tokenSet("De uitnodiging is voor een van de dagen")
+	source := tokenSet("Het document is met een van de regels")
+	if score := overlapScore(claim, source); score != 0 {
+		t.Fatalf("unrelated Dutch snippets share stopword-only relevance: %.2f", score)
+	}
+	if overlapCount(tokenSet("niet"), tokenSet("niet")) != 1 {
+		t.Fatal("Dutch negation word niet must remain meaningful")
+	}
+}
+
 func TestConnectedSourceProvenanceSupportsButDoesNotVerifyTruth(t *testing.T) {
 	if isTrustedEvidence(authorityConnectedProvenance) {
 		t.Fatal("authenticated provenance must not be treated as semantic authority")

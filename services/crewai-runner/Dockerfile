@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
@@ -10,7 +10,6 @@ COPY app.py ./
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     OTEL_SDK_DISABLED=true \
-    CREWAI_DISABLE_TELEMETRY=true \
     DO_NOT_TRACK=true
 
 EXPOSE 8080

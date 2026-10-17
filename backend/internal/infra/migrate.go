@@ -27,6 +27,8 @@ const (
 	migrationAdvisoryLockKey = int64(0x4841494d494752)
 )
 
+const previousAccountFeedSyncCursorChecksum = "6660b907490fb479b2959704b90a2566cf6c5b5b274cd5b30425786f61960f1c"
+
 // Migration is one versioned change loaded from an embedded directory.
 type Migration struct {
 	Version string // e.g. "post/0001_conversation_owner_identity"
@@ -45,6 +47,17 @@ func MigrationChecksum(migration Migration) string {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(migration.DownSQL))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func migrationChecksumMatches(migration Migration, stored string) bool {
+	if stored == MigrationChecksum(migration) {
+		return true
+	}
+	// 0128's down script was hardened after the original migration shipped.
+	// The up script is unchanged, so accept only the exact prior checksum for
+	// this version while retaining strict checksum validation for every other
+	// migration and every unknown 0128 revision.
+	return migration.Version == "pre/0128_account_feed_sync_cursor" && stored == previousAccountFeedSyncCursorChecksum
 }
 
 // loadMigrations reads every NNNN_name.up.sql (and optional matching .down.sql)
@@ -368,7 +381,7 @@ func validateAppliedChecksums(all []Migration, applied map[string]bool, checksum
 			return fmt.Errorf("applied migration %q has no content checksum; verify the database schema and explicitly adopt its checksum before continuing", migration.Version)
 		}
 		want := MigrationChecksum(migration)
-		if stored != want {
+		if !migrationChecksumMatches(migration, stored) {
 			return fmt.Errorf("applied migration %q checksum mismatch: database=%s source=%s; refusing to continue", migration.Version, stored, want)
 		}
 	}
@@ -438,7 +451,7 @@ func AdoptLegacyMigrationChecksums(db *gorm.DB, fsys fs.FS, dir string, approved
 			return err
 		}
 		for _, migration := range all {
-			if applied[migration.Version] && checksums[migration.Version] != "" && checksums[migration.Version] != MigrationChecksum(migration) {
+			if applied[migration.Version] && checksums[migration.Version] != "" && !migrationChecksumMatches(migration, checksums[migration.Version]) {
 				return fmt.Errorf("applied migration %q checksum mismatch; refusing legacy adoption", migration.Version)
 			}
 		}
@@ -569,7 +582,7 @@ func ApplyMigrations(db *gorm.DB, fsys fs.FS, dir string) (int, error) {
 					return fmt.Errorf("recheck migration %s: %w", migration.Version, scanErr)
 				}
 				if scanErr == nil && stored.Valid {
-					if stored.String != MigrationChecksum(migration) {
+					if !migrationChecksumMatches(migration, stored.String) {
 						return fmt.Errorf("applied migration %q checksum mismatch under lock; refusing to continue", migration.Version)
 					}
 					return nil

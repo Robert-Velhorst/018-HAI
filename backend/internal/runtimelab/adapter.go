@@ -52,10 +52,17 @@ type ProbeResult struct {
 	GatewayAgentRoster          *GatewayAgentRosterSummary          `json:"gatewayAgentRoster,omitempty"`
 	EvidenceExpiresAt           *time.Time                          `json:"evidenceExpiresAt,omitempty"`
 	EvidencePersisted           bool                                `json:"evidencePersisted"`
+	EvidencePersistenceStatus   string                              `json:"evidencePersistenceStatus,omitempty"`
 	DurationMs                  int64                               `json:"durationMs"`
 	Detail                      string                              `json:"detail,omitempty"`
 	CheckedAt                   time.Time                           `json:"checkedAt"`
 }
+
+const (
+	EvidencePersistenceNotAttempted = "not_attempted"
+	EvidencePersistenceSucceeded    = "persisted"
+	EvidencePersistenceFailed       = "failed"
+)
 
 // GatewayTaskLedgerSummary is the bounded, redacted task state projection that
 // HAI may retain after an authenticated operator.read discovery. It excludes

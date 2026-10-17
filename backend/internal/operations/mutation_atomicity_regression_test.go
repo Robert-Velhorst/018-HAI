@@ -132,8 +132,8 @@ func TestAtomicMutationServiceStaleRetryPreservesWinningEvent(t *testing.T) {
 	}
 }
 
-// Source-review red regression: a current version must not authenticate a
-// caller-invented before-status. The parent owns the production fix and run.
+// A current version must not authenticate a caller-invented before-status.
+// Keep the regression paired with the atomic status and audit checks.
 func TestAtomicMutationTransitionRejectsForgedBeforeStatus(t *testing.T) {
 	repo := NewMemoryRepository()
 	before := mutationSeed(t, repo)

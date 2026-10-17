@@ -113,6 +113,7 @@ export interface IRuntimeProbe {
     unknownKindCount: number
   }
   evidenceSha256?: string
+  evidencePersistenceStatus?: 'not_attempted' | 'persisted' | 'failed'
   durationMs: number
   detail: string
   checkedAt: string

@@ -198,6 +198,27 @@ describe('RuntimeLabComponent MCP readiness', () => {
     expect(component.selfTestBusy['openclaw']).toBeFalse()
   });
 
+  it('keeps successful protocol discovery distinct from failed durable evidence persistence', () => {
+    const { component, runtimeService, notification } = make()
+    const runtime = { info: { id: 'openclaw', displayName: 'OpenClaw' } } as any
+    runtimeService.probe.and.returnValue(of({
+      protocolValid: true,
+      discoveryState: 'succeeded',
+      readinessLevel: 'available',
+      evidencePersisted: false,
+      evidencePersistenceStatus: 'failed',
+    }))
+
+    component.probe(runtime)
+
+    expect(component.latestProbes['openclaw'].evidencePersistenceStatus).toBe('failed')
+    expect(notification.warning).toHaveBeenCalledOnceWith(
+      'Discovery evidence was not saved',
+      jasmine.stringMatching(/protocol discovery completed, but durable evidence could not be recorded/i),
+    )
+    expect(notification.info).not.toHaveBeenCalled()
+  })
+
   it('clears each busy state when its request completes without a response', () => {
     const { component, runtimeService } = make()
     const probe = new Subject<any>()

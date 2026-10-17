@@ -2,6 +2,7 @@ package ambientmonitor
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -33,23 +34,76 @@ type schedulerService interface {
 	ProcessDue(context.Context, ProcessDueRequest) (ProcessDueResult, error)
 }
 
+const (
+	SweepResultCompleted   = "completed"
+	SweepResultFailed      = "failed"
+	SweepResultInterrupted = "interrupted"
+	SweepResultSkipped     = "skipped"
+)
+
+// SweepMetrics contains only bounded operational counts. It deliberately
+// excludes scope identifiers, target IDs, source content, and failure details.
+type SweepMetrics struct {
+	Duration                   time.Duration
+	Result                     string
+	DueCollectionScopes        int
+	DueCompositionScopes       int
+	CollectionLeasesRecovered  int
+	CompositionLeasesRecovered int
+	CollectionClaimed          int
+	CollectionCompleted        int
+	CollectionFailed           int
+	CompositionClaimed         int
+	CompositionSucceeded       int
+	CompositionRetrying        int
+	CompositionFailed          int
+}
+
+// SweepObserver receives one summary for each scheduled sweep.
+type SweepObserver interface {
+	ObserveOutcomeMonitorSweep(SweepMetrics)
+}
+
 // RegisterDurableScheduling creates a singleton, restart-safe advisory sweep.
 // The safety callback is checked for every run, so emergency stop/read-only
 // control remains authoritative over background processing.
-func RegisterDurableScheduling(runner *durablejob.Runner, service schedulerService, allowed func() bool, interval time.Duration) error {
+func RegisterDurableScheduling(runner *durablejob.Runner, service schedulerService, allowed func() bool, interval time.Duration, observers ...SweepObserver) error {
 	if runner == nil || service == nil {
 		return fmt.Errorf("ambient outcome scheduling requires a runner and service")
 	}
 	allowed = monitorSafetyGate(allowed)
+	var observer SweepObserver
+	if len(observers) > 0 {
+		observer = observers[0]
+	}
 	return runner.RegisterRecurring(monitorSweepJobKind, interval, monitorMaxAttempts, func(ctx context.Context) error {
 		if !allowed() {
+			observeSweep(observer, SweepMetrics{Result: SweepResultSkipped})
 			return durablejob.Defer("background processing is paused by safety policy")
 		}
-		return runMonitorSweep(ctx, service, time.Now().UTC(), allowed)
+		return runMonitorSweep(ctx, service, time.Now().UTC(), allowed, observer)
 	})
 }
 
-func runMonitorSweep(ctx context.Context, service schedulerService, now time.Time, allowed func() bool) error {
+func runMonitorSweep(ctx context.Context, service schedulerService, now time.Time, allowed func() bool, observers ...SweepObserver) (sweepErr error) {
+	started := time.Now()
+	observation := SweepMetrics{Result: SweepResultCompleted}
+	var observer SweepObserver
+	if len(observers) > 0 {
+		observer = observers[0]
+	}
+	defer func() {
+		observation.Duration = time.Since(started)
+		if sweepErr != nil {
+			var deferred *durablejob.DeferredError
+			if errors.Is(sweepErr, context.Canceled) || errors.Is(sweepErr, context.DeadlineExceeded) || errors.As(sweepErr, &deferred) {
+				observation.Result = SweepResultInterrupted
+			} else {
+				observation.Result = SweepResultFailed
+			}
+		}
+		observeSweep(observer, observation)
+	}()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -57,6 +111,7 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 	if err != nil {
 		return fmt.Errorf("discover due monitor scopes: %w", err)
 	}
+	observation.DueCollectionScopes = min(len(dueScopes), monitorScopeLimit())
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -64,6 +119,7 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 	if err != nil {
 		return fmt.Errorf("discover due composition scopes: %w", err)
 	}
+	observation.DueCompositionScopes = min(len(compositionScopes), monitorScopeLimit())
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -76,14 +132,18 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 			}
 			return durablejob.Defer("background processing is paused by safety policy")
 		}
-		if _, err := service.RecoverExpiredLeases(ctx, scope, now); err != nil {
+		recovered, err := service.RecoverExpiredLeases(ctx, scope, now)
+		if err != nil {
 			failures++
 			continue
 		}
-		if _, err := service.RecoverExpiredCompositionLeases(ctx, scope, now); err != nil {
+		observation.CollectionLeasesRecovered += max(0, recovered)
+		compositionRecovered, err := service.RecoverExpiredCompositionLeases(ctx, scope, now)
+		if err != nil {
 			failures++
 			continue
 		}
+		observation.CompositionLeasesRecovered += max(0, compositionRecovered)
 		for processed := 0; processed < monitorBatchLimit(); processed++ {
 			if ctx.Err() != nil || !allowed() {
 				if err := ctx.Err(); err != nil {
@@ -100,14 +160,21 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 				failures++
 				break
 			}
+			observation.CollectionClaimed += max(0, result.Claimed)
+			observation.CollectionCompleted += len(result.Completions)
+			observation.CollectionFailed += len(result.Failures)
+			observation.CompositionClaimed += max(0, result.Compositions.Claimed)
+			observation.CompositionSucceeded += max(0, result.Compositions.Succeeded)
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			terminalCompositionFailure := false
 			for _, failure := range result.Compositions.Failures {
-				if !failure.Retrying {
+				if failure.Retrying {
+					observation.CompositionRetrying++
+				} else {
+					observation.CompositionFailed++
 					terminalCompositionFailure = true
-					break
 				}
 			}
 			if len(result.Failures) > 0 || terminalCompositionFailure {
@@ -125,6 +192,12 @@ func runMonitorSweep(ctx context.Context, service schedulerService, now time.Tim
 		return fmt.Errorf("ambient outcome sweep failed for %d scoped batch(es)", failures)
 	}
 	return nil
+}
+
+func observeSweep(observer SweepObserver, observation SweepMetrics) {
+	if observer != nil {
+		observer.ObserveOutcomeMonitorSweep(observation)
+	}
 }
 
 func mergeScopes(groupsA, groupsB []Scope, limit int) []Scope {
@@ -145,13 +218,13 @@ func mergeScopes(groupsA, groupsB []Scope, limit int) []Scope {
 	return result
 }
 
-func StartDurableScheduler(ctx context.Context, service *Service, allowed func() bool) error {
+func StartDurableScheduler(ctx context.Context, service *Service, allowed func() bool, observers ...SweepObserver) error {
 	repository, err := durablejob.DefaultRepository()
 	if err != nil {
 		return err
 	}
 	runner := durablejob.NewRunner(repository, durablejob.Options{Queue: "outcome-monitor"})
-	if err := RegisterDurableScheduling(runner, service, allowed, monitorSweepInterval()); err != nil {
+	if err := RegisterDurableScheduling(runner, service, allowed, monitorSweepInterval(), observers...); err != nil {
 		return err
 	}
 	if !lifecycle.Go(ctx, "ambient-monitor-worker", func() { runner.Start(ctx, monitorPollInterval()) }) {
