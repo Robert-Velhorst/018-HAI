@@ -28,6 +28,8 @@ The 493-file clean patch represents 98,461 additions and 10,054 deletions relati
 
 The larger 682-file patch represents 199,137 additions and 74,020 deletions. A prior path/blob comparison found 324 exact-current matches and 358 paths that differ or are absent. Neither archive is a safe bulk overlay.
 
+A line-level comparison of the 168 non-matching clean-patch files against current `main` found 5,245 archived additions and 7,649 archived deletions (net 2,404 fewer lines in the archive); 139 files are net smaller, four are net larger, and 25 have equal line counts. This is evidence of a reduced/older snapshot, not proof that every remaining delta is obsolete.
+
 ## Concrete regressions found in the stale snapshot
 
 Direct blob-to-blob comparisons against current `main` found:
