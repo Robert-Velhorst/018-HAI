@@ -39,6 +39,11 @@ Direct blob-to-blob comparisons against current `main` found:
 - `backend/internal/accountfeed/registry_service.go`: the archived version omits current cursor-presence handling and the HTTP-feed-only persistence/clearing rules.
 - `backend/internal/source/trello.go`: the archived version removes the quiet-board cursor optimization, which avoids re-fetching a quiet board's full card/comment history.
 - `backend/internal/opscontrol/service.go`: the archived version removes the durable control-review repository hook used by the current safety-control flow.
+- `backend/internal/frameworkregistry/repository.go`: the archived version removes transactional preference-change audit persistence.
+- `backend/internal/task/state_repository.go`: the archived version removes context-aware task-operation claim/heartbeat/completion contracts and the canceled operation state.
+- `backend/internal/task/handler.go`: the archived version removes bounded task-history limits and the compact/full history projection.
+- `backend/internal/ambient/service.go`: the archived version removes the compact owner-scoped overview and its smaller scan projection.
+- `frontend/src/app/pages/governance-control/governance-control.component.html`: the archived version removes the expired-monitor recovery action and lazy/full-evidence loading controls.
 - `idp/internal/app/authentication/auth_handler.go`: the archived version drops request-context propagation for logout, authentication checks, token refresh, and password-reset requests.
 - `nginx-config/nginx.conf`: the archived standalone file embeds the fixed value `change-this-local-backend-key`; current Compose instead renders `nginx-config/nginx.conf.template` with an environment-provided secret. Compose does not mount or reference the archived standalone file. Do not port this file.
 
