@@ -1232,3 +1232,8 @@ The registered `hai-model-maintenance-audit` worktree is at the same local `orig
 The sampled local variants are not safe additions as written. The local LLM maintenance service/scheduler omits current `main`'s shared background-processing gate, provider-managed versus local-health distinctions, and cross-process lease/durable-history controls. The local model-intelligence path accepts only a model ID where current `main` also validates provider and selected-model metadata and explicitly avoids sending provider-hosted models through the local artifact updater. The local OpenClaw worker path differs in lifecycle/cancellation and credential-format handling; its service omits the background-policy gate. The local Windows launcher does not include current `main`'s validated-payload preflight and uses an immediate mutex check instead of the bounded, shared-lock helper. Current `main` retains these controls and corresponding tests.
 
 This is a targeted source comparison, not execution of these local variants or a review of all 520 paths. No code was ported, and the worktree was not changed or cleaned up.
+
+
+## Model-maintenance fail-closed status check (2026-10-17)
+
+A separate same-path comparison of the local untracked `backend/internal/llm/maintenance_cooldown.go` found a concrete fail-open difference. The local `maintenanceStatusBlocksExecution` returns false for unknown or empty maintenance statuses; current `main` returns true unless the status is explicitly one of the verified/non-blocking values. An unknown state could therefore be treated as safe by the local variant. Current `main` already has the safer behavior, so the local variant was not ported or deleted.
