@@ -1256,3 +1256,26 @@ crosswalk IDs. It reported `source_archive_verified=true`, but
 `deletion_performed=false`. The combined main and supplemental inventories
 therefore remain preserved: 27 files, 34,752,906,420 bytes, and seven hashed
 candidate transcripts totaling 6,292,733,953 bytes; none has been deleted.
+
+
+### Current local retained-transcript scan (2026-10-17)
+
+A read-only rerun of `scripts/audit-child-agent-transcripts.ps1` streamed the
+three currently inventoried source folders. It read 20 files totaling
+28,460,172,467 logical bytes and confirmed the pinned HAI parent session ID
+in each file's session metadata. No source file was modified by the audit.
+
+| Source folder | Files | Bytes scanned | Completed / aborted / unattributed | Oversized records skipped | Cleanup candidates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `hai-completed-agent-sessions` | 13 | 17,559,729,527 | 0 / 8 / 5 | 2 | 0 |
+| `completed-agent-sessions` | 1 | 1,538,632,047 | 0 / 0 / 1 | 0 | 0 |
+| `session-log-relief` | 6 | 9,361,810,893 | 0 / 1 / 5 | 5 | 0 |
+| **Total** | **20** | **28,460,172,467** | **0 / 9 / 11** | **7** | **0** |
+
+The parser used its configured 10 Mi-character record bound. Seven oversized
+records were skipped from semantic attribution; consequently the two folders
+with oversized records report `full_file_scan=false`. The one-file folder had
+no oversized or malformed candidate records, but its child turn could not be
+uniquely attributed. These results do not establish that all child changes are
+integrated, and they do not authorize cleanup. All 20 files remain required
+for the unresolved attribution and code crosswalk; no transcript was deleted.
