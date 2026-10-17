@@ -108,3 +108,15 @@ The five candidate paths in the July 30 manifest could not be found in either `D
 ### Additional filename-search roots (2026-10-17)
 
 A follow-up exact-filename search also found no matches under `C:\\Users\\NO\\Documents\\Codex`, `C:\\Users\\NO\\Downloads`, `C:\\Users\\NO\\Desktop`, or `C:\\Users\\NO\\AppData\\Local\\Temp`. The `.codex` search was repeated including ignored files while excluding Git object stores, dependency/plugin caches, and worktree directories. This extends the bounded filename search, but still does not cover every drive, user profile, backup, or storage location; the five manifest files remain unresolved and unverified.
+
+
+
+## PR #153 merge and local cursor-path check (2026-10-17)
+
+GitHub reports PR #153, `feat(accountfeed): persist HTTP feed pagination cursors`, as merged into `main` on 2026-10-16 at merge commit `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. Its changed-file listing contains 17 backend feed and migration paths. The local cached `origin/main` ref is `498dcf7800f86be8c2e799f44d27ff649413881a`, and a local ancestry check confirms the PR merge commit is an ancestor of that ref.
+
+A new remote fetch could not be completed: Git was denied write access to `.git/FETCH_HEAD`. Therefore the ancestry result uses the cached remote-tracking ref, not a freshly fetched ref. The GitHub PR record independently confirms that PR #153 is merged.
+
+The 17 PR paths were checked in the 10 Git-readable registered worktrees. There were zero byte-identical working-file matches against the local `origin/main` blobs. In `D:\\hai-source-reconciliation`, 15 of the paths exist, but Git rejected the repository for dubious ownership during the hash pass; those files are unverified and are not counted as matches or eligible for deletion.
+
+The primary checkout and the Git-readable HAI worktrees remain dirty (the primary checkout reports 758 changed/untracked entries, and each other readable worktree also reports changes). No worktree or file was removed. This narrow PR-path result does not reconcile the broader worktree contents or transcript archive and does not establish any further cleanup candidates.
