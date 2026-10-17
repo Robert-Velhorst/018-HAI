@@ -215,3 +215,16 @@ This focused source review rejects the staged snapshot as a safe aggregate. It d
 - Reviewed Go test function names for the untracked backend tests against the matching files on main. The local versions add no test function names missing from main; three main files include additional test names absent from the local variants. This is only a function-name comparison, not proof that assertion bodies match, so no local test file is declared redundant or deleted.
 - The remaining non-output paths are alternate test/script/documentation or dependency-lock snapshots, not new production implementation files. They still require content-level review before any port or cleanup decision.
 - This is a bounded inventory of untracked paths only. It does not complete review of the 692 tracked working-tree changes, all 1,498 untracked `output/` files, the 11 registered worktrees, or the 13 retained transcript archives. No code from this snapshot was copied into a PR, and no local file was deleted.
+
+
+## Primary committed-tree comparison (2026-10-17, refreshed)
+
+A live `git ls-remote` check confirmed `main` remains at `498dcf7800f86be8c2e799f44d27ff649413881a`. The primary local branch is `codex/hai-runtime-release` at `e07b9daeb3ba2630ecbe12a64d948f791203c241`; the commit graph reports 89 commits only on `main` and 292 only on the local branch. This is a stale, divergent branch, not a clean port branch.
+
+The committed tree comparison (`origin/main` to local `HEAD`, excluding the uncommitted worktree layer) reports 2,130 changed paths, 20,942 insertions, and 398,064 deletions. The name-status inventory has 1,217 deletions, 907 modifications, and four additions. The four added paths are three local environment files and `nginx-config/nginx.conf`; there are no added application implementation paths. The 219-path runtime/source slice likewise contains substantially more deletions than additions, including OpenClaw runtime files present on current main. These totals are not evidence that the local branch is wholly redundant, but they rule out a safe branch-wide PR or cherry-pick.
+
+A fresh path check of untracked non-output files, excluding local `.claude-flow/` and `.swarm/` state, found 12 paths absent from current main; all 12 are PostgreSQL test-evidence or browser-acceptance log records, not production source. The other untracked source/test paths collide with paths on main but have different bytes. Prior path accounting identified four additional agent/tool-state files. No newly discovered production implementation file is eligible for direct port from this checkout based on this comparison alone.
+
+The generated `output/` directory currently contains 1,504 files totaling 120.1 MiB by recursive file-length measurement. It contains diagnostic run records and reports, not a source patch. It was neither uploaded nor deleted. This update does not declare any diagnostic output, transcript, worktree, or source copy safe to remove.
+
+This is a bounded tree/path comparison, not semantic review of all 292 local-only commits, 758 current worktree entries, every registered worktree, or all transcript content. Those reviews remain open. No local data was deleted.
