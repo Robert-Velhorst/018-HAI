@@ -1263,3 +1263,10 @@ This is a four-file source inspection within a 247-path worktree, not a full ret
 Five additional modified files in `hai-openclaw-artifact-audit` were compared with current `main`: host-runtime service, repository, and handler, plus the DeepSeek harness and final-effect authorization. The local host-runtime snapshot lacks current start-intent, actual-start acknowledgment, and unknown-outcome reconciliation routes; its repository path also lacks the current context-bounded, approval-digest/lease protocol. The local DeepSeek harness reports the bridge ready and permits queueing based on weaker conditions, while current `main` fails closed because verified OS isolation, TLS peer pinning, and the acknowledged Windows process-start protocol are not all available. These are safety-critical regressions in the local candidate, not missing work to port.
 
 This is a five-file source sample only. No host execution was run, no code was ported, and the worktree remains unchanged.
+
+
+## agent/laro-connected-source tree reconciliation (2026-10-17)
+
+The remote `agent/laro-connected-source` ref is in the same repository, at `4bee1ab8bad2fdc69105b33fa12ebda9b978665d`; it is the merged head of PR #32, while PR #29 is also merged. GitHub's merge-base comparison reports 83 commits on each side, which is ancestry history and not 83 unintegrated features. A direct current-tree comparison between live `main` (`80fdeabd16efda6d9328fa0c89a4ab813f087908`) and that branch reports 2,060 changed paths: 1,172 deletions, 871 modifications, one addition, and 16 renames. This is an old divergent snapshot and is unsafe to merge or publish wholesale.
+
+One apparent branch-only addition, `backend/internal/source/worker_control.go`, has the exact same Git blob on both trees (`9751a0eeda7c6c098c329e74a89bb2d9b62416a0`); current `main` also contains its connector registration and operational documentation. That feature is already integrated, so no code port or local deletion is warranted from this comparison. No branch ref was changed.
