@@ -94,7 +94,6 @@ def docker_run_command(
         docker,
         "run",
         "--detach",
-        "--rm",
         "--pull=never",
         "--cidfile",
         str(cidfile),
@@ -165,6 +164,39 @@ def _run(
     )
 
 
+def _container_failure_details(
+    runner: str, container_id: str, *, docker: str, run_process: PROCESS_RUN
+) -> str:
+    state = _run(
+        [docker, "inspect", "--format={{json .State}}", container_id],
+        timeout=5,
+        run_process=run_process,
+    )
+    details = "container state unavailable"
+    if state.returncode == 0:
+        try:
+            value = json.loads(state.stdout)
+            details = (
+                f"exit_code={value.get('ExitCode')}, "
+                f"oom_killed={value.get('OOMKilled')}, "
+                f"error={value.get('Error') or 'none'}"
+            )
+        except (json.JSONDecodeError, AttributeError):
+            details = "container state was not valid JSON"
+
+    logs = _run(
+        [docker, "logs", "--tail", "40", container_id],
+        timeout=5,
+        run_process=run_process,
+    )
+    output = (logs.stderr or "") + (logs.stdout or "")
+    for key, value in container_environment(runner).items():
+        if any(marker in key for marker in ("TOKEN", "KEY", "PASSWORD", "SECRET")):
+            output = output.replace(value, "[redacted]")
+    excerpt = " ".join(output.split())[-2000:]
+    return f"{details}; logs={excerpt or 'unavailable'}"
+
+
 def run_smoke(
     runner: str,
     image: str,
@@ -210,7 +242,10 @@ def run_smoke(
                     run_process=run_process,
                 )
                 if state.returncode != 0 or state.stdout.strip().lower() != "true":
-                    last_error = "container exited before readiness"
+                    details = _container_failure_details(
+                        runner, container_id, docker=docker, run_process=run_process
+                    )
+                    last_error = f"container exited before readiness ({details})"
                     break
                 remaining = deadline - monotonic()
                 if remaining <= 0:

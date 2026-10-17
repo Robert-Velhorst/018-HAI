@@ -234,7 +234,7 @@ func TestPostgresRegistryCommittedReconstructionAndAtomicFailure(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	outcome := SyncOutcome{ItemsRead: 2, Event: newFeedAudit(feed.ID, "synced", "completed import", at.Add(4*time.Second))}
+	outcome := SyncOutcome{ItemsRead: 2, Cursor: "next-42", CursorPresent: true, Event: newFeedAudit(feed.ID, "synced", "completed import", at.Add(4*time.Second))}
 	if err := repo.FinishSync(ctx, scope, feed.ID, tokens[winner], outcome); !errors.Is(err, ErrFeedStorageUnavailable) || !strings.Contains(err.Error(), "synthetic finish failure") {
 		t.Fatalf("failure not surfaced: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestPostgresRegistryCommittedReconstructionAndAtomicFailure(t *testing.T) {
 	reopened := openDB(1)
 	reconstructed := NewGormRegistryRepository(reopened)
 	row, err = reconstructed.Get(ctx, scope, feed.ID)
-	if err != nil || !row.Feed.Enabled || row.Feed.Name != name || row.Feed.ConfigVersion != 3 || row.SyncToken != nil || row.SyncStartedAt != nil ||
+	if err != nil || !row.Feed.Enabled || row.Feed.Name != name || row.Feed.ConfigVersion != 3 || row.Feed.SyncCursor != "next-42" || row.SyncToken != nil || row.SyncStartedAt != nil ||
 		row.LastAttemptAt == nil || !row.LastAttemptAt.Equal(claimAt) ||
 		row.LastSuccessAt == nil || !row.LastSuccessAt.Equal(outcome.Event.CreatedAt) || row.LastItemsRead != 2 {
 		t.Fatalf("committed reconstruction lost state: %+v %v", row, err)

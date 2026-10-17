@@ -240,7 +240,7 @@ func validateRelationShape(relation Relation, now time.Time) error {
 }
 
 func validateEvidenceEnvelope(confidence float64, verification VerificationStatus, sensitivity Sensitivity, validFrom time.Time, validUntil *time.Time, observedAt time.Time, provenance []Provenance, now time.Time) error {
-	if confidence < 0 || confidence > 1 {
+	if !validUnitConfidence(confidence) {
 		return fmt.Errorf("confidence must be between 0 and 1")
 	}
 	if _, ok := validVerificationStatuses[verification]; !ok {

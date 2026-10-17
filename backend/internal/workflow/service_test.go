@@ -2061,6 +2061,128 @@ func TestFrameworkSelectionProvenanceSurvivesRepositoryRoundTrip(t *testing.T) {
 	}
 }
 
+func TestFrameworkSelectionProvenanceRejectsConflictingIdempotentWrites(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*fakeWorkflowRepo, uuid.UUID)
+	}{
+		{
+			name: "decision payload",
+			mutate: func(repo *fakeWorkflowRepo, workflowID uuid.UUID) {
+				decisions := repo.decisions[workflowID]
+				decisions[0].Reason = `{"selection_decision_id":"conflicting"}`
+				repo.decisions[workflowID] = decisions
+			},
+		},
+		{
+			name: "event payload",
+			mutate: func(repo *fakeWorkflowRepo, workflowID uuid.UUID) {
+				events := repo.events[workflowID]
+				events[0].Message = "conflicting payload"
+				repo.events[workflowID] = events
+			},
+		},
+		{
+			name: "event rule",
+			mutate: func(repo *fakeWorkflowRepo, workflowID uuid.UUID) {
+				events := repo.events[workflowID]
+				events[0].RuleApplied = "conflicting rule"
+				repo.events[workflowID] = events
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newFakeWorkflowRepo()
+			engine := NewService(repo)
+			record, err := engine.Intake(IntakeRequest{
+				OwnerIdentity: "alice",
+				Input:         "Create a low-risk administrative checklist.",
+			})
+			if err != nil {
+				t.Fatalf("Intake: %v", err)
+			}
+			selection := testFrameworkSelection("conflict-plan")
+			result := &TaskRunResult{PlanID: "conflict-plan", FrameworkSelection: &selection}
+			implementation := engine.(*service)
+			if err := implementation.storeTaskFrameworkSelection(record.Item.ID, result); err != nil {
+				t.Fatalf("initial storeTaskFrameworkSelection: %v", err)
+			}
+			test.mutate(repo, record.Item.ID)
+			if err := implementation.storeTaskFrameworkSelection(record.Item.ID, result); err == nil {
+				t.Fatal("conflicting idempotent write unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+func TestFrameworkSelectionDecisionReadsLegacyRuleAppliedPayload(t *testing.T) {
+	selection := testFrameworkSelection("legacy-rule-plan")
+	payload, err := json.Marshal(selection)
+	if err != nil {
+		t.Fatalf("marshal legacy selection: %v", err)
+	}
+	decoded, err := decodeFrameworkSelectionDecision(models.WorkflowDecision{
+		DecisionType: frameworkSelectionDecisionType,
+		Decision:     selection.SelectionDecisionID,
+		RuleApplied:  string(payload),
+	})
+	if err != nil {
+		t.Fatalf("decode legacy RuleApplied payload: %v", err)
+	}
+	if decoded != selection {
+		t.Fatalf("decoded legacy selection = %#v, want %#v", decoded, selection)
+	}
+}
+
+func TestFrameworkSelectionProvenanceIsNormalizedBeforePersistence(t *testing.T) {
+	repo := newFakeWorkflowRepo()
+	engine := NewService(repo)
+	record, err := engine.Intake(IntakeRequest{
+		OwnerIdentity: "alice",
+		Input:         "Create a low-risk administrative checklist.",
+	})
+	if err != nil {
+		t.Fatalf("Intake: %v", err)
+	}
+	selection := testFrameworkSelection("normalized-plan")
+	selection.SelectionDecisionID = " " + selection.SelectionDecisionID + " "
+	selection.TaskPlanID = " normalized-plan "
+	selection.CatalogDigest = strings.ToUpper(selection.CatalogDigest)
+	selection.EffectivePreferenceDigest = " " + strings.ToUpper(selection.EffectivePreferenceDigest) + " "
+	selection.ConstitutionSource = " " + selection.ConstitutionSource + " "
+	implementation := engine.(*service)
+	if err := implementation.storeTaskFrameworkSelection(record.Item.ID, &TaskRunResult{
+		PlanID:             "normalized-plan",
+		FrameworkSelection: &selection,
+	}); err != nil {
+		t.Fatalf("storeTaskFrameworkSelection: %v", err)
+	}
+	decisions, err := repo.FindDecisions(record.Item.ID)
+	if err != nil {
+		t.Fatalf("FindDecisions: %v", err)
+	}
+	for _, decision := range decisions {
+		if decision.DecisionType != frameworkSelectionDecisionType {
+			continue
+		}
+		decoded, err := decodeFrameworkSelectionDecision(decision)
+		if err != nil {
+			t.Fatalf("decodeFrameworkSelectionDecision: %v", err)
+		}
+		if decoded.SelectionDecisionID != strings.TrimSpace(selection.SelectionDecisionID) ||
+			decoded.TaskPlanID != "normalized-plan" ||
+			decoded.CatalogDigest != strings.ToLower(selection.CatalogDigest) ||
+			decoded.EffectivePreferenceDigest != strings.ToLower(strings.TrimSpace(selection.EffectivePreferenceDigest)) ||
+			decoded.ConstitutionSource != strings.TrimSpace(selection.ConstitutionSource) {
+			t.Fatalf("persisted selection was not normalized: %#v", decoded)
+		}
+		return
+	}
+	t.Fatal("framework selection decision was not persisted")
+}
+
 func TestRunDuePassesSingleOwnerPursuitToTaskRunner(t *testing.T) {
 	repo := newFakeWorkflowRepo()
 	runner := &fakeTaskRunner{result: &TaskRunResult{

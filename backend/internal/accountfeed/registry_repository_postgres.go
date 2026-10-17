@@ -49,7 +49,7 @@ func NewPostgresRegistry(ctx context.Context, ops *operations.Service, privacy *
 		return nil, storageError(err)
 	}
 	var rows []accountFeedRow
-	if err := db.WithContext(ctx).Select("id, owner_user_id, workspace_id, name, provider, account_label, source_type, path, url, project_key, operation_type, enabled, config_version, last_attempt_at, last_success_at, last_items_read, sync_token, sync_started_at").Limit(0).Find(&rows).Error; err != nil {
+	if err := db.WithContext(ctx).Select("id, owner_user_id, workspace_id, name, provider, account_label, source_type, path, url, project_key, operation_type, enabled, config_version, sync_cursor, last_attempt_at, last_success_at, last_items_read, sync_token, sync_started_at").Limit(0).Find(&rows).Error; err != nil {
 		return nil, storageError(err)
 	}
 	var audits []accountFeedAuditRow
@@ -250,13 +250,16 @@ func (p *GormRegistryRepository) FinishSync(ctx context.Context, scope FeedScope
 	if err := p.ready(); err != nil {
 		return err
 	}
-	if !scope.valid() || token == uuid.Nil || outcome.ItemsRead < 0 {
+	if !scope.valid() || token == uuid.Nil || outcome.ItemsRead < 0 || len(outcome.Cursor) > maxGenericFeedCursor {
 		return ErrFeedInvalid
 	}
 	err := p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		updates := map[string]any{"sync_token": nil, "sync_started_at": nil, "last_items_read": outcome.ItemsRead}
 		if outcome.Event.EventType == "synced" {
 			updates["last_success_at"] = outcome.Event.CreatedAt.UTC()
+			if outcome.CursorPresent || outcome.Cursor != "" {
+				updates["sync_cursor"] = outcome.Cursor
+			}
 		}
 		result := scopedFeedDB(tx.Model(&accountFeedRow{}), scope).Where("id = ? AND sync_token = ?", id, token).Updates(updates)
 		if result.Error != nil {

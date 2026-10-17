@@ -2,6 +2,7 @@ package lifeops
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -45,6 +46,10 @@ var goalStatuses = map[string]bool{
 	"archived":  true,
 }
 
+func validUnitConfidence(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1
+}
+
 func validateLinkRequest(request LinkEntityRequest) error {
 	if request.OwnerIdentity == "" {
 		return fmt.Errorf("owner identity is required")
@@ -55,7 +60,7 @@ func validateLinkRequest(request LinkEntityRequest) error {
 	if !IsCanonicalDomain(request.DomainID) {
 		return fmt.Errorf("unknown life domain %q", request.DomainID)
 	}
-	if request.Confidence < 0 || request.Confidence > 1 {
+	if !validUnitConfidence(request.Confidence) {
 		return fmt.Errorf("link confidence must be between 0 and 1")
 	}
 	if request.SourceLabel == "" {
@@ -89,7 +94,7 @@ func validateNeedRequest(request RecordNeedRequest, now time.Time) error {
 			return fmt.Errorf("need %s must be between 0 and 100", label)
 		}
 	}
-	if request.Confidence < 0 || request.Confidence > 1 {
+	if !validUnitConfidence(request.Confidence) {
 		return fmt.Errorf("need confidence must be between 0 and 1")
 	}
 	if request.SourceLabel == "" {
@@ -135,7 +140,7 @@ func validateCapacityRequest(request RecordCapacityRequest, now time.Time) error
 	if request.PlanningStepLimit < 0 || request.PlanningStepLimit > 20 {
 		return fmt.Errorf("capacity planning step limit must be between 0 and 20")
 	}
-	if request.Confidence < 0 || request.Confidence > 1 {
+	if !validUnitConfidence(request.Confidence) {
 		return fmt.Errorf("capacity confidence must be between 0 and 1")
 	}
 	for label, value := range capacitySignalValues(request.Signals) {
@@ -191,7 +196,7 @@ func validateGoalFields(goal GoalNode) error {
 	if !goalStatuses[goal.Status] {
 		return fmt.Errorf("invalid goal status %q", goal.Status)
 	}
-	if goal.Confidence < 0 || goal.Confidence > 1 {
+	if !validUnitConfidence(goal.Confidence) {
 		return fmt.Errorf("goal confidence must be between 0 and 1")
 	}
 	if goal.SourceLabel == "" {
