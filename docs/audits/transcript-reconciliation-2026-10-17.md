@@ -77,3 +77,15 @@ The reviewed diffs do not justify replaying the old patches wholesale:
 - The automation-form keyboard focus rule and the listed ignore rules are also present.
 
 Evidence was based on the exact failed diff additions/deletions and source/test searches at `e768e7fb75eb8167fc6b6bcc5f43fbb38f7757b6`. This is not a full semantic review of every successful patch event, and the two oversized records plus five unattributed transcripts remain unresolved. No source patch was necessary from the reviewed failures, and no local copy is approved for deletion by this result.
+
+
+## Primary checkout comparison (2026-10-17)
+
+A fresh, read-only comparison refreshed `origin/main` to `498dcf7800f86be8c2e799f44d27ff649413881a`. The primary local checkout is branch `codex/hai-runtime-release` at `e07b9daeb3ba2630ecbe12a64d948f791203c241`; it is a stale, heavily changed worktree, not a clean checkout of current `main`.
+
+- The worktree reported 244 modified tracked files, 448 deleted tracked files, and 1,578 untracked files.
+- Content hashes were compared for 243 modified files whose paths exist on current `main` and 69 untracked files whose paths exist on current `main`. None were byte-for-byte matches.
+- Thirty-five untracked Go test files share paths with current `main`. Every local test function name was present in the corresponding `main` file, but 33 files had differing test bodies. This name comparison is not proof of equivalent assertions or behavior.
+- The scan did not inspect all contents in other worktrees, source archives, transcript archives, or output/evidence directories. It does not establish that local changes are integrated and does not authorize deleting them.
+
+No local file was deleted. The preceding transcript findings remain pinned to their explicitly stated earlier `main` snapshot and were not re-characterized as a full current-main audit by this comparison.
