@@ -1420,9 +1420,9 @@ stdlibs==2026.9.3 \
     --hash=sha256:0da5ac692879757df75fd944ebabfae11b2d6454a2643658699a1c0a1f4bb91a \
     --hash=sha256:5e323d7bff3d361ef30ae01582d1fd14eb71570b7d00c3e8d25f1c77e4b642c2
     # via -r requirements.in
-tqdm==4.69.0 \
-    --hash=sha256:700c5e85dcd5f009dd6222588a29180a193a748247a5d855b4d67db93d79a53b \
-    --hash=sha256:9979978912be667a6ef21fd5d8abf54e324e63d82f7f43c360792ebc2bc4e622
+tqdm==4.70.1 \
+    --hash=sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73 \
+    --hash=sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4
     # via
     #   -r requirements.in
     #   nltk
