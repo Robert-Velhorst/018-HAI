@@ -10,6 +10,8 @@ The primary checkout is substantially dirty: 244 modified tracked paths, 448 del
 
 `D:\hai-source-reconciliation` initially rejected ordinary Git inspection because of filesystem ownership metadata. It was subsequently inspected read-only using a one-command `safe.directory` setting; no global trust or ownership settings were changed. That worktree is on `codex/hai-local-source-reconciliation` at `3b15fe4a`, 75 commits behind `origin/main`, with 309 staged modifications, 34 staged deletions, and one staged addition. Its index has 3,178 paths: 2,777 exact blob matches to `main`, 400 different blobs, one path absent from `main`, and 23 `main` paths missing locally. It is not a duplicate. `git diff --cached --check` returned no findings; this is not a test or correctness result.
 
+The staged D: snapshot is not ready to publish as a bulk change: its version of `docs/child-agent-integration-ledger.md` removes 5,263 lines, and the staged state also deletes tests and audit documents. Review and extract only individually verified changes; do not use the staged tree as a replacement for `main`.
+
 ## Integration status
 
 PRs #41 and #42 are merged. Their changed files remain present in `main`, but the local copies checked in the registered worktrees did not match the current `main` blob hashes, so those copies are not direct cleanup candidates.
