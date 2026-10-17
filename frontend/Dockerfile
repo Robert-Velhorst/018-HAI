@@ -1,12 +1,12 @@
-# Angular 22.1.1 supports Node 22.22.3+ or 24.15.0+. Pin the active LTS
-# toolchain so a floating Alpine tag cannot move builds to an unsupported release.
-FROM node:24.22.0-alpine AS build
+# Angular 22.2.2 supports Node 26.0.0+. Pin current stable.
+# Avoid floating Alpine tags that can move builds to an unsupported release.
+FROM node:26.12.0-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install --global npm@10.9.8 --no-audit --no-fund \
-    && test "$(npm --version)" = "10.9.8" \
+    npm install --global npm@12.2.0 --no-audit --no-fund \
+    && test "$(npm --version)" = "12.2.0" \
     && npm ci --prefer-offline --no-audit --no-fund
 
 
