@@ -32,3 +32,30 @@ Two archive pairs have names indicating duplicate copies. Full-file SHA-256 chec
 - The two small code changes are already present in `main`; their source can be removed from a local child checkout only after the exact local copy and its backups are individually matched.
 - The two duplicate-ID pairs, all oversized/unattributed records, and the remaining archive stay retained until their distinct content and relevant work are reconciled.
 - This checkpoint is a partial reconciliation record, not authorization or evidence for deleting the 17.5 GB archive.
+
+
+## Bounded patch-path index (2026-10-17)
+
+All 13 archived JSONL files were streamed without modification and compared to the local origin/main tree at e768e7fb75eb8167fc6b6bcc5f43fbb38f7757b6 (3,200 tracked paths). The parser considered patch_apply_end events, capped individual records at 16 MiB, and recorded path presence only. It saw 37,824 such events, 41 unsuccessful results, and skipped two oversized records. The two small Bohr/Darwin transcripts each exposed one patch event in a different record shape; their source changes are assessed separately above.
+
+| Transcript identifier | Patch events | Unsuccessful | Oversized records | Distinct paths in parsed changes |
+|---|---:|---:|---:|---:|
+| 019fb1d1-53a5-78a0-9387-b23f05eb6aef | 3,577 | 3 | 0 | 674 |
+| 019fb1d3-1ebf-7b63-897a-a4fa0fbf1f10 | 3,549 | 2 | 0 | 674 |
+| 019fb20b-b4b1-7250-9d7c-9d1e591ab852 duplicate-named copy | 3,610 | 8 | 0 | 674 |
+| 019fb20b-b4b1-7250-9d7c-9d1e591ab852 original-named copy | 2,783 | 0 | 1 | 448 |
+| 019fb221-54e7-7921-8c65-8a74da2e6d93 | 3,571 | 4 | 0 | 674 |
+| 019fb250-eabe-7c82-a488-19e4541375f0 | 3,574 | 4 | 0 | 674 |
+| 019fb274-e722-7332-affe-a739fe68e5e9 | 3,575 | 5 | 0 | 674 |
+| 019fb276-99d1-7b71-9fa3-041e9331fa87 | 3,575 | 5 | 0 | 674 |
+| 019fb277-0ddf-7500-9088-52cb4655be1a duplicate-named copy | 3,576 | 5 | 0 | 674 |
+| 019fb277-0ddf-7500-9088-52cb4655be1a original-named copy | 2,857 | 0 | 1 | 491 |
+| 019fb277-f977-7db1-8417-67f225aef4f3 | 3,575 | 5 | 0 | 674 |
+| 019fb296-75ae-7943-913c-32d41f5de2d6 (Bohr) | 1 | 0 | 0 | 0* |
+| 019fb296-9d1a-7301-901c-c35d99ccf3da (Darwin) | 1 | 0 | 0 | 0* |
+
+* The generic change-map parser did not extract paths from these two event shapes; their specific patches and corresponding current-main implementations/tests were inspected separately.
+
+Across the parsed large transcripts, the paths absent from the current tree were limited to: nginx-config/nginx.conf, frontend/proxy.preview.json, frontend/mock-preview-server.js, .codex-preview-server.mjs, .git/info/exclude, .tmp-ai-code-review.json, and .env.local. These do not establish that the associated work is integrated: the old gateway configuration needs semantic comparison against the maintained gateway templates; preview/mock tools need final-state and data-quality review; local Git metadata, review scratch data, and environment files must not be published. No local copy was deleted.
+
+This is an archive-wide path index, not a content-level reconciliation. A path existing on main does not prove that every transcript patch is present there. The 41 unsuccessful patch results and two oversized records also remain unresolved at content level. Therefore this section does not authorize deleting any transcript or source/worktree copy.
