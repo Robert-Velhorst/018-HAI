@@ -46,6 +46,84 @@ func TestApprovalProofBindsActionAndConsumesOnce(t *testing.T) {
 	}
 }
 
+func TestApprovalDecisionCanIssueOnlyOneProofAcrossServiceInstances(t *testing.T) {
+	now := time.Date(2026, time.August, 4, 12, 0, 0, 0, time.UTC)
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	store := &memoryApprovalProofConsumptionStore{consumed: map[string]time.Time{}}
+	issuer, err := NewApprovalProofService(secret, store, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := NewApprovalProofService(secret, store, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ApprovalProofIssueRequest{
+		OwnerIdentity:    "alice",
+		AutomationID:     uuid.New(),
+		ActionDigest:     approvalTestDigest("one decision, one proof"),
+		Scope:            ApprovalScopeScript,
+		ApprovalSourceID: "task-review:" + uuid.NewString(),
+	}
+	if _, err := issuer.Issue(request); err != nil {
+		t.Fatalf("first Issue: %v", err)
+	}
+	if _, err := restarted.Issue(request); !errors.Is(err, ErrApprovalProofAlreadyIssued) {
+		t.Fatalf("second Issue error = %v, want ErrApprovalProofAlreadyIssued", err)
+	}
+}
+
+func TestConcurrentApprovalProofIssuanceReservesSourceOnceAndIsOwnerScoped(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	store := &memoryApprovalProofConsumptionStore{consumed: map[string]time.Time{}}
+	var services []ApprovalProofService
+	for range 12 {
+		service, err := NewApprovalProofService(secret, store, time.Now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		services = append(services, service)
+	}
+	request := ApprovalProofIssueRequest{
+		OwnerIdentity:    "alice",
+		AutomationID:     uuid.New(),
+		ActionDigest:     approvalTestDigest("concurrent issue"),
+		Scope:            ApprovalScopeDocker,
+		ApprovalSourceID: "workflow-decision:" + uuid.NewString(),
+	}
+	var successes atomic.Int32
+	var rejected atomic.Int32
+	var unexpected atomic.Int32
+	start := make(chan struct{})
+	var wait sync.WaitGroup
+	for _, service := range services {
+		wait.Add(1)
+		go func(service ApprovalProofService) {
+			defer wait.Done()
+			<-start
+			_, err := service.Issue(request)
+			switch {
+			case err == nil:
+				successes.Add(1)
+			case errors.Is(err, ErrApprovalProofAlreadyIssued):
+				rejected.Add(1)
+			default:
+				unexpected.Add(1)
+			}
+		}(service)
+	}
+	close(start)
+	wait.Wait()
+	if successes.Load() != 1 || rejected.Load() != 11 || unexpected.Load() != 0 {
+		t.Fatalf("concurrent issuance successes=%d rejected=%d unexpected=%d, want 1/11/0", successes.Load(), rejected.Load(), unexpected.Load())
+	}
+	otherOwner := request
+	otherOwner.OwnerIdentity = "bob"
+	if _, err := services[0].Issue(otherOwner); err != nil {
+		t.Fatalf("same source for separate owner should have independent scope: %v", err)
+	}
+}
+
 func TestApprovalPolicySnapshotBindsScriptExecutionLimitsAndPin(t *testing.T) {
 	t.Setenv("AUTOMATION_SCRIPT_TIMEOUT_SECONDS", "17")
 	t.Setenv("AUTOMATION_SCRIPT_OUTPUT_LIMIT_BYTES", "2048")
@@ -269,6 +347,8 @@ func TestApprovalProofRejectsTamperingAndExpiry(t *testing.T) {
 		t.Fatalf("tamper error = %v, want ErrApprovalProofInvalid", err)
 	}
 
+	request.ApprovalSourceID = "workflow-decision:" + uuid.NewString()
+	expected.ApprovalSourceID = request.ApprovalSourceID
 	expired, err := service.Issue(request)
 	if err != nil {
 		t.Fatalf("Issue expiring proof: %v", err)

@@ -43,9 +43,29 @@ func TestPostgresApprovalProofConsumptionSurvivesRestartAndIsAtomic(t *testing.T
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
+	secondIssuer, err := NewApprovalProofService(secret, NewPostgresApprovalProofConsumptionStore(db), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := secondIssuer.Issue(request); !errors.Is(err, ErrApprovalProofAlreadyIssued) {
+		t.Fatalf("second durable issuance error = %v, want ErrApprovalProofAlreadyIssued", err)
+	}
 	expected := approvalExpectation(request)
 	if err := consumerAfterRestart.VerifyAndConsume(context.Background(), proof, expected); err != nil {
 		t.Fatalf("restart consumer: %v", err)
+	}
+	apiReadRequest := request
+	apiReadRequest.OwnerIdentity += "-api-read"
+	apiReadRequest.AutomationID = uuid.New()
+	apiReadRequest.ActionDigest = approvalTestDigest("durable API read approval")
+	apiReadRequest.Scope = ApprovalScopeAPIRead
+	apiReadRequest.ApprovalSourceID = "task-review:" + uuid.NewString()
+	apiReadProof, err := issuer.Issue(apiReadRequest)
+	if err != nil {
+		t.Fatalf("issue API-read proof: %v", err)
+	}
+	if err := consumerAfterRestart.VerifyAndConsume(context.Background(), apiReadProof, approvalExpectation(apiReadRequest)); err != nil {
+		t.Fatalf("consume API-read proof: %v", err)
 	}
 	secondRestart, err := NewApprovalProofService(secret, NewPostgresApprovalProofConsumptionStore(db), func() time.Time { return now })
 	if err != nil {
@@ -112,6 +132,23 @@ func TestPostgresApprovalProofConsumptionSurvivesRestartAndIsAtomic(t *testing.T
 		proof.ID,
 	).Error; err == nil {
 		t.Fatal("database allowed approval proof consumption deletion")
+	}
+	if err := db.Exec(`
+		UPDATE public.automation_approval_proof_issuances
+		SET scope = 'automation.script.execute'
+		WHERE owner_identity = ? AND approval_source_id = ?`,
+		request.OwnerIdentity,
+		request.ApprovalSourceID,
+	).Error; err == nil {
+		t.Fatal("database allowed approval proof issuance mutation")
+	}
+	if err := db.Exec(`
+		DELETE FROM public.automation_approval_proof_issuances
+		WHERE owner_identity = ? AND approval_source_id = ?`,
+		request.OwnerIdentity,
+		request.ApprovalSourceID,
+	).Error; err == nil {
+		t.Fatal("database allowed approval proof issuance deletion")
 	}
 }
 
