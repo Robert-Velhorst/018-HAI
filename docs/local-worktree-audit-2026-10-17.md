@@ -2,11 +2,13 @@
 
 ## Scope and reference
 
-This check compared the registered HAI Git worktrees that were readable from this Windows session against the GitHub `main` tree at `80fdeabd16efda6d9328fa0c89a4ab813f087908`. It compared tracked tree entries and existing non-ignored changes; this is not a whole-device inventory.
+This check compared all 11 registered HAI Git worktrees with the GitHub `main` tree at `80fdeabd16efda6d9328fa0c89a4ab813f087908`. It compared tracked tree entries and existing non-ignored changes. It is not a whole-device inventory and does not assess ignored build caches, containers, databases, backups, Codex session history, source archives, or files outside the registered worktrees.
 
-Ten registered worktree roots were readable. None had a tracked/non-ignored file tree exactly matching current `main`. The primary checkout is substantially dirty (244 modified tracked paths, 448 deleted tracked paths, and 1,581 non-ignored untracked files). The other readable roots also contain material differences, not just redundant checkouts.
+None of the 11 worktrees is an exact match for current `main`.
 
-The registered `D:\hai-source-reconciliation` worktree could not be inspected with Git because Git reported dubious ownership for that filesystem. No trust exception or ownership change was made; its files remain untouched and its content is not assessed here.
+The primary checkout is substantially dirty: 244 modified tracked paths, 448 deleted tracked paths, and 1,581 non-ignored untracked files. The other registered worktrees also contain material differences, not just redundant checkouts.
+
+`D:\hai-source-reconciliation` initially rejected ordinary Git inspection because of filesystem ownership metadata. It was subsequently inspected read-only using a one-command `safe.directory` setting; no global trust or ownership settings were changed. That worktree is on `codex/hai-local-source-reconciliation` at `3b15fe4a`, 75 commits behind `origin/main`, with 309 staged modifications, 34 staged deletions, and one staged addition. Its index has 3,178 paths: 2,777 exact blob matches to `main`, 400 different blobs, one path absent from `main`, and 23 `main` paths missing locally. It is not a duplicate. `git diff --cached --check` returned no findings; this is not a test or correctness result.
 
 ## Integration status
 
@@ -20,6 +22,4 @@ A focused Go test attempt for the runtime-safety audit could not run because `go
 
 ## Cleanup decision
 
-No worktree was removed and no source file was deleted. The available evidence does not establish any registered worktree as a complete, clean duplicate of current `main`; several contain unresolved merges, and the three parallel audit outputs overlap. Preserve these worktrees until their unique deltas are reconciled and any retained work has been pushed and verified.
-
-This report does not assess ignored build caches, containers, databases, backups, Codex session history, source archives, or other HAI-related files elsewhere on the device.
+No worktree was removed and no source file was deleted. The available evidence does not establish any registered worktree as a complete, clean duplicate of current `main`; several contain unresolved merges, and the parallel audit outputs overlap. Preserve these worktrees until their unique deltas are reconciled and any retained work has been pushed and verified.
