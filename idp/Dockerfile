@@ -22,7 +22,7 @@ RUN case "$HAI_GO_BUILD_WORKERS" in 1|2|4|8) ;; *) exit 1 ;; esac \
     go build -p "$HAI_GO_BUILD_WORKERS" -trimpath -o idp ./main.go
 
 # Stage 2: Build the runtime image
-FROM ubuntu:24.04
+FROM ubuntu:25.10
 
 # CA certificates are required for outbound HTTPS (the Google "Sign in with
 # Google" token exchange and userinfo calls); the minimal base ships without them.
