@@ -89,3 +89,12 @@ A fresh, read-only comparison refreshed `origin/main` to `498dcf7800f86be8c2e799
 - The scan did not inspect all contents in other worktrees, source archives, transcript archives, or output/evidence directories. It does not establish that local changes are integrated and does not authorize deleting them.
 
 No local file was deleted. The preceding transcript findings remain pinned to their explicitly stated earlier `main` snapshot and were not re-characterized as a full current-main audit by this comparison.
+
+
+## Registered worktree and branch-tree cross-check (2026-10-17)
+
+A second read-only scan compared the changed and untracked file contents in all 11 registered HAI worktrees against the current `origin/main` tree at `498dcf7800f86be8c2e799f44d27ff649413881a`. It found zero byte-identical matches among paths present in `main`. The scan excluded deleted files and ignored/unmodified files; it is not a whole-device duplicate-file search. No file was removed.
+
+The remote `codex/hai-runtime-release` tip `e62b56843eb8bbbf9a566aff5e883f9adf375429` was compared directly with the same `main` tree. Its tree has no added paths, 30 paths deleted relative to `main`, and 148 differing paths. The deleted paths include current-main account-feed cursor and approval-proof migrations/tests, so the branch is stale and is not a safe bulk source for a PR. This tree comparison does not imply that all working-tree changes or archived transcript content have been reconciled.
+
+These checks identify no exact-match local source copies eligible for deletion under the exact-content rule. They do not cover ignored build caches, all device directories, supplemental transcript roots, or the content of the retained archive. All unmatched or unreviewed work remains preserved.
