@@ -170,3 +170,15 @@ A fresh inventory of the primary checkout found 1,578 paths from `git ls-files -
 The untracked `output/` tree contains 1,498 files (884 `.log`, 420 `.json`, 82 `.jsonl`, 60 `.exit`, 34 `.md`, and 18 other extensions). Windows `dir /s` reported 125,926,957 bytes total for that directory. This consists of generated test/recovery/audit output rather than a reviewed source patch. It has not been uploaded or deleted; the archive/evidence subset remains unreviewed for unique findings. Other untracked paths include local agent state and test/support files and are also preserved.
 
 This count is limited to the primary checkout and does not cover ignored files, caches, all registered worktrees, or other device locations. No local data was removed and no reclaimed-space claim is made.
+
+
+## Staged test-surface comparison (2026-10-17)
+
+Compared the staged index of `D:\\hai-source-reconciliation` against cached `origin/main` for all 96 changed Go test files. By test-function name, the staged snapshot adds 2 functions and removes 74 current-main functions; all other test names overlap. This is not a full assertion-equivalence proof, but it is direct evidence that the staged test tree would drop substantial current-main coverage.
+
+The two staged-only test names were inspected:
+
+- `ProviderReadinessRequiresTLSForRemoteAndRejectsEmbeddedCredentials` checks remote HTTP, URL userinfo, and loopback HTTP. Current main already has `TestProviderReadinessRequiresTLSAndRejectsUnsafeURLComponents` plus `TestRouteBlocksProviderEndpointCredentialsQueryAndFragment`, covering this boundary more broadly.
+- `SafetyWeakeningRejectsMissingOwnerIdentity` expects failure when configured owner identity is empty. Current main explicitly tests and implements `TestSafetyWeakeningUsesAuthenticatedActorWhenConfiguredOwnerIsEmpty`; the verified authenticated actor is the authorization basis. The staged test is inconsistent with that current contract and should not be copied without a policy change.
+
+No test code was ported from this snapshot. The two staged-only cases do not establish a current-main coverage gap, while the 74 omitted test names strengthen the decision not to import the staged set wholesale. Individual assertion-level review remains incomplete; the local checkout stays preserved.
