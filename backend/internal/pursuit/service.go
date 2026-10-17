@@ -1284,6 +1284,10 @@ func (s *service) DashboardForOwner(ownerIdentity string) (*Dashboard, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.dashboardForPursuits(ownerIdentity, pursuits)
+}
+
+func (s *service) dashboardForPursuits(ownerIdentity string, pursuits []models.Pursuit) (*Dashboard, error) {
 	dashboard := &Dashboard{
 		Counts: map[string]int64{
 			"active": 0, "waiting": 0, "blocked": 0, "completed": 0, "needsRobert": 0, "decisionQueue": 0, "stale": 0, "reviewDue": 0, "planningNeeded": 0, "highRisk": 0, "completionCandidates": 0,
@@ -1393,11 +1397,11 @@ func (s *service) DashboardForOwner(ownerIdentity string) (*Dashboard, error) {
 // for clients that explicitly request them. The ordinary dashboard response
 // remains compact and does not expose this additional record list.
 func (s *service) DashboardWithPursuitsForOwner(ownerIdentity string) (*Dashboard, error) {
-	dashboard, err := s.DashboardForOwner(ownerIdentity)
+	pursuits, err := s.ListForOwner(ownerIdentity, false)
 	if err != nil {
 		return nil, err
 	}
-	pursuits, err := s.ListForOwner(ownerIdentity, false)
+	dashboard, err := s.dashboardForPursuits(ownerIdentity, pursuits)
 	if err != nil {
 		return nil, err
 	}

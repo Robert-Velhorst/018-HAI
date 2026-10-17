@@ -1,7 +1,6 @@
 package migrations
 
 import (
-	"errors"
 	"io/fs"
 	"regexp"
 	"sort"
@@ -17,14 +16,6 @@ var migrationFilePattern = regexp.MustCompile(
 func TestMigrationChainHasUniqueOrderedPairedVersions(t *testing.T) {
 	for _, phase := range []string{"pre", "post"} {
 		t.Run(phase, func(t *testing.T) {
-			reservedCursorGap := false
-			if phase == "pre" {
-				_, err := fs.Stat(Files, "pre/0128_account_feed_sync_cursor.up.sql")
-				if err != nil && !errors.Is(err, fs.ErrNotExist) {
-					t.Fatalf("check reserved account-feed cursor migration: %v", err)
-				}
-				reservedCursorGap = errors.Is(err, fs.ErrNotExist)
-			}
 			entries, err := fs.ReadDir(Files, phase)
 			if err != nil {
 				t.Fatalf("read %s migrations: %v", phase, err)
@@ -88,14 +79,6 @@ func TestMigrationChainHasUniqueOrderedPairedVersions(t *testing.T) {
 			sort.Ints(versions)
 			for index, version := range versions {
 				want := index + 1
-				// PR #153 reserves 0128 for feed cursors. Until that migration is
-				// present, allow only this connector's 0129 checkpoint immediately
-				// after 0127; all other gaps remain errors.
-				if reservedCursorGap && index >= 127 {
-					if index > 127 || (version == 129 && byVersion[version].name == "account_feed_reference_checkpoints") {
-						want = index + 2
-					}
-				}
 				if version != want {
 					t.Errorf("%s migration sequence has version %04d at position %d, want %04d", phase, version, index, want)
 				}
@@ -220,17 +203,13 @@ func TestGovernanceMigrationTailPreservesSemanticUpgradeOrder(t *testing.T) {
 		"0125_workflow_rule_defaults",
 		"0126_task_operation_cancellation",
 		"0127_opscontrol_review_receipt_provenance",
+		"0128_account_feed_sync_cursor",
+		"0129_automation_approval_proof_issuances",
+		"0130_automation_approval_proof_api_read_scope",
+		"0131_account_feed_reference_checkpoints",
+		"0132_account_feed_reference_controls",
+		"0133_account_feed_autoposter_source_type",
 	}
-	if _, err := fs.Stat(Files, "pre/0128_account_feed_sync_cursor.up.sql"); err == nil {
-		want = append(want, "0128_account_feed_sync_cursor")
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("check optional account-feed cursor migration: %v", err)
-	}
-	want = append(want,
-		"0129_account_feed_reference_checkpoints",
-		"0130_account_feed_reference_controls",
-		"0131_account_feed_autoposter_source_type",
-	)
 	entries, err := fs.ReadDir(Files, "pre")
 	if err != nil {
 		t.Fatalf("read pre migrations: %v", err)

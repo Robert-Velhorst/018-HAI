@@ -91,10 +91,10 @@ func TestAutoposterReferencePostgres(t *testing.T) {
 		if _, err := svc.SyncReferencePage(context.Background(), key, 1, ReferenceCheckpoint{}, "MQ", []NewOperationInput{in}); err != nil {
 			t.Fatal(err)
 		}
-		if err := infra.RollbackMigration(tx, migrations.Files, "pre", "pre/0061_account_feed_reference_controls"); err != nil {
+		if err := infra.RollbackMigration(tx, migrations.Files, "pre", "pre/0132_account_feed_reference_controls"); err != nil {
 			t.Fatal(err)
 		}
-		if err := infra.RollbackMigration(tx, migrations.Files, "pre", "pre/0060_account_feed_reference_checkpoints"); err != nil {
+		if err := infra.RollbackMigration(tx, migrations.Files, "pre", "pre/0131_account_feed_reference_checkpoints"); err != nil {
 			t.Fatal(err)
 		}
 		// Use a savepoint: a missing table aborts its PostgreSQL transaction.

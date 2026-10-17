@@ -58,7 +58,7 @@ jobs:
             python-version: "3.12"
             requirements-lock: services/lm-eval-runner/requirements.lock
           - name: miniswe-runner
-            python-version: "3.12"
+            python-version: "3.14"
             requirements-lock: services/miniswe-runner/requirements.lock
           - name: ortools-solver
             python-version: "3.12"
@@ -358,7 +358,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       redis:
-        image: redis:7-alpine
+        image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
         ports:
           - 6379:6379
         options: >-
@@ -1161,7 +1161,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       redis:
-        image: redis:7-alpine
+        image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
         ports:
           - 6379:6379
         options: >-

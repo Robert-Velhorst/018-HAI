@@ -30,9 +30,9 @@ Do not configure the protected Autoposter API as a generic HTTP JSON feed.
 - Use a current, expiring Autoposter `hai:read` token created in its Settings.
   The normal Autoposter login token is not a connector credential.
 - HAI's normal PostgreSQL migrations must be applied, including
-  `pre/0129_account_feed_reference_checkpoints`,
-  `pre/0130_account_feed_reference_controls`, and
-  `pre/0131_account_feed_autoposter_source_type`. References use the existing
+  `pre/0131_account_feed_reference_checkpoints`,
+  `pre/0132_account_feed_reference_controls`, and
+  `pre/0133_account_feed_autoposter_source_type`. References use the existing
   operations table; these additive migrations store owner/workspace/feed-scoped
   progress and source stop state. Missing or invalid control/checkpoint storage
   fails closed instead of reverting to an in-memory fallback.
@@ -190,12 +190,12 @@ there is no automatic fallback to a full replay.
 Prefer deploying compatible application code while retaining the additive tables
 if a rollback is necessary. Stop all connector processes, remove the connector
 configuration, and retain a backup before any schema rollback. Removing
-`pre/0130_account_feed_reference_controls` loses the saved disabled state, so
+`pre/0132_account_feed_reference_controls` loses the saved disabled state, so
 do not restart a configured connector assuming that stop state still exists.
 If an explicitly approved rollback also needs to remove pagination progress,
-`backend migrate down pre/0131_account_feed_autoposter_source_type` must precede
-`backend migrate down pre/0130_account_feed_reference_controls`, which must
-precede `backend migrate down pre/0129_account_feed_reference_checkpoints`. Migrations
+`backend migrate down pre/0133_account_feed_autoposter_source_type` must precede
+`backend migrate down pre/0132_account_feed_reference_controls`, which must
+precede `backend migrate down pre/0131_account_feed_reference_checkpoints`. Migrations
 cannot be rolled back out of order. References are retained, but progress is lost;
 reapplying the up migration requires a full safe replay of the same source
 history. This is not a source-reset or deletion procedure. This port has not
@@ -221,9 +221,9 @@ by the local automated tests below. The consumer source remains a review change.
 
 ## Current port verification (2026-10-16)
 
-- Open PR #153 already reserves migration version `0128` for generic account-feed
-  cursors. This connector uses `0129` through `0131`; merge it only after PR #153
-  is merged, and apply the migrations in that order. Its migration-chain test
+- The current `main` migration tail already includes generic account-feed
+  cursors and automation approval-proof changes through `0130`. This connector
+  uses `0131` through `0133`; apply the migrations in that order. Its migration-chain test
   recognizes the optional `0128` predecessor both before and after that merge.
 
 - Focused account-feed, operations, and router tests passed in Docker using the
