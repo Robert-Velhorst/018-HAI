@@ -59,3 +59,21 @@ All 13 archived JSONL files were streamed without modification and compared to t
 Across the parsed large transcripts, the paths absent from the current tree were limited to: nginx-config/nginx.conf, frontend/proxy.preview.json, frontend/mock-preview-server.js, .codex-preview-server.mjs, .git/info/exclude, .tmp-ai-code-review.json, and .env.local. These do not establish that the associated work is integrated: the old gateway configuration needs semantic comparison against the maintained gateway templates; preview/mock tools need final-state and data-quality review; local Git metadata, review scratch data, and environment files must not be published. No local copy was deleted.
 
 This is an archive-wide path index, not a content-level reconciliation. A path existing on main does not prove that every transcript patch is present there. The 41 unsuccessful patch results and two oversized records also remain unresolved at content level. Therefore this section does not authorize deleting any transcript or source/worktree copy.
+
+
+## Failed-patch content reconciliation (2026-10-17)
+
+A separate read-only byte-stream pass examined the 41 unsuccessful `patch_apply_end` results, with a 32 MiB per-record cap. It found 17 unique failed diff payloads across 18 path-target groups. Two records exceeded the cap and remain unexamined. The pass did not modify the archives.
+
+The reviewed diffs do not justify replaying the old patches wholesale:
+
+- IDP Kafka client-ID validation and its missing-client-ID test are present in current `main`.
+- Google OAuth token-endpoint redirect rejection is present with the corresponding regression test.
+- Task Blueprint validation fields and normalization are present in an expanded schema that also includes framework assurance criteria and typed criterion results.
+- Authenticated access to ownerless legacy workflows is denied in current `main`; the current service and API tests cover that boundary.
+- OpenClaw allowed-root resolution canonicalizes the accepted path before storing it. Current tests reject caller-selected outside-root paths and symlink escapes. One transcript-added positive-path test asserting that an allowed symlink is stored as its canonical target is not present by name; the source path resolution implements that behavior, but this audit did not run the Go suite.
+- Several transcript test names are superseded by current, stricter behavior: Hermes and Odysseus execution is deliberately blocked before process/network activity until HAI can mediate individual tool calls. The older proposed tests that expected controlled CLI/agent execution must not be copied over that safety gate.
+- Approval freshness, execution-policy binding, immutable launch-intent persistence, and indeterminate outcome handling are present in current `main` under current test names. Framework-selection provenance is normalized and conflicting persisted decisions/events are rejected; this is stricter than the earlier patch versions.
+- The automation-form keyboard focus rule and the listed ignore rules are also present.
+
+Evidence was based on the exact failed diff additions/deletions and source/test searches at `e768e7fb75eb8167fc6b6bcc5f43fbb38f7757b6`. This is not a full semantic review of every successful patch event, and the two oversized records plus five unattributed transcripts remain unresolved. No source patch was necessary from the reviewed failures, and no local copy is approved for deletion by this result.
