@@ -8,7 +8,7 @@ This checkpoint records a targeted review of retained child-agent transcripts un
 
 Two small aborted transcripts were inspected for patch calls:
 
-- Bohr, child ID `019fb296-75ae-7943-913c-32d41f5de2d6`, SHA-256 `a7dac5f8cb5f784b0614a5252862f6c?REDACTED` — one patch to `backend/internal/task/validation.go` and `backend/internal/task/validation_test.go`, covering contradictory values, negation polarity, and generic provenance matching. The child transcript ended before its own focused tests ran.
+- Bohr, child ID `019fb296-75ae-7943-913c-32d41f5de2d6`, SHA-256 `a7dac5f8cb5f784b0614a5252864a8ea932bb25503a333dbd772b50a46d2647e` — one patch to `backend/internal/task/validation.go` and `backend/internal/task/validation_test.go`, covering contradictory values, negation polarity, and generic provenance matching. The child transcript ended before its own focused tests ran.
 - Darwin, child ID `019fb296-9d1a-7301-901c-c35d99ccf3da`, SHA-256 `f8eaceb3d453530295489f73e9a04484012e2ef5fc1cdb8fdbb174e9eddf687f` — one patch across eight `backend/internal/frameworkregistry/` and router files for bounded Constitution version history. The child transcript ended before its own focused tests ran.
 
 The current `main` at `e768e7fb75eb8167fc6b6bcc5f43fbb38f7757b6` contains the corresponding validation functions/tests and Framework Registry history implementation/tests. The changes therefore do not need to be re-submitted as source-code changes. This is source-presence evidence; it does not claim those child runs passed.
