@@ -1199,3 +1199,15 @@ PR #160 is now open as a draft at exact head `835a06d19fa9663dfd9113dc9bc4af2ea3
 The bounded transcript rescan of the 13 retained archive files covered 17,559,729,527 bytes. Two oversized records were skipped, so `full_file_scan=false`; it found no cleanup candidates and performed no deletion. The five manifest rows previously marked as candidates remain absent from the declared source archive; their absence does not establish who removed them or when. All 13 retained files remain preserved.
 
 This refresh does not complete the full-device reconciliation. The 64 changed same-path untracked files, 244 modified tracked files, remaining registered worktrees, ignored files, other HAI-related roots, and the output records still need item-level review. No local data was deleted, and no HAI code was ported from the stale primary snapshot in this pass.
+
+
+## Non-Go variant comparison and live-ref note (2026-10-17)
+
+The primary checkout's local branch named `main` is stale at `df42ab2475b0814bacfc0f5989af85f855a64e14`; the verified live `origin/main` remains `80fdeabd16efda6d9328fa0c89a4ab813f087908`. The file comparisons in this follow-up use the latter, not the stale local branch ref.
+
+Three additional untracked same-path variants were compared with live `origin/main`:
+- `frontend/e2e/tests/support/owned-browser-matrix.ts`: the local variant uses direct email/password fields and lacks the current main version's run-scoped isolated auth-state path and expanded browser-error diagnostics. It is not an additive test port.
+- `scripts/test-windows-installer-install.ps1`: the local variant lacks current main's hosted-runner Docker exception boundary and stricter runner-temp/profile containment checks. Keep the safer current-main version authoritative.
+- `services/deepteam-runner/requirements.lock`: the local lock differs from main's resolved dependency set; current main includes a pinned `sentry-sdk==2.71.0` absent locally. No dependency update is justified from this stale lock.
+
+All three local files remain unchanged and were not uploaded or deleted. This closes only these three file-level comparisons; the remaining differing files and other HAI-related local roots still require review.
