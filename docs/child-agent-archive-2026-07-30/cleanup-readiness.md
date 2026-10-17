@@ -1396,3 +1396,16 @@ The remaining primary and D: snapshots have uncommitted or divergent content.
 They require per-file comparison and targeted validation before any source
 port or local deletion. This entry is an inventory checkpoint, not a claim that
 the full HAI local-device audit is complete.
+
+
+## 2026-10-17 execution authorization diff check
+
+A focused comparison of the primary local checkout with current `main` found
+that its modified `backend/internal/executionauth/service.go` calls the life-
+graph projector from `Get` and `List`, while current `main` has an explicit
+`TestAuthorizationReadsDoNotRunLifeGraphProjection` asserting reads do not
+trigger graph writes. The same local diff removes
+`CloneWithEmergencyStopEvaluator`, the isolated evaluator composition used
+to keep emergency-stop recovery from mutating the shared authorizer. Neither
+change is a safe port as-is. A focused Go test run could not start because the
+Go executable is unavailable in this session; no local test result is claimed.
