@@ -681,7 +681,7 @@ services:
   # internal-only network; SearXNG has separate egress for search providers.
   # It returns candidates only and has no published host port.
   searxng:
-    image: ghcr.io/searxng/searxng:2026.10.11-ad46ebd7d
+    image: ghcr.io/searxng/searxng:2026.10.17-decdfa6f7
     profiles: ["research-discovery"]
     restart: unless-stopped
     environment:
@@ -1011,7 +1011,7 @@ services:
   # publishes no host port. Model tags are pulled by HAI's dedicated mini-SWE
   # maintenance gate before use; image upgrades remain an operator action.
   ollama-miniswe:
-    image: ${HAI_RUNNER_OLLAMA_IMAGE:-ollama/ollama:0.40.3}
+    image: ${HAI_RUNNER_OLLAMA_IMAGE:-ollama/ollama:0.40.4}
     profiles: ["patch-proposals"]
     restart: unless-stopped
     expose: ["11434"]
