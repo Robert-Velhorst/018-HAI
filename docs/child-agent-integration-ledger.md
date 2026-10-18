@@ -11532,3 +11532,26 @@ cancellation/owner-binding checks, and independent feed/bridge error states.
 These are missing from the stale local snapshot, not unintegrated local
 additions; the current-main files must be preserved. No files were copied or
 deleted, and this focused comparison does not establish full frontend parity.
+
+### October 17, 2026: feed-cursor merge and verification
+
+PR #153 (`feat(accountfeed): persist HTTP feed pagination cursors`) merged
+as `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. Its exact-head GitHub
+Actions run #1707 completed successfully. PR #170
+(`fix(accountfeed): guard cursor persistence and rollback`) merged as
+`80fdeabd16efda6d9328fa0c89a4ab813f087908`; exact-head CI run #1822
+completed successfully. GitHub compare confirms current `main` descends from
+the PR #170 merge, and the current default-branch fetcher and migration 0128
+retain the persisted cursor behavior.
+
+The local branch `codex/accountfeed-cursor-rollback-guard-20261016` points to
+the merged PR #170 head. No dedicated worktree exists for it. The ref remains
+local; no branch reference or file was removed.
+
+The broader local-source reconciliation remains incomplete. The primary
+checkout and registered worktrees remain substantially divergent and dirty;
+several scratch snapshots contain secret-bearing environment files and
+unresolved conflicts. The July 30 transcript archives still lack a complete
+semantic patch crosswalk and contain unresolved nonterminal or oversized
+records. No source archives, checkouts, evidence, or transcript files were
+deleted.

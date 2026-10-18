@@ -448,7 +448,7 @@ The local untracked
 `backend/internal/workflow/project_dossier_test.go` differs from current `main`
 (local blob `867365ef`; main blob `62a22d40`). In
 `TestProjectDossierBoundsNestedContextAndRedactsCredentials`, the local test
-embeds the credential-shaped literal `AKIAABCDEFGHIJKLMNOP`; current `main`
+embeds a hard-coded AWS access-key-shaped fixture; current `main`
 constructs its AWS-shaped fixture dynamically with `"AKIA" + strings.Repeat(...)`
 and checks redaction against that value. The canonical test preserves the
 security assertion without adding a scanner-triggering literal. The local
@@ -827,3 +827,21 @@ PR #117's latest inspected head before this ledger addition was
 PR branch is still an open review branch, not proof of a passing integration.
 Go is unavailable in this Windows shell, so the model-maintenance comparison
 was static and no Go tests were run locally.
+
+
+### 2026-10-15: oversized transcript marker scan
+
+A bounded-memory, read-only byte-stream scan checked all 22 currently present JSONL files across the three inventoried archive roots. It read 766,103 records and found seven records larger than 10 MiB; none of those oversized records contains the literal `patch_apply_end` marker. Combined with the earlier parsed scan of 66,469 marker records (66,424 successful, 45 unsuccessful, zero malformed candidate-event JSON), this closes the oversized-record gap for locating and parsing patch-event records in this 22-file inventory.
+
+This does not establish child-specific authorship, remove repeated parent-history events, prove that any patch remains in current source, or complete the crosswalk from historical patch paths to current `main`. The nine out-of-manifest files and five absent manifest entries remain unresolved. All transcript files remain preserved; this scan did not modify or delete any archive.
+
+
+### 2026-10-15: manifest-to-disk path and size crosswalk
+
+A read-only check compared the published manifests with files currently present under the three audited roots in `D:\\codex-temp`. It compared exact relative paths and byte sizes; it did not read transcript bodies or recalculate transcript SHA-256 values.
+
+- Main-root manifest: 18 rows; 13 expected files are present with matching byte sizes. Five entries are absent at their manifest paths: Copernicus (`019fb20c-2b95-7550-8304-1117de872148`), Aristotle (`019fb220-c797-77d1-8060-0f220cd733e1`), and the three Banach/framework-registry reports (`019fb287-b2e4-7251-8f1b-bc8fa9febc07`, `019fb287-d1ed-75f0-99a8-8cd09c1ef9f2`, `019fb287-f3be-7860-ba1f-e6b05088db73`).
+- Supplemental manifest: all 9 entries are present at their expected paths with matching byte sizes.
+- Combined, all 22 files currently present in these three roots are accounted for by one of the two manifests, with zero observed size mismatches. The nine supplemental files are outside the main manifest but are not unmanifested: they are covered by the supplemental manifest.
+
+The five absent main-manifest entries were previously classified as completed candidates and have preserved reports/crosswalks, but this path check does not establish whether their transcript files were deleted, moved, or backed up elsewhere. It is not a whole-device search and does not authorize deletion of any other file. The seven oversized/unattributed transcripts remain present and retained. No transcript content was opened, hashed, changed, moved, or deleted in this check.

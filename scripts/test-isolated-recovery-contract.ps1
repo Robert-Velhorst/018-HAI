@@ -32,7 +32,7 @@ foreach ($change in @('project', 'owner', 'image', 'expired', 'container', 'data
     switch ($change) {
         'project' { $bad.project = '018-hai' }
         'owner' { $bad.owner = 'guess' }
-        'image' { $bad.image = 'postgres:17' }
+        'image' { $bad.image = 'postgres:18.6-alpine' }
         'expired' { $bad.createdUtc = [DateTime]::UtcNow.AddHours(-13).ToString('o') }
         'container' { $bad.containers[0].name = '018-hai-postgres-automation' }
         'database' { $bad.containers[0].database = 'personal_hai' }

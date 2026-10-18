@@ -1,9 +1,8 @@
 #!/bin/sh
 set -eu
 
-# PostgreSQL 18 moved PGDATA below the volume root. When upgrading a volume
-# that still contains the old `/var/lib/postgresql/data` cluster, refuse to
-# start an empty 18 cluster until an operator has restored and marked it.
+# PostgreSQL 18 moved PGDATA below the volume root. When an old PostgreSQL 17
+# cluster is still present, refuse to start an unverified PostgreSQL 18 target.
 legacy_pgdata=/var/lib/postgresql/data
 target_pgdata=${PGDATA:-/var/lib/postgresql/18/docker}
 
