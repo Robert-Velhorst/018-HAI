@@ -40,13 +40,23 @@ func TestPostgresConnectionStringEncodesUserAndDatabaseNames(t *testing.T) {
 	t.Setenv("PGSERVICE", "")
 	t.Setenv("RUN_MODE", "demo")
 	t.Setenv("DB_SSLMODE", "")
-	dsn, err := postgresConnectionString("synthetic user", "synthetic-password", "synthetic database", "127.0.0.1", 5432)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := pgx.ParseConfig(dsn)
-	if err != nil || cfg.User != "synthetic user" || cfg.Database != "synthetic database" {
-		t.Fatal("user or database name was not preserved")
+	for _, names := range []struct{ user, database string }{
+		{user: "synthetic user", database: "synthetic database"},
+		{user: "synthetic+user", database: "synthetic+database"},
+	} {
+		t.Run(names.user, func(t *testing.T) {
+			dsn, err := postgresConnectionString(names.user, "synthetic-password", names.database, "127.0.0.1", 5432)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := pgx.ParseConfig(dsn)
+			if err != nil {
+				t.Fatalf("generated connection string could not be parsed: %v", err)
+			}
+			if cfg.User != names.user || cfg.Database != names.database {
+				t.Fatalf("user or database name was not preserved: got user %q, database %q", cfg.User, cfg.Database)
+			}
+		})
 	}
 }
 
