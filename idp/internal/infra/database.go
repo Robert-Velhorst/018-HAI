@@ -106,7 +106,7 @@ func postgresConnectionString(user, password, dbName, dbHost string, dbPort int)
 		"host": {dbHost}, "port": {strconv.Itoa(dbPort)}, "dbname": {dbName},
 		"sslmode": {sslMode}, "timezone": {"UTC"}, "connect_timeout": {"5"},
 	}
-	connectionURL := url.URL{Scheme: "postgres", User: url.UserPassword(user, password), RawQuery: query.Encode()}
+	connectionURL := url.URL{Scheme: "postgres", User: url.UserPassword(user, password), RawQuery: strings.ReplaceAll(query.Encode(), "+", "%20")}
 	dsn := connectionURL.String()
 	if _, err := pgx.ParseConfig(dsn); err != nil {
 		// Parser errors can contain the entire credential-bearing URL.
