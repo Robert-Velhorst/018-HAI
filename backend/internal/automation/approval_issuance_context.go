@@ -37,20 +37,6 @@ func (s *service) IssueApprovalProofContext(ctx context.Context, id uuid.UUID, r
 	return s.issueApprovalProofWithRepository(ctx, repo, id, request, true)
 }
 
-func (s *approvalProofService) IssueContext(ctx context.Context, request ApprovalProofIssueRequest) (*ApprovalProof, error) {
-	if ctx == nil {
-		return nil, ErrApprovalIssuanceContextUnavailable
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	proof, err := s.Issue(request)
-	if contextErr := ctx.Err(); contextErr != nil {
-		return nil, errors.Join(err, contextErr)
-	}
-	return proof, err
-}
-
 func (s unavailableApprovalProofService) IssueContext(ctx context.Context, request ApprovalProofIssueRequest) (*ApprovalProof, error) {
 	if ctx == nil {
 		return nil, ErrApprovalIssuanceContextUnavailable

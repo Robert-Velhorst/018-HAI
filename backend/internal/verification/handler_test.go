@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,16 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+func TestAnswerRequestDoesNotDeserializeClientApproval(t *testing.T) {
+	var request AnswerRequest
+	if err := json.Unmarshal([]byte(`{"humanApproved":true,"humanApprovalReference":"forged"}`), &request); err != nil {
+		t.Fatalf("unmarshal legacy approval hints: %v", err)
+	}
+	if request.HumanApproved || request.HumanApprovalReference != "" {
+		t.Fatalf("client approval hints were deserialized into server-owned fields: %#v", request)
+	}
+}
 
 func TestAnswerHandlerIgnoresClientHumanApproval(t *testing.T) {
 	gin.SetMode(gin.TestMode)

@@ -1,6 +1,6 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 
-ARG DOCLING_VERSION=2.114.0
+ARG DOCLING_VERSION=2.140.0
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -9,8 +9,12 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 # Docling documents the PyTorch CPU index for Linux CPU-only deployments.
 # Without it, a plain PyPI resolution can pull multi-gigabyte CUDA libraries
 # even though this runner has no GPU device or GPU execution path.
-RUN pip install --no-cache-dir "docling==${DOCLING_VERSION}" \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential git zlib1g-dev \
+    && pip install --no-cache-dir "docling==${DOCLING_VERSION}" \
         --extra-index-url https://download.pytorch.org/whl/cpu \
+    && apt-get purge -y --auto-remove build-essential git zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 hai \
     && useradd --uid 10001 --gid hai --no-create-home --shell /usr/sbin/nologin hai
 

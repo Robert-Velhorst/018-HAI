@@ -894,8 +894,8 @@ func (s *service) issueApprovalProofWithRepository(ctx context.Context, repo Rep
 	if proofTTL == 0 {
 		proofTTL = defaultApprovalProofTTL
 	}
-	if proofTTL <= 0 || proofTTL > maximumApprovalProofTTL {
-		return nil, fmt.Errorf("approval proof TTL must be between 1ns and %s", maximumApprovalProofTTL)
+	if proofTTL < approvalProofTimestampPrecision || proofTTL > maximumApprovalProofTTL {
+		return nil, fmt.Errorf("approval proof TTL must be between %s and %s", approvalProofTimestampPrecision, maximumApprovalProofTTL)
 	}
 	remainingDecisionLifetime := record.ApprovedAt.UTC().
 		Add(maximumApprovalDecisionAge).
