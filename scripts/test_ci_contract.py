@@ -548,6 +548,10 @@ class CIWorkflowContractTest(unittest.TestCase):
     def test_canonical_service_runtime_images_do_not_float_on_latest(
         self,
     ) -> None:
+        expected_runtime_base = (
+            "FROM ubuntu:26.10@sha256:"
+            "93e29beff5257b2cdf1c024d831f6d2997e53655a653ff76a811fc9e6564a719"
+        )
         for relative_path in (
             "backend/Dockerfile",
             "idp/Dockerfile",
@@ -559,7 +563,7 @@ class CIWorkflowContractTest(unittest.TestCase):
                     dockerfile,
                     r"(?m)^FROM\s+\S+:latest(?:\s|$)",
                 )
-                self.assertIn("FROM ubuntu:24.04", dockerfile)
+                self.assertIn(expected_runtime_base, dockerfile)
 
     def test_local_compose_uses_one_lightweight_kafka_protocol_broker(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
@@ -1727,7 +1731,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
     def test_idp_rotation_races_require_marked_real_redis_and_pass_markers(self) -> None:
         identity = job_block("idp")
         self.assertRegex(identity, r"image:\s+redis:\d+\.\d+\.\d+-alpine@sha256:[0-9a-f]{64}")
-        for contract in ("HAI_TEST_REDIS_ADDR: 127.0.0.1:6379",
+        for contract in ("redis:8.10.2-alpine", "HAI_TEST_REDIS_ADDR: 127.0.0.1:6379",
                          "HAI_TEST_REDIS_INSTANCE:", "hai-disposable-test-instance",
                          "set -euo pipefail", "go test -count=3 -race -run '^TestRedis'",
                          "TestRedisSessionRefreshConcurrentCookiesAndLogout",
@@ -1755,7 +1759,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         )
         self.assertIsNotNone(service)
         for contract in (
-            "image: postgres:17-alpine",
+            "image: postgres:18.6-alpine",
             "POSTGRES_USER: postgres",
             "POSTGRES_PASSWORD: postgres",
             "POSTGRES_DB: hai_idp_auth_test",
