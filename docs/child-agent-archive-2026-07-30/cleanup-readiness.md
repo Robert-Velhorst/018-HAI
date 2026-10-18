@@ -1256,3 +1256,31 @@ crosswalk IDs. It reported `source_archive_verified=true`, but
 `deletion_performed=false`. The combined main and supplemental inventories
 therefore remain preserved: 27 files, 34,752,906,420 bytes, and seven hashed
 candidate transcripts totaling 6,292,733,953 bytes; none has been deleted.
+
+### 2026-10-17: main archive source discrepancy
+
+The canonical-main ledger at `80fdeabd16efda6d9328fa0c89a4ab813f087908`
+still records 18 main-archive files totaling 20,739,169,122 bytes: five
+candidate transcripts totaling 3,179,439,595 bytes and 13 retained
+transcripts totaling 17,559,729,527 bytes. A fresh read-only inventory of
+`D:\codex-temp\hai-completed-agent-sessions` found only 13 files at the archive
+root, totaling 17,559,729,527 bytes. Their sizes match the 13 retained ledger
+rows. The five paths marked `candidate_after_ledger_commit` are absent, so
+their recorded hashes could not be checked against source files.
+
+The five missing basenames were searched under `D:\codex-temp` and
+`C:\Users\NO\.codex`; no copies were found in those searched roots. This was
+not a full-device search and does not establish whether the files were moved,
+removed, or are available elsewhere. No transcript was deleted during this
+audit, and no cause or date for the missing files is known.
+
+The canonical `scripts/test-hai-transcript-cleanup-readiness.ps1` was run from
+a clean worktree at current `main` with `-TranscriptRoot` and
+`-RequireSourceArchive`. It failed closed on the first missing candidate path,
+before reporting source verification or reaching the repository/PR gates. This
+is expected behavior and confirms that the archive is not cleanup-ready. Do
+not interpret the earlier candidate classification, preserved reports, or
+code crosswalk as proof that these missing source transcripts were safely
+removed or fully integrated. Preserve the 13 remaining files and reconcile
+the missing five from a verified backup or other authoritative source before
+any archive cleanup decision.

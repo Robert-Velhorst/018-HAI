@@ -278,7 +278,7 @@ def probe() -> dict:
     _, base_url, model_id, _ = configured()
     if not model_available(base_url, model_id):
         raise RequestError("configured local model is not preloaded in the isolated Ollama service")
-    return {"status": "ok", "engine": "mini-swe-agent 2.4.5", "modelId": model_id, "modelEndpoint": base_url}
+    return {"status": "ok", "engine": "mini-swe-agent 2.4.6", "modelId": model_id, "modelEndpoint": base_url}
 
 
 def propose(payload: object) -> dict:

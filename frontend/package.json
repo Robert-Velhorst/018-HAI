@@ -1,7 +1,7 @@
 {
   "name": "app",
   "version": "0.0.0",
-  "packageManager": "npm@10.9.8",
+  "packageManager": "npm@12.2.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
@@ -14,7 +14,7 @@
   },
   "private": true,
   "engines": {
-    "node": "^24.15.0"
+    "node": "^26.12.0"
   },
   "dependencies": {
     "@angular/cdk": "22.2.2",

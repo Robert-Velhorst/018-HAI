@@ -58,7 +58,7 @@ jobs:
             python-version: "3.12"
             requirements-lock: services/lm-eval-runner/requirements.lock
           - name: miniswe-runner
-            python-version: "3.12"
+            python-version: "3.14"
             requirements-lock: services/miniswe-runner/requirements.lock
           - name: ortools-solver
             python-version: "3.12"
@@ -358,7 +358,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       redis:
-        image: redis:7-alpine
+        image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
         ports:
           - 6379:6379
         options: >-
@@ -495,11 +495,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "26"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm install --global npm@10.9.8 --no-audit --no-fund
-      - run: test "$(npm --version)" = "10.9.8"
+      - run: npm install --global npm@12.2.0 --no-audit --no-fund
+      - run: test "$(npm --version)" = "12.2.0"
       - run: npm ci
       - name: Build resource configuration regressions
         run: node --test --test-concurrency=1 ../scripts/test-frontend-build-resource-limit.cjs scripts/build-with-limits.test.mjs scripts/release-cache.test.mjs scripts/control-room-logic.test.mjs scripts/hai-os-observation.test.mjs scripts/module-view-preferences.test.mjs scripts/deep-link-focus.test.mjs scripts/framework-secret-boundary.test.mjs
@@ -527,11 +527,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "26"
           cache: npm
           cache-dependency-path: frontend/e2e/package-lock.json
-      - run: npm install --global npm@10.9.8 --no-audit --no-fund
-      - run: test "$(npm --version)" = "10.9.8"
+      - run: npm install --global npm@12.2.0 --no-audit --no-fund
+      - run: test "$(npm --version)" = "12.2.0"
       - name: Install application dependencies for source typechecking
         working-directory: frontend
         run: npm ci
@@ -754,11 +754,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "24"
+          node-version: "26"
           cache: npm
           cache-dependency-path: services/promptfoo-runner/package-lock.json
-      - run: npm install --global npm@10.9.8 --no-audit --no-fund
-      - run: test "$(npm --version)" = "10.9.8"
+      - run: npm install --global npm@12.2.0 --no-audit --no-fund
+      - run: test "$(npm --version)" = "12.2.0"
       - name: Audit production dependencies
         working-directory: services/promptfoo-runner
         run: bash ../../scripts/audit-npm-production-dependencies.sh "Promptfoo runner" omit-optional
@@ -1161,7 +1161,7 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       redis:
-        image: redis:7-alpine
+        image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
         ports:
           - 6379:6379
         options: >-

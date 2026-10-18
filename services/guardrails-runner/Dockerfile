@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+# litellm 1.105.1 currently declares Python <3.15 on PyPI; use the newest compatible line.
+FROM python:3.14-slim
 
 WORKDIR /app
 
