@@ -31,6 +31,9 @@ type SyncReport struct {
 	Errors            []string `json:"errors,omitempty"`
 	Recorded          bool     `json:"recorded"`
 	ReadCompleted     bool     `json:"readCompleted"`
+	TombstonesApplied int      `json:"tombstonesApplied,omitempty"`
+	HasMore           bool     `json:"hasMore"`
+	CursorPresent     bool     `json:"-"`
 }
 
 type FeedHealth struct {
@@ -89,6 +92,22 @@ func (r *Registry) RegisterContext(ctx context.Context, feed Feed) (Feed, error)
 	if feed.ID == uuid.Nil {
 		feed.ID = uuid.New()
 	}
+	if feed.SourceType == SourceAutoposterAPI || feed.Provider == string(ProviderAutoposter) {
+		a := r.opts.Autoposter
+		if a == nil || !a.matches(feed) {
+			return Feed{}, fmt.Errorf("accountfeed: Autoposter feed must match the server endpoint and owner binding")
+		}
+		if err := a.validate(); err != nil {
+			return Feed{}, err
+		}
+		feed.ID = a.feedID()
+		feed.AccountLabel = a.RemoteOwner
+		control, err := r.ops.EnsureReferenceSource(ctx, referenceKey(feed), feed.Enabled)
+		if err != nil {
+			return Feed{}, fmt.Errorf("accountfeed: Autoposter source control unavailable; check database migrations")
+		}
+		feed.Enabled = control.Enabled
+	}
 	return r.repo.Register(ctx, feed, newFeedAudit(feed.ID, "registered", "feed registered", r.now()))
 }
 
@@ -100,7 +119,18 @@ func (r *Registry) ListContext(ctx context.Context, scope FeedScope) ([]FeedHeal
 	if err != nil {
 		return nil, err
 	}
-	return healthRows(rows), nil
+	health := healthRows(rows)
+	for i := range health {
+		if health[i].Feed.SourceType != SourceAutoposterAPI {
+			continue
+		}
+		control, err := r.ops.GetReferenceSourceControl(ctx, referenceKey(health[i].Feed))
+		if err != nil {
+			return nil, fmt.Errorf("accountfeed: Autoposter source control unavailable")
+		}
+		health[i].Feed.Enabled = control.Enabled
+	}
+	return health, nil
 }
 
 func healthRows(rows []FeedRecord) []FeedHealth {
@@ -132,6 +162,20 @@ func (r *Registry) GetContext(ctx context.Context, scope FeedScope, id uuid.UUID
 func (r *Registry) PatchContext(ctx context.Context, scope FeedScope, id uuid.UUID, patch FeedPatch) (Feed, error) {
 	if !scope.valid() {
 		return Feed{}, ErrFeedInvalid
+	}
+	feed, err := r.repo.Get(ctx, scope, id)
+	if err != nil {
+		return Feed{}, err
+	}
+	if feed.Feed.SourceType == SourceAutoposterAPI {
+		if patch.OperationType != nil && *patch.OperationType != "read_only_reference" {
+			return Feed{}, ErrFeedInvalid
+		}
+		if patch.Enabled != nil {
+			if _, err := r.ops.SetReferenceSourceEnabled(ctx, referenceKey(feed.Feed), *patch.Enabled); err != nil {
+				return Feed{}, fmt.Errorf("accountfeed: source state could not be confirmed; reload before retrying")
+			}
+		}
 	}
 	return r.repo.Patch(ctx, scope, id, patch, newFeedAudit(id, "updated", "feed updated", r.now()))
 }
@@ -190,9 +234,17 @@ func (r *Registry) syncContext(ctx context.Context, scope FeedScope, id uuid.UUI
 		finishCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		message := fmt.Sprintf("read %d items, %d new operations, %d existing operations, %d rejected, %d privacy-flagged", rep.ItemsRead, rep.OperationsCreated, rep.OperationsRefresh, len(rep.Errors), rep.PrivacyFlagged)
-		outcome := SyncOutcome{ItemsRead: rep.ItemsRead, Event: newFeedAudit(id, eventType, message, r.now())}
+		outcomeCursor := rep.Cursor
+		outcomeCursorPresent := rep.CursorPresent
+		if feed.SourceType != SourceHTTPJSONFeed {
+			outcomeCursor = ""
+			// A successful local-feed sync clears any legacy HTTP checkpoint.
+			outcomeCursorPresent = true
+		}
+		outcome := SyncOutcome{ItemsRead: rep.ItemsRead, Cursor: outcomeCursor, CursorPresent: outcomeCursorPresent, Event: newFeedAudit(id, eventType, message, r.now())}
 		if err := r.repo.FinishSync(finishCtx, scope, id, token, outcome); err != nil {
 			rep.Cursor = ""
+			rep.CursorPresent = false
 			rep.Errors = append(rep.Errors, "feed sync result could not be recorded; operator review is required")
 			resultErr = storageError(err)
 			return
@@ -211,8 +263,21 @@ func (r *Registry) syncContext(ctx context.Context, scope FeedScope, id uuid.UUI
 		rep.Errors = append(rep.Errors, "source observation storage is unavailable; nothing was read")
 		return rep, nil
 	}
+	controlRevision := uint64(0)
+	if feed.SourceType == SourceAutoposterAPI {
+		control, err := r.ops.GetReferenceSourceControl(ctx, referenceKey(feed))
+		if err != nil || !control.Enabled {
+			rep.Errors = append(rep.Errors, "Autoposter source is disabled or its durable control state is unavailable")
+			return rep, nil
+		}
+		controlRevision = control.Revision
+	}
 	err = r.ops.WithSourceObservation(ctx, feed.SourceObservationStart(), func(observed context.Context) error {
-		r.ingestObservedFeed(observed, feed, &rep)
+		if feed.SourceType == SourceAutoposterAPI {
+			rep = r.syncAutoposter(observed, feed, controlRevision)
+		} else {
+			r.ingestObservedFeed(observed, feed, &rep)
+		}
 		return nil
 	})
 	if err != nil {
@@ -229,6 +294,7 @@ func (r *Registry) syncContext(ctx context.Context, scope FeedScope, id uuid.UUI
 			eventType = "sync_partial"
 		}
 		rep.Cursor = ""
+		rep.CursorPresent = false
 	}
 	return rep, nil
 }
@@ -245,6 +311,7 @@ func (r *Registry) ingestObservedFeed(ctx context.Context, feed Feed, rep *SyncR
 		return
 	}
 	rep.Cursor = parsed.Cursor
+	rep.CursorPresent = parsed.CursorPresent
 	rep.ReadCompleted = true
 	for _, item := range parsed.Items {
 		if ctx.Err() != nil {

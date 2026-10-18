@@ -14,11 +14,14 @@ $abortedChildTurn = '019fb2aa-6d0b-7fd0-af97-9e88a3022f11'
 $ambiguousChildId = '019fb2bb-53a5-78a0-9387-b23f05eb6aef'
 $oversizedChildId = '019fb2cc-53a5-78a0-9387-b23f05eb6aef'
 $oversizedChildTurn = '019fb2cc-6d0b-7fd0-af97-9e88a3022f11'
-$oversizedMetadataTranscript = Join-Path $sessions 'rollout-2026-08-01T00-04-00-019fb2dd-53a5-78a0-9387-b23f05eb6aef.jsonl'
+$missingReportChildId = '019fb2dd-53a5-78a0-9387-b23f05eb6aef'
+$missingReportChildTurn = '019fb2dd-6d0b-7fd0-af97-9e88a3022f11'
+$oversizedMetadataTranscript = Join-Path $sessions 'rollout-2026-08-01T00-04-00-019fb2ee-53a5-78a0-9387-b23f05eb6aef.jsonl'
 $transcript = Join-Path $sessions "rollout-2026-08-01T00-00-00-$childId.jsonl"
 $abortedTranscript = Join-Path $sessions "rollout-2026-08-01T00-01-00-$abortedChildId.jsonl"
 $ambiguousTranscript = Join-Path $sessions "rollout-2026-08-01T00-02-00-$ambiguousChildId.jsonl"
 $oversizedTranscript = Join-Path $sessions "rollout-2026-08-01T00-03-00-$oversizedChildId.jsonl"
+$missingReportTranscript = Join-Path $sessions "rollout-2026-08-01T00-05-00-$missingReportChildId.jsonl"
 $audit = Join-Path $PSScriptRoot 'audit-child-agent-transcripts.ps1'
 
 function New-SyntheticTranscriptLine([string]$Type, $Payload) {
@@ -56,8 +59,14 @@ try {
     $oversizedRecord = '{"timestamp":"2026-08-01T00:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"' + $oversizedChildTurn + '","content":"' + ('x' * (300KB)) + '"}}'
     $laterCompletion = New-SyntheticTranscriptLine 'event_msg' @{ type = 'task_complete'; turn_id = $oversizedChildTurn; last_agent_message = 'Must stay retained because an earlier event was too large to parse.' }
     [IO.File]::WriteAllLines($oversizedTranscript, [string[]]@($oversizedMetadata, $oversizedRecord, $laterCompletion), [Text.UTF8Encoding]::new($false))
-    $oversizedHeader = '{"type":"session_meta","payload":{"id":"019fb2dd-53a5-78a0-9387-b23f05eb6aef","root_session_id":"' + $rootSessionId + '","padding":"' + ('y' * (300KB)) + '"}}'
+    $oversizedHeader = '{"type":"session_meta","payload":{"id":"019fb2ee-53a5-78a0-9387-b23f05eb6aef","root_session_id":"' + $rootSessionId + '","padding":"' + ('y' * (300KB)) + '"}}'
     [IO.File]::WriteAllText($oversizedMetadataTranscript, $oversizedHeader, [Text.UTF8Encoding]::new($false))
+    $missingReportRecords = @(
+        (New-SyntheticTranscriptLine 'session_meta' @{ id = $missingReportChildId; agent_nickname = 'no-final-report'; root_session_id = $rootSessionId }),
+        (New-SyntheticTranscriptLine 'event_msg' @{ type = 'task_started'; turn_id = $missingReportChildTurn }),
+        (New-SyntheticTranscriptLine 'event_msg' @{ type = 'task_complete'; turn_id = $missingReportChildTurn; last_agent_message = '' })
+    )
+    [IO.File]::WriteAllLines($missingReportTranscript, [string[]]$missingReportRecords, [Text.UTF8Encoding]::new($false))
 
     & $audit -RootSessionId $rootSessionId -SessionsRoot $sessions -OutputDirectory $output -MaxRecordCharacters 256KB | Out-Null
 
@@ -66,8 +75,8 @@ try {
     $reportsPath = Join-Path $output 'child-agent-final-reports.md'
     $summary = Get-Content -LiteralPath $summaryPath -Raw | ConvertFrom-Json
     $rows = @(Import-Csv -LiteralPath $manifestPath)
-    if ($summary.audited_transcripts -ne 4 -or $summary.completed_transcripts -ne 1 -or
-        $summary.cleanup_candidate_transcripts -ne 1 -or $summary.retained_transcripts -ne 3 -or
+    if ($summary.audited_transcripts -ne 5 -or $summary.completed_transcripts -ne 2 -or
+        $summary.cleanup_candidate_transcripts -ne 1 -or $summary.retained_transcripts -ne 4 -or
         $summary.full_file_scan -ne $false -or $summary.oversized_metadata_records_skipped -ne 1 -or
         $summary.deletion_performed -ne $false) {
         throw "Synthetic audit summary mismatch: $($summary | ConvertTo-Json -Compress)"
@@ -76,11 +85,16 @@ try {
     $abortedRow = @($rows | Where-Object child_id -CEQ $abortedChildId)[0]
     $ambiguousRow = @($rows | Where-Object child_id -CEQ $ambiguousChildId)[0]
     $oversizedRow = @($rows | Where-Object child_id -CEQ $oversizedChildId)[0]
-    if ($rows.Count -ne 4 -or $completedRow.terminal_status -cne 'completed' -or
+    $missingReportRow = @($rows | Where-Object child_id -CEQ $missingReportChildId)[0]
+    if ($rows.Count -ne 5 -or $completedRow.terminal_status -cne 'completed' -or
         $completedRow.child_turn_id -cne $completedChildTurn -or
         $completedRow.turn_attribution -cne 'unique_prefix_match' -or
         [int]$completedRow.patch_call_count -ne 1 -or
         $completedRow.disposition -cne 'candidate_after_ledger_commit' -or
+        $completedRow.final_report_preserved -cne 'True' -or
+        $missingReportRow.terminal_status -cne 'completed' -or
+        $missingReportRow.final_report_preserved -cne 'False' -or
+        $missingReportRow.disposition -cne 'retain_missing_final_report' -or
         $abortedRow.terminal_status -cne 'aborted' -or
         $abortedRow.disposition -cne 'retain' -or
         $ambiguousRow.terminal_status -cne 'unattributed' -or
@@ -91,18 +105,34 @@ try {
         [long]$oversizedRow.scan_oversized_records -ne 1 -or
         $oversizedRow.disposition -cne 'retain_unparsed_candidate_record' -or
         -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('Synthetic completed report.') -or
+        -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('The child completed without a terminal text report.') -or
         -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('observed completion only') -or
         -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('../../backend/example.go') -or
         -not (Get-Content -LiteralPath $reportsPath -Raw).Contains('../../docs/example.md') -or
         (Get-Content -LiteralPath $reportsPath -Raw) -match '(?i)[A-Z]:[\\/]+Users[\\/]+[^\\/\s]+[\\/]+Documents[\\/]+Codex') {
         throw 'Synthetic transcript was not classified and reported as expected.'
     }
-    $sourceTranscripts = @($transcript, $abortedTranscript, $ambiguousTranscript, $oversizedTranscript, $oversizedMetadataTranscript)
+
+    $recordOnlySessions = Join-Path $scratch 'record-only\source\sessions\2026\08'
+    $recordOnlyOutput = Join-Path $scratch 'record-only\output'
+    [IO.Directory]::CreateDirectory($recordOnlySessions) | Out-Null
+    $recordOnlyTranscript = Join-Path $recordOnlySessions 'rollout-2026-08-01T00-06-00-019fb2cc-53a5-78a0-9387-b23f05eb6aef.jsonl'
+    $recordOnlyMetadata = New-SyntheticTranscriptLine 'session_meta' @{ id = $oversizedChildId; agent_nickname = 'oversized-record-only'; root_session_id = $rootSessionId }
+    [IO.File]::WriteAllLines($recordOnlyTranscript, [string[]]@($recordOnlyMetadata, $oversizedRecord, $laterCompletion), [Text.UTF8Encoding]::new($false))
+    & $audit -RootSessionId $rootSessionId -SessionsRoot $recordOnlySessions -OutputDirectory $recordOnlyOutput -MaxRecordCharacters 256KB | Out-Null
+    $recordOnlySummary = Get-Content -LiteralPath (Join-Path $recordOnlyOutput 'child-agent-transcript-summary.json') -Raw | ConvertFrom-Json
+    if ($recordOnlySummary.oversized_metadata_records_skipped -ne 0 -or
+        $recordOnlySummary.oversized_records_skipped -ne 1 -or
+        $recordOnlySummary.full_file_scan -ne $false) {
+        throw "Oversized transcript records must make the file scan incomplete: $($recordOnlySummary | ConvertTo-Json -Compress)"
+    }
+
+    $sourceTranscripts = @($transcript, $abortedTranscript, $ambiguousTranscript, $oversizedTranscript, $oversizedMetadataTranscript, $missingReportTranscript)
     if (@($sourceTranscripts | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) }).Count -gt 0) {
         throw 'Transcript audit unexpectedly removed its source file.'
     }
 
-    Write-Host 'Synthetic transcript attribution, bounded metadata/event records, reports, and non-deletion contract passed.'
+    Write-Host 'Synthetic transcript attribution, missing-report retention, bounded records, reports, and non-deletion contract passed.'
     if ($KeepArtifacts) {
         Write-Host "Preserved test artifacts: $scratch"
     }

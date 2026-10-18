@@ -20,10 +20,13 @@ function parsedWorkers(value) {
     process: { env, versions: process.versions },
     require(name) {
       assert.equal(name, 'node:os');
-      return { availableParallelism: () => 5 };
+      return { availableParallelism: () => 64 };
     },
   }, { timeout: 1000 });
-  return exports.maxWorkers;
+  return {
+    maxWorkers: exports.maxWorkers,
+    hasCustomMaxWorkers: exports.hasCustomMaxWorkers,
+  };
 }
 
 function instructions(source) {
@@ -50,10 +53,18 @@ const build = parsed[buildIndex];
 
 test('installed Angular parser honors each bounded worker choice', () => {
   for (const workers of ['1', '2', '4', '8']) {
-    assert.equal(parsedWorkers(workers), Number(workers));
+    const parsed = parsedWorkers(workers);
+    assert.equal(parsed.maxWorkers, Number(workers));
+    assert.equal(parsed.hasCustomMaxWorkers, true);
   }
-  assert.equal(parsedWorkers(undefined), 4);
-  assert.equal(parsedWorkers(''), 4);
+  assert.deepEqual(parsedWorkers(undefined), { maxWorkers: 63, hasCustomMaxWorkers: false });
+  assert.deepEqual(parsedWorkers(''), { maxWorkers: 63, hasCustomMaxWorkers: false });
+});
+
+test('Angular parser falls back to host concurrency for invalid custom values', () => {
+  for (const value of ['invalid', '0', '-1', '2.5']) {
+    assert.deepEqual(parsedWorkers(value), { maxWorkers: 63, hasCustomMaxWorkers: false });
+  }
 });
 
 test('worker argument defaults to two after the cached dependency and source layers', () => {

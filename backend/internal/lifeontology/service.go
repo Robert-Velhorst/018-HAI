@@ -4,10 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
 )
+
+func validUnitConfidence(value float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1
+}
 
 type Clock func() time.Time
 
@@ -419,7 +424,7 @@ func validateMergeProposal(proposal MergeProposal) error {
 	if proposal.Match != MergeExternalKey && proposal.Match != MergeSemanticIdentity {
 		return fmt.Errorf("invalid merge match")
 	}
-	if len(proposal.Reasons) == 0 || len(proposal.Reasons) > 8 || proposal.Confidence < 0 || proposal.Confidence > 1 || proposal.Status != "proposed" {
+	if len(proposal.Reasons) == 0 || len(proposal.Reasons) > 8 || !validUnitConfidence(proposal.Confidence) || proposal.Status != "proposed" {
 		return fmt.Errorf("invalid merge proposal evidence")
 	}
 	if !proposal.AdvisoryOnly || proposal.CanExecute || proposal.GrantsAuthority {

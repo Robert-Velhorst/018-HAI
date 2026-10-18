@@ -268,7 +268,7 @@ func normalizeNeedState(value NeedStateAssessment) (NeedStateAssessment, error) 
 	if value.Priority < 0 || value.Priority > 100 {
 		return NeedStateAssessment{}, fmt.Errorf("observed need priority must be between 0 and 100")
 	}
-	if value.Confidence < 0 || value.Confidence > 1 {
+	if math.IsNaN(value.Confidence) || math.IsInf(value.Confidence, 0) || value.Confidence < 0 || value.Confidence > 1 {
 		return NeedStateAssessment{}, fmt.Errorf("observed need confidence must be between 0 and 1")
 	}
 	return value, nil
@@ -345,7 +345,7 @@ func normalizeCapacitySnapshot(input *CapacitySnapshot, now time.Time) (Capacity
 	if result.TimeAvailableMinutes < 0 || result.ConcurrentWorkLimit < 0 {
 		return CapacitySnapshot{}, fmt.Errorf("capacity time and concurrent work limit cannot be negative")
 	}
-	if result.Confidence < 0 || result.Confidence > 1 {
+	if math.IsNaN(result.Confidence) || math.IsInf(result.Confidence, 0) || result.Confidence < 0 || result.Confidence > 1 {
 		return CapacitySnapshot{}, fmt.Errorf("capacity confidence must be between 0 and 1")
 	}
 	if result.CapturedAt == nil || strings.TrimSpace(result.SourceLabel) == "" {
@@ -651,7 +651,7 @@ func normalizeAvailableAgentCard(card AgentCard, selectionCeiling int, now time.
 	if card.HealthStatus == "" {
 		card.HealthStatus = card.Status
 	}
-	if card.EvaluationScore < 0 || card.EvaluationScore > 1 {
+	if math.IsNaN(card.EvaluationScore) || math.IsInf(card.EvaluationScore, 0) || card.EvaluationScore < 0 || card.EvaluationScore > 1 {
 		return AgentCard{}, fmt.Errorf("agent evaluation score must be between 0 and 1")
 	}
 	if card.EvaluationScoreSource == "" {
