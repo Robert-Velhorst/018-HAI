@@ -2,7 +2,7 @@
   "generated_at_utc": "2026-10-12T04:30:22.853146Z",
   "root_session_id": "019e7acc-44f2-7c90-a04e-253f6d43df28",
   "audited_transcripts": 9,
-  "full_file_scan": true,
+  "full_file_scan": false,
   "logical_bytes_scanned": 14013737298,
   "max_jsonl_record_characters": 10485760,
   "oversized_or_malformed_candidate_records_retained": true,

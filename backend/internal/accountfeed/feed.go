@@ -27,6 +27,8 @@ const (
 	SourceLocalJSONFile SourceType = "local_json_file"
 	// SourceHTTPJSONFeed reads items from an HTTP JSON feed URL (only if enabled).
 	SourceHTTPJSONFeed SourceType = "http_json_feed"
+	// SourceAutoposterAPI reads explicitly enabled, owner-bound reference records.
+	SourceAutoposterAPI SourceType = "autoposter_api"
 )
 
 // Feed is a registered account feed configuration.
@@ -44,6 +46,7 @@ type Feed struct {
 	OperationType string     `json:"operationType"` // default op type for items lacking one
 	Enabled       bool       `json:"enabled"`
 	ConfigVersion int64      `json:"configVersion"`
+	SyncCursor    string     `json:"-" gorm:"column:sync_cursor"`
 }
 
 // Bind the pre-read ticket to the exact configuration without exposing paths
@@ -67,6 +70,9 @@ func (f Feed) Validate() error {
 	if strings.TrimSpace(f.Name) == "" {
 		return fmt.Errorf("accountfeed: name required")
 	}
+	if err := validateGenericFeedCursor(f.SyncCursor); err != nil {
+		return fmt.Errorf("accountfeed: stored %w", err)
+	}
 	if strings.TrimSpace(f.OwnerUserID) == "" {
 		return fmt.Errorf("accountfeed: ownerUserId required")
 	}
@@ -78,6 +84,13 @@ func (f Feed) Validate() error {
 	case SourceHTTPJSONFeed:
 		if strings.TrimSpace(f.URL) == "" {
 			return fmt.Errorf("accountfeed: url required for %s", f.SourceType)
+		}
+		if err := validateFeedURL(f.URL); err != nil {
+			return err
+		}
+	case SourceAutoposterAPI:
+		if strings.TrimSpace(f.URL) == "" || strings.TrimSpace(f.AccountLabel) == "" {
+			return fmt.Errorf("accountfeed: Autoposter endpoint and remote owner required")
 		}
 		if err := validateFeedURL(f.URL); err != nil {
 			return err

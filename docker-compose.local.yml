@@ -545,6 +545,9 @@ services:
       HAI_PHASE2_WORKSPACE_DIR: ${HAI_PHASE2_WORKSPACE_DIR:-/root/agent-workspaces/phase2}
       HAI_PHASE2_FEEDS_DIR: ${HAI_PHASE2_FEEDS_DIR:-/root/phase2-feeds}
       HAI_PHASE2_FEED_FILES: ${HAI_PHASE2_FEED_FILES:-}
+      HAI_AUTOPOSTER_BASE_URL: ${HAI_AUTOPOSTER_BASE_URL:-}
+      HAI_AUTOPOSTER_REMOTE_OWNER: ${HAI_AUTOPOSTER_REMOTE_OWNER:-}
+      HAI_AUTOPOSTER_TOKEN: ${HAI_AUTOPOSTER_TOKEN:-}
       HAI_PHASE2_STATE_DIR: ${HAI_PHASE2_STATE_DIR:-/root/phase2-control-state}
       HAI_PHASE2_MODE: ${HAI_PHASE2_MODE:-autonomous_safe}
       HAI_PHASE2_EMERGENCY_STOP: ${HAI_PHASE2_EMERGENCY_STOP:-false}
@@ -678,7 +681,7 @@ services:
   # internal-only network; SearXNG has separate egress for search providers.
   # It returns candidates only and has no published host port.
   searxng:
-    image: ghcr.io/searxng/searxng:2026.10.9-f4822b3fc
+    image: ghcr.io/searxng/searxng:2026.10.17-decdfa6f7
     profiles: ["research-discovery"]
     restart: unless-stopped
     environment:
@@ -784,7 +787,7 @@ services:
   # Runs after migrations so grants cover every current table, and records
   # default privileges for all future tables created by the schema owner.
   backend-runtime-role:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     restart: "no"
     mem_limit: ${BACKEND_RUNTIME_ROLE_MEMORY_LIMIT:-64m}
     cpus: ${BACKEND_RUNTIME_ROLE_CPU_LIMIT:-0.1}
@@ -1008,7 +1011,7 @@ services:
   # publishes no host port. Model tags are pulled by HAI's dedicated mini-SWE
   # maintenance gate before use; image upgrades remain an operator action.
   ollama-miniswe:
-    image: ${HAI_RUNNER_OLLAMA_IMAGE:-ollama/ollama:0.11.10}
+    image: ${HAI_RUNNER_OLLAMA_IMAGE:-ollama/ollama:0.40.4}
     profiles: ["patch-proposals"]
     restart: unless-stopped
     expose: ["11434"]
@@ -1756,7 +1759,7 @@ services:
   # from HAI's primary Postgres instance and is enabled only with
   # `--profile durability`. No Temporal port is exposed to the host.
   temporal-postgres:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     profiles: ["durability"]
     restart: unless-stopped
     mem_limit: 512m
@@ -1766,10 +1769,14 @@ services:
       POSTGRES_USER: temporal
       POSTGRES_PASSWORD: "${HAI_TEMPORAL_POSTGRES_PASSWORD:-}"
       POSTGRES_DB: temporal
+      HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
+    entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
+    command: ["postgres"]
     volumes:
-      - temporal-postgres-data:/var/lib/postgresql/data
+      - temporal-postgres-data:/var/lib/postgresql
+      - ./scripts/postgres18-volume-preflight.sh:/scripts/postgres18-volume-preflight.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U temporal -d temporal"]
+      test: ["CMD-SHELL", "pg_isready -U temporal -d temporal && { [ ! -f /var/lib/postgresql/data/PG_VERSION ] || [ -f \"$$PGDATA/.hai-postgres18-migration-complete\" ]; }"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -1778,7 +1785,7 @@ services:
       - service-hub
 
   temporal-schema:
-    image: temporalio/admin-tools:1.31.2
+    image: temporalio/admin-tools:1.32.0
     profiles: ["durability"]
     restart: "no"
     mem_limit: 256m
@@ -1804,7 +1811,7 @@ services:
       - service-hub
 
   temporal:
-    image: temporalio/server:1.31.2
+    image: temporalio/server:1.32.0
     profiles: ["durability"]
     restart: unless-stopped
     mem_limit: 1g
@@ -1839,7 +1846,7 @@ services:
       - service-hub
 
   temporal-namespace:
-    image: temporalio/admin-tools:1.31.2
+    image: temporalio/admin-tools:1.32.0
     profiles: ["durability"]
     restart: "no"
     mem_limit: 256m
@@ -1862,7 +1869,7 @@ services:
       - service-hub
 
   postgres-idp:
-    image: postgres:17-alpine
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     container_name: 018-hai-postgres-idp
     hostname: postgres-idp
     restart: unless-stopped
@@ -1875,13 +1882,17 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${IDP_DB_NAME}
+      HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
+    entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
+    command: ["postgres"]
     ports:
       - "127.0.0.1:${IDP_DB_HOST_PORT:-5433}:5432"
     volumes:
-      - postgres-idp-data:/var/lib/postgresql/data
+      - postgres-idp-data:/var/lib/postgresql
+      - ./scripts/postgres18-volume-preflight.sh:/scripts/postgres18-volume-preflight.sh:ro
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${IDP_DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${IDP_DB_NAME} && { [ ! -f /var/lib/postgresql/data/PG_VERSION ] || [ -f \"$$PGDATA/.hai-postgres18-migration-complete\" ]; }"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -1890,9 +1901,9 @@ services:
       - idp-network
 
   postgres-automation:
-    # Pinned upstream pgvector Postgres 17 image. Existing data stays in the
-    # named volume; take a backup before changing a live database image.
-    image: pgvector/pgvector:0.8.5-pg17-bookworm
+    # PostgreSQL 18.6 with pgvector 0.8.7. PostgreSQL 17 volumes stay mounted
+    # until the documented dump/restore is verified and marked complete.
+    image: pgvector/pgvector:0.8.7-pg18-bookworm@sha256:2358fcba361ed2233a5ed81b5fe4ca779ccb304120ce531a3bf51c0ed7e2bc11
     container_name: 018-hai-postgres-automation
     hostname: postgres-automation
     restart: unless-stopped
@@ -1905,13 +1916,17 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${AUTOMATION_DB_NAME}
+      HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
+    entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
+    command: ["postgres"]
     ports:
       - "127.0.0.1:${AUTOMATION_DB_HOST_PORT:-5434}:5432"
     volumes:
-      - postgres-automation-data:/var/lib/postgresql/data
+      - postgres-automation-data:/var/lib/postgresql
+      - ./scripts/postgres18-volume-preflight.sh:/scripts/postgres18-volume-preflight.sh:ro
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${AUTOMATION_DB_NAME}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${AUTOMATION_DB_NAME} && { [ ! -f /var/lib/postgresql/data/PG_VERSION ] || [ -f \"$$PGDATA/.hai-postgres18-migration-complete\" ]; }"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -1920,7 +1935,7 @@ services:
       - automation-hub-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:8.10.2-alpine
     container_name: 018-hai-redis
     hostname: redis
     restart: unless-stopped

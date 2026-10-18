@@ -5,6 +5,7 @@ import {
   IAccountPermission,
   IBridgeContract,
   IFeedAudit,
+  IFeed,
   IFeedHealth,
   IFeedIdentityPreview,
   ISyncReport,
@@ -30,6 +31,10 @@ export class AccountBridgesService {
 
   sync(id: string): Observable<ISyncReport> {
     return this.http.post<ISyncReport>(`${this.apiUrl}/${id}/sync`, {})
+  }
+
+  setEnabled(id: string, enabled: boolean): Observable<IFeed> {
+    return this.http.patch<IFeed>(`${this.apiUrl}/${id}`, { enabled })
   }
 
   syncDue(): Observable<{ reports: ISyncReport[] }> {

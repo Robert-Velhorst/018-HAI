@@ -438,8 +438,7 @@ func openPasswordResetTestDB(t *testing.T) *gorm.DB {
 	}
 
 	query := parsed.Query()
-	options := strings.TrimSpace(query.Get("options") + " -c search_path=" + schema + ",public")
-	query.Set("options", options)
+	query.Set("search_path", schema+",public")
 	parsed.RawQuery = query.Encode()
 	db, err := gorm.Open(postgres.Open(parsed.String()), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
 	if err != nil {

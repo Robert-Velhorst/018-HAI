@@ -24,21 +24,31 @@ $validRecord = [ordered]@{
 $oversizedRecord = '{"type":"event_msg","payload":{"type":"patch_apply_end","noise":"' + ('x' * 700) + '"}}'
 $transcript = Join-Path $transcripts 'fixture.jsonl'
 [IO.File]::WriteAllText($transcript, $oversizedRecord + "`n" + $validRecord, [Text.UTF8Encoding]::new($false))
+$hiddenTranscript = Join-Path $transcripts 'hidden.jsonl'
+[IO.File]::WriteAllText($hiddenTranscript, $validRecord, [Text.UTF8Encoding]::new($false))
+[IO.File]::SetAttributes($hiddenTranscript, [IO.FileAttributes]::Hidden)
+$nestedTranscripts = Join-Path $transcripts 'nested'
+[void](New-Item -ItemType Directory -Path $nestedTranscripts -Force)
+$nestedTranscript = Join-Path $nestedTranscripts 'nested.jsonl'
+[IO.File]::WriteAllText($nestedTranscript, $validRecord, [Text.UTF8Encoding]::new($false))
 
-$report = & $audit -TranscriptRoot $transcripts -SourceCheckoutRoot $source -RepositoryRoot $repo -MaxRecordCharacters 512 | ConvertFrom-Json
-if ($report.oversized_records_skipped -ne 1 -or
+$report = & $audit -TranscriptRoot $transcripts -SourceCheckoutRoot $source -RepositoryRoot $repo -MaxRecordCharacters 512 -Recurse | ConvertFrom-Json
+if ($report.transcript_files -ne 3 -or
+    $report.oversized_records_skipped -ne 1 -or
     $report.files_with_oversized_records -ne 1 -or
-    $report.patch_events -ne 1 -or
-    $report.successful_events -ne 1 -or
-    $report.primary_path_references -ne 1 -or
+    $report.patch_events -ne 3 -or
+    $report.successful_events -ne 3 -or
+    $report.primary_path_references -ne 3 -or
     $report.primary_paths_tracked_in_repository -ne 1 -or
     $report.patch_event_scan_complete -ne $false) {
     throw "Bounded patch-path scan mismatch: $($report | ConvertTo-Json -Compress)"
 }
 
-if (-not (Test-Path -LiteralPath $transcript -PathType Leaf)) {
+if (-not (Test-Path -LiteralPath $transcript -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $hiddenTranscript -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $nestedTranscript -PathType Leaf)) {
     throw 'Patch-path audit unexpectedly removed its transcript fixture.'
 }
 
-Write-Host 'Bounded patch-path scan passed; oversized record was reported and the following valid final record was processed.'
+Write-Host 'Bounded patch-path scan passed for hidden and nested files; oversized record was reported and later valid records were processed.'
 Write-Host "Preserved test artifacts: $fixtureRoot"
