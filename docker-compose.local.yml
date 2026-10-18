@@ -1768,6 +1768,7 @@ services:
       POSTGRES_DB: temporal
       HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
     entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
+    command: ["postgres"]
     volumes:
       - temporal-postgres-data:/var/lib/postgresql
       - ./scripts/postgres18-volume-preflight.sh:/scripts/postgres18-volume-preflight.sh:ro
@@ -1880,6 +1881,7 @@ services:
       POSTGRES_DB: ${IDP_DB_NAME}
       HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
     entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
+    command: ["postgres"]
     ports:
       - "127.0.0.1:${IDP_DB_HOST_PORT:-5433}:5432"
     volumes:
@@ -1913,6 +1915,7 @@ services:
       POSTGRES_DB: ${AUTOMATION_DB_NAME}
       HAI_POSTGRES18_ALLOW_EMPTY_TARGET: "${HAI_POSTGRES18_ALLOW_EMPTY_TARGET:-0}"
     entrypoint: ["/bin/sh", "/scripts/postgres18-volume-preflight.sh"]
+    command: ["postgres"]
     ports:
       - "127.0.0.1:${AUTOMATION_DB_HOST_PORT:-5434}:5432"
     volumes:
