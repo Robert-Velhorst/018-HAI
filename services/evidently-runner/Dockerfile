@@ -1,5 +1,4 @@
-# dynaconf 3.3.5 currently declares Python <3.15 on PyPI; use the newest compatible line.
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 COPY requirements.txt ./
