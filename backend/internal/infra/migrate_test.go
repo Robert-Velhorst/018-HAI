@@ -135,6 +135,36 @@ func TestValidateAppliedChecksumsFailsClosedForLegacyAndChangedSource(t *testing
 	}
 }
 
+func TestValidateAppliedChecksumsAcceptsOnlyKnownPreviousCursorMigration(t *testing.T) {
+	all, err := loadMigrations(migrations.Files, "pre")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cursorMigration Migration
+	for _, migration := range all {
+		if migration.Version == "pre/0128_account_feed_sync_cursor" {
+			cursorMigration = migration
+			break
+		}
+	}
+	if cursorMigration.Version == "" {
+		t.Fatal("account-feed cursor migration not found")
+	}
+	applied := map[string]bool{cursorMigration.Version: true}
+	for _, stored := range []string{MigrationChecksum(cursorMigration), previousAccountFeedSyncCursorChecksum} {
+		if err := validateAppliedChecksums(all, applied, map[string]string{cursorMigration.Version: stored}); err != nil {
+			t.Errorf("known checksum %s rejected: %v", stored, err)
+		}
+	}
+	if err := validateAppliedChecksums(all, applied, map[string]string{cursorMigration.Version: strings.Repeat("0", 64)}); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("unknown checksum accepted: %v", err)
+	}
+	other := Migration{Version: "pre/0127_unrelated"}
+	if err := validateAppliedChecksums([]Migration{other}, map[string]bool{other.Version: true}, map[string]string{other.Version: previousAccountFeedSyncCursorChecksum}); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("0128 historical checksum accepted for another migration: %v", err)
+	}
+}
+
 func TestValidateAppliedVersionsRejectsMissingVersionInCurrentPhase(t *testing.T) {
 	all := []Migration{
 		{Version: "pre/0001_known"},

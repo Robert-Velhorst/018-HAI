@@ -21,6 +21,7 @@ type NewOperationInput struct {
 	SourceURI          string
 	SourceReceivedAt   *time.Time
 	SourceRevisionHash string
+	SourceSequence     uint64 // Monotonic source change ID, used only by reference synchronization.
 	SourceProvider     string
 	SourceAccount      string
 	SourceExternalID   string
@@ -59,36 +60,36 @@ func NewOperation(in NewOperationInput, now time.Time) (models.Operation, error)
 		}
 	}
 	op := models.Operation{
-		OwnerUserID:         in.OwnerUserID,
-		WorkspaceID:         firstNonEmpty(in.WorkspaceID, "local"),
-		Title:               in.Title,
-		Description:         in.Description,
-		OperationType:       in.OperationType,
-		SourceType:          in.SourceType,
-		SourceID:            in.SourceID,
-		SourceURI:           in.SourceURI,
-		SourceReceivedAt:    in.SourceReceivedAt,
-		SourceRevisionHash:  in.SourceRevisionHash,
-		SourceProvider:      in.SourceProvider,
-		SourceAccount:       in.SourceAccount,
-		SourceExternalID:    in.SourceExternalID,
-		SourceIdentityHash:  sourceIdentity,
-		ProjectKey:          in.ProjectKey,
-		AccountFeedID:       in.AccountFeedID,
-		Status:              string(StatusNew),
-		RiskLevel:           string(RiskLow),
-		AutonomyLevel:       string(AutonomyObserve),
-		OwnerType:           string(OwnerHAI),
-		CurrentDecision:     string(DecisionObserveOnly),
-		RequiresApproval:    false,
-		VerificationStatus:  string(VerificationNotRequired),
-		EvidenceJSON:        firstNonEmpty(in.EvidenceJSON, "{}"),
+		OwnerUserID:             in.OwnerUserID,
+		WorkspaceID:             firstNonEmpty(in.WorkspaceID, "local"),
+		Title:                   in.Title,
+		Description:             in.Description,
+		OperationType:           in.OperationType,
+		SourceType:              in.SourceType,
+		SourceID:                in.SourceID,
+		SourceURI:               in.SourceURI,
+		SourceReceivedAt:        in.SourceReceivedAt,
+		SourceRevisionHash:      in.SourceRevisionHash,
+		SourceProvider:          in.SourceProvider,
+		SourceAccount:           in.SourceAccount,
+		SourceExternalID:        in.SourceExternalID,
+		SourceIdentityHash:      sourceIdentity,
+		ProjectKey:              in.ProjectKey,
+		AccountFeedID:           in.AccountFeedID,
+		Status:                  string(StatusNew),
+		RiskLevel:               string(RiskLow),
+		AutonomyLevel:           string(AutonomyObserve),
+		OwnerType:               string(OwnerHAI),
+		CurrentDecision:         string(DecisionObserveOnly),
+		RequiresApproval:        false,
+		VerificationStatus:      string(VerificationNotRequired),
+		EvidenceJSON:            firstNonEmpty(in.EvidenceJSON, "{}"),
 		SourceEvidenceRawSHA256: rawEvidenceSHA256(firstNonEmpty(in.EvidenceJSON, "{}")),
-		WorldModelStateJSON: "{}",
-		DedupeKey:           in.DedupeKey,
-		CreatedAt:           now,
-		UpdatedAt:           now,
-		Version:             1,
+		WorldModelStateJSON:     "{}",
+		DedupeKey:               in.DedupeKey,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+		Version:                 1,
 	}
 	return op, Validate(op)
 }

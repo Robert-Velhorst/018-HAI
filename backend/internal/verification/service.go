@@ -67,7 +67,8 @@ type AnswerRequest struct {
 	DraftAnswer            string          `json:"draftAnswer,omitempty"`
 	ExternalEvidence       []EvidenceInput `json:"externalEvidence,omitempty"`
 	IncludeSensitive       bool            `json:"includeSensitive,omitempty"`
-	HumanApproved          bool            `json:"humanApproved,omitempty"`
+	// Human approval is server-owned and cannot be asserted by a JSON client.
+	HumanApproved          bool            `json:"-"`
 	HumanApprovalReference string          `json:"-"`
 	AllowMemoryUpdate      bool            `json:"allowMemoryUpdate,omitempty"`
 }
@@ -850,7 +851,9 @@ func (s *service) storeVerifiedMemory(request AnswerRequest, run *models.Verific
 	}
 	for _, claim := range claims {
 		proof, eligible := memoryPromotionEvidence(claim, run.ID, evidence)
-		if !eligible || claim.Status != StatusSourceSupported || claim.NeedsReview || claim.HighRisk || claim.Confidence < minimumMemoryPromotionConfidence {
+		if !eligible || claim.Status != StatusSourceSupported || claim.NeedsReview || claim.HighRisk ||
+			math.IsNaN(claim.Confidence) || math.IsInf(claim.Confidence, 0) ||
+			claim.Confidence < minimumMemoryPromotionConfidence || claim.Confidence > 1 {
 			outcome.Skipped++
 			continue
 		}
@@ -889,7 +892,10 @@ func countPromotableClaims(claims []models.VerificationClaim) int {
 
 func memoryPromotionEvidence(claim models.VerificationClaim, runID uuid.UUID, evidence []models.VerificationEvidence) (models.VerificationEvidence, bool) {
 	for _, item := range evidence {
-		if item.RunID != runID || item.ID == uuid.Nil || item.Rejected || !item.Used || item.QualityScore < minimumMemoryEvidenceQuality || !isSourceSupportedEvidence(item.Authority) {
+		if item.RunID != runID || item.ID == uuid.Nil || item.Rejected || !item.Used ||
+			math.IsNaN(item.QualityScore) || math.IsInf(item.QualityScore, 0) ||
+			item.QualityScore < minimumMemoryEvidenceQuality || item.QualityScore > 1 ||
+			!isSourceSupportedEvidence(item.Authority) {
 			continue
 		}
 		if claim.RunID != runID || !matchesEvidenceSource(claim.SourceRefs, item) || !matchesEvidenceSentence(claim.ClaimText, item.Snippet) || hasConflictingSingleWeekday(claim.ClaimText, item.Snippet) {
@@ -1278,6 +1284,9 @@ func overlapCount(left, right map[string]bool) int {
 		"out": true, "all": true, "any": true, "some": true, "more": true, "most": true,
 		"one": true, "two": true, "also": true, "its": true, "it's": true, "been": true,
 		"being": true, "here": true, "each": true, "per": true, "via": true,
+		"de": true, "het": true, "een": true, "van": true, "voor": true, "met": true,
+		"dat": true, "dit": true, "die": true, "aan": true, "zijn": true, "waren": true,
+		"als": true, "bij": true, "naar": true, "door": true, "er": true,
 	}
 	count := 0
 	for token := range left {

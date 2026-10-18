@@ -31,7 +31,9 @@ func TestBackendContainerRuntimeContract(t *testing.T) {
 		}
 	}
 
-	finalStageStart := strings.LastIndex(docker, "FROM ubuntu:24.04")
+	runtimeBase := "FROM ubuntu:26.10@sha256:" +
+		"93e29beff5257b2cdf1c024d831f6d2997e53655a653ff76a811fc9e6564a719"
+	finalStageStart := strings.LastIndex(docker, runtimeBase)
 	if finalStageStart < 0 {
 		t.Fatal("final Ubuntu runtime stage is missing")
 	}

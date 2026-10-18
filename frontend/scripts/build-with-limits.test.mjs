@@ -51,7 +51,7 @@ test('watch arguments remain literal and launch once with the selected resource 
     assert.equal(options.env.NG_BUILD_MAX_WORKERS, '2')
     assert.equal(options.shell, false)
     return { status: 0 }
-  }, '24.15.0')
+  }, '26.12.0')
   assert.equal(status, 0)
   assert.equal(calls, 1)
 })
@@ -62,8 +62,8 @@ test('build failures, launch errors and interrupted builds cannot become success
     [{ status: null, signal: 'SIGINT' }, 130],
     [{ status: null, signal: 'SIGTERM' }, 143],
     [{ status: null }, 1],
-  ]) assert.equal(runBuild([], {}, () => result, '24.15.0'), expected)
-  assert.throws(() => runBuild([], {}, () => ({ error: new Error('synthetic failure') }), '24.15.0'), /Unable to launch/)
+  ]) assert.equal(runBuild([], {}, () => result, '26.12.0'), expected)
+  assert.throws(() => runBuild([], {}, () => ({ error: new Error('synthetic failure') }), '26.12.0'), /Unable to launch/)
 })
 
 test('native production and watch scripts cannot bypass the worker guard', () => {
@@ -74,9 +74,9 @@ test('native production and watch scripts cannot bypass the worker guard', () =>
 })
 
 test('runtime policy follows package engines and rejects unsupported majors or prereleases', () => {
-  for (const version of ['24.15.0', '24.15.1', '24.16.0', '24.99.0']) assert.doesNotThrow(() => assertBuildRuntime(version))
-  for (const version of ['22.22.3', '24.14.9', '25.2.1', '26.0.0', '24.15.0-rc.1', 'invalid']) {
-    assert.throws(() => assertBuildRuntime(version), /Frontend builds require Node \^24\.15\.0/)
+  for (const version of ['26.12.0', '26.12.1', '26.13.0', '26.99.0']) assert.doesNotThrow(() => assertBuildRuntime(version))
+  for (const version of ['22.22.3', '26.11.9', '25.2.1', '26.0.0', '26.12.0-rc.1', 'invalid']) {
+    assert.throws(() => assertBuildRuntime(version), /Frontend builds require Node \^26\.12\.0/)
     assert.throws(() => runBuild([], {}, () => assert.fail('unsupported compiler launched'), version), /Frontend builds require Node/)
   }
 })

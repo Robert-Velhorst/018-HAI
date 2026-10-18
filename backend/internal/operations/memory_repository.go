@@ -16,20 +16,33 @@ import (
 // port implementation (not a mock) used by the background loop's tests and by
 // the DB-free smoke path; production uses GormRepository.
 type MemoryRepository struct {
-	mu                  sync.Mutex
-	ops                 map[uuid.UUID]models.Operation
-	events              []models.OperationEvent
-	claims              map[uuid.UUID]memoryExecutionClaim
-	observations        map[uuid.UUID]SourceObservation
-	observationClocks   map[sourceObservationScope]int64
-	sourceOrigins       map[sourceOriginKey]SourceOrigin
-	sourceHeads         map[sourceHeadKey]SourceHead
-	sourceHeadRevisions map[sourceRevisionKey]sourceHeadRevision
+	mu                   sync.Mutex
+	referenceMu          sync.Mutex
+	referenceCheckpoints map[ReferenceCheckpointKey]ReferenceCheckpoint
+	referenceControls    map[ReferenceCheckpointKey]ReferenceSourceControl
+	ops                  map[uuid.UUID]models.Operation
+	events               []models.OperationEvent
+	claims               map[uuid.UUID]memoryExecutionClaim
+	observations         map[uuid.UUID]SourceObservation
+	observationClocks    map[sourceObservationScope]int64
+	sourceOrigins        map[sourceOriginKey]SourceOrigin
+	sourceHeads          map[sourceHeadKey]SourceHead
+	sourceHeadRevisions  map[sourceRevisionKey]sourceHeadRevision
 }
 
 // NewMemoryRepository builds an empty in-memory repository.
 func NewMemoryRepository() *MemoryRepository {
-	return &MemoryRepository{ops: map[uuid.UUID]models.Operation{}, claims: map[uuid.UUID]memoryExecutionClaim{}}
+	return &MemoryRepository{
+		referenceCheckpoints: map[ReferenceCheckpointKey]ReferenceCheckpoint{},
+		referenceControls:    map[ReferenceCheckpointKey]ReferenceSourceControl{},
+		ops:                  map[uuid.UUID]models.Operation{},
+		claims:               map[uuid.UUID]memoryExecutionClaim{},
+		observations:         map[uuid.UUID]SourceObservation{},
+		observationClocks:    map[sourceObservationScope]int64{},
+		sourceOrigins:        map[sourceOriginKey]SourceOrigin{},
+		sourceHeads:          map[sourceHeadKey]SourceHead{},
+		sourceHeadRevisions:  map[sourceRevisionKey]sourceHeadRevision{},
+	}
 }
 
 func (r *MemoryRepository) Create(op *models.Operation) (*models.Operation, error) {

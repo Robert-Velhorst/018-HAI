@@ -20,13 +20,14 @@ const (
 	ProviderUpworkAssisted  Provider = "upwork_assisted"
 	ProviderChatExport      Provider = "chat_export"
 	ProviderBrowserCapture  Provider = "browser_capture"
+	ProviderAutoposter      Provider = "secondhand_autoposter"
 )
 
 func allProviders() []Provider {
 	return []Provider{
 		ProviderGenericJSONFeed, ProviderLocalFolder, ProviderGmail, ProviderGoogleDrive,
 		ProviderGoogleCalendar, ProviderGitHub, ProviderTrello, ProviderUpworkAssisted,
-		ProviderChatExport, ProviderBrowserCapture,
+		ProviderChatExport, ProviderBrowserCapture, ProviderAutoposter,
 	}
 }
 
@@ -95,6 +96,8 @@ func (b BridgeContract) ConnectionStatus() ConnectionStatus {
 	switch b.Provider {
 	case ProviderGenericJSONFeed, ProviderLocalFolder:
 		return ConnAvailable
+	case ProviderAutoposter:
+		return ConnCredentialsPresentUnverified
 	default:
 		// Provider credentials do not make this normalized-feed registry a live
 		// provider connector. Native health is owned by Connected Sources.
@@ -142,6 +145,9 @@ func bridgeContracts() []BridgeContract {
 			ItemTypes: []ItemType{ItemChat, ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Export a chat log", Detail: "Provide a normalized chat export in the generic feed format."}}},
 		{Provider: ProviderBrowserCapture, DisplayName: "Browser Capture (read-only)", ConnectorPreference: []string{"browser_read_only", "guarded_browser"}, ReadOnly: true,
 			ItemTypes: []ItemType{ItemDocument, ItemMessage}, SetupRequirements: []SetupRequirement{{Step: "Bounded read-only capture", Detail: "Only allowlisted-domain read-only capture; no state changes. No executor is faked."}}},
+		{Provider: ProviderAutoposter, DisplayName: "Secondhand Autoposter (read-only)", ConnectorPreference: []string{"official_api"}, ReadOnly: true,
+			RequiredScopes: []string{"hai:read"}, CredentialEnv: "HAI_AUTOPOSTER_BASE_URL, HAI_AUTOPOSTER_TOKEN, HAI_AUTOPOSTER_REMOTE_OWNER",
+			ItemTypes: []ItemType{ItemDocument}, SetupRequirements: []SetupRequirement{{Step: "Configure an expiring read token", Detail: "HAI only reads owner-bound listing references. Imported content never grants execution or publishing authority."}}},
 	}
 }
 

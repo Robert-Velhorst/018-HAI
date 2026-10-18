@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -67,7 +68,7 @@ func TestPrivateRecoveryBrokenConnectionDoesNotLeakError(t *testing.T) {
 	engine := gin.New()
 	engine.Use(gin.LoggerWithConfig(gin.LoggerConfig{Output: &output, Formatter: formatAccessLog}), privateRecovery())
 	engine.GET("/broken", func(*gin.Context) {
-		panic(&net.OpError{Op: "write", Err: &os.SyscallError{Syscall: "write", Err: errors.New("broken pipe synthetic-connection-secret")}})
+		panic(&net.OpError{Op: "write", Err: &os.SyscallError{Syscall: "write", Err: errors.Join(syscall.EPIPE, errors.New("synthetic-connection-secret"))}})
 	})
 	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/broken", nil))
 	if strings.Contains(output.String(), "synthetic-connection-secret") || !strings.Contains(output.String(), "[redacted]") {

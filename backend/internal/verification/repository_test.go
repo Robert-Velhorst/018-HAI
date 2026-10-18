@@ -105,3 +105,13 @@ func TestVerificationRunHistoryIsBounded(t *testing.T) {
 		t.Fatalf("verification history query vars = %#v", statement.Vars)
 	}
 }
+
+func TestOwnerScopedReadsRejectBlankIdentityBeforeQuery(t *testing.T) {
+	repository := &GormRepository{}
+	if _, err := repository.FindRunsForOwner(" \t "); err != errVerificationOwnerRequired {
+		t.Fatalf("FindRunsForOwner with blank identity error = %v", err)
+	}
+	if _, err := repository.FindRunForOwner("", uuid.New()); err != errVerificationOwnerRequired {
+		t.Fatalf("FindRunForOwner with blank identity error = %v", err)
+	}
+}

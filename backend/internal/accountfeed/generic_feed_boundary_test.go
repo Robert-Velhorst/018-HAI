@@ -60,6 +60,12 @@ func TestParseGenericFeedRejectsNonStringCursor(t *testing.T) {
 	}
 }
 
+func TestParseGenericFeedRejectsNULCursor(t *testing.T) {
+	if got, err := ParseGenericFeed([]byte(`{"cursor":"bad\u0000cursor","items":[]}`), 0, 0); err == nil || len(got.Items) != 0 {
+		t.Fatalf("NUL cursor accepted: %+v, %v", got, err)
+	}
+}
+
 func TestParseGenericFeedBoundsItemCountAndCursor(t *testing.T) {
 	item := `{"externalId":"x","title":"x","provider":"generic_json_feed","itemType":"email"}`
 	var input strings.Builder
