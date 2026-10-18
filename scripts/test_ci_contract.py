@@ -548,6 +548,10 @@ class CIWorkflowContractTest(unittest.TestCase):
     def test_canonical_service_runtime_images_do_not_float_on_latest(
         self,
     ) -> None:
+        expected_runtime_base = (
+            "FROM ubuntu:26.10@sha256:"
+            "93e29beff5257b2cdf1c024d831f6d2997e53655a653ff76a811fc9e6564a719"
+        )
         for relative_path in (
             "backend/Dockerfile",
             "idp/Dockerfile",
@@ -559,7 +563,7 @@ class CIWorkflowContractTest(unittest.TestCase):
                     dockerfile,
                     r"(?m)^FROM\s+\S+:latest(?:\s|$)",
                 )
-                self.assertIn("FROM ubuntu:24.04", dockerfile)
+                self.assertIn(expected_runtime_base, dockerfile)
 
     def test_local_compose_uses_one_lightweight_kafka_protocol_broker(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
