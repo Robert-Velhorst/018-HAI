@@ -173,7 +173,6 @@ def run_evaluation() -> dict:
         score = metric.measure(
             LLMTestCase(input=case["input"], actual_output=case["answer"], retrieval_context=[case["context"]]),
             _show_indicator=False,
-            _log_metric_to_confident=False,
         )
         if not isinstance(score, (int, float)) or not 0 <= score <= 1:
             raise RequestError("fixed DeepEval suite returned an invalid score")

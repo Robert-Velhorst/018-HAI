@@ -1,6 +1,10 @@
 package actionresolver
 
-import "testing"
+import (
+	"fmt"
+	"math"
+	"testing"
+)
 
 func TestDestructiveLowConfidenceBlocks(t *testing.T) {
 	if Resolve(Action{Description: "delete account", Confidence: 0.4, Destructive: true}) != Block {
@@ -25,5 +29,18 @@ func TestConfidentCompleteActionProceeds(t *testing.T) {
 	// handles the risk separately).
 	if Resolve(Action{Description: "archive", Confidence: 0.95, Destructive: true}) != Proceed {
 		t.Fatalf("destructive but confident should proceed at the resolver layer")
+	}
+}
+
+func TestInvalidConfidenceCannotProceed(t *testing.T) {
+	for _, confidence := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), -0.01, 1.01} {
+		t.Run(fmt.Sprintf("%v", confidence), func(t *testing.T) {
+			if got := Resolve(Action{Confidence: confidence, Destructive: true}); got != Block {
+				t.Fatalf("destructive action with invalid confidence resolved to %q, want block", got)
+			}
+			if got := Resolve(Action{Confidence: confidence}); got != Clarify {
+				t.Fatalf("action with invalid confidence resolved to %q, want clarification", got)
+			}
+		})
 	}
 }

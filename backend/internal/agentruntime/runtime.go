@@ -5211,7 +5211,7 @@ func openClawProviderExtensions() map[string]bool {
 		"minimax": true, "mistral": true, "moonshot": true, "novita": true, "nvidia": true,
 		"ollama": true, "openai": true, "openrouter": true, "perplexity": true, "qianfan": true,
 		"qwen": true, "sglang": true, "stepfun": true, "synthetic": true, "tencent": true,
-		"together": true, "tokenjuice": true, "venice": true, "vercel-ai-gateway": true,
+		"together": true, "tokenjuice": true, "venice": true,
 		"vllm": true, "volcengine": true, "voyage": true, "xai": true, "xiaomi": true,
 		"zai": true,
 	}

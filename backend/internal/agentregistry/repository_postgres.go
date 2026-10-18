@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -734,7 +735,7 @@ func validateAssignment(assignment Assignment) error {
 		assignment.GrantedAutonomy < 0 || assignment.GrantedAutonomy > 10 {
 		return fmt.Errorf("assignment authority and autonomy must be between 0 and 10")
 	}
-	if assignment.Score < 0 || assignment.Score > 1 {
+	if math.IsNaN(assignment.Score) || math.IsInf(assignment.Score, 0) || assignment.Score < 0 || assignment.Score > 1 {
 		return fmt.Errorf("assignment score must be between 0 and 1")
 	}
 	if strings.TrimSpace(assignment.RequestDigest) == "" ||

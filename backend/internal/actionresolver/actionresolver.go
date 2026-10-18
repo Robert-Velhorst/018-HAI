@@ -3,6 +3,8 @@
 // so the resolution of "the AI wasn't sure" is auditable.
 package actionresolver
 
+import "math"
+
 // Resolution is the recommended handling of an ambiguous action.
 type Resolution string
 
@@ -26,7 +28,8 @@ type Action struct {
 //   - Missing required parameters, or low confidence → Clarify with the user.
 //   - Otherwise → Proceed.
 func Resolve(a Action) Resolution {
-	lowConfidence := a.Confidence < 0.6
+	validConfidence := !math.IsNaN(a.Confidence) && !math.IsInf(a.Confidence, 0) && a.Confidence >= 0 && a.Confidence <= 1
+	lowConfidence := !validConfidence || a.Confidence < 0.6
 	if a.Destructive && lowConfidence {
 		return Block
 	}

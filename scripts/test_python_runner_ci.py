@@ -9,6 +9,15 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
 
+def _pip_effective_lines(path: Path) -> tuple[str, ...]:
+    """Return install-affecting lines, excluding resolver provenance comments."""
+    return tuple(
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+
+
 class PythonRunnerCIPolicyTest(unittest.TestCase):
     def test_every_shipped_python_runner_has_ci_contract_coverage(self):
         names = set(re.findall(r"(?m)^          - name: ([a-z0-9-]+)$", WORKFLOW))
@@ -43,9 +52,10 @@ class PythonRunnerCIPolicyTest(unittest.TestCase):
                 runtime_requirements = service / "requirements.txt"
                 self.assertTrue(runtime_requirements.is_file())
                 self.assertEqual(
-                    runtime_requirements.read_bytes().replace(b"\r\n", b"\n"),
-                    lock.read_bytes().replace(b"\r\n", b"\n"),
-                    "Docker-installed requirements.txt must exactly match the hash lock",
+                    _pip_effective_lines(runtime_requirements),
+                    _pip_effective_lines(lock),
+                    "Docker-installed requirements.txt must match the hash lock's "
+                    "install directives, pinned versions, and hashes",
                 )
                 locked = lock.read_text(encoding="utf-8").lower()
                 lines = lock.read_text(encoding="utf-8").splitlines()

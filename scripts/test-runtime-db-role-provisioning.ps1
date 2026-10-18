@@ -94,7 +94,7 @@ try {
         "--env", "POSTGRES_PASSWORD=$ownerPassword",
         "--env", "POSTGRES_DB=$databaseName",
         "--env", "POSTGRES_HOST_AUTH_METHOD=scram-sha-256",
-        "postgres:17-alpine"
+        "postgres:18.6-alpine"
     )
     # Set before launch so the finally block also checks for a partially
     # created container if Docker reports a startup error.
