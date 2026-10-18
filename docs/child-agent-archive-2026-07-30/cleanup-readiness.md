@@ -1284,3 +1284,247 @@ code crosswalk as proof that these missing source transcripts were safely
 removed or fully integrated. Preserve the 13 remaining files and reconcile
 the missing five from a verified backup or other authoritative source before
 any archive cleanup decision.
+
+### Public reconciliation export (2026-10-18)
+
+The historical additions below retain their original audit dates and
+bounded scope. They supplement the preceding source-discrepancy warning;
+they do not supersede its missing-source finding. Transcript identifiers
+and absolute machine paths in this export use aliases. The private source
+documents remain retained locally. This publication does not establish
+complete reconciliation or authorize any further transcript deletion.
+
+### Current local retained-transcript scan (2026-10-17)
+
+A read-only rerun of `scripts/audit-child-agent-transcripts.ps1` streamed the
+three currently inventoried source folders. It read 20 files totaling
+28,460,172,467 logical bytes and confirmed the pinned HAI parent session ID
+in each file's session metadata. No source file was modified by the audit.
+
+| Source folder | Files | Bytes scanned | Completed / aborted / unattributed | Oversized records skipped | Cleanup candidates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `hai-completed-agent-sessions` | 13 | 17,559,729,527 | 0 / 8 / 5 | 2 | 0 |
+| `completed-agent-sessions` | 1 | 1,538,632,047 | 0 / 0 / 1 | 0 | 0 |
+| `session-log-relief` | 6 | 9,361,810,893 | 0 / 1 / 5 | 5 | 0 |
+| **Total** | **20** | **28,460,172,467** | **0 / 9 / 11** | **7** | **0** |
+
+The parser used its configured 10 Mi-character record bound. Seven oversized
+records were skipped from semantic attribution; consequently the two folders
+with oversized records report `full_file_scan=false`. The one-file folder had
+no oversized or malformed candidate records, but its child turn could not be
+uniquely attributed. These results do not establish that all child changes are
+integrated, and they do not authorize cleanup. All 20 files remain required
+for the unresolved attribution and code crosswalk; no transcript was deleted.
+
+
+### Stale committed-checkout tree comparison (2026-10-17)
+
+Compared the primary local checkout's committed `HEAD` tree (commit
+`e07b9dae`, dated 2026-09-04) with the live `origin/main` ref
+(`80fdeabd`, dated 2026-10-17). The local tree has 1,992 paths versus 3,200
+on `main`: 1,088 blob-identical paths, 898 same-path but different-blob paths,
+6 local-only paths, and 1,214 paths present only on `main`.
+
+The six local-only paths are three local environment files, an environment-
+specific `nginx-config/nginx.conf`, and two older operation-index migration
+files. The operation-index migration is already present in current `main` as
+`backend/migrations/post/0006_operations_owner_workspace_dedupe_active.*`; the
+local `0004` files are duplicate filenames/content and are not candidates to
+port. Environment files and host-specific Nginx configuration are excluded
+from publication. The 292 local-only commit count is not an integration gap by
+itself: PR #36 was squash-merged, so its original commit ancestry is not
+preserved on `main`.
+
+This comparison does **not** prove the 898 divergent same-path files are
+redundant. They remain an explicit source-review gap, and the dirty checkout
+also contains 244 modified paths, 448 deleted paths, and 1,581 untracked paths
+(1,501 under generated `output/`). No stale branch snapshot or mass deletion
+was pushed. Continue reviewing any potentially newer same-path behavior against
+current `main` before porting or cleaning it.
+
+### Reconciliation worktree and open-PR audit (2026-10-17)
+
+A read-only inventory found ten Git worktrees registered to this HAI repository.
+The primary checkout and all nine secondary worktrees have non-default or
+uncommitted state; none was established as a clean full-tree copy of current
+`main`. The separate D: reconciliation checkout is staged/modified and has
+`HEAD` `3b15fe4a08b10bb2e15afe15640bd6488cebff5d`; it has 458 paths different
+from the current `main` tree (400 modified, 57 deleted, 1 added) and no
+untracked files. Do not remove or wholesale-merge any of these worktrees.
+
+The primary checkout's current status is 244 modified tracked paths, 448
+deleted tracked paths, and 1,581 untracked paths (1,501 under `output/`). In
+a bounded untracked source/evidence comparison, 64 files shared a path with
+`main` but had different content; 12 evidence/log files were absent from
+`main`; no exact-copy candidate was found. The changed tracked-file check
+also found no exact current-`main` copy. Generated output and state folders
+were excluded from source-port eligibility. No deletion or source-tree write
+was performed.
+
+Targeted comparison of the D: worktree against current `main` rejected at
+least these changes as regressions:
+- `backend/internal/background/worker.go` removes paused-mode and emergency
+  processing gates and reports raw internal errors rather than bounded,
+  redacted operator messages.
+- `backend/internal/operations/execution_claim.go` queries the wrong event
+  JSON column (`payload` instead of `payload_json`), removes exact-revision
+  approval/review-time safeguards, and changes timestamp-preserving CAS updates.
+- `backend/internal/operations/source_approval.go` removes reviewed-owner and
+  raw-evidence-digest binding from approval receipts.
+- `backend/internal/executionauth/repository_postgres.go` restores a NUL-
+  delimited PostgreSQL text lock key and drops newer receipt-reference columns.
+- The D: variant deletes the merged PR #153 feed-cursor rollback migration and
+  its refusal to drop live cursor/claim state.
+
+These are sampled high-impact findings, not a full review of the 458 paths.
+They demonstrate why the local snapshot cannot be ported or discarded as one
+unit. The remaining paths still need a current-main semantic comparison and
+targeted tests before any code is imported.
+
+Current open PR snapshots checked directly: #160 is open/draft at head
+`835a06d` based on current `main` `80fdeab`; #163 (`774ecb1`), #164
+(`e288dc7`), and #168 (`b68a037`) are open/draft and were based on older
+`main` `1e18f90`. Their remote branches preserve their proposed changes, but
+they are not merged-main evidence and do not qualify local copies for removal.
+PR #151 remains a draft audit ledger. No local worktree, transcript, source
+file, test evidence, or generated artifact was deleted.
+
+
+## 2026-10-17 local reconciliation follow-up
+
+This update supersedes the earlier statement that no local worktree had been
+removed; it describes a later, separately verified cleanup pass.
+
+- PR #153 was already merged to `main` as `ad8a72e`; its cursor migration and
+  rollback protections are present in the current `main` ref.
+- Two clean duplicate worktrees were removed after confirming their contents
+  were represented by remote PRs: the Autoposter checkout exactly matched PR
+  #160 head `835a06d`, and the reconciliation checkout was an ancestor of PR
+  #151 head `3c93f61`. Their working directories totaled 76,023,663 bytes.
+  Shared Git history, remote branches, PRs, and the archived Autoposter
+  worktree were retained.
+- PR #160 exact-head Actions run `38981873284` completed with 30/30 jobs
+  successful, including backend/frontend tests, browser acceptance, real
+  PostgreSQL migration integration, two-account isolation, and secret scan.
+  This is CI evidence, not live Autoposter account acceptance.
+- The primary checkout remains on stale branch `codex/hai-runtime-release`
+  at `e07b9da`, while `origin/main` is `80fdeab`. Its current working tree
+  has 244 tracked modifications, 448 tracked deletions, 1,581 untracked paths,
+  and 34,613 ignored entries. The 1,501 untracked `output/` files total
+  126,491,186 bytes.
+- No exact-content matches were found between untracked non-output files and
+  `origin/main`. Most have a path counterpart on `main` but different
+  contents, so they are alternate/stale copies, not safe deletion candidates.
+- Focused review found the local background-worker variant removes pause and
+  emergency-stop processing gates and secret-redacted bounded error reporting;
+  the local operations source-approval implementation is deleted. These
+  changes were not published. The local tree is not safe to push wholesale.
+- The separate older Autoposter draft contains unsafe defaults and omits
+  owner/source bindings that are present in the reviewed PR #160 version. No
+  code from that older copy was added to the PR.
+- A separate stale checkout contains about 299 MB of ignored frontend and
+  Python build/dependency caches. Recursive cache removal was rejected by the
+  local tool policy; a follow-up inspection confirmed the directories remain.
+  No source, environment files, test evidence, or cache directories were
+  removed in that attempt.
+
+The remaining primary and D: snapshots have uncommitted or divergent content.
+They require per-file comparison and targeted validation before any source
+port or local deletion. This entry is an inventory checkpoint, not a claim that
+the full HAI local-device audit is complete.
+
+
+## 2026-10-17 execution authorization diff check
+
+A focused comparison of the primary local checkout with current `main` found
+that its modified `backend/internal/executionauth/service.go` calls the life-
+graph projector from `Get` and `List`, while current `main` has an explicit
+`TestAuthorizationReadsDoNotRunLifeGraphProjection` asserting reads do not
+trigger graph writes. The same local diff removes
+`CloneWithEmergencyStopEvaluator`, the isolated evaluator composition used
+to keep emergency-stop recovery from mutating the shared authorizer. Neither
+change is a safe port as-is. A focused Go test run could not start because the
+Go executable is unavailable in this session; no local test result is claimed.
+
+
+
+## 2026-10-17 PR #153 merge and local cursor-copy audit
+
+GitHub reports PR #153 ("feat(accountfeed): persist HTTP feed pagination cursors") merged on 2026-10-16 as merge commit `ad8a72ea4c744a3bd8adf83907be87d92ae7351a`. Live `main` is `80fdeabd16efda6d9328fa0c89a4ab813f087908`, and the merge commit is an ancestor of that ref.
+
+Compared the PR's 17 changed paths against current `main` using Git blob hashes in every one of the 11 registered local HAI worktrees. No existing local file examined was an exact current-`main` blob match. The copies found are older or otherwise divergent; the primary checkout lacks several of the PR paths and has two dirty migration-test paths. No cursor-related local files were deleted.
+
+The primary checkout is at `e07b9daeb3ba2630ecbe12a64d948f791203c241`, with 292 commits not reachable from current `main` and 84 commits of current `main` not reachable from that local HEAD. Its uncommitted tracked delta is 690 files (72,730 insertions, 108,946 deletions); the separate status inventory reports 244 modified tracked paths, 448 deleted tracked paths, 1,581 untracked paths, and 34,613 ignored entries. This is not a safe wholesale PR or deletion candidate. All 11 registered worktrees have tracked changes, untracked files, ignored entries, or a combination; none qualifies as a clean disposable copy based on the current inventory.
+
+This is a bounded comparison of the registered Git worktrees and the PR's changed paths, not a full-device inventory. Local files outside those worktrees and imported archives remain to be reviewed. No source or worktree data was removed.
+
+
+## 2026-10-17 broader snapshot and legacy-worktree audit
+
+Three read-only audits examined the primary checkout, `<local-path-001>`, and the six registered worktrees under `<local-path-002>`. No source, index, PR, or worktree state was changed by those audits.
+
+The primary checkout remains unsafe to publish wholesale. It contains 244 modified tracked paths, 448 tracked deletions, and 1,581 untracked paths; local `worker.go` removes pause/autonomy processing gates and bounded secret-redacted error handling; `executionauth/service.go` projects life-graph records during reads; and `opscontrol/service.go` removes control-review wiring. A plausible candidate set (isolated acceptance harness and guide) exists locally and differs from `main`, but requires a focused diff review and non-destructive contract tests before any port. Its diagnostic logs, `output/`, and agent-state files remain excluded.
+
+The D: snapshot is on `codex/hai-local-source-reconciliation`, 75 commits behind `main`, with 310 staged paths (309 modified, one added), no reported untracked non-ignored files, and 34 unstaged `output/` deletions. Those 34 report contents are already present in `main`; the files are already absent from that working tree. Only one staged file examined, `backend/internal/runtimelab/owner_gate_handler_test.go`, exactly matches current `main`. The broad staged patch is not safe to push: it removes pause checks, redacted error bounds, source-evidence-hash binding in approval revisions, and OpsControl approval routing; it adds a hard-coded placeholder backend key to `nginx-config/nginx.conf`. Potentially useful verification changes are mixed into this patch and require isolated review and tests.
+
+The six legacy 2026-10-11 worktrees contain 2,104 tracked status entries, two untracked files, and 46,157 ignored files totaling 482,267,937 bytes. Their associated PRs #34, #35, and #36 are merged, but every worktree has local tracked changes; one also has untracked files and two contain ignored runtime/build data. Therefore the PR history does not preserve those worktree deltas, and no whole worktree is currently a safe deletion target.
+
+Do not push the primary or D: snapshot wholesale. The safe next step is to select a narrow test/acceptance improvement, compare it to current `main`, run its focused checks in an isolated clean-main worktree, and publish only after review. Local material remains preserved pending that work; the audit scope still excludes unregistered device locations and imported archives.
+
+
+## Oversized compaction-row follow-up (2026-10-18)
+
+A read-only, fixed-buffer scan examined only the two JSONL rows previously skipped for exceeding the 16 MiB parser limit. The rows are 1,016,062,444 bytes and 904,740,623 bytes; both identify their top-level event type as `compacted`. A memory-mapped marker scan found 2,783 and 2,857 literal `patch_apply_end` occurrences, respectively, matching the patch-event counts already indexed from parseable records for those same transcripts.
+
+This strongly suggests the oversized rows carry compacted copies of the already-indexed conversation history rather than additional independent patch events. The marker counts are not a one-to-one comparison of embedded event payloads, so they do not prove semantic integration of every patch. The 41 previously failed patch results, five unattributed transcript entries, duplicate-named archive pairs, and remaining worktree differences are still unresolved. No source code was imported, and no archive or local checkout was deleted. These two files remain ineligible for cleanup until the full content-level reconciliation is complete.
+
+
+## Historical embedded-runtime review reconciliation (2026-10-18)
+
+The local report `output/approved-embedded-runtime-review-20261001.md` raised a P1 concern that an embedded-runtime exemption could skip required independent specialists. A source check against current `main` at `d85cb1a657763027b21b0e59dc41aff8864b260e` found no `usesAdmittedEmbeddedRuntime` or embedded-coverage exemption. In `backend/internal/task/service.go`, `applyFrameworkRisk` checks each selected `RequiredAgents` entry and every unready required delegation before allowing execution. `backend/internal/task/required_participant_admission_test.go` contains `TestFrameworkRequiredParticipantCannotBeBypassedByAutomaticOrApprovedRuntime` for automatic Level 8 and approved Level 6, and `TestApprovedReadinessProbeDoesNotFabricateSpecialistEvidence` verifies a real task Run blocks dispatch without required specialist evidence.
+
+This establishes that the report's proposed whole-loop bypass is not present in current `main`; no code from that proposal needs to be ported. The source and focused regressions were inspected but not run in this audit. This does not resolve unrelated archive records, and it does not authorize local cleanup.
+
+
+## Historical automation approval snapshot reconciliation (2026-10-18)
+
+The local report `output/automation-launch-binding-20261001.md` raised a concern that approval review did not bind the reviewed automation configuration. A source check against current `main` at `d85cb1a657763027b21b0e59dc41aff8864b260e` found this behavior present and covered: `ReviewConfigurationSnapshot` is captured through `InspectReviewConfiguration`, kept as internal review evidence, included in the durable review-request representation, and validated against the current automation scope/configuration digest before an approval decision is recorded. The validation rejects configuration or policy changes since review.
+
+Focused regression coverage is present in `backend/internal/task/historical_automation_review_test.go`, `backend/internal/task/review_configuration_context_test.go`, `backend/internal/task/state_repository_postgres_test.go`, and `backend/internal/automation/historical_review_binding_test.go`; the tests cover snapshot persistence/round-trip, rejection of client-supplied or unavailable snapshots, legacy approvals not acquiring a later snapshot, and changed review targets/configuration. The report's snapshot-binding gap is therefore resolved in current `main`; no duplicate implementation should be ported from a local snapshot. Source and test names were inspected from GitHub, but these tests were not run in this audit. This finding does not close the broader transcript/source reconciliation or authorize local deletion.
+
+
+## Historical atomic mutation review reconciliation (2026-10-18)
+
+The local report `output/atomic-mutation-source-review-20261001.md` describes pre-fix concerns about forged `BeforeStatus` and mutable `CreatedAt`. Current `main` at `d85cb1a657763027b21b0e59dc41aff8864b260e` now checks a status-change event's `BeforeStatus` against the locked current row and applies the transition from that authoritative status in `backend/internal/operations/repository.go`. The memory repository also preserves `CreatedAt` from the stored row; the SQL path does the same. The exact regression `TestAtomicMutationTransitionRejectsForgedBeforeStatus` is present in `backend/internal/operations/mutation_atomicity_regression_test.go`.
+
+The report itself records the parent fix and a parent-run native suite result of 26 top-level / 65 subtests, while explicitly noting that this was not real PostgreSQL acceptance. This audit independently confirmed the current source and regression-test presence through GitHub, but did not rerun the suite. These two reported defects are resolved in current `main`; no duplicate patch is needed. This does not establish full transcript attribution or authorize local deletion.
+
+
+## Historical executor-outcome and redaction compatibility reconciliation (2026-10-18)
+
+Two more local reports were checked against current `main` at `d85cb1a657763027b21b0e59dc41aff8864b260e`:
+
+- `output/automation-executor-outcome-20261001.md`: the executor maps non-nil launch receipts even when an error is returned, preserves pre-dispatch versus uncertain-after-dispatch distinctions, and treats missing/malformed receipts as uncertain. The dedicated `backend/internal/task/automation_executor_outcome_test.go` is present with regression cases for result-plus-error, missing result, uncertain status, malformed completion, pre-dispatch failures, sanitized/bounded metadata, receipt mismatch, and unavailable executor. This report's proposed implementation is present in current `main`; no separate source patch is indicated by this comparison.
+- `output/structured-redaction-compatibility-20261001.md`: current `main` retains the shared conservative credential redactor, while fixing the reported metadata collision at typed validation boundaries. Agent-team contracts are scanned through `containsAgentTeamSecret` so schema labels such as `key` and authority booleans do not cause false credential findings, while their values are still inspected. Portfolio allocation validation creates a typed scan projection that renames only numeric token-budget fields to inbound/outbound unit labels; its digest remains bound to the original encoded request. Regression sources exist in `backend/internal/frameworkregistry/agent_team_service_test.go` and `backend/internal/pursuit/portfolio_secret_metadata_test.go`. The broad redaction rule was not weakened.
+
+These are source and test-presence findings. A GitHub Actions backend test job on a descendant PR head passed, but this audit did not rerun these suites or independently establish production acceptance. The old report's failing local test snapshot is historical and should not be presented as the current result. No additional source change is proposed from these two reports; transcript attribution and local cleanup remain open.
+
+
+## Historical task/workflow uncertainty and fallback review reconciliation (2026-10-18)
+
+Current `main` at `d85cb1a657763027b21b0e59dc41aff8864b260e` was checked against four local reports: `output/task-ui-outcome-uncertainty-20261001.md`, `output/workflow-outcome-recovery-20261001.md`, `output/workflow-preflight-independent-review-20261001.md`, and `output/workflow-preflight-followup-review-20261001.md`.
+
+The backend path now maps task execution uncertainty into `workflow.TaskRunResult.ExecutionOutcomeUncertain`; workflow uncertainty persistence and review gating are present in `backend/internal/workflow/service.go`, and runner coverage is present in `backend/internal/workflowtask/tool_outcome_uncertainty_test.go`. The former fallback findings have follow-up implementation/tests in current `main`: `backend/internal/task/fallback_review_evidence_test.go` covers retaining a prior completed receipt after reservation denial, requiring review without automatic retry for an empty fallback model, and letting fallback settlement blockers override verified output. `backend/internal/workflowtask/approval_preflight_test.go` includes `TestRunnerPreservesNamedMixedReadinessPrerequisites`; current resource/domain admission checks remain separate from approval-only classification. The reports' proposed workflow uncertainty propagation and bounded preflight fixes therefore have corresponding current-main source and regression coverage. The frontend's Basic uncertainty warning/disabled retry behavior and persisted-history protections are present in `frontend/src/app/pages/task-blueprint/task-blueprint.accessibility.spec.ts`; the owned browser-matrix handoff explicitly says its full-scope persisted-history scenario has not been executed.
+
+This is source and test-presence reconciliation, not execution or end-user acceptance. The historical worker reports did not run all relevant tests; this audit did not rerun backend/frontend tests or the named browser scenario. Existing workflow review remains approval-gated; no retry, participant, model, source, or authority requirement is waived. No code import is indicated by these reports. Their findings are not a substitute for unresolved transcript attribution, live integration acceptance, or the cleanup gates.
+
+
+## Historical intent, worker partial-outcome, and final-consumer reconciliation (2026-10-18)
+
+Current `main` at `d85cb1a657763027b21b0e59dc41aff8864b260e` was checked against `output/safe-intent-source-review-20261001.md`, `output/local-safe-worker-partial-outcome-20261001.md`, `output/runtime-outcome-independent-review-20261001.md`, and `output/runtime-outcome-final-consumer-review-20261001.md`.
+
+- The claimed-intent cancellation edge regression is present as `TestSafeExecutionCancellationAfterIntentCommitRetainsReplayBarrier` in `backend/internal/background/execute_intent_test.go`. It protects the in-memory cancellation/replay contract; it does not establish PostgreSQL crash durability or process-restart acceptance.
+- Safe-worker stage progress is present in `backend/internal/executionbroker/local_safe_worker.go`. The background outcome classifier consumes contradictory/partial progress as uncertainty; `backend/internal/background/execute_outcome_test.go` includes consumed/unknown authorization, effect-started and partial-progress-versus-success contradictions. This addresses the historical concern that a bare authorization error could be misclassified as a safe pre-effect refusal. It does not prove cross-process filesystem identity recovery or live operator reconciliation.
+- The runtime outcome consumer report says its three final P2s were source-resolved: uncertain task outcomes remain review-required in the life-ontology projection; assistant public review/summary/next-action text uses the shared uncertainty helper; and missing prior-plan evidence maps to reconciliation-required before approval mutation. This is consistent with the current consumer code represented in the report and the shared `task.ExecutionOutcomeUncertain` contract. It is a source reconciliation, not independent runtime verification.
+
+The historic worker reports did not execute all proposed regressions, and this audit did not rerun them. The HAI cleanup verifier remains read-only; no source artifact, report, worktree, transcript, or cache was removed. These findings do not close real PostgreSQL, process-restart, filesystem crash, or complete archive-attribution gates.
