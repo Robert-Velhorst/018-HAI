@@ -29,8 +29,12 @@ func (a *ArtifactArchive) Usage(ctx context.Context, owner string) (*ArtifactSto
 	if strings.TrimSpace(owner) == "" {
 		return nil, gorm.ErrRecordNotFound
 	}
-	usage := ArtifactStorageUsage{BytesLimit: artifactOwnerStorageLimit, FilesLimit: artifactOwnerRecordLimit}
+	var usage ArtifactStorageUsage
 	err := a.repo.db.WithContext(ctx).Model(&retainedArtifact{}).Select("COALESCE(SUM(size_bytes),0) AS bytes_used, COUNT(*) AS files_used").Where("owner_identity = ?", owner).Scan(&usage).Error
+	// Scan may zero destination fields that are not part of the aggregate.
+	// Keep policy limits independent of the database result's selected columns.
+	usage.BytesLimit = artifactOwnerStorageLimit
+	usage.FilesLimit = artifactOwnerRecordLimit
 	return &usage, err
 }
 
