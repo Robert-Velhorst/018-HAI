@@ -8,10 +8,11 @@ const jasmineCore = require('jasmine-core')
 const { ModuleViewPreferencesService } = await loadComponentLogic(new URL('../src/app/control-room/module-view-preferences.service.ts', import.meta.url))
 
 test('existing module preference specifications pass with actual service logic and synthetic storage', async t => {
-  const jasmine = jasmineCore.core(jasmineCore)
-  const env = jasmine.getEnv()
+  jasmineCore.reset()
+  const api = {}
+  jasmineCore.installGlobals(api)
+  const env = api.jasmine.getEnv()
   env.configure({ random: false })
-  const api = jasmineCore.interface(jasmine, env)
   const entries = new Map()
   const storage = {
     get length() { return entries.size },
@@ -38,6 +39,7 @@ test('existing module preference specifications pass with actual service logic a
     t.diagnostic(`Executed ${outcomes.length} existing Jasmine preference specifications; no browser or server used.`)
   } finally {
     env.clearReporters()
+    jasmineCore.reset()
     for (const [key, descriptor] of previous) {
       if (descriptor) Object.defineProperty(globalThis, key, descriptor)
       else delete globalThis[key]
