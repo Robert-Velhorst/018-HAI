@@ -1785,7 +1785,7 @@ and autonomy-mode controls persist in the named Docker volume
 
 Account Bridges uses the migrated application PostgreSQL database for registered
 feeds and their audit/health records, not the read-only feed directory. Apply
-the reviewed migration chain through `pre/0114_operation_source_configuration`
+the reviewed migration chain through `pre/0133_account_feed_autoposter_source_type`
 before running the updated API with `DB_MIGRATIONS_ENABLED=false`; the API fails
 startup if the registry schema is unavailable. The existing runtime-role
 provisioning sets DML default privileges for migration-owner-created tables;
