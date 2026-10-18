@@ -50,6 +50,7 @@ export class RuntimeLabComponent implements OnInit {
   capabilityLoading = false
   featureParityOpen = false
   probeBusy: Record<string, boolean> = {}
+  latestProbes: Record<string, IRuntimeProbe> = {}
   selfTestBusy: Record<string, boolean> = {}
   mcpBusy: Record<string, boolean> = {}
   private readonly operationTimeoutMs = 30000
@@ -375,6 +376,14 @@ export class RuntimeLabComponent implements OnInit {
     ).subscribe({
       next: (res) => {
         this.probeBusy[runtimeId] = false
+        this.latestProbes[runtimeId] = res
+        if (res.evidencePersistenceStatus === 'failed') {
+          this.notification.warning(
+            'Discovery evidence was not saved',
+            `${r.info.displayName}: protocol discovery completed, but durable evidence could not be recorded. This does not enable runtime execution.`
+          )
+          return
+        }
         const title = res.protocolValid ? 'Discovery validated' : 'Discovery did not validate'
         this.notification.info(
           title,

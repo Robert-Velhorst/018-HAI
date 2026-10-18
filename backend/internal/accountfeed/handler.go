@@ -174,6 +174,9 @@ func (h *Handler) Sync(c *gin.Context) {
 	}
 	rep, err := h.reg.SyncContext(c.Request.Context(), FeedScope{owner, h.space}, id)
 	if err != nil {
+		if errors.Is(err, ErrFeedNotFound) {
+			rep.FeedID = "" // Do not echo an unverified identifier across owner scopes.
+		}
 		respondFeedError(c, err, gin.H{"report": rep})
 		return
 	}

@@ -184,6 +184,10 @@ func TestPostgresPursuitExactRuntimeQueryBatchesAllLinkedReceipts(t *testing.T) 
 	if err != nil || len(recent) != 20 {
 		t.Fatalf("real display cap %d: %v", len(recent), err)
 	}
+	expanded, err := repo.FindLinkedAutomationLaunches(nil, ids, len(ids))
+	if err != nil || len(expanded) != len(ids) {
+		t.Fatalf("explicit display limit returned %d rows, want %d: %v", len(expanded), len(ids), err)
+	}
 	attempts, err := s.findExactRuntimeAttempts("alice", ids)
 	if err != nil || len(attempts) != 51 {
 		t.Fatalf("exact receipt count %d: %v", len(attempts), err)

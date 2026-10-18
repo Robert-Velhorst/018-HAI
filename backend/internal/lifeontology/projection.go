@@ -168,7 +168,7 @@ func validateOperationalProjection(request OperationalProjectionRequest) error {
 		if link.Direction != "" && link.Direction != "primary_to_related" && link.Direction != "related_to_primary" {
 			return fmt.Errorf("link %d has invalid direction %q", index, link.Direction)
 		}
-		if link.Confidence < 0 || link.Confidence > 1 {
+		if !validUnitConfidence(link.Confidence) {
 			return fmt.Errorf("link %d has invalid confidence", index)
 		}
 		if link.VerificationStatus != "" {

@@ -29,6 +29,30 @@ function Test-DockerQuery([string[]]$Arguments) {
     return [pscustomobject]@{ Success = $true; Items = @(([string]$result.output -split "`r?`n") | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) }
 }
 
+function ConvertTo-HaiUtcTimestamp([string]$Value) {
+    $formats = @(
+        'yyyy-MM-ddTHH:mm:ss.FFFFFFFK',
+        'M/d/yyyy HH:mm:ss',
+        'MM/dd/yyyy HH:mm:ss',
+        'M/d/yyyy h:mm:ss tt',
+        'MM/dd/yyyy hh:mm:ss tt'
+    )
+    $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    foreach ($format in $formats) {
+        $timestamp = [DateTimeOffset]::MinValue
+        if ([DateTimeOffset]::TryParseExact(
+            $Value,
+            $format,
+            [Globalization.CultureInfo]::InvariantCulture,
+            $styles,
+            [ref]$timestamp
+        )) {
+            return $timestamp.ToUniversalTime()
+        }
+    }
+    throw 'fixture timestamp does not use a supported generated format'
+}
+
 function Get-HaiExampleEnvironmentValues {
     $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
     $examplePath = Join-Path $repoRoot '.env.example'
@@ -224,7 +248,7 @@ function Assert-HaiCleanupManifest([string]$Path, [string]$Owner, [string]$Proje
         ($hasEnvironment -and [string]$marker.syntheticEnvSha256 -notmatch '^[0-9a-f]{64}$')) {
         throw 'cleanup manifest identity or synthetic environment hash does not match'
     }
-    return [DateTimeOffset]::Parse([string]$marker.createdUtc).ToUniversalTime()
+    return ConvertTo-HaiUtcTimestamp ([string]$marker.createdUtc)
 }
 
 $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory -Force | Where-Object Name -Match $pattern)) {
@@ -310,7 +334,7 @@ $results = foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory 
                 throw 'generated fixture identity markers do not match the directory'
             }
             $record.project = $expectedProject
-            $createdUtc = [DateTimeOffset]::Parse([string]$manifest.createdUtc).ToUniversalTime()
+            $createdUtc = ConvertTo-HaiUtcTimestamp ([string]$manifest.createdUtc)
             if ($hasCleanupManifest) {
                 $markerCreatedUtc = Assert-HaiCleanupManifest $cleanupManifestPath $owner $expectedProject $environmentPath
                 if ($markerCreatedUtc -gt $createdUtc) { throw 'cleanup manifest timestamp is inconsistent with the completed fixture' }

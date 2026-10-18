@@ -22,6 +22,7 @@ type FetchOptions struct {
 	FeedsRoot        string // allowlisted root for local file feeds
 	AllowHTTP        bool   // HTTP feeds only fetched when enabled
 	AllowLoopbackURL string // exact feed URL allowed to target loopback for local development
+	Autoposter       *AutoposterConnection
 }
 
 // fetchFeedBytes reads the raw feed bytes for a feed, confining local files to
@@ -41,7 +42,11 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 		if err := validateFeedURLForFetch(feed.URL, allowLoopback); err != nil {
 			return nil, err
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, feed.URL, nil)
+		requestURL, err := feedRequestURL(feed.URL, feed.SyncCursor)
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -62,9 +67,28 @@ func fetchFeedBytes(ctx context.Context, feed Feed, opts FetchOptions) ([]byte, 
 			return nil, fmt.Errorf("accountfeed: HTTP feed exceeds %d bytes", maxFeedBytes)
 		}
 		return body, nil
+	case SourceAutoposterAPI:
+		return nil, fmt.Errorf("accountfeed: Autoposter requires its governed paginated reader")
 	default:
 		return nil, fmt.Errorf("accountfeed: unsupported sourceType %q", feed.SourceType)
 	}
+}
+
+func feedRequestURL(raw, cursor string) (string, error) {
+	if err := validateGenericFeedCursor(cursor); err != nil {
+		return "", fmt.Errorf("accountfeed: stored %w", err)
+	}
+	if cursor == "" {
+		return raw, nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("accountfeed: invalid feed URL: %w", err)
+	}
+	query := u.Query()
+	query.Set("cursor", cursor)
+	u.RawQuery = query.Encode()
+	return u.String(), nil
 }
 
 func readBoundedLocalFeed(ctx context.Context, base, name string) ([]byte, error) {

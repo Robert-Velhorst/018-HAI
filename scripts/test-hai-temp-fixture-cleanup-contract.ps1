@@ -39,6 +39,24 @@ if (-not $source.Contains('Invoke-HaiBoundedDockerCommand $Arguments -TimeoutSec
     -not $processRunner.Contains('function Invoke-HaiBoundedDockerCommand')) {
     throw 'HAI Temp readiness must use a bounded local Docker query and fail closed on timeout.'
 }
+$tokens = $null
+$parseErrors = $null
+$ast = [Management.Automation.Language.Parser]::ParseInput($source, [ref]$tokens, [ref]$parseErrors)
+if ($parseErrors.Count) { throw 'HAI Temp readiness timestamp parser did not parse.' }
+$timestampFunction = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'ConvertTo-HaiUtcTimestamp' }, $true)
+if (-not $timestampFunction) { throw 'HAI Temp readiness is missing its invariant timestamp parser.' }
+. ([scriptblock]::Create($timestampFunction.Extent.Text))
+foreach ($sample in @(
+    @{ Value = '2026-10-13T23:38:56.0000000Z'; Expected = '2026-10-13T23:38:56Z' },
+    @{ Value = '10/13/2026 23:38:56'; Expected = '2026-10-13T23:38:56Z' }
+)) {
+    $parsed = ConvertTo-HaiUtcTimestamp $sample.Value
+    $actual = $parsed.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ', [Globalization.CultureInfo]::InvariantCulture)
+    if ($actual -cne $sample.Expected) { throw 'HAI Temp readiness parsed a supported timestamp incorrectly.' }
+}
+$invalidTimestampRejected = $false
+try { $null = ConvertTo-HaiUtcTimestamp '13/10/2026 23:38:56' } catch { $invalidTimestampRejected = $true }
+if (-not $invalidTimestampRejected) { throw 'HAI Temp readiness accepted an ambiguous locale-dependent timestamp.' }
 foreach ($token in @(
     "'(?:^|_)(?:PASSWORD|PASS|TOKEN|SECRET|API_KEY|CLIENT_ID|PRIVATE_KEY|SIGNING_KEY|WORKSPACE_KEY|ENCRYPTION_KEY|ACCESS_KEY|SHARED_KEY|CREDENTIALS?)$'",
     "state = 'preparing'",
