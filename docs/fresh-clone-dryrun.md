@@ -37,8 +37,9 @@ The initializer prompts for the first-run owner email and a password of at
 least 12 characters. It generates independent random backend, memory, JWT,
 approval-proof, database-owner, and database-runtime secrets, keeps the gateway
 on loopback, disables local-login bypass, and enables the planning-only local
-A2A connector with a separate token bound to that owner. Public connector and
-ngrok exposure remain disabled. The initializer does not print credentials.
+A2A connector with a separate token bound to that owner. The bridge is
+loopback-only and does not support public tunnel exposure. The initializer
+does not print credentials.
 Copying `.env.example` without running the initializer is expected to fail
 closed in production because its shipped values are placeholders.
 

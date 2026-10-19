@@ -84,6 +84,17 @@ function Test-HaiCredentialFreeA2ABridgeUrl {
         -not [string]::IsNullOrEmpty($parsedUrl.Fragment)) {
         return $false
     }
+    $hostName = $parsedUrl.DnsSafeHost.ToLowerInvariant()
+    if ($hostName -notin @('localhost', 'host.docker.internal', 'gateway')) {
+        $address = $null
+        if (-not [Net.IPAddress]::TryParse($hostName, [ref]$address) -or
+            -not [Net.IPAddress]::IsLoopback($address)) {
+            return $false
+        }
+    }
+    if ($parsedUrl.AbsolutePath -cne '/api/v1/a2a') {
+        return $false
+    }
     try {
         $decodedPath = [Uri]::UnescapeDataString($parsedUrl.AbsolutePath)
     } catch {
@@ -184,7 +195,6 @@ function Get-HaiSavedA2AConfiguration {
     $token = Get-HaiDotEnvEntry -Lines $lines -Name 'HAI_A2A_BRIDGE_TOKEN'
     $localPort = Get-HaiDotEnvEntry -Lines $lines -Name 'HAI_A2A_LOCAL_PORT'
     $bridgeUrl = Get-HaiDotEnvEntry -Lines $lines -Name 'HAI_A2A_BRIDGE_URL'
-    $publicBridge = Get-HaiDotEnvEntry -Lines $lines -Name 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED'
 
     $port = 0
     $parsedUrl = $null
@@ -192,9 +202,8 @@ function Get-HaiSavedA2AConfiguration {
     $validPort = $localPort.Found -and $localPort.WellFormed -and [int]::TryParse($localPort.Value, [ref]$port) -and $port -ge 1 -and $port -le 65535
     $validUrl = $bridgeUrl.Found -and $bridgeUrl.WellFormed -and
         (Test-HaiCredentialFreeA2ABridgeUrl -Url $bridgeUrl.Value)
-    $validPublicBridge = -not $publicBridge.Found -or ($publicBridge.WellFormed -and ($publicBridge.Value -ieq 'true' -or $publicBridge.Value -ieq 'false'))
     if (-not $owner.Found -or -not $owner.WellFormed -or [string]::IsNullOrWhiteSpace($owner.Value) -or
-        -not $validToken -or -not $validPort -or -not $validUrl -or -not $validPublicBridge) {
+        -not $validToken -or -not $validPort -or -not $validUrl) {
         throw 'The saved A2A bridge is enabled but its owner, token, port, or URL is invalid; refusing to silently disable it during replacement.'
     }
 
@@ -204,7 +213,6 @@ function Get-HaiSavedA2AConfiguration {
         Token = $token.Value
         LocalPort = $port
         BridgeUrl = $bridgeUrl.Value
-        PublicBridgeEnabled = if ($publicBridge.Found) { $publicBridge.Value.ToLowerInvariant() } else { 'false' }
     }
 }
 
@@ -550,7 +558,6 @@ $a2aBridgeUrl = "http://127.0.0.1:$a2aLocalPort/api/v1/a2a"
 $a2aBridgeEnabled = $false
 $a2aBridgeOwnerId = ''
 $a2aBridgeToken = ''
-$a2aPublicBridgeEnabled = 'false'
 $preserveSavedA2AConfiguration = $null -ne $savedA2AConfiguration -and $savedA2AConfiguration.Enabled -and
     (-not $PSBoundParameters.ContainsKey('EnableA2ABridge') -or $EnableA2ABridge)
 if ($EnableA2ABridge -and -not $preserveSavedA2AConfiguration) {
@@ -563,14 +570,12 @@ if ($EnableA2ABridge -and -not $preserveSavedA2AConfiguration) {
     $a2aBridgeToken = $savedA2AConfiguration.Token
     $a2aLocalPort = $savedA2AConfiguration.LocalPort
     $a2aBridgeUrl = $savedA2AConfiguration.BridgeUrl
-    $a2aPublicBridgeEnabled = $savedA2AConfiguration.PublicBridgeEnabled
 }
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_ENABLED" $a2aBridgeEnabled.ToString().ToLowerInvariant()
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_OWNER_ID" $a2aBridgeOwnerId
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_TOKEN" $a2aBridgeToken
 $content = Set-DotEnvValue $content "HAI_A2A_LOCAL_PORT" $a2aLocalPort.ToString()
 $content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_URL" $a2aBridgeUrl
-$content = Set-DotEnvValue $content "HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED" $a2aPublicBridgeEnabled
 $content = Set-DotEnvValue $content "GATEWAY_HOST_PORT" $GatewayPort.ToString()
 $content = Set-DotEnvValue $content "GATEWAY_HOST_BIND" "127.0.0.1"
 $content = Set-DotEnvValue $content "LOCAL_LOGIN_BYPASS_ENABLED" "false"

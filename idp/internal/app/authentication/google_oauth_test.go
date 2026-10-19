@@ -18,7 +18,7 @@ func newTestGoogleOAuth() *googleOAuth {
 	g := newGoogleOAuth("test-jwt-secret")
 	g.clientID = "client-1.apps.googleusercontent.com"
 	g.clientSecret = "secret"
-	g.redirectURL = "https://example.ngrok-free.dev/api/v1/auth/google/callback"
+	g.redirectURL = "https://example.test/api/v1/auth/google/callback"
 	return g
 }
 

@@ -49,7 +49,6 @@ The remaining profile-gated services are:
 | `verification` | Browser verifier |
 | `local-a2a` | A2A gateway |
 | `local-host-runtime` | Host runtime gateway |
-| `cloud-tunnel` | ngrok tunnel |
 | `optimization` | OR-Tools solver |
 | `evaluation` | Evidently runner |
 | `validation` | Guardrails runner |

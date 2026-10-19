@@ -9,14 +9,14 @@ $savedProfiles = [Environment]::GetEnvironmentVariable('COMPOSE_PROFILES', 'Proc
 try {
     $env:SERVER_PORT = '29999'
     $env:GOOGLE_OAUTH_CLIENT_ID = 'synthetic-inherited-poison'
-    $env:COMPOSE_PROFILES = 'cloud-tunnel,local-host-runtime'
+    $env:COMPOSE_PROFILES = 'local-host-runtime'
     $prepared = & $launcher -Action Prepare -Port 58144
     $prepared | Write-Output
     $line = @($prepared | Where-Object { $_ -like 'Prepared: *' })
     if ($line.Count -ne 1) { throw 'Prepare did not return its unique evidence directory.' }
     $preparedDirectory = $line[0].Substring('Prepared: '.Length)
     if ($env:SERVER_PORT -ne '29999' -or $env:GOOGLE_OAUTH_CLIENT_ID -ne 'synthetic-inherited-poison' -or
-        $env:COMPOSE_PROFILES -ne 'cloud-tunnel,local-host-runtime') { throw 'Prepare changed the caller environment.' }
+        $env:COMPOSE_PROFILES -ne 'local-host-runtime') { throw 'Prepare changed the caller environment.' }
 } finally {
     foreach ($entry in @(@('SERVER_PORT', $savedServer), @('GOOGLE_OAUTH_CLIENT_ID', $savedGoogle), @('COMPOSE_PROFILES', $savedProfiles))) {
         if ($null -eq $entry[1]) { Remove-Item -LiteralPath "Env:$($entry[0])" -ErrorAction SilentlyContinue }

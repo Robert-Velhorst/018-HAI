@@ -52,7 +52,6 @@ $stopScript = [IO.File]::ReadAllText((Join-Path $repositoryRoot "installer\windo
 $openScript = [IO.File]::ReadAllText((Join-Path $repositoryRoot "installer\windows\Open-HAI.ps1"))
 $connectorTest = [IO.File]::ReadAllText((Join-Path $repositoryRoot "installer\windows\Test-HAI-LocalConnector.ps1"))
 $hostRuntimeWorker = [IO.File]::ReadAllText((Join-Path $repositoryRoot "installer\windows\Run-HAI-DeepSeekBridge.ps1"))
-$ngrokStart = [IO.File]::ReadAllText((Join-Path $repositoryRoot "scripts\start-ngrok.ps1"))
 $exampleEnvironment = [IO.File]::ReadAllText((Join-Path $repositoryRoot ".env.example"))
 $secretGenerator = [IO.File]::ReadAllText((Join-Path $repositoryRoot "scripts\generate-secrets.sh"))
 $docs = [IO.File]::ReadAllText($documentation)
@@ -64,7 +63,7 @@ foreach ($textName in @(
     'maintenanceTaskManager', 'maintenanceLauncher', 'initializer',
     'runtimeDatabaseRole', 'runtimeRoleProvisioner', 'composeConfiguration',
     'gatewayConfig', 'maintenanceDocumentation', 'startScript', 'stopScript',
-    'openScript', 'connectorTest', 'hostRuntimeWorker', 'ngrokStart',
+    'openScript', 'connectorTest', 'hostRuntimeWorker',
     'exampleEnvironment', 'secretGenerator', 'docs', 'gitignore', 'runtimeLifecycle'
 )) {
     Set-Variable -Name $textName -Value ((Get-Variable -Name $textName -ValueOnly).Replace("`r`n", "`n"))
@@ -828,18 +827,6 @@ foreach ($required in @(
 }
 
 foreach ($required in @(
-    '{{json .Config.Labels}}',
-    'ConvertFrom-Json',
-    'COMPOSE_PROJECT_NAME',
-    'Assert-HaiComposeOwnership -ProjectName $composeProjectName',
-    'Refusing to manage cloud access until ownership can be verified'
-)) {
-    if ($ngrokStart -notmatch [Regex]::Escape($required)) {
-        throw "The cloud-tunnel ownership gate is missing '$required'."
-    }
-}
-
-foreach ($required in @(
     'db_password="$(secret)"',
     'first_run_admin_password="$(secret)"',
     'DB_PASSWORD=$db_password',
@@ -856,15 +843,6 @@ if ($initializer -notmatch [Regex]::Escape('FIRST_RUN_ADMIN_PASSWORD')) {
 if ($exampleEnvironment -match [Regex]::Escape('DB_PASSWORD=postgres') -or
     $exampleEnvironment -match [Regex]::Escape('FIRST_RUN_ADMIN_PASSWORD=ChangeMe123!')) {
     throw "The safe environment template must not ship a known database or owner password."
-}
-
-foreach ($required in @(
-    "'DB_PASSWORD'",
-    "'FIRST_RUN_ADMIN_PASSWORD'"
-)) {
-    if ($ngrokStart -notmatch [Regex]::Escape($required)) {
-        throw "The cloud-tunnel secret gate is missing '$required'."
-    }
 }
 
 if ($SkipPayload) {

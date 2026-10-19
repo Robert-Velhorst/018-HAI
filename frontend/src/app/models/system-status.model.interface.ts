@@ -75,5 +75,5 @@ export interface IA2ABridgeStatus {
   capabilities: string[];
   restrictions: string[];
   scope: string;
-  transport: 'local' | 'fixed_ngrok_https';
+  transport: 'local';
 }

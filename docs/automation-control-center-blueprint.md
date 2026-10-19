@@ -83,7 +83,6 @@ Each automation can have many dependencies. Examples:
 - Google API credential
 - Trello board, list, or card
 - Gmail label or search query
-- Ngrok tunnel
 - database connection
 - scheduled trigger
 - webhook endpoint
