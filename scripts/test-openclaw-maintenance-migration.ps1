@@ -166,6 +166,14 @@ try {
     Assert-HaiTest $falseRun.Succeeded 'An explicit false opt-out should not block the upgrade.'
     Assert-HaiTest ([string]::Equals($falseContent, [IO.File]::ReadAllText($falsePath), [StringComparison]::Ordinal)) 'The explicit false setting or its token was modified.'
 
+    $falseLegacyContent = "HAI_OPENCLAW_MAINTENANCE_ENABLED=false`r`nHAI_OPENCLAW_MAINTENANCE_TOKEN=short`r`nHAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=true`r`nCUSTOM_VALUE=unchanged`r`n"
+    $falseLegacyPath = New-HaiFixture -Name 'explicit-opt-out-legacy-public-setting' -Content $falseLegacyContent
+    $falseLegacyRun = Invoke-HaiUpgradeFixture -Path $falseLegacyPath
+    Assert-HaiTest $falseLegacyRun.Succeeded 'An explicit maintenance opt-out with the retired public setting should not block the upgrade.'
+    $falseLegacyResult = [IO.File]::ReadAllText($falseLegacyPath)
+    Assert-HaiTest (-not [Regex]::IsMatch($falseLegacyResult, '(?m)^\s*HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED\s*=')) 'The retired public tunnel setting survived an opt-out migration.'
+    Assert-HaiTest ($falseLegacyResult.Contains("HAI_OPENCLAW_MAINTENANCE_ENABLED=false`r`nHAI_OPENCLAW_MAINTENANCE_TOKEN=short`r`nCUSTOM_VALUE=unchanged`r`n")) 'The opt-out, token, or unrelated environment setting changed during retired-setting cleanup.'
+
     $invalidContent = "HAI_OPENCLAW_MAINTENANCE_ENABLED=true`nHAI_OPENCLAW_MAINTENANCE_TOKEN=short`nBACKEND_API_SHARED_KEY=$b`nKEEP=this line`n"
     $invalidPath = New-HaiFixture -Name 'replace-invalid-token' -Content $invalidContent
     $invalidRun = Invoke-HaiUpgradeFixture -Path $invalidPath

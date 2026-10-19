@@ -606,7 +606,7 @@ class CIWorkflowContractTest(unittest.TestCase):
 
         self.assertEqual(default_services, core_services)
         self.assertEqual(len(services), 44)
-        self.assertEqual(len(optional_services), 35)
+        self.assertEqual(len(optional_services), 34)
         self.assertTrue(optional_services)
         for service in optional_services:
             with self.subTest(service=service):

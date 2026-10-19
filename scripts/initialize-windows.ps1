@@ -277,6 +277,14 @@ function Invoke-HaiExistingEnvironmentMigrationLocked {
         }
     }
 
+    $changed = $false
+    for ($index = $lines.Count - 1; $index -ge 0; $index--) {
+        if ([Regex]::IsMatch($lines[$index], '^\s*HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED\s*=')) {
+            $lines.RemoveAt($index)
+            $changed = $true
+        }
+    }
+
     $enabled = Get-HaiDotEnvEntry -Lines $lines.ToArray() -Name 'HAI_OPENCLAW_MAINTENANCE_ENABLED'
     if (-not $enabled.Found) {
         $lines.Add('HAI_OPENCLAW_MAINTENANCE_ENABLED=true')
@@ -286,10 +294,12 @@ function Invoke-HaiExistingEnvironmentMigrationLocked {
         throw 'The existing HAI_OPENCLAW_MAINTENANCE_ENABLED value is malformed; refusing to change it.'
     } elseif ($enabled.Value -ieq 'false') {
         Write-Host 'The existing explicit OpenClaw maintenance opt-out was preserved.'
-        return
+        $maintenanceEnabled = $false
+        if (-not $changed) {
+            return
+        }
     } elseif ($enabled.Value -ieq 'true') {
         $maintenanceEnabled = $true
-        $changed = $false
     } else {
         throw 'The existing HAI_OPENCLAW_MAINTENANCE_ENABLED value must be true or false; refusing to change it.'
     }

@@ -345,11 +345,10 @@ try {
         'HAI_A2A_BRIDGE_OWNER_ID=operator@example.test',
         "HAI_A2A_BRIDGE_TOKEN=$savedToken",
         'HAI_A2A_LOCAL_PORT=18091',
-        'HAI_A2A_BRIDGE_URL=http://127.0.0.1:18091/api/v1/a2a',
-        'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=true'
+        'HAI_A2A_BRIDGE_URL=http://127.0.0.1:18091/api/v1/a2a'
     )
     $savedNetworkLines = @('HAI_A2A_LOCAL_SUBNET=10.254.0.0/24', 'HAI_HOST_RUNTIME_INTERNAL_SUBNET=10.254.1.0/24')
-    $savedEnvironment = $savedA2ALines + $savedNetworkLines + 'HAI_OPENCLAW_MAINTENANCE_ENABLED=false'
+    $savedEnvironment = $savedA2ALines + 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=true' + $savedNetworkLines + 'HAI_OPENCLAW_MAINTENANCE_ENABLED=false'
     [IO.File]::WriteAllLines($environmentFile, [string[]]$savedEnvironment)
     foreach ($startAttempt in 1..2) {
         Initialize-HaiLocalEnvironment -GatewayPort 8088
@@ -409,7 +408,7 @@ try {
             'HAI_A2A_BRIDGE_OWNER_ID=operator@example.test',
             "HAI_A2A_BRIDGE_TOKEN=$savedToken",
             'HAI_A2A_LOCAL_PORT=18091',
-            "HAI_A2A_BRIDGE_URL=$invalidBridgeUrl",
+            "HAI_A2A_BRIDGE_URL=$invalidBridgeUrl"
         )
         [IO.File]::WriteAllLines($invalidSavedEnvironment, [string[]]$invalidSavedLines)
         $beforeInvalidUrl = [Convert]::ToBase64String([IO.File]::ReadAllBytes($invalidSavedEnvironment))
