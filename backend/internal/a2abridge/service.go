@@ -260,6 +260,8 @@ func isLocalHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+func envTrue(name string) bool { return strings.EqualFold(strings.TrimSpace(os.Getenv(name)), "true") }
+
 func normalize(value string) string { return strings.Join(strings.Fields(value), " ") }
 
 func bounded(value string, max int) string {

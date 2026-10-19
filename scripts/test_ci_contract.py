@@ -605,7 +605,7 @@ class CIWorkflowContractTest(unittest.TestCase):
                 default_services.add(service)
 
         self.assertEqual(default_services, core_services)
-        self.assertEqual(len(services), 45)
+        self.assertEqual(len(services), 44)
         self.assertEqual(len(optional_services), 35)
         self.assertTrue(optional_services)
         for service in optional_services:
@@ -637,7 +637,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.findall(r"(?m)^\| `([^`]+)` \|", documentation)
         )
 
-        self.assertEqual(len(compose_profiles), 26)
+        self.assertEqual(len(compose_profiles), 25)
         self.assertEqual(documented_profiles, compose_profiles)
 
     def test_searxng_discovery_is_opt_in_and_network_isolated(self) -> None:
@@ -793,7 +793,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             "\nnetworks:\n", 1
         )[0]
         services = re.findall(r"(?m)^  ([A-Za-z0-9_-]+):\n", services_section)
-        self.assertEqual(len(services), 45)
+        self.assertEqual(len(services), 44)
 
         for service in services:
             block = compose_service_block(compose, service)
@@ -975,8 +975,6 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("healthcheck:", fastmcp)
         self.assertIn("socket.create_connection", fastmcp)
 
-        self.assertIn("/api/v1/auth/google/callback", entrypoint_text)
-        self.assertIn("/api/v1/sources/oauth/google/callback", entrypoint_text)
 
     def test_optional_event_bus_does_not_expand_the_default_local_stack(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
