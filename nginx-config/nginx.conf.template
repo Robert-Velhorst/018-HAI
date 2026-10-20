@@ -145,7 +145,7 @@ http {
 
         # The Windows host-runtime bridge has its own loopback-only proxy and
         # dedicated bearer credential. It must never be reachable via this
-        # dashboard gateway, including when the operator opts into ngrok.
+        # dashboard gateway, including when a deployment has a public proxy.
         location ^~ /api/v1/host-runtime/ {
             return 404;
         }

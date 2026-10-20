@@ -18,7 +18,7 @@ func testConfig(tokenURL string) Config {
 	return Config{
 		ClientID:      "client-123.apps.googleusercontent.com",
 		ClientSecret:  "secret-abc",
-		RedirectURL:   "https://example.ngrok-free.dev/api/v1/sources/oauth/google/callback",
+		RedirectURL:   "https://example.test/api/v1/sources/oauth/google/callback",
 		Scopes:        []string{GmailReadonlyScope},
 		TokenEndpoint: tokenURL,
 	}

@@ -266,7 +266,7 @@ try {
     Assert-HaiRuntimeTest (-not (Test-Path -LiteralPath $sensitiveTemporaryPath)) 'Sensitive temporary cleanup did not remove the file after its lock was released.'
 
     $a2aCleanupEnvironment = Join-Path $temporaryRoot 'a2a-cleanup.env'
-    [IO.File]::WriteAllText($a2aCleanupEnvironment, "FIRST_RUN_ADMIN_EMAIL=operator@example.test`r`nHAI_A2A_BRIDGE_ENABLED=true`r`nHAI_A2A_BRIDGE_OWNER_ID=operator@example.test`r`nHAI_A2A_BRIDGE_TOKEN=$('c' * 64)`r`nHAI_A2A_LOCAL_PORT=18091`r`nHAI_A2A_BRIDGE_URL=https://a2a.example.test/saved/rpc`r`nHAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=false`r`n")
+    [IO.File]::WriteAllText($a2aCleanupEnvironment, "FIRST_RUN_ADMIN_EMAIL=operator@example.test`r`nHAI_A2A_BRIDGE_ENABLED=true`r`nHAI_A2A_BRIDGE_OWNER_ID=operator@example.test`r`nHAI_A2A_BRIDGE_TOKEN=$('c' * 64)`r`nHAI_A2A_LOCAL_PORT=18091`r`nHAI_A2A_BRIDGE_URL=http://127.0.0.1:18091/api/v1/a2a`r`nHAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=true`r`n")
     $script:a2aCleanupRemovalCalls = New-Object 'System.Collections.Generic.List[string]'
     $script:a2aCleanupHeldFile = $null
     $script:a2aCleanupOriginalRemove = (Get-Item Function:\Remove-HaiSensitiveTemporaryFile).ScriptBlock
@@ -345,16 +345,15 @@ try {
         'HAI_A2A_BRIDGE_OWNER_ID=operator@example.test',
         "HAI_A2A_BRIDGE_TOKEN=$savedToken",
         'HAI_A2A_LOCAL_PORT=18091',
-        'HAI_A2A_BRIDGE_URL=https://a2a.example.test/saved/rpc',
-        'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=false'
+        'HAI_A2A_BRIDGE_URL=http://127.0.0.1:18091/api/v1/a2a'
     )
     $savedNetworkLines = @('HAI_A2A_LOCAL_SUBNET=10.254.0.0/24', 'HAI_HOST_RUNTIME_INTERNAL_SUBNET=10.254.1.0/24')
-    $savedEnvironment = $savedA2ALines + $savedNetworkLines + 'HAI_OPENCLAW_MAINTENANCE_ENABLED=false'
+    $savedEnvironment = $savedA2ALines + 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=true' + $savedNetworkLines + 'HAI_OPENCLAW_MAINTENANCE_ENABLED=false'
     [IO.File]::WriteAllLines($environmentFile, [string[]]$savedEnvironment)
     foreach ($startAttempt in 1..2) {
         Initialize-HaiLocalEnvironment -GatewayPort 8088
         $currentA2ALines = @(Get-Content -LiteralPath $environmentFile | Where-Object { $_ -match '^HAI_A2A_(?:BRIDGE_|LOCAL_PORT=)' })
-        Assert-HaiRuntimeTest (($currentA2ALines -join "`n") -ceq ($savedA2ALines -join "`n")) "No-switch startup attempt $startAttempt changed the saved enabled A2A settings or token."
+        Assert-HaiRuntimeTest (($currentA2ALines -join "`n") -ceq "HAI_A2A_BRIDGE_ENABLED=true`nHAI_A2A_BRIDGE_OWNER_ID=operator@example.test`nHAI_A2A_BRIDGE_TOKEN=$savedToken`nHAI_A2A_LOCAL_PORT=18091`nHAI_A2A_BRIDGE_URL=http://127.0.0.1:18091/api/v1/a2a") "No-switch startup attempt $startAttempt changed the saved enabled A2A settings or token, or retained the retired public setting."
         Assert-HaiRuntimeTest (Test-HaiA2ABridgeEnabled) "No-switch startup attempt $startAttempt disabled the saved A2A bridge."
     }
 
@@ -409,8 +408,7 @@ try {
             'HAI_A2A_BRIDGE_OWNER_ID=operator@example.test',
             "HAI_A2A_BRIDGE_TOKEN=$savedToken",
             'HAI_A2A_LOCAL_PORT=18091',
-            "HAI_A2A_BRIDGE_URL=$invalidBridgeUrl",
-            'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=false'
+            "HAI_A2A_BRIDGE_URL=$invalidBridgeUrl"
         )
         [IO.File]::WriteAllLines($invalidSavedEnvironment, [string[]]$invalidSavedLines)
         $beforeInvalidUrl = [Convert]::ToBase64String([IO.File]::ReadAllBytes($invalidSavedEnvironment))
@@ -428,9 +426,9 @@ try {
         Assert-HaiRuntimeTest (-not (Test-HaiCredentialFreeA2ABridgeUrl -Url $invalidBridgeUrl)) 'Installer support accepted a credential-bearing A2A URL.'
         Remove-Item -LiteralPath $invalidSavedEnvironment -Force
     }
-    Assert-HaiRuntimeTest (Test-HaiCredentialFreeA2ABridgeUrl -Url 'https://a2a.example.test/saved/rpc') 'Installer support rejected a safe HTTPS A2A endpoint.'
+    Assert-HaiRuntimeTest (Test-HaiCredentialFreeA2ABridgeUrl -Url 'http://127.0.0.1:18091/api/v1/a2a') 'Installer support rejected a safe loopback A2A endpoint.'
 
-    $safeSecretUrl = "https://a2a.example.test/saved/$secretMarker"
+    $safeSecretUrl = 'http://127.0.0.1:18091/api/v1/a2a'
     $safeOutputLines = @($savedEnvironment | Where-Object { $_ -notmatch '^HAI_A2A_BRIDGE_URL=' }) + "HAI_A2A_BRIDGE_URL=$safeSecretUrl"
     $safeOutputEnvironment = Join-Path (Split-Path -Parent $environmentFile) 'safe-output.env'
     [IO.File]::WriteAllLines($safeOutputEnvironment, [string[]]$safeOutputLines)
@@ -447,7 +445,7 @@ try {
     [IO.File]::WriteAllText($environmentFile, "HAI_A2A_BRIDGE_ENABLED=`"true'`r`n")
     Assert-HaiRuntimeTest (-not (Test-HaiA2ABridgeEnabled)) 'A malformed quoted A2A setting was treated as enabled.'
 
-    $expectedPlanningUrl = 'https://a2a.example.test/custom/rpc'
+    $expectedPlanningUrl = 'http://127.0.0.1:18091/api/v1/a2a'
     $agentCardProbeUrl = 'http://127.0.0.1:18091/.well-known/agent-card.json'
     $validAgentCard = [pscustomobject]@{
         name = 'HAI controlled planning bridge'
@@ -1056,7 +1054,7 @@ try {
     $script:runtimeComposeUpExitCode = 29
     $script:runtimeComposeSimulateConcurrentHealthyContainer = $true
     $script:runtimeComposeCurrentIds = @('aaaaaaaaaaaa')
-    [IO.File]::WriteAllText($environmentFile, "HAI_A2A_BRIDGE_ENABLED=true`r`nHAI_A2A_BRIDGE_OWNER_ID=operator@example.test`r`nHAI_A2A_BRIDGE_TOKEN=$('d' * 64)`r`nHAI_A2A_LOCAL_PORT=18091`r`nHAI_A2A_BRIDGE_URL=https://a2a.example.test/saved/rpc`r`n")
+    [IO.File]::WriteAllText($environmentFile, "HAI_A2A_BRIDGE_ENABLED=true`r`nHAI_A2A_BRIDGE_OWNER_ID=operator@example.test`r`nHAI_A2A_BRIDGE_TOKEN=$('d' * 64)`r`nHAI_A2A_LOCAL_PORT=18091`r`nHAI_A2A_BRIDGE_URL=http://127.0.0.1:18091/api/v1/a2a`r`n")
     $failure = Invoke-HaiRuntimeStartAndCaptureFailure
     Assert-HaiRuntimeTest ($script:runtimeComposeCurrentIds -contains $script:runtimeComposeConcurrentHealthyContainerId -and
         $script:runtimeComposeConcurrentHealthyContainer.Health -eq 'healthy' -and
@@ -1083,23 +1081,23 @@ try {
     $script:runtimeComposeStaleA2AStopExitCode = 0
     $script:runtimeReadinessFailure = $null
     $script:runtimeA2AReadinessFailure = $null
-    [IO.File]::WriteAllText($environmentFile, "HAI_A2A_BRIDGE_ENABLED=false`r`nHAI_A2A_LOCAL_PORT=18191`r`nHAI_A2A_BRIDGE_URL=https://a2a.example.test/configured/rpc`r`n")
+    [IO.File]::WriteAllText($environmentFile, "HAI_A2A_BRIDGE_ENABLED=false`r`nHAI_A2A_LOCAL_PORT=18191`r`nHAI_A2A_BRIDGE_URL=http://127.0.0.1:18191/api/v1/a2a`r`n")
     $env:HAI_A2A_BRIDGE_ENABLED = 'true'
-    $env:HAI_A2A_BRIDGE_URL = 'https://ambient.example.test/override'
+    $env:HAI_A2A_BRIDGE_URL = 'http://127.0.0.1:28765/api/v1/a2a'
     $env:HAI_A2A_LOCAL_PORT = '28765'
     $env:COMPOSE_PROFILES = 'local-a2a'
     Start-HaiComposeStack -ComposeArguments @('compose', '--env-file', $environmentFile) -HealthTimeoutSeconds 30
     Assert-HaiRuntimeTest ($script:runtimeComposeCalls.Count -eq 3) 'Successful disabled startup issued unexpected Compose operations.'
     Assert-HaiRuntimeTest ($script:runtimeComposeCalls[0] -match 'config --format json' -and $script:runtimeComposeCalls[1] -match '--profile local-a2a stop a2a-gateway' -and $script:runtimeComposeCalls[2] -notmatch '--profile local-a2a' -and $script:runtimeComposeCalls[2] -match 'up -d --build') 'The disabled transition stopped core services or started the optional A2A profile.'
-    Assert-HaiRuntimeTest ($env:HAI_A2A_BRIDGE_ENABLED -ceq 'true' -and $env:HAI_A2A_BRIDGE_URL -ceq 'https://ambient.example.test/override' -and $env:HAI_A2A_LOCAL_PORT -ceq '28765' -and $env:COMPOSE_PROFILES -ceq 'local-a2a') 'Compose environment overrides were not restored after startup.'
+    Assert-HaiRuntimeTest ($env:HAI_A2A_BRIDGE_ENABLED -ceq 'true' -and $env:HAI_A2A_BRIDGE_URL -ceq 'http://127.0.0.1:28765/api/v1/a2a' -and $env:HAI_A2A_LOCAL_PORT -ceq '28765' -and $env:COMPOSE_PROFILES -ceq 'local-a2a') 'Compose environment overrides were not restored after startup.'
     Assert-HaiRuntimeTest (@($script:runtimeAgentCardRequests | Where-Object { $_ -match '/\.well-known/agent-card\.json$' }).Count -eq 1 -and $script:runtimeA2AReadinessUrls.Count -eq 0) 'A disabled A2A bridge triggered Agent Card readiness validation.'
 
     $script:runtimeComposeCalls.Clear()
-    [IO.File]::WriteAllText($environmentFile, "HAI_A2A_BRIDGE_ENABLED=true`r`nHAI_A2A_LOCAL_PORT=18091`r`nHAI_A2A_BRIDGE_URL=https://a2a.example.test/configured/rpc`r`n")
+    [IO.File]::WriteAllText($environmentFile, "HAI_A2A_BRIDGE_ENABLED=true`r`nHAI_A2A_LOCAL_PORT=18091`r`nHAI_A2A_BRIDGE_URL=http://127.0.0.1:18091/api/v1/a2a`r`n")
     Start-HaiComposeStack -ComposeArguments @('compose', '--env-file', $environmentFile) -HealthTimeoutSeconds 30
     Assert-HaiRuntimeTest ($script:runtimeComposeCalls.Count -eq 2 -and $script:runtimeComposeCalls[0] -match 'config --format json' -and $script:runtimeComposeCalls[1] -match '--profile local-a2a up') 'An explicitly enabled A2A bridge profile was not included in Compose startup.'
     Assert-HaiRuntimeTest ($script:runtimeA2AReadinessUrls.Count -eq 1) 'An explicitly enabled A2A bridge did not receive Agent Card readiness validation after dashboard readiness.'
-    Assert-HaiRuntimeTest ($script:runtimeA2AReadinessUrls[-1] -ceq 'http://127.0.0.1:18091/.well-known/agent-card.json' -and $script:runtimeA2AReadinessBridgeUrls[-1] -ceq 'https://a2a.example.test/configured/rpc') 'Startup readiness did not use the Compose-published probe port and configured advertised bridge URL.'
+    Assert-HaiRuntimeTest ($script:runtimeA2AReadinessUrls[-1] -ceq 'http://127.0.0.1:18091/.well-known/agent-card.json' -and $script:runtimeA2AReadinessBridgeUrls[-1] -ceq 'http://127.0.0.1:18091/api/v1/a2a') 'Startup readiness did not use the Compose-published probe port and configured advertised bridge URL.'
 
     $script:runtimeComposeCalls.Clear()
     $script:runtimeA2AReadinessFailure = 'The local A2A Agent Card was unavailable or invalid.'
@@ -1202,7 +1200,7 @@ try {
         supportedInterfaces = @([pscustomobject]@{
             protocolBinding = 'JSONRPC'
             protocolVersion = '1.0'
-            url = 'https://a2a.example.test/saved/rpc'
+            url = 'http://127.0.0.1:18091/api/v1/a2a'
         })
     }
     $script:runtimeAgentCardResponse = [pscustomobject]@{ StatusCode = 200; Content = $launcherAgentCard | ConvertTo-Json -Depth 5 -Compress }
@@ -1286,7 +1284,7 @@ try {
     Assert-HaiRuntimeTest ($afterExplicitFalseLines -contains 'HAI_A2A_BRIDGE_ENABLED=false' -and
         $afterExplicitFalseLines -contains 'HAI_A2A_BRIDGE_OWNER_ID=' -and
         $afterExplicitFalseLines -contains 'HAI_A2A_BRIDGE_TOKEN=' -and
-        $afterExplicitFalseLines -contains 'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=false' -and
+        -not (@($afterExplicitFalseLines) -match '^HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=') -and
         $afterExplicitFalseLines -contains 'KEEP_UNRELATED_SETTING=preserve-me') 'An actual explicit-false launcher start did not clear A2A credentials while preserving unrelated settings.'
     Assert-HaiRuntimeTest ($launcherComposeActions.Count -eq 3 -and
         $launcherComposeActions[0] -match 'config --format json' -and
