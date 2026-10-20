@@ -1,13 +1,14 @@
-# Source audit history recovery - 2026-10-20
+# Source activity history recovery - 2026-10-20
 
 Canonical baseline: main `41840861bed0deaa206752dc8b19b98223943711`.
 
 ## Recovered operational path
 
-Retained frontend variants contain `pageAuditLogs`, but the canonical UI read a
-bounded recent array and displayed only eight events without older-page controls.
-The repository and service already contained the offset reader. This recovery
-wires that existing reader through HTTP, the typed client, and Advanced activity.
+Retained frontend variants contain `pageAuditLogs` and `pageSyncJobs`, but the
+canonical UI read bounded recent arrays and displayed only eight audit events
+and six sync jobs without older-page controls. The repository and service already
+contained offset readers. This recovery wires them through HTTP, the typed client,
+and Advanced activity while replacing the unsafe unowned sync-job offset reader.
 
 Requests without `offset` keep the existing recent-array contract. An explicit
 offset requests a page envelope with items, total, limit, offset, and hasMore.
@@ -23,33 +24,46 @@ applies. Backend errors retain public redaction behavior.
 The client validates the page shape, offset, limit, total, continuation flag,
 and row fields before displaying it. In particular, an older server ignoring
 offset cannot masquerade as working pagination. The UI loads eight audit rows
-per request; filters explicitly apply to the loaded records. Previous/Next
-controls have accessible names, tooltips, and loading guards. Failed reads keep
+and six sync rows per request; filters explicitly apply to the loaded records.
+Previous/Next controls have accessible names, tooltips, and loading guards. Failed reads keep
 the previous page and expose a retry path rather than claiming an empty history.
 
-Audit browsing never replaces the latest sync-job array or its operational
-indexes. Sync-job pagination remains unfinished: manual-job ownership filtering
-must occur before SQL counting/paging, not after a page has been selected.
+History browsing never replaces the latest sync-job array or its operational
+indexes. The sync reader applies manual-job ownership filtering in SQL before
+counting or paging, including exclusion of missing manual-job owners. Returned
+manual-job statuses use the existing durable-worker projection instead of stale
+history-only status. Nonmanual jobs remain scoped to the authenticated owner's
+sources. Legacy no-offset endpoints remain unchanged.
 
-Both audit and extraction pagers now permit backward navigation when concurrent
+The UI stores history rows separately from live jobs. Polling may update an
+already-loaded history row with the same job ID; it does not invent new history
+totals. Refresh cancels obsolete reads and invalidates closed history caches
+without eagerly loading those sections in Basic mode.
+
+Audit, sync, and extraction pagers permit backward navigation when concurrent
 deletions shrink the total below an older offset. Offset browsing is live
 history, not an immutable snapshot.
 
 ## Verification
 
-- Focused audit HTTP/service tests passed, covering authenticated ownership,
+- Focused audit and sync HTTP/service tests cover authenticated ownership,
   invalid/duplicate bounds, missing permission, old array compatibility,
   unavailable capabilities, redaction, and exclusion of foreign/legacy sources.
 - The full native source package suite passed.
-- All 124 final focused Angular tests passed, including actual rendered
+- All 129 final focused Angular tests passed, including actual rendered
   Previous/Next clicks, duplicate-read prevention, failed-read retention, and
-  preservation of latest sync-job state, plus the concurrent-deletion regression.
-- The final production build passed using Node 26.12.0 and the existing installed
-  dependency tree. Existing unrelated component-style warnings remain; no budget
-  was raised. Fresh lockfile installation remains a hosted CI gate.
-- The existing real-PostgreSQL fixture now seeds audit rows and asserts ordering,
-  offset, totals, foreign-source exclusion, and an empty source scope. Local
-  execution without a database skips that fixture; hosted database CI remains
+  preservation of latest sync-job state, plus concurrent-deletion, obsolete-read,
+  closed-cache invalidation, Basic laziness, and zero/invalid timestamp regressions.
+- The final production build including both history readers passed using Node
+  26.12.0 and the existing installed dependency tree. Existing unrelated style
+  warnings remain; no budget was raised. Fresh lockfile installation remains a
+  hosted CI gate.
+- The existing real-PostgreSQL fixture now seeds audit and sync rows and asserts
+  ordering, offset, totals, foreign-source exclusion, manual-owner filtering
+  before paging, durable-status projection, and an empty source scope. It also
+  exercises the actual HTTP handler, service, and repository together for Alice
+  and Bob using injected test subjects. Real IDP token verification remains a
+  separate gate. Local execution without a database skips that fixture; hosted database CI remains
   the execution gate. No local database or Docker stack was started.
 - An initial focused Angular invocation incorrectly combined a narrowed
   TypeScript program with default all-spec discovery. It failed before tests;

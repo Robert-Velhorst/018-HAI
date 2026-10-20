@@ -44,6 +44,26 @@ describe('ConnectedSourceService extraction corrections', () => {
     }
   });
 
+  it('requests bounded sync history separately from the latest-job array', () => {
+    const page = { items: [], total: 0, limit: 6, offset: 6, hasMore: false };
+    let observed: unknown;
+    service.syncJobPage(6, 6, 'source-id').subscribe((value) => { observed = value; });
+    const request = http.expectOne((r) => r.url === '/api/v1/sources/sync-jobs' && r.params.get('offset') === '6' && r.params.get('limit') === '6' && r.params.get('sourceId') === 'source-id');
+    request.flush(page);
+    expect(observed).toEqual(page);
+  });
+
+  it('rejects unpaged, malformed or mismatched sync history without treating it as empty', () => {
+    for (const response of [[], { items: [], total: 0, limit: 100, offset: 0, hasMore: false },
+      { items: [null], total: 1, limit: 6, offset: 0, hasMore: false },
+      { items: [{ id: 'job', sourceId: 'source', mode: 'manual_async_sync', status: 'queued', itemsSeen: -1, itemsAdded: 0, itemsUpdated: 0, itemsFailed: 0 }], total: 1, limit: 6, offset: 0, hasMore: false }]) {
+      let error: unknown;
+      service.syncJobPage(0).subscribe({ error: (failure) => { error = failure; } });
+      http.expectOne((r) => r.url === '/api/v1/sources/sync-jobs').flush(response);
+      expect(error).toEqual(jasmine.any(Error));
+    }
+  });
+
   const authorization = {
     taskId: 'synthetic-task', approvalSourceId: 'task-review:synthetic-review',
     approvalBindingDigest: 'a'.repeat(64), idempotencyKey: 'synthetic-source-action-key',

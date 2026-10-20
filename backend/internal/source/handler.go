@@ -242,6 +242,10 @@ func (h *Handler) SyncJobs(c *gin.Context) {
 			return
 		}
 	}
+	if _, paged := c.Request.URL.Query()["offset"]; paged {
+		h.syncJobHistoryPage(c, owner, sourceID)
+		return
+	}
 	if sourceID == nil {
 		visibleSourceIDs, err := h.visibleSourceIDs(c)
 		if err != nil {

@@ -69,22 +69,29 @@ func (s *service) ExtractionsForOwnerPage(ownerIdentity, projectKey string, incl
 }
 
 func (s *service) SyncJobsForOwnerPage(ownerIdentity string, sourceID *uuid.UUID, page HistoryPageRequest) (*SyncJobPage, error) {
-	visible, err := s.ownerSourceIDs(ownerIdentity)
+	ownerIdentity = strings.TrimSpace(ownerIdentity)
+	owned, err := s.extractionSourceIDsForOwner(ownerIdentity)
 	if err != nil {
 		return nil, err
 	}
+	limit, offset := normalizedHistoryPage(page)
+	visible := make(map[uuid.UUID]bool, len(owned))
+	for _, id := range owned {
+		visible[id] = true
+	}
 	if sourceID != nil {
 		if !visible[*sourceID] {
-			return &SyncJobPage{Items: []models.SourceSyncJob{}}, nil
+			return &SyncJobPage{Items: []models.SourceSyncJob{}, Limit: limit, Offset: offset}, nil
 		}
 		visible = map[uuid.UUID]bool{*sourceID: true}
 	}
-	limit, offset := normalizedHistoryPage(page)
-	repository, ok := s.repo.(pagedSourceHistoryRepository)
+	repository, ok := s.repo.(interface {
+		FindSyncJobsPageForOwnerSources(string, []uuid.UUID, int, int) ([]models.SourceSyncJob, int, error)
+	})
 	if !ok {
 		return nil, errors.New("paged source history repository is unavailable")
 	}
-	items, total, err := repository.FindSyncJobsPageForSources(sourceIDsFromSet(visible), limit, offset)
+	items, total, err := repository.FindSyncJobsPageForOwnerSources(ownerIdentity, sourceIDsFromSet(visible), limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -116,14 +123,6 @@ func (s *service) AuditLogsForOwnerPage(ownerIdentity string, sourceID *uuid.UUI
 		return nil, err
 	}
 	return &AuditLogPage{Items: items, Total: total, Limit: limit, Offset: offset, HasMore: offset+len(items) < total}, nil
-}
-
-func (s *service) ownerSourceIDs(ownerIdentity string) (map[uuid.UUID]bool, error) {
-	ownerIdentity = strings.TrimSpace(ownerIdentity)
-	if ownerIdentity == "" {
-		return nil, errors.New("source owner identity is required")
-	}
-	return s.visibleSourceIDs(ownerIdentity)
 }
 
 func normalizedHistoryPage(page HistoryPageRequest) (int, int) {

@@ -7,7 +7,7 @@ import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { Subject, of, throwError } from 'rxjs';
 import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
-import { IConnectedSource, ISourceAuditLog, ISourceConnectionHealth, ISourceConnector, ISourceExtraction, ISourceExtractionCorrectionRecovery, ISourceExtractionCorrectionView, ISourceManualSyncJob, ISourcePursuitRoutingOutcome } from '../../models/connected-source.model.interface';
+import { IConnectedSource, ISourceAuditLog, ISourceConnectionHealth, ISourceConnector, ISourceExtraction, ISourceExtractionCorrectionRecovery, ISourceExtractionCorrectionView, ISourceManualSyncJob, ISourcePursuitRoutingOutcome, ISourceSyncJob } from '../../models/connected-source.model.interface';
 import { CONNECTED_SOURCE_SERVICE_TOKEN } from '../../services/connected-source/connected-source.service.token';
 import { IConnectedSourceService } from '../../services/connected-source.service.interface';
 import { ThemeService } from '../../services/theme.service';
@@ -24,11 +24,12 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['info', 'success', 'error', 'warning']);
     const sourceService = jasmine.createSpyObj<IConnectedSourceService>('ConnectedSourceService', [
       'createSource', 'sync', 'submitManualSync', 'manualSyncJob', 'transcribe', 'extractDocuments', 'runDueScheduledSyncs',
-      'connectors', 'sources', 'extractions', 'submitExtractionCorrection', 'extractionCorrection', 'auditLogs', 'auditLogPage', 'syncJobs', 'connectionHealth', 'connectionHealths', 'startGoogleOAuth',
+      'connectors', 'sources', 'extractions', 'submitExtractionCorrection', 'extractionCorrection', 'auditLogs', 'auditLogPage', 'syncJobPage', 'syncJobs', 'connectionHealth', 'connectionHealths', 'startGoogleOAuth',
       'search', 'knowledgeGraph', 'pause', 'resume', 'reindex', 'revoke', 'deleteExtraction'
     ]);
     const changeDetector = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['detectChanges']);
     sourceService.auditLogPage.and.returnValue(of(auditPage()));
+    sourceService.syncJobPage.and.returnValue(of(syncPage()));
     const preferences = new ModuleViewPreferencesService();
     preferences.reset('connected-sources');
     return {
@@ -819,6 +820,7 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     expect(component.sourceHealthSummary(source)).toBe('One record failed.');
     expect(component.sourceActionLabel(source)).toBe('Retry sync');
     component.activityTypeFilter = 'failed';
+    component.syncHistoryJobs = [partialJob];
     expect(component.filteredSyncJobs()).toEqual([partialJob]);
 
     sourceService.connectors.and.returnValue(of([]));
@@ -1088,14 +1090,15 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     component.syncJobsUnavailable = true;
     component.auditLogsLoaded = true;
     expect(component.sourceActivityEmptyText()).toContain('could not be loaded');
-    expect(component.sourceActivityCountSummary()).toContain('Sync jobs unavailable');
+    expect(component.sourceActivityCountSummary()).toContain('Sync history not loaded');
 
     component.syncJobsUnavailable = false;
     component.syncJobsLoaded = true;
+    component.syncHistoryLoaded = true;
     component.syncJobs = [];
     component.auditLogs = [];
     expect(component.sourceActivityEmptyText()).toBe('No source activity has been recorded.');
-    expect(component.sourceActivityCountSummary()).toBe('0 of 0 sync jobs · Audit records 0 of 0');
+    expect(component.sourceActivityCountSummary()).toBe('Sync records 0 of 0 · Audit records 0 of 0');
 
     component.extractionsLoaded = false;
     component.extractionTotalCount = 0;
@@ -1359,6 +1362,7 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
       { id: 'job-2', sourceId: 'source-2', mode: 'incremental', status: 'completed', message: 'done' } as any,
     ];
     component.auditLogs = [{ id: 'audit-1', action: 'authorize', sourceId: 'source-1', message: 'Consent updated' } as any];
+    component.syncHistoryJobs = [...component.syncJobs];
     component.activityTypeFilter = 'failed';
     expect(component.filteredSyncJobs().map((job) => job.id)).toEqual(['job-1']);
     expect(component.filteredAuditLogs()).toEqual([]);
@@ -1954,6 +1958,7 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
 
     expect(sourceService.extractions).not.toHaveBeenCalled();
     expect(sourceService.auditLogPage).not.toHaveBeenCalled();
+    expect(sourceService.syncJobPage).not.toHaveBeenCalled();
     expect(component.loadWarnings).toEqual(['Sync jobs']);
 
     component.onExtractionsSectionOpen(true);
@@ -1961,6 +1966,7 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
 
     expect(sourceService.extractions).toHaveBeenCalledTimes(1);
     expect(sourceService.auditLogPage).toHaveBeenCalledTimes(1);
+    expect(sourceService.syncJobPage).toHaveBeenCalledOnceWith(0, 6);
     expect(component.loadWarnings).toContain('Extracted records');
     expect(component.loadWarnings).toContain('Audit history');
     expect(component.hasLoadWarnings()).toBeTrue();
@@ -2208,6 +2214,64 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     component.ngOnDestroy();
   });
 
+  it('pages sync history independently without replacing live job indexes and retains it after failure', () => {
+    const { component, sourceService } = createComponent();
+    const latest = { ...historyJob('latest-operational-job'), status: 'running' };
+    component.syncJobs = [latest];
+    (component as any).rebuildSourceIndexes();
+    component.syncHistoryJobs = [historyJob('first-history-page')];
+    component.syncHistoryTotal = 20;
+    component.syncHistoryLoaded = true;
+    const pending = new Subject<any>();
+    sourceService.syncJobPage.and.returnValue(pending);
+    component.changeSyncHistory(1);
+    component.changeSyncHistory(1);
+    expect(sourceService.syncJobPage).toHaveBeenCalledOnceWith(6, 6);
+    expect(component.syncHistoryOffset).toBe(0);
+    pending.next(syncPage([historyJob('older-history-page')], 20, 6));
+    pending.complete();
+    expect(component.syncHistoryOffset).toBe(6);
+    expect(component.syncHistoryJobs[0].id).toBe('older-history-page');
+    expect(component.latestJobFor({ id: 'source-1' } as IConnectedSource)?.id).toBe('latest-operational-job');
+    expect(component.syncJobs[0].status).toBe('running');
+    sourceService.syncJobPage.and.returnValue(throwError(() => new Error('read failed')));
+    component.changeSyncHistory(1);
+    expect(component.syncHistoryOffset).toBe(6);
+    expect(component.syncHistoryLoaded).toBeTrue();
+    expect(component.syncHistoryJobs[0].id).toBe('older-history-page');
+    expect(component.loadWarnings).toContain('Sync history');
+    component.ngOnDestroy();
+  });
+
+  it('does not render zero or malformed sync timestamps as an actual start or completion', () => {
+    const { component } = createComponent();
+    expect(component.syncHistoryTimestamp('0001-01-01T00:00:00Z')).toBeUndefined();
+    expect(component.syncHistoryTimestamp('not-a-date')).toBeUndefined();
+    expect(component.syncHistoryTimestamp(undefined)).toBeUndefined();
+    expect(component.syncHistoryTimestamp('2026-10-20T10:00:00Z')).toBe('2026-10-20T10:00:00Z');
+    component.ngOnDestroy();
+  });
+
+  it('cancels obsolete sync history, invalidates closed history caches, and does not load history in Basic refresh', () => {
+    const { component, sourceService } = createComponent();
+    const pending = new Subject<any>();
+    sourceService.syncJobPage.and.returnValue(pending);
+    component.onActivitySectionOpen(true);
+    expect(pending.observers.length).toBe(1);
+    sourceService.connectors.and.returnValue(of([]));
+    sourceService.sources.and.returnValue(of([]));
+    sourceService.syncJobs.and.returnValue(of([]));
+    sourceService.connectionHealths.and.returnValue(of([]));
+    component.refresh();
+    expect(pending.observers.length).toBe(0);
+    expect(component.syncHistoryLoading).toBeFalse();
+    expect(component.syncHistoryLoaded).toBeFalse();
+    expect(component.auditLogsLoaded).toBeFalse();
+    expect(sourceService.syncJobPage).toHaveBeenCalledTimes(1);
+    expect(sourceService.auditLogPage).toHaveBeenCalledTimes(1);
+    component.ngOnDestroy();
+  });
+
   it('allows returning from empty older pages after concurrent record deletion reduces the total', () => {
     const { component, sourceService } = createComponent();
     component.auditLogsLoaded = true;
@@ -2224,10 +2288,18 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     component.extractionTotalCount = 0;
     expect(component.canChangeExtractionPage(-1)).toBeTrue();
     expect(component.canChangeExtractionPage(1)).toBeFalse();
+    component.syncHistoryLoaded = true;
+    component.syncHistoryOffset = 6;
+    component.syncHistoryTotal = 0;
+    expect(component.canChangeSyncHistory(-1)).toBeTrue();
+    expect(component.canChangeSyncHistory(1)).toBeFalse();
+    component.changeSyncHistory(-1);
+    expect(sourceService.syncJobPage).toHaveBeenCalledOnceWith(0, 6);
+    expect(component.syncHistoryOffset).toBe(0);
     component.ngOnDestroy();
   });
 
-  it('renders working previous and next audit-history controls only inside Advanced activity', async () => {
+  it('renders working previous and next audit and sync-history controls only inside Advanced activity', async () => {
     const { sourceService, notification, router, preferences } = createComponent();
     preferences.setMode('connected-sources', 'advanced');
     preferences.setSection('connected-sources', 'source-activity', true);
@@ -2236,6 +2308,7 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     sourceService.syncJobs.and.returnValue(of([]));
     sourceService.connectionHealths.and.returnValue(of([]));
     sourceService.auditLogPage.and.callFake((offset) => of(auditPage([auditLog(offset ? 'older-page' : 'first-page')], 12, offset)));
+    sourceService.syncJobPage.and.callFake((offset) => of(syncPage([historyJob(offset ? 'older-sync' : 'newer-sync')], 10, offset)));
     await TestBed.configureTestingModule({
       imports: [ConnectedSourcesModule],
       providers: [
@@ -2257,6 +2330,14 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance.auditPageOffset).toBe(0);
     expect(sourceService.auditLogPage.calls.allArgs()).toEqual([[0, 8], [8, 8], [0, 8]]);
+    fixture.debugElement.query(By.css('[aria-label="Next sync page"]')).nativeElement.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.syncHistoryOffset).toBe(6);
+    fixture.debugElement.query(By.css('[aria-label="Previous sync page"]')).nativeElement.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.syncHistoryOffset).toBe(0);
+    expect(sourceService.syncJobPage.calls.allArgs()).toEqual([[0, 6], [6, 6], [0, 6]]);
+    expect(fixture.componentInstance.syncJobs).toEqual([]);
     fixture.destroy();
   });
 
@@ -2394,6 +2475,15 @@ function auditLog(id: string): ISourceAuditLog {
 
 function auditPage(items: ISourceAuditLog[] = [], total = items.length, offset = 0) {
   return { items, total, offset, limit: 8, hasMore: offset + items.length < total };
+}
+
+function syncPage(items: ISourceSyncJob[] = [], total = items.length, offset = 0) {
+  return { items, total, offset, limit: 6, hasMore: offset + items.length < total };
+}
+
+function historyJob(id: string): ISourceSyncJob {
+  return { id, sourceId: 'source-1', mode: 'incremental', status: 'completed', itemsSeen: 1,
+    itemsAdded: 1, itemsUpdated: 0, itemsFailed: 0, startedAt: '2026-10-20T10:00:00Z', createdAt: '2026-10-20T10:00:00Z' };
 }
 
 function correctionView(overrides: Partial<ISourceExtractionCorrectionView> = {}): ISourceExtractionCorrectionView {

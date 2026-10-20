@@ -97,6 +97,12 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   auditPageOffset = 0;
   auditTotalCount = 0;
   readonly auditPageLimit = 8;
+  syncHistoryJobs: ISourceSyncJob[] = [];
+  syncHistoryLoaded = false;
+  syncHistoryLoading = false;
+  syncHistoryOffset = 0;
+  syncHistoryTotal = 0;
+  readonly syncHistoryLimit = 6;
   syncJobs: ISourceSyncJob[] = [];
   sourceExtractionCounts: Record<string, number> = {};
   latestJobsBySource: Record<string, ISourceSyncJob> = {};
@@ -175,6 +181,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   private selectedHealthSubscription?: Subscription;
   private extractionSubscription?: Subscription;
   private auditSubscription?: Subscription;
+  private syncHistorySubscription?: Subscription;
   private searchSubscription?: Subscription;
   private graphSubscription?: Subscription;
   private themeSubscription?: Subscription;
@@ -300,6 +307,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
 
   onActivitySectionOpen(open: boolean): void {
     if (open && !this.auditLogsLoaded && !this.auditLogsLoading) this.loadAuditLogs();
+    if (open && !this.syncHistoryLoaded && !this.syncHistoryLoading) this.loadSyncHistory();
   }
 
   ngOnInit(): void {
@@ -323,6 +331,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
     this.selectedHealthSubscription?.unsubscribe();
     this.extractionSubscription?.unsubscribe();
     this.auditSubscription?.unsubscribe();
+    this.syncHistorySubscription?.unsubscribe();
     this.searchSubscription?.unsubscribe();
     this.graphSubscription?.unsubscribe();
     this.themeSubscription?.unsubscribe();
@@ -358,6 +367,12 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
     this.connectorCatalogLoading = true;
     this.connectorCatalogLoaded = false;
     this.connectorCatalogUnavailable = false;
+    this.auditSubscription?.unsubscribe();
+    this.auditLogsLoaded = false;
+    this.auditLogsLoading = false;
+    this.syncHistorySubscription?.unsubscribe();
+    this.syncHistoryLoaded = false;
+    this.syncHistoryLoading = false;
     const openSections = this.viewPreferences.get(this.moduleId).openSections;
     if (this.isAdvancedView && openSections['source-records']) {
       this.extractionsLoaded = false;
@@ -671,18 +686,18 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   }
 
   sourceActivityEmptyText(): string {
-    if (this.syncJobsUnavailable || !this.syncJobsLoaded || !this.auditLogsLoaded) {
+    if (!this.syncHistoryLoaded || !this.auditLogsLoaded || this.loadWarnings.includes('Sync history') || this.loadWarnings.includes('Audit history')) {
       return 'Some source activity could not be loaded. Retry before treating this view as empty.';
     }
-    return this.syncJobs.length || this.auditLogs.length || this.auditTotalCount
+    return this.syncHistoryTotal || this.auditLogs.length || this.auditTotalCount
       ? 'No loaded activity records match these filters.'
       : 'No source activity has been recorded.';
   }
 
   sourceActivityCountSummary(): string {
-    const jobs = this.syncJobsLoaded && !this.syncJobsUnavailable
-      ? `${this.recentSyncJobs().length} of ${this.syncJobs.length} sync jobs`
-      : this.loading ? 'Sync jobs loading' : 'Sync jobs unavailable';
+    const jobs = this.syncHistoryLoaded
+      ? `Sync records ${this.syncHistoryRange()} of ${this.syncHistoryTotal}`
+      : this.syncHistoryLoading ? 'Sync history loading' : this.loadWarnings.includes('Sync history') ? 'Sync history unavailable' : 'Sync history not loaded';
     const audit = this.auditLogsLoaded
       ? `Audit records ${this.auditPageRange()} of ${this.auditTotalCount}`
       : this.auditLogsLoading
@@ -1093,7 +1108,11 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   }
 
   recentSyncJobs(): ISourceSyncJob[] {
-    return this.syncJobs.slice(0, 6);
+    return this.syncHistoryJobs.slice(0, this.syncHistoryLimit);
+  }
+
+  syncHistoryTimestamp(value: unknown): string | undefined {
+    return typeof value === 'string' && !value.startsWith('0001-') && Number.isFinite(Date.parse(value)) ? value : undefined;
   }
 
   filteredSyncJobs(): ISourceSyncJob[] {
@@ -1862,6 +1881,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   private upsertManualSyncJob(job: ISourceManualSyncJob): void {
     this.manualSyncJobsBySource = { ...this.manualSyncJobsBySource, [job.sourceId]: job };
     this.syncJobs = [job, ...this.syncJobs.filter((existing) => existing.id !== job.id)].slice(0, 250);
+    this.syncHistoryJobs = this.syncHistoryJobs.map((existing) => existing.id === job.id ? { ...existing, ...job } : existing);
     this.rebuildSourceIndexes();
   }
 
@@ -2963,6 +2983,41 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   private setExtractionPage(page: ISourceExtractionPage): void {
     this.extractions = page.items || [];
     this.extractionTotalCount = page.totalCount;
+  }
+
+  canChangeSyncHistory(direction: -1 | 1): boolean {
+    const offset = this.syncHistoryOffset + direction * this.syncHistoryLimit;
+    return this.syncHistoryLoaded && !this.syncHistoryLoading && offset >= 0 && offset <= 1000000 && (direction === -1 || offset < this.syncHistoryTotal);
+  }
+
+  changeSyncHistory(direction: -1 | 1): void {
+    if (this.canChangeSyncHistory(direction)) this.loadSyncHistory(this.syncHistoryOffset + direction * this.syncHistoryLimit);
+  }
+
+  syncHistoryRange(): string {
+    return this.syncHistoryJobs.length ? `${this.syncHistoryOffset + 1}–${this.syncHistoryOffset + this.syncHistoryJobs.length}` : '0';
+  }
+
+  retrySyncHistory(): void {
+    if (!this.syncHistoryLoading) this.loadSyncHistory(this.syncHistoryOffset);
+  }
+
+  private loadSyncHistory(offset = 0): void {
+    this.syncHistorySubscription?.unsubscribe();
+    this.syncHistoryLoading = true;
+    this.syncHistorySubscription = this.sourceService.syncJobPage(offset, this.syncHistoryLimit).pipe(
+      timeout(this.loadTimeoutMs),
+      finalize(() => (this.syncHistoryLoading = false)),
+    ).subscribe({
+      next: (page) => {
+        this.syncHistoryJobs = page.items;
+        this.syncHistoryOffset = page.offset;
+        this.syncHistoryTotal = page.total;
+        this.syncHistoryLoaded = true;
+        this.clearLoadWarning('Sync history');
+      },
+      error: () => this.recordLoadWarning('Sync history'),
+    });
   }
 
   canChangeAuditPage(direction: -1 | 1): boolean {
