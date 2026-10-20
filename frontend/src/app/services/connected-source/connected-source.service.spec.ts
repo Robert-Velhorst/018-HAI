@@ -18,6 +18,32 @@ describe('ConnectedSourceService extraction corrections', () => {
 
   afterEach(() => http.verify());
 
+  it('requests an offset audit page and refuses an older server returning an unpaged array', () => {
+    let error: unknown;
+    service.auditLogPage(8).subscribe({ error: (failure) => { error = failure; } });
+    const request = http.expectOne((r) => r.url === '/api/v1/sources/audit-logs' && r.params.get('offset') === '8' && r.params.get('limit') === '8');
+    request.flush([]);
+    expect(error).toEqual(jasmine.any(Error));
+  });
+
+  it('preserves owner-scoped audit pagination metadata and source filter', () => {
+    const page = { items: [], total: 8, limit: 8, offset: 8, hasMore: false };
+    let observed: unknown;
+    service.auditLogPage(8, 8, 'source-id').subscribe((value) => { observed = value; });
+    const request = http.expectOne((r) => r.url === '/api/v1/sources/audit-logs' && r.params.get('sourceId') === 'source-id');
+    request.flush(page);
+    expect(observed).toEqual(page);
+  });
+
+  it('rejects mismatched audit offsets, limits and continuation metadata', () => {
+    for (const patch of [{ offset: 0 }, { limit: 100 }, { hasMore: true }, { total: -1 }, { items: [null] }, { items: [{}] }]) {
+      let error: unknown;
+      service.auditLogPage(8).subscribe({ error: (failure) => { error = failure; } });
+      http.expectOne((r) => r.url === '/api/v1/sources/audit-logs').flush({ items: [], total: 8, limit: 8, offset: 8, hasMore: false, ...patch });
+      expect(error).toEqual(jasmine.any(Error));
+    }
+  });
+
   const authorization = {
     taskId: 'synthetic-task', approvalSourceId: 'task-review:synthetic-review',
     approvalBindingDigest: 'a'.repeat(64), idempotencyKey: 'synthetic-source-action-key',

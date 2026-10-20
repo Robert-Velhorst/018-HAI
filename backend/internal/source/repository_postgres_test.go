@@ -33,6 +33,13 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 	}
 	t.Cleanup(func() { _ = tx.Rollback().Error })
 	if err := tx.Exec(`
+		CREATE TEMP TABLE source_audit_logs (
+			id uuid PRIMARY KEY,
+			source_id uuid NOT NULL,
+			action text DEFAULT 'source.read',
+			message text DEFAULT '',
+			created_at timestamptz NOT NULL
+		) ON COMMIT DROP;
 		CREATE TEMP TABLE connected_sources (
 			id uuid PRIMARY KEY,
 			owner_identity varchar(255)
@@ -96,9 +103,24 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 		).Error; err != nil {
 			t.Fatalf("seed extraction: %v", err)
 		}
+		if err := tx.Exec("INSERT INTO source_audit_logs (id, source_id, created_at) VALUES (?, ?, ?)", row.id, row.sourceID, row.updatedAt).Error; err != nil {
+			t.Fatalf("seed audit log: %v", err)
+		}
 	}
 
 	repository := &GormRepository{DB: tx}
+	auditItems, auditTotal, err := repository.FindAuditLogsPageForSources([]uuid.UUID{aliceSource}, 1, 2)
+	if err != nil || auditTotal != 4 || len(auditItems) != 1 || auditItems[0].ID != alicePrevious {
+		t.Fatalf("offset audit page = items %#v total %d err %v", auditItems, auditTotal, err)
+	}
+	firstAuditItems, _, err := repository.FindAuditLogsPageForSources([]uuid.UUID{aliceSource}, 2, 0)
+	if err != nil || len(firstAuditItems) != 2 || firstAuditItems[0].ID != aliceLatestHigh || firstAuditItems[1].ID != aliceLatestLow {
+		t.Fatalf("stable audit ordering = %#v, err %v", firstAuditItems, err)
+	}
+	emptyAuditItems, emptyAuditTotal, err := repository.FindAuditLogsPageForSources(nil, 8, 0)
+	if err != nil || emptyAuditTotal != 0 || len(emptyAuditItems) != 0 {
+		t.Fatalf("ownerless audit page = %#v total %d err %v", emptyAuditItems, emptyAuditTotal, err)
+	}
 	items, err := repository.FindRecentExtractionsForSources(
 		[]uuid.UUID{aliceSource}, "018-HAI", false, 2,
 	)

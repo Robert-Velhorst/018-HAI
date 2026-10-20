@@ -92,17 +92,21 @@ func (s *service) SyncJobsForOwnerPage(ownerIdentity string, sourceID *uuid.UUID
 }
 
 func (s *service) AuditLogsForOwnerPage(ownerIdentity string, sourceID *uuid.UUID, page HistoryPageRequest) (*AuditLogPage, error) {
-	visible, err := s.ownerSourceIDs(ownerIdentity)
+	owned, err := s.extractionSourceIDsForOwner(ownerIdentity)
 	if err != nil {
 		return nil, err
 	}
+	limit, offset := normalizedHistoryPage(page)
+	visible := make(map[uuid.UUID]bool, len(owned))
+	for _, id := range owned {
+		visible[id] = true
+	}
 	if sourceID != nil {
 		if !visible[*sourceID] {
-			return &AuditLogPage{Items: []models.SourceAuditLog{}}, nil
+			return &AuditLogPage{Items: []models.SourceAuditLog{}, Limit: limit, Offset: offset}, nil
 		}
 		visible = map[uuid.UUID]bool{*sourceID: true}
 	}
-	limit, offset := normalizedHistoryPage(page)
 	repository, ok := s.repo.(pagedSourceHistoryRepository)
 	if !ok {
 		return nil, errors.New("paged source history repository is unavailable")

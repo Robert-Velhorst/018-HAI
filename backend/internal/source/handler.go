@@ -1040,7 +1040,8 @@ func (h *Handler) DeleteExtraction(c *gin.Context) {
 }
 
 func (h *Handler) AuditLogs(c *gin.Context) {
-	if _, ok := requireSourceOwner(c); !ok {
+	owner, ok := requireSourceOwner(c)
+	if !ok {
 		return
 	}
 	var sourceID *uuid.UUID
@@ -1054,6 +1055,10 @@ func (h *Handler) AuditLogs(c *gin.Context) {
 		if !h.requireSourceAccess(c, parsed) {
 			return
 		}
+	}
+	if _, paged := c.Request.URL.Query()["offset"]; paged {
+		h.auditLogHistoryPage(c, owner, sourceID)
+		return
 	}
 	if sourceID == nil {
 		visibleSourceIDs, err := h.visibleSourceIDs(c)

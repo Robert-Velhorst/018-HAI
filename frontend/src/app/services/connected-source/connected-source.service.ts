@@ -8,6 +8,7 @@ import {
   ICreateSourceRequest,
   IImportRequest,
   ISourceAuditLog,
+  ISourceAuditLogPage,
   ISourceConnector,
   ISourceConnectionHealth,
   ISourceExtraction,
@@ -206,5 +207,25 @@ export class ConnectedSourceService implements IConnectedSourceService {
       params = params.set('sourceId', sourceId);
     }
     return this.http.get<ISourceAuditLog[]>(`${this.apiUrl}/audit-logs`, { params });
+  }
+
+  auditLogPage(offset: number, limit = 8, sourceId?: string): Observable<ISourceAuditLogPage> {
+    let params = new HttpParams().set('offset', offset).set('limit', limit);
+    if (sourceId) params = params.set('sourceId', sourceId);
+    return this.http.get<ISourceAuditLogPage>(`${this.apiUrl}/audit-logs`, { params }).pipe(
+      map((page) => {
+        if (!page || Array.isArray(page) || !Array.isArray(page.items)
+          || !Number.isSafeInteger(page.total) || page.total < 0
+          || page.offset !== offset || page.limit !== limit || page.items.length > limit
+          || (page.items.length > 0 && offset + page.items.length > page.total)
+          || !page.items.every((item) => item && typeof item.id === 'string'
+            && typeof item.action === 'string' && typeof item.message === 'string' && typeof item.createdAt === 'string')
+          || typeof page.hasMore !== 'boolean'
+          || page.hasMore !== (page.offset + page.items.length < page.total)) {
+          throw new Error('Source audit history returned an invalid page.');
+        }
+        return page;
+      }),
+    );
   }
 }

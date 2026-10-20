@@ -12,6 +12,7 @@ import {
   ICreateSourceRequest,
   IImportRequest,
   ISourceAuditLog,
+  ISourceAuditLogPage,
   ISourceConnector,
   ISourceConnectionHealth,
   ISourceExtraction,
@@ -58,4 +59,5 @@ export interface IConnectedSourceService {
   archiveExtraction(id: string): Observable<ISourceExtraction>;
   deleteExtraction(id: string, authorization: ISourceDestructiveAuthorization): Observable<void>;
   auditLogs(sourceId?: string): Observable<ISourceAuditLog[]>;
+  auditLogPage(offset: number, limit?: number, sourceId?: string): Observable<ISourceAuditLogPage>;
 }

@@ -94,6 +94,9 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   extractionTotalCount = 0;
   extractionPageOffset = 0;
   auditLogs: ISourceAuditLog[] = [];
+  auditPageOffset = 0;
+  auditTotalCount = 0;
+  readonly auditPageLimit = 8;
   syncJobs: ISourceSyncJob[] = [];
   sourceExtractionCounts: Record<string, number> = {};
   latestJobsBySource: Record<string, ISourceSyncJob> = {};
@@ -671,7 +674,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
     if (this.syncJobsUnavailable || !this.syncJobsLoaded || !this.auditLogsLoaded) {
       return 'Some source activity could not be loaded. Retry before treating this view as empty.';
     }
-    return this.syncJobs.length || this.auditLogs.length
+    return this.syncJobs.length || this.auditLogs.length || this.auditTotalCount
       ? 'No loaded activity records match these filters.'
       : 'No source activity has been recorded.';
   }
@@ -681,7 +684,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
       ? `${this.recentSyncJobs().length} of ${this.syncJobs.length} sync jobs`
       : this.loading ? 'Sync jobs loading' : 'Sync jobs unavailable';
     const audit = this.auditLogsLoaded
-      ? `${this.recentAuditLogs().length} of ${this.auditLogs.length} audit events`
+      ? `Audit records ${this.auditPageRange()} of ${this.auditTotalCount}`
       : this.auditLogsLoading
         ? 'Audit history loading'
         : this.loadWarnings.includes('Audit history') ? 'Audit history unavailable' : 'Audit history not loaded';
@@ -2940,7 +2943,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   canChangeExtractionPage(direction: -1 | 1): boolean {
     if (this.extractionsLoading || !this.extractionsLoaded) return false;
     const target = this.extractionPageOffset + direction * this.extractionPageLimit;
-    return target >= 0 && target <= 1000000 && target < this.extractionTotalCount;
+    return target >= 0 && target <= 1000000 && (direction === -1 || target < this.extractionTotalCount);
   }
 
   changeExtractionPage(direction: -1 | 1): void {
@@ -2962,20 +2965,38 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
     this.extractionTotalCount = page.totalCount;
   }
 
-  private loadAuditLogs(): void {
+  canChangeAuditPage(direction: -1 | 1): boolean {
+    const offset = this.auditPageOffset + direction * this.auditPageLimit;
+    return this.auditLogsLoaded && !this.auditLogsLoading && offset >= 0 && offset <= 1000000 && (direction === -1 || offset < this.auditTotalCount);
+  }
+
+  changeAuditPage(direction: -1 | 1): void {
+    if (this.canChangeAuditPage(direction)) this.loadAuditLogs(this.auditPageOffset + direction * this.auditPageLimit);
+  }
+
+  auditPageRange(): string {
+    return this.auditLogs.length ? `${this.auditPageOffset + 1}–${this.auditPageOffset + this.auditLogs.length}` : '0';
+  }
+
+  retryAuditHistory(): void {
+    if (!this.auditLogsLoading) this.loadAuditLogs(this.auditPageOffset);
+  }
+
+  private loadAuditLogs(offset = 0): void {
     this.auditSubscription?.unsubscribe();
     this.auditLogsLoading = true;
-    this.auditSubscription = this.sourceService.auditLogs().pipe(
+    this.auditSubscription = this.sourceService.auditLogPage(offset, this.auditPageLimit).pipe(
       timeout(this.loadTimeoutMs),
       finalize(() => (this.auditLogsLoading = false)),
     ).subscribe({
-      next: (logs) => {
-        this.auditLogs = logs;
+      next: (page) => {
+        this.auditLogs = page.items;
+        this.auditTotalCount = page.total;
+        this.auditPageOffset = page.offset;
         this.auditLogsLoaded = true;
         this.clearLoadWarning('Audit history');
       },
       error: () => {
-        this.auditLogsLoaded = false;
         this.recordLoadWarning('Audit history');
       },
     });

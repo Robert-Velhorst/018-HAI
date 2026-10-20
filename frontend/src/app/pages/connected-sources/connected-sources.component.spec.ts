@@ -24,10 +24,11 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     const notification = jasmine.createSpyObj<NzNotificationService>('NzNotificationService', ['info', 'success', 'error', 'warning']);
     const sourceService = jasmine.createSpyObj<IConnectedSourceService>('ConnectedSourceService', [
       'createSource', 'sync', 'submitManualSync', 'manualSyncJob', 'transcribe', 'extractDocuments', 'runDueScheduledSyncs',
-      'connectors', 'sources', 'extractions', 'submitExtractionCorrection', 'extractionCorrection', 'auditLogs', 'syncJobs', 'connectionHealth', 'connectionHealths', 'startGoogleOAuth',
+      'connectors', 'sources', 'extractions', 'submitExtractionCorrection', 'extractionCorrection', 'auditLogs', 'auditLogPage', 'syncJobs', 'connectionHealth', 'connectionHealths', 'startGoogleOAuth',
       'search', 'knowledgeGraph', 'pause', 'resume', 'reindex', 'revoke', 'deleteExtraction'
     ]);
     const changeDetector = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['detectChanges']);
+    sourceService.auditLogPage.and.returnValue(of(auditPage()));
     const preferences = new ModuleViewPreferencesService();
     preferences.reset('connected-sources');
     return {
@@ -1094,7 +1095,7 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     component.syncJobs = [];
     component.auditLogs = [];
     expect(component.sourceActivityEmptyText()).toBe('No source activity has been recorded.');
-    expect(component.sourceActivityCountSummary()).toBe('0 of 0 sync jobs · 0 of 0 audit events');
+    expect(component.sourceActivityCountSummary()).toBe('0 of 0 sync jobs · Audit records 0 of 0');
 
     component.extractionsLoaded = false;
     component.extractionTotalCount = 0;
@@ -1946,20 +1947,20 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     sourceService.connectors.and.returnValue(of([]));
     sourceService.sources.and.returnValue(of([]));
     sourceService.extractions.and.returnValue(throwError(() => new Error('extractions unavailable')));
-    sourceService.auditLogs.and.returnValue(throwError(() => new Error('audit unavailable')));
+    sourceService.auditLogPage.and.returnValue(throwError(() => new Error('audit unavailable')));
     sourceService.syncJobs.and.returnValue(throwError(() => new Error('jobs unavailable')));
 
     component.refresh();
 
     expect(sourceService.extractions).not.toHaveBeenCalled();
-    expect(sourceService.auditLogs).not.toHaveBeenCalled();
+    expect(sourceService.auditLogPage).not.toHaveBeenCalled();
     expect(component.loadWarnings).toEqual(['Sync jobs']);
 
     component.onExtractionsSectionOpen(true);
     component.onActivitySectionOpen(true);
 
     expect(sourceService.extractions).toHaveBeenCalledTimes(1);
-    expect(sourceService.auditLogs).toHaveBeenCalledTimes(1);
+    expect(sourceService.auditLogPage).toHaveBeenCalledTimes(1);
     expect(component.loadWarnings).toContain('Extracted records');
     expect(component.loadWarnings).toContain('Audit history');
     expect(component.hasLoadWarnings()).toBeTrue();
@@ -1973,14 +1974,14 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     sourceService.connectors.and.returnValue(of([]));
     sourceService.sources.and.returnValue(of([]));
     sourceService.extractions.and.returnValue(of({ items: [extractionRecord('record-1')], totalCount: 1, limit: 100 }));
-    sourceService.auditLogs.and.returnValue(of([auditLog('audit-1')]));
+    sourceService.auditLogPage.and.returnValue(of(auditPage([auditLog('audit-1')])));
     sourceService.syncJobs.and.returnValue(of([]));
     sourceService.connectionHealths.and.returnValue(of([]));
 
     component.refresh();
 
     expect(sourceService.extractions).toHaveBeenCalledTimes(1);
-    expect(sourceService.auditLogs).toHaveBeenCalledTimes(1);
+    expect(sourceService.auditLogPage).toHaveBeenCalledTimes(1);
     expect(component.extractionsLoaded).toBeTrue();
     expect(component.auditLogsLoaded).toBeTrue();
     expect(preferences.get('memory').mode).toBe('basic');
@@ -2181,6 +2182,84 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     component.ngOnDestroy();
   });
 
+  it('pages audit history without replacing latest sync jobs and retains a page when the next read fails', () => {
+    const { component, sourceService } = createComponent();
+    component.auditLogs = [auditLog('first-page')];
+    component.auditLogsLoaded = true;
+    component.auditTotalCount = 20;
+    component.syncJobs = [{ id: 'latest-sync', sourceId: 'source-1' } as any];
+    const pending = new Subject<any>();
+    sourceService.auditLogPage.and.returnValue(pending);
+    component.changeAuditPage(1);
+    component.changeAuditPage(1);
+    expect(sourceService.auditLogPage).toHaveBeenCalledOnceWith(8, 8);
+    expect(component.auditPageOffset).toBe(0);
+    pending.next(auditPage([auditLog('older-page')], 20, 8));
+    pending.complete();
+    expect(component.auditPageOffset).toBe(8);
+    expect(component.auditLogs[0].id).toBe('older-page');
+    expect(component.syncJobs[0].id).toBe('latest-sync');
+    sourceService.auditLogPage.and.returnValue(throwError(() => new Error('read failed')));
+    component.changeAuditPage(1);
+    expect(component.auditPageOffset).toBe(8);
+    expect(component.auditLogsLoaded).toBeTrue();
+    expect(component.auditLogs[0].id).toBe('older-page');
+    expect(component.loadWarnings).toContain('Audit history');
+    component.ngOnDestroy();
+  });
+
+  it('allows returning from empty older pages after concurrent record deletion reduces the total', () => {
+    const { component, sourceService } = createComponent();
+    component.auditLogsLoaded = true;
+    component.auditPageOffset = 8;
+    component.auditTotalCount = 0;
+    sourceService.auditLogPage.and.returnValue(of(auditPage()));
+    expect(component.canChangeAuditPage(-1)).toBeTrue();
+    expect(component.canChangeAuditPage(1)).toBeFalse();
+    component.changeAuditPage(-1);
+    expect(sourceService.auditLogPage).toHaveBeenCalledOnceWith(0, 8);
+    expect(component.auditPageOffset).toBe(0);
+    component.extractionsLoaded = true;
+    component.extractionPageOffset = 8;
+    component.extractionTotalCount = 0;
+    expect(component.canChangeExtractionPage(-1)).toBeTrue();
+    expect(component.canChangeExtractionPage(1)).toBeFalse();
+    component.ngOnDestroy();
+  });
+
+  it('renders working previous and next audit-history controls only inside Advanced activity', async () => {
+    const { sourceService, notification, router, preferences } = createComponent();
+    preferences.setMode('connected-sources', 'advanced');
+    preferences.setSection('connected-sources', 'source-activity', true);
+    sourceService.connectors.and.returnValue(of([]));
+    sourceService.sources.and.returnValue(of([]));
+    sourceService.syncJobs.and.returnValue(of([]));
+    sourceService.connectionHealths.and.returnValue(of([]));
+    sourceService.auditLogPage.and.callFake((offset) => of(auditPage([auditLog(offset ? 'older-page' : 'first-page')], 12, offset)));
+    await TestBed.configureTestingModule({
+      imports: [ConnectedSourcesModule],
+      providers: [
+        { provide: CONNECTED_SOURCE_SERVICE_TOKEN, useValue: sourceService },
+        { provide: NzNotificationService, useValue: notification },
+        { provide: Router, useValue: router },
+        { provide: ThemeService, useValue: { mode: () => 'light' } },
+        { provide: ModuleViewPreferencesService, useValue: preferences },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ConnectedSourcesComponent);
+    fixture.detectChanges();
+    const next = fixture.debugElement.query(By.css('[aria-label="Next audit page"]'));
+    expect(next).not.toBeNull();
+    next.nativeElement.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.auditPageOffset).toBe(8);
+    fixture.debugElement.query(By.css('[aria-label="Previous audit page"]')).nativeElement.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.auditPageOffset).toBe(0);
+    expect(sourceService.auditLogPage.calls.allArgs()).toEqual([[0, 8], [8, 8], [0, 8]]);
+    fixture.destroy();
+  });
+
   it('renders working previous and next extraction-history controls in the Advanced section', async () => {
     const { sourceService, notification, router, preferences } = createComponent();
     preferences.setMode('connected-sources', 'advanced');
@@ -2311,6 +2390,10 @@ function extractionRecord(id: string): ISourceExtraction {
 
 function auditLog(id: string): ISourceAuditLog {
   return { id, action: 'source.read', message: 'Read source data', createdAt: '2026-09-24T00:00:00Z' };
+}
+
+function auditPage(items: ISourceAuditLog[] = [], total = items.length, offset = 0) {
+  return { items, total, offset, limit: 8, hasMore: offset + items.length < total };
 }
 
 function correctionView(overrides: Partial<ISourceExtractionCorrectionView> = {}): ISourceExtractionCorrectionView {
