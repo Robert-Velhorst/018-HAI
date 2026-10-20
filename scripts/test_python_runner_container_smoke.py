@@ -1,6 +1,9 @@
 """Contract tests for the isolated Python runner container smoke stage."""
 
 from pathlib import Path
+import contextlib
+import io
+import json
 import subprocess
 import sys
 import unittest
@@ -169,6 +172,105 @@ class PythonRunnerContainerSmokeTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unexpected image reference"):
                 smoke.run_smoke("gitleaks-runner", "other-image:latest")
         run.assert_not_called()
+
+    def test_failure_diagnostics_redact_state_and_logs_before_bounding(self):
+        token = smoke.container_environment("fastmcp-bridge")["HAI_FASTMCP_BRIDGE_TOKEN"]
+
+        def fake_run(command, **_kwargs):
+            if command[1] == "inspect":
+                return completed(command, stdout=json.dumps({"ExitCode": 9, "OOMKilled": False, "Error": f"rejected {token}"}))
+            return completed(command, stdout=f"stdout {token}", stderr=f"stderr {token}")
+
+        result = smoke._container_failure_details("fastmcp-bridge", "container-id", docker="docker", run_process=fake_run)
+        self.assertNotIn(token, result)
+        self.assertIn("[redacted]", result)
+        self.assertIn("exit_code=9", result)
+        self.assertIn("oom_killed=False", result)
+
+    def test_exited_container_failure_reaches_redacted_diagnostics_and_cleanup(self):
+        token = smoke.container_environment("grype-runner")["HAI_GRYPE_RUNNER_TOKEN"]
+        commands = []
+
+        def fake_run(command, **_kwargs):
+            commands.append(command)
+            if command[1] == "run":
+                Path(command[command.index("--cidfile") + 1]).write_text(
+                    "container-id\n", encoding="utf-8"
+                )
+            if command[1] == "inspect":
+                if command[2] == "--format={{.State.Running}}":
+                    return completed(command, stdout="false\n")
+                return completed(command, stdout=json.dumps({
+                    "ExitCode": 7, "OOMKilled": True, "Error": token,
+                }))
+            if command[1] == "logs":
+                return completed(command, stderr=f"startup rejected {token}")
+            return completed(command)
+
+        with self.assertRaisesRegex(RuntimeError, "exit_code=7") as raised:
+            smoke.run_smoke(
+                "grype-runner", "hai-grype-runner:ci", run_process=fake_run,
+                monotonic=lambda: 0, sleep=lambda _: None,
+            )
+        self.assertNotIn(token, str(raised.exception))
+        self.assertIn("oom_killed=True", str(raised.exception))
+        self.assertIn("[redacted]", str(raised.exception))
+        self.assertTrue(any(command[1] == "rm" for command in commands))
+
+    def test_diagnostics_redact_before_truncation_and_bound_untrusted_text(self):
+        token = smoke.container_environment("fastmcp-bridge")["HAI_FASTMCP_BRIDGE_TOKEN"]
+        result = smoke._safe_diagnostic("fastmcp-bridge", "prefix" * 1000 + token)
+        self.assertEqual(len(result), 2000)
+        self.assertTrue(result.endswith("[redacted]"))
+        self.assertNotIn(token[-20:], result)
+
+    def test_invalid_container_state_still_returns_a_bounded_safe_diagnostic(self):
+        for state in ("not json", "[]", "null"):
+            with self.subTest(state=state):
+                def fake_run(command, **_kwargs):
+                    return completed(command, stdout=state if command[1] == "inspect" else "safe log")
+
+                result = smoke._container_failure_details(
+                    "docling-runner", "container-id", docker="docker",
+                    run_process=fake_run,
+                )
+                self.assertIn("container state was not valid JSON", result)
+                self.assertIn("safe log", result)
+
+    def test_smoke_failures_redact_known_configuration_in_every_command_stage(self):
+        token = smoke.container_environment("fastmcp-bridge")["HAI_FASTMCP_CLIENT_TOKEN"]
+        for stage in ("run", "probe", "cleanup"):
+            with self.subTest(stage=stage):
+                commands = []
+
+                def fake_run(command, **_kwargs):
+                    commands.append(command)
+                    if command[1] == "run":
+                        if stage == "run":
+                            return completed(command, returncode=1, stderr=f"start failed {token}")
+                        Path(command[command.index("--cidfile") + 1]).write_text("container-id\n", encoding="utf-8")
+                    if command[1] == "inspect":
+                        return completed(command, stdout="true\n")
+                    if command[1] == "exec" and stage == "probe":
+                        return completed(command, returncode=1, stderr=f"not ready {token}")
+                    if command[1] == "rm" and stage == "cleanup":
+                        return completed(command, returncode=1, stderr=f"cleanup failed {token}")
+                    return completed(command)
+
+                ticks = iter(range(1000))
+                with self.assertRaises(RuntimeError) as raised:
+                    smoke.run_smoke("fastmcp-bridge", "hai-fastmcp-bridge:ci", run_process=fake_run, monotonic=lambda: float(next(ticks)), sleep=lambda _: None)
+                self.assertNotIn(token, str(raised.exception))
+                self.assertIn("[redacted]", str(raised.exception))
+                self.assertTrue(any(command[1] == "rm" for command in commands))
+
+    def test_cli_timeout_does_not_print_configured_tokens_from_command(self):
+        token = smoke.container_environment("fastmcp-bridge")["HAI_FASTMCP_BRIDGE_TOKEN"]
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["smoke", "--runner", "fastmcp-bridge", "--image", "hai-fastmcp-bridge:ci"]), patch.object(smoke, "run_smoke", side_effect=subprocess.TimeoutExpired(["docker", "--env", f"TOKEN={token}"], 5)), contextlib.redirect_stdout(output):
+            self.assertEqual(smoke.main(), 1)
+        self.assertNotIn(token, output.getvalue())
+        self.assertIn("[redacted]", output.getvalue())
 
 
 if __name__ == "__main__":

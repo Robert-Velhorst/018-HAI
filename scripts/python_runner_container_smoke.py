@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 import subprocess
 import tempfile
 import time
@@ -164,6 +165,16 @@ def _run(
     )
 
 
+def _safe_diagnostic(runner: str, output: str, limit: int = 2000) -> str:
+    secrets = {
+        value for key, value in container_environment(runner).items()
+        if value and any(marker in key for marker in ("TOKEN", "KEY", "PASSWORD", "SECRET"))
+    }
+    for value in sorted(secrets, key=len, reverse=True):
+        output = output.replace(value, "[redacted]")
+    return " ".join(output.split())[-limit:]
+
+
 def _container_failure_details(
     runner: str, container_id: str, *, docker: str, run_process: PROCESS_RUN
 ) -> str:
@@ -190,10 +201,8 @@ def _container_failure_details(
         run_process=run_process,
     )
     output = (logs.stderr or "") + (logs.stdout or "")
-    for key, value in container_environment(runner).items():
-        if any(marker in key for marker in ("TOKEN", "KEY", "PASSWORD", "SECRET")):
-            output = output.replace(value, "[redacted]")
-    excerpt = " ".join(output.split())[-2000:]
+    details = _safe_diagnostic(runner, details, 1000)
+    excerpt = _safe_diagnostic(runner, output)
     return f"{details}; logs={excerpt or 'unavailable'}"
 
 
@@ -226,7 +235,7 @@ def run_smoke(
             if started.returncode != 0:
                 raise RuntimeError(
                     f"docker run failed for {runner}: "
-                    f"{(started.stderr or started.stdout)[-2000:]}"
+                    f"{_safe_diagnostic(runner, started.stderr or started.stdout or '')}"
                 )
             if cidfile.is_file():
                 container_id = cidfile.read_text(encoding="utf-8").strip() or name
@@ -262,7 +271,7 @@ def run_smoke(
                         f"startup_deadline={policy.startup_seconds}s"
                     )
                     return
-                last_error = (probe.stderr or probe.stdout or "readiness probe failed")[-1000:]
+                last_error = _safe_diagnostic(runner, probe.stderr or probe.stdout or "readiness probe failed", 1000)
                 sleep(min(1, max(0, deadline - monotonic())))
             raise RuntimeError(f"{runner} container smoke failed: {last_error}")
         finally:
@@ -276,7 +285,7 @@ def run_smoke(
                 if "no such container" not in detail and "not found" not in detail:
                     raise RuntimeError(
                         f"container cleanup failed for {runner}: "
-                        f"{(cleanup.stderr or cleanup.stdout)[-1000:]}"
+                        f"{_safe_diagnostic(runner, cleanup.stderr or cleanup.stdout or '', 1000)}"
                     )
 
 
@@ -289,7 +298,7 @@ def main() -> int:
     try:
         run_smoke(arguments.runner, arguments.image, docker=arguments.docker)
     except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
-        print(f"Python runner container smoke failed: {error}")
+        print(f"Python runner container smoke failed: {_safe_diagnostic(arguments.runner, str(error))}")
         return 1
     return 0
 
