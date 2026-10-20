@@ -1,4 +1,4 @@
-import { TestBed } from "@angular/core/testing";
+import { fakeAsync, flushMicrotasks, TestBed, tick } from "@angular/core/testing";
 import { DOCUMENT } from "@angular/common";
 import { provideHttpClient } from "@angular/common/http";
 import {
@@ -59,4 +59,31 @@ describe("AuthenticatedThemeService", () => {
     await expectAsync(loaded).toBeResolvedTo(false);
     expect(document.querySelector("link[data-hai-authenticated-theme]")).toBeNull();
   });
+
+  it("bounds a stalled stylesheet, removes it, ignores late load, and permits retry", fakeAsync(() => {
+    let outcome: boolean | undefined;
+    void service.load().then(value => { outcome = value; });
+    const manifestUrl = new URL("authenticated-theme-manifest.json", document.baseURI).toString();
+    http.expectOne(manifestUrl).flush({ href: "authenticated-theme-stalled.css" });
+    flushMicrotasks();
+    const link = document.querySelector<HTMLLinkElement>("link[data-hai-authenticated-theme]")!;
+    expect(link).not.toBeNull();
+    const lateLoad = link.onload;
+    tick(4999);
+    expect(outcome).toBeUndefined();
+    tick(1);
+    flushMicrotasks();
+    expect(outcome).toBeFalse();
+    expect(document.querySelector("link[data-hai-authenticated-theme]")).toBeNull();
+    lateLoad?.call(link, new Event("load"));
+
+    let retry: boolean | undefined;
+    void service.load().then(value => { retry = value; });
+    http.expectOne(manifestUrl).flush({ href: "authenticated-theme-retry.css" });
+    flushMicrotasks();
+    const retryLink = document.querySelector<HTMLLinkElement>("link[data-hai-authenticated-theme]")!;
+    retryLink.dispatchEvent(new Event("load"));
+    flushMicrotasks();
+    expect(retry).toBeTrue();
+  }));
 });

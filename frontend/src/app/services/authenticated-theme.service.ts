@@ -58,15 +58,24 @@ export class AuthenticatedThemeService {
       link.rel = "stylesheet";
       link.href = url.toString();
       link.setAttribute("data-hai-authenticated-theme", "true");
-      link.onload = () => {
-        this.loaded = true;
-        link.setAttribute("data-loaded", "true");
-        resolve(true);
+      let settled = false;
+      const finish = (success: boolean) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        link.onload = null;
+        link.onerror = null;
+        if (success) {
+          this.loaded = true;
+          link.setAttribute("data-loaded", "true");
+        } else {
+          link.remove();
+        }
+        resolve(success);
       };
-      link.onerror = () => {
-        link.remove();
-        resolve(false);
-      };
+      const timer = setTimeout(() => finish(false), 5000);
+      link.onload = () => finish(true);
+      link.onerror = () => finish(false);
       this.document.head.append(link);
     });
   }
