@@ -605,8 +605,8 @@ class CIWorkflowContractTest(unittest.TestCase):
                 default_services.add(service)
 
         self.assertEqual(default_services, core_services)
-        self.assertEqual(len(services), 45)
-        self.assertEqual(len(optional_services), 35)
+        self.assertEqual(len(services), 44)
+        self.assertEqual(len(optional_services), 34)
         self.assertTrue(optional_services)
         for service in optional_services:
             with self.subTest(service=service):
@@ -637,7 +637,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.findall(r"(?m)^\| `([^`]+)` \|", documentation)
         )
 
-        self.assertEqual(len(compose_profiles), 26)
+        self.assertEqual(len(compose_profiles), 25)
         self.assertEqual(documented_profiles, compose_profiles)
 
     def test_searxng_discovery_is_opt_in_and_network_isolated(self) -> None:
@@ -793,7 +793,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             "\nnetworks:\n", 1
         )[0]
         services = re.findall(r"(?m)^  ([A-Za-z0-9_-]+):\n", services_section)
-        self.assertEqual(len(services), 45)
+        self.assertEqual(len(services), 44)
 
         for service in services:
             block = compose_service_block(compose, service)
@@ -949,7 +949,7 @@ class CIWorkflowContractTest(unittest.TestCase):
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
         gateway = compose_service_block(compose, "nginx")
 
-        # The browser gateway is the first endpoint a local or ngrok user sees.
+        # The browser gateway is the first endpoint a local user sees.
         # Starting it before the IDP or API is healthy creates an intermittent
         # blank/login failure window even though Compose eventually recovers.
         self.assertIn(
@@ -975,46 +975,6 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("healthcheck:", fastmcp)
         self.assertIn("socket.create_connection", fastmcp)
 
-    def test_optional_ngrok_tunnel_is_profiled_and_fail_closed(self) -> None:
-        compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
-        defaults = (ROOT / ".env.example").read_text(encoding="utf-8")
-        launcher = (ROOT / "scripts" / "start-ngrok.ps1")
-        entrypoint = ROOT / "deploy" / "ngrok" / "start-ngrok.sh"
-
-        service = compose_service_block(compose, "ngrok")
-        self.assertIn('profiles: ["cloud-tunnel"]', service)
-        self.assertNotIn("ports:", service)
-        self.assertIn("read_only: true", service)
-        self.assertIn("no-new-privileges:true", service)
-        self.assertIn("cap_drop:", service)
-        self.assertIn("HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED", service)
-        self.assertIn("RATE_LIMIT_PER_MINUTE", service)
-        self.assertIn("NGROK_AUTHTOKEN=", defaults)
-        self.assertIn("HAI_NGROK_URL=", defaults)
-        self.assertIn("HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED=false", defaults)
-        self.assertTrue(launcher.is_file())
-        self.assertTrue(entrypoint.is_file())
-
-        launcher_text = launcher.read_text(encoding="utf-8")
-        entrypoint_text = entrypoint.read_text(encoding="utf-8")
-        for content in (launcher_text, entrypoint_text):
-            self.assertIn("RUN_MODE", content)
-            self.assertIn("LOCAL_LOGIN_BYPASS_ENABLED", content)
-            self.assertIn("IDP_COOKIE_SECURE", content)
-            self.assertIn("GATEWAY_HOST_BIND", content)
-            self.assertIn("HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED", content)
-            self.assertIn("RATE_LIMIT_PER_MINUTE", content)
-            self.assertIn("NGROK_AUTHTOKEN", content)
-            self.assertIn("HAI_NGROK_URL", content)
-            self.assertIn("GOOGLE_LOGIN_REDIRECT_URL", content)
-            self.assertIn("GOOGLE_OAUTH_REDIRECT_URL", content)
-
-        self.assertIn("GOOGLE_LOGIN_REDIRECT_URL: ${GOOGLE_LOGIN_REDIRECT_URL:-}", service)
-        self.assertIn("GOOGLE_OAUTH_REDIRECT_URL: ${GOOGLE_OAUTH_REDIRECT_URL:-}", service)
-        self.assertIn("/api/v1/auth/google/callback", launcher_text)
-        self.assertIn("/api/v1/sources/oauth/google/callback", launcher_text)
-        self.assertIn("/api/v1/auth/google/callback", entrypoint_text)
-        self.assertIn("/api/v1/sources/oauth/google/callback", entrypoint_text)
 
     def test_optional_event_bus_does_not_expand_the_default_local_stack(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
@@ -1291,7 +1251,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[a-f0-9]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
@@ -1435,7 +1395,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[a-f0-9]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
@@ -1466,7 +1426,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[a-f0-9]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
@@ -1832,7 +1792,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
 
     def test_native_runtime_gate_requires_actual_windows_execution_and_evidence(self) -> None:
         native = job_block("windows-native-runtime")
-        for contract in ("runs-on: windows-latest", 'go-version: "1.27.2"',
+        for contract in ("runs-on: windows-latest", 'go-version: "1.27.3"',
                          "go mod download", "./scripts/test-windows-native-runtime.ps1",
                          "if: always()", "acceptance-evidence.json", "native-tests.log"):
             self.assertIn(contract, native)

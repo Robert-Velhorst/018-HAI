@@ -1558,7 +1558,7 @@ Postgres + Redis + optional Kafka-compatible event bus
 ```
 
 The local deployment targets Windows 11 with Docker Desktop. The control-plane
-backend, IDP, and nginx configuration manager use Go 1.27.2 and share an
+backend, IDP, and nginx configuration manager use Go 1.27.3 and share an
 executable CI alignment contract. They use Gin, Gorm, Postgres, and
 Sarama/Kafka when the optional event-bus profile is enabled. The frontend uses Angular 22 and ng-zorro-antd 22. Use Node.js 26.12.0 Current and npm 12.2.0 for frontend development and verification; the repository `.nvmrc` and package metadata declare the supported frontend toolchain.
 Versioned SQL migrations are the schema source of truth and `DB_AUTOMIGRATE`
@@ -1575,7 +1575,7 @@ post-phase migrations. See
 - Git.
 - Node.js 26.12.0 Current and npm 12.2.0,
   for frontend development outside Docker.
-- Go 1.27.2 for control-plane backend, IDP, and nginx-config-manager
+- Go 1.27.3 for control-plane backend, IDP, and nginx-config-manager
   development outside Docker. Their modules, Docker builders, and CI toolchains
   are checked for version alignment.
 
@@ -1610,10 +1610,6 @@ Open [http://localhost:8088](http://localhost:8088) with the default
 configuration. If you deliberately override `GATEWAY_HOST_PORT`, use that port
 instead.
 
-For explicitly configured, guarded public HTTPS access, see
-[Governed ngrok cloud access](docs/ngrok-cloud-access.md). The tunnel is
-disabled by default and never publishes the local gateway directly.
-
 ### Windows 11 installer
 
 For a product-style local installation, build the Inno Setup executable and
@@ -1622,7 +1618,7 @@ installer keeps the source-built stack loopback-only, stores first-run secrets
 outside the application directory, and refuses to start a competing HAI stack.
 It also starts the separate loopback-only A2A planning connector at
 `http://127.0.0.1:8091` by default. That connector is never served through the
-dashboard gateway or the optional ngrok tunnel. See
+dashboard gateway and accepts loopback endpoint URLs only. See
 [Windows installer](docs/windows-installer.md).
 
 This describes the installation path, not release acceptance. The
@@ -1669,13 +1665,12 @@ must be a numeric loopback IP (`127.0.0.1` or `::1`). Nginx injects the secret
 only on the exact preview endpoint and overwrites any client-supplied header;
 the IDP also requires loopback `Host` and browser `Origin` values. Forwarded
 headers cannot establish trust. The capability is advertised only to loopback
-origins, and the ngrok launcher refuses to start while the bypass is enabled.
+origins.
 Do not enable it on a LAN- or internet-exposed installation.
 
 The `.env.example` values for credentials and secrets are intentionally invalid
 placeholders. The IDP refuses to create its first owner account from a missing,
-placeholder, or too-short password, and the public ngrok launcher rejects both
-placeholder database and owner credentials. If the Postgres data volume already exists,
+placeholder, or too-short password. If the Postgres data volume already exists,
 changing first-run values does not rewrite the existing account. Do not commit
 `.env.local`, Docker state, database directories, uploaded material, frontend
 build output, or secrets.
@@ -1709,12 +1704,10 @@ requests only its own read-only scope. Also set independent
 does not fall back to JWT or backend secrets. Google redirects the browser, so a
 public tunnel is not required for this local callback.
 
-For optional public access through the governed ngrok profile, register the
-equivalent callback URIs for the reserved `HAI_NGROK_URL` instead. Set each
-enabled callback to that exact public origin and path. The tunnel launcher
-rejects localhost, a different host, or a mismatched path while a Google flow
-is configured, so remote sign-in and source consent cannot fail after the
-tunnel has started.
+When deploying on Hetzner, register the canonical HTTPS callback hostname
+configured for that deployment instead of the local gateway URI. Keep each
+callback path exact and configure the same URL in `.env.local` before enabling
+the corresponding Google flow.
 
 For reset emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`,
 `SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_REQUIRE_STARTTLS=true` in `.env.local`.
@@ -2218,17 +2211,17 @@ model has been installed or accepted for real work.
 
 ```powershell
 # Backend (use Docker when Go is not installed locally)
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.2 go test ./...
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.2 go vet ./...
-docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.2 go build ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.3 go test ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.3 go vet ./...
+docker run --rm -v hai-go-module-cache:/go/pkg/mod -v "${PWD}/backend:/workspace" -w /workspace golang:1.27.3 go build ./...
 
-# Identity service (Go 1.27.2)
+# Identity service (Go 1.27.3)
 Set-Location idp
 go vet ./...
 go test ./...
 go build ./...
 
-# Nginx configuration service (Go 1.27.2)
+# Nginx configuration service (Go 1.27.3)
 Set-Location ..\nginx-config-manager
 go vet ./...
 go test ./...

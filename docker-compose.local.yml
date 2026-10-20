@@ -1195,8 +1195,8 @@ services:
     networks:
       - service-hub
 
-  # Local A2A is deliberately isolated from the browser gateway and the ngrok
-  # tunnel. It only exposes the Agent Card and planning JSON-RPC route through
+  # Local A2A is deliberately isolated from the browser gateway. It only
+  # exposes the Agent Card and planning JSON-RPC route through
   # a loopback host port when an operator explicitly enables this profile.
   a2a-gateway:
     image: nginx:alpine
@@ -1241,7 +1241,7 @@ services:
     networks:
       - a2a-local
 
-  # This gateway is deliberately separate from the browser and ngrok gateway.
+  # This gateway is deliberately separate from the browser gateway.
   # The native Windows DSH bridge polls it through a loopback host port and it
   # forwards only the host-runtime lease lifecycle endpoints to the backend.
   host-runtime-gateway:
@@ -1282,51 +1282,6 @@ services:
       start_period: 15s
     networks:
       - host-runtime-internal
-
-  # Disabled by default. This service is the only public-access mechanism and
-  # fails closed unless the production guardrails and a reserved HTTPS origin
-  # are configured. The gateway itself remains bound to host loopback.
-  ngrok:
-    image: ngrok/ngrok:alpine@sha256:85bea0e9c697bdad142b09cd9704420812cc44b5ae417ec4c7ac74d0a49d72f2
-    profiles: ["cloud-tunnel"]
-    container_name: 018-hai-ngrok
-    restart: unless-stopped
-    depends_on:
-      nginx:
-        condition: service_healthy
-    environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
-      HAI_NGROK_URL: ${HAI_NGROK_URL:-}
-      RUN_MODE: ${RUN_MODE:-production}
-      LOCAL_LOGIN_BYPASS_ENABLED: ${LOCAL_LOGIN_BYPASS_ENABLED:-false}
-      IDP_COOKIE_SECURE: ${IDP_COOKIE_SECURE:-false}
-      GATEWAY_HOST_BIND: ${GATEWAY_HOST_BIND:-127.0.0.1}
-      HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED: ${HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED:-false}
-      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-0}
-      GOOGLE_LOGIN_REDIRECT_URL: ${GOOGLE_LOGIN_REDIRECT_URL:-}
-      GOOGLE_OAUTH_REDIRECT_URL: ${GOOGLE_OAUTH_REDIRECT_URL:-}
-    entrypoint: ["/bin/sh", "/etc/hai/start-ngrok.sh"]
-    volumes:
-      - ./deploy/ngrok/ngrok.yml:/etc/ngrok.yml:ro
-      - ./deploy/ngrok/start-ngrok.sh:/etc/hai/start-ngrok.sh:ro
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    mem_limit: 128m
-    cpus: 0.25
-    pids_limit: 64
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:4040/api/endpoints | grep -q '\"url\"'"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 15s
-    networks:
-      - service-hub
 
   nginxconfigmanager:
     build:

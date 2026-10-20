@@ -21,10 +21,6 @@ const (
 	tokenEnv   = "HAI_A2A_BRIDGE_TOKEN"
 	ownerEnv   = "HAI_A2A_BRIDGE_OWNER_ID"
 	urlEnv     = "HAI_A2A_BRIDGE_URL"
-	publicEnv  = "HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED"
-	ngrokEnv   = "HAI_NGROK_URL"
-	runModeEnv = "RUN_MODE"
-	bypassEnv  = "LOCAL_LOGIN_BYPASS_ENABLED"
 )
 
 var (
@@ -37,10 +33,6 @@ type Config struct {
 	Token            string
 	OwnerID          string
 	URL              string
-	PublicNgrok      bool
-	NgrokURL         string
-	RunMode          string
-	LocalLoginBypass bool
 }
 
 type Status struct {
@@ -118,10 +110,6 @@ func DefaultConfig() Config {
 		Token:            strings.TrimSpace(os.Getenv(tokenEnv)),
 		OwnerID:          strings.TrimSpace(os.Getenv(ownerEnv)),
 		URL:              strings.TrimSpace(os.Getenv(urlEnv)),
-		PublicNgrok:      envTrue(publicEnv),
-		NgrokURL:         strings.TrimSpace(os.Getenv(ngrokEnv)),
-		RunMode:          strings.TrimSpace(os.Getenv(runModeEnv)),
-		LocalLoginBypass: envTrue(bypassEnv),
 	}
 }
 
@@ -153,18 +141,10 @@ func NewServiceFromEnv(planner task.PreviewService) *Service {
 }
 
 func (s *Service) Status() Status {
-	transport := "local"
-	provider := "A2A local planning bridge"
-	peerScope := "local peer"
-	if s.config.PublicNgrok {
-		transport = "fixed_ngrok_https"
-		provider = "A2A governed ngrok planning bridge"
-		peerScope = "peer through the fixed governed ngrok endpoint"
-	}
 	return Status{
 		Enabled:     s.config.Enabled,
 		Configured:  s.configured(),
-		Provider:    provider,
+		Provider:    "A2A local planning bridge",
 		Endpoint:    s.config.URL,
 		ConfigError: s.err,
 		Capabilities: []string{
@@ -177,8 +157,8 @@ func (s *Service) Status() Status {
 			"no source evidence, memory records, credentials, raw audit records, files, or tool inventory exposure",
 			"no streaming, task polling, push notifications, peer discovery, arbitrary remote URL, or outbound external-agent invocation",
 		},
-		Scope:     "One configured " + peerScope + " can request a bounded SendMessage planning draft for one configured owner. This limited endpoint is not a full A2A task-lifecycle server; HAI retains the authoritative workflow, approval, execution, source, memory, verification, and audit paths.",
-		Transport: transport,
+		Scope:     "One local configured peer can request a bounded SendMessage planning draft for one configured owner. This limited endpoint is not a full A2A task-lifecycle server; HAI retains the authoritative workflow, approval, execution, source, memory, verification, and audit paths.",
+		Transport: "local",
 	}
 }
 
@@ -266,30 +246,8 @@ func validateBridgeURL(config Config) error {
 		return errors.New(urlEnv + " must use the exact /api/v1/a2a path")
 	}
 	host := strings.ToLower(parsed.Hostname())
-	if isLocalHost(host) {
-		if config.PublicNgrok {
-			return errors.New(urlEnv + " must use the configured ngrok origin when " + publicEnv + " is enabled")
-		}
-		return nil
-	}
-	if !config.PublicNgrok {
-		return errors.New(urlEnv + " must be local unless " + publicEnv + " is explicitly enabled")
-	}
-	if !strings.EqualFold(strings.TrimSpace(config.RunMode), "production") {
-		return errors.New(runModeEnv + " must be production for the public A2A bridge")
-	}
-	if config.LocalLoginBypass {
-		return errors.New(bypassEnv + " must be false for the public A2A bridge")
-	}
-	if parsed.Scheme != "https" || parsed.Port() != "" || !validNgrokHost(host) {
-		return errors.New(urlEnv + " must use a fixed HTTPS ngrok hostname without a port")
-	}
-	origin, err := validateNgrokOrigin(config.NgrokURL)
-	if err != nil {
-		return err
-	}
-	if !strings.EqualFold(parsed.Scheme, origin.Scheme) || !strings.EqualFold(parsed.Host, origin.Host) {
-		return errors.New(urlEnv + " must use the same origin as " + ngrokEnv)
+	if !isLocalHost(host) {
+		return errors.New(urlEnv + " must use a loopback or configured local gateway address")
 	}
 	return nil
 }
@@ -300,23 +258,6 @@ func isLocalHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-func validateNgrokOrigin(raw string) (*url.URL, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.Port() != "" || parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" || !validNgrokHost(strings.ToLower(parsed.Hostname())) {
-		return nil, errors.New(ngrokEnv + " must be a fixed HTTPS ngrok origin without credentials, port, path, query, or fragment")
-	}
-	return parsed, nil
-}
-
-func validNgrokHost(host string) bool {
-	for _, suffix := range []string{".ngrok.app", ".ngrok.dev", ".ngrok-free.app", ".ngrok-free.dev"} {
-		if len(host) > len(suffix) && strings.HasSuffix(host, suffix) {
-			return true
-		}
-	}
-	return false
 }
 
 func envTrue(name string) bool { return strings.EqualFold(strings.TrimSpace(os.Getenv(name)), "true") }

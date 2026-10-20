@@ -12,7 +12,7 @@ import { SYSTEM_STATUS_SERVICE_TOKEN } from '../../services/system-status/system
 import { SystemStatusComponent } from './system-status.component';
 
 const sampleSystemInfo: ISystemInfo = {
-  build: { version: '1.2.3', commit: 'abcdef1234567890', buildTime: '2026-10-11T10:00:00Z', goVersion: 'go1.27.2' },
+  build: { version: '1.2.3', commit: 'abcdef1234567890', buildTime: '2026-10-11T10:00:00Z', goVersion: 'go1.27.3' },
   runMode: 'production', allowsRealSideEffects: false, languages: ['en', 'nl'],
   readiness: { ready: true, ok: 2, warn: 0, fail: 0 },
 };
@@ -260,7 +260,7 @@ describe('SystemStatusComponent rendered layout and accessibility', () => {
     const buildInfo = fixture.nativeElement.querySelector('.build-info') as HTMLElement;
     expect(buildInfo.textContent).toContain('Running 1.2.3 · abcdef123456');
     expect(buildInfo.getAttribute('title')).toContain('Built 2026-10-11T10:00:00Z');
-    expect(buildInfo.getAttribute('aria-label')).toContain('go1.27.2');
+    expect(buildInfo.getAttribute('aria-label')).toContain('go1.27.3');
     expect(buildInfo.getAttribute('tabindex')).toBe('0');
   });
 

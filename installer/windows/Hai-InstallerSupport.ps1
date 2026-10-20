@@ -455,6 +455,17 @@ function Test-HaiCredentialFreeA2ABridgeUrl {
         -not [string]::IsNullOrEmpty($parsedUrl.Fragment)) {
         return $false
     }
+    $hostName = $parsedUrl.DnsSafeHost.ToLowerInvariant()
+    if ($hostName -notin @('localhost', 'host.docker.internal', 'gateway')) {
+        $address = $null
+        if (-not [Net.IPAddress]::TryParse($hostName, [ref]$address) -or
+            -not [Net.IPAddress]::IsLoopback($address)) {
+            return $false
+        }
+    }
+    if ($parsedUrl.AbsolutePath -cne '/api/v1/a2a') {
+        return $false
+    }
 
     try {
         $decodedPath = [Uri]::UnescapeDataString($parsedUrl.AbsolutePath)
@@ -557,22 +568,31 @@ function Set-HaiA2ABridgeConfiguration {
             if ($hadTrailingNewline) { $lines.RemoveAt($lines.Count - 1) }
         }
 
+        # Remove the retired public-tunnel setting while preserving all other
+        # operator configuration during local A2A setup.
+        $legacyPublicSettingRemoved = $false
+        for ($index = $lines.Count - 1; $index -ge 0; $index--) {
+            if ([Regex]::IsMatch($lines[$index], '^\s*HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED\s*=')) {
+                $lines.RemoveAt($index)
+                $legacyPublicSettingRemoved = $true
+            }
+        }
+
         $names = @(
             'HAI_A2A_BRIDGE_ENABLED',
             'HAI_A2A_BRIDGE_OWNER_ID',
             'HAI_A2A_BRIDGE_TOKEN',
             'HAI_A2A_LOCAL_PORT',
-            'HAI_A2A_BRIDGE_URL',
-            'HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED'
+            'HAI_A2A_BRIDGE_URL'
         )
         $settings = @{}
         foreach ($name in $names) { $settings[$name] = Get-HaiA2AEnvironmentValue -Lines $lines.ToArray() -Name $name }
 
+        $values = $null
         if ($Enabled -and $settings.HAI_A2A_BRIDGE_ENABLED.Found -and
             $settings.HAI_A2A_BRIDGE_ENABLED.WellFormed -and
             $settings.HAI_A2A_BRIDGE_ENABLED.Value -ieq 'true') {
             $port = 0
-            $publicValue = $settings.HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED
             $validConfiguration =
                 $settings.HAI_A2A_BRIDGE_OWNER_ID.Found -and $settings.HAI_A2A_BRIDGE_OWNER_ID.WellFormed -and
                 -not [string]::IsNullOrWhiteSpace($settings.HAI_A2A_BRIDGE_OWNER_ID.Value) -and
@@ -581,43 +601,50 @@ function Set-HaiA2ABridgeConfiguration {
                 $settings.HAI_A2A_LOCAL_PORT.Found -and $settings.HAI_A2A_LOCAL_PORT.WellFormed -and
                 [int]::TryParse($settings.HAI_A2A_LOCAL_PORT.Value, [ref]$port) -and $port -ge 1 -and $port -le 65535 -and
                 $settings.HAI_A2A_BRIDGE_URL.Found -and $settings.HAI_A2A_BRIDGE_URL.WellFormed -and
-                (Test-HaiCredentialFreeA2ABridgeUrl -Url $settings.HAI_A2A_BRIDGE_URL.Value) -and
-                (-not $publicValue.Found -or ($publicValue.WellFormed -and ($publicValue.Value -ieq 'true' -or $publicValue.Value -ieq 'false')))
+                (Test-HaiCredentialFreeA2ABridgeUrl -Url $settings.HAI_A2A_BRIDGE_URL.Value)
             if (-not $validConfiguration) {
                 throw 'The saved enabled A2A configuration is invalid; refusing to rotate or replace its credentials.'
             }
-            return
-        }
-
-        $port = 8091
-        $savedPort = $settings.HAI_A2A_LOCAL_PORT
-        $parsedPort = 0
-        if ($savedPort.Found -and $savedPort.WellFormed -and
-            [int]::TryParse($savedPort.Value, [ref]$parsedPort) -and $parsedPort -ge 1 -and $parsedPort -le 65535) {
-            $port = $parsedPort
-        }
-
-        $values = @{}
-        if ($Enabled) {
-            $adminEmail = Get-HaiA2AEnvironmentValue -Lines $lines.ToArray() -Name 'FIRST_RUN_ADMIN_EMAIL'
-            if (-not $adminEmail.Found -or -not $adminEmail.WellFormed -or $adminEmail.Value -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$') {
-                throw 'A valid first-run admin email is required before enabling the A2A bridge.'
+            if (-not $legacyPublicSettingRemoved) { return }
+            $values = @{
+                HAI_A2A_BRIDGE_ENABLED = 'true'
+                HAI_A2A_BRIDGE_OWNER_ID = $settings.HAI_A2A_BRIDGE_OWNER_ID.Value
+                HAI_A2A_BRIDGE_TOKEN = $settings.HAI_A2A_BRIDGE_TOKEN.Value
+                HAI_A2A_LOCAL_PORT = [string]$port
+                HAI_A2A_BRIDGE_URL = $settings.HAI_A2A_BRIDGE_URL.Value
             }
-            $tokenBytes = New-Object byte[] 32
-            $random = [Security.Cryptography.RandomNumberGenerator]::Create()
-            try { $random.GetBytes($tokenBytes) } finally { $random.Dispose() }
-            $token = ([BitConverter]::ToString($tokenBytes)).Replace('-', '').ToLowerInvariant()
-            $values['HAI_A2A_BRIDGE_ENABLED'] = 'true'
-            $values['HAI_A2A_BRIDGE_OWNER_ID'] = $adminEmail.Value
-            $values['HAI_A2A_BRIDGE_TOKEN'] = $token
-        } else {
-            $values['HAI_A2A_BRIDGE_ENABLED'] = 'false'
-            $values['HAI_A2A_BRIDGE_OWNER_ID'] = ''
-            $values['HAI_A2A_BRIDGE_TOKEN'] = ''
         }
-        $values['HAI_A2A_LOCAL_PORT'] = [string]$port
-        $values['HAI_A2A_BRIDGE_URL'] = "http://127.0.0.1:$port/api/v1/a2a"
-        $values['HAI_A2A_BRIDGE_PUBLIC_NGROK_ENABLED'] = 'false'
+
+        if ($null -eq $values) {
+            $port = 8091
+            $savedPort = $settings.HAI_A2A_LOCAL_PORT
+            $parsedPort = 0
+            if ($savedPort.Found -and $savedPort.WellFormed -and
+                [int]::TryParse($savedPort.Value, [ref]$parsedPort) -and $parsedPort -ge 1 -and $parsedPort -le 65535) {
+                $port = $parsedPort
+            }
+
+            $values = @{}
+            if ($Enabled) {
+                $adminEmail = Get-HaiA2AEnvironmentValue -Lines $lines.ToArray() -Name 'FIRST_RUN_ADMIN_EMAIL'
+                if (-not $adminEmail.Found -or -not $adminEmail.WellFormed -or $adminEmail.Value -notmatch '^[^\s@]+@[^\s@]+\.[^\s@]+$') {
+                    throw 'A valid first-run admin email is required before enabling the A2A bridge.'
+                }
+                $tokenBytes = New-Object byte[] 32
+                $random = [Security.Cryptography.RandomNumberGenerator]::Create()
+                try { $random.GetBytes($tokenBytes) } finally { $random.Dispose() }
+                $token = ([BitConverter]::ToString($tokenBytes)).Replace('-', '').ToLowerInvariant()
+                $values['HAI_A2A_BRIDGE_ENABLED'] = 'true'
+                $values['HAI_A2A_BRIDGE_OWNER_ID'] = $adminEmail.Value
+                $values['HAI_A2A_BRIDGE_TOKEN'] = $token
+            } else {
+                $values['HAI_A2A_BRIDGE_ENABLED'] = 'false'
+                $values['HAI_A2A_BRIDGE_OWNER_ID'] = ''
+                $values['HAI_A2A_BRIDGE_TOKEN'] = ''
+            }
+            $values['HAI_A2A_LOCAL_PORT'] = [string]$port
+            $values['HAI_A2A_BRIDGE_URL'] = "http://127.0.0.1:$port/api/v1/a2a"
+        }
 
         $updatedLines = New-Object 'System.Collections.Generic.List[string]'
         $written = @{}
@@ -1243,7 +1270,7 @@ function Assert-HaiSingleInstallation {
     )
     $haiContainerMarkers = @(
         '018-hai-idp', '018-hai-backend', '018-hai-frontend', '018-hai-a2a-gateway',
-        '018-hai-host-runtime-gateway', '018-hai-ngrok', '018-hai-nginx-config-manager',
+        '018-hai-host-runtime-gateway', '018-hai-nginx-config-manager',
         '018-hai-postgres-idp', '018-hai-postgres-automation', '018-hai-redis',
         '018-hai-kafka', '018-hai-generic-auto', '018-hai-provider-fixture'
     )

@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$EnvFile = '.env.local',
-    [switch]$Public
+    [string]$EnvFile = '.env.local'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,24 +83,11 @@ if ((Get-Value $settings 'HAI_A2A_BRIDGE_ENABLED' 'false').ToLowerInvariant() -n
 }
 $token = Require-Value $settings 'HAI_A2A_BRIDGE_TOKEN'
 $advertisedEndpoint = Require-Value $settings 'HAI_A2A_BRIDGE_URL'
-$baseUrl = if ($Public) {
-    (Require-Value $settings 'HAI_NGROK_URL').TrimEnd('/')
-} else {
-    $port = Get-Value $settings 'GATEWAY_HOST_PORT' '8088'
-    "http://127.0.0.1:$port"
-}
+$port = Get-Value $settings 'GATEWAY_HOST_PORT' '8088'
+$baseUrl = "http://127.0.0.1:$port"
 
 $client = [System.Net.Http.HttpClient]::new()
 $client.Timeout = [TimeSpan]::FromSeconds(15)
-if ($Public) {
-    # Free ngrok endpoints can otherwise return the browser interstitial to the
-    # Agent Card GET. This header is not identity and does not replace the
-    # dedicated Bearer token required by SendMessage.
-    $client.DefaultRequestHeaders.TryAddWithoutValidation(
-        'ngrok-skip-browser-warning',
-        'hai-a2a-readiness'
-    ) | Out-Null
-}
 try {
     $card = Send-Request $client ([System.Net.Http.HttpMethod]::Get) "$baseUrl/.well-known/agent-card.json"
     if ($card.Status -ne 200) {
