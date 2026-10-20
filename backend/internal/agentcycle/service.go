@@ -398,10 +398,19 @@ func (s *Service) runForOwnerContext(ctx context.Context, ownerIdentity string, 
 	if provider, ok := s.pursuits.(PursuitOwnerOperatingSnapshotProvider); ok {
 		if scanner, scannerOK := s.ambient.(OwnerScopedAmbientSnapshotScanner); scannerOK && !request.SkipAmbient {
 			snapshot, snapshotErr := provider.OperatingSnapshotForOwner(ownerIdentity)
+			if requestContextError(snapshotErr) {
+				return interruptCycle(result, snapshotErr)
+			}
+			if err := ctx.Err(); err != nil {
+				return interruptCycle(result, err)
+			}
 			if snapshotErr == nil && snapshot != nil && snapshot.Dashboard != nil {
 				pursuitSnapshot = snapshot
 				scan, scanErr := scanner.ScanForOwnerWithPursuitDashboard(ownerIdentity, "agent-cycle."+result.Trigger, snapshot.Dashboard)
 				result.AmbientScan = scan
+				if requestContextError(scanErr) {
+					return interruptCycle(result, scanErr)
+				}
 				result.record("scan ambient opportunities", scanErr, ambientSummary(scan))
 			}
 		}
