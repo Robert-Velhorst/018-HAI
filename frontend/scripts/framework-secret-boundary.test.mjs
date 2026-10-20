@@ -35,6 +35,25 @@ test('completed private-key blocks retain trailing public context and public cer
   assert.equal(service.sanitizeInbound(certificate), certificate)
 })
 
+test('retained generic and escaped private-key cases complement RSA and OpenSSH fixtures', () => {
+  const service = new FrameworkRegistryService({})
+  for (const kind of ['', 'RSA ', 'OPENSSH ']) {
+    const header = ['-----BEGIN ', kind, 'PRIVATE ', 'KEY-----'].join('')
+    const footer = ['-----END ', kind, 'PRIVATE ', 'KEY-----'].join('')
+    for (const separator of ['\n', '\\n']) {
+      const complete = `public=before${separator}${header}${separator}synthetic-private-body${separator}${footer}${separator}status=keep`
+      const input = { diagnostic: complete, incomplete: `${header}${separator}synthetic-private-body` }
+      const original = structuredClone(input)
+      const output = service.sanitizeInbound(input)
+      assert.equal(output.diagnostic, `public=before${separator}[redacted]${separator}status=keep`)
+      assert.equal(output.incomplete, '[redacted]')
+      assert.doesNotMatch(JSON.stringify(output), /synthetic-private-body/)
+      assert.deepEqual(service.sanitizeInbound(output), output)
+      assert.deepEqual(input, original)
+    }
+  }
+})
+
 test('public framework read sanitizes inspector records and preserves operational contract fields', async () => {
   const record = {
     id: 'truth/evidence', version: '1', name: 'Truth', family: 'knowledge', purpose: 'Verify evidence',
