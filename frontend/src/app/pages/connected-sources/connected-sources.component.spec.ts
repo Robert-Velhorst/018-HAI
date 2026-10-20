@@ -296,7 +296,8 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
       .find((button) => button.textContent?.trim() === 'Review revocation')!;
     review.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    await Promise.resolve();
+    fixture.detectChanges();
     expect(sourceService.revoke).not.toHaveBeenCalled();
     const dialog = document.querySelector('.ant-modal-content') as HTMLElement;
     expect(dialog.textContent).toContain('Existing approval only');

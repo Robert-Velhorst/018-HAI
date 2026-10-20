@@ -25,6 +25,7 @@ const STATIC_PROGRESSIVE_SECTION_IDS_BY_ROUTE: Readonly<Record<string, readonly 
   '/agent-teams': ['members', 'decisions', 'consensus', 'history', 'charter-record'],
   '/connected-sources': ['source-records', 'source-activity', 'source-timeline-cooccurrence', 'source-permissions-filters', 'source-danger-zone'],
   '/account-bridges': ['registered-feeds', 'bridge-contracts'],
+  '/hire-ai': [],
   '/memory': ['memory-overview', 'memory-maintenance-actions', 'memory-records', 'memory-store-metadata', 'memory-retrieval-options', 'memory-import-metadata', 'memory-record-detail', 'memory-semantic-index', 'memory-record-content', 'memory-record-danger-zone'],
   '/knowledge-claims': ['workspace-boundary', 'claim-register', 'claim-evidence'],
   '/grounded-answers': ['verification-controls', 'source-discovery', 'verification-details', 'verification-history'],

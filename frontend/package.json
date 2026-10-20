@@ -1,16 +1,17 @@
 {
   "name": "app",
   "version": "0.0.0",
+  "type": "module",
   "packageManager": "npm@12.2.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
-    "prebuild": "node scripts/check-build-runtime.mjs && node scripts/check-progressive-sections.mjs",
+    "prebuild": "node scripts/check-build-runtime.mjs && node scripts/check-progressive-sections.mjs && node scripts/check-ng-zorro-theme.mjs && node scripts/check-ng-zorro-icons.mjs",
     "build": "node scripts/build-with-limits.mjs",
     "watch": "node scripts/build-with-limits.mjs --watch --configuration development",
-    "pretest": "node scripts/check-progressive-sections.mjs",
+    "pretest": "node scripts/check-progressive-sections.mjs && node scripts/check-ng-zorro-theme.mjs && node scripts/check-ng-zorro-icons.mjs",
     "check:control-room": "node --max-old-space-size=384 scripts/check-control-room-compiler.mjs && node --max-old-space-size=384 scripts/check-control-room-compiler.mjs --spec-types && node --max-old-space-size=384 scripts/check-control-room-compiler.mjs --source-navigation && node --max-old-space-size=384 scripts/check-control-room-compiler.mjs --workflow && node --max-old-space-size=384 scripts/check-control-room-compiler.mjs --workflow-spec-types",
-    "test": "node --test --test-concurrency=1 proxy.conf.test.cjs scripts/template-landmarks.test.mjs scripts/focused-test-config.test.mjs scripts/build-with-limits.test.mjs scripts/release-cache.test.mjs scripts/control-room-logic.test.mjs scripts/hai-os-observation.test.mjs scripts/module-view-preferences.test.mjs scripts/launch-request-safety.test.mjs scripts/runtime-stop-ui.test.mjs scripts/pursuit-decision-ui.test.mjs scripts/deep-link-focus.test.mjs scripts/framework-secret-boundary.test.mjs scripts/framework-registry-history-state.test.mjs && ng test"
+    "test": "node --test --test-concurrency=1 proxy.conf.test.cjs scripts/template-landmarks.test.mjs scripts/focused-test-config.test.mjs scripts/build-with-limits.test.mjs scripts/authenticated-theme-manifest.test.mjs scripts/release-cache.test.mjs scripts/control-room-logic.test.mjs scripts/hai-os-observation.test.mjs scripts/module-view-preferences.test.mjs scripts/launch-request-safety.test.mjs scripts/runtime-stop-ui.test.mjs scripts/pursuit-decision-ui.test.mjs scripts/deep-link-focus.test.mjs scripts/framework-secret-boundary.test.mjs scripts/framework-registry-history-state.test.mjs && ng test --watch=false"
   },
   "private": true,
   "engines": {

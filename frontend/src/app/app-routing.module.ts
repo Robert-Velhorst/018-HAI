@@ -2,6 +2,7 @@ import { NgModule } from "@angular/core";
 import { RouterModule, Routes } from "@angular/router";
 import { authGuard } from "./services/auth/guards/auth.guard";
 import { RedirectIfLoggedGuard } from "./services/auth/guards/login.guard";
+import { authenticatedThemeGuard } from "./services/authenticated-theme.guard";
 
 const authenticatedRoutes: Routes = [
   {
@@ -157,6 +158,12 @@ const authenticatedRoutes: Routes = [
     canActivate: [authGuard],
   },
   {
+    path: "hire-ai",
+    loadChildren: () =>
+      import("./pages/hire-ai/hire-ai.module").then((m) => m.HireAIModule),
+    canActivate: [authGuard],
+  },
+  {
     path: "runtime-control",
     loadChildren: () =>
       import("./pages/runtime-control/runtime-control.module").then(
@@ -251,6 +258,7 @@ export const APP_ROUTES: Routes = [
   {
     path: '',
     loadComponent: () => import('./control-room/app-shell.component').then((m) => m.AppShellComponent),
+    canActivateChild: [authenticatedThemeGuard],
     children: [
       ...authenticatedRoutes,
       { path: "", redirectTo: "control-center", pathMatch: "full" },

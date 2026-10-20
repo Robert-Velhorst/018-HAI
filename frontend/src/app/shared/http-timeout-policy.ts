@@ -1,5 +1,6 @@
 const sourceTranscriptionPath = /^\/api\/v1\/sources\/[^/]+\/transcribe$/;
 const sourceDocumentExtractionPath = /^\/api\/v1\/sources\/[^/]+\/extract-documents$/;
+const hireAIJobsSearchPath = /^\/api\/v1\/hire-ai\/jobs\/search$/;
 const configuredSourceRunnerMaximumMs = 10 * 60_000;
 
 function normalizedPath(requestUrl: string): string {
@@ -15,6 +16,8 @@ function normalizedPath(requestUrl: string): string {
 export const HttpTimeoutPolicy = Object.freeze({
   readMs: 8_000,
   operationMs: 30_000,
+  // HAI permits a 30-second upstream timeout; leave bounded response overhead.
+  hireAISearchMs: 35_000,
   reviewedArchiveUploadMs: 15 * 60_000,
   // Both local runners accept up to 600 seconds; the gateway allows 15 minutes.
   sourceTranscriptionMs: configuredSourceRunnerMaximumMs,
@@ -25,6 +28,7 @@ export const HttpTimeoutPolicy = Object.freeze({
     if (method.toUpperCase() !== 'POST') return this.operationMs;
 
     const path = normalizedPath(requestUrl);
+    if (hireAIJobsSearchPath.test(path)) return this.hireAISearchMs;
     if (sourceTranscriptionPath.test(path)) return this.sourceTranscriptionMs;
     if (sourceDocumentExtractionPath.test(path)) return this.sourceDocumentExtractionMs;
     return this.operationMs;
