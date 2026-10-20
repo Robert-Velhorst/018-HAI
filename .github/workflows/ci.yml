@@ -498,7 +498,7 @@ jobs:
           node-version: "26"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm install --global npm@12.2.0 --no-audit --no-fund
+      - run: npm install --global npm@12.2.1 --no-audit --no-fund
       - run: test "$(npm --version)" = "12.2.0"
       - run: npm ci
       - name: Build resource configuration regressions
@@ -530,7 +530,7 @@ jobs:
           node-version: "26"
           cache: npm
           cache-dependency-path: frontend/e2e/package-lock.json
-      - run: npm install --global npm@12.2.0 --no-audit --no-fund
+      - run: npm install --global npm@12.2.1 --no-audit --no-fund
       - run: test "$(npm --version)" = "12.2.0"
       - name: Install application dependencies for source typechecking
         working-directory: frontend
@@ -755,7 +755,7 @@ jobs:
           node-version: "26"
           cache: npm
           cache-dependency-path: services/promptfoo-runner/package-lock.json
-      - run: npm install --global npm@12.2.0 --no-audit --no-fund
+      - run: npm install --global npm@12.2.1 --no-audit --no-fund
       - run: test "$(npm --version)" = "12.2.0"
       - name: Audit production dependencies
         working-directory: services/promptfoo-runner
