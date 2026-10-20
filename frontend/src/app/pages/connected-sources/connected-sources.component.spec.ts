@@ -1106,7 +1106,7 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     component.extractionsLoading = false;
     component.extractionsLoaded = true;
     expect(component.extractionsEmptyText()).toBe('No extracted records have been recorded.');
-    expect(component.extractionScopeSummary()).toContain('API reports 0 total');
+    expect(component.extractionScopeSummary()).toContain('0 total');
     component.extractionTotalCount = 2;
     expect(component.extractionsEmptyText()).toContain('API reports extracted records');
   });
@@ -2139,7 +2139,102 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     expect(component.extractions.length).toBe(1);
     expect(component.extractionTotalCount).toBe(245);
     expect(component.extractionPageIsTruncated()).toBeTrue();
-    expect(sourceService.extractions).toHaveBeenCalledWith('018-HAI', false, 100);
+    expect(sourceService.extractions).toHaveBeenCalledWith('018-HAI', false, 8, 0);
+  });
+
+  it('pages older extracted records once and retains the current page on failure', () => {
+    const { component, sourceService } = createComponent();
+    component.extractions = [extractionRecord('first-page')];
+    component.extractionTotalCount = 20;
+    component.extractionsLoaded = true;
+    const pending = new Subject<any>();
+    sourceService.extractions.and.returnValue(pending);
+    component.changeExtractionPage(1);
+    component.changeExtractionPage(1);
+    expect(sourceService.extractions).toHaveBeenCalledOnceWith('018-HAI', false, 8, 8);
+    expect(component.extractionPageOffset).toBe(0);
+    expect(component.extractions[0].id).toBe('first-page');
+    pending.next({ items: [extractionRecord('older-page')], totalCount: 20, limit: 8 });
+    pending.complete();
+    expect(component.extractionPageOffset).toBe(8);
+    expect(component.canChangeExtractionPage(-1)).toBeTrue();
+    expect(component.extractionPageRange()).toContain('9');
+    sourceService.extractions.and.returnValue(throwError(() => new Error('history unavailable')));
+    component.changeExtractionPage(1);
+    expect(component.extractionPageOffset).toBe(8);
+    expect(component.extractions[0].id).toBe('older-page');
+    expect(component.loadWarnings).toContain('Extracted records');
+    component.ngOnDestroy();
+  });
+
+  it('resets extraction paging for an archive-scope change without eagerly loading other panels', () => {
+    const { component, sourceService } = createComponent();
+    component.extractionPageOffset = 16;
+    component.includeArchived = true;
+    sourceService.extractions.and.returnValue(of({ items: [], totalCount: 0, limit: 8 }));
+    component.refreshExtractions(true);
+    expect(sourceService.extractions).toHaveBeenCalledOnceWith('018-HAI', true, 8, 0);
+    expect(component.extractionPageOffset).toBe(0);
+    expect(component.canChangeExtractionPage(-1)).toBeFalse();
+    expect(component.canChangeExtractionPage(1)).toBeFalse();
+    expect(sourceService.auditLogs).not.toHaveBeenCalled();
+    component.ngOnDestroy();
+  });
+
+  it('renders working previous and next extraction-history controls in the Advanced section', async () => {
+    const { sourceService, notification, router, preferences } = createComponent();
+    preferences.setMode('connected-sources', 'advanced');
+    preferences.setSection('connected-sources', 'source-records', true);
+    sourceService.connectors.and.returnValue(of([]));
+    sourceService.sources.and.returnValue(of([]));
+    sourceService.syncJobs.and.returnValue(of([]));
+    sourceService.connectionHealths.and.returnValue(of([]));
+    sourceService.extractions.and.callFake((_project, _archived, _limit, offset = 0) => of({
+      items: [extractionRecord(offset ? 'older-page' : 'first-page')], totalCount: 12, limit: 8,
+    }));
+    await TestBed.configureTestingModule({
+      imports: [ConnectedSourcesModule],
+      providers: [
+        { provide: CONNECTED_SOURCE_SERVICE_TOKEN, useValue: sourceService },
+        { provide: ModuleViewPreferencesService, useValue: preferences },
+        { provide: ThemeService, useValue: { mode: () => 'light', changes$: of('light'), label: () => 'Light mode', icon: () => 'star' } },
+        { provide: Router, useValue: router },
+        { provide: NzNotificationService, useValue: notification },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ConnectedSourcesComponent);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    const previous = root.querySelector<HTMLButtonElement>('button[aria-label="Previous extracted records"]')!;
+    const next = root.querySelector<HTMLButtonElement>('button[aria-label="Next extracted records"]')!;
+    expect(previous.disabled).toBeTrue();
+    expect(next.disabled).toBeFalse();
+    next.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.extractions[0].id).toBe('older-page');
+    expect(root.querySelector('nav[aria-label="Extracted record pages"]')?.textContent).toContain('9');
+    expect(next.disabled).toBeTrue();
+    expect(previous.disabled).toBeFalse();
+    previous.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.extractions[0].id).toBe('first-page');
+    expect(previous.disabled).toBeTrue();
+    fixture.destroy();
+  });
+
+  it('invalidates a cached older page on refresh but keeps closed Advanced history lazy', () => {
+    const { component, sourceService } = createComponent();
+    component.extractionPageOffset = 16;
+    component.extractionsLoaded = true;
+    sourceService.connectors.and.returnValue(of([]));
+    sourceService.sources.and.returnValue(of([]));
+    sourceService.syncJobs.and.returnValue(of([]));
+    sourceService.connectionHealths.and.returnValue(of([]));
+    component.refresh();
+    expect(component.extractionPageOffset).toBe(0);
+    expect(component.extractionsLoaded).toBeFalse();
+    expect(sourceService.extractions).not.toHaveBeenCalled();
+    component.ngOnDestroy();
   });
 });
 

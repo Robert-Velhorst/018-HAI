@@ -121,17 +121,23 @@ export class ConnectedSourceService implements IConnectedSourceService {
     });
   }
 
-  extractions(projectKey: string, includeArchived: boolean, limit = 100): Observable<ISourceExtractionPage> {
-    return this.http.get<ISourceExtraction[]>(`${this.apiUrl}/extractions`, {
-      params: new HttpParams()
+  extractions(projectKey: string, includeArchived: boolean, limit = 100, offset?: number): Observable<ISourceExtractionPage> {
+    let params = new HttpParams()
         .set('projectKey', projectKey || '')
         .set('includeArchived', includeArchived)
-        .set('limit', limit),
+        .set('limit', limit);
+    if (offset !== undefined) params = params.set('offset', offset);
+    return this.http.get<ISourceExtraction[] | ISourceExtractionPage>(`${this.apiUrl}/extractions`, {
+      params,
       observe: 'response',
     }).pipe(map((response) => {
-      const items = response.body || [];
+      const payload = response.body;
+      if (offset !== undefined && (!payload || Array.isArray(payload) || !Array.isArray(payload.items) || payload.offset !== offset)) {
+        throw new Error('The source extraction history response is unavailable.');
+      }
+      const items = Array.isArray(payload) ? payload : payload?.items || [];
       const totalHeader = response.headers.get('X-Total-Count');
-      const total = totalHeader?.trim() ? Number(totalHeader) : NaN;
+      const total = totalHeader?.trim() ? Number(totalHeader) : !Array.isArray(payload) ? payload?.totalCount ?? NaN : NaN;
       const responseLimit = Number(response.headers.get('X-Result-Limit'));
       return {
         items,

@@ -773,12 +773,34 @@ func (h *Handler) Extractions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid extraction limit"})
 		return
 	}
-	pageService, ok := h.service.(ExtractionPageService)
-	if !ok {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "bounded source extraction access is unavailable"})
-		return
+	var page *ExtractionPage
+	offsets, paged := c.Request.URL.Query()["offset"]
+	if paged {
+		if len(offsets) != 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid extraction offset"})
+			return
+		}
+		offset, offsetErr := strconv.Atoi(offsets[0])
+		if offsetErr != nil || offset < 0 || offset > 1000000 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid extraction offset"})
+			return
+		}
+		pageService, ok := h.service.(interface {
+			ExtractionsForOwnerPage(string, string, bool, HistoryPageRequest) (*ExtractionPage, error)
+		})
+		if !ok {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "paged source extraction access is unavailable"})
+			return
+		}
+		page, err = pageService.ExtractionsForOwnerPage(owner, c.Query("projectKey"), includeArchived, HistoryPageRequest{Limit: limit, Offset: offset})
+	} else {
+		pageService, ok := h.service.(ExtractionPageService)
+		if !ok {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "bounded source extraction access is unavailable"})
+			return
+		}
+		page, err = pageService.ExtractionPageForOwner(owner, c.Query("projectKey"), includeArchived, limit)
 	}
-	page, err := pageService.ExtractionPageForOwner(owner, c.Query("projectKey"), includeArchived, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "source extractions are unavailable"})
 		return
@@ -793,6 +815,12 @@ func (h *Handler) Extractions(c *gin.Context) {
 	}
 	c.Header("X-Total-Count", strconv.FormatInt(page.TotalCount, 10))
 	c.Header("X-Result-Limit", strconv.Itoa(page.Limit))
+	if paged {
+		page.Items = items
+		c.Header("X-Result-Offset", strconv.Itoa(page.Offset))
+		c.JSON(http.StatusOK, page)
+		return
+	}
 	c.JSON(http.StatusOK, items)
 }
 

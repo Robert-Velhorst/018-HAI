@@ -2498,6 +2498,18 @@ func (s *service) ExtractionsForOwner(ownerIdentity, projectKey string, includeA
 }
 
 func (s *service) ExtractionPageForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) (*ExtractionPage, error) {
+	sourceIDs, err := s.extractionSourceIDsForOwner(ownerIdentity)
+	if err != nil {
+		return nil, err
+	}
+	items, totalCount, err := s.repo.FindExtractionPageForSources(sourceIDs, projectKey, includeArchived, limit)
+	if err != nil {
+		return nil, err
+	}
+	return &ExtractionPage{Items: items, TotalCount: totalCount, Limit: limit}, nil
+}
+
+func (s *service) extractionSourceIDsForOwner(ownerIdentity string) ([]uuid.UUID, error) {
 	ownerIdentity = strings.TrimSpace(ownerIdentity)
 	if ownerIdentity == "" {
 		return nil, errors.New("source owner identity is required")
@@ -2512,11 +2524,7 @@ func (s *service) ExtractionPageForOwner(ownerIdentity, projectKey string, inclu
 			sourceIDs = append(sourceIDs, source.ID)
 		}
 	}
-	items, totalCount, err := s.repo.FindExtractionPageForSources(sourceIDs, projectKey, includeArchived, limit)
-	if err != nil {
-		return nil, err
-	}
-	return &ExtractionPage{Items: items, TotalCount: totalCount, Limit: limit}, nil
+	return sourceIDs, nil
 }
 
 func (s *service) UpdateExtraction(id uuid.UUID, request models.SourceExtraction) (*models.SourceExtraction, error) {
