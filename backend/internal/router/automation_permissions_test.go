@@ -91,6 +91,8 @@ func TestAutomationEventDeliveryRoutesRequireVerifiedAdmin(t *testing.T) {
 		{name: "anonymous read", method: http.MethodGet, want: http.StatusUnauthorized},
 		{name: "operator read", role: "operator", subject: "operator-1", method: http.MethodGet, want: http.StatusForbidden},
 		{name: "viewer retry", role: "viewer", subject: "viewer-1", method: http.MethodPost, want: http.StatusForbidden},
+		{name: "owner reaches delivery handler", role: "owner", subject: "owner-1", method: http.MethodGet, want: http.StatusServiceUnavailable},
+		{name: "owner reaches retry handler", role: "owner", subject: "owner-1", method: http.MethodPost, want: http.StatusServiceUnavailable},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			path := "/api/v1/automation/events/delivery"

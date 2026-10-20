@@ -16,6 +16,25 @@
   width: 100%;
 }
 
+.operational-details {
+  padding: 16px;
+  color: var(--hai-text);
+  border: 1px solid var(--hai-border);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+
+  h2 { font-size: 16px; margin-top: 20px; }
+  button { white-space: normal; height: auto; min-height: 32px; max-width: 100%; }
+}
+
+.delivery-records {
+  padding: 0;
+  list-style: none;
+  li { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--hai-border); }
+}
+
+.delivery-confirmation { padding: 12px 0; }
+
 .header {
   display: flex;
   justify-content: space-between;

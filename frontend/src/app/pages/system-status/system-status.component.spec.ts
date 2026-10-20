@@ -10,6 +10,7 @@ import { ModuleViewPreferencesService } from '../../control-room/module-view-pre
 import { ISystemInfo, ISystemReadiness } from '../../models/system-status.model.interface';
 import { SYSTEM_STATUS_SERVICE_TOKEN } from '../../services/system-status/system-status.service.token';
 import { SystemStatusComponent } from './system-status.component';
+import { AuthSessionService } from '../../services/auth-session.service';
 
 const sampleSystemInfo: ISystemInfo = {
   build: { version: '1.2.3', commit: 'abcdef1234567890', buildTime: '2026-10-11T10:00:00Z', goVersion: 'go1.27.3' },
@@ -222,6 +223,7 @@ describe('SystemStatusComponent rendered layout and accessibility', () => {
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
       providers: [
         { provide: SYSTEM_STATUS_SERVICE_TOKEN, useValue: service },
+        { provide: AuthSessionService, useValue: { session: () => of(undefined) } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(SystemStatusComponent);

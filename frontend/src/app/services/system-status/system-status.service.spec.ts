@@ -32,9 +32,9 @@ describe('SystemStatusService', () => {
     })
   })
 
-  it('reads owner-scoped durable event delivery status', () => {
+  it('reads the verified-owner admin delivery route without a trailing redirect', () => {
     service.eventDelivery().subscribe()
-    const request = http.expectOne('/api/v1/event-delivery/')
+    const request = http.expectOne('/api/v1/automation/events/delivery')
     expect(request.request.method).toBe('GET')
     request.flush({ pending: 0, deadLettered: 0, published: 2, recentFailures: [], checkedAt: '2026-08-09T00:00:00Z' })
   })
@@ -57,7 +57,7 @@ describe('SystemStatusService', () => {
 
   it('encodes the dead-letter id when requesting an explicit retry', () => {
     service.retryEventDelivery('event/id').subscribe()
-    const request = http.expectOne('/api/v1/event-delivery/event%2Fid/retry')
+    const request = http.expectOne('/api/v1/automation/events/delivery/event%2Fid/retry')
     expect(request.request.method).toBe('POST')
     expect(request.request.body).toEqual({})
     request.flush({ status: 'queued', eventId: 'event/id' })

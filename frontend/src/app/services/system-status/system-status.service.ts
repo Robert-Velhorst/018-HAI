@@ -19,7 +19,7 @@ export class SystemStatusService implements ISystemStatusService {
   // authenticated endpoint; the public /readyz probe exposes aggregates only.
   private readonly readinessUrl = '/api/v1/system/readiness';
   private readonly infoUrl = '/api/v1/system/info';
-  private readonly eventDeliveryUrl = '/api/v1/event-delivery';
+  private readonly eventDeliveryUrl = '/api/v1/automation/events/delivery';
   private readonly connectorStatusUrl = '/api/v1/a2a/status';
 
   constructor(private http: HttpClient) {}
@@ -50,7 +50,7 @@ export class SystemStatusService implements ISystemStatusService {
   }
 
   eventDelivery(): Observable<IEventDeliveryStats> {
-    return this.http.get<IEventDeliveryStats>(`${this.eventDeliveryUrl}/`);
+    return this.http.get<IEventDeliveryStats>(this.eventDeliveryUrl);
   }
 
   connectorStatus(): Observable<IA2ABridgeStatus> {
