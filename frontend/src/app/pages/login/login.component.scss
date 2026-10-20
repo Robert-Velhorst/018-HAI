@@ -6,7 +6,12 @@
 }
 
 .login-page {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
   min-height: 100vh;
   min-height: 100svh;
   padding: 32px 16px;
@@ -18,7 +23,9 @@
 .login-layout {
   display: grid;
   gap: 18px;
-  width: min(100%, 448px);
+  width: 100%;
+  max-width: 448px;
+  min-width: 0;
   margin: auto;
 }
 

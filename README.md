@@ -1,5 +1,7 @@
 # 018-HAI
 
+The optional outbound Hire.AI read-only remote-job search connector, including the authenticated **Hire.AI jobs** dashboard page, is documented in [docs/HIRE_AI_CONNECTOR.md](docs/HIRE_AI_CONNECTOR.md). It is disabled by default.
+
 018-HAI is a local-first Human Autonomous Intelligence Shell: a governed
 Personal AI Operating System for turning authorized source material, durable
 memory, workflows, approvals, and controlled execution into inspectable work.

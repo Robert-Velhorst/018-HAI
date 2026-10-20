@@ -305,10 +305,13 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("scripts/deep-link-focus.test.mjs", package["scripts"]["test"])
         self.assertIn("scripts/framework-secret-boundary.test.mjs", package["scripts"]["test"])
         self.assertIn("scripts/framework-secret-boundary.test.mjs", frontend)
-        self.assertTrue(package["scripts"]["test"].endswith("&& ng test"))
+        self.assertTrue(package["scripts"]["test"].endswith("&& ng test --watch=false"))
 
     def test_frontend_theme_excludes_unused_ng_zorro_components(self) -> None:
         theme = (ROOT / "frontend" / "src" / "theme.less").read_text(
+            encoding="utf-8"
+        )
+        authenticated_theme = (ROOT / "frontend" / "src" / "authenticated-theme.less").read_text(
             encoding="utf-8"
         )
 
@@ -317,16 +320,25 @@ class CIWorkflowContractTest(unittest.TestCase):
         # application module usage so a new UI dependency has a deliberate
         # styling and payload review.
         self.assertNotIn("ng-zorro-antd/ng-zorro-antd.less", theme)
+        self.assertNotIn("ng-zorro-antd/ng-zorro-antd.less", authenticated_theme)
         expected_components = {
             "icon", "alert", "button", "card", "checkbox", "drawer",
             "dropdown", "empty", "form", "input", "input-number",
             "layout", "list", "modal", "radio", "select", "spin",
             "steps", "table", "tag", "timeline", "tooltip", "upload",
+            "menu", "pagination", "popconfirm", "notification",
         }
         imported_components = set(
-            re.findall(r'ng-zorro-antd/([^/]+)/style/entry\.less', theme)
+            re.findall(r'ng-zorro-antd/([^/]+)/style/entry\.less', theme + authenticated_theme)
         )
         self.assertEqual(imported_components, expected_components)
+        self.assertEqual(set(re.findall(r'ng-zorro-antd/([^/]+)/style/entry\.less', theme)), {
+            "button", "card", "checkbox", "form", "icon", "input", "layout", "notification",
+        })
+        angular = json.loads((ROOT / "frontend" / "angular.json").read_text(encoding="utf-8"))
+        deferred_style = next(style for style in angular["projects"]["app"]["architect"]["build"]["options"]["styles"] if isinstance(style, dict))
+        self.assertEqual(deferred_style["input"], "src/authenticated-theme.less")
+        self.assertFalse(deferred_style["inject"])
         self.assertIn('ng-zorro-antd/style/default.less', theme)
         self.assertIn('ng-zorro-antd/style/patch.less', theme)
 
@@ -543,7 +555,9 @@ class CIWorkflowContractTest(unittest.TestCase):
         # The package directory also contains source JavaScript modules. They
         # are not browser assets and publishing them inflates every Windows
         # installer and container image without helping nz-icon resolve SVGs.
-        self.assertEqual(icon_asset["glob"], "**/*.svg")
+        self.assertEqual(icon_asset["glob"], "outline/reload.svg")
+        package = json.loads((ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))
+        self.assertIn("check-ng-zorro-icons.mjs", package["scripts"]["prebuild"])
 
     def test_canonical_service_runtime_images_do_not_float_on_latest(
         self,

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { writeAuthenticatedThemeManifest } from './authenticated-theme-manifest.mjs'
 
 const script = fileURLToPath(import.meta.url)
 const frontend = resolve(dirname(script), '..')
@@ -56,7 +57,11 @@ export function runBuild(args = [], env = process.env, launch = spawnSync, nodeV
 
 if (process.argv[1] && resolve(process.argv[1]) === script) {
   try {
-    process.exitCode = runBuild(process.argv.slice(2))
+    const args = process.argv.slice(2)
+    process.exitCode = runBuild(args)
+    if (process.exitCode === 0 && !args.some((arg) => arg === '--watch' || arg.startsWith('--watch='))) {
+      writeAuthenticatedThemeManifest(frontend)
+    }
   } catch (error) {
     console.error(error.message)
     process.exitCode = 1

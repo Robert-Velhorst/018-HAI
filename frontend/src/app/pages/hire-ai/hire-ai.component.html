@@ -1,0 +1,58 @@
+<div class="hai-jobs" [attr.aria-busy]="statusLoading || searchLoading">
+  <header class="hai-jobs__header">
+    <div>
+      <p class="hai-jobs__eyebrow">Read-only job discovery</p>
+      <h1>Hire.AI remote jobs</h1>
+      <p>Search canonical, safety-cleared remote listings from Hire.AI. HAI does not send applications or candidate information.</p>
+    </div>
+    <button nz-button nzType="default" type="button" (click)="refreshStatus()" [nzLoading]="statusLoading" [disabled]="statusLoading" aria-label="Refresh Hire.AI connection status" title="Refresh connection status">
+      <i nz-icon nzType="reload" nzTheme="outline"></i>
+    </button>
+  </header>
+
+  <nz-alert *ngIf="statusError" nzType="error" nzShowIcon [nzMessage]="statusError" class="hai-jobs__alert"></nz-alert>
+  <nz-alert *ngIf="searchError" nzType="error" nzShowIcon [nzMessage]="searchError" class="hai-jobs__alert"></nz-alert>
+
+  <section class="hai-jobs__status" aria-live="polite">
+    <div>
+      <span class="hai-jobs__status-dot" [class.hai-jobs__status-dot--ready]="status?.configured"></span>
+      <strong>{{ status?.configured ? 'Connected' : status?.enabled ? 'Needs configuration' : 'Not connected' }}</strong>
+    </div>
+    <p>{{ status?.configured ? 'Search is available. Only remote, canonical, safety-cleared listings are accepted.' : 'The HAI operator must configure the Hire.AI endpoint and dedicated connector token before searches can run.' }}</p>
+    <small *ngIf="status?.configError as configError">{{ configError }}</small>
+  </section>
+
+  <form class="hai-jobs__filters" [formGroup]="filters" (ngSubmit)="search()">
+    <label>Keywords<input nz-input formControlName="query" maxlength="200" placeholder="Role, skills, or company" /></label>
+    <label>Location<input nz-input formControlName="location" maxlength="200" placeholder="Country, region, or timezone" /></label>
+    <label>Employment<nz-select formControlName="jobType"><nz-option nzValue="all" nzLabel="Any type"></nz-option><nz-option nzValue="full-time" nzLabel="Full-time"></nz-option><nz-option nzValue="part-time" nzLabel="Part-time"></nz-option><nz-option nzValue="contract" nzLabel="Contract"></nz-option><nz-option nzValue="temporary" nzLabel="Temporary"></nz-option></nz-select></label>
+    <label>Experience<nz-select formControlName="experienceLevel"><nz-option nzValue="all" nzLabel="Any level"></nz-option><nz-option nzValue="entry" nzLabel="Entry"></nz-option><nz-option nzValue="junior" nzLabel="Junior"></nz-option><nz-option nzValue="mid" nzLabel="Mid-level"></nz-option><nz-option nzValue="senior" nzLabel="Senior"></nz-option><nz-option nzValue="lead" nzLabel="Lead"></nz-option><nz-option nzValue="executive" nzLabel="Executive"></nz-option></nz-select></label>
+    <label>Application system<nz-select formControlName="applicationProcess"><nz-option nzValue="all" nzLabel="Any"></nz-option><nz-option nzValue="greenhouse" nzLabel="Greenhouse"></nz-option><nz-option nzValue="lever" nzLabel="Lever"></nz-option><nz-option nzValue="ashby" nzLabel="Ashby"></nz-option><nz-option nzValue="smartrecruiters" nzLabel="SmartRecruiters"></nz-option><nz-option nzValue="workday" nzLabel="Workday"></nz-option><nz-option nzValue="email" nzLabel="Email"></nz-option><nz-option nzValue="other" nzLabel="Other"></nz-option></nz-select></label>
+    <label>Posted<nz-select formControlName="postedWithin"><nz-option nzValue="all" nzLabel="Any time"></nz-option><nz-option nzValue="1" nzLabel="Last 24 hours"></nz-option><nz-option nzValue="3" nzLabel="Last 3 days"></nz-option><nz-option nzValue="7" nzLabel="Last week"></nz-option><nz-option nzValue="30" nzLabel="Last month"></nz-option></nz-select></label>
+    <label>Salary currency<input nz-input formControlName="salaryCurrency" maxlength="3" placeholder="EUR" autocapitalize="characters" /></label>
+    <label>Minimum salary<input nz-input type="number" formControlName="salaryMin" min="0" max="10000000" step="1" placeholder="0" /></label>
+    <label>Maximum salary<input nz-input type="number" formControlName="salaryMax" min="0" max="10000000" step="1" placeholder="100000" /></label>
+    <label>Source platform ID<input nz-input type="number" formControlName="platformId" min="1" step="1" placeholder="Any source" /></label>
+    <fieldset>
+      <legend>Listing preferences</legend>
+      <label><input type="checkbox" formControlName="visaSponsorshipOnly" /> Visa sponsorship</label>
+      <label><input type="checkbox" formControlName="openHiringSupportOnly" /> Open hiring</label>
+      <label><input type="checkbox" formControlName="diversityFriendlyOnly" /> Diversity-friendly</label>
+      <label><input type="checkbox" formControlName="salaryDisclosedOnly" /> Salary disclosed</label>
+    </fieldset>
+    <button nz-button nzType="primary" type="submit" [nzLoading]="searchLoading" [disabled]="!status?.configured || searchLoading">Search remote jobs</button>
+  </form>
+
+  <section class="hai-jobs__results" *ngIf="result as searchResult" aria-live="polite">
+    <div class="hai-jobs__results-heading"><h2>{{ searchResult.jobs.length }} remote listings</h2><span>Updated {{ searchResult.generatedAt | date:'medium' }}</span></div>
+    <p *ngIf="!searchResult.jobs.length" class="hai-jobs__empty">No matching remote listings were returned. Try broadening your filters.</p>
+    <article class="hai-jobs__job" *ngFor="let job of searchResult.jobs; trackBy: trackJob">
+      <div class="hai-jobs__job-heading"><div><h3>{{ job.title || 'Untitled role' }}</h3><p>{{ job.company || 'Company not listed' }}<span *ngIf="job.location"> · {{ job.location }}</span></p></div><span>{{ salary(job) }}</span></div>
+      <div class="hai-jobs__tags"><nz-tag *ngIf="job.jobType">{{ job.jobType }}</nz-tag><nz-tag *ngIf="job.platformName">{{ job.platformName }} · #{{ job.platformId }}</nz-tag><span *ngIf="job.postedAt">Posted {{ job.postedAt | date:'mediumDate' }}</span></div>
+      <p class="hai-jobs__description" *ngIf="job.description">{{ job.description }}</p>
+      <p class="hai-jobs__description" *ngIf="job.requirements"><strong>Requirements:</strong> {{ job.requirements }}</p>
+      <div class="hai-jobs__links"><a *ngIf="canOpen(job.sourceUrl)" [href]="job.sourceUrl" target="_blank" rel="noopener noreferrer">View source listing <i nz-icon nzType="export" nzTheme="outline"></i></a><a *ngIf="canOpen(job.applicationUrl)" [href]="job.applicationUrl" target="_blank" rel="noopener noreferrer">Open employer application page <i nz-icon nzType="export" nzTheme="outline"></i></a></div>
+    </article>
+    <button *ngIf="cursor" nz-button nzType="default" type="button" (click)="loadMore()" [nzLoading]="searchLoading" [disabled]="searchLoading">Load more</button>
+  </section>
+</div>

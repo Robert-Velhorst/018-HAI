@@ -62,7 +62,7 @@ func TestOpsControlReviewProvenanceMigrationKeepsOwnerAndDecisionBinding(t *test
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}
-	upSQL := string(up)
+	upSQL := strings.ReplaceAll(string(up), "\r\n", "\n")
 	for _, required := range []string{
 		"opscontrol_review_item_id uuid",
 		"opscontrol_review_decision_id uuid",

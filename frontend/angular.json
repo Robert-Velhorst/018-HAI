@@ -32,13 +32,18 @@
               "src/favicon.ico",
               "src/assets",
               {
-                "glob": "**/*.svg",
+                "glob": "outline/reload.svg",
                 "input": "./node_modules/@ant-design/icons-angular/src/inline-svg/",
                 "output": "/assets/"
               }
             ],
             "styles": [
-              "node_modules/ng-zorro-antd/ng-zorro-antd.min.css",
+              "src/theme.less",
+              {
+                "input": "src/authenticated-theme.less",
+                "bundleName": "authenticated-theme",
+                "inject": false
+              },
               "src/styles.scss"
             ],
             "scripts": []
@@ -54,7 +59,7 @@
                 {
                   "type": "initial",
                   "maximumWarning": "1mb",
-                  "maximumError": "2mb"
+                  "maximumError": "1.02mb"
                 },
                 {
                   "type": "anyComponentStyle",
@@ -106,7 +111,7 @@
               "src/favicon.ico",
               "src/assets",
               {
-                "glob": "**/*.svg",
+                "glob": "outline/*.svg",
                 "input": "./node_modules/@ant-design/icons-angular/src/inline-svg/",
                 "output": "/assets/"
               }
