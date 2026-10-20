@@ -22,6 +22,11 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 	if err != nil {
 		t.Fatalf("open PostgreSQL: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get PostgreSQL pool: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	tx := db.Begin()
 	if tx.Error != nil {
 		t.Fatalf("begin transaction: %v", tx.Error)
@@ -111,6 +116,16 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 	}
 	if totalCount != 4 || len(pageItems) != 2 || pageItems[0].ID != aliceLatestHigh || pageItems[1].ID != aliceLatestLow {
 		t.Fatalf("bounded extraction page = items %#v total %d, want latest two of four Alice records", pageItems, totalCount)
+	}
+	olderItems, olderTotal, err := repository.FindExtractionsPageForSources(
+		[]uuid.UUID{aliceSource}, "018-HAI", false, 1, 2,
+	)
+	if err != nil || olderTotal != 4 || len(olderItems) != 1 || olderItems[0].ID != alicePrevious {
+		t.Fatalf("offset extraction page = items %#v total %d err %v, want Alice previous record", olderItems, olderTotal, err)
+	}
+	emptyItems, emptyTotal, err := repository.FindExtractionsPageForSources(nil, "018-HAI", false, 1, 0)
+	if err != nil || emptyTotal != 0 || len(emptyItems) != 0 {
+		t.Fatalf("ownerless offset page returned items %#v total %d err %v", emptyItems, emptyTotal, err)
 	}
 
 	resolved, err := repository.FindExtractionForOwner(aliceLatestHigh, "alice")

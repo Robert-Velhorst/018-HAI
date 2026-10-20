@@ -191,7 +191,7 @@
       </div>
       <div title="Exact total from the API. Only the 100 most recent records are loaded here for responsive review.">
         <strong>{{ extractionCountMetric() }}</strong>
-        <span>extracted records<span *ngIf="extractionsLoaded && extractionPageIsTruncated()"> · recent {{ extractions.length }} loaded</span></span>
+        <span>extracted records<span *ngIf="extractionsLoaded && extractionPageIsTruncated()"> · {{ extractions.length }} on this page</span></span>
       </div>
       <div title="Records that must stay review-gated or sensitive">
         <strong>{{ sensitiveExtractionMetric() }}</strong>
@@ -279,7 +279,7 @@
               <span class="source-row__badges" aria-hidden="true">
                 <span class="status-pill" [attr.data-status]="sourceHealthTone(source)">{{ statusText(sourceDisplayStatus(source)) }}</span>
                 <span *ngIf="source.localOnly" class="status-pill local">local</span>
-                <span class="status-pill">{{ sourceExtractionCount(source) }} records</span>
+                <span class="status-pill" title="Extraction records in the loaded page">{{ extractionsLoaded ? sourceExtractionCount(source) + ' on this page' : 'Records not loaded' }}</span>
               </span>
             </button>
             <div class="source-row__actions">
@@ -934,7 +934,7 @@
             <h2>Extracted context</h2>
             <p>{{ extractionScopeSummary() }}</p>
           </div>
-          <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="refreshExtractions()" [nzDisabled]="extractionsLoading" title="Include archived extraction records">Show archived</label>
+          <label nz-checkbox [(ngModel)]="includeArchived" (ngModelChange)="refreshExtractions(true)" [nzDisabled]="extractionsLoading" title="Include archived extraction records">Show archived</label>
         </div>
         <p *ngIf="extractionsLoading" role="status" aria-live="polite" class="source-detail-state">Loading extracted source records…</p>
         <p *ngIf="!extractionsLoading && !extractionsLoaded && loadWarnings.includes('Extracted records')" role="alert" class="source-detail-state source-detail-state--error">
@@ -942,11 +942,16 @@
         </p>
         <div class="advanced-filter-row">
           <label>
-            <span>Find extracted record</span>
+            <span>Find on this page</span>
             <input nz-input type="search" [(ngModel)]="extractionFilterQuery" placeholder="Text, source, project, task, or date" />
           </label>
           <span class="filter-count">{{ extractionCountSummary() }}</span>
         </div>
+        <nav class="header-actions" aria-label="Extracted record pages">
+          <button type="button" nz-button nzSize="small" aria-label="Previous extracted records" title="Previous extracted records" [disabled]="!canChangeExtractionPage(-1)" (click)="changeExtractionPage(-1)"><span nz-icon nzType="arrow-left" aria-hidden="true"></span></button>
+          <span role="status" aria-live="polite">{{ extractionsLoaded ? extractionPageRange() + ' / ' + extractionTotalCount : extractionsLoading ? 'Loading records' : 'Records unavailable' }}</span>
+          <button type="button" nz-button nzSize="small" aria-label="Next extracted records" [title]="extractionPageOffset === 1000000 ? 'History offset limit reached. Narrow the project scope.' : 'Next extracted records'" [disabled]="!canChangeExtractionPage(1)" (click)="changeExtractionPage(1)"><span nz-icon nzType="arrow-right" aria-hidden="true"></span></button>
+        </nav>
         <div class="record-list">
           <article *ngFor="let extraction of filteredExtractions()">
             <div>

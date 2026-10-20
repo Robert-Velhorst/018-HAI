@@ -52,7 +52,7 @@ func (s *service) OverviewForOwner(ownerIdentity, projectKey string, includeArch
 }
 
 func (s *service) ExtractionsForOwnerPage(ownerIdentity, projectKey string, includeArchived bool, page HistoryPageRequest) (*ExtractionPage, error) {
-	visible, err := s.ownerSourceIDs(ownerIdentity)
+	sourceIDs, err := s.extractionSourceIDsForOwner(ownerIdentity)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func (s *service) ExtractionsForOwnerPage(ownerIdentity, projectKey string, incl
 	if !ok {
 		return nil, errors.New("paged source history repository is unavailable")
 	}
-	items, total, err := repository.FindExtractionsPageForSources(sourceIDsFromSet(visible), strings.TrimSpace(projectKey), includeArchived, limit, offset)
+	items, total, err := repository.FindExtractionsPageForSources(sourceIDs, strings.TrimSpace(projectKey), includeArchived, limit, offset)
 	if err != nil {
 		return nil, err
 	}

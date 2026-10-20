@@ -92,6 +92,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   sources: IConnectedSource[] = [];
   extractions: ISourceExtraction[] = [];
   extractionTotalCount = 0;
+  extractionPageOffset = 0;
   auditLogs: ISourceAuditLog[] = [];
   syncJobs: ISourceSyncJob[] = [];
   sourceExtractionCounts: Record<string, number> = {};
@@ -162,7 +163,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   private readonly extractionCorrectionMaxStatusChecks = 20;
   private readonly extractionCorrectionMaxPollFailures = 4;
   private readonly manualSyncFallbackKeys = new Map<string, string>();
-  private readonly extractionPageLimit = 100;
+  private readonly extractionPageLimit = 8;
   private lastSelectedConnectorKey = 'local-folder';
   private refreshSubscription?: Subscription;
   private connectorSubscription?: Subscription;
@@ -331,6 +332,9 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   }
 
   refresh(): void {
+    this.extractionSubscription?.unsubscribe();
+    this.extractionsLoaded = false;
+    this.extractionPageOffset = 0;
     this.refreshSubscription?.unsubscribe();
     this.connectorSubscription?.unsubscribe();
     this.connectionHealthSubscription?.unsubscribe();
@@ -687,7 +691,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   extractionScopeSummary(): string {
     if (this.extractionsLoading) return 'Loading recent extracted records and the API total.';
     if (!this.extractionsLoaded) return 'Extracted record counts are unavailable.';
-    return `Showing up to 8 matching records from the ${this.extractions.length} most recent records loaded; the API reports ${this.extractionTotalCount} total.`;
+    return `Records ${this.extractionPageRange()} · ${this.extractionTotalCount} total.`;
   }
 
   extractionCountSummary(): string {
@@ -2901,11 +2905,11 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
     return ref?.sourceLabel || ref?.sourceUri || 'source linked';
   }
 
-  private loadExtractions(): void {
+  private loadExtractions(offset = this.extractionPageOffset): void {
     this.extractionSubscription?.unsubscribe();
     this.extractionsLoading = true;
     this.extractionSubscription = this.sourceService
-      .extractions(this.searchForm.value.projectKey, this.includeArchived, this.extractionPageLimit)
+      .extractions(this.searchForm.value.projectKey, this.includeArchived, this.extractionPageLimit, offset)
       .pipe(
         timeout(this.loadTimeoutMs),
         finalize(() => (this.extractionsLoading = false)),
@@ -2913,6 +2917,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
       .subscribe({
         next: (page) => {
           this.setExtractionPage(page);
+          this.extractionPageOffset = offset;
           this.extractionsLoaded = true;
           this.clearLoadWarning('Extracted records');
           this.rebuildSourceIndexes();
@@ -2926,10 +2931,26 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
       });
   }
 
-  refreshExtractions(): void {
+  refreshExtractions(resetPage = false): void {
     if (this.extractionsLoading) return;
     this.extractionsLoaded = false;
-    this.loadExtractions();
+    this.loadExtractions(resetPage ? 0 : this.extractionPageOffset);
+  }
+
+  canChangeExtractionPage(direction: -1 | 1): boolean {
+    if (this.extractionsLoading || !this.extractionsLoaded) return false;
+    const target = this.extractionPageOffset + direction * this.extractionPageLimit;
+    return target >= 0 && target <= 1000000 && target < this.extractionTotalCount;
+  }
+
+  changeExtractionPage(direction: -1 | 1): void {
+    if (!this.canChangeExtractionPage(direction)) return;
+    this.loadExtractions(this.extractionPageOffset + direction * this.extractionPageLimit);
+  }
+
+  extractionPageRange(): string {
+    if (!this.extractions.length) return '0';
+    return `${this.extractionPageOffset + 1}–${this.extractionPageOffset + this.extractions.length}`;
   }
 
   extractionPageIsTruncated(): boolean {

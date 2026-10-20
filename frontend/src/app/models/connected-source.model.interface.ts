@@ -176,6 +176,7 @@ export interface ISourceExtractionPage {
   items: ISourceExtraction[];
   totalCount: number;
   limit: number;
+  offset?: number;
 }
 
 export interface ISourceSyncResult {

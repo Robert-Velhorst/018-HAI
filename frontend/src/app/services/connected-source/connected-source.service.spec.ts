@@ -68,6 +68,36 @@ describe('ConnectedSourceService extraction corrections', () => {
     request.flush([{ id: 'record-1' }], { headers: { 'X-Total-Count': '200', 'X-Result-Limit': '50' } });
   });
 
+  it('requests an explicit extraction offset and reads the paged history response', () => {
+    service.extractions('synthetic-project', false, 8, 8).subscribe((page) => {
+      expect(page.items.map(item => item.id)).toEqual(['older-record']);
+      expect(page.totalCount).toBe(20);
+      expect(page.limit).toBe(8);
+    });
+    const request = http.expectOne(candidate => candidate.url === '/api/v1/sources/extractions');
+    expect(request.request.params.get('offset')).toBe('8');
+    expect(request.request.params.get('limit')).toBe('8');
+    request.flush({ items: [{ id: 'older-record' }], totalCount: 20, total: 20, limit: 8, offset: 8, hasMore: true }, {
+      headers: { 'X-Total-Count': '20', 'X-Result-Limit': '8', 'X-Result-Offset': '8' },
+    });
+  });
+
+  it('does not silently show the first page when an older backend ignores the offset', () => {
+    let failed = false;
+    service.extractions('', false, 8, 8).subscribe({ error: () => { failed = true; } });
+    const request = http.expectOne(candidate => candidate.url === '/api/v1/sources/extractions');
+    request.flush([{ id: 'first-page-record' }]);
+    expect(failed).toBeTrue();
+  });
+
+  it('rejects a history envelope for a different offset instead of mislabeling the records', () => {
+    let failed = false;
+    service.extractions('', false, 8, 8).subscribe({ error: () => { failed = true; } });
+    const request = http.expectOne(candidate => candidate.url === '/api/v1/sources/extractions');
+    request.flush({ items: [], totalCount: 20, limit: 8, offset: 0 });
+    expect(failed).toBeTrue();
+  });
+
   it('wires health recovery, pause, resume, and Google consent to their actual backend paths', () => {
     service.connectionHealth('synthetic-source').subscribe();
     const health = http.expectOne('/api/v1/sources/synthetic-source/health');

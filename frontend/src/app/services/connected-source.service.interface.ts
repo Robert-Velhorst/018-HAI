@@ -47,7 +47,7 @@ export interface IConnectedSourceService {
   revoke(sourceId: string, authorization: ISourceDestructiveAuthorization): Observable<IConnectedSource>;
   search(request: ISourceSearchRequest): Observable<ISourceSearchResult>;
   knowledgeGraph(projectKey: string, includeArchived: boolean, includeSensitive: boolean): Observable<IKnowledgeGraphResult>;
-  extractions(projectKey: string, includeArchived: boolean, limit?: number): Observable<ISourceExtractionPage>;
+  extractions(projectKey: string, includeArchived: boolean, limit?: number, offset?: number): Observable<ISourceExtractionPage>;
   submitExtractionCorrection(
     extractionId: string,
     patch: ISourceExtractionCorrectionPatch,
