@@ -1,14 +1,17 @@
-import { ChangeDetectionStrategy, Component, HostListener, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
 import {
   Observable,
+  Subscription,
   catchError,
   finalize,
   forkJoin,
   map,
   of,
   switchMap,
+  take,
   throwError,
+  timeout,
 } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
@@ -55,7 +58,7 @@ interface IPauseResponse {
     styleUrls: ['./runtime-control.component.scss'],
     standalone: false
 })
-export class RuntimeControlComponent implements OnInit {
+export class RuntimeControlComponent implements OnInit, OnDestroy {
   status?: IBackgroundStatus
   readiness?: IReadiness
   authSession?: IAuthSession
@@ -66,6 +69,9 @@ export class RuntimeControlComponent implements OnInit {
   resumeApproval?: IResumeApprovalRequest
   resumeConfirmation = ''
   private refreshRequestId = 0
+  private refreshSubscription?: Subscription
+  private destroyed = false
+  private readonly readTimeoutMs = 6000
 
   readonly modes = ['autonomous_safe', 'approval_required', 'draft_only', 'read_only', 'paused']
 
@@ -81,8 +87,13 @@ export class RuntimeControlComponent implements OnInit {
     this.refresh()
   }
 
+  ngOnDestroy(): void {
+    this.destroyed = true
+    this.refreshSubscription?.unsubscribe()
+  }
+
   refresh(): void {
-    if (this.loading || this.busy) {
+    if (this.destroyed || this.loading || this.busy) {
       return
     }
 
@@ -96,7 +107,9 @@ export class RuntimeControlComponent implements OnInit {
     this.resumeApproval = undefined
     this.resumeConfirmation = ''
 
-    this.authSessionService.session().pipe(
+    this.refreshSubscription = this.authSessionService.session().pipe(
+      timeout(this.readTimeoutMs),
+      take(1),
       catchError(() => of(undefined)),
       switchMap((session): Observable<IRuntimeStateLoad> => {
         if (!session) {
@@ -117,6 +130,7 @@ export class RuntimeControlComponent implements OnInit {
           status: this.service.status(),
           readiness: this.service.readiness(),
         }).pipe(
+          timeout(this.readTimeoutMs),
           map(({ status, readiness }) => ({
             session,
             sessionUnavailable: false,

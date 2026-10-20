@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing'
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing'
 import { RouterTestingModule } from '@angular/router/testing'
 import { NoopAnimationsModule } from '@angular/platform-browser/animations'
 import {
@@ -7,7 +7,7 @@ import {
   ReloadOutline,
   StopOutline,
 } from '@ant-design/icons-angular/icons'
-import { of, throwError } from 'rxjs'
+import { NEVER, Subject, of, throwError } from 'rxjs'
 import { NZ_ICONS } from 'ng-zorro-antd/icon'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { IAuthSession } from '../../models/auth-session.model.interface'
@@ -172,6 +172,58 @@ describe('RuntimeControlComponent role boundaries', () => {
         },
       ],
     }).compileComponents()
+  })
+
+  it('bounds a stalled session read and permits an explicit retry without executing controls', fakeAsync(() => {
+    authSessionService.session.and.returnValue(NEVER)
+    createComponent()
+    expect(component.loading).toBeTrue()
+    tick(6001)
+    expect(component.loading).toBeFalse()
+    expect(component.sessionUnavailable).toBeTrue()
+    expect(component.canAdministerRuntime).toBeFalse()
+    expect(runtimeService.status).not.toHaveBeenCalled()
+    expect(runtimeService.pause).not.toHaveBeenCalled()
+    authSessionService.session.and.returnValue(of(ownerSession))
+    component.refresh()
+    expect(component.authSession).toBe(ownerSession)
+    expect(component.status).toBe(activeStatus)
+    expect(component.loading).toBeFalse()
+    expect(authSessionService.session).toHaveBeenCalledTimes(2)
+    fixture.destroy()
+  }))
+
+  it('bounds stalled runtime reads without reporting success or sending a mutation', fakeAsync(() => {
+    authSessionService.session.and.returnValue(of(ownerSession))
+    runtimeService.status.and.returnValue(NEVER)
+    createComponent()
+    tick(6001)
+    expect(component.loading).toBeFalse()
+    expect(component.runtimeLoadError).toContain('could not be loaded')
+    expect(component.status).toBeUndefined()
+    expect(component.readiness).toBeUndefined()
+    expect(component.authSession).toBe(ownerSession)
+    expect(runtimeService.pause).not.toHaveBeenCalled()
+    expect(runtimeService.setMode).not.toHaveBeenCalled()
+    expect(notification.success).not.toHaveBeenCalled()
+    runtimeService.status.and.returnValue(of(activeStatus))
+    component.refresh()
+    expect(component.runtimeLoadError).toBe('')
+    expect(component.status).toBe(activeStatus)
+    fixture.destroy()
+  }))
+
+  it('cancels pending reads on destruction and never starts late refreshes', () => {
+    const pending = new Subject<IAuthSession>()
+    authSessionService.session.and.returnValue(pending)
+    createComponent()
+    expect(pending.observers.length).toBe(1)
+    fixture.destroy()
+    expect(pending.observers.length).toBe(0)
+    pending.next(ownerSession)
+    expect(runtimeService.status).not.toHaveBeenCalled()
+    component.refresh()
+    expect(authSessionService.session).toHaveBeenCalledTimes(1)
   })
 
   it('renders owner controls and permits resume and autonomy changes', () => {
