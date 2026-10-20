@@ -90,10 +90,10 @@ test('build validates only 1, 2, 4, 8 and scopes Angular environment to npm run 
 });
 
 test('runtime stage remains the original Nginx stage without worker settings', () => {
-  const runtimeIndex = parsed.findIndex(({ keyword, value }) => keyword === 'FROM' && value === 'nginx:stable-alpine-slim');
+  const runtimeIndex = parsed.findIndex(({ keyword, value }) => keyword === 'FROM' && value === 'nginx:1.30.6-alpine-slim@sha256:3028fc1419f99b95c1c69f844bbaf49dc1b881750c51b497fc721ac4f02a14e6');
   assert.ok(runtimeIndex > buildIndex);
   assert.deepEqual(parsed.slice(runtimeIndex), [
-    { keyword: 'FROM', value: 'nginx:stable-alpine-slim' },
+    { keyword: 'FROM', value: 'nginx:1.30.6-alpine-slim@sha256:3028fc1419f99b95c1c69f844bbaf49dc1b881750c51b497fc721ac4f02a14e6' },
     { keyword: 'COPY', value: '--from=build /app/dist/app /usr/share/nginx/html' },
     { keyword: 'COPY', value: './nginx-custom.conf /etc/nginx/conf.d/default.conf' },
   ]);
