@@ -102,7 +102,7 @@ func (s *SMTPPasswordResetSender) Configured() bool {
 	return s.requireStartTLS
 }
 
-func (s *SMTPPasswordResetSender) SendPasswordReset(ctx context.Context, email, resetToken string, expiresAt time.Time) error {
+func (s *SMTPPasswordResetSender) SendPasswordReset(ctx context.Context, email, resetToken string, expiresAt time.Time) (resultErr error) {
 	if ctx == nil {
 		return errors.New("password reset email delivery requires a context")
 	}
@@ -120,6 +120,22 @@ func (s *SMTPPasswordResetSender) SendPasswordReset(ctx context.Context, email, 
 	if err != nil || parsedRecipient.Address != email {
 		return NewPasswordResetDeliveryError("recipient", errors.New("invalid recipient mailbox"))
 	}
+
+	// Closing a canceled socket produces a network error, not a context error.
+	defer func() {
+		var deliveryError *PasswordResetDeliveryError
+		if !errors.As(resultErr, &deliveryError) || deliveryError == nil {
+			return
+		}
+		contextError := ctx.Err()
+		var networkError net.Error
+		if deadline, ok := ctx.Deadline(); contextError == nil && ok && !time.Now().Before(deadline) && errors.As(resultErr, &networkError) && networkError.Timeout() {
+			contextError = context.DeadlineExceeded
+		}
+		if contextError != nil {
+			resultErr = NewPasswordResetDeliveryError(deliveryError.Stage, errors.Join(contextError, deliveryError.cause))
+		}
+	}()
 
 	dialer := &net.Dialer{Timeout: smtpDialTimeout}
 	connection, err := openSMTPConnection(ctx, s.host, s.port, dialer.DialContext, smtpTLSConfig(s.host))
