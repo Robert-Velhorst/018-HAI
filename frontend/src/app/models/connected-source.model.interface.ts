@@ -179,6 +179,17 @@ export interface ISourceExtractionPage {
   offset?: number;
 }
 
+export interface ISourceHistoryPage<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export type ISourceAuditLogPage = ISourceHistoryPage<ISourceAuditLog>;
+export type ISourceSyncJobPage = ISourceHistoryPage<ISourceSyncJob>;
+
 export interface ISourceSyncResult {
   job: ISourceSyncJob;
   extractions: ISourceExtraction[];

@@ -1,7 +1,9 @@
 package source
 
 import (
+	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -33,9 +35,33 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 	}
 	t.Cleanup(func() { _ = tx.Rollback().Error })
 	if err := tx.Exec(`
+		CREATE TEMP TABLE source_sync_jobs (
+			id uuid PRIMARY KEY,
+			source_id uuid NOT NULL,
+			owner_identity text,
+			durable_job_id uuid,
+			mode text NOT NULL,
+			status text NOT NULL,
+			message text DEFAULT '',
+			completed_at timestamptz,
+			created_at timestamptz NOT NULL
+		) ON COMMIT DROP;
+		CREATE TEMP TABLE durable_jobs (
+			id uuid PRIMARY KEY,
+			kind text NOT NULL,
+			status text NOT NULL
+		) ON COMMIT DROP;
+		CREATE TEMP TABLE source_audit_logs (
+			id uuid PRIMARY KEY,
+			source_id uuid NOT NULL,
+			action text DEFAULT 'source.read',
+			message text DEFAULT '',
+			created_at timestamptz NOT NULL
+		) ON COMMIT DROP;
 		CREATE TEMP TABLE connected_sources (
 			id uuid PRIMARY KEY,
-			owner_identity varchar(255)
+			owner_identity varchar(255),
+			updated_at timestamptz DEFAULT now()
 		) ON COMMIT DROP;
 		CREATE TEMP TABLE source_extractions (
 			id uuid PRIMARY KEY,
@@ -66,9 +92,10 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 
 	aliceSource := uuid.New()
 	bobSource := uuid.New()
+	legacySource := uuid.New()
 	if err := tx.Exec(
-		"INSERT INTO connected_sources (id, owner_identity) VALUES (?, ?), (?, ?)",
-		aliceSource, "alice", bobSource, "bob",
+		"INSERT INTO connected_sources (id, owner_identity) VALUES (?, ?), (?, ?), (?, NULL)",
+		aliceSource, "alice", bobSource, "bob", legacySource,
 	).Error; err != nil {
 		t.Fatalf("seed sources: %v", err)
 	}
@@ -96,9 +123,77 @@ func TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres(t *testing
 		).Error; err != nil {
 			t.Fatalf("seed extraction: %v", err)
 		}
+		if err := tx.Exec("INSERT INTO source_audit_logs (id, source_id, created_at) VALUES (?, ?, ?)", row.id, row.sourceID, row.updatedAt).Error; err != nil {
+			t.Fatalf("seed audit log: %v", err)
+		}
 	}
 
 	repository := &GormRepository{DB: tx}
+	durableID, manualID := uuid.New(), uuid.New()
+	if err := tx.Exec("INSERT INTO durable_jobs (id, kind, status) VALUES (?, ?, ?)", durableID, JobKindManualSync, "running").Error; err != nil {
+		t.Fatalf("seed durable job: %v", err)
+	}
+	for _, row := range []struct {
+		id      uuid.UUID
+		source  uuid.UUID
+		owner   any
+		mode    string
+		durable any
+		created time.Time
+	}{
+		{aliceLatestLow, aliceSource, nil, "incremental", nil, base.Add(2 * time.Minute)},
+		{aliceLatestHigh, aliceSource, nil, "incremental", nil, base.Add(2 * time.Minute)},
+		{manualID, aliceSource, "alice", ModeManualAsyncSync, durableID, base.Add(3 * time.Minute)},
+		{uuid.New(), aliceSource, "bob", ModeManualAsyncSync, nil, base.Add(4 * time.Minute)},
+		{uuid.New(), aliceSource, nil, ModeManualAsyncSync, nil, base.Add(5 * time.Minute)},
+		{uuid.New(), bobSource, "alice", ModeManualAsyncSync, nil, base.Add(6 * time.Minute)},
+		{uuid.New(), legacySource, "alice", ModeManualAsyncSync, nil, base.Add(7 * time.Minute)},
+	} {
+		if err := tx.Exec("INSERT INTO source_sync_jobs (id, source_id, owner_identity, mode, durable_job_id, status, created_at) VALUES (?, ?, ?, ?, ?, 'queued', ?)", row.id, row.source, row.owner, row.mode, row.durable, row.created).Error; err != nil {
+			t.Fatalf("seed sync job: %v", err)
+		}
+	}
+	syncItems, syncTotal, err := repository.FindSyncJobsPageForOwnerSources("alice", []uuid.UUID{aliceSource}, 1, 0)
+	if err != nil || syncTotal != 3 || len(syncItems) != 1 || syncItems[0].ID != manualID || syncItems[0].Status != "running" {
+		t.Fatalf("owner-filtered projected sync page = %#v total %d err %v", syncItems, syncTotal, err)
+	}
+	syncItems, syncTotal, err = repository.FindSyncJobsPageForOwnerSources("alice", []uuid.UUID{aliceSource}, 1, 1)
+	if err != nil || syncTotal != 3 || len(syncItems) != 1 || syncItems[0].ID != aliceLatestHigh {
+		t.Fatalf("owner-filtered offset sync page = %#v total %d err %v", syncItems, syncTotal, err)
+	}
+	syncItems, syncTotal, err = repository.FindSyncJobsPageForOwnerSources("", []uuid.UUID{aliceSource}, 6, 0)
+	if err != nil || syncTotal != 0 || len(syncItems) != 0 {
+		t.Fatalf("ownerless sync page = %#v total %d err %v", syncItems, syncTotal, err)
+	}
+	auditItems, auditTotal, err := repository.FindAuditLogsPageForSources([]uuid.UUID{aliceSource}, 1, 2)
+	if err != nil || auditTotal != 4 || len(auditItems) != 1 || auditItems[0].ID != alicePrevious {
+		t.Fatalf("offset audit page = items %#v total %d err %v", auditItems, auditTotal, err)
+	}
+	firstAuditItems, _, err := repository.FindAuditLogsPageForSources([]uuid.UUID{aliceSource}, 2, 0)
+	if err != nil || len(firstAuditItems) != 2 || firstAuditItems[0].ID != aliceLatestHigh || firstAuditItems[1].ID != aliceLatestLow {
+		t.Fatalf("stable audit ordering = %#v, err %v", firstAuditItems, err)
+	}
+	emptyAuditItems, emptyAuditTotal, err := repository.FindAuditLogsPageForSources(nil, 8, 0)
+	if err != nil || emptyAuditTotal != 0 || len(emptyAuditItems) != 0 {
+		t.Fatalf("ownerless audit page = %#v total %d err %v", emptyAuditItems, emptyAuditTotal, err)
+	}
+	// Exercise the real handler/service/repository path against PostgreSQL. The
+	// subject is injected here; IDP token verification remains a separate gate.
+	actualService := NewService(repository, nil)
+	syncResponse := syncHistoryRequest(actualService, "alice", "offset=1&limit=1&owner=bob")
+	var syncPage SyncJobPage
+	if syncResponse.Code != http.StatusOK || json.Unmarshal(syncResponse.Body.Bytes(), &syncPage) != nil || syncPage.Total != 3 || len(syncPage.Items) != 1 || syncPage.Items[0].ID != aliceLatestHigh {
+		t.Fatalf("PostgreSQL sync HTTP page status=%d body=%s", syncResponse.Code, syncResponse.Body.String())
+	}
+	bobResponse := syncHistoryRequest(actualService, "bob", "offset=0&limit=6&owner=alice")
+	if bobResponse.Code != http.StatusOK || json.Unmarshal(bobResponse.Body.Bytes(), &syncPage) != nil || syncPage.Total != 0 || len(syncPage.Items) != 0 {
+		t.Fatalf("PostgreSQL foreign-owner HTTP page status=%d body=%s", bobResponse.Code, bobResponse.Body.String())
+	}
+	auditResponse := auditHistoryRequest(actualService, "alice", "offset=1&limit=1&owner=bob")
+	var auditPage AuditLogPage
+	if auditResponse.Code != http.StatusOK || json.Unmarshal(auditResponse.Body.Bytes(), &auditPage) != nil || auditPage.Total != 4 || len(auditPage.Items) != 1 || auditPage.Items[0].ID != aliceLatestLow {
+		t.Fatalf("PostgreSQL audit HTTP page status=%d body=%s", auditResponse.Code, auditResponse.Body.String())
+	}
 	items, err := repository.FindRecentExtractionsForSources(
 		[]uuid.UUID{aliceSource}, "018-HAI", false, 2,
 	)

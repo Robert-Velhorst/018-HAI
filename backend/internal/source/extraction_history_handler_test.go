@@ -30,10 +30,6 @@ func (r *extractionHistoryScopeRepository) FindExtractionsPageForSources(ids []u
 	return []models.SourceExtraction{}, 0, nil
 }
 
-func (r *extractionHistoryScopeRepository) FindSyncJobsPageForSources([]uuid.UUID, int, int) ([]models.SourceSyncJob, int, error) {
-	panic("unexpected sync-job paging in extraction test")
-}
-
 func (r *extractionHistoryScopeRepository) FindAuditLogsPageForSources([]uuid.UUID, int, int) ([]models.SourceAuditLog, int, error) {
 	panic("unexpected audit paging in extraction test")
 }

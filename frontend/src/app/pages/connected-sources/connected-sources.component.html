@@ -1045,13 +1045,27 @@
         <div class="panel-heading">
           <div>
             <h2>Sync jobs and audit</h2>
-            <p>Recent loaded job and audit records. Filter to find exact IDs, source, status, or message.</p>
+            <p>Paged sync jobs and audit records. Filters apply to the loaded records.</p>
           </div>
         </div>
         <p *ngIf="auditLogsLoading" role="status" aria-live="polite" class="source-detail-state">Loading source audit history…</p>
-        <p *ngIf="!auditLogsLoading && !auditLogsLoaded && loadWarnings.includes('Audit history')" role="alert" class="source-detail-state source-detail-state--error">
-          Audit history could not be loaded. <button type="button" nz-button nzSize="small" (click)="onActivitySectionOpen(true)">Retry</button>
+        <p *ngIf="syncHistoryLoading" role="status" aria-live="polite" class="source-detail-state">Loading sync job history…</p>
+        <p *ngIf="!syncHistoryLoading && loadWarnings.includes('Sync history')" role="alert" class="source-detail-state source-detail-state--error">
+          Sync history could not be refreshed. Any previously loaded records remain visible. <button type="button" nz-button nzSize="small" (click)="retrySyncHistory()">Retry</button>
         </p>
+        <div class="header-actions" role="group" aria-label="Sync history pages" *ngIf="syncHistoryLoaded">
+          <button type="button" nz-button nz-tooltip nzTooltipTitle="Previous sync page" aria-label="Previous sync page" [disabled]="!canChangeSyncHistory(-1)" (click)="changeSyncHistory(-1)"><span nz-icon nzType="arrow-left" aria-hidden="true"></span></button>
+          <span role="status" aria-live="polite">Sync records {{ syncHistoryRange() }} of {{ syncHistoryTotal }}</span>
+          <button type="button" nz-button nz-tooltip nzTooltipTitle="Next sync page" aria-label="Next sync page" [disabled]="!canChangeSyncHistory(1)" (click)="changeSyncHistory(1)"><span nz-icon nzType="arrow-right" aria-hidden="true"></span></button>
+        </div>
+        <p *ngIf="!auditLogsLoading && loadWarnings.includes('Audit history')" role="alert" class="source-detail-state source-detail-state--error">
+          Audit history could not be refreshed. Any previously loaded records remain visible. <button type="button" nz-button nzSize="small" (click)="retryAuditHistory()">Retry</button>
+        </p>
+        <div class="header-actions" role="group" aria-label="Audit history pages" *ngIf="auditLogsLoaded">
+          <button type="button" nz-button nz-tooltip nzTooltipTitle="Previous audit page" aria-label="Previous audit page" [disabled]="!canChangeAuditPage(-1)" (click)="changeAuditPage(-1)"><span nz-icon nzType="arrow-left" aria-hidden="true"></span></button>
+          <span role="status" aria-live="polite">Audit records {{ auditPageRange() }} of {{ auditTotalCount }}</span>
+          <button type="button" nz-button nz-tooltip nzTooltipTitle="Next audit page" aria-label="Next audit page" [disabled]="!canChangeAuditPage(1)" (click)="changeAuditPage(1)"><span nz-icon nzType="arrow-right" aria-hidden="true"></span></button>
+        </div>
         <div class="advanced-filter-row activity-filters">
           <label>
             <span>Find activity</span>
@@ -1075,7 +1089,7 @@
               <strong>{{ statusText(job.status) }} · {{ job.mode }}</strong>
               <span>Job {{ job.id }} · source {{ job.sourceId }}</span>
               <span>{{ job.itemsSeen }} seen, {{ job.itemsAdded }} added, {{ job.itemsUpdated }} updated, {{ job.itemsFailed }} failed</span>
-              <small>Started {{ job.startedAt | date: 'short' }}{{ job.completedAt ? ' · completed ' + (job.completedAt | date: 'short') : '' }} · {{ safeOperationalText(job.message) || 'no message' }}</small>
+              <small><ng-container *ngIf="syncHistoryTimestamp(job.startedAt) as started; else syncStartUnknown">Started {{ started | date: 'short' }}</ng-container><ng-template #syncStartUnknown>{{ job.status === 'queued' || job.status === 'pending' ? 'Not started' : 'Start time unavailable' }}</ng-template><ng-container *ngIf="syncHistoryTimestamp(job.completedAt) as completed"> · completed {{ completed | date: 'short' }}</ng-container> · {{ safeOperationalText(job.message) || 'no message' }}</small>
             </div>
           </article>
           <article *ngFor="let log of filteredAuditLogs()" data-status="neutral">
@@ -1088,7 +1102,7 @@
             </div>
           </article>
           <nz-empty
-            *ngIf="!loading && !auditLogsLoading && (syncJobsLoaded || syncJobsUnavailable) && (auditLogsLoaded || loadWarnings.includes('Audit history')) && !hasFilteredActivity()"
+            *ngIf="!loading && !auditLogsLoading && !syncHistoryLoading && (syncHistoryLoaded || loadWarnings.includes('Sync history')) && (auditLogsLoaded || loadWarnings.includes('Audit history')) && !hasFilteredActivity()"
             [nzNotFoundContent]="sourceActivityEmptyText()"
           ></nz-empty>
         </div>

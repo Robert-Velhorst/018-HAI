@@ -8,7 +8,6 @@ import (
 )
 
 type pagedSourceHistoryRepository interface {
-	FindSyncJobsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceSyncJob, int, error)
 	FindExtractionsPageForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool, limit, offset int) ([]models.SourceExtraction, int, error)
 	FindAuditLogsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceAuditLog, int, error)
 }
@@ -27,18 +26,27 @@ type SourceOverview struct {
 	LatestJobStatusBySource  map[string]string `json:"latestJobStatusBySource"`
 }
 
-func (r *GormRepository) FindSyncJobsPageForSources(sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceSyncJob, int, error) {
-	if len(sourceIDs) == 0 {
+func (r *GormRepository) FindSyncJobsPageForOwnerSources(owner string, sourceIDs []uuid.UUID, limit, offset int) ([]models.SourceSyncJob, int, error) {
+	owner = strings.TrimSpace(owner)
+	if owner == "" || len(sourceIDs) == 0 {
 		return []models.SourceSyncJob{}, 0, nil
 	}
-	query := r.DB.Model(&models.SourceSyncJob{}).Where("source_id IN ?", sourceIDs)
+	// Filter before Count and Offset: removing another owner's manual jobs after
+	// paging leaks totals and can turn a full page into an empty one.
+	query := r.DB.Model(&models.SourceSyncJob{}).Where("source_id IN ?", sourceIDs).
+		Where("(mode <> ? OR owner_identity = ?)", ModeManualAsyncSync, owner)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var items []models.SourceSyncJob
-	err := query.Order("created_at DESC").Order("id DESC").Limit(limit).Offset(offset).Find(&items).Error
-	return items, int(total), err
+	if err := query.Order("created_at DESC").Order("id DESC").Limit(limit).Offset(offset).Find(&items).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := r.refreshManualSyncStatuses(items); err != nil {
+		return nil, 0, err
+	}
+	return items, int(total), nil
 }
 
 func (r *GormRepository) FindExtractionsPageForSources(sourceIDs []uuid.UUID, projectKey string, includeArchived bool, limit, offset int) ([]models.SourceExtraction, int, error) {

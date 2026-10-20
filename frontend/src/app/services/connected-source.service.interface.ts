@@ -12,6 +12,7 @@ import {
   ICreateSourceRequest,
   IImportRequest,
   ISourceAuditLog,
+  ISourceAuditLogPage,
   ISourceConnector,
   ISourceConnectionHealth,
   ISourceExtraction,
@@ -19,6 +20,7 @@ import {
   ISourceSearchRequest,
   ISourceSearchResult,
   ISourceSyncJob,
+  ISourceSyncJobPage,
   ISourceManualSyncJob,
   ISourceSyncResult,
   IKnowledgeGraphResult,
@@ -33,6 +35,7 @@ export interface IConnectedSourceService {
   connectionHealth(sourceId: string): Observable<ISourceConnectionHealth>;
   connectionHealths(): Observable<ISourceConnectionHealth[]>;
   syncJobs(sourceId?: string): Observable<ISourceSyncJob[]>;
+  syncJobPage(offset: number, limit?: number, sourceId?: string): Observable<ISourceSyncJobPage>;
   submitManualSync(sourceId: string, request: { projectKey?: string }, idempotencyKey: string): Observable<ISourceManualSyncJob>;
   manualSyncJob(id: string): Observable<ISourceManualSyncJob>;
   createSource(request: ICreateSourceRequest): Observable<IConnectedSource>;
@@ -58,4 +61,5 @@ export interface IConnectedSourceService {
   archiveExtraction(id: string): Observable<ISourceExtraction>;
   deleteExtraction(id: string, authorization: ISourceDestructiveAuthorization): Observable<void>;
   auditLogs(sourceId?: string): Observable<ISourceAuditLog[]>;
+  auditLogPage(offset: number, limit?: number, sourceId?: string): Observable<ISourceAuditLogPage>;
 }
