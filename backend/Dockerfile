@@ -1,5 +1,5 @@
 # Stage 1: Compiling the application
-FROM golang:1.27.2 AS builder
+FROM golang:1.27.3@sha256:957861185dbf29d93668ace41e011d091c6e779953d47f0316ef2cc58e28fe2b AS builder
 
 # Set the Current Working Directory inside the container
 WORKDIR /app
