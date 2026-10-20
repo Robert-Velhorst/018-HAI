@@ -18,7 +18,7 @@
     "node": "^26.12.0"
   },
   "dependencies": {
-    "@angular/cdk": "22.2.2",
+    "@angular/cdk": "22.2.3",
     "@angular/animations": "22.2.2",
     "@angular/common": "22.2.2",
     "@angular/compiler": "22.2.2",
