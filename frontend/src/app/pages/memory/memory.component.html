@@ -173,6 +173,7 @@
             </nz-select></label>
           </div>
           <button type="submit" nz-button nzType="default" [nzLoading]="loading"><i nz-icon nzType="search"></i>Search</button>
+          <button type="button" nz-button nzType="default" [disabled]="loading" (click)="clearLibraryFilters()" title="Clear search, kind, tag and sort; keep the applied project, page size and archive scope"><i nz-icon nzType="clear"></i>Clear filters</button>
         </form>
 
         <div class="memory-list">
@@ -203,6 +204,7 @@
           </button>
           <nz-empty *ngIf="memoriesLoaded && !memories.length && !loading && !memoryLoadError" nzNotFoundContent="No matching memory records."></nz-empty>
         </div>
+        <p *ngIf="memoriesLoaded && !loading && !memoryLoadError && libraryResult" class="memory-page-range" role="status">Records {{ pageRangeStart() }}–{{ pageRangeEnd() }} of {{ libraryResult.total }}</p>
         <nz-pagination *ngIf="libraryResult" [nzPageIndex]="libraryPage" [nzPageSize]="libraryResult.pageSize" [nzTotal]="libraryResult.total" [nzDisabled]="loading" [nzSimple]="true" (nzPageIndexChange)="changeLibraryPage($event)"></nz-pagination>
       </aside>
       </hai-progressive-section>

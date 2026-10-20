@@ -220,6 +220,26 @@ export class MemoryComponent implements OnInit, OnDestroy {
     }
   }
 
+  clearLibraryFilters(): void {
+    if (!this.isAdvancedView || this.loading) return;
+    this.libraryForm.patchValue({
+      projectKey: this.libraryProjectKey,
+      pageSize: this.appliedLibraryFilters.pageSize ?? 20,
+      q: '', kind: '', tag: '', sort: 'updatedAt', order: 'desc',
+    });
+    this.applyLibraryFilters();
+  }
+
+  pageRangeStart(): number {
+    if (!this.memoriesLoaded || this.loading || this.memoryLoadError || !this.libraryResult?.total || !this.memories.length) return 0;
+    return (this.libraryResult.page - 1) * this.libraryResult.pageSize + 1;
+  }
+
+  pageRangeEnd(): number {
+    const start = this.pageRangeStart();
+    return start ? Math.min(start + this.memories.length - 1, this.libraryResult!.total) : 0;
+  }
+
   private clearRetrieval(): void {
     this.retrieveSubscription?.unsubscribe();
     this.retrieving = false;
