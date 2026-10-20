@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -510,6 +512,54 @@ func TestSearchChecksListingDNSBeforeReturningJobs(t *testing.T) {
 				t.Fatalf("public listing rejected: result=%v error=%v", result, err)
 			}
 		})
+	}
+}
+
+func TestListingDNSLookupsRunConcurrentlyWithABoundedWorkerCount(t *testing.T) {
+	result := &SearchResult{}
+	for index := range 20 {
+		listing := fmt.Sprintf("https://jobs%d.example.com/apply", index)
+		result.Jobs = append(result.Jobs, Job{SourceURL: &listing})
+	}
+	started := make(chan struct{}, 20)
+	release := make(chan struct{})
+	var active, maximum atomic.Int32
+	service := &Service{lookupIP: func(ctx context.Context, _, _ string) ([]netip.Addr, error) {
+		current := active.Add(1)
+		defer active.Add(-1)
+		for previous := maximum.Load(); current > previous; previous = maximum.Load() {
+			if maximum.CompareAndSwap(previous, current) {
+				break
+			}
+		}
+		started <- struct{}{}
+		select {
+		case <-release:
+			return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan bool, 1)
+	go func() { done <- service.validListingAddresses(ctx, result) }()
+	for range maxListingDNSLookups {
+		select {
+		case <-started:
+		case <-ctx.Done():
+			t.Fatal("DNS lookups did not run concurrently")
+		}
+	}
+	if got := maximum.Load(); got != maxListingDNSLookups {
+		t.Fatalf("active lookups=%d, want %d", got, maxListingDNSLookups)
+	}
+	close(release)
+	if !<-done {
+		t.Fatal("public listing host batch was rejected")
+	}
+	if got := maximum.Load(); got > maxListingDNSLookups {
+		t.Fatalf("concurrency exceeded bound: %d", got)
 	}
 }
 

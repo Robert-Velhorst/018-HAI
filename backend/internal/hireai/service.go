@@ -20,16 +20,18 @@ import (
 
 	"automation-hub-backend/internal/demomode"
 	"golang.org/x/net/publicsuffix"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
-	urlEnv       = "HIRE_AI_JOBS_SEARCH_URL"
-	tokenEnv     = "HIRE_AI_CONNECTOR_TOKEN"
-	modeEnv      = "RUN_MODE"
-	searchPath   = "/api/hai/jobs/search"
-	maxRequest   = 16 << 10
-	maxResponse  = 512 << 10
-	defaultLimit = 10
+	urlEnv               = "HIRE_AI_JOBS_SEARCH_URL"
+	tokenEnv             = "HIRE_AI_CONNECTOR_TOKEN"
+	modeEnv              = "RUN_MODE"
+	searchPath           = "/api/hai/jobs/search"
+	maxRequest           = 16 << 10
+	maxResponse          = 512 << 10
+	defaultLimit         = 10
+	maxListingDNSLookups = 8
 )
 
 var ErrUnavailable = errors.New("Hire.AI connector is unavailable")
@@ -273,18 +275,28 @@ func (s *Service) validListingAddresses(ctx context.Context, result *SearchResul
 				}
 				continue
 			}
-			addresses, err := s.lookupIP(ctx, "ip", host)
+		}
+	}
+	group, lookupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(maxListingDNSLookups)
+	for host := range checked {
+		if _, err := netip.ParseAddr(host); err == nil {
+			continue
+		}
+		group.Go(func() error {
+			addresses, err := s.lookupIP(lookupCtx, "ip", host)
 			if err != nil || len(addresses) == 0 {
-				return false
+				return ErrUnavailable
 			}
 			for _, address := range addresses {
 				if !publicUnicast(address) {
-					return false
+					return ErrUnavailable
 				}
 			}
-		}
+			return nil
+		})
 	}
-	return ctx.Err() == nil
+	return group.Wait() == nil && ctx.Err() == nil
 }
 
 // The API orders listings by posted date, then creation time, then ID, all
