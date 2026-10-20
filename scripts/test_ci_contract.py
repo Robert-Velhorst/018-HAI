@@ -1251,7 +1251,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[a-f0-9]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
@@ -1395,7 +1395,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[a-f0-9]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
@@ -1426,7 +1426,7 @@ class CIWorkflowContractTest(unittest.TestCase):
             re.MULTILINE,
         )
         container = re.search(
-            r"^FROM\s+golang:(\d+\.\d+\.\d+)\s+AS\s+builder$",
+            r"^FROM\s+golang:(\d+\.\d+\.\d+)(?:@sha256:[a-f0-9]{64})?\s+AS\s+builder$",
             dockerfile,
             re.MULTILINE,
         )
