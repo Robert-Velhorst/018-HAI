@@ -44,3 +44,7 @@ If private reporting is unavailable, contact the repository maintainers through 
 ## Response and disclosure
 
 Reports are reviewed on a best-effort basis; no response or fix-time guarantee is provided. Coordinate public disclosure with the maintainers so users have a reasonable opportunity to receive a fix. Security fixes target the current default branch and latest published release; older versions are not guaranteed to receive fixes.
+
+## Supported versions
+
+Security fixes are assessed against the current default branch and latest published release. Older versions are not guaranteed to receive fixes unless release notes explicitly identify them as maintained.
