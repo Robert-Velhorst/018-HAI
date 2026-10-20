@@ -40,7 +40,7 @@ const STATIC_PROGRESSIVE_SECTION_IDS_BY_ROUTE: Readonly<Record<string, readonly 
   '/governance-control': ['advisory-engines', 'outcome-monitor-advanced', 'outcome-monitor-composition', 'execution-receipts', 'life-ledger-records', 'standing-mandates', 'controlled-learning', 'agent-registry', 'domain-pack-catalog', 'agent-teams', 'whole-life-context', 'life-ledger-overview', 'proactivity-policy', 'outcome-evaluations', 'resilience-status'],
   '/runtime-control': ['runtime-autonomy-policy', 'runtime-readiness-evidence'],
   '/runtime-lab': ['runtime-inventory', 'runtime-feature-parity', 'runtime-mcp-readiness'],
-  '/system-status': ['system-check-details'],
+  '/system-status': ['system-check-details', 'system-delivery-details'],
   '/command-dashboard': ['runtime-inventory', 'memory-inspection', 'command-history'],
 };
 

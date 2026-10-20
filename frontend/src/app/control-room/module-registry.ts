@@ -235,7 +235,7 @@ export const HAI_MODULES: HaiModuleDefinition[] = [
   },
   { id: 'runtime-control', route: '/runtime-control', group: 'system', title: 'Runtime control', description: 'Controlled execution and safety gates.', icon: 'poweroff', primaryActionOwner: 'module', advancedSectionIds: ['runtime-autonomy-policy', 'runtime-readiness-evidence'] },
   { id: 'runtime-lab', route: '/runtime-lab', group: 'system', title: 'Runtime lab', description: 'Runtime adapters and capability checks.', icon: 'api', primaryActionOwner: 'module', advancedSectionIds: ['runtime-inventory', 'runtime-feature-parity', 'runtime-mcp-readiness'], advancedSectionIdPrefixes: [{ prefix: 'runtime-inventory-', parentId: 'runtime-feature-parity' }] },
-  { id: 'system-status', route: '/system-status', group: 'system', title: 'System status', description: 'Services, dependencies, and health.', icon: 'heart', primaryActionOwner: 'module', advancedSectionIds: ['system-check-details'] },
+  { id: 'system-status', route: '/system-status', group: 'system', title: 'System status', description: 'Services, dependencies, and health.', icon: 'heart', primaryActionOwner: 'module', advancedSectionIds: ['system-check-details', 'system-delivery-details'] },
   { id: 'command-dashboard', route: '/command-dashboard', group: 'system', title: 'Legacy dashboard', description: 'Detailed operating records.', icon: 'dashboard', primaryActionOwner: 'module', advancedSectionIds: ['runtime-inventory', 'memory-inspection', 'command-history'] },
   { id: 'onboarding', route: '/onboarding', group: 'system', title: 'Getting started', description: 'A short orientation to HAI.', icon: 'read', primaryActionOwner: 'module', showInNavigation: false },
 ]

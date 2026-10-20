@@ -14,6 +14,44 @@
     </div>
   </div>
 
+  <hai-progressive-section moduleId="system-status" sectionId="system-delivery-details"
+    title="Event delivery and connector" summary="Owner-only delivery records and local planning-bridge configuration."
+    (openChange)="onOperationsOpen($event)">
+    <section class="operational-details" aria-label="Event delivery and connector">
+      <button type="button" nz-button nzType="default" (click)="loadOperationalDetails()" [disabled]="operationsLoading || !!retryingEventId">
+        <span nz-icon nzType="reload" aria-hidden="true"></span>Refresh delivery and connector
+      </button>
+      <p *ngIf="operationsLoading" role="status">Loading operational details…</p>
+      <p *ngIf="operationsError" role="alert">{{ operationsError }}</p>
+      <p *ngIf="deliveryError" role="alert">{{ deliveryError }}</p>
+      <p *ngIf="connectorError" role="alert">{{ connectorError }}</p>
+      <p *ngIf="retryMessage" role="status" aria-live="polite">{{ retryMessage }}</p>
+      <ng-container *ngIf="canAdministerDelivery && eventDelivery as delivery">
+        <h2>Event delivery</h2>
+        <p>Pending {{ delivery.pending }} · Dead-lettered {{ delivery.deadLettered }} · Published {{ delivery.published }}</p>
+        <p>Checked {{ delivery.checkedAt | date:'medium' }}. Published means dispatched, not verified downstream completion.</p>
+        <ul class="delivery-records">
+          <li *ngFor="let failure of delivery.recentFailures">
+            <strong>{{ failure.eventType }} · {{ failure.status }}</strong>
+            <span>{{ failure.id }} · Attempts {{ failure.attemptCount }} / {{ failure.maxAttempts }}</span>
+            <button type="button" nz-button nzType="default" (click)="requestDeliveryRetry(failure)" [disabled]="!deliveryRetryAllowed(failure.id)">Review retry</button>
+            <div *ngIf="retryConfirmationId === failure.id" class="delivery-confirmation" role="group" aria-label="Confirm delivery retry">
+              <p>Reset this event's bounded retry budget? Delivery is at-least-once; confirm the consumer can safely handle a possible duplicate.</p>
+              <button type="button" nz-button (click)="retryConfirmationId = ''">Cancel</button>
+              <button type="button" nz-button nzType="primary" (click)="confirmDeliveryRetry(failure.id)" [disabled]="!deliveryRetryAllowed(failure.id)">Queue retry</button>
+            </div>
+          </li>
+        </ul>
+        <p *ngIf="!delivery.recentFailures.length">No recent failed deliveries in this snapshot.</p>
+      </ng-container>
+      <ng-container *ngIf="canReadConnector && connectorStatus as connector">
+        <h2>Local planning bridge</h2>
+        <p>{{ !connector.enabled ? 'Disabled' : connector.configured ? 'Configured' : 'Configuration required' }} · {{ connector.transport }}</p>
+        <p>Configuration status is not a live connectivity or execution test.</p>
+      </ng-container>
+    </section>
+  </hai-progressive-section>
+
   <hai-openclaw-maintenance></hai-openclaw-maintenance>
   <div *ngIf="loadError" class="load-error" role="status" aria-live="polite">
     <span nz-icon nzType="disconnect" aria-hidden="true"></span>

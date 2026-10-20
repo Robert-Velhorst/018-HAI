@@ -1,12 +1,17 @@
-import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit, Optional } from '@angular/core';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service';
-import { finalize, Subscription, timeout } from 'rxjs';
+import { catchError, defaultIfEmpty, finalize, forkJoin, Observable, of, Subscription, switchMap, take, timeout } from 'rxjs';
+import { AuthSessionService } from '../../services/auth-session.service';
+import { IAuthSession } from '../../models/auth-session.model.interface';
 import {
   ISystemCheck,
   ISystemInfo,
   ISystemReadiness,
   SystemCheckSeverity,
+  IEventDeliveryStats,
+  IEventDeliveryFailure,
+  IA2ABridgeStatus,
 } from '../../models/system-status.model.interface';
 import { ISystemStatusService } from '../../services/system-status/system-status.service.interface';
 import { SYSTEM_STATUS_SERVICE_TOKEN } from '../../services/system-status/system-status.service.token';
@@ -52,8 +57,23 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   loading = false;
   loadError = false;
   lastUpdated?: Date;
+  eventDelivery?: IEventDeliveryStats;
+  connectorStatus?: IA2ABridgeStatus;
+  operationsLoading = false;
+  operationsError = '';
+  deliveryError = '';
+  connectorError = '';
+  canReadConnector = false;
+  canAdministerDelivery = false;
+  retryConfirmationId = '';
+  retryingEventId = '';
+  retryMessage = '';
 
   private pollTimer?: ReturnType<typeof setTimeout>;
+  private readinessSubscription?: Subscription;
+  private operationsSubscription?: Subscription;
+  private retrySubscription?: Subscription;
+  private operationsOpen = false;
   private refreshInFlight = false;
   private systemInfoSubscription?: Subscription;
   private destroyed = false;
@@ -69,7 +89,8 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
     @Inject(SYSTEM_STATUS_SERVICE_TOKEN)
     private systemStatusService: ISystemStatusService,
     private notification: NzNotificationService,
-    private viewPreferences: ModuleViewPreferencesService
+    private viewPreferences: ModuleViewPreferencesService,
+    @Optional() @Inject(AuthSessionService) private authSessionService?: AuthSessionService,
   ) {}
 
   get isAdvanced(): boolean {
@@ -86,6 +107,9 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
     this.destroyed = true;
     this.clearPollTimer();
     this.systemInfoSubscription?.unsubscribe();
+    this.readinessSubscription?.unsubscribe();
+    this.operationsSubscription?.unsubscribe();
+    this.retrySubscription?.unsubscribe();
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
   }
 
@@ -114,7 +138,9 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
   }
 
   refresh(silent = false): void {
+    if (this.destroyed) return;
     this.clearPollTimer();
+    if (!silent && this.operationsOpen) this.loadOperationalDetails();
     if (this.refreshInFlight) {
       return;
     }
@@ -122,8 +148,9 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
       this.loading = true;
     }
     this.refreshInFlight = true;
-    this.systemStatusService.readiness().pipe(
+    this.readinessSubscription = this.systemStatusService.readiness().pipe(
       timeout(READINESS_TIMEOUT_MS),
+      take(1),
       finalize(() => {
         this.refreshInFlight = false;
       })
@@ -149,6 +176,105 @@ export class SystemStatusComponent implements OnInit, OnDestroy {
         }
       },
     });
+  }
+
+  onOperationsOpen(open: boolean): void {
+    this.operationsOpen = open;
+    this.retryConfirmationId = '';
+    if (open) this.loadOperationalDetails();
+    else {
+      this.operationsSubscription?.unsubscribe();
+      this.operationsLoading = false;
+    }
+  }
+
+  loadOperationalDetails(): void {
+    if (this.destroyed || !this.isAdvanced || !this.operationsOpen || this.operationsLoading || this.retryingEventId) return;
+    this.operationsLoading = true;
+    this.operationsError = '';
+    this.deliveryError = '';
+    this.connectorError = '';
+    this.retryConfirmationId = '';
+    this.canAdministerDelivery = false;
+    this.canReadConnector = false;
+    const sessionRead: Observable<IAuthSession | undefined> = this.authSessionService?.session() ?? of(undefined);
+    this.operationsSubscription = sessionRead.pipe(
+      timeout(READINESS_TIMEOUT_MS), take(1), defaultIfEmpty(undefined),
+      switchMap((session) => {
+        const owner = session?.authenticated === true && session.role === 'owner';
+        this.canReadConnector = owner && session!.permissions.canRead === true;
+        this.canAdministerDelivery = owner && session!.permissions.canAdminister === true;
+        if (!this.canReadConnector && !this.canAdministerDelivery) {
+          this.operationsError = 'Verified owner access is required. Delivery controls also require administration permission.';
+        }
+        return forkJoin({
+          delivery: this.canAdministerDelivery ? this.systemStatusService.eventDelivery().pipe(defaultIfEmpty(undefined), catchError(() => { this.deliveryError = 'Delivery status unavailable. Previously loaded records may be stale.'; return of(undefined); })) : of(undefined),
+          connector: this.canReadConnector ? this.systemStatusService.connectorStatus().pipe(defaultIfEmpty(undefined), catchError(() => { this.connectorError = 'Connector configuration unavailable. Previously loaded values may be stale.'; return of(undefined); })) : of(undefined),
+        });
+      }),
+      timeout(READINESS_TIMEOUT_MS),
+      finalize(() => this.operationsLoading = false),
+    ).subscribe({
+      next: ({ delivery, connector }) => {
+        if (delivery) {
+          if (this.validDeliveryStats(delivery)) this.eventDelivery = delivery;
+          else this.deliveryError = 'Delivery status could not be verified. Refresh before retrying.';
+        }
+        else if (this.canAdministerDelivery && !this.deliveryError) this.deliveryError = 'Delivery status returned no records. Refresh before retrying.';
+        if (connector) {
+          if (typeof connector.enabled === 'boolean' && typeof connector.configured === 'boolean' && connector.transport === 'local') this.connectorStatus = connector;
+          else this.connectorError = 'Connector configuration could not be verified.';
+        }
+        else if (this.canReadConnector && !this.connectorError) this.connectorError = 'Connector configuration returned no status.';
+      },
+      error: () => this.operationsError = 'Operational details could not be loaded. Refresh before retrying a delivery.',
+    });
+  }
+
+  requestDeliveryRetry(failure: IEventDeliveryFailure): void {
+    if (!this.deliveryRetryAllowed(failure.id)) return;
+    this.retryConfirmationId = failure.id;
+    this.retryMessage = '';
+  }
+
+  confirmDeliveryRetry(id: string): void {
+    if (this.retryConfirmationId !== id || !this.deliveryRetryAllowed(id)) return;
+    this.retryConfirmationId = '';
+    this.retryingEventId = id;
+    this.retryMessage = '';
+    this.retrySubscription = this.systemStatusService.retryEventDelivery(id).pipe(
+      timeout(READINESS_TIMEOUT_MS), take(1),
+      finalize(() => this.retryingEventId = ''),
+    ).subscribe({
+      next: (result) => {
+        if (result?.status !== 'queued' || result.eventId !== id) {
+          this.deliveryError = 'Retry outcome is unverified. Refresh delivery status before taking another action.';
+          return;
+        }
+        this.retryMessage = 'Retry queued. This does not prove delivery; a healthy event consumer is still required.';
+        if (this.eventDelivery) this.eventDelivery = { ...this.eventDelivery, recentFailures: this.eventDelivery.recentFailures.filter((failure) => failure.id !== id) };
+        this.deliveryError = 'Delivery totals may have changed. Refresh to verify the current state.';
+      },
+      error: () => this.deliveryError = 'Retry outcome is unknown. It may have been accepted; refresh status before retrying.',
+      complete: () => {
+        if (!this.retryMessage && !this.deliveryError) this.deliveryError = 'Retry returned no confirmation. Refresh status before retrying.';
+      },
+    });
+  }
+
+  deliveryRetryAllowed(id: string): boolean {
+    return !this.destroyed && this.isAdvanced && this.operationsOpen && this.canAdministerDelivery
+      && !this.operationsLoading && !this.operationsError && !this.deliveryError && !this.retryingEventId
+      && this.eventDelivery?.recentFailures.some((failure) => failure.id === id && failure.status === 'dead_lettered') === true;
+  }
+
+  private validDeliveryStats(stats: IEventDeliveryStats): boolean {
+    return [stats.pending, stats.published, stats.deadLettered].every((value) => Number.isSafeInteger(value) && value >= 0)
+      && typeof stats.checkedAt === 'string' && Number.isFinite(Date.parse(stats.checkedAt))
+      && Array.isArray(stats.recentFailures) && stats.recentFailures.every((failure) => failure && typeof failure.id === 'string' && failure.id.length > 0
+        && ['pending', 'published', 'dead_lettered'].includes(failure.status)
+        && Number.isSafeInteger(failure.attemptCount) && failure.attemptCount >= 0
+        && Number.isSafeInteger(failure.maxAttempts) && failure.maxAttempts > 0);
   }
 
   private scheduleNextPoll(): void {
