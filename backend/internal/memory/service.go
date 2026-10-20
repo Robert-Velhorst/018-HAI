@@ -451,7 +451,9 @@ func (s *service) createForOwnerInRepository(repo Repository, ownerIdentity, pro
 
 	if ownerIdentity == "" {
 		if existing, err := repo.FindByHash(projectKey, kind, contentHash); err == nil {
-			return s.mergeExact(repo, existing, request)
+			if normalizeText(existing.Content) == normalizeText(content) && provenanceCanMerge(existing.SourceURI, request.SourceURI) {
+				return s.mergeExact(repo, existing, request)
+			}
 		} else if err != nil && !isNotFound(err) {
 			return nil, err
 		}
@@ -463,6 +465,9 @@ func (s *service) createForOwnerInRepository(repo Repository, ownerIdentity, pro
 	}
 	for _, candidate := range memories {
 		if ownerIdentity != "" && candidate.OwnerIdentity != ownerIdentity {
+			continue
+		}
+		if !provenanceCanMerge(candidate.SourceURI, request.SourceURI) {
 			continue
 		}
 		if candidate.Kind == kind && candidate.ContentHash == contentHash && normalizeText(candidate.Content) == normalizeText(content) {
@@ -1010,11 +1015,18 @@ func filterReadableMemories(memories []models.ContextMemory, ownerIdentity strin
 	return visible
 }
 
+// A duplicate can acquire missing provenance without combining different sources.
+func provenanceCanMerge(existingURI, incomingURI string) bool {
+	existingURI = strings.TrimSpace(existingURI)
+	incomingURI = strings.TrimSpace(incomingURI)
+	return existingURI == "" || incomingURI == "" || existingURI == incomingURI
+}
+
 func (s *service) mergeExact(repo Repository, existing *models.ContextMemory, request CreateRequest) (*models.ContextMemory, error) {
 	existing.Confidence = math.Max(existing.Confidence, normalizeConfidence(request.Confidence))
 	existing.Tags = joinTags(mergeTags(splitTags(existing.Tags), request.Tags))
 	if existing.SourceURI == "" {
-		existing.SourceURI = request.SourceURI
+		existing.SourceURI = strings.TrimSpace(request.SourceURI)
 	}
 	if existing.SourceLabel == "" {
 		existing.SourceLabel = request.SourceLabel
@@ -1032,7 +1044,7 @@ func (s *service) mergeSimilar(repo Repository, existing *models.ContextMemory, 
 	existing.Confidence = math.Max(existing.Confidence, normalizeConfidence(request.Confidence)-0.05)
 	existing.Tags = joinTags(mergeTags(splitTags(existing.Tags), request.Tags))
 	if existing.SourceURI == "" {
-		existing.SourceURI = request.SourceURI
+		existing.SourceURI = strings.TrimSpace(request.SourceURI)
 	}
 	if existing.SourceLabel == "" {
 		existing.SourceLabel = request.SourceLabel

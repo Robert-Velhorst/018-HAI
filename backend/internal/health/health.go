@@ -40,14 +40,15 @@ const DefaultTimeout = 3 * time.Second
 //
 // Criticality reflects what the process can actually serve without:
 //   - Postgres is critical: every domain route reads or writes it.
-//   - Kafka is not: the publisher degrades to a no-op when brokers are absent.
-//   - Redis is not: the backend does not connect to it yet (see RedisProbe).
+//   - Kafka is not: committed events wait in the transactional outbox.
+//   - Redis is not: the rate limiter can fall back to in-process counters.
 //   - An LLM provider is not: generation is one capability, not the service.
 func Probes(cfg config.Configuration) []doctor.Probe {
 	return []doctor.Probe{
 		PostgresProbe(cfg),
 		RedisProbe(cfg),
 		KafkaProbe(cfg),
+		EventOutboxProbe(),
 		LLMProviderProbe(),
 		schedulerstatus.Probe("source"),
 		schedulerstatus.Probe("workflow"),

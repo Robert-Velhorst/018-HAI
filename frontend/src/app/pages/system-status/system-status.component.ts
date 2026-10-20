@@ -24,6 +24,7 @@ const GROUP_TITLES: Record<string, string> = {
   database: 'Database',
   redis: 'Redis cache',
   kafka: 'Event bus (Kafka)',
+  events: 'Event delivery',
   llm: 'LLM provider',
   security: 'Secrets & security',
   media: 'Media storage',
