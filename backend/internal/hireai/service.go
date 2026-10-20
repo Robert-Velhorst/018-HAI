@@ -19,16 +19,19 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/demomode"
+	"golang.org/x/net/publicsuffix"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
-	urlEnv       = "HIRE_AI_JOBS_SEARCH_URL"
-	tokenEnv     = "HIRE_AI_CONNECTOR_TOKEN"
-	modeEnv      = "RUN_MODE"
-	searchPath   = "/api/hai/jobs/search"
-	maxRequest   = 16 << 10
-	maxResponse  = 512 << 10
-	defaultLimit = 10
+	urlEnv               = "HIRE_AI_JOBS_SEARCH_URL"
+	tokenEnv             = "HIRE_AI_CONNECTOR_TOKEN"
+	modeEnv              = "RUN_MODE"
+	searchPath           = "/api/hai/jobs/search"
+	maxRequest           = 16 << 10
+	maxResponse          = 512 << 10
+	defaultLimit         = 10
+	maxListingDNSLookups = 8
 )
 
 var ErrUnavailable = errors.New("Hire.AI connector is unavailable")
@@ -116,6 +119,7 @@ type Service struct {
 	client      *http.Client
 	endpoint    *url.URL
 	configError string
+	lookupIP    func(context.Context, string, string) ([]netip.Addr, error)
 }
 
 func DefaultConfig() Config {
@@ -138,7 +142,7 @@ func NewService(config Config, client *http.Client) *Service {
 	if config.Timeout <= 0 || config.Timeout > 30*time.Second {
 		config.Timeout = 8 * time.Second
 	}
-	s := &Service{config: config}
+	s := &Service{config: config, lookupIP: net.DefaultResolver.LookupNetIP}
 	if !config.Enabled {
 		return s
 	}
@@ -241,7 +245,58 @@ func (s *Service) Search(ctx context.Context, input SearchRequest) (*SearchResul
 	if decoder.Decode(&result) != nil || decoder.Decode(new(any)) != io.EOF || !validResult(&result, input.Limit) || !validContinuation(&result, input) {
 		return nil, ErrUnavailable
 	}
+	if !s.validListingAddresses(ctx, &result) {
+		return nil, ErrUnavailable
+	}
 	return &result, nil
+}
+
+// Resolve every distinct listing host within the search deadline. No listing
+// request is made, and one private address in a mixed DNS answer rejects it.
+func (s *Service) validListingAddresses(ctx context.Context, result *SearchResult) bool {
+	checked := make(map[string]bool)
+	for _, job := range result.Jobs {
+		for _, raw := range []*string{job.SourceURL, job.ApplicationURL} {
+			if raw == nil {
+				continue
+			}
+			u, err := url.Parse(*raw)
+			if err != nil || !validPublicHTTPS(raw) {
+				return false
+			}
+			host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+			if checked[host] {
+				continue
+			}
+			checked[host] = true
+			if ip, err := netip.ParseAddr(host); err == nil {
+				if !publicUnicast(ip) {
+					return false
+				}
+				continue
+			}
+		}
+	}
+	group, lookupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(maxListingDNSLookups)
+	for host := range checked {
+		if _, err := netip.ParseAddr(host); err == nil {
+			continue
+		}
+		group.Go(func() error {
+			addresses, err := s.lookupIP(lookupCtx, "ip", host)
+			if err != nil || len(addresses) == 0 {
+				return ErrUnavailable
+			}
+			for _, address := range addresses {
+				if !publicUnicast(address) {
+					return ErrUnavailable
+				}
+			}
+			return nil
+		})
+	}
+	return group.Wait() == nil && ctx.Err() == nil
 }
 
 // The API orders listings by posted date, then creation time, then ID, all
@@ -374,17 +429,26 @@ func validPublicHTTPS(value *string) bool {
 		return true
 	}
 	u, err := url.Parse(*value)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || len(*value) > 2048 {
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || len(*value) > 2048 || (u.Port() != "" && u.Port() != "443") {
 		return false
 	}
 	host := strings.ToLower(u.Hostname())
 	if isLocalNetworkName(host) {
 		return false
 	}
-	if ip, err := netip.ParseAddr(host); err == nil && !publicUnicast(ip) {
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return publicUnicast(ip)
+	}
+	host = strings.TrimSuffix(host, ".")
+	// Require an ICANN root suffix while permitting legitimate hosted domains
+	// listed in the private suffix section (for example, jobs.github.io).
+	lastDot := strings.LastIndexByte(host, '.')
+	if lastDot < 0 {
 		return false
 	}
-	return true
+	_, icann := publicsuffix.PublicSuffix(host[lastDot+1:])
+	_, err = publicsuffix.EffectiveTLDPlusOne(host)
+	return icann && err == nil
 }
 
 func validateEndpoint(raw, runMode string) (*url.URL, error) {
