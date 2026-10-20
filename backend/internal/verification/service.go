@@ -925,21 +925,11 @@ func matchesEvidenceSentence(claim, source string) bool {
 }
 
 func normalizeEvidenceSentence(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	var normalized strings.Builder
-	space := true
-	for _, r := range value {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
-			normalized.WriteRune(r)
-			space = false
-			continue
-		}
-		if !space {
-			normalized.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(normalized.String())
+	// Internal symbols and Unicode can distinguish names, amounts and identifiers.
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, "\"'\u201c\u201d\u2018\u2019")
+	value = strings.TrimRight(strings.TrimSpace(value), ".!?;:")
+	return strings.ToLower(strings.Join(strings.Fields(value), " "))
 }
 
 func evidenceSentences(value string) []string {
