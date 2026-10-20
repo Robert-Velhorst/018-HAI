@@ -54,17 +54,24 @@ history, not an immutable snapshot.
   Previous/Next clicks, duplicate-read prevention, failed-read retention, and
   preservation of latest sync-job state, plus concurrent-deletion, obsolete-read,
   closed-cache invalidation, Basic laziness, and zero/invalid timestamp regressions.
-- The final production build including both history readers passed using Node
-  26.12.0 and the existing installed dependency tree. Existing unrelated style
-  warnings remain; no budget was raised. Fresh lockfile installation remains a
-  hosted CI gate.
+- The initial direct Angular build did not execute npm prebuild guards. Hosted
+  CI caught an unregistered pager icon in both frontend and image builds. The
+  pagers now reuse registered arrow icons; the guard remains unchanged.
+- The corrected canonical `npm run build` and `npm test` both passed, including
+  all preflight guards, 180 Node tests, and 1,432 Angular tests. Local execution
+  used Node 26.12.0, npm 11.6.2, and the existing installed Angular CLI 22.2.2
+  dependency tree, not a fresh installation of the locked CLI 22.2.3. Existing
+  unrelated style warnings remain; no budget was raised. Fresh lockfile
+  installation remains a hosted CI gate.
 - The existing real-PostgreSQL fixture now seeds audit and sync rows and asserts
   ordering, offset, totals, foreign-source exclusion, manual-owner filtering
   before paging, durable-status projection, and an empty source scope. It also
   exercises the actual HTTP handler, service, and repository together for Alice
   and Bob using injected test subjects. Real IDP token verification remains a
-  separate gate. Local execution without a database skips that fixture; hosted database CI remains
-  the execution gate. No local database or Docker stack was started.
+  separate gate. The expanded fixture ran and passed in hosted PostgreSQL CI
+  at commit 4c06c85. Local execution without a database skips that fixture.
+  The subsequent icon correction requires fresh exact-head CI before merge.
+  No local database or Docker stack was started.
 - An initial focused Angular invocation incorrectly combined a narrowed
   TypeScript program with default all-spec discovery. It failed before tests;
   selecting the same two spec files explicitly corrected the harness scope.

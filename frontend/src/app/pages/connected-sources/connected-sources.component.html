@@ -1054,17 +1054,17 @@
           Sync history could not be refreshed. Any previously loaded records remain visible. <button type="button" nz-button nzSize="small" (click)="retrySyncHistory()">Retry</button>
         </p>
         <div class="header-actions" role="group" aria-label="Sync history pages" *ngIf="syncHistoryLoaded">
-          <button type="button" nz-button nz-tooltip nzTooltipTitle="Previous sync page" aria-label="Previous sync page" [disabled]="!canChangeSyncHistory(-1)" (click)="changeSyncHistory(-1)"><span nz-icon nzType="left" aria-hidden="true"></span></button>
+          <button type="button" nz-button nz-tooltip nzTooltipTitle="Previous sync page" aria-label="Previous sync page" [disabled]="!canChangeSyncHistory(-1)" (click)="changeSyncHistory(-1)"><span nz-icon nzType="arrow-left" aria-hidden="true"></span></button>
           <span role="status" aria-live="polite">Sync records {{ syncHistoryRange() }} of {{ syncHistoryTotal }}</span>
-          <button type="button" nz-button nz-tooltip nzTooltipTitle="Next sync page" aria-label="Next sync page" [disabled]="!canChangeSyncHistory(1)" (click)="changeSyncHistory(1)"><span nz-icon nzType="right" aria-hidden="true"></span></button>
+          <button type="button" nz-button nz-tooltip nzTooltipTitle="Next sync page" aria-label="Next sync page" [disabled]="!canChangeSyncHistory(1)" (click)="changeSyncHistory(1)"><span nz-icon nzType="arrow-right" aria-hidden="true"></span></button>
         </div>
         <p *ngIf="!auditLogsLoading && loadWarnings.includes('Audit history')" role="alert" class="source-detail-state source-detail-state--error">
           Audit history could not be refreshed. Any previously loaded records remain visible. <button type="button" nz-button nzSize="small" (click)="retryAuditHistory()">Retry</button>
         </p>
         <div class="header-actions" role="group" aria-label="Audit history pages" *ngIf="auditLogsLoaded">
-          <button type="button" nz-button nz-tooltip nzTooltipTitle="Previous audit page" aria-label="Previous audit page" [disabled]="!canChangeAuditPage(-1)" (click)="changeAuditPage(-1)"><span nz-icon nzType="left" aria-hidden="true"></span></button>
+          <button type="button" nz-button nz-tooltip nzTooltipTitle="Previous audit page" aria-label="Previous audit page" [disabled]="!canChangeAuditPage(-1)" (click)="changeAuditPage(-1)"><span nz-icon nzType="arrow-left" aria-hidden="true"></span></button>
           <span role="status" aria-live="polite">Audit records {{ auditPageRange() }} of {{ auditTotalCount }}</span>
-          <button type="button" nz-button nz-tooltip nzTooltipTitle="Next audit page" aria-label="Next audit page" [disabled]="!canChangeAuditPage(1)" (click)="changeAuditPage(1)"><span nz-icon nzType="right" aria-hidden="true"></span></button>
+          <button type="button" nz-button nz-tooltip nzTooltipTitle="Next audit page" aria-label="Next audit page" [disabled]="!canChangeAuditPage(1)" (click)="changeAuditPage(1)"><span nz-icon nzType="arrow-right" aria-hidden="true"></span></button>
         </div>
         <div class="advanced-filter-row activity-filters">
           <label>
