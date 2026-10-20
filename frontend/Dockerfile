@@ -5,8 +5,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm install --global npm@12.2.0 --no-audit --no-fund \
-    && test "$(npm --version)" = "12.2.0" \
+    npm install --global npm@12.2.1 --no-audit --no-fund \
+    && test "$(npm --version)" = "12.2.1" \
     && npm ci --prefer-offline --no-audit --no-fund
 
 

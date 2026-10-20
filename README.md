@@ -1562,7 +1562,7 @@ Postgres + Redis + optional Kafka-compatible event bus
 The local deployment targets Windows 11 with Docker Desktop. The control-plane
 backend, IDP, and nginx configuration manager use Go 1.27.3 and share an
 executable CI alignment contract. They use Gin, Gorm, Postgres, and
-Sarama/Kafka when the optional event-bus profile is enabled. The frontend uses Angular 22 and ng-zorro-antd 22. Use Node.js 26.12.0 Current and npm 12.2.0 for frontend development and verification; the repository `.nvmrc` and package metadata declare the supported frontend toolchain.
+Sarama/Kafka when the optional event-bus profile is enabled. The frontend uses Angular 22 and ng-zorro-antd 22. Use Node.js 26.12.0 Current and npm 12.2.1 for frontend development and verification; the repository `.nvmrc` and package metadata declare the supported frontend toolchain.
 Versioned SQL migrations are the schema source of truth and `DB_AUTOMIGRATE`
 defaults to `false`. Startup applies pre-phase migrations, optionally runs
 development-only AutoMigrate when explicitly enabled, then applies
@@ -1575,7 +1575,7 @@ post-phase migrations. See
 
 - Windows 11 with Docker Desktop, or another Docker Compose-capable environment.
 - Git.
-- Node.js 26.12.0 Current and npm 12.2.0,
+- Node.js 26.12.0 Current and npm 12.2.1,
   for frontend development outside Docker.
 - Go 1.27.3 for control-plane backend, IDP, and nginx-config-manager
   development outside Docker. Their modules, Docker builders, and CI toolchains
