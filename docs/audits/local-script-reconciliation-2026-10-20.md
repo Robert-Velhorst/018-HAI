@@ -34,6 +34,11 @@ or transcript identifiers. No original file is deleted.
 These decisions cover the reviewed differences, not the remaining 60 selected
 files or complete worktree/archival equivalence.
 
+A subsequent ten-file authentication-test comparison is recorded in
+[Authentication test reconciliation](auth-test-reconciliation-2026-10-20.md).
+It reviews retained assertions separately; neither report treats equal paths
+or older API signatures as raw-file identity or blanket cleanup permission.
+
 ## Reproduced current defects
 
 The newer diagnostic path calls `json.loads` without importing `json`, causing
