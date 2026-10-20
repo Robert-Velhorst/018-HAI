@@ -962,6 +962,14 @@ jobs:
             DB_NAME=hai_migration_runner_test DB_AUTOMIGRATE=false \
             HAI_SEMANTIC_RETRIEVAL_ENABLED=false \
             go run ./cmd/main.go migrate up
+          memory_provenance_log="$RUNNER_TEMP/memory-provenance-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s -tags integration \
+            -run '^TestPostgresMemoryDedupPreservesDistinctSources$' \
+            ./internal/memory/ -v | tee "$memory_provenance_log"
+          grep -q -- '^--- PASS: TestPostgresMemoryDedupPreservesDistinctSources (' "$memory_provenance_log"
+          for test_case in legacy_exact legacy_similar owner_exact owner_similar; do
+            grep -q -- "^[[:space:]]*--- PASS: TestPostgresMemoryDedupPreservesDistinctSources/${test_case} (" "$memory_provenance_log"
+          done
           source_history_log="$RUNNER_TEMP/source-history-page-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
             -run '^TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres$' \
