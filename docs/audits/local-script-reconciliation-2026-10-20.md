@@ -39,6 +39,10 @@ A subsequent ten-file authentication-test comparison is recorded in
 It reviews retained assertions separately; neither report treats equal paths
 or older API signatures as raw-file identity or blanket cleanup permission.
 
+The subsequent [backend test review](backend-test-reconciliation-2026-10-20.md)
+covers the 25 selected backend and migration test files. It distinguishes
+retained coverage from deliberately superseded safety expectations.
+
 ## Reproduced current defects
 
 The newer diagnostic path calls `json.loads` without importing `json`, causing
