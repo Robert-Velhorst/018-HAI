@@ -57,6 +57,7 @@ import (
 	"automation-hub-backend/internal/haios"
 	"automation-hub-backend/internal/hardwareprofile"
 	"automation-hub-backend/internal/health"
+	"automation-hub-backend/internal/hireai"
 	"automation-hub-backend/internal/hostruntime"
 	"automation-hub-backend/internal/hostruntimereconcile"
 	"automation-hub-backend/internal/i18n"
@@ -954,6 +955,7 @@ func initializeRoutesWithContext(router *gin.Engine, runtimeCtx context.Context,
 		a2aBridgeHandler := a2abridge.NewHandler(a2abridge.NewServiceFromEnv(planningPreview))
 		initializeA2ABridgeStatusRoutes(v1, a2aBridgeHandler)
 		initializeA2ABridgeRoutes(router, relativePathV1, a2aBridgeHandler)
+		initializeHireAIRoutes(v1, hireai.NewHandler(hireai.NewServiceFromEnv()))
 		workflowRunner.Set(workflowtask.NewRunner(taskService, automationService))
 		if err := source.StartScheduler(runtimeCtx, sourceService, backgroundAllowed); err != nil {
 			return fmt.Errorf("start source scheduler: %w", err)
@@ -2083,6 +2085,17 @@ func initializeA2ABridgeStatusRoutes(apiVersion *gin.RouterGroup, handler *a2abr
 	routes.Use(requireAuthenticatedOwner())
 	{
 		routes.GET("/status", requirePermission(rbac.PermRead), handler.Status)
+	}
+}
+
+// initializeHireAIRoutes exposes only the configured, read-only job search to
+// an authenticated HAI owner. It never forwards candidate data to Hire.AI.
+func initializeHireAIRoutes(apiVersion *gin.RouterGroup, handler *hireai.Handler) {
+	routes := apiVersion.Group("/hire-ai")
+	routes.Use(requireAuthenticatedOwner())
+	{
+		routes.GET("/status", requirePermission(rbac.PermRead), handler.Status)
+		routes.POST("/jobs/search", requirePermission(rbac.PermRead), handler.Search)
 	}
 }
 

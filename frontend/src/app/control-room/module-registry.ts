@@ -95,6 +95,7 @@ export const HAI_MODULES: HaiModuleDefinition[] = [
   },
   { id: 'connected-sources', route: '/connected-sources', group: 'intelligence', title: 'Sources', description: 'Connected accounts, files, and sync health.', icon: 'cluster', primaryActionOwner: 'module', advancedSectionIds: ['source-records', 'source-activity', 'source-timeline-cooccurrence', 'source-permissions-filters', 'source-danger-zone'] },
   { id: 'account-bridges', route: '/account-bridges', group: 'intelligence', title: 'Account bridges', description: 'Connection and permission health.', icon: 'link', primaryActionOwner: 'module', advancedSectionIds: ['registered-feeds', 'bridge-contracts'] },
+  { id: 'hire-ai', route: '/hire-ai', group: 'work', title: 'Hire.AI jobs', description: 'Search safety-cleared remote jobs from Hire.AI.', icon: 'search', primaryActionOwner: 'module' },
   { id: 'memory', route: '/memory', group: 'intelligence', title: 'Memory', description: 'Review useful, source-linked context.', icon: 'database', primaryActionOwner: 'module', advancedSectionIds: ['memory-overview', 'memory-maintenance-actions', 'memory-records', 'memory-store-metadata', 'memory-retrieval-options', 'memory-import-metadata', 'memory-record-detail', 'memory-semantic-index', 'memory-record-content', 'memory-record-danger-zone'], progressiveSectionParents: { 'memory-record-content': 'memory-record-detail', 'memory-record-danger-zone': 'memory-record-detail' } },
   {
     id: 'operational-brain',

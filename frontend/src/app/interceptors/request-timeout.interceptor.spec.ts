@@ -91,6 +91,21 @@ describe('RequestTimeoutInterceptor', () => {
       .toBe(RequestTimeoutInterceptor.operationTimeoutMs);
   });
 
+  it('allows Hire.AI search its upstream timeout plus bounded response overhead', fakeAsync(() => {
+    let receivedError: unknown;
+    http.post('/api/v1/hire-ai/jobs/search', {}).subscribe({ error: (error: unknown) => (receivedError = error) });
+    const request = controller.expectOne('/api/v1/hire-ai/jobs/search');
+
+    tick(RequestTimeoutInterceptor.operationTimeoutMs + 1);
+
+    expect(receivedError).toBeUndefined();
+    expect(request.cancelled).toBeFalse();
+    tick(HttpTimeoutPolicy.hireAISearchMs - RequestTimeoutInterceptor.operationTimeoutMs - 1);
+
+    expect(receivedError instanceof TimeoutError).toBeTrue();
+    expect(request.cancelled).toBeTrue();
+  }));
+
   it('keeps long-running source timeouts within the backend configured maximum', () => {
     const backendMaximumMs = 10 * 60_000;
     expect(RequestTimeoutInterceptor.sourceTranscriptionTimeoutMs).toBeLessThanOrEqual(backendMaximumMs);

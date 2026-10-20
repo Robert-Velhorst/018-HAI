@@ -15,6 +15,7 @@ import (
 	"automation-hub-backend/internal/gitleaks"
 	"automation-hub-backend/internal/gosec"
 	"automation-hub-backend/internal/grype"
+	"automation-hub-backend/internal/hireai"
 	"automation-hub-backend/internal/llm"
 	"automation-hub-backend/internal/memory"
 	"automation-hub-backend/internal/miniswe"
@@ -145,6 +146,33 @@ func TestRecoveredIntegrationRoutesRequireIdentityAndOwnerAuthority(t *testing.T
 				t.Fatalf("owner did not reach fail-closed handler: %d %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestHireAIRoutesRequireAuthenticationAndReadPermission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	initialize := func(engine *gin.Engine) {
+		initializeHireAIRoutes(engine.Group("/api/v1"), hireai.NewHandler(hireai.NewService(hireai.Config{}, nil)))
+	}
+
+	unauthenticated := gin.New()
+	initialize(unauthenticated)
+	for _, route := range []struct{ method, path, body string }{
+		{http.MethodGet, "/api/v1/hire-ai/status", ""},
+		{http.MethodPost, "/api/v1/hire-ai/jobs/search", `{}`},
+	} {
+		if response := performRecoveredRequest(unauthenticated, route.method, route.path, route.body); response.Code != http.StatusUnauthorized {
+			t.Errorf("unauthenticated %s %s status = %d, want %d", route.method, route.path, response.Code, http.StatusUnauthorized)
+		}
+	}
+
+	viewer := recoveredRouteEngine("viewer")
+	initialize(viewer)
+	if response := performRecoveredRequest(viewer, http.MethodGet, "/api/v1/hire-ai/status", ""); response.Code != http.StatusOK {
+		t.Fatalf("viewer status route returned %d: %s", response.Code, response.Body.String())
+	}
+	if response := performRecoveredRequest(viewer, http.MethodPost, "/api/v1/hire-ai/jobs/search", `{}`); response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("read-authorized search did not reach disabled connector handler: %d %s", response.Code, response.Body.String())
 	}
 }
 

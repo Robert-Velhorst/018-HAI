@@ -1,0 +1,47 @@
+:host { display: block; min-height: 100%; color: var(--hai-text); background: var(--hai-canvas); }
+
+.hai-jobs {
+  box-sizing: border-box;
+  width: min(100%, 1440px);
+  margin: 0 auto;
+  padding: 28px 32px 48px;
+
+  &__header, &__results-heading, &__job-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+  &__header { margin-bottom: 22px; }
+  &__header h1 { margin: 0; font-size: 28px; line-height: 1.2; }
+  &__header p:last-child, &__status p { max-width: 760px; color: var(--hai-text-muted); line-height: 1.55; }
+  &__eyebrow { margin: 0 0 6px; color: var(--hai-text-muted); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  &__alert { margin-bottom: 14px; }
+  &__status { margin-bottom: 18px; padding: 16px 18px; border: 1px solid var(--hai-border); border-radius: 7px; background: var(--hai-surface); }
+  &__status > div { display: flex; align-items: center; gap: 9px; }
+  &__status p { margin: 6px 0 0; }
+  &__status small { display: block; margin-top: 8px; color: var(--hai-text-muted); overflow-wrap: anywhere; }
+  &__status-dot { width: 9px; height: 9px; border-radius: 50%; background: #bd5b36; }
+  &__status-dot--ready { background: #27835c; }
+  &__filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end; padding: 18px 0 22px; border-bottom: 1px solid var(--hai-border); }
+  &__filters > label { display: grid; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; }
+  &__filters input, &__filters select { min-height: 38px; }
+  &__filters fieldset { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 16px 24px; border: 0; padding: 4px 0; }
+  &__filters legend { margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+  &__filters fieldset label { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+  &__filters button { min-height: 40px; justify-self: start; }
+  &__results { padding-top: 24px; }
+  &__results-heading { align-items: baseline; margin-bottom: 12px; }
+  &__results-heading h2 { margin: 0; font-size: 18px; }
+  &__results-heading span, &__tags > span { color: var(--hai-text-muted); font-size: 12px; }
+  &__empty { padding: 20px 0; color: var(--hai-text-muted); }
+  &__job { padding: 18px 0; border-bottom: 1px solid var(--hai-border); }
+  &__job-heading { align-items: baseline; }
+  &__job-heading h3 { margin: 0; font-size: 17px; }
+  &__job-heading p { margin: 4px 0 0; color: var(--hai-text-muted); }
+  &__job-heading > span { flex: 0 0 auto; font-size: 13px; font-weight: 600; }
+  &__tags, &__links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  &__tags { margin-top: 10px; }
+  &__description { max-width: 1000px; margin: 12px 0 0; line-height: 1.55; white-space: pre-line; }
+  &__links { margin-top: 14px; gap: 16px; }
+  &__links a { color: var(--hai-link, #2874a6); text-decoration: underline; text-underline-offset: 2px; }
+  &__results > button { margin-top: 18px; }
+
+  @media (max-width: 800px) { padding: 22px 18px 36px; &__filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 520px) { padding: 18px 14px 28px; &__header, &__job-heading { gap: 12px; } &__header h1 { font-size: 23px; } &__filters { grid-template-columns: 1fr; } &__filters fieldset { grid-column: auto; display: grid; grid-template-columns: 1fr 1fr; } &__job-heading { display: block; } &__job-heading > span { display: block; margin-top: 8px; } }
+}

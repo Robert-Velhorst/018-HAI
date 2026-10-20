@@ -66,6 +66,7 @@ describe('SystemStatusComponent', () => {
   }));
 
   it('backs off while healthy and polls faster for degraded and recovery states', fakeAsync(() => {
+    spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
     const service = { readiness: jasmine.createSpy('readiness'), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     service.readiness.and.returnValues(
       of({ status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] }),
@@ -124,6 +125,7 @@ describe('SystemStatusComponent', () => {
   }));
 
   it('times out a stalled readiness request and schedules a degraded retry', fakeAsync(() => {
+    spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
     const service = { readiness: jasmine.createSpy('readiness').and.returnValue(NEVER), info: jasmine.createSpy('info').and.returnValue(of(sampleSystemInfo)) };
     const component = new SystemStatusComponent(
       service as never,

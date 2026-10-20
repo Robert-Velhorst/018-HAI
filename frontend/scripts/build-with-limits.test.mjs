@@ -70,7 +70,18 @@ test('native production and watch scripts cannot bypass the worker guard', () =>
   const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)))
   assert.equal(packageJson.scripts.build, 'node scripts/build-with-limits.mjs')
   assert.equal(packageJson.scripts.watch, 'node scripts/build-with-limits.mjs --watch --configuration development')
-  assert.equal(packageJson.scripts.prebuild, 'node scripts/check-build-runtime.mjs && node scripts/check-progressive-sections.mjs')
+  assert.equal(packageJson.scripts.prebuild, 'node scripts/check-build-runtime.mjs && node scripts/check-progressive-sections.mjs && node scripts/check-ng-zorro-theme.mjs && node scripts/check-ng-zorro-icons.mjs')
+  assert.ok(packageJson.scripts.pretest.includes('node scripts/check-ng-zorro-icons.mjs'))
+  assert.ok(packageJson.scripts.pretest.includes('node scripts/check-ng-zorro-theme.mjs'))
+})
+
+test('production builds fail if the initial bundle exceeds the strict raw-size ceiling', () => {
+  const angular = JSON.parse(readFileSync(new URL('../angular.json', import.meta.url)))
+  const budgets = angular.projects.app.architect.build.configurations.production.budgets
+  const initial = budgets.find((budget) => budget.type === 'initial')
+
+  assert.equal(initial.maximumWarning, '1mb')
+  assert.equal(initial.maximumError, '1.02mb')
 })
 
 test('runtime policy follows package engines and rejects unsupported majors or prereleases', () => {
