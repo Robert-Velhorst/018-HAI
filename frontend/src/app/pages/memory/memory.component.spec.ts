@@ -268,6 +268,48 @@ describe('MemoryComponent', () => {
     expect(component.libraryProjectKey).toBe('applied-project');
   });
 
+  it('clears library filters within the applied project and archive scope', () => {
+    const { component, memoryService, preferences } = createComponent();
+    preferences.setMode('memory', 'advanced');
+    component.includeArchived = true;
+    component.libraryForm.patchValue({ projectKey: 'kept-project', pageSize: 50, q: 'needle', tag: 'reviewed', kind: 'lesson', sort: 'confidence', order: 'asc' });
+    component.applyLibraryFilters();
+    component.libraryPage = 3;
+    component.libraryForm.patchValue({ projectKey: 'unsubmitted-project', pageSize: 100 });
+    component.clearLibraryFilters();
+    expect(memoryService.query.calls.mostRecent().args[0]).toEqual(jasmine.objectContaining({ projectKey: 'kept-project', pageSize: 50, includeArchived: true, page: 1, q: '', kind: '', tag: '', sort: 'updatedAt', order: 'desc' }));
+    expect(component.libraryForm.getRawValue().projectKey).toBe('kept-project');
+    const calls = memoryService.query.calls.count();
+    component.loading = true;
+    component.clearLibraryFilters();
+    component.loading = false;
+    preferences.setMode('memory', 'basic');
+    component.clearLibraryFilters();
+    expect(memoryService.query.calls.count()).toBe(calls);
+  });
+
+  it('reports server-backed page ranges only for a successfully loaded page', () => {
+    const { component, memoryService, preferences } = createComponent();
+    preferences.setMode('memory', 'advanced');
+    expect(component.pageRangeStart()).toBe(0);
+    memoryService.query.and.returnValue(of(page([record()], 2, 21)));
+    component.libraryPage = 2;
+    component.refresh();
+    expect(component.pageRangeStart()).toBe(21);
+    expect(component.pageRangeEnd()).toBe(21);
+    component.memoryLoadError = 'Unavailable';
+    expect(component.pageRangeStart()).toBe(0);
+    expect(component.pageRangeEnd()).toBe(0);
+    component.memoryLoadError = '';
+    component.loading = true;
+    expect(component.pageRangeStart()).toBe(0);
+    component.loading = false;
+    memoryService.query.and.returnValue(of(page()));
+    component.refresh();
+    expect(component.pageRangeStart()).toBe(0);
+    expect(component.pageRangeEnd()).toBe(0);
+  });
+
   it('queries all matching corrections instead of filtering only the first page', () => {
     const { component, memoryService, preferences } = createComponent();
     preferences.setMode('memory', 'advanced');
@@ -574,6 +616,34 @@ describe('MemoryComponent rendered HTTP action chains (synthetic fixtures only)'
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.inspector').textContent).toContain('last-page');
     expect(preferences.get('memory').openSections['memory-record-content']).toBeFalse();
+    http.verify();
+    fixture.destroy();
+  });
+
+  it('renders clear-filter HTTP recovery and accurate partial-page ranges', async () => {
+    const { fixture, http, preferences } = await setup(true);
+    preferences.setSection('memory', 'memory-records', true);
+    http.expectOne((request) => request.url.endsWith('/memory/query')).flush(page([record()], 1, 21));
+    fixture.componentInstance.libraryForm.patchValue({ q: 'needle', kind: 'lesson', tag: 'reviewed' });
+    fixture.componentInstance.applyLibraryFilters();
+    http.expectOne((request) => request.params.get('q') === 'needle').flush(page([record('first-page')], 1, 21));
+    fixture.componentInstance.changeLibraryPage(2);
+    http.expectOne((request) => request.params.get('page') === '2').flush(page([record('last-page')], 2, 21));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.memory-page-range').textContent).toContain('Records 21–21 of 21');
+    const clear = Array.from(fixture.nativeElement.querySelectorAll('.memory-library-filters button'))
+      .find((button: any) => button.textContent.includes('Clear filters')) as HTMLButtonElement;
+    clear.click();
+    const reset = http.expectOne((request) => request.url.endsWith('/memory/query') && request.params.get('page') === '1');
+    expect(reset.request.params.has('q')).toBeFalse();
+    expect(reset.request.params.has('kind')).toBeFalse();
+    expect(reset.request.params.has('tag')).toBeFalse();
+    expect(reset.request.params.get('projectKey')).toBe('018-HAI');
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.memory-page-range')).toBeNull();
+    reset.flush(page());
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.memory-page-range').textContent).toContain('Records 0–0 of 0');
     http.verify();
     fixture.destroy();
   });
