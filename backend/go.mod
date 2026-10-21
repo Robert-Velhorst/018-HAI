@@ -8,7 +8,7 @@ require (
 	github.com/IBM/sarama v1.61.1
 	github.com/gin-gonic/gin v1.9.1
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.9.2
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/json-iterator/go v1.1.12
 	github.com/prometheus/client_golang v1.21.1
 	github.com/redis/go-redis/v9 v9.6.3
@@ -19,6 +19,7 @@ require (
 	go.temporal.io/api v1.63.7
 	go.temporal.io/sdk v1.49.0
 	golang.org/x/net v0.61.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/text v0.43.0
 	google.golang.org/protobuf v1.36.12
@@ -88,7 +89,6 @@ require (
 	golang.org/x/arch v0.3.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
