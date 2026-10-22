@@ -3,14 +3,13 @@ package automation
 import (
 	"context"
 	"errors"
-	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"automation-hub-backend/internal/infra"
+	"automation-hub-backend/internal/pgtestguard"
 	"automation-hub-backend/migrations"
 
 	"github.com/google/uuid"
@@ -177,10 +176,7 @@ func approvalExpectation(request ApprovalProofIssueRequest) ApprovalProofExpecta
 
 func approvalProofPostgresDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping Postgres integration test")
-	}
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
