@@ -135,9 +135,9 @@ func finalizeArtifactViewState(view *ArtifactView, receipt models.OpenClawGatewa
 		view.State = "pending"
 	}
 
-	// Legacy metadata remains inspectable without claiming a durable collection,
-	// but it must not hide that automatic collection exhausted its retry limit.
-	if len(view.Items) > 0 && view.CapturedAt == nil && view.State != "retry_exhausted" && view.State != "collecting" {
+	// Legacy metadata is available after completion, but must not hide a running,
+	// failed or cancelled execution, active collection, or exhausted retry limit.
+	if len(view.Items) > 0 && view.State == "pending" {
 		view.State = "metadata_available"
 	}
 	// The final attempt's backoff timestamp is not an eligible retry: automatic
