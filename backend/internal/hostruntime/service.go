@@ -397,6 +397,9 @@ func (s *Service) BeginStartIntent(ctx context.Context, workerID string, jobID u
 	defer releaseFence()
 	gate := currentStartGate()
 	intent, err := s.repository.BeginStartIntent(ctx, strings.TrimSpace(workerID), jobID, digestToken(token), binding, gate, s.now().UTC().Truncate(time.Microsecond))
+	if ctx.Err() != nil {
+		return nil, errors.Join(err, ctx.Err())
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +425,11 @@ func (s *Service) AcknowledgeActualStart(ctx context.Context, workerID string, j
 	}
 	defer releaseFence()
 	gate := currentStartGate()
-	return s.repository.AcknowledgeActualStart(ctx, strings.TrimSpace(workerID), jobID, digestToken(token), binding, gate, s.now().UTC().Truncate(time.Microsecond))
+	err = s.repository.AcknowledgeActualStart(ctx, strings.TrimSpace(workerID), jobID, digestToken(token), binding, gate, s.now().UTC().Truncate(time.Microsecond))
+	if ctx.Err() != nil {
+		return errors.Join(err, ctx.Err())
+	}
+	return err
 }
 
 // ReportStartOutcomeUnknown makes an unresolved process-start report
@@ -436,6 +443,9 @@ func (s *Service) ReportStartOutcomeUnknown(ctx context.Context, workerID string
 	ctx, cancel := boundedProtocolContext(ctx)
 	defer cancel()
 	alreadyAcknowledged, err := s.repository.ReportStartOutcomeUnknown(ctx, strings.TrimSpace(workerID), jobID, digestToken(token), binding, s.now().UTC().Truncate(time.Microsecond))
+	if ctx.Err() != nil {
+		return false, errors.Join(err, ctx.Err())
+	}
 	if err != nil {
 		return false, err
 	}
