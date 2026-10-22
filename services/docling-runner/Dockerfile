@@ -1,6 +1,6 @@
 FROM python:3.15-slim
 
-ARG DOCLING_VERSION=2.140.0
+ARG DOCLING_VERSION=2.142.0
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -11,7 +11,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 # even though this runner has no GPU device or GPU execution path.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential git zlib1g-dev \
-    && pip install --no-cache-dir "docling==${DOCLING_VERSION}" "certifi==2026.10.19" \
+    && pip install --no-cache-dir "docling==${DOCLING_VERSION}" "pillow==13.0.0" "certifi==2026.10.19" \
         --extra-index-url https://download.pytorch.org/whl/cpu \
     && apt-get purge -y --auto-remove build-essential git zlib1g-dev \
     && rm -rf /var/lib/apt/lists/* \

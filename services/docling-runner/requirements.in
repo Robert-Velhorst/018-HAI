@@ -1,4 +1,6 @@
 # Keep CPU-only PyTorch packages on the official CPU wheel index.
 --index-url https://pypi.org/simple
 --extra-index-url https://download.pytorch.org/whl/cpu
-docling==2.139.0
+docling==2.142.0
+pillow==13.0.0
+certifi==2026.10.19

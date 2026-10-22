@@ -19,6 +19,21 @@ def _pip_effective_lines(path: Path) -> tuple[str, ...]:
 
 
 class PythonRunnerCIPolicyTest(unittest.TestCase):
+    def test_docling_pillow_security_cohort_matches_runtime_and_ci(self):
+        service = ROOT / "services/docling-runner"
+        source = (service / "requirements.in").read_text(encoding="utf-8")
+        locked = (service / "requirements.lock").read_text(encoding="utf-8")
+        dockerfile = (service / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("docling==2.142.0", source)
+        self.assertIn("pillow==13.0.0", source)
+        self.assertIn("ARG DOCLING_VERSION=2.142.0", dockerfile)
+        self.assertIn('"pillow==13.0.0"', dockerfile)
+        self.assertIn("pillow==13.0.0 ", locked)
+        self.assertRegex(locked, r"(?m)^torch==[^\s]+\+cpu ")
+        self.assertRegex(locked, r"(?m)^torchvision==[^\s]+\+cpu ")
+        self.assertNotRegex(locked, r"(?m)^nvidia-[a-z0-9-]+==")
+        self.assertIn("HAI_REQUIRE_DOCLING_PACKAGE_TESTS:", WORKFLOW)
+
     def test_certifi_locks_exclude_compromised_emsign_roots(self):
         expected_hashes = {
             "42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b",
