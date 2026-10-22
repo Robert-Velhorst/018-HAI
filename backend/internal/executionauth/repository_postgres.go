@@ -484,11 +484,14 @@ func lockAndCheckApprovalClaim(
 		consumption.ReceiptID,
 		consumption.ReceiptDigest,
 	).Row().Scan(&approvalSourceID, &decisionID)
-	if errors.Is(err, sql.ErrNoRows) || approvalSourceID == "" {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("read approval claim identity: %w", err)
+	}
+	if approvalSourceID == "" {
+		return nil
 	}
 	if decisionID == "" {
 		return ErrAuthorizationChanged
