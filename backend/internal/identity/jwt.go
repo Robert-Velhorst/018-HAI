@@ -14,6 +14,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -244,7 +245,7 @@ func walkJSONValue(decoder *json.Decoder, token json.Token, depth int) error {
 			if !ok {
 				return errors.New("identity: invalid JSON object key")
 			}
-			foldedKey := strings.ToLower(key)
+			foldedKey := foldJSONKey(key)
 			if _, exists := seen[foldedKey]; exists {
 				return errors.New("identity: duplicate JSON object key")
 			}
@@ -285,6 +286,20 @@ func walkJSONValue(decoder *json.Decoder, token json.Token, depth int) error {
 		return errors.New("identity: unexpected JSON delimiter")
 	}
 	return nil
+}
+
+// Match encoding/json's Unicode simple-fold field equivalence, not lowercase
+// conversion: long s and ASCII s, for example, decode to the same claim field.
+func foldJSONKey(key string) string {
+	return strings.Map(func(r rune) rune {
+		minimum := r
+		for next := unicode.SimpleFold(r); next != r; next = unicode.SimpleFold(next) {
+			if next < minimum {
+				minimum = next
+			}
+		}
+		return minimum
+	}, key)
 }
 
 // SignToken builds an HS256 JWT for the given claims. Production tokens are
