@@ -970,6 +970,47 @@ jobs:
           for test_case in legacy_exact legacy_similar owner_exact owner_similar; do
             grep -q -- "^[[:space:]]*--- PASS: TestPostgresMemoryDedupPreservesDistinctSources/${test_case} (" "$memory_provenance_log"
           done
+          memory_lesson_log="$RUNNER_TEMP/memory-source-lessons-postgres.log"
+          memory_lesson_tests=(
+            TestPostgresManualCorrectionAuditBindsRevisionAndMemoryLockFollowsEvidenceLocks
+            TestPostgresDurableCorrectionIntentCannotAuthorizeDifferentLessonContent
+            TestPostgresUnrelatedExtractionAuditCannotAuthorizeCorrectionLesson
+            TestPostgresCorrectionAuditCannotAuthorizeDifferentLessonContent
+            TestPostgresSourceExtractionLessonUpsertIsExactAndIdempotentUnderConcurrency
+            TestPostgresSourceExtractionLessonFailsClosedForMissingOrStaleCorrection
+            TestPostgresDeleteSourceExtractionLessonsRemovesOnlyExactOwnerProvenanceAndEmbeddings
+            TestPostgresDeleteSourceExtractionLessonsTxParticipatesInCallerTransaction
+            TestPostgresDeleteSourceExtractionLessonsSkipsMissingEmbeddingTable
+            TestPostgresDeleteSourceExtractionLessonsFailsClosedWhenEmbeddingCleanupFails
+          )
+          memory_lesson_pattern="^($(IFS='|'; echo "${memory_lesson_tests[*]}"))$"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -p 1 -parallel 1 -timeout 5m -tags integration \
+            -run "$memory_lesson_pattern" ./internal/memory/ -v | tee "$memory_lesson_log"
+          for test_name in "${memory_lesson_tests[@]}"; do
+            grep -Fq -- "--- PASS: ${test_name} (" "$memory_lesson_log"
+          done
+          source_correction_log="$RUNNER_TEMP/source-correction-fences-postgres.log"
+          source_correction_tests=(
+            TestExtractionCorrectionPostgresIntentAndRevisionTransactions
+            TestDeleteExtractionRefusesWhileSourceSyncLeaseIsHeld
+            TestDeleteExtractionAuthorizedAtomicallyRetractsWorkflowAndLessons
+            TestExtractionCorrectionPostgresPrefersCompletedTerminalRow
+            TestExtractionCorrectionSessionFenceCoordinatesWithDeletion
+            TestExtractionCorrectionWorkerDefersWhileSourceSyncLeaseIsHeld
+            TestDeleteAndArchiveRefuseWhileSourceSyncLeaseIsHeld
+            TestExtractionWorkerReleasesSourceLeaseWhenExtractionFenceIsBusy
+            TestCorrectionWorkerPoolCapacityRequiresThreeConnections
+            TestExtractionCorrectionWorkerStopsWhenDeletionCommittedBeforeRun
+            TestExtractionCorrectionSessionFenceCoversMemoryPersistence
+            TestExtractionCorrectionLessonPersistenceIsIdempotentAndLeaseRevisionFenced
+            TestExtractionCorrectionSessionFenceReleaseAllowsDeletion
+          )
+          source_correction_pattern="^($(IFS='|'; echo "${source_correction_tests[*]}"))$"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -p 1 -parallel 1 -timeout 5m -tags integration \
+            -run "$source_correction_pattern" ./internal/source/ -v | tee "$source_correction_log"
+          for test_name in "${source_correction_tests[@]}"; do
+            grep -Fq -- "--- PASS: ${test_name} (" "$source_correction_log"
+          done
           source_history_log="$RUNNER_TEMP/source-history-page-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
             -run '^TestGormRepositoryBoundsExtractionHistoryAndScopesLookupPostgres$' \
