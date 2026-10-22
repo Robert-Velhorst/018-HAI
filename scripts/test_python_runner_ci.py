@@ -19,6 +19,31 @@ def _pip_effective_lines(path: Path) -> tuple[str, ...]:
 
 
 class PythonRunnerCIPolicyTest(unittest.TestCase):
+    def test_certifi_locks_exclude_compromised_emsign_roots(self):
+        expected_hashes = {
+            "42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b",
+            "035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae",
+        }
+        found = 0
+        for path in (ROOT / "services").glob("*/requirements.*"):
+            if path.suffix not in (".lock", ".txt"):
+                continue
+            text = path.read_text(encoding="utf-8")
+            match = re.search(r"(?m)^certifi==([^\s]+) \\\n((?:[ \t]+--hash=sha256:[0-9a-f]{64}[^\n]*\n)+)", text)
+            if not match:
+                self.assertNotRegex(text, r"(?m)^certifi[=<>!~]", str(path))
+                continue
+            found += 1
+            with self.subTest(manifest=path.relative_to(ROOT)):
+                version = tuple(int(part) for part in match.group(1).split("."))
+                self.assertGreaterEqual(version, (2026, 10, 19))
+                if version == (2026, 10, 19):
+                    self.assertEqual(set(re.findall(r"sha256:([0-9a-f]{64})", match.group(2))), expected_hashes)
+        self.assertGreater(found, 0, "certifi manifest coverage disappeared")
+        # This image resolves Docling directly rather than installing the lock.
+        dockerfile = (ROOT / "services/docling-runner/Dockerfile").read_text(encoding="utf-8")
+        self.assertIn('"certifi==2026.10.19"', dockerfile)
+
     def test_every_shipped_python_runner_has_ci_contract_coverage(self):
         names = set(re.findall(r"(?m)^          - name: ([a-z0-9-]+)$", WORKFLOW))
         python_runners = set()

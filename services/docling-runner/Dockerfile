@@ -11,7 +11,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 # even though this runner has no GPU device or GPU execution path.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential git zlib1g-dev \
-    && pip install --no-cache-dir "docling==${DOCLING_VERSION}" \
+    && pip install --no-cache-dir "docling==${DOCLING_VERSION}" "certifi==2026.10.19" \
         --extra-index-url https://download.pytorch.org/whl/cpu \
     && apt-get purge -y --auto-remove build-essential git zlib1g-dev \
     && rm -rf /var/lib/apt/lists/* \
