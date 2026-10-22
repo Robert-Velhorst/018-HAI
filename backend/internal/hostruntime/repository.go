@@ -314,7 +314,7 @@ func (r *gormRepository) BeginStartIntent(ctx context.Context, workerID string, 
 				outcome = startGateError(gate)
 				return nil
 			}
-			if !job.LeaseExpires.After(now) || !job.ApprovalExpiresAt.After(now) || job.CancelRequestedAt != nil || !startIntentFresh(job, now) {
+			if job.LeaseExpires == nil || !job.LeaseExpires.After(now) || !job.ApprovalExpiresAt.After(now) || job.CancelRequestedAt != nil || !startIntentFresh(job, now) {
 				if err := quarantineStartIntent(tx, job.ID, now, reviewReasonStartUnknown); err != nil {
 					return err
 				}
@@ -347,7 +347,7 @@ func (r *gormRepository) BeginStartIntent(ctx context.Context, workerID string, 
 			outcome = ErrStaleLease
 			return nil
 		}
-		if !job.LeaseExpires.After(now) || !job.ApprovalExpiresAt.After(now) {
+		if job.LeaseExpires == nil || !job.LeaseExpires.After(now) || !job.ApprovalExpiresAt.After(now) {
 			if err := quarantineStartIntent(tx, job.ID, now, reviewReasonLeaseExpired); err != nil {
 				return err
 			}
@@ -449,7 +449,7 @@ func (r *gormRepository) AcknowledgeActualStart(ctx context.Context, workerID st
 			outcome = ErrStartOutcomeReview
 			return nil
 		}
-		if gateUnavailableOrUnsafe(gate, binding.StopRevision) || !job.LeaseExpires.After(now) || !job.ApprovalExpiresAt.After(now) || job.CancelRequestedAt != nil || !startIntentFresh(job, now) {
+		if gateUnavailableOrUnsafe(gate, binding.StopRevision) || job.LeaseExpires == nil || !job.LeaseExpires.After(now) || !job.ApprovalExpiresAt.After(now) || job.CancelRequestedAt != nil || !startIntentFresh(job, now) {
 			if err := quarantineStartIntent(tx, id, now, reviewReasonStartUnknown); err != nil {
 				return err
 			}

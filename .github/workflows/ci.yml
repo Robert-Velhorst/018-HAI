@@ -1143,6 +1143,15 @@ jobs:
           grep -q -- '^--- PASS: TestPostgresPursuitExactRuntimeQueryBatchesAllLinkedReceipts (' "$pursuit_runtime_log"
           grep -q -- '^--- PASS: TestPostgresPursuitUnresolvedAttemptQueryIgnoresDisplayLimit (' "$pursuit_runtime_log"
           grep -q -- '^--- PASS: TestPostgresPortfolioCoordinationDigestSurvivesSaveReloadWithoutWeakeningEvidence (' "$pursuit_runtime_log"
+          host_runtime_log="$RUNNER_TEMP/host-runtime-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" HAI_ALLOW_HOST_RUNTIME_TEMP_TABLE_TESTS=true \
+            go test -count=1 -p 1 -parallel 1 -timeout 180s -tags integration \
+            -run '^TestGormRepositoryExpiryAndUncertainLeaseTransitions$' \
+            ./internal/hostruntime/ -v | tee "$host_runtime_log"
+          grep -q -- '^--- PASS: TestGormRepositoryExpiryAndUncertainLeaseTransitions (' "$host_runtime_log"
+          for operation in begin replay ack; do
+            grep -q -- "^[[:space:]]*--- PASS: TestGormRepositoryExpiryAndUncertainLeaseTransitions/missing_lease_expiry/${operation} (" "$host_runtime_log"
+          done
 
   # Boots the real backend against a real Postgres + Redis and runs the
   # two-account isolation acceptance test over HTTP: two authenticated owners

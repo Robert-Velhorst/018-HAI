@@ -2158,6 +2158,18 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertNotIn("t.Skip", source)
         self.assertNotIn("postgres.Open(dsn)", source)
 
+    def test_host_runtime_postgres_requires_all_missing_expiry_cases(self) -> None:
+        migrations = job_block("migrations-integration")
+        for contract in (
+            'HAI_TEST_DATABASE_DSN="$migration_dsn" HAI_ALLOW_HOST_RUNTIME_TEMP_TABLE_TESTS=true',
+            "-run '^TestGormRepositoryExpiryAndUncertainLeaseTransitions$'",
+            './internal/hostruntime/ -v | tee "$host_runtime_log"',
+            "grep -q -- '^--- PASS: TestGormRepositoryExpiryAndUncertainLeaseTransitions ('",
+            'for operation in begin replay ack; do',
+            'TestGormRepositoryExpiryAndUncertainLeaseTransitions/missing_lease_expiry/${operation}',
+        ):
+            self.assertIn(contract, migrations)
+
     def test_running_stack_must_be_live_before_acceptance_test(self) -> None:
         isolation = job_block("isolation-acceptance")
         for contract in (
