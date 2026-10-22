@@ -65,23 +65,23 @@ func (g GmailClient) httpClient() *http.Client {
 
 // GmailMessage is the metadata this connector ingests for one message.
 type GmailMessage struct {
-	ID                 string
-	ThreadID           string
-	HistoryID          string
-	From               string
-	To                 string
-	Subject            string
-	Date               time.Time
-	Snippet            string
-	Body               string
-	BodyTruncated      bool
-	BodyLimitBytes     int64
+	ID                  string
+	ThreadID            string
+	HistoryID           string
+	From                string
+	To                  string
+	Subject             string
+	Date                time.Time
+	Snippet             string
+	Body                string
+	BodyTruncated       bool
+	BodyLimitBytes      int64
 	BodyEncodingWarning bool
-	Attachments        []GmailAttachment
-	AttachmentsOmitted int
-	Unavailable        bool
-	ContentStatus      string
-	ContentLimitBytes  int64
+	Attachments         []GmailAttachment
+	AttachmentsOmitted  int
+	Unavailable         bool
+	ContentStatus       string
+	ContentLimitBytes   int64
 }
 
 type GmailAttachment struct {
@@ -251,6 +251,9 @@ func (g GmailClient) ListHistoryPage(ctx context.Context, startHistoryID, pageTo
 	if strings.TrimSpace(response.HistoryID) == "" {
 		return GmailHistoryPage{}, fmt.Errorf("gmail history response returned no historyId")
 	}
+	if !validGmailHistoryID(response.HistoryID) {
+		return GmailHistoryPage{}, fmt.Errorf("gmail history response returned a malformed historyId")
+	}
 	if response.NextPageToken != "" && response.NextPageToken == strings.TrimSpace(pageToken) {
 		return GmailHistoryPage{}, fmt.Errorf("gmail history response repeated its page token")
 	}
@@ -290,6 +293,9 @@ func (g GmailClient) ListHistoryPage(ctx context.Context, startHistoryID, pageTo
 		return nil
 	}
 	for _, history := range response.History {
+		if history.ID != "" && !validGmailHistoryID(history.ID) {
+			return GmailHistoryPage{}, fmt.Errorf("gmail history entry returned a malformed history id")
+		}
 		for _, added := range history.MessagesAdded {
 			id := strings.TrimSpace(added.Message.ID)
 			if id != "" && !seen[id] {
