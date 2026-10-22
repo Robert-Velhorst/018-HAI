@@ -4,7 +4,8 @@
 
 Compared the automation service and execution-authorization test variants in
 both audit worktrees, plus the artifact-worktree idempotency and OpenClaw CLI
-identity test variants: six source versions. The two service variants match
+identity test variants, followed by both automation-service test variants:
+eight source versions. The two service variants match
 after line-ending normalization. Their older behavior is not ported over the
 current safeguards:
 
@@ -23,8 +24,12 @@ current safeguards:
   fixtures from the production PostgreSQL approval transaction.
 
 The older idempotency test version omits the existing outcome-identity/conflict
-regression. Retain that regression. Automation-service test-file variants are
-not included in this completed review batch.
+regression. Retain that regression. The two older service-test variants match
+after line-ending normalization and omit current process containment, staging,
+outbox, concurrent-edit and cross-owner regressions; those tests are retained.
+The older explicit stop-result execution-reference assertion is ported into
+the current three-runtime test, together with its pending-intent reference
+assertion, without weakening launch-scoped task identity or owner isolation.
 
 ## Verification improvement
 
