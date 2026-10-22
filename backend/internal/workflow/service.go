@@ -5205,7 +5205,7 @@ func workflowSourceRevision(request IntakeRequest, input string, selectionContex
 		strings.TrimSpace(request.SourceURI) == "" {
 		return ""
 	}
-	canonical := strings.Join([]string{
+	canonical := workflowRevisionValues([]string{
 		strings.TrimSpace(input),
 		strings.TrimSpace(request.ProjectKey),
 		strings.TrimSpace(request.ProjectKeyHint),
@@ -5220,15 +5220,29 @@ func workflowSourceRevision(request IntakeRequest, input string, selectionContex
 		strings.TrimSpace(request.MandateID),
 		fmt.Sprintf("%t", request.RequiresReview),
 		strings.TrimSpace(request.ReviewReason),
-		strings.Join(request.SuccessCriteria, "\x1d"),
+		workflowRevisionValues(request.SuccessCriteria, "\x1d"),
 		request.CoordinationPlan.PlanID.String(),
 		fmt.Sprintf("%d", request.CoordinationPlan.Revision),
 		strings.ToLower(strings.TrimSpace(request.CoordinationPlan.Digest)),
 		strings.TrimSpace(request.CoordinationPlan.NodeID),
-		strings.Join(selectionContext, "\x1e"),
+		workflowRevisionValues(selectionContext, "\x1e"),
 	}, "\x1f")
 	sum := sha256.Sum256([]byte(canonical))
 	return fmt.Sprintf("%x", sum)
+}
+
+// Escape embedded separators without changing ordinary persisted revisions.
+// Literal escape prefixes must also be escaped to keep the encoding injective.
+func workflowRevisionValues(values []string, separator string) string {
+	const prefix = "~hai-revision:"
+	escaped := make([]string, len(values))
+	for index, value := range values {
+		if strings.Contains(value, separator) || strings.HasPrefix(value, prefix) {
+			value = prefix + hex.EncodeToString([]byte(value))
+		}
+		escaped[index] = value
+	}
+	return strings.Join(escaped, separator)
 }
 
 func normalizeWorkflowSuccessCriteria(criteria []string) ([]string, error) {
