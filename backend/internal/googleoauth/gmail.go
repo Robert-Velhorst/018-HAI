@@ -57,10 +57,7 @@ func (g GmailClient) baseURL() string {
 }
 
 func (g GmailClient) httpClient() *http.Client {
-	if g.HTTPClient != nil {
-		return g.HTTPClient
-	}
-	return &http.Client{Timeout: 20 * time.Second}
+	return googleAPIHTTPClient(g.HTTPClient, 20*time.Second)
 }
 
 // GmailMessage is the metadata this connector ingests for one message.

@@ -93,10 +93,7 @@ func (d DriveClient) baseURL() string {
 }
 
 func (d DriveClient) httpClient() *http.Client {
-	if d.HTTPClient != nil {
-		return d.HTTPClient
-	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return googleAPIHTTPClient(d.HTTPClient, 30*time.Second)
 }
 
 // GetStartPageToken captures the point from which future changes are read. A
