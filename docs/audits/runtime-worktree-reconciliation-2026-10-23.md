@@ -72,3 +72,11 @@ to main. Recording these decisions does not preserve every historical byte in
 GitHub and does not make the worktree deletable. Ignored files and unchanged
 worktree files are outside this selected-difference review; they still require
 their own preservation assessment before whole-worktree cleanup.
+
+A supplementary GitHub path-history metadata check, bounded to twelve commits
+per present file at the pinned main revision, found no raw or CRLF-normalized
+original-content match for any of the seventeen versions. No history page
+reached the bound. This is a negative result for the inspected path history,
+not proof that no equivalent version exists under another path or reference.
+It does not authorize deletion or replace a recoverable source-preservation
+record.
