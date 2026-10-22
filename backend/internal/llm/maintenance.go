@@ -217,6 +217,9 @@ func maintenanceEndpointKey(raw string) (string, error) {
 	if host == "" {
 		return "", fmt.Errorf("invalid endpoint host")
 	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
 	port := parsed.Port()
 	if (parsed.Scheme == "http" && port == "80") || (parsed.Scheme == "https" && port == "443") {
 		port = ""
@@ -228,13 +231,16 @@ func maintenanceEndpointKey(raw string) (string, error) {
 	// v1 segment anywhere else means the caller passed a route rather than a
 	// root.
 	path := strings.TrimRight(parsed.EscapedPath(), "/")
+	if strings.Contains(path, "//") {
+		return "", fmt.Errorf("unsupported endpoint path")
+	}
 	segments := []string{}
 	for _, segment := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
 		if segment != "" {
 			segments = append(segments, segment)
 		}
 	}
-	if len(segments) > 0 && strings.EqualFold(segments[len(segments)-1], "v1") {
+	if len(segments) > 0 && segments[len(segments)-1] == "v1" {
 		segments = segments[:len(segments)-1]
 	}
 	if len(segments) > 2 {
@@ -250,7 +256,7 @@ func maintenanceEndpointKey(raw string) (string, error) {
 	}
 	key := strings.ToLower(parsed.Scheme) + "://" + host
 	for _, segment := range segments {
-		key += "/" + strings.ToLower(segment)
+		key += "/" + segment
 	}
 	return key, nil
 }
