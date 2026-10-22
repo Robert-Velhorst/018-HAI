@@ -60,6 +60,9 @@ var errHandlerAdmissionClosed = errors.New("handler ownership admission is close
 type ManualReviewClassification interface{ RequiresManualReview() bool }
 
 func RequiresManualReview(err error) bool {
+	if errors.Is(err, ErrManualReviewRequired) {
+		return true
+	}
 	var review ManualReviewClassification
 	if errors.As(err, &review) && review.RequiresManualReview() {
 		return true
