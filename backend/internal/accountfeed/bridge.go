@@ -97,6 +97,10 @@ func (b BridgeContract) ConnectionStatus() ConnectionStatus {
 	case ProviderGenericJSONFeed, ProviderLocalFolder:
 		return ConnAvailable
 	case ProviderAutoposter:
+		connection := AutoposterFromEnv("", "")
+		if connection == nil || connection.Token == "" || connection.RemoteOwner == "" {
+			return ConnCredentialsRequired
+		}
 		return ConnCredentialsPresentUnverified
 	default:
 		// Provider credentials do not make this normalized-feed registry a live
