@@ -864,6 +864,7 @@ func TestCommitEcosystemMutationSerializesEmergencyStopInterleavings(t *testing.
 		stopActive.Store(false)
 		recorder := httptest.NewRecorder()
 		ginContext, _ := gin.CreateTestContext(recorder)
+		ginContext.Request = httptest.NewRequest(http.MethodPost, "/", nil)
 		mutationEntered := make(chan struct{})
 		finishMutation := make(chan struct{})
 		mutationDone := make(chan struct{})
@@ -926,6 +927,7 @@ func TestCommitEcosystemMutationSerializesEmergencyStopInterleavings(t *testing.
 
 		recorder := httptest.NewRecorder()
 		ginContext, _ := gin.CreateTestContext(recorder)
+		ginContext.Request = httptest.NewRequest(http.MethodPost, "/", nil)
 		mutationCalled := atomic.Bool{}
 		type result struct {
 			proceed bool

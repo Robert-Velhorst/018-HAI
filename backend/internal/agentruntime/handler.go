@@ -724,7 +724,22 @@ func commitEcosystemMutation(
 	openClaw *openClawAdapter,
 	mutate func() error,
 ) (bool, error) {
-	decision, err := openClaw.withEcosystemCommitFence(mutate)
+	if c.Request == nil || c.Request.Context().Err() != nil {
+		c.JSON(http.StatusRequestTimeout, gin.H{"error": "runtime ecosystem mutation request is unavailable or cancelled"})
+		return false, nil
+	}
+	cancelledBeforeMutation := false
+	decision, err := openClaw.withEcosystemCommitFence(func() error {
+		if err := c.Request.Context().Err(); err != nil {
+			cancelledBeforeMutation = true
+			return err
+		}
+		return mutate()
+	})
+	if cancelledBeforeMutation {
+		c.JSON(http.StatusRequestTimeout, gin.H{"error": "runtime ecosystem mutation was cancelled before commit"})
+		return false, nil
+	}
 	if decision.Active {
 		c.JSON(http.StatusLocked, gin.H{
 			"error":  "emergency stop blocks OpenClaw ecosystem mutation",
