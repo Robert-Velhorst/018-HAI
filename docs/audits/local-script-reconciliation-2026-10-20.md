@@ -34,6 +34,20 @@ or transcript identifiers. No original file is deleted.
 These decisions cover the reviewed differences, not the remaining 60 selected
 files or complete worktree/archival equivalence.
 
+A subsequent ten-file authentication-test comparison is recorded in
+[Authentication test reconciliation](auth-test-reconciliation-2026-10-20.md).
+It reviews retained assertions separately; neither report treats equal paths
+or older API signatures as raw-file identity or blanket cleanup permission.
+
+The subsequent [backend test review](backend-test-reconciliation-2026-10-20.md)
+covers the 25 selected backend and migration test files. It distinguishes
+retained coverage from deliberately superseded safety expectations.
+
+The [non-Go review](non-go-reconciliation-2026-10-20.md) accounts for all 29
+selected non-Go files, including the four scripts first reviewed here. Together
+the three per-file reports cover the 64-file selected inventory, not the excluded
+operational material, tracked production variants or whole archives.
+
 ## Reproduced current defects
 
 The newer diagnostic path calls `json.loads` without importing `json`, causing
