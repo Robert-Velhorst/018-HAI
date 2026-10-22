@@ -10,8 +10,9 @@ normal pause. Both paths returned a successful poll rather than the requested
 review outcome.
 
 This was found while comparing retained durable-queue implementations. The
-broader retained repository/runner/test reconciliation is not complete and is
-not claimed by this focused repair.
+completed six-version comparison is documented separately in
+[the source reconciliation](durable-queue-source-reconciliation-2026-10-23.md).
+That comparison is not a review of every queue-related file or archive.
 
 ## Repair and regression evidence
 
@@ -33,6 +34,18 @@ packages passed locally with Go 1.27.3 on Windows:
 ```text
 go test -p 1 -timeout 180s ./internal/durablejob ./internal/ambient -count=1
 ```
+
+## Poll outcome and logging follow-up
+
+Two additional regressions failed before their repairs:
+
+- A later claim error in the same poll discarded an earlier manual-review
+  result. Join the earlier result with the new claim error so both remain
+  discoverable, including by `errors.Is` and review classification.
+- Poll status redacted secrets, but the log printed the original repository
+  error. Apply the same secret redaction at that log sink.
+
+The complete queue and ambient packages passed again after both repairs.
 
 ## Boundary
 

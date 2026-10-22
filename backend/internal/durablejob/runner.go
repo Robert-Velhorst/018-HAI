@@ -436,7 +436,7 @@ func (r *Runner) RunOnce(ctx context.Context) (int, error) {
 		}
 		jobs, err := r.repo.ClaimDue(r.workerID, r.queue, r.now(), 1)
 		if err != nil {
-			return processed, fmt.Errorf("claim due jobs: %w", err)
+			return processed, errors.Join(firstErr, fmt.Errorf("claim due jobs: %w", err))
 		}
 		if len(jobs) == 0 {
 			break
@@ -692,7 +692,7 @@ func (r *Runner) runAndReport(ctx context.Context) {
 	now := r.now()
 	becameUnhealthy, recovered := r.recordPollResult(now, err)
 	if becameUnhealthy {
-		log.Printf("durablejob: queue %q worker %q poll failed: %v", r.queue, r.workerID, err)
+		log.Printf("durablejob: queue %q worker %q poll failed: %s", r.queue, r.workerID, safety.RedactSecrets(err.Error()))
 	}
 	if recovered {
 		log.Printf("durablejob: queue %q worker %q recovered", r.queue, r.workerID)
