@@ -65,6 +65,32 @@ Autoposter-adjacent dependency graph and the remaining original source files are
 not certified by these two file reviews. No weaker original grant behavior is
 restored and neither original file is marked deletion-eligible.
 
+## Runtime handler comparison
+
+The complete original-to-current diff of
+`backend/internal/agentruntime/handler.go` contains 33 added lines and one
+replaced line. The additions check request cancellation after upload inspection,
+before archive persistence, and immediately before the selection mutation under
+the execution commit fence. The original callback dispatch is replaced by that
+guarded dispatch; restoring the older handler would remove these checks.
+
+The upload authorization, archive persistence/validation and selection contexts,
+the adapter's commit fence, and the existing cancellation regression tests were
+inspected. The fence takes the adapter inventory lock before the execution fence,
+checks the emergency stop, and then invokes the guarded callback. Existing tests
+cover cancellation before upload authorization, cancellation after approval,
+cancellation during fence evaluation, and preserving an error returned after the
+callback starts. This checkpoint inspected those tests; it did not rerun Go tests
+or exercise a live OpenClaw installation.
+
+This is a comparison of the retained file and its changed execution boundaries,
+not a full runtime security certification. Archive persistence precedes selection
+commit: cancellation after persistence is not proof that no disk write occurred,
+and the checks do not promise rollback or interruption inside a started callback.
+The current handler's Git blob matches the inspected `main` reference. The raw
+original is different, so neither it nor the original checkout is released for
+deletion under the direct-match rule.
+
 ## Storage boundary
 
 No original sources, Git history, databases, or transcript archives were deleted.
