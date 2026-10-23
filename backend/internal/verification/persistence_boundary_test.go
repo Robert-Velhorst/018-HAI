@@ -7,6 +7,7 @@ import (
 
 	"automation-hub-backend/internal/memory"
 	"automation-hub-backend/internal/models"
+	"github.com/google/uuid"
 )
 
 func TestAnswerFailsClosedWhenEvidenceCannotBePersisted(t *testing.T) {
@@ -209,6 +210,14 @@ type failingVerificationRepository struct {
 	auditErr          error
 	auditActionErr    string
 	auditActionErrors map[string]error
+	runAck            func(*models.VerificationRun) *models.VerificationRun
+}
+
+func (r *failingVerificationRepository) UpdateRun(run *models.VerificationRun) (*models.VerificationRun, error) {
+	if r.runAck != nil {
+		return r.runAck(run), nil
+	}
+	return r.fakeVerificationRepository.UpdateRun(run)
 }
 
 func (r *failingVerificationRepository) CreateEvidence(evidence *models.VerificationEvidence) (*models.VerificationEvidence, error) {
@@ -253,6 +262,7 @@ func (r *transactionalFailingVerificationRepository) WithinTransaction(action fu
 		auditErr:                   r.auditErr,
 		auditActionErr:             r.auditActionErr,
 		auditActionErrors:          r.auditActionErrors,
+		runAck:                     r.runAck,
 	}
 	if err := action(transactional); err != nil {
 		return err
@@ -262,4 +272,50 @@ func (r *transactionalFailingVerificationRepository) WithinTransaction(action fu
 	r.evidence = staged.evidence
 	r.audits = staged.audits
 	return nil
+}
+
+func TestAnswerRejectsUnconfirmedOrMismatchedFinalization(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*models.VerificationRun) *models.VerificationRun
+	}{
+		{name: "missing acknowledgement", mutate: func(*models.VerificationRun) *models.VerificationRun { return nil }},
+		{name: "foreign run", mutate: func(run *models.VerificationRun) *models.VerificationRun { run.ID = uuid.New(); return run }},
+		{name: "foreign owner", mutate: func(run *models.VerificationRun) *models.VerificationRun { run.OwnerIdentity = "bob"; return run }},
+		{name: "unfinalized status", mutate: func(run *models.VerificationRun) *models.VerificationRun { run.Status = StatusUncertain; return run }},
+		{name: "different answer", mutate: func(run *models.VerificationRun) *models.VerificationRun {
+			run.Answer = "A different answer."
+			return run
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &transactionalFailingVerificationRepository{failingVerificationRepository: &failingVerificationRepository{
+				fakeVerificationRepository: &fakeVerificationRepository{},
+				runAck: func(run *models.VerificationRun) *models.VerificationRun {
+					copy := *run
+					return test.mutate(&copy)
+				},
+			}}
+			memoryRepository := &capturingMemoryRepository{}
+			resolver := EvidenceAuthorityResolverFunc(func(AnswerRequest, EvidenceInput) EvidenceAuthorityResolution {
+				return EvidenceAuthorityResolution{Trusted: true, Authority: "project_record", Primary: true}
+			})
+			service := NewServiceWithAuthorityResolver(repository, nil, memory.NewService(memoryRepository), resolver)
+			result, err := service.Answer(AnswerRequest{
+				OwnerIdentity: "alice", Question: "What is the integration result?", Mode: ModeGrounded,
+				DraftAnswer: "The integration result is stable.", AllowMemoryUpdate: true,
+				ExternalEvidence: []EvidenceInput{{SourceType: "project_record", SourceID: "integration-1",
+					SourceURI: "local://project/integration-1", Snippet: "The integration result is stable."}},
+			})
+			if err == nil || result != nil || !strings.Contains(err.Error(), "persist completed verification run") {
+				t.Fatalf("unconfirmed finalization returned a result: result=%#v err=%v", result, err)
+			}
+			if len(memoryRepository.created) != 0 || len(repository.evidence) != 0 || len(repository.claims) != 0 || hasVerificationAudit(repository.audits, "verification.completed") {
+				t.Fatal("unconfirmed finalization retained memory or committed verification records")
+			}
+			if len(repository.runs) != 1 || repository.runs[0].Status != StatusUncertain {
+				t.Fatal("unconfirmed finalization changed the initial run status")
+			}
+		})
+	}
 }

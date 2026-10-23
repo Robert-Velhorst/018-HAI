@@ -177,6 +177,54 @@ func TestGenericStopwordOverlapIsNotEvidenceRelevance(t *testing.T) {
 	}
 }
 
+func TestWeakLexicalOverlapCannotBecomeSourceSupportThroughQuality(t *testing.T) {
+	tests := []struct {
+		name, claim, snippet string
+		wantSupported        bool
+	}{
+		{
+			name:    "one shared meaningful word",
+			claim:   "The bridge project passed inspection.",
+			snippet: "The bridge is a historic landmark.",
+		},
+		{
+			name:    "two shared words below the original relevance floor",
+			claim:   "The bridge construction project contract passed detailed structural engineering safety inspection.",
+			snippet: "The bridge project is a historic landmark.",
+		},
+		{
+			name:          "matching source remains supported",
+			claim:         "The bridge project passed inspection.",
+			snippet:       "The bridge project passed inspection.",
+			wantSupported: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runID := uuid.New()
+			claims := verifyClaims(
+				[]models.VerificationClaim{{RunID: runID, ClaimText: test.claim}},
+				[]models.VerificationEvidence{{
+					RunID: runID, SourceType: "connected_source", SourceID: "bridge-record",
+					SourceURI: "https://example.test/bridge-record", Snippet: test.snippet,
+					Authority: authorityConnectedProvenance, QualityScore: 1, Used: true, Freshness: "fresh",
+				}},
+				AnswerRequest{}, ModeGrounded,
+			)
+			if len(claims) != 1 {
+				t.Fatalf("claims = %#v, want one", claims)
+			}
+			if test.wantSupported {
+				if claims[0].Status != StatusSourceSupported || claims[0].NeedsReview {
+					t.Fatalf("matching evidence lost support: %#v", claims[0])
+				}
+			} else if claims[0].Status != StatusUnsupported || !claims[0].NeedsReview || claims[0].SourceRefs != "" {
+				t.Fatalf("source quality substituted for claim relevance: %#v", claims[0])
+			}
+		})
+	}
+}
+
 func TestDutchStopwordOverlapIsNotEvidenceRelevance(t *testing.T) {
 	claim := tokenSet("De uitnodiging is voor een van de dagen")
 	source := tokenSet("Het document is met een van de regels")

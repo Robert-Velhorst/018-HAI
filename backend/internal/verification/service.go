@@ -36,6 +36,7 @@ const (
 	StatusConflicting                = "conflicting"
 	StatusUnsupported                = "unsupported"
 	StatusNeedsReview                = "needs_review"
+	minimumClaimEvidenceOverlap      = 0.22
 	minimumMemoryPromotionConfidence = 0.75
 	minimumMemoryEvidenceQuality     = 0.75
 	// ExplanationUntrustedProvenance is the verdict for a claim that a source
@@ -59,18 +60,18 @@ type EvidenceInput struct {
 }
 
 type AnswerRequest struct {
-	OwnerIdentity          string          `json:"-"`
-	Question               string          `json:"question"`
-	ProjectKey             string          `json:"projectKey,omitempty"`
-	PursuitID              string          `json:"pursuitId,omitempty"`
-	Mode                   string          `json:"mode,omitempty"`
-	DraftAnswer            string          `json:"draftAnswer,omitempty"`
-	ExternalEvidence       []EvidenceInput `json:"externalEvidence,omitempty"`
-	IncludeSensitive       bool            `json:"includeSensitive,omitempty"`
+	OwnerIdentity    string          `json:"-"`
+	Question         string          `json:"question"`
+	ProjectKey       string          `json:"projectKey,omitempty"`
+	PursuitID        string          `json:"pursuitId,omitempty"`
+	Mode             string          `json:"mode,omitempty"`
+	DraftAnswer      string          `json:"draftAnswer,omitempty"`
+	ExternalEvidence []EvidenceInput `json:"externalEvidence,omitempty"`
+	IncludeSensitive bool            `json:"includeSensitive,omitempty"`
 	// Human approval is server-owned and cannot be asserted by a JSON client.
-	HumanApproved          bool            `json:"-"`
-	HumanApprovalReference string          `json:"-"`
-	AllowMemoryUpdate      bool            `json:"allowMemoryUpdate,omitempty"`
+	HumanApproved          bool   `json:"-"`
+	HumanApprovalReference string `json:"-"`
+	AllowMemoryUpdate      bool   `json:"allowMemoryUpdate,omitempty"`
 }
 
 type VerificationResult struct {
@@ -373,6 +374,10 @@ type verificationTransactionRepository interface {
 }
 
 func (s *service) persistCompletedVerification(run *models.VerificationRun, evidence []models.VerificationEvidence, claims []models.VerificationClaim) error {
+	if run == nil || run.ID == uuid.Nil {
+		return fmt.Errorf("persist completed verification run: run identity is required")
+	}
+	expected := *run
 	persist := func(repository Repository) error {
 		for index := range evidence {
 			saved, err := repository.CreateEvidence(&evidence[index])
@@ -400,8 +405,19 @@ func (s *service) persistCompletedVerification(run *models.VerificationRun, evid
 		}); err != nil {
 			return fmt.Errorf("persist verification completion audit: %w", err)
 		}
-		if _, err := repository.UpdateRun(run); err != nil {
+		stored, err := repository.UpdateRun(run)
+		if err != nil {
 			return fmt.Errorf("persist completed verification run: %w", err)
+		}
+		if stored == nil {
+			return fmt.Errorf("persist completed verification run: repository returned no acknowledgement")
+		}
+		observed, wanted := *stored, expected
+		// Database-managed timestamps may change; run identity, ownership and data may not.
+		observed.CreatedAt, observed.UpdatedAt = time.Time{}, time.Time{}
+		wanted.CreatedAt, wanted.UpdatedAt = time.Time{}, time.Time{}
+		if observed != wanted {
+			return fmt.Errorf("persist completed verification run: acknowledgement does not match the requested finalization")
 		}
 		return nil
 	}
@@ -785,8 +801,9 @@ func bestEvidenceForClaim(claim string, evidence []models.VerificationEvidence) 
 		if evidence[i].Rejected || evidence[i].Snippet == "" {
 			continue
 		}
-		score := overlapScore(claimTokens, tokenSet(evidence[i].Snippet))
-		if score < 0.2 {
+		sourceTokens := tokenSet(evidence[i].Snippet)
+		score := overlapScore(claimTokens, sourceTokens)
+		if score < minimumClaimEvidenceOverlap || overlapCount(claimTokens, sourceTokens) < 2 {
 			continue
 		}
 		score = score*0.75 + evidence[i].QualityScore*0.25
@@ -1116,7 +1133,7 @@ func containsContradiction(claim string, evidence []models.VerificationEvidence)
 		if item.Rejected || !item.Used {
 			continue
 		}
-		if overlapScore(tokenSet(claim), tokenSet(item.Snippet)) < 0.2 {
+		if overlapScore(tokenSet(claim), tokenSet(item.Snippet)) < minimumClaimEvidenceOverlap {
 			continue
 		}
 		if hasConflictingSingleWeekday(claim, item.Snippet) {
