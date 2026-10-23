@@ -872,11 +872,12 @@ jobs:
           set -euo pipefail
           maintenance_pull_log="$RUNNER_TEMP/maintenance-pull-postgres.log"
           go test -count=1 -p 1 -parallel 1 -timeout 180s \
-            -run '^(TestPullClientReportsIndependentBackendHealthRejection|TestPullClientPostgresLifecycleAndLostAcknowledgement)$' \
+            -run '^(TestPullClientReportsIndependentBackendHealthRejection|TestPullClientPostgresLifecycleAndLostAcknowledgement|TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres)$' \
             ./internal/openclawmaintenance/ -v | tee "$maintenance_pull_log"
           for test_name in \
             TestPullClientReportsIndependentBackendHealthRejection \
-            TestPullClientPostgresLifecycleAndLostAcknowledgement
+            TestPullClientPostgresLifecycleAndLostAcknowledgement \
+            TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres
           do
             grep -q -- "^--- PASS: ${test_name} (" "$maintenance_pull_log"
           done

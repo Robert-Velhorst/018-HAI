@@ -2,7 +2,8 @@
 
 ## Scope and retained behavior
 
-Reviewed the retained `pull_client.go` and `pull_integration_test.go` variants
+Reviewed the retained `pull_client.go`, `pull_integration_test.go`,
+`contained_process_windows.go`, `handler.go` and `handler_test.go` variants
 against current code. Also inspected and hardened the shared PostgreSQL fixture
 setup in `service_test.go`; this does not mark that entire larger test file,
 the service implementation or remaining archives as reconciled.
@@ -16,6 +17,26 @@ the service implementation or remaining archives as reconciled.
 - Keep the newer explicit publisher-pin verification in successful synthetic
   integration reports. The older reports omitted evidence now required by the
   current report validator.
+- Keep the newer pre-create/pre-resume cancellation checks in Windows process
+  containment and the newer owned scheduler goroutines, paused-background gate
+  and retry recovery when no persisted deadline can be loaded.
+
+## Unambiguous worker headers
+
+The handler previously read only the first Authorization and capability header
+value. Duplicate credentials could pass authentication, and duplicate capability
+reports could refresh installation readiness from just the first value. This
+does not establish an authentication bypass without a valid credential.
+
+Require exactly one Authorization value before recording contact. A duplicate
+capability header is treated as unsupported, clearing previous install readiness;
+the authenticated worker can still perform read-only/status work. Six HTTP
+cases cover single valid headers, both credential orders, identical duplicates
+and conflicting capability reports. Four cases failed before the correction.
+An additional HTTP/service/PostgreSQL regression checks the durable chain:
+duplicate credentials leave the pending install unleased, while duplicate
+capability reports cancel it with the recorded capability-unavailable reason.
+Neither path may dispatch the installer callback.
 
 ## Integrated acceptance and safety work
 
@@ -29,7 +50,8 @@ PostgreSQL service and explicitly runs:
 2. Lost receipt acknowledgement, proving that retry records one completed update
    without executing the installer callback twice.
 
-Both require top-level PASS markers; a skip is insufficient. The live Windows /
+Those two tests and the new ambiguous-header admission regression require
+top-level PASS markers; a skip is insufficient. The live Windows /
 WSL opt-in test remains excluded: no real update or live Gateway access is
 authorized by this fixture work.
 

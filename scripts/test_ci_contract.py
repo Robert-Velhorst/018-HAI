@@ -138,10 +138,11 @@ class CIWorkflowContractTest(unittest.TestCase):
         for contract in (
             "hai_openclaw_maintenance_test",
             'TEST_OPENCLAW_MAINTENANCE_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_openclaw_maintenance_test port=5432 sslmode=disable TimeZone=UTC"',
-            "-run '^(TestPullClientReportsIndependentBackendHealthRejection|TestPullClientPostgresLifecycleAndLostAcknowledgement)$'",
+            "-run '^(TestPullClientReportsIndependentBackendHealthRejection|TestPullClientPostgresLifecycleAndLostAcknowledgement|TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres)$'",
             "./internal/openclawmaintenance/ -v",
             "TestPullClientReportsIndependentBackendHealthRejection \\",
-            "TestPullClientPostgresLifecycleAndLostAcknowledgement\n",
+            "TestPullClientPostgresLifecycleAndLostAcknowledgement \\",
+            "TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres\n",
             'grep -q -- "^--- PASS: ${test_name} (" "$maintenance_pull_log"',
         ):
             self.assertIn(contract, migrations)
