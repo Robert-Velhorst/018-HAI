@@ -720,15 +720,32 @@ func (s *service) QueryForOwner(ctx context.Context, ownerIdentity, projectKey s
 	if err != nil {
 		return PageResult{}, err
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return PageResult{}, err
+	}
 	repository, ok := s.repo.(OwnerQueryRepository)
 	if ok {
-		return repository.QueryForOwner(ctx, ownerIdentity, projectKey, includeArchived, params)
+		result, err := repository.QueryForOwner(ctx, ownerIdentity, projectKey, includeArchived, params)
+		if err != nil {
+			return PageResult{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return PageResult{}, err
+		}
+		return result, nil
 	}
 	memories, err := s.findAllReadable(ownerIdentity, projectKey, includeArchived)
 	if err != nil {
 		return PageResult{}, err
 	}
-	return Query(memories, params), nil
+	result := Query(memories, params)
+	if err := ctx.Err(); err != nil {
+		return PageResult{}, err
+	}
+	return result, nil
 }
 
 func (s *service) RecentForOwner(ownerIdentity, projectKey string, includeArchived bool, limit int) ([]models.ContextMemory, error) {
