@@ -1,5 +1,5 @@
 # Keep the isolated runner aligned with the frontend's verified Node/npm toolchain.
-FROM node:26.12.0-bookworm-slim
+FROM node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe
 
 WORKDIR /app
 
@@ -14,9 +14,12 @@ ENV PATH="/app/node_modules/.bin:${PATH}"
 
 COPY app.mjs ./
 COPY test_app.mjs ./
+COPY test_cli_compatibility.mjs ./
 
 RUN node --test test_app.mjs \
-    && PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 promptfoo --version
+    && test "$(PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 promptfoo --version)" = "$(node -p 'require("./package.json").dependencies.promptfoo')"
+
+RUN --network=none PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 OTEL_SDK_DISABLED=true DO_NOT_TRACK=1 node test_cli_compatibility.mjs
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin hai
 
