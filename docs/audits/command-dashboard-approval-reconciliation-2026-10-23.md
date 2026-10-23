@@ -1,6 +1,6 @@
 # Command dashboard approval reconciliation
 
-Current local gate: 101 native control-room tests, including 32 targeted
+Current local gate: 102 native control-room tests, including 33 targeted
 dashboard decision scenarios, and zero no-emit TypeScript diagnostics. Earlier
 counts below describe successive checks, not additional unique tests.
 
@@ -136,12 +136,20 @@ The final 32 scenarios were replayed against the exact controller from commit
 approval/completion scenarios passed and all 16 new scenarios failed. This
 comparison used corrected proposal route fixtures, verified against both the
 actual service and router; two earlier fixture URLs had omitted `/resolve`.
-No checkout or source file was modified for the baseline replay. All 32
-targeted scenarios now pass, and the containing control-room suite passes 101
+No checkout or source file was modified for the baseline replay. With the
+selection-routing scenario below, all 33 targeted scenarios now pass, and the
+containing control-room suite passes 102
 tests without skips. The TypeScript controller/spec program reports zero
 diagnostics over 330 source/declaration files, with no output writes allowed.
 Real frontend services are exercised against mocked HTTP responses; no live
 provider, browser, container or database mutation is claimed.
+
+Exact automation-selection proposals use a reserved recommended-action value
+which the backend itself matches exactly. A generic `Accept` option cannot
+satisfy its candidate-list validation. Approval of that proposal now opens the
+existing workflow review using its `workflowId` query parameter without sending
+a decision. A native test verifies the route and absence of a mutation request;
+rendered navigation and real owner selection remain separate acceptance gates.
 
 ## Server follow-ups still open
 

@@ -29,7 +29,7 @@ function receipt(approved = true) {
   }
 }
 function fixture(response = of(receipt()), synchronousFailure = false, useActualService = false) {
-  const notices = [], requests = [], refreshes = []
+  const notices = [], requests = [], refreshes = [], navigations = []
   const notification = Object.fromEntries(['info', 'success', 'warning', 'error']
     .map(kind => [kind, (...args) => notices.push({ kind, args })]))
   const request = (...args) => {
@@ -39,9 +39,10 @@ function fixture(response = of(receipt()), synchronousFailure = false, useActual
   }
   const workflows = useActualService ? new WorkflowService({ post: request }) : { resolveApproval: request, resolveProposal: request }
   const pursuits = useActualService ? new PursuitService({ post: request }) : { resolveDecision: request, acceptCandidate: request, archive: request }
-  const component = new CommandDashboardComponent(new FormBuilder(), {}, {}, {}, pursuits, workflows, notification, {})
+  const component = new CommandDashboardComponent(new FormBuilder(), {}, {}, {}, pursuits, workflows, notification,
+    { navigate: (...args) => { navigations.push(args); return Promise.resolve(true) } })
   component.refreshPursuits = () => refreshes.push(true)
-  return { component, notices, requests, refreshes }
+  return { component, notices, requests, refreshes, navigations }
 }
 
 test('command dashboard confirms only matching approval state and dated decision evidence', () => {
@@ -429,4 +430,15 @@ test('dashboard decision dispatch tolerates incomplete untrusted cards without t
     assert.doesNotThrow(() => f.component.resolveDashboardDecision(input, true))
     assert.equal(f.requests.length, 0)
   }
+})
+
+test('exact automation selection opens its workflow review without submitting a generic acceptance', () => {
+  const entry = remainingCases().find(value => value.kind === 'proposal' && value.approved)
+  entry.input.decision.recommended = 'Select an automation for controlled execution'
+  const f = fixture()
+  f.component.resolveDashboardDecision(entry.input, true)
+  assert.equal(f.requests.length, 0)
+  assert.deepEqual(f.navigations, [[['/workflow-engine'], { queryParams: { workflowId } }]])
+  assert.equal(f.component.resolvingDashboardDecisionId, '')
+  assert.match(f.notices[0]?.args.join(' '), /No decision has been submitted/)
 })

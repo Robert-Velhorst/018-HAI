@@ -1169,6 +1169,11 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       this.reportDashboardDecisionUnconfirmed('Proposal unavailable');
       return;
     }
+    if (approved && card.decision.recommended === 'Select an automation for controlled execution') {
+      void this.router.navigate(['/workflow-engine'], { queryParams: { workflowId } });
+      this.notification.info('Automation selection required', 'This proposal requires an exact automation candidate. No decision has been submitted.');
+      return;
+    }
     const expected = approved ? 'approved' : 'rejected';
     this.resolvingDashboardDecisionId = card.decision.id;
     this.observeDashboardDecision(() => this.workflows.resolveProposal(workflowId, proposalID, {
