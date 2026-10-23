@@ -38,7 +38,6 @@ const routes: Routes = [{ path: '', component: CommandDashboardComponent }];
     NzModalModule,
     NzTableModule,
     NzTagModule,
-    ControlRoomModule,
   ],
   providers: [{ provide: MEMORY_ENGINE_SERVICE_TOKEN, useClass: MemoryEngineService }],
 })

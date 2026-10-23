@@ -536,6 +536,52 @@ func TestCompareFrameworkExecutionContractsRejectsAutonomyOrApprovalDrift(t *tes
 	if err := compareFrameworkRiskContracts(preflight, &executed); err == nil {
 		t.Fatal("approval drift from side-effect-free preview was accepted")
 	}
+
+	executed = *preflight
+	executed.OperatingContractDigest = strings.Repeat("e", 64)
+	if err := compareFrameworkRiskContracts(preflight, &executed); err == nil {
+		t.Fatal("operating-contract drift from side-effect-free preview was accepted")
+	}
+}
+
+func TestRunnerRejectsOperatingContractDriftAndRetainsPartialPlan(t *testing.T) {
+	for _, digest := range []string{strings.Repeat("d", 64), strings.Repeat("e", 64), ""} {
+		t.Run("digest_"+digest, func(t *testing.T) {
+			preview := validWorkflowCompletionPlan("contract-preview")
+			preview.RiskAssessment.Level = "high"
+			preview.FrameworkDecision.SelectorAlgorithmVersion = "selector-v5"
+			preview.FrameworkDecision.TaskRiskLevel = "high"
+			preview.FrameworkDecision.EffectiveRiskCeiling = "high"
+			preview.FrameworkDecision.MaximumAutonomyLevel = 6
+			preview.FrameworkDecision.RequiresApproval = true
+			preview.FrameworkDecision.OperatingContractDigest = strings.Repeat("d", 64)
+			executed := *preview
+			executed.ID = "contract-executed"
+			decision := *preview.FrameworkDecision
+			decision.TaskPlanID = executed.ID
+			decision.OperatingContractDigest = digest
+			executed.FrameworkDecision = &decision
+			tasks := &capturingTaskService{previewPlan: preview, plan: &executed}
+			result, err := NewRunner(tasks).RunWorkflowTask(workflow.TaskRunRequest{
+				OwnerIdentity: "alice", WorkflowID: "workflow-contract", Request: "Perform reviewed work", RiskLevel: "high",
+			})
+			if tasks.previews != 1 || tasks.runs != 1 || result == nil || result.PlanID != executed.ID {
+				t.Fatalf("partial execution context lost or work replayed: result=%#v previews=%d runs=%d error=%v", result, tasks.previews, tasks.runs, err)
+			}
+			if digest == preview.FrameworkDecision.OperatingContractDigest {
+				if err != nil || !result.Passed {
+					t.Fatalf("unchanged operating contract rejected: result=%#v error=%v", result, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "framework selection changed after preflight") || workflow.IsTaskFailureSafeNoSideEffect(err) {
+				t.Fatalf("contract drift must fail as post-run uncertainty, not a safe retry: result=%#v error=%v", result, err)
+			}
+			if result.Passed || !result.ReviewRequired || !result.ExecutionOutcomeUncertain || result.ApprovalRequired || result.CompletionStatus != "review_required" || result.VerificationStatus != "uncertain" {
+				t.Fatalf("contract drift retained an optimistic success or approval-only result: %#v", result)
+			}
+		})
+	}
 }
 
 func TestRunnerRejectsForgedWorkflowApprovalBeforeTaskEngine(t *testing.T) {

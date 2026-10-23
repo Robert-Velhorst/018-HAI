@@ -1036,7 +1036,8 @@ jobs:
             TestTrelloPostgresFindStaleCardsAfterOrdersPaginatesAndFilters \
             TestTrelloPostgresOwnerManualRequestResumesCancelledCheckpoint \
             TestTrelloPostgresInventoryCheckpointUpdatesFetchedAtAndCursorAtomically \
-            TestTrelloPostgresRejectsSourcePausedBeforeDurableOperations
+            TestTrelloPostgresRejectsSourcePausedBeforeDurableOperations \
+            TestTrelloPostgresCheckpointCannotOverwriteStoppedOrReboundJob
           do
             grep -q -- "^--- PASS: ${test_name} (" "$trello_repository_log"
           done
@@ -1049,6 +1050,18 @@ jobs:
             TestGoogleOAuthTokenFailureRevisionMonotonePostgres
           do
             grep -q -- "^--- PASS: ${test_name} (" "$oauth_revision_log"
+          done
+          proposal_resolution_log="$RUNNER_TEMP/workflow-proposal-resolution-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
+            -run '^(TestPostgresProposalResolutionWaitsForSourceRetractionAndSeesQuarantine|TestPostgresConcurrentProposalResolutionsCommitExactlyOneDecision|TestPostgresProposalResolutionRollsBackWhenAuditWriteFails|TestPostgresProposalResolutionProjectsCommittedState)$' \
+            ./internal/workflow/ -v | tee "$proposal_resolution_log"
+          for test_name in \
+            TestPostgresProposalResolutionWaitsForSourceRetractionAndSeesQuarantine \
+            TestPostgresConcurrentProposalResolutionsCommitExactlyOneDecision \
+            TestPostgresProposalResolutionRollsBackWhenAuditWriteFails \
+            TestPostgresProposalResolutionProjectsCommittedState
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$proposal_resolution_log"
           done
           reminder_revocation_log="$RUNNER_TEMP/workflow-reminder-revocation-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \

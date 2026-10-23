@@ -48,3 +48,13 @@ Original worktrees and archives remain intact. Publication and semantic
 reconciliation are not evidence that every historical source byte is preserved
 on main or that a whole worktree can be deleted. No live Google account, provider
 refresh, database service or installed runtime was changed during this review.
+
+## Main conflict reconciliation
+
+Integrated main at `add36afdf7067dade10b2a7277e254b9f452d41b` without
+dropping the newer workflow-proposal PostgreSQL selection or its per-test PASS
+checks. The OAuth revision loop remains separately selected and checked. The
+combined CI contract suite now passes all 117 cases, and workflow YAML plus all
+six migration-job Bash blocks parse. The full uncached source package passes
+again. No local database DSN was supplied; dedicated SQL acceptance remains a
+new-head CI gate after this merge-conflict resolution, not a local test claim.

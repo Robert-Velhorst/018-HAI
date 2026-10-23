@@ -119,7 +119,7 @@ func (h *Handler) Capabilities(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body dto.UserDTO true "User registration details"
-// @Success 200 {object} dto.UserDTO
+// @Success 200 {object} dto.UserResponse
 // @Failure 400 {object} dto.ErrorResponse
 // @Failure 409 {object} dto.ErrorResponse
 // @Failure 500 {object} dto.ErrorResponse
@@ -162,7 +162,8 @@ func (h *Handler) Register(c *gin.Context) {
 // @Accept application/json
 // @Param body body dto.UserLoginDTO true "User object"
 // @Success 200 "Successfully logged in"
-// @Failure 400 "Unauthorized"
+// @Failure 400 "Bad Request"
+// @Failure 401 "Unauthorized"
 // @Failure 500 "Internal Server Error"
 // @Router /auth/login [post]
 func (h *Handler) Login(c *gin.Context) {
@@ -362,8 +363,10 @@ func isLoopbackHost(requestHost string) bool {
 // @Summary Logout
 // @Description Logout
 // @Tags Authentication
+// @Param Origin header string true "Exact allowed browser origin"
 // @Success 200 "OK"
-// @Failure 400 "Unauthorized"
+// @Failure 401 "Unauthorized"
+// @Failure 403 "Forbidden"
 // @Failure 500 "Internal Server Error"
 // @Router /auth/logout [post]
 func (h *Handler) Logout(c *gin.Context) {
@@ -450,6 +453,9 @@ func (h *Handler) CurrentSession(c *gin.Context) {
 }
 
 func (h *Handler) resolveAuthenticatedAccessToken(c *gin.Context) (string, bool) {
+	if ambiguousSessionCookies(c.Request) {
+		return "", false
+	}
 	if accessToken, err := c.Cookie("access_token"); err == nil && accessToken != "" {
 		if isAuthenticated, authErr := h.authService.IsUserAuthenticated(c.Request.Context(), accessToken); authErr == nil && isAuthenticated {
 			return accessToken, true
@@ -488,7 +494,7 @@ func (h *Handler) resolveAuthenticatedAccessToken(c *gin.Context) (string, bool)
 // @Accept application/x-www-form-urlencoded
 // @Produce json
 // @Param email formData string true "Email"
-// @Success 200 {object} string
+// @Success 200 {object} dto.SuccessResponse
 // @Failure 429 {object} dto.ErrorResponse
 // @Router /auth/request-password-reset [post]
 func (h *Handler) RequestPasswordReset(c *gin.Context) {
@@ -534,7 +540,7 @@ func (h *Handler) RequestPasswordReset(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param body body dto.ConfirmPasswordResetDTO true "One-time reset token and new password"
-// @Success 200 {object} string
+// @Success 200 {object} dto.SuccessResponse
 // @Failure 400 {object} dto.ErrorResponse
 // @Failure 500 {object} dto.ErrorResponse
 // @Router /auth/confirm-password-reset [post]
