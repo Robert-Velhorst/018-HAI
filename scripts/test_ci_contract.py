@@ -133,6 +133,23 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_artifact_recovery_and_retention_suites_require_postgres_pass(self):
+        migrations = job_block("migrations-integration")
+        selection = re.search(r"-run '([^']*TestOpenClawArtifactRecoveryPostgres[^']*)'", migrations)
+        self.assertIsNotNone(selection)
+        for source in (
+            "openclaw_artifact_recovery_integration_test.go",
+            "openclaw_artifact_retention_integration_test.go",
+        ):
+            program = (ROOT / "backend" / "migrations" / source).read_text(encoding="utf-8")
+            names = re.findall(r"(?m)^func (Test\w+)\(t \*testing\.T\)", program)
+            self.assertTrue(names, source)
+            for name in names:
+                with self.subTest(source=source, test=name):
+                    self.assertIsNotNone(re.fullmatch(selection.group(1), name))
+                    self.assertRegex(migrations, rf"(?m)^            {name}(?: \\\n|\n)")
+        self.assertIn('grep -q -- "^--- PASS: ${test_name} (" "$openclaw_migrations_log"', migrations)
+
     def test_guarded_rollbacks_require_real_postgres_pass(self):
         migrations = job_block("migrations-integration")
         selection = re.search(r"-run '(\^\(TestOpenClawArtifactAlignmentPostgres[^']+)'", migrations)

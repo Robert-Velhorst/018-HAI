@@ -1100,7 +1100,7 @@ jobs:
           done
           openclaw_migrations_log="$RUNNER_TEMP/openclaw-migrations-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
-            -run '^(TestOpenClawArtifactAlignmentPostgres|TestOpenClawArtifactRecoveryPostgres|TestOpenClawArtifactRetentionKeyGuardAndLegacyReadPostgres|TestOpenClawArtifactRetentionPostgres|TestOpenClawReceiptAlignmentPostgres|TestOpenClawUsageRecoveryPostgres|TestOpenClawSessionReviewRollbackPreservesTerminalReviewMetadata|TestTrelloResumableRollbackRefusesPersistedStateAndPreservesSharedIndex|TestOpenClawArtifactClaimRollbackRefusesRetainedTokens)$' \
+            -run '^(TestOpenClawArtifactAlignmentPostgres|TestOpenClawArtifactRecoveryPostgres|TestOpenClawArtifactRetentionKeyGuardAndLegacyReadPostgres|TestOpenClawArtifactRetentionPostgres|TestOpenClawReceiptAlignmentPostgres|TestOpenClawUsageRecoveryPostgres|TestOpenClawSessionReviewRollbackPreservesTerminalReviewMetadata|TestTrelloResumableRollbackRefusesPersistedStateAndPreservesSharedIndex|TestOpenClawArtifactClaimRollbackRefusesRetainedTokens|TestOpenClawLegacyArtifactDownloadDoesNotUpgradeRetainedCopy|TestOpenClawArtifactRetentionRollbackGuard|TestOpenClawArtifactRetentionConcurrentForgetIsIdempotentPostgres|TestOpenClawArtifactRetentionConcurrentQuotaBoundaryAcrossArchivesPostgres|TestOpenClawArtifactRetentionDoesNotSerializeHotOwnersWithinArchivePostgres|TestOpenClawArtifactRetentionKeyCheckSurvivesForgettingLastArtifactPostgres|TestOpenClawArtifactRetentionConcurrentFirstWriteUsesOneKeyPostgres)$' \
             ./migrations/ -v | tee "$openclaw_migrations_log"
           for test_name in \
             TestOpenClawArtifactAlignmentPostgres \
@@ -1111,7 +1111,14 @@ jobs:
             TestOpenClawUsageRecoveryPostgres \
             TestOpenClawSessionReviewRollbackPreservesTerminalReviewMetadata \
             TestTrelloResumableRollbackRefusesPersistedStateAndPreservesSharedIndex \
-            TestOpenClawArtifactClaimRollbackRefusesRetainedTokens
+            TestOpenClawArtifactClaimRollbackRefusesRetainedTokens \
+            TestOpenClawLegacyArtifactDownloadDoesNotUpgradeRetainedCopy \
+            TestOpenClawArtifactRetentionRollbackGuard \
+            TestOpenClawArtifactRetentionConcurrentForgetIsIdempotentPostgres \
+            TestOpenClawArtifactRetentionConcurrentQuotaBoundaryAcrossArchivesPostgres \
+            TestOpenClawArtifactRetentionDoesNotSerializeHotOwnersWithinArchivePostgres \
+            TestOpenClawArtifactRetentionKeyCheckSurvivesForgettingLastArtifactPostgres \
+            TestOpenClawArtifactRetentionConcurrentFirstWriteUsesOneKeyPostgres
           do
             grep -q -- "^--- PASS: ${test_name} (" "$openclaw_migrations_log"
           done
