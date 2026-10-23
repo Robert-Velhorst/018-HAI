@@ -272,7 +272,7 @@ func (r *GormRepository) SetGoogleOAuthReconnectRequired(sourceID uuid.UUID, req
 	} else {
 		query = query.Where("lower(status) = ?", "reconnect_required")
 	}
-	result := query.Updates(map[string]any{"status": status, "updated_at": time.Now().UTC()})
+	result := query.Updates(map[string]any{"status": status, "updated_at": gorm.Expr("GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')")})
 	if result.Error != nil {
 		return false, result.Error
 	}
@@ -347,7 +347,7 @@ func (r *GormRepository) SetGoogleOAuthReconnectRequiredForToken(
 		result := tx.Model(&models.ConnectedSource{}).
 			Where("id = ? AND enabled = ? AND revoked_at IS NULL AND lower(status) NOT IN ?",
 				expected.SourceID, true, []string{"paused", "revoked", "reconnect_required"}).
-			Updates(map[string]any{"status": "reconnect_required", "updated_at": time.Now().UTC()})
+			Updates(map[string]any{"status": "reconnect_required", "updated_at": gorm.Expr("GREATEST(clock_timestamp(), updated_at + INTERVAL '1 microsecond')")})
 		if result.Error != nil {
 			return result.Error
 		}
