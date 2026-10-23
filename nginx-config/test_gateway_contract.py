@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 import unittest
 
 
@@ -42,6 +43,34 @@ def compose_service_block(name: str) -> str:
 
 
 class GatewayAuthContractTest(unittest.TestCase):
+    def test_generated_secret_config_is_ignored_but_template_is_publishable(self) -> None:
+        ignored = subprocess.run(
+            ["git", "-c", f"safe.directory={ROOT.as_posix()}", "check-ignore", "--no-index", "-z", "--stdin"],
+            input=b"nginx-config/nginx.conf\0nginx-config/nginx.conf.template\0",
+            cwd=ROOT, capture_output=True, check=False,
+        )
+        self.assertEqual(ignored.returncode, 0, "generated gateway config must be ignored")
+        self.assertEqual(ignored.stdout, b"nginx-config/nginx.conf\0")
+        tracked = subprocess.run(
+            ["git", "-c", f"safe.directory={ROOT.as_posix()}", "ls-files", "--error-unmatch", "--", "nginx-config/nginx.conf"],
+            cwd=ROOT, text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(tracked.returncode, 1, "generated gateway config must not be tracked")
+
+    def test_readiness_probes_have_local_deadlines_and_no_browser_credentials(self) -> None:
+        for marker in ("location = /readyz", "location = /_hai/idp-readyz"):
+            with self.subTest(marker=marker):
+                block = location_block(marker)
+                self.assertIn("proxy_connect_timeout 2s;", block)
+                self.assertIn("proxy_read_timeout 3s;", block)
+                self.assertIn("proxy_send_timeout 3s;", block)
+        readiness = location_block("location = /_hai/idp-readyz")
+        self.assertIn("proxy_pass_request_body off;", readiness)
+        self.assertIn("proxy_pass_request_headers off;", readiness)
+        self.assertIn('proxy_set_header Content-Length "";', readiness)
+        self.assertNotIn("$http_cookie", readiness)
+        self.assertNotIn("$http_authorization", readiness)
+
     def test_gateway_applies_security_headers_to_all_and_cookie_refresh_responses(self) -> None:
         required = (
             'add_header X-Content-Type-Options "nosniff" always;',

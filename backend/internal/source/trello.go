@@ -399,8 +399,8 @@ func fetchTrelloSourceSnapshot(ctx context.Context, source *models.ConnectedSour
 // trelloQuietBoardCursor avoids fetching every card and comment on scheduled
 // runs with no card-level activity. Any card-affecting, unknown, saturated, or
 // malformed action page falls back to the complete bounded reconciliation.
+// A non-array response is a failed observation, not an empty activity page.
 func trelloQuietBoardCursor(ctx context.Context, client *trelloAPIClient, boardID, currentCursor string, cursorTime time.Time) (bool, string, error) {
-	var actions []trelloAction
 	query := url.Values{
 		"fields":        {trelloActionFields},
 		"filter":        {"all"},
@@ -409,7 +409,8 @@ func trelloQuietBoardCursor(ctx context.Context, client *trelloAPIClient, boardI
 		"memberCreator": {"false"},
 		"since":         {cursorTime.UTC().Format(time.RFC3339Nano)},
 	}
-	if err := client.getJSON(ctx, "/1/boards/"+boardID+"/actions", query, &actions); err != nil {
+	actions, err := getTrelloJSONArray[trelloAction](ctx, client, "/1/boards/"+boardID+"/actions", query)
+	if err != nil {
 		return false, "", err
 	}
 	if len(actions) >= trelloActionPageSize {

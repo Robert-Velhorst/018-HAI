@@ -26,6 +26,9 @@ import (
 
 func liveBoard(t *testing.T) (string, string) {
 	t.Helper()
+	if !liveTrelloProviderURLAllowed(os.Getenv(trelloBaseURLEnv)) {
+		t.Fatal("live acceptance requires the real HTTPS Trello endpoint, not a simulated provider")
+	}
 	if strings.TrimSpace(os.Getenv(trelloAPIKeyEnv)) == "" || strings.TrimSpace(os.Getenv(trelloReadTokenEnv)) == "" {
 		t.Skip("TRELLO_API_KEY / TRELLO_READ_TOKEN not set; skipping live Trello test")
 	}
@@ -38,6 +41,31 @@ func liveBoard(t *testing.T) (string, string) {
 		t.Skip("TRELLO_LIVE_BOARD not set; skipping live Trello test")
 	}
 	return board, ownerIdentity
+}
+
+func liveTrelloProviderURLAllowed(raw string) bool {
+	value := strings.TrimRight(strings.TrimSpace(raw), "/")
+	return value == "" || value == trelloDefaultBaseURL
+}
+
+func TestTrelloLiveAcceptanceProviderBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		url     string
+		allowed bool
+	}{
+		{"", true},
+		{"https://api.trello.com", true},
+		{"https://api.trello.com/", true},
+		{"http://127.0.0.1:1234", false},
+		{"http://api.trello.com", false},
+		{"https://api.trello.com/proxy", false},
+		{"https://api.trello.com?token=synthetic", false},
+		{"https://api.trello.com.attacker.test", false},
+	} {
+		if got := liveTrelloProviderURLAllowed(tc.url); got != tc.allowed {
+			t.Errorf("provider URL boundary returned %v; want %v", got, tc.allowed)
+		}
+	}
 }
 
 func liveTrelloSource(t *testing.T) *models.ConnectedSource {
@@ -198,7 +226,7 @@ func TestLiveTrelloTokenIsReadOnly(t *testing.T) {
 		} `json:"permissions"`
 		DateExpires string `json:"dateExpires"`
 	}
-	if err := trelloGetJSON(context.Background(), base, key, token, "/1/tokens/"+token, nil, &info); err != nil {
+	if err := trelloGetJSONContext(context.Background(), base, key, token, "/1/tokens/"+token, nil, &info); err != nil {
 		t.Fatalf("inspect token: %v", err)
 	}
 	if len(info.Permissions) == 0 {

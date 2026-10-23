@@ -133,6 +133,16 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_trello_live_contract_is_compiled_without_live_credentials(self) -> None:
+        backend = job_block("backend")
+        self.assertIn(
+            "go test -count=1 -tags live -run '^TestTrelloLiveAcceptanceProviderBoundary$' ./internal/source",
+            backend,
+        )
+        self.assertIn("./scripts/test-live-trello-launcher.ps1", backend)
+        self.assertIn("./scripts/test-live-trello-launcher-execution.ps1", backend)
+        self.assertNotIn("-run '^TestLiveTrello'", backend)
+
     def test_artifact_recovery_and_retention_suites_require_postgres_pass(self):
         migrations = job_block("migrations-integration")
         selection = re.search(r"-run '([^']*TestOpenClawArtifactRecoveryPostgres[^']*)'", migrations)
@@ -1359,6 +1369,8 @@ class CIWorkflowContractTest(unittest.TestCase):
                 self.assertNotIn("jacksonbarreto/", content)
 
     def test_cross_platform_secret_generator_covers_every_required_backend_key(self) -> None:
+        backend = job_block("backend")
+        self.assertIn("- name: Bootstrap secret generator contracts\n        working-directory: .\n        run: bash scripts/test-generate-secrets.sh", backend)
         generator = (ROOT / "scripts" / "generate-secrets.sh").read_text(encoding="utf-8")
         generated_keys = {
             "BACKEND_API_SHARED_KEY": "backend_api_shared_key",
@@ -1870,6 +1882,18 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         for contract in ("HAI_TEST_DATABASE_DSN=\"$migration_dsn\" go test -count=1 -race",
                          "-run '^TestPostgresReminderDeliveryAtomicReplay$'",
                          "grep -q -- '^--- PASS: TestPostgresReminderDeliveryAtomicReplay ('"):
+            self.assertIn(contract, migrations)
+
+    def test_maintenance_overview_requires_postgres_projection_passes(self) -> None:
+        migrations = job_block("migrations-integration")
+        for contract in (
+            'maintenance_projection_log="$RUNNER_TEMP/maintenance-overview-postgres.log"',
+            'TEST_OPENCLAW_MAINTENANCE_DSN="$migration_dsn" go test -count=1 -race',
+            'TestOverviewReadyCompanionHasNoBlockingReason',
+            'TestOverviewMissingPublisherBlocksEvenWithContainment',
+            './internal/openclawmaintenance/ -v',
+            '"^--- PASS: ${test_name} (" "$maintenance_projection_log"',
+        ):
             self.assertIn(contract, migrations)
 
     def test_automation_idempotency_requires_guarded_postgres_passes(self) -> None:
@@ -2433,6 +2457,23 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn("--redact=100", scanner)
         self.assertIn("capture_output=True", scanner)
         self.assertNotIn("stdout=", scanner)
+
+
+    def test_oauth_source_revisions_require_real_postgres_passes(self) -> None:
+        migrations = job_block("migrations-integration")
+        source = (ROOT / "backend/internal/source/google_oauth_revision_test.go").read_text(encoding="utf-8")
+        names = re.findall(r"func (Test\w+Postgres)\(t \*testing.T\)", source)
+        self.assertEqual(len(names), 2)
+        pattern = "-run '^(" + "|".join(names) + ")$'"
+        self.assertIn(pattern, migrations)
+        self.assertIn('HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s', migrations)
+        self.assertIn('./internal/source/ -v | tee "$oauth_revision_log"', migrations)
+        for name in names:
+            self.assertIn(name, migrations)
+        self.assertIn('grep -q -- "^--- PASS: ${test_name} (" "$oauth_revision_log"', migrations)
+        self.assertEqual(source.count("openTrelloRepositoryPostgresTestDB(t)"), 2)
+        self.assertEqual(source.count("withTrelloPostgresRollback(t, db"), 2)
+        self.assertNotIn("os.Getenv", source)
 
 
 if __name__ == "__main__":
