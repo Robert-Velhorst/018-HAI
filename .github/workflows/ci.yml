@@ -212,6 +212,9 @@ jobs:
       - name: Installer payload and safety contract
         shell: pwsh
         run: |
+          ./scripts/test-windows-installer-static-mode.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-windows-installer-static-mode.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell static installer contracts failed" }
           ./scripts/test-windows-initializer-password.ps1
           & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-windows-initializer-password.ps1
           if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell password preflight failed" }

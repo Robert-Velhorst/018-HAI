@@ -2,10 +2,15 @@
 param(
     [switch]$SkipPayload,
     [switch]$OpenClawMaintenanceOnly,
-    [switch]$UninstallRuntimeOnly
+    [switch]$UninstallRuntimeOnly,
+    [switch]$StaticOnly
 )
 
 $ErrorActionPreference = "Stop"
+
+if ($StaticOnly -and ($SkipPayload -or $OpenClawMaintenanceOnly -or $UninstallRuntimeOnly)) {
+    throw 'StaticOnly cannot be combined with payload or behavioral fixture modes.'
+}
 
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $buildScript = Join-Path $PSScriptRoot "build-windows-installer.ps1"
@@ -103,17 +108,19 @@ foreach ($script in @(
     }
 }
 
-if (-not $OpenClawMaintenanceOnly -and -not $UninstallRuntimeOnly) {
+if (-not $StaticOnly -and -not $OpenClawMaintenanceOnly -and -not $UninstallRuntimeOnly) {
     & (Join-Path $PSScriptRoot "test-dsh-version-validation.ps1")
 }
 
-if (-not $OpenClawMaintenanceOnly -and -not $UninstallRuntimeOnly) {
+if (-not $StaticOnly -and -not $OpenClawMaintenanceOnly -and -not $UninstallRuntimeOnly) {
     & $runtimeHealthTest
 }
 
-& $uninstallMaintenanceRecoveryTest
+if (-not $StaticOnly) {
+    & $uninstallMaintenanceRecoveryTest
+}
 
-if (-not $UninstallRuntimeOnly) {
+if (-not $StaticOnly -and -not $UninstallRuntimeOnly) {
     & $payloadValidationTest
 }
 
@@ -700,19 +707,21 @@ if ($initializer -notmatch 'Write-HaiAclProtectedFile -Path \$temporaryPath -Byt
     $initializer -match '\[IO\.File\]::WriteAll(?:Bytes|Text)\(\$temporaryPath') {
     throw "Existing-install migration must preserve its ACL, while first-run or forced initialization must restrict and verify the target and temporary-file ACLs before replacement and secret writes."
 }
-& $maintenanceMigrationTest
-& $maintenanceLauncherTest
-& $maintenancePromotionTest
-if (-not $OpenClawMaintenanceOnly) {
-    & $runtimeLifecycleTest
-} else {
-    foreach ($required in @('Uninstall waits for the same maintenance lock', 'uninstall is cancelled')) {
-        if ($docs -notmatch [Regex]::Escape($required)) {
-            throw "Windows installer documentation is missing '$required'."
+if (-not $StaticOnly) {
+    & $maintenanceMigrationTest
+    & $maintenanceLauncherTest
+    & $maintenancePromotionTest
+    if (-not $OpenClawMaintenanceOnly) {
+        & $runtimeLifecycleTest
+    } else {
+        foreach ($required in @('Uninstall waits for the same maintenance lock', 'uninstall is cancelled')) {
+            if ($docs -notmatch [Regex]::Escape($required)) {
+                throw "Windows installer documentation is missing '$required'."
+            }
         }
+        Write-Host 'OpenClaw Windows installer static, scheduling, locking, upgrade, and uninstall contracts passed with offline maintenance fixtures only.'
+        exit 0
     }
-    Write-Host 'OpenClaw Windows installer static, scheduling, locking, upgrade, and uninstall contracts passed with offline maintenance fixtures only.'
-    exit 0
 }
 
 foreach ($required in @(
@@ -843,6 +852,11 @@ if ($initializer -notmatch [Regex]::Escape('FIRST_RUN_ADMIN_PASSWORD')) {
 if ($exampleEnvironment -match [Regex]::Escape('DB_PASSWORD=postgres') -or
     $exampleEnvironment -match [Regex]::Escape('FIRST_RUN_ADMIN_PASSWORD=ChangeMe123!')) {
     throw "The safe environment template must not ship a known database or owner password."
+}
+
+if ($StaticOnly) {
+    Write-Host 'Windows installer static source contracts passed; behavioral fixtures, payload generation, installation, and runtime operations were not run.'
+    exit 0
 }
 
 if ($SkipPayload) {

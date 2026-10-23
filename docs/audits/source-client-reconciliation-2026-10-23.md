@@ -239,6 +239,38 @@ console message belongs to the existing Home negative-path test. This is local
 component rendering and HTTP-boundary evidence, not a deployed-app screenshot,
 full-app visual acceptance or live provider authorization. The original template
 is retained until preservation on main is verified.
+
+## Windows installer contract reconciliation
+
+Read the complete retained installer contract and the current integration delta.
+Keep release-source selection, payload rollback, process identity, A2A opt-in and
+credential handling, protected environment writes, worker mutex/promotion and
+uninstall boundaries. Current source checks additionally cover readiness,
+existing-data recovery, guarded uninstall, validated executable payloads,
+digest-pinned builder inputs and the shared least-privilege role provisioner.
+The retained contract referenced a cloud-tunnel script absent at the current
+path; this pass does not restore that launcher or claim its historical behavior
+has been preserved. That dependency remains part of the broader reconciliation.
+
+Add an explicit StaticOnly mode that performs source checks but excludes all
+behavioral fixture and payload invocations. Reject combinations with the three
+existing mode switches rather than giving an ambiguous partial result. Leave
+the default full behavior and existing fixture modes unchanged when StaticOnly
+is absent. Document that source assertions are not runtime acceptance.
+
+The companion AST contract accounts for ten non-read command boundaries: each
+must be inside a negative StaticOnly guard or after its unconditional top-level
+exit. New script/native/mutation commands are not silently classified as safe
+read commands. All three conflicting switch combinations are rejected. These
+checks and the actual static-only source pass succeed under PowerShell 7 and
+Windows PowerShell 5.1. Both are wired into the existing Windows CI step without
+replacing its full installer command. The 122 CI contracts pass locally.
+
+No behavioral fixture suite, payload preparation, installer compiler, Docker
+operation, scheduled-task mutation, live database action or original deletion
+was run for this pass. These source checks do not establish signed installer,
+clean-machine, real uninstall or deployment acceptance. The retained contract
+and original worktrees remain intact pending main preservation verification.
 The combined fourteen-suite frontend run passes all 211 tests; progressive
 section, split-theme and icon-registry checks also pass with this change set.
 

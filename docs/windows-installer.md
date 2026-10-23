@@ -14,6 +14,23 @@ Install and start current **Docker Desktop** with its Linux engine enabled.
 The installer does not silently install Docker Desktop, enable public access,
 or turn on the local-login bypass.
 
+## Check source contracts without building
+
+```powershell
+.\scripts\test-windows-installer-contract.ps1 -StaticOnly
+.\scripts\test-windows-installer-static-mode.ps1
+```
+
+`-StaticOnly` parses installer scripts and checks source contracts without running
+behavioral fixtures, generating payloads, installing software, starting Docker,
+or changing runtime settings. It cannot be combined with the other fixture-mode
+switches. The companion test checks invocation boundaries and conflicting-mode
+rejection under PowerShell 7 and Windows PowerShell 5.1 in CI.
+
+This is a lightweight source check, not behavioral, installation, clean-machine,
+signing or live readiness acceptance. The existing full contract command remains
+available and still runs its behavioral fixtures and payload preparation.
+
 ## Build a developer preview
 
 From a Git checkout on Windows 11:
