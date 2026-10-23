@@ -61,6 +61,22 @@ def browser_test_program() -> str:
     return "\n".join(line.removeprefix("          ") for line in match.group(1).splitlines())
 
 
+def pass_marker_probe(pattern: str, name: str, label: str) -> str:
+    exact = f"--- PASS: {name} (0.01s)"
+    outputs = "\n".join((
+        exact,
+        f"--- PASS: {name}Extra (0.01s)",
+        f"--- SKIP: {name} (0.01s)",
+        f"--- FAIL: {name} (0.01s)",
+        f"prefix {exact}",
+    )) + "\n"
+    # Replace the substitution shell with grep; do not fork a printf pipeline.
+    probe = "exec grep -- " + shlex.quote(pattern) + " <<'HAI_MARKER_FIXTURE'\n" + outputs + "HAI_MARKER_FIXTURE\n"
+    return (f"actual=$(\n{probe})\n"
+            f"if [ \"$actual\" != {shlex.quote(exact)} ]; then "
+            f"echo {shlex.quote('invalid marker behavior ' + label)} >&2; exit 1; fi")
+
+
 def exercise_browser_program(scenario: str) -> dict:
     # Execute the workflow's actual program with fake OS boundaries, never Docker or a live stack.
     harness = r"""
@@ -2663,6 +2679,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
     @unittest.skipUnless(shutil.which("bash") or Path("C:/Program Files/Git/bin/bash.exe").is_file(), "Bash is required to execute workflow grep expressions")
     def test_database_pass_markers_reject_prefix_skip_and_fail_output(self) -> None:
         commands = ["set -eu"]
+        checked_patterns = set()
         count = 0
         for line in job_block("migrations-integration").splitlines():
             if not line.strip().startswith("grep -q -- "):
@@ -2674,17 +2691,30 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
             for variable in ("test_name", "case_name", "test_case", "operation"):
                 pattern = pattern.replace("${" + variable + "}", "SyntheticCase")
             name = pattern.removeprefix("^").removeprefix("[[:space:]]*").removeprefix("--- PASS: ").removesuffix(" (")
-            for label, output, accepted in (
-                ("exact", f"--- PASS: {name} (0.01s)\n", True),
-                ("suffix", f"--- PASS: {name}Extra (0.01s)\n", False),
-                ("skip", f"--- SKIP: {name} (0.01s)\n", False),
-                ("fail", f"--- FAIL: {name} (0.01s)\n", False),
-            ):
-                probe = "printf '%s' " + shlex.quote(output) + " | grep -q -- " + shlex.quote(pattern)
-                condition = "! " if accepted else ""
-                commands.append(f"if {condition}{probe}; then echo 'invalid marker behavior {count}:{label}' >&2; exit 1; fi")
+            if pattern not in checked_patterns:
+                commands.append(pass_marker_probe(pattern, name, str(count)))
+                checked_patterns.add(pattern)
             count += 1
         self.assertGreater(count, 30)
+        git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+        bash = str(git_bash) if git_bash.is_file() else shutil.which("bash")
+        result = subprocess.run([bash, "--noprofile", "--norc", "-s"],
+                                input="\n".join(commands) + "\n", text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(shutil.which("bash") or Path("C:/Program Files/Git/bin/bash.exe").is_file(), "Bash is required to execute workflow grep expressions")
+    def test_pass_marker_probe_rejects_weakened_patterns(self) -> None:
+        commands = [pass_marker_probe(r"^--- PASS: SyntheticCase (", "SyntheticCase", "valid")]
+        for index, pattern in enumerate((
+            r"--- PASS: SyntheticCase (",
+            r"^--- PASS: SyntheticCase",
+            r"^--- ",
+            r"^--- SKIP: SyntheticCase (",
+            r"^--- FAIL: SyntheticCase (",
+            r"^--- PASS: OtherCase (",
+        )):
+            probe = pass_marker_probe(pattern, "SyntheticCase", f"negative-{index}")
+            commands.append(f"if (\n{probe}\n); then echo 'weakened marker accepted {index}' >&2; exit 1; fi")
         git_bash = Path("C:/Program Files/Git/bin/bash.exe")
         bash = str(git_bash) if git_bash.is_file() else shutil.which("bash")
         result = subprocess.run([bash, "--noprofile", "--norc", "-s"],
