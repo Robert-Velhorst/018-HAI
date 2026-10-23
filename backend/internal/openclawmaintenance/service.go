@@ -400,7 +400,7 @@ func (s *Service) queue(ctx context.Context, id, kind, version string, manual bo
 
 // queueRecoveryCheck records a read-only observation after an ambiguous apply.
 // It deliberately never creates or replays an installation job.
-func (s *Service) queueRecoveryCheck(tx *gorm.DB, target *Target, now, createdAt time.Time) error {
+func (s *Service) queueRecoveryCheck(tx *gorm.DB, target *Target, now time.Time) error {
 	var active int64
 	if err := tx.Model(&Job{}).Where("target = ? AND status IN ?", target.ID, []string{"pending", "leased"}).Count(&active).Error; err != nil {
 		return err
@@ -409,7 +409,7 @@ func (s *Service) queueRecoveryCheck(tx *gorm.DB, target *Target, now, createdAt
 		return nil
 	}
 	target.NextCheck = now
-	return tx.Create(&Job{ID: uuid.NewString(), Target: target.ID, Kind: "check", Status: "pending", CreatedAt: createdAt}).Error
+	return tx.Create(&Job{ID: uuid.NewString(), Target: target.ID, Kind: "check", Status: "pending", CreatedAt: now}).Error
 }
 
 func (s *Service) canApply(tx *gorm.DB, t *Target, version string) error {
@@ -492,7 +492,7 @@ func (s *Service) expire(tx *gorm.DB, t *Target, now time.Time) (bool, error) {
 			return false, err
 		}
 		if j.Kind == "apply" {
-			if err := s.queueRecoveryCheck(tx, t, now, now.Add(time.Second)); err != nil {
+			if err := s.queueRecoveryCheck(tx, t, now); err != nil {
 				return false, err
 			}
 		}
@@ -525,7 +525,7 @@ func (s *Service) expire(tx *gorm.DB, t *Target, now time.Time) (bool, error) {
 			return false, err
 		}
 		if j.Kind == "apply" {
-			if err := s.queueRecoveryCheck(tx, t, now, now.Add(time.Second)); err != nil {
+			if err := s.queueRecoveryCheck(tx, t, now); err != nil {
 				return false, err
 			}
 		}
@@ -788,7 +788,7 @@ func (s *Service) Complete(ctx context.Context, id, worker, token string, r Repo
 			if err := tx.Save(&j).Error; err != nil {
 				return err
 			}
-			return s.queueRecoveryCheck(tx, t, now, now.Add(time.Second))
+			return s.queueRecoveryCheck(tx, t, now)
 		}
 		j.Status = "completed"
 		t.Installed, t.Available = r.Installed, r.Available
@@ -814,7 +814,7 @@ func (s *Service) Complete(ctx context.Context, id, worker, token string, r Repo
 		if err := tx.Save(&j).Error; err != nil {
 			return err
 		}
-		return s.queueRecoveryCheck(tx, t, now, now.Add(time.Second))
+		return s.queueRecoveryCheck(tx, t, now)
 	})
 	if err == nil {
 		s.notifyScheduler()
@@ -839,6 +839,17 @@ func receiptRetry(j Job, worker, token, encoded string) bool {
 	return token != "" && (j.Status == "completed" || j.Status == "failed" || j.Status == "needs_review" || j.Status == "reviewed") && j.Worker == worker && j.LeaseDigest == digest(token) && j.Result == encoded
 }
 
+func verifiedReviewEvidence(target *Target, receipt *Job, report *Report, now time.Time) bool {
+	return target != nil && receipt != nil && report != nil && receipt.Kind == "check" && receipt.Status == "completed" &&
+		target.ReceiptID != "" && receipt.ID == target.ReceiptID && receipt.Target == target.ID &&
+		receipt.Worker != "" && receipt.LeaseDigest != "" && receipt.StartedAt != nil && receipt.FinishedAt != nil &&
+		target.CheckedAt != nil && !now.Before(*target.CheckedAt) && now.Sub(*target.CheckedAt) <= time.Hour &&
+		receipt.FinishedAt.Equal(*target.CheckedAt) && !receipt.StartedAt.Before(receipt.CreatedAt) && !receipt.FinishedAt.Before(*receipt.StartedAt) &&
+		report.Installed == target.Installed && report.Available == target.Available &&
+		ValidateReport(*receipt, *report) == nil && report.Outcome == "ok" && ValidVersion(report.Installed) &&
+		providerMetadataFreshAtReceipt(report.ProviderMetadataAt, receipt)
+}
+
 // Review resolves an ambiguous update only after a fresh read-only observation,
 // independent health probe, and explicit owner acknowledgement. It never enables
 // automatic updates or grants delegated capabilities.
@@ -853,11 +864,8 @@ func (s *Service) Review(ctx context.Context, id, owner string) error {
 		}
 		var report Report
 		now := s.now()
-		if receipt.Kind != "check" || receipt.Status != "completed" || t.CheckedAt == nil || now.Before(*t.CheckedAt) || now.Sub(*t.CheckedAt) > time.Hour || json.Unmarshal([]byte(receipt.Result), &report) != nil || ValidateReport(receipt, report) != nil || report.Outcome != "ok" || !ValidVersion(report.Installed) {
+		if json.Unmarshal([]byte(receipt.Result), &report) != nil || !verifiedReviewEvidence(t, &receipt, &report, now) {
 			return fmt.Errorf("a fresh successful check is required")
-		}
-		if !providerMetadataFreshAtReceipt(report.ProviderMetadataAt, &receipt) {
-			return fmt.Errorf("a check with fresh provider metadata is required")
 		}
 		var unresolved []Job
 		if err := tx.Where("target = ? AND kind = ? AND status = ?", id, "apply", "needs_review").Find(&unresolved).Error; err != nil {
@@ -867,7 +875,7 @@ func (s *Service) Review(ctx context.Context, id, owner string) error {
 			return fmt.Errorf("no update requires review")
 		}
 		for _, job := range unresolved {
-			if job.FinishedAt == nil || !receipt.CreatedAt.After(*job.FinishedAt) {
+			if job.FinishedAt == nil || receipt.CreatedAt.Before(*job.FinishedAt) || !receipt.StartedAt.After(*job.FinishedAt) {
 				return fmt.Errorf("check must follow the interrupted update")
 			}
 		}

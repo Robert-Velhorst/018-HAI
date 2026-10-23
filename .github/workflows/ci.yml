@@ -872,12 +872,18 @@ jobs:
           set -euo pipefail
           maintenance_pull_log="$RUNNER_TEMP/maintenance-pull-postgres.log"
           go test -count=1 -p 1 -parallel 1 -timeout 180s \
-            -run '^(TestPullClientReportsIndependentBackendHealthRejection|TestPullClientPostgresLifecycleAndLostAcknowledgement|TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres)$' \
+            -run '^(TestPullClientReportsIndependentBackendHealthRejection|TestPullClientPostgresLifecycleAndLostAcknowledgement|TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres|TestMaintenanceReviewRejectsMismatchedReceiptPostgres|TestFailedUpdateBlocksTasksUntilExplicitFreshReview)$' \
             ./internal/openclawmaintenance/ -v | tee "$maintenance_pull_log"
+          if grep -qE -- '^[[:space:]]*--- SKIP:' "$maintenance_pull_log"; then
+            echo "Required maintenance PostgreSQL coverage skipped"
+            exit 1
+          fi
           for test_name in \
             TestPullClientReportsIndependentBackendHealthRejection \
             TestPullClientPostgresLifecycleAndLostAcknowledgement \
-            TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres
+            TestWorkerAmbiguousHeadersCannotLeasePendingInstallPostgres \
+            TestMaintenanceReviewRejectsMismatchedReceiptPostgres \
+            TestFailedUpdateBlocksTasksUntilExplicitFreshReview
           do
             grep -q -- "^--- PASS: ${test_name} (" "$maintenance_pull_log"
           done

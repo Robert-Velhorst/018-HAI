@@ -5,8 +5,9 @@
 Reviewed the retained `pull_client.go`, `pull_integration_test.go`,
 `contained_process_windows.go`, `handler.go` and `handler_test.go` variants
 against current code. Also inspected and hardened the shared PostgreSQL fixture
-setup in `service_test.go`; this does not mark that entire larger test file,
-the service implementation or remaining archives as reconciled.
+setup in `service_test.go`; this does not mark that entire larger test file
+or remaining archives as reconciled. The retained `service.go` implementation
+has now also been reviewed in full against the current implementation.
 
 - Keep current lifecycle ownership of installer goroutines: unconfirmed
   cancellation must not make a still-running callback disappear from shutdown.
@@ -50,7 +51,9 @@ PostgreSQL service and explicitly runs:
 2. Lost receipt acknowledgement, proving that retry records one completed update
    without executing the installer callback twice.
 
-Those two tests and the new ambiguous-header admission regression require
+Those two tests, the ambiguous-header admission regression, the persisted
+review-evidence rejection regression and the existing successful explicit-review
+lifecycle require
 top-level PASS markers; a skip is insufficient. The live Windows /
 WSL opt-in test remains excluded: no real update or live Gateway access is
 authorized by this fixture work.
@@ -62,6 +65,29 @@ copying replaces raw DSN concatenation so URI and keyword forms share the same
 schema binding. Administration and scoped pools are bounded, early failures
 retain cleanup hooks, initialization is time-bounded, and schema cleanup verifies
 the created namespace OID before dropping it. Connection errors do not echo DSNs.
+
+## Review evidence and recovery chronology
+
+Keep the current paused-background gates, metadata freshness measured at receipt
+completion, successful current-update admission and read-only recovery when a
+release changes during installation. The older service does not supersede them.
+
+Owner review previously accepted completed check evidence without fully binding
+its target, receipt identity, worker lease, observation time and stored versions.
+Ten pure regressions reproduced those invalid acceptances before the correction.
+Review now requires a matching completed check, authenticated worker/lease
+provenance, matching observed versions and monotonic creation/start/completion
+times. Existing freshness, publisher verification and independent health gates
+remain required.
+
+Recovery checks now record their actual creation time instead of a fabricated
+timestamp one second in the future. Creation may share the interrupted update's
+completion tick, but the new observation must start strictly after that update.
+The PostgreSQL regression covers four persisted-evidence mutations, rejection
+without resolving the interrupted job or writing a success audit, restoration
+of valid evidence and successful explicit review without automatic installation.
+It also checks the actual recovery creation time. These database assertions are
+mandatory in CI, not claimed as executed by local package runs without a DSN.
 
 ## Verification and preservation boundary
 
