@@ -719,6 +719,30 @@ describe('MemoryComponent rendered HTTP action chains (synthetic fixtures only)'
     fixture.destroy();
   });
 
+  it('recovers an Advanced inventory failure from Basic through an explicit library action', async () => {
+    const { fixture, http, preferences } = await setup(true);
+    preferences.setSection('memory', 'memory-records', true);
+    http.expectOne((request) => request.url.endsWith('/memory/query')).flush({}, { status: 503, statusText: 'Unavailable' });
+    preferences.setMode('memory', 'basic');
+    fixture.detectChanges();
+    http.expectNone((request) => request.url.endsWith('/memory/query'));
+
+    const retry = fixture.nativeElement.querySelector('.memory-message--error button') as HTMLButtonElement;
+    expect(retry.textContent).toContain('Open library to retry');
+    retry.click();
+    fixture.detectChanges();
+
+    expect(preferences.get('memory').mode).toBe('advanced');
+    expect(preferences.get('memory').openSections['memory-records']).toBeTrue();
+    const recovery = http.expectOne((request) => request.url.endsWith('/memory/query'));
+    recovery.flush(page([record('recovered-memory')]));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.memory-message--error')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.memory-row').textContent).toContain('recovered-memory');
+    http.verify();
+    fixture.destroy();
+  });
+
   it('completes a rendered manual correction through the actual PATCH service without an inventory fetch in Basic', async () => {
     const { fixture, http } = await setup();
     const memory = record('manual-correction');

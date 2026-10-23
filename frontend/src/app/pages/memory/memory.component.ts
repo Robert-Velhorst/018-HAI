@@ -202,6 +202,13 @@ export class MemoryComponent implements OnInit, OnDestroy {
     if (open && !this.memoriesLoaded && !this.loading) this.refresh();
   }
 
+  retryMemoryLibrary(): void {
+    if (this.loading) return;
+    this.viewPreferences.setMode(this.moduleId, 'advanced');
+    this.viewPreferences.setSection(this.moduleId, 'memory-records', true);
+    this.refresh();
+  }
+
   applyLibraryFilters(): void {
     this.appliedLibraryFilters = this.libraryForm.getRawValue();
     this.libraryPage = 1;

@@ -641,3 +641,39 @@ test. Empty/multiple-emission handling, full response-schema validation,
 post-destruction direct dispatch prevention, full diagnostic redaction and
 durable mutation reconciliation are not established by this targeted repair.
 No source copy or archive is eligible for deletion merely from these checks.
+
+## Retained Memory template and explicit retry recovery
+
+Read the entire retained template and its complete current difference. Keep the
+Basic retrieved-record detail, source provenance, review-managed edit gates,
+server-page filters/ranges, loading and unavailable distinctions, export scope,
+pending-record controls and nested content/danger disclosures. Do not restore
+the older generic editing shortcut or show an unloaded inventory as zero.
+
+A rendered HTTP regression reproduced a dead recovery button after switching
+from a failed Advanced library load to Basic. The visible Retry called refresh,
+which correctly refused a Basic inventory read. Offer "Open library to retry"
+in Basic and explicitly open this module's Advanced library before refreshing.
+The existing Basic read restriction is preserved; the transition requires the
+user's recovery action. The test verifies no automatic Basic query, exactly one
+recovery request and the recovered record rendered in the opened library.
+All 46 focused Memory checks pass; the new recovery case failed beforehand.
+The combined 26-suite frontend run passes all 511 checks.
+This is synthetic HTTP/component evidence, not deployed browser acceptance.
+
+## Retained installer entry point and build script
+
+Read the complete retained Inno entry point and PowerShell build script and
+their complete current differences. Both current files already match main
+exactly. Keep explicit production signing with pinned certificate and timestamp
+verification, distinct developer previews, signed-uninstaller evidence,
+source-file path validation, build provenance and atomic output promotion.
+Keep visible launch errors, maintenance synchronization, fail-closed uninstall
+ownership checks and scheduled-task recovery after a refused uninstall. No
+older installer code needs porting over these controls.
+
+Both retained and current build scripts parse without PowerShell syntax errors.
+This review did not compile or install an EXE, invoke signing tools, access
+certificates, register tasks, start Docker, or prove installed lifecycle behavior.
+Source comparison and parsing are not release or runtime acceptance. The
+retained recovery copies remain untouched pending the broader preservation gate.
