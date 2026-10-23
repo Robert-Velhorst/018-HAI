@@ -725,7 +725,16 @@ func (s *service) storeGoogleOAuthToken(
 // googleAccessToken returns a currently-valid access token for exactly the
 // source connector that received the grant.
 func (s *service) googleAccessToken(ctx context.Context, sourceID uuid.UUID, connectorKey string) (string, error) {
+	if ctx == nil {
+		return "", fmt.Errorf("Google OAuth token context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	source, err := s.repo.FindSource(sourceID)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", errors.Join(err, contextErr)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -738,7 +747,13 @@ func (s *service) googleAccessToken(ctx context.Context, sourceID uuid.UUID, con
 	if strings.TrimSpace(source.OwnerIdentity) == "" {
 		return "", fmt.Errorf("google grant is not bound to an authenticated source owner")
 	}
+	// Keep the original binding even if a repository returns a mutable pointer.
+	snapshot := *source
+	source = &snapshot
 	stored, err := s.repo.FindOAuthToken(sourceID)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", errors.Join(err, contextErr)
+	}
 	if errors.Is(err, gorm.ErrRecordNotFound) || err == nil && stored == nil {
 		return "", fmt.Errorf("no connected Google account for this source; connect it first: %w", gorm.ErrRecordNotFound)
 	}
@@ -770,6 +785,21 @@ func (s *service) googleAccessToken(ctx context.Context, sourceID uuid.UUID, con
 	}
 	if _, err := validateGoogleOAuthScope(tok.Scope, requiredScope); err != nil {
 		return "", fmt.Errorf("stored google grant does not include the required read-only scope; reconnect the source")
+	}
+	currentSource, err := s.repo.FindSource(sourceID)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return "", errors.Join(err, contextErr)
+	}
+	if err != nil {
+		return "", fmt.Errorf("recheck Google OAuth source before token use: %w", err)
+	}
+	if currentSource == nil || currentSource.ID != sourceID ||
+		strings.TrimSpace(currentSource.OwnerIdentity) != strings.TrimSpace(source.OwnerIdentity) ||
+		strings.TrimSpace(currentSource.ConnectorKey) != strings.TrimSpace(connectorKey) {
+		return "", errGoogleOAuthSourceBindingChanged
+	}
+	if err := googleOAuthSourceReadyForTokenUse(currentSource); err != nil {
+		return "", err
 	}
 	if tok.Valid(time.Now()) {
 		return tok.AccessToken, nil
