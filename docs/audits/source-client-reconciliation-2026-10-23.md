@@ -1387,3 +1387,38 @@ These tests use service doubles: they are not live backend authorization,
 Constitution activation, deployed UI or provider acceptance. The entire
 framework controller has not been reviewed in this step. Its retained
 specification remains intact pending verified preservation on main.
+
+## Command Center specification reconciliation
+
+Read the complete retained Command Center specification and its full current
+delta. Keep the original host-review summary boundary, pending approval lock,
+operating-brief timeout, automation-health duplicate lock, unloaded/failed source
+distinctions, freshness state, obsolete-refresh cancellation, inspector identity
+and close behavior, bounded recent-memory query, local disclosure preferences,
+accessible action cards, workflow routes and explicit operating-brief retry.
+
+Current adaptations use the bounded pursuit dashboard-summary endpoint and
+complete source fixtures. They retain approval locking while adding uncertain
+outcome reconciliation, unavailable-queue retry, current-record admission and
+signed-out recovery. The renamed refresh case retains all three source-checking
+assertions and additionally excludes stale primary actions. Review the existing
+asynchronous DOM, memory-archive row isolation, truthful action labels,
+pursuit/ambient completeness and blocker-disclosure cases as well. Remove one
+exact duplicated action-label case without removing its surviving assertions;
+include Command Center in the native scenario-identity check.
+
+This review found a real lifecycle defect: continuing an inspector scheduled a
+360ms callback to wait for drawer closure, but leaving the page did not cancel
+it. Three added cases fail before repair: destruction, inspector replacement and
+explicit dismissal still allowed the old callback to execute or navigate. Store
+and clear the pending timer on all three paths, and reject action dispatch after
+destruction. Retain the ordinary deferred operation and route behavior. This
+cancels pending local callbacks only; it is not server-side cancellation or
+rollback of an operation that already began.
+
+The focused Command Center suite passes all 51 cases after the repair. The
+combined frontend selection passes all 1,337 cases across 44 specification files.
+All 68 native control-room checks and 121 CI contracts pass. Review of controller and
+template code here is limited to the relevant lifecycle and action paths, not
+the complete controller. No live provider, backend or deployed acceptance is
+claimed, and the retained original remains in place.

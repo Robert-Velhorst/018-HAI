@@ -233,6 +233,48 @@ describe('ControlCenterComponent', () => {
     expect(component.lastAgentCycleIssue).toContain('has not confirmed')
   })
 
+  it('does not execute a deferred inspector action after the dashboard is destroyed', fakeAsync(() => {
+    const { component, cdr } = createComponent({ run: jasmine.createSpy('run') })
+    const execute = jasmine.createSpy('execute')
+    component.openAction({ execute } as any)
+    component.runSelectedAction()
+    component.ngOnDestroy()
+    cdr.markForCheck.calls.reset()
+
+    tick(360)
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(cdr.markForCheck).not.toHaveBeenCalled()
+  }))
+
+  it('cancels a deferred inspector action when a newer inspector opens', fakeAsync(() => {
+    const { component } = createComponent({ run: jasmine.createSpy('run') })
+    const first = jasmine.createSpy('first')
+    const second = jasmine.createSpy('second')
+    component.openAction({ execute: first } as any)
+    component.runSelectedAction()
+    component.openAction({ execute: second } as any)
+
+    tick(360)
+
+    expect(first).not.toHaveBeenCalled()
+    expect(second).not.toHaveBeenCalled()
+    component.runSelectedAction()
+    tick(360)
+    expect(second).toHaveBeenCalledTimes(1)
+  }))
+
+  it('cancels deferred inspector navigation when its action is dismissed', fakeAsync(() => {
+    const { component, router } = createComponent({ run: jasmine.createSpy('run') })
+    component.openAction({ route: '/connected-sources' } as any)
+    component.runSelectedAction()
+    component.closeAction()
+
+    tick(360)
+
+    expect(router.navigate).not.toHaveBeenCalled()
+  }))
+
   it('locks every other approval action while one decision is pending and clears the state on failure', () => {
     const run = jasmine.createSpy('run').and.returnValue(new Subject<any>().asObservable())
     const response = new Subject<void>()
@@ -411,20 +453,6 @@ describe('ControlCenterComponent', () => {
     const afterLoading = (component as any).buildCommandActions()
       .find((action: any) => action.id === 'automation')
     expect(afterLoading.primaryMetric).toBe('1 registered')
-  })
-
-  it('labels navigation and diagnostics actions according to the operation they actually perform', () => {
-    const { component } = createComponent({ run: jasmine.createSpy('run') })
-    const actions = (component as any).buildCommandActions()
-    const sources = actions.find((action: any) => action.id === 'sources')
-    const health = actions.find((action: any) => action.id === 'health')
-
-    expect(sources.title).toBe('Review sources')
-    expect(sources.route).toBe('/connected-sources')
-    expect(sources.execute).toBeUndefined()
-    expect(health.title).toBe('Review health status')
-    expect(health.detail).toContain('Load current')
-    expect(component.actionModeLabel(health)).toBe('Loads current diagnostics')
   })
 
   it('labels navigation and diagnostics actions according to the operation they actually perform', () => {

@@ -137,6 +137,8 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
   private diagnosticsDataSubscription?: Subscription
   private checkingIds = new Set<string>()
   private launchingIds = new Set<string>()
+  private selectedActionTimer?: number
+  private destroyed = false
 
   isDiagnosticsVisible = false
   diagnostics?: IAutomationDiagnostics
@@ -168,6 +170,8 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true
+    this.closeAction()
     this.dashboardRefreshSubscription?.unsubscribe()
     this.cancelDiagnosticsRequest()
     this.memoryRequestSubscription?.unsubscribe()
@@ -1313,21 +1317,29 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
   }
 
   openAction(action: CommandAction): void {
+    if (this.destroyed) return
+    this.closeAction()
     this.selectedAction = action
   }
 
   closeAction(): void {
+    if (this.selectedActionTimer !== undefined) {
+      window.clearTimeout(this.selectedActionTimer)
+      this.selectedActionTimer = undefined
+    }
     this.selectedAction = undefined
   }
 
   runSelectedAction(): void {
-    if (!this.selectedAction) return
+    if (this.destroyed || !this.selectedAction) return
     const action = this.selectedAction
     this.closeAction()
     // NG-Zorro keeps the document scroll-locked until the inspector close
     // animation finishes. Deferring the target action lets section actions
     // land visibly instead of leaving users at the command cards.
-    window.setTimeout(() => {
+    this.selectedActionTimer = window.setTimeout(() => {
+      this.selectedActionTimer = undefined
+      if (this.destroyed) return
       this.continueSelectedAction(action)
       this.cdr.markForCheck()
     }, 360)

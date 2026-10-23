@@ -10,7 +10,7 @@ import { launchRecoveryNotice } from '../src/app/control-room/launch-recovery.ts
 
 const { moduleForUrl } = await loadModuleUrlLogic()
 
-for (const [moduleId, minimumCases] of [['task-blueprint', 50], ['framework-registry', 33]]) {
+for (const [moduleId, minimumCases] of [['task-blueprint', 50], ['framework-registry', 33], ['control-center', 30]]) {
 test(`${moduleId} scenarios have unique identities rather than repeated copied cases`, () => {
   const file = new URL(`../src/app/pages/${moduleId}/${moduleId}.component.spec.ts`, import.meta.url)
   const source = ts.createSourceFile(file.pathname, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
