@@ -271,6 +271,21 @@ operation, scheduled-task mutation, live database action or original deletion
 was run for this pass. These source checks do not establish signed installer,
 clean-machine, real uninstall or deployment acceptance. The retained contract
 and original worktrees remain intact pending main preservation verification.
+
+## Historical tunnel follow-up
+
+Locate and completely read the four retained tunnel files referenced by the old
+installer contract. Their bytes remain available outside the selected changed-
+file ledger; they are not integrated in the current source tree. The current
+Compose document has no ngrok service or cloud-tunnel profile. Record source
+hashes, incomplete ownership checks, unbound Compose project arguments, shell
+all-zero rate-limit handling and the mismatched recovery fixture in the
+[dedicated review](legacy-ngrok-source-reconciliation-2026-10-23.md).
+
+Correct the installer overview so it does not imply a currently available
+cloud-tunnel feature. Keep the old sources intact and their integration gate
+open; neither source location nor this audit makes them safe to delete. No
+legacy launcher, fixture, Docker operation or public endpoint was run.
 The combined fourteen-suite frontend run passes all 211 tests; progressive
 section, split-theme and icon-registry checks also pass with this change set.
 

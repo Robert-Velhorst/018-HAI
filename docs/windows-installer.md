@@ -4,9 +4,11 @@ HAI ships as a local Windows installer around the canonical Docker Compose
 stack. It installs product files under `Program Files`, stores the local
 configuration in `%LOCALAPPDATA%\HAI`, and keeps all services bound to
 `127.0.0.1` on port `8088` by default. The optional local A2A planning
-connector is separately bound to `127.0.0.1:8091`; it cannot be reached from
-the cloud tunnel and only serves the Agent Card plus its bearer-authenticated
-planning endpoint.
+connector is separately bound to `127.0.0.1:8091`; the dashboard gateway does not
+route it. It only serves the Agent Card plus its bearer-authenticated planning
+endpoint. This checkout does not ship an ngrok launcher or a `cloud-tunnel`
+Compose profile. Recovered historical tunnel sources are not an available
+installer feature; see the [source reconciliation](audits/legacy-ngrok-source-reconciliation-2026-10-23.md).
 
 ## Prerequisite
 
