@@ -147,3 +147,32 @@ differences remain open, not silently retired or counted as integrated. No
 installed environment secrets were read or published. Neither the reviewed
 subset nor these local commits make a source checkout or transcript archive
 eligible for deletion; verified main preservation remains a separate gate.
+
+## Loose retained patch files, 24 October
+
+Four separately retained patch files were parsed by Git and reverse-checked
+against a dedicated index of freshly verified remote main
+`3b5afa697ebb0e72b01d59e3a04648a04317cd45`. The actual checkout and its index
+were not changed. Input SHA-256, size and modification time were checked again
+after processing; raw patch contents and diagnostics were not published.
+
+| Patch scope | File entries | Reverse-check passes | Entries requiring semantic review |
+| --- | ---: | ---: | ---: |
+| HireAI connector | 21 | 19 | 2 |
+| Primary tracked delta | 240 | 75 | 165 |
+| Local source reconciliation | 339 | 165 | 174 |
+| Additional source overlay | 310 | 10 | 300 |
+
+These 910 entries overlap across patches; they are not 910 unique files. A
+reverse-check pass establishes applicability of the inverse patch against the
+checked main index, not complete semantic coverage of its originating checkout,
+untracked files, private state or transcript archive. A failure can be changed
+context or superseded code, not necessarily missing functionality.
+
+For the HireAI patch's two context failures, direct main-blob inspection confirms
+all four connector example assignments, every retained package script and the
+module type. The older Node 24.15.0 restriction is superseded by the canonical
+Node 26.12.1 restriction; do not restore the older runtime merely to make an old
+patch apply. The missing ngrok context around the environment insertion remains
+part of the separately unresolved tunnel feature. These checks neither erase
+that gap nor authorize deletion of any original source or patch file.
