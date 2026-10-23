@@ -391,6 +391,10 @@ func (s *service) persistCompletedVerification(run *models.VerificationRun, evid
 	expected := *run
 	persist := func(repository Repository) error {
 		for index := range evidence {
+			wanted := evidence[index]
+			if wanted.RunID != expected.ID {
+				return fmt.Errorf("persist verification evidence: run identity does not match finalization")
+			}
 			saved, err := repository.CreateEvidence(&evidence[index])
 			if err != nil {
 				return fmt.Errorf("persist verification evidence: %w", err)
@@ -398,15 +402,37 @@ func (s *service) persistCompletedVerification(run *models.VerificationRun, evid
 			if saved == nil || saved.ID == uuid.Nil {
 				return fmt.Errorf("persist verification evidence: repository returned no durable identifier")
 			}
+			observed := *saved
+			if wanted.ID == uuid.Nil {
+				observed.ID = uuid.Nil
+			}
+			observed.CreatedAt, observed.UpdatedAt = time.Time{}, time.Time{}
+			wanted.CreatedAt, wanted.UpdatedAt = time.Time{}, time.Time{}
+			if observed != wanted {
+				return fmt.Errorf("persist verification evidence: acknowledgement does not match the requested record")
+			}
 			evidence[index] = *saved
 		}
 		for index := range claims {
+			wanted := claims[index]
+			if wanted.RunID != expected.ID {
+				return fmt.Errorf("persist verification claim: run identity does not match finalization")
+			}
 			saved, err := repository.CreateClaim(&claims[index])
 			if err != nil {
 				return fmt.Errorf("persist verification claim: %w", err)
 			}
 			if saved == nil || saved.ID == uuid.Nil {
 				return fmt.Errorf("persist verification claim: repository returned no durable identifier")
+			}
+			observed := *saved
+			if wanted.ID == uuid.Nil {
+				observed.ID = uuid.Nil
+			}
+			observed.CreatedAt, observed.UpdatedAt = time.Time{}, time.Time{}
+			wanted.CreatedAt, wanted.UpdatedAt = time.Time{}, time.Time{}
+			if observed != wanted {
+				return fmt.Errorf("persist verification claim: acknowledgement does not match the requested record")
 			}
 			claims[index] = *saved
 		}

@@ -28,3 +28,7 @@ This covers the run-creation contract only. Per-evidence/per-claim acknowledgeme
 secondary audit failures, provider acceptance and the separate global-control
 owner-policy decision remain outside this fix. No production database, account
 permissions, credentials, archives or original source copies are changed.
+
+A subsequent [record-acknowledgement follow-up](verification-record-acknowledgements-2026-10-23.md)
+adds evidence/claim content and linkage checks. The 159-result figure above
+remains the creation-only checkpoint, not a claim about that subsequent revision.

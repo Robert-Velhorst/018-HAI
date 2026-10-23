@@ -212,6 +212,8 @@ type failingVerificationRepository struct {
 	auditActionErr    string
 	auditActionErrors map[string]error
 	runAck            func(*models.VerificationRun) *models.VerificationRun
+	evidenceAck       func(*models.VerificationEvidence) *models.VerificationEvidence
+	claimAck          func(*models.VerificationClaim) *models.VerificationClaim
 }
 
 type creationAcknowledgementRepository struct {
@@ -294,14 +296,22 @@ func (r *failingVerificationRepository) CreateEvidence(evidence *models.Verifica
 	if r.evidenceErr != nil {
 		return nil, r.evidenceErr
 	}
-	return r.fakeVerificationRepository.CreateEvidence(evidence)
+	saved, err := r.fakeVerificationRepository.CreateEvidence(evidence)
+	if err == nil && r.evidenceAck != nil {
+		return r.evidenceAck(saved), nil
+	}
+	return saved, err
 }
 
 func (r *failingVerificationRepository) CreateClaim(claim *models.VerificationClaim) (*models.VerificationClaim, error) {
 	if r.claimErr != nil {
 		return nil, r.claimErr
 	}
-	return r.fakeVerificationRepository.CreateClaim(claim)
+	saved, err := r.fakeVerificationRepository.CreateClaim(claim)
+	if err == nil && r.claimAck != nil {
+		return r.claimAck(saved), nil
+	}
+	return saved, err
 }
 
 func (r *failingVerificationRepository) CreateAuditLog(log *models.VerificationAuditLog) (*models.VerificationAuditLog, error) {
@@ -333,6 +343,8 @@ func (r *transactionalFailingVerificationRepository) WithinTransaction(action fu
 		auditActionErr:             r.auditActionErr,
 		auditActionErrors:          r.auditActionErrors,
 		runAck:                     r.runAck,
+		evidenceAck:                r.evidenceAck,
+		claimAck:                   r.claimAck,
 	}
 	if err := action(transactional); err != nil {
 		return err
@@ -342,6 +354,119 @@ func (r *transactionalFailingVerificationRepository) WithinTransaction(action fu
 	r.evidence = staged.evidence
 	r.audits = staged.audits
 	return nil
+}
+
+func TestAnswerRejectsMismatchedEvidenceAndClaimAcknowledgements(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		evidenceAck func(*models.VerificationEvidence) *models.VerificationEvidence
+		claimAck    func(*models.VerificationClaim) *models.VerificationClaim
+	}{
+		{name: "foreign evidence run", evidenceAck: func(record *models.VerificationEvidence) *models.VerificationEvidence {
+			record.RunID = uuid.New()
+			return record
+		}},
+		{name: "different evidence", evidenceAck: func(record *models.VerificationEvidence) *models.VerificationEvidence {
+			record.Snippet = "Different evidence."
+			return record
+		}},
+		{name: "changed evidence usage", evidenceAck: func(record *models.VerificationEvidence) *models.VerificationEvidence {
+			record.Used = !record.Used
+			return record
+		}},
+		{name: "foreign claim run", claimAck: func(record *models.VerificationClaim) *models.VerificationClaim {
+			record.RunID = uuid.New()
+			return record
+		}},
+		{name: "different claim", claimAck: func(record *models.VerificationClaim) *models.VerificationClaim {
+			record.ClaimText = "A different claim."
+			return record
+		}},
+		{name: "changed claim status", claimAck: func(record *models.VerificationClaim) *models.VerificationClaim {
+			record.Status = "unsupported"
+			return record
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &transactionalFailingVerificationRepository{failingVerificationRepository: &failingVerificationRepository{
+				fakeVerificationRepository: &fakeVerificationRepository{}, evidenceAck: test.evidenceAck, claimAck: test.claimAck,
+			}}
+			memoryRepository := &capturingMemoryRepository{}
+			resolver := EvidenceAuthorityResolverFunc(func(AnswerRequest, EvidenceInput) EvidenceAuthorityResolution {
+				return EvidenceAuthorityResolution{Trusted: true, Authority: "project_record", Primary: true}
+			})
+			service := NewServiceWithAuthorityResolver(repository, nil, memory.NewService(memoryRepository), resolver)
+			result, err := service.Answer(AnswerRequest{
+				OwnerIdentity: "alice", Question: "What is the integration result?", Mode: ModeGrounded,
+				DraftAnswer: "The integration result is stable.", AllowMemoryUpdate: true,
+				ExternalEvidence: []EvidenceInput{{SourceType: "project_record", SourceID: "integration-1",
+					SourceURI: "local://project/integration-1", Snippet: "The integration result is stable."}},
+			})
+			if err == nil || result != nil || !strings.Contains(err.Error(), "acknowledgement") {
+				t.Errorf("mismatched record acknowledgement was accepted: resultPresent=%t err=%v", result != nil, err)
+			}
+			if len(memoryRepository.created) != 0 || len(repository.evidence) != 0 || len(repository.claims) != 0 || hasVerificationAudit(repository.audits, "verification.completed") {
+				t.Fatal("mismatched record acknowledgement retained memory or finalized records")
+			}
+			if len(repository.runs) != 1 || repository.runs[0].Status != StatusUncertain {
+				t.Fatal("mismatched record acknowledgement finalized the run")
+			}
+		})
+	}
+}
+
+func TestFinalizationRejectsForeignRecordInputsBeforeWriting(t *testing.T) {
+	for _, kind := range []string{"evidence", "claim"} {
+		t.Run(kind, func(t *testing.T) {
+			repository := &transactionalFailingVerificationRepository{failingVerificationRepository: &failingVerificationRepository{
+				fakeVerificationRepository: &fakeVerificationRepository{},
+			}}
+			run, err := repository.CreateRun(&models.VerificationRun{OwnerIdentity: "alice", Status: StatusUncertain})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var evidence []models.VerificationEvidence
+			var claims []models.VerificationClaim
+			if kind == "evidence" {
+				evidence = []models.VerificationEvidence{{RunID: uuid.New(), Snippet: "Foreign evidence."}}
+			} else {
+				claims = []models.VerificationClaim{{RunID: uuid.New(), ClaimText: "Foreign claim."}}
+			}
+			err = NewService(repository, nil, nil).(*service).persistCompletedVerification(run, evidence, claims)
+			if err == nil || !strings.Contains(err.Error(), "run identity") {
+				t.Fatalf("foreign input was not rejected: %v", err)
+			}
+			if len(repository.evidence) != 0 || len(repository.claims) != 0 || len(repository.audits) != 0 {
+				t.Fatal("foreign input was persisted")
+			}
+		})
+	}
+}
+
+func TestAnswerAcceptsDatabaseManagedEvidenceAndClaimMetadata(t *testing.T) {
+	now := time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+	repository := &failingVerificationRepository{
+		fakeVerificationRepository: &fakeVerificationRepository{},
+		evidenceAck: func(record *models.VerificationEvidence) *models.VerificationEvidence {
+			record.CreatedAt, record.UpdatedAt = now, now
+			return record
+		},
+		claimAck: func(record *models.VerificationClaim) *models.VerificationClaim {
+			record.CreatedAt, record.UpdatedAt = now, now
+			return record
+		},
+	}
+	result, err := NewService(repository, nil, nil).Answer(AnswerRequest{
+		OwnerIdentity: "alice", Question: "What is the result?", DraftAnswer: "The work passed.", Mode: ModeGrounded,
+		ExternalEvidence: []EvidenceInput{{SourceType: "project_record", SourceID: "record-1", Snippet: "The work passed."}},
+	})
+	if err != nil || result == nil || len(result.Evidence) == 0 || len(result.Claims) == 0 {
+		t.Fatalf("database-managed record metadata was rejected: resultPresent=%t err=%v", result != nil, err)
+	}
+	if result.Evidence[0].ID == uuid.Nil || result.Claims[0].ID == uuid.Nil ||
+		!result.Evidence[0].CreatedAt.Equal(now) || !result.Claims[0].CreatedAt.Equal(now) {
+		t.Fatal("database-assigned identifiers and timestamps were not retained")
+	}
 }
 
 func TestAnswerRejectsUnconfirmedOrMismatchedFinalization(t *testing.T) {

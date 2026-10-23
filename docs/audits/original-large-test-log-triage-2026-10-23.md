@@ -27,6 +27,15 @@ or demonstrated semantic equivalence. Do not restore a historical acceptance
 rule merely to recover its test name; review the evidence and intended trust
 boundary first.
 
+The historical subtest diagnostics were subsequently inspected: they explicitly
+expected admission for a fresh registry declaration and for the `healthy`
+spelling. Current tests reject registry declarations even when relabeled as
+verified and healthy, without rewriting the historical card. Retain that
+stricter distinction between declared inventory health and probe evidence; the
+old accepting assertion is not restored. This is a trust-contract difference,
+not a claim that the removed and current test suites are equivalent or that a
+real production health probe was exercised.
+
 The logs remain historical evidence requiring further diagnostic/context review.
 Parsing all records does not mean every `Output` body has been semantically
 reviewed, every failure fixed or all related source changes integrated. The
