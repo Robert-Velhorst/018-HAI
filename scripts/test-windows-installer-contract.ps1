@@ -615,7 +615,7 @@ $uninstallDockerPreflight = $uninstallStopHelperScript.IndexOf('Assert-HaiDocker
 $uninstallComposeArgs = $uninstallStopHelperScript.IndexOf('Get-HaiComposeArguments', [StringComparison]::Ordinal)
 $uninstallOwnershipCheck = $uninstallStopHelperScript.IndexOf('Assert-HaiSingleInstallation', [StringComparison]::Ordinal)
 $uninstallConfigCheck = $uninstallStopHelperScript.IndexOf('docker @composeArguments config --quiet', [StringComparison]::Ordinal)
-$uninstallComposeStop = $uninstallStopHelperScript.IndexOf('docker @composeArguments stop --timeout 30', [StringComparison]::Ordinal)
+$uninstallComposeStop = $uninstallStopHelperScript.IndexOf('docker @composeArguments stop 2>&1', [StringComparison]::Ordinal)
 $uninstallRuntimeVerification = $uninstallStopHelperScript.IndexOf('docker @composeArguments ps --status running --quiet', [StringComparison]::Ordinal)
 if ($uninstallRuntimeStop -lt 0 -or $uninstallRuntimeFailure -lt $uninstallRuntimeStop -or
     $uninstallReleaseAfterStopFailure -lt $uninstallRuntimeFailure -or $uninstallSuccess -lt $uninstallReleaseAfterStopFailure -or
@@ -629,6 +629,7 @@ if ($uninstallRuntimeStop -lt 0 -or $uninstallRuntimeFailure -lt $uninstallRunti
     $uninstallStopHelperScript -notmatch "(?s)@\(Get-HaiComposeArguments\)\s*\+\s*@\('--profile', '\*'\)" -or
     $uninstallStopHelperScript -notmatch 'if \(\$verifyExitCode -ne 0\)' -or
     $uninstallStopHelperScript -notmatch 'if \(\$runningContainerIds\.Count -gt 0\)' -or
+    $uninstallStopHelperScript -match '(?im)docker @composeArguments stop[^\r\n]*(?:--timeout|-t\s)' -or
     $uninstallStopHelperScript -match '(?i)\bdown\b|\bvolume\s+(?:rm|prune)\b|-v(?:\s|$)|\bdocker\s+(?:stop|kill)\b') {
     throw 'Uninstall must stop only the verified installed HAI Compose project after environment, Docker, and ownership checks; any failed check/stop must cancel uninstall and preserve files and volumes.'
 }

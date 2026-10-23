@@ -47,40 +47,37 @@ function Get-HaiComparableFileAccessDescriptor {
     return 'D:' + $prefix.Substring(2).Replace('AI', '') + $sddl.Substring($prefixLength)
 }
 
+function Set-HaiFileDacl {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][Security.AccessControl.FileSecurity]$AccessRules
+    )
+
+    $target = New-Object IO.FileInfo($Path)
+    if ('System.IO.FileSystemAclExtensions' -as [type]) {
+        [IO.FileSystemAclExtensions]::SetAccessControl($target, $AccessRules)
+    } else {
+        # .NET Framework exposes this as an instance method (Windows PS 5.1).
+        $target.SetAccessControl($AccessRules)
+    }
+}
+
 function Set-HaiExistingFileAccessRules {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
         [Parameter(Mandatory = $true)][Security.AccessControl.FileSecurity]$DesiredSecurity
     )
 
-    # Preserve the existing owner, group, and audit rules. icacls edits only
-    # the DACL, avoiding a privileged rewrite of the file's audit descriptor.
-    $currentUserSID = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    $desiredSids = @($currentUserSID, 'S-1-5-18', 'S-1-5-32-544')
-    $icacls = Join-Path $env:SystemRoot 'System32\icacls.exe'
-    if (-not (Test-Path -LiteralPath $icacls -PathType Leaf)) {
-        throw 'Windows icacls is unavailable; the existing environment-file ACL was not changed.'
-    }
-
-    $arguments = @($Path, '/reset')
-    $null = @(& $icacls @arguments 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "Windows could not reset the existing environment-file access rules (icacls exit code $LASTEXITCODE); no new secrets were written."
-    }
-
-    $arguments = @($Path, '/inheritance:r')
-    $null = @(& $icacls @arguments 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "Windows could not disable broad environment-file ACL inheritance (icacls exit code $LASTEXITCODE); no new secrets were written."
-    }
-
-    $arguments = @($Path, '/grant:r') + @($desiredSids | ForEach-Object { "*${_}:(F)" })
-    $null = @(& $icacls @arguments 2>&1)
-    if ($LASTEXITCODE -ne 0) {
-        throw "Windows could not grant the restricted environment-file access rules (icacls exit code $LASTEXITCODE); no new secrets were written."
-    }
-
+    # Apply only the complete desired DACL in one persistence call. A reset
+    # followed by grants can expose existing bytes through inherited access.
+    # Do not import owner, group or audit sections from the supplied descriptor.
     $expected = Get-HaiComparableFileAccessDescriptor -FileSecurity $DesiredSecurity
+    $accessOnly = New-Object Security.AccessControl.FileSecurity
+    $accessOnly.SetSecurityDescriptorSddlForm(
+        $DesiredSecurity.GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::Access),
+        [Security.AccessControl.AccessControlSections]::Access
+    )
+    Set-HaiFileDacl -Path $Path -AccessRules $accessOnly
     $actual = Get-HaiComparableFileAccessDescriptor -FileSecurity (Get-Acl -LiteralPath $Path)
     if (-not [string]::Equals($expected, $actual, [StringComparison]::Ordinal)) {
         throw 'The existing file access rules did not match the requested restricted policy.'
@@ -1389,7 +1386,9 @@ function Stop-HaiComposeRuntimeForUninstall {
         throw "HAI Compose configuration could not be verified (exit code $configExitCode); uninstall was cancelled without changing the runtime."
     }
 
-    $null = @(& docker @composeArguments stop --timeout 30 2>&1)
+    # Respect each service's stop_grace_period instead of shortening database
+    # and control-plane drains with a shared command-line timeout.
+    $null = @(& docker @composeArguments stop 2>&1)
     $stopExitCode = $LASTEXITCODE
     if ($stopExitCode -ne 0) {
         throw "The verified HAI Compose runtime could not be stopped (exit code $stopExitCode); uninstall was cancelled and HAI files and data were preserved."

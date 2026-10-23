@@ -224,6 +224,16 @@ jobs:
           & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-openclaw-maintenance-migration.ps1
           if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell maintenance migration fixtures failed" }
           ./scripts/test-windows-installer-contract.ps1
+      - name: Installer DACL and uninstall grace regression
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/test-installer-environment-acl-contract.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-installer-environment-acl-contract.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell installer DACL contract failed" }
+          ./scripts/test-installer-uninstall-stop-contract.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-installer-uninstall-stop-contract.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell uninstall grace contract failed" }
       - name: Existing HAI data recovery guard
         shell: pwsh
         run: ./scripts/test-windows-existing-data-env-guard.ps1

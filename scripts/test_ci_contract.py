@@ -1066,6 +1066,33 @@ class CIWorkflowContractTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("Installer A2A Compose contract: 12 PASS;", result.stdout)
 
+    def test_installer_acl_and_uninstall_contracts_are_wired_on_windows(self) -> None:
+        job = job_block("windows-installer")
+        for script, message in (
+            ("test-installer-environment-acl-contract.ps1", "Windows PowerShell installer DACL contract failed"),
+            ("test-installer-uninstall-stop-contract.ps1", "Windows PowerShell uninstall grace contract failed"),
+        ):
+            with self.subTest(script=script):
+                self.assertIn(f"          ./scripts/{script}", job)
+                self.assertIn(f'powershell.exe" -NoProfile -File ./scripts/{script}', job)
+                self.assertIn(f'if ($LASTEXITCODE -ne 0) {{ throw "{message}" }}', job)
+
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is required for the uninstall contract")
+    def test_installer_uninstall_respects_grace_and_failure_boundaries(self) -> None:
+        engines = [shutil.which("pwsh")]
+        legacy = shutil.which("powershell.exe")
+        if legacy:
+            engines.append(legacy)
+        for engine in engines:
+            with self.subTest(engine=Path(engine).name):
+                result = subprocess.run(
+                    [engine, "-NoProfile", "-NonInteractive", "-File",
+                     str(ROOT / "scripts/test-installer-uninstall-stop-contract.ps1")],
+                    cwd=ROOT, capture_output=True, text=True, timeout=45,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Installer uninstall stop contract: 6 PASS;", result.stdout)
+
     def test_optional_event_bus_does_not_expand_the_default_local_stack(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
         defaults = (ROOT / ".env.example").read_text(encoding="utf-8")
