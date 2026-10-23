@@ -927,3 +927,11 @@ workflow package tests pass in 3.314 and 2.879 seconds respectively; all 119 CI
 source contracts pass. The local database DSN was empty, so dedicated PostgreSQL
 cases skip locally; the explicit OAuth database PASS evidence is the separately
 verified exact-head hosted job linked in its source-repository audit.
+
+The separately authorized clean source-header PR also passed all 41 exact-head
+checks and was squash-merged. All three head/merge/fetched-main file blobs match;
+only its remote branch was removed. Its privately retained pre-rewrite history
+and all local recovery originals remain intact. That merge changes source API
+header binding, not provider permission or installed credentials.
+The complete source package passes again locally after this final integration,
+uncached, in 3.668 seconds. The database DSN remains empty for that local run.
