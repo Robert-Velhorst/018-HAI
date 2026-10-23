@@ -1240,3 +1240,43 @@ changed. Wire both interpreter checks into the existing Windows installer CI
 step without adding a new job or weakening payload checks. All 121 existing CI
 contract tests pass locally. Full installer/payload execution and real IDP login
 remain separate acceptance gates. The retained initializer is not deleted.
+
+## Workflow and task stylesheet reconciliation
+
+Read the complete retained workflow and task-planning stylesheets and their
+complete deltas against the current versions. Preserve existing shared theme
+tokens, Basic/Advanced layouts, responsive inspectors, approval/error states,
+keyboard focus, reminder provenance, reduced-motion task rules and MCP trace
+inspection. Do not restore obsolete hard-coded light surfaces or duplicate
+declarations merely to reproduce an older file.
+
+The workflow component explicitly uses Angular emulated encapsulation. Twenty-three
+selectors incorrectly targeted a descendant `app-workflow-engine` instead of the
+component host. That left its empty/quiet states, compact toolbar disclosure and
+idle layout without their intended component styles. Use `:host` and retain the
+narrowly anchored child-disclosure styling. Keep absolute positioning on the
+disclosure content only; the projected menu body remains in normal flow rather
+than forming a second overlapping positioned panel. The task MCP explanatory
+paragraph is not interactive, so remove its hand cursor and the duplicated
+summary selector while retaining the real result-disclosure cursor.
+
+Twelve new Chrome style tests fail before repair and pass afterwards at 375,
+768, 1024 and 1440 pixels. They compile the actual two SCSS files under Angular
+encapsulation and check scoped empty-state styles, idle columns, one bounded
+toolbar popover, task inspector layout, dark surface tokens and document width.
+These are isolated rendered style harnesses with representative markup and a
+child disclosure harness, not a live application or screenshot acceptance pass.
+No backend API, stored view preference, approval policy or execution handler was
+changed. Original worktree files remain retained pending preservation on main.
+
+An additional action-strip assertion catches three-column crowding at 375 and
+768 pixels after the previously inactive host rules are enabled. Both breakpoint
+cases fail before the follow-up fix. Keep three columns on desktop, two through
+980 pixels and one through 680 pixels. Existing component tests are included in
+the broader regression selection rather than relying only on style harnesses.
+
+The final combined run passes all 1,218 cases across 41 specification files,
+including the 12 style cases and 47 existing workflow component cases. The 66
+native control-room logic checks and progressive-section, theme and icon
+contracts also pass locally. This is not a full frontend-suite, production-build
+or deployed-page visual acceptance claim.
