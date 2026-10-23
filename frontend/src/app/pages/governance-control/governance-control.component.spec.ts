@@ -10,6 +10,7 @@ import {
   DomainPackView,
   ExecutionAuthorizationReceipt,
   LearningApplicationSummary,
+  LearningOutcomeRecord,
   LearningProposal,
   LifeCommitmentRevision,
   LifeCostEntry,
@@ -466,6 +467,71 @@ describe('GovernanceControlComponent', () => {
 
     expect(service.listExecutionReceipts).toHaveBeenCalledTimes(2)
     expect(service.listExecutionReceipts).toHaveBeenCalledWith(50, 'full')
+  })
+
+  it('settles execution state when Advanced supersedes an unfinished summary read', () => {
+    const summary = new Subject<{ receipts: ExecutionAuthorizationReceipt[]; count: number; limit: number }>()
+    const full = new Subject<{ receipts: ExecutionAuthorizationReceipt[]; count: number; limit: number }>()
+    service.listExecutionReceipts.and.callFake((_limit, view) => view === 'full' ? full : summary)
+    component.loadExecution()
+    component.loadExecutionSection(true)
+    expect(summary.observed).toBeFalse()
+    full.next({ receipts: [receipt], count: 1, limit: 50 })
+    expect(component.state.execution.loading).toBeFalse()
+    expect(component.state.execution.loaded).toBeTrue()
+    expect(component.executionFullLoaded).toBeTrue()
+    component.ngOnDestroy()
+    expect(full.observed).toBeFalse()
+  })
+
+  it('refreshes full execution evidence without replacing it with a summary', () => {
+    component.loadExecutionSection(true)
+    service.listExecutionReceipts.calls.reset()
+    component.loadExecution()
+    expect(service.listExecutionReceipts).toHaveBeenCalledOnceWith(50, 'full')
+  })
+
+  it('settles failed full execution reads and permits an explicit section retry', () => {
+    const summary = new Subject<{ receipts: ExecutionAuthorizationReceipt[]; count: number; limit: number }>()
+    service.listExecutionReceipts.and.callFake((_limit, view) => view === 'full'
+      ? throwError(() => new Error('Unavailable')) : summary)
+    component.loadExecution()
+    component.loadExecutionSection(true)
+    expect(component.state.execution.loading).toBeFalse()
+    expect(component.state.execution.loaded).toBeFalse()
+    expect(component.executionFullLoading).toBeFalse()
+    expect(component.executionFullError).toContain('unavailable')
+    service.listExecutionReceipts.and.returnValue(of({ receipts: [receipt], count: 1, limit: 50 }))
+    component.loadExecutionSection(true)
+    expect(component.state.execution.loaded).toBeTrue()
+    expect(component.executionFullError).toBe('')
+    component.ngOnDestroy()
+  })
+
+  it('keeps proposal and outcome history reads independent when Advanced opens', () => {
+    const proposals = new Subject<{ proposals: LearningProposal[] }>()
+    const outcomes = new Subject<{ outcomes: LearningOutcomeRecord[] }>()
+    service.listLearningProposals.and.returnValue(proposals)
+    service.listLearningOutcomes.and.returnValue(outcomes)
+    component.loadLearning()
+    component.loadLearningSection(true)
+    expect(proposals.observed).toBeTrue()
+    expect(outcomes.observed).toBeTrue()
+    proposals.next({ proposals: [proposal] })
+    expect(component.state.learning.loaded).toBeTrue()
+    outcomes.next({ outcomes: [] })
+    expect(component.learningHistoryLoaded).toBeTrue()
+    component.ngOnDestroy()
+    expect(proposals.observed).toBeFalse()
+    expect(outcomes.observed).toBeFalse()
+  })
+
+  it('restores full evidence and outcome history for their saved open sections', () => {
+    preferences.setSection('governance-control', 'execution-receipts', true)
+    preferences.setSection('governance-control', 'controlled-learning', true)
+    component.ngOnInit()
+    expect(service.listExecutionReceipts).toHaveBeenCalledOnceWith(50, 'full')
+    expect(service.listLearningOutcomes).toHaveBeenCalledOnceWith(100)
   })
 
   it('builds the Basic decision queue only from unresolved records', () => {

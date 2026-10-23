@@ -10,6 +10,7 @@ import { launchRecoveryNotice } from '../src/app/control-room/launch-recovery.ts
 import './command-dashboard-approval.test.mjs'
 import './pursuits-styles.test.mjs'
 import './task-template-controls.test.mjs'
+import './source-template-controls.test.mjs'
 
 const { moduleForUrl } = await loadModuleUrlLogic()
 

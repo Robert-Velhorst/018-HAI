@@ -2367,17 +2367,23 @@ describe('ConnectedSourcesComponent pursuit handoff', () => {
     const root = fixture.nativeElement as HTMLElement;
     const previous = root.querySelector<HTMLButtonElement>('button[aria-label="Previous extracted records"]')!;
     const next = root.querySelector<HTMLButtonElement>('button[aria-label="Next extracted records"]')!;
+    const extractionMetric = Array.from(root.querySelectorAll<HTMLElement>('[title]'))
+      .find((element) => element.title === fixture.componentInstance.extractionScopeSummary())!;
+    expect(extractionMetric).toBeDefined();
+    expect(extractionMetric.title).toBe('Records 1–1 · 12 total.');
     expect(previous.disabled).toBeTrue();
     expect(next.disabled).toBeFalse();
     next.click();
     fixture.detectChanges();
     expect(fixture.componentInstance.extractions[0].id).toBe('older-page');
+    expect(extractionMetric.title).toBe('Records 9–9 · 12 total.');
     expect(root.querySelector('nav[aria-label="Extracted record pages"]')?.textContent).toContain('9');
     expect(next.disabled).toBeTrue();
     expect(previous.disabled).toBeFalse();
     previous.click();
     fixture.detectChanges();
     expect(fixture.componentInstance.extractions[0].id).toBe('first-page');
+    expect(extractionMetric.title).toBe('Records 1–1 · 12 total.');
     expect(previous.disabled).toBeTrue();
     fixture.destroy();
   });
