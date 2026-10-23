@@ -1042,6 +1042,37 @@ describe('WorkflowEngineComponent', () => {
       'Confirm that the prior execution has ended and its outcome was checked, and add a source URI.'
     );
   });
+
+  for (const decision of ['retry', 'confirm_completed']) {
+    for (const missing of ['reconciliation', 'evidence']) {
+      it(`refuses interrupted ${decision} when only ${missing} is missing`, () => {
+        const { component, workflowService, notification } = createComponent();
+        component.dataLoaded = true;
+        const interrupted = workflowRecord([]);
+        interrupted.item.currentState = 'blocked';
+        interrupted.item.recoveryStatus = 'needs_review';
+        component.applyWorkflowRecord(interrupted);
+        component.interruptionForm.setValue({
+          decision,
+          note: 'Review the prior execution before allowing another attempt.',
+          evidenceUri: missing === 'evidence' ? '' : 'local://recovery/source',
+          evidenceLabel: 'Recovery evidence',
+          priorExecutionReconciled: missing !== 'reconciliation',
+        });
+        expect(component.interruptionForm.valid).toBeTrue();
+
+        component.resolveInterruptedExecution();
+
+        expect(workflowService.resolveInterruptedExecution).not.toHaveBeenCalled();
+        expect(component.selected).toBe(interrupted);
+        expect(component.saving).toBeFalse();
+        expect(notification.error).toHaveBeenCalledOnceWith(
+          'Reconciliation required',
+          'Confirm that the prior execution has ended and its outcome was checked, and add a source URI.'
+        );
+      });
+    }
+  }
 });
 
 describe('WorkflowEngineComponent progressive disclosure', () => {

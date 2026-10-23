@@ -246,6 +246,33 @@ every declaration, installed secrets, authenticated providers, SMTP, tunnels,
 Docker startup or deployment acceptance. No dependencies were installed, no
 runtime was started and no retained original was deleted.
 
+## Workflow component-test reconciliation
+
+Read the complete retained workflow component spec and its complete integration
+delta. All 33 original literal test titles remain. Seven original callback bodies
+are identical after newline normalization; 26 are adapted to the newer strict
+UUID/response contracts, explicit loaded state, outcome criteria, evidence-linked
+interruption recovery and cautious server-acknowledgement wording. Preserve
+manual intake, independent reminder failures, cancellation, exact selected-run
+confirmation, framework provenance, dedicated approval, proposal routing, Basic
+actions, persisted Advanced sections, keyboard rows, filters and retry states.
+The current integration already adds 14 literal tests covering stale decisions,
+worker review, explicit criteria, disclosure focus, loading and checklist writes.
+
+The original interrupted-completion rejection test omits both reconciliation and
+evidence, so it cannot independently protect either requirement. Add four cases
+covering retry and completion with each requirement missing separately. Verify
+the form is otherwise valid, the endpoint is not called, selection stays intact,
+saving never starts and the explicit reconciliation error is emitted.
+
+All 51 focused workflow component tests pass in headless Chrome, and all 190
+native frontend contract tests pass. This spec uses
+service spies and partially shallow templates with `NO_ERRORS_SCHEMA`; it does
+not prove a complete real-NG-Zorro action chain, backend authorization, an actual
+external outcome, deployed browser acceptance or a full workflow-controller
+audit. No production component behavior changes in this reconciliation. The
+retained original is not eligible for deletion yet.
+
 ## Brain catalog template reconciliation
 
 Read the complete retained template and its integration delta. Preserve Basic
