@@ -94,11 +94,12 @@ type VerificationResult struct {
 }
 
 type memoryPromotionOutcome struct {
-	Stored        int
-	Skipped       int
-	Failed        int
-	BlockedReason string
-	AuditWarning  bool
+	Stored         int
+	Skipped        int
+	Failed         int
+	BlockedReason  string
+	AuditWarning   bool
+	PromotedClaims []models.VerificationClaim
 }
 
 type Service interface {
@@ -310,7 +311,7 @@ func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*Ve
 	knowledgeError := ""
 	if s.claimProjector != nil && request.AllowMemoryUpdate && memoryOptInRecorded && memoryOutcome.Failed == 0 && memoryOutcome.BlockedReason == "" && memoryOutcome.Stored > 0 {
 		knowledgeClaimIDs, err = s.claimProjector.ProjectClaims(
-			ctx, request, *run, verifiedClaims, evidence,
+			ctx, request, *run, memoryOutcome.PromotedClaims, evidence,
 		)
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
 			cancelErr := firstVerificationContextError(ctx, err)
@@ -763,14 +764,14 @@ func verifyClaims(claims []models.VerificationClaim, evidence []models.Verificat
 		if best.SourceType == "test_result" && containsAny(strings.ToLower(best.Snippet), "pass", "passed", "ok") {
 			claim.Status = StatusTestPassed
 		}
-		if containsContradiction(claim.ClaimText, evidence) {
-			claim.Status = StatusConflicting
-			claim.NeedsReview = true
-			claim.SupportExplanation = "supporting sources appear to disagree"
-		} else if hasConflictingSingleWeekday(claim.ClaimText, best.Snippet) {
+		if hasConflictingSingleWeekday(claim.ClaimText, best.Snippet) {
 			claim.Status = StatusConflicting
 			claim.NeedsReview = true
 			claim.SupportExplanation = "the claim conflicts with its supporting evidence; human review is required"
+		} else if containsContradiction(claim.ClaimText, evidence) {
+			claim.Status = StatusConflicting
+			claim.NeedsReview = true
+			claim.SupportExplanation = "supporting sources appear to disagree"
 		}
 	}
 	return claims
@@ -857,7 +858,7 @@ func (s *service) storeVerifiedMemory(request AnswerRequest, run *models.Verific
 			outcome.Skipped++
 			continue
 		}
-		_, err := memory.CreateVerifiedFactForOwner(s.memoryService, request.OwnerIdentity, memory.CreateRequest{
+		created, err := memory.CreateVerifiedFactForOwner(s.memoryService, request.OwnerIdentity, memory.CreateRequest{
 			ProjectKey:  request.ProjectKey,
 			Kind:        "source_supported_fact",
 			Content:     claim.ClaimText,
@@ -867,11 +868,12 @@ func (s *service) storeVerifiedMemory(request AnswerRequest, run *models.Verific
 			SourceURI:   firstNonEmpty(proof.SourceURI, proof.SourceID),
 			SourceLabel: "verification-run:" + run.ID.String(),
 		}, memory.VerifiedFactProvenance{RunID: run.ID, ClaimID: claim.ID, EvidenceID: proof.ID, SourceURI: proof.SourceURI, SourceID: proof.SourceID})
-		if err != nil {
+		if err != nil || created == nil || created.ID == uuid.Nil {
 			outcome.Failed++
 			continue
 		}
 		outcome.Stored++
+		outcome.PromotedClaims = append(outcome.PromotedClaims, claim)
 		if auditErr := s.auditErr(run.ID, "verification.memory_promoted", "source-supported claim promoted with owner-bound evidence provenance"); auditErr != nil {
 			// The persisted fact is retained; callers must see that its follow-up audit failed.
 			outcome.AuditWarning = true
@@ -1110,9 +1112,6 @@ func sourceLabels(evidence []models.VerificationEvidence) string {
 
 func containsContradiction(claim string, evidence []models.VerificationEvidence) bool {
 	claimPolarity := statementPolarity(claim)
-	if claimPolarity == 0 {
-		return false
-	}
 	for _, item := range evidence {
 		if item.Rejected || !item.Used {
 			continue
@@ -1120,7 +1119,10 @@ func containsContradiction(claim string, evidence []models.VerificationEvidence)
 		if overlapScore(tokenSet(claim), tokenSet(item.Snippet)) < 0.2 {
 			continue
 		}
-		if evidencePolarity := statementPolarity(item.Snippet); evidencePolarity != 0 && evidencePolarity != claimPolarity {
+		if hasConflictingSingleWeekday(claim, item.Snippet) {
+			return true
+		}
+		if evidencePolarity := statementPolarity(item.Snippet); claimPolarity != 0 && evidencePolarity != 0 && evidencePolarity != claimPolarity {
 			return true
 		}
 	}
