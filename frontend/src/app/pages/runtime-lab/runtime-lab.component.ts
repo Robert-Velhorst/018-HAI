@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core'
 import { HttpClient, HttpErrorResponse } from '@angular/common/http'
 import { Router } from '@angular/router'
-import { timeout, TimeoutError } from 'rxjs'
+import { defer, Subject, take, takeUntil, throwIfEmpty, timeout, TimeoutError } from 'rxjs'
 import { finalize } from 'rxjs/operators'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
@@ -35,7 +35,7 @@ const DEEPSEEK_HARNESS_ID = 'deepseek-harness'
     styleUrls: ['./runtime-lab.component.scss'],
     standalone: false
 })
-export class RuntimeLabComponent implements OnInit {
+export class RuntimeLabComponent implements OnInit, OnDestroy {
   runtimes: IRuntimeSummary[] = []
   agentRuntimeInfo: IAgentRuntimeInfo[] = []
   parityOverview?: IRuntimeParityOverview
@@ -54,6 +54,9 @@ export class RuntimeLabComponent implements OnInit {
   selfTestBusy: Record<string, boolean> = {}
   mcpBusy: Record<string, boolean> = {}
   private readonly operationTimeoutMs = 30000
+  private readonly readTimeoutMs = 6000
+  private readonly destroyed$ = new Subject<void>()
+  private destroyed = false
   private readonly selfTestOutcomes = new Map<string, IRuntimeAttempt>()
   private readonly uncertainRuntimeIds = new Set<string>()
   private readonly runtimeDiagnosticDetails = new Map<string, string>()
@@ -70,6 +73,12 @@ export class RuntimeLabComponent implements OnInit {
 
   ngOnInit(): void {
     this.refresh()
+  }
+
+  ngOnDestroy(): void {
+    this.destroyed = true
+    this.destroyed$.next()
+    this.destroyed$.complete()
   }
 
   get isAdvanced(): boolean {
@@ -101,6 +110,7 @@ export class RuntimeLabComponent implements OnInit {
   }
 
   refresh(): void {
+    if (this.destroyed) return
     this.loading = true
     this.loadError = false
     this.refreshAgentRuntimeInfo()
@@ -109,7 +119,10 @@ export class RuntimeLabComponent implements OnInit {
       this.refreshFeatureParity(true)
       this.refreshCapabilities(true)
     }
-    this.service.overview().subscribe({
+    defer(() => this.service.overview()).pipe(
+      timeout(this.readTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.loading = false),
+    ).subscribe({
       next: (res) => {
         this.runtimes = (res.runtimes ?? []).map((runtime) => {
           // Incomplete legacy diagnostics can explain a block, but cannot prove execution.
@@ -142,7 +155,10 @@ export class RuntimeLabComponent implements OnInit {
   private refreshAgentRuntimeInfo(): void {
     this.agentRuntimeInfoLoading = true
     this.agentRuntimeInfoError = false
-    this.http.get<IAgentRuntimeInfo[]>('/api/v1/agent-runtimes/').subscribe({
+    defer(() => this.http.get<IAgentRuntimeInfo[]>('/api/v1/agent-runtimes/')).pipe(
+      timeout(this.readTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.agentRuntimeInfoLoading = false),
+    ).subscribe({
       next: (runtimes) => {
         this.agentRuntimeInfo = Array.isArray(runtimes) ? runtimes : []
         this.agentRuntimeInfoLoading = false
@@ -208,9 +224,12 @@ export class RuntimeLabComponent implements OnInit {
   }
 
   refreshCapabilities(force = false): void {
-    if (this.capabilityLoading || (!force && this.capabilityOverview)) return
+    if (this.destroyed || this.capabilityLoading || (!force && this.capabilityOverview)) return
     this.capabilityLoading = true
-    this.service.capabilities().subscribe({
+    defer(() => this.service.capabilities()).pipe(
+      timeout(this.readTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.capabilityLoading = false),
+    ).subscribe({
       next: (overview) => {
         this.capabilityOverview = overview
         this.capabilityLoading = false
@@ -258,9 +277,12 @@ export class RuntimeLabComponent implements OnInit {
   }
 
   refreshFeatureParity(force = false): void {
-    if (this.parityLoading || (!force && this.parityOverview)) return
+    if (this.destroyed || this.parityLoading || (!force && this.parityOverview)) return
     this.parityLoading = true
-    this.service.featureParity().subscribe({
+    defer(() => this.service.featureParity()).pipe(
+      timeout(this.readTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.parityLoading = false),
+    ).subscribe({
       next: (overview) => {
         this.parityOverview = overview
         this.parityLoading = false
@@ -318,8 +340,12 @@ export class RuntimeLabComponent implements OnInit {
   }
 
   refreshMCPPreflight(): void {
+    if (this.destroyed) return
     this.mcpLoading = true
-    this.mcpPreflight.overview().subscribe({
+    defer(() => this.mcpPreflight.overview()).pipe(
+      timeout(this.readTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.mcpLoading = false),
+    ).subscribe({
       next: (overview) => {
         this.mcpOverview = overview
         this.mcpLoading = false
@@ -332,9 +358,12 @@ export class RuntimeLabComponent implements OnInit {
   }
 
   runMCPPreflight(server: IMCPPreflightServer): void {
-    if (this.mcpBusy[server.id] || !server.configured) return
+    if (this.destroyed || this.mcpBusy[server.id] || !server.configured) return
     this.mcpBusy[server.id] = true
-    this.mcpPreflight.run(server.id).pipe(timeout(this.operationTimeoutMs)).subscribe({
+    defer(() => this.mcpPreflight.run(server.id)).pipe(
+      timeout(this.operationTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.mcpBusy[server.id] = false),
+    ).subscribe({
       next: (result) => {
         this.mcpBusy[server.id] = false
         this.notifyMCPPreflight(server, result)
@@ -368,10 +397,11 @@ export class RuntimeLabComponent implements OnInit {
 
   probe(r: IRuntimeSummary): void {
     const runtimeId = r.info.id
-    if (this.probeBusy[runtimeId]) return
+    if (this.destroyed || this.probeBusy[runtimeId]) return
     this.probeBusy[runtimeId] = true
-    this.service.probe(runtimeId).pipe(
+    defer(() => this.service.probe(runtimeId)).pipe(
       timeout(this.operationTimeoutMs),
+      take(1), throwIfEmpty(), takeUntil(this.destroyed$),
       finalize(() => this.probeBusy[runtimeId] = false),
     ).subscribe({
       next: (res) => {
@@ -403,8 +433,9 @@ export class RuntimeLabComponent implements OnInit {
     this.selfTestRuntimeSnapshots.set(runtimeId, r)
     this.selfTestBusy[runtimeId] = true
     let receivedOutcome = false
-    this.service.selfTest(runtimeId).pipe(
+    defer(() => this.service.selfTest(runtimeId)).pipe(
       timeout(this.operationTimeoutMs),
+      take(1), takeUntil(this.destroyed$),
       finalize(() => this.selfTestBusy[runtimeId] = false),
     ).subscribe({
       next: (attempt) => {
@@ -470,7 +501,7 @@ export class RuntimeLabComponent implements OnInit {
   }
 
   canSelfTest(runtime: IRuntimeSummary): boolean {
-    return !this.selfTestBusy[runtime.info.id] && !this.selfTestNeedsReconciliation(runtime) && !this.isDeepSeekExecutionBlocked(runtime)
+    return !this.destroyed && !this.selfTestBusy[runtime.info.id] && !this.selfTestNeedsReconciliation(runtime) && !this.isDeepSeekExecutionBlocked(runtime)
   }
 
   selfTestAttemptLabel(attempt: IRuntimeAttempt): string {

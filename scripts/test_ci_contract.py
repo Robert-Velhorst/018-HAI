@@ -693,6 +693,12 @@ class CIWorkflowContractTest(unittest.TestCase):
         )
 
         self.assertEqual(len(compose_profiles), 25)
+        command_profiles = set(
+            re.findall(r"--profile\s+([a-z][a-z0-9-]*)\b", documentation)
+        )
+        for profile in command_profiles:
+            with self.subTest(command_profile=profile):
+                self.assertIn(profile, compose_profiles)
         self.assertEqual(documented_profiles, compose_profiles)
 
     def test_searxng_discovery_is_opt_in_and_network_isolated(self) -> None:

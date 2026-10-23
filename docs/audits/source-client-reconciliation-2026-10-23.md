@@ -677,3 +677,54 @@ This review did not compile or install an EXE, invoke signing tools, access
 certificates, register tasks, start Docker, or prove installed lifecycle behavior.
 Source comparison and parsing are not release or runtime acceptance. The
 retained recovery copies remain untouched pending the broader preservation gate.
+
+## Runtime Lab reconciliation and observation limits
+
+Read the complete retained runtime component, tests and template and their
+complete current differences. Preserve on-demand parity/capability loading,
+the DeepSeek hard block, redacted legacy diagnostics, explicit discovery versus
+execution evidence, retained uncertain self-test receipts and repeat-test
+fences. Do not restore success claims based on process or status alone.
+
+Ten new negative controls reproduced escaping request-factory exceptions,
+unbounded status reads and post-teardown callbacks/dispatch. Construct all
+eight request paths inside defer; bound the five status reads at six seconds;
+observe one result and reject empty read/handshake results. Cancel observation
+and reject direct runtime actions after component teardown. Preserve uncertain
+self-test outcomes rather than authorizing retry when a timeout or empty result
+cannot establish what happened. Unsubscribing does not undo a server operation.
+Additional controls cover an empty MCP handshake and repeated self-test results.
+
+The current template also contained duplicate discovery-persistence warnings.
+A rendered control reproduced both copies and the blanket assertion that all
+runtime execution remained blocked. Show one warning that discovery alone does
+not authorize execution; retain the actual backend/runtime policy separately.
+
+The final combined run passes all 556 frontend checks in 27 suites, including
+45 Runtime Lab checks. The ten new observation failures and duplicate-warning
+assertion failed before their corresponding repairs.
+
+These are frontend observation and presentation changes, not new execution
+authority, an OS sandbox, durable reconciliation across reloads or live runtime
+acceptance. Full response-schema validation, cross-refresh ordering and complete
+diagnostic redaction remain separate work.
+
+## Optional runtime profile documentation
+
+Read the complete retained profile guide and its complete current difference.
+Compare the active Compose document through a YAML parser and its existing
+source contracts. It defines 44 services: ten default definitions, including
+three one-shot jobs, and 34 profile-gated services over 25 profiles. Correct the
+older nine-service/two-job description and aggregate limits to 3,328 MiB and
+5.2 CPU including all setup jobs; these are configured ceilings, not measured
+resource consumption or simultaneous peaks.
+
+The documented local-model profile and ollama-local service do not exist in
+this Compose file. A new regression assertion rejected the stale profile
+commands. Replace them with the separately managed, reviewed provider boundary
+and describe the authenticated generation smoke script without running it or
+claiming prior local evidence proves a current deployment. Preserve opt-in
+helpers, local-network cautions and the hard-disabled host-runtime policy.
+All 118 CI source contracts pass; these are not GitHub CI or live Docker tests.
+No model, account, container, certificate or retained source was changed by
+executing this review's tests, and no recovery original is deleted.

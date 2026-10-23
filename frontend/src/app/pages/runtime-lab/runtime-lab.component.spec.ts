@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { NzButtonModule } from 'ng-zorro-antd/button';
 import { NzCardModule } from 'ng-zorro-antd/card';
@@ -243,6 +243,98 @@ describe('RuntimeLabComponent MCP readiness', () => {
     }
   }
 
+  for (const operation of ['overview', 'agentInfo', 'capabilities', 'parity', 'mcpOverview', 'mcpRun', 'probe', 'selfTest']) {
+    it(`contains synchronous ${operation} construction errors and releases its busy state`, () => {
+      const { component, runtimeService, mcpService, http, notification } = make();
+      const runtime = safeRuntime();
+      const fail = () => { throw new Error('Synthetic request construction failure'); };
+      const actions: Record<string, () => void> = {
+        overview: () => { runtimeService.overview.and.callFake(fail); component.refresh(); },
+        agentInfo: () => { http.get.and.callFake(fail); component.refresh(); },
+        capabilities: () => { runtimeService.capabilities.and.callFake(fail); component.refreshCapabilities(); },
+        parity: () => { runtimeService.featureParity.and.callFake(fail); component.refreshFeatureParity(); },
+        mcpOverview: () => { mcpService.overview.and.callFake(fail); component.refreshMCPPreflight(); },
+        mcpRun: () => { mcpService.run.and.callFake(fail); component.runMCPPreflight({ id: 'github', configured: true }); },
+        probe: () => { runtimeService.probe.and.callFake(fail); component.probe(runtime); },
+        selfTest: () => { runtimeService.selfTest.and.callFake(fail); component.selfTest(runtime); },
+      };
+      expect(actions[operation]).not.toThrow();
+      expect(component.loading || component.agentRuntimeInfoLoading || component.capabilityLoading || component.parityLoading || component.mcpLoading).toBeFalse();
+      expect(component.probeBusy[runtime.info.id] || component.selfTestBusy[runtime.info.id] || component.mcpBusy['github']).toBeFalsy();
+      expect(notification.success).not.toHaveBeenCalled();
+      if (operation === 'selfTest') expect(component.canSelfTest(runtime)).toBeFalse();
+    });
+  }
+
+  it('bounds silent overview reads instead of keeping the page busy forever', fakeAsync(() => {
+    const { component, runtimeService, mcpService, http } = make();
+    runtimeService.overview.and.returnValue(new Subject());
+    runtimeService.featureParity.and.returnValue(new Subject());
+    runtimeService.capabilities.and.returnValue(new Subject());
+    mcpService.overview.and.returnValue(new Subject());
+    http.get.and.returnValue(new Subject());
+    component.onFeatureParityToggle(true);
+    component.refresh();
+    tick(6001);
+    expect(component.loading || component.agentRuntimeInfoLoading || component.capabilityLoading || component.parityLoading || component.mcpLoading).toBeFalse();
+    expect(component.loadError).toBeTrue();
+    expect(component.agentRuntimeInfoError).toBeTrue();
+    expect(component.mcpOverview).toBeUndefined();
+    expect(component.capabilityOverview).toBeUndefined();
+    expect(component.parityOverview).toBeUndefined();
+    (component as any).ngOnDestroy?.();
+  }));
+
+  it('cancels observation and blocks direct actions after teardown', () => {
+    const { component, runtimeService, mcpService, notification } = make();
+    const pending = new Subject<any>();
+    runtimeService.probe.and.returnValue(pending);
+    component.probe(safeRuntime());
+    (component as any).ngOnDestroy?.();
+    pending.next({ protocolValid: true, discoveryState: 'succeeded', readinessLevel: 'available' });
+    expect(component.latestProbes['local-safe-worker']).toBeUndefined();
+    expect(notification.info).not.toHaveBeenCalled();
+    runtimeService.probe.calls.reset();
+    runtimeService.overview.calls.reset();
+    component.refresh();
+    component.probe(safeRuntime());
+    component.selfTest(safeRuntime());
+    component.runMCPPreflight({ id: 'github', configured: true });
+    expect(runtimeService.overview).not.toHaveBeenCalled();
+    expect(runtimeService.probe).not.toHaveBeenCalled();
+    expect(runtimeService.selfTest).not.toHaveBeenCalled();
+    expect(mcpService.run).not.toHaveBeenCalled();
+  });
+
+  it('does not leave an empty MCP handshake pending or claim readiness', () => {
+    const { component, mcpService, notification } = make();
+    const pending = new Subject<any>();
+    mcpService.run.and.returnValue(pending);
+    component.runMCPPreflight({ id: 'github', configured: true });
+    expect(component.mcpBusy['github']).toBeTrue();
+    pending.complete();
+    expect(component.mcpBusy['github']).toBeFalse();
+    expect(notification.success).not.toHaveBeenCalled();
+    expect(notification.error).toHaveBeenCalled();
+    component.ngOnDestroy();
+  });
+
+  it('uses only the first self-test outcome and cannot overwrite uncertainty with a repeated emission', () => {
+    const { component, runtimeService, notification } = make();
+    const pending = new Subject<IRuntimeAttempt>();
+    runtimeService.selfTest.and.returnValue(pending);
+    const runtime = safeRuntime();
+    component.selfTest(runtime);
+    pending.next(completedAttempt({ status: 'inconclusive', verificationPassed: false, reconciliationRequired: true }));
+    pending.next(completedAttempt());
+    pending.complete();
+    expect(notification.success).not.toHaveBeenCalled();
+    expect(component.lastSelfTestAttempt(runtime)?.reconciliationRequired).toBeTrue();
+    expect(component.canSelfTest(runtime)).toBeFalse();
+    expect(component.selfTestBusy[runtime.info.id]).toBeFalse();
+    component.ngOnDestroy();
+  });
+
   function completedAttempt(overrides: Partial<IRuntimeAttempt> = {}): IRuntimeAttempt {
     return {
       id: 'attempt', runtimeId: 'local-safe-worker', operationId: 'self-test-operation',
@@ -402,6 +494,12 @@ describe('RuntimeLabComponent MCP readiness', () => {
       .find((button) => button.textContent?.trim() === 'Self-test')
     expect(selfTest?.disabled).toBeTrue()
     expect(root.textContent).toContain('Completion not verified')
+    fixture.componentInstance.latestProbes['local-safe-worker'] = { evidencePersistenceStatus: 'failed' } as any
+    fixture.detectChanges()
+    const discoveryWarnings = Array.from(root.querySelectorAll('.rl__card .rl__warning'))
+      .filter((warning) => warning.textContent?.includes('durable evidence was not saved'))
+    expect(discoveryWarnings.length).toBe(1)
+    expect(discoveryWarnings[0]?.textContent).toContain('Discovery alone does not authorize runtime execution')
     fixture.destroy()
   })
 
