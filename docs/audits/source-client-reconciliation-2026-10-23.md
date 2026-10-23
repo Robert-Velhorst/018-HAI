@@ -215,6 +215,37 @@ reconciliation; this review does not declare the whole module operationally
 accepted. Original recovery files remain retained until main preservation is
 verified.
 
+## Environment example reconciliation
+
+Read the complete retained example with assignment values suppressed, and the
+complete current delta. Parse both complete declaration sets privately: the
+retained example has 578 unique keys and the current example has 609. All 575
+shared values remain identical, with 34 newer declarations retained. Neither
+example has duplicate keys or unsupported single-line declarations. No installed
+environment files were read or modified.
+
+Three removed ngrok declarations belong to the still-unintegrated tunnel path
+tracked in `legacy-ngrok-source-reconciliation-2026-10-23.md`. Their absence is
+not a retirement decision or proof that those source files can be deleted.
+Keep the original until that feature is integrated or explicitly retired.
+Preserve the newer database deadlines, owner-bound connectors, signed Trello
+webhook configuration, fail-closed queue fallback switches, explicit Docker-host
+pins, read-only history context and bounded operational-graph settings.
+
+Correct the reminder-delivery comment that appeared immediately above the
+numeric workflow lease setting: `false` applies to reminder delivery, not the
+lease. No example assignment value changes. Add a standard-library contract for
+the canonical single-line template, duplicate/malformed declarations with
+value-free errors, critical opt-in defaults and loopback gateway binding. This
+is deliberately not a replacement dotenv parser. Run it in the existing Linux
+and native Windows CI jobs, without removing their previous checks.
+
+Seven local environment-template tests and all 122 existing CI-contract tests
+pass. These static checks do not establish runtime configuration parity for
+every declaration, installed secrets, authenticated providers, SMTP, tunnels,
+Docker startup or deployment acceptance. No dependencies were installed, no
+runtime was started and no retained original was deleted.
+
 ## Brain catalog template reconciliation
 
 Read the complete retained template and its integration delta. Preserve Basic
