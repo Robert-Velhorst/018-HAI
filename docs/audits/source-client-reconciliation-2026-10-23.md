@@ -833,3 +833,21 @@ diagnostics, durable retry idempotency and preservation of edits made to an
 in-flight form are not established by these controls. A stopped observation
 does not undo server work. No authority ceiling, provider, account, source
 original or transcript archive was changed by executing the tests.
+
+## Framework registry style preservation
+
+Read the complete retained stylesheet and its complete current delta. All old
+theme-token surfaces, keyboard focus rules, bounded inspector widths, responsive
+grid breakpoints, minimum-width protections and reduced-motion rules remain.
+The current file adds explicit help-button alignment and bounded, wrapping
+preference-history presentation. It already exactly matches the freshly fetched
+main snapshot; no obsolete stylesheet needs restoring. Both retained and current
+files compile successfully with the installed Sass compiler. This establishes
+style source preservation and syntax validity, not rendered viewport, contrast
+or accessibility acceptance. The retained source remains intact.
+
+After the exact-head 41-check feed-read PR merged, its three files were verified
+against the merge commit and fetched main before deleting only its remote branch.
+A normal conflict-free main merge preserves the tested frontend tree unchanged.
+The complete accountfeed package passes again locally, uncached, in 2.922 seconds.
+That package run uses local fixtures, not live account or provider acceptance.
