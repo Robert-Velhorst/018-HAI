@@ -640,6 +640,12 @@ func applyCompanionInstallerWith(
 	verify func(context.Context, string, string) error,
 	run func(context.Context, string) error,
 ) (result error) {
+	if ctx == nil {
+		return fmt.Errorf("installer execution context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if artifact.Path == "" || !validSHA256Digest("sha256:"+artifact.SHA256) || !validPublisherThumbprint(artifact.PublisherThumbprint) {
 		return fmt.Errorf("verified installer identity is incomplete")
 	}
@@ -667,17 +673,29 @@ func applyCompanionInstallerWith(
 		}
 	}()
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	digest, err := hashLockedInstaller(locked)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return contextErr
+	}
 	if err != nil || !strings.EqualFold(digest, artifact.SHA256) {
 		return fmt.Errorf("locked installer digest does not match the approved release")
 	}
 	if err := verify(ctx, artifact.Path, artifact.PublisherThumbprint); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
 		return fmt.Errorf("locked installer publisher verification failed")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := run(ctx, artifact.Path); err != nil {
 		return fmt.Errorf("verified installer execution failed: %w", err)
 	}
-	return nil
+	return ctx.Err()
 }
 
 func runCompanionInstaller(ctx context.Context, installer string) error {
