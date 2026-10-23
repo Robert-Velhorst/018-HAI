@@ -587,3 +587,28 @@ blocked by the local security policy and was not retried through another route.
 These checks do not establish a deployed gateway, live cookie rotation, external
 OAuth, account access, or runtime execution. The original recovery files and
 transcripts remain retained.
+
+## Background operation template and stylesheet review
+
+Read the complete retained template and stylesheet and the current versions.
+Preserve the newer calm primary action, per-module Advanced ledger, enabled-feed
+filtering, paged table rows, narrow-layout wrapping, shared theme tokens and
+visible keyboard focus. Keep inline recovery, explicit uncertain outcomes,
+source-derived approval previews and revision-bound confirmation. Restoring the
+older presentation would lose these controls; no older stylesheet needs copying.
+
+Two rendered regression cases reproduced a misleading green success icon for
+reports containing feed errors or failed operations. A failure count without an
+error list also produced the heading "Pass complete". Derive report issue state
+from both the error list and failed-operation count. Show the existing warning
+surface and a warning icon, retain the issue heading and show the failed count.
+This does not change execution, permissions, approval or retry behavior. A later
+request failure takes precedence over a previous report's warning.
+
+All 68 focused component/UI tests pass, including the two regression cases,
+the clean-success control and the later permission-failure control. The combined
+25-suite frontend run passes all 465 checks. These are
+Chrome-rendered component fixtures with synthetic services, not deployed visual
+acceptance or live feed execution. Full report-response schema validation,
+diagnostic redaction and end-to-end provider acceptance remain separate work.
+Retained source copies and transcript archives are not deleted by this review.

@@ -105,6 +105,10 @@ export class BackgroundOperationsComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute
   ) {}
 
+  get lastReportHasIssues(): boolean {
+    return !!this.lastReport && (this.lastReport.failed > 0 || !!this.lastReport.errors?.length)
+  }
+
   ngOnInit(): void {
     const requestedStatus = this.route.snapshot.queryParamMap.get('status') ?? ''
     if (this.statusFilters.some((filter) => filter.value === requestedStatus)) this.statusFilter = requestedStatus

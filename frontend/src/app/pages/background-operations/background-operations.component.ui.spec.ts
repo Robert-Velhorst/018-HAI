@@ -7,7 +7,7 @@ import { By } from '@angular/platform-browser'
 import { NzButtonModule } from 'ng-zorro-antd/button'
 import { NzDrawerModule } from 'ng-zorro-antd/drawer'
 import { NzEmptyModule } from 'ng-zorro-antd/empty'
-import { NzIconModule } from 'ng-zorro-antd/icon'
+import { NzIconDirective, NzIconModule } from 'ng-zorro-antd/icon'
 import { NzModalModule } from 'ng-zorro-antd/modal'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { NzTableModule } from 'ng-zorro-antd/table'
@@ -140,6 +140,52 @@ describe('BackgroundOperationsComponent rendered states', () => {
     expect(service.runBackground).toHaveBeenCalledTimes(1)
     expect(rendered.nativeElement.textContent).toContain('Pass complete')
     expect(rendered.nativeElement.textContent).toContain('1 feeds checked')
+    const result = rendered.nativeElement.querySelector('.bg-ops__run-result') as HTMLElement
+    expect(result.classList.contains('bg-ops__run-result--warning')).toBeFalse()
+    expect(rendered.debugElement.query(By.css('.bg-ops__run-result [nz-icon]')).injector.get(NzIconDirective).nzType()).toBe('check-circle')
+  })
+
+  for (const issue of [
+    { label: 'reported feed errors', report: { ...report(), errors: ['Source unavailable'] } },
+    { label: 'failed operations without an error list', report: { ...report(), failed: 1 } },
+  ]) {
+    it(`renders ${issue.label} as a warning rather than verified success`, () => {
+      service.runBackground.and.returnValue(of(issue.report))
+      const rendered = createFixture()
+      const button = rendered.nativeElement.querySelector('.bg-ops__run-button') as HTMLButtonElement
+      button.click()
+      rendered.detectChanges()
+
+      const result = rendered.nativeElement.querySelector('.bg-ops__run-result') as HTMLElement
+      expect(result.textContent).toContain('Pass finished with issues')
+      expect(result.textContent).not.toContain('Pass complete')
+      expect(result.classList.contains('bg-ops__run-result--warning')).toBeTrue()
+      expect(rendered.debugElement.query(By.css('.bg-ops__run-result [nz-icon]')).injector.get(NzIconDirective).nzType()).toBe('exclamation-circle')
+      expect(service.runBackground).toHaveBeenCalledTimes(1)
+      expect(result.getAttribute('role')).toBe('status')
+      if (issue.report.failed > 0) expect(result.textContent).toContain('1 failed')
+    })
+  }
+
+  it('keeps a later request failure distinct from an earlier report warning', () => {
+    service.runBackground.and.returnValues(
+      of({ ...report(), failed: 1 }),
+      throwError(() => new HttpErrorResponse({ status: 403 })),
+    )
+    const rendered = createFixture()
+    const button = rendered.nativeElement.querySelector('.bg-ops__run-button') as HTMLButtonElement
+    button.click()
+    rendered.detectChanges()
+    button.click()
+    rendered.detectChanges()
+
+    const result = rendered.nativeElement.querySelector('.bg-ops__run-result') as HTMLElement
+    expect(result.classList.contains('bg-ops__run-result--error')).toBeTrue()
+    expect(result.classList.contains('bg-ops__run-result--warning')).toBeFalse()
+    expect(rendered.debugElement.query(By.css('.bg-ops__run-result [nz-icon]')).injector.get(NzIconDirective).nzType()).toBe('close-circle')
+    expect(result.textContent).not.toContain('Pass finished with issues')
+    expect(result.textContent).not.toContain('Pass complete')
+    expect(service.runBackground).toHaveBeenCalledTimes(2)
   })
 
   it('keeps read failure distinct from empty and offers an inline retry without a generic toast', () => {
