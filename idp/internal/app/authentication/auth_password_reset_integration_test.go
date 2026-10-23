@@ -260,6 +260,8 @@ func TestDeletingAndReactivatingUserDoesNotRestoreOldSessionOrResetToken(t *test
 		ResetTokenExpires: timePointer(time.Now().Add(time.Hour)),
 	}
 	require.NoError(t, db.Create(&user).Error)
+	// Login consumes a database snapshot, including PostgreSQL timestamp precision.
+	require.NoError(t, db.First(&user, "id = ?", user.ID).Error)
 	setupAuthConfig(t)
 	userService := users.NewUserService(repo, noopLogger{}, integrationPasswordHasher{})
 	blocklist := &inMemoryBlockListService{}
@@ -353,10 +355,11 @@ func TestAtomicAccountUpdateChangesEmailAndPasswordWithSessionGuard(t *testing.T
 	require.NoError(t, db.Create(&duplicate).Error)
 	err = repo.UpdateAccount(duplicate.ID, 3, &newEmail, "must-not-commit-hash", now)
 	require.ErrorIs(t, err, irepository.ErrDuplicateUser)
-	require.NoError(t, db.First(&persisted, "id = ?", duplicate.ID).Error)
-	require.Equal(t, duplicate.Email, persisted.Email)
-	require.Equal(t, duplicate.Password, persisted.Password)
-	require.Equal(t, int64(3), persisted.SessionVersion)
+	var unchangedDuplicate models.User
+	require.NoError(t, db.First(&unchangedDuplicate, "id = ?", duplicate.ID).Error)
+	require.Equal(t, duplicate.Email, unchangedDuplicate.Email)
+	require.Equal(t, duplicate.Password, unchangedDuplicate.Password)
+	require.Equal(t, int64(3), unchangedDuplicate.SessionVersion)
 }
 
 func TestEmailOnlyAccountUpdateInvalidatesPendingPasswordReset(t *testing.T) {

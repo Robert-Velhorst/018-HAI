@@ -64,3 +64,28 @@ where not already covered by an individual reconciliation. Original source
 integrity and preservation on `main` remain separate checks. No source checkout,
 transcript archive, database or worktree is eligible for deletion from this
 document alone.
+
+## First database-enabled execution
+
+At commit `b3d2b00957aaa573bf99e25ee48b9abeb6b6a915`, CI run `40018740909`
+actually executed the eleven newly selected PostgreSQL cases: nine passed and
+two failed. The retained tests therefore exposed issues that skipped execution
+had hidden; the new step is not treated as green merely because most cases pass.
+
+The account-deletion/reactivation fixture supplied a just-created in-memory
+user to session issuance, rather than reloading the persisted login snapshot.
+Its reset-expiry timestamp can differ from PostgreSQL's stored precision and
+trigger the strict session-creation comparison. CI reported the bounded issuance
+error, not its underlying cause, so this diagnosis remains an inference pending
+a fresh database run. The fixture now reloads the user before issuing the
+session. Production comparison and revocation rules remain unchanged.
+
+The account-update fixture reused a result struct still holding the first user's
+primary key when querying the duplicate account. GORM added that nonzero key to
+the new lookup, producing `record not found`. A separate empty result struct now
+reads the duplicate account. Its unchanged-email/password/version assertions and
+the duplicate-user rejection assertion are retained.
+
+These fixture corrections are not a claim that the next PostgreSQL run passes.
+The exact-head eleven-case step must execute again without skips. No production
+database, identity permissions, session authority or password rules were changed.
