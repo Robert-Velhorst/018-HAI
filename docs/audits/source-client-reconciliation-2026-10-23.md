@@ -305,13 +305,39 @@ pass in a separate 64-test focused run; the final combined group also includes
 the two context-count cases. No deployed visual or live-provider acceptance is
 claimed from these fixture tests.
 
-Lifecycle cancellation remains a known follow-up: this controller still has no
-destruction hook for its route/service subscriptions or delayed focus callback.
+At the initial review this controller had no destruction hook for its
+route/service subscriptions or delayed focus callback; the follow-up below
+addresses that lifecycle gap.
 This review does not certify comprehensive response-schema validation, stale
 planning-draft handling or approval-dialog context binding. Keep the original
 and the broader task-service sources until those paths and main preservation
 are resolved. No execution permission, provider configuration or deployment is
 enabled by this change.
+
+## Task Planning lifecycle follow-up
+
+Add destruction-bound teardown to all nine controller subscription sites: the
+route observer, draft planners, assistant command, history, review queue,
+combined retry-history read, review resolution and recovery. In-flight HTTP
+observation is ended, but this does not establish that a dispatched backend
+operation was cancelled, rolled back or had no effect. Existing uncertain-result
+and durable-history requirements remain unchanged.
+
+Refuse new service calls and retained retry/review/recovery confirmations after
+destruction. Release local busy flags, invalidate history request counters,
+cancel the pending focus timer and guard delayed clipboard notifications. A new
+focus request replaces the older timer. No backend cancellation request or
+execution-policy change is introduced.
+
+All 13 new lifecycle cases fail before the repair and pass afterward: eight
+pending service flows, route lifetime and post-destruction dispatch, three stale
+confirmation callbacks and focus on replacement DOM. These are controller and
+RxJS/DOM fixtures, not deployed navigation, backend cancellation or independent
+runtime acceptance. All 1,662 tests in the 56-spec browser reconciliation group
+and all 190 native frontend contracts pass afterward. Comprehensive response
+schemas, stale draft selection and
+live approval-context revalidation remain separate work. Retained originals are
+still not eligible for deletion before main preservation.
 
 ## Brain catalog template reconciliation
 
