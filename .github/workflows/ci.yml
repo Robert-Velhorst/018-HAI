@@ -972,6 +972,16 @@ jobs:
           for test_case in legacy_exact legacy_similar owner_exact owner_similar; do
             grep -q -- "^[[:space:]]*--- PASS: TestPostgresMemoryDedupPreservesDistinctSources/${test_case} (" "$memory_provenance_log"
           done
+          automation_launch_log="$RUNNER_TEMP/automation-launch-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
+            -run '^(TestPostgresLaunchIntentIdempotencyIsAtomicAcrossConcurrentRequests|TestPostgresLaunchEventIdempotencyReturnsStoredIdentityAndRejectsConflicts)$' \
+            ./internal/automation/ -v | tee "$automation_launch_log"
+          for test_name in \
+            TestPostgresLaunchIntentIdempotencyIsAtomicAcrossConcurrentRequests \
+            TestPostgresLaunchEventIdempotencyReturnsStoredIdentityAndRejectsConflicts
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$automation_launch_log"
+          done
           memory_lesson_log="$RUNNER_TEMP/memory-source-lessons-postgres.log"
           memory_lesson_tests=(
             TestPostgresManualCorrectionAuditBindsRevisionAndMemoryLockFollowsEvidenceLocks
