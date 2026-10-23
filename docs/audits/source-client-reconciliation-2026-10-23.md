@@ -612,3 +612,32 @@ Chrome-rendered component fixtures with synthetic services, not deployed visual
 acceptance or live feed execution. Full report-response schema validation,
 diagnostic redaction and end-to-end provider acceptance remain separate work.
 Retained source copies and transcript archives are not deleted by this review.
+
+## Memory component, tests and stylesheet reconciliation
+
+Read the retained component and tests in full and compare the current versions.
+Keep all older disclosure, selection, unavailable-state and obsolete-request
+scenarios with the current server-page query contract. Preserve actual server
+pagination and applied project/filter scope rather than restoring a twelve-row
+client cap. Keep the manual-versus-review-managed write boundary, drafts on
+failure, record mutation overlap guards, retrieval invalidation and partial
+reindex warnings. Read the retained stylesheet and its entire current delta;
+keep newer filter, page range, form fieldset, wrapping and header control rules.
+The separate retained Memory HTML file is not included in this three-file review.
+
+Ten new negative controls reproduced synchronous request-construction exceptions
+escaping the observable error boundary: query, retrieve, create, update, archive,
+restore, delete, export, semantic reindex and conversation import. Construct each
+request inside RxJS defer so existing error handlers clear its busy state,
+preserve drafts and report failure without claiming success. Record mutations
+now acquire their existing pending marker before request construction. No new
+endpoint, permission, automatic retry or backend mutation behavior is added.
+
+All 45 focused Memory checks pass after correction; all ten new exception cases
+failed before it. The combined 26-suite frontend run passes all 510 checks.
+This includes rendered HTTP action chains using the real
+frontend service with a synthetic HTTP backend, not a live persistence/provider
+test. Empty/multiple-emission handling, full response-schema validation,
+post-destruction direct dispatch prevention, full diagnostic redaction and
+durable mutation reconciliation are not established by this targeted repair.
+No source copy or archive is eligible for deletion merely from these checks.

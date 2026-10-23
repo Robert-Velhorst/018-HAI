@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit, QueryLis
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
-import { Observable, Subject, Subscription } from 'rxjs';
+import { defer, Observable, Subject, Subscription } from 'rxjs';
 import { takeUntil, timeout } from 'rxjs/operators';
 import {
   IContextMemory,
@@ -166,8 +166,8 @@ export class MemoryComponent implements OnInit, OnDestroy {
     this.memoriesLoaded = false;
     this.updateMemoryActions();
     this.refreshSubscription?.unsubscribe();
-    this.refreshSubscription = this.memoryService
-      .query({ ...this.appliedLibraryFilters, includeArchived: this.includeArchived, page: this.libraryPage })
+    this.refreshSubscription = defer(() => this.memoryService
+      .query({ ...this.appliedLibraryFilters, includeArchived: this.includeArchived, page: this.libraryPage }))
       .pipe(timeout(this.loadTimeoutMs))
       .subscribe({
         next: (result) => {
@@ -290,9 +290,9 @@ export class MemoryComponent implements OnInit, OnDestroy {
       this.saving = false;
       return;
     }
-    const save$ = this.editingId
+    const save$ = defer(() => this.editingId
       ? this.memoryService.update(this.editingId, request)
-      : this.memoryService.create(request);
+      : this.memoryService.create(request));
     this.memoryForm.disable({ emitEvent: false });
 
     save$.pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
@@ -360,7 +360,7 @@ export class MemoryComponent implements OnInit, OnDestroy {
     this.clearRetrieval();
     this.retrieving = true;
     this.operationError = '';
-    this.retrieveSubscription = this.memoryService.retrieve(this.retrieveForm.value).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
+    this.retrieveSubscription = defer(() => this.memoryService.retrieve(this.retrieveForm.value)).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (result) => {
         this.retrieveResult = result;
         if (result.usedContext.length) {
@@ -392,14 +392,14 @@ export class MemoryComponent implements OnInit, OnDestroy {
     this.importing = true;
     this.importResult = undefined;
     this.operationError = '';
-    this.memoryEngine.importConversation({
+    defer(() => this.memoryEngine.importConversation({
       platform: this.importForm.value.platform,
       externalId: this.importForm.value.externalId,
       title: this.importForm.value.title,
       sourceUri: this.importForm.value.sourceUri,
       projectKey: this.importForm.value.projectKey,
       messages,
-    }).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
+    })).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (result) => {
         this.importResult = result;
         this.importing = false;
@@ -424,30 +424,30 @@ export class MemoryComponent implements OnInit, OnDestroy {
 
   archive(memory: IContextMemory): void {
     if (!memory.id || memory.archived || this.recordBusy(memory)) return;
-    this.mutateRecord(memory, this.memoryService.archive(memory.id), 'Archive');
+    this.mutateRecord(memory, () => this.memoryService.archive(memory.id!), 'Archive');
   }
 
   restore(memory: IContextMemory): void {
     if (!memory.id || !memory.archived || this.recordBusy(memory)) return;
-    this.mutateRecord(memory, this.memoryService.restore(memory.id), 'Restore');
+    this.mutateRecord(memory, () => this.memoryService.restore(memory.id!), 'Restore');
   }
 
   delete(memory: IContextMemory): void {
     if (!memory.id || this.recordBusy(memory) || !window.confirm('Delete this memory permanently?')) {
       return;
     }
-    this.mutateRecord(memory, this.memoryService.delete(memory.id), 'Delete');
+    this.mutateRecord(memory, () => this.memoryService.delete(memory.id!), 'Delete');
   }
 
   recordBusy(memory: IContextMemory): boolean {
     return this.loading || !memory.id || this.pendingMemoryIds.has(memory.id) || (this.saving && this.editingId === memory.id);
   }
 
-  private mutateRecord(memory: IContextMemory, request: Observable<IContextMemory | void>, action: string): void {
+  private mutateRecord(memory: IContextMemory, request: () => Observable<IContextMemory | void>, action: string): void {
     const id = memory.id!;
     this.pendingMemoryIds.add(id);
     this.operationError = '';
-    request.pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
+    defer(request).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (saved) => {
         this.pendingMemoryIds.delete(id);
         this.retrieveSubscription?.unsubscribe();
@@ -479,7 +479,7 @@ export class MemoryComponent implements OnInit, OnDestroy {
     if (!this.isAdvancedView || this.exporting) return;
     this.exporting = true;
     this.operationError = '';
-    this.memoryService.exportMemories(this.libraryProjectKey).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
+    defer(() => this.memoryService.exportMemories(this.libraryProjectKey)).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (data) => {
         this.exporting = false;
         const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -505,7 +505,7 @@ export class MemoryComponent implements OnInit, OnDestroy {
     this.reindexingSemantic = true;
     this.operationError = '';
     this.semanticReindexResult = undefined;
-    this.memoryService.reindexSemantic(100).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
+    defer(() => this.memoryService.reindexSemantic(100)).pipe(timeout(this.operationTimeoutMs), takeUntil(this.destroyed$)).subscribe({
       next: (result) => {
         this.semanticReindexResult = result;
         this.reindexingSemantic = false;
