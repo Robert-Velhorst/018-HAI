@@ -1,6 +1,7 @@
 const sourceTranscriptionPath = /^\/api\/v1\/sources\/[^/]+\/transcribe$/;
 const sourceDocumentExtractionPath = /^\/api\/v1\/sources\/[^/]+\/extract-documents$/;
 const hireAIJobsSearchPath = /^\/api\/v1\/hire-ai\/jobs\/search$/;
+const reviewedArchiveUploadPath = /^\/api\/v1\/agent-runtimes\/openclaw\/ecosystem\/(?:approval\/)?upload$/;
 const configuredSourceRunnerMaximumMs = 10 * 60_000;
 
 function normalizedPath(requestUrl: string): string {
@@ -28,6 +29,7 @@ export const HttpTimeoutPolicy = Object.freeze({
     if (method.toUpperCase() !== 'POST') return this.operationMs;
 
     const path = normalizedPath(requestUrl);
+    if (reviewedArchiveUploadPath.test(path)) return this.reviewedArchiveUploadMs;
     if (hireAIJobsSearchPath.test(path)) return this.hireAISearchMs;
     if (sourceTranscriptionPath.test(path)) return this.sourceTranscriptionMs;
     if (sourceDocumentExtractionPath.test(path)) return this.sourceDocumentExtractionMs;

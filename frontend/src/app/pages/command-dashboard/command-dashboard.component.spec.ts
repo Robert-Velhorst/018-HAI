@@ -432,7 +432,10 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
   it('does not replace an unsaved OpenClaw path when ecosystem inventory refreshes', () => {
     const { component, agentRuntimes } = createComponent();
     const savedRuntime = { id: 'openclaw', ecosystemPath: 'C:\\old\\package.zip' };
-    agentRuntimes.prepareOpenClawEcosystemRefresh.and.returnValue(of({ authorization: 'approved-once' }));
+    agentRuntimes.prepareOpenClawEcosystemRefresh.and.returnValue(of({
+      idempotencyKey: 'fixture-refresh', taskId: 'fixture-task',
+      approvalSourceId: 'fixture-owner', approvalBindingDigest: 'a'.repeat(64),
+    }));
     agentRuntimes.refreshOpenClawEcosystem.and.returnValue(of(savedRuntime));
     component.runtimes = [savedRuntime as any];
     component.onOpenClawEcosystemPathInput('C:\\draft\\package.zip');
@@ -441,6 +444,7 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
 
     expect(component.openClawEcosystemPath).toBe('C:\\draft\\package.zip');
     expect((component as any).openClawEcosystemPathEdited).toBeTrue();
+    expect(agentRuntimes.refreshOpenClawEcosystem).toHaveBeenCalledTimes(1);
   });
 
   it('does not duplicate runtime skill requests while one is pending', () => {
@@ -579,7 +583,10 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
       ecosystemPath: 'C:\\OpenClaw\\current.zip',
       ecosystemRollbackAvailable: true,
     };
-    agentRuntimes.prepareOpenClawEcosystemRollback.and.returnValue(of({}));
+    agentRuntimes.prepareOpenClawEcosystemRollback.and.returnValue(of({
+      idempotencyKey: 'fixture-rollback', taskId: 'fixture-task',
+      approvalSourceId: 'fixture-owner', approvalBindingDigest: 'a'.repeat(64),
+    }));
     agentRuntimes.rollbackOpenClawEcosystem.and.returnValue(
       throwError(() => ({ error: { error: 'Previous archive failed integrity validation.' } }))
     );
@@ -589,9 +596,10 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
 
     expect(component.runtimes[0]).toBe(runtime as any);
     expect(component.openClawRollbackLoading).toBeFalse();
+    expect(agentRuntimes.rollbackOpenClawEcosystem).toHaveBeenCalledTimes(1);
     expect(notification.error).toHaveBeenCalledWith(
       'OpenClaw archive rollback failed',
-      'Previous archive failed integrity validation.'
+      'The rollback outcome could not be confirmed. Refresh runtime inventory before deciding whether to retry.'
     );
   });
 });

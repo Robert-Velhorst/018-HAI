@@ -10,7 +10,7 @@ import { launchRecoveryNotice } from '../src/app/control-room/launch-recovery.ts
 
 const { moduleForUrl } = await loadModuleUrlLogic()
 
-for (const [moduleId, minimumCases] of [['task-blueprint', 50], ['framework-registry', 33], ['control-center', 30]]) {
+for (const [moduleId, minimumCases] of [['task-blueprint', 50], ['framework-registry', 33], ['control-center', 30], ['command-dashboard', 25]]) {
 test(`${moduleId} scenarios have unique identities rather than repeated copied cases`, () => {
   const file = new URL(`../src/app/pages/${moduleId}/${moduleId}.component.spec.ts`, import.meta.url)
   const source = ts.createSourceFile(file.pathname, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
@@ -1036,6 +1036,7 @@ const sourcePolicyUrl = new URL('../src/app/control-room/source-navigation.ts', 
 const { safeWebSourceHref } = await import(sourcePolicyUrl)
 const { CommandDashboardComponent } = await loadComponentLogic(new URL('../src/app/pages/command-dashboard/command-dashboard.component.ts', import.meta.url), {
   '@angular/forms': import.meta.resolve('@angular/forms'),
+  '../../shared/http-timeout-policy': new URL('../src/app/shared/http-timeout-policy.ts', import.meta.url).href,
   '../../control-room/source-navigation': sourcePolicyUrl,
   '../../services/memory-engine/memory-engine.service.token': 'data:text/javascript,export const MEMORY_ENGINE_SERVICE_TOKEN = Symbol("test-token")',
 })

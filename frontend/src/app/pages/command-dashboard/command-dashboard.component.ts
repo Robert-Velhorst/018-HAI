@@ -2,9 +2,10 @@ import { ChangeDetectionStrategy, Component, Inject, OnDestroy, OnInit } from '@
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
-import { finalize, Subscription, switchMap } from 'rxjs';
+import { defer, finalize, map, Observable, Subject, Subscription, switchMap, take, takeUntil, throwIfEmpty, timeout } from 'rxjs';
 import {
   IAgentRuntimeEcosystemSurface,
+  IAgentRuntimeEcosystemAuthorization,
   IAgentRuntimeHealth,
   IAgentRuntimeInfo,
   IAgentRuntimeSkill,
@@ -28,6 +29,7 @@ import {
 import { PursuitService } from '../../services/pursuit.service';
 import { WorkflowService } from '../../services/workflow/workflow.service';
 import { safeWebSourceHref } from '../../control-room/source-navigation';
+import { HttpTimeoutPolicy } from '../../shared/http-timeout-policy';
 
 type CommandActionKey = 'manage-pursuits' | 'plan-next' | 'clear-blockers' | 'run-cycle' | 'run-safe';
 
@@ -97,6 +99,8 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   private pursuitBriefSubscription?: Subscription;
   private runtimeOverviewSubscription?: Subscription;
   private commandLogsSubscription?: Subscription;
+  private readonly openClawDestroy$ = new Subject<void>();
+  private destroyed = false;
 
   actions: DashboardAction[] = [
     {
@@ -175,6 +179,9 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+    this.openClawDestroy$.next();
+    this.openClawDestroy$.complete();
     this.dashboardRefreshSubscription?.unsubscribe();
     this.pursuitDashboardSubscription?.unsubscribe();
     this.pursuitBriefSubscription?.unsubscribe();
@@ -500,13 +507,49 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       this.openClawRollbackLoading || this.openClawUploadLoading;
   }
 
+  private observeOpenClawChange(
+    prepare: () => Observable<IAgentRuntimeEcosystemAuthorization>,
+    execute: (authorization: IAgentRuntimeEcosystemAuthorization) => Observable<IAgentRuntimeInfo>,
+    executionTimeoutMs: number = HttpTimeoutPolicy.operationMs,
+    requirePath = true
+  ): Observable<IAgentRuntimeInfo> {
+    return defer(prepare).pipe(
+      take(1),
+      throwIfEmpty(),
+      timeout({ first: executionTimeoutMs }),
+      switchMap((authorization) => {
+        if (!authorization ||
+          ![authorization.idempotencyKey, authorization.taskId, authorization.approvalSourceId]
+            .every((value) => typeof value === 'string' && value.trim().length > 0) ||
+          typeof authorization.approvalBindingDigest !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(authorization.approvalBindingDigest)) {
+          throw new Error('Unusable OpenClaw approval references');
+        }
+        return defer(() => execute(authorization)).pipe(
+          take(1), throwIfEmpty(), timeout({ first: executionTimeoutMs })
+        );
+      }),
+      map((runtime) => {
+        if (!runtime || runtime.id !== 'openclaw' ||
+          (requirePath ? typeof runtime.ecosystemPath !== 'string' || !runtime.ecosystemPath.trim()
+            : runtime.ecosystemPath !== undefined && typeof runtime.ecosystemPath !== 'string')) {
+          throw new Error('Unusable OpenClaw runtime acknowledgement');
+        }
+        return runtime;
+      }),
+      takeUntil(this.openClawDestroy$)
+    );
+  }
+
   rollbackOpenClawEcosystem(runtime: IAgentRuntimeInfo): void {
-    if (runtime?.id !== 'openclaw' || !runtime.ecosystemRollbackAvailable || this.isOpenClawBusy()) {
+    if (this.destroyed || runtime?.id !== 'openclaw' || runtime.ecosystemRollbackAvailable !== true || this.isOpenClawBusy()) {
       return;
     }
     this.openClawRollbackLoading = true;
-    this.agentRuntimes.prepareOpenClawEcosystemRollback().pipe(
-      switchMap((authorization) => this.agentRuntimes.rollbackOpenClawEcosystem(authorization)),
+    this.observeOpenClawChange(
+      () => this.agentRuntimes.prepareOpenClawEcosystemRollback(),
+      (authorization) => this.agentRuntimes.rollbackOpenClawEcosystem(authorization)
+    ).pipe(
       finalize(() => {
         this.openClawRollbackLoading = false;
       })
@@ -524,17 +567,17 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
           'The previously verified archive is selected. Runtime status has been refreshed.'
         );
       },
-      error: (error) => {
+      error: () => {
         this.notification.error(
           'OpenClaw archive rollback failed',
-          error?.error?.error || 'HAI could not restore the previously verified OpenClaw archive. The current selection was retained.'
+          'The rollback outcome could not be confirmed. Refresh runtime inventory before deciding whether to retry.'
         );
       },
     });
   }
 
   setOpenClawEcosystemPath(runtime: IAgentRuntimeInfo): void {
-    if (this.isOpenClawBusy()) {
+    if (this.destroyed || this.isOpenClawBusy()) {
       return;
     }
     const path = this.openClawEcosystemPath?.trim();
@@ -543,8 +586,10 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       return;
     }
     this.openClawConfigLoading = true;
-    this.agentRuntimes.prepareOpenClawEcosystemPath(path).pipe(
-      switchMap((authorization) => this.agentRuntimes.setOpenClawEcosystemPath(path, authorization)),
+    this.observeOpenClawChange(
+      () => this.agentRuntimes.prepareOpenClawEcosystemPath(path),
+      (authorization) => this.agentRuntimes.setOpenClawEcosystemPath(path, authorization)
+    ).pipe(
       finalize(() => {
         this.openClawConfigLoading = false;
       })
@@ -558,22 +603,26 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
         this.openClawEcosystemPathEdited = false;
         this.notification.success('OpenClaw ecosystem path updated', `Configured at ${this.openClawEcosystemPath}`);
       },
-      error: (error) => {
+      error: () => {
         this.notification.error(
           'OpenClaw ecosystem config failed',
-          error?.error?.error || 'The backend rejected the configured OpenClaw ecosystem path.'
+          'The path-change outcome could not be confirmed. Refresh runtime inventory before deciding whether to retry.'
         );
       },
     });
   }
 
   refreshOpenClawEcosystem(runtime: IAgentRuntimeInfo): void {
-    if (runtime.id !== 'openclaw' || this.isOpenClawBusy()) {
+    if (this.destroyed || runtime?.id !== 'openclaw' || this.isOpenClawBusy()) {
       return;
     }
     this.openClawRefreshLoading = true;
-    this.agentRuntimes.prepareOpenClawEcosystemRefresh().pipe(
-      switchMap((authorization) => this.agentRuntimes.refreshOpenClawEcosystem(authorization)),
+    this.observeOpenClawChange(
+      () => this.agentRuntimes.prepareOpenClawEcosystemRefresh(),
+      (authorization) => this.agentRuntimes.refreshOpenClawEcosystem(authorization),
+      HttpTimeoutPolicy.operationMs,
+      false
+    ).pipe(
       finalize(() => {
         this.openClawRefreshLoading = false;
       })
@@ -588,13 +637,13 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
         }
         this.notification.success(
           'OpenClaw ecosystem refreshed',
-          'Re-scanned the selected OpenClaw source after a one-time owner confirmation.'
+          'Current OpenClaw inventory was returned after a one-time owner confirmation.'
         );
       },
-      error: (error) => {
+      error: () => {
         this.notification.error(
           'OpenClaw ecosystem refresh failed',
-          error?.error?.error || 'The backend failed to refresh OpenClaw ecosystem inventory.'
+          'The inventory-refresh outcome could not be confirmed. Refresh runtime inventory before deciding whether to retry.'
         );
       },
     });
@@ -613,7 +662,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   uploadOpenClawEcosystem(file: File): void {
-    if (this.isOpenClawBusy()) {
+    if (this.destroyed || this.isOpenClawBusy()) {
       return;
     }
     if (!file || !file.name.toLowerCase().endsWith('.zip')) {
@@ -634,8 +683,11 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
     this.openClawUploadFileName = file.name;
     this.openClawUploadError = '';
     this.openClawUploadLoading = true;
-    this.agentRuntimes.prepareOpenClawEcosystemUpload(file).pipe(
-      switchMap((authorization) => this.agentRuntimes.uploadOpenClawEcosystem(file, authorization)),
+    this.observeOpenClawChange(
+      () => this.agentRuntimes.prepareOpenClawEcosystemUpload(file),
+      (authorization) => this.agentRuntimes.uploadOpenClawEcosystem(file, authorization),
+      HttpTimeoutPolicy.reviewedArchiveUploadMs
+    ).pipe(
       finalize(() => {
         this.openClawUploadLoading = false;
       })
@@ -655,8 +707,8 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
           'The uploaded OpenClaw archive was indexed and the runtime surfaces were refreshed.'
         );
       },
-      error: (error) => {
-        this.openClawUploadError = error?.error?.error || 'The archive could not be indexed. Check runtime inventory before uploading again.';
+      error: () => {
+        this.openClawUploadError = 'The upload outcome could not be confirmed. Refresh runtime inventory before uploading again.';
         this.notification.error(
           'OpenClaw ecosystem upload failed',
           this.openClawUploadError

@@ -162,6 +162,22 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertIn("proxy_pass http://$backend_upstream;", backend)
         self.assertNotIn("location ~", backend)
 
+    def test_openclaw_approval_upload_has_the_same_protected_envelope_as_apply(self) -> None:
+        apply = location_block("location = /api/v1/agent-runtimes/openclaw/ecosystem/upload")
+        approval = location_block("location = /api/v1/agent-runtimes/openclaw/ecosystem/approval/upload")
+
+        def directives(block: str) -> list[str]:
+            return [line.strip() for line in block.splitlines()[1:]
+                    if line.strip() and not line.strip().startswith("#")]
+
+        self.assertEqual(directives(approval), directives(apply))
+        self.assertIn("client_max_body_size 752m;", approval)
+        self.assertIn("proxy_request_buffering off;", approval)
+        self.assertIn("proxy_read_timeout 15m;", approval)
+        self.assertIn("proxy_send_timeout 15m;", approval)
+        self.assertIn("auth_request /auth-verify;", approval)
+        self.assertIn('proxy_set_header Authorization "Bearer $hai_verified_access_token";', approval)
+
     def test_dashboard_gateway_targets_the_frontend_listening_port(self) -> None:
         frontend_config = (ROOT / "frontend" / "nginx-custom.conf").read_text(
             encoding="utf-8"

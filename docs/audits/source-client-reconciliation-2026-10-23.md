@@ -1459,3 +1459,57 @@ the payload contract already runs the migration fixtures on PowerShell 7.
 These are offline fixtures, not a signed installer upgrade, scheduled-task
 registration, running-worker replacement, provider update or live owner install.
 No real account configuration or application deployment was changed.
+
+## Command Dashboard specification and OpenClaw chain reconciliation
+
+Read the complete retained Command Dashboard specification and its complete
+current delta. Preserve all 31 original cases: explicit candidate/approval and
+completion endpoints, retained history and snapshots, stale/unavailable rather
+than fabricated zero states, duplicate command prevention, partial and queued
+outcome labels, incomplete-result failure, search retention, safe source links,
+archive pending controls, unsaved source-path retention, runtime discovery versus
+execution, owner-bound preparation, local disclosure and contextual accessibility.
+Thirty original case bodies remain identical. The remaining unsaved-path test
+now supplies complete approval references and explicitly verifies that the apply
+endpoint was reached. Keep the five already-integrated rollback logic/rendering
+cases; exercise execution failure with valid approval and safe recovery copy.
+
+The four OpenClaw mutation paths (set path, refresh, upload and rollback) share a
+bounded observation helper. Defer service calls so synchronous failures release
+pending state. Consume exactly one preparation and acknowledgement, treat empty
+completion as unconfirmed, cancel observation on destruction, and prevent new
+calls after destruction. Require usable reference fields and a digest shape
+before apply; require a matching OpenClaw acknowledgement and a usable path when
+the operation selects an archive. These checks are not cryptographic approval
+verification or authority: the backend still enforces its owner, immutable
+effect, idempotency and approval gates. Require an explicit boolean rollback
+availability flag. Keep error copy static and direct the operator to refresh
+inventory before deliberate retry; transport failure or cancellation does not
+prove rollback of a server-side write. Other Command Dashboard mutation paths
+and the complete controller remain outside this review step.
+
+Inspection of the actual backend handler, adapter and JSON shape shows that a
+refresh can legitimately return inventory without a selected archive. Preserve
+that response and avoid falsely announcing that an archive was re-scanned.
+Ordinary preparation/application phases remain bounded to 30 seconds; both
+full-archive upload phases receive the existing 15-minute upload limit. Resolve
+these exact normalized POST paths through the shared timeout policy, replacing
+the interceptor substring match that also granted long deadlines to unrelated
+query strings, prefixes and path suffixes. Four interceptor regressions fail
+before this repair. The gateway also lacked the upload envelope for approval:
+add an exact authenticated approval-upload location with the same 752 MiB
+multipart envelope, buffering policy, timeouts, refreshed identity/cookies and
+security headers as the existing apply-upload location. A new parity contract
+fails before the route exists. No unrelated route or body limit is expanded.
+
+The initial component regression run observed 60 failures and unhandled malformed
+acknowledgements, then disconnected; it is not a clean completed baseline run.
+The final combined selection passes 1,478 Chrome cases across 48 specification
+files, including 88 new OpenClaw boundary cases, 36 existing Command Dashboard
+cases, 13 interceptor cases and four real runtime-service/mock-HTTP cases.
+All 69 native control-room checks, 122 CI contracts and 23 static gateway
+contracts pass. The native loader resolves the real shared timeout policy rather
+than weakening its import allowlist. There is no local native Nginx command, so
+these static contracts are not `nginx -t`, a live large-upload transfer, deployed
+gateway or real owner/provider acceptance. No Docker service was started.
+Original source and archive copies remain intact until main preservation.

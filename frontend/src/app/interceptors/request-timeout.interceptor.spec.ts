@@ -58,6 +58,35 @@ describe('RequestTimeoutInterceptor', () => {
     request.flush({});
   }));
 
+  it('allows the approval upload the same bounded transfer time as applying the reviewed archive', fakeAsync(() => {
+    let receivedError: unknown;
+    const url = '/api/v1/agent-runtimes/openclaw/ecosystem/approval/upload';
+    http.post(url, new FormData()).subscribe({ error: (error: unknown) => (receivedError = error) });
+    const request = controller.expectOne(url);
+    tick(RequestTimeoutInterceptor.operationTimeoutMs + 1);
+    expect(receivedError).toBeUndefined();
+    expect(request.cancelled).toBeFalse();
+    tick(HttpTimeoutPolicy.reviewedArchiveUploadMs - RequestTimeoutInterceptor.operationTimeoutMs - 1);
+    expect(receivedError instanceof TimeoutError).toBeTrue();
+    expect(request.cancelled).toBeTrue();
+  }));
+
+  for (const url of [
+    '/api/v1/agent-runtimes/openclaw/ecosystem/upload/extra',
+    '/other?next=/api/v1/agent-runtimes/openclaw/ecosystem/upload',
+    '/unrelated/api/v1/agent-runtimes/openclaw/ecosystem/upload',
+  ]) {
+    it(`does not grant the archive deadline to lookalike URL ${url}`, fakeAsync(() => {
+      let receivedError: unknown;
+      http.post(url, new FormData()).subscribe({ error: (error: unknown) => (receivedError = error) });
+      const request = controller.expectOne(url);
+      tick(RequestTimeoutInterceptor.operationTimeoutMs);
+      expect(receivedError instanceof TimeoutError).toBeTrue();
+      expect(request.cancelled).toBeTrue();
+      if (!request.cancelled) request.flush({});
+    }));
+  }
+
   it('uses the long bounded timeout only for the exact document extraction route', fakeAsync(() => {
     let receivedError: unknown;
     http.post('/api/v1/sources/source-2/extract-documents', null)
