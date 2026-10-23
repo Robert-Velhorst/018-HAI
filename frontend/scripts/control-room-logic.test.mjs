@@ -10,21 +10,23 @@ import { launchRecoveryNotice } from '../src/app/control-room/launch-recovery.ts
 
 const { moduleForUrl } = await loadModuleUrlLogic()
 
-test('task blueprint scenarios have unique identities rather than repeated copied cases', () => {
-  const file = new URL('../src/app/pages/task-blueprint/task-blueprint.component.spec.ts', import.meta.url)
+for (const [moduleId, minimumCases] of [['task-blueprint', 50], ['framework-registry', 33]]) {
+test(`${moduleId} scenarios have unique identities rather than repeated copied cases`, () => {
+  const file = new URL(`../src/app/pages/${moduleId}/${moduleId}.component.spec.ts`, import.meta.url)
   const source = ts.createSourceFile(file.pathname, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
   const titles = new Set()
   function visit(node) {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'it' && ts.isStringLiteral(node.arguments[0])) {
       const title = node.arguments[0].text
-      assert.equal(titles.has(title), false, `duplicate task blueprint scenario: ${title}`)
+      assert.equal(titles.has(title), false, `duplicate ${moduleId} scenario: ${title}`)
       titles.add(title)
     }
     ts.forEachChild(node, visit)
   }
   visit(source)
-  assert.ok(titles.size >= 50, 'the complete scenario collection must remain discoverable')
+  assert.ok(titles.size >= minimumCases, 'the complete scenario collection must remain discoverable')
 })
+}
 
 test('launch error recovery is contextual, non-authoritative and contains no raw payload', () => {
   const id = '11111111-1111-4111-8111-111111111111'

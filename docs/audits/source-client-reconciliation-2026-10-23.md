@@ -1360,3 +1360,30 @@ its nine existing cases. All 121 CI contracts and 66 native control-room checks
 pass. These are local component/service-double tests, not live owner API,
 PostgreSQL, provider, browser screenshot or deployed acceptance. Deeper response
 validation remains open. The retained source is intact and not deletion-eligible.
+
+## Framework registry specification reconciliation
+
+Read the complete retained framework-registry specification and its complete
+current delta. Preserve its 33 original cases: source-backed overview counters
+and partial failures, independent module preferences, lazy taxonomy disclosure,
+deterministic records, non-authoritative selection hints, owner-and-permission
+gates, immutable Constitution drafts, exact activation confirmation, conflict
+recovery, restrictive rule recognition, authorization downgrade, safe error
+messages, superseded reads, inspector focus restoration and navigation.
+
+The current suite already adds persisted taxonomy-toggle and preference-history
+retry coverage. Give the toggle case a distinct name rather than leaving two
+identically named cases. Add three controls proving preference-history requests
+are unsubscribed on framework replacement, inspector closure and component
+destruction. Closed or obsolete reads cannot inject a later error or record into
+the current inspector. Extend the existing AST-based scenario-identity check to
+the framework suite without removing the task-blueprint check.
+
+All 38 current framework cases pass as part of 1,335 Chrome cases across 44
+specification files; all 67 native control-room checks pass. An AST statement
+comparison separately checks that every retained case and its original ordered
+statements remain, allowing the existing additional history-call assertion.
+These tests use service doubles: they are not live backend authorization,
+Constitution activation, deployed UI or provider acceptance. The entire
+framework controller has not been reviewed in this step. Its retained
+specification remains intact pending verified preservation on main.
