@@ -152,22 +152,27 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
   }
 
   refresh(): void {
+    if (this.pageDestroyed) return
     this.clearIdentityPreview()
     this.loadSubscription?.unsubscribe()
     this.loading = true
     this.feedLoadError = ''
     this.bridgeLoadError = ''
     this.loadSubscription = forkJoin({
-      bridges: this.service.bridges().pipe(
+      bridges: defer(() => this.service.bridges()).pipe(
         timeout(this.loadTimeoutMs),
+        take(1),
+        throwIfEmpty(() => new Error('Bridge status returned no response')),
         map((response): ResourceLoad<IBridgeContract[]> => ({
           value: Array.isArray(response?.bridges) ? response.bridges : null,
           failed: !Array.isArray(response?.bridges),
         })),
         catchError(() => of({ value: null, failed: true } as ResourceLoad<IBridgeContract[]>)),
       ),
-      feeds: this.service.feeds().pipe(
+      feeds: defer(() => this.service.feeds()).pipe(
         timeout(this.loadTimeoutMs),
+        take(1),
+        throwIfEmpty(() => new Error('Feed status returned no response')),
         map((response): ResourceLoad<IFeedHealth[]> => ({
           value: Array.isArray(response?.feeds) ? response.feeds : null,
           failed: !Array.isArray(response?.feeds),
@@ -197,7 +202,7 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
   }
 
   runNextSafeAction(): void {
-    if (this.loading) return
+    if (this.pageDestroyed || this.loading) return
     if (this.feedLoadError) {
       this.refresh()
       return
@@ -366,14 +371,17 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
   }
 
   sync(feedHealth: IFeedHealth): void {
+    if (this.pageDestroyed) return
     const feedId = feedHealth.feed.id
     if (!feedHealth.feed.enabled || this.loading || this.feedLoadError || !this.isFeedSyncable(feedHealth) ||
       this.syncing[feedId] || this.syncingAll || this.changing[feedId]) return
 
     this.feedback = undefined
     this.syncing[feedId] = true
-    this.service.sync(feedId).pipe(
+    defer(() => this.service.sync(feedId)).pipe(
       timeout(this.operationTimeoutMs),
+      take(1),
+      throwIfEmpty(() => new Error('Sync returned no response')),
       takeUntil(this.destroyed$),
       finalize(() => { this.syncing[feedId] = false }),
     ).subscribe({
@@ -404,8 +412,10 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
     this.loadSubscription?.unsubscribe()
     this.loading = false
     this.changing[feed.id] = true
-    this.service.setEnabled(feed.id, enabled).pipe(
+    defer(() => this.service.setEnabled(feed.id, enabled)).pipe(
       timeout(this.operationTimeoutMs),
+      take(1),
+      throwIfEmpty(() => new Error('Source state returned no response')),
       takeUntil(this.destroyed$),
       finalize(() => { this.changing[feed.id] = false }),
     ).subscribe({
@@ -436,12 +446,14 @@ export class AccountBridgesComponent implements OnInit, OnDestroy {
   }
 
   syncAll(): void {
-    if (this.syncAllDisabled) return
+    if (this.pageDestroyed || this.syncAllDisabled) return
 
     this.feedback = undefined
     this.syncingAll = true
-    this.service.syncDue().pipe(
+    defer(() => this.service.syncDue()).pipe(
       timeout(this.operationTimeoutMs),
+      take(1),
+      throwIfEmpty(() => new Error('Bulk sync returned no response')),
       takeUntil(this.destroyed$),
       finalize(() => { this.syncingAll = false }),
     ).subscribe({
