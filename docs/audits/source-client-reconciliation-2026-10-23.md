@@ -214,6 +214,31 @@ The separate LLM service and backend implementation still need their own
 reconciliation; this review does not declare the whole module operationally
 accepted. Original recovery files remain retained until main preservation is
 verified.
+
+## Brain catalog template reconciliation
+
+Read the complete retained template and its integration delta. Preserve Basic
+review guidance, Advanced capability planes and roadmap, profile readiness and
+activation boundaries, bridge restrictions, explicit aggregate exports, transient
+migration planning, source links, metadata maintenance and discovery, skill
+provenance, loading/error states and per-module disclosure. The current template
+already fixes the OSS Insight open-change callback name; retain that correction.
+
+Add a named capability input rather than relying on its placeholder. Four tests
+first compile and render the real BrainCatalogModule with NG-Zorro, its real
+services and mocked HTTP; the accessible-name case fails before the fix. A fifth
+case covers stale refresh recovery. The final five rendered cases verify a calm
+Basic view with no Advanced reads, history loading through the actual disclosure,
+visible failed-history messages without replacement scans, keyboard-focusable
+named search, bounded pending search interaction, and retained-data refresh retry.
+No schema suppression or replacement template is used.
+
+The combined suite passes 1,627 Chrome cases across 53 specification files;
+69 native controls and 122 CI contracts pass separately. The expected offline
+console message belongs to the existing Home negative-path test. This is local
+component rendering and HTTP-boundary evidence, not a deployed-app screenshot,
+full-app visual acceptance or live provider authorization. The original template
+is retained until preservation on main is verified.
 The combined fourteen-suite frontend run passes all 211 tests; progressive
 section, split-theme and icon-registry checks also pass with this change set.
 
