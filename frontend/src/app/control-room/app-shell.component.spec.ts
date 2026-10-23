@@ -11,6 +11,12 @@ import { AppShellComponent } from './app-shell.component'
 import { moduleForUrl } from './module-url'
 
 describe('AppShellComponent', () => {
+  const helperShells: AppShellComponent[] = []
+
+  afterEach(() => {
+    for (const shell of helperShells.splice(0)) shell.ngOnDestroy()
+  })
+
   const status: IBackgroundStatus = {
     mode: 'autonomous_safe', storedMode: 'autonomous_safe',
     emergencyStop: { engaged: false, updatedAt: '2026-09-23T00:00:00Z' },
@@ -20,12 +26,14 @@ describe('AppShellComponent', () => {
   }
 
   function createShell(statusSource: () => Observable<IBackgroundStatus>): AppShellComponent {
-    return new AppShellComponent(
+    const shell = new AppShellComponent(
       { url: '/control-center' } as unknown as Router,
       {} as unknown as ModuleViewPreferencesService,
       { mode: () => 'dark' } as unknown as ThemeService,
       { status: statusSource } as unknown as RuntimeControlService,
     )
+    helperShells.push(shell)
+    return shell
   }
 
   function afterNativeDisclosureUpdate(): Promise<void> {

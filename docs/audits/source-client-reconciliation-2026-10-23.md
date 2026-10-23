@@ -313,3 +313,26 @@ tests. Progressive-section, split-theme and icon-registry contracts also pass.
 This completes the retained stylesheet review only, not the separate large
 shell test source. Originals remain retained until preservation and cleanup
 requirements have been demonstrated for their complete scope.
+
+## Retained shell test reconciliation
+
+Read all 1,441 lines of the retained shell test file and its complete current
+diff. Preserve tests for grouped navigation, independent module preferences,
+runtime-status uncertainty and emergency stops, accessible controls, responsive
+focus transfer, inert mobile navigation, reset persistence and nested disclosures.
+Keep the newer rendered visibility/dialog timing, current-group initial focus,
+route-preserving skip-link, canceled-navigation recovery, Basic-fragment reset,
+delayed-content focus and user-interaction cancellation coverage.
+
+The changed older expectations are intentional: opening navigation now focuses
+the active destination rather than the brand, and activating the skip link must
+not change the current route/hash. The nested native-detail fixture now includes
+its real summary/focus target. Do not restore the older weaker fixture.
+
+Some helper-created shells were not destroyed by their individual tests and
+could leave safety refresh/retry timers scheduled during a long suite. Register
+helper instances for central afterEach teardown, including cases that exit early.
+Existing explicit destruction remains safe; no production behavior changes.
+The complete eighteen-suite reconciliation run still passes all 281 Chrome
+tests. These fixtures are not a claim of full deployed acceptance. Original
+worktree copies and unrelated archive content remain retained.
