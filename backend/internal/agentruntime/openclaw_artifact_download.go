@@ -206,6 +206,12 @@ func parseOpenClawArtifactDownload(payload json.RawMessage, id string, receipt O
 // exactly that artifact in exactly that run. URL responses use only the separate
 // approved-origin transport; no shell or local file path is used.
 func (r *Registry) DownloadOpenClawGatewayArtifact(ctx context.Context, expected OpenClawGatewayReceipt, descriptor GatewayArtifactDescriptor) (*GatewayArtifactContent, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("OpenClaw artifact download context is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !r.OpenClawArtifactRecoveryReady() || expected.OwnerIdentity == "" {
 		return nil, fmt.Errorf("OpenClaw artifact download unavailable")
 	}
@@ -214,6 +220,9 @@ func (r *Registry) DownloadOpenClawGatewayArtifact(ctx context.Context, expected
 	}
 	a := r.adapters["openclaw"].(*openClawAdapter)
 	receipt, err := a.openClawGatewayReceiptForReference(expected.RuntimeTaskID, expected.ExecutionReference)
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, contextErr
+	}
 	if err != nil || receipt.OwnerIdentity != expected.OwnerIdentity || receipt.RunID != expected.RunID || !validOpenClawGatewayRunID(receipt.RunID) || receipt.SessionKey != expected.SessionKey || receipt.SessionID != expected.SessionID || receipt.TerminalStatus != "completed" || receipt.TerminalAt.IsZero() || !receipt.TerminalAt.Equal(expected.TerminalAt) {
 		return nil, fmt.Errorf("artifact receipt mismatch")
 	}

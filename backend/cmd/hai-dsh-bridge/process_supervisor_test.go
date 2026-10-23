@@ -23,6 +23,7 @@ type fakeSuspendedProcess struct {
 	events        *[]string
 	resumeErr     error
 	terminateErr  error
+	closeErr      error
 	waitResult    processResult
 	waitErr       error
 	waitForCancel bool
@@ -65,7 +66,43 @@ func (p *fakeSuspendedProcess) Terminate() error {
 func (p *fakeSuspendedProcess) Close() error {
 	*p.events = append(*p.events, "close-job")
 	p.closed = true
-	return nil
+	return p.closeErr
+}
+
+func TestRunContainedProcessPreservesCloseFailureAlongsideExecutionCause(t *testing.T) {
+	for _, phase := range []string{"successful wait", "failed wait", "rejected authorization"} {
+		t.Run(phase, func(t *testing.T) {
+			events := []string{}
+			closeErr := errors.New("test process handle close failed")
+			workErr := errors.New("test execution boundary failed")
+			process := &fakeSuspendedProcess{
+				events: &events, closeErr: closeErr,
+				waitResult: processResult{ExitCode: 0, Stdout: "bounded output"},
+			}
+			if phase == "failed wait" {
+				process.waitErr = workErr
+			}
+			result, err := runContainedProcess(context.Background(), processSpec{}, func(context.Context) error {
+				if phase == "rejected authorization" {
+					return workErr
+				}
+				return nil
+			}, nil, func(processSpec) (suspendedProcess, error) { return process, nil })
+			if !process.closed || !errors.Is(err, closeErr) {
+				t.Fatalf("close failure was lost: closed=%v err=%v", process.closed, err)
+			}
+			if phase != "successful wait" && (!errors.Is(err, workErr) || !process.terminated) {
+				t.Fatalf("close error displaced the execution cause or cleanup: terminated=%v err=%v", process.terminated, err)
+			}
+			mapped := completionFromProcessResult(context.Background(), result, err)
+			if mapped.ExitCode != -1 || mapped.Error == "" {
+				t.Fatalf("close failure was mapped to successful completion: %#v", mapped)
+			}
+			if phase != "rejected authorization" && mapped.Output != "bounded output" {
+				t.Fatalf("close failure discarded captured output: %#v", mapped)
+			}
+		})
+	}
 }
 
 func TestRunContainedProcessDoesNotResumeAfterFailedLeaseRecheck(t *testing.T) {

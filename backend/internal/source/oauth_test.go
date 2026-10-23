@@ -1621,6 +1621,39 @@ func (r *googleOAuthReuseRaceRepository) FindOAuthToken(id uuid.UUID) (*models.S
 }
 
 func TestForcedGoogleOAuthRefreshReuseRechecksSourceAndCancellation(t *testing.T) {
+	testGoogleOAuthTokenReuseRechecksSourceAndCancellation(t, true)
+}
+
+func TestGoogleAccessTokenReuseRechecksSourceAndCancellation(t *testing.T) {
+	testGoogleOAuthTokenReuseRechecksSourceAndCancellation(t, false)
+}
+
+func TestGoogleAccessTokenRejectsInvalidContextBeforeRepositoryRead(t *testing.T) {
+	for _, mode := range []string{"nil", "cancelled", "expired"} {
+		t.Run(mode, func(t *testing.T) {
+			var ctx context.Context
+			var expected error
+			if mode != "nil" {
+				var cancel context.CancelFunc
+				if mode == "expired" {
+					ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+				} else {
+					ctx, cancel = context.WithCancel(context.Background())
+				}
+				cancel()
+				expected = ctx.Err()
+			}
+			repo := &googleOAuthReuseRaceRepository{Repository: newFakeSourceRepo(&models.ConnectedSource{ID: uuid.New()})}
+			access, err := NewService(repo, nil).(*service).googleAccessToken(ctx, uuid.New(), gmailConnectorKey)
+			if err == nil || access != "" || repo.sourceReads != 0 || expected != nil && !errors.Is(err, expected) {
+				t.Fatalf("invalid context reached token storage: access=%q reads=%d err=%v", access, repo.sourceReads, err)
+			}
+		})
+	}
+}
+
+func testGoogleOAuthTokenReuseRechecksSourceAndCancellation(t *testing.T, forced bool) {
+	t.Helper()
 	previous := config.AppConfig
 	t.Cleanup(func() { config.AppConfig = previous })
 	config.AppConfig.OAuthTokenEncryptionKey = "token-key"
@@ -1674,10 +1707,17 @@ func TestForcedGoogleOAuthRefreshReuseRechecksSourceAndCancellation(t *testing.T
 				repo.recheckErr = recheckErr
 			}
 			refreshes := 0
-			access, err := NewService(repo, nil).(*service).forceGoogleAccessTokenRefreshWith(ctx, sourceID, gmailConnectorKey, "rejected-access", func(context.Context, string) (*googleoauth.Token, error) {
-				refreshes++
-				return nil, errors.New("replacement-token reuse must not call the provider")
-			})
+			svc := NewService(repo, nil).(*service)
+			var access string
+			var err error
+			if forced {
+				access, err = svc.forceGoogleAccessTokenRefreshWith(ctx, sourceID, gmailConnectorKey, "rejected-access", func(context.Context, string) (*googleoauth.Token, error) {
+					refreshes++
+					return nil, errors.New("replacement-token reuse must not call the provider")
+				})
+			} else {
+				access, err = svc.googleAccessToken(ctx, sourceID, gmailConnectorKey)
+			}
 			if test.wantErr != nil || test.wantFailure {
 				if err == nil || access != "" || test.wantErr != nil && !errors.Is(err, test.wantErr) {
 					t.Fatalf("reuse access/error = %q/%v, want failure %v", access, err, test.wantErr)

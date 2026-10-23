@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core'
 import { HttpClient, HttpResponse } from '@angular/common/http'
-import { BehaviorSubject, Observable, finalize, shareReplay, tap, throwError, timeout } from 'rxjs'
+import { BehaviorSubject, Observable, ReplaySubject, finalize, map, share, tap, throwError, timeout } from 'rxjs'
 
 const artifactDigestPattern = /^[a-f0-9]{64}$/
 const artifactContentLimit = 8 * 1024 * 1024
@@ -73,17 +73,22 @@ export class OpenclawArtifactOperationsService {
     const existing = this.inFlight.get(key)
     if (existing) return existing as Observable<T>
 
-    this.activeByEvent.set(eventId, (this.activeByEvent.get(eventId) || 0) + 1)
-    this.publish({ eventId, action, digest, status: 'running', updatedAt: Date.now() })
     const shared = request.pipe(
       timeout(timeoutMs),
+      map(result => {
+        const retained = result as Partial<RetainedArtifactCopy> | null
+        const validRetain = action !== 'retain' || (
+          retained !== null && typeof retained === 'object' && !Array.isArray(retained) &&
+          retained.artifactDigest === digest && artifactDigestPattern.test(retained.contentSHA256 || '') &&
+          Number.isSafeInteger(retained.sizeBytes) && Number(retained.sizeBytes) >= 0 && Number(retained.sizeBytes) <= artifactContentLimit &&
+          retained.verification === 'unverified' && typeof retained.retainedAt === 'string' && Number.isFinite(Date.parse(retained.retainedAt))
+        )
+        const validRemoval = action !== 'remove' || (result instanceof HttpResponse && result.status === 204)
+        if (!validRetain || !validRemoval) throw new Error('OpenClaw artifact operation response could not be verified')
+        return result
+      }),
       tap({
-        next: result => {
-          const retained = result as Partial<RetainedArtifactCopy>
-          const validRetain = action !== 'retain' || (retained.artifactDigest === digest && artifactDigestPattern.test(retained.contentSHA256 || '') && Number.isSafeInteger(retained.sizeBytes) && Number(retained.sizeBytes) >= 0 && Number(retained.sizeBytes) <= artifactContentLimit && retained.verification === 'unverified' && typeof retained.retainedAt === 'string' && Number.isFinite(Date.parse(retained.retainedAt)))
-          const validRemoval = action !== 'remove' || (result as HttpResponse<unknown>).status === 204
-          this.publish({ eventId, action, digest, status: validRetain && validRemoval ? 'succeeded' : 'failed', httpStatus: validRetain && validRemoval ? undefined : 0, updatedAt: Date.now() })
-        },
+        next: () => this.publish({ eventId, action, digest, status: 'succeeded', updatedAt: Date.now() }),
         error: error => this.publish({
           eventId, action, digest, status: 'failed',
           httpStatus: Number.isInteger(error?.status) ? error.status : 0,
@@ -99,9 +104,13 @@ export class OpenclawArtifactOperationsService {
         const channel = this.states.get(eventId)
         if (channel) this.pruneState(eventId, channel)
       }),
-      shareReplay({ bufferSize: 1, refCount: false }),
+      // A resubscription observes the original outcome, not a new mutation.
+      share({ connector: () => new ReplaySubject<T>(1), resetOnError: false, resetOnComplete: false, resetOnRefCountZero: false }),
     )
+    // Watchers can synchronously request the same action from the status callback.
     this.inFlight.set(key, shared)
+    this.activeByEvent.set(eventId, (this.activeByEvent.get(eventId) || 0) + 1)
+    this.publish({ eventId, action, digest, status: 'running', updatedAt: Date.now() })
     shared.subscribe({ error: () => {} })
     return shared
   }
