@@ -124,3 +124,26 @@ owner permission, disclosure, uncertain retry, cancellation and HTTP-route
 fixtures. These are local tests with synthetic reports, not deployed health,
 real delivery, or full visual/operator acceptance. Original worktrees remain
 retained; semantic review is not a main-preservation or deletion gate.
+
+## Automation editor and retained coverage follow-up
+
+Read the retained automation form component, home-page tests, quick-capture
+template and system-status tests, then their complete current differences.
+Preserve explicit change detection and the stronger current home-page navigation,
+responsive-content and recovery tests. Preserve quick capture's labelled section
+instead of restoring a second main landmark inside the application's main shell.
+Keep its existing validation, Basic save/error feedback and Advanced disclosure.
+Keep all earlier status coverage alongside the current polling, provenance and
+unverified-snapshot checks; none of the retained tests is discarded.
+
+Three new editor controls failed before correction: reopening after cancellation
+lost the creation defaults; opening a different record could inherit prior
+identity, model, image and title state; an opening during an unconfirmed save
+could replace the active editor record. Reset the form to creation defaults
+before applying the selected record, clear prior image state, derive the title
+from the requested mode and ignore openings while saving. The existing
+parent-confirmed completion and failed-save retry contract remains unchanged.
+All six focused editor tests pass. These are local component fixtures, not real
+automation creation or provider/runtime execution. Source copies remain retained
+until the separate main-preservation gate is satisfied.
+The combined nine-suite frontend run passes all 131 tests with this change set.
