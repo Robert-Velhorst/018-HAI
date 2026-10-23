@@ -76,6 +76,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
   private readonly resetDisclosureEvents = new WeakMap<HTMLDetailsElement, boolean>()
   private readonly mobileNavigationFocusTimers = new Set<number>()
   private mobileNavigationFocusGeneration = 0
+  private navigationFocusGeneration = 0
   private deepLinkedSectionId = ''
   private deepLinkedAncestorIds: string[] = []
   private readonly advancedDetailSelector = [
@@ -111,6 +112,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    ++this.navigationFocusGeneration
     this.routerSubscription?.unsubscribe()
     this.themeSubscription?.unsubscribe()
     this.moduleModeSubscription?.unsubscribe()
@@ -156,6 +158,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
   }
 
   navigate(module: HaiModuleDefinition): void {
+    ++this.navigationFocusGeneration
     this.closeMobileNavigation()
     this.router.navigateByUrl(module.route)
   }
@@ -164,14 +167,17 @@ export class AppShellComponent implements OnInit, OnDestroy {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
 
+    const focusGeneration = ++this.navigationFocusGeneration
     const currentUrl = this.router.url
     const restorePageFocus = this.mobileNavigationOpen
     if (restorePageFocus) this.closeMobileNavigation(false)
 
     void this.router.navigateByUrl(module.route).then((navigated) => {
+      if (focusGeneration !== this.navigationFocusGeneration) return
       const destinationReady = navigated || currentUrl === module.route
       if (!restorePageFocus && !destinationReady) return
       requestAnimationFrame(() => {
+        if (focusGeneration !== this.navigationFocusGeneration) return
         const main = document.getElementById('hai-main')
         const target = destinationReady
           ? main
@@ -179,12 +185,17 @@ export class AppShellComponent implements OnInit, OnDestroy {
         if (target?.isConnected && !target.closest('[inert]')) target.focus()
       })
     }, () => {
-      if (!restorePageFocus) return
-      requestAnimationFrame(() => this.mobileMenuButton?.nativeElement.focus())
+      if (!restorePageFocus || focusGeneration !== this.navigationFocusGeneration) return
+      requestAnimationFrame(() => {
+        if (focusGeneration !== this.navigationFocusGeneration) return
+        const menu = this.mobileMenuButton?.nativeElement
+        if (menu?.isConnected && !menu.closest('[inert]')) menu.focus()
+      })
     })
   }
 
   openRoute(route: string): void {
+    ++this.navigationFocusGeneration
     this.closeMobileNavigation()
     this.router.navigateByUrl(route)
   }

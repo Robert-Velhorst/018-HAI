@@ -256,3 +256,35 @@ and delayed-focus controls also pass. This template-specific review does not
 claim full reconciliation of the retained shell TypeScript, stylesheet or large
 test file. Those files and all originals remain retained. These local fixtures
 are not a full deployed navigation, accessibility or visual acceptance pass.
+
+## Shared shell behavior reconciliation
+
+Read the retained shell TypeScript and current implementation in full and
+reviewed the complete difference. Preserve current document titles, module mode
+subscriptions, route-aware skip links, immediate dialog rendering before focus,
+current-group entry focus and focus non-interference. Keep bounded delayed
+deep-link restoration, generation checks, visibility recovery, explicit reset
+of Basic fragments and cancellation on route changes, destruction or trusted
+interaction. Do not restore the older one-shot lazy-content lookup.
+
+Four new negative controls reproduced stale navigation focus: a successful
+promise resolving after destruction, a focus frame already queued at destruction,
+a rejected mobile navigation resolving after destruction, and an older canceled
+navigation overriding a newer completed one. All four failed before correction;
+a live successful navigation control already passed.
+
+Navigation focus now has its own generation marker, invalidated on destruction
+and subsequent shell-initiated navigation. Both promise settlement and its
+animation-frame callback check that marker. Rejection recovery also requires a
+connected, non-inert menu target. This only suppresses obsolete focus work; it
+does not cancel router operations, change URLs, grant permissions or alter
+runtime safety policy. Existing safety freshness and emergency-stop semantics
+remain unchanged.
+
+All 57 shell/component lifecycle Chrome controls pass, and the combined
+seventeen-suite frontend reconciliation run passes all 275 tests. Eighteen Node
+focus/landmark controls and the progressive-section/theme/icon contracts pass.
+This is local fixture acceptance, not deployed accessibility or runtime acceptance.
+The separate retained shell stylesheet and large shell test source remain
+unreconciled by this TypeScript review. Originals remain retained until verified
+main preservation and the broader cleanup gate are satisfied.
