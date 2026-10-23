@@ -728,3 +728,34 @@ helpers, local-network cautions and the hard-disabled host-runtime policy.
 All 118 CI source contracts pass; these are not GitHub CI or live Docker tests.
 No model, account, container, certificate or retained source was changed by
 executing this review's tests, and no recovery original is deleted.
+
+## Plan coordination component and template
+
+Read the complete retained component and template and both complete current
+differences. The current implementation already retains their immutable plan
+preview, criteria/constraint deduplication, owner bindings, revision/digest
+acceptance, append-only replan, inspector and per-module disclosure behavior.
+Keep the shared shell's single-main landmark instead of restoring a nested main.
+
+Ten new controls reproduced direct request-construction exceptions, obsolete
+list/detail responses replacing newer selections, overlapping preview submission,
+unbounded reads and callbacks/dispatch after teardown. Construct requests inside
+defer, observe one result, fail empty responses, bound status reads at six seconds
+and writes at thirty seconds. Cancel obsolete reads and pending observation on
+teardown. Block list/selection changes and duplicate preview submission during
+a write; reflect that lock on the visible controls. Keep the exact reviewed
+revision/digest request and existing backend permission boundary unchanged.
+
+Do not claim a failed preview/replan proves nothing was created. Preserve the
+draft and direct the user to refresh before retrying when completion cannot be
+confirmed. This repair does not establish durable idempotency across reloads,
+independent write verification, complete response-schema validation, source
+provenance validation or full diagnostic redaction. Stopping observation does
+not undo a server-side write. The existing HTTP action-chain tests use the real
+frontend service with synthetic HTTP responses, not a live plan database.
+
+All 26 focused checks pass after repair; all ten new cases failed beforehand.
+The combined frontend run covering 28 selected spec files also exits zero.
+Its final output was unavailable, so no combined assertion count is claimed.
+No runtime execution permission, provider setting, account or source original
+was modified. The recovery worktrees and transcript archives remain retained.

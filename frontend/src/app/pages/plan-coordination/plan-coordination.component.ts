@@ -1,7 +1,8 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core'
 import { ActivatedRoute } from '@angular/router'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
+import { defer, finalize, Subject, Subscription, take, takeUntil, throwIfEmpty, timeout } from 'rxjs'
 import {
   IPlanBinding,
   IPlanConstraint,
@@ -33,7 +34,7 @@ interface PreviewForm {
     styleUrls: ['./plan-coordination.component.scss'],
     standalone: false
 })
-export class PlanCoordinationComponent implements OnInit {
+export class PlanCoordinationComponent implements OnInit, OnDestroy {
   readonly moduleId = 'plan-coordination'
 
   loading = true
@@ -48,6 +49,12 @@ export class PlanCoordinationComponent implements OnInit {
   replanConstraints = ''
   replanDeadlineAt = ''
   private requestedPlanId = ''
+  private readonly destroyed$ = new Subject<void>()
+  private destroyed = false
+  private listSubscription?: Subscription
+  private detailSubscription?: Subscription
+  private readonly readTimeoutMs = 6000
+  private readonly writeTimeoutMs = 30000
 
   previewForm: PreviewForm = this.emptyPreviewForm()
 
@@ -62,11 +69,28 @@ export class PlanCoordinationComponent implements OnInit {
     this.refresh()
   }
 
+  ngOnDestroy(): void {
+    this.destroyed = true
+    this.cancelReads()
+    this.destroyed$.next()
+    this.destroyed$.complete()
+  }
+
+  private cancelReads(): void {
+    this.listSubscription?.unsubscribe()
+    this.detailSubscription?.unsubscribe()
+  }
+
   refresh(preserveSelection = true): void {
+    if (this.destroyed || this.saving) return
     const selectedId = preserveSelection ? (this.selectedPlan?.id || this.requestedPlanId) : this.requestedPlanId
+    this.cancelReads()
     this.loading = true
     this.errorMessage = ''
-    this.planService.list().subscribe({
+    this.listSubscription = defer(() => this.planService.list()).pipe(
+      timeout(this.readTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.loading = false),
+    ).subscribe({
       next: (plans) => {
         this.plans = this.sortPlans(plans)
         this.selectedPlan = this.plans.find((plan) => plan.id === selectedId) || this.plans[0]
@@ -81,6 +105,7 @@ export class PlanCoordinationComponent implements OnInit {
   }
 
   createPreview(): void {
+    if (this.destroyed || this.saving) return
     const title = this.previewForm.title.trim()
     const objective = this.previewForm.objective.trim()
     const successCriteria = this.lines(this.previewForm.successCriteria)
@@ -96,8 +121,12 @@ export class PlanCoordinationComponent implements OnInit {
       edges: this.previewEdges(successCriteria.length),
     }
 
+    this.cancelReads()
     this.saving = true
-    this.planService.preview(request).subscribe({
+    defer(() => this.planService.preview(request)).pipe(
+      timeout(this.writeTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.saving = false),
+    ).subscribe({
       next: (plan) => {
         this.saving = false
         this.upsert(plan)
@@ -108,17 +137,22 @@ export class PlanCoordinationComponent implements OnInit {
       },
       error: (error: HttpErrorResponse) => {
         this.saving = false
-        this.notification.error('Preview failed', this.apiError(error, 'The backend could not create a plan preview.'))
+        this.notification.error('Preview failed', this.apiError(error, 'Preview creation could not be confirmed. Your draft is retained; refresh plans before retrying.'))
       },
     })
   }
 
   selectPlan(plan: IPlanGraph, openInspector = false): void {
+    if (this.destroyed || this.saving) return
+    this.cancelReads()
     this.selectedPlan = plan
     this.replanOpen = false
     if (openInspector) this.inspectorOpen = true
     this.detailLoading = true
-    this.planService.get(plan.id).subscribe({
+    this.detailSubscription = defer(() => this.planService.get(plan.id)).pipe(
+      timeout(this.readTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.detailLoading = false),
+    ).subscribe({
       next: (detail) => {
         this.detailLoading = false
         this.selectedPlan = detail
@@ -143,12 +177,16 @@ export class PlanCoordinationComponent implements OnInit {
 
   acceptSelected(): void {
     const plan = this.selectedPlan
-    if (!plan || !this.canAccept(plan) || this.saving) return
+    if (this.destroyed || !plan || !this.canAccept(plan) || this.saving) return
+    this.cancelReads()
     this.saving = true
-    this.planService.accept(plan.id, {
+    defer(() => this.planService.accept(plan.id, {
       expectedRevision: plan.revision,
       expectedDigest: plan.planDigest,
-    }).subscribe({
+    })).pipe(
+      timeout(this.writeTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.saving = false),
+    ).subscribe({
       next: (accepted) => {
         this.saving = false
         this.selectedPlan = accepted
@@ -163,6 +201,7 @@ export class PlanCoordinationComponent implements OnInit {
   }
 
   beginReplan(): void {
+    if (this.destroyed || this.saving) return
     this.replanOpen = true
     this.replanReason = ''
     this.replanConstraints = ''
@@ -170,20 +209,23 @@ export class PlanCoordinationComponent implements OnInit {
   }
 
   cancelReplan(): void {
+    if (this.destroyed || this.saving) return
     this.replanOpen = false
     this.replanReason = ''
     this.replanConstraints = ''
   }
 
   replanSelected(): void {
+    if (this.destroyed || this.saving) return
     const plan = this.selectedPlan
     const reason = this.replanReason.trim()
     if (!plan || !reason || this.saving) {
       if (!reason) this.notification.error('Reason required', 'Explain what changed so the repair remains auditable.')
       return
     }
+    this.cancelReads()
     this.saving = true
-    this.planService.replan(plan.id, {
+    defer(() => this.planService.replan(plan.id, {
       expectedRevision: plan.revision,
       expectedDigest: plan.planDigest,
       idempotencyKey: this.idempotencyKey('replan'),
@@ -198,7 +240,10 @@ export class PlanCoordinationComponent implements OnInit {
       })),
       reason,
       trigger: 'owner_requested',
-    }).subscribe({
+    })).pipe(
+      timeout(this.writeTimeoutMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      finalize(() => this.saving = false),
+    ).subscribe({
       next: (replanned) => {
         this.saving = false
         this.replanOpen = false
@@ -208,7 +253,7 @@ export class PlanCoordinationComponent implements OnInit {
       },
       error: (error: HttpErrorResponse) => {
         this.saving = false
-        this.notification.error('Replan failed', this.apiError(error, 'The current plan remains unchanged.'))
+        this.notification.error('Replan failed', this.apiError(error, 'Replanning could not be confirmed. Refresh before retrying; a new revision may already exist.'))
       },
     })
   }
