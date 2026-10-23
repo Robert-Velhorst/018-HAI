@@ -624,7 +624,16 @@ export class BrainCatalogComponent implements OnInit {
     this.langfuseService.probe().subscribe({
       next: (result) => {
         this.probingLangfuse = false
+        if (!result || typeof result.healthy !== 'boolean' || typeof result.ready !== 'boolean' ||
+            !this.isRecordedTimestamp(result.checkedAt)) {
+          this.notification.error('Langfuse readiness unconfirmed', 'HAI received no valid dated readiness evidence. No trace was exported.')
+          return
+        }
         this.langfuseProbe = result
+        if (!result.healthy || !result.ready) {
+          this.notification.error('Langfuse not ready', 'The local bridge reported an unhealthy or not-ready endpoint. No trace was exported.')
+          return
+        }
         this.notification.success('Langfuse ready', 'HAI verified the configured local health and readiness endpoints. No trace was exported.')
       },
       error: () => {
@@ -641,12 +650,16 @@ export class BrainCatalogComponent implements OnInit {
     this.langfuseService.exportOperationalSnapshot().subscribe({
       next: (result) => {
         this.exportingLangfuse = false
+        if (!this.isExportAcknowledgement(result)) {
+          this.reportUnconfirmedExport()
+          return
+        }
         this.langfuseExport = result
         this.notification.success('Aggregate trace exported', "Langfuse accepted HAI's fixed aggregate operational snapshot. No prompts, sources, or workflow records were exported.")
       },
       error: () => {
         this.exportingLangfuse = false
-        this.notification.error('Trace export unavailable', 'Langfuse did not accept the aggregate operational snapshot. No HAI workflow or policy state changed.')
+        this.reportUnconfirmedExport()
       },
     })
   }
@@ -658,6 +671,10 @@ export class BrainCatalogComponent implements OnInit {
     this.openLITService.exportOperationalSnapshot().subscribe({
       next: (result) => {
         this.exportingOpenLIT = false
+        if (!this.isExportAcknowledgement(result)) {
+          this.reportUnconfirmedExport()
+          return
+        }
         this.openLITExport = result
         this.notification.success(
           'Aggregate trace exported',
@@ -666,16 +683,29 @@ export class BrainCatalogComponent implements OnInit {
       },
       error: () => {
         this.exportingOpenLIT = false
-        this.notification.error(
-          'Trace export unavailable',
-          'OpenLIT did not accept the aggregate operational snapshot. No HAI workflow or policy state changed.'
-        )
+        this.reportUnconfirmedExport()
       },
     })
   }
 
   openMCPToolboxRuntimeLab(): void {
     this.router.navigate(['/runtime-lab'])
+  }
+
+  private isRecordedTimestamp(value: unknown): value is string {
+    return typeof value === 'string' && value.includes('T') && Number.isFinite(Date.parse(value))
+  }
+
+  private isExportAcknowledgement(value: unknown): value is ILangfuseExportResult {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+    const result = value as Partial<ILangfuseExportResult>
+    return typeof result.traceId === 'string' && /^[a-f0-9]{32}$/i.test(result.traceId) && !/^0+$/.test(result.traceId) &&
+      typeof result.spanId === 'string' && /^[a-f0-9]{16}$/i.test(result.spanId) && !/^0+$/.test(result.spanId) &&
+      this.isRecordedTimestamp(result.exportedAt) && typeof result.scope === 'string' && result.scope.trim().length > 0
+  }
+
+  private reportUnconfirmedExport(): void {
+    this.notification.error('Trace export outcome unconfirmed', 'The aggregate snapshot may have been accepted. Inspect the provider trace records before exporting again.')
   }
 
   prepareFrameworkMigration(input: string): void {
@@ -691,7 +721,9 @@ export class BrainCatalogComponent implements OnInit {
       return
     }
     if (
+      !parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
       typeof parsed.workloadId !== 'string' ||
+      !parsed.workloadId.trim() ||
       !Array.isArray(parsed.events) ||
       parsed.events.length < 1 ||
       parsed.events.length > 100

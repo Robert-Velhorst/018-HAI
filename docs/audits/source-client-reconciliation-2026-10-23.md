@@ -1122,3 +1122,42 @@ cases across 38 frontend specification files pass in Chrome Headless. The five
 removed duplicate callbacks are not counted as unique coverage. This run keeps
 the earlier 888-case selection and adds the 84 catalog/task cases; it is still a
 bounded selection rather than a full frontend or deployed acceptance claim.
+
+## Capability catalog implementation reconciliation
+
+Read the complete retained component implementation and its full current delta.
+Keep current eager change detection and the corrected collection-section event
+handler, deferred profile/skill/history reads, explicit probe/export commands,
+transient migration mapping and manual pursuit review instead of installation.
+Retain candidate/held distinctions, capped discovery display, scoped metadata
+revalidation and review history; none establishes live upstream capability.
+
+Five new regression cases fail before repair. The component announced Langfuse
+readiness even for false health/readiness flags, accepted malformed/undated
+probe evidence, announced export on incomplete trace acknowledgements and threw
+on a valid JSON `null` migration sample. Require dated boolean probe evidence;
+a well-shaped negative result remains inspectable but is not called ready.
+Require nonzero hexadecimal trace/span identities, a recorded timestamp and a
+nonempty scope before showing an export receipt. Langfuse and OpenLIT share
+that same narrow acknowledgement check.
+
+A transport error cannot prove that an export was rejected. Both export error
+paths now state that the snapshot may have been accepted and direct the
+operator to inspect trace records before another export. No automatic retry is
+introduced. Reject null, primitive/array roots and blank workload IDs before
+dispatching a transient migration request. Existing valid Langfuse proof stays
+covered; added controls retain valid OpenLIT acknowledgements, one-shot lost
+export response handling and valid transient migration mapping.
+
+The initial 31 catalog cases pass after repair. The later combined run includes
+three additional positive/transport controls. These are component/service-double
+observations, not actual provider receipts or proof of remote acceptance.
+Known follow-up remains: this catalog does not yet uniformly bound/cancel every
+request or fully validate every nested response; obsolete profile observations
+also need a separate lifecycle review. This source reconciliation must not be
+presented as complete catalog safety hardening. The retained source is intact
+and no cleanup eligibility follows until the broader preservation gates pass.
+
+The final combined selection passes all 980 cases across the same 38 frontend
+specification files, including all 34 catalog cases. No live telemetry endpoint,
+external account, package installation or deployed dashboard was exercised.

@@ -471,4 +471,95 @@ describe('BrainCatalogComponent adapter reviews', () => {
     expect(catalogService.collectionRevalidationHistory).toHaveBeenCalledTimes(1)
     expect(catalogService.repositoryDiscoveryRevalidationHistory).toHaveBeenCalledTimes(1)
   })
+
+  it('does not call Langfuse ready when either readiness flag is false', () => {
+    for (const flags of [{ healthy: false, ready: false }, { healthy: true, ready: false }, { healthy: false, ready: true }]) {
+      const { component, langfuseService, notification } = createComponent()
+      langfuseService.probe.and.returnValue(of({ ...flags, checkedAt: '2026-10-23T12:00:00Z', scope: 'health only' }))
+      component.probeLangfuse()
+      expect(component.probingLangfuse).toBeFalse()
+      expect(notification.success).not.toHaveBeenCalled()
+      expect(notification.error).toHaveBeenCalled()
+    }
+  })
+
+  it('does not announce readiness from malformed or undated probe evidence', () => {
+    for (const result of [null, {}, { healthy: 'true', ready: true, checkedAt: '2026-10-23T12:00:00Z' }, { healthy: true, ready: true, checkedAt: 'invalid' }]) {
+      const { component, langfuseService, notification } = createComponent()
+      langfuseService.probe.and.returnValue(of(result))
+      expect(() => component.probeLangfuse()).not.toThrow()
+      expect(component.langfuseProbe).toBeUndefined()
+      expect(notification.success).not.toHaveBeenCalled()
+      expect(notification.error).toHaveBeenCalled()
+    }
+  })
+
+  it('requires a complete Langfuse trace acknowledgement before claiming export', () => {
+    const valid = { traceId: 'a'.repeat(32), spanId: 'b'.repeat(16), exportedAt: '2026-10-23T12:00:00Z', scope: 'aggregate-only' }
+    for (const result of [null, {}, { ...valid, exportedAt: 'invalid' }, { ...valid, traceId: '0'.repeat(32) }, { ...valid, spanId: '0'.repeat(16) }, { ...valid, scope: '' }]) {
+      const { component, langfuseService, notification } = createComponent()
+      langfuseService.exportOperationalSnapshot.and.returnValue(of(result))
+      component.exportLangfuseSnapshot()
+      expect(component.exportingLangfuse).toBeFalse()
+      expect(component.langfuseExport).toBeUndefined()
+      expect(notification.success).not.toHaveBeenCalled()
+      expect(notification.error).toHaveBeenCalledWith('Trace export outcome unconfirmed', jasmine.stringMatching(/may have been accepted/))
+    }
+  })
+
+  it('applies the same acknowledgement boundary to OpenLIT exports', () => {
+    const { component, notification } = createComponent()
+    const service = (component as any).openLITService
+    service.exportOperationalSnapshot = jasmine.createSpy('export').and.returnValue(of({}))
+    component.exportOpenLITSnapshot()
+    expect(component.exportingOpenLIT).toBeFalse()
+    expect(component.openLITExport).toBeUndefined()
+    expect(notification.success).not.toHaveBeenCalled()
+    expect(notification.error).toHaveBeenCalledWith('Trace export outcome unconfirmed', jasmine.stringMatching(/may have been accepted/))
+  })
+
+  it('rejects null and non-object migration samples without throwing or dispatching', () => {
+    for (const sample of ['null', 'false', '1', '[]', '"text"', '{"workloadId":"  ","events":[{}]}']) {
+      const { component, notification } = createComponent()
+      const migration = jasmine.createSpy('migration')
+      ;(component as any).autoGenCompatibilityService.microsoftAgentFrameworkMigrationPlan = migration
+      expect(() => component.prepareFrameworkMigration(sample)).not.toThrow()
+      expect(migration).not.toHaveBeenCalled()
+      expect(component.planningFrameworkMigration).toBeFalse()
+      expect(notification.error).toHaveBeenCalled()
+    }
+  })
+
+  it('retains a valid OpenLIT acknowledgement without requiring installation or runtime execution', () => {
+    const { component, notification } = createComponent()
+    const result = { traceId: 'c'.repeat(32), spanId: 'd'.repeat(16), exportedAt: '2026-10-23T12:00:00Z', scope: 'aggregate-only' }
+    ;(component as any).openLITService.exportOperationalSnapshot = jasmine.createSpy('export').and.returnValue(of(result))
+    component.exportOpenLITSnapshot()
+    expect(component.openLITExport).toBe(result)
+    expect(notification.success).toHaveBeenCalled()
+    expect(notification.error).not.toHaveBeenCalled()
+  })
+
+  it('does not infer rejection from a lost export response or retry automatically', () => {
+    const { component, langfuseService, notification } = createComponent()
+    langfuseService.exportOperationalSnapshot.and.returnValue(throwError(() => new Error('PRIVATE_TRANSPORT_DETAIL')))
+    component.exportLangfuseSnapshot()
+    expect(langfuseService.exportOperationalSnapshot).toHaveBeenCalledTimes(1)
+    expect(notification.error).toHaveBeenCalledWith('Trace export outcome unconfirmed', jasmine.stringMatching(/may have been accepted/))
+    expect(notification.success).not.toHaveBeenCalled()
+    expect(JSON.stringify(notification.error.calls.allArgs())).not.toContain('PRIVATE_TRANSPORT_DETAIL')
+  })
+
+  it('continues to prepare a valid transient migration map without activating a runtime', () => {
+    const { component, notification } = createComponent()
+    const sample = { workloadId: 'synthetic-workload', events: [{ id: 'synthetic-event', type: 'handoff', agent: 'triage', summary: 'Prepare a review.' }] }
+    const result = { workloadId: sample.workloadId, scope: 'transient control map' }
+    const migration = jasmine.createSpy('migration').and.returnValue(of(result))
+    ;(component as any).autoGenCompatibilityService.microsoftAgentFrameworkMigrationPlan = migration
+    component.prepareFrameworkMigration(JSON.stringify(sample))
+    expect(migration).toHaveBeenCalledOnceWith(sample.workloadId, sample.events)
+    expect(component.frameworkMigrationPlan).toBe(result as any)
+    expect(component.planningFrameworkMigration).toBeFalse()
+    expect(notification.success).toHaveBeenCalledWith('Migration plan prepared', jasmine.stringMatching(/not installed or started/))
+  })
 })
