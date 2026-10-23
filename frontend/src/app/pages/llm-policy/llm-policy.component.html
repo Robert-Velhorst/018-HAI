@@ -512,7 +512,7 @@
             </div>
             <div title="Provider input and output tokens">
               <span>Tokens</span>
-              <strong>{{ formatNumber(totalTokens(provider)) }}</strong>
+              <strong>{{ provider.usageAccountingStatus === 'unavailable' ? 'Unavailable' : formatNumber(totalTokens(provider)) }}</strong>
             </div>
             <div title="Enabled models available from this provider">
               <span>Models</span>

@@ -143,4 +143,22 @@ describe('LLMPolicyComponent accessible tier selection', () => {
     budget.focus();
     expect(document.activeElement).toBe(budget);
   });
+
+  it('marks failed accounting unavailable in the visible provider counters and accessible budget detail', () => {
+    fixture.componentInstance.policy!.providers[0].usageAccountingStatus = 'unavailable';
+    preferences.setMode('llm-policy', 'advanced');
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    const disclosure = page.querySelector(
+      'hai-progressive-section[sectionid="provider-inventory"] .hai-progressive-section__summary',
+    ) as HTMLButtonElement;
+    disclosure.click();
+    fixture.detectChanges();
+    const budget = page.querySelector('.provider-stats [role="group"]') as HTMLElement;
+    expect(budget.textContent).toContain('Usage unavailable / max EUR 2');
+    expect(budget.getAttribute('aria-label')).toContain('Input tokens: unavailable');
+    expect(budget.getAttribute('title')).toContain('Daily max: EUR 2');
+    expect(page.querySelector('.provider-stats > div:nth-child(3) strong')?.textContent).toContain('Unavailable');
+    expect(page.querySelector('.provider-card .usage-meter')).toBeNull();
+  });
 });

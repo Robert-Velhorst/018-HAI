@@ -181,3 +181,38 @@ live owner-account approval or deployed runtime acceptance. The retained skills
 component test file and backend catalog are not declared fully reconciled by
 this narrower file review. Original worktrees and transcript archives remain
 retained pending main-preservation verification.
+
+## LLM policy presentation follow-up
+
+Read the retained LLM policy component, template, stylesheet, component tests
+and accessibility tests in full and reviewed all current differences. Preserve
+the seven-tier catalog, per-module disclosure, budget/token context, audit/error
+distinctions and cancelled/in-progress maintenance warnings. Keep the newer
+cloud-catalog versus health-only maintenance wording, explicit change detection,
+shared main landmark, responsive status grid and keyboard-focusable budget
+information group instead of the old no-op budget button. No stylesheet is
+replaced and no provider settings are changed.
+
+Four negative controls failed before correction. Failed accounting was still
+formatted as numeric spend/token totals in provider and policy tooltips, and an
+invalid or future live-probe timestamp could pass the displayed strict freshness
+check. Unavailable accounting now remains explicitly unavailable in budget,
+token and accessible-detail text while retaining the configured budget ceiling.
+Known durable zero remains zero. The provider token counter also reflects the
+unavailable state; the existing unknown-usage meter suppression remains intact.
+
+The displayed strict-readiness classification now treats invalid or future
+timestamps as unverified relative to this device clock. A valid probe at exactly
+the configured age boundary remains accepted by the display. This does not
+change the backend routing/admission policy or initiate a probe.
+
+All 21 focused LLM component/accessibility tests pass, including rendered
+provider counters, accessible budget details, tier selection, positive zero and
+age-boundary controls. These are local report fixtures, not actual billing,
+live provider freshness, full-screen-reader or deployed runtime acceptance.
+The separate LLM service and backend implementation still need their own
+reconciliation; this review does not declare the whole module operationally
+accepted. Original recovery files remain retained until main preservation is
+verified.
+The combined fourteen-suite frontend run passes all 211 tests; progressive
+section, split-theme and icon-registry checks also pass with this change set.
