@@ -271,6 +271,51 @@ func TestGormRepositoryExpiryAndUncertainLeaseTransitions(t *testing.T) {
 		t.Fatalf("verified termination acknowledgment = %#v, %v", cancelled, err)
 	}
 
+	for _, operation := range []string{"begin", "replay", "ack"} {
+		t.Run("missing_lease_expiry/"+operation, func(t *testing.T) {
+			job := newJob("missing-expiry-"+operation, now.Add(time.Hour), now)
+			create(job)
+			digest := digestToken("missing-expiry-" + operation)
+			lease, err := repository.Lease("worker-null-expiry", job.RuntimeID, now, now.Add(time.Minute), digest, 0)
+			if err != nil || lease == nil {
+				t.Fatalf("lease missing-expiry fixture: %v", err)
+			}
+			if err := repository.ConfirmLeaseContext(context.Background(), "worker-null-expiry", job.ID, digest, now, 0); err != nil {
+				t.Fatal(err)
+			}
+			binding := StartIntentBinding{IntentID: uuid.New(), ApprovalDigest: lease.ApprovalDigest, StopRevision: 0}
+			gate := StartGate{Available: true, CurrentRevision: 0}
+			if operation != "begin" {
+				if _, err := repository.BeginStartIntent(context.Background(), "worker-null-expiry", job.ID, digest, binding, gate, now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := db.Model(&Job{}).Where("id = ?", job.ID).Update("lease_expires", nil).Error; err != nil {
+				t.Fatal(err)
+			}
+			if operation == "ack" {
+				err = repository.AcknowledgeActualStart(context.Background(), "worker-null-expiry", job.ID, digest, binding, gate, now)
+			} else {
+				var intent *StartIntent
+				intent, err = repository.BeginStartIntent(context.Background(), "worker-null-expiry", job.ID, digest, binding, gate, now)
+				if intent != nil {
+					t.Fatal("missing lease expiry returned a start intent")
+				}
+			}
+			wantErr := ErrStartOutcomeReview
+			if operation == "begin" {
+				wantErr = ErrStaleLease
+			}
+			if !errors.Is(err, wantErr) {
+				t.Fatalf("missing lease expiry returned %v, want %v", err, wantErr)
+			}
+			stored := load(job.ID)
+			if stored.Status != StatusNeedsReview || stored.LeaseDigest != "" || stored.ActualStartAckAt != nil || stored.LeaseExpires != nil {
+				t.Fatal("missing lease expiry did not quarantine the job without start acknowledgement")
+			}
+		})
+	}
+
 	confirmEdge := newJob("confirmation-after-approval-expiry", now.Add(7*time.Minute), now)
 	create(confirmEdge)
 	confirmLease, err := repository.Lease("worker-confirm-edge", confirmEdge.RuntimeID, now.Add(6*time.Minute), now.Add(16*time.Minute), "digest-confirm-edge", 0)
