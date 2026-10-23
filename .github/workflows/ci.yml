@@ -972,6 +972,13 @@ jobs:
           for test_case in legacy_exact legacy_similar owner_exact owner_similar; do
             grep -q -- "^[[:space:]]*--- PASS: TestPostgresMemoryDedupPreservesDistinctSources/${test_case} (" "$memory_provenance_log"
           done
+          maintenance_projection_log="$RUNNER_TEMP/maintenance-overview-postgres.log"
+          TEST_OPENCLAW_MAINTENANCE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
+            -run '^(TestOverviewReadyCompanionHasNoBlockingReason|TestOverviewMissingPublisherBlocksEvenWithContainment)$' \
+            ./internal/openclawmaintenance/ -v | tee "$maintenance_projection_log"
+          for test_name in TestOverviewReadyCompanionHasNoBlockingReason TestOverviewMissingPublisherBlocksEvenWithContainment; do
+            grep -q -- "^--- PASS: ${test_name} (" "$maintenance_projection_log"
+          done
           memory_lesson_log="$RUNNER_TEMP/memory-source-lessons-postgres.log"
           memory_lesson_tests=(
             TestPostgresManualCorrectionAuditBindsRevisionAndMemoryLockFollowsEvidenceLocks
