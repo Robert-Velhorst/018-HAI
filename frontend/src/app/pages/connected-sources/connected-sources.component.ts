@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, OnDestro
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
-import { forkJoin, Observable, of, Subscription, timer } from 'rxjs';
-import { catchError, finalize, switchMap, tap, timeout } from 'rxjs/operators';
+import { defer, forkJoin, Observable, of, Subscription, timer } from 'rxjs';
+import { catchError, finalize, switchMap, take, tap, throwIfEmpty, timeout } from 'rxjs/operators';
 import {
   IConnectedSource,
   ISourceAuditLog,
@@ -182,6 +182,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   private extractionSubscription?: Subscription;
   private auditSubscription?: Subscription;
   private syncHistorySubscription?: Subscription;
+  private destructiveSubscription?: Subscription;
   private searchSubscription?: Subscription;
   private graphSubscription?: Subscription;
   private themeSubscription?: Subscription;
@@ -332,6 +333,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
     this.extractionSubscription?.unsubscribe();
     this.auditSubscription?.unsubscribe();
     this.syncHistorySubscription?.unsubscribe();
+    this.destructiveSubscription?.unsubscribe();
     this.searchSubscription?.unsubscribe();
     this.graphSubscription?.unsubscribe();
     this.themeSubscription?.unsubscribe();
@@ -2439,7 +2441,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   }
 
   private openDestructiveApproval(action: 'revoke' | 'delete', id: string, label: string): void {
-    if (this.destructiveSubmitting) return;
+    if (this.destroyed || this.destructiveSubmitting) return;
     this.destructiveTarget = { action, id, label: this.safeOperationalText(label) };
     this.destructiveApprovalForm.reset();
     this.destructiveError = this.uncertainDestructiveActions.has(`${action}:${id}`)
@@ -2448,7 +2450,7 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
   }
 
   destructiveCanSubmit(): boolean {
-    return Boolean(this.destructiveTarget) && this.destructiveApprovalForm.valid && !this.destructiveSubmitting
+    return !this.destroyed && Boolean(this.destructiveTarget) && this.destructiveApprovalForm.valid && !this.destructiveSubmitting
       && !this.uncertainDestructiveActions.has(`${this.destructiveTarget?.action}:${this.destructiveTarget?.id}`);
   }
 
@@ -2468,13 +2470,15 @@ export class ConnectedSourcesComponent implements OnInit, OnDestroy {
     if (!this.destructiveCanSubmit()) return;
     const target = this.destructiveTarget!;
     const authorization = this.destructiveApprovalForm.value as ISourceDestructiveAuthorization;
-    const request: Observable<unknown> = target.action === 'revoke'
+    const request: Observable<unknown> = defer(() => target.action === 'revoke'
       ? this.sourceService.revoke(target.id, authorization)
-      : this.sourceService.deleteExtraction(target.id, authorization);
+      : this.sourceService.deleteExtraction(target.id, authorization));
     this.destructiveSubmitting = true;
     this.destructiveError = '';
-    request.pipe(
+    this.destructiveSubscription = request.pipe(
       timeout(this.operationTimeoutMs),
+      take(1),
+      throwIfEmpty(() => new Error('Destructive outcome unconfirmed')),
       tap((result) => {
         if (target.action === 'revoke' && (!(result as IConnectedSource)?.id
           || (result as IConnectedSource).id !== target.id || !this.sourceIsRevoked(result as IConnectedSource))) {
