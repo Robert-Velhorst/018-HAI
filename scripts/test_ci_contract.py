@@ -133,6 +133,16 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_trello_live_contract_is_compiled_without_live_credentials(self) -> None:
+        backend = job_block("backend")
+        self.assertIn(
+            "go test -count=1 -tags live -run '^TestTrelloLiveAcceptanceProviderBoundary$' ./internal/source",
+            backend,
+        )
+        self.assertIn("./scripts/test-live-trello-launcher.ps1", backend)
+        self.assertIn("./scripts/test-live-trello-launcher-execution.ps1", backend)
+        self.assertNotIn("-run '^TestLiveTrello'", backend)
+
     def test_compose_job_checks_effective_docker_build_contexts(self) -> None:
         compose = job_block("compose")
         self.assertIn(

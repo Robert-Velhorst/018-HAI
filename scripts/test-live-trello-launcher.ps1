@@ -23,6 +23,8 @@ $launcher = [IO.File]::ReadAllText($launcherPath)
 foreach ($required in @(
     'TRELLO_API_KEY',
     'TRELLO_READ_TOKEN',
+    'TRELLO_ACCOUNT_OWNER_IDENTITY',
+    'TRELLO_ACCOUNT_MEMBER_ID',
     'TRELLO_LIVE_BOARD',
     ':/workspace:ro',
     'finally',

@@ -324,6 +324,15 @@ jobs:
           cache-dependency-path: backend/go.sum
       - run: go vet ./...
       - run: go test ./...
+      - name: Compile Trello live acceptance without contacting a provider
+        run: go test -count=1 -tags live -run '^TestTrelloLiveAcceptanceProviderBoundary$' ./internal/source
+      - name: Trello acceptance launcher contract
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/test-live-trello-launcher.ps1
+          ./scripts/test-live-trello-launcher-execution.ps1
       - name: Execution-boundary race tests
         # Keep concurrency coverage limited to stateful boundary packages. This
         # catches duplicate lease, approval, model-refresh, source-sync, and
