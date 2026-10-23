@@ -216,3 +216,24 @@ accepted. Original recovery files remain retained until main preservation is
 verified.
 The combined fourteen-suite frontend run passes all 211 tests; progressive
 section, split-theme and icon-registry checks also pass with this change set.
+
+## Shared global stylesheet reconciliation
+
+Read the retained global stylesheet and its complete current diff. Preserve
+the newer light/dark purple tokens, dark native heading contrast, descendant
+notification-pane matching and notification hit-testing fallback. Do not restore
+the older direct-child-only overlay selector: a nested notification container
+must not prevent an underlying operational action from receiving input.
+Keep the explicit notification close control interactive and unrelated dialog
+panes unaffected. Diagnostics modal surfaces continue to use the active theme.
+No production stylesheet replacement is needed.
+
+Seven Chrome Headless regressions exercise computed theme/heading/modal styles,
+actual browser element hit-testing through direct and nested notification panes,
+the close control and an unrelated interactive overlay. All seven pass against
+the application global stylesheet loaded by the Angular test builder. These are
+synthetic DOM fixtures, not a whole-app visual review, real notification-service
+integration, keyboard/screen-reader acceptance or deployed browser acceptance.
+The original stylesheet remains retained pending main-preservation verification.
+The combined fifteen-suite reconciliation run passes all 218 tests; the
+progressive-section, split-theme and icon-registry contracts also pass.
