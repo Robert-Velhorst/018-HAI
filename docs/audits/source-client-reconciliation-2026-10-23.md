@@ -462,3 +462,31 @@ the two empty/disabled-target controls failed before the template correction.
 
 Original recovery copies remain retained. Local fixture checks do not establish
 live scheduler, model-provider, persisted profile or deployed visual acceptance.
+
+## Ambient component and retained test reconciliation
+
+The separate retained component and test source have now also been read in
+full, including their complete current differences. Preserve current teardown,
+first-response deadlines, validated telemetry ratios and guard case totals,
+scan identity/count/time validation, conflict guards, source-bound proposal
+receipts, profile draft preservation and shared safe external-link handling.
+Keep all nine retained test scenarios with their stronger current expectations.
+In particular, do not restore incomplete scan fixtures, raw error-body display
+or a success notification that implies a proposal is executed work.
+
+Seven additional controls reproduced synchronous service-construction exceptions
+escaping before subscription and leaving operation flags set: overview,
+telemetry, guard suite, scan, profile update and both proposal decisions. Wrap
+the existing factories in RxJS defer so these failures reach existing static
+error handling, refresh gates and finalizers. No retry, new endpoint, policy
+change or server-side execution authority is introduced.
+
+All 19 focused Chrome Headless checks pass after correction, including all
+seven controls that failed beforehand. Profile drafts remain available;
+uncertain decisions still require refresh. These are service-factory fault
+injections, not proof of a reproduced failure against a live provider. The
+profile error path still permits deliberate review/retry of its idempotent
+field update; cross-client durability and complete nested payload validation
+are not established by this review. Canceling a subscription is not server
+rollback. Originals and archives remain retained pending verified main
+preservation and the wider cleanup requirements.

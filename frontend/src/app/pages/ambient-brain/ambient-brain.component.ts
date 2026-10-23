@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
-import { finalize, Subscription, take, timeout } from 'rxjs';
+import { defer, finalize, Subscription, take, timeout } from 'rxjs';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import {
   IAmbientNeed,
@@ -81,7 +81,7 @@ export class AmbientBrainComponent implements OnInit, OnDestroy {
     this.autonomySub?.unsubscribe();
     this.autonomyLoading = true;
     let received = false;
-    this.autonomySub = this.autonomy.overview().pipe(take(1), timeout(this.operationTimeoutMs),
+    this.autonomySub = defer(() => this.autonomy.overview()).pipe(take(1), timeout(this.operationTimeoutMs),
       finalize(() => { this.autonomyLoading = false; }),
     ).subscribe({
       next: (overview) => {
@@ -143,7 +143,7 @@ export class AmbientBrainComponent implements OnInit, OnDestroy {
     if (this.destroyed || this.stressTesting) return;
     this.stressTesting = true;
     let received = false;
-    this.stressSub = this.autonomy.runStressSuite().pipe(take(1), timeout(this.operationTimeoutMs),
+    this.stressSub = defer(() => this.autonomy.runStressSuite()).pipe(take(1), timeout(this.operationTimeoutMs),
       finalize(() => { this.stressTesting = false; }),
     ).subscribe({
       next: (result) => {
@@ -324,7 +324,7 @@ export class AmbientBrainComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.errorMessage = '';
     let received = false;
-    this.overviewSub = this.ambient.overview().pipe(
+    this.overviewSub = defer(() => this.ambient.overview()).pipe(
       take(1), timeout(this.operationTimeoutMs), finalize(() => { this.loading = false; }),
     ).subscribe({
       next: (overview) => {
@@ -396,7 +396,7 @@ export class AmbientBrainComponent implements OnInit, OnDestroy {
     if (this.lastAcknowledgedScanId) knownIds.add(this.lastAcknowledgedScanId);
     this.scanning = true;
     let received = false;
-    this.scanSub = this.ambient.scan().pipe(take(1), timeout(this.operationTimeoutMs),
+    this.scanSub = defer(() => this.ambient.scan()).pipe(take(1), timeout(this.operationTimeoutMs),
       finalize(() => { this.scanning = false; }),
     ).subscribe({
       next: (scan) => {
@@ -458,7 +458,7 @@ export class AmbientBrainComponent implements OnInit, OnDestroy {
     const overview = this.overview;
     this.savingNeed = need.key;
     let received = false;
-    this.needSaveSub = this.ambient.updateNeed(need.key, request).pipe(
+    this.needSaveSub = defer(() => this.ambient.updateNeed(need.key, request)).pipe(
       take(1), timeout(this.operationTimeoutMs), finalize(() => { this.savingNeed = ''; }),
     ).subscribe({
         next: (savedNeed) => {
@@ -559,9 +559,9 @@ export class AmbientBrainComponent implements OnInit, OnDestroy {
     }
     const inspector = this.selectedOpportunity;
     this.resolving = current.id;
-    const request = accept
+    const request = defer(() => accept
       ? this.ambient.accept(current.id)
-      : this.ambient.dismiss(current.id);
+      : this.ambient.dismiss(current.id));
     let received = false;
     this.decisionSub = request.pipe(take(1), timeout(this.operationTimeoutMs),
       finalize(() => { this.resolving = ''; }),
