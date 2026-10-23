@@ -1,6 +1,7 @@
 # HAI backend stable Go dependency refresh - 23 October 2026
 
-Base main: `b4f4bc91206eb58be4d6f412c0829c498c9f4889`.
+Reconciled main: `3b5afa697ebb0e72b01d59e3a04648a04317cd45` (#330,
+squash-merged with explicit user approval). This draft now targets main.
 
 Updates Gin 1.12.0, pgx 5.11.0, Prometheus client 1.25.0, Redis client
 9.23.0, Temporal API 1.64.0, Temporal SDK 1.50.0, and GORM PostgreSQL
@@ -13,7 +14,9 @@ refreshes the imported production and test dependency graph as well. Every
 explicit direct and indirect go.mod declaration matches current proxy metadata
 after tidy. The complete selected graph still contains 44 version differences
 across 210 module records; none is an explicit go.mod declaration. Reachability
-of those dependency metadata/test/tool requirements remains to be classified.
+of those differences was classified for Linux amd64 with CGO enabled: none
+is loaded among 1,249 production/test packages and their 86 external modules.
+Other platform and build-tag profiles remain unqualified.
 This does not establish that every transitive module, native library, database
 or deployed image is current.
 
@@ -26,12 +29,14 @@ or deployed image is current.
 - `go get` for the seven exact versions, then `go get -u -t ./...`, `go mod
   tidy`, `go mod verify`, and complete selected-module graph enumeration
   succeeded. Both intermediate and broad outputs passed checksum verification.
-- Compilation, unit/race tests, migration compatibility and vulnerability
-  checking remain subject to the existing hosted CI. No local test execution
-  or live provider calls were performed for this dependency refresh.
-- This draft depends on the Node/Angular/Promptfoo draft #330 and uses its branch
-  as the review base. Its code is included in the combined validation head;
-  neither draft has been merged into main.
+- Hosted run 40024776545 at e0f32e543719e8b5f52bb0babce823c37daaeffb
+  passed all 36 CI jobs, including backend vet, full unit suite, race checks,
+  build, govulncheck, disposable PostgreSQL migrations and browser acceptance.
+  These results apply to that preceding head; fresh checks on the reconciled
+  main base are required. No live provider calls were performed.
+- Node/Angular/Promptfoo #330 is merged. This Go draft remains unmerged and
+  requires separate approval. Main-branch default security checks also need
+  fresh qualification now that the review base is main.
 - Deployment target remains Hetzner; no deployment or operator migration.
 
 ## pgx URI compatibility
