@@ -9,6 +9,18 @@ file.
 
 ## Implemented Layout
 
+The tree below is illustrative, not an exhaustive inventory. The shipped
+embedded catalog currently contains these phase heads:
+
+| Phase | Migration pairs | Latest shipped version |
+| --- | --- | --- |
+| pre | 133 | `pre/0133_account_feed_autoposter_source_type` |
+| post | 7 | `post/0007_durable_jobs_queue_lease_index` |
+
+`TestMigrationDocumentationTracksEmbeddedHeads` checks this snapshot against
+the actual embedded files. Adding a migration requires reviewing this table;
+the directory ordering/pairing contract remains independently enforced.
+
 ```text
 backend/migrations/
   embed.go
@@ -99,6 +111,16 @@ check the applicable phase(s). A missing digest or mismatch stops the operation.
 Do not edit shipped SQL to resolve a mismatch: restore the reviewed source or
 add a new numbered migration.
 
+There is one narrowly pinned compatibility exception for
+`pre/0128_account_feed_sync_cursor`: its original recorded checksum may accompany
+only the exact reviewed rollback-safety repair, in the explicitly pinned LF or
+CRLF checkout encoding. The original up script is unchanged. A different up or
+down script, empty scripts, mixed encodings or another version cannot use that
+historical checksum. The runner does not rewrite the ledger or normalize SQL
+bytes. Other migration checksums still bind exact bytes; build and restore from
+the intended reviewed release rather than treating a line-ending mismatch as
+permission to adopt or overwrite an already recorded checksum.
+
 The runner adds the nullable `checksum` column to an existing ledger under the
 migration advisory lock. Existing rows receive `NULL`; this is intentional and
 does not assert that the live schema matches the current migration files. The
@@ -178,6 +200,15 @@ backend migrate down 0001_conversation_owner_identity
 Use an explicit phase in operator procedures. It prevents a correct version
 name from being interpreted against the wrong migration directory.
 
+The down-command snippets in individual sections identify migration-specific
+targets, not complete downgrade procedures for the current schema. Inspect the
+applied ledger first. All applied `post` migrations must be rolled back in
+descending order before any `pre` rollback; later applied migrations within the
+same phase must also be removed first. Nonempty evidence ledgers can deliberately
+refuse rollback. Never delete ledger rows, erase evidence, bypass a trigger or
+change a checksum to force these snippets through. Follow the global rollback
+procedure below with a verified backup and a compatible application version.
+
 ## AutoMigrate Is Retired By Default
 
 `migrations/pre/0002_baseline.up.sql` is the versioned baseline generated from
@@ -211,7 +242,7 @@ return to `DB_AUTOMIGRATE=false`.
 - digest, owner, status, JSON-shape, and autonomy constraints;
 - immutable selection-history and Constitution-lifecycle triggers.
 
-The exact rollback command is:
+The migration-specific rollback targets, subject to the global guards, are:
 
 ```text
 backend migrate down pre/0005_framework_operating_contract
@@ -235,7 +266,7 @@ migration remains applied.
   request digest, and task plan;
 - constraints and triggers that reject cross-owner or mutable audit history.
 
-The exact rollback command is:
+The migration-specific rollback target, subject to the global guards, is:
 
 ```text
 backend migrate down pre/0004_task_state_storage
@@ -254,7 +285,7 @@ conditions, outcome monitoring, and the Chief-of-Staff summary. JSON shape
 constraints reject arrays where objects are required and vice versa. A
 validated SHA-256 operating-contract digest is indexed for trace inspection.
 
-The exact rollback command is:
+The migration-specific rollback target, subject to the global guards, is:
 
 ```text
 backend migrate down pre/0005_framework_operating_contract
@@ -525,11 +556,14 @@ backend migrate down pre/0047_workflow_reminder_activation_decision_order
 backend migrate down pre/0046_workflow_reminder_activation_ledger
 ```
 
-The migration-chain contract covers `0082`. CI runs isolated PostgreSQL
-acceptance for migration ordering, OpenClaw receipt/artifact retention and
-recovery, workflow reminder persistence, and related owner-scoped ledgers.
-These checks validate schema and persistence behavior; they do not prove or
-activate Calendar, message, provider, notification, or follow-up effects.
+The migration-chain contract checks all shipped versions listed by the embedded
+catalog, not only the historical `0082` boundary. CI is configured for isolated
+PostgreSQL acceptance of migration ordering, OpenClaw receipt/artifact retention
+and recovery, workflow reminder persistence, and related owner-scoped ledgers.
+An execution result must be checked for the exact release commit; configuration
+alone is not passing evidence. These checks cover schema and persistence; they
+do not prove or activate Calendar, message, provider, notification, or follow-up
+effects.
 
 ## Proactive Attention Feedback
 
@@ -681,7 +715,8 @@ its own uniquely named database.
 2. **Every up has a down.** `migrate down` refuses a migration without its down
    file.
 3. **Reverse order only.** `migrate down` rejects an unapplied target and any
-   target with a later applied migration in the same phase.
+   target with a later applied migration in the same phase. A `pre` rollback
+   also refuses while any `post` migration remains applied.
 4. **Backfill safely.** Large backfills run in bounded batches outside the
    request hot path.
 5. **Use explicit phases.** Production rollback commands should say `pre/...`
@@ -695,7 +730,9 @@ its own uniquely named database.
 
 1. Stop new writes and capture a database backup.
 2. Deploy or prepare the previous compatible binary/tag.
-3. Run phase-qualified rollback commands in reverse migration order.
+3. Inspect applied versions and checksums. Run phase-qualified rollback commands
+   in reverse migration order, finishing `post` before starting `pre`. Stop on
+   an evidence-preservation or checksum refusal; do not bypass it.
 4. Run `backend migrate status` and confirm the intended version is pending.
 5. Start the compatible application.
 6. Confirm public `/healthz` and `/readyz` probes and run
@@ -711,10 +748,11 @@ its own uniquely named database.
   tests.
 - Migration parsing, ordering, statement splitting, and embedded-file loading:
   covered by focused unit tests.
-- Applied migration checksum enforcement and explicit legacy adoption are
-  implemented with unit and isolated-PostgreSQL fixture coverage. This checkout
-  did not have the Go toolchain available to execute the new tests; do not treat
-  this change as verified until those tests run in CI or a Go-enabled checkout.
+- Applied migration checksum enforcement and explicit legacy adoption have
+  unit tests and opt-in isolated-PostgreSQL fixtures. The pinned `0128` repair
+  includes source-mutation and checkout-encoding regressions. Database-free
+  suites are separate from tagged PostgreSQL acceptance; a skipped fixture is
+  not a successful apply, adoption, rollback or restore rehearsal.
 - Framework Registry migration and rollback behavior: covered in its own
   isolated Postgres database.
 - Task-state persistence, owner scope, redaction, provenance, and immutability:

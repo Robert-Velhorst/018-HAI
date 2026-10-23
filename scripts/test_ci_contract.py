@@ -486,9 +486,10 @@ class CIWorkflowContractTest(unittest.TestCase):
             "/* Workflow Engine follows the command-center rule:", global_styles
         )
         self.assertIn(
-            "app-workflow-engine hai-progressive-section.workflow-more-tools {",
+            ":host hai-progressive-section.workflow-more-tools {",
             workflow_styles,
         )
+        self.assertNotRegex(workflow_styles, r"(?m)^\s*app-workflow-engine\b")
         self.assertIn("ViewEncapsulation.Emulated", workflow_component)
         self.assertNotIn("ViewEncapsulation.None", workflow_component)
 

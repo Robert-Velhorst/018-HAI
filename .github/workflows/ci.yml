@@ -332,6 +332,8 @@ jobs:
         working-directory: .
         run: bash scripts/test-generate-secrets.sh
       - run: go vet ./...
+      - name: Migration guide matches embedded schema
+        run: go test -count=1 -run '^TestMigrationDocumentation' ./migrations
       - run: go test ./...
       - name: Compile Trello live acceptance without contacting a provider
         run: go test -count=1 -tags live -run '^TestTrelloLiveAcceptanceProviderBoundary$' ./internal/source

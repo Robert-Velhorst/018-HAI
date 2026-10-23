@@ -1280,3 +1280,44 @@ including the 12 style cases and 47 existing workflow component cases. The 66
 native control-room logic checks and progressive-section, theme and icon
 contracts also pass locally. This is not a full frontend-suite, production-build
 or deployed-page visual acceptance claim.
+
+## Migration guide and checksum exception reconciliation
+
+Read the complete retained migration guide and its delta against the current
+guide. Preserve its evidence-retention, least-privilege, explicit legacy-adoption
+and backup requirements, while separating source/unit coverage from actual
+PostgreSQL upgrade or recovery acceptance. The illustrative tree was not the
+full catalog: add a checked snapshot of all 133 pre-phase and seven post-phase
+migration pairs, require every phase-qualified guide reference to resolve to
+both embedded SQL directions, and run these documentation checks uncached in CI.
+Replace the obsolete `0082` coverage boundary and unavailable-toolchain note.
+Clarify that individual down snippets are guarded targets, not standalone
+downgrade plans: post-phase rollback must finish before pre-phase rollback, and
+nonempty evidence or checksum refusals must not be bypassed.
+
+Following the guide into the actual runner found a source-integrity defect.
+The special historical checksum for `0128_account_feed_sync_cursor` was accepted
+by version alone, even if its supplied up/down scripts had changed or were
+empty. Three mutation cases fail before repair. Pin that compatibility bridge
+to the exact reviewed repaired up/down/version digest, with separately pinned
+LF and CRLF checkout variants. Reject unknown scripts, empty scripts, other
+versions and mixed encodings; retain exact-current-checksum acceptance and valid
+reviewed LF/CRLF controls. No SQL migration file or database ledger was edited.
+
+Both local Go suites (`internal/infra` and `migrations`) pass with 208 top-level
+PASS cases and 42 explicitly skipped PostgreSQL fixtures. The new guide-head
+test fails before the documentation update and passes afterwards. Scoped
+`go vet` also passes. No live PostgreSQL database was used; tagged runner
+integration tests were not compiled by the ordinary run, and skipped fixtures
+are not evidence of successful apply, adoption, rollback or restore. The
+retained guide and source copies remain intact pending main-preservation gates.
+
+The CI contract run also exposed one stale static stylesheet assertion from the
+prior layout round: it required the incorrect descendant component selector.
+Update it to require `:host` and explicitly reject the old selector, retaining
+the independent Emulated/None encapsulation checks and the passing browser
+geometry regressions. Do not reinstate broken CSS to satisfy a stale string
+expectation.
+
+All 121 CI contract tests pass after that expectation update. This does not
+replace exact-head remote CI or the outstanding database acceptance gates.
