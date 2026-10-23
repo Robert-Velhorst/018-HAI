@@ -324,8 +324,20 @@ jobs:
         with:
           go-version: "1.27.3"
           cache-dependency-path: backend/go.sum
+      - name: Bootstrap secret generator contracts
+        working-directory: .
+        run: bash scripts/test-generate-secrets.sh
       - run: go vet ./...
       - run: go test ./...
+      - name: Compile Trello live acceptance without contacting a provider
+        run: go test -count=1 -tags live -run '^TestTrelloLiveAcceptanceProviderBoundary$' ./internal/source
+      - name: Trello acceptance launcher contract
+        shell: pwsh
+        working-directory: .
+        run: |
+          $ErrorActionPreference = "Stop"
+          ./scripts/test-live-trello-launcher.ps1
+          ./scripts/test-live-trello-launcher-execution.ps1
       - name: Execution-boundary race tests
         # Keep concurrency coverage limited to stateful boundary packages. This
         # catches duplicate lease, approval, model-refresh, source-sync, and
@@ -972,6 +984,13 @@ jobs:
           for test_case in legacy_exact legacy_similar owner_exact owner_similar; do
             grep -q -- "^[[:space:]]*--- PASS: TestPostgresMemoryDedupPreservesDistinctSources/${test_case} (" "$memory_provenance_log"
           done
+          maintenance_projection_log="$RUNNER_TEMP/maintenance-overview-postgres.log"
+          TEST_OPENCLAW_MAINTENANCE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
+            -run '^(TestOverviewReadyCompanionHasNoBlockingReason|TestOverviewMissingPublisherBlocksEvenWithContainment)$' \
+            ./internal/openclawmaintenance/ -v | tee "$maintenance_projection_log"
+          for test_name in TestOverviewReadyCompanionHasNoBlockingReason TestOverviewMissingPublisherBlocksEvenWithContainment; do
+            grep -q -- "^--- PASS: ${test_name} (" "$maintenance_projection_log"
+          done
           automation_launch_log="$RUNNER_TEMP/automation-launch-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
             -run '^(TestPostgresLaunchIntentIdempotencyIsAtomicAcrossConcurrentRequests|TestPostgresLaunchEventIdempotencyReturnsStoredIdentityAndRejectsConflicts)$' \
@@ -1040,6 +1059,18 @@ jobs:
             TestTrelloPostgresCheckpointCannotOverwriteStoppedOrReboundJob
           do
             grep -q -- "^--- PASS: ${test_name} (" "$trello_repository_log"
+          done
+          proposal_resolution_log="$RUNNER_TEMP/workflow-proposal-resolution-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
+            -run '^(TestPostgresProposalResolutionWaitsForSourceRetractionAndSeesQuarantine|TestPostgresConcurrentProposalResolutionsCommitExactlyOneDecision|TestPostgresProposalResolutionRollsBackWhenAuditWriteFails|TestPostgresProposalResolutionProjectsCommittedState)$' \
+            ./internal/workflow/ -v | tee "$proposal_resolution_log"
+          for test_name in \
+            TestPostgresProposalResolutionWaitsForSourceRetractionAndSeesQuarantine \
+            TestPostgresConcurrentProposalResolutionsCommitExactlyOneDecision \
+            TestPostgresProposalResolutionRollsBackWhenAuditWriteFails \
+            TestPostgresProposalResolutionProjectsCommittedState
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$proposal_resolution_log"
           done
           reminder_revocation_log="$RUNNER_TEMP/workflow-reminder-revocation-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \

@@ -34,10 +34,11 @@ type googleOAuth struct {
 }
 
 const (
-	googleDefaultAuthEndpoint  = "https://accounts.google.com/o/oauth2/v2/auth"
-	googleDefaultTokenEndpoint = "https://oauth2.googleapis.com/token"
-	googleDefaultUserInfoURL   = "https://openidconnect.googleapis.com/v1/userinfo"
-	googleLoginScope           = "openid email profile"
+	googleDefaultAuthEndpoint   = "https://accounts.google.com/o/oauth2/v2/auth"
+	googleDefaultTokenEndpoint  = "https://oauth2.googleapis.com/token"
+	googleDefaultUserInfoURL    = "https://openidconnect.googleapis.com/v1/userinfo"
+	googleLoginScope            = "openid email profile"
+	maxGoogleOAuthResponseBytes = 1 << 20
 )
 
 // newGoogleOAuth builds the flow from the environment. jwtSecret signs the CSRF
@@ -223,7 +224,7 @@ func (g *googleOAuth) Exchange(ctx context.Context, code, state string) (string,
 		return "", fmt.Errorf("token exchange failed: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := readGoogleOAuthResponseBody(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("read token response: %w", err)
 	}
@@ -260,7 +261,7 @@ func (g *googleOAuth) fetchEmail(ctx context.Context, accessToken string) (strin
 		return "", fmt.Errorf("userinfo request failed: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := readGoogleOAuthResponseBody(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("read userinfo response: %w", err)
 	}
@@ -283,4 +284,15 @@ func (g *googleOAuth) fetchEmail(ctx context.Context, accessToken string) (strin
 		return "", fmt.Errorf("google email address is not verified")
 	}
 	return email, nil
+}
+
+func readGoogleOAuthResponseBody(reader io.Reader) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(reader, maxGoogleOAuthResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxGoogleOAuthResponseBytes {
+		return nil, fmt.Errorf("Google OAuth response exceeds size limit")
+	}
+	return body, nil
 }

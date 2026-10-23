@@ -148,6 +148,9 @@ func newOpenClawDiscoveryEvidence(result ProbeResult, now time.Time) (openClawDi
 		ExpiresAt:                   checkedAt.Add(openClawDiscoveryEvidenceTTL),
 	}
 	evidence.EvidenceSHA256 = openClawDiscoveryEvidenceSHA256(evidence)
+	if !validOpenClawDiscoveryEvidence(evidence, now.UTC()) {
+		return openClawDiscoveryEvidence{}, errInvalidOpenClawDiscoveryEvidence
+	}
 	return evidence, nil
 }
 
@@ -224,7 +227,7 @@ func validGatewayTaskLedgerSummary(summary *GatewayTaskLedgerSummary) bool {
 	}
 	total := 0
 	for status, count := range summary.StatusCounts {
-		if !validOpenClawDiscoveryTaskStatus(status) || count < 0 {
+		if !validOpenClawDiscoveryTaskStatus(status) || count < 0 || count > summary.SampledTasks {
 			return false
 		}
 		total += count
@@ -241,7 +244,7 @@ func validGatewayCapabilityCatalogSummary(summary *GatewayCapabilityCatalogSumma
 	}
 	totalTools := 0
 	for source, count := range summary.ToolCountsBySource {
-		if (source != "core" && source != "plugin") || count < 0 {
+		if (source != "core" && source != "plugin") || count < 0 || count > 500 {
 			return false
 		}
 		totalTools += count
@@ -253,7 +256,10 @@ func validGatewayPreparedModelCatalogSummary(summary *GatewayPreparedModelCatalo
 	if summary == nil {
 		return true
 	}
-	if summary.SampledModels < 0 || summary.SampledModels > 500 || summary.AvailableModels < 0 || summary.UnavailableModels < 0 || summary.UnknownAvailabilityModels < 0 {
+	if summary.SampledModels < 0 || summary.SampledModels > 500 ||
+		summary.AvailableModels < 0 || summary.AvailableModels > summary.SampledModels ||
+		summary.UnavailableModels < 0 || summary.UnavailableModels > summary.SampledModels ||
+		summary.UnknownAvailabilityModels < 0 || summary.UnknownAvailabilityModels > summary.SampledModels {
 		return false
 	}
 	return summary.AvailableModels+summary.UnavailableModels+summary.UnknownAvailabilityModels == summary.SampledModels
@@ -263,7 +269,10 @@ func validGatewayAgentRosterSummary(summary *GatewayAgentRosterSummary) bool {
 	if summary == nil {
 		return true
 	}
-	if summary.SampledAgents < 0 || summary.SampledAgents > 500 || summary.AgentCount < 0 || summary.SystemCount < 0 || summary.UnknownKindCount < 0 {
+	if summary.SampledAgents < 0 || summary.SampledAgents > 500 ||
+		summary.AgentCount < 0 || summary.AgentCount > summary.SampledAgents ||
+		summary.SystemCount < 0 || summary.SystemCount > summary.SampledAgents ||
+		summary.UnknownKindCount < 0 || summary.UnknownKindCount > summary.SampledAgents {
 		return false
 	}
 	return summary.AgentCount+summary.SystemCount+summary.UnknownKindCount == summary.SampledAgents

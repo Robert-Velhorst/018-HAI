@@ -559,3 +559,31 @@ response-schema validation, the legacy approval observation path, general
 refresh observation/schema handling and full diagnostic redaction are not
 established by this targeted correction. The separate retained template and
 stylesheet remain outside this two-file review. Originals remain retained.
+
+## Current main synchronization and retained gateway tests
+
+Merged current main normally without conflicts. The existing frontend source
+and tests are preserved; the shared credential checklist also retains main's
+Trello owner/member bindings and live-acceptance limitations. Main's already
+integrated backend, authentication, installer and gateway changes are retained,
+not replaced with older branch snapshots. Fresh exact-head CI is still required.
+
+Read the complete retained gateway contract test and its complete current
+difference. Preserve the authenticated routing, upload, identity forwarding,
+loopback bridge and local-preview contracts. Keep newer frontend/host listener
+ports, dual rotated-cookie checks, suppressed internal headers, bounded
+readiness probes, restrictive generated-config permissions and exact Git-ignore
+verification. The current test deliberately reads the public template instead
+of requiring generated credential-bearing nginx.conf. No older test replacement
+is needed.
+
+All 462 frontend checks in 25 suites pass after synchronization, as do all 22
+gateway source/Git contracts. Karma reported delayed Chrome termination but the
+runner subsequently exited successfully; no frontend process was force-terminated.
+The separate synthetic Docker build-context test stalled in a Buildx descendant
+beyond its subprocess deadline. Its identified test processes were stopped;
+that test is not a local pass. Removal of its temporary synthetic fixture was
+blocked by the local security policy and was not retried through another route.
+These checks do not establish a deployed gateway, live cookie rotation, external
+OAuth, account access, or runtime execution. The original recovery files and
+transcripts remain retained.

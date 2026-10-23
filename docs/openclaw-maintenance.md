@@ -224,9 +224,13 @@ The pull client rejects expired or malformed leases, confirms admission before
 execution, and rechecks installation permission after upstream preflight. While
 an update is running, it rechecks the permit every two seconds; a denied or
 unavailable check requests cancellation and records `needs_review`, then stops
-the worker after its receipt attempt. Cancellation still cannot prove
-termination of Windows/WSL descendants, which is why this build blocks apply
-before launch.
+the worker after its receipt attempt. Gateway/core WSL apply remains blocked
+before launch because Windows Job Objects do not contain Linux descendants.
+For an admitted Windows Companion update, cancellation requests termination of
+the contained process tree; verified termination requires observing the whole
+Job Object empty. If that cannot be confirmed, the outcome remains unknown and
+requires review. Neither cancellation nor verified process exit rolls back
+changes an installer already made.
 It never forwards credentials across HTTP redirects or through an environment
 proxy. Only exact receipt delivery is retried (up to three attempts), never the
 installer. Failure and unconfirmed receipt delivery produce a nonzero exit in
@@ -309,10 +313,15 @@ request framing, credential separation, authenticated capability expiry and
 target-specific blocking. Windows-only tests exercise Job Object descendant
 termination and whole-job completion. Windows cross-compilation verifies that
 the containment implementation builds; it does not replace running these tests
-on Windows. PostgreSQL integration
-tests. Set `TEST_OPENCLAW_MAINTENANCE_DSN` to a disposable PostgreSQL database
-to execute the latter. Each test creates and removes only its own generated
-schema. Without that variable, database tests explicitly skip.
+on Windows. SQL-backed lifecycle tests need a separately provisioned disposable
+PostgreSQL database. Use the exact database name
+`hai_openclaw_maintenance_test` on a literal loopback IP, configure
+`TEST_OPENCLAW_MAINTENANCE_DSN`, and explicitly set
+`HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS=true`. Never supply an application,
+production or shared database: the fixture creates and removes generated
+schemas and executes schema-changing SQL. Without a configured test DSN,
+database cases explicitly skip. A green ordinary package check without SQL
+execution does not prove database concurrency, receipt persistence or recovery.
 
 `TestPullClientPostgresLifecycleAndLostAcknowledgement` connects the same client
 used by the Windows executable to real maintenance handlers and PostgreSQL. It

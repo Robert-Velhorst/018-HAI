@@ -1,13 +1,17 @@
 package services
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
+	"io"
 	"net"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -226,5 +230,75 @@ func TestOpenSMTPConnectionBoundsDialWithContextDeadline(t *testing.T) {
 func localSMTPDialer(target string) smtpDialContextFunc {
 	return func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, target)
+	}
+}
+
+func TestSMTPPasswordResetSenderClosesConnectionWhenQuitIsRejected(t *testing.T) {
+	testSMTPPasswordResetSenderConnectionClosure(t, "500 QUIT rejected\r\n")
+}
+
+func TestSMTPPasswordResetSenderClosesConnectionWhenQuitIsAccepted(t *testing.T) {
+	testSMTPPasswordResetSenderConnectionClosure(t, "221 Goodbye\r\n")
+}
+
+func testSMTPPasswordResetSenderConnectionClosure(t *testing.T, quitResponse string) {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	finished := make(chan error, 1)
+	go func() {
+		connection, err := listener.Accept()
+		if err != nil {
+			finished <- err
+			return
+		}
+		defer connection.Close()
+		if err := connection.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			finished <- err
+			return
+		}
+		reader := bufio.NewReader(connection)
+		for _, exchange := range []struct{ response, command string }{
+			{"220 fixture SMTP ready\r\n", "EHLO "},
+			{"250 fixture SMTP\r\n", "QUIT\r\n"},
+		} {
+			if _, err := io.WriteString(connection, exchange.response); err != nil {
+				finished <- err
+				return
+			}
+			command, err := reader.ReadString('\n')
+			if err != nil || !strings.HasPrefix(command, exchange.command) {
+				finished <- fmt.Errorf("unexpected fixture SMTP command %q: %v", command, err)
+				return
+			}
+		}
+		if _, err := io.WriteString(connection, quitResponse); err != nil {
+			finished <- err
+			return
+		}
+		if err := connection.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			finished <- err
+			return
+		}
+		_, err = reader.ReadByte()
+		if err != io.EOF {
+			finished <- fmt.Errorf("sender left rejected SMTP session open: %v", err)
+			return
+		}
+		finished <- nil
+	}()
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	require.NoError(t, err)
+	sender := NewSMTPPasswordResetSender(host, port, "", "", "sender@example.test", true)
+	err = sender.SendPasswordReset(context.Background(), "recipient@example.test", "synthetic-reset-code", time.Now().Add(time.Hour))
+	stage, ok := PasswordResetDeliveryFailureStage(err)
+	require.True(t, ok)
+	require.Equal(t, "tls", stage)
+	select {
+	case err := <-finished:
+		require.NoError(t, err)
+	case <-time.After(6 * time.Second):
+		t.Fatal("local SMTP fixture did not finish")
 	}
 }

@@ -91,6 +91,8 @@ calling it live-proven, add the following non-placeholder values to untracked
 ```text
 TRELLO_API_KEY=...
 TRELLO_READ_TOKEN=...
+TRELLO_ACCOUNT_OWNER_IDENTITY=<HAI source owner identity>
+TRELLO_ACCOUNT_MEMBER_ID=<24-character Trello member ID>
 TRELLO_LIVE_BOARD=<board ID or https://trello.com/b/... URL>
 ```
 
@@ -105,6 +107,12 @@ runs only the connector's three GET-only live tests. It fails if credentials
 are absent, placeholders, API access fails, any test is skipped, the cursor is
 not incremental, or Trello reports write permission. It does not print the
 credential values or change a Trello board.
+
+The acceptance runner uses Go 1.27.3 and forwards both owner and member binding.
+It pins the real HTTPS Trello endpoint and its host allowlist; a simulated API
+cannot count as live-provider evidence. Raw records are held in test fixtures,
+not written to the production database. Successful live reads do not by
+themselves prove database persistence, restart recovery, or webhook acceptance.
 
 ## Sign-off
 

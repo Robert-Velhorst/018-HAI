@@ -157,7 +157,9 @@ func (s *SMTPPasswordResetSender) SendPasswordReset(ctx context.Context, email, 
 		_ = connection.Close()
 		return NewPasswordResetDeliveryError("protocol", err)
 	}
-	defer client.Quit() //nolint:errcheck // The message result is decided before QUIT.
+	// QUIT may fail without closing the socket; always release it afterwards.
+	defer client.Close() //nolint:errcheck // Preserve the delivery outcome.
+	defer client.Quit()  //nolint:errcheck // The message result is decided before QUIT.
 
 	if !isImplicitTLSPort(s.port) {
 		if ok, _ := client.Extension("STARTTLS"); !ok {

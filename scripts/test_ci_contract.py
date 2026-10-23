@@ -133,6 +133,16 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_trello_live_contract_is_compiled_without_live_credentials(self) -> None:
+        backend = job_block("backend")
+        self.assertIn(
+            "go test -count=1 -tags live -run '^TestTrelloLiveAcceptanceProviderBoundary$' ./internal/source",
+            backend,
+        )
+        self.assertIn("./scripts/test-live-trello-launcher.ps1", backend)
+        self.assertIn("./scripts/test-live-trello-launcher-execution.ps1", backend)
+        self.assertNotIn("-run '^TestLiveTrello'", backend)
+
     def test_artifact_recovery_and_retention_suites_require_postgres_pass(self):
         migrations = job_block("migrations-integration")
         selection = re.search(r"-run '([^']*TestOpenClawArtifactRecoveryPostgres[^']*)'", migrations)
@@ -1359,6 +1369,8 @@ class CIWorkflowContractTest(unittest.TestCase):
                 self.assertNotIn("jacksonbarreto/", content)
 
     def test_cross_platform_secret_generator_covers_every_required_backend_key(self) -> None:
+        backend = job_block("backend")
+        self.assertIn("- name: Bootstrap secret generator contracts\n        working-directory: .\n        run: bash scripts/test-generate-secrets.sh", backend)
         generator = (ROOT / "scripts" / "generate-secrets.sh").read_text(encoding="utf-8")
         generated_keys = {
             "BACKEND_API_SHARED_KEY": "backend_api_shared_key",
@@ -1872,6 +1884,18 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
                          "grep -q -- '^--- PASS: TestPostgresReminderDeliveryAtomicReplay ('"):
             self.assertIn(contract, migrations)
 
+    def test_maintenance_overview_requires_postgres_projection_passes(self) -> None:
+        migrations = job_block("migrations-integration")
+        for contract in (
+            'maintenance_projection_log="$RUNNER_TEMP/maintenance-overview-postgres.log"',
+            'TEST_OPENCLAW_MAINTENANCE_DSN="$migration_dsn" go test -count=1 -race',
+            'TestOverviewReadyCompanionHasNoBlockingReason',
+            'TestOverviewMissingPublisherBlocksEvenWithContainment',
+            './internal/openclawmaintenance/ -v',
+            '"^--- PASS: ${test_name} (" "$maintenance_projection_log"',
+        ):
+            self.assertIn(contract, migrations)
+
     def test_automation_idempotency_requires_guarded_postgres_passes(self) -> None:
         migrations = job_block("migrations-integration")
         for contract in (
@@ -1885,6 +1909,24 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         source = (ROOT / "backend/internal/automation/approval_proof_postgres_test.go").read_text(encoding="utf-8")
         guard = 'RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")'
         self.assertLess(source.index(guard), source.index("gorm.Open"))
+
+    def test_proposal_resolution_suite_requires_guarded_postgres_passes(self) -> None:
+        migrations = job_block("migrations-integration")
+        source = (ROOT / "backend/internal/workflow/proposal_resolution_transaction_test.go").read_text(encoding="utf-8")
+        names = re.findall(r"(?m)^func (TestPostgres\w+)\(t \*testing\.T\)", source)
+        self.assertTrue(names)
+        selection = re.search(r"-run '([^']*TestPostgresProposalResolution[^']*)'", migrations)
+        self.assertIsNotNone(selection)
+        for name in names:
+            with self.subTest(test=name):
+                self.assertIsNotNone(re.fullmatch(selection.group(1), name))
+                self.assertRegex(migrations, rf"(?m)^            {name}(?: \\\n|\n)")
+        self.assertIn('HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s', migrations)
+        self.assertIn('grep -q -- "^--- PASS: ${test_name} (" "$proposal_resolution_log"', migrations)
+        helper = (ROOT / "backend/internal/workflow/transactional_retraction_test.go").read_text(encoding="utf-8")
+        guard = 'RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")'
+        self.assertLess(helper.index(guard), helper.index("gorm.Open"))
+        self.assertIn('HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"', migrations)
 
     def test_atomic_claim_recovery_requires_guarded_real_postgres_pass(self) -> None:
         migrations = job_block("migrations-integration")
@@ -2203,6 +2245,14 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn('databaseName != "hai_migration_runner_test"', source)
         self.assertNotIn("t.Skip", source)
         self.assertNotIn("postgres.Open(dsn)", source)
+
+    def test_source_lesson_postgres_fixture_requires_dedicated_database(self) -> None:
+        source = (ROOT / "backend/internal/memory/source_extraction_lessons_postgres_test.go").read_text(encoding="utf-8")
+        guard = 'RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")'
+        self.assertLess(source.index(guard), source.index("gorm.Open"))
+        migrations = job_block("migrations-integration")
+        self.assertIn("TestPostgresSourceExtractionLessonUpsertIsExactAndIdempotentUnderConcurrency", migrations)
+        self.assertIn('grep -Fq -- "--- PASS: ${test_name} (" "$memory_lesson_log"', migrations)
 
     def test_host_runtime_postgres_requires_all_missing_expiry_cases(self) -> None:
         migrations = job_block("migrations-integration")
