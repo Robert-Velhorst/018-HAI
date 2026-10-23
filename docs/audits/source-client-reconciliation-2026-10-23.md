@@ -1161,3 +1161,51 @@ and no cleanup eligibility follows until the broader preservation gates pass.
 The final combined selection passes all 980 cases across the same 38 frontend
 specification files, including all 34 catalog cases. No live telemetry endpoint,
 external account, package installation or deployed dashboard was exercised.
+
+## Catalog request lifecycle follow-up
+
+Bound all 32 catalog request observations: 14 profile status reads have a
+six-second deadline, public metadata and ordinary reads have a fifteen-second
+deadline, and migration planning, aggregate exports, pursuit creation and
+maintenance have a thirty-second deadline. Deferred factories contain synchronous
+setup failures. Empty completion follows the existing error path, only the first
+response is accepted, and finalizers release loading flags on every terminal or
+unsubscribe path. Destruction cancels observations and blocks further dispatch.
+
+Profile changes cancel profile status, probe and selected upstream metadata
+observations, including selection away and back to the same profile. Deliberate
+status retries clear the previous unavailable marker. Selection cannot clear a
+pending export or migration view. Writes are not retried automatically; timeout
+and unsubscribe do not establish rollback. Pursuit creation failures now explain
+that a manual review may already exist and direct the operator to inspect it
+before another attempt. Existing export acknowledgement and approval boundaries
+are retained. No runtime is installed or activated by these changes.
+
+The initial 98 lifecycle regression cases failed before the request-wrapper
+repair. Additional controls cover post-destruction dispatch, all-path silent
+deadlines, one-response profile reads and preservation of pending export/migration
+selection. These are local component observations, not provider acceptance or a
+deployed-page visual review. Full nested response validation remains separate.
+The original worktree files and transcript archives remain retained; this patch
+alone does not make them deletion-eligible.
+
+All 179 lifecycle cases pass. The combined selection passes all 1,159 cases
+across 39 frontend specification files, retaining the existing 34 catalog cases.
+The 66 native control-room logic checks also pass. One existing failure-message
+expectation was updated to require the honest uncertain-outcome wording and
+assert a single pursuit dispatch, rather than advising an immediate blind retry.
+
+## Retained browser-acceptance build logs
+
+Read both retained stdout/stderr logs in full. They contain build progress, not
+source patches or browser interactions. Four image exports completed, primarily
+using cached build layers. The subsequent Compose startup failed while creating
+an internal network because Docker's predefined address pools were exhausted.
+Therefore these logs do not establish a running application, successful database
+migration, healthy authentication, or browser acceptance. The recorded image
+versions describe that historical attempt, not the current product toolchain.
+
+Preserve that failed-attempt classification here rather than adding raw local
+build logs to the public repository. No container/network/volume removal, Docker
+configuration change, stack restart or rerun was performed during this review.
+Both original logs remain intact pending main-preservation and cleanup gates.

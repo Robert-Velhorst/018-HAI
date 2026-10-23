@@ -190,14 +190,15 @@ describe('BrainCatalogComponent adapter reviews', () => {
     expect(pursuitService.create).toHaveBeenCalledWith(jasmine.objectContaining({ sourceOfCreation: 'brain_catalog:cline' }))
   })
 
-  it('keeps the candidate disabled after a create failure', () => {
+  it('keeps the candidate disabled without claiming a failed response prevented review creation', () => {
     const { component, pursuitService, notification } = createComponent()
     pursuitService.create.and.returnValue(throwError(() => new Error('offline')))
 
     component.startAdapterReview(candidate as any)
 
     expect(component.reviewingCandidateId).toBe('')
-    expect(notification.error).toHaveBeenCalledWith('Could not create adapter review', 'No project was installed, configured, or activated. Try again after checking the local pursuit service.')
+    expect(notification.error).toHaveBeenCalledWith('Adapter review outcome unconfirmed', 'No project was activated. A manual review may already exist; inspect pursuits before creating another.')
+    expect(pursuitService.create).toHaveBeenCalledTimes(1)
   })
 
   it('retains confirmed maintenance history when a later history read is unavailable', () => {
