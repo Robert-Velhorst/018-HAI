@@ -855,6 +855,7 @@ jobs:
             hai_durablejob_test \
             hai_workflow_lease_expiry_test \
             hai_workflow_followup_test \
+            hai_openclaw_maintenance_test \
             hai_ambient_monitor_test
           do
             createdb \
@@ -862,6 +863,22 @@ jobs:
               --port=5432 \
               --username=postgres \
               "${database}"
+          done
+      - name: OpenClaw maintenance pull lifecycle (PostgreSQL)
+        env:
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+          TEST_OPENCLAW_MAINTENANCE_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_openclaw_maintenance_test port=5432 sslmode=disable TimeZone=UTC"
+        run: |
+          set -euo pipefail
+          maintenance_pull_log="$RUNNER_TEMP/maintenance-pull-postgres.log"
+          go test -count=1 -p 1 -parallel 1 -timeout 180s \
+            -run '^(TestPullClientReportsIndependentBackendHealthRejection|TestPullClientPostgresLifecycleAndLostAcknowledgement)$' \
+            ./internal/openclawmaintenance/ -v | tee "$maintenance_pull_log"
+          for test_name in \
+            TestPullClientReportsIndependentBackendHealthRejection \
+            TestPullClientPostgresLifecycleAndLostAcknowledgement
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$maintenance_pull_log"
           done
       - name: Ambient monitor advisory release lifecycle (PostgreSQL)
         env:

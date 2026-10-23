@@ -2,6 +2,7 @@ package openclawmaintenance
 
 import (
 	"context"
+	stdsql "database/sql"
 	"encoding/json"
 	"errors"
 	"os"
@@ -11,9 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"automation-hub-backend/internal/pgtestguard"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func testService(t *testing.T) *Service {
@@ -29,55 +34,84 @@ func testService(t *testing.T) *Service {
 
 func testServiceWithDefaultPolicy(t *testing.T) *Service {
 	t.Helper()
-	dsn := os.Getenv("TEST_OPENCLAW_MAINTENANCE_DSN")
-	if dsn == "" {
-		t.Skip("set TEST_OPENCLAW_MAINTENANCE_DSN to an isolated PostgreSQL test database")
-	}
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{DisableAutomaticPing: true})
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "TEST_OPENCLAW_MAINTENANCE_DSN", maintenanceTestDatabase)
+	config, err := maintenanceTestDatabaseConfig(dsn)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("unsafe maintenance test database: %v", err)
 	}
-	probe, cancelProbe := context.WithTimeout(context.Background(), 10*time.Second)
+	config.RuntimeParams["search_path"] = "public"
+	rawDB := stdlib.OpenDB(*config)
+	rawDB.SetMaxOpenConns(2)
+	rawDB.SetMaxIdleConns(1)
+	t.Cleanup(func() {
+		if err := rawDB.Close(); err != nil {
+			t.Error("cannot close maintenance test administration pool")
+		}
+	})
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: rawDB}), &gorm.Config{DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal("cannot initialize maintenance test administration connection")
+	}
+	probe, cancelProbe := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancelProbe()
-	rawDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err = rawDB.PingContext(probe); err != nil {
-		rawDB.Close()
-		t.Fatalf("test PostgreSQL unavailable: %v", err)
+		t.Fatal("maintenance test PostgreSQL is unavailable")
 	}
 	schema := "hai_maintenance_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if err = db.Exec("CREATE SCHEMA " + schema).Error; err != nil {
-		t.Fatal(err)
+	quotedSchema := pgx.Identifier{schema}.Sanitize()
+	if err = db.WithContext(probe).Exec("CREATE SCHEMA " + quotedSchema).Error; err != nil {
+		t.Fatal("cannot create owned maintenance test schema")
 	}
-	// Each test owns a new schema; no existing application tables are touched.
-	scoped, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{DisableAutomaticPing: true})
-	if err != nil {
-		t.Fatal(err)
-	}
+	var schemaOID uint32
 	t.Cleanup(func() {
-		raw, _ := scoped.DB()
-		raw.Close()
-		db.Exec("DROP SCHEMA " + schema + " CASCADE")
-		raw, _ = db.DB()
-		raw.Close()
+		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var currentOID uint32
+		err := db.WithContext(cleanup).Raw("SELECT oid FROM pg_namespace WHERE nspname = ?", schema).Row().Scan(&currentOID)
+		if errors.Is(err, stdsql.ErrNoRows) {
+			return
+		}
+		if err != nil || schemaOID == 0 || currentOID != schemaOID {
+			t.Error("refusing maintenance test cleanup: schema ownership is unverified")
+			return
+		}
+		if err := db.WithContext(cleanup).Exec("DROP SCHEMA " + quotedSchema + " CASCADE").Error; err != nil {
+			t.Error("cannot remove owned maintenance test schema")
+		}
 	})
+	if err := db.WithContext(probe).Raw("SELECT oid FROM pg_namespace WHERE nspname = ?", schema).Row().Scan(&schemaOID); err != nil {
+		t.Fatal("cannot record maintenance test schema ownership")
+	}
+	// Parse URI and keyword DSNs identically; never append raw connection text.
+	scopedConfig := config.Copy()
+	scopedConfig.RuntimeParams["search_path"] = schema
+	scopedPool := stdlib.OpenDB(*scopedConfig)
+	scopedPool.SetMaxOpenConns(8)
+	scopedPool.SetMaxIdleConns(2)
+	t.Cleanup(func() {
+		if err := scopedPool.Close(); err != nil {
+			t.Error("cannot close maintenance test schema pool")
+		}
+	})
+	scoped, err := gorm.Open(postgres.New(postgres.Config{Conn: scopedPool}), &gorm.Config{DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal("cannot initialize maintenance test schema connection")
+	}
 	sql, err := os.ReadFile(filepath.Join("..", "..", "migrations", "pre", "0072_openclaw_maintenance.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = scoped.Exec(string(sql)).Error; err != nil {
+	if err = scoped.WithContext(probe).Exec(string(sql)).Error; err != nil {
 		t.Fatal(err)
 	}
 	retryBudgetMigration, err := os.ReadFile(filepath.Join("..", "..", "migrations", "pre", "0083_openclaw_maintenance_retry_budget.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = scoped.Exec(string(retryBudgetMigration)).Error; err != nil {
+	if err = scoped.WithContext(probe).Exec(string(retryBudgetMigration)).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err = scoped.Exec("CREATE TABLE openclaw_gateway_session_receipts (status text, reconciled_at timestamptz)").Error; err != nil {
+	if err = scoped.WithContext(probe).Exec("CREATE TABLE openclaw_gateway_session_receipts (status text, reconciled_at timestamptz)").Error; err != nil {
 		t.Fatal(err)
 	}
 	s := NewService(scoped)
@@ -86,7 +120,7 @@ func testServiceWithDefaultPolicy(t *testing.T) *Service {
 	// fake executor; the production default remains fail-closed.
 	s.canSafelyInstall = func() bool { return true }
 	s.SetHealthVerifier(func(context.Context) bool { return true })
-	if err = s.Initialize(context.Background()); err != nil {
+	if err = s.Initialize(probe); err != nil {
 		t.Fatal(err)
 	}
 	return s
