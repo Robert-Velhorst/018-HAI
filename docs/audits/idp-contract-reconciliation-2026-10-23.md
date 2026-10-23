@@ -105,7 +105,7 @@ duplicate cookies, and no-credential behavior. OAuth state cookies and other
 cookie preferences are not reclassified as session credentials by this change.
 
 The complete retained middleware fixture file is reviewed here, not the remaining
-large authentication-handler test file.
+large authentication-handler test file, which is covered in the follow-up below.
 Redis unit fixtures and Lua source review do not establish live Redis failover or
 cross-process abuse-limit acceptance.
 
@@ -141,6 +141,32 @@ default IDP suite does not prove these opt-in PostgreSQL scenarios ran. Live
 database contention, migrations, real email delivery, and provider acceptance
 remain separate verification requirements.
 
+## Handler tests and generated response contracts
+
+The complete retained `auth_handler_test.go` and all three generated API documents
+were read and compared with their full current diffs. Keep browser cookie
+persistence, bounded JSON/form parsing, reset privacy and rate limits, loopback
+preview checks, verified internal tokens, session permissions, OAuth browser
+state/denial handling, and safe return URLs. Keep the current rotated refresh
+cookie assertions and internal cookie forwarding, exact Origin checks before
+logout refresh/revocation, and POST rather than GET logout. No older handler
+assertion needs to be restored.
+
+The retained documents only differed from current documents in the logout verb
+and a final newline; both versions still contained incorrect response contracts.
+Registration returns `dto.UserResponse`, not its password-bearing input model.
+Reset request and confirmation return `dto.SuccessResponse`, not a string. Login
+returns 401 for authentication failure and 400 for malformed input. Logout
+requires an allowed Origin and can return 401 or 403, not the documented 400.
+Those annotations and all three generated document representations are corrected.
+
+Before repair, the new document regression failed for JSON, YAML, and the served
+Swagger template, each exposing the wrong response schemas and missing success
+definition. The regression checks the corrected schemas, login/logout statuses,
+required Origin header, and complete paths/definitions consistency across all
+three forms. This is a response-contract correction, not a claim that the legacy
+Swagger catalogue exhaustively documents every newer operational endpoint.
+
 ## Verification
 
 ```text
@@ -154,8 +180,8 @@ cache. This validates local compilation and covered fixtures, not
 live Redis/PostgreSQL configuration, real OAuth/email delivery, or deployment.
 
 This is a contract-and-wiring reconciliation, not a claim to have completed the
-remaining authentication-handler tests, separate repository acceptance tests,
-or generated API-documentation reviews, nor live password-reset acceptance.
+separate repository acceptance tests, an exhaustive endpoint catalogue,
+or live password-reset acceptance.
 No runtime code was replaced by older interfaces. Retained source copies remain
 intact, with private exact-content review records kept separately from public
 documentation and from any deletion gate.

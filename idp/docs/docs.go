@@ -43,7 +43,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "400": {
@@ -107,6 +107,9 @@ const docTemplate = `{
                         "description": "Successfully logged in"
                     },
                     "400": {
+                        "description": "Bad Request"
+                    },
+                    "401": {
                         "description": "Unauthorized"
                     },
                     "500": {
@@ -122,12 +125,24 @@ const docTemplate = `{
                     "Authentication"
                 ],
                 "summary": "Logout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Exact allowed browser origin",
+                        "name": "Origin",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK"
                     },
-                    "400": {
+                    "401": {
                         "description": "Unauthorized"
+                    },
+                    "403": {
+                        "description": "Forbidden"
                     },
                     "500": {
                         "description": "Internal Server Error"
@@ -163,7 +178,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/dto.UserDTO"
+                            "$ref": "#/definitions/dto.UserResponse"
                         }
                     },
                     "400": {
@@ -213,7 +228,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/dto.SuccessResponse"
                         }
                     },
                     "429": {
@@ -332,6 +347,17 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "dto.SuccessResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "statusCode": {
+                    "type": "integer"
                 }
             }
         },
