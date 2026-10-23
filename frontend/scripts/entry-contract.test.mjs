@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import ts from 'typescript'
+import { HAI_MODULES } from '../src/app/control-room/module-registry.ts'
 
 const read = (path) => readFileSync(new URL(`../src/app/${path}`, import.meta.url), 'utf8')
 const routesText = read('app-routing.module.ts')
@@ -85,6 +86,12 @@ function validateRoutes(text) {
 
 test('independent retained URL contract preserves lazy modules and authentication guards', () => {
   validateRoutes(routesText)
+})
+
+test('every authenticated lazy route has exactly one registered control-room module', () => {
+  const routes = array(validateRoutes(routesText), 'authenticatedRoutes').map(properties)
+  const paths = routes.map(route => `/${route.get('path').text}`)
+  assert.deepEqual(HAI_MODULES.map(module => module.route).sort(), paths.sort())
 })
 
 test('route contract rejects missing URLs, removed guards and changed lazy targets', () => {
