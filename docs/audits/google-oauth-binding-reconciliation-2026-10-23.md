@@ -2,10 +2,23 @@
 
 ## Reviewed source decisions
 
-Reviewed the connected-source model and OAuth implementation in both audit
-worktrees: four source versions. The model variants match after line-ending
-normalization; the artifact OAuth variant is older than the model-audit variant.
-The large OAuth test-file variants remain a separate, unfinished review batch.
+Reviewed the connected-source model, OAuth implementation and OAuth tests in
+both audit worktrees: six source versions. The model variants match after
+line-ending normalization; the artifact OAuth implementation and tests are
+older subsets of the model-audit variants.
+
+The test comparison is complete for these two files, not for the whole
+worktrees. Retain the current owner-bound fixtures, usable encrypted grants,
+durable single-use state and PKCE coverage, cancellation checks, token-refresh
+snapshot comparisons and callback replay protections. The old tests do not
+provide an additional behavior that requires restoring their weaker fixtures
+or obsolete service signatures.
+
+Keep typed retryable provider errors instead of assertions over raw provider
+error strings. Preserve unavailable-message observations alongside imported
+messages, rather than restoring the older expectation that missing mail leaves
+no source record. Keep the read-failure and undecryptable-refresh-token tests
+that verify the original grant and reconnect state are not overwritten.
 
 Retain main's durable single-use OAuth state model storing only the state
 digest, owner/source/connector binding, PKCE and encrypted token storage. Keep
