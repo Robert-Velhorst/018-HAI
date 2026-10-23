@@ -245,7 +245,7 @@ func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*Ve
 	mode := normalizeMode(request.Mode)
 	questions := researchQuestions(request.Question, request.ProjectKey)
 	logs := []string{"converted request into research questions"}
-	run, err := s.repo.CreateRun(&models.VerificationRun{
+	initial := models.VerificationRun{
 		OwnerIdentity:     request.OwnerIdentity,
 		Mode:              mode,
 		Question:          strings.TrimSpace(request.Question),
@@ -253,9 +253,20 @@ func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*Ve
 		Status:            StatusUncertain,
 		ResearchQuestions: joinValues(questions),
 		SourcesSearched:   "connected_sources,provided_evidence",
-	})
+	}
+	creation := initial
+	run, err := s.repo.CreateRun(&creation)
 	if err != nil {
 		return nil, err
+	}
+	if run == nil || run.ID == uuid.Nil {
+		return nil, fmt.Errorf("create verification run: repository returned no run identity")
+	}
+	observed := *run
+	observed.ID = uuid.Nil
+	observed.CreatedAt, observed.UpdatedAt = time.Time{}, time.Time{}
+	if observed != initial {
+		return nil, fmt.Errorf("create verification run: acknowledgement does not match the requested creation")
 	}
 	memoryOptInRecorded := false
 	if request.AllowMemoryUpdate {

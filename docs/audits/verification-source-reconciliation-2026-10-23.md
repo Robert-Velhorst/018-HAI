@@ -73,3 +73,8 @@ binding, secondary audit failure reporting, external provider/source acceptance
 and remaining source variants. The broader router/extraction leads and three
 declaration ambiguities from the Go inventory remain open. This checkpoint does
 not authorize removing the original checkout or transcript archives.
+
+A later [creation-boundary follow-up](verification-creation-boundary-2026-10-23.md)
+addresses the creation-acknowledgement item with independent input snapshotting
+and fail-closed validation. The preceding test count describes this document's
+original checkpoint, not that later revision.

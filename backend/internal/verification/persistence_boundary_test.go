@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"automation-hub-backend/internal/memory"
 	"automation-hub-backend/internal/models"
@@ -211,6 +212,75 @@ type failingVerificationRepository struct {
 	auditActionErr    string
 	auditActionErrors map[string]error
 	runAck            func(*models.VerificationRun) *models.VerificationRun
+}
+
+type creationAcknowledgementRepository struct {
+	*fakeVerificationRepository
+	acknowledge func(*models.VerificationRun) *models.VerificationRun
+}
+
+func (r *creationAcknowledgementRepository) CreateRun(run *models.VerificationRun) (*models.VerificationRun, error) {
+	stored, err := r.fakeVerificationRepository.CreateRun(run)
+	if err != nil {
+		return nil, err
+	}
+	return r.acknowledge(stored), nil
+}
+
+func TestAnswerRejectsUnconfirmedOrMismatchedCreation(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		ack  func(*models.VerificationRun) *models.VerificationRun
+	}{
+		{"missing acknowledgement", func(*models.VerificationRun) *models.VerificationRun { return nil }},
+		{"missing identity", func(run *models.VerificationRun) *models.VerificationRun { run.ID = uuid.Nil; return run }},
+		{"foreign owner", func(run *models.VerificationRun) *models.VerificationRun { run.OwnerIdentity = "bob"; return run }},
+		{"different question", func(run *models.VerificationRun) *models.VerificationRun {
+			run.Question = "A different question"
+			return run
+		}},
+		{"premature finalization", func(run *models.VerificationRun) *models.VerificationRun { run.Status = StatusNeedsReview; return run }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &creationAcknowledgementRepository{
+				fakeVerificationRepository: &fakeVerificationRepository{}, acknowledge: test.ack,
+			}
+			func() {
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						t.Errorf("creation acknowledgement caused a panic: %v", recovered)
+					}
+				}()
+				result, err := NewService(repository, nil, nil).Answer(AnswerRequest{
+					OwnerIdentity: "alice", Question: "What is the result?", DraftAnswer: "The work passed.",
+					Mode: ModeGrounded, AllowMemoryUpdate: true,
+				})
+				if err == nil || result != nil || !strings.Contains(err.Error(), "create verification run") {
+					t.Errorf("unconfirmed creation returned a result: result=%#v err=%v", result, err)
+				}
+			}()
+			if len(repository.audits) != 0 || len(repository.evidence) != 0 || len(repository.claims) != 0 {
+				t.Fatal("unconfirmed creation continued into verification persistence")
+			}
+		})
+	}
+}
+
+func TestAnswerAcceptsDatabaseManagedCreationMetadata(t *testing.T) {
+	repository := &creationAcknowledgementRepository{
+		fakeVerificationRepository: &fakeVerificationRepository{},
+		acknowledge: func(run *models.VerificationRun) *models.VerificationRun {
+			run.CreatedAt = time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+			run.UpdatedAt = run.CreatedAt
+			return run
+		},
+	}
+	result, err := NewService(repository, nil, nil).Answer(AnswerRequest{
+		OwnerIdentity: "alice", Question: "What is the result?", DraftAnswer: "The work passed.", Mode: ModeGrounded,
+	})
+	if err != nil || result == nil || result.Run.ID == uuid.Nil || result.Run.CreatedAt.IsZero() {
+		t.Fatalf("database-managed creation metadata was rejected: result=%#v err=%v", result, err)
+	}
 }
 
 func (r *failingVerificationRepository) UpdateRun(run *models.VerificationRun) (*models.VerificationRun, error) {
