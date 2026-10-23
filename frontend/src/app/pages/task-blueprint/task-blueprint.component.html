@@ -563,7 +563,7 @@
           <p class="engine-summary">{{ commandActionSummary() }}</p>
           <div class="engine-summary" *ngIf="lastCommand?.pursuit as pursuit">
             <span>{{ pursuit.message || 'Pursuit context is available for this command.' }}</span>
-            <button nz-button nzType="link" *ngIf="pursuit.pursuitId" (click)="openCommandPursuit()">Open pursuit</button>
+            <button type="button" nz-button nzType="link" *ngIf="pursuit.pursuitId" (click)="openCommandPursuit()">Open pursuit</button>
           </div>
         </article>
 
@@ -808,7 +808,7 @@
         <article class="inspector-card">
           <h3>Suggested success criteria</h3>
           <ul><li *ngFor="let criterion of typed.proposal.successCriteria">{{ criterion }}</li></ul>
-          <button nz-button nzType="default" (click)="useTypedProposalCriteria()" title="Copies criteria into the editable task form only. It does not run, approve, or save work.">Use criteria in task</button>
+          <button type="button" nz-button nzType="default" (click)="useTypedProposalCriteria()" title="Copies criteria into the editable task form only. It does not run, approve, or save work.">Use criteria in task</button>
         </article>
         <article class="inspector-card">
           <h3>Next steps</h3>
@@ -837,6 +837,7 @@
           <h3>Suggested success criteria</h3>
           <ul><li *ngFor="let criterion of crew.proposal.successCriteria">{{ criterion }}</li></ul>
           <button
+            type="button"
             nz-button
             nzType="default"
             (click)="useCrewProposalCriteria()"

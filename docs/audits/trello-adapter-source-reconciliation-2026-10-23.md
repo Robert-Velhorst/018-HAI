@@ -54,3 +54,32 @@ Integration-tagged source tests also compile and the selected Trello cursor,
 quiet-probe, source-state and resume unit cases pass with that build tag. No
 PostgreSQL case was selected or executed by that targeted command; database
 acceptance remains a separate CI/environment gate.
+
+## Additional retained model-maintenance variant
+
+The complete 56,724-byte retained model-maintenance adapter was read, including
+its credential, snapshot, pagination, rendering, retry and cursor helpers. Its
+complete normalized diff against the published adapter contains 241 added and
+33 removed lines. No older connector implementation was copied over the newer
+adapter. Keep the newer identity normalization, member/start/due-completion
+metadata, public short links, request-budget sentinel, restricted credential
+destination and transport integration. The retained standalone full-scan logic
+is already represented in the current bounded reconciliation path.
+
+The newer quiet-board probe is an intentional behavioral difference, not proof
+that every sync is a complete snapshot. The stale source comments claiming a
+full scan on every sync and unconditional cursor losslessness were corrected.
+Quiet observations skip stored-card hash comparison, tombstones and propagation
+of board metadata into stored card content. A board metadata-only action can
+advance the cursor without rebuilding card content. Periodic full-snapshot
+freshness and completeness under concurrent changes remain unproven; the
+existing no-activity tests do not establish either property. Do not remove the
+optimization or claim periodic reconciliation without a separately reviewed
+design and persistence contract.
+
+After the comment correction, the Trello-named local Go run reports 163 passed
+top-level tests and 178 passed subtests. Nine PostgreSQL-dependent tests skip;
+their database behavior is not verified by this run. This command does not
+enable the `live` build tag or exercise a real account. Other retained
+service/test variants remain separate reviews. This additional source review
+does not make its original file, worktree or transcript history deletable.

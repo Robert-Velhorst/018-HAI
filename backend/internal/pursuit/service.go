@@ -3698,13 +3698,32 @@ func (s *service) ResolveDecisionForOwner(ownerIdentity string, id uuid.UUID, re
 	if strings.TrimSpace(request.DecisionID) == "" {
 		return nil, fmt.Errorf("decisionId is required")
 	}
-	if detail, err := s.DetailForOwner(ownerIdentity, id); err != nil {
+	detail, err := s.DetailForOwner(ownerIdentity, id)
+	if err != nil {
 		return nil, err
-	} else if resolvedPursuitDecisions(detail.Activity)[strings.TrimSpace(request.DecisionID)] {
+	}
+	isRuntimeReview := strings.EqualFold(strings.TrimSpace(request.DecisionType), "runtime_attempt_review")
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(request.DecisionID)), "runtime:") && !isRuntimeReview {
+		return nil, fmt.Errorf("runtime decision requires the runtime review decision type")
+	}
+	if isRuntimeReview {
+		attempt, ok := runtimeAttemptForDecision(detail.RuntimeAttempts, request)
+		if !ok {
+			return nil, fmt.Errorf("runtime decision and evidence must identify the same linked runtime attempt")
+		}
+		// Use one audit identity for equivalent, validated reference spellings.
+		request.DecisionID = runtimeAttemptDecisionID(attempt)
+		request.DecisionType = "runtime_attempt_review"
+		request.EvidenceURI = "automation-launch://" + attempt.ID.String()
+	}
+	if resolvedPursuitDecisions(detail.Activity)[strings.TrimSpace(request.DecisionID)] {
 		// Decision requests can be retried by the UI or a client after a network
 		// timeout. Returning the current detail avoids duplicating work or audit
 		// records after the first governed resolution succeeded.
 		return detail, nil
+	}
+	if isRuntimeReview && !pendingDecision(detail.DecisionQueue, request.DecisionID, "runtime_attempt_review") {
+		return nil, fmt.Errorf("runtime review decision is not pending for this pursuit")
 	}
 	if request.Approved && strings.EqualFold(strings.TrimSpace(request.DecisionType), "pursuit_completion_review") {
 		if err := s.completePursuitFromDecisionForOwner(ownerIdentity, id, request); err != nil {
@@ -6288,22 +6307,15 @@ func runtimeAttemptDecisionID(attempt models.AutomationLaunchEvent) string {
 }
 
 func runtimeAttemptForDecision(attempts []models.AutomationLaunchEvent, request DecisionResolutionRequest) (models.AutomationLaunchEvent, bool) {
-	candidates := []uuid.UUID{}
-	if id, ok := runtimeLaunchIDFromEvidenceURI(request.EvidenceURI); ok {
-		candidates = append(candidates, id)
-	}
-	if id, ok := runtimeLaunchIDFromDecisionID(request.DecisionID); ok {
-		candidates = append(candidates, id)
+	decisionID, decisionOK := runtimeLaunchIDFromDecisionID(request.DecisionID)
+	evidenceID, evidenceOK := runtimeLaunchIDFromEvidenceURI(request.EvidenceURI)
+	if !decisionOK || !evidenceOK || decisionID == uuid.Nil || decisionID != evidenceID {
+		return models.AutomationLaunchEvent{}, false
 	}
 	for _, attempt := range attempts {
-		for _, candidate := range candidates {
-			if attempt.ID == candidate {
-				return attempt, true
-			}
+		if attempt.ID == decisionID {
+			return attempt, true
 		}
-	}
-	if len(attempts) == 1 {
-		return attempts[0], true
 	}
 	return models.AutomationLaunchEvent{}, false
 }

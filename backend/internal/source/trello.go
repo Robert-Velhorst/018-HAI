@@ -40,10 +40,11 @@ import (
 //   - Complete-or-fail pagination. Cards are read in descending Mongo-ID pages;
 //     comments are read separately from the board action endpoint, never nested
 //     on a large card request. Incomplete pages cannot produce a new cursor.
-//   - Reconciled full scan. Trello has no supported board-card change cursor
-//     for this adapter, so every sync reads the complete paginated board and
-//     comment history. The card cursor limits emitted active-card updates but
-//     does not reduce provider reads; closed cards are reconciled every scan.
+//   - Reconciled snapshots. Initial and non-quiet syncs read the complete
+//     paginated board and comment history. Subsequent syncs can skip that scan
+//     when a bounded action observation reports no card-affecting activity.
+//     The card cursor limits emitted active-card updates during full scans;
+//     closed/missing cards are reconciled only when a full scan takes place.
 //   - State reconciliation. Closed cards and cards missing from the configured
 //     board are emitted as lightweight tombstones even when their activity
 //     timestamp did not advance. The source service applies them only to
@@ -1556,10 +1557,10 @@ func parseTrelloActivityTime(value string) (time.Time, bool) {
 }
 
 func encodeTrelloCursor(activity time.Time, _ map[string]struct{}) (string, error) {
-	// A timestamp-only cursor is lossless for incremental processing because the
-	// full board is fetched each time: replay every card at the high-water time,
-	// then rely on stable external-ID upserts to avoid duplicate source records.
-	// Its size is independent of the number of cards sharing that timestamp.
+	// During full reconciliation, replay cards at the high-water time and rely
+	// on stable external-ID upserts to avoid duplicate records. Quiet activity
+	// observations may skip reconciliation; this cursor is not proof of a full
+	// snapshot. Its size is independent of cards sharing the timestamp.
 	cursor := trelloCursorV2Prefix
 	if !activity.IsZero() {
 		cursor += activity.UTC().Format(time.RFC3339Nano)
