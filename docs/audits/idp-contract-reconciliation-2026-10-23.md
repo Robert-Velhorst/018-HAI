@@ -25,20 +25,52 @@ Logout remains a state-changing POST rather than restoring the older GET route.
 The local-preview configuration remains an explicit local-only option; this
 review does not enable it or change an account's permissions.
 
+## Account and migration implementation follow-up
+
+Six additional retained files were read completely, including both halves of the
+retained user-service test file, and compared with their entire current diffs:
+
+- `idp/internal/app/users/user_service.go`: preserve account reauthentication,
+  canonical email, session-version/reset-token concurrency checks, password
+  policy, and one-time reset handling. Keep newer borrowed-database construction,
+  owned-resource cleanup, successful-login completion, legacy email normalization,
+  and reset-error log redaction.
+- `idp/internal/app/users/user_service_test.go`: every retained test remains;
+  current code additionally tests legacy email normalization and invalid-token
+  error classification. No retained assertion needs replacement.
+- `idp/internal/app/users/user_handler.go`: keep bounded single-value JSON,
+  authenticated account binding, and safe error mapping. Retain current nil/type
+  checks instead of restoring panic-prone principal assertions or nil responses.
+- `idp/internal/app/repositories/user_repository.go`: preserve failed-login row
+  locking, conditional account/password updates, reset-token digests, and
+  one-time consumption. Keep newer successful-login snapshot validation under a
+  row lock, deactivation that invalidates sessions/resets, and strict digest
+  validation instead of length-only checks.
+- `idp/internal/infra/migrations.go`: preserve conditional legacy token upgrades
+  and operator-by-default role handling. Keep the newer durable-session migration
+  call; this review does not claim complete review of its separate SQL schema.
+- `idp/internal/infra/migrations_test.go`: all retained first-owner password
+  boundary/redaction assertions remain. Keep the newer synthetic passphrase
+  fixture rather than restoring the old literal.
+
+No older implementation is copied over the stronger current code. Reading the
+conditional SQL paths and passing fixture tests does not establish that real
+PostgreSQL contention, upgrades, rollback, or deployment acceptance has passed.
+
 ## Verification
 
 ```text
-go test -C idp -p 1 -timeout 180s ./...
+go test -C idp -p 1 -timeout 180s -count=1 ./...
 ```
 
 The complete default IDP package suite passed locally, including config,
 repositories, router, authentication, services, users, command lifecycle, and
-infrastructure packages. Some package results were cached from the preceding
-successful checks. This validates local compilation and covered fixtures, not
+infrastructure packages. This final follow-up run disabled the Go test-result
+cache. This validates local compilation and covered fixtures, not
 live Redis/PostgreSQL configuration, real OAuth/email delivery, or deployment.
 
 This is a contract-and-wiring reconciliation, not a claim to have completed the
-remaining authentication handler/service, repository implementation, Google
+remaining authentication handler/service, repository acceptance tests, Google
 OAuth, password-reset integration, or generated API-documentation reviews.
 No runtime code was replaced by older interfaces. Retained source copies remain
 intact, with private exact-content review records kept separately from public
