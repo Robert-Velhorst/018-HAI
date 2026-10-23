@@ -81,6 +81,8 @@ func loadMigrations(fsys fs.FS, dir string) ([]Migration, error) {
 		migration := Migration{Version: dir + "/" + base, UpSQL: string(upSQL)}
 		if downSQL, err := fs.ReadFile(fsys, dir+"/"+base+".down.sql"); err == nil {
 			migration.DownSQL = string(downSQL)
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("read rollback migration %q: %w", base+".down.sql", err)
 		}
 		migrations = append(migrations, migration)
 	}
