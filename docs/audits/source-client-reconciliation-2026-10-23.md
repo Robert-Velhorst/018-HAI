@@ -147,3 +147,37 @@ All six focused editor tests pass. These are local component fixtures, not real
 automation creation or provider/runtime execution. Source copies remain retained
 until the separate main-preservation gate is satisfied.
 The combined nine-suite frontend run passes all 131 tests with this change set.
+
+## Skills observations follow-up
+
+Read the retained skills component, template, stylesheet and service specification
+in full and reviewed their complete current differences. Preserve current
+catalog-fingerprint reconciliation after legacy selection replies, invalidation
+of previews when the catalog changes, pinned source links in both views,
+accessible announcements and visible focus fallbacks. Keep the service's strict
+inventory schema, duplicate-ID rejection and reviewed-hash mutation requirement;
+do not restore older shortened/hash-placeholder inventory fixtures as valid data.
+No template or stylesheet replacement is needed for this review.
+
+Eight new controls failed before correction: empty or stalled inventory/session
+reads, empty or stalled guidance reads, empty or stalled selection responses,
+an empty legacy audit refresh and reads surviving page destruction. Observe one
+response with a ten-second request deadline, route empty completion through the
+existing error handling, and cancel observations on destruction. A selection
+timeout remains an uncertain outcome requiring a fresh inventory, never an
+automatic retry or a claim that the server rejected the mutation.
+
+Destroying the component also invalidates in-progress guidance verification and
+suppresses scheduled focus changes. Two additional controls cover detaching a
+pending mutation without claiming rejection and ignoring an asynchronous guidance
+verification that finishes after destruction. Existing permission, exact text
+hash, reapproval, concurrency and disclosure checks remain unchanged.
+
+All 190 tests in the combined twelve-suite Chrome Headless run pass, including
+the ten new observation controls and existing skills component/service tests.
+Progressive-section, split-theme and static-icon registry checks also pass.
+These are local synthetic observations and rendered component fixtures, not a
+live owner-account approval or deployed runtime acceptance. The retained skills
+component test file and backend catalog are not declared fully reconciled by
+this narrower file review. Original worktrees and transcript archives remain
+retained pending main-preservation verification.
