@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -9,6 +10,7 @@ function loadProxyConfig(target) {
   const env = {
     PATH: process.env.PATH,
     SystemRoot: process.env.SystemRoot,
+    NODE_DISABLE_COMPILE_CACHE: '1',
   };
   if (target !== undefined) env.HAI_API_PROXY_TARGET = target;
 
@@ -26,6 +28,41 @@ test('defaults to the local Compose gateway', () => {
   assert.equal(proxy.target, 'http://127.0.0.1:8088');
   assert.equal(proxy.changeOrigin, true);
   assert.equal(proxy.secure, false);
+});
+
+function assertRealGatewayConfiguration(workspace, scripts) {
+  const serve = workspace.projects.app.architect.serve;
+  assert.equal(path.resolve(__dirname, serve.options.proxyConfig), configPath);
+  for (const configuration of Object.values(serve.configurations ?? {})) {
+    const proxy = configuration.proxyConfig ?? serve.options.proxyConfig;
+    assert.equal(path.resolve(__dirname, proxy), configPath);
+  }
+  const historicalMocks = /(?:proxy\.preview\.json|mock-preview-server\.js|\.codex-preview-server\.mjs)/;
+  assert.doesNotMatch(JSON.stringify(workspace), historicalMocks);
+  for (const command of Object.values(scripts)) assert.doesNotMatch(command, historicalMocks);
+}
+
+test('Angular serve configurations and package commands do not reconnect historical mock previews', () => {
+  const workspace = JSON.parse(fs.readFileSync(path.join(__dirname, 'angular.json'), 'utf8'));
+  const { scripts } = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+  assertRealGatewayConfiguration(workspace, scripts);
+});
+
+test('gateway configuration guard detects historical mock wiring in every supported entry point', () => {
+  const workspace = JSON.parse(fs.readFileSync(path.join(__dirname, 'angular.json'), 'utf8'));
+  const { scripts } = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+  const baseline = structuredClone(workspace);
+  workspace.projects.app.architect.serve.options.proxyConfig = 'proxy.preview.json';
+  assert.throws(() => assertRealGatewayConfiguration(workspace, scripts));
+  const overridden = structuredClone(baseline);
+  overridden.projects.app.architect.serve.configurations.production.proxyConfig = 'proxy.preview.json';
+  assert.throws(() => assertRealGatewayConfiguration(overridden, scripts));
+  for (const command of ['node mock-preview-server.js', 'node ../.codex-preview-server.mjs']) {
+    assert.throws(() => assertRealGatewayConfiguration(baseline, { ...scripts, start: command }));
+  }
+  const injected = structuredClone(baseline);
+  injected.projects.app.architect.build.options.scripts.push('mock-preview-server.js');
+  assert.throws(() => assertRealGatewayConfiguration(injected, scripts));
 });
 
 test('accepts IPv4 and IPv6 loopback gateway origins', () => {
