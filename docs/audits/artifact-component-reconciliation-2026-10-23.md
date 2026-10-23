@@ -36,9 +36,11 @@ in this component. It validates responses before success delivery, registers
 in-flight operations before synchronous observer callbacks, and prevents an
 errored observable from restarting its HTTP mutation on resubscription.
 
-That PR remains a separate integration dependency until its exact-head checks
-and merge are verified. A component-level review does not establish that those
-service changes are on main.
+PR #297 has since merged as `db5c59a60495ec213e4ffe0876a06f7be9e89d74`.
+Reconciliation against main at `4454c5c096c818ff96c30d1200984297ed5742f3`
+confirmed merge ancestry and no subsequent changes to that service or its
+specification. Those service changes are therefore integrated; the earlier
+component-only test run is still not proof of deployed or live-account behavior.
 
 ## Preservation boundary
 
