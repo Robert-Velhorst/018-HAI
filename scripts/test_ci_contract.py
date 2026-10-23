@@ -2147,6 +2147,7 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
             "TestTrelloPostgresOwnerManualRequestResumesCancelledCheckpoint",
             "TestTrelloPostgresInventoryCheckpointUpdatesFetchedAtAndCursorAtomically",
             "TestTrelloPostgresRejectsSourcePausedBeforeDurableOperations",
+            "TestTrelloPostgresCheckpointCannotOverwriteStoppedOrReboundJob",
         ):
             self.assertIn(name, migrations)
         self.assertIn('grep -q -- "^--- PASS: ${test_name} (" "$trello_repository_log"', migrations)
