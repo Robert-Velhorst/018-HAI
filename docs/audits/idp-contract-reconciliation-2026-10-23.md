@@ -80,6 +80,35 @@ existing response-body cleanup and timeout behavior remains; the limit increases
 by only one sentinel byte, not an unbounded read. No provider configuration,
 credentials, scopes, or account permissions change.
 
+## Cookies, handler, and reset-limit follow-up
+
+Five further retained files were read fully and compared with their complete
+current diffs: `cookies.go`, `auth_handler.go`, `auth_middleware_test.go`,
+`password_reset_rate_limit.go`, and `password_reset_rate_limit_test.go` in
+`idp/internal/app/authentication`.
+
+Preserve HttpOnly/Secure/SameSite settings, remember-me/session behavior, OAuth
+state/return cookies, bounded reset windows and bucket capacity, purpose-scoped
+HMAC keys, normalization, concurrent memory limits, and fail-closed Redis outage
+behavior. Keep newer owned Redis-client cleanup, missing-address denial, context
+parameters in service fixtures, bounded request parsing, public authentication
+limits, origin-checked POST logout, and internal refresh-cookie propagation.
+The newer reset response explicitly avoids claiming account existence or email
+delivery; do not restore the older wording.
+
+Session resolution still chose the first cookie when duplicate `access_token`
+or `refresh_token` values were supplied. Four actual handler fixture regressions
+returned HTTP 200 or invoked refresh before repair. Session-cookie ambiguity now
+fails before any token-validation or refresh call. The nine-case handler suite
+also preserves single access, single refresh, expired-access refresh, unrelated
+duplicate cookies, and no-credential behavior. OAuth state cookies and other
+cookie preferences are not reclassified as session credentials by this change.
+
+The complete retained middleware fixture file is reviewed here, not the remaining
+large authentication-handler test file or the full durable auth-service source.
+Redis unit fixtures and Lua source review do not establish live Redis failover or
+cross-process abuse-limit acceptance.
+
 ## Verification
 
 ```text
@@ -93,7 +122,7 @@ cache. This validates local compilation and covered fixtures, not
 live Redis/PostgreSQL configuration, real OAuth/email delivery, or deployment.
 
 This is a contract-and-wiring reconciliation, not a claim to have completed the
-remaining authentication handler/service, repository acceptance tests,
+remaining authentication-handler tests and service, repository acceptance tests,
 password-reset integration, or generated API-documentation reviews.
 No runtime code was replaced by older interfaces. Retained source copies remain
 intact, with private exact-content review records kept separately from public

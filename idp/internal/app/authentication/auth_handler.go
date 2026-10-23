@@ -450,6 +450,9 @@ func (h *Handler) CurrentSession(c *gin.Context) {
 }
 
 func (h *Handler) resolveAuthenticatedAccessToken(c *gin.Context) (string, bool) {
+	if ambiguousSessionCookies(c.Request) {
+		return "", false
+	}
 	if accessToken, err := c.Cookie("access_token"); err == nil && accessToken != "" {
 		if isAuthenticated, authErr := h.authService.IsUserAuthenticated(c.Request.Context(), accessToken); authErr == nil && isAuthenticated {
 			return accessToken, true
