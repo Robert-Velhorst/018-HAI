@@ -2,15 +2,19 @@ import { ChangeDetectionStrategy, Component, HostListener, OnDestroy, OnInit } f
 import { Router } from '@angular/router'
 import {
   Observable,
+  Subject,
   Subscription,
   catchError,
+  defer,
   finalize,
   forkJoin,
   map,
   of,
   switchMap,
   take,
+  takeUntil,
   throwError,
+  throwIfEmpty,
   timeout,
 } from 'rxjs'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
@@ -71,7 +75,9 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
   private refreshRequestId = 0
   private refreshSubscription?: Subscription
   private destroyed = false
+  private readonly destroyed$ = new Subject<void>()
   private readonly readTimeoutMs = 6000
+  private readonly controlTimeoutMs = 30000
 
   readonly modes = ['autonomous_safe', 'approval_required', 'draft_only', 'read_only', 'paused']
 
@@ -89,7 +95,10 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true
+    this.destroyed$.next()
+    this.destroyed$.complete()
     this.refreshSubscription?.unsubscribe()
+    this.busy = false
   }
 
   refresh(): void {
@@ -107,9 +116,10 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
     this.resumeApproval = undefined
     this.resumeConfirmation = ''
 
-    this.refreshSubscription = this.authSessionService.session().pipe(
+    this.refreshSubscription = defer(() => this.authSessionService.session()).pipe(
       timeout(this.readTimeoutMs),
       take(1),
+      throwIfEmpty(() => new Error('Session returned no evidence')),
       catchError(() => of(undefined)),
       switchMap((session): Observable<IRuntimeStateLoad> => {
         if (!session) {
@@ -127,8 +137,12 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
         }
 
         return forkJoin({
-          status: this.service.status(),
-          readiness: this.service.readiness(),
+          status: defer(() => this.service.status()).pipe(
+            timeout(this.readTimeoutMs), take(1), throwIfEmpty(() => new Error('Runtime status returned no evidence')),
+          ),
+          readiness: defer(() => this.service.readiness()).pipe(
+            timeout(this.readTimeoutMs), take(1), throwIfEmpty(() => new Error('Readiness returned no evidence')),
+          ),
         }).pipe(
           timeout(this.readTimeoutMs),
           map(({ status, readiness }) => ({
@@ -151,7 +165,7 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
         }
       })
     ).subscribe((snapshot) => {
-      if (requestId !== this.refreshRequestId) {
+      if (this.destroyed || requestId !== this.refreshRequestId) {
         return
       }
       this.authSession = snapshot.session
@@ -176,7 +190,7 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
       return
     }
     this.busy = true
-    this.service.pause('operator engaged emergency stop').subscribe({
+    this.observeControl(() => this.service.pause('operator engaged emergency stop')).subscribe({
       next: (response) => {
         this.busy = false
         const result = response as (typeof response & IPauseResponse) | null | undefined
@@ -231,7 +245,7 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
       return
     }
     this.busy = true
-    this.service.requestResumeApproval().subscribe({
+    this.observeControl(() => this.service.requestResumeApproval()).subscribe({
       next: (approval) => {
         this.busy = false
         if (!this.isValidResumeReview(approval)) {
@@ -259,7 +273,9 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
       return
     }
     this.busy = true
-    this.service.approveAndResume(this.resumeApproval.reviewItemId, this.resumeConfirmation).subscribe({
+    const reviewItemId = this.resumeApproval.reviewItemId
+    const confirmation = this.resumeConfirmation
+    this.observeControl(() => this.service.approveAndResume(reviewItemId, confirmation)).subscribe({
       next: (result) => {
         this.busy = false
         if (result?.emergencyStop?.engaged !== false) {
@@ -298,7 +314,7 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
       return
     }
     this.busy = true
-    this.service.prepareModeChange(mode).pipe(
+    this.observeControl(() => this.service.prepareModeChange(mode)).pipe(
       switchMap((result) => {
         if (!result || typeof result.authorizationRequired !== 'boolean') {
           return throwError(() => new Error('The server did not confirm whether this mode change requires approval.'))
@@ -309,10 +325,11 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
               'The server required owner approval but returned incomplete approval proof. The mode was not changed.'
             ))
           }
-          return this.service.setMode(mode, result.authorization)
+          return this.observeControl(() => this.service.setMode(mode, result.authorization))
         }
-        return this.service.setMode(mode)
-      })
+        return this.observeControl(() => this.service.setMode(mode))
+      }),
+      takeUntil(this.destroyed$),
     ).subscribe({
       next: (result) => {
         this.busy = false
@@ -347,7 +364,7 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
       return
     }
     this.busy = true
-    this.service.verifyEmergencyStop().subscribe({
+    this.observeControl(() => this.service.verifyEmergencyStop()).subscribe({
       next: (v) => {
         this.busy = false
         if (
@@ -382,7 +399,7 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
       return
     }
     this.busy = true
-    this.service.recover().subscribe({
+    this.observeControl(() => this.service.recover()).subscribe({
       next: (r) => {
         this.busy = false
         if (!this.isValidRecoveryReport(r)) {
@@ -563,6 +580,7 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
     action: string,
     explanation: string
   ): boolean {
+    if (this.destroyed) return false
     if (permitted && !this.busy) {
       return true
     }
@@ -595,6 +613,16 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
     )
   }
 
+  private observeControl<T>(request: () => Observable<T>): Observable<T> {
+    // A preparation result must not release busy while its governed write is pending.
+    return defer(request).pipe(
+      timeout(this.controlTimeoutMs),
+      take(1),
+      throwIfEmpty(() => new Error('Runtime control returned no evidence')),
+      takeUntil(this.destroyed$),
+    )
+  }
+
   private errorMessage(error: unknown, fallback: string): string {
     const candidate = typeof error === 'object' && error !== null
       ? error as { error?: unknown; message?: unknown }
@@ -603,11 +631,13 @@ export class RuntimeControlComponent implements OnInit, OnDestroy {
       ? candidate.error as { error?: unknown }
       : undefined
     const serverMessage = body?.error
-    if (typeof serverMessage === 'string' && serverMessage.trim()) {
-      return serverMessage
-    }
-    if (typeof candidate?.message === 'string' && candidate.message.trim()) {
-      return candidate.message
+    const safeMessages = [
+      'The server did not confirm whether this mode change requires approval.',
+      'The server required owner approval but returned incomplete approval proof. The mode was not changed.',
+      'safety-control state changed; refresh and retry',
+    ]
+    for (const value of [serverMessage, candidate?.message]) {
+      if (typeof value === 'string' && safeMessages.includes(value)) return value
     }
     return fallback
   }
