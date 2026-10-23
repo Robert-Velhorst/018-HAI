@@ -104,6 +104,26 @@ func TestPersistSourceExtractionLessonFailsWhenRepositoryLacksOptionalCapability
 	}
 }
 
+func TestSourceExtractionLessonKindMatchesCanonicalValidation(t *testing.T) {
+	extractionID := uuid.New()
+	for _, kind := range []string{"lesson", " LESSON ", "Lesson", "correction_lesson", " CORRECTION_LESSON ", "Correction_Lesson"} {
+		t.Run(kind, func(t *testing.T) {
+			request := CreateRequest{
+				Kind: kind, ProjectKey: "case-a", Content: "A verified correction lesson.",
+				SourceURI: "https://example.invalid/source", SourceLabel: "Source record",
+			}
+			if err := validateSourceExtractionLessonRequest(request); err != nil {
+				t.Fatalf("accepted kind spelling rejected: %v", err)
+			}
+			lesson := sourceExtractionLesson("owner-a", extractionID, request)
+			canonicalKind := strings.ToLower(strings.TrimSpace(kind))
+			if lesson.Kind != canonicalKind || lesson.ContentHash != hashContent(request.ProjectKey, canonicalKind, request.Content) {
+				t.Fatalf("kind spelling changed persisted identity/hash: kind=%q hash=%q", lesson.Kind, lesson.ContentHash)
+			}
+		})
+	}
+}
+
 func TestSourceExtractionLessonRequestRequiresKindAndContent(t *testing.T) {
 	valid := CreateRequest{
 		Kind: "correction_lesson", Content: "A verified correction lesson.",
