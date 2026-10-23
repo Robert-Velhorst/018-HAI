@@ -525,7 +525,8 @@ func (r *PostgresTaskStateRepository) FindApprovedReviewDecisionInPostgresTransa
 }
 
 func sameTaskStatePostgresTransaction(database, tx *gorm.DB) bool {
-	if database == nil || tx == nil || database.Dialector == nil || tx.Dialector == nil ||
+	if database == nil || tx == nil || database.Config == nil || tx.Config == nil ||
+		database.DryRun || tx.DryRun || database.Dialector == nil || tx.Dialector == nil ||
 		database.Dialector.Name() != "postgres" || tx.Dialector.Name() != "postgres" ||
 		database.Error != nil || tx.Error != nil || database.Statement == nil || tx.Statement == nil {
 		return false
