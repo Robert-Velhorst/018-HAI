@@ -1209,3 +1209,34 @@ Preserve that failed-attempt classification here rather than adding raw local
 build logs to the public repository. No container/network/volume removal, Docker
 configuration change, stack restart or rerun was performed during this review.
 Both original logs remain intact pending main-preservation and cleanup gates.
+
+## Windows initializer reconciliation
+
+Read the complete retained initializer and the complete current implementation,
+including their delta. Preserve cryptographic independent secrets, additive
+maintenance migration with explicit opt-out, strict duplicate-setting checks,
+atomic environment writes and protected temporary-file handling. Keep the current
+local-only A2A host/path restriction, removed public-tunnel configuration, saved
+network subnet handling, existing-data-volume refusal and DACL/rollback recovery
+checks; do not replace them with the older permissive behavior. Reading this code
+does not establish a successful native installer, ACL recovery or live deployment.
+
+The first-run password preflight did not match the current IDP policy. It counted
+UTF-16 units instead of Unicode scalars, omitted bcrypt's 72-byte limit and could
+accept whitespace that the IDP trims, NUL/invalid Unicode or markers that the IDP
+rejects. Validate strict Unicode, at least 12 scalars and at most 72 UTF-8 bytes;
+reject boundary whitespace rather than silently changing the supplied secret.
+Retain the dotenv single-quote/line-break restriction and reject NUL and the same
+known placeholder markers. Existing-install migration bypasses first-run input
+validation and continues to preserve saved credentials.
+
+The new test executes the actual preflight AST block and its validator, without
+executing the rest of the initializer. Before the repair, 12 of its 20 cases
+failed. All 20 now pass in both PowerShell 7 and Windows PowerShell 5.1, including
+valid ASCII, multibyte and astral boundaries, plus literal interpolation symbols.
+The test also rejects disclosure or modification of supplied values. No test
+environment file, credential, Docker resource, account or ACL was created or
+changed. Wire both interpreter checks into the existing Windows installer CI
+step without adding a new job or weakening payload checks. All 121 existing CI
+contract tests pass locally. Full installer/payload execution and real IDP login
+remain separate acceptance gates. The retained initializer is not deleted.

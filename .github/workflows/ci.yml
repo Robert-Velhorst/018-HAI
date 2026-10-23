@@ -211,7 +211,11 @@ jobs:
           }
       - name: Installer payload and safety contract
         shell: pwsh
-        run: ./scripts/test-windows-installer-contract.ps1
+        run: |
+          ./scripts/test-windows-initializer-password.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-windows-initializer-password.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell password preflight failed" }
+          ./scripts/test-windows-installer-contract.ps1
       - name: Existing HAI data recovery guard
         shell: pwsh
         run: ./scripts/test-windows-existing-data-env-guard.ps1
