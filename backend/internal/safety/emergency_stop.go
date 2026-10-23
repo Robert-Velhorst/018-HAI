@@ -67,13 +67,17 @@ func AcquireExecutionCommitFenceContext(ctx context.Context) (func(), error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	timer := time.NewTicker(5 * time.Millisecond)
 	defer timer.Stop()
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if emergencyStopFence.TryRLock() {
+			if err := ctx.Err(); err != nil {
+				emergencyStopFence.RUnlock()
+				return nil, err
+			}
 			return emergencyStopFence.RUnlock, nil
 		}
 		select {

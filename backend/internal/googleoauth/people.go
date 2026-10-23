@@ -143,8 +143,5 @@ func (c PeopleClient) baseURL() string {
 }
 
 func (c PeopleClient) httpClient() *http.Client {
-	if c.HTTPClient != nil {
-		return c.HTTPClient
-	}
-	return &http.Client{Timeout: 30 * time.Second}
+	return googleAPIHTTPClient(c.HTTPClient, 30*time.Second)
 }

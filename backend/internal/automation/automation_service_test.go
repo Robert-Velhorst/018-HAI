@@ -2274,7 +2274,7 @@ func testOwnerStopCancelsAgentRuntimeBlockedDuringLaunchTask(t *testing.T, runti
 		t.Fatalf("expected one immutable launch intent before dispatch, got %#v", repo.launchIntents)
 	}
 	wantTaskID := automationLaunchRuntimeTaskID(repo.automation, repo.launchIntents[0].ID)
-	if repo.launchIntents[0].RuntimeTaskID != launched.ID || launched.ID != wantTaskID || strings.TrimSpace(launched.ID) == "" {
+	if repo.launchIntents[0].RuntimeTaskID != launched.ID || repo.launchIntents[0].ExecutionReference != launched.ExecutionReference || launched.ID != wantTaskID || strings.TrimSpace(launched.ID) == "" {
 		t.Fatalf("pending intent does not match dispatched launch-scoped runtime identity: intents=%#v task=%#v wantTaskID=%q", repo.launchIntents, launched, wantTaskID)
 	}
 	if launched.ID == id.String() {
@@ -2296,7 +2296,7 @@ func testOwnerStopCancelsAgentRuntimeBlockedDuringLaunchTask(t *testing.T, runti
 	if err != nil {
 		t.Fatalf("owner stop: %v", err)
 	}
-	if stopped.Status != "cancellation_requested" || stopped.TaskID != launched.ID || adapter.stopReference != launched.ExecutionReference {
+	if stopped.Status != "cancellation_requested" || stopped.TaskID != launched.ID || stopped.ExecutionReference != launched.ExecutionReference || adapter.stopReference != launched.ExecutionReference {
 		t.Fatalf("owner stop did not target the exact in-flight launch: stop=%#v adapterRef=%q wantTaskID=%q", stopped, adapter.stopReference, launched.ID)
 	}
 	select {

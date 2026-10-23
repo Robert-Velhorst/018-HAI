@@ -63,6 +63,42 @@ func TestSafeOutcomeAttemptErrorOverridesContradictoryVerifiedFlag(t *testing.T)
 	}
 }
 
+func TestRecoveredCompletedSafeWorkerRequiresExecutionReceipt(t *testing.T) {
+	for _, test := range []struct{ name, state string }{
+		{"empty", ""},
+		{"whitespace", " \n\t"},
+		{"empty_object", "{}"},
+		{"unrelated_state", `{"policyRule":"retain"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			attempt := runtimeAttemptFromOperation(models.Operation{
+				ID: uuid.New(), Status: string(operations.StatusCompleted),
+				VerificationStatus: string(operations.VerificationPassed), WorldModelStateJSON: test.state,
+			})
+			if attempt.Status != AttemptInconclusive || attempt.VerificationPassed || !attempt.ReconciliationRequired || attempt.Receipt != nil || !attempt.OutcomeRecorded {
+				t.Fatalf("terminal status without execution evidence became success: %#v", attempt)
+			}
+		})
+	}
+	// Complete recorded evidence must still recover without rerunning the worker.
+	receipt := labOutcomeReceipt()
+	receipt.Verification.InsideWorkspace = true
+	receipt.Verification.HashMatches = true
+	receipt.Verification.MarkerFound = true
+	receipt.Verification.OutputBounded = true
+	state, err := json.Marshal(map[string]any{"safeWorkerExecution": map[string]any{"result": receipt, "outcomeUncertain": false}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempt := runtimeAttemptFromOperation(models.Operation{
+		ID: uuid.New(), Status: string(operations.StatusCompleted),
+		VerificationStatus: string(operations.VerificationPassed), WorldModelStateJSON: string(state),
+	})
+	if attempt.Status != AttemptSucceeded || !attempt.VerificationPassed || attempt.ReconciliationRequired || attempt.Receipt == nil || !attempt.OutcomeRecorded {
+		t.Fatalf("complete recorded execution did not recover: %#v", attempt)
+	}
+}
+
 func TestSafeOutcomeAttemptRecoveryPreservesInterruptedAndContradictoryReceipts(t *testing.T) {
 	for _, status := range []operations.OperationStatus{operations.StatusInterrupted, operations.StatusCompleted} {
 		state, err := json.Marshal(map[string]any{

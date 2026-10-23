@@ -143,6 +143,37 @@ class CIWorkflowContractTest(unittest.TestCase):
         ):
             self.assertIn(contract, migrations)
 
+    def test_artifact_recovery_and_retention_suites_require_postgres_pass(self):
+        migrations = job_block("migrations-integration")
+        selection = re.search(r"-run '([^']*TestOpenClawArtifactRecoveryPostgres[^']*)'", migrations)
+        self.assertIsNotNone(selection)
+        for source in (
+            "openclaw_artifact_recovery_integration_test.go",
+            "openclaw_artifact_retention_integration_test.go",
+        ):
+            program = (ROOT / "backend" / "migrations" / source).read_text(encoding="utf-8")
+            names = re.findall(r"(?m)^func (Test\w+)\(t \*testing\.T\)", program)
+            self.assertTrue(names, source)
+            for name in names:
+                with self.subTest(source=source, test=name):
+                    self.assertIsNotNone(re.fullmatch(selection.group(1), name))
+                    self.assertRegex(migrations, rf"(?m)^            {name}(?: \\\n|\n)")
+        self.assertIn('grep -q -- "^--- PASS: ${test_name} (" "$openclaw_migrations_log"', migrations)
+
+    def test_guarded_rollbacks_require_real_postgres_pass(self):
+        migrations = job_block("migrations-integration")
+        selection = re.search(r"-run '(\^\(TestOpenClawArtifactAlignmentPostgres[^']+)'", migrations)
+        self.assertIsNotNone(selection)
+        for name in (
+            "TestOpenClawSessionReviewRollbackPreservesTerminalReviewMetadata",
+            "TestTrelloResumableRollbackRefusesPersistedStateAndPreservesSharedIndex",
+            "TestOpenClawArtifactClaimRollbackRefusesRetainedTokens",
+        ):
+            self.assertIn(name, selection.group(1))
+            self.assertRegex(migrations, rf"(?m)^            {name}(?: \\\n|\n)")
+        self.assertIn('HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1', migrations)
+        self.assertIn('grep -q -- "^--- PASS: ${test_name}', migrations)
+
     def test_compose_job_checks_effective_docker_build_contexts(self) -> None:
         compose = job_block("compose")
         self.assertIn(
@@ -1851,6 +1882,20 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
                          "grep -q -- '^--- PASS: TestPostgresReminderDeliveryAtomicReplay ('"):
             self.assertIn(contract, migrations)
 
+    def test_automation_idempotency_requires_guarded_postgres_passes(self) -> None:
+        migrations = job_block("migrations-integration")
+        for contract in (
+            'automation_launch_log="$RUNNER_TEMP/automation-launch-postgres.log"',
+            "TestPostgresLaunchIntentIdempotencyIsAtomicAcrossConcurrentRequests",
+            "TestPostgresLaunchEventIdempotencyReturnsStoredIdentityAndRejectsConflicts",
+            '"^--- PASS: ${test_name} (" "$automation_launch_log"',
+            "./internal/automation/ -v",
+        ):
+            self.assertIn(contract, migrations)
+        source = (ROOT / "backend/internal/automation/approval_proof_postgres_test.go").read_text(encoding="utf-8")
+        guard = 'RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")'
+        self.assertLess(source.index(guard), source.index("gorm.Open"))
+
     def test_atomic_claim_recovery_requires_guarded_real_postgres_pass(self) -> None:
         migrations = job_block("migrations-integration")
         for contract in ('HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s',
@@ -2167,6 +2212,18 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn('databaseName != "hai_migration_runner_test"', source)
         self.assertNotIn("t.Skip", source)
         self.assertNotIn("postgres.Open(dsn)", source)
+
+    def test_host_runtime_postgres_requires_all_missing_expiry_cases(self) -> None:
+        migrations = job_block("migrations-integration")
+        for contract in (
+            'HAI_TEST_DATABASE_DSN="$migration_dsn" HAI_ALLOW_HOST_RUNTIME_TEMP_TABLE_TESTS=true',
+            "-run '^TestGormRepositoryExpiryAndUncertainLeaseTransitions$'",
+            './internal/hostruntime/ -v | tee "$host_runtime_log"',
+            "grep -q -- '^--- PASS: TestGormRepositoryExpiryAndUncertainLeaseTransitions ('",
+            'for operation in begin replay ack; do',
+            'TestGormRepositoryExpiryAndUncertainLeaseTransitions/missing_lease_expiry/${operation}',
+        ):
+            self.assertIn(contract, migrations)
 
     def test_running_stack_must_be_live_before_acceptance_test(self) -> None:
         isolation = job_block("isolation-acceptance")
