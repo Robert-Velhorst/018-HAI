@@ -2,16 +2,18 @@
 
 ## Reviewed scope
 
-Compared three retained Windows launcher variants with current code:
+Compared five retained Windows launcher and regression-test variants with current code:
 
 - `installer/windows/Hai-OpenClawMaintenance.ps1`
 - `installer/windows/Manage-HAI-OpenClawMaintenanceTask.ps1`
 - `installer/windows/Run-HAI-OpenClawMaintenance.ps1`
+- `scripts/test-openclaw-maintenance-launcher.ps1`
+- `scripts/test-openclaw-maintenance-migration.ps1`
 
-The older variants add no missing behavior. Keep the current implementations
-rather than restoring them wholesale. The larger launcher/migration test-script
-variants, NSIS integration and remaining archive work are not marked reviewed by
-this comparison.
+Keep the stronger current implementations rather than restoring older launchers
+wholesale. One useful native-process scenario from the older migration test was
+adapted as described below. NSIS integration and remaining archive work are not
+marked reviewed by this comparison.
 
 ## Retained current behavior
 
@@ -31,12 +33,42 @@ this comparison.
   validation, bounded log rotation, secret redaction and environment restoration
   remain intact.
 
+## Integrated regression work
+
+The launcher regression now isolates LOCALAPPDATA before loading support or
+performing mock registration, restores the prior environment in `finally`, and
+only deletes its exact generated temporary directory. Its lock-probe child also
+blocks native Task Scheduler lookup/registration/removal/start even if the lock
+regresses. Previously some early test log writes reached the real profile.
+
+The migration regression now binds the parent promotion helper to the same
+isolated mutex as its child fixture and restores the previous mutex name. It
+also checks concurrent worker output against the newly generated concurrent
+token, not just an unrelated earlier fixture token.
+
+The earlier real legacy-worker test was missing from the current mocked process
+coverage. Restore that useful evidence using a copied Windows command processor
+and bounded loopback-only child in the generated temporary installation. Verify
+its exact PID/executable path through native CIM, require the actual promotion
+timeout while it still runs, prove installed/staged hashes remain unchanged,
+wait for natural exit, then verify successful atomic promotion. Keep current
+payload validation and self-acquired isolated locking; do not restore the old
+installer-lock bypass. Other legacy-process cases remain explicitly mocked.
+
 ## Verification and cleanup boundary
 
 Local Windows PowerShell validation covered all three files' syntax, the valid
 four-setting worker projection, ten rejected configurations, duplicate settings
 and quoted-value parsing. It did not register/unregister tasks, write maintenance
 logs, access the network or launch an installer.
+
+After the isolation fixes, both complete Windows regression scripts pass locally.
+These runs exercise real temporary-file ACL/encoding/idempotency and migration
+mutex operations, bounded launcher lock contention, malformed executable rejection,
+temporary log rotation and the restored native process/path replacement guard.
+Task Scheduler mutation is mocked/blocked. The native child uses loopback only;
+no real HAI installation, production environment file or installer is executed.
+Portable CI contracts protect the fixture-isolation and native-path checks.
 
 A separate byte comparison covered all 618 frozen selected worktree entries
 against the pinned current main revision. None matched exactly or through the

@@ -70,7 +70,7 @@ the created namespace OID before dropping it. Connection errors do not echo DSNs
 - Positive keyword, URI and IPv6-loopback configurations and malformed-input
   rejection are covered without opening database connections.
 - The CI contract failed before the dedicated database and test selection were
-  added; the full 111-contract suite passes after wiring.
+  added; the full 113-contract suite passes after wiring and fixture-isolation coverage.
 - Local maintenance, pgtestguard and maintenance-command package tests pass.
   SQL-backed service tests skip without the dedicated DSN and explicit opt-in;
   actual PostgreSQL lifecycle and cleanup execution remain CI acceptance gates.

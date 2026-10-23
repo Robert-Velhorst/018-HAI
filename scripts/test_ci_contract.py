@@ -133,6 +133,30 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_windows_maintenance_native_worker_fixture_is_path_bound(self):
+        migration = (ROOT / "scripts/test-openclaw-maintenance-migration.ps1").read_text(encoding="utf-8")
+        for contract in (
+            "CimCmdlets\\Get-CimInstance -ClassName Win32_Process",
+            "$_.ProcessId -eq $legacyWorker.Id",
+            "[IO.Path]::GetFullPath($promotionWorker)",
+            "could not be promoted within 1 seconds",
+            "$legacyWorker.WaitForExit(15000)",
+            "-not $workerOutput.Contains($concurrentToken)",
+        ):
+            self.assertIn(contract, migration)
+
+    def test_windows_maintenance_fixtures_isolate_logs_tasks_and_mutexes(self):
+        launcher = (ROOT / "scripts/test-openclaw-maintenance-launcher.ps1").read_text(encoding="utf-8")
+        self.assertLess(launcher.index("$env:LOCALAPPDATA = $isolatedLocalAppData"), launcher.index(". $support\n"))
+        self.assertIn("$env:LOCALAPPDATA = $originalLocalAppData", launcher)
+        self.assertIn("^hai-maintenance-test-localdata-[0-9a-f]{32}$", launcher)
+        probe = launcher.split("$script:HaiOpenClawMaintenanceMutexName = $MutexName\n", 1)[1].split("$registerBlocked", 1)[0]
+        for name in ("Get", "Register", "Unregister", "Start"):
+            self.assertIn(f"function {name}-ScheduledTask {{ throw 'Offline fixture blocked", probe)
+        migration = (ROOT / "scripts/test-openclaw-maintenance-migration.ps1").read_text(encoding="utf-8")
+        self.assertIn("$script:HaiOpenClawMaintenanceMutexName = $offlinePromotionMutexName", migration)
+        self.assertIn("$script:HaiOpenClawMaintenanceMutexName = $previousMaintenanceMutexName", migration)
+
     def test_maintenance_pull_lifecycle_requires_postgres_pass(self):
         migrations = job_block("migrations-integration")
         for contract in (

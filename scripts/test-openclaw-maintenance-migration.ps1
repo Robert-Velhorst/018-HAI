@@ -252,6 +252,7 @@ try {
         $concurrentContent = [IO.File]::ReadAllText($concurrentPath)
         $concurrentToken = Get-HaiFixtureValue -Content $concurrentContent -Name 'HAI_OPENCLAW_MAINTENANCE_TOKEN'
         Assert-HaiTest ($concurrentToken -match '\A[a-f0-9]{64}\z') 'Concurrent migrations did not leave one complete valid token.'
+        Assert-HaiTest (-not $workerOutput.Contains($concurrentToken)) 'Concurrent migration output exposed its newly generated maintenance token.'
         Assert-HaiTest (@(Get-ChildItem -LiteralPath $temporaryRoot -Filter '.hai-maintenance-*' -File).Count -eq 0) 'Concurrent migrations left a temporary config or backup file behind.'
     } finally {
         if ($ownsTestMutex) { $testMutex.ReleaseMutex() }
@@ -352,7 +353,9 @@ function Register-HaiOpenClawMaintenanceTask {
     Assert-HaiTest ($oldPromotionHash -cne $newPromotionHash) 'The promotion fixture requires distinct valid worker payloads.'
     $promotionMutex = New-Object Threading.Mutex($false, $offlinePromotionMutexName)
     $ownsPromotionMutex = $false
+    $previousMaintenanceMutexName = $script:HaiOpenClawMaintenanceMutexName
     try {
+        $script:HaiOpenClawMaintenanceMutexName = $offlinePromotionMutexName
         $ownsPromotionMutex = $promotionMutex.WaitOne(0)
         Assert-HaiTest $ownsPromotionMutex 'The installer/worker mutex fixture could not acquire the shared lock.'
         $powershellPath = (Get-Process -Id $PID).Path
@@ -364,9 +367,13 @@ function Register-HaiOpenClawMaintenanceTask {
 
         $script:fixtureInstallRoot = $promotionRoot
         $script:fixtureMaintenanceProcesses = @()
+        $script:fixtureUseNativeProcessQuery = $false
         function Get-CimInstance {
             param([string]$ClassName, [string]$Filter, [string]$ErrorAction)
             if ($ClassName -ne 'Win32_Process') { throw 'Unexpected system query in the offline process fixture.' }
+            if ($script:fixtureUseNativeProcessQuery) {
+                return CimCmdlets\Get-CimInstance -ClassName $ClassName -Filter $Filter -ErrorAction Stop
+            }
             return @($script:fixtureMaintenanceProcesses)
         }
 
@@ -395,7 +402,47 @@ function Register-HaiOpenClawMaintenanceTask {
         Assert-HaiTest ($retryResult -is [bool] -and $retryResult) ("Worker promotion did not succeed after the offline legacy-process fixture cleared: {0}" -f $retryResult)
         Assert-HaiTest ((Get-FileHash -LiteralPath $promotionWorker -Algorithm SHA256).Hash -ceq $replacementPromotionHash) 'The retry did not install the staged worker after the legacy process exited.'
         Assert-HaiTest (-not (Test-Path -LiteralPath $pendingWorker)) 'A successful retry left its pending executable behind.'
+
+        # Preserve the real process/path check from the older fixture without
+        # restoring its removed installer-lock bypass or touching installed data.
+        Copy-Item -LiteralPath $oldPromotionSource -Destination $promotionWorker -Force
+        Copy-Item -LiteralPath $newPromotionSource -Destination $pendingWorker
+        $nativeWorkerHash = (Get-FileHash -LiteralPath $promotionWorker -Algorithm SHA256).Hash
+        $nativeReplacementHash = (Get-FileHash -LiteralPath $pendingWorker -Algorithm SHA256).Hash
+        $systemPing = Join-Path $env:WINDIR 'System32\ping.exe'
+        Assert-HaiTest (Test-Path -LiteralPath $systemPing -PathType Leaf) 'The bounded Windows process fixture requires the system loopback ping utility.'
+        $legacyWorker = Start-Process -FilePath $promotionWorker -ArgumentList @('/d', '/c', ('"{0}" 127.0.0.1 -n 8 > nul' -f $systemPing)) -WindowStyle Hidden -PassThru
+        try {
+            $script:fixtureUseNativeProcessQuery = $true
+            $visibleDeadline = [DateTimeOffset]::UtcNow.AddSeconds(5)
+            do {
+                $visible = @(CimCmdlets\Get-CimInstance -ClassName Win32_Process -Filter "Name = 'hai-openclaw-maintenance.exe'" -ErrorAction Stop | Where-Object {
+                    $_.ProcessId -eq $legacyWorker.Id -and -not [string]::IsNullOrWhiteSpace([string]$_.ExecutablePath) -and
+                    [string]::Equals([IO.Path]::GetFullPath([string]$_.ExecutablePath), [IO.Path]::GetFullPath($promotionWorker), [StringComparison]::OrdinalIgnoreCase)
+                })
+                if ($visible.Count -eq 1) { break }
+                Start-Sleep -Milliseconds 50
+            } while ([DateTimeOffset]::UtcNow -lt $visibleDeadline -and -not $legacyWorker.HasExited)
+            Assert-HaiTest ($visible.Count -eq 1) 'The real temporary legacy worker was not visible through its exact PID and executable path.'
+            $nativeRejection = $null
+            try { [void](Promote-HaiMaintenanceWorker -WaitSeconds 1) } catch { $nativeRejection = $_.Exception.Message }
+            Assert-HaiTest ($nativeRejection -match 'could not be promoted within 1 seconds' -and -not $legacyWorker.HasExited) 'Promotion did not explicitly defer while the real temporary worker was still running.'
+            Assert-HaiTest ((Get-FileHash -LiteralPath $promotionWorker -Algorithm SHA256).Hash -ceq $nativeWorkerHash) 'Blocked native-process promotion changed the running executable.'
+            Assert-HaiTest ((Get-FileHash -LiteralPath $pendingWorker -Algorithm SHA256).Hash -ceq $nativeReplacementHash) 'Blocked native-process promotion consumed the replacement.'
+            Assert-HaiTest ($legacyWorker.WaitForExit(15000)) 'The bounded temporary worker did not exit naturally.'
+            Assert-HaiTest (Promote-HaiMaintenanceWorker -WaitSeconds 1) 'Promotion did not recover after the real temporary worker exited.'
+            Assert-HaiTest ((Get-FileHash -LiteralPath $promotionWorker -Algorithm SHA256).Hash -ceq $nativeReplacementHash) 'Native-process retry did not preserve the intended replacement bytes.'
+            Assert-HaiTest (-not (Test-Path -LiteralPath $pendingWorker)) 'Native-process retry left the staged executable behind.'
+        } finally {
+            $script:fixtureUseNativeProcessQuery = $false
+            try {
+                if (-not $legacyWorker.HasExited -and -not $legacyWorker.WaitForExit(15000)) {
+                    throw 'The owned temporary process is still running; its fixture must be preserved for inspection.'
+                }
+            } finally { $legacyWorker.Dispose() }
+        }
     } finally {
+        $script:HaiOpenClawMaintenanceMutexName = $previousMaintenanceMutexName
         if ($ownsPromotionMutex) { $promotionMutex.ReleaseMutex() }
         $promotionMutex.Dispose()
     }
@@ -409,7 +456,7 @@ function Register-HaiOpenClawMaintenanceTask {
     $startupTaskRegistration = $startText.IndexOf('Register-HaiOpenClawMaintenanceTask', [StringComparison]::Ordinal)
     Assert-HaiTest ($migrationCall -ge 0 -and $startupInitialize -ge 0 -and $startupTaskRegistration -gt $startupInitialize) 'The Windows upgrade path no longer reaches maintenance task registration after environment migration.'
 
-    Write-Output 'OpenClaw migration/startup fixtures passed: opt-out, token, encoding, ACL-before-write, fail-closed, concurrent migration locking, isolated installer mutex exclusion, mocked legacy-worker replacement guard/retry, self-locking silent-upgrade ordering, fresh-install deferral, and no application launch.'
+    Write-Output 'OpenClaw migration/startup fixtures passed: opt-out, token, encoding, ACL-before-write, fail-closed, concurrent migration locking, isolated installer mutex exclusion, mocked and real temporary legacy-worker replacement guard/retry, self-locking silent-upgrade ordering, fresh-install deferral, and no HAI application launch.'
 } finally {
     $resolvedTemporaryRoot = [IO.Path]::GetFullPath($temporaryRoot)
     $resolvedTempParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
