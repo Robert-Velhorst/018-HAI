@@ -359,7 +359,8 @@ func matchDecisionCalibrationRequestExcluded(tokens []matchToken) bool {
 
 func matchDecisionCalibrationRequestAfterContrast(tokens []matchToken) bool {
 	return matchAfterContrast(tokens, func(suffix []matchToken) bool {
-		return matchAnyPositive(suffix, matchDecisionCalibrationRequestTerms...)
+		return !matchDecisionCalibrationExcluded(suffix) &&
+			matchAnyPositive(suffix, matchDecisionCalibrationRequestTerms...)
 	})
 }
 
