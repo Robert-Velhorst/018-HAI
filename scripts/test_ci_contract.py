@@ -1359,6 +1359,8 @@ class CIWorkflowContractTest(unittest.TestCase):
                 self.assertNotIn("jacksonbarreto/", content)
 
     def test_cross_platform_secret_generator_covers_every_required_backend_key(self) -> None:
+        backend = job_block("backend")
+        self.assertIn("- name: Bootstrap secret generator contracts\n        working-directory: .\n        run: bash scripts/test-generate-secrets.sh", backend)
         generator = (ROOT / "scripts" / "generate-secrets.sh").read_text(encoding="utf-8")
         generated_keys = {
             "BACKEND_API_SHARED_KEY": "backend_api_shared_key",
