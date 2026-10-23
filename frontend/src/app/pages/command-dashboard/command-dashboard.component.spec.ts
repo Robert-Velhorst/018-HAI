@@ -158,10 +158,12 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
 
   it('resolves a verified completion review from the unified queue', () => {
     const { component, pursuits, notification } = createComponent();
+    const pursuitId = '33333333-3333-4333-8333-333333333333';
+    const decisionId = `pursuit:${pursuitId}:completion-review`;
     const card = {
-      pursuit: { id: 'pursuit-1', title: 'Complete evidence bundle' },
+      pursuit: { id: pursuitId, title: 'Complete evidence bundle' },
       decision: {
-        id: 'pursuit:pursuit-1:completion-review',
+        id: decisionId,
         decisionType: 'pursuit_completion_review',
         status: 'pending',
         riskLevel: 'medium',
@@ -171,12 +173,18 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
         noConsequence: 'Keep it active.',
       },
     } as IPursuitDashboardDecision;
-    pursuits.resolveDecision.and.returnValue(of({}));
+    pursuits.resolveDecision.and.returnValue(of({
+      pursuit: { id: pursuitId, status: 'completed', completionState: 'verified', archived: false },
+      decisionQueue: [],
+      activity: [{ id: '22222222-2222-4222-8222-222222222222', pursuitId,
+        eventType: 'pursuit.decision_resolved', sourceId: decisionId,
+        sourceType: 'pursuit_decision:pursuit_completion_review:approved', createdAt: '2026-10-23T10:00:00Z' }],
+    }));
 
     component.resolveDashboardDecision(card, true);
 
-    expect(pursuits.resolveDecision).toHaveBeenCalledWith('pursuit-1', {
-      decisionId: 'pursuit:pursuit-1:completion-review',
+    expect(pursuits.resolveDecision).toHaveBeenCalledWith(pursuitId, {
+      decisionId,
       decisionType: 'pursuit_completion_review',
       approved: true,
       reason: 'Linked workflows are completed with accepted evidence.',
@@ -185,7 +193,9 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
       evidenceLabel: undefined,
       actor: 'Robert',
     });
-    expect(notification.success).toHaveBeenCalledWith('Pursuit completed', 'Verified completion and the Robert decision were recorded in the audit trail.');
+    expect(notification.info).toHaveBeenCalledWith('Completion response received',
+      'The server reports completed and verified state with a matching decision record. This is not independent verification of the outcome.');
+    expect(notification.success).not.toHaveBeenCalled();
   });
 
   it('retains confirmed command history when the next ledger read is unavailable', () => {

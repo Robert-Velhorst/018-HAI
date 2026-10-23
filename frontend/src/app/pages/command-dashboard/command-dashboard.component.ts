@@ -1069,12 +1069,15 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
     this.resolveRuntimeDecision(card, approved);
   }
 
-  private resolveWorkflowApprovalDecision(card: IPursuitDashboardDecision, approved: boolean): void {
-    const validReference = (value: unknown): boolean => typeof value === 'string' &&
+  private validDashboardReference(value: unknown): value is string {
+    return typeof value === 'string' &&
       /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value) &&
       value !== '00000000-0000-0000-0000-000000000000';
+  }
+
+  private resolveWorkflowApprovalDecision(card: IPursuitDashboardDecision, approved: boolean): void {
     const workflowId = card.decision.workflowId;
-    if (!workflowId || !validReference(workflowId) || card.decision.id !== `workflow:${workflowId}:approval`) {
+    if (!this.validDashboardReference(workflowId) || card.decision.id !== `workflow:${workflowId}:approval`) {
       this.notification.warning('Decision unavailable', 'Refresh the decision queue before acting on this approval.');
       this.refreshPursuits();
       return;
@@ -1103,7 +1106,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: (record) => {
         const decisionMatches = Array.isArray(record?.decisions) && record.decisions.some((decision) =>
-          validReference(decision?.id) && decision.workflowId === workflowId &&
+          this.validDashboardReference(decision?.id) && decision.workflowId === workflowId &&
           decision.decisionType === 'approval' && decision.decision === expectedDecision &&
           decision.approved === approved && typeof decision.createdAt === 'string' &&
           Number.isFinite(Date.parse(decision.createdAt)));
@@ -1151,9 +1154,26 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   private resolvePursuitCompletionDecision(card: IPursuitDashboardDecision, approved: boolean): void {
-    this.resolvingDashboardDecisionId = card.decision.id;
-    this.pursuits.resolveDecision(card.pursuit.id, {
-      decisionId: card.decision.id,
+    const pursuitId = card.pursuit.id;
+    const decisionId = card.decision.id;
+    if (!this.validDashboardReference(pursuitId) || decisionId !== `pursuit:${pursuitId}:completion-review`) {
+      this.notification.warning('Decision unavailable', 'Refresh the decision queue before acting on this completion review.');
+      this.refreshPursuits();
+      return;
+    }
+    const outcome = approved ? 'approved' : 'rejected';
+    const unconfirmed = () => {
+      if (this.destroyed) return;
+      this.resolvingDashboardDecisionId = '';
+      this.notification.warning(
+        'Completion outcome unconfirmed',
+        'Refresh the pursuit decision queue to reconcile its current state. HAI will not automatically repeat this decision.'
+      );
+      this.refreshPursuits();
+    };
+    this.resolvingDashboardDecisionId = decisionId;
+    defer(() => this.pursuits.resolveDecision(pursuitId, {
+      decisionId,
       decisionType: card.decision.decisionType,
       approved,
       reason: card.decision.reason,
@@ -1163,24 +1183,39 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       evidenceUri: card.decision.evidenceUri,
       evidenceLabel: card.decision.evidenceLabel,
       actor: 'Robert',
-    }).subscribe({
-      next: () => {
+    })).pipe(
+      take(1),
+      throwIfEmpty(),
+      timeout({ first: HttpTimeoutPolicy.operationMs }),
+      takeUntil(this.openClawDestroy$),
+      finalize(() => { this.resolvingDashboardDecisionId = ''; })
+    ).subscribe({
+      next: (detail) => {
+        const activityMatches = Array.isArray(detail?.activity) && detail.activity.some((activity) =>
+          this.validDashboardReference(activity?.id) && activity.pursuitId === pursuitId &&
+          activity.eventType === 'pursuit.decision_resolved' && activity.sourceId === decisionId &&
+          activity.sourceType === `pursuit_decision:pursuit_completion_review:${outcome}` &&
+          typeof activity.createdAt === 'string' && Number.isFinite(Date.parse(activity.createdAt)));
+        const stateMatches = detail?.pursuit?.archived === false && (approved
+          ? detail.pursuit.status === 'completed' && detail.pursuit.completionState === 'verified'
+          : ['active', 'waiting', 'blocked'].includes(detail.pursuit.status));
+        if (detail?.pursuit?.id !== pursuitId || !stateMatches || !activityMatches ||
+            !Array.isArray(detail.decisionQueue) || detail.decisionQueue.some((decision) =>
+              decision?.id === decisionId && (typeof decision.status !== 'string' ||
+                decision.status.trim().toLowerCase() === 'pending'))) {
+          unconfirmed();
+          return;
+        }
         this.resolvingDashboardDecisionId = '';
-        this.notification.success(
-          approved ? 'Pursuit completed' : 'Pursuit kept active',
+        this.notification.info(
+          approved ? 'Completion response received' : 'Decision response received',
           approved
-            ? 'Verified completion and the Robert decision were recorded in the audit trail.'
-            : 'The completion review decision was recorded.'
+            ? 'The server reports completed and verified state with a matching decision record. This is not independent verification of the outcome.'
+            : 'The server returned a matching rejection record with the pursuit still open. This is not independent verification of the outcome.'
         );
         this.refreshPursuits();
       },
-      error: (error) => {
-        this.resolvingDashboardDecisionId = '';
-        this.notification.error(
-          approved ? 'Completion blocked' : 'Decision blocked',
-          error?.error?.error || 'The completion review could not be recorded.'
-        );
-      },
+      error: unconfirmed,
     });
   }
 

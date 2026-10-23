@@ -13,6 +13,7 @@ const { CommandDashboardComponent } = await loadComponentLogic(new URL('../src/a
   '../../shared/http-timeout-policy': new URL('../src/app/shared/http-timeout-policy.ts', import.meta.url).href,
 })
 const { WorkflowService } = await loadComponentLogic(new URL('../src/app/services/workflow/workflow.service.ts', import.meta.url))
+const { PursuitService } = await loadComponentLogic(new URL('../src/app/services/pursuit.service.ts', import.meta.url))
 const workflowId = '11111111-1111-4111-8111-111111111111'
 const decisionId = '22222222-2222-4222-8222-222222222222'
 function card() {
@@ -37,7 +38,8 @@ function fixture(response = of(receipt()), synchronousFailure = false, useActual
     return response
   }
   const workflows = useActualService ? new WorkflowService({ post: request }) : { resolveApproval: request }
-  const component = new CommandDashboardComponent(new FormBuilder(), {}, {}, {}, {}, workflows, notification, {})
+  const pursuits = useActualService ? new PursuitService({ post: request }) : { resolveDecision: request }
+  const component = new CommandDashboardComponent(new FormBuilder(), {}, {}, {}, pursuits, workflows, notification, {})
   component.refreshPursuits = () => refreshes.push(true)
   return { component, notices, requests, refreshes }
 }
@@ -153,4 +155,121 @@ test('command dashboard rejects an empty approval returned through the actual Wo
   assert.equal(f.requests[0][0], `/api/v1/workflow/${workflowId}/approval`)
   assert.equal(f.notices[0]?.kind, 'warning')
   assert.equal(f.component.resolvingDashboardDecisionId, '')
+})
+
+const pursuitId = '33333333-3333-4333-8333-333333333333'
+const completionId = `pursuit:${pursuitId}:completion-review`
+function completionCard() {
+  return { pursuit: { id: pursuitId }, decision: {
+    id: completionId, decisionType: 'pursuit_completion_review', status: 'pending',
+  } }
+}
+function completionReceipt(approved = true) {
+  return {
+    pursuit: { id: pursuitId, status: approved ? 'completed' : 'active', completionState: approved ? 'verified' : 'open', archived: false },
+    decisionQueue: [],
+    activity: [{ id: decisionId, pursuitId, eventType: 'pursuit.decision_resolved', sourceId: completionId,
+      sourceType: `pursuit_decision:pursuit_completion_review:${approved ? 'approved' : 'rejected'}`, createdAt: '2026-10-23T10:00:00Z' }],
+  }
+}
+
+test('command dashboard binds completion and rejection to matching server resolution evidence', () => {
+  for (const approved of [true, false]) {
+    const f = fixture(of(completionReceipt(approved)), false, true)
+    f.component.resolveDashboardDecision(completionCard(), approved)
+    assert.equal(f.requests.length, 1)
+    assert.equal(f.requests[0][0], `/api/v1/pursuits/${pursuitId}/decisions/resolve`)
+    assert.equal(f.notices[0]?.kind, 'info')
+    assert.match(f.notices[0].args.join(' '), /not independent verification/)
+    assert.equal(f.component.resolvingDashboardDecisionId, '')
+    assert.equal(f.refreshes.length, 1)
+  }
+})
+
+test('command dashboard never confirms completion from active or unverified real service detail', () => {
+  for (const change of [{ status: 'active' }, { completionState: 'open' }, { archived: true }]) {
+    const original = completionReceipt()
+    const f = fixture(of({ ...original, pursuit: { ...original.pursuit, ...change } }), false, true)
+    f.component.resolveDashboardDecision(completionCard(), true)
+    assert.equal(f.notices[0]?.kind, 'warning')
+    assert.equal(f.component.resolvingDashboardDecisionId, '')
+  }
+})
+
+test('command dashboard requires exact completion activity and a resolved queue', () => {
+  const original = completionReceipt()
+  const malformed = [null, {}, { ...original, pursuit: { ...original.pursuit, id: workflowId } },
+    { ...original, decisionQueue: undefined }, { ...original, activity: [] },
+    { ...original, decisionQueue: [{ id: completionId, status: 'pending' }] },
+    { ...original, decisionQueue: [{ id: completionId, status: ' PENDING ' }] },
+    ...[{ id: '00000000-0000-0000-0000-000000000000' }, { pursuitId: workflowId },
+      { eventType: 'pursuit.completed' }, { sourceId: 'foreign' },
+      { sourceType: 'pursuit_decision:pursuit_completion_review:rejected' }, { createdAt: 'invalid' }]
+      .map(change => ({ ...original, activity: [{ ...original.activity[0], ...change }] })),
+  ]
+  for (const value of malformed) {
+    const f = fixture(of(value))
+    f.component.resolveDashboardDecision(completionCard(), true)
+    assert.equal(f.notices[0]?.kind, 'warning')
+    assert.equal(f.component.resolvingDashboardDecisionId, '')
+    assert.equal(f.refreshes.length, 1)
+  }
+})
+
+test('command dashboard does not report a rejected completion as still open when the server reports closed state', () => {
+  for (const status of ['completed', 'archived', 'unknown']) {
+    const original = completionReceipt(false)
+    const f = fixture(of({ ...original, pursuit: { ...original.pursuit, status } }))
+    f.component.resolveDashboardDecision(completionCard(), false)
+    assert.equal(f.notices[0]?.kind, 'warning')
+  }
+})
+
+test('command dashboard completion releases empty and failed observations without leaking details', () => {
+  for (const [response, synchronous] of [[EMPTY, false], [throwError(() => new Error('private-provider-detail')), false], [undefined, true]]) {
+    const f = fixture(response, synchronous)
+    f.component.resolveDashboardDecision(completionCard(), true)
+    assert.equal(f.notices[0]?.kind, 'warning')
+    assert.doesNotMatch(JSON.stringify(f.notices), /private-provider-detail/)
+    assert.equal(f.component.resolvingDashboardDecisionId, '')
+    assert.equal(f.refreshes.length, 1)
+    assert.equal(f.requests.length, 1)
+  }
+})
+
+test('command dashboard completion observes one response and cancels UI observation on destroy', () => {
+  for (const destroy of [false, true]) {
+    const response = new Subject(), f = fixture(response)
+    f.component.resolveDashboardDecision(completionCard(), true)
+    f.component.resolveDashboardDecision(completionCard(), false)
+    assert.equal(f.requests.length, 1)
+    if (destroy) f.component.ngOnDestroy()
+    response.next(completionReceipt())
+    response.next(completionReceipt(false))
+    assert.equal(response.observed, false)
+    assert.equal(f.component.resolvingDashboardDecisionId, '')
+    assert.equal(f.notices.length, destroy ? 0 : 1)
+    assert.equal(f.refreshes.length, destroy ? 0 : 1)
+  }
+})
+
+test('command dashboard bounds stalled completion requests without repeating the mutation', () => {
+  let result
+  new TestScheduler(() => {}).run(() => {
+    result = fixture(NEVER)
+    result.component.resolveDashboardDecision(completionCard(), true)
+  })
+  assert.equal(result.component.resolvingDashboardDecisionId, '')
+  assert.equal(result.notices[0]?.kind, 'warning')
+  assert.equal(result.requests.length, 1)
+})
+
+test('command dashboard rejects noncanonical completion identities before service dispatch', () => {
+  for (const change of [{ pursuit: { id: 'foreign' } },
+    { decision: { ...completionCard().decision, id: 'foreign' } }]) {
+    const f = fixture(), input = { ...completionCard(), ...change }
+    f.component.resolveDashboardDecision(input, true)
+    assert.equal(f.requests.length, 0)
+    assert.equal(f.component.resolvingDashboardDecisionId, '')
+  }
 })
