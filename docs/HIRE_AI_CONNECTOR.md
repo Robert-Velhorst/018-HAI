@@ -54,6 +54,29 @@ The request body is limited to 16 KiB; the result to 512 KiB; page size to 25; a
 
 This connector does not submit applications, send email, change approvals, share candidate information, or start workflows. The Hire.AI A2A endpoint remains a separate inbound capability; configuring this job-search connector does not enable arbitrary A2A calls.
 
+## Retained source optimization, 24 October 2026
+
+The frontend requests 25 jobs per page, preserving the maximum-page optimization
+found in the retained connector source copy. This stays within the backend's
+existing maximum of 25; later pages retain the returned continuation cursor.
+The canonical response-size limit, request deadline and public-URL/DNS validation
+remain unchanged. Fewer page requests for a given result count are the intent,
+not a measured whole-application resource saving or live-provider acceptance.
+
+The retained optimization note reported 15 combined component/service Chrome
+tests and a production frontend build on Node 24.22.0 on 20 October. These are
+historical reported outcomes, not independently reproduced current acceptance.
+The older dated checkpoints below likewise do not describe the current branch
+or merge status. The newly ported request size still needs current-head browser
+and real-provider qualification.
+
+For this port, three new native service contracts pass as part of 279 passing
+frontend native tests on Node 26.12.1, using the existing Angular compiler 22.2.2
+and TypeScript 6.0.3 installation. They exercise the actual service with synthetic
+HTTP boundaries: status reads, 25-item initial/continuation requests and
+non-replayed errors. The updated Angular HTTP-testing specs, production build,
+rendered browser flow and live Hire.AI endpoint were not executed in this check.
+
 ## Verification boundary
 
 The HAI unit tests use a local HTTP test server and verify request authentication, filter bounds, response policy, redirect handling, destination restrictions, and repeated-cursor rejection. On 2026-10-19, `go test ./internal/hireai ./internal/router` passed after the cursor-progress guard was added, using the `golang:1.27.2` Docker image. The focused `HireAIComponent` Angular suite previously passed in an isolated Node/Chromium container: 9/9 tests, including the repeated-cursor regression. A native Windows Chrome Headless run on 2026-10-19 passed the focused Angular suite after adding overlap deduplication: 11/11 tests, including preserving first-seen order and refreshing duplicate listing data by canonical job ID. Earlier on 2026-10-19, `go vet ./internal/hireai ./internal/router`, `npm run check:control-room`, the production build, and all 1,393 Angular tests passed; those broader checks predate the latest cursor and deduplication changes and are not claimed as post-change verification. The production build completed with existing initial-bundle and SCSS budget warnings. `bash ../scripts/audit-frontend-production-dependencies.sh` passed. The full frontend audit reports six high findings, all from the same development/test-only dependency path: `braces` through Karma's `chokidar` watcher, propagated to `karma`, `karma-jasmine`, `karma-jasmine-html-reporter`, and `@angular/build`. GitHub Advisory `GHSA-vfj7-8cjw-p6xm` currently lists no patched `braces` release; npm's suggested fixes require major-version downgrades of the Karma toolchain. No downgrade or audit suppression was applied. Recheck this advisory before release and update the test-toolchain dependency path when a compatible upstream fix exists. These checks do not prove a live Hire.AI instance, real credentials, DNS/TLS, or candidate-account configuration. Complete live acceptance only after both services are configured and an authenticated search returns expected listings.
