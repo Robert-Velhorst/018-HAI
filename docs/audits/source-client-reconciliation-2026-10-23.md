@@ -237,3 +237,22 @@ integration, keyboard/screen-reader acceptance or deployed browser acceptance.
 The original stylesheet remains retained pending main-preservation verification.
 The combined fifteen-suite reconciliation run passes all 218 tests; the
 progressive-section, split-theme and icon-registry contracts also pass.
+
+## Shared shell template reconciliation
+
+Read the full retained shell template, current template and complete difference.
+Preserve the single authenticated main landmark, grouped navigation, current-page
+labels, responsive navigation dialog/inert workspace, visible runtime safety
+state, module-local disclosure/reset controls and theme control. The current
+skip link deliberately supersedes the older bare fragment: it uses the current
+path and query, while ordinary activation focuses main without navigating away
+from the module under a root base URL. Its handler leaves modified/non-primary
+clicks alone and refuses to focus an inert workspace.
+
+No template replacement is needed. All 52 existing shell Chrome tests pass,
+including rendered skip-link route/focus behavior, mobile dialog isolation,
+navigation, view controls, freshness and safety states. Eighteen Node landmark
+and delayed-focus controls also pass. This template-specific review does not
+claim full reconciliation of the retained shell TypeScript, stylesheet or large
+test file. Those files and all originals remain retained. These local fixtures
+are not a full deployed navigation, accessibility or visual acceptance pass.
