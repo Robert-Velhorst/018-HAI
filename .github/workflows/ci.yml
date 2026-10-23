@@ -1040,6 +1040,16 @@ jobs:
           do
             grep -q -- "^--- PASS: ${test_name} (" "$trello_repository_log"
           done
+          oauth_revision_log="$RUNNER_TEMP/oauth-source-revisions-postgres.log"
+          HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s \
+            -run '^(TestGoogleOAuthReconnectRevisionMonotonePostgres|TestGoogleOAuthTokenFailureRevisionMonotonePostgres)$' \
+            ./internal/source/ -v | tee "$oauth_revision_log"
+          for test_name in \
+            TestGoogleOAuthReconnectRevisionMonotonePostgres \
+            TestGoogleOAuthTokenFailureRevisionMonotonePostgres
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$oauth_revision_log"
+          done
           reminder_revocation_log="$RUNNER_TEMP/workflow-reminder-revocation-postgres.log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
             -run '^TestPostgresReminderRevocationAfterPreparationExpiryAndSourceClosure$' \

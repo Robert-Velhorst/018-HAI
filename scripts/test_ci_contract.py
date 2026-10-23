@@ -2408,5 +2408,22 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertNotIn("stdout=", scanner)
 
 
+    def test_oauth_source_revisions_require_real_postgres_passes(self) -> None:
+        migrations = job_block("migrations-integration")
+        source = (ROOT / "backend/internal/source/google_oauth_revision_test.go").read_text(encoding="utf-8")
+        names = re.findall(r"func (Test\w+Postgres)\(t \*testing.T\)", source)
+        self.assertEqual(len(names), 2)
+        pattern = "-run '^(" + "|".join(names) + ")$'"
+        self.assertIn(pattern, migrations)
+        self.assertIn('HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s', migrations)
+        self.assertIn('./internal/source/ -v | tee "$oauth_revision_log"', migrations)
+        for name in names:
+            self.assertIn(name, migrations)
+        self.assertIn('grep -q -- "^--- PASS: ${test_name} (" "$oauth_revision_log"', migrations)
+        self.assertEqual(source.count("openTrelloRepositoryPostgresTestDB(t)"), 2)
+        self.assertEqual(source.count("withTrelloPostgresRollback(t, db"), 2)
+        self.assertNotIn("os.Getenv", source)
+
+
 if __name__ == "__main__":
     unittest.main()
