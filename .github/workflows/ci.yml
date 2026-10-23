@@ -1036,7 +1036,8 @@ jobs:
             TestTrelloPostgresFindStaleCardsAfterOrdersPaginatesAndFilters \
             TestTrelloPostgresOwnerManualRequestResumesCancelledCheckpoint \
             TestTrelloPostgresInventoryCheckpointUpdatesFetchedAtAndCursorAtomically \
-            TestTrelloPostgresRejectsSourcePausedBeforeDurableOperations
+            TestTrelloPostgresRejectsSourcePausedBeforeDurableOperations \
+            TestTrelloPostgresCheckpointCannotOverwriteStoppedOrReboundJob
           do
             grep -q -- "^--- PASS: ${test_name} (" "$trello_repository_log"
           done
