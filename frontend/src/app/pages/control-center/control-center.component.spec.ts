@@ -281,8 +281,8 @@ describe('ControlCenterComponent', () => {
     const resolveApproval = jasmine.createSpy('resolveApproval').and.returnValue(response.asObservable())
     const { component, notifications } = createComponent({ run })
     ;(component as any).workflowService = { resolveApproval }
-    const first = { id: 'workflow-1' } as any
-    const second = { id: 'workflow-2' } as any
+    const first = { id: '11111111-1111-4111-8111-111111111111', requiresApproval: true, approvalStatus: 'pending', currentState: 'needs_approval' } as any
+    const second = { ...first, id: '22222222-2222-4222-8222-222222222222' } as any
     component.workflowDashboard = {
       counts: { approvals: 2, blocked: 0, dueOpenLoops: 0 },
       approvalItems: [first, second],
@@ -352,7 +352,7 @@ describe('ControlCenterComponent', () => {
 
   it('only enables approval for an item present in the current complete workflow response', () => {
     const { component } = createComponent({ run: jasmine.createSpy('run') })
-    const currentApproval = { id: 'current-approval' } as any
+    const currentApproval = { id: '11111111-1111-4111-8111-111111111111', requiresApproval: true, approvalStatus: 'pending', currentState: 'needs_approval' } as any
     const staleApproval = { id: 'stale-approval' } as any
     component.workflowDashboard = {
       counts: { approvals: 1, blocked: 0, dueOpenLoops: 0 },

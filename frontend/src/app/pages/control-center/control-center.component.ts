@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Inject, OnDestroy, OnInit, ViewChild, ViewEncapsulation } from '@angular/core'
 import { Router } from '@angular/router'
-import { forkJoin, of, Subscription } from 'rxjs'
-import { catchError, finalize, timeout } from 'rxjs/operators'
+import { defer, forkJoin, of, Subscription } from 'rxjs'
+import { catchError, finalize, take, timeout } from 'rxjs/operators'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { IAgentCycleRunResult } from '../../models/agent-cycle.model.interface'
 import {
@@ -135,6 +135,7 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
   private diagnosticsRequestSubscription?: Subscription
   private memoryRequestSubscription?: Subscription
   private diagnosticsDataSubscription?: Subscription
+  private approvalSubscription?: Subscription
   private checkingIds = new Set<string>()
   private launchingIds = new Set<string>()
   private selectedActionTimer?: number
@@ -176,6 +177,8 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
     this.cancelDiagnosticsRequest()
     this.memoryRequestSubscription?.unsubscribe()
     this.diagnosticsDataSubscription?.unsubscribe()
+    this.approvalSubscription?.unsubscribe()
+    this.clearResolvingAction()
   }
 
   refresh(): void {
@@ -415,41 +418,61 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
   }
 
   resolveApproval(item: IWorkflowItem, approved: boolean): void {
-    if (this.isApprovalActionDisabled(item)) {
+    if (typeof approved !== 'boolean' || this.isApprovalActionDisabled(item)) {
       return
     }
+    const workflowId = item.id
     const action = approved ? 'approve' : 'reject'
-    this.resolvingId = item.id
+    const expectedDecision = approved ? 'approved' : 'rejected'
+    this.resolvingId = workflowId
     this.resolvingAction = action
-    this.workflowService
-      .resolveApproval(item.id, {
+    let received = false
+    const unconfirmed = () => {
+      if (this.destroyed) return
+      this.clearResolvingAction()
+      this.notification.warning(
+        'Decision outcome unconfirmed',
+        'HAI could not confirm whether the decision was saved. Refreshing the queue to reconcile its current state before another decision.'
+      )
+      this.refresh()
+    }
+    this.approvalSubscription = defer(() => this.workflowService.resolveApproval(workflowId, {
         approved,
         note: approved
           ? 'Approved from the household operations dashboard.'
           : 'Rejected from the household operations dashboard.',
         actor: 'operator',
-      })
-      .pipe(timeout(this.operationTimeoutMs))
+      }))
+      .pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => this.clearResolvingAction()))
       .subscribe({
-        next: () => {
+        next: (record) => {
+          received = true
+          if (this.destroyed) return
+          const decisionMatches = Array.isArray(record?.decisions) && record.decisions.some((decision) =>
+            this.validApprovalReference(decision?.id) && decision.workflowId === workflowId &&
+            decision.decisionType === 'approval' && decision.decision === expectedDecision && decision.approved === approved &&
+            typeof decision.createdAt === 'string' && Number.isFinite(Date.parse(decision.createdAt)))
+          if (record?.item?.id !== workflowId || record.item.requiresApproval !== true ||
+              record.item.approvalStatus !== expectedDecision || record.item.currentState !== (approved ? 'ready' : 'blocked') ||
+              !decisionMatches) {
+            unconfirmed()
+            return
+          }
           this.clearResolvingAction()
-          this.notification.success(
-            approved ? 'Approved' : 'Rejected',
-            approved
-              ? 'The AI may continue within the recorded safety limits.'
-              : 'The task has been blocked and the decision was logged.'
+          this.notification.info(
+            'Decision response received',
+            'The server returned the requested workflow state and matching decision record. This is not proof of execution or independent audit persistence.'
           )
           this.refresh()
         },
-        error: () => {
-          this.clearResolvingAction()
-          this.notification.warning(
-            'Decision outcome unconfirmed',
-            'HAI could not confirm whether the decision was saved. Refreshing the queue to reconcile its current state before another decision.'
-          )
-          this.refresh()
-        },
+        error: unconfirmed,
+        complete: () => { if (!received) unconfirmed() },
       })
+  }
+
+  private validApprovalReference(value: unknown): boolean {
+    return typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value) &&
+      value !== '00000000-0000-0000-0000-000000000000'
   }
 
   isResolving(item: IWorkflowItem, action: 'approve' | 'reject'): boolean {
@@ -458,7 +481,7 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
 
   isApprovalActionDisabled(item?: IWorkflowItem): boolean {
     if (
-      this.loading ||
+      this.destroyed || this.loading ||
       !!this.resolvingId ||
       this.dashboardAuthenticationRequired ||
       this.dashboardLoadErrors.includes('Workflow status') ||
@@ -468,9 +491,10 @@ export class ControlCenterComponent implements OnInit, OnDestroy {
       return true
     }
 
-    return item
-      ? !this.workflowDashboard?.approvalItems?.some((approval) => approval.id === item.id)
-      : false
+    if (!item) return false
+    return !this.validApprovalReference(item.id) || item.requiresApproval !== true ||
+      item.approvalStatus !== 'pending' || item.currentState !== 'needs_approval' ||
+      !this.workflowDashboard?.approvalItems?.includes(item)
   }
 
   private clearResolvingAction(): void {

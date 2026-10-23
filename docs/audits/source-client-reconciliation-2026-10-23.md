@@ -339,6 +339,42 @@ schemas, stale draft selection and
 live approval-context revalidation remain separate work. Retained originals are
 still not eligible for deletion before main preservation.
 
+## Command Center controller reconciliation
+
+Read the complete retained model-worktree controller, the full artifact-to-model
+delta and the full current integration delta. Both retained variants' method
+names remain; their only semantic difference is the two accessible action
+description helpers in the later variant. Preserve those helpers, component CSS
+encapsulation, lazy memory/diagnostics, action ordering, decision and pursuit
+navigation, source-link restrictions, delayed inspector transitions, explicit
+source/authentication failures, null-safe historical queues, current count-based
+pursuit summaries and stricter launch-receipt presentation.
+
+The Command Center approval handler previously reported success for any emitted
+response, unlike the guarded Workflow Engine path. Require a current exact queue
+object, a nonzero UUID, pending approval state, a real approval requirement and
+a boolean decision before dispatch. Require the returned workflow identity,
+requested approval/state and a matching structured decision record before
+reporting a server acknowledgement. This record is not independent proof of
+durable audit storage or execution. Consume one response only; empty completion
+and synchronous service exceptions follow the same unconfirmed-outcome path as
+transport failure. Refresh the queue without automatically resending a decision.
+Unsubscribe the decision observer and block later decisions on destruction.
+
+All 22 new focused cases fail before repair and pass afterward, covering positive
+approval/rejection, foreign/contradictory/missing records, stale queue objects,
+invalid dispatch state, empty/thrown responses, duplicate emissions and observer
+destruction. Adapt only two existing positive fixture setups to provide the
+required UUID and pending/gated state, preserving their original assertions.
+All 1,684 browser tests in the 57-spec reconciliation group and all 190 native
+frontend contract tests pass afterward.
+
+This does not certify all Command Center async or runtime paths. Scan, archive,
+health and launch observers and section-scroll timers still need their own full
+lifecycle review. Runtime configuration labels are not proof of a live probe;
+other read/receipt schema checks and live provider/backend authorization remain
+separate gates. Both retained originals remain intact pending main preservation.
+
 ## Brain catalog template reconciliation
 
 Read the complete retained template and its integration delta. Preserve Basic
