@@ -766,7 +766,7 @@ function Get-HaiA2AComposeSettings {
 
         $gateway = $configurationJson.services.'a2a-gateway'
         $publishedPorts = @($gateway.ports | Where-Object {
-            [int]$_.target -eq 80 -and ([string]$_.protocol -in @('', 'tcp'))
+            [int]$_.target -eq 8080 -and ([string]$_.protocol -in @('', 'tcp'))
         })
         if ($publishedPorts.Count -ne 1) {
             throw 'The resolved local A2A gateway must publish exactly one TCP host port for its Agent Card.'

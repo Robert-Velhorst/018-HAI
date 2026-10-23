@@ -1050,6 +1050,22 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertRegex(gateway, r"(?m)^    stop_grace_period: 25s$")
         self.assertNotIn("The Go API", gateway)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is required for the installer contract")
+    def test_installer_a2a_settings_match_canonical_compose_listener(self) -> None:
+        engines = [shutil.which("pwsh")]
+        legacy = shutil.which("powershell.exe")
+        if legacy:
+            engines.append(legacy)
+        for engine in engines:
+            with self.subTest(engine=Path(engine).name):
+                result = subprocess.run(
+                    [engine, "-NoProfile", "-NonInteractive", "-File",
+                     str(ROOT / "scripts/test-installer-a2a-compose-contract.ps1")],
+                    cwd=ROOT, capture_output=True, text=True, timeout=45,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("Installer A2A Compose contract: 12 PASS;", result.stdout)
+
     def test_optional_event_bus_does_not_expand_the_default_local_stack(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
         defaults = (ROOT / ".env.example").read_text(encoding="utf-8")

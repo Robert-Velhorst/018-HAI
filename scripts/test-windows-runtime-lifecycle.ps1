@@ -978,7 +978,7 @@ try {
             $resolvedConfiguration = @{
                 services = @{
                     backend = @{ environment = @{ HAI_A2A_BRIDGE_ENABLED = $resolvedEnabled; HAI_A2A_BRIDGE_URL = $resolvedUrl } }
-                    'a2a-gateway' = @{ ports = @(@{ target = 80; published = $resolvedPort; host_ip = '127.0.0.1'; protocol = 'tcp' }) }
+                    'a2a-gateway' = @{ ports = @(@{ target = 8080; published = $resolvedPort; host_ip = '127.0.0.1'; protocol = 'tcp' }) }
                 }
             }
             $global:LASTEXITCODE = 0
