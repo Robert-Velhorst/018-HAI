@@ -84,7 +84,7 @@ func newGuardedLocalGatewayProvider(id, name, enabledEnv, baseURLEnv, modelID, a
 func newLocalRemoteProvider(id, name, baseURLEnv, modelID string, arch ArchitectureFamily, lanes []RoutingLane) *remoteProvider {
 	p := newRemoteProvider(id, name, baseURLEnv, modelID, arch, lanes)
 	if p.baseURL != "" {
-		if err := validateLocalEndpointURL(p.baseURL); err != nil {
+		if err := validateLocalEndpointURLForProvider(p.baseURL, p.id); err != nil {
 			p.configErr = safety.RedactSecrets(err.Error())
 			return p
 		}
