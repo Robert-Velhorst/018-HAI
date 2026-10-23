@@ -6,6 +6,7 @@ import shlex
 import shutil
 import subprocess
 import unittest
+from urllib.parse import urlsplit
 from unittest.mock import patch
 
 
@@ -1270,6 +1271,36 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("GATEWAY_HOST_PORT=8088", defaults)
         self.assertIn("http://localhost:8088/api/v1/sources/oauth/google/callback", defaults)
         self.assertIn("http://localhost:8088", readme)
+
+    def test_readme_auth_recreate_targets_declared_compose_services(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        section = readme.split("### Optional Google sign-in and password recovery\n", 1)[1].split("\n### ", 1)[0]
+        compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+        services = set(re.findall(r"(?m)^  ([A-Za-z0-9_-]+):$", compose.split("\nnetworks:\n", 1)[0]))
+        commands = re.findall(r"(?m)^docker compose .+\bup\b.+$", section)
+        self.assertEqual(len(commands), 1)
+        parts = shlex.split(commands[0])
+        # This specific documented command supports these two no-value flags.
+        targets = [part for part in parts[parts.index("up") + 1:] if part not in ("-d", "--build")]
+        self.assertTrue(targets)
+        self.assertTrue(set(targets) <= services, "Auth restart names an undeclared Compose service")
+        self.assertIn("idp", targets)
+        self.assertIn("nginx", targets)
+
+    def test_readme_gateway_curl_commands_use_the_configured_default_port(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        section = readme.split("### Verify the local gateway\n", 1)[1].split("\n### ", 1)[0]
+        defaults = (ROOT / ".env.example").read_text(encoding="utf-8")
+        port = int(re.search(r"(?m)^GATEWAY_HOST_PORT=([0-9]+)$", defaults).group(1))
+        urls = re.findall(r"(?m)^curl\.exe -i (\S+)$", section)
+        self.assertEqual(len(urls), 4)
+        self.assertEqual({urlsplit(url).path for url in urls}, {"/", "/healthz", "/readyz", "/api/v1/llm/policy"})
+        for url in urls:
+            with self.subTest(path=urlsplit(url).path):
+                parsed = urlsplit(url)
+                self.assertEqual(parsed.scheme, "http")
+                self.assertEqual(parsed.hostname, "localhost")
+                self.assertEqual(parsed.port, port)
 
     def test_directly_invoked_contract_and_smoke_files_exist(self) -> None:
         for relative_path in (
