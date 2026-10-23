@@ -1513,3 +1513,40 @@ than weakening its import allowlist. There is no local native Nginx command, so
 these static contracts are not `nginx -t`, a live large-upload transfer, deployed
 gateway or real owner/provider acceptance. No Docker service was started.
 Original source and archive copies remain intact until main preservation.
+
+## Framework registry template reconciliation
+
+Read the entire retained framework template and the complete current delta.
+Preserve selection context and capability hints, explicit recommendation versus
+execution boundaries, source-backed counters/freshness, lazy taxonomy and
+catalogue filters, recorded selections, immutable Constitution history/drafts,
+explicit activation, inspector contracts and owner-scoped preference history.
+Retain the shared-shell section landmark and the existing labelled help notes
+instead of reinstating a nested main landmark or non-functional help buttons.
+
+Upgrade the rendered accessibility suite to import the actual registry module,
+including real NG-Zorro controls, tables, drawers, recommendation/inspector and
+progressive disclosure. Register the app's actual icons. Do not suppress unknown
+component errors or replace the checkbox controls with placeholders.
+
+Two rendered regressions fail before repair. A disabled native fieldset did not
+stop the custom checkbox hosts from changing all six read-only capability hints.
+Bind `nzDisabled` on each real checkbox to the same permission/pending condition;
+retain the fieldset boundary as well. Check both signed-out/read-only and pending
+selection states, and verify that authorized idle users can still edit through
+the same controls. This fixes frontend interaction state, not server authority.
+
+The error branch also hid previously loaded selection rows despite retaining
+them in memory. Keep known rows visible with an explicit stale-check warning,
+without presenting a first failed read as empty history. Exercise the rendered
+retry button through the existing refresh service path and verify that a
+successful empty response clears the warning. Owner amendment preparation also
+has a rendered disabled/enabled control check; preparing an editor does not
+create or activate a Constitution version.
+
+All eight rendered registry cases pass, including the original help-note case
+and seven added controls. The combined run passes 1,486 Chrome cases across 49
+specification files, plus 69 native controls and 122 CI contracts. No full
+framework-controller review, live authorization/provider mutation, deployed
+browser screenshot or full-app visual acceptance is claimed. The retained
+template remains intact pending verified preservation on main.
