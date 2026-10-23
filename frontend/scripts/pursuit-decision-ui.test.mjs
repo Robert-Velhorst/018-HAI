@@ -4,7 +4,8 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import '@angular/compiler'
 import { FormBuilder } from '@angular/forms'
-import { of, Subject, throwError } from 'rxjs'
+import { EMPTY, of, Subject, throwError } from 'rxjs'
+import { TestScheduler } from 'rxjs/testing'
 import { loadComponentLogic } from './load-component-logic.mjs'
 
 const require = createRequire(import.meta.url)
@@ -68,6 +69,127 @@ function fixture() {
   component.load = () => {}
   return { component, requests, evidenceRequests, mutationRequests, workflowRequests, delegationRequests, summaryRequests, reviewRequests, planRequests, contextRequests, linkRequests, detachRequests, intakeRequests, routeRequests, resourceRequests, ledgerRequests, releaseRequests, confirmations, resolved, notices }
 }
+
+function emptyProjectDossier(projectKey = 'project-a') {
+  return {
+    projectKey, generatedAt: '2026-10-23T10:00:00Z',
+    counts: { matchingWorkflows: 0, returnedWorkflows: 0, returnedMemories: 0,
+      checklistItemsReturned: 0, openLoopsReturned: 0, sourceLinksReturned: 0,
+      evidenceClaimsReturned: 0, decisionsReturned: 0 },
+    truncated: { workflows: false, memories: false, workflowContext: false, text: false },
+    workflows: [], memories: [],
+  }
+}
+
+function populatedProjectDossier() {
+  const dossier = emptyProjectDossier()
+  dossier.counts = { matchingWorkflows: 1, returnedWorkflows: 1, returnedMemories: 1,
+    checklistItemsReturned: 1, openLoopsReturned: 1, sourceLinksReturned: 1,
+    evidenceClaimsReturned: 1, decisionsReturned: 1 }
+  const date = dossier.generatedAt
+  dossier.workflows = [{ id: 'workflow-a', title: 'Review evidence', state: 'needs_approval',
+    priorityScore: 50, confidence: 0.8, requiresApproval: true, updatedAt: date,
+    checklist: [{ id: 'check-a', label: 'Review', status: 'open', requiresApproval: true }],
+    openLoops: [{ id: 'loop-a', status: 'open' }], sourceLinks: [{ createdAt: date }],
+    evidence: [{ claimText: 'Source-backed claim', status: 'unverified', reliability: 'unknown', needsReview: true, createdAt: date }],
+    decisions: [{ decisionType: 'approval', decision: 'pending', approved: false, createdAt: date }] }]
+  dossier.memories = [{ id: 'memory-a', kind: 'preference', content: 'Preserve evidence',
+    confidence: 0.9, createdAt: date, updatedAt: date }]
+  return dossier
+}
+
+test('real dossier service and component preserve complete populated context and reject malformed nested records', () => {
+  const mutations = [null,
+    d => { d.workflows[0].checklist = null }, d => { d.workflows[0].evidence = [null] },
+    d => { d.workflows[0].decisions[0].approved = undefined },
+    d => { d.workflows[0].sourceLinks[0].createdAt = 'invalid' },
+    d => { d.workflows[0].updatedAt = 'invalid' }, d => { d.memories[0].confidence = NaN },
+    d => { d.memories[0].lastUsedAt = 'invalid' }, d => { d.counts.openLoopsReturned = 0 },
+  ]
+  for (const mutate of mutations) {
+    const f = fixture(), dossier = populatedProjectDossier()
+    if (mutate) mutate(dossier)
+    const service = new PursuitService({ get: () => of(dossier) })
+    f.component.pursuitsService.projectDossier = service.projectDossier.bind(service)
+    try {
+      PursuitsComponent.prototype.loadProjectDossier.call(f.component, 'project-a')
+      assert.equal(f.component.projectDossier, mutate ? undefined : dossier)
+      assert.equal(f.component.projectDossierLoading, false)
+      if (mutate) assert.match(f.component.projectDossierError, /incomplete|inconsistent/i)
+      else assert.equal(f.component.projectDossierError, '')
+    } finally { f.component.ngOnDestroy() }
+  }
+})
+
+test('project dossier settles empty and synchronous failure responses without exposing details', () => {
+  for (const mode of ['empty', 'throw']) {
+    const f = fixture()
+    f.component.pursuitsService.projectDossier = () => {
+      if (mode === 'throw') throw new Error('private transport detail')
+      return EMPTY
+    }
+    try {
+      assert.doesNotThrow(() => PursuitsComponent.prototype.loadProjectDossier.call(f.component, 'project-a'))
+      assert.equal(f.component.projectDossierLoading, false)
+      assert.equal(f.component.projectDossier, undefined)
+      assert.match(f.component.projectDossierError, /could not be loaded/i)
+      assert.doesNotMatch(f.component.projectDossierError, /private/)
+    } finally { f.component.ngOnDestroy() }
+  }
+})
+
+test('project dossier accepts one matching complete response and stops observing duplicates', () => {
+  const f = fixture(), response = new Subject()
+  f.component.pursuitsService.projectDossier = () => response
+  try {
+    PursuitsComponent.prototype.loadProjectDossier.call(f.component, 'project-a')
+    const first = emptyProjectDossier()
+    response.next(first)
+    assert.equal(response.observed, false)
+    assert.equal(f.component.projectDossierLoading, false)
+    response.next({ ...first, generatedAt: '2026-10-24T10:00:00Z' })
+    assert.equal(f.component.projectDossier, first)
+  } finally { f.component.ngOnDestroy() }
+})
+
+test('project dossier bounds a stalled read without retrying or retaining a busy state', () => {
+  const f = fixture(), scheduler = new TestScheduler((actual, expected) => assert.deepEqual(actual, expected))
+  let calls = 0, response
+  try {
+    scheduler.run(({ cold }) => {
+      response = cold('7000ms a|', { a: emptyProjectDossier() })
+      f.component.pursuitsService.projectDossier = () => { calls++; return response }
+      PursuitsComponent.prototype.loadProjectDossier.call(f.component, 'project-a')
+    })
+    assert.equal(calls, 1)
+    assert.equal(response.subscriptions[0].unsubscribedFrame, 6000)
+    assert.equal(f.component.projectDossierLoading, false)
+    assert.equal(f.component.projectDossier, undefined)
+    assert.match(f.component.projectDossierError, /could not be loaded/i)
+  } finally { f.component.ngOnDestroy() }
+})
+
+test('project dossier rejects incomplete containers and contradictory counts before template assignment', () => {
+  const mutations = [
+    d => { delete d.counts }, d => { d.counts.returnedMemories = 1 },
+    d => { d.counts.matchingWorkflows = -1 }, d => { d.counts.decisionsReturned = NaN },
+    d => { delete d.truncated }, d => { d.truncated.text = 'false' },
+    d => { d.generatedAt = 'not-a-date' }, d => { d.workflows = [null] },
+    d => { d.memories = [null] }, d => { d.workflows = null },
+    d => { d.counts.matchingWorkflows = 1 },
+  ]
+  for (const mutate of mutations) {
+    const f = fixture(), dossier = emptyProjectDossier()
+    mutate(dossier)
+    f.component.pursuitsService.projectDossier = () => of(dossier)
+    try {
+      PursuitsComponent.prototype.loadProjectDossier.call(f.component, 'project-a')
+      assert.equal(f.component.projectDossier, undefined)
+      assert.equal(f.component.projectDossierLoading, false)
+      assert.match(f.component.projectDossierError, /incomplete|inconsistent/i)
+    } finally { f.component.ngOnDestroy() }
+  }
+})
 
 test('project dossier read errors never expose raw provider or transport details', () => {
   const f = fixture()

@@ -48,10 +48,10 @@ integration state. Its dossier cases compile/render Basic and Advanced views,
 exercise error/retry, and reject a different returned project key. No production
 code was changed for this template review.
 
-The retained Pursuits controller still needs its separate full reconciliation.
-The retained test-file comparison and subsequent 70-case run are recorded in
-`pursuits-test-reconciliation-2026-10-23.md`. Reading relevant dossier/navigation
-controller contexts does not complete its full review. This template review does not prove live API ownership,
+The separate complete retained-controller comparison is recorded in
+`pursuits-controller-reconciliation-2026-10-23.md`; the test-file comparison and
+subsequent runs are in `pursuits-test-reconciliation-2026-10-23.md`.
+This template review does not prove live API ownership,
 runtime cancellation, provider availability, production viewport quality, or
 every dependent component. No source, worktree, or transcript archive becomes
 deletion-eligible merely because of this review.

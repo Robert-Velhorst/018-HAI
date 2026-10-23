@@ -2271,6 +2271,7 @@ describe('PursuitsComponent rendered operational states', () => {
     const pursuit = { id: 'pursuit-dossier', title: 'Prepare project evidence', status: 'active', projectKey: 'Legal & housing' };
     const detail = normalizedPursuitDetail(pursuit);
     const dossier = projectDossierFixture('Legal & housing', {
+      counts: { ...projectDossierFixture('Legal & housing').counts, matchingWorkflows: 2 },
       truncated: { workflows: true, memories: false, workflowContext: true, text: true },
     });
     pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
@@ -2381,5 +2382,20 @@ describe('PursuitsComponent rendered operational states', () => {
     expect(page.querySelector('[data-testid="project-dossier-no-key"]')).toBeNull();
     expect(page.querySelector('[data-testid="project-dossier-error"]')).toBeNull();
     expect(page.querySelector('[data-testid="project-dossier-loading"]')).toBeNull();
+  });
+
+  it('renders incomplete dossier data as unavailable instead of throwing from missing template containers', () => {
+    const pursuit = { id: 'pursuit-incomplete-dossier', title: 'Review project', status: 'active', projectKey: 'project-incomplete' };
+    pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
+    pursuitService.get.and.returnValue(of(normalizedPursuitDetail(pursuit)));
+    pursuitService.projectDossier.and.returnValue(of({ projectKey: pursuit.projectKey } as IProjectDossier));
+    routeParams.next(convertToParamMap({ selected: pursuit.id }));
+    fixture = TestBed.createComponent(PursuitsComponent);
+    expect(() => fixture!.detectChanges()).not.toThrow();
+    const page: HTMLElement = fixture.nativeElement;
+    expect(page.querySelector('[data-testid="project-dossier-error"]')?.textContent).toContain('incomplete or inconsistent');
+    expect(page.querySelector('.project-dossier-summary__metrics')).toBeNull();
+    expect(page.querySelector('[data-testid="project-dossier-loading"]')).toBeNull();
+    expect(fixture.componentInstance.projectDossier).toBeUndefined();
   });
 });

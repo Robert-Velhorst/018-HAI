@@ -37,6 +37,11 @@ zero counts and empty workflow/memory arrays and asserts the confirmed-empty
 state is distinct from missing-key, loading, and failure states. The current file
 has 70 literal cases rather than the previous 69.
 
+The subsequent controller-loader review adds a separate incomplete-response
+rendered case, bringing the file to 71 cases. That case confirms that missing
+containers produce an unavailable state instead of an Angular template error.
+The truncation fixture now has consistent matching/returned workflow counts.
+
 The dossier error callback displayed raw backend error text, unlike the protected
 selected-detail callback. A native regression reproduced the disclosure with a
 synthetic credential/path message. The callback now uses a generic retry message;
@@ -54,6 +59,10 @@ The combined source/Pursuits Angular run subsequently passed 182 tests in Chrome
 Headless, including all 70 current Pursuits cases and the new confirmed-empty
 rendered case. Temporary browser files were redirected to D: because C: remained
 low on free space. This is not a full frontend suite or production build.
+
+After the subsequent loader repair, the Pursuits suite passed 71 tests and the
+native pursuit/control-room/landmark run passed 198. The complete retained
+controller comparison is recorded in `pursuits-controller-reconciliation-2026-10-23.md`.
 
 No live project API, account, provider, runtime, deployment, complete repository,
 or transcript-archive acceptance is asserted. Exact-content review receipts are

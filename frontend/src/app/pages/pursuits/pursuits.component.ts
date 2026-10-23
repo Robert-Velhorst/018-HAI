@@ -3,7 +3,7 @@ import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NzNotificationService } from 'ng-zorro-antd/notification';
 import { NzModalService } from 'ng-zorro-antd/modal';
-import { finalize, Observable, Subscription, take } from 'rxjs';
+import { defer, finalize, Observable, Subscription, take, throwIfEmpty, timeout } from 'rxjs';
 import {
   IAutomationLaunchEvent,
   IAutomationRuntimeRouteTrace,
@@ -165,6 +165,7 @@ export class PursuitsComponent implements OnInit, OnDestroy {
   private resourceEventsSub?: Subscription;
   private projectDossierSub?: Subscription;
   private projectDossierRequestGeneration = 0;
+  private readonly projectDossierTimeoutMs = 6000;
   private portfolioAllocationHistorySub?: Subscription;
   private portfolioExecutionProposalHistoryReadSub?: Subscription;
   private portfolioExecutionProposalSub?: Subscription;
@@ -2790,26 +2791,72 @@ export class PursuitsComponent implements OnInit, OnDestroy {
     }
 
     this.projectDossierLoading = true;
-    this.projectDossierSub = this.pursuitsService.projectDossier(key).subscribe({
+    this.projectDossierSub = defer(() => this.pursuitsService.projectDossier(key)).pipe(
+      timeout(this.projectDossierTimeoutMs),
+      take(1),
+      throwIfEmpty(() => new Error('No project dossier was returned')),
+      finalize(() => {
+        if (generation === this.projectDossierRequestGeneration && key === this.projectDossierProjectKey) {
+          this.projectDossierLoading = false;
+        }
+      }),
+    ).subscribe({
       next: (dossier) => {
         if (generation !== this.projectDossierRequestGeneration || key !== this.projectDossierProjectKey) {
           return;
         }
-        this.projectDossierLoading = false;
         if (!dossier || dossier.projectKey !== key) {
           this.projectDossierError = 'The returned project dossier did not match the selected project.';
           return;
         }
+        if (!this.projectDossierIsRenderable(dossier)) {
+          this.projectDossierError = 'The returned project dossier is incomplete or inconsistent. Retry loading this project dossier.';
+          return;
+        }
         this.projectDossier = dossier;
       },
-      error: (error) => {
+      error: () => {
         if (generation !== this.projectDossierRequestGeneration || key !== this.projectDossierProjectKey) {
           return;
         }
-        this.projectDossierLoading = false;
         this.projectDossierError = 'Project context could not be loaded. Retry loading this project dossier.';
       },
     });
+  }
+
+  private projectDossierIsRenderable(dossier: IProjectDossier): boolean {
+    const record = (value: unknown): boolean => !!value && typeof value === 'object' && !Array.isArray(value);
+    const date = (value: unknown, required = false): boolean => !required && (value === undefined || value === null || value === '')
+      || typeof value === 'string' && Number.isFinite(Date.parse(value));
+    const countKeys = ['matchingWorkflows', 'returnedWorkflows', 'returnedMemories', 'checklistItemsReturned',
+      'openLoopsReturned', 'sourceLinksReturned', 'evidenceClaimsReturned', 'decisionsReturned'] as const;
+    if (!record(dossier.counts) || !record(dossier.truncated) || !date(dossier.generatedAt, true)
+      || !countKeys.every(key => Number.isSafeInteger(dossier.counts[key]) && dossier.counts[key] >= 0)
+      || !(['workflows', 'memories', 'workflowContext', 'text'] as const).every(key => typeof dossier.truncated[key] === 'boolean')
+      || !Array.isArray(dossier.workflows) || !Array.isArray(dossier.memories)) return false;
+    const arrays = [['checklist', 'checklistItemsReturned'], ['openLoops', 'openLoopsReturned'],
+      ['sourceLinks', 'sourceLinksReturned'], ['evidence', 'evidenceClaimsReturned'], ['decisions', 'decisionsReturned']] as const;
+    if (!dossier.workflows.every(workflow => record(workflow) && typeof workflow.id === 'string' && !!workflow.id.trim()
+      && typeof workflow.title === 'string' && typeof workflow.state === 'string'
+      && Number.isFinite(workflow.priorityScore) && Number.isFinite(workflow.confidence)
+      && typeof workflow.requiresApproval === 'boolean' && date(workflow.updatedAt, true) && date(workflow.dueAt)
+      && arrays.every(([key]) => Array.isArray(workflow[key]) && workflow[key].every(record))
+      && workflow.checklist.every(item => typeof item.id === 'string' && typeof item.label === 'string'
+        && typeof item.status === 'string' && typeof item.requiresApproval === 'boolean' && date(item.dueAt) && date(item.reminderAt))
+      && workflow.openLoops.every(item => typeof item.id === 'string' && typeof item.status === 'string' && date(item.followUpAt))
+      && workflow.sourceLinks.every(item => date(item.createdAt, true))
+      && workflow.evidence.every(item => typeof item.claimText === 'string' && typeof item.status === 'string'
+        && typeof item.reliability === 'string' && typeof item.needsReview === 'boolean' && date(item.createdAt, true))
+      && workflow.decisions.every(item => typeof item.decisionType === 'string' && typeof item.decision === 'string'
+        && typeof item.approved === 'boolean' && date(item.createdAt, true)))) return false;
+    if (!dossier.memories.every(memory => record(memory) && typeof memory.id === 'string' && !!memory.id.trim()
+      && typeof memory.kind === 'string' && typeof memory.content === 'string' && Number.isFinite(memory.confidence)
+      && date(memory.createdAt, true) && date(memory.updatedAt, true) && date(memory.lastUsedAt))) return false;
+    return dossier.counts.returnedWorkflows === dossier.workflows.length
+      && dossier.counts.returnedMemories === dossier.memories.length
+      && dossier.counts.matchingWorkflows >= dossier.counts.returnedWorkflows
+      && dossier.truncated.workflows === (dossier.counts.matchingWorkflows > dossier.counts.returnedWorkflows)
+      && arrays.every(([field, count]) => dossier.counts[count] === dossier.workflows.reduce((total, workflow) => total + workflow[field].length, 0));
   }
 
   loadResourceEvents(force: boolean = false): void {
