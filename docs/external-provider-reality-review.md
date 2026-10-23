@@ -66,8 +66,14 @@ The detailed Gmail and Trello evidence is retained in
   candidates without provider write-back. Trello
   issues only HTTP GET requests and expects a read-scoped token. Neither has a
   remote mutation path.
-- Credentials remain environment-managed. Source rows do not persist API keys,
-  tokens, or board ids. Google OAuth tokens are encrypted at rest.
+- API keys and provider tokens are not stored in connected-source rows; Google
+  OAuth grants are stored separately with encrypted tokens. This does not mean
+  source records contain no provider identifiers: the Trello source retains its
+  normalized board ID or short link in `syncTarget`, and ingested evidence retains
+  provider references and source links. Treat those records as account/project
+  metadata when sharing diagnostics or backups. See the
+  [source creation path](../backend/internal/source/service.go) and
+  [Trello target validation](../backend/internal/source/trello.go).
 - Remote fetches use the shared allowlist, blocked-address guard, timeout, and
   response-size cap. Trello's API host is explicitly allowlisted.
 - The local-first provider policy never selects a paid model without explicit
