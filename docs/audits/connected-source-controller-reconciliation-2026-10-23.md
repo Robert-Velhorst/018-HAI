@@ -76,10 +76,12 @@ authorization and idempotency remain authoritative across navigation/reload.
 - A focused Angular compiler pass checks the connected-sources module and its
   dependencies with `noEmit` and strict inherited application settings. It passed
   without generating browser/build output.
-- The earlier browser-bundled connected-sources suite passed 112 tests before
-  this final observation repair. That earlier result is not presented as a fresh
-  browser run of the repaired code. A new full browser suite/production build was
-  not run here because C: fell below 1 GiB free.
+- The initial browser-bundled source run predated the observation repair. A
+  subsequent run redirected temporary browser files to D: and passed both source
+  and Pursuits Angular suites on the repaired state: 182 tests, including the
+  source suite's 112 cases. The later native pursuit/control-room/landmark run
+  passed 193 cases. These are scoped runs, not a new full frontend suite or
+  production build.
 
 There is no new live provider, account, destructive-server-action, deployment,
 full-repository, or transcript-archive acceptance claim. Private exact-content

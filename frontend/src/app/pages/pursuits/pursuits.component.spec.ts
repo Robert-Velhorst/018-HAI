@@ -2316,7 +2316,7 @@ describe('PursuitsComponent rendered operational states', () => {
     pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
     pursuitService.get.and.returnValue(of(detail));
     pursuitService.projectDossier.and.returnValues(
-      throwError(() => ({ error: { error: 'Project dossier temporarily unavailable.' } })),
+      throwError(() => ({ error: { error: 'token=private-provider-credential' } })),
       of(projectDossierFixture('project-error')),
     );
     routeParams.next(convertToParamMap({ selected: pursuit.id }));
@@ -2326,7 +2326,8 @@ describe('PursuitsComponent rendered operational states', () => {
     const page: HTMLElement = fixture.nativeElement;
     const error = page.querySelector('[data-testid="project-dossier-error"]') as HTMLElement;
     expect(error?.getAttribute('role')).toBe('alert');
-    expect(error?.textContent).toContain('Project dossier temporarily unavailable.');
+    expect(error?.textContent).toContain('Project context could not be loaded.');
+    expect(error?.textContent).not.toContain('private-provider-credential');
     expect(fixture.componentInstance.projectDossier).toBeUndefined();
     (error.querySelector('button') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -2335,7 +2336,7 @@ describe('PursuitsComponent rendered operational states', () => {
     expect(fixture.componentInstance.projectDossier?.projectKey).toBe('project-error');
   });
 
-  it('does not request a dossier without a project key and distinguishes an empty bounded response', () => {
+  it('does not request a dossier without a project key', () => {
     const pursuit = { id: 'pursuit-no-key', title: 'Unlinked project', status: 'active' };
     pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
     pursuitService.get.and.returnValue(of(normalizedPursuitDetail(pursuit)));
@@ -2347,7 +2348,7 @@ describe('PursuitsComponent rendered operational states', () => {
     expect(page.querySelector('[data-testid="project-dossier-no-key"]')?.textContent).toContain('Add a project key');
   });
 
-  it('reports an empty dossier and rejects content returned for a different project key', () => {
+  it('rejects dossier content returned for a different project key', () => {
     const pursuit = { id: 'pursuit-empty-dossier', title: 'Empty project', status: 'active', projectKey: 'empty-project' };
     pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
     pursuitService.get.and.returnValue(of(normalizedPursuitDetail(pursuit)));
@@ -2357,5 +2358,28 @@ describe('PursuitsComponent rendered operational states', () => {
     fixture.detectChanges();
     expect(fixture.componentInstance.projectDossier).toBeUndefined();
     expect(fixture.componentInstance.projectDossierError).toContain('did not match the selected project');
+  });
+
+  it('renders a confirmed empty dossier separately from missing project key and loading failure', () => {
+    const pursuit = { id: 'pursuit-confirmed-empty', title: 'Empty project', status: 'active', projectKey: 'empty-project' };
+    pursuitService.dashboard.and.returnValue(of({ ...emptyDashboard(), pursuits: [pursuit] }));
+    pursuitService.get.and.returnValue(of(normalizedPursuitDetail(pursuit)));
+    pursuitService.projectDossier.and.returnValue(of(projectDossierFixture('empty-project', {
+      counts: {
+        matchingWorkflows: 0, returnedWorkflows: 0, returnedMemories: 0,
+        checklistItemsReturned: 0, openLoopsReturned: 0, sourceLinksReturned: 0,
+        evidenceClaimsReturned: 0, decisionsReturned: 0,
+      },
+      workflows: [], memories: [],
+    })));
+    routeParams.next(convertToParamMap({ selected: pursuit.id }));
+    fixture = TestBed.createComponent(PursuitsComponent);
+    fixture.detectChanges();
+    const page: HTMLElement = fixture.nativeElement;
+    expect(page.querySelector('[data-testid="project-dossier-empty"]')?.textContent)
+      .toContain('No active workflow or memory context');
+    expect(page.querySelector('[data-testid="project-dossier-no-key"]')).toBeNull();
+    expect(page.querySelector('[data-testid="project-dossier-error"]')).toBeNull();
+    expect(page.querySelector('[data-testid="project-dossier-loading"]')).toBeNull();
   });
 });

@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import '@angular/compiler'
 import { FormBuilder } from '@angular/forms'
-import { of, Subject } from 'rxjs'
+import { of, Subject, throwError } from 'rxjs'
 import { loadComponentLogic } from './load-component-logic.mjs'
 
 const require = createRequire(import.meta.url)
@@ -68,6 +68,20 @@ function fixture() {
   component.load = () => {}
   return { component, requests, evidenceRequests, mutationRequests, workflowRequests, delegationRequests, summaryRequests, reviewRequests, planRequests, contextRequests, linkRequests, detachRequests, intakeRequests, routeRequests, resourceRequests, ledgerRequests, releaseRequests, confirmations, resolved, notices }
 }
+
+test('project dossier read errors never expose raw provider or transport details', () => {
+  const f = fixture()
+  f.component.pursuitsService.projectDossier = () => throwError(() => ({
+    error: { error: 'token=private-provider-credential; local-path=private-record' },
+  }))
+  try {
+    PursuitsComponent.prototype.loadProjectDossier.call(f.component, 'project-a')
+    assert.equal(f.component.projectDossierLoading, false)
+    assert.equal(f.component.projectDossier, undefined)
+    assert.match(f.component.projectDossierError, /could not be loaded/i)
+    assert.doesNotMatch(f.component.projectDossierError, /private|token=|local-path=/i)
+  } finally { f.component.ngOnDestroy() }
+})
 
 test('source navigation never opens executable, malformed, credentialed or local file URLs', () => {
   const previousWindow = globalThis.window

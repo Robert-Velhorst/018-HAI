@@ -2807,7 +2807,7 @@ export class PursuitsComponent implements OnInit, OnDestroy {
           return;
         }
         this.projectDossierLoading = false;
-        this.projectDossierError = error?.error?.error || 'Project context could not be loaded.';
+        this.projectDossierError = 'Project context could not be loaded. Retry loading this project dossier.';
       },
     });
   }
