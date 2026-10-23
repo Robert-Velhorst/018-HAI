@@ -1,6 +1,6 @@
 # Angular 22.2.2 supports Node 26.0.0+. Pin current stable.
 # Avoid floating Alpine tags that can move builds to an unsupported release.
-FROM node:26.12.0-alpine AS build
+FROM node:26.12.1-alpine@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 
