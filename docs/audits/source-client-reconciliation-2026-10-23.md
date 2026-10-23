@@ -851,3 +851,40 @@ against the merge commit and fetched main before deleting only its remote branch
 A normal conflict-free main merge preserves the tested frontend tree unchanged.
 The complete accountfeed package passes again locally, uncached, in 2.922 seconds.
 That package run uses local fixtures, not live account or provider acceptance.
+
+## Windows OpenClaw maintenance preservation
+
+Read the complete retained maintenance support and launcher test suite, plus
+both full current differences. Preserve credential separation and header-safe
+literal validation, exact loopback backend binding, publisher-pin validation,
+bounded redacted logging, task identity/principal/action/schedule validation,
+least-privileged scheduling, overlap control and uninstall ownership checks.
+The current support already exactly matches fetched main. Keep its bounded
+mutex wait and deferred canceled-uninstall recovery instead of restoring the
+older immediate-only lock behavior. The manager restricts that recovery path
+to task registration with its immediate maintenance run suppressed.
+
+The current launcher suite retains the old scheduling, quoting, redaction,
+rotation, contention, failure and uninstall controls, and adds bounded lock-wait
+tests plus a real-launcher malformed-worker rejection fixture. Preserve those
+newer checks. This review did not execute that complete suite: its generated
+processes, mutex/log fixtures and simulated lifecycle are distinct from pure
+configuration/ownership validation and from an installed-product acceptance run.
+
+Add a separately runnable, side-effect-free contract script for the actual
+environment parser, worker-environment allowlist and task-ownership predicate.
+Its 41 checks include positive controls and rejection of altered credentials,
+URLs, port/pin data, task principals, scheduling, actions and working directory.
+All 41 pass against retained and current support in both PowerShell 7 and Windows
+PowerShell 5.1. The 5.1 run initially exposed a new-test default-parameter path
+issue; computing that default in the script body repairs it. No production
+maintenance behavior was changed. The existing launcher suite invokes the new
+script, which is reached by the Windows CI installer-contract step.
+
+Five current/retained PowerShell files parse without errors and all 118 CI source
+contracts pass locally. These checks do not start a worker, register a real task,
+read installed credentials, write logs, acquire maintenance locks, contact a
+provider or perform an installation/update. They do not prove current upstream
+release availability, signing, all synchronization behavior, log-path security,
+cancelled-uninstall recovery or deployed lifecycle correctness. Originals remain
+intact; publication is not permission to discard the broader recovery scope.
