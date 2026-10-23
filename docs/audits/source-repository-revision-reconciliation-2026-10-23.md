@@ -58,3 +58,19 @@ combined CI contract suite now passes all 117 cases, and workflow YAML plus all
 six migration-job Bash blocks parse. The full uncached source package passes
 again. No local database DSN was supplied; dedicated SQL acceptance remains a
 new-head CI gate after this merge-conflict resolution, not a local test claim.
+
+## Verified CI follow-up
+
+Both dedicated PostgreSQL cases subsequently reported explicit PASS markers in
+the migration job of [CI run 39921916717](https://github.com/Robert-Velhorst/018-HAI/actions/runs/39921916717/job/120308922793).
+The run's head was verified as `3e49e8322bb1065e858b2f8d97280e9ced51c006`,
+and all 41 exact-head checks completed successfully before squash-merging PR
+#315. This establishes the selected reconnect-revision SQL fixture behavior on
+PostgreSQL 18.6, not live Google OAuth, mail ingestion or full provider acceptance.
+
+Post-merge comparison found three exact PR files and two shared CI files with
+reviewed additions only. The additions retain newer Trello boundary compilation,
+bootstrap-secret checks and maintenance projection tests without removing the
+OAuth selection or its PASS requirements. The remote PR branch and all local
+originals remain retained because shared-file preservation is not an exact
+five-file byte match. The broader recovery and cleanup gate remains open.

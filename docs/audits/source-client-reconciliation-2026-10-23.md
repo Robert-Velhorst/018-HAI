@@ -888,3 +888,42 @@ provider or perform an installation/update. They do not prove current upstream
 release availability, signing, all synchronization behavior, log-path security,
 cancelled-uninstall recovery or deployed lifecycle correctness. Originals remain
 intact; publication is not permission to discard the broader recovery scope.
+
+## HAI OS specification preservation
+
+Read the complete retained HAI OS component specification and its full current
+difference. Keep current operational wording and routing rather than restoring
+older queue shortcuts or assertions that hide a clear status. Preserve Basic
+attention limits, module-local disclosure persistence, real empty/unavailable
+states, emergency-stop separation, timestamp handling, named scroll regions and
+last-known data on refresh failure. Keep newer internal-route allowlisting,
+missing-record-ID refusal, unavailable-pursuit handling and rendered pagination
+checks for all three Advanced tables. All 26 current cases pass again in Chrome
+Headless after integrating the reviewed main changes. These are rendered local
+component/router doubles, not deployed navigation, real provider or whole-app
+accessibility acceptance. No older test needs to replace the current coverage.
+
+## Historical orchestration metadata
+
+Read the complete retained terminal store, agent registry and model-router state.
+These are local development records, not product implementations or authoritative
+runtime observations. The terminal store contains a closed session with failed
+commands and no returned verification output. Agent entries contain registration,
+configuration and counters, not source patches or review results. The router's
+retained history contains failed attempts and truncated task descriptions; its
+counters and labels cannot establish successful reviews or current model health.
+
+Do not replay those commands, restart registered agents, restore stale routing
+priors, import private workspace locations or present old idle/healthy labels as
+current HAI state. No unique implementation or completed-work result was found
+in these three files. Record the classification and exact source integrity
+privately; do not publish raw local identifiers or paths. Their original files
+remain intact. The separate policy state, other worktree data and transcript
+archives are not covered by this classification or approved for removal.
+
+After the reviewed OAuth, account-bridge and reminder PRs were merged into main,
+both main updates integrated without conflicts. Local uncached source and
+workflow package tests pass in 3.314 and 2.879 seconds respectively; all 119 CI
+source contracts pass. The local database DSN was empty, so dedicated PostgreSQL
+cases skip locally; the explicit OAuth database PASS evidence is the separately
+verified exact-head hosted job linked in its source-repository audit.
