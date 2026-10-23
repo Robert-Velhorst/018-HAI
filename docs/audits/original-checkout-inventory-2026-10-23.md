@@ -128,6 +128,59 @@ concurrent writer, or live database behavior. The original service tests and
 additional original ambient files remain a separate reconciliation task. No
 original file or directory is marked deletion-eligible by this comparison.
 
+## Original tests, configuration and assistant retention
+
+A Go parser/scanner comparison now covers thirteen reviewed original files,
+including two baseline test files outside the changed/untracked inventory.
+Those two originals were independently read, content-hashed, and matched against
+their original checkout's committed contents after CRLF normalization. The
+other eleven retained their frozen inventory hashes. All reads checked stable
+file size and modification time and rejected symbolic links.
+
+Declaration identity retains comments, string literals and statement order.
+Five analyzer self-checks cover those properties; they are not application tests.
+Grouped import/constant declarations acquire different keys when expanded, so a
+reported removed group was checked against the complete textual delta rather
+than interpreted as removal of its original symbols. No original function was
+removed in this thirteen-file comparison. Equal declarations do not prove that
+their dependencies still behave identically.
+
+| Original test file | Unchanged tests | Changed tests | Removed tests | Added tests |
+| --- | ---: | ---: | ---: | ---: |
+| `ambient/scheduler_test.go` | 1 | 0 | 0 | 1 |
+| `ambient/service_test.go` | 17 | 1 | 0 | 11 |
+| `config/config_test.go` | 3 | 0 | 0 | 2 |
+| `assistant/service_test.go` | 13 | 0 | 0 | 2 |
+
+Paths in the table are relative to `backend/internal`. Counts describe named
+top-level test functions, not subtests or successful executions. The changed
+ambient visibility test retains the original owner-filter assertion and adds
+the batch-read fixture and operation-count assertions. Its helper changes and
+the complete added test delta were read separately from declaration accounting.
+
+`config/config.go` retains twelve original declarations unchanged; only
+`validatePort` changes to reject zero as well as negative and out-of-range ports.
+Both server and database initialization use that validator. The configuration
+package's five current top-level tests passed locally with dependencies offline
+and temporary/cache paths on D:. This is not a live database or deployed-server
+check.
+
+`assistant/service.go` retains 32 original declarations unchanged, extends
+`Command`, and adds five declarations for caller-context propagation. The old
+task and cycle interfaces remain supported; context-aware implementations receive
+the caller context when available. Existing checks still prevent a canceled
+command from starting subsequent work and retain partial results for review.
+The HTTP request-context binding and relevant existing tests were inspected.
+Legacy fallback engines cannot thereby be promised interruptible, and no new
+execution authority, live provider access, or rollback guarantee is inferred.
+
+The complete original/current assistant test delta is additive apart from its
+expanded import group. These assistant/ambient tests were inspected, not freshly
+executed for this checkpoint. All five newly compared file contents already
+match the inspected `main`; copying the old files back would remove retained
+checks and optimizations. Raw original differences remain recorded, and the
+whole original checkout is still not deletion-eligible.
+
 ## Storage boundary
 
 No original sources, Git history, databases, or transcript archives were deleted.
