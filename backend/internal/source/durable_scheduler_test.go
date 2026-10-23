@@ -734,6 +734,37 @@ func TestDurablePollIntervalUsesSafeBounds(t *testing.T) {
 	}
 }
 
+func TestDurablePollIntervalRejectsPartialNumbers(t *testing.T) {
+	for _, value := range []string{"15junk", "15.5", "15 30", "15\n30", "1_500", "0x10", "9223372036854775808"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("SOURCE_WORKER_POLL_SECONDS", value)
+			if got := durablePollInterval(); got != defaultDurablePollInterval {
+				t.Fatalf("partially parsed %q as %s, want safe default %s", value, got, defaultDurablePollInterval)
+			}
+		})
+	}
+}
+
+func TestDurablePollIntervalPreservesWholeDecimalValues(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		want  time.Duration
+	}{
+		{"15", 15 * time.Second},
+		{"3600", time.Hour},
+		{" 120\n", 2 * time.Minute},
+		{"+30", 30 * time.Second},
+		{"0015", 15 * time.Second},
+	} {
+		t.Run(test.value, func(t *testing.T) {
+			t.Setenv("SOURCE_WORKER_POLL_SECONDS", test.value)
+			if got := durablePollInterval(); got != test.want {
+				t.Fatalf("parsed %q as %s, want %s", test.value, got, test.want)
+			}
+		})
+	}
+}
+
 func TestDurableSyncHandlerTreatsPausedSourceAsComplete(t *testing.T) {
 	sourceID := uuid.New()
 	repo := newFakeSourceRepo(&models.ConnectedSource{

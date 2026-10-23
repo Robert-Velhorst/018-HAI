@@ -387,6 +387,64 @@ func TestManualSyncRetryProjectionRemainsNonterminalUntilDurableJobSettles(t *te
 	}
 }
 
+type terminalManualSyncTestRepo struct {
+	*manualSyncSubmitTestRepo
+	sourceReads   int
+	historyWrites int
+}
+
+func (r *terminalManualSyncTestRepo) FindSource(id uuid.UUID) (*models.ConnectedSource, error) {
+	r.sourceReads++
+	return r.manualSyncSubmitTestRepo.FindSource(id)
+}
+
+func (r *terminalManualSyncTestRepo) UpdateSyncJob(job *models.SourceSyncJob) (*models.SourceSyncJob, error) {
+	r.historyWrites++
+	return r.manualSyncSubmitTestRepo.UpdateSyncJob(job)
+}
+
+func TestRunManualSyncJobTerminalReplayDoesNotReadSourceOrRewriteHistory(t *testing.T) {
+	for _, status := range []string{"completed", "cancelled"} {
+		for _, wrongQueue := range []bool{false, true} {
+			name := status
+			if wrongQueue {
+				name += "/wrong_queue_identity"
+			}
+			t.Run(name, func(t *testing.T) {
+				sourceID, jobID, durableID := uuid.New(), uuid.New(), uuid.New()
+				completedAt := time.Now().UTC()
+				original := models.SourceSyncJob{
+					ID: jobID, SourceID: sourceID, OwnerIdentity: "alice",
+					Mode: ModeManualAsyncSync, Status: status, DurableJobID: &durableID,
+					CursorBefore: "before", CursorAfter: "after", Message: "terminal result",
+					ItemsAdded: 3, CompletedAt: &completedAt,
+				}
+				repo := &terminalManualSyncTestRepo{manualSyncSubmitTestRepo: &manualSyncSubmitTestRepo{
+					fakeSourceRepo: newFakeSourceRepo(),
+					jobs:           map[string]models.SourceSyncJob{"terminal": original},
+					durable:        map[uuid.UUID]models.DurableJob{},
+				}}
+				queueID := durableID
+				if wrongQueue {
+					queueID = uuid.New()
+				}
+				err := NewService(repo, nil).(*service).RunManualSyncJob(context.Background(), manualSyncPayload{
+					SourceID: sourceID.String(), SyncJobID: jobID.String(),
+				}, queueID, 1, 3)
+				if (err != nil) != wrongQueue {
+					t.Fatalf("terminal replay err=%v, want identity rejection=%v", err, wrongQueue)
+				}
+				if repo.sourceReads != 0 || repo.historyWrites != 0 {
+					t.Fatalf("terminal replay read source %d times and wrote history %d times", repo.sourceReads, repo.historyWrites)
+				}
+				if got := repo.jobs["terminal"]; got != original {
+					t.Fatalf("terminal replay changed preserved history: %#v", got)
+				}
+			})
+		}
+	}
+}
+
 func TestRunManualSyncJobDefersWhenSourceLeaseIsBusyWithoutConsumingAttempt(t *testing.T) {
 	const owner = "alice"
 	sourceID, syncJobID, durableJobID := uuid.New(), uuid.New(), uuid.New()
