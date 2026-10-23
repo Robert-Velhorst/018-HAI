@@ -1,7 +1,7 @@
 import { HttpErrorResponse } from '@angular/common/http'
 import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core'
 import { ActivatedRoute, Router } from '@angular/router'
-import { forkJoin, Subscription, TimeoutError } from 'rxjs'
+import { defer, forkJoin, Subscription, take, throwIfEmpty, TimeoutError } from 'rxjs'
 import { finalize, map, switchMap, timeout } from 'rxjs/operators'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import {
@@ -84,6 +84,7 @@ export class BackgroundOperationsComponent implements OnInit, OnDestroy {
   // A successful read cannot reconcile effects reported by a failed mutation.
   private readonly uncertainOperationIds = new Set<string>()
   private readonly uncertainOperations = new Map<string, IOperation>()
+  private destroyed = false
 
   private readonly loadTimeoutMs = 6000
   private readonly operationTimeoutMs = 30000
@@ -111,6 +112,7 @@ export class BackgroundOperationsComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true
     this.refreshSubscription?.unsubscribe()
     this.detailEventsSubscription?.unsubscribe()
     this.selectedOperationSubscription?.unsubscribe()
@@ -328,7 +330,7 @@ export class BackgroundOperationsComponent implements OnInit, OnDestroy {
   }
 
   approve(op: IOperation): void {
-    if (this.loading || this.loadError || !this.canApprove(op) || this.pendingOperationIds.has(op.id)) return
+    if (this.destroyed || this.loading || this.loadError || !this.canApprove(op) || this.pendingOperationIds.has(op.id)) return
     if (isSourceDerivedOperation(op)) {
       if (this.sourceApprovalReviewVisible) return
       this.openSourceApprovalReview(op)
@@ -340,14 +342,16 @@ export class BackgroundOperationsComponent implements OnInit, OnDestroy {
   confirmSourceApprovalReview(): void {
     const displayed = this.sourceApprovalReview
     const base = this.sourceApprovalReviewBase
-    if (!this.sourceApprovalReviewVisible || !displayed || !base || this.sourceApprovalReviewLoading ||
+    if (this.destroyed || !this.sourceApprovalReviewVisible || !displayed || !base || this.sourceApprovalReviewLoading ||
       this.sourceApprovalReviewConfirming || !!this.sourceApprovalReviewError || this.pendingOperationIds.has(base.id)) return
 
     this.pendingOperationIds.add(base.id)
     this.sourceApprovalReviewConfirming = true
     this.sourceApprovalReviewError = ''
     let freshPreviewLoaded = false
-    this.actionSubscriptions.add(this.service.approvalPreview(base.id).pipe(
+    this.actionSubscriptions.add(defer(() => this.service.approvalPreview(base.id)).pipe(
+      take(1),
+      throwIfEmpty(),
       timeout(this.operationTimeoutMs),
       map((fresh) => {
         freshPreviewLoaded = true
@@ -356,10 +360,10 @@ export class BackgroundOperationsComponent implements OnInit, OnDestroy {
         }
         return fresh
       }),
-      switchMap((fresh) => this.service.approve(base.id, {
+      switchMap((fresh) => defer(() => this.service.approve(base.id, {
         expectedVersion: fresh.revision.version,
         revisionDigest: fresh.revision.revisionDigest,
-      })),
+      })).pipe(take(1), throwIfEmpty(), timeout(this.operationTimeoutMs))),
       finalize(() => {
         this.pendingOperationIds.delete(base.id)
         this.sourceApprovalReviewConfirming = false
@@ -430,7 +434,7 @@ export class BackgroundOperationsComponent implements OnInit, OnDestroy {
 
   retrySourceApprovalReview(): void {
     const base = this.sourceApprovalReviewBase
-    if (!base || this.sourceApprovalReviewLoading || this.sourceApprovalReviewConfirming) return
+    if (this.destroyed || !base || this.sourceApprovalReviewLoading || this.sourceApprovalReviewConfirming) return
     this.sourceApprovalReview = undefined
     this.sourceApprovalReviewError = ''
     this.loadSourceApprovalReview(base)
@@ -445,11 +449,13 @@ export class BackgroundOperationsComponent implements OnInit, OnDestroy {
   }
 
   private loadSourceApprovalReview(op: IOperation): void {
-    if (this.sourceApprovalReviewLoading || this.sourceApprovalReviewConfirming || this.pendingOperationIds.has(op.id)) return
+    if (this.destroyed || this.sourceApprovalReviewLoading || this.sourceApprovalReviewConfirming || this.pendingOperationIds.has(op.id)) return
     this.pendingOperationIds.add(op.id)
     this.sourceApprovalReviewLoading = true
     this.sourceApprovalReviewError = ''
-    this.actionSubscriptions.add(this.service.approvalPreview(op.id).pipe(
+    this.actionSubscriptions.add(defer(() => this.service.approvalPreview(op.id)).pipe(
+      take(1),
+      throwIfEmpty(),
       timeout(this.operationTimeoutMs),
       map((preview) => {
         if (this.sourceApprovalReviewBase !== op || !this.sourceApprovalReviewVisible ||

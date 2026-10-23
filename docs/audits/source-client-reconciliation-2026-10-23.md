@@ -530,3 +530,32 @@ frontend reconciliation changes applied. The three new pagination cases failed
 before repair. These are rendered component fixtures, not deployed visual
 acceptance, a fresh production build, live backend/provider acceptance or full
 accessibility conformance. No retained source or transcript is deleted.
+
+## Background operation logic and retained tests
+
+Read the complete retained component and its test source and both complete
+current differences. Preserve owner/source revision previews, explicit fresh
+digest confirmation, retained uncertain execution receipts, per-operation retry
+fences, interrupted work visibility, inline failure recovery and the distinction
+between approval, execution, worker verification and recorded outcomes. Keep
+all retained scenarios with newer uncertainty and diagnostic expectations;
+do not restore claims that a failed request proves nothing changed.
+
+Four new controls reproduced gaps in the source-approval observation chain:
+the approval write could remain pending beyond the preview timeout, repeated
+fresh-preview emissions could dispatch repeated approvals, empty previews
+silently ended the review, and a retained review could dispatch after component
+destruction. Observe the first result of each preview/write, reject empty
+completion and apply a separate deadline to the write. Construct requests inside
+the observable error boundary. Block new approval/review dispatch after teardown.
+No automatic retry, new permission or backend authorization change is introduced.
+
+All 65 focused component/UI checks pass after repair; all four new controls
+failed beforehand. The combined 25-suite Chrome Headless run passes all 462
+checks. These use synthetic services and rendered fixtures, not a live owner
+approval or proof of durable exactly-once behavior across reloads/clients.
+Unsubscribing or timing out does not undo a server write. Complete approval
+response-schema validation, the legacy approval observation path, general
+refresh observation/schema handling and full diagnostic redaction are not
+established by this targeted correction. The separate retained template and
+stylesheet remain outside this two-file review. Originals remain retained.
