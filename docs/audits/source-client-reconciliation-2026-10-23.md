@@ -1081,3 +1081,44 @@ The full CI-contract test source remains a separate retained-file review; this
 change does not claim its complete historical reconciliation. Originals and
 archives remain intact. Hosted CI and post-merge preservation are still required
 before any associated cleanup eligibility can be established.
+
+## Capability catalog and task-planning specification reconciliation
+
+Read the complete retained catalog and Task Blueprint specifications, then the
+complete current catalog delta and Task Blueprint specification in contiguous
+ranges. Preserve deferred Advanced profile/skill/history loading, explicit manual
+adapter/discovery reviews, held-candidate refusal, metadata-only upstream checks,
+separate probe/export actions and the distinction between a catalog profile and
+real activation. Keep the newer persisted-history disclosure regression.
+
+For task planning, preserve module-local preferences, query-scoped pursuit
+context, plan-only shortcuts, explicit mandates without inferred approval,
+structured validation and its absent/partial/not-applicable states, confirmation
+before uncertain retries and recovery preview before apply. Retain the newer
+cold-history replay restrictions, exact project/pursuit scoping, malformed
+receipt refusal, bounded/redacted partial-effect inspection, backend retry-policy
+refusal and confirmation-time rechecks. A frontend advisory model route or
+selected framework is not proof of execution readiness or additional authority.
+
+The current Task Blueprint specification contained five exact duplicate MCP
+scenario bodies. An AST comparison verifies identical copies and, after removing
+only the second copies, preserves every one of its 58 unique callback bodies
+(line-ending normalized source comparison). Tool argument/result labels, rejected
+call alignment, wrong-tool refusal and bounded result truncation remain covered.
+Add a unique-title/discoverability guard to the existing Node control-room test
+file already executed by CI. It fails before deduplication and passes after;
+all 66 tests in that Node file pass. No application behavior or test assertion
+was removed or weakened to reduce a failure count.
+
+Both current Angular specifications pass all 84 cases after deduplication. These
+are service-double/component-logic tests, not live OSS Insight availability,
+package installation, real LLM evaluation, external source truth or runtime
+execution acceptance. The two production component sources remain separate
+retained-file reviews. Original specifications remain intact; publishing this
+decision does not authorize transcript or whole-worktree deletion.
+
+After adding both reviewed specifications to the combined selection, all 972
+cases across 38 frontend specification files pass in Chrome Headless. The five
+removed duplicate callbacks are not counted as unique coverage. This run keeps
+the earlier 888-case selection and adds the 84 catalog/task cases; it is still a
+bounded selection rather than a full frontend or deployed acceptance claim.

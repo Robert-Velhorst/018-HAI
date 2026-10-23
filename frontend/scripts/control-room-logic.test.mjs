@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
+import ts from 'typescript'
 import '@angular/compiler'
 import { of, Subject, throwError } from 'rxjs'
 import { loadComponentLogic } from './load-component-logic.mjs'
@@ -8,6 +9,22 @@ import { loadModuleUrlLogic } from './module-url-test-helper.mjs'
 import { launchRecoveryNotice } from '../src/app/control-room/launch-recovery.ts'
 
 const { moduleForUrl } = await loadModuleUrlLogic()
+
+test('task blueprint scenarios have unique identities rather than repeated copied cases', () => {
+  const file = new URL('../src/app/pages/task-blueprint/task-blueprint.component.spec.ts', import.meta.url)
+  const source = ts.createSourceFile(file.pathname, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true)
+  const titles = new Set()
+  function visit(node) {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'it' && ts.isStringLiteral(node.arguments[0])) {
+      const title = node.arguments[0].text
+      assert.equal(titles.has(title), false, `duplicate task blueprint scenario: ${title}`)
+      titles.add(title)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  assert.ok(titles.size >= 50, 'the complete scenario collection must remain discoverable')
+})
 
 test('launch error recovery is contextual, non-authoritative and contains no raw payload', () => {
   const id = '11111111-1111-4111-8111-111111111111'
