@@ -160,7 +160,7 @@ describe('System delivery rendered HTTP chain (synthetic fixtures)', () => {
     const http = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
     http.expectOne('/api/v1/system/info').flush(null, { status: 503, statusText: 'Unavailable' });
-    http.expectOne('/api/v1/system/readiness').flush({ status: 'ready', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] });
+    http.expectOne('/api/v1/system/readiness').flush({ status: 'ready', service: 'backend', summary: { ok: 0, warn: 0, fail: 0 }, checks: [] });
     http.expectNone('/api/v1/auth/session');
     preferences.setMode('system-status', 'advanced');
     preferences.setSection('system-status', 'system-delivery-details', true);

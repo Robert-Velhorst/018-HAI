@@ -63,13 +63,16 @@
       <span
         nz-icon
         [nzType]="
-          readiness.status === 'ready'
+          loadError
+            ? 'question-circle'
+            : readiness.status === 'ready'
             ? 'check-circle'
             : readiness.status === 'degraded'
             ? 'warning'
             : 'close-circle'
         "
-        nzTheme="fill"
+        [nzTheme]="loadError ? 'outline' : 'fill'"
+        aria-hidden="true"
       ></span>
       <div class="banner-text">
         <strong>{{ statusLabel() }}</strong>

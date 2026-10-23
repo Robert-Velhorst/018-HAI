@@ -96,3 +96,31 @@ visual/operator acceptance. No provider, permission or credential is enabled or
 changed, and no new source/transcript deletion is authorized by the review.
 The combined four-suite browser run passes all 77 tests with the complete frontend
 client/onboarding change set applied.
+
+## System status follow-up
+
+Read the retained system-status component, template and stylesheet and their
+complete current differences. Keep the current visibility-aware adaptive polling,
+request cancellation and deadlines, supplemental build identity, and owner-only
+Advanced delivery inspection with deliberate, bounded retry confirmation. The
+older unbounded subscription and fixed 15-second healthy polling must not return.
+Keep the existing responsive theme styles; no stylesheet is replaced in this
+follow-up.
+
+Ten new controls failed against the prior implementation: an empty completed
+readiness stream left the view loading without scheduling recovery, malformed
+reports replaced the last valid snapshot, and a failed refresh could still label
+the earlier green snapshot as currently ready. A null report also produced an
+unhandled callback error. Validate each new report before changing the snapshot
+or freshness timestamp, including nonnegative integer counts, check shapes, and
+the aggregate status/count contract of the authenticated backend handler. Empty
+responses now enter the existing error/recovery path.
+
+Keep the last valid records after failure but label current status as unverified,
+using the already registered outline question icon rather than a green success
+icon. All 31 focused Chrome Headless component/delivery tests pass, including a
+rendered icon check, stale-data explanation, narrow-container layout, and existing
+owner permission, disclosure, uncertain retry, cancellation and HTTP-route
+fixtures. These are local tests with synthetic reports, not deployed health,
+real delivery, or full visual/operator acceptance. Original worktrees remain
+retained; semantic review is not a main-preservation or deletion gate.
