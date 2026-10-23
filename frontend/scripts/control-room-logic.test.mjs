@@ -12,6 +12,7 @@ import './pursuits-styles.test.mjs'
 import './task-template-controls.test.mjs'
 import './source-template-controls.test.mjs'
 import './source-destructive-ui.test.mjs'
+import './entry-contract.test.mjs'
 
 const { moduleForUrl } = await loadModuleUrlLogic()
 
