@@ -57,6 +57,92 @@ const { WorkflowEngineComponent } = await loadComponentLogic(new URL('../src/app
   '../../services/workflow/workflow.service.token': 'data:text/javascript,export const WORKFLOW_SERVICE_TOKEN = Symbol("test-workflow")',
 })
 
+function checklistFixture() {
+  const id = '11111111-1111-4111-8111-111111111111'
+  const child = '22222222-2222-4222-8222-222222222222'
+  const response = new Subject(); const calls = []; const applied = []; const notices = []
+  const component = new WorkflowEngineComponent(new FormBuilder(), {
+    updateChecklistItem: (...args) => { calls.push(args); return response },
+  }, {}, Object.fromEntries(['info', 'success', 'warning', 'error'].map(kind => [kind, (...args) => notices.push(args)])), {}, {}, {}, { detectChanges() {} }, {})
+  component.actionsUnavailable = () => false
+  component.selected = { item: { id }, checklist: [{ id: child, workflowId: id, status: 'open' }] }
+  component.applyWorkflowRecord = record => { applied.push(record); component.selected = record }
+  return { component, response, calls, applied, notices, id, child }
+}
+
+test('checklist acknowledgement must bind the exact workflow, item and requested status', () => {
+  for (const mode of ['foreign_workflow', 'foreign_item', 'foreign_parent', 'duplicate', 'wrong_status', 'malformed', 'valid']) {
+    const f = checklistFixture()
+    try {
+      f.component.markChecklist(f.child, 'done')
+      assert.equal(f.calls.length, 1)
+      const item = { id: f.child, workflowId: f.id, status: 'done' }
+      const record = { item: { id: f.id }, checklist: [item] }
+      if (mode === 'foreign_workflow') record.item.id = f.child
+      if (mode === 'foreign_item') item.id = f.id
+      if (mode === 'foreign_parent') item.workflowId = f.child
+      if (mode === 'duplicate') record.checklist.push({ ...item })
+      if (mode === 'wrong_status') item.status = 'open'
+      f.response.next(mode === 'malformed' ? null : record)
+      assert.equal(f.component.checklistAction, undefined, mode)
+      assert.equal(f.applied.length, mode === 'valid' ? 1 : 0, mode)
+      assert.equal(f.component.transitionReviewId, mode === 'valid' ? undefined : f.id, mode)
+      assert.equal(f.response.observed, false, mode)
+    } finally { f.component.ngOnDestroy() }
+  }
+})
+
+test('empty and failed checklist writes clear busy state but require workflow readback', () => {
+  for (const mode of ['empty', 'error']) {
+    const f = checklistFixture()
+    try {
+      f.component.markChecklist(f.child, 'done')
+      if (mode === 'empty') f.response.complete()
+      else f.response.error(new Error('private-checklist-payload'))
+      assert.equal(f.component.checklistAction, undefined, mode)
+      assert.equal(f.component.transitionReviewId, f.id, mode)
+      assert.equal(f.component.checklistActionError?.itemId, f.child, mode)
+      assert.equal(f.applied.length, 0, mode)
+      assert.doesNotMatch(JSON.stringify(f.notices) + JSON.stringify(f.component.checklistActionError), /private-checklist-payload/)
+    } finally { f.component.ngOnDestroy() }
+  }
+})
+
+test('checklist writes reject invalid requests, preserve newer selections and unsubscribe on destroy', () => {
+  for (const mode of ['invalid_status', 'duplicate_target', 'foreign_target', 'destroy_before', 'destroy_after', 'changed_selection']) {
+    const f = checklistFixture()
+    try {
+      if (mode === 'duplicate_target') f.component.selected.checklist.push({ ...f.component.selected.checklist[0] })
+      if (mode === 'foreign_target') f.component.selected.checklist[0].workflowId = f.child
+      if (mode === 'destroy_before') f.component.ngOnDestroy()
+      f.component.markChecklist(f.child, mode === 'invalid_status' ? 'invented' : 'done')
+      const prevented = ['invalid_status', 'duplicate_target', 'foreign_target', 'destroy_before'].includes(mode)
+      assert.equal(f.calls.length, prevented ? 0 : 1, mode)
+      if (prevented) continue
+      if (mode === 'destroy_after') {
+        f.component.ngOnDestroy()
+        assert.equal(f.response.observed, false)
+      } else f.component.selected = { item: { id: f.child }, checklist: [] }
+      f.response.next({ item: { id: f.id }, checklist: [{ id: f.child, workflowId: f.id, status: 'done' }] })
+      assert.equal(f.applied.length, 0, mode)
+    } finally { f.component.ngOnDestroy() }
+  }
+})
+
+test('stalled checklist observation expires without dispatching a second write', async () => {
+  const f = checklistFixture()
+  try {
+    f.component.operationTimeoutMs = 5
+    f.component.markChecklist(f.child, 'done')
+    await new Promise(resolve => setTimeout(resolve, 25))
+    assert.equal(f.calls.length, 1)
+    assert.equal(f.response.observed, false)
+    assert.equal(f.component.checklistAction, undefined)
+    assert.equal(f.component.transitionReviewId, f.id)
+    assert.equal(f.applied.length, 0)
+  } finally { f.component.ngOnDestroy() }
+})
+
 test('both reminder authorization controls expose the execution review gate without blocking revocation', () => {
   const template = readFileSync(new URL('../src/app/pages/workflow-engine/workflow-engine.component.html', import.meta.url), 'utf8')
   const buttons = template.match(/<button\b[\s\S]*?<\/button>/g) || []

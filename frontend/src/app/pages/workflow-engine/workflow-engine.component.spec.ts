@@ -1614,6 +1614,7 @@ describe('WorkflowEngineComponent progressive disclosure', () => {
     fixture = TestBed.createComponent(WorkflowEngineComponent);
     spyOn(fixture.componentInstance, 'refresh');
     const component = fixture.componentInstance;
+    component.overview = validOverview();
     const record = selectedWorkflowWithProposal();
     record.checklist = [{
       id: checklistItemId, workflowId: record.item.id, label: 'Verify source', status: 'open', position: 0,
@@ -1644,6 +1645,13 @@ describe('WorkflowEngineComponent progressive disclosure', () => {
     expect(component.checklistAction).toBeUndefined();
     expect(page.querySelector('.checklist-error')?.getAttribute('role')).toBe('alert');
     expect(page.querySelector('.checklist-error')?.textContent).toContain('Update failed');
+    expect(done.disabled).toBeTrue();
+    expect(component.transitionReviewId).toBe(record.item.id);
+
+    workflowService.get.and.returnValue(of(record));
+    component.reviewTransition();
+    fixture.detectChanges();
+    expect(component.transitionReviewId).toBeUndefined();
     expect(done.disabled).toBeFalse();
 
     const confirmed: IWorkflowRecord = { ...record, checklist: [{ ...record.checklist[0], status: 'done' }] };

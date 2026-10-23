@@ -81,6 +81,7 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   transitionReviewId?: string;
   transitionError?: string;
   private transitionSubscription?: Subscription;
+  private checklistSubscription?: Subscription;
   approvalReviewId?: string;
   approvalError?: string;
   private approvalSubscription?: Subscription;
@@ -193,6 +194,7 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
     this.workflowOpenSubscription?.unsubscribe();
     this.intakeChangesSubscription?.unsubscribe();
     this.transitionSubscription?.unsubscribe();
+    this.checklistSubscription?.unsubscribe();
     this.approvalSubscription?.unsubscribe();
     this.interruptionSubscription?.unsubscribe();
     this.proposalSubscription?.unsubscribe();
@@ -534,6 +536,7 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
           if (this.transitionReviewId === workflowId) {
             this.transitionReviewId = undefined;
             this.transitionError = undefined;
+            this.checklistActionError = undefined;
           }
           this.applyWorkflowRecord(record);
           onLoaded?.();
@@ -1564,27 +1567,43 @@ export class WorkflowEngineComponent implements OnInit, OnDestroy {
   }
 
   markChecklist(itemId: string, status: string): void {
-    const checklistItem = this.selected?.checklist.find((item) => item.id === itemId);
-    if (!this.selected || !checklistItem || checklistItem.status === status ||
+    const original = this.selected;
+    const checklistItems = Array.isArray(original?.checklist) ? original.checklist.filter((item) => item?.id === itemId) : [];
+    if (this.destroyed || !original || !this.validWorkerReference(original.item.id) ||
+        !this.validWorkerReference(itemId) || !['open', 'done', 'blocked'].includes(status) ||
+        checklistItems.length !== 1 || checklistItems[0].workflowId !== original.item.id || checklistItems[0].status === status ||
         this.actionsUnavailable() || this.anyActionRunning()) {
       return;
     }
     this.checklistAction = { itemId, status };
     this.checklistActionError = undefined;
-    const workflowId = this.selected.item.id;
-    this.workflowService.updateChecklistItem(workflowId, itemId, { status })
-      .pipe(timeout(this.operationTimeoutMs))
+    const workflowId = original.item.id;
+    let received = false;
+    const unconfirmed = () => {
+      if (this.destroyed) return;
+      const message = 'Update failed or could not be confirmed. Refresh the affected workflow before another change.';
+      this.checklistActionError = { itemId, message };
+      this.transitionReviewId = workflowId;
+      this.transitionError = message;
+      this.changeDetector.detectChanges();
+      this.notification.error('Checklist update unconfirmed', 'The saved state was not confirmed. Inspect the current workflow before retrying.');
+    };
+    this.checklistSubscription = this.workflowService.updateChecklistItem(workflowId, itemId, { status })
+      .pipe(take(1), timeout(this.operationTimeoutMs), finalize(() => { this.checklistAction = undefined; }))
       .subscribe({
       next: (record) => {
-        this.checklistAction = undefined;
-        this.applyWorkflowRecord(record);
+        received = true;
+        if (this.destroyed) return;
+        const returned = Array.isArray(record?.checklist) ? record.checklist.filter(item => item?.id === itemId) : [];
+        if (record?.item?.id !== workflowId || returned.length !== 1 ||
+            returned[0].workflowId !== workflowId || returned[0].status !== status) {
+          unconfirmed();
+          return;
+        }
+        if (this.selected === original) this.applyWorkflowRecord(record);
       },
-      error: () => {
-        this.checklistAction = undefined;
-        this.checklistActionError = { itemId, message: 'Update failed. The saved checklist state was not confirmed; retry after checking the workflow.' };
-        this.changeDetector.detectChanges();
-        this.notification.error('Checklist update failed', 'The saved state was not confirmed.');
-      },
+      error: unconfirmed,
+      complete: () => { if (!received) unconfirmed(); },
     });
   }
 
