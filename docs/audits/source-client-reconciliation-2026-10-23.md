@@ -286,6 +286,34 @@ Correct the installer overview so it does not imply a currently available
 cloud-tunnel feature. Keep the old sources intact and their integration gate
 open; neither source location nor this audit makes them safe to delete. No
 legacy launcher, fixture, Docker operation or public endpoint was run.
+
+## Control Center template reconciliation
+
+Read the complete retained Control Center template, the differences between both
+retained variants, and the current integration delta. Keep the later variant's
+accessible action names and descriptions, noninteractive help marker and hidden
+hover duplication. Preserve the action catalogue, approval and workflow detail,
+blockers, priorities, activity, memory, runtime diagnostics, launch history,
+OpenClaw evidence components and inspector close/continue controls. Current
+integration adds honest authentication/retry and unavailable states, bound
+open-loop navigation, per-item approval disabling, memory errors and archive
+pending state; this pass does not claim a full controller review.
+
+An actual template defect remained: after an earlier empty memory result, the
+empty-state message stayed visible during a new read and alongside its failure
+warning. Six new tests render the real ControlCenterModule and NG-Zorro through
+real services with mocked HTTP, without schema suppression. Two cases fail
+before repair. Show a polite pending status and permit the empty message only
+after a completed successful read with no current error. Retain previously
+loaded records on failure and the rendered retry path.
+
+All six cases pass in the combined 1,633-case Chrome run over 54 specification
+files. The 69 native controls and 122 CI contracts pass. Tests cover Basic lazy
+loading, confirmed empty data, pending and failed refresh, successful retry and
+retained records. The existing Home offline-path console message is expected.
+This is component/HTTP-boundary evidence, not live memory-provider, database,
+signed-session or deployed visual acceptance. Both originals remain retained
+until their work is verified preserved on main.
 The combined fourteen-suite frontend run passes all 211 tests; progressive
 section, split-theme and icon-registry checks also pass with this change set.
 

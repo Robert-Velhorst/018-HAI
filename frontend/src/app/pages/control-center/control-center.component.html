@@ -608,7 +608,12 @@
             <button type="button" nz-button nzType="default" data-testid="memory-load-retry" (click)="loadMemories(true)" [nzLoading]="memoryLoading">Retry</button>
           </div>
 
-          <div class="empty-state compact" *ngIf="memoriesLoaded && !recentMemories().length">
+          <div class="empty-state compact" *ngIf="memoryLoading" role="status" aria-live="polite" data-testid="memory-load-pending">
+            <i nz-icon nzType="loading" nzTheme="outline"></i>
+            <div><strong>Checking recent memory updates</strong></div>
+          </div>
+
+          <div class="empty-state compact" *ngIf="memoriesLoaded && !memoryLoading && !memoryLoadError && !recentMemories().length">
             <i nz-icon nzType="database" nzTheme="outline"></i>
             <div>
               <strong>No recent memory updates</strong>
