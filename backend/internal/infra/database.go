@@ -64,6 +64,10 @@ func GetDefaultDBContext(ctx context.Context) (*gorm.DB, error) {
 			return nil, err
 		}
 		defaultDBMu.Lock()
+		if err := ctx.Err(); err != nil {
+			defaultDBMu.Unlock()
+			return nil, err
+		}
 		if defaultDBClosed {
 			defaultDBMu.Unlock()
 			return nil, ErrDefaultDBClosed
