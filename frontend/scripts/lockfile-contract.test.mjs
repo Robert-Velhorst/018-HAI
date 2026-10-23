@@ -4,6 +4,43 @@ import test from 'node:test';
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const lock = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
+const e2eManifest = JSON.parse(readFileSync(new URL('../e2e/package.json', import.meta.url), 'utf8'));
+const e2eLock = JSON.parse(readFileSync(new URL('../e2e/package-lock.json', import.meta.url), 'utf8'));
+
+test('separate browser acceptance manifest retains its entry points and matches its lock root', () => {
+  assert.equal(e2eManifest.private, true);
+  assert.equal(e2eManifest.packageManager, manifest.packageManager);
+  assert.deepEqual(e2eManifest.engines, manifest.engines);
+  assert.deepEqual(e2eManifest.scripts, {
+    test: 'playwright test',
+    'test:smoke': 'playwright test tests/auth-smoke.spec.ts',
+    'test:headed': 'playwright test --headed',
+    typecheck: 'tsc --project tsconfig.json',
+    report: 'playwright show-report',
+    'install-browsers': 'playwright install --with-deps chromium',
+  });
+  assert.equal(e2eLock.lockfileVersion, 3);
+  assert.equal(e2eLock.name, e2eManifest.name);
+  assert.equal(e2eLock.packages[''].name, e2eManifest.name);
+  assert.deepEqual(e2eLock.packages[''].devDependencies, e2eManifest.devDependencies);
+  assert.deepEqual(e2eLock.packages[''].engines, e2eManifest.engines);
+  assert.ok(!manifest.scripts.test.includes('playwright'));
+});
+
+test('browser acceptance dependencies and compiler aliases have locked registry integrity', () => {
+  for (const name of Object.keys(e2eManifest.devDependencies)) {
+    assert.ok(e2eLock.packages[`node_modules/${name}`], `unlocked browser acceptance dependency: ${name}`);
+  }
+  for (const [path, entry] of Object.entries(e2eLock.packages)) {
+    if (path === '') continue;
+    assert.ok(path.startsWith('node_modules/') && !path.includes('\\') && !path.includes('\0') &&
+      !path.split('/').includes('..'), 'unreviewed browser acceptance package path');
+    assert.ok(!entry.link && typeof entry.version === 'string' && entry.version.length > 0);
+    const url = new URL(entry.resolved);
+    assert.ok(url.origin === 'https://registry.npmjs.org' && !url.username && !url.password && !url.search && !url.hash);
+    assert.match(entry.integrity, /^sha512-[A-Za-z0-9+/]{86}==$/);
+  }
+});
 
 test('frontend lock root matches the manifest declarations and runtime requirement', () => {
   assert.equal(lock.lockfileVersion, 3);

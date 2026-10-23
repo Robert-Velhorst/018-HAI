@@ -345,10 +345,58 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertLess(frontend.index("npm ci"), frontend.index("npm run check:control-room"))
         self.assertLess(frontend.index("npm run check:control-room"), frontend.index("npm run build"))
         self.assertIn("npx ng test --watch=false --browsers=ChromeHeadlessNoSandbox", frontend)
-        self.assertIn("scripts/deep-link-focus.test.mjs", package["scripts"]["test"])
-        self.assertIn("scripts/framework-secret-boundary.test.mjs", package["scripts"]["test"])
-        self.assertIn("scripts/framework-secret-boundary.test.mjs", frontend)
-        self.assertTrue(package["scripts"]["test"].endswith("&& ng test --watch=false"))
+        self.assert_frontend_native_release_gates(package["scripts"], frontend)
+
+    def assert_frontend_native_release_gates(self, scripts: dict, frontend: str) -> None:
+        self.assertEqual(
+            shlex.split(scripts["test"]),
+            ["npm", "run", "test:native", "&&", "ng", "test", "--watch=false"],
+        )
+        native = shlex.split(scripts["test:native"])
+        self.assertEqual(native[:3], ["node", "--test", "--test-concurrency=1"])
+        self.assertCountEqual(native[3:], [
+            "scripts/lockfile-contract.test.mjs", "proxy.conf.test.cjs",
+            "scripts/template-landmarks.test.mjs", "scripts/focused-test-config.test.mjs",
+            "scripts/build-with-limits.test.mjs", "scripts/authenticated-theme-manifest.test.mjs",
+            "scripts/release-cache.test.mjs", "scripts/control-room-logic.test.mjs",
+            "scripts/hai-os-observation.test.mjs", "scripts/module-view-preferences.test.mjs",
+            "scripts/launch-request-safety.test.mjs", "scripts/runtime-stop-ui.test.mjs",
+            "scripts/pursuit-decision-ui.test.mjs", "scripts/deep-link-focus.test.mjs",
+            "scripts/framework-secret-boundary.test.mjs",
+            "scripts/framework-registry-history-state.test.mjs",
+        ])
+        for path in native[3:]:
+            self.assertTrue((ROOT / "frontend" / path).is_file(), path)
+        step = re.search(
+            r"(?ms)^      - name: Build resource configuration regressions\n(.*?)(?=^      - |\Z)",
+            frontend,
+        )
+        self.assertIsNotNone(step)
+        self.assertNotIn("continue-on-error", step.group(1))
+        self.assertRegex(step.group(1), r"(?m)^          npm run test:native$")
+        self.assertLess(frontend.index("npm run test:native"), frontend.index("npx ng test --watch=false"))
+
+    def test_frontend_shared_native_gate_rejects_bypasses(self) -> None:
+        package = json.loads((ROOT / "frontend" / "package.json").read_text(encoding="utf-8"))
+        scripts = package["scripts"]
+        frontend = job_block("frontend")
+        for path in shlex.split(scripts["test:native"])[3:]:
+            with self.subTest(omitted_native_test=path):
+                changed = {**scripts, "test:native": scripts["test:native"].replace(" " + path, "", 1)}
+                with self.assertRaises(AssertionError):
+                    self.assert_frontend_native_release_gates(changed, frontend)
+        for command in ["ng test --watch=false", "npm run test:native", "npm run test:native; ng test --watch=false"]:
+            with self.subTest(weakened_test_command=command):
+                with self.assertRaises(AssertionError):
+                    self.assert_frontend_native_release_gates({**scripts, "test": command}, frontend)
+        for command in [scripts["test:native"].replace("--test-concurrency=1", "--test-concurrency=8"), scripts["test:native"] + " || true"]:
+            with self.subTest(weakened_native_command=command):
+                with self.assertRaises(AssertionError):
+                    self.assert_frontend_native_release_gates({**scripts, "test:native": command}, frontend)
+        for replacement in ["# npm run test:native", "npm run test:native || true", "echo npm run test:native"]:
+            with self.subTest(weakened_ci_command=replacement):
+                with self.assertRaises(AssertionError):
+                    self.assert_frontend_native_release_gates(scripts, frontend.replace("npm run test:native", replacement))
 
     def test_frontend_theme_excludes_unused_ng_zorro_components(self) -> None:
         theme = (ROOT / "frontend" / "src" / "theme.less").read_text(

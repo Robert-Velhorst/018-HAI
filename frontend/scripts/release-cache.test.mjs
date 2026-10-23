@@ -6,6 +6,29 @@ const config = readFileSync(new URL('../nginx-custom.conf', import.meta.url), 'u
 const hashed = /location ~ "([^"\n]+)" \{([^}]+)\}/.exec(config)
 const staticFiles = /location ~\* (\S+) \{([^}]+)\}/.exec(config)
 
+test('frontend listens on the non-root runtime port and exposes a frontend-only health result', () => {
+  assert.match(config, /\blisten 8080;/)
+  assert.doesNotMatch(config, /\blisten 80;/)
+  const health = /location = \/healthz \{([^}]*return 200 '[^']+';[^}]*)\}/.exec(config)
+  assert.ok(health)
+  assert.match(health[1], /access_log off;/)
+  assert.match(health[1], /default_type application\/json;/)
+  const payload = /return 200 '([^']+)';/.exec(health[1])
+  assert.deepEqual(JSON.parse(payload[1]), { service: 'frontend', status: 'ok' })
+  assert.doesNotMatch(health[1], /proxy_pass|immutable/)
+})
+
+test('frontend retains bounded response compression for its text and vector assets', () => {
+  assert.match(config, /\bgzip on;/)
+  assert.match(config, /\bgzip_vary on;/)
+  assert.match(config, /\bgzip_min_length 1024;/)
+  const types = /\bgzip_types\s+([^;]+);/.exec(config)
+  assert.ok(types)
+  assert.deepEqual(types[1].trim().split(/\s+/).sort(), [
+    'application/javascript', 'application/json', 'image/svg+xml', 'text/css', 'text/plain',
+  ])
+})
+
 test('immutable release caching is restricted to content-hashed root bundles', () => {
   assert.ok(hashed)
   const pattern = new RegExp(hashed[1])
