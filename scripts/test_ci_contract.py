@@ -1874,6 +1874,18 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
                          "grep -q -- '^--- PASS: TestPostgresReminderDeliveryAtomicReplay ('"):
             self.assertIn(contract, migrations)
 
+    def test_maintenance_overview_requires_postgres_projection_passes(self) -> None:
+        migrations = job_block("migrations-integration")
+        for contract in (
+            'maintenance_projection_log="$RUNNER_TEMP/maintenance-overview-postgres.log"',
+            'TEST_OPENCLAW_MAINTENANCE_DSN="$migration_dsn" go test -count=1 -race',
+            'TestOverviewReadyCompanionHasNoBlockingReason',
+            'TestOverviewMissingPublisherBlocksEvenWithContainment',
+            './internal/openclawmaintenance/ -v',
+            '"^--- PASS: ${test_name} (" "$maintenance_projection_log"',
+        ):
+            self.assertIn(contract, migrations)
+
     def test_automation_idempotency_requires_guarded_postgres_passes(self) -> None:
         migrations = job_block("migrations-integration")
         for contract in (

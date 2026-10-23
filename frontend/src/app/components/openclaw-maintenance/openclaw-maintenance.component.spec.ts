@@ -342,6 +342,28 @@ describe('OpenClaw maintenance controls', () => {
     http.expectNone('/api/v1/openclaw-maintenance/gateway_core')
   })
 
+  it('allows a fresh capability-ready Companion request without claiming installation completion', () => {
+    const ready = freshTarget({
+      id: 'companion', policy: 'auto_install_verified',
+      installStatus: 'capability_ready', installBlockedReason: '',
+    })
+    initialize(true, [ready], { installation: { available: true, reason: '' } })
+    const apply = (Array.from(fixture.nativeElement.querySelectorAll('.actions button')) as HTMLButtonElement[])
+      .find(button => button.textContent?.includes('Request installation'))!
+    expect(component.targetStateLabel(component.targets[0])).toBe('Update available')
+    expect(apply.disabled).toBeFalse()
+    apply.click()
+    const request = http.expectOne('/api/v1/openclaw-maintenance/companion')
+    expect(request.request.body).toEqual({ action: 'apply', version: ready.available, policy: '' })
+    request.flush(null, { status: 202, statusText: 'Accepted' })
+    http.expectOne('/api/v1/openclaw-maintenance').flush({
+      enabled: true, targets: [{ ...ready, pendingKind: 'apply', pendingStatus: 'pending' }],
+    })
+    fixture.detectChanges()
+    expect(fixture.nativeElement.textContent).toContain('Acceptance is not completion evidence')
+    expect(fixture.nativeElement.textContent).not.toContain('Installation verified')
+  })
+
   it('maps backend target states without treating a failed check as an update failure', () => {
     const labels: Record<string, string> = {
       disabled: 'Disabled',
