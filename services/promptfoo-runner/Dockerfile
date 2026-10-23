@@ -14,9 +14,12 @@ ENV PATH="/app/node_modules/.bin:${PATH}"
 
 COPY app.mjs ./
 COPY test_app.mjs ./
+COPY test_cli_compatibility.mjs ./
 
 RUN node --test test_app.mjs \
-    && PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 promptfoo --version
+    && test "$(PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 promptfoo --version)" = "$(node -p 'require("./package.json").dependencies.promptfoo')"
+
+RUN --network=none PROMPTFOO_DISABLE_TELEMETRY=1 PROMPTFOO_DISABLE_UPDATE=1 OTEL_SDK_DISABLED=true DO_NOT_TRACK=1 node test_cli_compatibility.mjs
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin hai
 

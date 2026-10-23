@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildConfig, configuration, summarizeEvaluation, validateLocalModelURL } from './app.mjs';
+import { readFile } from 'node:fs/promises';
+import { ENGINE, buildConfig, configuration, summarizeEvaluation, validateLocalModelURL } from './app.mjs';
+
+test('reported engine agrees with the exact dependency pin', async () => {
+  const manifest = JSON.parse(await readFile(new URL('./package.json', import.meta.url), 'utf8'));
+  assert.match(manifest.dependencies.promptfoo, /^\d+\.\d+\.\d+$/);
+  assert.equal(ENGINE, `promptfoo ${manifest.dependencies.promptfoo}`);
+});
 
 test('builds a six-case fixed safety suite for one configured local model', () => {
   const config = buildConfig({ modelId: 'qwen2.5:7b', baseUrl: 'http://ollama:11434/v1' });
