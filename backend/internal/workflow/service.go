@@ -744,7 +744,12 @@ func (s *service) Intake(request IntakeRequest) (*WorkflowRecord, error) {
 		dedupeRule = "source URI deduplication"
 	}
 	if existing != nil {
-		if existing.SourceRevision == sourceRevision {
+		sameRevision := existing.SourceRevision == sourceRevision
+		if !sameRevision && len(request.SuccessCriteria) == 0 && len(existing.SuccessCriteria) == 0 {
+			legacyRevision := workflowSourceRevisionForLayout(request, input, false, string(selectionFingerprint))
+			sameRevision = legacyRevision != "" && existing.SourceRevision == legacyRevision
+		}
+		if sameRevision {
 			if existing.CurrentState == StateNewInput {
 				return nil, fmt.Errorf("%w: workflow %s", ErrWorkflowIntakeIncomplete, existing.ID)
 			}
@@ -5200,12 +5205,19 @@ func engineCapabilities() []EngineCapability {
 }
 
 func workflowSourceRevision(request IntakeRequest, input string, selectionContext ...string) string {
+	return workflowSourceRevisionForLayout(request, input, true, selectionContext...)
+}
+
+func workflowSourceRevisionForLayout(request IntakeRequest, input string, includeCriteria bool, selectionContext ...string) string {
 	if strings.TrimSpace(request.SourceType) == "" &&
 		strings.TrimSpace(request.SourceID) == "" &&
 		strings.TrimSpace(request.SourceURI) == "" {
 		return ""
 	}
-	canonical := workflowRevisionValues([]string{
+	if !includeCriteria && len(request.SuccessCriteria) != 0 {
+		return ""
+	}
+	values := []string{
 		strings.TrimSpace(input),
 		strings.TrimSpace(request.ProjectKey),
 		strings.TrimSpace(request.ProjectKeyHint),
@@ -5220,13 +5232,27 @@ func workflowSourceRevision(request IntakeRequest, input string, selectionContex
 		strings.TrimSpace(request.MandateID),
 		fmt.Sprintf("%t", request.RequiresReview),
 		strings.TrimSpace(request.ReviewReason),
-		workflowRevisionValues(request.SuccessCriteria, "\x1d"),
+	}
+	if includeCriteria {
+		values = append(values, workflowRevisionValues(request.SuccessCriteria, "\x1d"))
+	}
+	values = append(values,
 		request.CoordinationPlan.PlanID.String(),
 		fmt.Sprintf("%d", request.CoordinationPlan.Revision),
 		strings.ToLower(strings.TrimSpace(request.CoordinationPlan.Digest)),
 		strings.TrimSpace(request.CoordinationPlan.NodeID),
 		workflowRevisionValues(selectionContext, "\x1e"),
-	}, "\x1f")
+	)
+	if !includeCriteria {
+		// Old revisions did not escape boundaries. Reuse only unambiguous legacy
+		// fields, never a raw separator or literal encoding prefix.
+		for _, value := range values {
+			if strings.ContainsAny(value, "\x1d\x1e\x1f") || strings.HasPrefix(value, "~hai-revision:") {
+				return ""
+			}
+		}
+	}
+	canonical := workflowRevisionValues(values, "\x1f")
 	sum := sha256.Sum256([]byte(canonical))
 	return fmt.Sprintf("%x", sum)
 }
