@@ -186,6 +186,23 @@ describe('AmbientBrainComponent progressive view', () => {
     expect(page.querySelector('button[aria-label="Open automation registry"] i')?.getAttribute('aria-hidden')).toBe('true');
   });
 
+  for (const state of ['empty', 'disabled', 'enabled'] as const) {
+    it(`only offers priority tuning with an enabled target (${state})`, () => {
+      const component = fixture.componentInstance;
+      component.overview = {
+        ...ambientOverview,
+        needs: state === 'empty' ? [] : [{ ...ambientOverview.needs[0], enabled: state === 'enabled' }],
+      };
+      fixture.detectChanges();
+      const button = Array.from(fixture.nativeElement.querySelectorAll('.action-tile'))
+        .find((node: any) => node.textContent.includes('Tune priorities')) as HTMLButtonElement;
+      expect(button.disabled).toBe(state !== 'enabled');
+      button.click();
+      expect(!!component.selectedNeed).toBe(state === 'enabled');
+      expect(ambient.updateNeed).not.toHaveBeenCalled();
+    });
+  }
+
   it('keeps the need editor open and preserves the original values when a save fails', () => {
     const original = fixture.componentInstance.overview!.needs[0];
     fixture.componentInstance.openNeed(original);

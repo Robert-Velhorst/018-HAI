@@ -69,14 +69,15 @@
       <button
         type="button"
         class="action-tile"
-        title="Tune the priority targets HAI uses when ranking possible next actions."
+        [title]="visibleNeeds().length ? 'Tune the priority targets HAI uses when ranking possible next actions.' : 'Enable a priority below before tuning its ranking target.'"
+        [disabled]="!visibleNeeds().length"
         (click)="visibleNeeds()[0] && openNeed(visibleNeeds()[0])"
       >
         <span class="action-tile__help">?</span>
         <span><i nz-icon nzType="heart" nzTheme="outline"></i></span>
         <strong>Tune priorities</strong>
         <small>{{ visibleNeeds().length }} enabled, {{ disabledNeedCount() }} disabled</small>
-        <em>Targets controlled by you</em>
+        <em>{{ visibleNeeds().length ? 'Targets controlled by you' : 'No enabled priorities' }}</em>
         <span class="action-tile__hover">
           <strong>{{ visibleNeeds().length }} enabled</strong>
           <small>{{ disabledNeedCount() }} disabled ranking targets</small>

@@ -441,3 +441,24 @@ hardware. Full runtime response-schema validation, mutation deadlines and
 durable benchmark reconciliation are not established by this read-boundary
 repair and remain separate work. Original copies remain retained; review and
 PR publication are not deletion permission without main preservation.
+
+## Ambient template reconciliation
+
+Read the complete retained Ambient Brain template and its complete current
+difference. Preserve current mutation conflict/uncertain-outcome guards, the
+single shell-owned main landmark, percentage confidence, dated telemetry and
+policy configuration disclosure. A configuration snapshot is not authorization;
+deterministic guard checks are not evidence of external-provider correctness.
+The retained component logic and separate test source are not declared fully
+reconciled by this template-only review.
+
+Two new rendered controls reproduced an enabled but ineffective Tune priorities
+button when there were no enabled ranking targets. Disable that action and show
+the empty-priority state, while preserving the individual priority editors below
+for enabling targets. A positive control opens the editor for an enabled target;
+all three controls assert that merely opening it does not save a profile.
+The focused Ambient Brain suite passes all 12 checks in Chrome Headless;
+the two empty/disabled-target controls failed before the template correction.
+
+Original recovery copies remain retained. Local fixture checks do not establish
+live scheduler, model-provider, persisted profile or deployed visual acceptance.
