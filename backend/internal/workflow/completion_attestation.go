@@ -32,12 +32,20 @@ func newWorkflowCompletionAttestation(
 	if !acceptsWorkflowCompletionVerification(verificationStatus) {
 		return nil, fmt.Errorf("workflow completion requires verified or test-passed evidence")
 	}
-	resultDigest := sha256.Sum256([]byte(strings.Join([]string{
-		strings.TrimSpace(result.CompletionStatus),
-		strings.TrimSpace(result.VerificationStatus),
-		result.Output,
-		result.FailureReason,
-	}, "\n")))
+	// Byte slices preserve opaque output exactly, including invalid UTF-8,
+	// while structured fields cannot collide through embedded delimiters.
+	resultPayload, err := json.Marshal(struct {
+		Version                              int
+		CompletionStatus, VerificationStatus string
+		Output, FailureReason                []byte
+	}{
+		1, strings.TrimSpace(result.CompletionStatus), strings.TrimSpace(result.VerificationStatus),
+		[]byte(result.Output), []byte(result.FailureReason),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode workflow completion result: %w", err)
+	}
+	resultDigest := sha256.Sum256(resultPayload)
 	runtimeURI := strings.TrimSpace(result.RuntimeEvidenceURI)
 	if result.ExternalActionExecuted {
 		if !isWorkflowLaunchEvidenceURI(runtimeURI) {
@@ -104,8 +112,8 @@ func workflowCompletionAttestationDigest(value *models.WorkflowCompletionAttesta
 	}
 	payload := struct {
 		AttestationID, WorkflowID, OwnerIdentity, TaskPlanID, CompletionStatus, VerificationStatus string
-		RuntimeID, RuntimeEvidenceURI, RuntimeEvidenceDigest, ResultDigest                       string
-		CompletedAt, CreatedAt                                                                  string
+		RuntimeID, RuntimeEvidenceURI, RuntimeEvidenceDigest, ResultDigest                         string
+		CompletedAt, CreatedAt                                                                     string
 	}{
 		value.ID.String(), value.WorkflowID.String(), strings.TrimSpace(value.OwnerIdentity),
 		strings.TrimSpace(value.TaskPlanID), strings.TrimSpace(value.CompletionStatus),
