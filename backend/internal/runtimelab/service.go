@@ -457,6 +457,10 @@ func runtimeAttemptFromOperation(operation models.Operation) RuntimeAttempt {
 			}
 		}
 	}
+	// A terminal ledger flag cannot replace missing execution evidence.
+	if status == AttemptSucceeded && attempt.Receipt == nil {
+		attempt.ReconciliationRequired = true
+	}
 	if attempt.ReconciliationRequired {
 		attempt.Status = AttemptInconclusive
 		attempt.VerificationPassed = false
