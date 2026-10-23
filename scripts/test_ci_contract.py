@@ -1039,6 +1039,16 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("socket.create_connection", fastmcp)
 
 
+    def test_a2a_nginx_gateway_uses_bounded_graceful_shutdown(self) -> None:
+        compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
+        gateway = compose_service_block(compose, "a2a-gateway")
+        # The command execs Nginx, not the Go API. INT aborts active requests;
+        # QUIT drains them, bounded by the existing container stop deadline.
+        self.assertIn("exec nginx", gateway)
+        self.assertRegex(gateway, r"(?m)^    stop_signal: SIGQUIT$")
+        self.assertRegex(gateway, r"(?m)^    stop_grace_period: 25s$")
+        self.assertNotIn("The Go API", gateway)
+
     def test_optional_event_bus_does_not_expand_the_default_local_stack(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
         defaults = (ROOT / ".env.example").read_text(encoding="utf-8")

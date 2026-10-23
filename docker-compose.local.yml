@@ -1204,9 +1204,9 @@ services:
     container_name: 018-hai-a2a-gateway
     restart: unless-stopped
     user: "nginx"
-    # The Go API listens for SIGINT and uses it to drain HTTP requests and stop
-    # bounded background schedulers before Docker replaces the container.
-    stop_signal: SIGINT
+    # Nginx uses SIGQUIT to drain active requests; SIGINT stops immediately.
+    # Keep that drain bounded by the container's existing stop grace period.
+    stop_signal: SIGQUIT
     stop_grace_period: 25s
     read_only: true
     security_opt:
