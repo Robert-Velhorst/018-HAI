@@ -144,6 +144,40 @@ describe('ConnectedSourceService extraction corrections', () => {
     expect(failed).toBeTrue();
   });
 
+  for (const test of [
+    { name: 'different page limit', patch: { limit: 100 } },
+    { name: 'negative total', patch: { totalCount: -1, total: -1 } },
+    { name: 'fractional total', patch: { totalCount: 20.5, total: 20.5 } },
+    { name: 'contradictory totals', patch: { totalCount: 9 } },
+    { name: 'impossible item count', patch: { totalCount: 8, total: 8 } },
+    { name: 'incorrect continuation', patch: { hasMore: false } },
+    { name: 'null record', patch: { items: [null] } },
+    { name: 'conflicting count header', headers: { 'X-Total-Count': '0' } },
+    { name: 'conflicting limit header', headers: { 'X-Result-Limit': '100' } },
+    { name: 'conflicting offset header', headers: { 'X-Result-Offset': '0' } },
+  ] as Array<{ name: string; patch?: Record<string, unknown>; headers?: Record<string, string> }>) {
+    it(`rejects inconsistent extraction history: ${test.name}`, () => {
+      let failures = 0;
+      let successes = 0;
+      service.extractions('', false, 8, 8).subscribe({ next: () => successes++, error: () => failures++ });
+      http.expectOne(candidate => candidate.url === '/api/v1/sources/extractions').flush({
+        items: [{ id: 'older-record' }], totalCount: 20, total: 20, limit: 8, offset: 8, hasMore: true,
+        ...test.patch,
+      }, { headers: test.headers || {} });
+      expect(successes).toBe(0);
+      expect(failures).toBe(1);
+    });
+  }
+
+  it('uses valid extraction envelope metadata when optional response headers are absent', () => {
+    let observed: unknown;
+    service.extractions('', false, 8, 8).subscribe(page => { observed = page; });
+    http.expectOne(candidate => candidate.url === '/api/v1/sources/extractions').flush({
+      items: [{ id: 'older-record' }], totalCount: 20, total: 20, limit: 8, offset: 8, hasMore: true,
+    });
+    expect(observed).toEqual({ items: [{ id: 'older-record' }], totalCount: 20, limit: 8, offset: 8 });
+  });
+
   it('wires health recovery, pause, resume, and Google consent to their actual backend paths', () => {
     service.connectionHealth('synthetic-source').subscribe();
     const health = http.expectOne('/api/v1/sources/synthetic-source/health');

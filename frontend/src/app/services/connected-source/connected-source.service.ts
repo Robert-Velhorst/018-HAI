@@ -130,13 +130,27 @@ export class ConnectedSourceService implements IConnectedSourceService {
         .set('includeArchived', includeArchived)
         .set('limit', limit);
     if (offset !== undefined) params = params.set('offset', offset);
-    return this.http.get<ISourceExtraction[] | ISourceExtractionPage>(`${this.apiUrl}/extractions`, {
+    return this.http.get<ISourceExtraction[] | (ISourceExtractionPage & ISourceHistoryPage<ISourceExtraction>)>(`${this.apiUrl}/extractions`, {
       params,
       observe: 'response',
     }).pipe(map((response) => {
       const payload = response.body;
-      if (offset !== undefined && (!payload || Array.isArray(payload) || !Array.isArray(payload.items) || payload.offset !== offset)) {
-        throw new Error('The source extraction history response is unavailable.');
+      if (offset !== undefined) {
+        if (!payload || Array.isArray(payload)) throw new Error('The source extraction history response is unavailable.');
+        const page = this.requireHistoryPage(payload, offset, limit,
+          item => !!item && typeof item.id === 'string' && item.id.trim() !== '');
+        if (!Number.isSafeInteger(payload.totalCount) || payload.totalCount !== page.total) {
+          throw new Error('The source extraction history response is unavailable.');
+        }
+        for (const [name, expected] of [
+          ['X-Total-Count', page.total], ['X-Result-Limit', page.limit], ['X-Result-Offset', page.offset],
+        ] as const) {
+          const header = response.headers.get(name);
+          if (header !== null && (!/^\d+$/.test(header.trim()) || Number(header) !== expected)) {
+            throw new Error('The source extraction history response is unavailable.');
+          }
+        }
+        return { items: page.items, totalCount: page.total, limit: page.limit, offset: page.offset };
       }
       const items = Array.isArray(payload) ? payload : payload?.items || [];
       const totalHeader = response.headers.get('X-Total-Count');
