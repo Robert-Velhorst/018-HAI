@@ -215,6 +215,11 @@ jobs:
           ./scripts/test-windows-initializer-password.ps1
           & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-windows-initializer-password.ps1
           if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell password preflight failed" }
+          ./scripts/test-openclaw-migration-process-contract.ps1
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-openclaw-migration-process-contract.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell migration process contract failed" }
+          & "$env:WINDIR/System32/WindowsPowerShell/v1.0/powershell.exe" -NoProfile -File ./scripts/test-openclaw-maintenance-migration.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell maintenance migration fixtures failed" }
           ./scripts/test-windows-installer-contract.ps1
       - name: Existing HAI data recovery guard
         shell: pwsh

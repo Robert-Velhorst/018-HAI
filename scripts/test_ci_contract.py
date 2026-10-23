@@ -2383,6 +2383,24 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn("-AllowUnavailableDockerOnHostedRunner", installer)
         self.assertNotIn("-AllowDirtyWorktree", installer)
 
+    def test_migration_process_deadlines_run_on_both_powershell_engines(self) -> None:
+        installer = job_block("windows-installer")
+        self.assertIn("./scripts/test-openclaw-migration-process-contract.ps1", installer)
+        self.assertIn(
+            'powershell.exe" -NoProfile -File ./scripts/test-openclaw-migration-process-contract.ps1',
+            installer,
+        )
+        self.assertIn(
+            'powershell.exe" -NoProfile -File ./scripts/test-openclaw-maintenance-migration.ps1',
+            installer,
+        )
+        self.assertIn('throw "Windows PowerShell migration process contract failed"', installer)
+        self.assertIn('throw "Windows PowerShell maintenance migration fixtures failed"', installer)
+        self.assertLess(
+            installer.index("./scripts/test-openclaw-migration-process-contract.ps1"),
+            installer.index("./scripts/test-windows-installer-contract.ps1"),
+        )
+
     def test_windows_installer_ci_compiles_the_distributable(self) -> None:
         installer = job_block("windows-installer")
         for contract in (

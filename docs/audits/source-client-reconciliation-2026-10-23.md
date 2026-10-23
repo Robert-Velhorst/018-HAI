@@ -1422,3 +1422,40 @@ All 68 native control-room checks and 121 CI contracts pass. Review of controlle
 template code here is limited to the relevant lifecycle and action paths, not
 the complete controller. No live provider, backend or deployed acceptance is
 claimed, and the retained original remains in place.
+
+## OpenClaw maintenance migration fixture reconciliation
+
+Read the complete retained Windows maintenance-migration test and its complete
+current delta. Preserve opt-out and valid-token idempotency, BOM/encoding and
+unrelated-text preservation, invalid/reused-token repair, ambiguous-setting
+refusal, restrictive ACL-before-secret-write, concurrent path locking, isolated
+worker-promotion exclusion, mocked legacy-process refusal/retry, silent-upgrade
+ordering, fresh-install deferral and no application launch.
+
+The current integration deliberately compares the environment-file DACL rather
+than claiming to preserve every security-descriptor field. It also checks
+removal of the retired public-tunnel setting during an explicit maintenance
+opt-out. Promotion fixtures now use two distinct, valid Windows executables and
+SHA-256 comparisons instead of text files masquerading as executables; neither
+copied executable is launched as a maintenance worker.
+
+Bound the test helper's direct PowerShell child to a configurable 1-120 second
+deadline (60 seconds by default). Keep the exact process handle so Windows
+PowerShell 5.1 retains the exit code. On timeout, stop only that child and await
+its exit for at most five seconds, then dispose the handle. Do not kill processes
+by name or make a general descendant-tree containment claim. A focused contract
+loads the real helper through its PowerShell AST and checks success output,
+nonzero exit/stderr and a sleeping child's timeout on both supported engines.
+It fails before the deadline support is added. Temporary contract fixtures are
+bounded to their generated directory; original source and retained archives are
+not cleanup targets.
+
+Correct the concurrent log-redaction assertion to inspect that migration's
+actual token, not a different fixture's earlier token. Both the focused process
+contract and complete migration fixtures pass on PowerShell 7 and Windows
+PowerShell 5.1. All 122 CI contract tests pass. Add both-engine process checks and
+the Windows PowerShell migration fixtures to the existing installer CI step;
+the payload contract already runs the migration fixtures on PowerShell 7.
+These are offline fixtures, not a signed installer upgrade, scheduled-task
+registration, running-worker replacement, provider update or live owner install.
+No real account configuration or application deployment was changed.
