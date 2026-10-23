@@ -571,7 +571,9 @@ jobs:
       - run: test "$(npm --version)" = "12.2.1"
       - run: npm ci
       - name: Build resource configuration regressions
-        run: node --test --test-concurrency=1 ../scripts/test-frontend-build-resource-limit.cjs scripts/build-with-limits.test.mjs scripts/release-cache.test.mjs scripts/control-room-logic.test.mjs scripts/hai-os-observation.test.mjs scripts/module-view-preferences.test.mjs scripts/deep-link-focus.test.mjs scripts/framework-secret-boundary.test.mjs
+        run: |
+          node --test --test-concurrency=1 ../scripts/test-frontend-build-resource-limit.cjs
+          npm run test:native
       - name: Strict control-room compiler checks (no emit)
         run: npm run check:control-room
       - run: npm run build

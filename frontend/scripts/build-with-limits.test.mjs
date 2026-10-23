@@ -73,6 +73,9 @@ test('native production and watch scripts cannot bypass the worker guard', () =>
   assert.equal(packageJson.scripts.prebuild, 'node scripts/check-build-runtime.mjs && node scripts/check-progressive-sections.mjs && node scripts/check-ng-zorro-theme.mjs && node scripts/check-ng-zorro-icons.mjs')
   assert.ok(packageJson.scripts.pretest.includes('node scripts/check-ng-zorro-icons.mjs'))
   assert.ok(packageJson.scripts.pretest.includes('node scripts/check-ng-zorro-theme.mjs'))
+  assert.equal(packageJson.scripts.test, 'npm run test:native && ng test --watch=false')
+  assert.match(packageJson.scripts['test:native'], /^node --test --test-concurrency=1 /)
+  assert.doesNotMatch(packageJson.scripts['test:native'], /\bng (?:test|build)\b/)
 })
 
 test('production builds fail if the initial bundle exceeds the strict raw-size ceiling', () => {

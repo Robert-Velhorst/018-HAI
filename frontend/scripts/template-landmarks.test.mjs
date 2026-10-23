@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { parseTemplate, RecursiveAstVisitor, TmplAstRecursiveVisitor, tmplAstVisitAll } from '@angular/compiler'
+import { BindingType, Conditional, LiteralPrimitive, PropertyRead, parseTemplate, RecursiveAstVisitor, TmplAstRecursiveVisitor, tmplAstVisitAll } from '@angular/compiler'
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const pagesRoot = resolve(frontendRoot, 'src/app/pages')
@@ -94,4 +94,57 @@ test('comments, text and unrelated role bindings do not contribute landmarks', (
 
 test('malformed templates fail rather than silently bypassing the contract', () => {
   assert.throws(() => mainLandmarks('<section><main></section>'), /template.html/)
+})
+
+function assertDisclosureContract(source) {
+  const template = parseTemplate(source, 'progressive-section.component.html')
+  assert.equal(template.errors?.length ?? 0, 0)
+  const elements = new Map()
+  class Visitor extends TmplAstRecursiveVisitor {
+    visitElement(element) {
+      const classes = element.attributes.find(attribute => attribute.name === 'class')?.value.split(/\s+/) ?? []
+      for (const name of classes) if (name.startsWith('hai-progressive-section')) elements.set(name, element)
+      super.visitElement(element)
+    }
+  }
+  tmplAstVisitAll(new Visitor(), template.nodes)
+  const section = elements.get('hai-progressive-section')
+  const trigger = elements.get('hai-progressive-section__summary')
+  const panel = elements.get('hai-progressive-section__content')
+  assert.ok(section && trigger && panel, 'disclosure structure missing')
+  const input = (element, name) => {
+    const binding = element.inputs.find(binding => binding.name === name)
+    assert.ok(binding, `disclosure binding missing: ${name}`)
+    return binding
+  }
+  const reference = (element, name, expected) => {
+    const expression = input(element, name).value.ast
+    assert.ok(expression instanceof PropertyRead && expression.name === expected, `wrong disclosure reference: ${name}`)
+  }
+  assert.equal(trigger.name, 'button')
+  assert.ok(trigger.attributes.some(attribute => attribute.name === 'type' && attribute.value === 'button'))
+  const marker = input(section, 'data-hai-section')
+  assert.equal(marker.type, BindingType.Attribute)
+  assert.equal(marker.value.source, input(section, 'id').value.source)
+  reference(trigger, 'id', 'triggerId')
+  reference(trigger, 'aria-expanded', 'effectiveOpen')
+  reference(panel, 'id', 'panelId')
+  reference(panel, 'aria-labelledby', 'triggerId')
+  assert.ok(panel.attributes.some(attribute => attribute.name === 'role' && attribute.value === 'region'))
+  const controls = input(trigger, 'aria-controls').value.ast
+  assert.ok(controls instanceof Conditional, 'aria-controls must follow disclosure visibility')
+  assert.ok(controls.condition instanceof PropertyRead && controls.condition.name === 'effectiveOpen')
+  assert.ok(controls.trueExp instanceof PropertyRead && controls.trueExp.name === 'panelId')
+  assert.ok(controls.falseExp instanceof LiteralPrimitive && controls.falseExp.value === null)
+}
+
+test('shared progressive disclosure retains deep-link and accessible control relationships', () => {
+  assertDisclosureContract(readFileSync(resolve(frontendRoot, 'src/app/control-room/progressive-section.component.html'), 'utf8'))
+})
+
+test('disclosure contract rejects removed markers, stale controls and wrong label targets', () => {
+  const source = readFileSync(resolve(frontendRoot, 'src/app/control-room/progressive-section.component.html'), 'utf8')
+  assert.throws(() => assertDisclosureContract(source.replace('[attr.data-hai-section]="sectionId || null"', '')), /data-hai-section/)
+  assert.throws(() => assertDisclosureContract(source.replace('effectiveOpen ? panelId : null', 'panelId')), /aria-controls/)
+  assert.throws(() => assertDisclosureContract(source.replace('[attr.aria-labelledby]="triggerId"', '[attr.aria-labelledby]="panelId"')), /wrong disclosure reference/)
 })
