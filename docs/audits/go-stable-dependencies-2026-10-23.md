@@ -34,6 +34,21 @@ or deployed image is current.
   neither draft has been merged into main.
 - Deployment target remains Hetzner; no deployment or operator migration.
 
+## pgx URI compatibility
+
+The initial hosted dependency build passed vet, then the existing credential
+preservation test failed. pgx 5.11's libpq-compatible URI parser treats '+'
+literally, whereas Go's Values.Encode emits '+' for spaces. The constructor
+now converts those space encodings to '%20'; encoded literal plus remains
+'%2B'. Credentials remain escaped and verified TLS policy remains intact.
+
+The existing regression retains all original cases and adds mixed spaces,
+plus signs and percent sequences in user/database/socket fields. An isolated
+Go 1.27.3 / pgx 5.11 probe copied the exact production constructor and SSL
+policy bodies: five round-trip cases and a verified-TLS/error-redaction case
+passed without making a database connection. The small probe uses a minimal
+settings type and does not qualify the full infra package or hosted suite.
+
 ## Direct module metadata
 
 | Module | Selected stable version |

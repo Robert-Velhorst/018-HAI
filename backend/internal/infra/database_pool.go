@@ -105,7 +105,11 @@ func postgresConnectionConfig(user, password, dbName, dbHost string, dbPort int,
 		"host": {dbHost}, "port": {strconv.Itoa(dbPort)}, "dbname": {dbName},
 		"sslmode": {sslMode}, "timezone": {"UTC"},
 	}
-	connectionURL := url.URL{Scheme: "postgres", User: url.UserPassword(user, password), RawQuery: query.Encode()}
+	// pgx follows libpq URI decoding: '+' is literal, unlike HTML form query
+	// decoding. Values.Encode uses '+' for spaces and '%2B' for literal plus;
+	// convert only its space encoding so both values round-trip unchanged.
+	encodedQuery := strings.ReplaceAll(query.Encode(), "+", "%20")
+	connectionURL := url.URL{Scheme: "postgres", User: url.UserPassword(user, password), RawQuery: encodedQuery}
 	cfg, err := pgx.ParseConfig(connectionURL.String())
 	if err != nil {
 		// Parse errors include the original credential-bearing string.

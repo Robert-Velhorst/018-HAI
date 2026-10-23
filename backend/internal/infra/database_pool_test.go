@@ -75,6 +75,8 @@ func TestPostgresConnectionConfigPreservesCredentialFields(t *testing.T) {
 		{"localhost", "tester", "with spaces ' \\ &?#% sslmode=require", "database &timezone=wrong"},
 		{"::1", "tester@+ ?", "synthetic:/@'", "/database/name"},
 		{"/synthetic/socket", "tester", "synthetic-password", "synthetic_database"},
+		{"localhost", "tester+ name", "synthetic+ space %2B", "database+ with spaces %2B"},
+		{"/synthetic/socket+ with spaces", "tester", "synthetic-password", "database%20+ name"},
 	} {
 		cfg, err := postgresConnectionConfig(test.user, test.password, test.database, test.host, 5432, settings)
 		if err != nil {
