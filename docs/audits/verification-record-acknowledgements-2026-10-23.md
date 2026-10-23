@@ -32,3 +32,7 @@ introduced. Completion-audit acknowledgement binding, advisory audit failure
 reporting, database acceptance and external provider/source acceptance remain
 separate review items. No schema, account permission, credential, original file,
 transcript archive or database is changed by this code review.
+
+A later [audit-boundary review](verification-audit-boundary-2026-10-23.md) covers
+completion acknowledgement, memory opt-in acknowledgement and advisory audit
+failure disclosure. This document's 170-result count is its earlier checkpoint.

@@ -70,7 +70,8 @@ func TestVerificationProjectionFailureIsExplicitAndRedacted(t *testing.T) {
 		return EvidenceAuthorityResolution{Trusted: true, Authority: "project_record", Official: true, Primary: true}
 	})
 	memoryRepository := &capturingMemoryRepository{}
-	base := NewServiceWithAuthorityResolver(&fakeVerificationRepository{}, nil, memory.NewService(memoryRepository), resolver)
+	repository := &fakeVerificationRepository{}
+	base := NewServiceWithAuthorityResolver(repository, nil, memory.NewService(memoryRepository), resolver)
 	projector := &capturingClaimProjector{err: errors.New("postgres password=hunter2")}
 	service, err := WithClaimProjector(base, projector)
 	if err != nil {
@@ -93,6 +94,74 @@ func TestVerificationProjectionFailureIsExplicitAndRedacted(t *testing.T) {
 	payload, _ := json.Marshal(result)
 	if strings.Contains(string(payload), "hunter2") || strings.Contains(string(payload), "postgres") {
 		t.Fatal("projection internals leaked into result")
+	}
+	for _, audit := range repository.audits {
+		if strings.Contains(audit.Message, "hunter2") || strings.Contains(audit.Message, "postgres") {
+			t.Fatal("projection internals leaked into the persisted audit")
+		}
+	}
+}
+
+func TestUnacknowledgedMemoryOptInPreventsPromotion(t *testing.T) {
+	repository := &failingVerificationRepository{
+		fakeVerificationRepository: &fakeVerificationRepository{},
+		auditAck: func(record *models.VerificationAuditLog) *models.VerificationAuditLog {
+			if record.Action == "verification.memory_update_requested" {
+				return nil
+			}
+			return record
+		},
+	}
+	memoryRepository := &capturingMemoryRepository{}
+	resolver := EvidenceAuthorityResolverFunc(func(AnswerRequest, EvidenceInput) EvidenceAuthorityResolution {
+		return EvidenceAuthorityResolution{Trusted: true, Authority: "project_record", Official: true, Primary: true}
+	})
+	service := NewServiceWithAuthorityResolver(repository, nil, memory.NewService(memoryRepository), resolver)
+	result, err := service.Answer(AnswerRequest{
+		OwnerIdentity: "alice", Question: "What is ready?", DraftAnswer: "The project record is ready.",
+		Mode: ModeGrounded, AllowMemoryUpdate: true,
+		ExternalEvidence: []EvidenceInput{{SourceType: "project_record", SourceID: "record-1", Snippet: "The project record is ready."}},
+	})
+	if err != nil || result == nil {
+		t.Fatalf("verification could not finish without optional memory promotion: %v", err)
+	}
+	if result.MemoryUpdatesStored != 0 || len(memoryRepository.created) != 0 || result.MemoryUpdateBlockedReason == "" {
+		t.Fatal("unacknowledged memory opt-in permitted promotion")
+	}
+}
+
+func TestSemanticProjectionAuditFailuresAreVisible(t *testing.T) {
+	for _, action := range []string{"verification.knowledge_projected", "verification.knowledge_projection_failed"} {
+		t.Run(action, func(t *testing.T) {
+			repository := &failingVerificationRepository{
+				fakeVerificationRepository: &fakeVerificationRepository{},
+				auditActionErr:             action, auditErr: errors.New("audit unavailable"),
+			}
+			memoryRepository := &capturingMemoryRepository{}
+			resolver := EvidenceAuthorityResolverFunc(func(AnswerRequest, EvidenceInput) EvidenceAuthorityResolution {
+				return EvidenceAuthorityResolution{Trusted: true, Authority: "project_record", Official: true, Primary: true}
+			})
+			projector := &capturingClaimProjector{ids: []string{"claim-1"}}
+			if action == "verification.knowledge_projection_failed" {
+				projector.err = errors.New("projection unavailable")
+			}
+			base := NewServiceWithAuthorityResolver(repository, nil, memory.NewService(memoryRepository), resolver)
+			service, err := WithClaimProjector(base, projector)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := service.Answer(AnswerRequest{
+				OwnerIdentity: "alice", Question: "What is ready?", DraftAnswer: "The project record is ready.",
+				Mode: ModeGrounded, AllowMemoryUpdate: true,
+				ExternalEvidence: []EvidenceInput{{SourceType: "project_record", SourceID: "record-1", Snippet: "The project record is ready."}},
+			})
+			if err != nil || result == nil || projector.called != 1 || len(memoryRepository.created) != 1 {
+				t.Fatalf("secondary audit failure lost completed work: %v", err)
+			}
+			if len(result.AuditWarnings) != 1 || result.AuditWarnings[0] != action {
+				t.Fatalf("secondary audit failure was hidden: %v", result.AuditWarnings)
+			}
+		})
 	}
 }
 

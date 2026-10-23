@@ -214,6 +214,7 @@ type failingVerificationRepository struct {
 	runAck            func(*models.VerificationRun) *models.VerificationRun
 	evidenceAck       func(*models.VerificationEvidence) *models.VerificationEvidence
 	claimAck          func(*models.VerificationClaim) *models.VerificationClaim
+	auditAck          func(*models.VerificationAuditLog) *models.VerificationAuditLog
 }
 
 type creationAcknowledgementRepository struct {
@@ -321,7 +322,11 @@ func (r *failingVerificationRepository) CreateAuditLog(log *models.VerificationA
 	if r.auditErr != nil && (r.auditActionErr == "" || log.Action == r.auditActionErr) {
 		return nil, r.auditErr
 	}
-	return r.fakeVerificationRepository.CreateAuditLog(log)
+	saved, err := r.fakeVerificationRepository.CreateAuditLog(log)
+	if err == nil && r.auditAck != nil {
+		return r.auditAck(saved), nil
+	}
+	return saved, err
 }
 
 type transactionalFailingVerificationRepository struct {
@@ -345,6 +350,7 @@ func (r *transactionalFailingVerificationRepository) WithinTransaction(action fu
 		runAck:                     r.runAck,
 		evidenceAck:                r.evidenceAck,
 		claimAck:                   r.claimAck,
+		auditAck:                   r.auditAck,
 	}
 	if err := action(transactional); err != nil {
 		return err
@@ -354,6 +360,74 @@ func (r *transactionalFailingVerificationRepository) WithinTransaction(action fu
 	r.evidence = staged.evidence
 	r.audits = staged.audits
 	return nil
+}
+
+func TestVerificationAuditRequiresMatchingAcknowledgement(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		ack  func(*models.VerificationAuditLog) *models.VerificationAuditLog
+	}{
+		{"missing acknowledgement", func(*models.VerificationAuditLog) *models.VerificationAuditLog { return nil }},
+		{"missing identity", func(record *models.VerificationAuditLog) *models.VerificationAuditLog {
+			record.ID = uuid.Nil
+			return record
+		}},
+		{"foreign run", func(record *models.VerificationAuditLog) *models.VerificationAuditLog {
+			record.RunID = uuid.New()
+			return record
+		}},
+		{"different action", func(record *models.VerificationAuditLog) *models.VerificationAuditLog {
+			record.Action = "verification.other"
+			return record
+		}},
+		{"different message", func(record *models.VerificationAuditLog) *models.VerificationAuditLog {
+			record.Message = "A different event."
+			return record
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			repository := &failingVerificationRepository{fakeVerificationRepository: &fakeVerificationRepository{}, auditAck: test.ack}
+			err := NewService(repository, nil, nil).(*service).auditErr(uuid.New(), "verification.test", "Expected event.")
+			if err == nil || !strings.Contains(err.Error(), "acknowledgement") {
+				t.Fatalf("mismatched audit acknowledgement was accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestVerificationAuditAcceptsDatabaseManagedMetadata(t *testing.T) {
+	repository := &failingVerificationRepository{
+		fakeVerificationRepository: &fakeVerificationRepository{},
+		auditAck: func(record *models.VerificationAuditLog) *models.VerificationAuditLog {
+			record.CreatedAt = time.Date(2026, 10, 23, 12, 0, 0, 0, time.UTC)
+			return record
+		},
+	}
+	if err := NewService(repository, nil, nil).(*service).auditErr(uuid.New(), "verification.test", "Expected event."); err != nil {
+		t.Fatalf("database-managed audit metadata was rejected: %v", err)
+	}
+}
+
+func TestAnswerRejectsMissingCompletionAuditAcknowledgement(t *testing.T) {
+	repository := &transactionalFailingVerificationRepository{failingVerificationRepository: &failingVerificationRepository{
+		fakeVerificationRepository: &fakeVerificationRepository{},
+		auditAck: func(record *models.VerificationAuditLog) *models.VerificationAuditLog {
+			if record.Action == "verification.completed" {
+				return nil
+			}
+			return record
+		},
+	}}
+	result, err := NewService(repository, nil, nil).Answer(AnswerRequest{
+		OwnerIdentity: "alice", Question: "What is the result?", DraftAnswer: "The work passed.", Mode: ModeGrounded,
+	})
+	if err == nil || result != nil || !strings.Contains(err.Error(), "completion audit") {
+		t.Fatalf("missing completion audit returned a result: resultPresent=%t err=%v", result != nil, err)
+	}
+	if len(repository.claims) != 0 || hasVerificationAudit(repository.audits, "verification.completed") ||
+		len(repository.runs) != 1 || repository.runs[0].Status != StatusUncertain {
+		t.Fatal("missing completion audit retained finalized verification records")
+	}
 }
 
 func TestAnswerRejectsMismatchedEvidenceAndClaimAcknowledgements(t *testing.T) {

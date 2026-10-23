@@ -330,13 +330,21 @@ func (s *service) AnswerContext(ctx context.Context, request AnswerRequest) (*Ve
 			s.markCanceledRun(run, cancelErr)
 			return nil, cancelErr
 		}
+		auditAction, auditMessage := "", ""
 		if err != nil {
 			knowledgeError = "semantic claim projection failed"
 			logs = append(logs, knowledgeError)
-			s.audit(run.ID, "verification.knowledge_projection_failed", err.Error())
+			auditAction, auditMessage = "verification.knowledge_projection_failed", knowledgeError
 		} else if len(knowledgeClaimIDs) > 0 {
 			logs = append(logs, "source-backed claims projected into immutable semantic knowledge")
-			s.audit(run.ID, "verification.knowledge_projected", fmt.Sprintf("projected %d semantic claim(s)", len(knowledgeClaimIDs)))
+			auditAction = "verification.knowledge_projected"
+			auditMessage = fmt.Sprintf("projected %d semantic claim(s)", len(knowledgeClaimIDs))
+		}
+		if auditAction != "" {
+			if auditErr := s.auditErr(run.ID, auditAction, auditMessage); auditErr != nil {
+				auditWarnings = append(auditWarnings, auditAction)
+				logs = append(logs, "semantic projection audit could not be durably recorded")
+			}
 		}
 	}
 	if err := s.stopIfCanceled(ctx, run); err != nil {
@@ -436,7 +444,7 @@ func (s *service) persistCompletedVerification(run *models.VerificationRun, evid
 			}
 			claims[index] = *saved
 		}
-		if _, err := repository.CreateAuditLog(&models.VerificationAuditLog{
+		if err := persistVerificationAudit(repository, models.VerificationAuditLog{
 			RunID: run.ID, Action: "verification.completed",
 			Message: "important claims decomposed and verified before acceptance",
 		}); err != nil {
@@ -1044,12 +1052,31 @@ func (s *service) audit(runID uuid.UUID, action, message string) {
 }
 
 func (s *service) auditErr(runID uuid.UUID, action, message string) error {
-	_, err := s.repo.CreateAuditLog(&models.VerificationAuditLog{
+	return persistVerificationAudit(s.repo, models.VerificationAuditLog{
 		RunID:   runID,
 		Action:  action,
 		Message: message,
 	})
-	return err
+}
+
+func persistVerificationAudit(repository Repository, record models.VerificationAuditLog) error {
+	wanted := record
+	saved, err := repository.CreateAuditLog(&record)
+	if err != nil {
+		return err
+	}
+	if saved == nil || saved.ID == uuid.Nil {
+		return fmt.Errorf("verification audit acknowledgement has no durable identity")
+	}
+	observed := *saved
+	if wanted.ID == uuid.Nil {
+		observed.ID = uuid.Nil
+	}
+	observed.CreatedAt, wanted.CreatedAt = time.Time{}, time.Time{}
+	if observed != wanted {
+		return fmt.Errorf("verification audit acknowledgement does not match the requested event")
+	}
+	return nil
 }
 
 func normalizeMode(mode string) string {
