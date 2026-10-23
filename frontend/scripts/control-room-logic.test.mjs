@@ -8,6 +8,7 @@ import { loadComponentLogic } from './load-component-logic.mjs'
 import { loadModuleUrlLogic } from './module-url-test-helper.mjs'
 import { launchRecoveryNotice } from '../src/app/control-room/launch-recovery.ts'
 import './command-dashboard-approval.test.mjs'
+import './pursuits-styles.test.mjs'
 
 const { moduleForUrl } = await loadModuleUrlLogic()
 
