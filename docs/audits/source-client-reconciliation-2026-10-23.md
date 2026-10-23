@@ -48,3 +48,25 @@ not an authenticated deployed browser/API or live account acceptance run. The
 large connected-sources page and backend service are not thereby declared fully
 reconciled. Original recovery copies and archives remain retained pending the
 separate main-preservation and deletion gates.
+
+## Automation client follow-up
+
+The retained `automations.service.ts` and complete service tests were also read
+against their full current differences. Preserve multipart model/runtime options,
+PATCH configuration ordering, persisted secure launch keys, fail-closed storage
+admission, transport-error recovery and compare-before-remove key cleanup.
+
+Keep the newer shared confirmed-receipt predicate instead of the older rule that
+cleared a request key for every response except `indeterminate`. It requires the
+exact automation, nonzero UUID event receipt, `ready`/`completed` status and no
+approval requirement. The actual control-center consumer uses the same predicate
+and warns rather than reporting success for an unconfirmed response.
+
+Ten added tests cover eight unconfirmed receipt shapes, a newer request key that
+must survive an older response, and a corrupt stored key that must block HTTP
+without silently replacing recovery state. These pass against the current service;
+they are additional coverage, not newly reproduced defects or live runtime proof.
+Together, the automation and source-client suites pass all 45 Chrome Headless
+tests. All 67 existing launch-safety/control-room logic tests also pass locally.
+No launch, automation registration, real local storage profile or external runtime
+is modified by these fixtures.

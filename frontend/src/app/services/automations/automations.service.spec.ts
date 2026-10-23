@@ -93,6 +93,45 @@ describe('AutomationsService', () => {
     expect(launchError?.name).toBe('AutomationLaunchSafetyError');
     expect(http.match('/api/v1/automation/automation-4/launch')).toHaveSize(0);
   });
+
+  for (const [name, response] of [
+    ['empty response', null],
+    ['missing receipt', {}],
+    ['different automation', launchResult('completed', 'different-automation')],
+    ['pending execution', launchResult('running', 'automation-5')],
+    ['failed execution', launchResult('failed', 'automation-5')],
+    ['approval required', { ...launchResult('completed', 'automation-5'), requiresApproval: true }],
+    ['missing event identifier', { ...launchResult('completed', 'automation-5'), launchEventId: undefined }],
+    ['nil event identifier', { ...launchResult('completed', 'automation-5'), launchEventId: '00000000-0000-0000-0000-000000000000' }],
+  ]) {
+    it(`retains the existing launch key for an unconfirmed receipt: ${name}`, () => {
+      service.launchAutomation('automation-5').subscribe();
+      const request = http.expectOne('/api/v1/automation/automation-5/launch');
+      const key = request.request.headers.get('Idempotency-Key');
+      request.flush(response);
+      expect(window.localStorage.getItem('hai.automation-launch.idempotency.v1.automation-5')).toBe(key);
+    });
+  }
+
+  it('does not remove a newer request key when an older launch response arrives', () => {
+    const storageKey = 'hai.automation-launch.idempotency.v1.automation-6';
+    service.launchAutomation('automation-6').subscribe();
+    const request = http.expectOne('/api/v1/automation/automation-6/launch');
+    const newerKey = globalThis.crypto.randomUUID();
+    window.localStorage.setItem(storageKey, newerKey);
+    request.flush(launchResult('completed', 'automation-6'));
+    expect(window.localStorage.getItem(storageKey)).toBe(newerKey);
+  });
+
+  it('keeps a corrupt saved key for explicit recovery and sends no launch', () => {
+    const storageKey = 'hai.automation-launch.idempotency.v1.automation-7';
+    window.localStorage.setItem(storageKey, 'not-a-valid-request-key');
+    let failure: Error | undefined;
+    service.launchAutomation('automation-7').subscribe({ error: error => { failure = error; } });
+    expect(failure?.name).toBe('AutomationLaunchSafetyError');
+    expect(window.localStorage.getItem(storageKey)).toBe('not-a-valid-request-key');
+    http.expectNone('/api/v1/automation/automation-7/launch');
+  });
 });
 
 function launchResult(status: string, automationId: string): IAutomationLaunchResult {
