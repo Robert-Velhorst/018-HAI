@@ -6,8 +6,8 @@
       <p>Form bounded advisory teams, record evidence-backed decisions, and escalate conflict without granting execution authority.</p>
     </div>
     <div class="heading-actions">
-      <button nz-button type="button" (click)="refresh()" [disabled]="loading"><i nz-icon nzType="reload"></i> Refresh</button>
-      <button nz-button nzType="primary" type="button" (click)="openCreate()" [disabled]="!canGovern"><i nz-icon nzType="team"></i> Create advisory team</button>
+      <button nz-button type="button" (click)="refresh()" [disabled]="loading || saving"><i nz-icon nzType="reload"></i> Refresh</button>
+      <button nz-button nzType="primary" type="button" (click)="openCreate()" [disabled]="!canGovern || saving"><i nz-icon nzType="team"></i> Create advisory team</button>
     </div>
   </header>
 
@@ -18,7 +18,7 @@
 
   <div class="source-error" *ngIf="errorMessage" role="alert">
     <i nz-icon nzType="warning"></i><div><strong>Agent teams unavailable</strong><span>{{ errorMessage }}</span></div>
-    <button nz-button type="button" (click)="refresh()">Retry</button>
+    <button nz-button type="button" (click)="refresh()" [disabled]="loading || saving">Retry</button>
   </div>
   <div class="loading-state" *ngIf="loading" role="status"><nz-spin nzSimple></nz-spin><span>Loading authoritative team contracts</span></div>
   <div class="source-error" *ngIf="detailError" role="alert">
@@ -36,7 +36,7 @@
     <section class="teams-workspace" *ngIf="selected as team; else emptyState">
       <aside class="team-list" aria-label="Agent teams">
         <header><h2>Teams</h2><span>{{ teams.length }}</span></header>
-        <button type="button" *ngFor="let item of teams; trackBy: trackById" (click)="selectTeam(item)" [class.active]="item.id === team.id && item.version === team.version" [attr.aria-current]="item.id === team.id ? 'true' : null">
+        <button type="button" *ngFor="let item of teams; trackBy: trackById" (click)="selectTeam(item)" [disabled]="saving" [class.active]="item.id === team.id && item.version === team.version" [attr.aria-current]="item.id === team.id && item.version === team.version ? 'true' : null">
           <span class="state-dot" [attr.data-status]="item.status"></span>
           <span><strong>{{ item.name }}</strong><small>{{ statusLabel(item.status) }} | v{{ item.version }}</small></span>
           <i nz-icon nzType="right"></i>

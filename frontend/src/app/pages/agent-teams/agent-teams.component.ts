@@ -1,6 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { ChangeDetectionStrategy, Component, ElementRef, OnInit, ViewChild } from '@angular/core'
-import { forkJoin } from 'rxjs'
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core'
+import { defer, EMPTY, finalize, forkJoin, Observable, Subject, Subscription, take, takeUntil, throwIfEmpty, timeout } from 'rxjs'
 import { HaiProgressiveSectionComponent } from '../../control-room/progressive-section.component'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import { Router } from '@angular/router'
@@ -26,7 +26,7 @@ import { NzNotificationService } from 'ng-zorro-antd/notification'
     styleUrls: ['./agent-teams.component.scss'],
     standalone: false
 })
-export class AgentTeamsComponent implements OnInit {
+export class AgentTeamsComponent implements OnInit, OnDestroy {
   @ViewChild('membersSection') membersSection?: HaiProgressiveSectionComponent
   @ViewChild('decisionsSection') decisionsSection?: HaiProgressiveSectionComponent
   @ViewChild('decisionsSection', { read: ElementRef }) decisionsSectionHost?: ElementRef<HTMLElement>
@@ -56,6 +56,11 @@ export class AgentTeamsComponent implements OnInit {
   loadedSections = new Set<string>()
   private attentionRequest = 0
   private attentionLoadedTeam = ''
+  private readonly destroyed$ = new Subject<void>()
+  private readonly teamChanged$ = new Subject<void>()
+  private readonly pendingSections = new Set<string>()
+  private destroyed = false
+  private registrySubscription?: Subscription
 
   createForm = {
     key: '', version: '1.0.0', name: '', purpose: '', authorityCeiling: 1,
@@ -79,7 +84,14 @@ export class AgentTeamsComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    forkJoin({ session: this.authService.session(), teams: this.teamsService.list() }).subscribe({
+    if (this.destroyed || this.saving) return
+    this.registrySubscription?.unsubscribe()
+    this.loading = true
+    this.errorMessage = ''
+    this.registrySubscription = this.observe(
+      () => forkJoin({ session: this.authService.session(), teams: this.teamsService.list() }),
+      () => this.loading = false,
+    ).subscribe({
       next: ({ session, teams }) => {
         this.session = session
         this.teams = teams
@@ -91,6 +103,21 @@ export class AgentTeamsComponent implements OnInit {
         this.errorMessage = this.apiError(error, 'The authoritative team registry could not be loaded.')
       },
     })
+  }
+
+  ngOnDestroy(): void {
+    this.destroyed = true
+    this.destroyed$.next()
+    this.destroyed$.complete()
+    this.teamChanged$.complete()
+  }
+
+  private observe<T>(request: () => Observable<T>, settle: () => void, deadlineMs = 6000, selectionBound = false): Observable<T> {
+    if (this.destroyed) return EMPTY
+    return defer(request).pipe(
+      timeout(deadlineMs), take(1), throwIfEmpty(), takeUntil(this.destroyed$),
+      takeUntil(selectionBound ? this.teamChanged$ : EMPTY), finalize(settle),
+    )
   }
 
   get canGovern(): boolean { return this.session?.permissions.canAdminister === true }
@@ -137,22 +164,28 @@ export class AgentTeamsComponent implements OnInit {
   }
 
   refresh(): void {
+    if (this.destroyed || this.saving) return
+    if (!this.session) { this.ngOnInit(); return }
+    this.registrySubscription?.unsubscribe()
     this.loading = true
     this.errorMessage = ''
-    this.teamsService.list().subscribe({
+    this.registrySubscription = this.observe(() => this.teamsService.list(), () => this.loading = false).subscribe({
       next: (teams) => {
         this.teams = teams
         this.loading = false
         const current = this.selected && teams.find((team) => team.id === this.selected?.id && team.version === this.selected?.version)
         if (current) this.selectTeam(current)
         else if (teams.length) this.selectTeam(teams[0])
-        else this.selected = undefined
+        else { this.teamChanged$.next(); this.selected = undefined }
       },
       error: (error: HttpErrorResponse) => { this.loading = false; this.errorMessage = this.apiError(error, 'Refresh failed.') },
     })
   }
 
   selectTeam(team: AgentTeamContract): void {
+    if (this.destroyed || this.saving) return
+    this.registrySubscription?.unsubscribe()
+    this.teamChanged$.next()
     this.attentionRequest++
     this.attentionLoadedTeam = ''
     this.attentionLoading = false
@@ -184,7 +217,7 @@ export class AgentTeamsComponent implements OnInit {
   }
 
   openCreate(): void {
-    if (!this.canGovern) return
+    if (this.destroyed || this.saving || !this.canGovern) return
     this.createOpen = true
   }
 
@@ -233,40 +266,42 @@ export class AgentTeamsComponent implements OnInit {
   }
 
   createTeam(): void {
-    if (!this.canGovern || this.saving) return
+    if (this.destroyed || !this.canGovern || this.saving) return
     const name = this.createForm.name.trim()
     const purpose = this.createForm.purpose.trim()
     if (!name || !purpose || !this.createForm.key.trim()) {
       this.notification.error('Team charter incomplete', 'Name, key, and purpose are required.')
       return
     }
+    this.teamChanged$.next()
     this.saving = true
-    this.teamsService.createGuided({
+    this.observe(() => this.teamsService.createGuided({
       key: this.createForm.key.trim(), version: this.createForm.version.trim(), name, purpose,
       authorityCeiling: this.createForm.authorityCeiling, riskCeiling: 'low',
       maximumDelegatedAuthority: Math.min(1, this.createForm.authorityCeiling), maximumDelegatedRisk: 'low',
       consensusMode: this.createForm.consensusMode, quorum: this.createForm.quorum,
       minimumSupport: this.createForm.minimumSupport, allowAbstention: this.createForm.allowAbstention,
       evidenceRefs: this.lines(this.createForm.evidenceRefs), actor: this.actor,
-    }).subscribe({
+    }), () => this.saving = false, 30000).subscribe({
       next: (team) => {
         this.saving = false; this.createOpen = false; this.teams = [team, ...this.teams]; this.selectTeam(team)
         this.notification.success('Advisory team created', 'The charter is a draft and grants no execution authority.')
       },
-      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Team creation failed', this.apiError(error, 'No team was created.')) },
+      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Team creation unconfirmed', this.apiError(error, 'Refresh the registry before retrying; a draft may already have been saved.')) },
     })
   }
 
   addMember(): void {
     const team = this.selected
-    if (!team || !this.canGovern || this.saving) return
+    if (this.destroyed || !team || !this.canGovern || this.saving) return
     const role = team.roles.find((item) => item.id === this.memberForm.roleId)
     if (!role || !this.memberForm.agentId.trim() || !this.memberForm.reason.trim()) {
       this.notification.error('Member record incomplete', 'Agent, role, and auditable reason are required.')
       return
     }
+    this.teamChanged$.next()
     this.saving = true
-    this.teamsService.addMember(team.id, team.version, {
+    this.observe(() => this.teamsService.addMember(team.id, team.version, {
       expectedRevision: team.revision, actor: this.actor, reason: this.memberForm.reason.trim(),
       member: {
         agentId: this.memberForm.agentId.trim(), agentVersion: this.memberForm.agentVersion.trim(),
@@ -274,41 +309,43 @@ export class AgentTeamsComponent implements OnInit {
         authorityCeiling: Math.min(role.authorityCeiling, team.authorityCeiling),
         riskCeiling: role.riskCeiling, evidenceRefs: this.lines(this.memberForm.evidenceRefs),
       },
-    }).subscribe({
+    }), () => this.saving = false, 30000).subscribe({
       next: (updated) => {
         this.saving = false; this.memberFormOpen = false; this.replaceTeam(updated)
         this.memberForm = { agentId: '', agentVersion: '1.0.0', roleId: '', evidenceRefs: '', reason: '' }
         this.notification.success('Member added', 'The member is bounded by the team charter and remains advisory.')
       },
-      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Member not added', this.apiError(error, 'The charter remains unchanged.')) },
+      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Member update unconfirmed', this.apiError(error, 'Refresh the charter before retrying; the update may already have been saved.')) },
     })
   }
 
   changeMembership(member: AgentTeamMember, status: TeamMembershipStatus): void {
     const team = this.selected
-    if (!team || !this.canGovern || this.saving) return
+    if (this.destroyed || !team || !this.canGovern || this.saving) return
     const reason = window.prompt(`Reason for changing ${member.agentId} to ${status}`)?.trim()
     if (!reason) return
+    this.teamChanged$.next()
     this.saving = true
-    this.teamsService.changeMembership(team.id, team.version, member.id, {
+    this.observe(() => this.teamsService.changeMembership(team.id, team.version, member.id, {
       expectedRevision: team.revision, actor: this.actor, status, reason, evidenceRefs: member.evidenceRefs || [],
-    }).subscribe({
+    }), () => this.saving = false, 30000).subscribe({
       next: (updated) => { this.saving = false; this.replaceTeam(updated); this.notification.success('Membership updated', 'The lifecycle event was recorded.') },
-      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Membership unchanged', this.apiError(error, 'The transition was rejected.')) },
+      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Membership update unconfirmed', this.apiError(error, 'Refresh membership before retrying; the transition may already have been saved.')) },
     })
   }
 
   transition(action: 'activate' | 'suspend' | 'retire' | 'revoke'): void {
     const team = this.selected
-    if (!team || !this.canGovern || this.saving) return
+    if (this.destroyed || !team || !this.canGovern || this.saving) return
     const reason = window.prompt(`Reason to ${action} ${team.name}`)?.trim()
     if (!reason) return
+    this.teamChanged$.next()
     this.saving = true
-    this.teamsService.transition(team.id, team.version, action, {
+    this.observe(() => this.teamsService.transition(team.id, team.version, action, {
       expectedRevision: team.revision, actor: this.actor, reason, evidenceRefs: team.evidenceRefs || [],
-    }).subscribe({
+    }), () => this.saving = false, 30000).subscribe({
       next: (updated) => { this.saving = false; this.replaceTeam(updated); this.notification.success('Team lifecycle updated', `${updated.name} is now ${updated.status}.`) },
-      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Transition rejected', this.apiError(error, 'The team state is unchanged.')) },
+      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Transition unconfirmed', this.apiError(error, 'Refresh the team before retrying; the transition may already have been saved.')) },
     })
   }
 
@@ -320,37 +357,39 @@ export class AgentTeamsComponent implements OnInit {
 
   createDecision(): void {
     const team = this.selected
-    if (!team || !this.canOperate || this.saving) return
+    if (this.destroyed || !team || !this.canOperate || this.saving) return
     if (!this.decisionForm.senderMembershipId || !this.decisionForm.recipientMembershipId || !this.decisionForm.issue.trim() || !this.decisionForm.recommendation.trim() || !this.lines(this.decisionForm.evidenceRefs).length) {
       this.notification.error('Decision evidence incomplete', 'Sender, recipient, issue, recommendation, and evidence are required.')
       return
     }
+    this.teamChanged$.next()
     this.saving = true
-    this.teamsService.createDecision(team.id, team.version, {
+    this.observe(() => this.teamsService.createDecision(team.id, team.version, {
       ...this.decisionForm, issue: this.decisionForm.issue.trim(), recommendation: this.decisionForm.recommendation.trim(),
       evidenceRefs: this.lines(this.decisionForm.evidenceRefs), idempotencyKey: this.uuid(),
-    }).subscribe({
+    }), () => this.saving = false, 30000).subscribe({
       next: (message) => {
         this.saving = false; this.decisionFormOpen = false; this.messages = [message, ...this.messages]; this.loadedSections.add('decisions')
         this.consensusForm = { correlationId: message.correlationId, issue: this.decisionForm.issue.trim() }
         this.decisionForm.recommendation = ''; this.decisionForm.evidenceRefs = ''
         this.loadAttention(); this.notification.success('Decision recorded', 'The server created the canonical advisory message envelope.')
       },
-      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Decision not recorded', this.apiError(error, 'No message was stored.')) },
+      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Decision unconfirmed', this.apiError(error, 'Refresh decision records before retrying; a message may already have been stored.')) },
     })
   }
 
   acknowledge(item: AgentTeamAttention, status: 'accepted' | 'rejected' | 'deferred'): void {
     const team = this.selected
-    if (!team || !this.canOperate || this.saving) return
+    if (this.destroyed || !team || !this.canOperate || this.saving) return
     const reason = status === 'accepted' ? 'Reviewed in HAI operator workspace.' : window.prompt(`Reason for ${status}`)?.trim()
     if (!reason) return
+    this.teamChanged$.next()
     this.saving = true
-    this.teamsService.acknowledge(team.id, team.version, item.messageId, {
+    this.observe(() => this.teamsService.acknowledge(team.id, team.version, item.messageId, {
       status, reason, retryAfterMinutes: status === 'deferred' ? 60 : 0, idempotencyKey: this.uuid(),
-    }).subscribe({
+    }), () => this.saving = false, 30000).subscribe({
       next: () => { this.saving = false; this.loadAttention(); this.notification.success('Acknowledgment recorded', 'The response is bound to the persisted message and recipient.') },
-      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Acknowledgment rejected', this.apiError(error, 'No acknowledgment was stored.')) },
+      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Acknowledgment unconfirmed', this.apiError(error, 'Refresh the queue before retrying; an acknowledgment may already have been stored.')) },
     })
   }
 
@@ -360,35 +399,36 @@ export class AgentTeamsComponent implements OnInit {
 
   recordConsensus(): void {
     const team = this.selected
-    if (!team || !this.canGovern || this.saving || !this.consensusForm.correlationId.trim() || !this.consensusForm.issue.trim()) return
+    if (this.destroyed || !team || !this.canGovern || this.saving || !this.consensusForm.correlationId.trim() || !this.consensusForm.issue.trim()) return
+    this.teamChanged$.next()
     this.saving = true
-    this.teamsService.recordConsensus(team.id, team.version, {
+    this.observe(() => this.teamsService.recordConsensus(team.id, team.version, {
       correlationId: this.consensusForm.correlationId.trim(), issue: this.consensusForm.issue.trim(), idempotencyKey: this.uuid(),
-    }).subscribe({
+    }), () => this.saving = false, 30000).subscribe({
       next: (outcome) => { this.saving = false; this.outcomes = [outcome, ...this.outcomes]; this.notification.success('Consensus evaluated', 'The result is advisory and does not authorize execution.') },
-      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Consensus not recorded', this.apiError(error, 'The vote set may be incomplete or conflicting.')) },
+      error: (error: HttpErrorResponse) => { this.saving = false; this.notification.error('Consensus unconfirmed', this.apiError(error, 'Refresh outcomes before retrying; an evaluation may already have been stored.')) },
     })
   }
 
   loadSection(section: string, open: boolean): void {
-    if (!open || !this.selected || this.loadedSections.has(section)) return
+    if (this.destroyed || this.saving || !open || !this.selected || this.loadedSections.has(section) || this.pendingSections.has(section)) return
     const team = this.selected
+    this.pendingSections.add(section)
     this.detailLoading = true
     this.detailError = ''
     this.failedSection = ''
     const isCurrentTeam = () => this.selected?.id === team.id && this.selected.version === team.version
+    const settle = () => { this.pendingSections.delete(section); this.detailLoading = this.pendingSections.size > 0 }
     const failed = (error: HttpErrorResponse) => {
       if (!isCurrentTeam()) return
-      this.detailLoading = false
       this.failedSection = section
       this.detailError = this.apiError(error, 'The section could not be loaded.')
       this.notification.error('Team detail unavailable', this.apiError(error, 'The section could not be loaded.'))
     }
     if (section === 'decisions') {
-      this.teamsService.decisionOverview(team.id, team.version).subscribe({
+      this.observe(() => this.teamsService.decisionOverview(team.id, team.version), settle, 6000, true).subscribe({
         next: (result) => {
           if (!isCurrentTeam()) return
-          this.detailLoading = false
           this.loadedSections.add(section)
           this.messages = result.messages
           this.attention = result.attention
@@ -402,21 +442,21 @@ export class AgentTeamsComponent implements OnInit {
       return
     }
     if (section === 'consensus') {
-      this.teamsService.outcomes(team.id, team.version).subscribe({
-        next: (result) => { if (!isCurrentTeam()) return; this.detailLoading = false; this.loadedSections.add(section); this.outcomes = result },
+      this.observe(() => this.teamsService.outcomes(team.id, team.version), settle, 6000, true).subscribe({
+        next: (result) => { if (!isCurrentTeam()) return; this.loadedSections.add(section); this.outcomes = result },
         error: failed,
       })
       return
     }
     if (section === 'history') {
-      this.teamsService.events(team.id, team.version).subscribe({
-        next: (result) => { if (!isCurrentTeam()) return; this.detailLoading = false; this.loadedSections.add(section); this.events = result },
+      this.observe(() => this.teamsService.events(team.id, team.version), settle, 6000, true).subscribe({
+        next: (result) => { if (!isCurrentTeam()) return; this.loadedSections.add(section); this.events = result },
         error: failed,
       })
       return
     }
-    this.teamsService.get(team.id, team.version).subscribe({
-      next: (result) => { if (!isCurrentTeam()) return; this.detailLoading = false; this.loadedSections.add(section); this.replaceTeam(result) },
+    this.observe(() => this.teamsService.get(team.id, team.version), settle, 6000, true).subscribe({
+      next: (result) => { if (!isCurrentTeam()) return; this.loadedSections.add(section); this.replaceTeam(result) },
       error: failed,
     })
   }
@@ -428,11 +468,13 @@ export class AgentTeamsComponent implements OnInit {
 
   private loadAttention(): void {
     const team = this.selected
-    if (!team || this.attentionLoading) return
+    if (this.destroyed || this.saving || !team || this.attentionLoading) return
     const request = ++this.attentionRequest
     this.attentionLoading = true
     this.attentionError = ''
-    this.teamsService.attention(team.id, team.version).subscribe({
+    this.observe(() => this.teamsService.attention(team.id, team.version), () => {
+      if (request === this.attentionRequest) this.attentionLoading = false
+    }, 6000, true).subscribe({
       next: (items) => {
         if (request !== this.attentionRequest || this.selected?.id !== team.id || this.selected.version !== team.version) return
         this.attentionLoading = false
@@ -442,8 +484,8 @@ export class AgentTeamsComponent implements OnInit {
       error: (error: HttpErrorResponse) => {
         if (request !== this.attentionRequest || this.selected?.id !== team.id || this.selected.version !== team.version) return
         this.attentionLoading = false
-        this.attentionError = this.apiError(error, 'The decision succeeded, but the queue could not be refreshed.')
-        this.notification.error('Attention queue unavailable', this.apiError(error, 'The decision succeeded, but the queue could not be refreshed.'))
+        this.attentionError = this.apiError(error, 'The queue could not be refreshed. Previously displayed decisions may be stale.')
+        this.notification.error('Attention queue unavailable', this.attentionError)
       },
     })
   }

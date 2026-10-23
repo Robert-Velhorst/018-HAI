@@ -794,3 +794,42 @@ tests across 29 selected frontend spec files pass together in ChromeHeadless,
 including the resulting 36 grounded-answer tests. These test counts are not
 counts of recovered source files or live-provider acceptance evidence.
 No original worktree file or transcript archive has been removed.
+
+## Agent teams component and template
+
+Read both complete retained files and their full current deltas. Their advisory
+charter creation, governed membership, revision checks, canonical message and
+acknowledgment requests, consensus outcomes, Basic attention queue and Advanced
+records already exist in the current application. Preserve the current Angular
+change-detection declaration and the shared shell's single-main landmark rather
+than restoring older plumbing. Advisory teams still grant no execution authority.
+
+Nineteen new tests fail before repair. They cover thirteen request construction
+paths, both initial request factories, an obsolete detail response after leaving
+and returning to the same team, team switching during a write, empty/silent
+attention reads and dispatch/callbacks after teardown. All 25 focused tests pass
+after repair. Standardize deferred, nonempty, one-response observation with six-
+second read/probe deadlines and thirty-second write deadlines; preserve backend
+permissions and exact revision/request fields. Cancel team-scoped observations
+when the selected team changes or a write starts. Deduplicate pending sections
+and derive their shared busy state from outstanding reads. Registry refresh and
+selection are blocked during writes, including their visible controls.
+
+Retry initial session loading when it failed rather than refreshing only the
+team list and leaving permission recovery unreachable. An unconfirmed write
+retains the draft and directs inspection before retrying; the queue's generic
+error no longer claims a decision succeeded. Section failures remain distinct
+from a successful empty result. Current-location markup includes team version.
+
+Six additional controls cover permission-read recovery, pending-section
+deduplication/concurrent busy state, pre-write read cancellation, uncertain write
+timeout, empty write completion and rendered disabled navigation. All 649 tests
+in 30 selected frontend spec files pass together, including 31 team tests.
+These are synthetic browser component/request tests, not live multi-agent
+operation, independent consensus correctness or production acceptance.
+
+Complete response-schema/identity validation, redaction of all server-provided
+diagnostics, durable retry idempotency and preservation of edits made to an
+in-flight form are not established by these controls. A stopped observation
+does not undo server work. No authority ceiling, provider, account, source
+original or transcript archive was changed by executing the tests.
