@@ -483,6 +483,9 @@ func validateReminderActivationDecision(
 	activation *models.WorkflowReminderActivationRequest,
 	value *models.WorkflowReminderActivationDecision,
 ) error {
+	if value == nil {
+		return fmt.Errorf("reminder activation decision contains invalid immutable evidence")
+	}
 	confirmation, ok := reminderActivationDecisionConfirmation(value.Decision)
 	if activation == nil || value == nil || value.ID == uuid.Nil || value.ActivationRequestID != activation.ID ||
 		value.OwnerIdentity != activation.OwnerIdentity || value.Actor != value.OwnerIdentity || !ok ||
