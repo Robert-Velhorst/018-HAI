@@ -490,3 +490,43 @@ field update; cross-client durability and complete nested payload validation
 are not established by this review. Canceling a subscription is not server
 rollback. Originals and archives remain retained pending verified main
 preservation and the wider cleanup requirements.
+
+## Retained Home component and template
+
+Read the complete retained Home component and template and both complete current
+differences. The current component preserves registration, editing, deliberate
+deletion confirmation, ordering failure recovery, profile controls and empty/
+loading/error states. Preserve shell-owned navigation instead of restoring the
+older duplicate navigation drawer and hardcoded menu. Account actions remain
+in the page header; automation links now have accessible names and long titles
+use the wrapping title template. No older implementation needs to be copied
+over the current files.
+
+The existing rendered Home checks cover page/account action dispatch, Basic and
+Advanced management disclosure, long-content containment, load errors, failed
+submission and ordering recovery. These do not establish live profile changes,
+deletion durability, runtime launch or a complete concurrency/security audit.
+The retained component's broader unbounded request lifecycle and mutation receipt
+limitations are not claimed repaired by this source-preservation review.
+
+## HAI OS template and stylesheet reconciliation
+
+Read both retained files in full and both complete current differences. Preserve
+the current explicit unavailable pursuit state, identity-checked record links,
+registry-bound plane navigation, concise status labels and calm queue lists.
+Keep shared theme tokens, visible focus, narrow-layout wrapping and separate
+Advanced source/readiness/governance sections. Do not restore the older
+clickable queue summaries as if they opened distinct filtered queues.
+
+Three rendered controls reproduced nonfunctional pagination: the reference,
+operating-plane and readiness tables iterated the entire backend array even
+after selecting a different page. Render each table's existing NG-Zorro page
+data instead. The checks click the real next-page control and verify the first
+page limit, second-page records and absence of another overview request. All
+records remain loaded; this changes client-side presentation, not API paging.
+
+The combined 23-suite Chrome Headless run passes all 397 tests with the complete
+frontend reconciliation changes applied. The three new pagination cases failed
+before repair. These are rendered component fixtures, not deployed visual
+acceptance, a fresh production build, live backend/provider acceptance or full
+accessibility conformance. No retained source or transcript is deleted.

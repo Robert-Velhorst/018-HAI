@@ -251,12 +251,12 @@
         aria-label="Reference technology stacks; scroll horizontally for all columns"
         *ngIf="os.referenceStacks.length"
       >
-        <nz-table [nzData]="os.referenceStacks" nzSize="small" [nzPageSize]="5" [nzShowPagination]="os.referenceStacks.length > 5">
+        <nz-table #referenceTable [nzData]="os.referenceStacks" nzSize="small" [nzPageSize]="5" [nzShowPagination]="os.referenceStacks.length > 5">
           <thead>
             <tr><th>Reference</th><th>Status</th><th>Use</th></tr>
           </thead>
           <tbody>
-            <tr *ngFor="let stack of os.referenceStacks">
+            <tr *ngFor="let stack of referenceTable.data">
               <td>{{ stack.name }}</td>
               <td>{{ statusLabel(stack.status) }}</td>
               <td>{{ stack.use }}</td>
@@ -301,12 +301,12 @@
         aria-label="HAI operating planes; scroll horizontally for all columns"
         *ngIf="os.planes.length"
       >
-        <nz-table [nzData]="os.planes" nzSize="small" [nzPageSize]="8" [nzShowPagination]="os.planes.length > 8">
+        <nz-table #planesTable [nzData]="os.planes" nzSize="small" [nzPageSize]="8" [nzShowPagination]="os.planes.length > 8">
           <thead>
             <tr><th>Plane</th><th>Status</th><th>Description</th><th>Open</th></tr>
           </thead>
           <tbody>
-            <tr *ngFor="let plane of os.planes">
+            <tr *ngFor="let plane of planesTable.data">
               <td>{{ plane.name }}</td>
               <td>{{ statusLabel(plane.status) }}</td>
               <td>{{ plane.description }}</td>
@@ -352,12 +352,12 @@
         aria-label="Real-world readiness gates; scroll horizontally for all columns"
         *ngIf="os.readinessGates.length"
       >
-        <nz-table [nzData]="os.readinessGates" nzSize="small" [nzPageSize]="8" [nzShowPagination]="os.readinessGates.length > 8">
+        <nz-table #readinessTable [nzData]="os.readinessGates" nzSize="small" [nzPageSize]="8" [nzShowPagination]="os.readinessGates.length > 8">
           <thead>
             <tr><th>Gate</th><th>Status</th><th>Evidence</th><th>Next</th></tr>
           </thead>
           <tbody>
-            <tr *ngFor="let gate of os.readinessGates">
+            <tr *ngFor="let gate of readinessTable.data">
               <td>{{ gate.name }}</td>
               <td>{{ statusLabel(gate.status) }}</td>
               <td>{{ gate.evidence }}</td>
