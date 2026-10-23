@@ -1855,6 +1855,24 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         guard = 'RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")'
         self.assertLess(source.index(guard), source.index("gorm.Open"))
 
+    def test_proposal_resolution_suite_requires_guarded_postgres_passes(self) -> None:
+        migrations = job_block("migrations-integration")
+        source = (ROOT / "backend/internal/workflow/proposal_resolution_transaction_test.go").read_text(encoding="utf-8")
+        names = re.findall(r"(?m)^func (TestPostgres\w+)\(t \*testing\.T\)", source)
+        self.assertTrue(names)
+        selection = re.search(r"-run '([^']*TestPostgresProposalResolution[^']*)'", migrations)
+        self.assertIsNotNone(selection)
+        for name in names:
+            with self.subTest(test=name):
+                self.assertIsNotNone(re.fullmatch(selection.group(1), name))
+                self.assertRegex(migrations, rf"(?m)^            {name}(?: \\\n|\n)")
+        self.assertIn('HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s', migrations)
+        self.assertIn('grep -q -- "^--- PASS: ${test_name} (" "$proposal_resolution_log"', migrations)
+        helper = (ROOT / "backend/internal/workflow/transactional_retraction_test.go").read_text(encoding="utf-8")
+        guard = 'RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")'
+        self.assertLess(helper.index(guard), helper.index("gorm.Open"))
+        self.assertIn('HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"', migrations)
+
     def test_atomic_claim_recovery_requires_guarded_real_postgres_pass(self) -> None:
         migrations = job_block("migrations-integration")
         for contract in ('HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -race -p 1 -parallel 1 -timeout 120s',
