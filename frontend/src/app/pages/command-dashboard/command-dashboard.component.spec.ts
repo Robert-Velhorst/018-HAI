@@ -60,10 +60,11 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
   }
 
   function candidateDecision(riskLevel: string = 'medium'): IPursuitDashboardDecision {
+    const id = '33333333-3333-4333-8333-333333333333';
     return {
-      pursuit: { id: 'candidate-1', title: 'Imported legal correspondence' } as any,
+      pursuit: { id, title: 'Imported legal correspondence' } as any,
       decision: {
-        id: 'pursuit:candidate-1:candidate-review',
+        id: `pursuit:${id}:candidate-review`,
         decisionType: 'pursuit_candidate_review',
         status: 'pending',
         riskLevel,
@@ -94,29 +95,38 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
   it('accepts a candidate through the explicit approval endpoint', () => {
     const { component, pursuits, notification } = createComponent();
     const card = candidateDecision();
-    pursuits.acceptCandidate.and.returnValue(of({}));
+    pursuits.acceptCandidate.and.returnValue(of({
+      pursuit: { id: card.pursuit.id, status: 'active', archived: false, sourceOfCreation: 'pursuit_intake' },
+      decisionQueue: [],
+      activity: [{ id: '22222222-2222-4222-8222-222222222222', pursuitId: card.pursuit.id,
+        eventType: 'pursuit.candidate_accepted', createdAt: '2026-10-23T10:00:00Z' }],
+    }));
 
     component.resolveDashboardDecision(card, true);
 
     expect(component.canResolveDashboardDecision(card)).toBeTrue();
-    expect(pursuits.acceptCandidate).toHaveBeenCalledWith('candidate-1', {
+    expect(pursuits.acceptCandidate).toHaveBeenCalledWith(card.pursuit.id, {
       requiresReview: false,
       reviewReason: 'Confirm this imported objective before planning work.',
     });
-    expect(notification.success).toHaveBeenCalledWith('Candidate accepted', 'HAI converted the candidate into governed pursuit work.');
+    expect(notification.info).toHaveBeenCalledWith('Candidate response received',
+      'The server reports an accepted candidate with a matching acceptance activity. This is not proof that a workflow was created or executed.');
+    expect(notification.success).not.toHaveBeenCalled();
     expect(component.refreshPursuits).toHaveBeenCalled();
   });
 
   it('archives a rejected candidate without creating workflow work', () => {
     const { component, pursuits, notification } = createComponent();
     const card = candidateDecision('high');
-    pursuits.archive.and.returnValue(of({}));
+    pursuits.archive.and.returnValue(of({ id: card.pursuit.id, archived: true, status: 'archived' }));
 
     component.resolveDashboardDecision(card, false);
 
-    expect(pursuits.archive).toHaveBeenCalledWith('candidate-1', true);
+    expect(pursuits.archive).toHaveBeenCalledWith(card.pursuit.id, true);
     expect(pursuits.acceptCandidate).not.toHaveBeenCalled();
-    expect(notification.success).toHaveBeenCalledWith('Candidate archived', 'The auto-created candidate was removed from active queues.');
+    expect(notification.info).toHaveBeenCalledWith('Archive response received',
+      'The server reports the requested pursuit archived. This is not independent verification of audit persistence.');
+    expect(notification.success).not.toHaveBeenCalled();
     expect(component.refreshPursuits).toHaveBeenCalled();
   });
 

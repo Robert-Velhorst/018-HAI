@@ -1,5 +1,9 @@
 # Command dashboard approval reconciliation
 
+Current local gate: 101 native control-room tests, including 32 targeted
+dashboard decision scenarios, and zero no-emit TypeScript diagnostics. Earlier
+counts below describe successive checks, not additional unique tests.
+
 ## Source scope
 
 The complete retained Command Dashboard controller and its complete pre-edit
@@ -60,11 +64,9 @@ is part of this repair.
 
 ## Remaining scope and retention
 
-The subsequent completion follow-up below repairs the false confirmation from
-active/unverified pursuit detail. Candidate acceptance/archive, next-action,
-runtime recovery and proposal paths still need equivalent state/evidence and
-lifecycle coverage. The full controller is not yet a completed reconciliation
-ledger entry for that reason.
+The subsequent follow-ups below cover the false completion confirmation and
+the remaining decision paths. Non-decision reads/mutations, server-side gaps,
+rendered acceptance and broader source reconciliation remain separate work.
 
 The additional checkout inventory distinguishes raw working-byte matches from
 line-ending-only matches; neither a normalized comparison nor an open PR is
@@ -102,3 +104,58 @@ source/declaration files, zero diagnostics, with host output writes forbidden.
 
 Neither a live server mutation nor independent outcome verification is proven
 by these tests. No source archive becomes deletion-eligible from this repair.
+
+## Remaining decision paths
+
+All six decision handlers, including the separate candidate-archive branch,
+now use the same deferred, one-response, nonempty, timeout-bounded observation.
+Its finalizer releases the matching pending action; destruction cancels UI
+observation, not proof of backend execution. Unknown results refresh the queue
+without automatic mutation retries or raw provider errors.
+
+The additional response checks are specific to the backend contracts:
+
+- Proposal: exact workflow/proposal IDs, requested outcome/option, resolution
+  timestamp, and matching dated proposal decision. Both frontend service and
+  backend router use the existing `/proposals/:id/resolve` path.
+- Candidate acceptance: accepted intake origin, still-open pursuit state,
+  matching dated acceptance activity and removal of its candidate decision.
+  Acceptance alone is not described as creation or execution of a workflow.
+- Candidate rejection: exact pursuit ID plus archived flag and archived state.
+  The endpoint returns a pursuit row, not a separate audit receipt.
+- Next action: exact pursuit decision, resolution activity and non-pending
+  queue state. Approval additionally requires a matching source-bound workflow
+  and approved-next-action link with approval required.
+- Runtime review: exact canonical attempt/decision/evidence references and
+  resolution activity. Approval additionally requires the specific attempt,
+  matching source-bound approval-gated workflow and recovery link. This is not
+  described as a direct retry or independently proven runtime state.
+
+The final 32 scenarios were replayed against the exact controller from commit
+`d49226f` using an in-memory override of that one source read: 16 earlier
+approval/completion scenarios passed and all 16 new scenarios failed. This
+comparison used corrected proposal route fixtures, verified against both the
+actual service and router; two earlier fixture URLs had omitted `/resolve`.
+No checkout or source file was modified for the baseline replay. All 32
+targeted scenarios now pass, and the containing control-room suite passes 101
+tests without skips. The TypeScript controller/spec program reports zero
+diagnostics over 330 source/declaration files, with no output writes allowed.
+Real frontend services are exercised against mocked HTTP responses; no live
+provider, browser, container or database mutation is claimed.
+
+## Server follow-ups still open
+
+Reading the actual pursuit service identified boundaries that the frontend
+cannot certify or repair by checking responses:
+
+- Candidate acceptance updates the pursuit and then ignores an acceptance
+  activity write error. The UI now remains unconfirmed if that activity is
+  absent; atomic server persistence still needs separate repair and tests.
+- `runtimeAttemptForDecision` considers evidence and decision references
+  independently and falls back to the sole attempt. The dashboard now refuses
+  conflicting/noncanonical references, but this does not fix direct API callers.
+  Server-side exact binding and legacy compatibility need separate review.
+
+These server gaps, other controller operations, live acceptance and the broader
+file/archive scope remain open. Reviewed source is not equivalent to complete
+product acceptance, main preservation or permission to delete original copies.

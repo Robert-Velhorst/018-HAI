@@ -24,6 +24,7 @@ import {
   IPursuitBriefCard,
   IPursuitDashboard,
   IPursuitDashboardDecision,
+  IPursuitDetail,
   IPursuitListItem,
 } from '../../models/pursuit.model.interface';
 import { PursuitService } from '../../services/pursuit.service';
@@ -99,7 +100,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   private pursuitBriefSubscription?: Subscription;
   private runtimeOverviewSubscription?: Subscription;
   private commandLogsSubscription?: Subscription;
-  private readonly openClawDestroy$ = new Subject<void>();
+  private readonly destroy$ = new Subject<void>();
   private destroyed = false;
 
   actions: DashboardAction[] = [
@@ -180,8 +181,8 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.destroyed = true;
-    this.openClawDestroy$.next();
-    this.openClawDestroy$.complete();
+    this.destroy$.next();
+    this.destroy$.complete();
     this.dashboardRefreshSubscription?.unsubscribe();
     this.pursuitDashboardSubscription?.unsubscribe();
     this.pursuitBriefSubscription?.unsubscribe();
@@ -537,7 +538,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
         }
         return runtime;
       }),
-      takeUntil(this.openClawDestroy$)
+      takeUntil(this.destroy$)
     );
   }
 
@@ -993,7 +994,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   canResolveDashboardDecision(card: IPursuitDashboardDecision): boolean {
-    if (card.decision.status !== 'pending') {
+    if (this.destroyed || !card?.decision || card.decision.status !== 'pending') {
       return false;
     }
     switch (card.decision.decisionType) {
@@ -1043,7 +1044,10 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
 
   resolveDashboardDecision(card: IPursuitDashboardDecision, approved: boolean, event?: Event): void {
     event?.stopPropagation();
-    if (this.destroyed || typeof approved !== 'boolean' || !this.canResolveDashboardDecision(card) || this.resolvingDashboardDecisionId) {
+    if (this.destroyed || typeof approved !== 'boolean' || typeof card?.decision?.id !== 'string' ||
+        !card.decision.id || typeof card.pursuit?.id !== 'string' || !card.pursuit.id ||
+        (card.decision.evidenceUri !== undefined && typeof card.decision.evidenceUri !== 'string') ||
+        !this.canResolveDashboardDecision(card) || this.resolvingDashboardDecisionId) {
       return;
     }
     if (card.decision.decisionType === 'pursuit_next_action') {
@@ -1075,6 +1079,42 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       value !== '00000000-0000-0000-0000-000000000000';
   }
 
+  private observeDashboardDecision<T>(operation: () => Observable<T>): Observable<T> {
+    const decisionId = this.resolvingDashboardDecisionId;
+    return defer(operation).pipe(
+      take(1), throwIfEmpty(), timeout({ first: HttpTimeoutPolicy.operationMs }),
+      takeUntil(this.destroy$),
+      finalize(() => {
+        if (this.resolvingDashboardDecisionId === decisionId) this.resolvingDashboardDecisionId = '';
+      })
+    );
+  }
+
+  private reportDashboardDecisionUnconfirmed(title: string): void {
+    if (this.destroyed) return;
+    this.resolvingDashboardDecisionId = '';
+    this.notification.warning(title, 'Refresh the pursuit decision queue to reconcile the current state. HAI will not automatically repeat this decision.');
+    this.refreshPursuits();
+  }
+
+  private matchesPursuitResolution(detail: IPursuitDetail, pursuitId: string, decisionId: string, type: string, approved: boolean): boolean {
+    return detail?.pursuit?.id === pursuitId && Array.isArray(detail.activity) && detail.activity.some((activity) =>
+      this.validDashboardReference(activity?.id) && activity.pursuitId === pursuitId &&
+      activity.eventType === 'pursuit.decision_resolved' && activity.sourceId === decisionId &&
+      activity.sourceType === `pursuit_decision:${type}:${approved ? 'approved' : 'rejected'}` &&
+      typeof activity.createdAt === 'string' && Number.isFinite(Date.parse(activity.createdAt))) &&
+      Array.isArray(detail.decisionQueue) && !detail.decisionQueue.some((decision) =>
+        decision?.id === decisionId && (typeof decision.status !== 'string' || decision.status.trim().toLowerCase() === 'pending'));
+  }
+
+  private hasDecisionWorkflow(detail: IPursuitDetail, pursuitId: string, decisionId: string, relationship: string, sourceUri: string): boolean {
+    return Array.isArray(detail?.workflows) && Array.isArray(detail.links) && detail.workflows.some((workflow) =>
+      this.validDashboardReference(workflow?.id) && workflow.sourceType === 'pursuit_decision' &&
+      workflow.sourceId === decisionId && workflow.sourceUri === sourceUri && workflow.requiresApproval === true &&
+      workflow.archived === false && detail.links.some((link) => link?.pursuitId === pursuitId &&
+        link.linkType === 'workflow' && link.linkId === workflow.id && link.relationship === relationship));
+  }
+
   private resolveWorkflowApprovalDecision(card: IPursuitDashboardDecision, approved: boolean): void {
     const workflowId = card.decision.workflowId;
     if (!this.validDashboardReference(workflowId) || card.decision.id !== `workflow:${workflowId}:approval`) {
@@ -1093,17 +1133,11 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       this.refreshPursuits();
     };
     this.resolvingDashboardDecisionId = card.decision.id;
-    defer(() => this.workflows.resolveApproval(workflowId, {
+    this.observeDashboardDecision(() => this.workflows.resolveApproval(workflowId, {
       approved,
       note: approved ? card.decision.yesConsequence : card.decision.noConsequence,
       actor: 'Robert',
-    })).pipe(
-      take(1),
-      throwIfEmpty(),
-      timeout({ first: HttpTimeoutPolicy.operationMs }),
-      takeUntil(this.openClawDestroy$),
-      finalize(() => { this.resolvingDashboardDecisionId = ''; })
-    ).subscribe({
+    })).subscribe({
       next: (record) => {
         const decisionMatches = Array.isArray(record?.decisions) && record.decisions.some((decision) =>
           this.validDashboardReference(decision?.id) && decision.workflowId === workflowId &&
@@ -1129,27 +1163,38 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
 
   private resolveWorkflowProposalDecision(card: IPursuitDashboardDecision, approved: boolean): void {
     const proposalID = card.decision.id.startsWith('proposal:') ? card.decision.id.substring('proposal:'.length) : '';
-    if (!card.decision.workflowId || !proposalID) {
-      this.notification.error('Proposal unavailable', 'The proposal ID or linked workflow is missing from this decision card.');
+    const workflowId = card.decision.workflowId;
+    const selectedOption = approved ? card.decision.yesLabel : card.decision.noLabel;
+    if (!this.validDashboardReference(workflowId) || !this.validDashboardReference(proposalID) || typeof selectedOption !== 'string') {
+      this.reportDashboardDecisionUnconfirmed('Proposal unavailable');
       return;
     }
+    const expected = approved ? 'approved' : 'rejected';
     this.resolvingDashboardDecisionId = card.decision.id;
-    this.workflows.resolveProposal(card.decision.workflowId, proposalID, {
+    this.observeDashboardDecision(() => this.workflows.resolveProposal(workflowId, proposalID, {
       approved,
-      status: approved ? 'approved' : 'rejected',
-      selectedOption: approved ? card.decision.yesLabel : card.decision.noLabel,
+      status: expected,
+      selectedOption,
       note: approved ? card.decision.yesConsequence : card.decision.noConsequence,
       actor: 'Robert',
-    }).subscribe({
-      next: () => {
+    })).subscribe({
+      next: (record) => {
+        const proposals = Array.isArray(record?.proposals) ? record.proposals.filter((proposal) => proposal?.id === proposalID) : [];
+        const decisionMatches = Array.isArray(record?.decisions) && record.decisions.some((decision) =>
+          this.validDashboardReference(decision?.id) && decision.workflowId === workflowId &&
+          decision.decisionType === 'proposal' && decision.decision === expected && decision.approved === approved &&
+          typeof decision.createdAt === 'string' && Number.isFinite(Date.parse(decision.createdAt)));
+        if (record?.item?.id !== workflowId || proposals.length !== 1 || proposals[0].workflowId !== workflowId ||
+            proposals[0].status !== expected || proposals[0].selectedOption !== selectedOption.trim() ||
+            typeof proposals[0].resolvedAt !== 'string' || !Number.isFinite(Date.parse(proposals[0].resolvedAt)) || !decisionMatches) {
+          this.reportDashboardDecisionUnconfirmed('Proposal outcome unconfirmed');
+          return;
+        }
         this.resolvingDashboardDecisionId = '';
-        this.notification.success('Proposal recorded', approved ? 'Proposal accepted through the workflow audit trail.' : 'Proposal rejected for revision.');
+        this.notification.info('Proposal response received', 'The server returned a matching proposal and decision record. This is not proof of execution or independent audit persistence.');
         this.refreshPursuits();
       },
-      error: (error) => {
-        this.resolvingDashboardDecisionId = '';
-        this.notification.error('Proposal blocked', error?.error?.error || 'The workflow proposal could not be recorded.');
-      },
+      error: () => this.reportDashboardDecisionUnconfirmed('Proposal outcome unconfirmed'),
     });
   }
 
@@ -1161,7 +1206,6 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       this.refreshPursuits();
       return;
     }
-    const outcome = approved ? 'approved' : 'rejected';
     const unconfirmed = () => {
       if (this.destroyed) return;
       this.resolvingDashboardDecisionId = '';
@@ -1172,7 +1216,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       this.refreshPursuits();
     };
     this.resolvingDashboardDecisionId = decisionId;
-    defer(() => this.pursuits.resolveDecision(pursuitId, {
+    this.observeDashboardDecision(() => this.pursuits.resolveDecision(pursuitId, {
       decisionId,
       decisionType: card.decision.decisionType,
       approved,
@@ -1183,26 +1227,12 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       evidenceUri: card.decision.evidenceUri,
       evidenceLabel: card.decision.evidenceLabel,
       actor: 'Robert',
-    })).pipe(
-      take(1),
-      throwIfEmpty(),
-      timeout({ first: HttpTimeoutPolicy.operationMs }),
-      takeUntil(this.openClawDestroy$),
-      finalize(() => { this.resolvingDashboardDecisionId = ''; })
-    ).subscribe({
+    })).subscribe({
       next: (detail) => {
-        const activityMatches = Array.isArray(detail?.activity) && detail.activity.some((activity) =>
-          this.validDashboardReference(activity?.id) && activity.pursuitId === pursuitId &&
-          activity.eventType === 'pursuit.decision_resolved' && activity.sourceId === decisionId &&
-          activity.sourceType === `pursuit_decision:pursuit_completion_review:${outcome}` &&
-          typeof activity.createdAt === 'string' && Number.isFinite(Date.parse(activity.createdAt)));
         const stateMatches = detail?.pursuit?.archived === false && (approved
           ? detail.pursuit.status === 'completed' && detail.pursuit.completionState === 'verified'
           : ['active', 'waiting', 'blocked'].includes(detail.pursuit.status));
-        if (detail?.pursuit?.id !== pursuitId || !stateMatches || !activityMatches ||
-            !Array.isArray(detail.decisionQueue) || detail.decisionQueue.some((decision) =>
-              decision?.id === decisionId && (typeof decision.status !== 'string' ||
-                decision.status.trim().toLowerCase() === 'pending'))) {
+        if (!stateMatches || !this.matchesPursuitResolution(detail, pursuitId, decisionId, 'pursuit_completion_review', approved)) {
           unconfirmed();
           return;
         }
@@ -1220,41 +1250,65 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   private resolvePursuitCandidateDecision(card: IPursuitDashboardDecision, approved: boolean): void {
+    const pursuitId = card.pursuit.id;
+    const decisionId = card.decision.id;
+    if (!this.validDashboardReference(pursuitId) || decisionId !== `pursuit:${pursuitId}:candidate-review`) {
+      this.reportDashboardDecisionUnconfirmed('Candidate unavailable');
+      return;
+    }
     this.resolvingDashboardDecisionId = card.decision.id;
     if (approved) {
-      this.pursuits.acceptCandidate(card.pursuit.id, {
+      this.observeDashboardDecision(() => this.pursuits.acceptCandidate(pursuitId, {
         requiresReview: card.decision.riskLevel === 'high',
         reviewReason: card.decision.reason,
-      }).subscribe({
-        next: () => {
+      })).subscribe({
+        next: (detail) => {
+          const acceptedSource = typeof detail?.pursuit?.sourceOfCreation === 'string' &&
+            detail.pursuit.sourceOfCreation.toLowerCase().includes('pursuit_intake') &&
+            !detail.pursuit.sourceOfCreation.toLowerCase().includes('pursuit_candidate');
+          const acceptanceMatches = Array.isArray(detail?.activity) && detail.activity.some((activity) =>
+            this.validDashboardReference(activity?.id) && activity.pursuitId === pursuitId &&
+            activity.eventType === 'pursuit.candidate_accepted' && typeof activity.createdAt === 'string' &&
+            Number.isFinite(Date.parse(activity.createdAt)));
+          if (detail?.pursuit?.id !== pursuitId || detail.pursuit.archived !== false ||
+              !['active', 'waiting', 'blocked'].includes(detail.pursuit.status) || !acceptedSource || !acceptanceMatches ||
+              !Array.isArray(detail.decisionQueue) || detail.decisionQueue.some((decision) => decision?.id === decisionId)) {
+            this.reportDashboardDecisionUnconfirmed('Candidate outcome unconfirmed');
+            return;
+          }
           this.resolvingDashboardDecisionId = '';
-          this.notification.success('Candidate accepted', 'HAI converted the candidate into governed pursuit work.');
+          this.notification.info('Candidate response received', 'The server reports an accepted candidate with a matching acceptance activity. This is not proof that a workflow was created or executed.');
           this.refreshPursuits();
         },
-        error: (error) => {
-          this.resolvingDashboardDecisionId = '';
-          this.notification.error('Candidate blocked', error?.error?.error || 'HAI could not accept and plan this candidate.');
-        },
+        error: () => this.reportDashboardDecisionUnconfirmed('Candidate outcome unconfirmed'),
       });
       return;
     }
-    this.pursuits.archive(card.pursuit.id, true).subscribe({
-      next: () => {
+    this.observeDashboardDecision(() => this.pursuits.archive(pursuitId, true)).subscribe({
+      next: (pursuit) => {
+        if (pursuit?.id !== pursuitId || pursuit.archived !== true || pursuit.status !== 'archived') {
+          this.reportDashboardDecisionUnconfirmed('Archive outcome unconfirmed');
+          return;
+        }
         this.resolvingDashboardDecisionId = '';
-        this.notification.success('Candidate archived', 'The auto-created candidate was removed from active queues.');
+        this.notification.info('Archive response received', 'The server reports the requested pursuit archived. This is not independent verification of audit persistence.');
         this.refreshPursuits();
       },
-      error: (error) => {
-        this.resolvingDashboardDecisionId = '';
-        this.notification.error('Archive blocked', error?.error?.error || 'HAI could not archive this candidate.');
-      },
+      error: () => this.reportDashboardDecisionUnconfirmed('Archive outcome unconfirmed'),
     });
   }
 
   private resolvePursuitNextActionDecision(card: IPursuitDashboardDecision, approved: boolean): void {
-    this.resolvingDashboardDecisionId = card.decision.id;
-    this.pursuits.resolveDecision(card.pursuit.id, {
-      decisionId: card.decision.id,
+    const pursuitId = card.pursuit.id;
+    const decisionId = card.decision.id;
+    const sourceUri = card.decision.evidenceUri?.trim() || `pursuit://${pursuitId}`;
+    if (!this.validDashboardReference(pursuitId) || decisionId !== `pursuit:${pursuitId}:next-action`) {
+      this.reportDashboardDecisionUnconfirmed('Next action unavailable');
+      return;
+    }
+    this.resolvingDashboardDecisionId = decisionId;
+    this.observeDashboardDecision(() => this.pursuits.resolveDecision(pursuitId, {
+      decisionId,
       decisionType: card.decision.decisionType,
       approved,
       reason: card.decision.reason,
@@ -1264,31 +1318,37 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       evidenceUri: card.decision.evidenceUri,
       evidenceLabel: card.decision.evidenceLabel,
       actor: 'Robert',
-    }).subscribe({
-      next: () => {
+    })).subscribe({
+      next: (detail) => {
+        if (!this.matchesPursuitResolution(detail, pursuitId, decisionId, 'pursuit_next_action', approved) ||
+            detail.pursuit.archived !== false || !['active', 'waiting', 'blocked'].includes(detail.pursuit.status) ||
+            (approved && !this.hasDecisionWorkflow(detail, pursuitId, decisionId, 'approved_next_action_workflow', sourceUri))) {
+          this.reportDashboardDecisionUnconfirmed('Next-action outcome unconfirmed');
+          return;
+        }
         this.resolvingDashboardDecisionId = '';
-        this.notification.success(
-          approved ? 'Workflow created' : 'Decision recorded',
-          approved
-            ? 'The approved pursuit decision became a governed workflow item.'
-            : 'The pursuit decision is now resolved in the audit trail.'
-        );
+        this.notification.info('Next-action response received', approved
+          ? 'The server returned a matching decision and linked approval-gated workflow. This is not proof of execution or independent audit persistence.'
+          : 'The server returned a matching rejection record. This is not independent verification of audit persistence.');
         this.refreshPursuits();
       },
-      error: (error) => {
-        this.resolvingDashboardDecisionId = '';
-        this.notification.error(
-          approved ? 'Workflow creation blocked' : 'Decision blocked',
-          error?.error?.error || 'The pursuit decision could not be recorded.'
-        );
-      },
+      error: () => this.reportDashboardDecisionUnconfirmed('Next-action outcome unconfirmed'),
     });
   }
 
   private resolveRuntimeDecision(card: IPursuitDashboardDecision, approved: boolean): void {
-    this.resolvingDashboardDecisionId = card.decision.id;
-    this.pursuits.resolveDecision(card.pursuit.id, {
-      decisionId: card.decision.id,
+    const pursuitId = card.pursuit.id;
+    const decisionId = card.decision.id;
+    const attemptId = decisionId.split(':')[1];
+    const sourceUri = `automation-launch://${attemptId}`;
+    if (!this.validDashboardReference(pursuitId) || !this.validDashboardReference(attemptId) ||
+        decisionId !== `runtime:${attemptId}:review` || card.decision.evidenceUri !== sourceUri) {
+      this.reportDashboardDecisionUnconfirmed('Runtime review unavailable');
+      return;
+    }
+    this.resolvingDashboardDecisionId = decisionId;
+    this.observeDashboardDecision(() => this.pursuits.resolveDecision(pursuitId, {
+      decisionId,
       decisionType: card.decision.decisionType,
       approved,
       reason: card.decision.reason,
@@ -1298,24 +1358,22 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
       evidenceUri: card.decision.evidenceUri,
       evidenceLabel: card.decision.evidenceLabel,
       actor: 'Robert',
-    }).subscribe({
-      next: () => {
+    })).subscribe({
+      next: (detail) => {
+        if (!this.matchesPursuitResolution(detail, pursuitId, decisionId, 'runtime_attempt_review', approved) ||
+            detail.pursuit.archived !== false || !['active', 'waiting', 'blocked'].includes(detail.pursuit.status) ||
+            !Array.isArray(detail.runtimeAttempts) || !detail.runtimeAttempts.some((attempt) => attempt?.id === attemptId) ||
+            (approved && !this.hasDecisionWorkflow(detail, pursuitId, decisionId, 'runtime_recovery_workflow', sourceUri))) {
+          this.reportDashboardDecisionUnconfirmed('Runtime review outcome unconfirmed');
+          return;
+        }
         this.resolvingDashboardDecisionId = '';
-        this.notification.success(
-          approved ? 'Recovery workflow created' : 'Runtime attempt kept blocked',
-          approved
-            ? 'HAI created a governed recovery workflow without retrying OpenClaw directly.'
-            : 'The runtime attempt remains blocked and is removed from the Robert-only decision queue.'
-        );
+        this.notification.info('Runtime review response received', approved
+          ? 'The server returned a matching decision and linked approval-gated recovery workflow. This is not proof of retry, execution or independent audit persistence.'
+          : 'The server returned a matching rejection record for this attempt. This is not independent verification of runtime state or audit persistence.');
         this.refreshPursuits();
       },
-      error: (error) => {
-        this.resolvingDashboardDecisionId = '';
-        this.notification.error(
-          approved ? 'Recovery workflow blocked' : 'Decision blocked',
-          error?.error?.error || 'The runtime recovery decision could not be recorded.'
-        );
-      },
+      error: () => this.reportDashboardDecisionUnconfirmed('Runtime review outcome unconfirmed'),
     });
   }
 
