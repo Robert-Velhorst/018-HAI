@@ -288,3 +288,28 @@ This is local fixture acceptance, not deployed accessibility or runtime acceptan
 The separate retained shell stylesheet and large shell test source remain
 unreconciled by this TypeScript review. Originals remain retained until verified
 main preservation and the broader cleanup gate are satisfied.
+
+## Shared shell stylesheet reconciliation
+
+Read the retained shell stylesheet completely and reviewed its full current
+difference. Preserve the newer equivalent selector consolidation, scoped source/
+memory subtitle selector, bounded safety text, stable icon sizing, mobile utility
+menu and compact status width. Keep explicit focus outlines, forced-color rules,
+reduced-motion transition suppression, module depth visibility and themed legacy
+surfaces. Do not replace these with the older larger stylesheet or restore the
+broad header-span rule that also restyled button labels.
+
+Six new Chrome checks use isolated iframes containing a clone of the rendered
+shell and the actual compiled stylesheet rules. Four assert real iframe widths
+of 375, 768, 1024 and 1440 pixels, document/header containment and non-overlapping
+visible toolbar controls. Two cover unchanged subtitle-versus-button styling
+and a focused navigation link's outline. No production CSS change is needed.
+The iframe clones are non-interactive layout fixtures: these checks do not
+establish every module's responsive behavior, a visual screenshot review,
+production theme-bundle loading or deployed accessibility acceptance.
+
+The combined eighteen-suite frontend reconciliation run passes all 281 Chrome
+tests. Progressive-section, split-theme and icon-registry contracts also pass.
+This completes the retained stylesheet review only, not the separate large
+shell test source. Originals remain retained until preservation and cleanup
+requirements have been demonstrated for their complete scope.
