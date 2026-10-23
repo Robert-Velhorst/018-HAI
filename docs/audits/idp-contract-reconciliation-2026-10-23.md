@@ -105,9 +105,41 @@ duplicate cookies, and no-credential behavior. OAuth state cookies and other
 cookie preferences are not reclassified as session credentials by this change.
 
 The complete retained middleware fixture file is reviewed here, not the remaining
-large authentication-handler test file or the full durable auth-service source.
+large authentication-handler test file.
 Redis unit fixtures and Lua source review do not establish live Redis failover or
 cross-process abuse-limit acceptance.
+
+## Authentication service and reset integration follow-up
+
+Three further retained files were read completely and compared with their full
+current diffs: `auth_service.go`, `auth_service_test.go`, and
+`auth_password_reset_integration_test.go` in `idp/internal/app/authentication`.
+Their useful behavior is already represented on main; no older implementation
+or test fixture needs to replace the current code.
+
+Preserve password policy, Unicode/bcrypt bounds, provisioning races, cooldown,
+claim validation, permissions, logout revocation, reauthentication, reset-token
+digests, one-time consumption, concurrency guards, privacy, and local-preview
+gates. Keep the newer durable session authority and lifecycle handling. Refresh
+rotates token identity within the same bounded family; stale privileged token
+roles are rejected rather than accepted and downgraded. Positive session tests
+explicitly seed authority instead of treating a signed token alone as an active
+session. The current durable-session fixture was also read to check this change.
+
+The retained PostgreSQL reset scenarios remain: legacy digest migration,
+concurrent consumption, atomic failed-login lockout, expired-lockout recovery,
+stale update rejection, account/password/email changes, and duplicate-email
+atomicity. Keep current deletion/reactivation revocation coverage, explicit SQL
+session storage, full migrations, and context-aware reset sender contracts.
+The current test database guard was read in full: it requires explicit destructive
+test opt-in, a dedicated database, literal loopback addressing, and validated
+effective pgx targets, including fallbacks. Do not restore the older unrestricted
+database setup.
+
+This follow-up is a source reconciliation, not a new test execution. The prior
+default IDP suite does not prove these opt-in PostgreSQL scenarios ran. Live
+database contention, migrations, real email delivery, and provider acceptance
+remain separate verification requirements.
 
 ## Verification
 
@@ -122,8 +154,8 @@ cache. This validates local compilation and covered fixtures, not
 live Redis/PostgreSQL configuration, real OAuth/email delivery, or deployment.
 
 This is a contract-and-wiring reconciliation, not a claim to have completed the
-remaining authentication-handler tests and service, repository acceptance tests,
-password-reset integration, or generated API-documentation reviews.
+remaining authentication-handler tests, separate repository acceptance tests,
+or generated API-documentation reviews, nor live password-reset acceptance.
 No runtime code was replaced by older interfaces. Retained source copies remain
 intact, with private exact-content review records kept separately from public
 documentation and from any deletion gate.
