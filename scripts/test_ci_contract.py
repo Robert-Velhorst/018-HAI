@@ -1093,6 +1093,17 @@ class CIWorkflowContractTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("Installer uninstall stop contract: 6 PASS;", result.stdout)
 
+    @unittest.skipUnless(shutil.which("pwsh"), "PowerShell is required for the lifecycle mode contract")
+    def test_lifecycle_fixture_rejects_conflicting_focus_modes(self) -> None:
+        result = subprocess.run(
+            [shutil.which("pwsh"), "-NoProfile", "-NonInteractive", "-File",
+             str(ROOT / "scripts/test-windows-runtime-lifecycle.ps1"),
+             "-FocusedOrphanShutdown", "-FocusedInstallerSettings"],
+            cwd=ROOT, capture_output=True, text=True, timeout=45,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Choose at most one focused lifecycle mode", result.stderr)
+
     def test_optional_event_bus_does_not_expand_the_default_local_stack(self) -> None:
         compose = (ROOT / "docker-compose.local.yml").read_text(encoding="utf-8")
         defaults = (ROOT / ".env.example").read_text(encoding="utf-8")

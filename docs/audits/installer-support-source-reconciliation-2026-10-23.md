@@ -94,6 +94,11 @@ whole installer readiness, or acceptance of existing installations. Those broade
 security and release gates remain open. Full lifecycle-source reconciliation and
 main preservation are still required before local source deletion.
 
+Subsequently, the [complete lifecycle test reconciliation](runtime-lifecycle-source-reconciliation-2026-10-23.md)
+reviews that retained source and records successful full local runs on both
+PowerShell engines. This closes the source-review question, not installed-product
+acceptance or preservation on main.
+
 API references: [specific security descriptor sections](https://learn.microsoft.com/en-us/dotnet/api/system.security.accesscontrol.objectsecurity.setsecuritydescriptorsddlform),
 [native .NET file security persistence](https://learn.microsoft.com/en-us/dotnet/api/system.io.filesystemaclextensions.setaccesscontrol),
 and [Compose stop grace](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
