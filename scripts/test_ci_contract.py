@@ -1390,6 +1390,15 @@ class CIWorkflowContractTest(unittest.TestCase):
         self.assertIn("http://localhost:8088/api/v1/sources/oauth/google/callback", defaults)
         self.assertIn("http://localhost:8088", readme)
 
+    def test_readme_frontend_toolchain_matches_declared_versions(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        package = json.loads((ROOT / "frontend/package.json").read_text(encoding="utf-8"))
+        node = (ROOT / "frontend/.nvmrc").read_text(encoding="utf-8").strip().removeprefix("v")
+        self.assertEqual(package["engines"]["node"], f"^{node}")
+        npm = package["packageManager"].removeprefix("npm@")
+        versions = re.findall(r"Node\.js ([0-9]+\.[0-9]+\.[0-9]+) Current and npm ([0-9]+\.[0-9]+\.[0-9]+)", readme)
+        self.assertEqual(versions, [(node, npm), (node, npm)])
+
     def test_readme_auth_recreate_targets_declared_compose_services(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         section = readme.split("### Optional Google sign-in and password recovery\n", 1)[1].split("\n### ", 1)[0]

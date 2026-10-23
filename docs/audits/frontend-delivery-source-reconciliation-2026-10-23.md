@@ -106,3 +106,44 @@ against the canonical 2.3.0 entry. Upstream identifies 2.4.0 as patched; its
 required dependency ranges also need a targeted lockfile review. Authorization
 for that separate repair is pending. The audit gate remains unchanged; this
 work must not be represented as release-ready or safe for source retirement.
+
+## Additional retained-source review, 24 October
+
+The retained HireAI frontend intentionally requests the existing backend maximum
+of 25 results per cursor page. Preserve that round-trip optimization rather than
+silently keeping the canonical client's smaller default of 10. The service and
+its HTTP test source now match the retained LF-normalized content. Three added
+native service contracts cover status reads, both cursor requests and propagated
+failures without replay. The complete native frontend suite passes 279 tests,
+without failures or skips, using Node 26.12.1 and the existing Angular compiler
+22.2.2/TypeScript 6.0.3 installation. The updated Angular HTTP test source was not
+executed locally; no live HireAI provider or production-build acceptance follows.
+
+Review of the retained package and build tests preserves canonical dependency
+updates, the shared native test command, worker limits, strict bundle ceiling
+and fail-closed unsupported-runtime behavior. All eight native build-guard
+contracts pass. The README nevertheless still named Node 26.12.0 in two setup
+locations, contrary to the declared 26.12.1 minimum. A new source contract fails
+against those stale instructions and passes after correcting both locations;
+the two existing README command contracts also pass. These checks inspect
+sources, not a fresh package installation or an executed installation guide.
+
+The complete retained system-status test delta preserves existing cases and
+adds empty-response recovery, strict readiness-schema/count consistency, stale
+status and registered-icon coverage. The connected-sources delta preserves
+existing handoff cases while moving history assertions to bounded, independent
+audit/sync/extraction pages and adding paging, retry, cancellation and lazy-load
+cases. Their Angular specifications were read, not newly executed locally.
+Keep these canonical cases rather than copying older fixtures over them.
+
+The router delta retains the original routes and adds durable-monitor observer
+wiring, read-only Autoposter configuration and first-run installation-owner
+gates on all nine global operations-control mutations. Source comparison is not
+a new live connector, database or authorization acceptance run.
+
+The retained README and environment example still refer to the unresolved ngrok
+feature recorded in `legacy-ngrok-source-reconciliation-2026-10-23.md`. Those
+differences remain open, not silently retired or counted as integrated. No
+installed environment secrets were read or published. Neither the reviewed
+subset nor these local commits make a source checkout or transcript archive
+eligible for deletion; verified main preservation remains a separate gate.
