@@ -965,13 +965,13 @@ jobs:
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -tags integration \
             -run '^(TestIsLoopbackIntegrationHost|TestIsLoopbackIntegrationConfig|TestConcurrentMigrationRunnersSerializeAndRecheck|TestLegacyBaselineRejectsDifferentExistingPrimaryKey|TestMigrationStatusAndRollbackDoNotCreateLedgerOnFreshDatabase|TestRunMigrationsAppliesAndIsIdempotent|TestRollbackMigrationReversesPostMigration)$' \
             ./internal/infra/ -v | tee "$infra_log"
-          grep -q -- '^--- PASS: TestIsLoopbackIntegrationHost' "$infra_log"
-          grep -q -- '^--- PASS: TestIsLoopbackIntegrationConfig' "$infra_log"
-          grep -q -- '^--- PASS: TestConcurrentMigrationRunnersSerializeAndRecheck' "$infra_log"
-          grep -q -- '^--- PASS: TestLegacyBaselineRejectsDifferentExistingPrimaryKey' "$infra_log"
-          grep -q -- '^--- PASS: TestMigrationStatusAndRollbackDoNotCreateLedgerOnFreshDatabase' "$infra_log"
-          grep -q -- '^--- PASS: TestRunMigrationsAppliesAndIsIdempotent' "$infra_log"
-          grep -q -- '^--- PASS: TestRollbackMigrationReversesPostMigration' "$infra_log"
+          grep -q -- '^--- PASS: TestIsLoopbackIntegrationHost (' "$infra_log"
+          grep -q -- '^--- PASS: TestIsLoopbackIntegrationConfig (' "$infra_log"
+          grep -q -- '^--- PASS: TestConcurrentMigrationRunnersSerializeAndRecheck (' "$infra_log"
+          grep -q -- '^--- PASS: TestLegacyBaselineRejectsDifferentExistingPrimaryKey (' "$infra_log"
+          grep -q -- '^--- PASS: TestMigrationStatusAndRollbackDoNotCreateLedgerOnFreshDatabase (' "$infra_log"
+          grep -q -- '^--- PASS: TestRunMigrationsAppliesAndIsIdempotent (' "$infra_log"
+          grep -q -- '^--- PASS: TestRollbackMigrationReversesPostMigration (' "$infra_log"
           RUN_MODE=test DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres \
             DB_NAME=hai_migration_runner_test DB_AUTOMIGRATE=false \
             HAI_SEMANTIC_RETRIEVAL_ENABLED=false \
@@ -1099,23 +1099,23 @@ jobs:
           grep -q -- '^--- PASS: TestPostgresClaimRecoveryStateAndHistoryAtomic (' "$claim_recovery_log"
           HAI_TEST_DATABASE_DSN="$registry_dsn" go test -count=1 -tags integration \
             ./internal/frameworkregistry/ -v | tee "$registry_log"
-          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresIntegrationRequiredEnvironment' "$registry_log"
-          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun' "$registry_log"
-          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresConstraintsAndImmutability' "$registry_log"
+          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresIntegrationRequiredEnvironment (' "$registry_log"
+          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresMigrationApplyRollbackAndRerun (' "$registry_log"
+          grep -q -- '^--- PASS: TestFrameworkRegistryPostgresConstraintsAndImmutability (' "$registry_log"
           HAI_TEST_DATABASE_DSN="$task_dsn" go test -count=1 -tags integration \
             -run '^TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability$' \
             ./internal/task/ -v | tee "$task_log"
-          grep -q -- '^--- PASS: TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability' "$task_log"
+          grep -q -- '^--- PASS: TestPostgresTaskStateRepositoryDurabilityOwnerScopeAndImmutability (' "$task_log"
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 \
             -run '^(TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals|TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts)$' \
             ./internal/executionauth/ -v | tee "$execution_auth_log"
-          grep -q -- '^--- PASS: TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals' "$execution_auth_log"
-          grep -q -- '^--- PASS: TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresReceiptPersistsOwnerSafePolymorphicApprovals (' "$execution_auth_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryClaimsOwnerControlApprovalAcrossReceipts (' "$execution_auth_log"
           HAI_AGENTREGISTRY_TEST_DATABASE_DSN="$agent_registry_dsn" go test -count=1 \
             -run '^(TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers|TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema)$' \
             ./internal/agentregistry/ -v | tee "$agent_registry_log"
-          grep -q -- '^--- PASS: TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers' "$agent_registry_log"
-          grep -q -- '^--- PASS: TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema' "$agent_registry_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryRoundTripOwnerIsolationCASAndImmutableLedgers (' "$agent_registry_log"
+          grep -q -- '^--- PASS: TestPostgresAgentRegistryMigrationCanReplayAgainstExistingSchema (' "$agent_registry_log"
           resilience_log="$RUNNER_TEMP/resilience-postgres.log"
           HAI_RESILIENCE_TEST_DATABASE_DSN="$resilience_dsn" go test -count=1 \
             ./internal/resilience/ -v | tee "$resilience_log"
@@ -1125,7 +1125,7 @@ jobs:
             TestPostgresRepositoryConcurrentFencingAndEventChain \
             TestPostgresRepositoryRejectsCorruptStoredPayload
           do
-            grep -q -- "^--- PASS: ${test_name}" "$resilience_log"
+            grep -q -- "^--- PASS: ${test_name} (" "$resilience_log"
           done
           brain_skill_selection_log="$RUNNER_TEMP/brain-skill-selection-postgres.log"
           RUN_MODE=test DB_HOST=127.0.0.1 DB_PORT=5432 DB_USER=postgres DB_PASSWORD=postgres \
@@ -1134,13 +1134,13 @@ jobs:
             go run ./cmd/main.go migrate up
           HAI_BRAIN_SKILL_SELECTION_TEST_DATABASE_DSN="$brain_skill_selection_dsn" go test -count=1 -tags integration \
             ./internal/brain_skill_selection/ -v | tee "$brain_skill_selection_log"
-          grep -q -- '^--- PASS: TestPostgresRepositoryAndSelectionServiceIntegration' "$brain_skill_selection_log"
-          grep -q -- '^--- PASS: TestPostgresRepositoryConcurrentOpposingSelectionWrites' "$brain_skill_selection_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryAndSelectionServiceIntegration (' "$brain_skill_selection_log"
+          grep -q -- '^--- PASS: TestPostgresRepositoryConcurrentOpposingSelectionWrites (' "$brain_skill_selection_log"
           evaluation_log="$RUNNER_TEMP/evaluation-postgres.log"
           HAI_EVALUATION_TEST_DATABASE_DSN="$evaluation_dsn" go test -count=1 -tags integration \
             ./internal/evaluation/ -v | tee "$evaluation_log"
-          grep -q -- '^--- PASS: TestGormRepositoryOwnerIsolationRoundTripAndImmutableReceipts' "$evaluation_log"
-          grep -q -- '^--- PASS: TestGormRepositoryFailsClosedOnStoredDigestMismatch' "$evaluation_log"
+          grep -q -- '^--- PASS: TestGormRepositoryOwnerIsolationRoundTripAndImmutableReceipts (' "$evaluation_log"
+          grep -q -- '^--- PASS: TestGormRepositoryFailsClosedOnStoredDigestMismatch (' "$evaluation_log"
           durablejob_log="$RUNNER_TEMP/durablejob-postgres.log"
           HAI_DURABLEJOB_TEST_DATABASE_DSN="$durablejob_dsn" go test -count=1 -tags integration \
             ./internal/durablejob/ -v | tee "$durablejob_log"
@@ -1180,7 +1180,7 @@ jobs:
           HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1 -tags integration \
             -run '^TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema$' \
             ./migrations/ -v | tee "$account_feed_rollback_log"
-          grep -q -- '^--- PASS: TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema' "$account_feed_rollback_log"
+          grep -q -- '^--- PASS: TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema (' "$account_feed_rollback_log"
           for test_case in feed_configuration audit_history empty_schema_rolls_back; do
             grep -q -- "^[[:space:]]*--- PASS: TestAccountFeedRegistryRollbackRefusesDataAndAllowsEmptySchema/${test_case} (" "$account_feed_rollback_log"
           done

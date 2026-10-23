@@ -1042,3 +1042,42 @@ After adding both full module component suites and the new layout fixture to the
 combined selection, all 888 cases across 36 specification files pass in Chrome
 Headless. The expected Home offline-fixture console output remains unchanged.
 This broader local check still does not substitute for deployed visual review.
+
+## CI workflow reconciliation and exact PASS evidence
+
+Read the complete retained workflow and the complete current workflow in
+contiguous ranges. Keep current read-only repository permissions, pinned action
+references, non-persisted checkout credentials, hash-locked runner matrix,
+Windows containment/recovery/signing guards, dedicated PostgreSQL/Redis suites,
+owner-scoped disposable browser-stack lifecycle, redacted evidence collection,
+resource checks and full frontend test discovery. Do not restore the older
+fixed browser project, unguarded Compose cleanup, smaller database-test set or
+unrestricted installer artifact upload.
+
+The current browser matrix deliberately selects its documented first scope;
+broader uncertainty fixtures remain incomplete. A provider fixture, synthetic
+credential or capability check is not live external-account acceptance. The
+workflow's presence is not proof that every hosted job ran or passed. Keep these
+limitations separate from local source-contract success and main preservation.
+
+Twenty-one migration-job PASS assertions matched only a test-name prefix. A
+longer test name could satisfy those checks if the required case were removed
+from a broader test selection. Require the literal space/elapsed-time opening
+parenthesis after the exact name, consistently with newer assertions already
+in this job. Do not weaken test selectors, required environment flags, failure
+handling, skip checks or the secret scanner.
+
+Two new contract tests fail before repair: the structural test identifies all
+21 prefix-only patterns, and executing the actual grep expression confirms a
+wrong-name false positive. After repair, all 121 CI contract tests pass. The
+shell regression exercises all 51 migration-job `grep -q` PASS patterns with 204
+synthetic exact, longer-name, SKIP and FAIL probes, using Git Bash on Windows.
+It neither opens a database nor runs a provider or cleanup operation.
+
+The current YAML parses into 17 jobs (36 expanded matrix jobs); all 62 Linux Bash
+run blocks pass Bash syntax validation after substituting inert text for GitHub
+expressions. Heredoc contents are not independently proven by that shell parse.
+The full CI-contract test source remains a separate retained-file review; this
+change does not claim its complete historical reconciliation. Originals and
+archives remain intact. Hosted CI and post-merge preservation are still required
+before any associated cleanup eligibility can be established.

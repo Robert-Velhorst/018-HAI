@@ -2,6 +2,7 @@ import json
 import io
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 import unittest
@@ -2464,6 +2465,50 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertIn("capture_output=True", scanner)
         self.assertNotIn("stdout=", scanner)
 
+
+    def test_database_pass_markers_require_exact_test_name_boundaries(self) -> None:
+        markers = []
+        for line in job_block("migrations-integration").splitlines():
+            if line.strip().startswith("grep -q -- "):
+                arguments = shlex.split(line.strip())
+                if "--- PASS:" in arguments[3]:
+                    markers.append(arguments[3])
+        self.assertGreater(len(markers), 30)
+        for pattern in markers:
+            with self.subTest(pattern=pattern):
+                self.assertTrue(pattern.startswith("^"))
+                self.assertTrue(pattern.endswith(" ("), "a longer test name must not satisfy the required PASS")
+
+    @unittest.skipUnless(shutil.which("bash") or Path("C:/Program Files/Git/bin/bash.exe").is_file(), "Bash is required to execute workflow grep expressions")
+    def test_database_pass_markers_reject_prefix_skip_and_fail_output(self) -> None:
+        commands = ["set -eu"]
+        count = 0
+        for line in job_block("migrations-integration").splitlines():
+            if not line.strip().startswith("grep -q -- "):
+                continue
+            arguments = shlex.split(line.strip())
+            pattern = arguments[3]
+            if "--- PASS:" not in pattern:
+                continue
+            for variable in ("test_name", "case_name", "test_case", "operation"):
+                pattern = pattern.replace("${" + variable + "}", "SyntheticCase")
+            name = pattern.removeprefix("^").removeprefix("[[:space:]]*").removeprefix("--- PASS: ").removesuffix(" (")
+            for label, output, accepted in (
+                ("exact", f"--- PASS: {name} (0.01s)\n", True),
+                ("suffix", f"--- PASS: {name}Extra (0.01s)\n", False),
+                ("skip", f"--- SKIP: {name} (0.01s)\n", False),
+                ("fail", f"--- FAIL: {name} (0.01s)\n", False),
+            ):
+                probe = "printf '%s' " + shlex.quote(output) + " | grep -q -- " + shlex.quote(pattern)
+                condition = "! " if accepted else ""
+                commands.append(f"if {condition}{probe}; then echo 'invalid marker behavior {count}:{label}' >&2; exit 1; fi")
+            count += 1
+        self.assertGreater(count, 30)
+        git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+        bash = str(git_bash) if git_bash.is_file() else shutil.which("bash")
+        result = subprocess.run([bash, "--noprofile", "--norc", "-s"],
+                                input="\n".join(commands) + "\n", text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_oauth_source_revisions_require_real_postgres_passes(self) -> None:
         migrations = job_block("migrations-integration")
