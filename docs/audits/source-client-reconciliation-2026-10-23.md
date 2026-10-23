@@ -314,6 +314,26 @@ retained records. The existing Home offline-path console message is expected.
 This is component/HTTP-boundary evidence, not live memory-provider, database,
 signed-session or deployed visual acceptance. Both originals remain retained
 until their work is verified preserved on main.
+
+## Frontend lockfile reconciliation
+
+Parse and compare all retained/current lock metadata rather than restoring old
+versions. The current graph accounts for every historical record as unchanged,
+changed or removed, retains all direct dependency names and adds current build
+requirements. Add four manifest/registry/integrity/install-hook contract tests
+to the normal frontend command. The full native run exposes one obsolete
+selection-history source assertion; repair it without restoring hidden stale
+rows. All 190 native cases pass afterward.
+
+The logical dependency tree passes npm's lockfile-only validation. Separate live
+registry audits report zero production-only findings but two high and one low
+full-toolchain findings. Keep dependency remediation open pending patch approval;
+do not downgrade Angular automatically or claim npm 12 installation acceptance
+from the available npm 11 audit CLI. Details and primary advisory links are in
+the [dependency review](frontend-dependency-reconciliation-2026-10-23.md).
+No dependency version, lockfile bytes, installed dependency or original source
+was changed or deleted by the metadata review; the frontend test command now
+includes the new contract tests.
 The combined fourteen-suite frontend run passes all 211 tests; progressive
 section, split-theme and icon-registry checks also pass with this change set.
 
