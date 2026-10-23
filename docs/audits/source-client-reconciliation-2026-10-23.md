@@ -935,3 +935,32 @@ and all local recovery originals remain intact. That merge changes source API
 header binding, not provider permission or installed credentials.
 The complete source package passes again locally after this final integration,
 uncached, in 3.668 seconds. The database DSN remains empty for that local run.
+
+## Task and runtime-control main integration
+
+PRs #325 and #331 each passed all 41 checks at their reviewed exact heads and
+were squash-merged into main. A fresh fetch verified all six task PR files and
+all three runtime-control PR files against their head and merge blobs. Only the
+two matching remote branches were removed; no local source or archive was
+deleted. Their combined main changes merged into this integration branch without
+conflicts. The complete task package passes uncached in 12.294 seconds and both
+Runtime Control suites pass all 40 cases in Chrome Headless after integration.
+The local database DSN was empty: this is not a new PostgreSQL or live runtime
+acceptance claim. Existing backend authority and explicit owner review remain
+authoritative; frontend observation cancellation is not server rollback proof.
+
+## Historical policy-state classification
+
+Decode the complete retained policy JSON and validate every nested field in all
+99 receipts against the observed schema. The file contains legacy default-allow
+decisions for ten tool names, request/identity references and input digests.
+Rules, budgets, usage and approvals are empty. There are no tool arguments,
+source patches or returned execution results in these records. A historical
+allowance proves neither successful execution nor current authorization.
+
+Do not replay calls, restore the permissive legacy mode, infer completed agent
+work from a receipt or treat an input digest as recoverable source code. Publish
+this classification only, with exact raw-file integrity recorded privately.
+The raw state remains local and is not main-preserved or deletion eligible.
+The structural check does not claim cryptographic receipt authenticity. This
+completes one additional selected-file review, not the entire recovery scope.
