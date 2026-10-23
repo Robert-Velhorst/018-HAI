@@ -1622,3 +1622,29 @@ snapshot boundary and the three runner manifest links. The 122 CI contract
 tests pass. These are local source and fixture checks, not live upstream,
 container, provider or database acceptance. No dependency installation, runtime
 upgrade or original-file deletion was performed.
+
+## Trello resumable test reconciliation
+
+Read the complete retained resumable test file and its current integration
+delta. All 19 original test-function bodies remain identical after newline
+normalization. Preserve generation reset and overlap, independent card/action
+cursors, supported ID pagination, monotonic transitions, observed/verified
+identity contracts, authorized terminal-job resume, resource caps, unchanged
+extraction behavior, resumable inventory checks and progress projections.
+The existing integration adds webhook repository stubs, explicit loopback
+fixture binding, board identity checks and short-link/member provenance cases.
+
+The convenient card-page fixture fills absent board IDs automatically. Add an
+independent raw HTTP fixture that does not repair provider records: missing,
+empty, whitespace-only, malformed and foreign board identities must return no
+importable slice. Canonical and normalized board IDs are positive controls.
+Assert that validation reaches the card-page response, uses authenticated reads
+without query credentials and does not persist raw items or extractions before
+the durable commit. All seven new subcases pass without production-code changes.
+
+The focused Trello/progress run passes 101 top-level tests and 150 subtests;
+seven database-dependent tests skip because no test database is configured.
+These checks use local HTTP fixtures and in-memory repositories, not a live
+Trello account, signed production webhook, transactional database acceptance or
+complete connector readiness. The original remains retained pending main
+preservation verification.
