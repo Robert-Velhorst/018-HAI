@@ -122,11 +122,12 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
 
   it('resolves a workflow approval from the unified queue', () => {
     const { component, workflows, notification } = createComponent();
+    const workflowId = '11111111-1111-4111-8111-111111111111';
     const card = {
       pursuit: { id: 'pursuit-1', title: 'Prepare legal response' },
       decision: {
-        id: 'workflow:workflow-1:approval',
-        workflowId: 'workflow-1',
+        id: `workflow:${workflowId}:approval`,
+        workflowId,
         decisionType: 'approval',
         status: 'pending',
         riskLevel: 'high',
@@ -136,17 +137,23 @@ describe('CommandDashboardComponent pursuit candidate decisions', () => {
         noConsequence: 'The workflow remains blocked.',
       },
     } as IPursuitDashboardDecision;
-    workflows.resolveApproval.and.returnValue(of({}));
+    workflows.resolveApproval.and.returnValue(of({
+      item: { id: workflowId, requiresApproval: true, approvalStatus: 'approved', currentState: 'ready' },
+      decisions: [{ id: '22222222-2222-4222-8222-222222222222', workflowId, decisionType: 'approval',
+        decision: 'approved', approved: true, createdAt: '2026-10-23T10:00:00Z' }],
+    }));
 
     component.resolveDashboardDecision(card, true);
 
     expect(component.canResolveDashboardDecision(card)).toBeTrue();
-    expect(workflows.resolveApproval).toHaveBeenCalledWith('workflow-1', {
+    expect(workflows.resolveApproval).toHaveBeenCalledWith(workflowId, {
       approved: true,
       note: 'The workflow may move forward.',
       actor: 'Robert',
     });
-    expect(notification.success).toHaveBeenCalledWith('Approval recorded', 'Workflow approved through the audited gate.');
+    expect(notification.info).toHaveBeenCalledWith('Decision response received',
+      'The server returned the requested workflow state and matching decision record. This is not proof of execution or independent audit persistence.');
+    expect(notification.success).not.toHaveBeenCalled();
   });
 
   it('resolves a verified completion review from the unified queue', () => {

@@ -1043,7 +1043,7 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
 
   resolveDashboardDecision(card: IPursuitDashboardDecision, approved: boolean, event?: Event): void {
     event?.stopPropagation();
-    if (!this.canResolveDashboardDecision(card) || this.resolvingDashboardDecisionId) {
+    if (this.destroyed || typeof approved !== 'boolean' || !this.canResolveDashboardDecision(card) || this.resolvingDashboardDecisionId) {
       return;
     }
     if (card.decision.decisionType === 'pursuit_next_action') {
@@ -1070,24 +1070,57 @@ export class CommandDashboardComponent implements OnInit, OnDestroy {
   }
 
   private resolveWorkflowApprovalDecision(card: IPursuitDashboardDecision, approved: boolean): void {
-    if (!card.decision.workflowId) {
+    const validReference = (value: unknown): boolean => typeof value === 'string' &&
+      /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value) &&
+      value !== '00000000-0000-0000-0000-000000000000';
+    const workflowId = card.decision.workflowId;
+    if (!workflowId || !validReference(workflowId) || card.decision.id !== `workflow:${workflowId}:approval`) {
+      this.notification.warning('Decision unavailable', 'Refresh the decision queue before acting on this approval.');
+      this.refreshPursuits();
       return;
     }
+    const expectedDecision = approved ? 'approved' : 'rejected';
+    const unconfirmed = () => {
+      if (this.destroyed) return;
+      this.resolvingDashboardDecisionId = '';
+      this.notification.warning(
+        'Decision outcome unconfirmed',
+        'Refresh the decision queue to reconcile its current state before deciding whether another action is needed. HAI will not automatically retry the approval.'
+      );
+      this.refreshPursuits();
+    };
     this.resolvingDashboardDecisionId = card.decision.id;
-    this.workflows.resolveApproval(card.decision.workflowId, {
+    defer(() => this.workflows.resolveApproval(workflowId, {
       approved,
       note: approved ? card.decision.yesConsequence : card.decision.noConsequence,
       actor: 'Robert',
-    }).subscribe({
-      next: () => {
+    })).pipe(
+      take(1),
+      throwIfEmpty(),
+      timeout({ first: HttpTimeoutPolicy.operationMs }),
+      takeUntil(this.openClawDestroy$),
+      finalize(() => { this.resolvingDashboardDecisionId = ''; })
+    ).subscribe({
+      next: (record) => {
+        const decisionMatches = Array.isArray(record?.decisions) && record.decisions.some((decision) =>
+          validReference(decision?.id) && decision.workflowId === workflowId &&
+          decision.decisionType === 'approval' && decision.decision === expectedDecision &&
+          decision.approved === approved && typeof decision.createdAt === 'string' &&
+          Number.isFinite(Date.parse(decision.createdAt)));
+        if (record?.item?.id !== workflowId || record.item.requiresApproval !== true ||
+            record.item.approvalStatus !== expectedDecision ||
+            record.item.currentState !== (approved ? 'ready' : 'blocked') || !decisionMatches) {
+          unconfirmed();
+          return;
+        }
         this.resolvingDashboardDecisionId = '';
-        this.notification.success('Approval recorded', approved ? 'Workflow approved through the audited gate.' : 'Workflow rejected and blocked for review.');
+        this.notification.info(
+          'Decision response received',
+          'The server returned the requested workflow state and matching decision record. This is not proof of execution or independent audit persistence.'
+        );
         this.refreshPursuits();
       },
-      error: (error) => {
-        this.resolvingDashboardDecisionId = '';
-        this.notification.error('Approval blocked', error?.error?.error || 'The workflow approval could not be recorded.');
-      },
+      error: unconfirmed,
     });
   }
 
