@@ -4,8 +4,19 @@ set -euo pipefail
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 generator="$repository_root/scripts/generate-secrets.sh"
 readme="$repository_root/README.md"
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+temporary_parent="$(cd "${TMPDIR:-/tmp}" && pwd -P)"
+tmp="$(mktemp -d "$temporary_parent/hai-secret-generator-test.XXXXXXXX")"
+cleanup() {
+  local resolved
+  [[ -d "$tmp" && ! -L "$tmp" ]] || return 1
+  resolved="$(cd "$tmp" && pwd -P)" || return 1
+  [[ "$resolved" == "$tmp" ]] || return 1
+  case "$resolved" in
+    "$temporary_parent"/hai-secret-generator-test.????????) rm -rf -- "$resolved" ;;
+    *) echo 'Refusing cleanup outside the owned secret-generator fixture.' >&2; return 1 ;;
+  esac
+}
+trap cleanup EXIT
 mkdir -p "$tmp/bin"
 
 cat >"$tmp/bin/openssl" <<'OPENSSL'
@@ -47,9 +58,36 @@ if PATH="$tmp/failing-bin:$PATH" FIRST_RUN_ADMIN_EMAIL='owner@example.com' bash 
 fi
 [[ ! -s "$tmp/entropy-failure.out" ]]
 
+mkdir -p "$tmp/malformed-bin"
+cat >"$tmp/malformed-bin/openssl" <<'OPENSSL'
+#!/usr/bin/env bash
+printf '%s' "$HAI_TEST_RANDOM_OUTPUT"
+OPENSSL
+chmod +x "$tmp/malformed-bin/openssl"
+accepted_malformed=0
+for kind in empty short nonhex multiline; do
+  case "$kind" in
+    empty) random_output='' ;;
+    short) random_output='abc' ;;
+    nonhex) random_output="$(printf '%064d' 1)"; random_output="z${random_output:1}" ;;
+    multiline) random_output="$(printf '%064d' 1)"$'\nextra' ;;
+  esac
+  if PATH="$tmp/malformed-bin:$PATH" FIRST_RUN_ADMIN_EMAIL='owner@example.com' HAI_TEST_RANDOM_OUTPUT="$random_output" bash "$generator" >"$tmp/malformed-$kind.out" 2>"$tmp/malformed-$kind.err"; then
+    accepted_malformed=$((accepted_malformed + 1))
+    continue
+  fi
+  [[ ! -s "$tmp/malformed-$kind.out" ]]
+  grep -F 'Secret generation did not return exactly 32 bytes of hexadecimal entropy.' "$tmp/malformed-$kind.err" >/dev/null
+done
+if [[ "$accepted_malformed" -ne 0 ]]; then
+  echo "Malformed entropy output was accepted in $accepted_malformed cases." >&2
+  exit 1
+fi
+
 grep -F 'FIRST_RUN_ADMIN_EMAIL=you@example.com ./scripts/generate-secrets.sh' "$readme" >/dev/null
-grep -F 'pre/0109_trello_webhook_reconciliation_generations' "$readme" >/dev/null
-grep -F 'migration runner' "$readme" >/dev/null
-grep -F 'remains unproven release evidence' "$readme" >/dev/null
+[[ -f "$repository_root/backend/migrations/pre/0109_trello_webhook_reconciliation_generations.up.sql" ]]
+[[ -f "$repository_root/backend/migrations/pre/0109_trello_webhook_reconciliation_generations.down.sql" ]]
+grep -F 'Versioned SQL migrations are the schema source of truth' "$readme" >/dev/null
+grep -F 'Clean-clone Windows 11 migration apply/rollback remains unproven.' "$readme" >/dev/null
 
 printf 'generate-secrets and README checks passed\n'
