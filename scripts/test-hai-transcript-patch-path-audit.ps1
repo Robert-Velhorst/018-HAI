@@ -40,8 +40,18 @@ if ($report.transcript_files -ne 3 -or
     $report.successful_events -ne 3 -or
     $report.primary_path_references -ne 3 -or
     $report.primary_paths_tracked_in_repository -ne 1 -or
-    $report.patch_event_scan_complete -ne $false) {
+    $report.patch_event_scan_complete -ne $false -or
+    $report.content_preservation_verified -ne $false -or
+    $report.deletion_eligible -ne $false) {
     throw "Bounded patch-path scan mismatch: $($report | ConvertTo-Json -Compress)"
+}
+
+$completeReport = & $audit -TranscriptRoot $transcripts -SourceCheckoutRoot $source -RepositoryRoot $repo -Recurse | ConvertFrom-Json
+if ($completeReport.patch_event_scan_complete -ne $true -or
+    $completeReport.content_preservation_verified -ne $false -or
+    $completeReport.deletion_eligible -ne $false -or
+    [string]::IsNullOrWhiteSpace($completeReport.coverage_limitation)) {
+    throw 'A complete path scan must not claim content preservation or deletion eligibility.'
 }
 
 if (-not (Test-Path -LiteralPath $transcript -PathType Leaf) -or

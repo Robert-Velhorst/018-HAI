@@ -55,3 +55,13 @@ not copying simulated behavior into the product. No archive deletion is
 authorized by this six-record review. Remaining source files, other events,
 oversized/malformed records, execution outcomes and archive-wide preservation
 still require reconciliation with the actual current product and `main`.
+
+The existing `scripts/audit-hai-transcript-patch-paths.ps1` path inventory now
+always emits `content_preservation_verified=false` and `deletion_eligible=false`,
+with an explicit coverage limitation. Its record-scan completion flag remains
+independent: parsing every record does not prove integration of those records.
+The existing fixture test was extended to check this for both an oversized-record
+scan and a complete record scan. It failed before those fields were added and
+passed afterward; source fixtures remain intact. The Windows CI test sequence
+now includes this regression. No real archive was deleted or declared safe by
+these fixture results.
