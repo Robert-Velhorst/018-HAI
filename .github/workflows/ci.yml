@@ -895,13 +895,34 @@ jobs:
             hai_durablejob_test \
             hai_workflow_lease_expiry_test \
             hai_workflow_followup_test \
-            hai_ambient_monitor_test
+            hai_ambient_monitor_test \
+            hai_automation_events_test
           do
             createdb \
               --host=127.0.0.1 \
               --port=5432 \
               --username=postgres \
               "${database}"
+          done
+      - name: Automation mutation and outbox persistence (PostgreSQL)
+        env:
+          HAI_ALLOW_DESTRUCTIVE_DATABASE_TESTS: "true"
+          HAI_REQUIRE_POSTGRES_INTEGRATION: "true"
+          HAI_TEST_DATABASE_DSN: "host=127.0.0.1 user=postgres password=postgres dbname=hai_automation_events_test port=5432 sslmode=disable TimeZone=UTC"
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/automation-outbox-postgres.log"
+          go test -count=1 -p 1 -parallel 1 -timeout 180s \
+            -run '^(TestPostgresAutomationMutationsCommitOutboxAtomically|TestPostgresOutboxCommitDispatchAndRollback|TestPostgresOutboxRetriesPublisherFailure|TestPostgresOutboxExpiresAbandonedFinalLease|TestPostgresOutboxStatsRetryAndPrune)$' \
+            ./internal/automation/ ./internal/events/ -v | tee "$log"
+          for test_name in \
+            TestPostgresAutomationMutationsCommitOutboxAtomically \
+            TestPostgresOutboxCommitDispatchAndRollback \
+            TestPostgresOutboxRetriesPublisherFailure \
+            TestPostgresOutboxExpiresAbandonedFinalLease \
+            TestPostgresOutboxStatsRetryAndPrune
+          do
+            grep -q -- "^--- PASS: ${test_name} (" "$log"
           done
       - name: Ambient monitor advisory release lifecycle (PostgreSQL)
         env:
