@@ -32,6 +32,18 @@ This comparison includes the changed source contexts, the relevant provenance
 migration and rollback guard, and existing unit/integration assertions. It is
 not a full authorization security certification or production-database audit.
 
+The related original `executionapproval/composite_resolver.go` was also
+compared in full. Six declarations remain token-identical, three are extended,
+and three are added; none is removed. Task/workflow/portfolio/owner-control
+routing remains, with a dedicated OpsControl-review resolver and server-owned
+additional namespaces that cannot overlap reserved or already registered
+prefixes. Resolver rejection still returns directly rather than trying another
+approval source. The current router registers the control-decision resolver and
+attaches the OpsControl-review resolver before constructing the authorization
+engine. This is inspected wiring, not an executed end-to-end approval flow.
+Registering an arbitrary additional namespace alone does not establish database
+receipt support; persistence still validates its supported evidence types.
+
 ## Close the database test selection gap
 
 The existing backend `go test ./...` command can skip PostgreSQL tests when its
