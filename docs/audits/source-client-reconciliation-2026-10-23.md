@@ -70,3 +70,29 @@ Together, the automation and source-client suites pass all 45 Chrome Headless
 tests. All 67 existing launch-safety/control-room logic tests also pass locally.
 No launch, automation registration, real local storage profile or external runtime
 is modified by these fixtures.
+
+## Onboarding and overview follow-up
+
+Reviewed the retained onboarding component, HAI OS component and provider
+credential checklist in full, then their complete current differences. Keep safe
+internal onboarding return URLs and local completion state. Keep current HAI OS
+single-result/deadline behavior, response-shape validation, preserved prior data
+on failed refresh, cancellation on replacement/destroy, and registry-bound
+internal navigation instead of the older unrestricted link dispatch. Preserve
+the newer Trello resumable/incremental and webhook limitations documentation;
+the older claim that those cursors are unimplemented must not return.
+
+The onboarding copy previously made unconditional claims about on-device data
+and individual approvals. It now discloses that enabled external services may
+receive data and describes configured permissions/approval policy, without
+changing that policy. The provider checklist distinguishes configuration/probe
+sign-off from operational acceptance through an authorized account/resource,
+persisted result and verification/recovery chain.
+
+Two new wording controls failed before correction and pass afterward. All 32
+onboarding/HAI OS Chrome Headless tests and both existing HAI OS observation
+tests pass. These checks do not establish deployment, live provider or full
+visual/operator acceptance. No provider, permission or credential is enabled or
+changed, and no new source/transcript deletion is authorized by the review.
+The combined four-suite browser run passes all 77 tests with the complete frontend
+client/onboarding change set applied.
