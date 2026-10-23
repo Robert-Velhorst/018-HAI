@@ -69,10 +69,13 @@ is already represented in the current bounded reconciliation path.
 The newer quiet-board probe is an intentional behavioral difference, not proof
 that every sync is a complete snapshot. The stale source comments claiming a
 full scan on every sync and unconditional cursor losslessness were corrected.
-Quiet observations skip stored-card hash comparison, tombstones and propagation
-of board metadata into stored card content. A board metadata-only action can
-advance the cursor without rebuilding card content. Periodic full-snapshot
-freshness and completeness under concurrent changes remain unproven; the
+Quiet observations skip stored-card hash comparison and tombstones. At the
+initial review, a board metadata-only action could advance the cursor without
+rebuilding card content. The subsequent Trello test-corpus reconciliation adds
+a failing service-level regression and repairs that boundary: newer metadata
+requires successful full reconciliation before its proposed cursor is retained.
+Unchanged activity still uses the quiet path. Periodic full-snapshot freshness
+and completeness under concurrent changes remain unproven; the
 existing no-activity tests do not establish either property. Do not remove the
 optimization or claim periodic reconciliation without a separately reviewed
 design and persistence contract.
