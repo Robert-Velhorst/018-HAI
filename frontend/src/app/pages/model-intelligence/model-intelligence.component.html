@@ -48,7 +48,7 @@
 
     <section class="advanced-error-summary" *ngIf="hasAdvancedErrors()" role="alert" aria-label="Advanced model data needs attention">
       <i nz-icon nzType="warning" nzTheme="outline" aria-hidden="true"></i>
-      <div><strong>Some Advanced model data needs attention</strong><span>Open the affected panel to inspect the error and retry. Raw provider details stay in Advanced view.</span></div>
+      <div><strong>Some Advanced model data needs attention</strong><span>Open the affected panel to review its status and retry.</span></div>
       <div class="advanced-error-actions">
         <button nz-button type="button" *ngIf="profilesError || hasBenchmarkErrors()" (click)="openAdvancedSection('model-profiles')">Open profile details</button>
         <button nz-button type="button" *ngIf="runtimeError || detectionError" (click)="openAdvancedSection('runtime-budget')">Open runtime details</button>

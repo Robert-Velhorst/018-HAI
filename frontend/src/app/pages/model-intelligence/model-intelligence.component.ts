@@ -1,7 +1,8 @@
 import { HttpErrorResponse } from '@angular/common/http'
-import { ChangeDetectionStrategy, Component, OnInit } from '@angular/core'
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit } from '@angular/core'
 import { Router } from '@angular/router'
-import { forkJoin } from 'rxjs'
+import { forkJoin, Observable, Subject } from 'rxjs'
+import { finalize, take, takeUntil, throwIfEmpty, timeout } from 'rxjs/operators'
 import { NzNotificationService } from 'ng-zorro-antd/notification'
 import { ModuleViewPreferencesService } from '../../control-room/module-view-preferences.service'
 import {
@@ -22,9 +23,12 @@ import { ModelIntelligenceService } from '../../services/model-intelligence.serv
     styleUrls: ['./model-intelligence.component.scss'],
     standalone: false
 })
-export class ModelIntelligenceComponent implements OnInit {
+export class ModelIntelligenceComponent implements OnInit, OnDestroy {
   private readonly moduleId = 'model-intelligence'
   private readonly calibrationSectionId = 'model-calibration'
+  private readonly destroyed$ = new Subject<void>()
+  private destroyed = false
+  private scrollTimer?: ReturnType<typeof setTimeout>
 
   overview?: IModelIntelligenceOverview
   calibration?: ICalibrationSummary
@@ -57,11 +61,29 @@ export class ModelIntelligenceComponent implements OnInit {
     this.refresh()
   }
 
+  ngOnDestroy(): void {
+    this.destroyed = true
+    this.destroyed$.next()
+    this.destroyed$.complete()
+    if (this.scrollTimer !== undefined) window.clearTimeout(this.scrollTimer)
+  }
+
+  private observeRead<T>(response: Observable<T>): Observable<T> {
+    return response.pipe(
+      take(1),
+      timeout(6000),
+      throwIfEmpty(() => new Error('Model observation completed without a response')),
+      takeUntil(this.destroyed$),
+    )
+  }
+
   refresh(): void {
-    if (this.loading) return
+    if (this.destroyed || this.loading) return
     this.loading = true
     this.errorMessage = ''
-    this.service.overview().subscribe({
+    this.observeRead(this.service.overview()).pipe(
+      finalize(() => { this.loading = false }),
+    ).subscribe({
       next: (overview) => {
         this.overview = overview
         this.calibration = overview.calibration
@@ -89,6 +111,7 @@ export class ModelIntelligenceComponent implements OnInit {
   }
 
   openAdvancedSection(sectionId: 'model-profiles' | 'model-calibration' | 'runtime-budget'): void {
+    if (this.destroyed) return
     this.viewPreferences.setMode(this.moduleId, 'advanced')
     this.viewPreferences.setSection(this.moduleId, sectionId, true)
     document.body.classList.add('hai-view-advanced')
@@ -96,10 +119,14 @@ export class ModelIntelligenceComponent implements OnInit {
     void this.router.navigate(['/model-intelligence'], {
       queryParams: { mode: 'advanced' },
       fragment: sectionId,
-    }).then(() => {
-      window.setTimeout(() => {
-        document.getElementById(sectionId)?.scrollIntoView({ block: 'start' })
+    }).then((navigated) => {
+      if (!navigated || this.destroyed) return
+      if (this.scrollTimer !== undefined) window.clearTimeout(this.scrollTimer)
+      this.scrollTimer = window.setTimeout(() => {
+        if (!this.destroyed) document.getElementById(sectionId)?.scrollIntoView({ block: 'start' })
       })
+    }).catch(() => {
+      if (!this.destroyed) this.notification.warning('Panel unavailable', 'The requested model panel could not be opened. Try again.')
     })
   }
 
@@ -120,10 +147,12 @@ export class ModelIntelligenceComponent implements OnInit {
   }
 
   private loadProfiles(force = false): void {
-    if (this.profilesLoading || (this.profilesLoaded && !force)) return
+    if (this.destroyed || this.profilesLoading || (this.profilesLoaded && !force)) return
     this.profilesLoading = true
     this.profilesError = ''
-    this.service.profiles().subscribe({
+    this.observeRead(this.service.profiles()).pipe(
+      finalize(() => { this.profilesLoading = false }),
+    ).subscribe({
       next: ({ profiles }) => {
         this.profiles = profiles ?? []
         this.profilesLoaded = true
@@ -137,14 +166,14 @@ export class ModelIntelligenceComponent implements OnInit {
   }
 
   private loadRuntimeDetails(force = false): void {
-    if (this.runtimeLoading || (this.runtimeLoaded && !force)) return
+    if (this.destroyed || this.runtimeLoading || (this.runtimeLoaded && !force)) return
     this.runtimeLoading = true
     this.runtimeError = ''
     forkJoin({
-      budgets: this.service.tokenBudgets(),
-      hardware: this.service.hardware(),
-      power: this.service.powerPolicy(),
-    }).subscribe({
+      budgets: this.observeRead(this.service.tokenBudgets()),
+      hardware: this.observeRead(this.service.hardware()),
+      power: this.observeRead(this.service.powerPolicy()),
+    }).pipe(finalize(() => { this.runtimeLoading = false })).subscribe({
       next: ({ budgets, hardware, power }) => {
         this.budgets = budgets
         this.hardware = hardware
@@ -161,10 +190,10 @@ export class ModelIntelligenceComponent implements OnInit {
 
   benchmark(p: IModelProfile): void {
     const key = p.providerId + '/' + p.modelId
-    if (this.benchmarking[key]) return
+    if (this.destroyed || this.benchmarking[key]) return
     this.benchmarking[key] = true
     this.benchmarkErrors[key] = ''
-    this.service.benchmark(p.providerId, p.modelId).subscribe({
+    this.service.benchmark(p.providerId, p.modelId).pipe(takeUntil(this.destroyed$)).subscribe({
       next: (res) => {
         this.benchmarking[key] = false
         if (res.ok) {
@@ -184,10 +213,10 @@ export class ModelIntelligenceComponent implements OnInit {
   }
 
   detectHardware(): void {
-    if (this.detectionLoading) return
+    if (this.destroyed || this.detectionLoading) return
     this.detectionLoading = true
     this.detectionError = ''
-    this.service.detectHardware().subscribe({
+    this.service.detectHardware().pipe(takeUntil(this.destroyed$)).subscribe({
       next: (hw) => {
         this.detectionLoading = false
         this.hardware = hw
@@ -293,6 +322,10 @@ export class ModelIntelligenceComponent implements OnInit {
   }
 
   private errorDetail(error: HttpErrorResponse, fallback: string): string {
-    return error.error?.error || error.error?.message || error.message || fallback
+    // Response bodies and request URLs can contain provider credentials, even in Advanced.
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599
+      ? ` HTTP ${error.status}.`
+      : ''
+    return fallback + status
   }
 }

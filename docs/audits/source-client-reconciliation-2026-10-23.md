@@ -405,3 +405,39 @@ split-theme and icon contracts pass. Cloned iframe content is non-interactive;
 these results do not establish real sign-in, email delivery, all-page visual
 acceptance, production deployment or full WCAG conformance. No source recovery
 copy or transcript archive is deleted by this review or PR publication.
+
+## Model intelligence observation reconciliation
+
+Read the complete retained component and its complete current difference.
+Preserve completion-first calibration, the distinction between declared and
+attested inference/billing claims, token-usage provenance and lazy Advanced
+profile/runtime loading. Keep current eager change detection compatibility.
+
+Eight new controls failed before repair: empty and stalled reads for the
+overview, profiles and runtime bundle; raw error disclosure; and a late overview
+after destruction. Non-mutating reads now observe one response, reject empty
+completion and have a six-second deadline. Finalization clears loading flags,
+while a failed refresh keeps prior data alongside a visible error. Runtime
+bundle members are bounded individually so one empty or stalled response cannot
+silently strand the whole section.
+
+Error previews now use the relevant fixed explanation and a bounded HTTP status,
+never raw response bodies, exception messages or request URLs. Update the old
+test that expected a private marker in Advanced: sensitive error content must
+not become visible merely by opening a deeper view. Existing retry, provenance
+and rendered disclosure tests remain enabled.
+
+Destroying the component stops observation subscriptions, including benchmark
+and hardware-result notifications, and prevents later dispatch. Pending section
+navigation cannot scroll after destruction; rejected navigation has a safe
+warning instead of an unhandled rejection. This does not assert that canceling
+a browser subscription undoes an already dispatched server operation.
+
+Four additional controls cover first-response completion and retained data,
+late benchmark/hardware receipts, and navigation rejection. The final combined
+twenty-two-suite Chrome run passes all 375 tests. Section, split-theme and icon
+contracts pass. Tests do not call an actual model provider or detect host
+hardware. Full runtime response-schema validation, mutation deadlines and
+durable benchmark reconciliation are not established by this read-boundary
+repair and remain separate work. Original copies remain retained; review and
+PR publication are not deletion permission without main preservation.

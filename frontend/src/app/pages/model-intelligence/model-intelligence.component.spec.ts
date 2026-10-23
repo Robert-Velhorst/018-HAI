@@ -73,6 +73,7 @@ describe('ModelIntelligenceComponent', () => {
   })
 
   afterEach(() => {
+    component.ngOnDestroy()
     localStorage.removeItem('hai.module-view.v1.model-intelligence')
     document.body.classList.remove('hai-view-advanced')
   })
@@ -160,7 +161,8 @@ describe('ModelIntelligenceComponent', () => {
     service.profiles.and.returnValue(throwError(() => new Error('profile token=private-detail')))
     fixture.componentInstance.openAdvancedSection('model-profiles')
     fixture.detectChanges()
-    expect(fixture.componentInstance.profilesError).toContain('private-detail')
+    expect(fixture.componentInstance.profilesError).toContain('Model profiles could not be loaded')
+    expect(fixture.componentInstance.profilesError).not.toContain('private-detail')
     preferences.setMode('model-intelligence', 'basic')
     document.body.classList.remove('hai-view-advanced')
     fixture.detectChanges()
@@ -188,7 +190,7 @@ describe('ModelIntelligenceComponent', () => {
       of({ profiles: [] })
     )
     component.onProfilesOpen(true)
-    expect(component.profilesError).toContain('profile endpoint unavailable')
+    expect(component.profilesError).toContain('Model profiles could not be loaded')
     component.retryProfiles()
     expect(component.profilesError).toBe('')
     expect(component.profilesLoaded).toBeTrue()
@@ -201,7 +203,7 @@ describe('ModelIntelligenceComponent', () => {
       })
     )
     component.onRuntimeOpen(true)
-    expect(component.runtimeError).toContain('runtime endpoint unavailable')
+    expect(component.runtimeError).toContain('Runtime diagnostics could not be loaded')
     component.retryRuntime()
     expect(component.runtimeError).toBe('')
     expect(component.runtimeLoaded).toBeTrue()
@@ -304,7 +306,7 @@ describe('ModelIntelligenceComponent', () => {
 
     component.ngOnInit()
 
-    expect(component.errorMessage).toContain('outcome endpoint unavailable')
+    expect(component.errorMessage).toContain('Model outcome telemetry is unavailable')
     expect(component.loading).toBeFalse()
     component.refresh()
     expect(service.overview).toHaveBeenCalledTimes(2)
