@@ -66,6 +66,14 @@ is configured, approved or secure.
 
 ## Disposition
 
+The retained CI source also contains
+`test_optional_ngrok_tunnel_is_profiled_and_fail_closed`. The current CI source
+omits it. Its assertions cover the optional profile, immutable/unprivileged
+service, no host port, default-private A2A, rate limits, launcher/entrypoint gates
+and exact Google callback paths. Retain this test with the historical feature:
+there is no current replacement to count as integrated. This is separate from
+the dependency-audit test, which was renamed and strengthened rather than lost.
+
 Keep the four historical sources and the inconsistent fixture intact. Do not
 publish them as a working installer feature, enable public access, or call their
 work integrated merely because an audit record exists. A subsequent deliberate

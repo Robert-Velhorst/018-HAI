@@ -375,6 +375,40 @@ lifecycle review. Runtime configuration labels are not proof of a live probe;
 other read/receipt schema checks and live provider/backend authorization remain
 separate gates. Both retained originals remain intact pending main preservation.
 
+## CI contract-source reconciliation
+
+Read the full retained CI contract-test source and the entire current delta.
+The retained class contains 57 tests: 33 have identical parsed Python ASTs,
+22 retain their names with reviewed adaptations, one dependency-audit test is
+renamed and strengthened, and one ngrok-profile test is absent. The current
+source initially adds 67 names, including the renamed audit test. Preserve the
+newer owned/disposable browser harness, redaction checks, exact PostgreSQL PASS
+boundaries, dedicated database guards, source/identity race gates, pinned build
+inputs, installer signing/preview checks and resource controls. Reading those
+assertions does not independently validate every referenced implementation.
+
+The dependency audit now rejects registry/infrastructure uncertainty rather
+than treating it as a clean report. That is a preserved and stricter replacement,
+not missing functionality. Conversely,
+`test_optional_ngrok_tunnel_is_profiled_and_fail_closed` has no current equivalent
+because its launcher, Compose profile and environment wiring remain absent.
+Keep that retained test source together with the unresolved historical tunnel
+sources documented in `legacy-ngrok-source-reconciliation-2026-10-23.md`.
+Neither removing the test nor recording this review retires the feature or
+makes the original eligible for deletion.
+
+Fix a vacuous action-pin check: its old regex matched `uses:` but missed the
+ordinary unnamed `- uses:` step syntax. The later reference-presence assertions
+could still pass, even if the action scan examined no steps. Match both canonical
+forms, require a nonempty result and retain full-SHA/version-comment checks.
+Two negative tests exercise a floating action in named/unnamed syntax and a
+comment-only workflow containing reference text. Both fail before repair; all
+124 local CI-contract tests pass afterward without skips.
+
+No frontend build, Docker stack, dependency installation, public tunnel or real
+database test was started during this pass. This is workflow-wiring and local
+fixture evidence, not completion of the full release gates or live acceptance.
+
 ## Brain catalog template reconciliation
 
 Read the complete retained template and its integration delta. Preserve Basic

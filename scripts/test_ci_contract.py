@@ -2452,7 +2452,8 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
                 self.assertIn("timeout-minutes:", job_block(job_id))
 
     def test_external_actions_are_pinned_to_reviewed_full_shas(self) -> None:
-        uses_lines = re.findall(r"(?m)^\s*uses:\s*(.+)$", WORKFLOW)
+        uses_lines = re.findall(r"(?m)^[ \t]*(?:-[ \t]+)?uses:[ \t]*(.+)$", WORKFLOW)
+        self.assertTrue(uses_lines, "workflow action references were not inspected")
         for raw_reference in uses_lines:
             reference = raw_reference.strip()
             if reference.startswith(("./", "docker://")):
@@ -2472,6 +2473,24 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         }
         for action, sha in reviewed.items():
             self.assertIn(f"{action}@{sha}", WORKFLOW)
+
+    def test_action_pin_guard_rejects_named_and_unnamed_floating_steps(self) -> None:
+        for step in (
+            "      - uses: actions/checkout@main\n",
+            "      - name: Synthetic unpinned action\n        uses: actions/checkout@main\n",
+        ):
+            with self.subTest(step_style="unnamed" if "- uses:" in step else "named"):
+                with patch.dict(globals(), {"WORKFLOW": WORKFLOW + "\n" + step}):
+                    with self.assertRaises(AssertionError):
+                        self.test_external_actions_are_pinned_to_reviewed_full_shas()
+
+    def test_action_pin_guard_cannot_pass_on_reference_comments_alone(self) -> None:
+        comments = "\n".join(
+            "# " + line.strip() for line in WORKFLOW.splitlines() if "actions/" in line
+        )
+        with patch.dict(globals(), {"WORKFLOW": comments}):
+            with self.assertRaises(AssertionError):
+                self.test_external_actions_are_pinned_to_reviewed_full_shas()
 
     def test_redacted_secret_scan_is_a_read_only_ci_job(self) -> None:
         job = job_block("secret-scan")
