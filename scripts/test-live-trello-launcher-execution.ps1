@@ -30,6 +30,15 @@ function docker {
 }
 
 try {
+    $savedTemp = [Environment]::GetEnvironmentVariable('TEMP', 'Process')
+    try {
+        [Environment]::SetEnvironmentVariable('TEMP', $null, 'Process')
+        & (Join-Path $PSScriptRoot 'test-live-trello-launcher.ps1')
+        if ($mockState.Calls -ne 0) { throw 'Missing-environment contract reached Docker' }
+        Write-Host 'PASS: Trello launcher contract uses platform temp path without TEMP'
+    } finally {
+        [Environment]::SetEnvironmentVariable('TEMP', $savedTemp, 'Process')
+    }
     if (Test-Path -LiteralPath $root) { throw 'Fixture path already exists' }
     [IO.Directory]::CreateDirectory($root) | Out-Null
     $owned = $true

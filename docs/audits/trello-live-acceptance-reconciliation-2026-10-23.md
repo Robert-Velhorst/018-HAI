@@ -31,3 +31,17 @@ recovery, or webhook acceptance. The live tests retain fake local storage; a rea
 provider read is separate from production persistence acceptance. No credentials
 are read by the isolated checks. Original worktrees and archives remain intact;
 publication is not a local deletion gate.
+
+## Cross-platform CI follow-up
+
+The completed backend job in run `39891656115` passed Go vet, ordinary Go tests
+and live-tag compilation, then failed the launcher contract on Ubuntu because
+`TEMP` was unset. The contract now uses the platform temporary path with a unique
+nonexistent filename, rather than a Windows-only environment variable and a
+predictable shared filename.
+
+The failure was reproduced locally with `TEMP` removed. After repair, that
+contract and all six isolated execution scenarios pass. The execution contract
+now permanently exercises the unset-`TEMP` case, restores the environment, and
+requires zero Docker calls for the missing-environment check. This is local
+PowerShell evidence; a successful fresh Ubuntu CI run remains required.

@@ -55,7 +55,7 @@ foreach ($required in @(
     }
 }
 
-$missingEnv = Join-Path $env:TEMP "hai-live-trello-contract-missing-env"
+$missingEnv = Join-Path ([IO.Path]::GetTempPath()) ("hai-live-trello-contract-missing-env-" + [Guid]::NewGuid().ToString('N'))
 try {
     & $launcherPath -EnvFile $missingEnv
     throw "Live Trello launcher unexpectedly continued without its environment file."
