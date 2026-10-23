@@ -302,18 +302,36 @@ func createArtifactClaimRollbackFixture(t *testing.T, db *gorm.DB) {
 
 func applyRollbackFixtureMigration(t *testing.T, db *gorm.DB, version string) fs.FS {
 	t.Helper()
+	files := rollbackFixtureMigrationFiles(t, version)
+	if count, err := infra.ApplyMigrations(db, files, "pre"); err != nil || count != 1 {
+		t.Fatalf("record isolated rollback fixture migration: applied=%d err=%v", count, err)
+	}
+	return files
+}
+
+func TestGuardedRollbackFixturesDeclareEmptyPostPhase(t *testing.T) {
+	for _, version := range []string{openClawSessionReviewMigration, trelloResumableSyncMigration, openClawArtifactClaimMigration} {
+		t.Run(version, func(t *testing.T) {
+			entries, err := fs.ReadDir(rollbackFixtureMigrationFiles(t, version), "post")
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("isolated pre rollback must declare a readable empty post phase: entries=%v err=%v", entries, err)
+			}
+		})
+	}
+}
+
+func rollbackFixtureMigrationFiles(t *testing.T, version string) fs.FS {
+	t.Helper()
 	name := strings.TrimPrefix(version, "pre/")
 	down, err := migrations.Files.ReadFile("pre/" + name + ".down.sql")
 	if err != nil {
 		t.Fatalf("read rollback migration %s: %v", version, err)
 	}
 	files := fstest.MapFS{
+		"post":                      &fstest.MapFile{Mode: fs.ModeDir},
 		"pre":                       &fstest.MapFile{Mode: fs.ModeDir},
 		"pre/" + name + ".up.sql":   {Data: []byte("SELECT 1;"), Mode: 0o600},
 		"pre/" + name + ".down.sql": {Data: down, Mode: 0o600},
-	}
-	if count, err := infra.ApplyMigrations(db, files, "pre"); err != nil || count != 1 {
-		t.Fatalf("record isolated rollback fixture migration: applied=%d err=%v", count, err)
 	}
 	return files
 }

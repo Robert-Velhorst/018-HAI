@@ -182,16 +182,25 @@ func (r *GormUserRepository) UpdateLaunchState(id uuid.UUID, startedAt time.Time
 	if id == uuid.Nil || startedAt.IsZero() {
 		return fmt.Errorf("automation launch state requires an automation ID and start time")
 	}
+	if r == nil || r.DB == nil || r.DB.Config == nil || r.DB.DryRun || r.DB.Statement == nil || r.DB.Statement.Context == nil {
+		return fmt.Errorf("automation launch state requires available non-dry-run storage")
+	}
+	ctx, cancel := context.WithTimeout(r.DB.Statement.Context, approvalRegistrationTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	scoped := r.DB.WithContext(ctx)
 
 	updates := map[string]interface{}{"last_launch_at": startedAt.UTC()}
 	if failureReason != nil {
 		updates["last_failure_reason"] = *failureReason
 	}
-	result := r.DB.Model(&models.Automation{}).
+	result := scoped.Model(&models.Automation{}).
 		Where("id = ? AND (last_launch_at IS NULL OR last_launch_at <= ?)", id, startedAt.UTC()).
 		Updates(updates)
-	if result.Error != nil {
-		return result.Error
+	if err := errors.Join(ctx.Err(), result.Error); err != nil {
+		return err
 	}
 	if result.RowsAffected > 0 {
 		return nil
@@ -200,7 +209,8 @@ func (r *GormUserRepository) UpdateLaunchState(id uuid.UUID, startedAt time.Time
 	// A zero-row update also means this launch is older than the projection
 	// already stored. Distinguish that harmless stale write from a deleted row.
 	var existing models.Automation
-	return r.DB.Select("id").First(&existing, "id = ?", id).Error
+	err := scoped.Select("id").First(&existing, "id = ?", id).Error
+	return errors.Join(ctx.Err(), err)
 }
 
 func (r *GormUserRepository) Delete(id uuid.UUID) error {

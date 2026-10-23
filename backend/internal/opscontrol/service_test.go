@@ -320,6 +320,15 @@ func TestRecoveryReconcilesStuckOperations(t *testing.T) {
 }
 
 func TestRecoveryLeavesLiveClaimAloneAndReportsUnleasedExecution(t *testing.T) {
+	for _, status := range []operations.OperationStatus{operations.StatusRunning, operations.StatusVerifying} {
+		t.Run(string(status), func(t *testing.T) {
+			testRecoveryLeavesLiveClaimAloneAndReportsUnleasedExecution(t, status)
+		})
+	}
+}
+
+func testRecoveryLeavesLiveClaimAloneAndReportsUnleasedExecution(t *testing.T, status operations.OperationStatus) {
+	t.Helper()
 	ops := operations.NewService(operations.NewMemoryRepository())
 	s := NewService(t.TempDir(), executionbroker.NewBroker(t.TempDir()), ops, "u", "local")
 	makeRunning := func(key string, lease time.Duration) *operations.ClaimedOperation {
@@ -340,8 +349,14 @@ func TestRecoveryLeavesLiveClaimAloneAndReportsUnleasedExecution(t *testing.T) {
 		if err != nil || claimed == nil || claimed.Operation.ID != ready.ID {
 			t.Fatalf("claim %s: claim=%#v err=%v", key, claimed, err)
 		}
-		if _, err := ops.TransitionClaimed(context.Background(), claimed.Claim, claimed.Operation, operations.StatusRunning, "hai", "", ""); err != nil {
+		running, err := ops.TransitionClaimed(context.Background(), claimed.Claim, claimed.Operation, operations.StatusRunning, "hai", "", "")
+		if err != nil {
 			t.Fatalf("start %s: %v", key, err)
+		}
+		if status == operations.StatusVerifying {
+			if _, err := ops.TransitionClaimed(context.Background(), claimed.Claim, *running, status, "hai", "", ""); err != nil {
+				t.Fatalf("verify %s: %v", key, err)
+			}
 		}
 		return claimed
 	}
@@ -351,11 +366,15 @@ func TestRecoveryLeavesLiveClaimAloneAndReportsUnleasedExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("recover live claim: %v", err)
 	}
-	if report.Recovered != 0 || report.LiveRunning != 1 {
-		t.Fatalf("live claim recovery report = %+v, want one preserved live running operation", report)
+	liveCount := report.LiveRunning
+	if status == operations.StatusVerifying {
+		liveCount = report.LiveVerifying
+	}
+	if report.Recovered != 0 || liveCount != 1 || report.LiveRunning+report.LiveVerifying != 1 {
+		t.Fatalf("live claim recovery report = %+v, want one preserved live %s operation", report, status)
 	}
 	stored, err := ops.Get("u", "local", live.Operation.ID)
-	if err != nil || stored.Status != string(operations.StatusRunning) {
+	if err != nil || stored.Status != string(status) {
 		t.Fatalf("live operation after recovery = %#v, %v", stored, err)
 	}
 
@@ -372,15 +391,29 @@ func TestRecoveryLeavesLiveClaimAloneAndReportsUnleasedExecution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ready unleased operation: %v", err)
 	}
-	if _, err := ops.Transition(*ready, operations.StatusRunning, "hai", "", "legacy running state"); err != nil {
+	running, err := ops.Transition(*ready, operations.StatusRunning, "hai", "", "legacy running state")
+	if err != nil {
 		t.Fatalf("create unleased running state: %v", err)
+	}
+	if status == operations.StatusVerifying {
+		if _, err := ops.Transition(*running, status, "hai", "", "legacy verifying state"); err != nil {
+			t.Fatalf("create unleased verifying state: %v", err)
+		}
 	}
 	report, err = s.Recover(context.Background())
 	if err != nil {
 		t.Fatalf("recover unleased state: %v", err)
 	}
-	if report.UnleasedRunning != 1 || report.Recovered != 0 {
+	unleasedCount := report.UnleasedRunning
+	if status == operations.StatusVerifying {
+		unleasedCount = report.UnleasedVerifying
+	}
+	if unleasedCount != 1 || report.Recovered != 0 || report.UnleasedRunning+report.UnleasedVerifying != 1 {
 		t.Fatalf("unleased recovery report = %+v, want one visible unleased operation and no recovery", report)
+	}
+	stored, err = ops.Get("u", "local", unleased.Operation.ID)
+	if err != nil || stored.Status != string(status) {
+		t.Fatalf("unleased operation after recovery = %#v, %v", stored, err)
 	}
 }
 
