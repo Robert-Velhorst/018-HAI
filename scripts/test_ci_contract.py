@@ -133,6 +133,20 @@ console.log(JSON.stringify({ error, calls, output, files, env, evidence, owner, 
 
 
 class CIWorkflowContractTest(unittest.TestCase):
+    def test_guarded_rollbacks_require_real_postgres_pass(self):
+        migrations = job_block("migrations-integration")
+        selection = re.search(r"-run '(\^\(TestOpenClawArtifactAlignmentPostgres[^']+)'", migrations)
+        self.assertIsNotNone(selection)
+        for name in (
+            "TestOpenClawSessionReviewRollbackPreservesTerminalReviewMetadata",
+            "TestTrelloResumableRollbackRefusesPersistedStateAndPreservesSharedIndex",
+            "TestOpenClawArtifactClaimRollbackRefusesRetainedTokens",
+        ):
+            self.assertIn(name, selection.group(1))
+            self.assertRegex(migrations, rf"(?m)^            {name}(?: \\\n|\n)")
+        self.assertIn('HAI_TEST_DATABASE_DSN="$migration_dsn" go test -count=1', migrations)
+        self.assertIn('grep -q -- "^--- PASS: ${test_name}', migrations)
+
     def test_compose_job_checks_effective_docker_build_contexts(self) -> None:
         compose = job_block("compose")
         self.assertIn(
