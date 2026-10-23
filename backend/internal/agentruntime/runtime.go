@@ -531,6 +531,12 @@ func (r *Registry) StopOpenClawGatewayReceipt(ctx context.Context, expected Open
 		TaskID:             strings.TrimSpace(expected.RuntimeTaskID),
 		ExecutionReference: strings.TrimSpace(expected.ExecutionReference),
 	}
+	if ctx == nil || ctx.Err() != nil {
+		base.Status = "blocked"
+		base.Message = "a live request context is required; no stop was requested"
+		base.AuditEvents = []string{"missing or cancelled stop request rejected before adapter access"}
+		return base
+	}
 	if strings.TrimSpace(expected.OwnerIdentity) == "" || strings.TrimSpace(expected.RuntimeTaskID) == "" ||
 		!validOpenClawGatewayReceiptReference(expected.ExecutionReference) ||
 		strings.TrimSpace(expected.SessionKey) == "" || !ValidOpenClawGatewayRunID(expected.RunID) ||
@@ -602,6 +608,13 @@ func (r *Registry) stopTask(ctx context.Context, runtimeID string, taskID string
 			Status:      "blocked",
 			Message:     "agent runtime task id is required",
 			AuditEvents: []string{"empty runtime task stop request rejected"},
+		}
+	}
+	if ctx == nil || ctx.Err() != nil {
+		return StopResult{
+			RuntimeID: runtimeID, TaskID: taskID, ExecutionReference: strings.TrimSpace(executionReference),
+			Status: "blocked", Message: "a live request context is required; no stop was requested",
+			AuditEvents: []string{"missing or cancelled stop request rejected before local cancellation or adapter access"},
 		}
 	}
 	found, ownerMatched := r.stopRunningTask(runtimeID, taskID, ownerIdentity)
@@ -5211,7 +5224,7 @@ func openClawProviderExtensions() map[string]bool {
 		"minimax": true, "mistral": true, "moonshot": true, "novita": true, "nvidia": true,
 		"ollama": true, "openai": true, "openrouter": true, "perplexity": true, "qianfan": true,
 		"qwen": true, "sglang": true, "stepfun": true, "synthetic": true, "tencent": true,
-		"together": true, "tokenjuice": true, "venice": true,
+		"together": true, "tokenjuice": true, "venice": true, "vercel-ai-gateway": true,
 		"vllm": true, "volcengine": true, "voyage": true, "xai": true, "xiaomi": true,
 		"zai": true,
 	}
