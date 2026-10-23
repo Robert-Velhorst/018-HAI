@@ -8,8 +8,14 @@ driver 1.6.3. Refreshes the module graph and checksums with Go 1.27.3.
 Tidy also recognizes the existing source's x/sync import as a direct dependency.
 
 All 20 resulting direct module declarations match the official Go proxy's
-current stable metadata in this dated audit. This does not establish that
-every transitive module, native library, database or deployed image is current.
+current stable metadata in this dated audit. A subsequent `go get -u -t ./...`
+refreshes the imported production and test dependency graph as well. Every
+explicit direct and indirect go.mod declaration matches current proxy metadata
+after tidy. The complete selected graph still contains 44 version differences
+across 210 module records; none is an explicit go.mod declaration. Reachability
+of those dependency metadata/test/tool requirements remains to be classified.
+This does not establish that every transitive module, native library, database
+or deployed image is current.
 
 ## Verification and limits
 
@@ -17,12 +23,15 @@ every transitive module, native library, database or deployed image is current.
   `sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c`.
 - Temporary source, downloaded modules and build cache were confined to a
   bounded RAM filesystem. No additional SDK extraction or operator database.
-- `go get` for the seven exact versions, `go mod tidy`, `go mod verify`, and
-  complete selected-module graph enumeration succeeded.
+- `go get` for the seven exact versions, then `go get -u -t ./...`, `go mod
+  tidy`, `go mod verify`, and complete selected-module graph enumeration
+  succeeded. Both intermediate and broad outputs passed checksum verification.
 - Compilation, unit/race tests, migration compatibility and vulnerability
   checking remain subject to the existing hosted CI. No local test execution
   or live provider calls were performed for this dependency refresh.
-- This draft does not merge the separate Node/Angular/Promptfoo draft #330.
+- This draft depends on the Node/Angular/Promptfoo draft #330 and uses its branch
+  as the review base. Its code is included in the combined validation head;
+  neither draft has been merged into main.
 - Deployment target remains Hetzner; no deployment or operator migration.
 
 ## Direct module metadata
