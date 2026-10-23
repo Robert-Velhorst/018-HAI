@@ -1321,3 +1321,42 @@ expectation.
 
 All 121 CI contract tests pass after that expectation update. This does not
 replace exact-head remote CI or the outstanding database acceptance gates.
+
+## Life Ops component reconciliation
+
+Read the complete retained Life Ops implementation and its full current delta.
+Preserve eager change detection, owner-context loading, dated source-backed
+need/capacity records, explicit numeric inputs, allowed goal levels and required
+success/stop conditions, manual domain links, goal hierarchy, and advisory
+priority assessment. The upcoming-goals filter is deliberately future-facing;
+do not silently relabel it as overdue work or invent health/priority values.
+
+All eight service paths across seven subscription sites now use deferred,
+single-response observation with empty-response errors, finalization and
+destruction teardown. Reads have six-second deadlines; writes have thirty-second
+deadlines. A new entity query supersedes older observations, including an
+away-and-back selection. Closing/switching the editor cancels obsolete entity
+reads; mutation dispatch invalidates pending overview/entity reads so late data
+cannot replace a subsequent write. Editor replacement and duplicate pending
+writes are blocked. Cancellation and timeout do not prove server-side rollback.
+
+Do not display raw transport or server error payloads. Provide a stable access
+message for 401/403 and operation-specific recovery guidance otherwise. A failed,
+empty or unusable write acknowledgement may still follow a committed record;
+retain the form and direct the operator to inspect recorded state before a
+deliberate retry. No automatic retry is introduced. Require nonempty record and
+owner identities before announcing a write acknowledgement. The actual Go DTOs
+and handler return paths were inspected for these fields; this narrow shape
+check is not authorization, cryptographic proof or full nested-schema validation.
+Only strictly boolean fresh/review metadata and a known non-unknown capacity
+status permit capacity to influence a priority assessment. The result remains
+advisory and grants no execution authority.
+
+The initial 52 lifecycle regressions fail before repair and pass afterwards.
+Additional controls exercise unusable acknowledgements, duplicate pending writes
+and valid one-shot acknowledgements. The final combined selection passes all
+1,297 cases across 43 specification files, including 70 new Life Ops cases and
+its nine existing cases. All 121 CI contracts and 66 native control-room checks
+pass. These are local component/service-double tests, not live owner API,
+PostgreSQL, provider, browser screenshot or deployed acceptance. Deeper response
+validation remains open. The retained source is intact and not deletion-eligible.

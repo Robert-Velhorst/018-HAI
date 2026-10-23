@@ -224,7 +224,7 @@ describe('LifeOpsComponent', () => {
     component.refresh()
 
     expect(component.loading).toBeFalse()
-    expect(component.errorMessage).toBe('whole-life context operation failed')
+    expect(component.errorMessage).toBe('Whole-life context is unavailable.')
   })
 
   it('keeps review and correction actions in Basic and defers raw capacity constraints to Advanced', async () => {
