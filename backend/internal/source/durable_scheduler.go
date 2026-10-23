@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -98,15 +99,15 @@ func setManualSyncWorkerReady(service Service, ready bool) {
 
 // durablePollInterval bounds recovery and retry latency when no immediate
 // worker pass is available. The runner performs a pass at startup, while
-// recurring work holds its own due time, so a five-minute idle interval avoids
+// recurring work holds its own due time, so a one-minute idle interval avoids
 // continuous database wake-ups on an empty local installation.
 func durablePollInterval() time.Duration {
 	value := strings.TrimSpace(os.Getenv("SOURCE_WORKER_POLL_SECONDS"))
 	if value == "" {
 		return defaultDurablePollInterval
 	}
-	var seconds int64
-	if _, err := fmt.Sscanf(value, "%d", &seconds); err != nil || seconds < int64(minDurablePollInterval/time.Second) || seconds > int64(maxDurablePollInterval/time.Second) {
+	seconds, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || seconds < int64(minDurablePollInterval/time.Second) || seconds > int64(maxDurablePollInterval/time.Second) {
 		return defaultDurablePollInterval
 	}
 	return time.Duration(seconds) * time.Second
