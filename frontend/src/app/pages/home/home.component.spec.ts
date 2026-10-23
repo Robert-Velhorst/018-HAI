@@ -68,6 +68,33 @@ describe('HomeComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  it('keeps password visibility controls visibly outlined for keyboard focus', () => {
+    fixture.detectChanges();
+    const page = fixture.nativeElement as HTMLElement;
+    // Use the component's actual encapsulation scope without opening an unrelated modal.
+    const scope = Array.from(page.querySelector('.header-content')!.attributes)
+      .find(attribute => attribute.name.startsWith('_ngcontent-'))!.name;
+    const input = document.createElement('input');
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'password-visibility-toggle';
+    toggle.setAttribute(scope, '');
+    toggle.setAttribute('aria-label', 'Show password');
+    document.body.append(input, toggle);
+    try {
+      input.focus();
+      toggle.focus();
+      expect(toggle.matches(':focus-visible')).toBeTrue();
+      const style = getComputedStyle(toggle);
+      expect(style.outlineStyle).toBe('solid');
+      expect(parseFloat(style.outlineWidth)).toBeGreaterThanOrEqual(2);
+      expect(style.outlineColor).not.toBe('rgba(0, 0, 0, 0)');
+    } finally {
+      input.remove();
+      toggle.remove();
+    }
+  });
+
   it('leaves navigation to AppShell while preserving page and account actions', () => {
     fixture.detectChanges();
     const page: HTMLElement = fixture.nativeElement;

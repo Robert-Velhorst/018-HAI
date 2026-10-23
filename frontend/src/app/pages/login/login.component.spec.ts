@@ -864,6 +864,54 @@ describe('LoginComponent rendered forms', () => {
     expect(fixture.nativeElement.querySelector(`#${errorId}`)?.textContent.trim()).toBeTruthy();
   }
 
+  for (const width of [375, 768, 1024, 1440]) {
+    it(`contains login, registration and recovery forms in light and dark ${width}px viewports`, () => {
+      const frame = document.createElement('iframe');
+      frame.title = 'Isolated account form layout';
+      frame.style.cssText = `position:fixed;left:0;top:0;width:${width}px;height:600px;border:0`;
+      document.body.append(frame);
+      try {
+        const doc = frame.contentDocument!;
+        const view = frame.contentWindow!;
+        for (const sheet of Array.from(document.styleSheets)) {
+          const style = doc.createElement('style');
+          style.textContent = Array.from(sheet.cssRules).map(rule => rule.cssText).join('\n');
+          doc.head.append(style);
+        }
+        // The lightweight Karma target omits theme.less. Mirror its NG-Zorro
+        // global.less box model; a separate run also loads the actual public theme.
+        const reset = doc.createElement('style');
+        reset.textContent = '*, *::before, *::after { box-sizing: border-box; }';
+        doc.head.prepend(reset);
+        expect(view.innerWidth).toBe(width);
+        for (const prepare of [
+          () => {},
+          () => component.toggleRegistration(),
+          () => { component.showPasswordHelp(); component.showResetConfirmation(); },
+        ]) {
+          prepare();
+          fixture.detectChanges();
+          for (const dark of [false, true]) {
+            doc.body.classList.toggle('hai-theme-dark', dark);
+            doc.body.replaceChildren(fixture.nativeElement.cloneNode(true));
+            expect(doc.documentElement.scrollWidth).toBeLessThanOrEqual(width);
+            for (const selector of ['.login-layout', '.login-box', '.login-brand', '.login-signal', 'input', 'button']) {
+              for (const element of Array.from(doc.querySelectorAll<HTMLElement>(selector))) {
+                const box = element.getBoundingClientRect();
+                expect(box.width).withContext(selector).toBeGreaterThan(0);
+                expect(box.left).withContext(selector).toBeGreaterThanOrEqual(0);
+                expect(box.right).withContext(selector).toBeLessThanOrEqual(width);
+                expect(element.scrollWidth).withContext(selector).toBeLessThanOrEqual(element.clientWidth + 1);
+              }
+            }
+          }
+        }
+      } finally {
+        frame.remove();
+      }
+    });
+  }
+
   it('links login validation errors to their labelled inputs for assistive technology', () => {
     component.submitForm();
     fixture.detectChanges();

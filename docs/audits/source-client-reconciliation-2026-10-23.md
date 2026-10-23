@@ -374,3 +374,34 @@ All 19 claim component checks pass within the combined nineteen-suite,
 local synthetic API and rendered UI fixtures, not real owner-account corrections,
 database concurrency, source truth, durable delivery or deployed acceptance.
 Original recovery copies remain retained pending main-preservation verification.
+
+## Home and login stylesheet reconciliation
+
+Read the complete retained home and login stylesheets and their full current
+differences. Preserve current shell-owned navigation, wrapping toolbar, bounded
+automation grid, long-title wrapping and narrow management layout. Do not restore
+the obsolete fixed header or duplicate navigation drawer. Keep the login's
+current flex layout, width constraints, service-retry focus treatment and
+capability explanations. The login production stylesheet remains unchanged.
+
+A duplicate home password-toggle declaration overrode the visible focus outline
+with a transparent one. A scoped, browser-computed focus regression failed before
+repair. Remove only the duplicate override, preserving the earlier token-based
+hover and visible keyboard-focus styles. The test deliberately isolates the
+component stylesheet; it is not a full profile-dialog interaction test.
+
+Add actual-width iframe checks at 375, 768, 1024 and 1440 pixels for login,
+operator registration and reset confirmation in both theme modes. The initial
+lightweight Karma run omitted the public NG-Zorro box-model reset and reported
+four fixture failures. Loading the actual public theme resolves those failures
+without a production login change. The isolated fixture now explicitly mirrors
+that reset for default lightweight runs rather than misclassifying the missing
+test theme as a product defect.
+
+The two-suite run with the real public theme passes all 65 checks. After the
+fixture correction, the combined twenty-suite reconciliation run passes all
+355 checks, including existing auth and rendered form behavior. Section,
+split-theme and icon contracts pass. Cloned iframe content is non-interactive;
+these results do not establish real sign-in, email delivery, all-page visual
+acceptance, production deployment or full WCAG conformance. No source recovery
+copy or transcript archive is deleted by this review or PR publication.
