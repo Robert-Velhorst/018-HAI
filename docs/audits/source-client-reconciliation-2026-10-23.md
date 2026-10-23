@@ -1648,3 +1648,27 @@ These checks use local HTTP fixtures and in-memory repositories, not a live
 Trello account, signed production webhook, transactional database acceptance or
 complete connector readiness. The original remains retained pending main
 preservation verification.
+
+## Router smoke-test reconciliation
+
+Read the full retained router smoke-test source and its current integration
+delta. The two retained variants are identical after newline normalization;
+their raw hashes remain tracked separately. Fourteen original test bodies are
+unchanged, and the route-tree test retains every original line in order with
+additional registrations and dispatch cases. Keep the real MCP, Serena and
+planning-optimizer initializer permission tests, API-key configuration failure
+checks, dedicated production memory-secret boundary and local-origin CORS cases.
+
+The large marker-handler route tree is representative, not a registration-parity
+test against every production initializer. Correct its overly broad comment.
+Add dispatch assertions for the already-registered source and background overview
+paths. Also cover an unreadable emergency-stop provider in all six known modes:
+background work must remain blocked even if the provider returns false alongside
+its error. The existing clear/engaged stop checks remain intact.
+
+All 16 focused router tests and six new subtests pass without skips. No production
+route, middleware or autonomy-policy behavior changed. Marker dispatch and
+in-process initializer checks do not prove complete production route parity,
+signed-session authentication, real provider execution, deployment or database
+acceptance. Both retained originals remain intact until main preservation is
+verified.
