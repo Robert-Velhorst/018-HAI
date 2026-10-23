@@ -2204,6 +2204,14 @@ Write-Output 'PowerShell syntax, path overloads and JSON property checks passed.
         self.assertNotIn("t.Skip", source)
         self.assertNotIn("postgres.Open(dsn)", source)
 
+    def test_source_lesson_postgres_fixture_requires_dedicated_database(self) -> None:
+        source = (ROOT / "backend/internal/memory/source_extraction_lessons_postgres_test.go").read_text(encoding="utf-8")
+        guard = 'RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")'
+        self.assertLess(source.index(guard), source.index("gorm.Open"))
+        migrations = job_block("migrations-integration")
+        self.assertIn("TestPostgresSourceExtractionLessonUpsertIsExactAndIdempotentUnderConcurrency", migrations)
+        self.assertIn('grep -Fq -- "--- PASS: ${test_name} (" "$memory_lesson_log"', migrations)
+
     def test_host_runtime_postgres_requires_all_missing_expiry_cases(self) -> None:
         migrations = job_block("migrations-integration")
         for contract in (

@@ -6,13 +6,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"automation-hub-backend/internal/models"
+	"automation-hub-backend/internal/pgtestguard"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -29,10 +29,7 @@ type sourceLessonPostgresFixture struct {
 
 func openSourceLessonPostgresFixture(t *testing.T) *sourceLessonPostgresFixture {
 	t.Helper()
-	dsn := strings.TrimSpace(os.Getenv("HAI_TEST_DATABASE_DSN"))
-	if dsn == "" {
-		t.Skip("HAI_TEST_DATABASE_DSN not set; skipping source-extraction memory PostgreSQL tests")
-	}
+	dsn := pgtestguard.RequireDedicatedPostgresTestDSN(t, "HAI_TEST_DATABASE_DSN", "hai_migration_runner_test")
 	admin, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open test PostgreSQL: %v", err)
@@ -404,9 +401,9 @@ func TestPostgresSourceExtractionLessonUpsertIsExactAndIdempotentUnderConcurrenc
 	const writers = 8
 	var wg sync.WaitGroup
 	errs := make(chan error, writers)
-	for range writers {
+	for index := range writers {
 		wg.Add(1)
-		go func() {
+		go func(index int) {
 			defer wg.Done()
 			db, conn, err := openSourceLessonPostgresSession(f.sqlDB, f.schema)
 			if err != nil {
@@ -414,9 +411,13 @@ func TestPostgresSourceExtractionLessonUpsertIsExactAndIdempotentUnderConcurrenc
 				return
 			}
 			defer conn.Close()
-			_, err = (&GormRepository{DB: db}).UpsertSourceExtractionLesson(owner, uri, request)
+			writerRequest := request
+			if index%2 != 0 {
+				writerRequest.Kind = " LESSON "
+			}
+			_, err = (&GormRepository{DB: db}).UpsertSourceExtractionLesson(owner, uri, writerRequest)
 			errs <- err
-		}()
+		}(index)
 	}
 	wg.Wait()
 	close(errs)
@@ -487,6 +488,24 @@ func TestPostgresSourceExtractionLessonUpsertIsExactAndIdempotentUnderConcurrenc
 	}
 	if total != 3 {
 		t.Fatalf("exact owner/source/kind lessons collapsed or duplicated: got %d rows, want 3", total)
+	}
+	// Older releases could store accepted uppercase spellings as separate kinds.
+	if err := f.db.Model(&models.ContextMemory{}).Where("id = ?", canonical.ID).Update("kind", "LESSON").Error; err != nil {
+		t.Fatalf("seed legacy kind spelling: %v", err)
+	}
+	reused, err := (&GormRepository{DB: f.db}).UpsertSourceExtractionLesson(owner, uri, request)
+	if err != nil || reused == nil || reused.ID != canonical.ID {
+		t.Fatalf("canonical retry did not reuse the legacy row: memory=%#v err=%v", reused, err)
+	}
+	duplicate := sourceExtractionLesson(owner, extractionID, request)
+	if err := f.db.Create(&duplicate).Error; err != nil {
+		t.Fatalf("seed ambiguous historical case variants: %v", err)
+	}
+	if _, err := (&GormRepository{DB: f.db}).UpsertSourceExtractionLesson(owner, uri, request); err == nil {
+		t.Fatal("ambiguous historical case variants must require review instead of choosing or overwriting a row")
+	}
+	if err := f.db.Model(&models.ContextMemory{}).Count(&total).Error; err != nil || total != 4 {
+		t.Fatalf("legacy conflict changed stored rows: count=%d err=%v", total, err)
 	}
 }
 
