@@ -91,6 +91,43 @@ The current handler's Git blob matches the inspected `main` reference. The raw
 original is different, so neither it nor the original checkout is released for
 deletion under the direct-match rule.
 
+## Ambient scheduling and service comparison
+
+Five more original-file deltas were read in full: `ambient/scheduler.go`,
+`ambient/durable_scheduler.go`, `ambient/scheduler_test.go`,
+`ambient/repository.go`, and `ambient/service.go` (all under `backend/internal`).
+Their current committed contents already match the inspected `main` reference;
+no original-only feature in those deltas needs copying over the newer code.
+
+The retained scheduling path adds startup-state reporting and requires both
+durable-mode opt-out and explicit legacy-fallback opt-in before using the
+in-process ticker. A durable startup failure still stops rather than bypassing
+persistent review. The default queue poll changes from five minutes to one
+minute; this is not a measured resource-saving claim. Scheduler status records
+worker attachment, not continuous liveness or successful scan execution.
+
+The repository adds batch fingerprint reads without removing the original
+single-record operations. The service uses those reads, avoids writes for
+unchanged proposals within the daily freshness window, and still saves semantic
+changes and expired dismissal cooldowns. The common candidate store retains
+owner-mismatch rejection, score/confidence filtering, cancellation checkpoints,
+creation/update accounting and review behavior. Reduced database operation
+counts in fixtures are not a measured 90% end-to-end resource reduction.
+
+The service also adds a summary projection (no opportunity collection and three
+recent scans), optional reuse of an owner-validated pursuit dashboard, and a
+single owner-scoped pursuit visibility lookup. The full overview remains
+available. The HTTP summary dispatch, owner/default resolution, default-row
+migration and relevant existing owner-isolation, visibility, summary, batching,
+freshness and scheduler assertions were inspected. Those tests were not freshly
+executed for this comparison. Default needs are a configuration fallback, not
+measurements of Robert's actual wellbeing.
+
+These file comparisons do not certify every ambient dependency, integration,
+concurrent writer, or live database behavior. The original service tests and
+additional original ambient files remain a separate reconciliation task. No
+original file or directory is marked deletion-eligible by this comparison.
+
 ## Storage boundary
 
 No original sources, Git history, databases, or transcript archives were deleted.
