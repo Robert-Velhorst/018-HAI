@@ -642,6 +642,12 @@
               </div>
             </nz-list-item>
           </nz-list>
+          <p *ngIf="!view.openLoops.length && workflowQueuesScopedOut()" role="status">
+            Open-loop counts are available in Pursuits; this memory snapshot omitted them.
+          </p>
+          <p *ngIf="!view.openLoops.length && !workflowQueuesScopedOut()" role="status">
+            No open loops were reported in this snapshot.
+          </p>
         </nz-card>
 
         <nz-card nzTitle="Contradictions">
@@ -656,11 +662,8 @@
               </button>
             </nz-list-item>
           </nz-list>
-          <p *ngIf="!view.openLoops.length && workflowQueuesScopedOut()" role="status">
-            Open-loop counts are available in Pursuits; this memory snapshot omitted them.
-          </p>
-          <p *ngIf="!view.openLoops.length && !workflowQueuesScopedOut()" role="status">
-            No open loops were reported in this snapshot.
+          <p *ngIf="!view.contradictions.length" role="status">
+            No contradictions were reported in this snapshot.
           </p>
         </nz-card>
       </div>

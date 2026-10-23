@@ -334,6 +334,32 @@ the [dependency review](frontend-dependency-reconciliation-2026-10-23.md).
 No dependency version, lockfile bytes, installed dependency or original source
 was changed or deleted by the metadata review; the frontend test command now
 includes the new contract tests.
+
+## Command Dashboard template reconciliation
+
+Read the complete retained template and its current delta. Preserve snapshot
+freshness and unavailable states, assistant actions, pursuit queues and brief,
+runtime readiness, OpenClaw ecosystem/skills/upload/path controls, owner-approved
+rollback, memory search, source links, corrections, decisions, projects, archive
+controls, command history and runtime-surface detail. Retain the current removal
+of the nested main landmark and existing explicit rollback control. This is a
+template review, not a complete controller or execution-path audit.
+
+The retained/current template placed the empty/omitted open-loop messages inside
+the Contradictions card instead of Open Loops. Four new cases render the real
+CommandDashboardModule, NG-Zorro and HTTP services with mocked responses. Three
+cases fail before repair. Move those messages into Open Loops, retain the
+owner-scoped omission distinction, and give contradictions a separate
+snapshot-scoped empty state. Populated queues retain their own rows and no
+misplaced empty claim. The tests deliberately make the secondary pursuit reads
+unavailable; they do not claim a healthy live pursuit integration.
+
+All four cases pass within 1,637 Chrome cases over 55 specification files;
+190 native tests and 122 CI contracts pass. The expected existing Home offline
+console case remains a negative fixture. No runtime, archive, approval, provider
+or package mutation was performed. These checks do not prove real-account,
+database, signed-session, deployment or full-app visual acceptance. The retained
+template remains intact pending verified preservation on main.
 The combined fourteen-suite frontend run passes all 211 tests; progressive
 section, split-theme and icon-registry checks also pass with this change set.
 
