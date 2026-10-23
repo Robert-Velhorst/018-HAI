@@ -14,6 +14,7 @@ import './source-template-controls.test.mjs'
 import './source-destructive-ui.test.mjs'
 import './entry-contract.test.mjs'
 import './module-registry-contract.test.mjs'
+import './auth-service-contract.test.mjs'
 
 const { moduleForUrl } = await loadModuleUrlLogic()
 
