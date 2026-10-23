@@ -87,14 +87,23 @@ func requireAuthenticatedOwner() gin.HandlerFunc {
 }
 
 // requirePrincipal binds installation-wide controls to the configured owner
-// identity in addition to the role permission checked by the route. A verified
-// owner role alone must not let another account mutate global runtime state.
+// identity or the IDP's signed first-run-admin scope, in addition to route RBAC.
+// Keep the actual subject unchanged for approval binding and audit attribution.
 func requirePrincipal(expected string) gin.HandlerFunc {
 	expected = strings.TrimSpace(expected)
 	return func(c *gin.Context) {
 		value, _ := c.Get(contextSubjectKey)
 		principal, _ := value.(string)
-		if expected == "" || strings.TrimSpace(principal) != expected {
+		role, _ := c.Get(contextRoleKey)
+		scopeValue, _ := c.Get(identity.ContextOperatorScopeKey)
+		scope, _ := scopeValue.(string)
+		// Legacy local identities have no scope claim. A supplied conflicting
+		// scope must never fall back to matching the subject.
+		matches := principal == expected && scope == ""
+		if canonicalOperatorScope(scope) && scope == expected {
+			matches = true
+		}
+		if !canonicalOperatorScope(expected) || principal == "" || role != "owner" || !matches {
 			e := apierror.New(apierror.CodeForbidden, "identity is not authorized for this installation-wide action")
 			c.AbortWithStatusJSON(e.HTTPStatus(), e.Envelope())
 			return
