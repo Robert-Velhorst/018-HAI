@@ -685,8 +685,10 @@ dl div,
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  grid-column: 2;
 }
+
+.source-row__badges { grid-column: 2; }
+.source-row__actions { grid-column: 1; }
 
 .status-pill {
   background: var(--blue-soft);

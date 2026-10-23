@@ -1004,3 +1004,41 @@ cases pass in Chrome Headless, including all 30 new login observation cases and
 both Runtime Control suites. The logged `offline` error is the existing Home
 negative-path fixture, not a live service observation. This is not the entire
 frontend suite, a production build or a deployed browser acceptance run.
+
+## Control Center and Connected Sources stylesheet reconciliation
+
+Read both retained module stylesheets completely and all current differences.
+Preserve shared theme tokens, visible focus, responsive grid breakpoints,
+wrapping provenance and failure messages, reduced-motion handling, and status
+colors. Keep current selector consolidation, corrected heading colors,
+labelled approval-input layout, connector-readiness feedback, progress state and
+the header-button span isolation. Do not restore removed Basic action styles
+whose old class is no longer used by the current template, or make static metric
+containers look like actionable buttons again.
+
+Two layout defects remained in both source generations. Connected Sources put
+outer row actions in column two despite defining only one explicit column;
+that forced an implicit second track beside the source selector. Keep badges in
+column two of their nested selector grid, but place the sibling actions in
+column one of the outer row. Control Center declared a mobile one-column metric
+inspector before a later equal-specificity two-column rule, which overrode the
+mobile intent. Move that breakpoint after its base declaration.
+
+Eight Chrome layout regressions use the actual component stylesheets with
+representative static markup in isolated 375, 768, 1024 and 1440 pixel frames.
+Before repair, all four source-action layouts and the 375-pixel inspector case
+fail. All eight pass after repair, checking explicit column count, vertical
+action placement, control containment and the inspector breakpoint. Both
+retained and current variants compile with the installed Sass implementation.
+The current compiled CSS is 23,953 and 23,794 bytes respectively; no stylesheet
+bundle or generated image was added to the product.
+
+These focused style fixtures do not establish full live-page layout, a visual
+design sign-off, complete keyboard/contrast acceptance or real connector
+execution. Original sources remain intact; their review is distinct from
+main-preservation and whole-worktree deletion eligibility.
+
+After adding both full module component suites and the new layout fixture to the
+combined selection, all 888 cases across 36 specification files pass in Chrome
+Headless. The expected Home offline-fixture console output remains unchanged.
+This broader local check still does not substitute for deployed visual review.
