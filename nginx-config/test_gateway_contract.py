@@ -206,6 +206,21 @@ class GatewayAuthContractTest(unittest.TestCase):
         self.assertIn("add_header Set-Cookie $hai_refreshed_access_cookie always;", generated_route)
         self.assertIn("add_header Set-Cookie $hai_refreshed_refresh_cookie always;", generated_route)
 
+    def test_compatibility_and_generated_cookie_headers_retain_parent_security_policy(self) -> None:
+        generated_route = (
+            ROOT / "nginx-config-manager" / "internal" / "app" / "autoconfig" / "config_template.go"
+        ).read_text(encoding="utf-8")
+        routes = (
+            ("compatibility", location_block("location /generic-auto/ {", GENERIC_AUTO_ROUTE)),
+            ("generated", generated_route),
+        )
+        for name, route in routes:
+            with self.subTest(route=name):
+                self.assertEqual(route.count("add_header_inherit merge;"), 1)
+                self.assertNotIn("add_header_inherit off;", route)
+                self.assertIn("add_header Set-Cookie $hai_refreshed_access_cookie always;", route)
+                self.assertIn("add_header Set-Cookie $hai_refreshed_refresh_cookie always;", route)
+
     def test_host_runtime_bridge_is_not_exposed_by_dashboard_gateway(self) -> None:
         bridge = location_block("location ^~ /api/v1/host-runtime/")
         self.assertIn("return 404;", bridge)
