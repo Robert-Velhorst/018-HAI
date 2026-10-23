@@ -315,6 +315,20 @@ func TestValidatePlanMapsOnlyDirectlyRelatedClaimEvidence(t *testing.T) {
 	}
 }
 
+func TestCriterionEvidenceMatchesRejectsMixedPolarityForTheSameClaim(t *testing.T) {
+	for _, test := range []struct {
+		criterion, description string
+	}{
+		{"client email is sent", "client email is sent. The client email is not sent"},
+		{"client email is not sent", "client email is not sent. The client email is sent"},
+		{"client email is sent and client email is not sent", "client email is sent"},
+	} {
+		if criterionEvidenceMatches(test.criterion, test.description) {
+			t.Errorf("contradictory polarity satisfied a criterion: criterion=%q evidence=%q", test.criterion, test.description)
+		}
+	}
+}
+
 func TestCriterionEvidenceMatchesRejectsConflictingProtectedValues(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -344,6 +358,34 @@ func TestCriterionEvidenceMatchesRejectsConflictingProtectedValues(t *testing.T)
 					test.criterion, test.description)
 			}
 		})
+	}
+}
+
+func TestCriterionEvidenceMatchesAcceptsConsistentPolarity(t *testing.T) {
+	for _, test := range []struct{ criterion, description string }{
+		{"client email is sent", "client email is sent"},
+		{"client email is not sent", "client email is not sent"},
+		{"client email is sent", "client email is sent. Invoice is not paid"},
+	} {
+		if !criterionEvidenceMatches(test.criterion, test.description) {
+			t.Errorf("consistent claim rejected: criterion=%q evidence=%q", test.criterion, test.description)
+		}
+	}
+}
+
+func TestValidatePlanRejectsMixedPolarityEvidence(t *testing.T) {
+	plan := validStructuredValidationPlan()
+	plan.ValidationPlan.SuccessCriteria = []string{"client email is sent"}
+	plan.Intake.SuccessCriteria = append([]string{}, plan.ValidationPlan.SuccessCriteria...)
+	plan.ExecutionResult.Claims = []models.VerificationClaim{{
+		ID: uuid.New(), ClaimText: "Client email is sent. Client email is not sent.",
+		Status: verification.StatusSourceSupported, SourceRefs: "email://record",
+		SupportExplanation: "The record contains contradictory delivery statements.",
+	}}
+	result := validatePlan(plan, 1)
+	criterion := validationCriterionByText(result.Criteria, "client email is sent")
+	if criterion == nil || criterion.Status != validationCriterionFailed || len(criterion.Evidence) != 0 {
+		t.Fatalf("mixed delivery claim satisfied the plan: %#v", criterion)
 	}
 }
 
