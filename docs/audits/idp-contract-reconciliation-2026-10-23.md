@@ -57,6 +57,29 @@ No older implementation is copied over the stronger current code. Reading the
 conditional SQL paths and passing fixture tests does not establish that real
 PostgreSQL contention, upgrades, rollback, or deployment acceptance has passed.
 
+## Google login follow-up
+
+Both retained `google_oauth.go` and `google_oauth_test.go` were read completely and
+compared with their current diffs. Keep signed state, state-bound PKCE, verifier
+non-disclosure, verified-email enforcement, bounded HTTP timeouts, and redirect
+refusal. Do not restore the older userinfo endpoint/claim name or weaker callback
+configuration checks. Preserve the current `email_verified` claim, validated
+callback URL, and expiration-at-equality rejection; current tests cover those
+intentional differences.
+
+The response reader had a separate defect: limiting reads to exactly 1 MiB could
+turn an oversized invalid provider response into valid JSON by discarding the
+extra bytes. Two local HTTP regressions confirmed that both the token and
+userinfo paths accepted a valid JSON prefix followed by padding and extra junk
+beyond the limit. Both failed before repair. Positive controls for valid JSON
+padded to exactly the limit passed.
+
+Both paths now use a bounded limit-plus-one reader and reject oversized content
+before parsing it. An oversized token response never advances to userinfo. The
+existing response-body cleanup and timeout behavior remains; the limit increases
+by only one sentinel byte, not an unbounded read. No provider configuration,
+credentials, scopes, or account permissions change.
+
 ## Verification
 
 ```text
@@ -70,8 +93,8 @@ cache. This validates local compilation and covered fixtures, not
 live Redis/PostgreSQL configuration, real OAuth/email delivery, or deployment.
 
 This is a contract-and-wiring reconciliation, not a claim to have completed the
-remaining authentication handler/service, repository acceptance tests, Google
-OAuth, password-reset integration, or generated API-documentation reviews.
+remaining authentication handler/service, repository acceptance tests,
+password-reset integration, or generated API-documentation reviews.
 No runtime code was replaced by older interfaces. Retained source copies remain
 intact, with private exact-content review records kept separately from public
 documentation and from any deletion gate.
