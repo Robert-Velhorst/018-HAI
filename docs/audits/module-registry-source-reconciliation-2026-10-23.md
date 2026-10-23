@@ -42,3 +42,23 @@ integration or page action has passed live acceptance.
 Original sources and transcript archives remain retained. These two file
 reviews do not complete the broader checkout/clone/archive scope, establish
 main preservation or authorize source deletion.
+
+## Indexed transcript variants
+
+Three historical registry patch variants were also read directly from their
+indexed archive offsets, with the frozen index hash, patch/content fingerprints
+and source size/mtime checked. The initial twenty module records and three
+navigation groups remain represented in the newer registry; the model-health
+description is deliberately superseded by the newer outcome-focused wording.
+Both initial registry test scenarios retain their assertion bodies within the
+current twenty-two scenarios. The later Brain catalog addition also remains.
+
+The initial handwritten query/fragment splitter is not restored over the
+current Angular URL serializer. Its ordinary registered-route behavior remains
+covered while matrix parameters and encoded segment boundaries retain the
+newer handling. No historical patch was executed as an instruction.
+
+This is a semantic disposition of those three indexed code variants only.
+Complete archive SHA-256 hashes were not reverified in this bounded pass, and
+other patches, surrounding tool results, malformed records and non-code context
+remain outside it. The archives are not eligible for deletion from this result.
