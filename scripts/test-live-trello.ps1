@@ -31,7 +31,7 @@ function Get-DotEnvValue {
 }
 
 $lines = [IO.File]::ReadAllLines($envPath)
-$required = @("TRELLO_API_KEY", "TRELLO_READ_TOKEN", "TRELLO_LIVE_BOARD")
+$required = @("TRELLO_API_KEY", "TRELLO_READ_TOKEN", "TRELLO_ACCOUNT_OWNER_IDENTITY", "TRELLO_ACCOUNT_MEMBER_ID", "TRELLO_LIVE_BOARD")
 $optional = @("TRELLO_API_BASE_URL", "CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS", "CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL")
 $values = @{}
 foreach ($name in $required + $optional) {
@@ -43,6 +43,15 @@ foreach ($name in $required) {
         throw "$name must be set to a non-placeholder value in $envPath."
     }
 }
+if ($values['TRELLO_ACCOUNT_MEMBER_ID'] -notmatch '^[a-fA-F0-9]{24}$') {
+    throw 'TRELLO_ACCOUNT_MEMBER_ID must be a canonical Trello member ID.'
+}
+if (-not [string]::IsNullOrWhiteSpace($values['TRELLO_API_BASE_URL']) -and $values['TRELLO_API_BASE_URL'].TrimEnd('/') -cne 'https://api.trello.com') {
+    throw 'Live acceptance requires the real HTTPS Trello endpoint, not a simulated provider.'
+}
+$values['TRELLO_API_BASE_URL'] = 'https://api.trello.com'
+$values['CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS'] = 'api.trello.com'
+$values['CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL'] = 'false'
 
 $backendPath = Join-Path $repositoryRoot "backend"
 $previous = @{}
@@ -61,13 +70,15 @@ try {
     $output = & docker run --rm `
         -e TRELLO_API_KEY `
         -e TRELLO_READ_TOKEN `
+        -e TRELLO_ACCOUNT_OWNER_IDENTITY `
+        -e TRELLO_ACCOUNT_MEMBER_ID `
         -e TRELLO_LIVE_BOARD `
         -e TRELLO_API_BASE_URL `
         -e CONNECTED_SOURCE_HTTP_ALLOWED_HOSTS `
         -e CONNECTED_SOURCE_HTTP_ALLOW_LINK_LOCAL `
         -v "${backendPath}:/workspace:ro" `
         -w /workspace `
-        golang:1.25.13 `
+        golang:1.27.3 `
         go test -count=1 -tags live ./internal/source -run '^TestLiveTrello' -v 2>&1
     $exitCode = $LASTEXITCODE
 } finally {
