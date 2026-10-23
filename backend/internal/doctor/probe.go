@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"automation-hub-backend/internal/lifecycle"
+	"automation-hub-backend/internal/safety"
 )
 
 // ProbeFunc performs a live connectivity check against one dependency. It must
@@ -79,7 +80,7 @@ func runProbe(ctx context.Context, timeout time.Duration, p Probe) Check {
 		return Check{
 			Name:     p.Name,
 			Severity: severity,
-			Detail:   fmt.Sprintf("unreachable after %s: %v", elapsed, err),
+			Detail:   fmt.Sprintf("unreachable after %s: %s", elapsed, safety.RedactSecrets(err.Error())),
 		}
 	}
 
