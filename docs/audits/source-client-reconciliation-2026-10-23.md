@@ -336,3 +336,41 @@ Existing explicit destruction remains safe; no production behavior changes.
 The complete eighteen-suite reconciliation run still passes all 281 Chrome
 tests. These fixtures are not a claim of full deployed acceptance. Original
 worktree copies and unrelated archive content remain retained.
+
+## Knowledge claim review reconciliation
+
+Read the retained claim component, template and test file completely and
+reviewed all current differences. Preserve immutable successor corrections,
+exact source/digest detail, per-module disclosure and the distinction between
+human approval and external source verification. Keep current authenticated
+subject/permission checks, authority revocation on denial, draft preservation,
+superseded request cancellation, destruction cleanup and effective-date validation.
+The backend correction service/handler and frontend service/model were inspected
+to check the successor receipt contract; no backend code changes are claimed.
+
+Ten new negative controls failed before repair: empty/stalled queue and session
+reads, empty/stalled lifecycle reads, and empty/stalled/offline/wrong-workspace
+correction results. Observe one response with a ten-second deadline and route
+empty completion through existing failure handling. A correction receipt must
+identify the new human-approved successor for the captured owner/workspace,
+subject/predicate/value and superseded claim before success is displayed.
+
+Non-authority errors, empty completion, timeout and invalid receipts remain
+unknown outcomes, not proof that nothing was stored. Require a fresh claim read
+before another correction, remove the old inspector selection for fresh review
+and clear confirmation. A failed refresh keeps the gate closed. No automatic
+mutation retry is introduced, and this is not durable exactly-once execution
+across browser reloads or concurrent clients. Permission denials still revoke
+authority without losing the draft. Workspace changes and overlapping loads/
+inspections are blocked while the correction request is pending.
+
+An eleventh rendered negative control found an incomplete bounded queue reporting
+no claim exceptions or no records. Its Basic summary now warns that review is
+incomplete instead of displaying an all-clear state. A matching-successor positive
+control and failed-reconciliation control also pass.
+
+All 19 claim component checks pass within the combined nineteen-suite,
+300-test Chrome run. Progressive-section/theme/icon contracts pass. These are
+local synthetic API and rendered UI fixtures, not real owner-account corrections,
+database concurrency, source truth, durable delivery or deployed acceptance.
+Original recovery copies remain retained pending main-preservation verification.
